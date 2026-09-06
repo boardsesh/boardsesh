@@ -160,7 +160,21 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
   // JSON-LD are `users.name` / `user_profiles.display_name` / `avatar_url` —
   // rename a mapped setter and every one of those changes while the climb rows
   // sit still. `LIMIT 1` mirrors `fetchSetterIdentity`'s own lookup, so the
-  // clock describes the row the page actually renders.
+  // clock describes the identity the page actually renders.
+  //
+  // `linked_at` is in the fold because it is the only clock that moves when an
+  // account is newly linked to a setter name — the moment the rendered identity
+  // flips from the raw username to that user's name and avatar, while both user
+  // clocks can predate the setter's newest climb (#5206).
+  //
+  // It is aggregated per USER rather than read off one mapping row. One user can
+  // hold the same setter name on several boards (the unique index is
+  // `(user_id, board_type)`), and those rows share a `user_id` AND a profile —
+  // so the ORDER BY cannot separate them. Taking `linked_at` from whichever row
+  // `LIMIT 1` happened to reach would let `<lastmod>` move, or go BACKWARDS, on
+  // a page nothing changed about, after nothing worse than a plan change.
+  // `max()` over that user's mappings is the honest clock: any relink rebinds
+  // the identity the page renders.
   //
   // `page_rank_ascents` reproduces the page's sort key. The page joins stats at
   // `mostAscendedAngle` and orders on `COALESCE(stats.ascensionist_count, 0)
@@ -221,12 +235,13 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
       ) AS last_modified
     FROM eligible
     LEFT JOIN LATERAL (
-      SELECT GREATEST(u.updated_at, ubm.linked_at, COALESCE(p.updated_at, u.updated_at)) AS updated_at
+      SELECT GREATEST(u.updated_at, max(ubm.linked_at), COALESCE(p.updated_at, u.updated_at)) AS updated_at
       FROM user_board_mappings ubm
       JOIN users u ON u.id = ubm.user_id
       LEFT JOIN user_profiles p ON p.user_id = ubm.user_id
       WHERE ubm.board_username = eligible.setter_username
-      ORDER BY p.user_id IS NULL, ubm.user_id
+      GROUP BY u.id, u.updated_at, p.user_id, p.updated_at
+      ORDER BY p.user_id IS NULL, u.id
       LIMIT 1
     ) AS identity ON true
     ORDER BY eligible.setter_username ASC
