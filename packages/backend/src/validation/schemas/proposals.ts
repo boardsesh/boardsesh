@@ -26,6 +26,7 @@ export const ProposalStatusSchema = z.enum(['open', 'approved', 'rejected', 'sup
 export const CommunityRoleTypeSchema = z.enum(['admin', 'community_leader', 'tester']);
 
 const BOOLEAN_PROPOSAL_VALUES: ReadonlySet<string> = new Set(['true', 'false']);
+const GRADE_LABEL_VALUES: ReadonlySet<string> = new Set(BOULDER_GRADE_LABELS);
 
 export const CreateProposalInputSchema = z
   .object({
@@ -41,10 +42,16 @@ export const CreateProposalInputSchema = z
     path: ['angle'],
   })
   // Boolean proposal types carry 'true' | 'false'; grade carries a grade label.
-  .refine((input) => input.type === 'grade' || BOOLEAN_PROPOSAL_VALUES.has(input.proposedValue), {
-    message: 'Proposed value must be true or false for this proposal type',
-    path: ['proposedValue'],
-  });
+  .refine(
+    (input) =>
+      input.type === 'grade'
+        ? GRADE_LABEL_VALUES.has(input.proposedValue)
+        : BOOLEAN_PROPOSAL_VALUES.has(input.proposedValue),
+    {
+      message: 'Proposed value must be a known grade label for grade proposals, or true/false otherwise',
+      path: ['proposedValue'],
+    },
+  );
 
 export const VoteOnProposalInputSchema = z.object({
   proposalUuid: UUIDSchema,

@@ -176,3 +176,17 @@ describe('CreateProposalInputSchema boolean proposal values', () => {
     ).toBe(true);
   });
 });
+
+describe('CreateProposalInputSchema grade labels', () => {
+  const base = { climbUuid: '11111111-1111-4111-8111-111111111111', boardType: 'kilter', angle: 40, reason: null };
+
+  it('rejects an unknown grade label for a grade proposal', () => {
+    const result = CreateProposalInputSchema.safeParse({ ...base, type: 'grade', proposedValue: '9Z/V99' });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0]?.path).toEqual(['proposedValue']);
+  });
+
+  it('accepts a known grade label', () => {
+    expect(CreateProposalInputSchema.safeParse({ ...base, type: 'grade', proposedValue: '6b+/V4' }).success).toBe(true);
+  });
+});

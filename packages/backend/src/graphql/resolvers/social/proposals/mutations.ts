@@ -135,6 +135,17 @@ export const socialProposalMutations = {
     // voter sees. Serialised, the second one reads the first one's committed
     // vote and is the toggle-off a second tap has always meant.
     await withProposalLock(proposal.climbUuid, proposal.type, async (tx) => {
+      // The pre-lock status check can go stale: a moderator's resolveProposal
+      // (which takes this same lock) may have closed the proposal in between.
+      const [live] = await tx
+        .select({ status: dbSchema.climbProposals.status })
+        .from(dbSchema.climbProposals)
+        .where(eq(dbSchema.climbProposals.id, proposal.id))
+        .limit(1);
+      if (!live || live.status !== 'open') {
+        throw new Error('Can only vote on open proposals');
+      }
+
       const weight = await getUserVoteWeight(userId, proposal.boardType, tx);
 
       // UPSERT vote (toggle off if same value)
@@ -306,8 +317,12 @@ export const socialProposalMutations = {
     // The status flip and the effect land together. Split across two statements,
     // a failure in between leaves an 'approved' row describing a climb that was
     // never changed — the same hazard `deleteProposal` closes on the way back.
-    await db.transaction(async (tx) => {
-      await tx
+    // Under the proposal's advisory lock, with the UPDATE guarded on
+    // `status = 'open'`: an auto-approval that commits between the check above
+    // and this write must not be overwritten with a moderator's 'rejected' (the
+    // climb would stay hidden with no approved proposal explaining it).
+    await withProposalLock(proposal.climbUuid, proposal.type, async (tx) => {
+      const [transitioned] = await tx
         .update(dbSchema.climbProposals)
         .set({
           status: status as ProposalStatus,
@@ -315,7 +330,11 @@ export const socialProposalMutations = {
           resolvedBy: userId,
           reason: reason || proposal.reason,
         })
-        .where(eq(dbSchema.climbProposals.id, proposal.id));
+        .where(and(eq(dbSchema.climbProposals.id, proposal.id), eq(dbSchema.climbProposals.status, 'open')))
+        .returning({ id: dbSchema.climbProposals.id });
+      if (!transitioned) {
+        throw new Error('Proposal is no longer open');
+      }
 
       if (status === 'approved') {
         await applyProposalEffect(proposal, tx);
