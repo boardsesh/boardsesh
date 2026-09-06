@@ -5,6 +5,7 @@ import {
   reconcileWindow,
   type ExistingExplicitSession,
   type ExistingInferredSession,
+  type ReconcileResult,
   type SessionMerge,
 } from '@boardsesh/session-inference';
 import { logger } from '../../utils/logger';
@@ -21,6 +22,13 @@ import { loadReconciliationWindow, type ReconciliationTransaction } from './wind
 export function inferredSessionsEnabled(): boolean {
   return process.env.INFERRED_SESSIONS_ENABLED === 'true';
 }
+
+/** What a reconciliation would do, before anything is written. */
+export type PlannedReconciliation = {
+  result: ReconcileResult;
+  /** Ids in `result.runs` that belong to explicit sessions rather than inferred ones. */
+  explicitSessionIds: Set<string>;
+};
 
 /** Move a merged-away session's social rows onto the survivor, then drop the session. */
 async function applyMerge(tx: ReconciliationTransaction, merge: SessionMerge): Promise<void> {
@@ -53,12 +61,23 @@ async function applyMerge(tx: ReconciliationTransaction, merge: SessionMerge): P
  * the loser's insert raises a unique violation that rolls its transaction back. The
  * caller retries the tick write, and the second pass finds the anchor and inherits it.
  */
-export async function reconcileInferredSessions(
+/**
+ * Work out what reconciliation WOULD do to the window around `touchedAt`, reading only.
+ *
+ * Split out from the write path so a dry run exercises the real decisions rather than
+ * approximating them. The backfill's job is to convince a human that ~63k sessions are
+ * about to be created correctly, and counting runs does not do that — this returns the
+ * merges, the absorptions and the sessions that would be minted.
+ *
+ * Returns null when the flag is off or the window holds no ticks.
+ */
+export async function planReconciliation(
   tx: ReconciliationTransaction,
   userId: string,
   touchedAt: Date,
-): Promise<void> {
-  if (!inferredSessionsEnabled()) return;
+  options: { ignoreFlag?: boolean } = {},
+): Promise<PlannedReconciliation | null> {
+  if (!options.ignoreFlag && !inferredSessionsEnabled()) return null;
 
   const { ticks, truncated } = await loadReconciliationWindow(tx, userId, touchedAt);
   if (truncated) {
@@ -66,7 +85,7 @@ export async function reconcileInferredSessions(
       `[inferredSessions] window for ${userId} around ${touchedAt.toISOString()} hit the widening ceiling; reconciling the clipped range`,
     );
   }
-  if (ticks.length === 0) return;
+  if (ticks.length === 0) return null;
 
   const tickIds = ticks.map((tick) => tick.id);
   const assignedIds = [...new Set(ticks.map((tick) => tick.sessionId).filter((id): id is string => id !== null))];
@@ -122,6 +141,30 @@ export async function reconcileInferredSessions(
     }));
 
   const result = reconcileWindow({ ticks, existingInferred, existingExplicit });
+  return { result, explicitSessionIds: new Set(existingExplicit.map((session) => session.id)) };
+}
+
+/**
+ * Reassign the ticks around `touchedAt` to the sessions they belong to.
+ *
+ * Runs inside the caller's transaction so a tick and its session assignment commit or
+ * roll back together. Safe to call from every writer — save, edit, delete, importer,
+ * offline drain — because {@link reconcileWindow} returns the same answer for a window
+ * however many times it is applied.
+ *
+ * Concurrency is settled by the unique partial index on `board_sessions.anchor_tick_id`:
+ * two writers reconciling the same unassigned run both decide to create a session, and
+ * the loser's insert raises a unique violation that rolls its transaction back. The
+ * caller retries the tick write, and the second pass finds the anchor and inherits it.
+ */
+export async function reconcileInferredSessions(
+  tx: ReconciliationTransaction,
+  userId: string,
+  touchedAt: Date,
+): Promise<void> {
+  const planned = await planReconciliation(tx, userId, touchedAt);
+  if (!planned) return;
+  const { result } = planned;
 
   for (const merge of result.merges) {
     await applyMerge(tx, merge);

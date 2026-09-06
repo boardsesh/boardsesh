@@ -17,9 +17,20 @@
  *
  * DRY RUN BY DEFAULT. `--apply` is the only thing that writes.
  *
+ * Two dry-run depths, because they cost very different amounts:
+ *   - default: counts the runs it would reconcile. One query per climber, seconds for
+ *     the fleet. Answers "how much work is there".
+ *   - `--simulate`: plans each run for real, reporting the sessions it would create, the
+ *     climbs an explicit session would absorb, merges, and the size/duration spread.
+ *     A query per run — minutes for one climber, hours for the fleet — so pair it with
+ *     `--user` or `--limit`.
+ *
  * Usage:
- *   # what would happen, no writes
+ *   # how much work is there — fast
  *   vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts
+ *
+ *   # what the grouping would actually look like for one climber
+ *   vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts --user <userId> --simulate
  *
  *   # one climber first — the sane way to start
  *   vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts --user <userId> --apply
@@ -33,11 +44,12 @@ import { asc, eq, isNull, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { SESSION_GAP_MS } from '@boardsesh/session-inference';
 import { db } from '../db/client';
-import { reconcileInferredSessions } from '../services/inferred-sessions/reconcile';
+import { planReconciliation, reconcileInferredSessions } from '../services/inferred-sessions/reconcile';
 import { logger } from '../utils/logger';
 
 type Options = {
   apply: boolean;
+  simulate: boolean;
   userId: string | null;
   limit: number | null;
   resumeFrom: string | null;
@@ -60,6 +72,7 @@ function parseArgs(argv: string[]): Options {
 
   return {
     apply: argv.includes('--apply'),
+    simulate: argv.includes('--simulate'),
     userId: value('--user'),
     limit: number('--limit', null),
     resumeFrom: value('--resume-from'),
@@ -157,6 +170,15 @@ async function main(): Promise<void> {
   let sessionsCreated = 0;
   let failed = 0;
   let lastUserId = '';
+  const plan = {
+    wouldCreate: 0,
+    absorbedRuns: 0,
+    absorbedTicks: 0,
+    merges: 0,
+    emptied: 0,
+    tickCounts: [] as number[],
+    durationsMin: [] as number[],
+  };
 
   for (const userId of userIds) {
     lastUserId = userId;
@@ -173,6 +195,27 @@ async function main(): Promise<void> {
           await db.transaction((tx) => reconcileInferredSessions(tx, userId, start));
         }
         sessionsCreated += (await countInferredSessions(userId)) - before;
+      } else if (options.simulate) {
+        // Exercise the real decisions rather than approximating them. Counting runs
+        // would say nothing about merges, or about how many climbs an explicit session
+        // is going to absorb — which is the part worth seeing before 63k sessions
+        // appear across everyone's history at once.
+        for (const start of starts) {
+          const planned = await db.transaction((tx) => planReconciliation(tx, userId, start, { ignoreFlag: true }));
+          if (!planned) continue;
+          for (const run of planned.result.runs) {
+            if (run.sessionId !== null && planned.explicitSessionIds.has(run.sessionId)) {
+              plan.absorbedRuns++;
+              plan.absorbedTicks += run.tickIds.length;
+            } else if (run.sessionId === null) {
+              plan.wouldCreate++;
+              plan.tickCounts.push(run.tickIds.length);
+              plan.durationsMin.push(Math.round((run.lastTickAt - run.firstTickAt) / 60000));
+            }
+          }
+          plan.merges += planned.result.merges.length;
+          plan.emptied += planned.result.emptiedSessionIds.length;
+        }
       }
     } catch (error) {
       failed++;
@@ -195,8 +238,30 @@ async function main(): Promise<void> {
     `[backfill-inferred-sessions] done — ${processed} climber(s), ${runsSeen} run(s), ` +
       `${sessionsCreated} session(s) created, ${failed} failure(s)`,
   );
+  if (!options.apply && options.simulate) {
+    const percentile = (values: number[], p: number): number => {
+      if (values.length === 0) return 0;
+      const sorted = [...values].sort((a, b) => a - b);
+      return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+    };
+    logger.info(
+      `[backfill-inferred-sessions] would create ${plan.wouldCreate} session(s); ` +
+        `${plan.absorbedRuns} run(s) / ${plan.absorbedTicks} tick(s) absorbed by an explicit session; ` +
+        `${plan.merges} merge(s); ${plan.emptied} emptied`,
+    );
+    logger.info(
+      `[backfill-inferred-sessions] session size ticks p50=${percentile(plan.tickCounts, 0.5)} ` +
+        `p90=${percentile(plan.tickCounts, 0.9)} max=${Math.max(0, ...plan.tickCounts)} · ` +
+        `duration min p50=${percentile(plan.durationsMin, 0.5)} ` +
+        `p90=${percentile(plan.durationsMin, 0.9)} max=${Math.max(0, ...plan.durationsMin)} · ` +
+        `single-climb=${plan.tickCounts.filter((n) => n === 1).length}`,
+    );
+  }
   if (!options.apply) {
     logger.info('[backfill-inferred-sessions] dry run: nothing was written. Re-run with --apply to commit.');
+    if (!options.simulate) {
+      logger.info('[backfill-inferred-sessions] add --simulate to plan the real grouping (slower — a query per run).');
+    }
   }
   if (failed > 0) {
     logger.warn(`[backfill-inferred-sessions] resume the remainder with --resume-from ${lastUserId}`);
