@@ -47,7 +47,7 @@ vi.mock('@/app/lib/cnc-funnel-analytics', () => ({
 }));
 
 vi.mock('../configurator/use-cnc-layout', () => ({
-  useCncLayout: () => ({ summary: null, isLoading: false, errorKey: null }),
+  useCncLayout: () => ({ summary: null, model: null, isLoading: false, errorKey: null }),
 }));
 
 vi.mock('../configurator/use-cnc-checkout', () => ({
