@@ -412,11 +412,8 @@ describe('submitQaVerdict', () => {
   });
 
   it('records the verdict without a head SHA when GitHub cannot be reached at all', async () => {
-    // The row is the record and GitHub is the mirror, so an uninstalled App or
-    // a spent anonymous rate limit must not be able to refuse a verdict: the
-    // sheet a tester files it from is the one that takes them back off the
-    // preview, and rejecting the write left them stuck on the PR they were
-    // testing. A null head SHA is the runbook's "revision never verified".
+    // The row is the record and GitHub only the mirror, so an unreachable
+    // GitHub cannot refuse a verdict. Null head SHA = "revision never verified".
     getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
     readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
 
@@ -429,17 +426,14 @@ describe('submitQaVerdict', () => {
   });
 
   it('never mirrors a verdict GitHub never confirmed a PR for', async () => {
-    // `prNumber` is client-supplied and both reads failed, so it need not be an
-    // open PR — or a PR at all. The comment goes through the issues API, which
-    // answers for any number, and `qa-approved` gates a merge on a public repo,
-    // so the mirror must not fire on GitHub recovering between read and write.
+    // With both reads failed, `prNumber` is unverified client input. The comment
+    // API answers for any number and `qa-approved` gates a merge on a public
+    // repo, so GitHub recovering mid-request must not let the mirror fire.
     getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
     readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
 
-    // Anchored on the skip being logged, not on a timer. A bare sleep would not
-    // flake here — the mocks are never called either way — it would pass
-    // VACUOUSLY whenever the fire-and-forget block had not run yet, which is
-    // the one failure a negative assertion has to rule out.
+    // Anchored on the skip log, not a timer: a sleep here never flakes, it
+    // passes vacuously whenever the fire-and-forget block has not run yet.
     const warn = vi.spyOn(logger, 'warn');
     try {
       const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
