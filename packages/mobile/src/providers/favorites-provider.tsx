@@ -60,12 +60,18 @@ export function FavoritesProvider({
 
   const trackedToggleFavorite = useCallback(
     async (uuid: string): Promise<boolean> => {
+      // Capture the scope BEFORE awaiting: the store holds one board+angle+user
+      // at a time, and re-scoping while this is in flight makes the result
+      // belong to a list that is no longer on screen.
+      const contextEpoch = favoritesStore.getContextEpoch();
       const isNowFavorited = await toggleFavorite(uuid);
       // Reflect the result in the store so a heart flips wherever it's rendered.
-      // The wired-up `toggleFavorite` writes this too; doing it here as well
-      // keeps the provider correct for any other implementation of the prop,
-      // and the store no-ops a write that doesn't change the value.
-      favoritesStore.setIsFavorited(uuid, isNowFavorited);
+      // The wired-up `toggleFavorite` writes this too (under the same guard);
+      // doing it here as well keeps the provider correct for any other
+      // implementation of the prop, and the store no-ops an unchanged value.
+      if (favoritesStore.getContextEpoch() === contextEpoch) {
+        favoritesStore.setIsFavorited(uuid, isNowFavorited);
+      }
       track(SHARED_EVENTS.FavoriteToggle, {
         action: isNowFavorited ? 'added' : 'removed',
         climbUuid: uuid,

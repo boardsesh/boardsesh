@@ -142,7 +142,7 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
   mutationDepsRef.current = { activeBoard, queryClient, isAuthenticated, offlineEnabled };
 
   const toggleFavoriteMutation = useMutation({
-    mutationFn: async (climbUuid: string): Promise<{ uuid: string; favorited: boolean }> => {
+    mutationFn: async (climbUuid: string): Promise<{ uuid: string; favorited: boolean; contextEpoch: number }> => {
       const { activeBoard: board, queryClient: client, offlineEnabled: offline } = mutationDepsRef.current;
       if (!board) throw new Error('Cannot toggle favorite: no active board selected.');
       // The favorite key is (userId, boardName, climbUuid, angle) on the
@@ -153,6 +153,10 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
       if (board.angle == null) throw new Error('Cannot toggle favorite: active board has no angle.');
       const input = { boardName: board.boardType, climbUuid, angle: board.angle };
       const currentlyFavorited = favoritesStore.getIsFavorited(climbUuid);
+      // The scope this toggle belongs to. The store is a singleton holding one
+      // board+angle+user at a time, so a slow response must not write a 40°
+      // result into a store the user has since re-scoped to 25°.
+      const contextEpoch = favoritesStore.getContextEpoch();
       const db = getDatabaseHandle();
 
       // Local-first only with the offline flag on; otherwise the plain
@@ -164,18 +168,21 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
           await addFavoriteLocal(db, input);
         }
         scheduleDrain(db, client);
-        return { uuid: climbUuid, favorited: !currentlyFavorited };
+        return { uuid: climbUuid, favorited: !currentlyFavorited, contextEpoch };
       }
 
       const response = await getHttpClient().request<ToggleFavoriteMutationResponse>(TOGGLE_FAVORITE, {
         input,
       });
-      return { uuid: climbUuid, favorited: response.toggleFavorite.favorited };
+      return { uuid: climbUuid, favorited: response.toggleFavorite.favorited, contextEpoch };
     },
     // Write server truth back into the store this mutation read
     // `currentlyFavorited` from, so a heart in the climb list reflects the
-    // toggle without waiting for a refetch.
-    onSuccess: ({ uuid, favorited }) => {
+    // toggle without waiting for a refetch — unless the store has been
+    // re-scoped while the request was in flight, in which case the result
+    // belongs to a context that is no longer on screen.
+    onSuccess: ({ uuid, favorited, contextEpoch }) => {
+      if (favoritesStore.getContextEpoch() !== contextEpoch) return;
       favoritesStore.setIsFavorited(uuid, favorited);
     },
   });
