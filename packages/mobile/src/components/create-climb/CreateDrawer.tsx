@@ -121,7 +121,14 @@ export function CreateDrawer({
   onViewDuplicate,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
-  const { t } = useTranslation(['climbs', 'session']);
+  const { t } = useTranslation('climbs');
+  // A SEPARATE hook, not `useTranslation(['climbs', 'session'])`: with an array,
+  // `t('a.b.c')` resolves against the FIRST namespace only, so the wall-state
+  // key — which lives in session.json — fell through and the chip rendered the
+  // raw `playView.wallState.onWall`. Every CreateDrawer suite mocks `t` as
+  // identity, so nothing caught it until the emulator did. Matches
+  // CreateDrawerHeader, which already aliases its second and third namespaces.
+  const { t: tSession } = useTranslation('session');
   const insets = useSafeAreaInsets();
   // Bottom terms use the WINDOW inset: this drawer is a route inside the climbs
   // tab, whose per-tab provider folds iOS 26 tab chrome the sheet covers into
@@ -369,7 +376,7 @@ export function CreateDrawer({
               frameCount={controller.frameCount}
               frameIndex={controller.currentFrameIndex}
               playback={controller.playback}
-              wallStateLabel={controller.handedOff ? t('playView.wallState.onWall') : null}
+              wallStateLabel={controller.handedOff ? tSession('playView.wallState.onWall') : null}
               onAddFrame={controller.duplicateFrame}
             />
 
