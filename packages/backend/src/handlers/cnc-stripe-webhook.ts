@@ -13,7 +13,7 @@ import {
   type CncOrdersExecutor,
 } from '../services/cnc/orders';
 import { db } from '../db/client';
-import { CNC_KICKER_SET_IDS, findCatalogEntry, parseSetIds } from '../services/cnc/catalog';
+import { CNC_KICKER_SET_IDS, describeBoard, parseSetIds } from '../services/cnc/catalog';
 import { sendCncOrderReceivedEmail } from '../email/cnc-emails';
 import { webPublicUrl } from '../utils/public-urls';
 import { captureBackendEvent } from '../services/analytics/posthog';
@@ -181,7 +181,7 @@ async function handleCheckoutCompleted(
       amountCents: session.amount_total ?? order.amountCents,
       currency: session.currency ? session.currency.toUpperCase() : order.currency,
     },
-    tx,
+    { executor: tx },
   );
 
   if (!queued) {
@@ -216,7 +216,7 @@ async function handleCheckoutExpired(
   const order = await resolveSessionOrder(session, event.type, tx);
   if (!order) return IGNORED;
 
-  await transitionOrder(order.id, 'checkoutExpired', {}, tx);
+  await transitionOrder(order.id, 'checkoutExpired', {}, { executor: tx });
   return { orderId: order.id, queued: null };
 }
 
@@ -255,7 +255,7 @@ async function handleChargeRefunded(
     return IGNORED;
   }
 
-  await transitionOrder(order.id, 'refund', { refundedAt: new Date(event.created * 1000) }, tx);
+  await transitionOrder(order.id, 'refund', { refundedAt: new Date(event.created * 1000) }, { executor: tx });
   return { orderId: order.id, queued: null };
 }
 
@@ -293,12 +293,7 @@ async function processEvent(event: Stripe.Event, tx: CncOrdersExecutor): Promise
  * failures — so a dead address on one side never costs the other its receipt.
  */
 async function announcePurchase(order: CncOrder, amountExcludingTaxCents: number | null): Promise<void> {
-  const entry = findCatalogEntry({
-    boardName: order.boardName,
-    layoutId: order.layoutId,
-    sizeId: order.sizeId,
-  });
-  const boardLabel = entry ? `${order.boardName} ${entry.label}` : `${order.boardName} ${String(order.sizeId)}`;
+  const boardLabel = describeBoard(order);
   const setIds = parseSetIds(order.setIds) ?? [];
   const hasKicker = setIds.some((setId) => CNC_KICKER_SET_IDS.includes(setId));
 

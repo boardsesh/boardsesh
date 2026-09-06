@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { logger } from '../../utils/logger';
-import { CNC_KICKER_SET_IDS, type CncCatalogEntry } from './catalog';
+import { CNC_KICKER_SET_IDS, type CncBoardTuple } from './catalog';
 import type { CncOrderOptions } from '@boardsesh/db/schema';
 
 /**
@@ -249,7 +249,14 @@ function parseSheetStock(sheetStock: unknown): { lengthMm: number; widthMm: numb
 }
 
 export type ToLayoutRequestInput = {
-  entry: CncCatalogEntry;
+  /**
+   * The wall being built. A `CncCatalogEntry` satisfies this, and that is what
+   * the resolvers pass — but only the tuple is read, so the generation job can
+   * pass a PAID ORDER's own stored tuple instead. That matters when a
+   * catalogue entry is retired: the buyer is still owed the pack they paid
+   * for, and re-resolving through today's catalogue would refuse to build it.
+   */
+  entry: CncBoardTuple;
   /** Options already normalised by `validateCatalogOptions` — every key present. */
   options: CncOrderOptions;
   /** Set ids already parsed by `parseSetIds`. Order preserved. */

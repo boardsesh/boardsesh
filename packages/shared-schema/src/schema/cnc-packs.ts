@@ -235,4 +235,21 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     ok: Boolean!
     collisions: JSON!
   }
+
+  """
+  A short-lived link to one pack.
+
+  It exists because a browser navigation cannot carry an Authorization header,
+  and a session token in a URL would land in history, in a referrer and in every
+  proxy log. So the grant is the weakest thing that works: one order, one user,
+  five minutes, no revocation — and the download route re-checks ownership and
+  refund status when it is redeemed anyway. Treat it as a click target, not as a
+  credential to store.
+  """
+  type CncDownloadGrant {
+    "Fetch or navigate to this. Streams the zip as an attachment."
+    url: String!
+    "ISO 8601. Ask for another one after this; nothing is lost by doing so."
+    expiresAt: String!
+  }
 `;
