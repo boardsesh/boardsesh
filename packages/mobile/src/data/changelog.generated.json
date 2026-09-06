@@ -1,6 +1,22 @@
 {
-  "generatedAt": "2026-09-06T05:54:00.166Z",
+  "generatedAt": "2026-09-06T07:08:30.591Z",
   "entries": [
+    {
+      "prNumber": 4761,
+      "category": "fixed",
+      "title": "Routes now light up properly on the wall — the whole route, not a scrambled mix of moves.",
+      "mergedAt": "2026-09-06T06:57:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4761",
+      "body": "Play your route in the climb creator before you publish it, with the same transport and speed control the play drawer has.\nThe creator's play button was never a play button. It's now a queue glyph that says \"Put it on the wall\", and it tells you why it's greyed out.\nThe creator now shows a route strip under the board from the first frame, so you can see how to build and play a route."
+    },
+    {
+      "prNumber": 5184,
+      "category": "fixed",
+      "title": "Following a setter now shows the right button: if you already follow them, it says Following instead of asking you to follow again.",
+      "mergedAt": "2026-09-06T06:52:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5184",
+      "body": "The follower count no longer drifts when the page loads on a bad connection."
+    },
     {
       "prNumber": 5158,
       "category": "fixed",

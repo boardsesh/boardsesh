@@ -14,6 +14,12 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Routes now light up properly on the wall — the whole route, not a scrambled mix of moves. ([#4761](https://github.com/boardsesh/boardsesh/pull/4761))
+  Play your route in the climb creator before you publish it, with the same transport and speed control the play drawer has.
+  The creator's play button was never a play button. It's now a queue glyph that says "Put it on the wall", and it tells you why it's greyed out.
+  The creator now shows a route strip under the board from the first frame, so you can see how to build and play a route.
+- Following a setter now shows the right button: if you already follow them, it says Following instead of asking you to follow again. ([#5184](https://github.com/boardsesh/boardsesh/pull/5184))
+  The follower count no longer drifts when the page loads on a bad connection.
 - Fixed the Climbs tab going dead after opening a playlist mid-session — no more force-quitting to get your search back. ([#5158](https://github.com/boardsesh/boardsesh/pull/5158))
 - Tapping holds in the climb creator now picks the hold you actually touched ([#4571](https://github.com/boardsesh/boardsesh/pull/4571))
   Before, at full-board zoom a handful of screw-ons grabbed every tap and the whole board felt offset — on a Kilter original, 9 out of 10 bolt-on centres were inside a screw-on's hit circle, so bolt-ons were basically unselectable unless you pinched in first
