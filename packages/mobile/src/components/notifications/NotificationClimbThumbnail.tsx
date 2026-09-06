@@ -37,8 +37,11 @@ export function useNotificationClimbRender(notification: GroupedNotification): N
 
   return useMemo(
     () => notificationClimbRender(notification),
-    // The four fields the resolution actually reads, not the group object — an
-    // unrelated field moving (isRead, commentBody) must not re-resolve.
+    // Deliberately the four fields the resolution reads, NOT `notification`.
+    // React Query mints a new group object whenever any field changes, so
+    // listing the object would re-resolve the board every time an unrelated
+    // one moves — `isRead` flipping on mark-read, or `commentBody` arriving.
+    // Adding `notification` here to satisfy the rule silently undoes that.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [climbFrames, boardType, climbLayoutId, climbCompatibleSizeIds],
   );
