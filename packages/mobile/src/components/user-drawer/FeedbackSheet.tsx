@@ -15,6 +15,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { FeedbackMetadataCollector, type FeedbackMetadataReader } from '../../lib/feedback/FeedbackMetadataCollector';
+import { reportHandledError } from '../../lib/error-reporting';
 import { useSubmitMobileAppFeedback } from '../../lib/feedback/use-submit-app-feedback';
 import { clearScreenshotUploadCache, uploadFeedbackScreenshots } from '../../lib/feedback/screenshot-upload';
 import { runBleAdvertisementRecon } from '../../lib/ble/advertisement-recon';
@@ -102,7 +103,10 @@ export const FeedbackSheet = memo(function FeedbackSheet({
         setIsUploading(true);
         try {
           screenshotKeys = await uploadFeedbackScreenshots(screenshotUris);
-        } catch {
+        } catch (error) {
+          // Reported, not swallowed: this catch used to be bare, which is why a
+          // real upload failure in the field left no trace anywhere to debug from.
+          reportHandledError(error, { tags: { source: 'feedback', op: 'upload-screenshots' } });
           showToast(tCommon('screenshots.uploadFailed'), 'error');
           return;
         } finally {
@@ -138,7 +142,8 @@ export const FeedbackSheet = memo(function FeedbackSheet({
         // The report is filed, so the uploaded objects now belong to it. The next
         // one must upload its own rather than reuse these.
         clearScreenshotUploadCache();
-      } catch {
+      } catch (error) {
+        reportHandledError(error, { tags: { source: 'feedback', op: 'submit-report' } });
         showToast(t('feedbackDialog.errorRating'), 'error');
       }
     } finally {
