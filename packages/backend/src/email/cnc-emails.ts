@@ -221,3 +221,69 @@ export async function sendCncPackFailedAdminEmail({
     );
   }
 }
+
+export type SendCncOrderStuckAdminEmailInput = {
+  licenceId: string;
+  orderId: number;
+  /** The signed-in buyer, so support can reach whoever is staring at the order page. */
+  licenseeEmail: string;
+  /** Why Stripe would not open a session. Boardsesh only — the buyer sees a fixed message. */
+  checkoutError: string;
+  /** Why cancelling the reserved order failed too. This is the part that needs a human. */
+  cancelError: string;
+};
+
+/**
+ * Tell Boardsesh an order is stranded in `pending_payment`.
+ *
+ * Only sent when both halves failed: Stripe would not open a checkout session
+ * AND the cleanup transition that retires the reserved order threw as well.
+ * Nothing has been charged, but no webhook will ever arrive for a session that
+ * was never created, so the row sits in the buyer's order list looking like an
+ * unfinished purchase until somebody cancels it by hand.
+ */
+export async function sendCncOrderStuckAdminEmail({
+  licenceId,
+  orderId,
+  licenseeEmail,
+  checkoutError,
+  cancelError,
+}: SendCncOrderStuckAdminEmailInput): Promise<void> {
+  try {
+    const safeLicence = escapeHtml(licenceId);
+    const safeBuyer = escapeHtml(licenseeEmail);
+    const safeCheckoutError = escapeHtml(checkoutError);
+    const safeCancelError = escapeHtml(cancelError);
+    const orderUrl = `${webPublicUrl()}/build-plans/orders/${encodeURIComponent(licenceId)}`;
+
+    await getTransporter().sendMail({
+      from: fromAddress(),
+      to: ADMIN_NOTIFICATION_EMAIL,
+      subject: headerSafe(`CNC order stuck in pending_payment: ${licenceId}`),
+      html: shell(
+        'An order is stuck in pending_payment',
+        `
+        <p style="color: ${emailColors.textPrimary}; font-size: 16px; line-height: 1.5;">
+          <strong>${safeLicence}</strong> (order ${String(orderId)}) could not open a Stripe Checkout session,
+          and cancelling the reserved order failed too. Nothing has been charged, but no webhook will ever
+          arrive for it — somebody has to cancel this row by hand.
+        </p>
+        <p style="color: ${emailColors.textSecondary}; font-size: 15px; line-height: 1.5;">
+          Buyer: ${safeBuyer}
+        </p>
+        <p style="color: ${emailColors.textSecondary}; font-size: 14px; line-height: 1.5;">Stripe error</p>
+        <pre style="color: ${emailColors.textPrimary}; font-size: 13px; background: #f5f5f4; padding: 12px; border-radius: 6px; white-space: pre-wrap; word-break: break-word;">${safeCheckoutError}</pre>
+        <p style="color: ${emailColors.textSecondary}; font-size: 14px; line-height: 1.5;">Cancel error</p>
+        <pre style="color: ${emailColors.textPrimary}; font-size: 13px; background: #f5f5f4; padding: 12px; border-radius: 6px; white-space: pre-wrap; word-break: break-word;">${safeCancelError}</pre>
+        ${button(orderUrl, 'Open the order')}
+      `,
+      ),
+      text: `${licenceId} (order ${String(orderId)}) is stuck in pending_payment: Stripe would not open a checkout session and cancelling the order failed too. Nothing was charged.\n\nBuyer: ${licenseeEmail}\n\nStripe error: ${checkoutError}\nCancel error: ${cancelError}\n\n${orderUrl}`,
+    });
+  } catch (error) {
+    logger.warn(
+      '[cnc-email] Failed to send the order-stuck admin email:',
+      error instanceof Error ? error.message : error,
+    );
+  }
+}

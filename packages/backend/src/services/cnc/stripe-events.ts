@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { cncStripeEvents } from '@boardsesh/db/schema';
 import { db } from '../../db/client';
+import type { CncOrdersExecutor } from './orders';
 
 /**
  * The webhook's idempotency gate.
@@ -37,9 +38,21 @@ export async function claimStripeEvent(eventId: string, eventType: string): Prom
  * an order we could not resolve, a type we do not act on. It is still marked
  * processed: "handled" here means "will never be acted on again", not "changed
  * something".
+ *
+ * The handler passes its open transaction as `executor` so this stamp and the
+ * order transition it describes commit together: a stamp that survived a
+ * rolled-back transition would tell every redelivery there was nothing left to
+ * do, stranding a paid order in `pending_payment`.
  */
-export async function markStripeEventProcessed(eventId: string, orderId: number | null): Promise<void> {
-  await db.update(cncStripeEvents).set({ orderId, processedAt: new Date() }).where(eq(cncStripeEvents.id, eventId));
+export async function markStripeEventProcessed(
+  eventId: string,
+  orderId: number | null,
+  executor: CncOrdersExecutor = db,
+): Promise<void> {
+  await executor
+    .update(cncStripeEvents)
+    .set({ orderId, processedAt: new Date() })
+    .where(eq(cncStripeEvents.id, eventId));
 }
 
 /**
