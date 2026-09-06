@@ -30,6 +30,25 @@ describe('useBleFrameWriter', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('writes an emptied frame, so erasing every hold clears the wall', async () => {
+    // #4761-2. '' is a REAL frame — a route frame whose holds have all been
+    // erased — not the `null` stand-down. A falsy check conflated the two, so
+    // the previous frame stayed lit through the empty one instead of the clear
+    // packet going out.
+    const send = vi.fn().mockResolvedValue(true) as unknown as SendFramesToBoard;
+    const { rerender } = renderHook(
+      (props: { frame: string | null }) =>
+        useBleFrameWriter({ frame: props.frame, send, mirrored: false, resetKey: 'climb-1' }),
+      { initialProps: { frame: 'p1r42' as string | null } },
+    );
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    rerender({ frame: '' });
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(send).mock.calls[1][0]).toBe('');
+  });
+
   it('skips a repeat of the frame already on the wall', async () => {
     const send = vi.fn().mockResolvedValue(true) as unknown as SendFramesToBoard;
     const { rerender } = renderHook(
