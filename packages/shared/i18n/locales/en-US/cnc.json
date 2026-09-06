@@ -168,8 +168,8 @@
       "note": "Hold numbers and set-screw angles come from Kilter's own layout. We are still getting legal advice on shipping them, so leave them off if you would rather not wait for that answer."
     },
     "artwork": {
-      "heading": "Custom text",
-      "help": "Route your own words into a panel: a name, a date, a gym logo caption. Up to {{count}} labels, and we check every one against the hole grid before you buy.",
+      "heading": "Custom text and logos",
+      "help": "Route your own words into a panel, or upload a logo. Up to {{count}} items, and we check every one against the hole grid before you buy.",
       "add": "Add a label",
       "remove": "Remove",
       "itemLabel": "Label {{number}}",
@@ -226,6 +226,27 @@
         "cut_through_keepout": "A cut-through needs more room around the holes than this one has.",
         "crosses_seam": "This one spans two panels, so it would be cut in half.",
         "unknown": "This one cannot be routed where it is."
+      },
+      "upload": {
+        "button": "Upload a logo",
+        "busy": "Uploading…",
+        "help": "SVG, up to 5 MB. Convert strokes to outlines first — we cut the path itself, not around it.",
+        "signIn": "Sign in to upload a logo.",
+        "previewAlt": "Your uploaded logo",
+        "stored": "Your uploaded logo",
+        "errors": {
+          "tooLarge": "That file is too big. 5 MB is the most we can take.",
+          "unsupportedType": "We could not read that as a drawing. Export it again as a plain SVG.",
+          "unsafeDrawing": "That drawing does something we will not cut — a script, a linked font, an outside image. Export it again as a plain SVG.",
+          "noViewBox": "That drawing has no viewBox, so there is nothing to size it against. Export it again from your editor.",
+          "tooComplex": "That drawing has more detail than a router can follow. Simplify the paths and try again.",
+          "imageTooSmall": "That image is too small to trace. 64 pixels a side is the minimum.",
+          "imageTooLarge": "That image is too big to trace. 4096 pixels a side is the maximum.",
+          "unreadableImage": "We could not open that image. Export it again as a PNG.",
+          "rateLimited": "That is a lot of uploads. Give it a few minutes and try again.",
+          "unavailable": "Uploads are not working right now. Nothing was charged. Try again shortly.",
+          "generic": "That upload did not go through. Try again."
+        }
       }
     },
     "summary": {
