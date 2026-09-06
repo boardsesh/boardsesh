@@ -8,7 +8,17 @@ import { Trans, useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 
-export default function LegalContent() {
+type LegalContentProps = {
+  /**
+   * Whether to show the build-plans section. It links to
+   * `/build-plans/licence`, which 404s while the `cnc-packs` flag is off — an
+   * indexed page must not carry a link into a 404, so the section appears with
+   * the rest of the surface rather than ahead of it.
+   */
+  showBuildPlans?: boolean;
+};
+
+export default function LegalContent({ showBuildPlans = false }: LegalContentProps) {
   const { t } = useTranslation('marketing');
   return (
     <PageShell title={t('legal.intro.title')}>
@@ -103,6 +113,14 @@ export default function LegalContent() {
       <PageSection title={t('legal.trademark.title')}>
         <Prose>{t('legal.trademark.body')}</Prose>
       </PageSection>
+
+      {showBuildPlans && (
+        <PageSection title={t('legal.buildPlans.title')}>
+          <Prose>
+            <Trans i18nKey="legal.buildPlans.body" t={t} components={{ licence: <MuiLink component={LocaleLink} href="/build-plans/licence" /> }} />
+          </Prose>
+        </PageSection>
+      )}
 
       <PageSection title={t('legal.dmca.title')}>
         <Prose>{t('legal.dmca.intro')}</Prose>

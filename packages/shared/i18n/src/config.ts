@@ -53,6 +53,7 @@ export const ALL_NAMESPACES = [
   'oauth',
   'developers',
   'cnc',
+  'cnc-legal',
 ] as const;
 export type Namespace = (typeof ALL_NAMESPACES)[number];
 

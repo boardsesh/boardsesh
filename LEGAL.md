@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-This is a free, open-source, community-built alternative for browsing and interacting with standardised LED climbing training boards (Kilter Board, Tension Board, MoonBoard, and others). It is non-commercial and maintained entirely by volunteers.
+This is a free, open-source, community-built alternative for browsing and interacting with standardised LED climbing training boards (Kilter Board, Tension Board, MoonBoard, and others). The app is free, the source is open, and the people who build it are volunteers. Boardsesh sells one optional thing — CNC build plans for a home wall, under a separate manufacturing licence — and that revenue pays for hosting and development.
 
 We believe climbers should have the freedom to choose how they interact with hardware they've purchased, and that community-created data should remain accessible to the community.
 
@@ -71,6 +71,20 @@ The hosted service is not a backend for other apps. A publicly distributed app o
 You do not have to start from an empty database either. The [nightly board snapshots](./docs/board-snapshots-dataset.md) are public SQLite files of the climb catalogs, cheap for us to serve, and you are welcome to use them. We are also happy to talk about syncing non-user data such as climbs and grades to an alternative service.
 
 Questions about this policy: [legal@boardsesh.com](mailto:legal@boardsesh.com)
+
+---
+
+## Build Plans
+
+Boardsesh sells CNC build plans for a climbing home wall: a generated set of DXF cutting files, PDFs and a bill of materials for one wall, in the size and the manufacturing options the buyer picked.
+
+What is sold is the generated pack, not the generator. The software that produces the plans is closed source and is not distributed; the app itself stays Apache 2.0 and free.
+
+Each pack is generated individually for one order, carries its own licence id, and is licensed for one wall rather than sold outright. The terms are on the [build plans manufacturing licence](https://boardsesh.com/build-plans/licence) page.
+
+The plans are compatible with the Kilter Homewall hole pattern. That is a statement about hole positions, not a relationship: Boardsesh is not affiliated with, endorsed by, or sponsored by Aurora Climbing or any board manufacturer. Holds, LED kits and app access are not part of a pack and are bought from the manufacturer.
+
+The licence text is a draft pending review by an Australian IP lawyer, and build plans are not on sale until that review is done.
 
 ---
 
