@@ -16,14 +16,18 @@ Two kinds of shard:
 
 |                   | fixed (`SHARD_REGISTRY`)                           | paged (`PAGED_SHARD_REGISTRY`)                   |
 | ----------------- | -------------------------------------------------- | ------------------------------------------------ |
-| members           | `static`, `boards`, `gyms`, `setters`, `playlists` | `climbs` when enabled                            |
-| file              | one `/sitemaps/<id>.xml`                           | `/sitemaps/climbs/1.xml … N.xml`                 |
+| members           | `static`, `boards`, `gyms`, `playlists`            | `setters`, and `climbs` when enabled             |
+| file              | one `/sitemaps/<id>.xml`                           | `/sitemaps/<id>/1.xml … N.xml`                   |
 | index asks it for | the whole item list                                | `summary()` only — count + newest timestamp      |
 | N comes from      | —                                                  | `ceil(itemCount / urlsPerShard)` at request time |
 
 `N` is derived from the summary on every request, never from the filesystem: Next has
 no partial dynamic segments, so a `climbs-1.xml` shape would hardcode today's page
 count into the directory tree.
+
+`setters` is paged for volume, not for locale expansion: ~108,000 distinct
+`(board_type, setter_username)` pairs against `MAX_ITEMS_PER_SHARD`'s 11,250, so
+one file cannot hold them at any expansion.
 
 ## The climb sitemap switch
 

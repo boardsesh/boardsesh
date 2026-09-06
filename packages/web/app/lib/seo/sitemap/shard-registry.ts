@@ -406,7 +406,7 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     // setter pages cross-canonicalise onto the default locale, so listing the
     // twins would advertise URLs whose own canonical points elsewhere.
     //
-    // Locale expansion is NOT why this had to move off the fixed path — #4648
+    // Locale expansion is NOT why this had to move off the fixed path — #4996
     // gave every shard its own `expansion`, and the declared-empty fixed
     // `setters` entry already carried `default-locale-only`. Volume is why: the
     // dev image has ~108,000 distinct `(board_type, setter_username)` pairs
