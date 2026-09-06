@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CncAdminOrder, CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import BuildPlansPanel from '../build-plans-panel';
@@ -127,7 +127,7 @@ describe('BuildPlansPanel', () => {
     await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
   });
 
-  it('requeues on confirm and clears the row of its spent attempts and error', async () => {
+  it('requeues on confirm and re-reads the queue for the row it cannot know', async () => {
     mockRequest.mockResolvedValueOnce(
       page([makeEntry({ attempts: 3, lastError: 'ezdxf: PANEL_EXCEEDS_SHEET on panel 2' }, { status: 'failed' })]),
     );
@@ -135,14 +135,26 @@ describe('BuildPlansPanel', () => {
     renderPanel();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Regenerate' }));
+    // The mutation answers with a plain order: no attempt count, no last error.
     mockRequest.mockResolvedValueOnce({ regenerateCncPack: makeOrder({ status: 'queued' }) });
+    mockRequest.mockResolvedValueOnce(page([makeEntry({ attempts: 0 }, { status: 'queued' })]));
     fireEvent.click(screen.getByRole('button', { name: 'Rebuild it' }));
 
-    expect(await screen.findByText('In the queue')).toBeDefined();
-    // A requeue resets the attempt budget and clears the previous error — a row
-    // still showing "3" and the old message would read as a fresh failure.
-    await waitFor(() => expect(screen.queryByText('ezdxf: PANEL_EXCEEDS_SHEET on panel 2')).toBeNull());
-    expect(screen.getByText('0')).toBeDefined();
+    // So the row's two admin-only columns come from a re-read of the queue once
+    // the mutation resolves — a row still showing "3" and the old message would
+    // read as a fresh failure.
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenLastCalledWith('ADMIN_CNC_ORDERS', { status: null, limit: 50, cursor: null }),
+    );
+    expect(mockRequest).toHaveBeenCalledTimes(3);
+    // Scoped to the row: "In the queue" is also one of the status filter chips.
+    await waitFor(() => {
+      const row = screen.getByText('BS-CNC-ABC234').closest('tr') as HTMLElement | null;
+      expect(row).not.toBeNull();
+      expect(within(row as HTMLElement).getByText('In the queue')).toBeDefined();
+      expect(within(row as HTMLElement).getByText('0')).toBeDefined();
+    });
+    expect(screen.queryByText('ezdxf: PANEL_EXCEEDS_SHEET on panel 2')).toBeNull();
   });
 
   it('sends the status filter and asks for the first page again when it changes', async () => {
