@@ -1,6 +1,9 @@
 /**
  * Expected parsing results for all test fixtures.
  * Used by both Sharp and Canvas test suites.
+ * Touching-ring expectations were visually rechecked against the existing
+ * images in September 2026: 24 omitted rings across 21 fixtures were restored.
+ * Do not regenerate these expectations from parser output alone.
  */
 
 import type { GridCoordinate } from '../../types';
@@ -98,7 +101,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['B4', 'B6'],
-    handHolds: ['E9', 'F6', 'G12', 'G15', 'I14', 'K11'],
+    handHolds: ['E9', 'F6', 'F13', 'G12', 'G15', 'I14', 'K11'],
     finishHolds: ['I18'],
   },
   {
@@ -181,7 +184,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     userGrade: '6C/V5',
     setterGrade: null,
     isBenchmark: true,
-    startHolds: ['G5'],
+    startHolds: ['G5', 'H5'],
     handHolds: ['I16', 'I9', 'K11', 'K13', 'K15', 'K3'],
     finishHolds: ['F18', 'I18'],
   },
@@ -194,7 +197,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['E6', 'F5'],
-    handHolds: ['E9', 'H16', 'I10', 'J15', 'K5'],
+    handHolds: ['E9', 'H16', 'I10', 'J11', 'J15', 'K5', 'K6'],
     finishHolds: ['F18'],
   },
   {
@@ -241,7 +244,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     userGrade: '6B+/V4',
     setterGrade: '6B+/V4',
     isBenchmark: true,
-    startHolds: ['K5'],
+    startHolds: ['K5', 'K6'],
     handHolds: ['E16', 'G12', 'H15', 'I9', 'J11', 'K3'],
     finishHolds: ['I18'],
   },
@@ -279,8 +282,8 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['D4', 'H3'],
-    // Note: D18 blue merges with adjacent D17 in flood-fill; merged center maps to D17
-    handHolds: ['D17', 'D2', 'E15', 'G10', 'G2', 'I16', 'J4'],
+    // Both touching rings are visible; do not encode the old merged-centroid bug.
+    handHolds: ['D17', 'D18', 'D2', 'E15', 'G10', 'G2', 'I16', 'J4'],
     finishHolds: ['A18'],
   },
   {
@@ -292,7 +295,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['F6', 'H5'],
-    handHolds: ['E15', 'G17', 'H13', 'I9', 'K11', 'K2'],
+    handHolds: ['E15', 'G17', 'H13', 'H14', 'I9', 'K11', 'K2'],
     finishHolds: ['C18'],
   },
   {
@@ -304,7 +307,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['C6'],
-    handHolds: ['D10', 'G14', 'G4'],
+    handHolds: ['D10', 'D11', 'G14', 'G15', 'G4'],
     finishHolds: ['I18'],
   },
   {
@@ -328,7 +331,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['B6', 'G4'],
-    handHolds: ['B11', 'D9', 'F12', 'I15'],
+    handHolds: ['B11', 'D9', 'F12', 'F13', 'I15'],
     finishHolds: ['G18'],
   },
   {
@@ -340,7 +343,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['A4', 'C4'],
-    handHolds: ['B7', 'G10', 'G16', 'H6', 'J14'],
+    handHolds: ['B7', 'G10', 'G11', 'G16', 'H6', 'J14'],
     finishHolds: ['J18'],
   },
   {
@@ -364,7 +367,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['D7', 'H6'],
-    handHolds: ['E2', 'G10', 'G15', 'K13', 'K8'],
+    handHolds: ['E2', 'G10', 'G11', 'G15', 'K13', 'K8'],
     finishHolds: ['G18'],
   },
   {
@@ -388,7 +391,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['D7', 'K7'],
-    handHolds: ['D6', 'F15', 'I14', 'J11'],
+    handHolds: ['D6', 'F15', 'I14', 'J11', 'K11'],
     finishHolds: ['B18'],
   },
   {
@@ -424,7 +427,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['G4', 'I4'],
-    handHolds: ['A12', 'B4', 'D15', 'E10', 'G8', 'I9'],
+    handHolds: ['A12', 'B4', 'C15', 'D10', 'D15', 'E10', 'G8', 'I9'],
     finishHolds: ['F18'],
   },
   {
@@ -448,7 +451,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['B8', 'E8'],
-    handHolds: ['A8', 'F11', 'F17', 'J13', 'K9'],
+    handHolds: ['A8', 'F11', 'F12', 'F17', 'J13', 'K9'],
     finishHolds: ['B18'],
   },
   {
@@ -508,7 +511,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['C6'],
-    handHolds: ['A8', 'B12', 'D15', 'J15'],
+    handHolds: ['A8', 'B12', 'B13', 'D15', 'J15'],
     finishHolds: ['K18'],
   },
   {
@@ -544,7 +547,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['H5'],
-    handHolds: ['B14', 'C8', 'D12', 'D2', 'G16', 'H9'],
+    handHolds: ['B14', 'C8', 'D12', 'D2', 'G16', 'G17', 'H9'],
     finishHolds: ['J18'],
   },
   {
@@ -592,7 +595,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['I7', 'K6'],
-    handHolds: ['A16', 'G15', 'J10', 'K13'],
+    handHolds: ['A16', 'F15', 'G15', 'J10', 'K13'],
     finishHolds: ['B18'],
   },
   {
@@ -628,7 +631,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['I4'],
-    handHolds: ['A11', 'A14', 'C16', 'F10', 'J1', 'K10'],
+    handHolds: ['A11', 'A14', 'C16', 'E10', 'F10', 'J1', 'K10'],
     finishHolds: ['H18'],
   },
   {
@@ -652,7 +655,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['H4', 'K4'],
-    handHolds: ['A11', 'A15', 'C2', 'C7', 'D10', 'E13', 'F16', 'F6', 'G7'],
+    handHolds: ['A11', 'A15', 'C2', 'C7', 'D10', 'E13', 'E16', 'F16', 'F6', 'G7'],
     finishHolds: ['I18'],
   },
   {
@@ -664,7 +667,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     setterGrade: null,
     isBenchmark: true,
     startHolds: ['A12'],
-    handHolds: ['E9', 'F7', 'H15', 'J9', 'K5'],
+    handHolds: ['D9', 'E9', 'F7', 'H15', 'J9', 'K5'],
     finishHolds: ['I18'],
   },
   {
@@ -675,7 +678,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     userGrade: null,
     setterGrade: null,
     isBenchmark: true,
-    startHolds: ['F4'],
+    startHolds: ['E4', 'F4'],
     handHolds: ['G14', 'H15', 'J11', 'J7', 'K9'],
     finishHolds: ['C18'],
   },
@@ -723,7 +726,7 @@ export const EXPECTED_RESULTS: ExpectedClimbResult[] = [
     userGrade: null,
     setterGrade: null,
     isBenchmark: true,
-    startHolds: ['G5'],
+    startHolds: ['F5', 'G5'],
     handHolds: ['E9', 'F13', 'F16', 'I14', 'I8', 'K5'],
     finishHolds: ['C18'],
   },
