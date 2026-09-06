@@ -20,6 +20,10 @@ vi.mock('@boardsesh/board-react', () => ({
     qualityAverage: base.qualityAverage ?? null,
     difficulty: base.difficulty ?? null,
   }),
+  // The rich tier's `ClimbProgressLine` reads the logbook index; this file is
+  // about layout, so it renders outside a provider (and therefore renders null).
+  logbookClimbAngleKey: (climbUuid: string, angle: number) => `${climbUuid}:${angle}`,
+  useOptionalBoardLogbook: () => null,
 }));
 
 // View keeps its style on the DOM node so the thumbnail cell's width/height are
@@ -30,10 +34,13 @@ vi.mock('react-native', () => ({
     const flattened = Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : (style ?? {});
     return createElement('div', { 'data-style': JSON.stringify(flattened) }, children);
   },
+  // The rich tier mounts `ClimbProgressLine`, which reads the Dynamic Type
+  // multiplier to decide how many tokens fit on its line.
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
 }));
 
 vi.mock('../../hooks/use-display-grade', () => ({
