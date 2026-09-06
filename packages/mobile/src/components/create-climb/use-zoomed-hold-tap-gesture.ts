@@ -3,16 +3,16 @@ import { Gesture, type ComposedGesture, type GestureType } from 'react-native-ge
 import { runOnJS, type SharedValue } from 'react-native-reanimated';
 import { resolveHoldAtPoint, type HoldHitTarget } from './holdLayout';
 
-// Match the per-hold detectors in HoldTarget.tsx so a tap while zoomed behaves
-// identically to a tap at rest. Keep in sync. As in HoldTarget, a release in the
-// 300–400ms gap between maxDuration and minDuration fires neither tap nor
-// long-press — intentional parity with the at-rest behaviour, not a new dead zone.
+// Match the at-rest overlay (use-rest-hold-tap-gesture) so a tap while zoomed
+// behaves identically to a tap at rest. Keep in sync. As at rest, a release in
+// the 300–400ms gap between maxDuration and minDuration fires neither tap nor
+// long-press — intentional parity, not a new dead zone.
 const TAP_MAX_DURATION_MS = 300;
 const TAP_MAX_DISTANCE_PX = 15;
 const LONG_PRESS_MIN_DURATION_MS = 400;
 
 // Tap/LongPress default to a single pointer, so a 2-finger pinch fails them and
-// falls through to the ancestor pinch — same as HoldTarget.tsx at rest.
+// falls through to the ancestor pinch — same as the at-rest overlay.
 
 /** Default drag distance (px) before the zoom-pan activates. Boards that compose
  *  this hook pass it to useZoomPanGesture's `panActivationOffset`, so a stationary
@@ -34,7 +34,7 @@ type UseZoomedHoldTapGestureOptions = {
    *  pan unchanged — used by zone mode, which has no per-hold taps. */
   onTap?: (holdId: number) => void;
   /** Long-press handler (role sheet). Falls back to onTap when omitted, matching
-   *  HoldTargetLayer which wires both. */
+   *  the at-rest overlay. */
   onLongPress?: (holdId: number) => void;
   /** The board's ancestor pinch. The overlay's tap/long-press declare themselves
    *  simultaneous with it so a pinch-to-zoom-further while already zoomed isn't

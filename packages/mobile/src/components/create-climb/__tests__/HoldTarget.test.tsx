@@ -2,99 +2,56 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import type { SharedValue } from 'react-native-reanimated';
 
-// Capture the tap / long-press onStart worklets (and the pinch relation) so the
-// test can invoke them and assert the per-hold pinch gate without real gestures.
-const tapStartCallbacks: (() => void)[] = [];
-const longPressStartCallbacks: (() => void)[] = [];
-const simultaneousCalls: unknown[] = [];
+// If HoldTarget ever reaches for RNGH again this records it, so a reinstated
+// per-hold detector fails the suite instead of quietly competing with the
+// board's full-bleed overlay (#4496).
+const gestureUse = { count: 0 };
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, pointerEvents }: { children?: ReactNode; pointerEvents?: string }) =>
+    createElement('div', { 'data-pointer-events': pointerEvents }, children),
 }));
 
-vi.mock('react-native-reanimated', () => ({ runOnJS: (fn: unknown) => fn }));
-
-vi.mock('react-native-gesture-handler', () => {
-  const makeGesture = (recordStart: (cb: () => void) => void) => {
-    const gesture: Record<string, unknown> = {
-      maxDuration: () => gesture,
-      maxDistance: () => gesture,
-      minDuration: () => gesture,
-      onStart: (cb: () => void) => {
-        recordStart(cb);
-        return gesture;
-      },
-      simultaneousWithExternalGesture: (ref: unknown) => {
-        simultaneousCalls.push(ref);
-        return gesture;
-      },
-    };
-    return gesture;
-  };
-  return {
-    Gesture: {
-      Tap: () => makeGesture((cb) => tapStartCallbacks.push(cb)),
-      LongPress: () => makeGesture((cb) => longPressStartCallbacks.push(cb)),
-      Exclusive: (...members: unknown[]) => ({ composed: 'exclusive', members }),
+vi.mock('react-native-gesture-handler', () => ({
+  Gesture: {
+    Tap: () => {
+      gestureUse.count += 1;
+      throw new Error('HoldTarget must stay a marker — see #4496');
     },
-    GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  };
-});
+    LongPress: () => {
+      gestureUse.count += 1;
+      throw new Error('HoldTarget must stay a marker — see #4496');
+    },
+  },
+  GestureDetector: ({ children }: { children?: ReactNode }) => {
+    gestureUse.count += 1;
+    return createElement('div', { 'data-gesture': 'true' }, children);
+  },
+}));
 
 import { HoldTarget } from '../HoldTarget';
 
-function renderHoldTarget(overrides: { isPinchingSV?: SharedValue<boolean> } = {}) {
-  tapStartCallbacks.length = 0;
-  longPressStartCallbacks.length = 0;
-  simultaneousCalls.length = 0;
-  const onPaint = vi.fn();
-  const onLongPress = vi.fn();
-  render(
-    <HoldTarget
-      holdId={7}
-      leftPct={10}
-      topPct={20}
-      tapDiameter={30}
-      dotDiameter={6}
-      showDot
-      dotColor="#fff"
-      onPaint={onPaint}
-      onLongPress={onLongPress}
-      {...overrides}
-    />,
-  );
-  return { onPaint, onLongPress };
+function renderHoldTarget() {
+  gestureUse.count = 0;
+  return render(<HoldTarget leftPct={10} topPct={20} dotDiameter={6} dotColor="#fff" />);
 }
 
 describe('HoldTarget', () => {
-  it('paints on tap and opens the role sheet on long-press when no pinch is active', () => {
-    const { onPaint, onLongPress } = renderHoldTarget({
-      isPinchingSV: { value: false } as unknown as SharedValue<boolean>,
-    });
-    tapStartCallbacks.at(-1)?.();
-    longPressStartCallbacks.at(-1)?.();
-    expect(onPaint).toHaveBeenCalledWith(7);
-    expect(onLongPress).toHaveBeenCalledWith(7);
+  it('renders an inert marker: no gesture detector, no hit-testing', () => {
+    // Per-hold detectors used to own an inflated square each; overlapping
+    // squares are arbitrated by z-order, so the last hold in the list won every
+    // touch inside its square (#4496). Taps now belong to the board's single
+    // full-bleed overlay, and this layer must never take one back.
+    const { container } = renderHoldTarget();
+    expect(container.querySelector('[data-gesture="true"]')).toBeNull();
+    expect(gestureUse.count).toBe(0);
+    expect(container.firstElementChild?.getAttribute('data-pointer-events')).toBe('none');
   });
 
-  it('does not paint or open the role sheet while a pinch is active', () => {
-    // tap/long-press are simultaneousWithExternalGesture(pinch), so RNGH no
-    // longer fails them when the pinch activates — the gate is what prevents an
-    // accidental paint / role-sheet open during a small or slow pinch.
-    const { onPaint, onLongPress } = renderHoldTarget({
-      isPinchingSV: { value: true } as unknown as SharedValue<boolean>,
-    });
-    tapStartCallbacks.at(-1)?.();
-    longPressStartCallbacks.at(-1)?.();
-    expect(onPaint).not.toHaveBeenCalled();
-    expect(onLongPress).not.toHaveBeenCalled();
-  });
-
-  it('still paints when no pinch gate is wired (gate is optional)', () => {
-    const { onPaint } = renderHoldTarget();
-    tapStartCallbacks.at(-1)?.();
-    expect(onPaint).toHaveBeenCalledWith(7);
+  it('draws exactly one dot per hold, with no wrapper box around it', () => {
+    // The old inflated tap square wrapped the dot; nothing needs it now.
+    const { container } = renderHoldTarget();
+    expect(container.querySelectorAll('div').length).toBe(1);
   });
 });

@@ -1,111 +1,46 @@
-import React, { type MutableRefObject, useMemo } from 'react';
+import React from 'react';
 import { View } from 'react-native';
-import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
-import { runOnJS, type SharedValue } from 'react-native-reanimated';
 
 type HoldTargetProps = {
-  holdId: number;
   leftPct: number;
   topPct: number;
-  tapDiameter: number;
   /** Diameter of the faint discoverability dot, in device px. */
   dotDiameter: number;
-  showDot: boolean;
   dotColor: string;
-  onPaint: (holdId: number) => void;
-  onLongPress: (holdId: number) => void;
-  /** The board's ancestor pinch, so this per-hold tap/long-press declares itself
-   *  simultaneous with it. Without that, two fingers on two hold targets each
-   *  claim a pointer and the pinch can't acquire both — zoom stalls on Android. */
-  pinchRef?: MutableRefObject<GestureType | undefined>;
-  /** True while a pinch is in progress. Because the tap/long-press are
-   *  simultaneous with the pinch (above), RNGH no longer fails them when the
-   *  pinch activates, so a small/slow pinch could otherwise paint a hold or open
-   *  the role sheet — gate both callbacks on this. */
-  isPinchingSV?: SharedValue<boolean>;
 };
 
 /**
- * One hold's transparent tap target plus an optional discoverability dot. A
- * `GestureDetector` (not Pressable) is used so the per-hold tap/long-press
- * compose cleanly with the board's ancestor pinch/pan gestures. A quick
- * stationary touch paints; a 400ms press opens the role sheet; a drag falls
- * through to the pan gesture (the Tap fails on movement > maxDistance).
+ * One hold's discoverability dot. Purely visual — `pointerEvents="none"`, no
+ * gesture of its own.
  *
- * `React.memo` leaf with primitive props — the static tap layer never
- * re-renders when holds are painted.
+ * It used to own a transparent tap target inflated to
+ * `max(ringDiameter * 1.6, 44)` px with its own `GestureDetector`. Those squares
+ * overlap heavily at fit-to-screen and overlapping sibling Views are arbitrated
+ * by z-order, so the last hold in the list won every touch inside its square
+ * however far off-centre the finger landed (#4496). Boards now resolve a tap
+ * through one full-bleed overlay — `useRestHoldTapGesture` at rest,
+ * `useZoomedHoldTapGesture` while zoomed — which picks the nearest hold centre.
+ * Don't re-add a per-hold detector here: it would sit above the overlay and
+ * start winning touches by z-order again.
+ *
+ * `React.memo` leaf with primitive props — the marker layer never re-renders
+ * when holds are painted.
  */
-export const HoldTarget = React.memo(function HoldTarget({
-  holdId,
-  leftPct,
-  topPct,
-  tapDiameter,
-  dotDiameter,
-  showDot,
-  dotColor,
-  onPaint,
-  onLongPress,
-  pinchRef,
-  isPinchingSV,
-}: HoldTargetProps) {
-  const gesture = useMemo(() => {
-    const tap = Gesture.Tap()
-      .maxDuration(300)
-      .maxDistance(15)
-      .onStart(() => {
-        'worklet';
-        // Bail if a pinch is active — see isPinchingSV. The tap recognizes on
-        // finger-lift, so without this a finger that's part of a small pinch
-        // would paint the hold it happened to be resting on.
-        if (isPinchingSV?.value) return;
-        runOnJS(onPaint)(holdId);
-      });
-    const longPress = Gesture.LongPress()
-      .minDuration(400)
-      .onStart(() => {
-        'worklet';
-        if (isPinchingSV?.value) return;
-        runOnJS(onLongPress)(holdId);
-      });
-    // Let the ancestor pinch recognize even while this finger sits on the hold —
-    // applied per-leg because the relation method lives on the individual
-    // gestures, not the Exclusive composite.
-    if (pinchRef) {
-      tap.simultaneousWithExternalGesture(pinchRef);
-      longPress.simultaneousWithExternalGesture(pinchRef);
-    }
-    // Long-press wins; tap fires only if the long-press fails (released early).
-    return Gesture.Exclusive(longPress, tap);
-  }, [holdId, onPaint, onLongPress, pinchRef, isPinchingSV]);
-
+export const HoldTarget = React.memo(function HoldTarget({ leftPct, topPct, dotDiameter, dotColor }: HoldTargetProps) {
   return (
-    <GestureDetector gesture={gesture}>
-      <View
-        collapsable={false}
-        style={{
-          position: 'absolute',
-          left: `${leftPct}%`,
-          top: `${topPct}%`,
-          width: tapDiameter,
-          height: tapDiameter,
-          marginLeft: -tapDiameter / 2,
-          marginTop: -tapDiameter / 2,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        {showDot ? (
-          <View
-            pointerEvents="none"
-            style={{
-              width: dotDiameter,
-              height: dotDiameter,
-              borderRadius: dotDiameter / 2,
-              backgroundColor: dotColor,
-            }}
-          />
-        ) : null}
-      </View>
-    </GestureDetector>
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: `${leftPct}%`,
+        top: `${topPct}%`,
+        width: dotDiameter,
+        height: dotDiameter,
+        marginLeft: -dotDiameter / 2,
+        marginTop: -dotDiameter / 2,
+        borderRadius: dotDiameter / 2,
+        backgroundColor: dotColor,
+      }}
+    />
   );
 });
