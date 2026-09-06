@@ -49,6 +49,10 @@ export async function GET(request: NextRequest) {
           FROM boardsesh_ticks bt
           JOIN board_climbs bc ON bc.uuid = bt.climb_uuid
           WHERE bc.setter_username = ${username}
+            -- The card counts ascents on the same climbs the page shows. Without
+            -- this it draws grade bars from sends on climbs the setter unlisted.
+            AND bc.is_listed = true
+            AND bc.is_draft = false
             AND bt.status IN ('flash', 'send')
             AND bt.difficulty IS NOT NULL
           GROUP BY bt.difficulty
@@ -59,6 +63,13 @@ export async function GET(request: NextRequest) {
     );
     const dbMs = performance.now() - dbT0;
     const gradeRows = gradeResult;
+
+    // The card and the HTML page read one summary, so they answer the same
+    // question about whether this setter exists. Rendering a card for a name
+    // nobody set a climb under is the OG half of the soft-404 the page now 404s.
+    if (!summary) {
+      return new Response('Setter not found', { status: 404 });
+    }
 
     const displayName = summary.displayName;
     // Absolute base for a relative avatar path. Host-agnostic: the request's own

@@ -83,8 +83,25 @@ export type SetterOgSummary = {
   version: string;
 };
 
-export const getSetterOgSummary = cache(async (username: string): Promise<SetterOgSummary> => {
+/**
+ * The setter's OG/metadata summary, or `null` when nobody has a publicly
+ * visible climb under that name.
+ *
+ * The null is the whole point. This query LEFT JOINs the profile onto
+ * `(SELECT 1) AS seed`, so it always returns exactly one row — which is why
+ * `/setter/{anything}` used to answer 200 with an indexable title and no
+ * `<meta name="robots">` at all. One `EXISTS` over the setter's visible climbs
+ * turns that soft-404 farm into a real 404, and because both the HTML page and
+ * `/api/og/setter` read this one function, the two surfaces cannot disagree
+ * about whether a setter exists.
+ *
+ * `is_listed AND NOT is_draft` and not merely "has a row": a setter whose whole
+ * catalogue is drafts or unlisted has nothing to show a crawler, and rendering
+ * their drafts on an indexable page would publish work they never published.
+ */
+export const getSetterOgSummary = cache(async (username: string): Promise<SetterOgSummary | null> => {
   const result = await executeRows<{
+    has_visible_climb: boolean | null;
     name: string | null;
     display_name: string | null;
     avatar_url: string | null;
@@ -93,6 +110,13 @@ export const getSetterOgSummary = cache(async (username: string): Promise<Setter
     dbz,
     drizzleSql`
     SELECT
+      EXISTS (
+        SELECT 1
+        FROM board_climbs vc
+        WHERE vc.setter_username = ${username}
+          AND vc.is_listed = true
+          AND vc.is_draft = false
+      ) AS has_visible_climb,
       profile.name,
       profile.display_name,
       profile.avatar_url,
@@ -135,11 +159,14 @@ export const getSetterOgSummary = cache(async (username: string): Promise<Setter
   );
 
   const row = result[0];
+  if (!row?.has_visible_climb) {
+    return null;
+  }
 
   return {
-    displayName: row?.display_name || row?.name || username,
-    avatarUrl: row?.avatar_url || null,
-    version: buildOgVersionToken(row?.version_at),
+    displayName: row.display_name || row.name || username,
+    avatarUrl: row.avatar_url || null,
+    version: buildOgVersionToken(row.version_at),
   };
 });
 

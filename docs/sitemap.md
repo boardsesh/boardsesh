@@ -140,6 +140,33 @@ recomputed from the rows it actually holds. A board type that must NOT move the
 existing ordinals needs an explicit rank in that sort — `boardCount` and
 `isBetterConfig` cannot deliver it, since neither is consulted across groups.
 
+## One rule picks the published angle
+
+The angle is a path segment (`/{board}/{layout}/{size}/{sets}/{angle}/view/…`),
+so two builders that pick different angles for the same climb publish two URLs
+for one page. `published-angle.ts` is the single rule, and both callers build
+their query from it: the climbs shard (`climb-query.ts`) and the setter front
+door (`server-setter-data.ts`).
+
+It shipped as two hand-written `ORDER BY`s and they disagreed on 28 tier-2
+climbs — every one a setter row linking to a URL the shard never submitted.
+After the change, 0 of 85,596 disagree, pinned by a byte-comparison of the two
+real builders' rendered SQL in `server-setter-data.test.ts`.
+
+Two parts are easy to get wrong:
+
+- **`publishableAngles` reads `getRoutableBoardAngles`, not `ANGLES`.** `ANGLES`
+  is the picker — 5-degree steps, and only 25° and 40° on MoonBoard — while the
+  write contracts accept every integer 0-90 and `parseBoardAngleSegment`
+  resolves all of them. Picking from `ANGLES` refuses to publish pages that
+  exist. Grasshopper additionally carries -5°, which is a real URL there and a
+  404 on every other board, so the setter-side guard is a `CASE` over the row's
+  own `board_type`.
+- **`nulls last` on the ascent count** is load-bearing on the setter side and a
+  no-op on the shard side (which already filters `ascensionist_count >= 10`).
+  Postgres sorts NULLs first under a bare `DESC`, which would hand a climb the
+  angle of a stats row recording no ascents at all.
+
 ## Degrade at the index, fail closed at the shard
 
 The doctrine splits by layer, and the split is deliberate.

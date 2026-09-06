@@ -3,17 +3,15 @@ import type { SitemapItem } from './entries';
 /**
  * Declared-empty shard. The route exists so filling it is one builder away.
  *
- * `/setter/[setter_username]` cannot be submitted yet:
- *   1. `setter-profile-content.tsx` is a client component that fetches in a
- *      `useEffect` with `loading` initialised true, so the first server HTML is
- *      a spinner — no `<h1>`, no copy. "No indexable spinner-only pages" is a
- *      standing repo rule.
- *   2. `getSetterOgSummary` never returns null (it falls back to the raw
- *      username), so `/setter/{anything}` answers 200. Submitting that would be
- *      a soft-404 farm spending crawl budget the climb shards need.
+ * The two blockers this comment used to name are now closed (#4473):
+ * `/setter/[setter_username]` server-renders its `<h1>`, its summary copy and a
+ * real anchor per climb, and it answers a real 404 for a username nobody has a
+ * publicly visible climb under instead of a 200 shell for any string at all.
  *
- * The dev database has 108,000 distinct (board, setter) pairs, so this shard
- * needs paging as well as an SSR fragment before it can ship.
+ * What is left is the shard itself (#4465): a query over `board_climbs` with a
+ * real `max(updated_at)` per setter, the fixed-to-paged move (a setters page
+ * under `expandAllLocales` would render far past `MAX_SHARD_BYTES`), and the
+ * item predicate that decides which setters are worth a crawl budget.
  */
 export function buildSetterEntries(): SitemapItem[] {
   return [];

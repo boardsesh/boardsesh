@@ -113,8 +113,6 @@
     "signOut": "Cerrar sesión"
   },
   "setter": {
-    "notFoundTitle": "Aperturista no encontrado",
-    "notFoundMessage": "Este perfil de aperturista puede no existir o haber sido eliminado.",
     "shareAriaLabel": "Compartir perfil del aperturista",
     "shareTitle": "{{name}} - Aperturista",
     "shareText": "Echa un vistazo a los bloques de {{name}} en Boardsesh",
@@ -123,6 +121,19 @@
     "follower_one": "seguidor",
     "follower_other": "seguidores",
     "climb_one": "bloque",
-    "climb_other": "bloques"
+    "climb_other": "bloques",
+    "seoHeading": "Bloques abiertos por {{name}}",
+    "seoSummary_one": "{{name}} tiene un bloque en Boardsesh, en {{boards}}.",
+    "seoSummary_other": "{{name}} tiene {{count}} bloques en Boardsesh, en {{boards}}.",
+    "climbsHeading": "Todos los bloques de {{name}}",
+    "empty": "No hay bloques en esta página.",
+    "browseBoard": "Ver todos los bloques del plafón {{boardName}}",
+    "browsePlaylists": "Crea una lista con estos bloques",
+    "pagination": {
+      "aria": "Páginas de bloques",
+      "previous": "Bloques anteriores",
+      "next": "Más bloques",
+      "pageLabel": "Página {{page}}"
+    }
   }
 }

@@ -22,6 +22,24 @@ import { logger } from '../../../utils/logger';
 /** Default angle fallback when no angle specified or no stats exist. 40 is the most common training angle. */
 const DEFAULT_ANGLE = 40;
 
+/**
+ * A setter's *publicly visible* climbs.
+ *
+ * Every setter query below reads `board_climbs` filtered on `setter_username`
+ * alone, which handed anyone who asked the setter's drafts and unlisted climbs
+ * — `setterProfile.climbCount` counted them, and `setterClimbs` /
+ * `setterClimbsFull` listed them. None of these resolvers is authenticated
+ * against the setter, so there is no "it's your own draft" case to preserve:
+ * the caller is always someone else looking at someone else's work.
+ */
+function visibleSetterClimbConditions(username: string) {
+  return [
+    eq(dbSchema.boardClimbs.setterUsername, username),
+    eq(dbSchema.boardClimbs.isListed, true),
+    eq(dbSchema.boardClimbs.isDraft, false),
+  ];
+}
+
 export const setterFollowQueries = {
   /**
    * Get a setter profile by username
@@ -37,7 +55,7 @@ export const setterFollowQueries = {
         climbCount: count(),
       })
       .from(dbSchema.boardClimbs)
-      .where(eq(dbSchema.boardClimbs.setterUsername, username))
+      .where(and(...visibleSetterClimbConditions(username)))
       .groupBy(dbSchema.boardClimbs.boardType);
 
     if (boardTypeResults.length === 0) {
@@ -118,8 +136,11 @@ export const setterFollowQueries = {
     const validatedInput = validateInput(SetterClimbsInputSchema, input, 'input');
     const { username, boardType, layoutId, sortBy, limit, offset } = validatedInput;
 
-    // Build conditions
-    const conditions = [eq(dbSchema.boardClimbs.setterUsername, username)];
+    // Build conditions. Spread rather than mutating what the helper returned:
+    // it hands back a fresh array today, so pushing into it works, but the
+    // pattern only survives while that stays true — and `setterClimbsFull`
+    // below already spreads.
+    const conditions = [...visibleSetterClimbConditions(username)];
     if (boardType) {
       conditions.push(eq(dbSchema.boardClimbs.boardType, boardType));
     }
@@ -230,8 +251,12 @@ export const setterFollowQueries = {
       const tables = UNIFIED_TABLES;
 
       // Build WHERE conditions for board filter
+      // `UNIFIED_TABLES.climbs` IS `dbSchema.boardClimbs`, so the shared
+      // visibility helper applies here verbatim. Spelling the two predicates out
+      // again is how the next one gets added to three call sites and missed on
+      // the fourth.
       const filterConditions: ReturnType<typeof eq>[] = [
-        eq(tables.climbs.setterUsername, username),
+        ...visibleSetterClimbConditions(username),
         eq(tables.climbs.boardType, boardName),
       ];
 
@@ -344,7 +369,7 @@ export const setterFollowQueries = {
           boardType: dbSchema.boardClimbs.boardType,
         })
         .from(dbSchema.boardClimbs)
-        .where(eq(dbSchema.boardClimbs.setterUsername, username))
+        .where(and(...visibleSetterClimbConditions(username)))
         .groupBy(dbSchema.boardClimbs.boardType);
 
       const setterBoardTypes = boardTypeResults
@@ -359,7 +384,7 @@ export const setterFollowQueries = {
       const [countResult] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(dbSchema.boardClimbs)
-        .where(eq(dbSchema.boardClimbs.setterUsername, username));
+        .where(and(...visibleSetterClimbConditions(username)));
 
       const totalCount = Number(countResult?.count ?? 0);
 
@@ -416,7 +441,7 @@ export const setterFollowQueries = {
             eq(dbSchema.boardClimbGrades.angle, tables.climbStats.angle),
           ),
         )
-        .where(eq(tables.climbs.setterUsername, username))
+        .where(and(...visibleSetterClimbConditions(username)))
         .orderBy(
           sortBy === 'popular'
             ? sql`COALESCE(${tables.climbStats.ascensionistCount}, 0) DESC`
@@ -729,6 +754,11 @@ export const setterFollowQueries = {
         and(
           ilike(dbSchema.boardClimbs.setterUsername, searchPattern),
           sql`${dbSchema.boardClimbs.setterUsername} IS NOT NULL`,
+          // Same visibility rule the profile answers on. Without it search
+          // offers a setter whose whole catalogue is drafts, with a climb count
+          // that includes them, and the tap lands on a 404.
+          eq(dbSchema.boardClimbs.isListed, true),
+          eq(dbSchema.boardClimbs.isDraft, false),
         ),
       )
       .groupBy(dbSchema.boardClimbs.setterUsername)
@@ -860,11 +890,12 @@ export const setterFollowMutations = {
     const myUserId = ctx.userId!;
     const setterUsername = validatedInput.setterUsername;
 
-    // Verify setter exists in board_climbs
+    // Verify the setter exists AND is visible — the same rule the profile 404s
+    // on, so you cannot follow a setter whose page does not resolve.
     const [exists] = await db
       .select({ count: count() })
       .from(dbSchema.boardClimbs)
-      .where(eq(dbSchema.boardClimbs.setterUsername, setterUsername))
+      .where(and(...visibleSetterClimbConditions(setterUsername)))
       .limit(1);
 
     if (Number(exists?.count ?? 0) === 0) {

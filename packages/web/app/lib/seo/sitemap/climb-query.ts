@@ -1,7 +1,7 @@
 import 'server-only';
 import { unstable_cache } from 'next/cache';
-import { and, asc, desc, eq, gte, inArray, ne, notExists, sql } from 'drizzle-orm';
-import { getRoutableBoardAngles, toBoardName } from '@boardsesh/board-config';
+import { and, asc, eq, gte, inArray, ne, notExists, sql } from 'drizzle-orm';
+import { toBoardName } from '@boardsesh/board-config';
 import { withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
 import { dbzRead } from '@/app/lib/db/db';
 import { boardClimbAliases, boardClimbStats, boardClimbs } from '@/app/lib/db/schema';
@@ -13,6 +13,7 @@ import {
   type ClimbSitemapRow,
 } from './climb-entries';
 import type { SitemapItem } from './entries';
+import { publishableAngles, publishedAngleOrderBy } from './published-angle';
 
 /**
  * Tier 2 is the slice of the catalogue worth a crawl budget: a climb people have
@@ -88,7 +89,10 @@ function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
         eq(boardClimbs.isDraft, false),
         gte(boardClimbStats.ascensionistCount, TIER_2_MIN_ASCENTS),
         // Never publish an angle the route tables don't carry — that URL 404s.
-        inArray(boardClimbStats.angle, [...getRoutableBoardAngles(boardName)]),
+        // `publishableAngles` is the same list the setter front door's angle
+        // pick reads, so the two surfaces cannot disagree about what is
+        // publishable.
+        inArray(boardClimbStats.angle, publishableAngles(boardName)),
         // The same two predicates the /list front door filters on, so the climb
         // genuinely renders on the configuration we are about to name in its URL.
         // MoonBoard has one fixed size, so it has no size predicate at all.
@@ -129,19 +133,28 @@ function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
     )
     .orderBy(
       boardClimbStats.climbUuid,
-      desc(boardClimbStats.ascensionistCount),
-      // COALESCE rather than a bare `stats.angle = climbs.angle`, but DEFENSIVE
-      // rather than load-bearing, and the earlier claim that it was load-bearing
-      // was wrong. `board_climbs.uuid` is the primary key and the join is on
-      // `(uuid, board_type)`, so every row inside one `DISTINCT ON (climb_uuid)`
-      // group joins to the SAME `board_climbs` row. A null `climbs.angle` makes
-      // the comparison NULL for every row in the group, NULLs sort equal, and the
-      // tie-break falls through to `asc(stats.angle)` with or without the
-      // COALESCE — measured over kilter layout 1 (16,233 tier-2 climbs with a
-      // NULL `board_climbs.angle`): zero differing rows. Kept because it costs
-      // nothing and survives a future join that does compare across climbs.
-      desc(sql`COALESCE(${boardClimbStats.angle} = ${boardClimbs.angle}, false)`),
-      asc(boardClimbStats.angle),
+      // The angle pick itself lives in `published-angle.ts` because the setter
+      // front door has to make the identical choice: the angle is a path
+      // segment, so a second rule is a second indexable URL for the same climb.
+      // It shipped as two hand-written ORDER BYs and they disagreed on 28
+      // tier-2 climbs (measured on the dev image) — every one of them a setter
+      // row linking to a URL this shard never submitted.
+      //
+      // The COALESCE tie-break is defensive HERE, and the earlier claim that it
+      // was load-bearing was wrong: `board_climbs.uuid` is the primary key and
+      // the join is on `(uuid, board_type)`, so every row inside one
+      // `DISTINCT ON (climb_uuid)` group joins the SAME `board_climbs` row. A
+      // null `climbs.angle` makes the comparison NULL for every row in the
+      // group, NULLs sort equal, and the tie-break falls through to
+      // `asc(stats.angle)` with or without it — measured over kilter layout 1
+      // (16,233 tier-2 climbs with a NULL `board_climbs.angle`): zero differing
+      // rows. It is load-bearing on the setter side, where the subquery reads
+      // one climb's stats rows and `board_climbs.angle` is frequently non-null.
+      ...publishedAngleOrderBy({
+        ascensionistCount: boardClimbStats.ascensionistCount,
+        statsAngle: boardClimbStats.angle,
+        climbAngle: boardClimbs.angle,
+      }),
     )
     .as('chosen');
 }
