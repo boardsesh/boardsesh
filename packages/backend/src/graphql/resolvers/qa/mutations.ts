@@ -109,10 +109,11 @@ export const qaMutations = {
       if (!cached && !failed) {
         throw new Error('Pull request is not open');
       }
+      // Not logged here. This is the same event the mirror reports below, and
+      // that line carries the row id an operator needs to find it — two entries
+      // per verdict would only double the volume during the outage that
+      // produced them.
       pullRequest = cached ?? null;
-      if (!pullRequest) {
-        logger.warn(`[qa] recording the verdict on #${validated.prNumber} without a head SHA; GitHub is unreachable`);
-      }
     }
 
     const headCommittedAt = pullRequest === null ? null : toUtcTimestamp(await getHeadCommitDate(pullRequest.headSha));
