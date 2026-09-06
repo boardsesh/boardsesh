@@ -53,7 +53,7 @@ the whole build. On a small or cold table that is a non-event. On `boardsesh_tic
 `board_climbs`, or `board_climb_stats` it is a write outage for as long as the build runs.
 
 The pattern, established by `0121_add_quality_search_covering_index` and followed by
-`0215_yielding_hellion`:
+`0216_yielding_hellion`:
 
 1. Build the index by hand against production first, outside the migrator:
    `CREATE INDEX CONCURRENTLY <name> ON <table> (...)`. It takes longer and needs two
