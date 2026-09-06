@@ -69,7 +69,10 @@ export const schemaSQL = `
     "origin" session_origin DEFAULT 'explicit' NOT NULL,
     "anchor_tick_id" bigint,
     "user_edited" boolean DEFAULT false NOT NULL,
-    CONSTRAINT "board_sessions_status_check" CHECK (status IN ('active', 'inactive', 'ended'))
+    CONSTRAINT "board_sessions_status_check" CHECK (status IN ('active', 'inactive', 'ended')),
+    -- Mirrors migration 0215: an explicit session must always have a board path,
+    -- so tests exercise the same constraint production has.
+    CONSTRAINT "board_sessions_explicit_board_path_check" CHECK (origin <> 'explicit' OR board_path IS NOT NULL)
   );
 
   -- Two concurrent reconciliations of the same unassigned run would otherwise both
