@@ -50,6 +50,8 @@ type SessionFeedRow = {
   daily_avatar_url: string | null;
   daily_board_types: string[] | null;
   highlight_tick_uuid: string | null;
+  /** False when the day's highlight tick is an attempt — nothing was sent. */
+  highlight_is_send: boolean | null;
 };
 
 type DailyHighlightKey = {
@@ -200,10 +202,16 @@ export const sessionFeedQueries = {
               dt.*,
               ROW_NUMBER() OVER (
                 PARTITION BY dt.user_id, dt.day
-                ORDER BY COALESCE(dt.effective_difficulty, -1) DESC, dt.climbed_at DESC, dt.id DESC
+                ORDER BY
+                  -- Sends first, so a day that has any keeps the highlight it always
+                  -- had. Attempts are ranked too, rather than filtered out, so a day
+                  -- spent projecting still produces a row: the INNER JOIN below used to
+                  -- drop it entirely and the climber saw "No sessions yet" despite
+                  -- having logged climbs (~1,343 days across 385 climbers).
+                  (dt.status IN ('flash', 'send')) DESC,
+                  COALESCE(dt.effective_difficulty, -1) DESC, dt.climbed_at DESC, dt.id DESC
               ) AS rank
             FROM daily_ticks dt
-            WHERE dt.status IN ('flash', 'send')
           ) ranked
           WHERE rank = 1
         ),
@@ -226,7 +234,8 @@ export const sessionFeedQueries = {
             COALESCE(up.display_name, u.name) AS daily_display_name,
             COALESCE(up.avatar_url, u.image) AS daily_avatar_url,
             db.board_types AS daily_board_types,
-            dh.uuid AS highlight_tick_uuid
+            dh.uuid AS highlight_tick_uuid,
+            (dh.status IN ('flash', 'send')) AS highlight_is_send
           FROM daily_base db
           INNER JOIN daily_hardest dh ON dh.user_id = db.user_id AND dh.day = db.day
           LEFT JOIN users u ON u.id = db.user_id
@@ -263,7 +272,8 @@ export const sessionFeedQueries = {
             NULL::text AS daily_display_name,
             NULL::text AS daily_avatar_url,
             NULL::text[] AS daily_board_types,
-            NULL::text AS highlight_tick_uuid
+            NULL::text AS highlight_tick_uuid,
+            NULL::boolean AS highlight_is_send
           FROM scored
           UNION ALL
           SELECT
@@ -284,7 +294,8 @@ export const sessionFeedQueries = {
             daily_display_name,
             daily_avatar_url,
             daily_board_types,
-            highlight_tick_uuid
+            highlight_tick_uuid,
+            highlight_is_send
           FROM daily_scored
         )
         `
@@ -308,7 +319,8 @@ export const sessionFeedQueries = {
             NULL::text AS daily_display_name,
             NULL::text AS daily_avatar_url,
             NULL::text[] AS daily_board_types,
-            NULL::text AS highlight_tick_uuid
+            NULL::text AS highlight_tick_uuid,
+            NULL::boolean AS highlight_is_send
           FROM scored
         )
         `;
@@ -422,7 +434,12 @@ export const sessionFeedQueries = {
       const sessionMeta = metaMap.get(row.session_id) ?? null;
       const boardTypes = isDailyHighlight ? (row.daily_board_types ?? []) : (boardTypesMap.get(row.session_id) ?? []);
       const hardestSend = isDailyHighlight
-        ? (dailyHardestSendMap.get(row.highlight_tick_uuid ?? '') ?? null)
+        ? // The highlight is only a *send* when something was sent. On a day spent
+          // projecting it is the hardest attempt, which anchors the card's votes and
+          // comments but must not be reported as an ascent.
+          row.highlight_is_send
+          ? (dailyHardestSendMap.get(row.highlight_tick_uuid ?? '') ?? null)
+          : null
         : (hardestSendMap.get(row.session_id) ?? null);
       const featuredBeta = featuredBetaMap.get(row.session_id) ?? null;
 

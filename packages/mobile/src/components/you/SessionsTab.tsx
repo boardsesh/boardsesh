@@ -99,7 +99,12 @@ export function SessionsTab({ userId, topInset = 0 }: SessionsTabProps) {
   const commentSheetRef = useRef<BottomSheet | null>(null);
   const [commentTarget, setCommentTarget] = useState<CommentTarget | null>(null);
 
-  const feed = useSessionGroupedFeed({ userId }, !!userId);
+  // `includeDailyHighlights` is what surfaces climbs logged WITHOUT an explicit
+  // session — they come back as `daily:<userId>:<date>` groups. Sessions are
+  // optional, and most climbers never press Start, so without this the tab shows
+  // "No sessions yet" to someone with thousands of ticks (#4975). The home feed
+  // has always passed it (`deriveFeedScopeInput`); this tab silently didn't.
+  const feed = useSessionGroupedFeed({ userId, includeDailyHighlights: true }, !!userId);
   // `networkMode: 'offlineFirst'` pauses an offline fetch instead of failing it,
   // so `feed.isPending` below would hold the skeleton up for good.
   const offline = useOfflineQueryState(feed);

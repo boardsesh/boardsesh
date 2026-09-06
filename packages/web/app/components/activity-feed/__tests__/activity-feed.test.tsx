@@ -139,6 +139,26 @@ describe('ActivityFeed', () => {
       expect(mockRequest).toHaveBeenCalledWith('GET_SESSION_GROUPED_FEED', expect.any(Object));
     });
 
+    // #4975: climbs logged without an explicit session only come back as
+    // `daily:` groups when this flag is set. Without it the profile Sessions
+    // page is empty for anyone who never presses Start.
+    it('asks for daily highlights so session-less ticks still appear', async () => {
+      mockRequest.mockResolvedValueOnce({
+        sessionGroupedFeed: { sessions: [], cursor: null, hasMore: false },
+      });
+
+      render(<ActivityFeed isAuthenticated={false} userId="user-1" />, { wrapper: createWrapper() });
+
+      await waitFor(() => {
+        expect(mockRequest).toHaveBeenCalledWith(
+          'GET_SESSION_GROUPED_FEED',
+          expect.objectContaining({
+            input: expect.objectContaining({ userId: 'user-1', includeDailyHighlights: true }),
+          }),
+        );
+      });
+    });
+
     it('does not send sortBy or topPeriod in query', async () => {
       mockRequest.mockResolvedValueOnce({
         sessionGroupedFeed: { sessions: [], cursor: null, hasMore: false },

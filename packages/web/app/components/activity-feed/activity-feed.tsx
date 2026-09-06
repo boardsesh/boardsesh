@@ -58,6 +58,10 @@ export default function ActivityFeed({
         cursor: pageParam as string | null,
         boardUuid: boardUuid || undefined,
         userId: userId || undefined,
+        // Climbs logged without an explicit session come back as `daily:` groups.
+        // Without this the profile Sessions page is empty for anyone who never
+        // presses Start — the large majority of climbers (#4975).
+        includeDailyHighlights: true,
       };
 
       const response = await client.request<GetSessionGroupedFeedQueryResponse>(GET_SESSION_GROUPED_FEED, { input });
@@ -83,7 +87,14 @@ export default function ActivityFeed({
 
   const sessions: SessionFeedItem[] = useMemo(() => data?.pages.flatMap((p) => p.sessions) ?? [], [data]);
 
-  const sessionIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions]);
+  // Only rows whose social lives on a real session row. Day-grouped rows hang theirs
+  // off the day's hardest tick instead, so batching them under entityType 'session'
+  // would query ids that cannot exist. Their VoteButtons still render the counts the
+  // feed row carries; only the viewer's own like-state falls back.
+  const sessionIds = useMemo(
+    () => sessions.filter((s) => s.socialEntityType === 'session').map((s) => s.socialEntityId),
+    [sessions],
+  );
 
   const { sentinelRef } = useInfiniteScroll({
     onLoadMore: fetchNextPage,

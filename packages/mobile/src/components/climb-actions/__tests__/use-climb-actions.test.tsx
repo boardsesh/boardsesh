@@ -6,7 +6,7 @@ import type { ClimbActionId } from '../use-climb-actions';
 
 // Keep the real useCreateClimbNavigation in this test so fork/edit exercise the
 // one-action and injected-dismiss handoff end to end.
-const ctrl = vi.hoisted(() => ({ canUpdate: false }));
+const ctrl = vi.hoisted(() => ({ canUpdate: false, sessionId: null as string | null }));
 const openers = vi.hoisted(() => ({
   openPlayDrawer: vi.fn(),
   openAddToPlaylist: vi.fn(),
@@ -42,6 +42,7 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ addToQueue: openers.addToQueue }),
+  useQueueSessionId: () => ({ sessionId: ctrl.sessionId }),
 }));
 vi.mock('../../../lib/climb-to-queue-item', () => ({ climbToQueueItem: (climb: unknown) => ({ uuid: 'qi', climb }) }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -91,6 +92,7 @@ function ids(args: ActionArgs): ClimbActionId[] {
 
 beforeEach(() => {
   ctrl.canUpdate = false;
+  ctrl.sessionId = null;
   Object.values(openers).forEach((fn) => fn.mockClear?.());
 });
 
@@ -246,6 +248,26 @@ describe('useClimbActions colours and dispatch', () => {
     const payload = openers.openLogAscent.mock.calls[0]?.[0] as { baseAscensionistCount: number };
     expect(Number.isFinite(payload.baseAscensionistCount)).toBe(true);
     expect(onAfterAction).toHaveBeenCalledTimes(1);
+  });
+
+  // #4975: every other tick entry point (play drawer, queue bar, queue sheet)
+  // already forwards the active session. This one didn't, so ticking from the
+  // climbs list / board sheet / logbook / a playlist — or the in-session screen's
+  // own climb rows — wrote `session_id = NULL` mid-session and the climb vanished
+  // from the session it belonged to.
+  it('tick.run forwards the active session so the tick lands on it', () => {
+    ctrl.sessionId = 'session-abc';
+    const { result } = renderActions({ climb, boardConfig: woodsBoard, isAuthenticated: true });
+    result.current.find((action) => action.id === 'tick')?.run();
+    expect(openers.openLogAscent).toHaveBeenCalledWith(
+      expect.objectContaining({ climbUuid: 'climb-1', sessionId: 'session-abc' }),
+    );
+  });
+
+  it('tick.run passes a null session when no session is running', () => {
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: true });
+    result.current.find((action) => action.id === 'tick')?.run();
+    expect(openers.openLogAscent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: null }));
   });
 
   it('tick.run calls onTick (in-tree) instead of the root sheet when provided', () => {
