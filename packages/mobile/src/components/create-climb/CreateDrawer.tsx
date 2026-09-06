@@ -39,7 +39,7 @@ import { InteractiveCreateBoard, type CreateBoardControls } from './InteractiveC
 import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
 import { CreateDrawerForm } from './CreateDrawerForm';
-import { PlaybackControls } from '../playback/PlaybackControls';
+import { CreateRoutePlaybackSlot } from './CreateRoutePlaybackSlot';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
@@ -84,9 +84,14 @@ type CreateDrawerProps = {
 const ABOVE_FOLD_CHROME = 324;
 
 // PlaybackControls' resting height: paddingVertical 12 x 2 + the 52dp play
-// button + marginTop 8. Taken out of the board budget only for a route,
-// otherwise duplicating a frame would shrink the board for boulders too.
+// button + marginTop 8. Claimed once a climb actually has frames to play.
 const PLAYBACK_TRANSPORT_RESERVE = 84;
+
+// The single-frame route strip: a 44dp control row plus its 8dp marginTop. It
+// costs the board 52dp on a fresh climb, which is the price of the transport
+// being discoverable at all — the feature was invisible until you found a bare
+// `copy` glyph fourth inside the action bar's scroller (#4761 QA).
+const ROUTE_STRIP_RESERVE = 52;
 
 // The peek must never grow into the '100%' snap — at that point the two snap
 // points collapse into one, the sheet has no travel and the "drag up for the
@@ -189,10 +194,15 @@ export function CreateDrawer({
     [resetBoardZoom, onLoadDraft],
   );
 
-  const isRoute = controller.frameCount > 1;
+  // Woods pays neither reserve: the slot renders nothing there.
+  const routeSlotReserve = controller.supportsMultiFrame
+    ? controller.frameCount > 1
+      ? PLAYBACK_TRANSPORT_RESERVE
+      : ROUTE_STRIP_RESERVE
+    : 0;
   const boardMaxHeight = Math.max(
     200,
-    windowHeight - insets.top - windowInsetBottom - ABOVE_FOLD_CHROME - (isRoute ? PLAYBACK_TRANSPORT_RESERVE : 0),
+    windowHeight - insets.top - windowInsetBottom - ABOVE_FOLD_CHROME - routeSlotReserve,
   );
 
   // Compute the on-screen board size up front (window width minus the board
@@ -354,28 +364,14 @@ export function CreateDrawer({
               />
             </View>
 
-            {isRoute && (
-              /* The nested root is load-bearing on Android, not decoration: the
-                 speed slider is a GestureDetector, and this sheet's content lives
-                 inside a Jetpack Compose ModalBottomSheet that the app's single
-                 root GestureHandlerRootView does not cover (#4320). The explicit
-                 style matters too — RNGH defaults to flex: 1, and a flex child
-                 inside the measured View would corrupt peekHeight. */
-              <GestureHandlerRootView style={styles.playbackRoot}>
-                <PlaybackControls
-                  frameIndex={controller.currentFrameIndex}
-                  frameCount={controller.frameCount}
-                  isPlaying={controller.playback.isPlaying}
-                  speed={controller.playback.speed}
-                  paceMs={controller.playback.paceMs}
-                  wallStateLabel={controller.handedOff ? t('playView.wallState.onWall') : null}
-                  onPlay={controller.playback.play}
-                  onPause={controller.playback.pause}
-                  onSeek={controller.playback.seek}
-                  onSpeedChange={controller.playback.setSpeed}
-                />
-              </GestureHandlerRootView>
-            )}
+            <CreateRoutePlaybackSlot
+              supportsMultiFrame={controller.supportsMultiFrame}
+              frameCount={controller.frameCount}
+              frameIndex={controller.currentFrameIndex}
+              playback={controller.playback}
+              wallStateLabel={controller.handedOff ? t('playView.wallState.onWall') : null}
+              onAddFrame={controller.duplicateFrame}
+            />
 
             <CreateDrawerActionBar
               boardName={board.boardName}
@@ -434,9 +430,6 @@ const styles = StyleSheet.create({
   boardSection: {
     marginHorizontal: spacing[4],
     marginTop: spacing[2],
-  },
-  playbackRoot: {
-    alignSelf: 'stretch',
   },
   belowFold: {
     paddingHorizontal: spacing[4],

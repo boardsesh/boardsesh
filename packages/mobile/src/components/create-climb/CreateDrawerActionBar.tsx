@@ -213,10 +213,14 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
             onPress={onClearHolds}
             accessibilityLabel={t('mobile.create.actions.clear')}
           />
-          {/* Duplicate is what MAKES a second frame, so it is hidden on a board
-              that can't have one. Leaving it would offer a control whose only
-              outcome is a climb the wall then refuses to light. */}
-          {supportsMultiFrame && (
+          {/* Duplicate appears only once a climb is already a route. Its FIRST
+              use — turning a boulder into a route — belongs to the strip under
+              the board, which says what it does; a bare `copy` glyph fourth
+              inside a horizontal scroller said nothing, and that is why the
+              transport went undiscovered (#4761 QA). Hidden entirely on a board
+              that can't hold a second frame: the frames string would then carry
+              a comma the packet builder rejects. */}
+          {supportsMultiFrame && frameCount > 1 && (
             <ActionButton
               size="sm"
               iconName="copy"
