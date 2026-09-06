@@ -114,9 +114,12 @@ vi.mock('../use-swipe-arm', () => ({
 
 vi.mock('../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
 
+// Renders `trailingAccessory` because the real component does: the ⋮ lives in
+// the trailing rail, stacked under the grade, rather than as its own column in
+// the row. A stub that dropped it would hide the button these tests assert on.
 vi.mock('../ClimbListItemContent', () => ({
-  ClimbListItemContent: ({ climb }: { climb?: { name?: string } }) =>
-    createElement('span', { 'data-climb-name': climb?.name ?? '' }),
+  ClimbListItemContent: ({ climb, trailingAccessory }: { climb?: { name?: string }; trailingAccessory?: ReactNode }) =>
+    createElement('span', { 'data-climb-name': climb?.name ?? '' }, trailingAccessory),
 }));
 
 vi.mock('../climb-list-row-styles', () => ({
@@ -182,6 +185,26 @@ describe('ClimbListRow screen-reader activation', () => {
     a11y.row?.onAccessibilityTap?.();
     a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'activate' } });
     expect(onPress).not.toHaveBeenCalled();
+  });
+
+  // The ⋮ normally rides in the trailing rail, which `renderContent` replaces.
+  // Without the fallback, opting into the button from a custom layout would
+  // silently render nothing — including its screen-reader route.
+  it('keeps the ⋮ reachable when a custom layout replaces the default content', () => {
+    const onOpenActions = vi.fn();
+    render(
+      <ClimbListRow
+        climb={climb}
+        {...boardProps}
+        onOpenActions={onOpenActions}
+        showMoreButton
+        renderContent={() => null}
+      />,
+    );
+
+    expect(a11y.moreButton?.onAccessibilityTap).toBeTypeOf('function');
+    a11y.moreButton?.onAccessibilityTap?.();
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
   });
 
   it('opens the actions menu from a screen-reader activation of the ⋮ button', () => {

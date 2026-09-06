@@ -201,6 +201,14 @@ vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>
   published a preview, or a native change has landed on `main` since they did: a `pr-<n>` branch is
   offered only to a binary whose runtimeVersion matches it exactly, so every un-rebased PR goes
   invisible at once. Rebasing those PRs onto `main` republishes them.
+- **One PR missing while the rest are listed** — search its number first and take the escape hatch
+  above; that re-reads `/branch_lists` live and answers it on the device, without a laptop. Reach
+  for the doctor only when the hatch says the branch still is not listed and you need to know why.
+  Both it and `listPrBranches` ask for the whole list (`?all=1`), so the two agree: a branch the
+  doctor lists and the app does not is an app bug, not a publish that never landed. Neither listing
+  it means the preview was never published, or was published and then removed — read the PR's
+  `Mobile OTA Preview` run, and see `docs/mobile-ota-updates.md` for why a push that does not move
+  the JS bundle deploys nothing and used to take the branch with it.
 
 Take `<hash>` from a native build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE`. Run the command bare to
 check only the switch — the branch list needs a real fingerprint, so the script declines to read it

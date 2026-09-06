@@ -125,9 +125,86 @@ describe('self-hosted publish retries', () => {
       success: true,
       attempts: SELF_HOSTED_PUBLISH_MAX_ATTEMPTS,
       failureKind: null,
+      deployed: true,
     });
     expect(attempts).toHaveLength(SELF_HOSTED_PUBLISH_MAX_ATTEMPTS);
     expect(sleeper.mock.calls.map(([delayMs]) => delayMs)).toEqual([...SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS]);
+  });
+
+  // The exact lines eoas@3.1.2 prints when it finds the export identical to the
+  // update already on the branch, copied from the PR #5166 preview publish log.
+  // It says this on stdout and still exits 0, which is what made the no-op
+  // indistinguishable from a publish.
+  const EOAS_NO_CHANGE_LOG = [
+    '\u25cf  \u26a0\ufe0f There is no change in the update for android, ignored...\n',
+    '\u25b2  \u26a0\ufe0f No changes found in the update, nothing to deploy\n',
+  ];
+
+  it('reports a zero-exit run that uploaded nothing as not deployed', async () => {
+    const runner: PublishCommandRunner = async ({ onStdout }) => {
+      for (const line of EOAS_NO_CHANGE_LOG) onStdout(line);
+      return { exitCode: 0 };
+    };
+
+    const outcome = await publishSelfHostedPlatformWithRetry(
+      { platform: 'android', command: 'vp', args: [], cwd: '/repo', env: emptyChildEnvironment },
+      {
+        runner,
+        sleeper: vi.fn(async () => undefined),
+        stdout: outputCollector().output,
+        stderr: outputCollector().output,
+      },
+    );
+
+    expect(outcome).toEqual({
+      platform: 'android',
+      success: true,
+      attempts: 1,
+      failureKind: null,
+      deployed: false,
+    });
+  });
+
+  it('sees the no-change verdict even when a long asset listing follows it', async () => {
+    // eoas prints the export's whole asset list, which is far longer than the
+    // scanner's rolling window. The verdict must survive falling out of it —
+    // otherwise the detection works locally and silently fails in CI, where the
+    // bundle carries ~380 assets.
+    const runner: PublishCommandRunner = async ({ onStdout }) => {
+      for (const line of EOAS_NO_CHANGE_LOG) onStdout(line);
+      onStdout('assets/material-icons/tune.xml (363B)\n'.repeat(500));
+      return { exitCode: 0 };
+    };
+
+    const outcome = await publishSelfHostedPlatformWithRetry(
+      { platform: 'ios', command: 'vp', args: [], cwd: '/repo', env: emptyChildEnvironment },
+      {
+        runner,
+        sleeper: vi.fn(async () => undefined),
+        stdout: outputCollector().output,
+        stderr: outputCollector().output,
+      },
+    );
+
+    expect(outcome.deployed).toBe(false);
+  });
+
+  it('does not let a no-change run be mistaken for a retryable failure', async () => {
+    // The no-change signal must never feed the retry decision: re-running an
+    // unchanged export produces the same unchanged export.
+    const runner = vi.fn<PublishCommandRunner>(async ({ onStdout }) => {
+      for (const line of EOAS_NO_CHANGE_LOG) onStdout(line);
+      return { exitCode: 0 };
+    });
+    const sleeper = vi.fn(async () => undefined);
+
+    await publishSelfHostedPlatformWithRetry(
+      { platform: 'ios', command: 'vp', args: [], cwd: '/repo', env: emptyChildEnvironment },
+      { runner, sleeper, stdout: outputCollector().output, stderr: outputCollector().output },
+    );
+
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(sleeper).not.toHaveBeenCalled();
   });
 
   it('does not retry permanent or mixed evidence', async () => {
@@ -144,7 +221,13 @@ describe('self-hosted publish retries', () => {
       { runner, sleeper, stdout: outputCollector().output, stderr: stderr.output },
     );
 
-    expect(outcome).toEqual({ platform: 'android', success: false, attempts: 1, failureKind: 'permanent' });
+    expect(outcome).toEqual({
+      platform: 'android',
+      success: false,
+      attempts: 1,
+      failureKind: 'permanent',
+      deployed: false,
+    });
     expect(runner).toHaveBeenCalledTimes(1);
     expect(sleeper).not.toHaveBeenCalled();
   });
@@ -164,7 +247,7 @@ describe('self-hosted publish retries', () => {
       { runner, sleeper, stdout: outputCollector().output, stderr: stderr.output },
     );
 
-    expect(outcome).toEqual({ platform: 'ios', success: false, attempts: 1, failureKind: 'http-5xx' });
+    expect(outcome).toEqual({ platform: 'ios', success: false, attempts: 1, failureKind: 'http-5xx', deployed: false });
     expect(runner).toHaveBeenCalledOnce();
     expect(sleeper).toHaveBeenCalledOnce();
     expect(sleeper).toHaveBeenCalledWith(SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS[0]);
@@ -200,13 +283,14 @@ describe('platform aggregation', () => {
         success: platform === 'android',
         attempts: 1,
         failureKind: platform === 'ios' ? 'unknown' : null,
+        deployed: platform === 'android',
       };
     });
 
     expect(calls).toEqual(['ios', 'android']);
     expect(outcomes).toEqual([
-      { platform: 'ios', success: false, attempts: 1, failureKind: 'unknown' },
-      { platform: 'android', success: true, attempts: 1, failureKind: null },
+      { platform: 'ios', success: false, attempts: 1, failureKind: 'unknown', deployed: false },
+      { platform: 'android', success: true, attempts: 1, failureKind: null, deployed: true },
     ]);
   });
 
@@ -215,13 +299,13 @@ describe('platform aggregation', () => {
     const outcomes = await publishPlatformsSequentially(['ios', 'android'], async (platform) => {
       calls.push(platform);
       if (platform === 'ios') throw new Error('fixture callback failure');
-      return { platform, success: true, attempts: 1, failureKind: null };
+      return { platform, success: true, attempts: 1, failureKind: null, deployed: true };
     });
 
     expect(calls).toEqual(['ios', 'android']);
     expect(outcomes).toEqual([
-      { platform: 'ios', success: false, attempts: 0, failureKind: 'unknown' },
-      { platform: 'android', success: true, attempts: 1, failureKind: null },
+      { platform: 'ios', success: false, attempts: 0, failureKind: 'unknown', deployed: false },
+      { platform: 'android', success: true, attempts: 1, failureKind: null, deployed: true },
     ]);
   });
 });
