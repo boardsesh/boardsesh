@@ -16,15 +16,18 @@ vi.mock('@shopify/flash-list', () => ({
     data,
     renderItem,
     keyExtractor,
+    ListFooterComponent,
   }: {
     data: { branch: string }[];
     renderItem: (info: { item: { branch: string } }) => ReactNode;
     keyExtractor: (item: { branch: string }) => string;
+    ListFooterComponent?: ReactNode;
   }) =>
     createElement(
       'div',
       { 'data-testid': 'pick-list' },
       data.map((item) => createElement('div', { key: keyExtractor(item) }, renderItem({ item }))),
+      ListFooterComponent,
     ),
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -592,6 +595,36 @@ describe('QaPickScreen search', () => {
       'Nothing new for #9999 on this build — its next publish applies on relaunch',
       'info',
     );
+  });
+
+  // The bug an empty-list check hides: searching 5203 matches "Follow up #5203" by
+  // title, so the list is not empty — but #5203 itself is missing, and that is
+  // exactly when the tester needs the offer.
+  it('still offers the PR when the query only matched another row by title', async () => {
+    qa.listPrBranches.mockResolvedValue([
+      { prNumber: 5210, branch: 'pr-5210', lastUpdateAt: '2026-08-26T10:00:00.000Z' },
+    ]);
+    previews.data = [{ ...TITLED_PREVIEWS[0], prNumber: 5210, branch: 'pr-5210', title: 'Follow up #5203' }];
+    renderScreen();
+    await screen.findByText('Follow up #5203');
+
+    await search('5203');
+
+    // The unrelated row still matches, so this is not the no-match state...
+    expect(screen.getByText('Follow up #5203')).toBeTruthy();
+    expect(screen.queryByText('No PR matches that')).toBeNull();
+    // ...and the offer survives it.
+    expect(screen.getByText('Try #5203 anyway')).toBeTruthy();
+  });
+
+  it('offers nothing when the searched PR is right there in the list', async () => {
+    renderScreen();
+    await screen.findByText('pr-4792');
+
+    await search('4792');
+
+    expect(screen.getByText('pr-4792')).toBeTruthy();
+    expect(screen.queryByText(/anyway/)).toBeNull();
   });
 
   // A failed refetch keeps the stale list in `data`, so "not listed" proves nothing.

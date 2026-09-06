@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,9 +25,9 @@ import {
   fallbackRowTitle,
   filterQaPickRows,
   labelChipColor,
-  parsePrQuery,
   qaPickListState,
   riskTone,
+  unlistedPrNumber,
   visibleLabels,
   type QaPickRow,
   type QaRiskTone,
@@ -96,7 +96,7 @@ export function QaPickScreen() {
 
   const [query, setQuery] = useState('');
   const visibleRows = useMemo(() => filterQaPickRows(rows, query), [rows, query]);
-  const queryPrNumber = useMemo(() => parsePrQuery(query), [query]);
+  const unlistedPr = useMemo(() => unlistedPrNumber(rows, query), [rows, query]);
 
   const [surfingPrNumber, setSurfingPrNumber] = useState<number | null>(null);
   // Swipe-dismiss pops the route without touching Skip, so the "left without
@@ -285,6 +285,11 @@ export function QaPickScreen() {
   // filtering a read-only list is still useful.
   const showSearchField = listState.kind !== 'surfing-off' && listState.kind !== 'unreachable';
 
+  const trySurfBlock =
+    unlistedPr !== null && surfingAvailable ? (
+      <TrySurfBlock prNumber={unlistedPr} busy={surfingPrNumber !== null} onTrySurf={handleTrySurf} t={t} />
+    ) : null;
+
   return (
     <View style={[styles.root, { backgroundColor: systemColors.groupedBackground, paddingTop: insets.top }]}>
       <View style={styles.header}>
@@ -341,20 +346,19 @@ export function QaPickScreen() {
       {listState.kind === 'empty' ? <Placard title={t('qa.pick.emptyTitle')} body={t('qa.pick.emptyBody')} /> : null}
 
       {listState.kind === 'no-match' ? (
-        <NoMatchState
-          query={query}
-          prNumber={queryPrNumber}
-          canSurf={surfingAvailable}
-          busy={surfingPrNumber !== null}
-          onTrySurf={handleTrySurf}
-          t={t}
-        />
+        <NoMatchState query={query} t={t}>
+          {trySurfBlock}
+        </NoMatchState>
       ) : null}
 
       <FlashList
         data={listState.kind === 'rows' ? listState.rows : NO_ROWS}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
+        // Rows can match a query while the PR it names is still missing — a title
+        // saying "Follow up #5203" is not #5203 — so the offer belongs under the
+        // results too, not only on an empty screen.
+        ListFooterComponent={listState.kind === 'rows' ? trySurfBlock : null}
         contentContainerStyle={styles.listContent}
         // Without this the first tap on a row after typing is eaten by the keyboard
         // dismissal, and the tester has to tap twice to pick anything.
@@ -367,23 +371,16 @@ export function QaPickScreen() {
 
 type NoMatchStateProps = {
   query: string;
-  prNumber: number | null;
-  canSurf: boolean;
-  busy: boolean;
-  onTrySurf: (prNumber: number) => void;
   t: TFunction<'common'>;
+  children?: ReactNode;
 };
 
 /**
- * Nothing matched what the tester typed — which is a different fact from "nothing
- * is published for this build", and reads differently.
- *
- * When the query names a PR number, this is also the only place that offers to load
- * it anyway. A title-shaped query gets the message and no button: there is no
- * branch name to guess from a handful of words.
+ * Nothing matched what the tester typed — a different fact from "nothing is
+ * published for this build", and it reads differently.
  */
-function NoMatchState({ query, prNumber, canSurf, busy, onTrySurf, t }: NoMatchStateProps) {
-  const { systemColors, brandColors } = useTheme();
+function NoMatchState({ query, t, children }: NoMatchStateProps) {
+  const { systemColors } = useTheme();
 
   return (
     <View style={styles.centered}>
@@ -393,30 +390,50 @@ function NoMatchState({ query, prNumber, canSurf, busy, onTrySurf, t }: NoMatchS
       <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.placardBody}>
         {t('qa.pick.noMatchBody', { query })}
       </Text>
+      {children}
+    </View>
+  );
+}
 
-      {prNumber !== null && canSurf ? (
-        <>
-          <PressableSurface
-            onPress={() => onTrySurf(prNumber)}
-            feedback="opacity"
-            disabled={busy}
-            accessibilityRole="button"
-            accessibilityLabel={t('qa.pick.trySurfAction', { prNumber })}
-            style={[styles.trySurfButton, { borderColor: brandColors.primary }]}
-          >
-            {busy ? (
-              <ActivityIndicator />
-            ) : (
-              <Text variant="subheadline" color={brandColors.primary}>
-                {t('qa.pick.trySurfAction', { prNumber })}
-              </Text>
-            )}
-          </PressableSurface>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.placardBody}>
-            {t('qa.pick.trySurfHint')}
+type TrySurfBlockProps = {
+  prNumber: number;
+  busy: boolean;
+  onTrySurf: (prNumber: number) => void;
+  t: TFunction<'common'>;
+};
+
+/**
+ * The offer to load a PR this build was never handed a branch for.
+ *
+ * Rendered from two places — under an empty result, and under a list that matched
+ * something else — because a query can turn up rows while the PR it actually names
+ * is missing. A title-shaped query reaches neither: there is no branch name to guess
+ * from a handful of words.
+ */
+function TrySurfBlock({ prNumber, busy, onTrySurf, t }: TrySurfBlockProps) {
+  const { systemColors, brandColors } = useTheme();
+
+  return (
+    <View style={styles.trySurfWrap}>
+      <PressableSurface
+        onPress={() => onTrySurf(prNumber)}
+        feedback="opacity"
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={t('qa.pick.trySurfAction', { prNumber })}
+        style={[styles.trySurfButton, { borderColor: brandColors.primary }]}
+      >
+        {busy ? (
+          <ActivityIndicator />
+        ) : (
+          <Text variant="subheadline" color={brandColors.primary}>
+            {t('qa.pick.trySurfAction', { prNumber })}
           </Text>
-        </>
-      ) : null}
+        )}
+      </PressableSurface>
+      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.placardBody}>
+        {t('qa.pick.trySurfHint')}
+      </Text>
     </View>
   );
 }
@@ -569,6 +586,11 @@ const styles = StyleSheet.create({
   searchWrap: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
+  },
+  trySurfWrap: {
+    alignItems: 'center',
+    paddingTop: spacing[4],
+    gap: spacing[2],
   },
   trySurfButton: {
     marginTop: spacing[2],

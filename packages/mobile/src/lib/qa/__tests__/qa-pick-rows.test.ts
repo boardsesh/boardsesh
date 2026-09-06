@@ -9,6 +9,7 @@ import {
   parsePrQuery,
   qaPickListState,
   riskTone,
+  unlistedPrNumber,
   visibleLabels,
   type QaPickRow,
 } from '../qa-pick-rows';
@@ -459,6 +460,33 @@ describe('filterQaPickRows', () => {
   it('finds a row the backend could not name, by number or branch', () => {
     expect(prNumbersOf(filterQaPickRows(rows, '1523'))).toEqual([1523]);
     expect(prNumbersOf(filterQaPickRows(rows, 'pr-1523'))).toEqual([1523]);
+  });
+});
+
+describe('unlistedPrNumber', () => {
+  const rows = [row(5203, 'Fix the queue reducer'), row(5210, 'Follow up #5203')];
+
+  it('names the PR when this build has no row for it', () => {
+    expect(unlistedPrNumber(rows, '9999')).toBe(9999);
+    expect(unlistedPrNumber(rows, 'pr-9999')).toBe(9999);
+  });
+
+  it('stays quiet when the PR is right there', () => {
+    expect(unlistedPrNumber(rows, '5203')).toBeNull();
+  });
+
+  it('stays quiet for a query that names no PR', () => {
+    expect(unlistedPrNumber(rows, 'queue')).toBeNull();
+    expect(unlistedPrNumber(rows, '')).toBeNull();
+  });
+
+  // The case an empty-list check gets wrong: searching 5203 matches "Follow up
+  // #5203" by title, so the list is not empty — but #5203 itself is missing and the
+  // offer to load it has to survive that.
+  it('names a PR that only some other row mentions in its title', () => {
+    const withoutTheRealOne = [row(5210, 'Follow up #5203')];
+    expect(filterQaPickRows(withoutTheRealOne, '5203')).toHaveLength(1);
+    expect(unlistedPrNumber(withoutTheRealOne, '5203')).toBe(5203);
   });
 });
 

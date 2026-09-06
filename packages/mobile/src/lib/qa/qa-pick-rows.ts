@@ -307,6 +307,24 @@ export function filterQaPickRows(rows: QaPickRow[], query: string): QaPickRow[] 
 }
 
 /**
+ * The PR a query names that this build has no row for, or null.
+ *
+ * Deliberately NOT "the filtered list came back empty". A numeric query also runs
+ * the text pass, so searching `5203` matches a PR titled "Follow up #5203" — and
+ * that unrelated row is enough to make the list non-empty while #5203 itself is
+ * nowhere to be found. Gating the escape hatch on an empty list therefore hid it in
+ * exactly the case it exists for.
+ *
+ * Asks `rows`, not the filtered rows: the question is whether this build has that PR
+ * at all, which does not depend on what is currently typed.
+ */
+export function unlistedPrNumber(rows: QaPickRow[], query: string): number | null {
+  const prNumber = parsePrQuery(query);
+  if (prNumber === null) return null;
+  return rows.some((row) => row.prNumber === prNumber) ? null : prNumber;
+}
+
+/**
  * What the pick screen shows below its header. Kept here, as a pure function over
  * facts, because the distinction that matters — "nothing matches what you typed"
  * versus "nothing is published for this build" — is a rule worth testing without a
