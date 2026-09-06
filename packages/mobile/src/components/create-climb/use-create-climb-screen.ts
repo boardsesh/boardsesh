@@ -25,7 +25,7 @@ import {
   type SavedClimbSnapshot,
 } from '@boardsesh/create-climb-react';
 import { useBoardActions, isDuplicateClimbError } from '@boardsesh/board-react';
-import { DEFAULT_PACE_MS, clampAuthoredPaceMs } from '@boardsesh/playback-react';
+import { DEFAULT_PACE_MS, clampAuthoredPaceMs, resolveStoredPaceMs } from '@boardsesh/playback-react';
 import { GraphQLOperationError } from '@boardsesh/graphql-client';
 import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -567,7 +567,7 @@ export function useCreateClimbScreen({
       // Explicit flag first, then infer from the restored frames: a slot written
       // before route mode existed carries no flag but may well carry a route.
       setRouteMode(draft.routeMode ?? restoredFrameCount > 1);
-      setFramesPaceMs(clampAuthoredPaceMs(draft.framesPaceMs ?? DEFAULT_PACE_MS));
+      setFramesPaceMs(resolveStoredPaceMs(draft.framesPaceMs));
     },
     [loadFrames, usesNoMatchDescription],
   );
@@ -644,11 +644,8 @@ export function useCreateClimbScreen({
     const serverAnyFeet = !serverCampus && isAnyFeet(editClimb.characteristics);
     const serverIsDraft = editClimb.is_draft ?? false;
     // 0/null mean "never authored" and play at the default, so that is what the
-    // control should open on — not a clamped 0.
-    const serverPaceMs =
-      editClimb.framesPace != null && editClimb.framesPace > 0
-        ? clampAuthoredPaceMs(editClimb.framesPace)
-        : DEFAULT_PACE_MS;
+    // control opens on. Preserved as stored otherwise — see `resolveStoredPaceMs`.
+    const serverPaceMs = resolveStoredPaceMs(editClimb.framesPace);
     const serverSignature = createPayloadSignature({
       holdsJson: JSON.stringify(serverFrames[0] ?? {}),
       framesJson: JSON.stringify(serverFrames),
@@ -659,7 +656,11 @@ export function useCreateClimbScreen({
       campus: serverCampus,
       anyFeet: serverAnyFeet,
       isDraft: serverIsDraft,
-      framesPaceMs: serverPaceMs,
+      // Signed by the same rule the live signature uses — the pace this payload
+      // would PUBLISH. A single-frame row carrying a stray pace publishes none,
+      // so counting it here would make the two sides disagree forever and the
+      // climb read as permanently edited.
+      framesPaceMs: serverFrames.length > 1 ? serverPaceMs : DEFAULT_PACE_MS,
     });
     const serverSnapshot: SavedClimbSnapshot = {
       uuid: editClimb.uuid,
@@ -812,7 +813,14 @@ export function useCreateClimbScreen({
   // non-zero pace outright, so a Woods climb carrying one fails the mutation.
   // A boulder has no gap between frames to pace either, and 0/null both read as
   // "use the default" downstream in `useClimbFrames`.
-  const publishedFramesPace = frameCount > 1 ? clampAuthoredPaceMs(framesPaceMs) : null;
+  //
+  // Passed through rather than re-clamped: the authoring slider's 10s ceiling
+  // bounds what this control can PRODUCE, not what a climb may hold. An Aurora
+  // climb synced with a slower pace keeps it here, so opening one and saving an
+  // unrelated edit republishes the pace its setter chose instead of quietly
+  // halving it. The two writers are already bounded — `setFramesPace` clamps the
+  // control, and the server bounds what it accepts.
+  const publishedFramesPace = frameCount > 1 ? Math.round(framesPaceMs) : null;
 
   const payloadSignature = createPayloadSignature({
     holdsJson,

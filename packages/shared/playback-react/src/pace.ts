@@ -39,3 +39,23 @@ export function clampAuthoredPaceMs(paceMs: number): number {
   if (!Number.isFinite(paceMs)) return DEFAULT_PACE_MS;
   return Math.round(Math.min(Math.max(paceMs, MIN_AUTHORED_PACE_MS), MAX_PACE_MS));
 }
+
+/**
+ * Read a pace that came from storage — a synced climb, a server row, a restored
+ * draft — preserving whatever it holds.
+ *
+ * Deliberately NOT `clampAuthoredPaceMs`. That one bounds what the authoring
+ * CONTROL may produce, and its 10s ceiling is a property of the slider, not of
+ * the data: Aurora climbs are synced with whatever pace their setter chose, and
+ * the server accepts up to 30s precisely so those survive a round trip. Clamping
+ * on the way in would silently rewrite a 20s route to 10s the next time its
+ * owner opened and re-saved it, with nothing on screen to show a change — the
+ * pace would simply be halved.
+ *
+ * 0 and null both mean "never authored" in the Aurora encoding, so they resolve
+ * to the default rather than to a real value.
+ */
+export function resolveStoredPaceMs(paceMs: number | null | undefined): number {
+  if (paceMs == null || !Number.isFinite(paceMs) || paceMs <= 0) return DEFAULT_PACE_MS;
+  return Math.round(paceMs);
+}

@@ -469,6 +469,38 @@ describe('useCreateClimbScreen autosave flush', () => {
     expect(boardActions.saveClimb).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a synced climb's pace when it is slower than the slider allows", async () => {
+    // The authoring slider tops out at 10s, but that bounds what this control
+    // can PRODUCE, not what a climb may hold: Aurora climbs arrive with whatever
+    // pace their setter chose and the server accepts up to 30s so they survive a
+    // round trip. Clamping on load would halve a 20s route the next time its
+    // owner opened it and saved an unrelated edit — with nothing on screen to
+    // say anything had changed.
+    graphql.climb = {
+      uuid: 'climb-slow',
+      name: 'Slow Aurora Route',
+      description: '',
+      frames: 'p1r12,"p2r13',
+      is_draft: true,
+      created_at: null,
+      published_at: null,
+      framesPace: 20_000,
+    };
+
+    createClimb.frameCount = 2;
+
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD, editClimbUuid: 'climb-slow' }));
+    await waitFor(() => expect(result.current.name).toBe('Slow Aurora Route'));
+
+    // 20s, not the slider's 10s ceiling.
+    expect(result.current.framesPaceMs).toBe(20_000);
+
+    // Deliberately not asserting draftStatus here: this suite's editor mock holds
+    // a fixed single-frame `frames` array and a no-op `loadFrames`, so `framesJson`
+    // can never match a two-frame server row whatever the pace does. That would
+    // pin the mock, not the product.
+  });
+
   it('autosaves an edit session into its own identity-keyed slot', async () => {
     graphql.climb = {
       uuid: 'climb-9',
