@@ -330,6 +330,38 @@ describe('expandWindow', () => {
   });
 });
 
+// Nothing writes an unanchored inferred session yet (that lands with session-inference
+// step 2 wiring this into tick writes), but the shape is legal — `anchorTickId` is
+// nullable in the schema. `byAnchor` only indexes sessions with a real anchor, so an
+// unanchored session can never be a claimant for any run: it never survives or loses a
+// merge, and always ends up in `emptiedSessionIds` — which tells the caller to re-point
+// its social rows onto nothing in particular and delete the row. Locking this in now so
+// step 2 has to decide about it deliberately rather than trip over it after the fact.
+//
+// "Always empties" documents this fall-through, not an intended design choice — if
+// step 2 decides an unanchored session should survive instead, update this test as
+// part of that change rather than treating a failure here as a regression.
+describe('unanchored inferred sessions', () => {
+  it('always empties an inferred session with no anchor tick', () => {
+    const result = reconcile(run(1, DAY_ONE, 3), [{ id: 'sess-a', anchorTickId: null, userEdited: false }]);
+
+    expect(result.runs[0].sessionId).toBeNull();
+    expect(result.merges).toEqual([]);
+    expect(result.emptiedSessionIds).toEqual(['sess-a']);
+  });
+
+  // userEdited only matters for picking a merge survivor, which requires being a
+  // claimant in the first place — an unanchored session never is, so being
+  // user-edited doesn't save it either.
+  it('empties it even when the climber has named or annotated it', () => {
+    const result = reconcile(run(1, DAY_ONE, 3), [{ id: 'sess-a', anchorTickId: null, userEdited: true }]);
+
+    expect(result.runs[0].sessionId).toBeNull();
+    expect(result.merges).toEqual([]);
+    expect(result.emptiedSessionIds).toEqual(['sess-a']);
+  });
+});
+
 describe('empty window', () => {
   it('empties every inferred session when the last tick is gone', () => {
     const result = reconcile([], [inferred('sess-a', 1), inferred('sess-b', 5)]);

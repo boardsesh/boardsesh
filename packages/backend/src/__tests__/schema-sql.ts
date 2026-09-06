@@ -69,7 +69,11 @@ export const schemaSQL = `
     "origin" session_origin DEFAULT 'explicit' NOT NULL,
     "anchor_tick_id" bigint,
     "user_edited" boolean DEFAULT false NOT NULL,
-    CONSTRAINT "board_sessions_status_check" CHECK (status IN ('active', 'inactive', 'ended'))
+    CONSTRAINT "board_sessions_status_check" CHECK (status IN ('active', 'inactive', 'ended')),
+    -- Mirrors the board_sessions_explicit_board_path_check migration (packages/db):
+    -- an explicit session must always have a board path, so tests exercise the
+    -- same constraint production has.
+    CONSTRAINT "board_sessions_explicit_board_path_check" CHECK (origin <> 'explicit' OR board_path IS NOT NULL)
   );
 
   -- Two concurrent reconciliations of the same unassigned run would otherwise both
@@ -1290,9 +1294,10 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "app_feedback_status_idx" ON "app_feedback" ("status");
 
   -- Crowdsourced-QA verdicts a tester filed on a PR preview. Mirrors
-  -- packages/db/src/schema/app/qa-verdicts.ts (migration 0206). verdict is
-  -- plain text here (prod uses the qa_verdict_kind enum) with a CHECK; the
-  -- resolvers only ever compare the string value.
+  -- packages/db/src/schema/app/qa-verdicts.ts (migration 0206; device_model/
+  -- os_version added in 0215). verdict is plain text here (prod uses the
+  -- qa_verdict_kind enum) with a CHECK; the resolvers only ever compare the
+  -- string value.
   DROP TABLE IF EXISTS "qa_verdicts" CASCADE;
   CREATE TABLE IF NOT EXISTS "qa_verdicts" (
     "id" bigserial PRIMARY KEY NOT NULL,
