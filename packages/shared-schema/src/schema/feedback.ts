@@ -67,6 +67,14 @@ export const feedbackTypeDefs = /* GraphQL */ `
     GitHub issue link. Only meaningful for bug-report sources.
     """
     contactConsent: Boolean
+
+    """
+    Object keys returned by \`POST /api/feedback-screenshots\`, at most
+    FEEDBACK_SCREENSHOT_MAX_COUNT of them. Bug reports only — they become
+    \`<img>\` tags in the GitHub issue, so a key that isn't one we minted is
+    dropped rather than rendered.
+    """
+    screenshotKeys: [String!]
   }
 
   """
@@ -135,6 +143,12 @@ export const feedbackTypeDefs = /* GraphQL */ `
     githubIssueUrl: String
     reporter: AppFeedbackReporter
     context: AppFeedbackContext
+    """
+    Public URLs of the screenshots the reporter attached, in the order they
+    attached them. Empty when none were attached, and also when the media
+    bucket has no public base URL configured (the keys are still on the row).
+    """
+    screenshotUrls: [String!]!
   }
 
   """

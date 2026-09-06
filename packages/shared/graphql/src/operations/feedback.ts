@@ -62,6 +62,7 @@ export const ADMIN_APP_FEEDBACK = gql`
           url
           userAgent
         }
+        screenshotUrls
       }
       totalCount
       hasMore

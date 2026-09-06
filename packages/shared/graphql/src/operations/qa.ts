@@ -35,6 +35,7 @@ export const QA_PREVIEWS = gql`
         headSha
         createdAt
         githubCommentUrl
+        screenshotUrls
       }
     }
   }
@@ -61,6 +62,7 @@ export const SUBMIT_QA_VERDICT = gql`
       headSha
       createdAt
       githubCommentUrl
+      screenshotUrls
     }
   }
 `;

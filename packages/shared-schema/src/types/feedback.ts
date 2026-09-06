@@ -44,6 +44,12 @@ export type SubmitAppFeedbackInput = {
    * Only set for bug-report sources; null/false means "do not contact".
    */
   contactConsent?: boolean | null;
+  /**
+   * Object keys from `POST /api/feedback-screenshots`, at most
+   * `FEEDBACK_SCREENSHOT_MAX_COUNT`. Bug reports only. Anything that isn't a
+   * key we minted is dropped before it can reach the public GitHub issue.
+   */
+  screenshotKeys?: string[] | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -96,6 +102,11 @@ export type AppFeedbackReport = {
   githubIssueUrl?: string | null;
   reporter?: AppFeedbackReporter | null;
   context?: AppFeedbackContext | null;
+  /**
+   * Public URLs of the reporter's screenshots, in attachment order. Empty when
+   * none were attached, and also when the media bucket has no public base URL.
+   */
+  screenshotUrls: string[];
 };
 
 export type AdminAppFeedbackInput = {

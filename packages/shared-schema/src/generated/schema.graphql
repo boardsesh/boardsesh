@@ -7821,6 +7821,14 @@ input SubmitAppFeedbackInput {
   GitHub issue link. Only meaningful for bug-report sources.
   """
   contactConsent: Boolean
+
+  """
+  Object keys returned by `POST /api/feedback-screenshots`, at most
+  FEEDBACK_SCREENSHOT_MAX_COUNT of them. Bug reports only — they become
+  `<img>` tags in the GitHub issue, so a key that isn't one we minted is
+  dropped rather than rendered.
+  """
+  screenshotKeys: [String!]
 }
 
 """
@@ -7889,6 +7897,12 @@ type AppFeedbackReport {
   githubIssueUrl: String
   reporter: AppFeedbackReporter
   context: AppFeedbackContext
+  """
+  Public URLs of the screenshots the reporter attached, in the order they
+  attached them. Empty when none were attached, and also when the media
+  bucket has no public base URL configured (the keys are still on the row).
+  """
+  screenshotUrls: [String!]!
 }
 
 """
@@ -7963,6 +7977,12 @@ type QaVerdict {
   headSha: String
   createdAt: String!
   githubCommentUrl: String
+  """
+  Public URLs of the screenshots filed with this verdict, in the order the
+  author attached them. Empty when none were attached, and also when the media
+  bucket has no public base URL configured (the keys are still on the row).
+  """
+  screenshotUrls: [String!]!
 }
 
 """
@@ -8082,6 +8102,12 @@ input SubmitQaVerdictInput {
   the PR head's commit date to flag a verdict filed on an older revision.
   """
   bundleCreatedAt: String
+  """
+  Object keys returned by `POST /api/feedback-screenshots`, at most
+  FEEDBACK_SCREENSHOT_MAX_COUNT of them. They become `<img>` tags in the PR
+  comment, so a key that isn't one we minted is dropped rather than rendered.
+  """
+  screenshotKeys: [String!]
 }
 
 # ============================================

@@ -228,6 +228,12 @@ export type AppFeedbackReport = {
   reporter?: Maybe<AppFeedbackReporter>;
   resolvedAt?: Maybe<Scalars['String']['output']>;
   resolvedBy?: Maybe<Scalars['String']['output']>;
+  /**
+   * Public URLs of the screenshots the reporter attached, in the order they
+   * attached them. Empty when none were attached, and also when the media
+   * bucket has no public base URL configured (the keys are still on the row).
+   */
+  screenshotUrls: Array<Scalars['String']['output']>;
   source: Scalars['String']['output'];
   status: AppFeedbackStatus;
 };
@@ -5079,6 +5085,12 @@ export type QaVerdict = {
   headSha?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   prNumber: Scalars['Int']['output'];
+  /**
+   * Public URLs of the screenshots filed with this verdict, in the order the
+   * author attached them. Empty when none were attached, and also when the media
+   * bucket has no public base URL configured (the keys are still on the row).
+   */
+  screenshotUrls: Array<Scalars['String']['output']>;
   verdict: QaVerdictKind;
 };
 
@@ -7807,6 +7819,13 @@ export type SubmitAppFeedbackInput = {
   platform: Scalars['String']['input'];
   /** 1–5 star rating. Null for bug reports. */
   rating?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * Object keys returned by `POST /api/feedback-screenshots`, at most
+   * FEEDBACK_SCREENSHOT_MAX_COUNT of them. Bug reports only — they become
+   * `<img>` tags in the GitHub issue, so a key that isn't one we minted is
+   * dropped rather than rendered.
+   */
+  screenshotKeys?: InputMaybe<Array<Scalars['String']['input']>>;
   setIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /**
@@ -7839,6 +7858,12 @@ export type SubmitQaVerdictInput = {
   platform: Scalars['String']['input'];
   prNumber: Scalars['Int']['input'];
   runtimeVersion?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Object keys returned by `POST /api/feedback-screenshots`, at most
+   * FEEDBACK_SCREENSHOT_MAX_COUNT of them. They become `<img>` tags in the PR
+   * comment, so a key that isn't one we minted is dropped rather than rendered.
+   */
+  screenshotKeys?: InputMaybe<Array<Scalars['String']['input']>>;
   /** expo-updates `updateId` of the running bundle. */
   updateId?: InputMaybe<Scalars['String']['input']>;
   verdict: QaVerdictKind;
@@ -9596,6 +9621,7 @@ export type AppFeedbackReportResolvers<
   reporter?: Resolver<Maybe<ResolversTypes['AppFeedbackReporter']>, ParentType, ContextType>;
   resolvedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   resolvedBy?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  screenshotUrls?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   source?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   status?: Resolver<ResolversTypes['AppFeedbackStatus'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
@@ -12231,6 +12257,7 @@ export type QaVerdictResolvers<
   headSha?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   prNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  screenshotUrls?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   verdict?: Resolver<ResolversTypes['QaVerdictKind'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
