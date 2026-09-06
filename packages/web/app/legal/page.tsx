@@ -19,9 +19,12 @@ export async function generateMetadata() {
 
 export default async function LegalPage() {
   const locale = await getLocale();
-  // `distinctId: null` with `allowAnonymous` on purpose: /legal is public and
-  // indexable, so it must not read the session (that would make every render
-  // dynamic) and the build-plans mention is the same for everyone.
+  // `distinctId: null` with `allowAnonymous` on purpose, and it is about cache
+  // cardinality rather than staying static: `getLocale()` above reads `headers()`,
+  // so this page is dynamically rendered either way. The build-plans mention is
+  // the same for every visitor, so passing a per-person distinct id would only
+  // fan the cached flag lookup out into one entry per user for an answer that
+  // never varies between them.
   const showBuildPlans = await getServerFeatureFlag(CNC_PACKS_FLAG, { distinctId: null, allowAnonymous: true });
   return (
     <I18nProvider locale={locale} namespaces={['marketing']}>
