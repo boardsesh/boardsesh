@@ -588,13 +588,18 @@ describe('useBoardRouteTarget', () => {
     // The healed resolve is the longest await chain in this file — a local-board
     // probe, the owned-list walk and the resolver all have to settle before the
     // board is adopted. `waitFor`'s 1s default loses that race on a loaded CI
-    // box (observed on PR #4418), so this one gets room.
+    // box (observed on PR #4418), so this one gets room. That allowance only
+    // means anything because the `it` below raises the per-test budget past it:
+    // Vitest's default is also 5s, so a 5s `waitFor` inside a 5s test can never
+    // spend its own budget — the test dies first with "Test timed out in
+    // 5000ms", which is how this kept flaking after #4418 supposedly fixed it.
     await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(RESOLVED_BOARD), { timeout: 5000 });
     expect(fetchAllMyBoards).toHaveBeenCalledTimes(1);
     // The healed resolve hands off; the stale not-found is gone either way.
     expect(statusOf(container)).not.toBe('not-found');
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
-  });
+    // Must exceed the 5s `waitFor` above; see the comment there.
+  }, 15000);
 
   // A dead slug fails while ONLINE, so no offline→online transition can follow
   // it. Only a device that was genuinely offline gets a retry.
