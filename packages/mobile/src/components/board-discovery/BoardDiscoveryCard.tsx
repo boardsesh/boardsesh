@@ -530,13 +530,11 @@ const styles = StyleSheet.create({
     ...overlayPill,
     right: spacing[2],
   },
-  // Same slot as distanceBadge; square rather than text-width, since it holds a
-  // single glyph.
+  // Shares the distance pill's slot and its exact geometry — the two never
+  // appear together, so they should read as the same object in the same place.
   pinBadge: {
     ...overlayPill,
     right: spacing[2],
-    paddingHorizontal: spacing[2],
-    paddingVertical: 3,
   },
   title: {
     fontWeight: '600',
