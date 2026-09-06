@@ -266,6 +266,32 @@ describe('useMobileClimbActionsData', () => {
       expect(removeFavoriteLocalMock).not.toHaveBeenCalled();
       expect(drainMutationQueueMock).not.toHaveBeenCalled();
     });
+
+    // The store holds one board+angle+user at a time. A toggle fired at 40°
+    // that resolves after the user moved to 25° must not paint that list.
+    it('does not write server truth into a store that was re-scoped mid-flight', async () => {
+      requestMock.mockResolvedValueOnce({ allUserPlaylists: { playlists: [] } });
+      let resolveToggle: (value: { toggleFavorite: { favorited: boolean } }) => void = () => {};
+      requestMock.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveToggle = resolve;
+          }),
+      );
+
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+      await waitFor(() => expect(requestMock).toHaveBeenCalledWith(GET_ALL_USER_PLAYLISTS, expect.anything()));
+
+      const pending = result.current.favoritesProviderProps.toggleFavorite('climb-x');
+      await waitFor(() => expect(requestMock).toHaveBeenCalledWith(TOGGLE_FAVORITE, expect.anything()));
+
+      favoritesStore.applyContext('kilter:25:1');
+      resolveToggle({ toggleFavorite: { favorited: true } });
+      await pending;
+
+      expect(favoritesStore.getIsFavorited('climb-x')).toBe(false);
+    });
   });
 
   describe('addToPlaylist + removeFromPlaylist', () => {
