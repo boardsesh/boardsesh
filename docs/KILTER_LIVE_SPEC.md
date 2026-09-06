@@ -154,6 +154,32 @@ The following is the live-relevant subset of that parser, **not** a complete res
 
 **Confidence: LOW.** There is no established upstream disconnect/clear operation, guaranteed one-entry-per-climb behavior across installations, or acknowledged retry protocol. A changed or disconnected Boardsesh session cannot be translated into a fabricated upstream leave event.
 
+### 4.4 Where the serial comes from
+
+**Confidence: HIGH.** The Bluetooth scan callback constructs a `Candidate` using the device's name from FlutterBluePlus's platform-name cache. `_connectToBoardByName` passes that candidate name to `_serialNumberFromBoardName`, then passes the result into `BluetoothProvider.connectToDevice`. The provider stores it as the connection-associated serial subsequently read by the live publisher. This value is name-derived; it is not the selected wall's saved `serial_number` or the Bluetooth device address.
+
+**Confidence: HIGH.** The parser implements these rules:
+
+1. Split the name on `#`; return null if there is no second segment.
+2. Split that second segment on `@`; return null if there is no second segment.
+3. Trim the text before that `@`; return it if nonempty, otherwise null.
+
+The following examples are consequences of the parser, not captured controller advertisements:
+
+| Device name | Result |
+| --- | --- |
+| `Kilter Board#abc123@3` | `abc123` |
+| `Kilter Board#abc123@2` | `abc123` |
+| `Kilter Board#abc123` | null — this parser requires `@` too |
+| `Kilter Board@2` | null |
+| `Kilter Board` | null |
+
+**Confidence: HIGH.** The parser does not validate a numeric API version or restrict the serial to alphanumeric characters. This is a different parsing rule from the older Aurora regex described in [Bluetooth §4](AURORA_BLUETOOTH_PROTOCOL_SPEC.md#4-device-name-format), although both recognize the familiar `Name#serial@version` format.
+
+**Confidence: HIGH for the inspected paths.** No serial characteristic read or manufacturer-data decoder supplies this connection value. The provider's notification callback prints the received bytes and notifies listeners; it does not decode a serial or replace the stored serial. A separate device-label path matches a name-derived serial against saved wall serials to find a wall name; it does not supply a missing serial to the connection path.
+
+**Confidence: MEDIUM.** Continued compatibility with controllers using the existing name suffix is sufficient to explain the live request's serial field. The serial-less gym publication branch (§4.2) explicitly accommodates a null result. **Confidence: LOW / unresolved** that newer Kilter-built controllers have resumed emitting serials: the client provides no such evidence. Establishing a hardware or firmware change requires an advertisement/GATT capture from an identified controller revision or a firmware specification; a nullable REST field cannot establish that change.
+
 ## 5. Moderation
 
 **Confidence: HIGH.** The live screen's `_confirmAndReport` flow calls `reportRecentlyDisplayedClimb`, which sends bearer authorization and JSON:
@@ -217,6 +243,7 @@ All items below are **LOW confidence / unresolved**, unless an explicit client o
 6. Idempotency, duplicate submission handling, response bodies, timeout ambiguity, quotas, and account/IP/client rate-limit scope.
 7. Report scope, moderation outcomes, deletion/clear support, and behavior after disconnect.
 8. The named stream carrying `app_configs`, current timing values, and protocol changes across Android/iOS releases.
+9. Whether any newer Kilter-built controller revision emits a serial; the observed client only establishes name-suffix compatibility and a serial-less fallback.
 
 ## 9. Verification anchors
 
@@ -236,3 +263,7 @@ All items below are **LOW confidence / unresolved**, unless an explicit client o
 | `screen/live/live_at_board.dart` | `_preloadLiveAtBoardClimbs` `0x79ee3c`; `_pollRecentlyDisplayedClimbs` `0x79fbf8` | Read auth and refresh lifecycle |
 | `provider/app.dart` | `_applyAppConfigRows` `0x8a7d8c`; query `0x8a804c`; schema table object `0x9e9941` | Timing configuration and defaults |
 | `provider/login.dart` | `setUserUuid` `0x860760` | Account identifier from JWT `sub` |
+| `screen/components/bluetooth_device_dialog.dart` | Scan callback `0x839a38`; parser call `0x8379b4`; `_serialNumberFromBoardName` `0x83cc00` | Connection serial from the scanned candidate's platform name |
+| `domain/candidate.dart` | Constructor `0x839fb0` | Retains the device and platform name used at connection |
+| `provider/bluetooth_provider.dart` | `connectToDevice` `0x83a270`, serial store `0x83a330`; notification callback `0x83cb80` | Connection serial storage; notifications do not decode serials |
+| `screen/components/bluetooth_device_dialog.dart` | Label closure `0x83d264`; wall predicate `0x83d6a4` | Name-derived serial used to look up a saved wall's display name |
