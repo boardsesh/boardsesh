@@ -5,7 +5,14 @@ import { readJsonBody, sendJson } from './http-utils';
 import { logger } from '../utils/logger';
 import { constructWebhookEvent, isStripeWebhookConfigured } from '../services/cnc/stripe';
 import { claimStripeEvent, markStripeEventProcessed, releaseStripeEvent } from '../services/cnc/stripe-events';
-import { getAccountEmail, getOrderById, getOrderByPaymentIntentId, transitionOrder } from '../services/cnc/orders';
+import {
+  getAccountEmail,
+  getOrderById,
+  getOrderByPaymentIntentId,
+  transitionOrder,
+  type CncOrdersExecutor,
+} from '../services/cnc/orders';
+import { db } from '../db/client';
 import { CNC_KICKER_SET_IDS, findCatalogEntry, parseSetIds } from '../services/cnc/catalog';
 import { sendCncOrderReceivedEmail } from '../email/cnc-emails';
 import { webPublicUrl } from '../utils/public-urls';
@@ -35,6 +42,12 @@ import { captureBackendEvent } from '../services/analytics/posthog';
  * Idempotency is a uniqueness constraint, not application logic: the event id
  * is inserted into `cnc_stripe_events` before any side effect, and a second
  * delivery of the same id loses that race and no-ops.
+ *
+ * The claim insert commits on its own — a failed handler hands it back with
+ * `releaseStripeEvent` so Stripe's retry is not eaten as a duplicate — but the
+ * order transition and the "processed" stamp share one transaction. Marking an
+ * event processed after a transition that then rolled back would leave a paid
+ * order in `pending_payment` and tell every redelivery there was nothing to do.
  */
 
 /** 1 MB. Stripe's largest events are a few tens of KB; anything near this is not from Stripe. */
@@ -78,7 +91,11 @@ function idOf(reference: string | { id: string } | null | undefined): string | n
  * signed with a leaked secret) would otherwise queue somebody else's pack.
  * Mismatch is ignored, loudly.
  */
-async function resolveSessionOrder(session: Stripe.Checkout.Session, eventType: string): Promise<CncOrder | null> {
+async function resolveSessionOrder(
+  session: Stripe.Checkout.Session,
+  eventType: string,
+  tx: CncOrdersExecutor,
+): Promise<CncOrder | null> {
   const rawOrderId = session.metadata?.orderId;
   const licenceId = session.metadata?.licenceId;
   const orderId = Number(rawOrderId);
@@ -88,7 +105,7 @@ async function resolveSessionOrder(session: Stripe.Checkout.Session, eventType: 
     return null;
   }
 
-  const order = await getOrderById(orderId);
+  const order = await getOrderById(orderId, tx);
   if (!order) {
     logger.warn('[cnc-webhook] no order for the session metadata', { eventType, orderId, sessionId: session.id });
     return null;
@@ -127,7 +144,11 @@ async function resolveSessionOrder(session: Stripe.Checkout.Session, eventType: 
  * we wrote at checkout: with Stripe Tax on, what was actually charged is
  * Stripe's number, and the order should record what the buyer paid.
  */
-async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Checkout.Session): Promise<WebhookOutcome> {
+async function handleCheckoutCompleted(
+  event: Stripe.Event,
+  session: Stripe.Checkout.Session,
+  tx: CncOrdersExecutor,
+): Promise<WebhookOutcome> {
   if (session.payment_status !== 'paid') {
     logger.info('[cnc-webhook] checkout completed without payment; not queueing', {
       sessionId: session.id,
@@ -136,7 +157,7 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
     return IGNORED;
   }
 
-  const order = await resolveSessionOrder(session, event.type);
+  const order = await resolveSessionOrder(session, event.type, tx);
   if (!order) return IGNORED;
 
   // Stripe's own clock, not ours. A redelivery three days later must not stamp
@@ -150,13 +171,18 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
       ? session.amount_total - session.total_details.amount_tax
       : null;
 
-  const queued = await transitionOrder(order.id, 'checkoutCompleted', {
-    paidAt,
-    queuedAt: paidAt,
-    stripePaymentIntentId: idOf(session.payment_intent),
-    amountCents: session.amount_total ?? order.amountCents,
-    currency: session.currency ? session.currency.toUpperCase() : order.currency,
-  });
+  const queued = await transitionOrder(
+    order.id,
+    'checkoutCompleted',
+    {
+      paidAt,
+      queuedAt: paidAt,
+      stripePaymentIntentId: idOf(session.payment_intent),
+      amountCents: session.amount_total ?? order.amountCents,
+      currency: session.currency ? session.currency.toUpperCase() : order.currency,
+    },
+    tx,
+  );
 
   if (!queued) {
     // Zero rows: the order was not in `pending_payment` any more. A redelivery,
@@ -182,11 +208,15 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
  * transition the state table already allows from `pending_payment`, so
  * neither event needs one of its own.
  */
-async function handleCheckoutExpired(event: Stripe.Event, session: Stripe.Checkout.Session): Promise<WebhookOutcome> {
-  const order = await resolveSessionOrder(session, event.type);
+async function handleCheckoutExpired(
+  event: Stripe.Event,
+  session: Stripe.Checkout.Session,
+  tx: CncOrdersExecutor,
+): Promise<WebhookOutcome> {
+  const order = await resolveSessionOrder(session, event.type, tx);
   if (!order) return IGNORED;
 
-  await transitionOrder(order.id, 'checkoutExpired');
+  await transitionOrder(order.id, 'checkoutExpired', {}, tx);
   return { orderId: order.id, queued: null };
 }
 
@@ -201,14 +231,18 @@ async function handleCheckoutExpired(event: Stripe.Event, session: Stripe.Checko
  * part of a licence, so any money going back means the licence is not being
  * honoured any more.
  */
-async function handleChargeRefunded(event: Stripe.Event, charge: Stripe.Charge): Promise<WebhookOutcome> {
+async function handleChargeRefunded(
+  event: Stripe.Event,
+  charge: Stripe.Charge,
+  tx: CncOrdersExecutor,
+): Promise<WebhookOutcome> {
   const paymentIntentId = idOf(charge.payment_intent);
   if (!paymentIntentId) {
     logger.warn('[cnc-webhook] refunded charge has no payment intent', { chargeId: charge.id });
     return IGNORED;
   }
 
-  const order = await getOrderByPaymentIntentId(paymentIntentId);
+  const order = await getOrderByPaymentIntentId(paymentIntentId, tx);
   if (!order) {
     // Every Stripe charge on the account lands here, including ones that have
     // nothing to do with build packs, so this is not necessarily a bug — but
@@ -221,20 +255,20 @@ async function handleChargeRefunded(event: Stripe.Event, charge: Stripe.Charge):
     return IGNORED;
   }
 
-  await transitionOrder(order.id, 'refund', { refundedAt: new Date(event.created * 1000) });
+  await transitionOrder(order.id, 'refund', { refundedAt: new Date(event.created * 1000) }, tx);
   return { orderId: order.id, queued: null };
 }
 
-async function processEvent(event: Stripe.Event): Promise<WebhookOutcome> {
+async function processEvent(event: Stripe.Event, tx: CncOrdersExecutor): Promise<WebhookOutcome> {
   switch (event.type) {
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded':
-      return handleCheckoutCompleted(event, event.data.object);
+      return handleCheckoutCompleted(event, event.data.object, tx);
     case 'checkout.session.expired':
     case 'checkout.session.async_payment_failed':
-      return handleCheckoutExpired(event, event.data.object);
+      return handleCheckoutExpired(event, event.data.object, tx);
     case 'charge.refunded':
-      return handleChargeRefunded(event, event.data.object);
+      return handleChargeRefunded(event, event.data.object, tx);
     default:
       // Subscribed types are configured in the Stripe dashboard, so anything
       // else here is a dashboard change nobody told the code about. Recorded
@@ -366,8 +400,13 @@ export async function handleCncStripeWebhook(req: IncomingMessage, res: ServerRe
 
   let outcome: WebhookOutcome;
   try {
-    outcome = await processEvent(event);
-    await markStripeEventProcessed(event.id, outcome.orderId);
+    // One transaction, so the order transition and the stamp that says this
+    // event will never be acted on again land together or not at all.
+    outcome = await db.transaction(async (tx) => {
+      const processed = await processEvent(event, tx);
+      await markStripeEventProcessed(event.id, processed.orderId, tx);
+      return processed;
+    });
   } catch (error) {
     logger.error('[cnc-webhook] handler failed; releasing the claim so Stripe can retry', {
       eventId: event.id,
