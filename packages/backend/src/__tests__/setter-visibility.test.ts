@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
-import { setterFollowQueries } from '../graphql/resolvers/social/setter-follows';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { setterFollowMutations, setterFollowQueries } from '../graphql/resolvers/social/setter-follows';
 
 /**
  * `setterProfile`, `setterClimbs` and `setterClimbsFull` filtered on
@@ -37,10 +38,33 @@ async function insertClimb(suffix: string, flags: { isListed: boolean; isDraft: 
   `);
 }
 
+/** `user-123` is the account `setup.ts` seeds; `followSetter` needs a real one. */
+const FOLLOWER_ID = 'user-123';
+
+// Every field but `connectionId` is optional, so this needs no cast — and not
+// casting is the point: an object literal the compiler checks cannot drift out
+// of shape with `ConnectionContext` the way a `as ConnectionContext` one does.
+function authedCtx(): ConnectionContext {
+  return {
+    connectionId: 'conn-setter-visibility',
+    transport: 'ws',
+    isAuthenticated: true,
+    userId: FOLLOWER_ID,
+  };
+}
+
 afterEach(async () => {
+  await db.execute(sql`DELETE FROM "setter_follows" WHERE "setter_username" = ${SETTER}`);
   await db.execute(sql`DELETE FROM "board_climb_stats" WHERE "climb_uuid" LIKE ${CLIMB_PREFIX + '%'}`);
   await db.execute(sql`DELETE FROM "board_climbs" WHERE "uuid" LIKE ${CLIMB_PREFIX + '%'}`);
 });
+
+async function followRowCount(): Promise<number> {
+  const rows = await db.execute(
+    sql`SELECT count(*)::int AS count FROM "setter_follows" WHERE "setter_username" = ${SETTER}`,
+  );
+  return Array.from(rows as Iterable<{ count: number }>)[0]?.count ?? 0;
+}
 
 describe('setter queries hand out only publicly visible climbs', () => {
   it('counts and lists the listed non-draft climb, and neither the draft nor the unlisted one', async () => {
@@ -110,5 +134,37 @@ describe('setter queries hand out only publicly visible climbs', () => {
 
     const profile = await setterFollowQueries.setterProfile(null, { input: { username: SETTER } }, {} as never);
     expect(profile).toBeNull();
+  });
+});
+
+/**
+ * The mutation shares `visibleSetterClimbConditions` with the four query paths
+ * above, but nothing exercised it — so a regression there would have surfaced
+ * in production rather than in CI. The rule it enforces: you cannot follow a
+ * setter whose page 404s.
+ */
+describe('followSetter refuses a setter whose page does not resolve', () => {
+  it('throws for a setter whose whole catalogue is drafts or unlisted, and writes no row', async () => {
+    await insertClimb('follow-draft', { isListed: true, isDraft: true });
+    await insertClimb('follow-unlisted', { isListed: false, isDraft: false });
+
+    await expect(
+      setterFollowMutations.followSetter(null, { input: { setterUsername: SETTER } }, authedCtx()),
+    ).rejects.toThrow('Setter not found');
+
+    // Paired oracle: a handler that threw AFTER inserting would pass on the
+    // rejection alone.
+    expect(await followRowCount()).toBe(0);
+  });
+
+  it('follows a setter who has one publicly visible climb', async () => {
+    await insertClimb('follow-visible', { isListed: true, isDraft: false });
+    await insertClimb('follow-hidden', { isListed: true, isDraft: true });
+
+    await expect(
+      setterFollowMutations.followSetter(null, { input: { setterUsername: SETTER } }, authedCtx()),
+    ).resolves.toBe(true);
+
+    expect(await followRowCount()).toBe(1);
   });
 });
