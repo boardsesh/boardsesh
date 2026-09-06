@@ -58,7 +58,6 @@ vi.mock('@boardsesh/db/queries', () => ({
     if (reads.shouldThrow) throw new Error('setters scan failed');
     return reads.usernames.map((username) => ({
       setter_username: username,
-      climb_count: 9,
       last_modified: '2026-05-04T11:22:33.000Z',
     }));
   },

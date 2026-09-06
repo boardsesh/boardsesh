@@ -187,7 +187,6 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
     )
     SELECT
       setter_username,
-      count(*) FILTER (WHERE is_linkable)::int AS climb_count,
       to_char(max(content_clock), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS last_modified
     FROM ranked
     GROUP BY setter_username
@@ -199,7 +198,6 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
 
 export type SetterSitemapQueryRow = {
   setter_username: string;
-  climb_count: number;
   last_modified: string | null;
 };
 

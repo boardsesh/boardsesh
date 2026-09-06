@@ -157,7 +157,6 @@ describe('the setters shard query', () => {
 describe('setterRowsToItems', () => {
   const row = (setter_username: string, last_modified: string | null) => ({
     setter_username,
-    climb_count: 7,
     last_modified,
   });
 

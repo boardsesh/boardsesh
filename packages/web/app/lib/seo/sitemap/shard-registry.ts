@@ -424,6 +424,14 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
       const start = (page - 1) * SETTER_URLS_PER_SHARD;
       return { items: items.slice(start, start + SETTER_URLS_PER_SHARD), totalItems: items.length };
     },
+    // No `enabled` gate, unlike `climbs`. That shard's switch exists because it
+    // was PAUSED in production once (#4648) and needed a lever that did not
+    // require a deploy; this one has never shipped, so there is nothing to hold
+    // back. The rollback is a revert: the shard is derived — it writes nothing,
+    // owns no table, and dropping it from the registry withdraws every URL it
+    // published on the next crawl. Add a gate the day it needs pausing without
+    // a code change, not before.
+    //
     // No `pageLastmods`, deliberately: every setters index entry carries the
     // shard-level `lastModified` instead of a per-page one. The climbs shard
     // can afford per-page timestamps because it reads them off the
