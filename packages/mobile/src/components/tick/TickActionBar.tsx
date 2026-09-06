@@ -10,7 +10,7 @@
 //
 // It adds NO padding of its own: Sheet/ModalSheet's footer bar already applies
 // the gutter, the top inset and the window bottom inset.
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -45,7 +45,9 @@ type TickActionBarProps = {
 export const TickActionBar = React.memo(function TickActionBar({ primary, secondary, error }: TickActionBarProps) {
   const { brandColors, spacing } = useTheme();
   const { fontScale } = useWindowDimensions();
-  const buttonStyles = tickButtonStyles(tickActionHeight(fontScale));
+  // Memoized: `Button` is a native host, so a fresh style object every render is
+  // a fresh prop on both of them.
+  const buttonStyles = useMemo(() => tickButtonStyles(tickActionHeight(fontScale)), [fontScale]);
 
   return (
     <View>
