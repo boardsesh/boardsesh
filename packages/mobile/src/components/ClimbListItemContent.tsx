@@ -4,6 +4,12 @@ import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
 import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from './ClimbListThumbnail';
+import {
+  COMPACT_THUMBNAIL_HEIGHT,
+  COMPACT_THUMBNAIL_WIDTH,
+  thumbnailSizeForDensity,
+  type ClimbListDensity,
+} from './climb-list-thumbnail-metrics';
 import { formatSends, formatQuality } from '../lib/format-climb-stats';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
 import { useDisplayGrade } from '../hooks/use-display-grade';
@@ -21,6 +27,10 @@ import type { AscentStatusValue } from '../lib/ascent-status-utils';
 // grey — not a colour — so it can't be mistaken for the colour-coded grade right
 // beside it, and so it stays readable for colour-blind users. ⚡ flashed,
 // ✓ sent, ✗ attempted.
+// Hoisted so the compact tier hands `ClimbListThumbnail` a referentially stable
+// `size` — a fresh object per render would break its `React.memo` on every row.
+const COMPACT_THUMBNAIL_SIZE = thumbnailSizeForDensity('compact');
+
 const ASCENT_STATUS_ICON: Record<AscentStatusValue, IconName> = {
   flash: 'flash',
   send: 'tick.outline',
@@ -118,6 +128,18 @@ type ClimbListItemContentProps = {
    * scroll past and nothing on the rest.
    */
   showFavorite?: boolean;
+  /**
+   * How much of the climb this row shows — the climbs list's user-selectable
+   * density (More → Climb list). Defaults to `'default'`, which is today's row
+   * byte-for-byte, so every OTHER surface that renders this visual (queue,
+   * session, logbook, playlist detail, profile climbs, board-presence, the
+   * actions-sheet preview card) is untouched by simply not passing it.
+   *
+   * - `compact` — 56×72 thumbnail, no subtitle, no playlist tags.
+   * - `default` — unchanged.
+   * - `rich` — the playlist tags always show, whatever `showPlaylistChips` says.
+   */
+  density?: ClimbListDensity;
 };
 
 /**
@@ -303,8 +325,22 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   gradeIsConsensus = false,
   showPlaylistChips = false,
   showFavorite = false,
+  density = 'default',
 }: ClimbListItemContentProps) {
   const { t: tSession } = useTranslation('session');
+
+  const isCompact = density === 'compact';
+  // Two StyleSheet entries picked by a ternary, not an inline object: an inline
+  // style would allocate a new object on every row render and defeat the memo
+  // boundaries below it.
+  const thumbnailContainerStyle = isCompact ? styles.compactThumbnailContainer : styles.thumbnailContainer;
+  // `size` is omitted (not computed) for the 76×96 tiers so the default row hands
+  // `ClimbListThumbnail` exactly the props it got before this prop existed.
+  const thumbnailSize = isCompact ? COMPACT_THUMBNAIL_SIZE : undefined;
+  // The rich tier IS the opt-in to the tag line, so it shows the tags whatever the
+  // "Show playlist tags" toggle says; that toggle still governs the default tier.
+  const isRich = density === 'rich';
+  const showChips = !isCompact && (isRich || showPlaylistChips);
 
   const subtitleDetailText = useMemo(() => {
     const parts = subtitleDetailParts?.filter((part) => part.length > 0) ?? [];
@@ -321,7 +357,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   if (!climb || !isClimbResolved(climb)) {
     return (
       <>
-        <View style={styles.thumbnailContainer} />
+        <View style={thumbnailContainerStyle} />
         <View style={styles.centerColumn}>
           <Text variant="body" numberOfLines={1} style={styles.climbName}>
             {tSession('mobile.queue.unknownClimb')}
@@ -335,7 +371,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   return (
     <>
       {/* Left: portrait thumbnail with ascent badge */}
-      <View style={styles.thumbnailContainer}>
+      <View style={thumbnailContainerStyle}>
         <ClimbListThumbnail
           frames={climb.frames}
           boardName={boardName}
@@ -343,6 +379,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           sizeId={sizeId}
           setIds={setIds}
           mirrored={climb.mirrored ?? false}
+          size={thumbnailSize}
         />
       </View>
 
@@ -358,7 +395,10 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             isNoMatch={climb.is_no_match}
           />
         </View>
-        {primarySubtitleOverride === undefined ? (
+        {/* Compact drops the whole subtitle line — and with it `LiveClimbSubtitle`'s
+            per-row `useEffectiveClimbStats` subscription, so a compact row costs
+            strictly less than a default one rather than just looking smaller. */}
+        {isCompact ? null : primarySubtitleOverride === undefined ? (
           <LiveClimbSubtitle
             boardName={boardName}
             layoutId={layoutId}
@@ -374,12 +414,12 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             {primarySubtitleOverride}
           </Text>
         ) : null}
-        {subtitleDetailText ? (
+        {subtitleDetailText && !isCompact ? (
           <Text variant="caption1" numberOfLines={1} style={styles.subtitle}>
             {subtitleDetailText}
           </Text>
         ) : null}
-        {showPlaylistChips ? <ClimbPlaylistChips climbUuid={climb.uuid} /> : null}
+        {showChips ? <ClimbPlaylistChips climbUuid={climb.uuid} forceVisible={isRich} /> : null}
       </View>
 
       {/* Right: favourite heart + ascent-status glyph + colorized grade */}
@@ -405,6 +445,15 @@ const styles = StyleSheet.create({
   thumbnailContainer: {
     width: THUMBNAIL_WIDTH,
     height: THUMBNAIL_HEIGHT,
+    flexShrink: 0,
+    position: 'relative',
+  },
+  // The compact tier's cell. This is what actually shrinks the row: 72 + 8 + 8 of
+  // padding = an 88pt row, against the default's 96 + 16 = 112pt. Dropping text
+  // lines alone would save nothing, because the thumbnail is the tallest child.
+  compactThumbnailContainer: {
+    width: COMPACT_THUMBNAIL_WIDTH,
+    height: COMPACT_THUMBNAIL_HEIGHT,
     flexShrink: 0,
     position: 'relative',
   },

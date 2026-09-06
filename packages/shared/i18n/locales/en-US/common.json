@@ -320,6 +320,13 @@
         "font": "French",
         "both": "Both"
       },
+      "climbListDensity": {
+        "title": "Climb list",
+        "description": "Compact fits more climbs on screen. Rich adds playlist tags under each climb.",
+        "compact": "Compact",
+        "standard": "Standard",
+        "rich": "Rich"
+      },
       "displayOptions": {
         "title": "Display",
         "playlistTags": "Show playlist tags",
