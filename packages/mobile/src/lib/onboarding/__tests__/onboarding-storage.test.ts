@@ -25,6 +25,7 @@ import {
   hasSeenTip,
   markOnboardingSeen,
   markTipSeen,
+  recordTipVisit,
   replayOnboarding,
   setBoardRevealTipPending,
 } from '../onboarding-storage';
@@ -165,6 +166,38 @@ describe('onboarding storage', () => {
       setMock.mockResolvedValue(undefined);
       await markTipSeen(ONBOARDING_TIP_WORKOUT_KEY);
       expect(setMock).toHaveBeenCalledWith(ONBOARDING_TIP_WORKOUT_KEY, true);
+    });
+  });
+
+  describe('tip visit counter', () => {
+    it('counts the first visit from an absent key', async () => {
+      getMock.mockResolvedValue(null);
+      setMock.mockResolvedValue(undefined);
+      await expect(recordTipVisit(ONBOARDING_TIP_WORKOUT_KEY, 3)).resolves.toBe(1);
+      expect(setMock).toHaveBeenCalledWith(ONBOARDING_TIP_WORKOUT_KEY, 1);
+    });
+
+    it('increments a stored count', async () => {
+      getMock.mockResolvedValue(1);
+      setMock.mockResolvedValue(undefined);
+      await expect(recordTipVisit(ONBOARDING_TIP_WORKOUT_KEY, 3)).resolves.toBe(2);
+    });
+
+    it('stops writing once the cap is reached', async () => {
+      getMock.mockResolvedValue(3);
+      await expect(recordTipVisit(ONBOARDING_TIP_WORKOUT_KEY, 3)).resolves.toBe(3);
+      expect(setMock).not.toHaveBeenCalled();
+    });
+
+    it('ignores a garbage stored value rather than counting NaN visits', async () => {
+      getMock.mockResolvedValue('lots');
+      setMock.mockResolvedValue(undefined);
+      await expect(recordTipVisit(ONBOARDING_TIP_WORKOUT_KEY, 3)).resolves.toBe(1);
+    });
+
+    it('reports zero visits on a store error, so the tip stays quiet', async () => {
+      getMock.mockRejectedValue(new Error('keychain unavailable'));
+      await expect(recordTipVisit(ONBOARDING_TIP_WORKOUT_KEY, 3)).resolves.toBe(0);
     });
   });
 });
