@@ -168,8 +168,8 @@
       "note": "Los números de presa y los ángulos de los tornillos salen de la propia distribución de Kilter. Todavía estamos consultando con abogados si podemos incluirlos, así que déjalos desactivados si prefieres no esperar a esa respuesta."
     },
     "artwork": {
-      "heading": "Texto personalizado",
-      "help": "Graba tus propias palabras en un panel: un nombre, una fecha, el nombre de tu rocódromo. Hasta {{count}} etiquetas, y comprobamos cada una contra la retícula de agujeros antes de que compres.",
+      "heading": "Texto y logos personalizados",
+      "help": "Graba tus propias palabras en un panel, o sube un logo. Hasta {{count}} elementos, y comprobamos cada uno contra la retícula de agujeros antes de que compres.",
       "add": "Añadir una etiqueta",
       "remove": "Quitar",
       "itemLabel": "Etiqueta {{number}}",
@@ -226,6 +226,27 @@
         "cut_through_keepout": "Un corte pasante necesita más espacio alrededor de los agujeros del que tiene esta.",
         "crosses_seam": "Esta pasa de un panel a otro, así que quedaría partida.",
         "unknown": "Esta no se puede fresar donde está."
+      },
+      "upload": {
+        "button": "Subir un logo",
+        "busy": "Subiendo…",
+        "help": "SVG, hasta 5 MB. Convierte los trazos a contornos primero: cortamos la propia línea, no alrededor de ella.",
+        "signIn": "Inicia sesión para subir un logo.",
+        "previewAlt": "Tu logo subido",
+        "stored": "Tu logo subido",
+        "errors": {
+          "tooLarge": "Ese archivo es demasiado grande. El máximo son 5 MB.",
+          "unsupportedType": "No hemos podido leerlo como dibujo. Vuelve a exportarlo como SVG simple.",
+          "unsafeDrawing": "Ese dibujo hace algo que no vamos a cortar: un script, una fuente enlazada, una imagen externa. Vuelve a exportarlo como SVG simple.",
+          "noViewBox": "Ese dibujo no tiene viewBox, así que no hay con qué dimensionarlo. Vuelve a exportarlo desde tu editor.",
+          "tooComplex": "Ese dibujo tiene más detalle del que una fresa puede seguir. Simplifica los trazados e inténtalo otra vez.",
+          "imageTooSmall": "Esa imagen es demasiado pequeña para vectorizarla. El mínimo son 64 píxeles por lado.",
+          "imageTooLarge": "Esa imagen es demasiado grande para vectorizarla. El máximo son 4096 píxeles por lado.",
+          "unreadableImage": "No hemos podido abrir esa imagen. Vuelve a exportarla como PNG.",
+          "rateLimited": "Son muchas subidas. Espera unos minutos e inténtalo otra vez.",
+          "unavailable": "Las subidas no funcionan ahora mismo. No se ha cobrado nada. Inténtalo en un momento.",
+          "generic": "Esa subida no ha salido. Inténtalo otra vez."
+        }
       }
     },
     "summary": {

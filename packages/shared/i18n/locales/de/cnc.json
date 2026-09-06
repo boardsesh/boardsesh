@@ -168,8 +168,8 @@
       "note": "Griffnummern und Madenschrauben-Winkel stammen aus Kilters eigenem Layout. Wir klären rechtlich noch, ob wir sie mitliefern dürfen. Lass sie also aus, wenn du auf diese Antwort nicht warten willst."
     },
     "artwork": {
-      "heading": "Eigener Text",
-      "help": "Fräse deine eigenen Worte in ein Panel: einen Namen, ein Datum, den Namen deiner Halle. Bis zu {{count}} Beschriftungen, und wir prüfen jede gegen das Lochraster, bevor du kaufst.",
+      "heading": "Eigener Text und Logos",
+      "help": "Fräse deine eigenen Worte in ein Panel oder lade ein Logo hoch. Bis zu {{count}} Elemente, und wir prüfen jedes gegen das Lochraster, bevor du kaufst.",
       "add": "Beschriftung hinzufügen",
       "remove": "Entfernen",
       "itemLabel": "Beschriftung {{number}}",
@@ -226,6 +226,27 @@
         "cut_through_keepout": "Durchgefräst braucht mehr Platz um die Löcher, als diese hat.",
         "crosses_seam": "Diese geht über zwei Panels, sie würde in zwei Teile geschnitten.",
         "unknown": "Diese lässt sich dort nicht fräsen."
+      },
+      "upload": {
+        "button": "Logo hochladen",
+        "busy": "Wird hochgeladen…",
+        "help": "SVG, bis 5 MB. Wandle Striche vorher in Konturen um — wir fräsen den Pfad selbst, nicht darum herum.",
+        "signIn": "Melde dich an, um ein Logo hochzuladen.",
+        "previewAlt": "Dein hochgeladenes Logo",
+        "stored": "Dein hochgeladenes Logo",
+        "errors": {
+          "tooLarge": "Die Datei ist zu groß. Mehr als 5 MB geht nicht.",
+          "unsupportedType": "Das konnten wir nicht als Zeichnung lesen. Exportiere es noch einmal als einfaches SVG.",
+          "unsafeDrawing": "Diese Zeichnung macht etwas, das wir nicht fräsen: ein Skript, eine verlinkte Schrift, ein externes Bild. Exportiere sie noch einmal als einfaches SVG.",
+          "noViewBox": "Diese Zeichnung hat keine viewBox, also gibt es nichts, woran wir sie messen. Exportiere sie neu aus deinem Editor.",
+          "tooComplex": "Diese Zeichnung hat mehr Details, als eine Fräse abfahren kann. Vereinfache die Pfade und versuch es noch einmal.",
+          "imageTooSmall": "Dieses Bild ist zu klein zum Nachzeichnen. 64 Pixel pro Seite sind das Minimum.",
+          "imageTooLarge": "Dieses Bild ist zu groß zum Nachzeichnen. 4096 Pixel pro Seite sind das Maximum.",
+          "unreadableImage": "Wir konnten dieses Bild nicht öffnen. Exportiere es noch einmal als PNG.",
+          "rateLimited": "Das sind viele Uploads. Warte ein paar Minuten und versuch es noch einmal.",
+          "unavailable": "Uploads gehen gerade nicht. Es wurde nichts abgebucht. Versuch es gleich noch einmal.",
+          "generic": "Der Upload hat nicht geklappt. Versuch es noch einmal."
+        }
       }
     },
     "summary": {
