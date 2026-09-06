@@ -243,6 +243,30 @@ describe('POST /api/cnc/stripe/webhook', () => {
     expect(res.statusCode).toBe(405);
   });
 
+  it('is unmounted, not broken, when the webhook secret is unset: 404', async () => {
+    // Unmounted rather than 500: an operator wiring the endpoint up should see
+    // "this route is not here" and go looking for the env var, not a stack
+    // trace that reads like our bug. Signing the body proves the 404 is the
+    // configuration check and not the signature check firing early.
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    resetStripeClientForTests();
+    try {
+      const { body, headers } = signed({ id: 'evt_test_unconfigured', type: 'checkout.session.completed' });
+      const res = makeResponse();
+
+      await handleCncStripeWebhook(makeRequest(body, headers), res as unknown as ServerResponse);
+
+      expect(res.statusCode).toBe(404);
+      // Nothing was recorded: an unmounted route must not consume the event id,
+      // or the redelivery after the env is fixed would be eaten as a duplicate.
+      const [recorded] = await db.select().from(cncStripeEvents).where(eq(cncStripeEvents.id, 'evt_test_unconfigured'));
+      expect(recorded).toBeUndefined();
+    } finally {
+      process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+      resetStripeClientForTests();
+    }
+  });
+
   it('queues a paid order and stamps when it was paid', async () => {
     const order = await createOrder();
     const event = completedEvent(order);
