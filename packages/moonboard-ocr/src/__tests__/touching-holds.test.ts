@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { detectHoldsFromPixelData } from '../core/holds';
+import { detectHoldsFromPixelData, findCircleCenters } from '../core/holds';
 import type { RawPixelData } from '../image-processor/types';
 
 function outlinedCircles(centers: [number, number][], color: [number, number, number]): RawPixelData {
@@ -73,6 +73,24 @@ describe('touching MoonBoard hold outlines', () => {
     const pixels = outlinedCircles(centers as [number, number][], color as [number, number, number]);
     const holds = detectHoldsFromPixelData(pixels, { x: 0, y: 0, width: pixels.width, height: pixels.height });
     expect(holds.map((hold) => hold.coordinate).sort()).toEqual(expected);
+    expect(holds).toHaveLength(expected.length);
     expect(holds.every((hold) => hold.type === role)).toBe(true);
+  });
+
+  it('keeps near-miss outlines separate at 1.4 cells of center spacing', () => {
+    const pixels = outlinedCircles(
+      [
+        [330, 870],
+        [414, 870],
+      ],
+      [0, 255, 0],
+    );
+    const centers = findCircleCenters(pixels);
+    expect(centers.map(({ x, y }) => [x, y])).toEqual([
+      [330, 870],
+      [414, 870],
+    ]);
+    expect(centers).toHaveLength(2);
+    expect(centers.every((center) => center.type === 'start')).toBe(true);
   });
 });
