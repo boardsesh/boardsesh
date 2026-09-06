@@ -65,7 +65,7 @@ vi.mock('../../../providers/theme-provider', async () => {
 });
 
 import { TickActionBar } from '../TickActionBar';
-import { TICK_ACTION_HEIGHT, TICK_ERROR_SLOT_HEIGHT, TICK_STACK_FONT_SCALE } from '../tick-sheet-metrics';
+import { TICK_ACTION_HEIGHT, TICK_ERROR_SLOT_HEIGHT, tickActionHeight } from '../tick-sheet-metrics';
 import { brandColors } from '../../../theme/colors';
 
 function renderBar(props: Partial<Parameters<typeof TickActionBar>[0]> = {}) {
@@ -150,13 +150,15 @@ describe('TickActionBar', () => {
     expect(buttonStyle('Send').height).toBe(TICK_ACTION_HEIGHT);
   });
 
-  it('drops the pinned height above the stack text scale, rather than clip a big label', () => {
-    screen.fontScale = TICK_STACK_FONT_SCALE + 0.1;
+  it('grows the shared height with the OS text scale, and still shares it', () => {
+    screen.fontScale = 2;
     renderBar({ secondary: { title: 'Attempt', onPress: vi.fn() } });
 
-    expect(buttonStyle('Attempt').height).toBeUndefined();
-    expect(buttonStyle('Send').height).toBeUndefined();
-    // The flex split is not what Dynamic Type relaxes.
+    const grown = tickActionHeight(2);
+    expect(grown).toBeGreaterThan(TICK_ACTION_HEIGHT);
+    expect(buttonStyle('Attempt').height).toBe(grown);
+    expect(buttonStyle('Send').height).toBe(grown);
+    // The flex split is not what the text scale moves.
     expect(buttonStyle('Attempt').flex).toBe(1);
     expect(buttonStyle('Send').flex).toBe(2);
   });

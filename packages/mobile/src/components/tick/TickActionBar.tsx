@@ -17,7 +17,7 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import type { IconName } from '../icon-map';
-import { TICK_ACTION_HEIGHT, TICK_ERROR_SLOT_HEIGHT, TICK_STACK_FONT_SCALE } from './tick-sheet-metrics';
+import { TICK_ACTION_HEIGHT, TICK_ERROR_SLOT_HEIGHT, tickActionHeight } from './tick-sheet-metrics';
 
 const ERROR_ICON_SIZE = 13;
 
@@ -45,7 +45,7 @@ type TickActionBarProps = {
 export const TickActionBar = React.memo(function TickActionBar({ primary, secondary, error }: TickActionBarProps) {
   const { brandColors, spacing } = useTheme();
   const { fontScale } = useWindowDimensions();
-  const buttonStyles = tickButtonStyles(fontScale);
+  const buttonStyles = tickButtonStyles(tickActionHeight(fontScale));
 
   return (
     <View>
@@ -117,19 +117,11 @@ const styles = StyleSheet.create({
 });
 
 /**
- * The two buttons' styles. Both carry the SAME pinned height, because the tonal
- * Attempt and the filled Send are different native controls and each derives its
- * own padding — left to measure themselves they land ~7pt apart and the row
- * reads crooked. The 1:2 flex split makes the defining action the bigger object;
- * a lone primary fills the bar instead of hugging its label.
- *
- * Above the same OS text scale where a tick row stacks, the height is dropped: a
- * label that big needs more room than 56pt leaves, and two buttons of matching
- * height are not worth a clipped one. The row's `minHeight` still holds the
- * floor.
+ * The two buttons' styles: one shared height (see `tickActionHeight`), and the
+ * 1:2 flex split that makes the defining action the bigger object. A lone
+ * primary takes the whole bar instead of hugging its label.
  */
-function tickButtonStyles(fontScale: number) {
-  const height = fontScale > TICK_STACK_FONT_SCALE ? undefined : TICK_ACTION_HEIGHT;
+function tickButtonStyles(height: number) {
   return {
     secondary: { flex: 1, height },
     primaryPaired: { flex: 2, height },

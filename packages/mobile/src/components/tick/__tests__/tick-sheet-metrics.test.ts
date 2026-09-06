@@ -14,6 +14,7 @@ import {
   CREATE_TICK_SNAP_POINTS,
   EDIT_TICK_SNAP_POINTS,
   TICK_ACTION_HEIGHT,
+  TICK_ACTION_LABEL_HEIGHT,
   TICK_ANGLE_ROW_HEIGHT,
   TICK_CONTROL_ORIGIN,
   TICK_GUTTER,
@@ -22,6 +23,7 @@ import {
   TICK_LABEL_MIN_WIDTH,
   TICK_RAIL_ROW_HEIGHT,
   TICK_ROW_HEIGHT,
+  tickActionHeight,
 } from '../tick-sheet-metrics';
 
 function percentToNumber(snapPoint: string): number {
@@ -56,5 +58,30 @@ describe('tick sheet metrics', () => {
       expect(percentToNumber(snapPoints[0])).toBeLessThan(percentToNumber(snapPoints[1]));
       expect(snapPoints[1]).toBe('92%');
     }
+  });
+});
+
+// The action row pins ONE height across two different native controls, so this
+// value is the whole reason the tonal Attempt and the filled Send line up. It has
+// to hold at every text scale: a button that only sometimes carries a height
+// would flip `Host`'s `matchContents` mid-life, and nothing else sizes that axis.
+describe('tickActionHeight', () => {
+  it('is the hero height at the default text size', () => {
+    expect(tickActionHeight(1)).toBe(TICK_ACTION_HEIGHT);
+  });
+
+  it('never goes below the hero floor, however small the text', () => {
+    expect(tickActionHeight(0.85)).toBe(TICK_ACTION_HEIGHT);
+  });
+
+  it('grows by the label line alone, not by the whole button', () => {
+    // A native button's padding does not scale, so doubling the text adds one
+    // more line — not another 56pt.
+    expect(tickActionHeight(2)).toBe(TICK_ACTION_HEIGHT + TICK_ACTION_LABEL_HEIGHT);
+    expect(tickActionHeight(3)).toBe(TICK_ACTION_HEIGHT + TICK_ACTION_LABEL_HEIGHT * 2);
+  });
+
+  it('is a whole number of points at an awkward scale', () => {
+    expect(Number.isInteger(tickActionHeight(1.35))).toBe(true);
   });
 });
