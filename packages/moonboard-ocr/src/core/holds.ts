@@ -176,7 +176,9 @@ function enclosedCircleCenters(
     bottom = Math.max(bottom, pixel.y);
     outline.add(pixel.y * imageWidth + pixel.x);
   }
-  // Keep the existing centroid path for ordinary individual circles.
+  // Keep the centroid path only when BOTH dimensions fit an individual circle.
+  // A horizontal pair expands width alone; a vertical pair expands height alone.
+  // Either dimension reaching 1.4 cells must therefore reach the interior scan.
   if (right - left < cellWidth * 1.4 && bottom - top < cellHeight * 1.4) return [];
 
   const visited = new Set<number>();
@@ -255,6 +257,8 @@ export function findCircleCenters(pixelData: RawPixelData): CircleCenter[] {
 
       if (component.length >= minPixels) {
         const enclosed = enclosedCircleCenters(component, width, width / 11, height / 18);
+        // The helper currently returns zero or >=2 centers. Keep the >=2 guard
+        // explicit: one interior must not replace the ordinary centroid path.
         if (enclosed.length > 1) {
           circles.push(
             ...enclosed.map((center) => ({
