@@ -118,6 +118,17 @@ const readProposals = () =>
     .where(eq(dbSchema.climbProposals.climbUuid, CLIMB_UUID))
     .orderBy(dbSchema.climbProposals.id);
 
+/**
+ * Pin an approved proposal's `resolved_at` to a fixed instant.
+ *
+ * `resolveProposal` stamps `resolved_at` from JS, at millisecond precision, so a
+ * chain of resolutions inside one test can land on the same millisecond and
+ * leave "the latest OTHER approved hide decision" for Postgres to break
+ * arbitrarily. Pinning the earlier links keeps the order the revert reads.
+ */
+const pinResolvedAt = (proposalUuid: string, resolvedAt: Date) =>
+  db.update(dbSchema.climbProposals).set({ resolvedAt }).where(eq(dbSchema.climbProposals.uuid, proposalUuid));
+
 const readVotes = (proposalId: number) =>
   db.select().from(dbSchema.proposalVotes).where(eq(dbSchema.proposalVotes.proposalId, proposalId));
 
@@ -398,6 +409,81 @@ describe('reportClimb', () => {
     const climb = await readClimbHiddenState();
     expect(climb.isHidden).toBe(false);
     expect(climb.hiddenAt).toBeNull();
+  });
+
+  it('reverting the newest hide restores the unhide that preceded it (three-step chain)', async () => {
+    // Three approved hide decisions stacked up: hidden, visible again, hidden
+    // again. Deleting the newest one has to fall back to the decision directly
+    // behind it — the unhide — and deleting that one in turn has to fall back
+    // to the original hide. Only the second half separates "reads the chain"
+    // from "reverts a hide by making the climb visible", which would pass the
+    // first half on its own.
+    await grantAdmin(ADMIN);
+
+    // Admin weight is 3 against a threshold of 5, so nothing auto-approves:
+    // every step below is a moderator decision through resolveProposal.
+    const firstHide = await createHideProposal(ADMIN);
+    expect(firstHide.status).toBe('open');
+    await socialProposalMutations.resolveProposal(
+      null,
+      { input: { proposalUuid: firstHide.uuid, status: 'approved' } },
+      authCtx(ADMIN),
+    );
+    expect((await readClimbHiddenState()).isHidden).toBe(true);
+    await pinResolvedAt(firstHide.uuid, new Date('2026-01-01T00:00:00.000Z'));
+
+    const unhide = await createHideProposal(ADMIN, {
+      proposedValue: 'false',
+      reason: 'The holds were replaced, this one climbs fine again.',
+    });
+    await socialProposalMutations.resolveProposal(
+      null,
+      { input: { proposalUuid: unhide.uuid, status: 'approved' } },
+      authCtx(ADMIN),
+    );
+    const afterUnhide = await readClimbHiddenState();
+    expect(afterUnhide.isHidden).toBe(false);
+    expect(afterUnhide.hiddenAt).toBeNull();
+    await pinResolvedAt(unhide.uuid, new Date('2026-02-01T00:00:00.000Z'));
+
+    const secondHide = await createHideProposal(ADMIN);
+    await socialProposalMutations.resolveProposal(
+      null,
+      { input: { proposalUuid: secondHide.uuid, status: 'approved' } },
+      authCtx(ADMIN),
+    );
+    expect((await readClimbHiddenState()).isHidden).toBe(true);
+
+    const deletedNewest = await socialProposalMutations.deleteProposal(
+      null,
+      { input: { proposalUuid: secondHide.uuid } },
+      authCtx(ADMIN),
+    );
+
+    expect(deletedNewest).toBe(true);
+    const revertedClimb = await readClimbHiddenState();
+    expect(revertedClimb.isHidden).toBe(false);
+    expect(revertedClimb.hiddenAt).toBeNull();
+
+    // Only the deleted row is gone; the two decisions behind it still stand.
+    const remaining = await readProposals();
+    expect(remaining).toHaveLength(2);
+    expect(remaining.map((proposal) => proposal.uuid)).toEqual([firstHide.uuid, unhide.uuid]);
+    expect(remaining.map((proposal) => proposal.status)).toEqual(['approved', 'approved']);
+    expect(remaining.map((proposal) => proposal.proposedValue)).toEqual(['true', 'false']);
+
+    // One link further back: with the unhide gone too, the original hide is the
+    // latest decision left, so the climb goes back to hidden and carries that
+    // proposal's own resolution time rather than a fresh timestamp.
+    expect(
+      await socialProposalMutations.deleteProposal(null, { input: { proposalUuid: unhide.uuid } }, authCtx(ADMIN)),
+    ).toBe(true);
+
+    const [survivingHide] = await readProposals();
+    expect(survivingHide.uuid).toBe(firstHide.uuid);
+    const rehiddenClimb = await readClimbHiddenState();
+    expect(rehiddenClimb.isHidden).toBe(true);
+    expect(rehiddenClimb.hiddenAt).toEqual(survivingHide.resolvedAt);
   });
 
   it('joins a grade report asking for the same grade', async () => {
