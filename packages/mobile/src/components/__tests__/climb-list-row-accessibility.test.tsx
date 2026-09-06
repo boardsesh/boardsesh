@@ -114,9 +114,12 @@ vi.mock('../use-swipe-arm', () => ({
 
 vi.mock('../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
 
+// Renders `trailingAccessory` because the real component does: the ⋮ lives in
+// the trailing rail, stacked under the grade, rather than as its own column in
+// the row. A stub that dropped it would hide the button these tests assert on.
 vi.mock('../ClimbListItemContent', () => ({
-  ClimbListItemContent: ({ climb }: { climb?: { name?: string } }) =>
-    createElement('span', { 'data-climb-name': climb?.name ?? '' }),
+  ClimbListItemContent: ({ climb, trailingAccessory }: { climb?: { name?: string }; trailingAccessory?: unknown }) =>
+    createElement('span', { 'data-climb-name': climb?.name ?? '' }, trailingAccessory as never),
 }));
 
 vi.mock('../climb-list-row-styles', () => ({

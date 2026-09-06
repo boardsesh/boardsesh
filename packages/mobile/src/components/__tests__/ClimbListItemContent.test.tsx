@@ -200,3 +200,53 @@ describe('ClimbListItemContent favourite heart', () => {
     expect(heart(container)).toBeNull();
   });
 });
+
+describe('ClimbListItemContent trailing rail', () => {
+  beforeEach(() => {
+    favoritesStore.reset();
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+  });
+
+  const render_ = (props: Record<string, unknown> = {}) =>
+    render(
+      <ClimbListItemContent
+        climb={baseClimb}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        {...props}
+      />,
+    );
+
+  it('renders a trailing accessory inside the rail, not as a column of its own', () => {
+    const { container } = render_({ trailingAccessory: createElement('i', { 'data-testid': 'more' }) });
+    expect(container.querySelector('[data-testid="more"]')).not.toBeNull();
+  });
+
+  it('renders nothing extra when no accessory is supplied', () => {
+    const { container } = render_();
+    expect(container.querySelector('[data-testid="more"]')).toBeNull();
+  });
+
+  // "V10 / 7C+" needs ~88pt at title3 — more than the rail holds once the status
+  // glyphs are in it — so it used to overflow the row and paint over the name.
+  it('stacks a two-scale grade onto two lines', () => {
+    resolveGrade.mockReturnValue({ label: 'V10 / 7C+', color: '#abcdef', isBoardsesh: false });
+    const { container } = render_();
+
+    const primary = container.querySelector('[data-variant="title3"]');
+    const secondary = container.querySelector('[data-variant="caption2"]');
+    expect(primary?.textContent).toBe('V10');
+    expect(secondary?.textContent).toBe('7C+');
+  });
+
+  it('leaves a single-scale grade on one line', () => {
+    resolveGrade.mockReturnValue({ label: 'V10', color: '#abcdef', isBoardsesh: false });
+    const { container } = render_();
+
+    expect(container.querySelector('[data-variant="title3"]')?.textContent).toBe('V10');
+    expect(container.querySelector('[data-variant="caption2"]')).toBeNull();
+  });
+});

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -12,10 +12,24 @@ import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { ClimbPlaylistChips } from './ClimbPlaylistChips';
+import { splitGradeLabel } from '@boardsesh/play-view';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
 import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
 import type { IconName } from './icon-map';
 import type { AscentStatusValue } from '../lib/ascent-status-utils';
+
+/**
+ * Fixed width of the trailing rail when `stableRail` is on: two 16pt status
+ * slots, their 6pt gaps, and 44pt for the grade.
+ *
+ * Reserving the status slots costs a plain row ~44pt, and buys the list ONE
+ * truncation edge. Without it the rail is 40 / 62 / 84pt depending on whether
+ * that particular climb is favourited and/or ticked — the glyphs return null
+ * and a missing child emits no flex gap — so names cut at three different x
+ * positions down a single screen, and the rows that lose the most are the
+ * favourited-and-tried ones the climber cares about most.
+ */
+const STABLE_RAIL_WIDTH = 88;
 
 // Scan-line status marker. Status is carried by glyph SHAPE in a single neutral
 // grey — not a colour — so it can't be mistaken for the colour-coded grade right
@@ -118,6 +132,19 @@ type ClimbListItemContentProps = {
    * scroll past and nothing on the rest.
    */
   showFavorite?: boolean;
+  /**
+   * Pin the trailing rail to a constant width so every row in the list
+   * truncates at the same x. Opt-in: surfaces with a tighter budget than the
+   * climbs list (`QueueItemRow` runs a ~97pt text column) would rather have the
+   * variable rail's extra room than the alignment.
+   */
+  stableRail?: boolean;
+  /**
+   * Rendered UNDER the grade, inside the trailing rail, spending the vertical
+   * space the rail already occupies rather than taking another 56pt of the text
+   * column. The climbs list puts its ⋮ quick-actions button here.
+   */
+  trailingAccessory?: ReactNode;
 };
 
 /**
@@ -257,14 +284,26 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
     difficulty: liveStats.difficulty,
   });
 
+  // A "both" preference renders as "V10 / 7C+", which needs ~88pt at title3 —
+  // more than the rail has once the status glyphs are in it, so the label
+  // overflowed the row and painted over the name. Stack the two scales instead,
+  // spending the rail's unused height. `splitGradeLabel` returns a single
+  // element for the one-scale formats, so those rows are unchanged.
+  const gradeLines = splitGradeLabel(formattedGrade);
+
   return (
     <View style={styles.gradeColumn}>
       <View style={styles.iconGradeRow}>
         {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
         <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
-          {formattedGrade}
+          {gradeLines[0] ?? formattedGrade}
         </Text>
       </View>
+      {gradeLines.length > 1 ? (
+        <Text variant="caption2" numberOfLines={1} style={[styles.gradeSecondaryText, { color: gradeColor }]}>
+          {gradeLines[1]}
+        </Text>
+      ) : null}
       {consensusGrade ? (
         <View style={styles.iconGradeRow}>
           <Icon name="people" size={11} color={systemColors.secondaryLabel} />
@@ -303,6 +342,8 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   gradeIsConsensus = false,
   showPlaylistChips = false,
   showFavorite = false,
+  stableRail = false,
+  trailingAccessory,
 }: ClimbListItemContentProps) {
   const { t: tSession } = useTranslation('session');
 
@@ -327,7 +368,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             {tSession('mobile.queue.unknownClimb')}
           </Text>
         </View>
-        <View style={styles.rightSection} />
+        <View style={[styles.rightSection, stableRail && styles.rightSectionStable]} />
       </>
     );
   }
@@ -382,18 +423,22 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
         {showPlaylistChips ? <ClimbPlaylistChips climbUuid={climb.uuid} /> : null}
       </View>
 
-      {/* Right: favourite heart + ascent-status glyph + colorized grade */}
-      <View style={styles.rightSection}>
-        {showFavorite ? <FavoriteGlyph climbUuid={climb.uuid} /> : null}
-        {showAscentStatus ? <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} /> : null}
-        <LiveClimbGrade
-          climb={climb}
-          boardName={boardName}
-          layoutId={layoutId}
-          angle={angle}
-          gradeIsConsensus={gradeIsConsensus}
-          consensusGrade={consensusGrade}
-        />
+      {/* Right rail: status glyphs + colorized grade, with any trailing
+          accessory stacked beneath them in the rail's own vertical space. */}
+      <View style={[styles.rightSection, stableRail && styles.rightSectionStable]}>
+        <View style={styles.railPrimaryRow}>
+          {showFavorite ? <FavoriteGlyph climbUuid={climb.uuid} /> : null}
+          {showAscentStatus ? <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} /> : null}
+          <LiveClimbGrade
+            climb={climb}
+            boardName={boardName}
+            layoutId={layoutId}
+            angle={angle}
+            gradeIsConsensus={gradeIsConsensus}
+            consensusGrade={consensusGrade}
+          />
+        </View>
+        {trailingAccessory}
       </View>
     </>
   );
@@ -429,19 +474,35 @@ const styles = StyleSheet.create({
   },
   rightSection: {
     flexShrink: 0,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  rightSectionStable: {
+    width: STABLE_RAIL_WIDTH,
+  },
+  railPrimaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
+    alignSelf: 'stretch',
     gap: 6,
   },
   gradeText: {
     fontWeight: '700',
-    minWidth: 40,
     textAlign: 'right',
   },
+  // Takes the rail width the status glyphs don't, so a long label (`≈V16+`, or
+  // either half of a stacked V/font pair) gets the whole rail on a row with no
+  // glyphs instead of being held to a 40pt minimum and overflowing.
   gradeColumn: {
+    flexShrink: 1,
+    minWidth: 40,
     alignItems: 'flex-end',
     gap: 1,
+  },
+  gradeSecondaryText: {
+    fontWeight: '700',
   },
   iconGradeRow: {
     flexDirection: 'row',

@@ -127,3 +127,36 @@ describe('ClimbAttributeIcons', () => {
     expect(badgeTexts(container)).toEqual(['mobile.climbRow.campus · mobile.climbRow.noKickboard']);
   });
 });
+
+describe('ClimbAttributeIcons no-kickboard duplication', () => {
+  const textOf = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('span'))
+      .map((node) => node.textContent ?? '')
+      .filter((text) => text.length > 0);
+
+  // `no_kickboard` and `method_no_kickboard` are independent tokens and a climb
+  // can carry both. In en/es/fr the two strings are identical, so the row read
+  // "No KB  No KB".
+  it('names the no-kickboard rule once when a climb carries both tokens', () => {
+    const { container } = render(<ClimbAttributeIcons characteristics={['method_no_kickboard', 'no_kickboard']} />);
+
+    const labels = textOf(container).filter((text) => text.includes('noKickboard'));
+    expect(labels).toHaveLength(1);
+  });
+
+  it('still shows the standalone no-kickboard badge without the method token', () => {
+    const { container } = render(<ClimbAttributeIcons characteristics={['no_kickboard']} />);
+
+    expect(textOf(container).some((text) => text.includes('mobile.climbRow.noKickboard'))).toBe(true);
+  });
+
+  it('keeps a different method badge alongside the no-kickboard badge', () => {
+    const { container } = render(
+      <ClimbAttributeIcons characteristics={['method_footless_kickboard', 'no_kickboard']} />,
+    );
+    const labels = textOf(container);
+
+    expect(labels.some((text) => text.includes('method.footlessKickboard'))).toBe(true);
+    expect(labels.some((text) => text.includes('mobile.climbRow.noKickboard'))).toBe(true);
+  });
+});
