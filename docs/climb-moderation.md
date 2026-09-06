@@ -70,6 +70,16 @@ A frozen climb refuses reports like it refuses proposals.
 
 ---
 
+### Why the reason is stored twice
+
+`reportClimb` writes the reporter's reason to `climb_proposals.reason` **and** as a comment on the
+proposal. The column is the proposal's own headline (what the web card, the feed card and the
+notification enrichment read without a join); the comment thread is the record every reporter
+appends to, so "who said what" is one list. Nothing edits either after the fact — comments on a
+proposal have no edit path in the app, and `reason` is only ever overwritten by `resolveProposal`
+when a moderator supplies a resolution note. If you add an edit path, update both or drop the
+column; do not rationalise one away without the other.
+
 ## Approval
 
 Reports use the same threshold as every other proposal: **5 weighted upvotes**, with vote weight from

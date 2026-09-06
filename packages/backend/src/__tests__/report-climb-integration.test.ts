@@ -177,7 +177,7 @@ describe('reportClimb', () => {
     mockNotifyClimbRevalidated.mockClear();
     mockPublishCommentEvent.mockClear();
 
-    await db.execute(sql`DELETE FROM "comments"`);
+    await db.execute(sql`DELETE FROM "comments" WHERE entity_type = 'proposal'`);
     await db.execute(sql`DELETE FROM "proposal_votes"`);
     await db.execute(sql`DELETE FROM "climb_community_status"`);
     await db.execute(sql`DELETE FROM "climb_classic_status"`);
