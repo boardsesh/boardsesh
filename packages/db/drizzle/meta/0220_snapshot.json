@@ -1,6 +1,6 @@
 {
-  "id": "49c8aabc-6c2c-42c7-9904-dc14c885dcab",
-  "prevId": "27778161-7aab-44fe-b96f-7210d91f122d",
+  "id": "b8551b64-980a-4b2f-a259-eaa3fbbcdb68",
+  "prevId": "a0a4f145-2c6a-4385-be00-e891001f3663",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1070,6 +1070,12 @@
         },
         "upstream_synced_at": {
           "name": "upstream_synced_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tick_graded_at": {
+          "name": "tick_graded_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false

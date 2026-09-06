@@ -1531,13 +1531,6 @@
     {
       "idx": 218,
       "version": "7",
-      "when": 1788733115534,
-      "tag": "0218_climb_reports_hide",
-      "breakpoints": true
-    },
-    {
-      "idx": 218,
-      "version": "7",
       "when": 1788733004919,
       "tag": "0218_add_tick_graded_at_to_board_climb_stats",
       "breakpoints": true
@@ -1547,6 +1540,13 @@
       "version": "7",
       "when": 1788733004920,
       "tag": "0219_backfill_tick_graded_climb_stats",
+      "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1788736783044,
+      "tag": "0220_climb_reports_hide",
       "breakpoints": true
     }
   ]
