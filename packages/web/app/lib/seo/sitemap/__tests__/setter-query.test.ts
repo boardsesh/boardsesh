@@ -10,8 +10,10 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/db/db', () => ({ dbzRead: drizzle({} as never) }));
 vi.mock('@/app/lib/server-popular-configs', () => ({ getAllBoardConfigsOrThrow: async () => [] }));
 
-const { SETTER_MIN_VISIBLE_CLIMBS, SETTER_PAGE_SIZE, buildSetterSitemapSql, setterRowsToItems } =
-  await import('../setter-query');
+// Straight from the module that owns them: `setter-query` used to re-export
+// these, which gave the same constant two import chains to drift along.
+const { SETTER_MIN_VISIBLE_CLIMBS, SETTER_PAGE_SIZE } = await import('../setter-page-contract');
+const { buildSetterSitemapSql, setterRowsToItems } = await import('../setter-query');
 
 const dialect = new PgDialect();
 
@@ -129,6 +131,14 @@ describe('the setters shard query', () => {
     // unchanged, but URL normalisation eats them: `/setter/.` collapses to
     // `/setter/` and `/setter/..` to `/`, so the entry never reaches the route.
     expect(normalised).toContain(`setter_username !~ '^[.]{1,2}$'`);
+
+    // C1 controls (U+0080-U+009F) are the ones the JS guard cannot catch:
+    // `encodeURIComponent` encodes them and `decodeURIComponent` round-trips
+    // them cleanly, so `setterRowsToItems` sees a valid username. Postgres
+    // `text` in UTF-8 holds them happily, unlike a lone surrogate. Only this
+    // predicate stands between one and a sitemap entry HTTP intermediaries
+    // handle inconsistently.
+    expect(raw).toContain(`\\x7F\\x80-\\x9F]`);
   });
 
   it('orders deterministically so a page is the same page between crawls', () => {

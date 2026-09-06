@@ -20,7 +20,6 @@ import { SETTER_MIN_VISIBLE_CLIMBS, SETTER_PAGE_SIZE } from './setter-page-contr
  * setter page is thin by construction. The page still serves 200 at one visible
  * climb on any board — this gate decides what we *push*, not what exists.
  */
-export { SETTER_MIN_VISIBLE_CLIMBS, SETTER_PAGE_SIZE } from './setter-page-contract';
 
 /** In-process TTL for the full item list; matches the shard's CDN freshness window. */
 const ITEMS_TTL_MS = 6 * 60 * 60 * 1000;
@@ -107,7 +106,7 @@ const routableUsername = sql`
   AND setter_username <> ''
   AND setter_username ~ '^\\S(.*\\S)?$'
   AND setter_username !~ '[/?#]'
-  AND setter_username !~ '[\\x00-\\x1F\\x7F]'
+  AND setter_username !~ '[\\x00-\\x1F\\x7F\\x80-\\x9F]'
   AND setter_username !~ '^[.]{1,2}$'
 `;
 
