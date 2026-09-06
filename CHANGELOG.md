@@ -13,6 +13,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Your Sessions tab now shows every day you climbed, even the days you never pressed Start. ([#5152](https://github.com/boardsesh/boardsesh/pull/5152))
+  Climbs you tick from the climbs list, a playlist or the board now land in the session you're running.
 - Pinch-zoom and panning on the board now work smoothly while you're building a climb on Android. ([#5107](https://github.com/boardsesh/boardsesh/pull/5107))
 - Testing a PR preview, leaving one, and filing a verdict now show up in your language. ([#5150](https://github.com/boardsesh/boardsesh/pull/5150))
 

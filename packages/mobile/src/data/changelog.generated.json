@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-06T03:12:15.945Z",
+  "generatedAt": "2026-09-06T03:21:05.050Z",
   "entries": [
+    {
+      "prNumber": 5152,
+      "category": "fixed",
+      "title": "Your Sessions tab now shows every day you climbed, even the days you never pressed Start.",
+      "mergedAt": "2026-09-06T03:12:23Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5152",
+      "body": "Climbs you tick from the climbs list, a playlist or the board now land in the session you're running."
+    },
     {
       "prNumber": 5107,
       "category": "fixed",
