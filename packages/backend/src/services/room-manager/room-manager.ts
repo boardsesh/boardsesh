@@ -13,6 +13,7 @@ import { logger } from '../../utils/logger';
 import type {
   ConnectedClient,
   DiscoverableSession,
+  LiveSession,
   LocalSessionParticipant,
   QueueState,
   RoomManagerDeps,
@@ -589,7 +590,7 @@ class RoomManager {
     return getQueueStateFn(sessionId, this.redisStore);
   }
 
-  async getSessionById(sessionId: string): Promise<Session | null> {
+  async getSessionById(sessionId: string): Promise<LiveSession | null> {
     return getSessionByIdFn(sessionId);
   }
 
@@ -631,7 +632,7 @@ class RoomManager {
     return findNearbySessionsFn(this.deps(), latitude, longitude, radiusMeters);
   }
 
-  async getUserSessions(userId: string): Promise<Session[]> {
+  async getUserSessions(userId: string): Promise<LiveSession[]> {
     return getUserSessionsFn(userId);
   }
 

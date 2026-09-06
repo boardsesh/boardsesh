@@ -152,6 +152,7 @@ export default defineConfig({
       './packages/shared/play-view/vite.config.ts',
       './packages/shared/playback-react/vite.config.ts',
       './packages/shared/profile-stats/vite.config.ts',
+      './packages/shared/session-inference/vite.config.ts',
       './packages/shared/playlist-generator/vite.config.ts',
       './packages/shared/climb-filters/vite.config.ts',
       './packages/shared/gym-claim/vite.config.ts',

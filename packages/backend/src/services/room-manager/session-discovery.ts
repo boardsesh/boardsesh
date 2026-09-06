@@ -3,15 +3,42 @@ import { sessions, type Session } from '../../db/schema';
 import { userBoards } from '@boardsesh/db/schema/app';
 import { eq, and, gt, gte, lt, lte, ne, isNull, sql } from 'drizzle-orm';
 import { haversineDistance, getBoundingBox, DEFAULT_SEARCH_RADIUS_METERS } from '../../utils/geo';
-import type { DiscoverableSession, RoomManagerDeps } from './types';
+import type { DiscoverableSession, LiveSession, RoomManagerDeps } from './types';
 import { logger } from '../../utils/logger';
+
+/**
+ * Rows that back a live session — party mode, presence, queue, the lot.
+ *
+ * `board_sessions` also holds inferred sessions (`origin = 'inferred'`), which are
+ * reconstructed from tick timing and are over before they exist. They have no board
+ * path and nothing to join, so every live-session loader scopes them out here rather
+ * than leaving each caller to remember. See `docs/inferred-sessions.md`.
+ */
+const isLiveSessionRow = eq(sessions.origin, 'explicit');
+
+/**
+ * Narrow a row to a {@link LiveSession}.
+ *
+ * Only inferred sessions have a null `board_path` and `isLiveSessionRow` has already
+ * excluded those, so this discards nothing in practice. It states the invariant to the
+ * type system instead of asserting past it, which means a future writer that leaves an
+ * explicit session without a board path gets dropped here rather than crashing a
+ * caller that assumed the string.
+ */
+function toLiveSession(row: Session): LiveSession | null {
+  return row.boardPath === null ? null : { ...row, boardPath: row.boardPath };
+}
 
 /**
  * Get a session by its ID from the database.
  */
-export async function getSessionById(sessionId: string): Promise<Session | null> {
-  const result = await db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
-  return result[0] || null;
+export async function getSessionById(sessionId: string): Promise<LiveSession | null> {
+  const result = await db
+    .select()
+    .from(sessions)
+    .where(and(eq(sessions.id, sessionId), isLiveSessionRow))
+    .limit(1);
+  return result[0] ? toLiveSession(result[0]) : null;
 }
 
 /**
@@ -149,12 +176,13 @@ export async function findNearbySessions(
         lte(sessions.latitude, box.maxLat),
         gte(sessions.longitude, box.minLon),
         lte(sessions.longitude, box.maxLon),
+        isLiveSessionRow,
       ),
     );
 
-  type SessionWithCoords = Session & { latitude: number; longitude: number };
+  type SessionWithCoords = LiveSession & { latitude: number; longitude: number };
   const sessionsWithDistance = candidates
-    .filter((s): s is SessionWithCoords => s.latitude !== null && s.longitude !== null)
+    .filter((s): s is SessionWithCoords => s.latitude !== null && s.longitude !== null && s.boardPath !== null)
     .map((s: SessionWithCoords) => ({
       session: s,
       distance: haversineDistance(latitude, longitude, s.latitude, s.longitude),
@@ -227,16 +255,16 @@ export async function findNearbySessions(
 /**
  * Get sessions created by a user (within 7 days).
  */
-export async function getUserSessions(userId: string): Promise<Session[]> {
+export async function getUserSessions(userId: string): Promise<LiveSession[]> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const result = await db
     .select()
     .from(sessions)
-    .where(and(eq(sessions.createdByUserId, userId), gt(sessions.createdAt, sevenDaysAgo)))
+    .where(and(eq(sessions.createdByUserId, userId), gt(sessions.createdAt, sevenDaysAgo), isLiveSessionRow))
     .orderBy(sessions.lastActivity);
 
-  return result;
+  return result.map(toLiveSession).filter((session): session is LiveSession => session !== null);
 }
 
 /**
@@ -318,7 +346,18 @@ export async function endStaleInactiveSessions(thresholdMs: number): Promise<str
     const result = await tx
       .update(sessions)
       .set({ status: 'ended', endedAt: sql`${sessions.lastActivity}` })
-      .where(and(eq(sessions.status, 'active'), eq(sessions.isPermanent, false), lt(sessions.lastActivity, cutoff)))
+      .where(
+        and(
+          eq(sessions.status, 'active'),
+          eq(sessions.isPermanent, false),
+          lt(sessions.lastActivity, cutoff),
+          // Inferred sessions are written already-ended, so this would not match
+          // them today — but the guard is cheap and the failure it prevents is
+          // silent: a sweep rewriting `ended_at` across reconstructed history
+          // would corrupt session durations with nothing to show for it.
+          isLiveSessionRow,
+        ),
+      )
       .returning({ id: sessions.id });
     if (result.length > 0) {
       logger.info(`[RoomManager] Auto-ended ${result.length} inactive session(s)`);

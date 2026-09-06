@@ -37,9 +37,18 @@ export const schemaSQL = `
     "computed_at" timestamp DEFAULT now() NOT NULL
   );
 
+  -- Declared here rather than with the other enums further down: board_sessions
+  -- below is typed against it, and the CREATE TABLE would fail on an unknown type.
+  -- The EXCEPTION guard keeps a re-apply from aborting the whole transaction.
+  DO $$ BEGIN
+    CREATE TYPE session_origin AS ENUM ('explicit', 'inferred');
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+
   CREATE TABLE IF NOT EXISTS "board_sessions" (
     "id" text PRIMARY KEY NOT NULL,
-    "board_path" text NOT NULL,
+    -- Nullable: inferred sessions are rebuilt from ticks that may span boards.
+    "board_path" text,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "last_activity" timestamp DEFAULT now() NOT NULL,
     "status" text DEFAULT 'active' NOT NULL,
@@ -57,8 +66,17 @@ export const schemaSQL = `
     "timezone" text,
     "is_permanent" boolean DEFAULT false NOT NULL,
     "color" text,
+    "origin" session_origin DEFAULT 'explicit' NOT NULL,
+    "anchor_tick_id" bigint,
+    "user_edited" boolean DEFAULT false NOT NULL,
     CONSTRAINT "board_sessions_status_check" CHECK (status IN ('active', 'inactive', 'ended'))
   );
+
+  -- Two concurrent reconciliations of the same unassigned run would otherwise both
+  -- create a session on the same anchor. Present here so tests exercise the same
+  -- constraint production has.
+  CREATE UNIQUE INDEX IF NOT EXISTS "board_sessions_anchor_tick_idx"
+    ON "board_sessions" ("anchor_tick_id") WHERE "origin" = 'inferred';
 
   CREATE TABLE IF NOT EXISTS "session_health_kit_workouts" (
     "session_id" text NOT NULL REFERENCES "board_sessions"("id") ON DELETE CASCADE,
