@@ -36,6 +36,8 @@ The Android profile is calibrated for Moon Climbing **1.3.68**, stock Pixel 8 Pr
 shorter, vertically centered grid; selecting 12 rows without changing the crop is
 incorrect. Do not infer the setup from the detected holds: the caller must verify
 the board in the app's information panel.
+Other Android devices require a separately calibrated profile. Do not bypass the
+dimension check by selecting the legacy iOS profile for an Android screenshot.
 
 The original full-size/iOS behavior remains the default (`holdsetup: 21`,
 `screenshotProfile: 'legacy-ios'`). Other setups' iOS screenshots are **not calibrated**
@@ -62,6 +64,19 @@ Unicode name; the Android collector uses public accessibility labels separately.
 Missing labelled grades stay `Unknown` with a warning; a setter-only grade is not
 copied into the community grade. Title extraction excludes rating text below a
 recognized setter line.
+
+The grade parser explicitly supports the legacy iOS slash separator before the
+Setter field. Unrecognized grade suffixes remain `Unknown` with a warning rather
+than silently accepting a partial prefix; spacing/format changes need fixtures.
+
+Touching-ring recovery requires at least two plausible enclosed interiors. With
+only one (for example, a second ring damaged by a wide open gap), detection keeps
+the existing component-centroid fallback and can undercount or misplace a hold.
+A dedicated synthetic regression documents this limitation; the barely-touching
+**closed** pair is a separate passing test. A successful parse is not a guarantee
+of complete holds. The reference validator rejects the incomplete set and never
+imports it. Arbitrarily damaged screenshots need further algorithm work before
+they can be accepted without a reference or human review.
 
 The companion `moonboard-scraper` repository's `android_ocr_validate.py` collects
 read-only screenshots, matches old references by board/name/setter independently

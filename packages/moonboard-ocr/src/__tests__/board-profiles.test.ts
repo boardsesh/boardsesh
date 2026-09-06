@@ -37,13 +37,13 @@ describe('explicit MoonBoard setup geometry', () => {
             const radius = Math.hypot(x - ring.x, y - ring.y);
             if (radius >= 21 && radius <= 27) data.set(ring.color, (y * width + x) * 4);
           }
-          // Red plastic on Masters 2017 falls inside the legacy iOS marker palette.
-          // It must not manufacture a finish hold in the explicit Android profile.
-          for (let y = 185; y <= 235; y++) {
-            for (let x = 185; x <= 235; x++) {
-              if (Math.hypot(x - 210, y - 210) <= 25) data.set([225, 82, 64], (y * width + x) * 4);
-            }
-          }
+        }
+      }
+      // Red plastic on Masters 2017 falls inside the legacy iOS marker palette.
+      // It must not manufacture a finish hold in the explicit Android profile.
+      for (let y = 185; y <= 235; y++) {
+        for (let x = 185; x <= 235; x++) {
+          if (Math.hypot(x - 210, y - 210) <= 25) data.set([225, 82, 64], (y * width + x) * 4);
         }
       }
       const holds = detectHoldsFromPixelData(

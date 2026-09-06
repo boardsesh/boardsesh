@@ -112,4 +112,36 @@ describe('touching MoonBoard hold outlines', () => {
     expect(centers).toHaveLength(2);
     expect(centers.every((center) => center.type === 'start')).toBe(true);
   });
+
+  it('documents the single-centroid fallback when a damaged pair has only one closed interior', () => {
+    const pixels = outlinedCircles(
+      [
+        [330, 870],
+        [398, 870],
+      ],
+      [0, 255, 0],
+    );
+    // Open the second ring with a gap wider than the one-pixel seam repair.
+    // The outlines still touch, but only the first interior is enclosed.
+    for (let y = 833; y <= 846; y++) {
+      for (let x = 392; x <= 404; x++) pixels.data.set([255, 255, 255], (y * pixels.width + x) * 4);
+    }
+    let count = 0,
+      sumX = 0,
+      sumY = 0;
+    for (let y = 0; y < pixels.height; y++) {
+      for (let x = 0; x < pixels.width; x++) {
+        if (pixels.data[(y * pixels.width + x) * 4] !== 0) continue;
+        count++;
+        sumX += x;
+        sumY += y;
+      }
+    }
+    expect(count).toBeGreaterThan(0);
+    const centers = findCircleCenters(pixels);
+    expect(centers).toHaveLength(1);
+    expect(centers[0]).toMatchObject({ x: Math.round(sumX / count), y: Math.round(sumY / count), type: 'start' });
+    // This documents the limitation, not a claim of two-hold recovery.
+    // The reference validator must reject its incomplete coordinate/role set.
+  });
 });
