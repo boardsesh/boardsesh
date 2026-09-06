@@ -135,9 +135,9 @@
     "deleteFailed": "Impossible de supprimer la playlist",
     "queueReplace": {
       "title": "Lancer la playlist ?",
-      "message_one": "Cela supprimera {{count}} bloc en file après votre bloc actuel.",
-      "message_other": "Cela supprimera {{count}} blocs en file après votre bloc actuel.",
-      "cancel": "Garder la file",
+      "message_one": "La playlist se lance dans l'ordre à partir d'ici. Le bloc en file après votre bloc actuel disparaît.",
+      "message_other": "La playlist se lance dans l'ordre à partir d'ici. Les {{count}} blocs en file après votre bloc actuel disparaissent.",
+      "cancel": "Annuler",
       "confirm": "Lancer la playlist",
       "loadFailed": "Impossible de lancer la playlist. Réessayez."
     },

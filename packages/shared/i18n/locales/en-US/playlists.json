@@ -135,9 +135,9 @@
     "deleteFailed": "Failed to delete playlist",
     "queueReplace": {
       "title": "Start playlist?",
-      "message_one": "This will clear {{count}} queued climb after your current climb.",
-      "message_other": "This will clear {{count}} queued climbs after your current climb.",
-      "cancel": "Keep queue",
+      "message_one": "Plays the playlist in order from here. The climb queued after your current one drops out.",
+      "message_other": "Plays the playlist in order from here. The {{count}} climbs queued after your current one drop out.",
+      "cancel": "Cancel",
       "confirm": "Start playlist",
       "loadFailed": "Couldn't start playlist. Try again."
     },

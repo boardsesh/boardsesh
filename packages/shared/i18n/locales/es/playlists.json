@@ -135,9 +135,9 @@
     "deleteFailed": "No se pudo eliminar la playlist",
     "queueReplace": {
       "title": "¿Iniciar playlist?",
-      "message_one": "Esto borrará {{count}} bloque en cola después de tu bloque actual.",
-      "message_other": "Esto borrará {{count}} bloques en cola después de tu bloque actual.",
-      "cancel": "Mantener cola",
+      "message_one": "Reproduce la playlist en orden desde aquí. El bloque en cola después de tu bloque actual se elimina.",
+      "message_other": "Reproduce la playlist en orden desde aquí. Los {{count}} bloques en cola después de tu bloque actual se eliminan.",
+      "cancel": "Cancelar",
       "confirm": "Iniciar playlist",
       "loadFailed": "No se pudo iniciar la playlist. Inténtalo de nuevo."
     },
