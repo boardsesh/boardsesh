@@ -117,6 +117,26 @@ export const notificationsTypeDefs = /* GraphQL */ `
     climbs that carry no angle; clients fall back to the reader's own board.
     """
     climbAngle: Int
+    """
+    The climb's hold frames, so a row can draw the board art without a second
+    round trip. Present wherever climbUuid is.
+    """
+    climbFrames: String
+    """
+    Sizes the climb fits. Boards whose sizes number holds independently (Woods)
+    render a COMPLETELY different climb on the layout's default size, so a client
+    drawing the art needs this to pick the right one.
+    """
+    climbCompatibleSizeIds: [Int!]
+    """
+    The comment thread this notification belongs to, when it has one. For a
+    comment or a vote on a comment that is the commented-on entity (a tick, a
+    session, a playlist climb) rather than the comment itself, so a client can
+    open the thread directly.
+    """
+    threadEntityType: SocialEntityType
+    "ID of the entity named by threadEntityType."
+    threadEntityId: String
     "Proposal UUID (for deep-linking to a specific proposal)"
     proposalUuid: String
     "Setter username (for new_climbs_synced notifications)"
@@ -141,6 +161,25 @@ export const notificationsTypeDefs = /* GraphQL */ `
     unreadCount: Int!
     "Whether more groups are available"
     hasMore: Boolean!
+  }
+
+  """
+  Input for listing the distinct actors behind one notification group — the
+  people in "Sarah and 4 others started following you". The triple is the same
+  one groupedNotifications groups by, so a client passes back the fields off the
+  row it tapped.
+  """
+  input NotificationActorsInput {
+    "Notification type of the group"
+    type: NotificationType!
+    "Entity type of the group (null for types that carry none, like new_follower)"
+    entityType: SocialEntityType
+    "Entity ID of the group"
+    entityId: String
+    "Maximum number of actors to return"
+    limit: Int
+    "Number of actors to skip"
+    offset: Int
   }
 
   """

@@ -19,6 +19,9 @@ import { isNoMatchClimb } from '../graphql/resolvers/shared/helpers';
 import { logger } from '../utils/logger';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 
+/** The values `notifications.entity_type` actually accepts, for the guard below. */
+const SOCIAL_ENTITY_TYPES = new Set<string>(dbSchema.socialEntityTypeEnum.enumValues);
+
 export const eventBroker = new EventBroker();
 
 /**
@@ -284,13 +287,21 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
       .limit(1);
     if (existing) return;
 
+    // `follow.created` carries entityType 'user', which is NOT a member of the
+    // social_entity_type enum — passing it through threw on insert and the catch
+    // below swallowed it, so a follow made no notification at all whenever Redis
+    // was down. The worker path already passes null here.
+    const entityType = SOCIAL_ENTITY_TYPES.has(event.entityType)
+      ? (event.entityType as dbSchema.SocialEntityType)
+      : null;
+
     const uuid = crypto.randomUUID();
     await db.insert(dbSchema.notifications).values({
       uuid,
       recipientId,
       actorId: event.actorId,
       type: notificationType,
-      entityType: event.entityType as dbSchema.SocialEntityType,
+      entityType,
       entityId: event.entityId,
     });
 
@@ -314,7 +325,7 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
         actorId: event.actorId,
         actorDisplayName: actor?.displayName || actor?.name || undefined,
         actorAvatarUrl: actor?.avatarUrl || actor?.image || undefined,
-        entityType: event.entityType as dbSchema.SocialEntityType,
+        entityType,
         entityId: event.entityId,
         isRead: false,
         createdAt: new Date().toISOString(),

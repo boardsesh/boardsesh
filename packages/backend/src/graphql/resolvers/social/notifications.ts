@@ -4,7 +4,8 @@ import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
-import { GroupedNotificationsInputSchema } from '../../../validation/schemas';
+import { GroupedNotificationsInputSchema, NotificationActorsInputSchema } from '../../../validation/schemas';
+import { batchEnrichUserProfiles } from './helpers';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
 
@@ -40,6 +41,8 @@ const NOTIFICATION_CLIMB_COLUMNS = {
   setterUsername: dbSchema.boardClimbs.setterUsername,
   layoutId: dbSchema.boardClimbs.layoutId,
   angle: dbSchema.boardClimbs.angle,
+  frames: dbSchema.boardClimbs.frames,
+  compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
 } as const;
 
 type NotificationClimb = {
@@ -49,6 +52,15 @@ type NotificationClimb = {
   setterUsername: string | null;
   layoutId: number;
   angle: number | null;
+  frames: string | null;
+  compatibleSizeIds: number[] | null;
+};
+
+type ClimbBoardFields = {
+  climbLayoutId?: number;
+  climbAngle?: number;
+  climbFrames?: string;
+  climbCompatibleSizeIds?: number[];
 };
 
 /**
@@ -56,10 +68,17 @@ type NotificationClimb = {
  * `board_climbs` (most climbs carry none), so it stays `undefined` rather than
  * collapsing to 0 — clients fall back to the reader's own board angle, which is
  * a better guess than flat.
+ *
+ * `frames` + `compatibleSizeIds` ride along so a row can draw the board art
+ * without a follow-up climb query per row. The size list is not decoration:
+ * boards that number holds independently per size (Woods) render a completely
+ * different climb on the layout's default size — see docs/board-art-geometry.md.
  */
-function applyClimbBoardFields(group: { climbLayoutId?: number; climbAngle?: number }, climb: NotificationClimb): void {
+function applyClimbBoardFields(group: ClimbBoardFields, climb: NotificationClimb): void {
   group.climbLayoutId = climb.layoutId;
   group.climbAngle = climb.angle ?? undefined;
+  group.climbFrames = climb.frames ?? undefined;
+  group.climbCompatibleSizeIds = climb.compatibleSizeIds ?? undefined;
 }
 
 function truncateCommentBody(commentBody: string | null): string | undefined {
@@ -252,6 +271,10 @@ export const socialNotificationQueries = {
         boardType: undefined as string | undefined,
         climbLayoutId: undefined as number | undefined,
         climbAngle: undefined as number | undefined,
+        climbFrames: undefined as string | undefined,
+        climbCompatibleSizeIds: undefined as number[] | undefined,
+        threadEntityType: undefined as string | undefined,
+        threadEntityId: undefined as string | undefined,
         proposalUuid: undefined as string | undefined,
         setterUsername: undefined as string | undefined,
         gymName: undefined as string | undefined,
@@ -264,11 +287,16 @@ export const socialNotificationQueries = {
     // Enrich groups with climb/proposal data (batched to avoid N+1)
     const proposalTypes = ['proposal_created', 'proposal_approved', 'proposal_rejected', 'proposal_vote'];
     const climbTypes = ['new_climb', 'new_climb_global'];
+    // The types that hang off a comment thread. Clients open the thread for
+    // these rather than a climb, so they need `threadEntityType`/`threadEntityId`.
+    const threadTypes = ['comment_reply', 'comment_on_tick', 'comment_on_climb', 'vote_on_tick', 'vote_on_comment'];
 
     // Collect entity IDs by type
     const climbEntityIds: string[] = [];
     const proposalEntityIds: string[] = [];
     const gymEntityIds: string[] = [];
+    const commentEntityIds: string[] = [];
+    const tickEntityIds: string[] = [];
     for (const group of groups) {
       if (!group.entityId) continue;
       if (group.type === 'new_climbs_synced' || climbTypes.includes(group.type)) {
@@ -277,6 +305,49 @@ export const socialNotificationQueries = {
         proposalEntityIds.push(group.entityId);
       } else if (group.type === 'gym_claim_approved') {
         gymEntityIds.push(group.entityId);
+      } else if (threadTypes.includes(group.type)) {
+        // A vote on a comment names the COMMENT; the thread it lives in is the
+        // comment's own entity, one hop away. Every other thread type already
+        // names the commented-on entity.
+        if (group.entityType === 'comment') commentEntityIds.push(group.entityId);
+        else if (group.entityType === 'tick') tickEntityIds.push(group.entityId);
+      }
+    }
+
+    // Batch-fetch the thread behind a voted-on comment. Three sequential batched
+    // lookups follow (comment → thread → climb), each one `inArray` over at most
+    // `limit` groups rather than a query per row.
+    const commentThreadMap = new Map<string, { entityType: string; entityId: string }>();
+    if (commentEntityIds.length > 0) {
+      const commentRows = await db
+        .select({
+          uuid: dbSchema.comments.uuid,
+          entityType: dbSchema.comments.entityType,
+          entityId: dbSchema.comments.entityId,
+        })
+        .from(dbSchema.comments)
+        .where(inArray(dbSchema.comments.uuid, commentEntityIds));
+      for (const row of commentRows) {
+        commentThreadMap.set(row.uuid, { entityType: row.entityType, entityId: row.entityId });
+        if (row.entityType === 'tick') tickEntityIds.push(row.entityId);
+      }
+    }
+
+    // Batch-fetch the climb behind a tick, so a row about someone's ascent can
+    // draw the same board art as a climb row.
+    const tickClimbMap = new Map<string, { climbUuid: string; boardType: string }>();
+    if (tickEntityIds.length > 0) {
+      const tickRows = await db
+        .select({
+          uuid: dbSchema.boardseshTicks.uuid,
+          climbUuid: dbSchema.boardseshTicks.climbUuid,
+          boardType: dbSchema.boardseshTicks.boardType,
+        })
+        .from(dbSchema.boardseshTicks)
+        .where(inArray(dbSchema.boardseshTicks.uuid, [...new Set(tickEntityIds)]));
+      for (const row of tickRows) {
+        tickClimbMap.set(row.uuid, { climbUuid: row.climbUuid, boardType: row.boardType });
+        climbEntityIds.push(row.climbUuid);
       }
     }
 
@@ -372,6 +443,28 @@ export const socialNotificationQueries = {
           group.climbName = climb?.name ?? undefined;
           if (climb) applyClimbBoardFields(group, climb);
         }
+      } else if (threadTypes.includes(group.type)) {
+        const thread =
+          group.entityType === 'comment'
+            ? commentThreadMap.get(group.entityId)
+            : group.entityType
+              ? { entityType: group.entityType, entityId: group.entityId }
+              : undefined;
+        if (!thread) continue;
+
+        group.threadEntityType = thread.entityType;
+        group.threadEntityId = thread.entityId;
+
+        // An ascent's thread carries the climb it was logged on, which is what
+        // lets these rows draw board art like a climb row does.
+        if (thread.entityType !== 'tick') continue;
+        const tick = tickClimbMap.get(thread.entityId);
+        if (!tick) continue;
+        group.climbUuid = tick.climbUuid;
+        group.boardType = tick.boardType;
+        const climb = climbMap.get(tick.climbUuid);
+        group.climbName = climb?.name ?? undefined;
+        if (climb) applyClimbBoardFields(group, climb);
       }
     }
 
@@ -400,6 +493,94 @@ export const socialNotificationQueries = {
       .where(and(eq(dbSchema.notifications.recipientId, userId), isNull(dbSchema.notifications.readAt)));
 
     return Number(result[0]?.count || 0);
+  },
+
+  /**
+   * Every distinct actor behind one notification group, newest first.
+   *
+   * `groupedNotifications` caps `actors` at three, so "Sarah and 4 others
+   * started following you" can't show the other four. The group key is the same
+   * (type, entity_type, entity_id) triple that resolver groups by, and the
+   * `notifications_dedup_idx (actor_id, recipient_id, type, entity_id)` index
+   * covers the lookup.
+   *
+   * Scoped to the caller's own notifications — the recipient predicate is the
+   * whole authorisation story, so there is nothing to leak by passing another
+   * user's entity id.
+   */
+  notificationActors: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    const { type, entityType, entityId, limit, offset } = validateInput(NotificationActorsInputSchema, input, 'input');
+    const userId = ctx.userId!;
+
+    // `IS NOT DISTINCT FROM` rather than `=`: `new_follower` carries a null
+    // entity_type, and `= NULL` matches nothing.
+    const groupPredicate = and(
+      eq(dbSchema.notifications.recipientId, userId),
+      sql`${dbSchema.notifications.type} = ${type}`,
+      sql`${dbSchema.notifications.entityType} IS NOT DISTINCT FROM ${entityType ?? null}`,
+      sql`${dbSchema.notifications.entityId} IS NOT DISTINCT FROM ${entityId ?? null}`,
+      // `actor_id` is ON DELETE SET NULL, so a deleted account leaves an
+      // actor-less row. The grouped resolver drops those too.
+      sql`${dbSchema.notifications.actorId} IS NOT NULL`,
+    );
+
+    const [totalRow] = await db
+      .select({ count: sql<number>`count(DISTINCT ${dbSchema.notifications.actorId})` })
+      .from(dbSchema.notifications)
+      .where(groupPredicate);
+    const totalCount = Number(totalRow?.count ?? 0);
+
+    const actorRows = await db
+      .select({
+        actorId: sql<string>`${dbSchema.notifications.actorId}`,
+        latestCreatedAt: sql<Date>`max(${dbSchema.notifications.createdAt})`,
+      })
+      .from(dbSchema.notifications)
+      .where(groupPredicate)
+      .groupBy(dbSchema.notifications.actorId)
+      .orderBy(sql`max(${dbSchema.notifications.createdAt}) DESC`)
+      .limit(limit)
+      .offset(offset);
+
+    const actorIds = actorRows.map((row) => row.actorId);
+    if (actorIds.length === 0) return { users: [], totalCount, hasMore: false };
+
+    const [identityRows, enrichments] = await Promise.all([
+      db
+        .select({
+          id: dbSchema.users.id,
+          userName: dbSchema.users.name,
+          userImage: dbSchema.users.image,
+          displayName: dbSchema.userProfiles.displayName,
+          avatarUrl: dbSchema.userProfiles.avatarUrl,
+        })
+        .from(dbSchema.users)
+        .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
+        .where(inArray(dbSchema.users.id, actorIds)),
+      batchEnrichUserProfiles(actorIds, userId),
+    ]);
+
+    const identities = new Map(identityRows.map((row) => [row.id, row]));
+    // Ordered by `actorIds`, not by the identity fetch — the newest-first order
+    // is the point, and a join comes back in whatever order Postgres likes.
+    const users = actorIds.flatMap((actorId) => {
+      const identity = identities.get(actorId);
+      if (!identity) return [];
+      const enrichment = enrichments.get(actorId);
+      return [
+        {
+          id: actorId,
+          displayName: identity.displayName || identity.userName || undefined,
+          avatarUrl: identity.avatarUrl || identity.userImage || undefined,
+          followerCount: enrichment?.followerCount ?? 0,
+          followingCount: enrichment?.followingCount ?? 0,
+          isFollowedByMe: enrichment?.isFollowedByMe ?? false,
+        },
+      ];
+    });
+
+    return { users, totalCount, hasMore: offset + actorRows.length < totalCount };
   },
 };
 
