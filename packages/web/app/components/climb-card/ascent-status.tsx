@@ -69,7 +69,7 @@ export const AscentStatus = ({
     () => getHighestStatus(ascentsForClimb.filter(({ is_mirror }) => is_mirror)),
     [ascentsForClimb],
   );
-  const supportsMirroring = boardName === 'tension' || boardName === 'decoy';
+  const supportsMirroring = boardName === 'tension' || boardName === 'decoy' || boardName === 'woods';
 
   if (supportsMirroring) {
     if (!regularStatus && !mirroredStatus) return null;
