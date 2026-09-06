@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-06T12:34:37.837Z",
+  "generatedAt": "2026-09-06T20:59:36.291Z",
   "entries": [
+    {
+      "prNumber": 5195,
+      "category": "new",
+      "title": "Set the seconds each move is lit, and it sticks. Routes used to play back at one fixed speed no matter what you picked.",
+      "mergedAt": "2026-09-06T20:57:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5195",
+      "body": "Routes are something you turn on now, from the ⋯ menu. Build one from the first frame instead of hunting for a hidden button.\nFrames live in one strip under the board — tap any move to jump to it, then + or − right beside it to add or drop one.\nMore board on screen while you set, on every phone. Small screens gained the most.\nThe frame you are on is easier to pick out in the dark, and the card has an edge again.\nWant one move held longer? Add the same frame twice."
+    },
     {
       "prNumber": 5205,
       "category": "fixed",
