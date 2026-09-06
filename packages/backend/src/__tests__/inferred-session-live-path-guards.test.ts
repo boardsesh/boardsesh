@@ -171,7 +171,9 @@ describe('board_sessions defaults', () => {
 // live session. Mirrors migration 0217's board_sessions_explicit_board_path_check.
 describe('explicit sessions require a board path', () => {
   it('rejects an explicit session with a null board path', async () => {
-    await expect(db.insert(sessions).values({ id: uuidv4(), boardPath: null, status: 'active' })).rejects.toThrow();
+    await expect(
+      db.insert(sessions).values({ id: uuidv4(), boardPath: null, status: 'active', origin: 'explicit' }),
+    ).rejects.toThrow();
   });
 
   it('still allows an inferred session with a null board path', async () => {
