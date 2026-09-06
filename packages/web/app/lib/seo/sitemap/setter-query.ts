@@ -28,6 +28,16 @@ const ITEMS_TTL_MS = 6 * 60 * 60 * 1000;
 const SUMMARY_TTL_MS = 6 * 60 * 60 * 1000;
 /** Next Data Cache window for the (small) summary the index reads on every hit. */
 const SUMMARY_REVALIDATE_SECONDS = 21_600;
+/**
+ * A forward hook, not a live eviction path: nothing calls `revalidateTag` with
+ * it yet, here or on the climbs shard.
+ *
+ * Whoever wires one up has to evict BOTH layers. `revalidateTag` clears the
+ * Next Data Cache, but `cachedSummary` in front of it is an in-process TTL that
+ * knows nothing about tags, so a tagged revalidation is invisible to this
+ * instance for up to `SUMMARY_TTL_MS` (6 h) — the surface would keep serving
+ * the old summary and look like the revalidation silently failed.
+ */
 const SUMMARY_CACHE_TAG = 'sitemap-setters';
 
 export type SetterSitemapSummary = { itemCount: number; lastModified: Date | null };
