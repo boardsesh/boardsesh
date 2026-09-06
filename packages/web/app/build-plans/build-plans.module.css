@@ -161,3 +161,27 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* The placement canvas. The SVG carries the wall's real millimetres in its
+   viewBox, so the frame only has to say how wide it may be — no pixel scale to
+   keep in step with the layout, and no ResizeObserver to keep it there. */
+.wallCanvasFrame {
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+}
+
+.wallCanvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* A dragged label must not select the copy around it, and a dragged wall must
+     not pan the page on a phone. */
+  touch-action: none;
+  user-select: none;
+}
+
+.wallCanvas:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}

@@ -198,17 +198,10 @@
           "help": "Goes all the way through. Needs more room around the holes, and takes material out of the panel."
         }
       },
-      "width": "Width: {{width}} mm",
-      "widthHelp": "How wide the whole label is. Height follows the letters.",
-      "rotation": "Rotation: {{degrees}}°",
       "panel": "Panel",
       "panelHelp": "Which sheet it gets routed into.",
       "panelLoading": "Working out the panels…",
       "kickerPanel": "kicker",
-      "x": "Across (mm)",
-      "xHelp": "From the middle of the panel. Negative goes left.",
-      "y": "Up (mm)",
-      "yHelp": "From the middle of the panel. Negative goes down.",
       "checking": "Checking it fits…",
       "fits": "Fits. Clear of every hole and seam.",
       "doesNotFit": "That will not cut where it is. Move it and we will re-check.",
@@ -248,6 +241,21 @@
           "unavailable": "Uploads are not working right now. Nothing was charged. Try again shortly.",
           "generic": "That upload did not go through. Try again."
         }
+      },
+      "editor": {
+        "canvasLabel": "Your wall. Drag the label where you want it.",
+        "placeholder": "Your text",
+        "keyboardHelp": "Arrows move it 10 mm, hold shift for 1 mm. [ and ] turn it 5°. Plus and minus change the width.",
+        "resizeHandle": "Drag to resize",
+        "rotateHandle": "Drag to turn",
+        "width": "Width (mm)",
+        "rotation": "Rotation (degrees)",
+        "holesUnavailable": "Sign in to see the hole grid on your wall.",
+        "offPanel": "It hangs off the panel, or sits too close to the edge.",
+        "holesInTheWay_one": "It lands on {{count}} hole. Move it clear.",
+        "holesInTheWay_other": "It lands on {{count}} holes. Move it clear.",
+        "crossesSeam": "It runs across a seam, so it would be cut in half.",
+        "clear": "Clear of every hole and seam on this panel."
       }
     },
     "summary": {
