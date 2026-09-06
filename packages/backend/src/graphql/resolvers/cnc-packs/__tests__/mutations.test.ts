@@ -16,12 +16,14 @@ const {
   transitionOrderMock,
   attachCheckoutSessionMock,
   createCheckoutSessionMock,
+  getAccountEmailMock,
 } = vi.hoisted(() => ({
   validateArtworkMock: vi.fn(),
   createPendingOrderMock: vi.fn(),
   transitionOrderMock: vi.fn(),
   attachCheckoutSessionMock: vi.fn(),
   createCheckoutSessionMock: vi.fn(),
+  getAccountEmailMock: vi.fn(),
 }));
 
 vi.mock('../../../../services/cnc/worker-client', async (importOriginal) => ({
@@ -33,6 +35,7 @@ vi.mock('../../../../services/cnc/orders', () => ({
   createPendingOrder: createPendingOrderMock,
   transitionOrder: transitionOrderMock,
   attachCheckoutSession: attachCheckoutSessionMock,
+  getAccountEmail: getAccountEmailMock,
 }));
 
 vi.mock('../../../../services/cnc/stripe', async (importOriginal) => ({
@@ -105,6 +108,7 @@ beforeEach(() => {
     sessionId: 'cs_test_1',
     url: 'https://checkout.stripe.com/c/pay/cs_test_1',
   });
+  getAccountEmailMock.mockResolvedValue('account-holder@example.com');
 });
 
 afterEach(() => {
@@ -319,11 +323,17 @@ describe('createCncCheckoutSession', () => {
     });
     expect(attachCheckoutSessionMock).toHaveBeenCalledWith(7, 'cs_test_1');
 
-    const [sessionInput] = createCheckoutSessionMock.mock.calls[0] as [{ successUrl: string; cancelUrl: string }];
+    const [sessionInput] = createCheckoutSessionMock.mock.calls[0] as [
+      { successUrl: string; cancelUrl: string; customerEmail: string },
+    ];
     expect(sessionInput.successUrl).toBe('https://www.boardsesh.com/build-plans/orders/BS-CNC-ABC234?checkout=success');
     expect(sessionInput.cancelUrl).toBe(
       'https://www.boardsesh.com/build-plans/orders/BS-CNC-ABC234?checkout=cancelled',
     );
+    // Stripe's customer_email is the signed-in account's own email, never the
+    // buyer-typed licenseeEmail — even though they differ here on purpose.
+    expect(sessionInput.customerEmail).toBe('account-holder@example.com');
+    expect(getAccountEmailMock).toHaveBeenCalledWith('user-1');
   });
 
   it('refuses an order when the licence was not accepted', async () => {
@@ -442,5 +452,14 @@ describe('createCncCheckoutSession', () => {
     await expect(
       cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx()),
     ).resolves.toMatchObject({ checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1' });
+  });
+
+  it('falls back to the licensee email for Stripe when the account has none on file', async () => {
+    getAccountEmailMock.mockResolvedValue(null);
+
+    await cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx());
+
+    const [sessionInput] = createCheckoutSessionMock.mock.calls[0] as [{ customerEmail: string }];
+    expect(sessionInput.customerEmail).toBe('buyer@example.com');
   });
 });

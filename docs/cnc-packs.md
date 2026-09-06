@@ -19,8 +19,8 @@ for this" and "who is generating it right now" can never disagree.
 | From | Event | To |
 | --- | --- | --- |
 | — | `createCncCheckoutSession` | `pending_payment` |
-| `pending_payment` | `checkout.session.completed` (paid) | `queued` |
-| `pending_payment` | `checkout.session.expired` | `cancelled` |
+| `pending_payment` | `checkout.session.completed` (paid), or `checkout.session.async_payment_succeeded` | `queued` |
+| `pending_payment` | `checkout.session.expired`, or `checkout.session.async_payment_failed` | `cancelled` |
 | `pending_payment` | Stripe would not open a session | `cancelled` |
 | `queued` | worker claim | `generating` |
 | `generating` | complete | `ready` |
@@ -43,6 +43,26 @@ generator.
 Hosted Stripe Checkout, AUD, Stripe Tax for GST. Two tiers in v1: Personal
 (one wall, own non-commercial use) and Commercial single-build (one identified
 customer installation, which is why those orders carry a site name).
+
+### Stripe dashboard prerequisites
+
+Set up before the first live sale, none of it in code:
+
+- **Terms of Service URL** — Settings → Public details. `consent_collection`
+  requires one to be set or Checkout Sessions fail to create.
+- **Stripe Tax enabled, with an AU GST registration.** `automatic_tax.enabled`
+  on the session assumes Tax is switched on and the registration exists; it
+  does not enable either for you.
+- **The two AUD prices** — one per tier, named by the env vars below. Prices
+  live in Stripe, never in the repo.
+- **The webhook endpoint, with all five events** — see the table below. Fewer
+  than five is a silent gap: a missing `async_payment_failed`, say, leaves a
+  declined delayed-payment order in `pending_payment` forever, with nothing to
+  cancel it.
+- **Payment methods** — instant methods (card, Apple Pay/Google Pay, etc.) are
+  always safe to enable. Delayed-payment methods are safe too now that the
+  webhook handles their async events; see the note under the events table
+  below.
 
 ### Checkout
 
@@ -76,13 +96,22 @@ parsing — anything that re-serialises the JSON first breaks verification in a
 way that looks like a wrong secret. The body is never logged; it carries the
 buyer's email and the full charge record.
 
-Subscribe these three events in the dashboard:
+Subscribe these five events in the dashboard:
 
 | Event | Effect |
 | --- | --- |
 | `checkout.session.completed` | Queues the pack, but only when `payment_status` is `paid` — the event also fires for delayed-payment methods where the money is not there yet. |
+| `checkout.session.async_payment_succeeded` | A delayed-payment method (e.g. a bank debit) cleared after the session completed. Queues the pack exactly like a paid `checkout.session.completed`, with `paidAt` taken from this event's own `created`. |
 | `checkout.session.expired` | Cancels the reserved order. |
+| `checkout.session.async_payment_failed` | A delayed-payment method was declined. Cancels the reserved order the same way `checkout.session.expired` does — there is no separate state-table event for it. |
 | `charge.refunded` | Marks the order refunded and blocks downloads. Found by payment intent; partial refunds count. |
+
+Only instant payment methods (card, Apple Pay/Google Pay, etc.) need to be
+enabled for the happy path. Delayed-payment methods (bank debits and the like)
+are safe to enable too: `async_payment_succeeded`/`async_payment_failed` above
+is what makes them work correctly — a session that completes before the money
+actually clears no longer risks queueing a pack for a payment that can still
+fail.
 
 Status codes are a contract with Stripe's retry machinery:
 
@@ -107,6 +136,14 @@ the retry can work; a process *killed* mid-handler leaves a row with a null
 address it needs. Getting this wrong is a tax problem rather than a UX one, so
 it is not configurable per order. The AU GST registration is set up in the
 Stripe dashboard, not in code.
+
+`cnc_orders.amount_cents` stores `session.amount_total` — what the buyer was
+actually charged, **GST-inclusive**. It is never the catalogue's pre-tax
+`priceCents`. The `Build Plans Pack Purchased` analytics event also carries
+`amount_excluding_tax_cents`, the GST-exclusive equivalent computed from
+`session.total_details.amount_tax` (null when Stripe reported no tax
+breakdown) — that field exists for revenue reporting and is not persisted on
+the order row.
 
 ## Environment
 

@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { cncOrders, type CncOrder, type CncOrderArtworkItem, type CncOrderOptions } from '@boardsesh/db/schema';
+import { cncOrders, users, type CncOrder, type CncOrderArtworkItem, type CncOrderOptions } from '@boardsesh/db/schema';
 import { db } from '../../db/client';
 import { generateLicenceId } from './licence-id';
 import { CNC_LEASE_MS, CNC_MAX_ATTEMPTS, transitionFor, type CncOrderEvent, type CncOrderStatus } from './order-state';
@@ -165,6 +165,22 @@ export async function attachCheckoutSession(orderId: number, sessionId: string):
 /** A buyer's orders, newest first. Served by `cnc_orders_user_created_idx`. */
 export async function listOrdersForUser(userId: string): Promise<CncOrder[]> {
   return db.select().from(cncOrders).where(eq(cncOrders.userId, userId)).orderBy(desc(cncOrders.createdAt));
+}
+
+/**
+ * The signed-in account's own email, read fresh at call time.
+ *
+ * Never `licenseeEmail`: that field is buyer-typed free text kept as the
+ * licence record (it can be a teammate, a client, anyone the wall is built
+ * for), while Stripe's `customer_email` and the first "order received" mail
+ * both need the account the payment is actually tied to. Returns null for an
+ * order whose account has since been deleted (`cnc_orders.user_id` is
+ * `set null` on account deletion) rather than throwing — callers fall back to
+ * `licenseeEmail` in that case.
+ */
+export async function getAccountEmail(userId: string): Promise<string | null> {
+  const [account] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+  return account?.email ?? null;
 }
 
 /**

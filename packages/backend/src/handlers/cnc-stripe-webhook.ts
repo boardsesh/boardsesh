@@ -5,7 +5,7 @@ import { readJsonBody, sendJson } from './http-utils';
 import { logger } from '../utils/logger';
 import { constructWebhookEvent, isStripeWebhookConfigured } from '../services/cnc/stripe';
 import { claimStripeEvent, markStripeEventProcessed, releaseStripeEvent } from '../services/cnc/stripe-events';
-import { getOrderById, getOrderByPaymentIntentId, transitionOrder } from '../services/cnc/orders';
+import { getAccountEmail, getOrderById, getOrderByPaymentIntentId, transitionOrder } from '../services/cnc/orders';
 import { CNC_KICKER_SET_IDS, findCatalogEntry, parseSetIds } from '../services/cnc/catalog';
 import { sendCncOrderReceivedEmail } from '../email/cnc-emails';
 import { webPublicUrl } from '../email/email-service';
@@ -51,6 +51,13 @@ type WebhookOutcome = {
    * and the purchase being counted twice.
    */
   queued: CncOrder | null;
+  /**
+   * The GST-exclusive equivalent of `queued.amountCents`, from the session's
+   * `total_details.amount_tax` when Stripe reported one. `amountCents` itself
+   * stays what Stripe actually charged (GST-inclusive) — this is analytics-only
+   * and is never persisted on the order row.
+   */
+  amountExcludingTaxCents?: number | null;
 };
 
 const IGNORED: WebhookOutcome = { orderId: null, queued: null };
@@ -102,10 +109,19 @@ async function resolveSessionOrder(session: Stripe.Checkout.Session, eventType: 
 /**
  * Payment confirmed: queue the pack.
  *
+ * Handles both `checkout.session.completed` and
+ * `checkout.session.async_payment_succeeded` identically — the latter is the
+ * delayed-payment method (e.g. a bank debit) actually clearing, and by the
+ * time it fires the session's own `payment_status` already reads `paid`, so
+ * the same transition and the same "what did Stripe actually charge" logic
+ * apply unchanged.
+ *
  * `payment_status` is checked rather than assumed. `checkout.session.completed`
  * fires for delayed-payment methods too, where the session is complete but the
  * money is not there yet — queueing on that would generate a licensed pack for
- * a payment that can still fail.
+ * a payment that can still fail. That case is what `async_payment_succeeded`
+ * (money arrived) and `async_payment_failed` (it didn't — see
+ * {@link handleCheckoutExpired}) resolve.
  *
  * The amount and currency are taken from Stripe, not from the catalogue price
  * we wrote at checkout: with Stripe Tax on, what was actually charged is
@@ -127,6 +143,13 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
   // the order as paid three days late.
   const paidAt = new Date(event.created * 1000);
 
+  // GST-exclusive equivalent of the (GST-inclusive) amount stored on the order
+  // — analytics-only, see `WebhookOutcome.amountExcludingTaxCents`.
+  const amountExcludingTaxCents =
+    session.amount_total != null && session.total_details?.amount_tax != null
+      ? session.amount_total - session.total_details.amount_tax
+      : null;
+
   const queued = await transitionOrder(order.id, 'checkoutCompleted', {
     paidAt,
     queuedAt: paidAt,
@@ -146,10 +169,19 @@ async function handleCheckoutCompleted(event: Stripe.Event, session: Stripe.Chec
     return { orderId: order.id, queued: null };
   }
 
-  return { orderId: order.id, queued };
+  return { orderId: order.id, queued, amountExcludingTaxCents };
 }
 
-/** The 30-minute session lapsed unpaid. Retire the reserved order. */
+/**
+ * The checkout lapsed without payment. Retire the reserved order.
+ *
+ * Handles both `checkout.session.expired` (the 30-minute session ran out
+ * unpaid) and `checkout.session.async_payment_failed` (a delayed-payment
+ * method — the money was never going to arrive — declined). Both leave the
+ * order exactly as unpaid as it already was, and `checkoutExpired` is the
+ * transition the state table already allows from `pending_payment`, so
+ * neither event needs one of its own.
+ */
 async function handleCheckoutExpired(event: Stripe.Event, session: Stripe.Checkout.Session): Promise<WebhookOutcome> {
   const order = await resolveSessionOrder(session, event.type);
   if (!order) return IGNORED;
@@ -179,8 +211,13 @@ async function handleChargeRefunded(event: Stripe.Event, charge: Stripe.Charge):
   const order = await getOrderByPaymentIntentId(paymentIntentId);
   if (!order) {
     // Every Stripe charge on the account lands here, including ones that have
-    // nothing to do with build packs. Not finding an order is normal.
-    logger.info('[cnc-webhook] refunded charge does not belong to a build-pack order', { chargeId: charge.id });
+    // nothing to do with build packs, so this is not necessarily a bug — but
+    // it is worth a look, so warn rather than info. The payment intent id is
+    // enough to check by hand in the Stripe dashboard; the body is never
+    // logged (it carries the buyer's email and the full charge record).
+    logger.warn("[cnc-webhook] no build-pack order for the refunded charge's payment intent", {
+      paymentIntentId,
+    });
     return IGNORED;
   }
 
@@ -191,8 +228,10 @@ async function handleChargeRefunded(event: Stripe.Event, charge: Stripe.Charge):
 async function processEvent(event: Stripe.Event): Promise<WebhookOutcome> {
   switch (event.type) {
     case 'checkout.session.completed':
+    case 'checkout.session.async_payment_succeeded':
       return handleCheckoutCompleted(event, event.data.object);
     case 'checkout.session.expired':
+    case 'checkout.session.async_payment_failed':
       return handleCheckoutExpired(event, event.data.object);
     case 'charge.refunded':
       return handleChargeRefunded(event, event.data.object);
@@ -212,8 +251,14 @@ async function processEvent(event: Stripe.Event): Promise<WebhookOutcome> {
  * event is marked processed — a failure here must not turn a completed payment
  * into a 500 that Stripe redelivers, because the redelivery would find the
  * order already queued and never retry the email anyway.
+ *
+ * The "order received" mail goes to the signed-in account's own email and,
+ * when `licenseeEmail` names someone else (a teammate, a client, whoever the
+ * wall is actually for), to that address too. Each send is independently
+ * best-effort — `sendCncOrderReceivedEmail` already logs and swallows its own
+ * failures — so a dead address on one side never costs the other its receipt.
  */
-async function announcePurchase(order: CncOrder): Promise<void> {
+async function announcePurchase(order: CncOrder, amountExcludingTaxCents: number | null): Promise<void> {
   const entry = findCatalogEntry({
     boardName: order.boardName,
     layoutId: order.layoutId,
@@ -223,9 +268,16 @@ async function announcePurchase(order: CncOrder): Promise<void> {
   const setIds = parseSetIds(order.setIds) ?? [];
   const hasKicker = setIds.some((setId) => CNC_KICKER_SET_IDS.includes(setId));
 
-  if (order.licenseeEmail) {
+  // The account is nullable (the licence outlives it — `set null` on account
+  // deletion), so there may be nothing to look up.
+  const accountEmail = order.userId ? await getAccountEmail(order.userId) : null;
+  const recipients = new Set<string>();
+  if (accountEmail) recipients.add(accountEmail);
+  if (order.licenseeEmail) recipients.add(order.licenseeEmail);
+
+  for (const to of recipients) {
     await sendCncOrderReceivedEmail({
-      to: order.licenseeEmail,
+      to,
       licenseeName: order.licenseeName ?? 'there',
       licenceId: order.licenceId,
       boardLabel,
@@ -245,7 +297,14 @@ async function announcePurchase(order: CncOrder): Promise<void> {
       size_id: order.sizeId,
       kicker: hasKicker,
       has_artwork: Array.isArray(order.artwork) && order.artwork.length > 0,
+      // GST-inclusive: what Stripe actually charged. See the doc comment on
+      // `Build Plans Pack Purchased` above for why this is not the catalogue
+      // price.
       amount_cents: order.amountCents,
+      // GST-exclusive equivalent, when Stripe reported a tax breakdown. Null
+      // for an order with no tax details (e.g. a jurisdiction Stripe Tax
+      // didn't charge GST in) rather than derived from a guessed rate.
+      amount_excluding_tax_cents: amountExcludingTaxCents,
       currency: order.currency,
     },
   });
@@ -331,7 +390,7 @@ export async function handleCncStripeWebhook(req: IncomingMessage, res: ServerRe
 
   if (outcome.queued) {
     try {
-      await announcePurchase(outcome.queued);
+      await announcePurchase(outcome.queued, outcome.amountExcludingTaxCents ?? null);
     } catch (error) {
       logger.warn('[cnc-webhook] purchase announcement failed', { orderId: outcome.queued.id, error });
     }
