@@ -27,14 +27,25 @@ import SiteFooter from '../site-chrome/site-footer';
  * `app/layout.tsx` — it was never inside the old wrapper, and moving it under
  * `FeatureFlagsProvider` would reorder providers for no gain.
  */
-export default function SiteChrome({ children }: { children: React.ReactNode }) {
+export default function SiteChrome({
+  children,
+  showBuildPlans = false,
+}: {
+  children: React.ReactNode;
+  /**
+   * Server-resolved `cnc-packs` gate, passed straight through to SiteFooter.
+   * SiteChrome itself is a client component and must not resolve it — see the
+   * note at the call site in app/layout.tsx.
+   */
+  showBuildPlans?: boolean;
+}) {
   return (
     <StatsFilterBridgeProvider>
       <ProfileHeaderShareProvider>
         <PlaylistsAdapterProvider>
           <MarketingHeader />
           {children}
-          <SiteFooter />
+          <SiteFooter showBuildPlans={showBuildPlans} />
         </PlaylistsAdapterProvider>
       </ProfileHeaderShareProvider>
     </StatsFilterBridgeProvider>

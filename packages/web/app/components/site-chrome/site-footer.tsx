@@ -49,7 +49,7 @@ const GROUP_HEADING_SX = {
  * and it re-hosts the locale switcher that used to live in the user drawer —
  * without it a four-locale site would have no way to change language.
  */
-export default function SiteFooter() {
+export default function SiteFooter({ showBuildPlans = false }: { showBuildPlans?: boolean }) {
   const { t } = useTranslation('common');
   const pathname = usePathnameWithoutLocale();
 
@@ -86,6 +86,10 @@ export default function SiteFooter() {
         { href: '/playlists', label: t('footer.links.playlists') },
         { href: '/aurora-migration', label: t('footer.links.auroraMigration') },
         { href: '/docs', label: t('footer.links.docs') },
+        // The only crawl path into /build-plans, and it appears only when the
+        // `cnc-packs` flag is on — while it is off the route 404s, and a footer
+        // link to a 404 on every page of the site is a real SEO liability.
+        ...(showBuildPlans ? [{ href: '/build-plans', label: t('footer.links.buildPlans') }] : []),
       ],
     },
     {

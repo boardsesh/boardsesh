@@ -10,9 +10,10 @@ import SiteChrome from './components/providers/site-chrome';
 import { SnackbarProvider } from './components/providers/snackbar-provider';
 import { AuthModalProvider } from './components/providers/auth-modal-provider';
 import I18nProvider from './components/providers/i18n-provider';
-import { EMPTY_FEATURE_FLAGS } from './flags';
+import { CNC_PACKS_FLAG, EMPTY_FEATURE_FLAGS } from './flags';
 import { FeatureFlagsProvider } from './components/providers/feature-flags-provider';
 import CapacitorRetirementGate from './components/capacitor-retirement/capacitor-retirement-gate';
+import { getServerFeatureFlag } from './lib/feature-flags/server-feature-flag';
 import { getLocale } from './lib/i18n/get-locale';
 import { getServerTranslation } from './lib/i18n/server';
 import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
@@ -63,6 +64,21 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getLocale();
+  // Whether the footer offers a way into /build-plans. Resolved on the server
+  // because SiteFooter renders in the first paint of every page and a link that
+  // pops in after the browser resolves a flag is worse than no link.
+  //
+  // `distinctId: null` with `allowAnonymous: true`, NOT the signed-in person's
+  // id, and that is a deliberate trade: `getPosthogDistinctId` reads the
+  // next-auth session, and doing that in the ROOT layout would put a session
+  // decode in front of every render of every page on the site for one footer
+  // link. The anonymous bucket is a single shared distinct id, so this is one
+  // cached answer for everyone — right for a percentage rollout, and it means a
+  // rollout targeted at one PERSON hides the footer link from them while
+  // /build-plans itself still opens. The page's own gate resolves the real
+  // distinct id (see build-plans-page.ts) and is what actually decides
+  // reachability.
+  const showBuildPlans = await getServerFeatureFlag(CNC_PACKS_FLAG, { distinctId: null, allowAnonymous: true });
 
   return (
     <html lang={LOCALE_HTML_LANG[locale]} data-theme="dark" suppressHydrationWarning>
@@ -110,7 +126,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <CapacitorRetirementGate>
                       <AuthModalProvider>
                         <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                          <SiteChrome>{children}</SiteChrome>
+                          <SiteChrome showBuildPlans={showBuildPlans}>{children}</SiteChrome>
                         </FeatureFlagsProvider>
                       </AuthModalProvider>
                     </CapacitorRetirementGate>

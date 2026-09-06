@@ -32,9 +32,23 @@ export const MOONBOARD_WIDE_ANGLES_FLAG = 'moonboard-wide-angles';
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
 export const FEATURE_FLAG_KEYS = [BOARDSESH_GRADE_FLAG, GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as const;
 
+// Gates `/build-plans` — the paid CNC build-pack configurator, the orders
+// pages, and the footer link into them. Server-resolved rather than client,
+// because this gate has to make an unreachable surface 404 rather than hide a
+// button: the manufacturing licence ships marked DRAFT until an Australian IP
+// lawyer has reviewed it and the Kilter-derived engrave layer, so the pages
+// must not be reachable — or indexable — before then.
+//
+// Resolved with `allowAnonymous: true`. Build plans are bought by people who
+// have never signed in, so a gate that only evaluates for a session would keep
+// the page signed-in-only however the dashboard is configured.
+// `FEATURE_FLAG_OVERRIDES=cnc-packs` is how you reach it locally.
+export const CNC_PACKS_FLAG = 'cnc-packs';
+
 // Keys resolved server-side by `getServerFeatureFlag`, which gate whether a
-// route renders at all. Empty since `/gyms` launched unconditionally; the
-// machinery stays because that is a different gate from the client keys above
-// (see docs/feature-flags.md). Deliberately kept out of FEATURE_FLAG_KEYS: the
-// browser provider would fetch a flag no client component reads.
-export const SERVER_FEATURE_FLAG_KEYS = [] as const;
+// route renders at all. `/gyms` launched unconditionally and emptied this list;
+// `/build-plans` is its current occupant. That is a different gate from the
+// client keys above (see docs/feature-flags.md), and these keys are
+// deliberately kept out of FEATURE_FLAG_KEYS: the browser provider would fetch
+// a flag no client component reads.
+export const SERVER_FEATURE_FLAG_KEYS = [CNC_PACKS_FLAG] as const;
