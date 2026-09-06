@@ -49,7 +49,10 @@ public class BoardRendererModule: Module {
 
   // Initialized once per process (i.e. once per app launch), thread-safe for
   // the same reason as `cacheDir`. Accessing it from renderHoldsOverlay
-  // triggers the prune on the first call.
+  // triggers the prune on the first call. It reads `cacheDir` inside its own
+  // initializer; Swift initializes each static lazily and under its own lock,
+  // so that nested first access is fine — keep it that way (never touch
+  // `pruneOnce` from `cacheDir`'s initializer, which would deadlock).
   private static let pruneOnce: Void = {
     pruneCacheIfNeeded(at: cacheDir, maxBytes: cacheCapBytes)
   }()
