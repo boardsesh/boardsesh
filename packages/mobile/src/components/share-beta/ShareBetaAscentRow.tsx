@@ -3,11 +3,17 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
-import { deriveLogbookGradeDisplay, displayedAttemptCount, logbookAttemptsKind } from '@boardsesh/logbook';
+import {
+  deriveGradeTokenModel,
+  displayedAttemptCount,
+  gradeTokenA11yLabel,
+  logbookAttemptsKind,
+} from '@boardsesh/logbook';
 import { formatTickRelativeTime, getLayoutDisplayName } from '@boardsesh/profile-stats';
 import { ClimbListThumbnail } from '../ClimbListThumbnail';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { Icon } from '../Icon';
+import { GradeValue } from '../grade/GradeValue';
 import { type IconName } from '../icon-map';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
@@ -67,17 +73,29 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const boardseshActive = useBoardseshGradesActive();
 
-  // Grade column mirrors LogbookRow: the climber's own grade wins; the crowd
-  // grade (Boardsesh grade when that toggle is on and trusted) fills in when
-  // they never graded it, marked with the `people` glyph.
+  // Grade slot mirrors LogbookRow: ONE number, and a `people` marker only when
+  // that number is the crowd's. A diary surface — the picker lists YOUR ascents
+  // — so your own grade is the unremarkable one here. The crowd's number, when
+  // it differs, leads the result line below instead of stacking under this one.
   const crowdDifficulty = resolveCrowdDifficultyId(ascent, boardseshActive);
-  const { gradeIsConsensus } = deriveLogbookGradeDisplay(ascent.difficulty, crowdDifficulty);
   const rawGradeLabel = ascent.difficultyName ?? ascent.consensusDifficultyName;
-  const displayedDifficulty = ascent.difficulty ?? crowdDifficulty;
-  const gradeLabel =
-    formatGradeByDifficultyId(displayedDifficulty) ?? formatGrade(rawGradeLabel) ?? rawGradeLabel ?? null;
+  const personalGradeLabel =
+    ascent.difficulty != null
+      ? (formatGradeByDifficultyId(ascent.difficulty) ?? formatGrade(ascent.difficultyName) ?? ascent.difficultyName)
+      : null;
+  const crowdGradeLabel =
+    crowdDifficulty != null
+      ? (formatGradeByDifficultyId(crowdDifficulty) ??
+        formatGrade(ascent.consensusDifficultyName) ??
+        ascent.consensusDifficultyName)
+      : null;
+  const gradeModel = deriveGradeTokenModel({
+    personalLabel: personalGradeLabel,
+    crowdLabel: crowdGradeLabel,
+    baseline: 'personal',
+  });
   const gradeColorName =
-    gradeIsConsensus && crowdDifficulty != null
+    gradeModel.source === 'crowd' && crowdDifficulty != null
       ? (GRADE_BY_ID.get(clampDifficultyId(crowdDifficulty))?.difficulty_name ?? rawGradeLabel)
       : rawGradeLabel;
   const gradeColor = gradeColorName ? (getGradeColor(gradeColorName) ?? DEFAULT_GRADE_COLOR) : DEFAULT_GRADE_COLOR;
@@ -86,12 +104,15 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
   // agree — no new visible strings, no new translations to drift.
   const attemptsKind = logbookAttemptsKind(ascent.status);
   const tries = displayedAttemptCount(ascent.attemptCount);
-  const resultLabel =
+  const attemptsLabel =
     attemptsKind === 'flash'
       ? t('you:mobile.logbook.status.flash')
       : attemptsKind === 'send'
         ? t('you:mobile.logbook.tries', { count: tries })
         : `${t('you:mobile.logbook.row.project')} · ${t('you:mobile.logbook.tries', { count: tries })}`;
+  // The crowd's grade leads the result run when it is not the number in the
+  // grade slot — grey, uncoloured, one more fact about the climb.
+  const resultLabel = [gradeModel.crowdLineToken, attemptsLabel].filter(Boolean).join(' · ');
   const statusColor =
     ascent.status === 'flash'
       ? brandColors.warning
@@ -115,15 +136,19 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
 
   // One a11y element per row: the thumbnail subtree is hidden below, so VoiceOver
   // reads this composed sentence and nothing else.
+  // `gradeTokenA11yLabel` resolves its keys out of @boardsesh/logbook, which the
+  // i18n orphan checker does not scan — so name them here:
+  // i18n-keep common.mobile.gradeToken.a11yYours
+  // i18n-keep common.mobile.gradeToken.a11yCommunity
+  const gradeA11yLabel = gradeTokenA11yLabel(gradeModel, t);
   const accessibilityDetails = [
     ascent.climbName,
     ascent.isMirror ? t('you:mobile.logbook.row.a11yMirrored') : null,
-    gradeLabel
-      ? gradeIsConsensus
-        ? t('you:mobile.logbook.row.a11yCommunityGrade', { grade: gradeLabel })
-        : gradeLabel
+    gradeA11yLabel,
+    gradeModel.crowdLineToken
+      ? t('you:mobile.logbook.row.a11yCommunityGrade', { grade: gradeModel.crowdLineToken })
       : null,
-    resultLabel,
+    attemptsLabel,
     hasBetaVideo ? t('you:mobile.logbook.row.a11yHasBetaVideo') : null,
     wallAngleLabel,
     relativeTime,
@@ -209,14 +234,19 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
           </Text>
         </View>
 
-        {gradeLabel || hasBetaVideo ? (
+        {/* ONE number, one line — the crowd's, when it differs, is the leading
+            token of the result line to the left. */}
+        {gradeModel.source !== 'none' || hasBetaVideo ? (
           <View style={styles.gradeColumn}>
             {hasBetaVideo ? <Icon name="video.fill" size={13} color={brandColors.primary} /> : null}
-            {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
-            {gradeLabel ? (
-              <Text variant="title3" numberOfLines={1} style={[styles.grade, { color: gradeColor }]}>
-                {gradeLabel}
-              </Text>
+            {gradeModel.source !== 'none' ? (
+              <GradeValue
+                label={gradeModel.label}
+                color={gradeColor}
+                source={gradeModel.source}
+                baseline="personal"
+                accessibilityLabel={gradeA11yLabel ?? undefined}
+              />
             ) : null}
           </View>
         ) : null}
@@ -285,10 +315,6 @@ const styles = StyleSheet.create({
     gap: 3,
     marginLeft: spacing[1],
     maxWidth: 110,
-  },
-  grade: {
-    fontWeight: '700',
-    textAlign: 'right',
   },
   separator: {
     height: StyleSheet.hairlineWidth,

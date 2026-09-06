@@ -6,14 +6,17 @@
  * here on — the grade the climber gave it themselves when they logged a tick.
  * Issues #4796 and #4828 are both the same complaint from opposite ends: a
  * Woods climber logs V10 on a climb the board calls V0, and nothing anywhere
- * changes. The rule this module encodes is "your grade wins": if you graded it,
- * that is the number you see, and the crowd's number demotes to a second line.
+ * changes. The rule is "your grade wins": if you graded it, that is the number
+ * you see.
+ *
+ * This module owns SELECTING and BOUNDING that grade. How it then renders
+ * against the crowd's — which number sits in the column, whether it wears a
+ * provenance glyph, and where the other number goes — lives next door in
+ * ./grade-token.ts.
  *
  * Pure TS on purpose — no React, no formatting, so both web and mobile can
- * branch identically and the whole thing is unit testable. Callers own the
- * formatting (it needs each platform's grade-format preference) and pass the
- * rendered labels back in. The one table it reads is BOULDER_GRADES, and only
- * for the scale's end points.
+ * branch identically and the whole thing is unit testable. The one table it
+ * reads is BOULDER_GRADES, and only for the scale's end points.
  */
 
 import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
@@ -121,62 +124,4 @@ export function pickLatestGradedTick<TickShape extends GradedTickLike>(
     if (latest === null || compareByRecencyDesc(entry, latest) < 0) latest = entry;
   }
   return latest;
-}
-
-/** Which grade the big number on a row or header is showing. */
-export type PrimaryGradeSource = 'personal' | 'crowd' | 'none';
-
-export type PersonalGradeDisplay = {
-  /** Whose grade the big number is. */
-  source: PrimaryGradeSource;
-  /**
-   * Whether the big number wears the `person` marker.
-   *
-   * Deliberately not the same as `source === 'personal'`. When the climber's
-   * grade renders to the same label as the crowd's there is nothing to
-   * disambiguate, so the row stays byte-identical to a row with no personal
-   * grade at all — no marker, no second line. Marking every graded row would
-   * put a glyph on most rows for a climber who grades everything, which is the
-   * noise the whole design is trying to avoid.
-   */
-  markPrimary: boolean;
-  /**
-   * The crowd's label for the demoted second line, or `null` for no second
-   * line. Only ever populated when the two grades actually disagree.
-   */
-  secondaryLabel: string | null;
-};
-
-/**
- * Decide how one climb renders its grade, given the climber's label and the
- * crowd's.
- *
- * Equality is compared on the RENDERED LABEL rather than the difficulty id
- * because several ids collapse to one label — Aurora's 4a/4b/4c all render
- * "V0", so a climber who logged 4c on a climb listed as 4a has not actually
- * disagreed with anything a reader can see, and showing them "V0 over V0" would
- * be nonsense. Comparing labels also means the answer follows the climber's own
- * V-grade/Font/both preference for free.
- *
- * Pass `personalLabel: null` for both "never graded it" and "we haven't fetched
- * the logbook yet" — an unknown bucket must render exactly like an ungraded one
- * rather than guessing (#3940).
- */
-export function derivePersonalGradeDisplay(
-  personalLabel: string | null | undefined,
-  crowdLabel: string | null | undefined,
-): PersonalGradeDisplay {
-  if (personalLabel == null || personalLabel === '') {
-    return { source: crowdLabel ? 'crowd' : 'none', markPrimary: false, secondaryLabel: null };
-  }
-  if (crowdLabel == null || crowdLabel === '') {
-    // Your grade is the only one there is — a draft, or an angle with no stats
-    // row. Still marked, because the number is an opinion and the play drawer
-    // is a screen people hand to their partner.
-    return { source: 'personal', markPrimary: true, secondaryLabel: null };
-  }
-  if (personalLabel === crowdLabel) {
-    return { source: 'personal', markPrimary: false, secondaryLabel: null };
-  }
-  return { source: 'personal', markPrimary: true, secondaryLabel: crowdLabel };
 }

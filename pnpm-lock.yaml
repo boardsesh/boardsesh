@@ -1222,6 +1222,9 @@ importers:
       '@boardsesh/graphql':
         specifier: workspace:*
         version: link:../graphql
+      '@boardsesh/play-view':
+        specifier: workspace:*
+        version: link:../play-view
       dayjs:
         specifier: ^1.11.21
         version: 1.11.23

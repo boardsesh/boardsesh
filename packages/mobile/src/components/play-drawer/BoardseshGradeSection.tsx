@@ -17,6 +17,7 @@ import { getBoardCapabilities } from '@boardsesh/board-config';
 import { buildBoardseshGradeView, buildCorrection, buildTrustBand } from './boardsesh-grade-utils';
 import { ESTIMATE_PREFIX, renderDifficulty } from '../../lib/boardsesh-grade-display';
 import { useMyGrade } from '../../hooks/use-my-grade';
+import { GradeValue, type GradeSource } from '../grade/GradeValue';
 import type { IconName } from '../icon-map';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 
@@ -34,21 +35,29 @@ type BoardseshGradeSectionProps = {
  * hero: that row is already two grades wide, and a label like "Angegebener
  * Grad" cannot sit beside "Boardsesh-Grad" at caption size without clipping.
  * Stacking lets each label wrap on its own.
+ *
+ * The grade slot is `GradeValue`'s `ladder` variant, which never marks: the
+ * rung already states its provenance in words beside a 20pt glyph gutter, so a
+ * marker on the number would be the third time one row says the same thing.
  */
 const GradeLadderRow = memo(function GradeLadderRow({
   icon,
+  source,
   label,
   detail,
   grade,
   gradeColor,
 }: {
   icon: IconName;
+  /** Whose grade this rung is. Carried for the slot's contract; never drawn here. */
+  source: GradeSource;
   label: string;
   detail?: string | null;
   grade: string;
   /** Omitted for every rung except the one the app is actually using for you. */
   gradeColor?: string;
 }) {
+  const { systemColors } = useTheme();
   return (
     <View style={styles.ladderRow}>
       <View style={styles.ladderGlyph}>
@@ -62,13 +71,7 @@ const GradeLadderRow = memo(function GradeLadderRow({
           </Text>
         ) : null}
       </View>
-      <Text
-        variant="title3"
-        style={[styles.ladderGrade, { color: gradeColor ?? iosSystemColors.systemGray }]}
-        numberOfLines={1}
-      >
-        {grade}
-      </Text>
+      <GradeValue label={grade} color={gradeColor ?? systemColors.secondaryLabel} source={source} variant="ladder" />
     </View>
   );
 });
@@ -124,6 +127,7 @@ const YourGradeBlock = memo(function YourGradeBlock({
     <View style={styles.ladder}>
       <GradeLadderRow
         icon="person"
+        source="personal"
         label={t('boardseshGrade.yours.label')}
         detail={t('boardseshGrade.yours.meta', { angle })}
         grade={mine.label}
@@ -132,6 +136,7 @@ const YourGradeBlock = memo(function YourGradeBlock({
       {crowdLabel ? (
         <GradeLadderRow
           icon="people"
+          source="crowd"
           // On Woods and MoonBoard the number comes straight out of the
           // manufacturer's own app, so calling it a "community grade" would be
           // a lie. "Board grade" rather than "Setter's grade" because the data
@@ -528,13 +533,6 @@ const styles = StyleSheet.create({
     // instead of wrapping.
     minWidth: 0,
     gap: 1,
-  },
-  ladderGrade: {
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-    textAlign: 'right',
-    // Fits the widest label the 'both' format produces ("V5 / 6C").
-    minWidth: 56,
   },
   // HERO — correction row
   correctionRow: {

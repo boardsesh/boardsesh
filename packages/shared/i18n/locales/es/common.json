@@ -273,6 +273,10 @@
       "viewProfile": "Ver el perfil de {{name}}",
       "thisClimber": "este escalador"
     },
+    "gradeToken": {
+      "a11yYours": "tu grado {{grade}}",
+      "a11yCommunity": "grado de la comunidad {{grade}}"
+    },
     "more": {
       "title": "Más",
       "library": "Biblioteca",

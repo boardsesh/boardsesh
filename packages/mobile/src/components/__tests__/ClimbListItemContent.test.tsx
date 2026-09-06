@@ -122,7 +122,10 @@ const baseClimb = {
 
 const gradeNode = (container: HTMLElement) => container.querySelector('[data-variant="title3"]');
 
-const secondaryNode = (container: HTMLElement) => container.querySelector('[data-variant="caption2"]');
+// The subtitle run: "V0 · 412 sends · 2.9★ · woods". The crowd's number leads
+// it whenever it is not the number in the grade column.
+const subtitleText = (container: HTMLElement) =>
+  container.querySelector('[data-variant="footnote"]')?.textContent ?? '';
 const iconNames = (container: HTMLElement) =>
   [...container.querySelectorAll('[data-icon]')].map((node) => node.getAttribute('data-icon'));
 
@@ -230,8 +233,10 @@ describe('ClimbListItemContent favourite heart', () => {
   });
 });
 
-// #4796 / #4828: the grade a climber gave a climb wins over the crowd's, and
-// the crowd's demotes to a marked second line — but only where they disagree.
+// #4796 / #4828: the grade a climber gave a climb wins over the crowd's. The
+// climbs list is a CATALOG surface — it is about the board's climbs — so the
+// crowd's number is the unremarkable one and yours is what wears the `person`
+// marker. Only ever ONE number in the column; the other rides the subtitle.
 describe('ClimbListItemContent personal grade', () => {
   beforeEach(() => {
     resolveGrade.mockReset();
@@ -239,38 +244,42 @@ describe('ClimbListItemContent personal grade', () => {
     myGradeOverride.current = { status: 'unknown' };
   });
 
-  it('renders the crowd grade untouched before the logbook has been fetched', () => {
-    // State E. An empty bucket is ambiguous until the fetch lands, so the row
-    // must look exactly like one nobody graded rather than guess (#3940).
+  it('renders the crowd grade unmarked before the logbook has been fetched', () => {
+    // An empty bucket is ambiguous until the fetch lands, so the row must look
+    // exactly like one nobody graded rather than guess (#3940).
     resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
     const { container } = renderRow();
     expect(gradeNode(container)?.textContent).toBe('V4');
-    expect(secondaryNode(container)).toBeNull();
     expect(iconNames(container)).not.toContain('person');
+    expect(iconNames(container)).not.toContain('people');
+    expect(subtitleText(container)).not.toContain('V4');
   });
 
-  it('renders the crowd grade untouched when the climber never graded it', () => {
-    // State A — the common case, and byte-identical to today's row.
+  it('renders the crowd grade unmarked when the climber never graded it', () => {
+    // The common case, and byte-identical to a row before this feature.
     resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
     myGradeOverride.current = { status: 'none' };
     const { container } = renderRow();
     expect(gradeNode(container)?.textContent).toBe('V4');
-    expect(secondaryNode(container)).toBeNull();
     expect(iconNames(container)).not.toContain('person');
+    expect(subtitleText(container)).not.toContain('V4');
   });
 
-  it('shows your grade over the crowd’s, each marked, when they disagree', () => {
-    // State C — the Woods case in both issues: set at V0, you called it V10.
+  it('puts YOUR grade in the column, marked, and the crowd’s on the subtitle', () => {
+    // The Woods case in both issues: set at V0, you called it V10. One number
+    // in the column, one line tall; the crowd's leads the stats run.
     resolveGrade.mockReturnValue({ label: 'V0', color: '#111111', isBoardsesh: false });
     myGradeOverride.current = { status: 'set', difficultyId: 27, climbedAt: '2026-08-01T00:00:00.000Z' };
     const { container } = renderRow();
 
     expect(gradeNode(container)?.textContent).toBe('V10');
-    expect(secondaryNode(container)?.textContent).toBe('V0');
-    expect(iconNames(container)).toEqual(expect.arrayContaining(['person', 'people']));
+    expect(iconNames(container)).toContain('person');
+    // Never both markers: there is only one number in the column to attribute.
+    expect(iconNames(container)).not.toContain('people');
+    expect(subtitleText(container)).toBe('V0 · sends · 4.5★');
   });
 
-  it('colours the big number by YOUR grade, not the crowd’s', () => {
+  it('colours the number in the column by YOUR grade, not the crowd’s', () => {
     // The colour has to follow the number actually shown, or a V10 reads in
     // the V0 colour and the row lies twice over.
     resolveGrade.mockReturnValue({ label: 'V0', color: '#111111', isBoardsesh: false });
@@ -279,28 +288,30 @@ describe('ClimbListItemContent personal grade', () => {
     expect(gradeNode(container)?.getAttribute('data-color')).not.toBe('#111111');
   });
 
-  it('stays silent when your grade and the crowd’s render to the same label', () => {
-    // State B, and the reason equality is compared on the LABEL rather than the
-    // difficulty id: ids 10/11/12 are 4a, 4b and 4c, three distinct grades that
-    // all render "V0". A climber who logged 4c on a climb listed as 4a has not
-    // disagreed with anything a reader can see, so "V0 over V0" would be noise.
+  it('MARKS your grade even when it renders to the same label as the crowd’s', () => {
+    // The rule change. Ids 10/11/12 are 4a, 4b and 4c and all render "V0", so
+    // a climber who logged 4c on a climb listed as 4a has nothing to demote —
+    // but the number in the column is still THEIRS, and a marker that came and
+    // went as the crowd grade drifted past them would be unlearnable.
     resolveGrade.mockReturnValue({ label: 'V0', color: '#111111', isBoardsesh: false });
     myGradeOverride.current = { status: 'set', difficultyId: 12, climbedAt: '2026-08-01T00:00:00.000Z' };
     const { container } = renderRow();
 
     expect(gradeNode(container)?.textContent).toBe('V0');
-    expect(secondaryNode(container)).toBeNull();
-    expect(iconNames(container)).not.toContain('person');
+    expect(iconNames(container)).toContain('person');
+    // Nothing to say on the subtitle: a token repeating the column would be a
+    // second number stating no difference.
+    expect(subtitleText(container)).toBe('sends · 4.5★');
   });
 
-  it('marks your grade with no second line when there is no crowd number', () => {
-    // State D — a draft, or an angle with no stats row.
+  it('marks your grade with no subtitle token when there is no crowd number', () => {
+    // A draft, or an angle with no stats row.
     resolveGrade.mockReturnValue({ label: '', color: '#111111', isBoardsesh: false });
     myGradeOverride.current = { status: 'set', difficultyId: 27, climbedAt: '2026-08-01T00:00:00.000Z' };
     const { container } = renderRow();
 
     expect(gradeNode(container)?.textContent).toBe('V10');
-    expect(secondaryNode(container)).toBeNull();
     expect(iconNames(container)).toContain('person');
+    expect(subtitleText(container)).toBe('sends · 4.5★');
   });
 });

@@ -10,6 +10,10 @@
       "viewProfile": "Voir le profil de {{name}}",
       "thisClimber": "ce grimpeur"
     },
+    "gradeToken": {
+      "a11yYours": "ta cotation {{grade}}",
+      "a11yCommunity": "cotation de la communauté {{grade}}"
+    },
     "more": {
       "title": "Plus",
       "library": "Bibliothèque",

@@ -11,10 +11,10 @@ import { useGradeFormat } from '../hooks/use-grade-format';
 import { useAscentStatus } from '../hooks/use-ascent-status';
 import { useMyGrade } from '../hooks/use-my-grade';
 import { renderDifficulty } from '../lib/boardsesh-grade-display';
-import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
-import { splitGradeLabel } from '@boardsesh/play-view';
+import { deriveGradeTokenModel, gradeTokenA11yLabel, type GradeTokenModel } from '@boardsesh/logbook';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
+import { GradeValue, type GradeSource } from './grade/GradeValue';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { ClimbPlaylistChips } from './ClimbPlaylistChips';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
@@ -97,17 +97,6 @@ type ClimbListItemContentProps = {
    */
   primarySubtitleOverride?: string | null;
   /**
-   * Community consensus grade (formatted), shown as a small `people`-marked
-   * secondary under the main grade when it differs from the climber's logged
-   * grade. The logbook passes this so a climb you under/over-graded reads clearly.
-   */
-  consensusGrade?: string | null;
-  /**
-   * True when the main grade shown IS the consensus (the climber never logged
-   * their own). Marks it with the `people` glyph so it's clear it's the crowd's.
-   */
-  gradeIsConsensus?: boolean;
-  /**
    * Render the third row of playlist-membership tags under the subtitle. Opt-in
    * per surface (default off) so only the main filtered climb list shows them —
    * the queue, session, and logbook rows that also reuse this visual stay clean.
@@ -162,12 +151,16 @@ const FavoriteGlyph = React.memo(function FavoriteGlyph({ climbUuid }: { climbUu
  * climbs-search redesign removed when it inlined `useAscentStatus` into
  * `ClimbListItemContent`.
  *
- * This and `LiveClimbGrade` are the row's ONLY two logbook subscribers, and
- * each is its own memo boundary. The grade has to be one of them — your own
- * grade wins over the crowd's, so the number must move when a tick lands — but
- * keep the subscription inside these two children. Hoisting either into
- * `ClimbListItemContent` re-renders the thumbnail and name on every merge,
- * which is the regression this boundary exists to prevent.
+ * This, `LiveClimbGrade` and `LiveClimbSubtitle` are the row's logbook
+ * subscribers, and each is its own memo boundary. All three have to be — your
+ * own grade wins over the crowd's, so the number must move when a tick lands,
+ * and the crowd's number now rides the subtitle run whenever it is not the one
+ * in the column. Keep the subscription inside these children. Hoisting any of
+ * them into `ClimbListItemContent` re-renders the thumbnail and name on every
+ * merge, which is the regression this boundary exists to prevent. They read a
+ * dedicated, memoized logbook context that changes only when ticks merge —
+ * never per frame — so the third consumer costs a visible row one extra Text
+ * render on a tick save.
  */
 const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   climbUuid,
@@ -199,67 +192,21 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   );
 });
 
-const LiveClimbSubtitle = React.memo(function LiveClimbSubtitle({
-  boardName,
-  layoutId,
-  climbUuid,
-  angle,
-  isDraft,
-  ascensionistCount,
-  qualityAverage,
-  setterUsername,
-}: {
-  boardName: BoardName;
-  layoutId: number;
-  climbUuid: string;
-  angle: number;
-  isDraft: boolean;
-  ascensionistCount: number;
-  qualityAverage: string;
-  setterUsername: string;
-}) {
-  const { t } = useTranslation('climbs');
-  const liveStats = useEffectiveClimbStats(boardName, layoutId, climbUuid, angle, {
-    ascensionistCount,
-    qualityAverage,
-  });
-  const parts: string[] = [];
-  if (isDraft) parts.push(t('createClimbForm.draftBadge'));
-  if (!isDraft && liveStats.ascensionistCount > 0) {
-    parts.push(formatSends(liveStats.ascensionistCount, t));
-  }
-  const liveQuality = liveStats.qualityAverage;
-  if (liveQuality != null && parseFloat(liveQuality) > 0) parts.push(`${formatQuality(liveQuality)}★`);
-  if (setterUsername) parts.push(setterUsername);
-  const subtitle = parts.length > 0 ? parts.join(' · ') : t('mobile.climbRow.projectFallback');
-
-  return (
-    <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
-      {subtitle}
-    </Text>
-  );
-});
-
-const LiveClimbGrade = React.memo(function LiveClimbGrade({
-  climb,
-  boardName,
-  layoutId,
-  angle,
-  gradeIsConsensus,
-  consensusGrade,
-}: {
-  climb: ClimbListItemClimb;
-  boardName: BoardName;
-  layoutId: number;
-  angle: number;
-  gradeIsConsensus: boolean;
-  consensusGrade?: string | null;
-}) {
+/**
+ * The row's grade model: which number the column shows, whether that number
+ * needs a `person` marker, and what the subtitle should lead with.
+ *
+ * Read by BOTH the subtitle and the grade column. They stay separate memo
+ * boundaries (see `AscentStatusGlyph`) and the crowd's number now lives on the
+ * subtitle line, so the two have to reach the same answer from the same
+ * inputs. It costs a couple of Map lookups over the pre-built logbook index —
+ * no scan, no per-row state, no work proportional to the logbook.
+ */
+function useClimbGradeToken(climb: ClimbListItemClimb, boardName: BoardName, layoutId: number, angle: number) {
   const { resolveGrade } = useDisplayGrade();
   const { gradeFormat } = useGradeFormat();
-  const { systemColors } = useTheme();
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
-    ascensionistCount: climb.ascensionist_count,
+    ascensionistCount: climb.ascensionist_count ?? 0,
     qualityAverage: climb.quality_average,
     difficulty: climb.difficulty,
   });
@@ -278,55 +225,87 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   const myGrade = useMyGrade(climb.uuid, angle);
   const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
 
-  // Explicit props win when a caller has authoritative data of its own (a
-  // logbook or session row rendering one specific tick). Otherwise the row
-  // derives its own answer, so all six hosts get this without a prop change.
-  const derived = derivePersonalGradeDisplay(mine?.label ?? null, crowdLabel);
-  const showsMine = consensusGrade === undefined && !gradeIsConsensus && derived.source === 'personal' && mine;
+  // The climbs list is a catalog of the board's climbs, so the crowd's number
+  // is the unremarkable one here and yours is what gets marked.
+  const model: GradeTokenModel = deriveGradeTokenModel({
+    personalLabel: mine?.label ?? null,
+    crowdLabel,
+    baseline: 'crowd',
+  });
 
-  const primaryLabel = showsMine ? mine.label : crowdLabel;
-  const primaryColor = showsMine ? mine.color : crowdColor;
-  const markedAsMine = showsMine ? derived.markPrimary : false;
-  // Under the 'both' format ("V5 / 6C") the secondary shows only the V half —
-  // already the primary's own first half — so the two can never appear to be on
-  // different scales, and the line costs no extra width.
-  const secondary =
-    consensusGrade !== undefined ? consensusGrade : showsMine ? splitGradeLabel(derived.secondaryLabel)[0] : null;
+  return { model, color: model.source === 'personal' && mine ? mine.color : crowdColor, liveStats };
+}
+
+const LiveClimbSubtitle = React.memo(function LiveClimbSubtitle({
+  climb,
+  boardName,
+  layoutId,
+  angle,
+}: {
+  climb: ClimbListItemClimb;
+  boardName: BoardName;
+  layoutId: number;
+  angle: number;
+}) {
+  const { t } = useTranslation('climbs');
+  const { model, liveStats } = useClimbGradeToken(climb, boardName, layoutId, angle);
+
+  const parts: string[] = [];
+  // The crowd's number leads the run whenever it is NOT the number in the
+  // grade column — grey, uncoloured, one token among the other facts about the
+  // climb. This is where the demoted second grade went: it costs the row no
+  // height, so the column stays one line in every state.
+  if (model.crowdLineToken) parts.push(model.crowdLineToken);
+  const isDraft = climb.is_draft ?? false;
+  if (isDraft) parts.push(t('createClimbForm.draftBadge'));
+  if (!isDraft && liveStats.ascensionistCount > 0) {
+    parts.push(formatSends(liveStats.ascensionistCount, t));
+  }
+  const liveQuality = liveStats.qualityAverage;
+  if (liveQuality != null && parseFloat(liveQuality) > 0) parts.push(`${formatQuality(liveQuality)}★`);
+  if (climb.setter_username) parts.push(climb.setter_username);
+  const subtitle = parts.length > 0 ? parts.join(' · ') : t('mobile.climbRow.projectFallback');
 
   return (
-    <View style={styles.gradeColumn}>
-      <View style={styles.iconGradeRow}>
-        {markedAsMine ? <Icon name="person" size={13} color={systemColors.secondaryLabel} /> : null}
-        {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
-        <Text
-          variant="title3"
-          numberOfLines={1}
-          // The glyph supplies the column floor when it renders, so the minimum
-          // width is only needed on an unmarked row. Without this a marked row
-          // would cost the climb name the full glyph width on top of a gutter
-          // it no longer needs.
-          style={[
-            styles.gradeText,
-            markedAsMine || gradeIsConsensus ? styles.gradeTextMarked : null,
-            { color: primaryColor },
-          ]}
-        >
-          {primaryLabel}
-        </Text>
-      </View>
-      {secondary ? (
-        <View style={styles.iconGradeRow}>
-          <Icon name="people" size={11} color={systemColors.secondaryLabel} />
-          <Text
-            variant="caption2"
-            numberOfLines={1}
-            style={[styles.consensusText, { color: systemColors.secondaryLabel }]}
-          >
-            {secondary}
-          </Text>
-        </View>
-      ) : null}
-    </View>
+    <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
+      {subtitle}
+    </Text>
+  );
+});
+
+const LiveClimbGrade = React.memo(function LiveClimbGrade({
+  climb,
+  boardName,
+  layoutId,
+  angle,
+}: {
+  climb: ClimbListItemClimb;
+  boardName: BoardName;
+  layoutId: number;
+  angle: number;
+}) {
+  const { t } = useTranslation('climbs');
+  const { model, color } = useClimbGradeToken(climb, boardName, layoutId, angle);
+
+  // `gradeTokenA11yLabel` resolves its keys out of @boardsesh/logbook, which the
+  // i18n orphan checker does not scan — so name them here:
+  // i18n-keep common.mobile.gradeToken.a11yYours
+  // i18n-keep common.mobile.gradeToken.a11yCommunity
+  const accessibilityLabel = gradeTokenA11yLabel(model, t) ?? undefined;
+
+  // A climb with no grade anywhere still holds the column open so the row's
+  // right edge does not move down the list. There is no number to attribute,
+  // so it reads as the crowd's and never marks.
+  const source: GradeSource = model.source === 'none' ? 'crowd' : model.source;
+
+  return (
+    <GradeValue
+      label={model.label}
+      color={color}
+      source={source}
+      baseline="crowd"
+      accessibilityLabel={accessibilityLabel}
+    />
   );
 });
 
@@ -348,8 +327,6 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   subtitleDetailParts,
   showAscentStatus = true,
   primarySubtitleOverride,
-  consensusGrade,
-  gradeIsConsensus = false,
   showPlaylistChips = false,
   showFavorite = false,
 }: ClimbListItemContentProps) {
@@ -408,16 +385,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           />
         </View>
         {primarySubtitleOverride === undefined ? (
-          <LiveClimbSubtitle
-            boardName={boardName}
-            layoutId={layoutId}
-            climbUuid={climb.uuid}
-            angle={angle}
-            isDraft={climb.is_draft ?? false}
-            ascensionistCount={climb.ascensionist_count ?? 0}
-            qualityAverage={climb.quality_average}
-            setterUsername={climb.setter_username ?? ''}
-          />
+          <LiveClimbSubtitle climb={climb} boardName={boardName} layoutId={layoutId} angle={angle} />
         ) : primarySubtitleOverride ? (
           <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
             {primarySubtitleOverride}
@@ -431,18 +399,11 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
         {showPlaylistChips ? <ClimbPlaylistChips climbUuid={climb.uuid} /> : null}
       </View>
 
-      {/* Right: favourite heart + ascent-status glyph + colorized grade */}
+      {/* Right: favourite heart + ascent-status glyph + the one grade slot */}
       <View style={styles.rightSection}>
         {showFavorite ? <FavoriteGlyph climbUuid={climb.uuid} /> : null}
         {showAscentStatus ? <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} /> : null}
-        <LiveClimbGrade
-          climb={climb}
-          boardName={boardName}
-          layoutId={layoutId}
-          angle={angle}
-          gradeIsConsensus={gradeIsConsensus}
-          consensusGrade={consensusGrade}
-        />
+        <LiveClimbGrade climb={climb} boardName={boardName} layoutId={layoutId} angle={angle} />
       </View>
     </>
   );
@@ -482,32 +443,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 6,
-  },
-  gradeText: {
-    fontWeight: '700',
-    minWidth: 40,
-    textAlign: 'right',
-    // Digits stack between the two lines and between rows, so a column of
-    // grades scans as a column rather than jittering on each glyph width.
-    fontVariant: ['tabular-nums'],
-  },
-  gradeTextMarked: {
-    minWidth: 0,
-  },
-  gradeColumn: {
-    alignItems: 'flex-end',
-    gap: 1,
-  },
-  iconGradeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  consensusText: {
-    fontWeight: '600',
-    fontVariant: ['tabular-nums'],
-    // Pull the crowd's number up under yours: the two lines read as one grade
-    // block rather than two unrelated rows.
-    marginTop: -2,
   },
 });
