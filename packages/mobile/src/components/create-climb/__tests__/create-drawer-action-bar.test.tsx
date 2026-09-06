@@ -72,7 +72,6 @@ const baseProps = {
   onUndo: vi.fn(),
   onRedo: vi.fn(),
   onClearHolds: vi.fn(),
-  onNewClimb: vi.fn(),
   frameCount: 1,
   currentFrameIndex: 0,
   canSetActive: true,
@@ -139,21 +138,22 @@ describe('CreateDrawerActionBar', () => {
     expect(scroller.querySelector('[data-action="redo"]')).toBeTruthy();
   });
 
-  it('keeps the trash glyph for Clear holds and adds a separate Start-a-new-climb', () => {
-    // Two buttons, two jobs. `eraser` is not available for Clear holds — it is
-    // already the Erase BRUSH chip in the row above, and one glyph can't mean both
-    // a mode you enter and a destructive command you fire.
-    const { container, scroller } = renderBar(1);
+  it('keeps the trash glyph for Clear holds, and no longer carries a plus', () => {
+    // `eraser` is not available for Clear holds — it is already the Erase BRUSH
+    // chip in the row above, and one glyph can't mean both a mode you enter and a
+    // destructive command you fire.
+    //
+    // The `plus` is gone: "Start a new climb" moved to the header's overflow
+    // menu, because on a route screen a `+` that DISCARDS the climb sat a thumb's
+    // width from the `+` that adds a frame to it. Two plusses, opposite
+    // consequences, one row apart.
+    const { container } = renderBar(1);
 
     const clear = container.querySelector('[data-action="delete"]') as HTMLElement;
-    const newClimb = container.querySelector('[data-action="plus"]') as HTMLElement;
     expect(clear).toBeTruthy();
     expect(clear.getAttribute('data-label')).toBe('mobile.create.actions.clear');
-    expect(newClimb).toBeTruthy();
-    expect(newClimb.getAttribute('data-label')).toBe('mobile.create.actions.newClimb');
     expect(container.querySelector('[data-action="eraser"]')).toBeNull();
-    // "Start a new climb" is the least-used control, so it's the one that scrolls.
-    expect(scroller.contains(newClimb)).toBe(true);
+    expect(container.querySelector('[data-action="plus"]')).toBeNull();
   });
 
   it('floors the Save pill at the 44dp touch target', () => {

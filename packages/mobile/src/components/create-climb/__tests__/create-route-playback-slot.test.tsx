@@ -3,13 +3,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-// The slot is the only route affordance a fresh create sheet has. #4761 came
-// back QA-declined because the transport mounted only at two frames and the one
-// control that made a second frame was a bare `copy` glyph fourth inside the
-// action bar's horizontal scroller — so a climber saw no play control and no
-// sign routes existed. These cases pin the three states that fixes: nothing on a
-// board that can't hold a route, a self-explaining strip on a fresh climb, and
-// the real transport once there is something to play.
+// The slot decides ONE thing: whether the route transport is on screen at all.
+//
+// #4761 made it unconditional on a multi-frame board, because route-ness could
+// only be inferred from `frames.length > 1` and the feature was otherwise
+// invisible — which charged every boulder 52dp of board for an advert. Route
+// mode is now explicit state the header's overflow menu owns, so these cases pin
+// the contract that replaces it: nothing at all unless the setter is authoring a
+// route, and the transport in creator configuration when they are.
 
 type ViewMockProps = { children?: ReactNode; testID?: string; accessibilityLabel?: string };
 vi.mock('react-native', () => ({
@@ -21,45 +22,30 @@ vi.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: ({ children }: { children?: ReactNode }) =>
     createElement('div', { 'data-node': 'gesture-root' }, children),
 }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
-}));
-vi.mock('../../Icon', () => ({ Icon: ({ name }: { name?: string }) => createElement('span', { 'data-icon': name }) }));
-vi.mock('../../Button', () => ({
-  Button: ({
-    title,
-    onPress,
-    minHeight,
-    variant,
-  }: {
-    title?: string;
-    onPress?: () => void;
-    minHeight?: number;
-    variant?: string;
-  }) =>
-    createElement(
-      'button',
-      { 'data-title': title, 'data-min-height': minHeight, 'data-variant': variant, onClick: onPress },
-      title,
-    ),
-}));
-vi.mock('../../Button.surface', () => ({
-  ButtonSurfaceProvider: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-}));
 // The real transport pulls Reanimated and a GestureDetector into jsdom; the slot
 // only owes it the right props and the right mounting condition.
 vi.mock('../../playback/PlaybackControls', () => ({
-  PlaybackControls: ({ frameCount, frameIndex }: { frameCount?: number; frameIndex?: number }) =>
-    createElement('div', { 'data-node': 'transport', 'data-frames': frameCount, 'data-index': frameIndex }),
-}));
-vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { separator: '#C6C6C8', tertiaryLabel: '#3C3C4399' } }),
-}));
-vi.mock('../../../theme/layout', () => ({ glassSize: { inline: 44 } }));
-vi.mock('../../../theme/tokens', () => ({
-  spacing: { 2: 8, 4: 16 },
-  borderRadius: { lg: 12 },
+  PlaybackControls: ({
+    frameCount,
+    frameIndex,
+    paceUnit,
+    frameEditing,
+    onPaceChange,
+  }: {
+    frameCount?: number;
+    frameIndex?: number;
+    paceUnit?: string;
+    frameEditing?: { onAddFrame: () => void };
+    onPaceChange?: (paceMs: number) => void;
+  }) =>
+    createElement('div', {
+      'data-node': 'transport',
+      'data-frames': frameCount,
+      'data-index': frameIndex,
+      'data-pace-unit': paceUnit,
+      'data-frame-editing': frameEditing ? 'yes' : 'no',
+      'data-pace-change': onPaceChange ? 'yes' : 'no',
+    }),
 }));
 
 import { CreateRoutePlaybackSlot } from '../CreateRoutePlaybackSlot';
@@ -76,123 +62,74 @@ const playback = {
 
 function renderSlot(overrides: Partial<Parameters<typeof CreateRoutePlaybackSlot>[0]> = {}) {
   const onAddFrame = vi.fn();
-  const onDeleteFrame = vi.fn();
+  const onPaceChange = vi.fn();
   const { container } = render(
     createElement(CreateRoutePlaybackSlot, {
-      supportsMultiFrame: true,
+      showRouteTransport: true,
       frameCount: 1,
       frameIndex: 0,
       playback,
       wallStateLabel: null,
       onAddFrame,
-      onDeleteFrame,
+      onPaceChange,
       ...overrides,
     }),
   );
-  const button = (title: string) => container.querySelector(`[data-title="${title}"]`) as HTMLButtonElement | null;
   return {
     container,
     onAddFrame,
-    onDeleteFrame,
-    button,
-    strip: container.querySelector('[data-testid="create-route-playback-empty"]') as HTMLElement | null,
-    transport: container.querySelector('[data-node="transport"]') as HTMLElement | null,
-    addFrame: button('mobile.create.playback.addFrame'),
-    deleteFrame: button('mobile.create.frames.delete'),
+    onPaceChange,
+    transport: container.querySelector('[data-node="transport"]'),
+    gestureRoot: container.querySelector('[data-node="gesture-root"]'),
   };
 }
 
 describe('CreateRoutePlaybackSlot', () => {
-  it('renders nothing on a board that cannot hold a second frame', () => {
-    // Woods lights one static frame, and a two-frame string carries a comma its
-    // packet builder rejects outright. Offering the strip there would advertise
-    // a climb the wall then refuses to light.
-    const { container } = renderSlot({ supportsMultiFrame: false });
+  it('renders nothing for a boulder, however many frames it somehow has', () => {
+    // The frame count is deliberately >1: a route that was never switched into
+    // route mode cannot exist, and if one ever did, the flag still decides.
+    const { container } = renderSlot({ showRouteTransport: false, frameCount: 3 });
     expect(container.innerHTML).toBe('');
-
-    const asRoute = renderSlot({ supportsMultiFrame: false, frameCount: 3, frameIndex: 1 });
-    expect(asRoute.container.innerHTML).toBe('');
   });
 
-  it('offers a named way in on a single-frame climb', () => {
-    const { strip, transport, addFrame, container } = renderSlot({ frameCount: 1 });
-
-    expect(strip).toBeTruthy();
-    expect(transport).toBeNull();
-    // The strip says what it is, so the feature is not a glyph hunt.
-    expect(container.textContent).toContain('mobile.create.playback.emptyHint');
-    expect(addFrame).toBeTruthy();
-    expect(addFrame?.textContent).toContain('mobile.create.playback.addFrame');
-    expect(strip?.getAttribute('data-label')).toBe('mobile.create.playback.emptyA11y');
-    // Nothing to delete yet — one frame IS the climb.
-    expect(container.querySelector('[data-title="mobile.create.frames.delete"]')).toBeNull();
-    // The play glyph is inert here — a control that played nothing would be half
-    // of "the play button doesn't work".
-    expect(container.querySelector('[data-icon="play.circle"]')).toBeTruthy();
+  it('mounts the transport from the FIRST frame of a route', () => {
+    // The whole point of an explicit route mode: the transport no longer has to
+    // wait for a second frame to exist, so the control that creates one is on
+    // screen when you need it.
+    const { transport } = renderSlot({ frameCount: 1, frameIndex: 0 });
+    expect(transport).not.toBeNull();
+    expect(transport?.getAttribute('data-frames')).toBe('1');
   });
 
-  it('floors the Add frame pill at the 44dp touch target', () => {
-    // Compose sizes a small filled button at 40, and this one shares a row with
-    // a 44dp-tall glyph.
-    const { addFrame } = renderSlot({ frameCount: 1 });
-    expect(addFrame?.getAttribute('data-min-height')).toBe('44');
+  it('passes the frame position through to the transport', () => {
+    const { transport } = renderSlot({ frameCount: 4, frameIndex: 2 });
+    expect(transport?.getAttribute('data-frames')).toBe('4');
+    expect(transport?.getAttribute('data-index')).toBe('2');
   });
 
-  it('adds the frame when the pill is pressed', () => {
-    const { addFrame, onAddFrame } = renderSlot({ frameCount: 1 });
-
-    addFrame?.click();
-    expect(onAddFrame).toHaveBeenCalledTimes(1);
-  });
-
-  it('swaps the strip for the real transport once there is a route to play', () => {
-    const { strip, transport } = renderSlot({ frameCount: 2, frameIndex: 1 });
-
-    expect(strip).toBeNull();
-    expect(transport).toBeTruthy();
-    expect(transport?.getAttribute('data-frames')).toBe('2');
-    expect(transport?.getAttribute('data-index')).toBe('1');
-  });
-
-  it('keeps adding and deleting frames reachable on a route', () => {
-    // Marco, iOS: the strip got you to two frames and then vanished, putting the
-    // THIRD frame back behind the action bar's bare `copy` glyph. Both frame
-    // actions live under the transport now, in words.
-    const { addFrame, deleteFrame, onAddFrame, onDeleteFrame } = renderSlot({ frameCount: 2, frameIndex: 1 });
-
-    expect(addFrame).toBeTruthy();
-    expect(deleteFrame).toBeTruthy();
-
-    addFrame?.click();
-    expect(onAddFrame).toHaveBeenCalledTimes(1);
-    deleteFrame?.click();
-    expect(onDeleteFrame).toHaveBeenCalledTimes(1);
-  });
-
-  it('floors both frame buttons at the touch target and leads with the plainer one', () => {
-    // Add frame is the primary and sits nearest the thumb on a right-aligned
-    // row; the destructive one is plainer and further away.
-    const { addFrame, deleteFrame, container } = renderSlot({ frameCount: 3, frameIndex: 0 });
-
-    expect(addFrame?.getAttribute('data-min-height')).toBe('44');
-    expect(deleteFrame?.getAttribute('data-min-height')).toBe('44');
-    expect(addFrame?.getAttribute('data-variant')).toBe('filled');
-    expect(deleteFrame?.getAttribute('data-variant')).toBe('tonal');
-
-    const titles = Array.from(container.querySelectorAll('[data-title]')).map((node) =>
-      node.getAttribute('data-title'),
-    );
-    expect(titles).toEqual(['mobile.create.frames.delete', 'mobile.create.playback.addFrame']);
+  it('puts the transport in creator configuration: frame editing and seconds', () => {
+    // Both are creator-only. The play drawer mounts the same component without
+    // them and keeps the counter and the x-multiplier, so a regression here is a
+    // regression there too.
+    const { transport } = renderSlot({ frameCount: 2 });
+    expect(transport?.getAttribute('data-frame-editing')).toBe('yes');
+    expect(transport?.getAttribute('data-pace-unit')).toBe('seconds');
+    expect(transport?.getAttribute('data-pace-change')).toBe('yes');
   });
 
   it('keeps the transport under its own gesture root', () => {
-    // Load-bearing on Android: the speed slider is a GestureDetector, and this
-    // sheet's content lives inside a Compose ModalBottomSheet the app's single
-    // root GestureHandlerRootView does not cover (#4320).
-    const { container, transport } = renderSlot({ frameCount: 2 });
-    const gestureRoot = container.querySelector('[data-node="gesture-root"]');
-
-    expect(gestureRoot).toBeTruthy();
+    // Load-bearing on Android: the pace slider is a GestureDetector and this
+    // sheet is a Compose ModalBottomSheet the app's root GHRV does not cover.
+    const { gestureRoot, transport } = renderSlot({ frameCount: 2 });
+    expect(gestureRoot).not.toBeNull();
     expect(gestureRoot?.contains(transport)).toBe(true);
+  });
+
+  it('no longer renders a detached frame-actions row', () => {
+    // Delete moved into the header's overflow menu and add became a chip inside
+    // the transport card. Two rows collapsing into one card is the issue's
+    // "integrate them cleanly" requirement; a button row here would undo it.
+    const { container } = renderSlot({ frameCount: 3 });
+    expect(container.querySelector('button')).toBeNull();
   });
 });

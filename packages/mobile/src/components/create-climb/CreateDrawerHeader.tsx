@@ -1,10 +1,16 @@
-import { memo, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet, Pressable, type TextInput } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { BleLightbulbButton } from '../ble/BleLightbulbButton';
+import { AppMenu } from '../AppMenu';
+import {
+  buildCreateOverflowMenu,
+  type CreateOverflowAction,
+  type CreateOverflowMenuState,
+} from './create-overflow-menu';
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
@@ -22,6 +28,9 @@ type CreateDrawerHeaderProps = {
   bleConnected: boolean;
   bleConnecting: boolean;
   onToggleBle: () => void;
+  /** Editor state the overflow (⋯) menu builds its rows from. */
+  overflow: CreateOverflowMenuState;
+  onSelectOverflowAction: (action: CreateOverflowAction) => void;
 };
 
 /**
@@ -39,6 +48,8 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   bleConnected,
   bleConnecting,
   onToggleBle,
+  overflow,
+  onSelectOverflowAction,
 }: CreateDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const { t: tSettings } = useTranslation('settings');
@@ -53,6 +64,18 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   const counts = `${t('mobile.create.counts.start', { count: startingCount })} · ${t('mobile.create.counts.finish', {
     count: finishCount,
   })}`;
+
+  const overflowRows = useMemo(() => buildCreateOverflowMenu(overflow, t), [overflow, t]);
+  // The menu reports a position; the rows carry what that position means, so a
+  // state that drops a row (Woods, or a boulder with no frame to delete) can
+  // never shift a tap onto the wrong action.
+  const handleSelectOverflowIndex = useCallback(
+    (index: number) => {
+      const row = overflowRows[index];
+      if (row) onSelectOverflowAction(row.action);
+    },
+    [overflowRows, onSelectOverflowAction],
+  );
 
   return (
     <View style={styles.row}>
@@ -90,6 +113,20 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
         </Text>
       </View>
 
+      {/* Document-level commands (what kind of climb this is, start over) live in
+          the nav-bar overflow, not the action bar: that bar is a tool bar you use
+          with a brush in hand, and its middle is a horizontal scroller, so a
+          command placed there can scroll off-screen. That is exactly how the bare
+          `copy` glyph went unfound twice. Left of the lightbulb, which is a
+          stateful toggle whose position climbers track across sessions. */}
+      <AppMenu
+        iconName="more"
+        actions={overflowRows}
+        onSelectIndex={handleSelectOverflowIndex}
+        accessibilityLabel={t('mobile.create.routeMenu.open')}
+        style={styles.overflow}
+      />
+
       <BleLightbulbButton
         isConnected={bleConnected}
         isScanning={bleConnecting}
@@ -117,6 +154,12 @@ const styles = StyleSheet.create({
   // A 44pt circle echoing the Play Drawer's close button. The fill is applied
   // inline from the theme (systemColors.fill) so it adapts to dark mode and
   // matches the drawer's action buttons.
+  overflow: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   iconButton: {
     width: 44,
     height: 44,

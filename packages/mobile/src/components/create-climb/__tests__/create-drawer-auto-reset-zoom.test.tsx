@@ -46,10 +46,14 @@ vi.mock('../InteractiveCreateBoard', () => ({
     return createElement('div', { 'data-node': 'board' });
   },
 }));
-vi.mock('../CreateDrawerHeader', () => ({ CreateDrawerHeader: () => createElement('div') }));
+// "Start a new climb" moved off the action bar into the header's overflow menu,
+// so the button that stands in for it lives on the header mock now.
+vi.mock('../CreateDrawerHeader', () => ({
+  CreateDrawerHeader: ({ onSelectOverflowAction }: { onSelectOverflowAction?: (action: string) => void }) =>
+    createElement('button', { 'data-new-climb': 'true', onClick: () => onSelectOverflowAction?.('newClimb') }),
+}));
 vi.mock('../CreateDrawerActionBar', () => ({
-  CreateDrawerActionBar: ({ onNewClimb }: { onNewClimb?: () => void }) =>
-    createElement('button', { 'data-new-climb': 'true', onClick: onNewClimb }),
+  CreateDrawerActionBar: () => createElement('div', { 'data-node': 'action-bar' }),
 }));
 vi.mock('../CreateDrawerForm', () => ({ CreateDrawerForm: () => createElement('div') }));
 vi.mock('../OpenDraftsSection', () => ({

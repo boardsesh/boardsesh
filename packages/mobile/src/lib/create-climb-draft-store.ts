@@ -44,6 +44,23 @@ export type CreateClimbDraft = {
    *  board's default (feet on the marked holds). */
   anyFeet?: boolean;
   /**
+   * Whether the setter has switched this climb into route mode. Route-ness is
+   * otherwise inferred from `frames.length > 1`, which cannot express the state
+   * a setter is in right after choosing "Make it a route" and before adding the
+   * second frame — restoring such a draft without this would silently drop them
+   * back to a boulder. Optional for back-compat; a slot written before route
+   * mode existed restores as a boulder, then infers `true` from a multi-frame
+   * `framesJson`.
+   */
+  routeMode?: boolean;
+  /**
+   * Authored per-frame pace in milliseconds — what the published climb's
+   * `frames_pace` will be. Optional: a slot written before the pace was
+   * authorable restores at `DEFAULT_PACE_MS`, which is what those climbs
+   * already play at.
+   */
+  framesPaceMs?: number;
+  /**
    * JSON.stringify of the `SavedClimbSnapshot` this working copy is attached to,
    * once it has been saved to the server at least once. Restoring it re-links a
    * cold-started session to its row, so the next Save UPDATES that climb instead

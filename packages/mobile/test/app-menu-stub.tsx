@@ -16,22 +16,33 @@ import { Pressable, Text, View } from 'react-native';
 // stub — keeps the stub's contract from drifting from the real component.
 import type { AppMenuProps } from '../src/components/AppMenu.types';
 
-export function AppMenu({ label, actions, onSelectIndex, accessibilityLabel, accessibilityHint }: AppMenuProps) {
+export function AppMenu(props: AppMenuProps) {
+  const { actions, onSelectIndex, accessibilityLabel, accessibilityHint } = props;
   return (
     <View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityLabel={accessibilityLabel ?? props.label}
         accessibilityHint={accessibilityHint}
       >
-        <Text>{label}</Text>
+        {/* An icon anchor renders a glyph, so it has no visible text to mirror —
+            its `accessibilityLabel` is the only name it has, and it is required
+            for exactly that reason. Deliberately NOT echoed as text here: doing
+            so would let a screen test find by text an anchor that shows none. */}
+        <Text>{props.label}</Text>
       </Pressable>
       {actions.map((action, index) => (
         <Pressable
           key={`${index}-${action.label}`}
           accessibilityRole="button"
-          accessibilityState={{ selected: action.selected }}
-          onPress={() => onSelectIndex(index)}
+          accessibilityState={{ selected: action.selected, disabled: action.disabled }}
+          // Mirrors the real component's shared guard: a disabled row keeps its
+          // position (indices address actions) but never reports a selection.
+          disabled={action.disabled}
+          onPress={() => {
+            if (action.disabled) return;
+            onSelectIndex(index);
+          }}
         >
           <Text>{action.label}</Text>
         </Pressable>

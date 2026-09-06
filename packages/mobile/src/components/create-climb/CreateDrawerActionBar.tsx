@@ -37,10 +37,9 @@ type CreateDrawerActionBarProps = {
   onRedo: () => void;
   /** Empty this frame's holds. Undoable; leaves name/description/storage alone. */
   onClearHolds: () => void;
-  /** Park this climb and start a blank one (confirms when nothing is saved yet). */
-  onNewClimb: () => void;
   /** Frame count and index are read only to announce a new frame — the buttons
-   *  that CHANGE them live in the route slot under the board. */
+   *  that CHANGE them live in the transport card under the board, and the
+   *  destructive ones in the header's overflow menu. */
   frameCount: number;
   currentFrameIndex: number;
   canSetActive: boolean;
@@ -77,7 +76,6 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onUndo,
   onRedo,
   onClearHolds,
-  onNewClimb,
   frameCount,
   currentFrameIndex,
   canSetActive,
@@ -209,15 +207,6 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
             iconName="delete"
             onPress={onClearHolds}
             accessibilityLabel={t('mobile.create.actions.clear')}
-          />
-          {/* Last in the scroller: the least-used control in the row, and the one
-              it's fine to scroll for. `plus`, not `refresh` — that's already the
-              playback-restart glyph. */}
-          <ActionButton
-            size="sm"
-            iconName="plus"
-            onPress={onNewClimb}
-            accessibilityLabel={t('mobile.create.actions.newClimb')}
           />
         </ScrollView>
 

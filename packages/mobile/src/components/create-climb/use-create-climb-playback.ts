@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo } from 'react';
 import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { accumulatedMapsToFrameStrings } from '@boardsesh/board-constants/hold-states';
-import { DEFAULT_PACE_MS, usePlaybackEngine } from '@boardsesh/playback-react';
+import { usePlaybackEngine } from '@boardsesh/playback-react';
 
 type UseCreateClimbPlaybackInput = {
   /** The editor's live frame list — absolute lit-state snapshots, one per frame. */
@@ -10,6 +10,8 @@ type UseCreateClimbPlaybackInput = {
   /** The editor's cursor. Painting targets this frame. */
   currentFrameIndex: number;
   goToFrame: (index: number) => void;
+  /** The setter's authored per-frame pace, in ms — what the climb will publish with. */
+  paceMs: number;
 };
 
 export type CreateClimbPlayback = {
@@ -37,16 +39,16 @@ export type CreateClimbPlayback = {
  * must never be broadcast to the crew (hence no `externalState` and no
  * `onLocalStateChange` here).
  *
- * Pace is `DEFAULT_PACE_MS`, which is what the published climb will actually
- * play at: `handleSave` writes `frames_pace: 0` and `useClimbFrames` falls back
- * to the default for 0. So "1×" in the creator is honestly the shipped speed —
- * the speed control is a preview aid, it does not author the pace.
+ * Pace is the setter's own authored value, which is what `handleSave` now writes
+ * as the climb's `frames_pace`. So "0.8s" in the creator is honestly the shipped
+ * speed: the control authors the pace, it is not just a preview aid.
  */
 export function useCreateClimbPlayback({
   frames,
   boardName,
   currentFrameIndex,
   goToFrame,
+  paceMs,
 }: UseCreateClimbPlaybackInput): CreateClimbPlayback {
   const frameStrings = useMemo(() => accumulatedMapsToFrameStrings(frames, boardName), [frames, boardName]);
   const playbackClientId = useId();
@@ -54,7 +56,7 @@ export function useCreateClimbPlayback({
   const engine = usePlaybackEngine({
     frames,
     frameStrings,
-    paceMs: DEFAULT_PACE_MS,
+    paceMs,
     clientId: playbackClientId,
   });
 
@@ -99,7 +101,7 @@ export function useCreateClimbPlayback({
       isAnimatable: engine.isAnimatable,
       isPlaying: engine.isPlaying,
       speed: engine.speed,
-      paceMs: DEFAULT_PACE_MS,
+      paceMs,
       currentFrameString: engine.currentFrameString,
       play: engine.play,
       pause: engine.pause,
@@ -111,6 +113,7 @@ export function useCreateClimbPlayback({
       engine.isPlaying,
       engine.speed,
       engine.currentFrameString,
+      paceMs,
       engine.play,
       engine.pause,
       engine.setSpeed,

@@ -534,13 +534,10 @@
         "closeHint": "Tu borrador se queda en este teléfono."
       },
       "frames": {
-        "delete": "Eliminar fotograma",
         "counter": "{{index}}/{{total}}"
       },
       "playback": {
-        "emptyHint": "Añade un fotograma para reproducirla como vía",
-        "addFrame": "Añadir fotograma",
-        "emptyA11y": "Reproducción de la vía. Añade un segundo fotograma para activarla"
+        "addFrame": "Añadir fotograma"
       },
       "holdRole": {
         "title": "Asignar rol de presa",
@@ -604,7 +601,14 @@
       "publish": {
         "blocked": "Añade una presa de salida y una de final para publicar"
       },
-      "wallSizeMismatch": "Cambia tu plafón activo a este tamaño de Woods para iluminarlo."
+      "wallSizeMismatch": "Cambia tu plafón activo a este tamaño de Woods para iluminarlo.",
+      "routeMenu": {
+        "open": "Más acciones",
+        "makeRoute": "Convertir en vía",
+        "makeBoulder": "Convertir en bloque",
+        "makeBoulderBlocked": "Convertir en bloque — elimina primero los fotogramas",
+        "deleteFrame": "Eliminar fotograma {{index}}"
+      }
     },
     "holdFilter": {
       "title": "Tipos de presa",
