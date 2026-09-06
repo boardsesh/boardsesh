@@ -443,8 +443,10 @@ export async function startServer(): Promise<ServerResources> {
       // Stripe webhook for CNC build packs. Deliberately no CORS and no bearer
       // token: the only caller is Stripe, and the `stripe-signature` header
       // over the raw body is the authentication. 404s when Stripe is not
-      // configured rather than accepting unverifiable bodies.
-      if (pathname === '/api/cnc/stripe/webhook' && req.method === 'POST') {
+      // configured rather than accepting unverifiable bodies. The method check
+      // is the handler's — it answers 405, which is the honest code for a GET
+      // to a route that exists, and it is covered by a test.
+      if (pathname === '/api/cnc/stripe/webhook') {
         await handleCncStripeWebhook(req, res);
         return;
       }

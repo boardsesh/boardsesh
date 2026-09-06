@@ -1,6 +1,7 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { z } from 'zod';
 import { logger } from '../utils/logger';
+import { backendPublicUrl, webPublicUrl } from '../utils/public-urls';
 
 // Validate recipient format before it ever goes into a URL or header.
 const emailSchema = z.string().email();
@@ -8,15 +9,10 @@ const emailSchema = z.string().email();
 // Where claim-review notifications go. Override with ADMIN_EMAIL.
 export const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_EMAIL || 'admin@boardsesh.com';
 
-/** Public backend origin (no trailing slash) — used to build the verify link. */
-export function backendPublicUrl(): string {
-  return (process.env.BACKEND_PUBLIC_URL || 'https://ws.boardsesh.com').replace(/\/+$/, '');
-}
-
-/** Public web origin (no trailing slash) — used for admin/success links. */
-export function webPublicUrl(): string {
-  return (process.env.WEB_PUBLIC_URL || process.env.BOARDSESH_URL || 'https://www.boardsesh.com').replace(/\/+$/, '');
-}
+// The origins now live in `utils/public-urls`, with no dependencies of their
+// own, so a payments or handler module can reach them without importing the
+// mail transport. Re-exported here for the callers that already had them.
+export { backendPublicUrl, webPublicUrl } from '../utils/public-urls';
 
 // Muted rose primary + neutrals, matching the web transactional emails closely
 // enough without pulling in the web theme package.

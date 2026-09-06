@@ -8,7 +8,7 @@ import { claimStripeEvent, markStripeEventProcessed, releaseStripeEvent } from '
 import { getAccountEmail, getOrderById, getOrderByPaymentIntentId, transitionOrder } from '../services/cnc/orders';
 import { CNC_KICKER_SET_IDS, findCatalogEntry, parseSetIds } from '../services/cnc/catalog';
 import { sendCncOrderReceivedEmail } from '../email/cnc-emails';
-import { webPublicUrl } from '../email/email-service';
+import { webPublicUrl } from '../utils/public-urls';
 import { captureBackendEvent } from '../services/analytics/posthog';
 
 /**
@@ -327,9 +327,13 @@ export async function handleCncStripeWebhook(req: IncomingMessage, res: ServerRe
 
   let rawBody: string;
   try {
-    // The RAW string, before any parsing: the signature is over these exact
-    // bytes, so a JSON round trip would break verification in a way that looks
-    // like a wrong secret.
+    // `readJsonBody` reads JSON bodies; it does not parse them. It returns the
+    // RAW utf-8 string, and that is exactly what is wanted here: the signature
+    // is computed over these bytes, so a `JSON.parse` + `JSON.stringify` round
+    // trip — key order, whitespace, number formatting — would break
+    // verification in a way that looks for all the world like a wrong secret.
+    // Do not "tidy" this into a parsed object; `constructWebhookEvent` does
+    // the parsing, after it has verified the string.
     rawBody = await readJsonBody(req, MAX_WEBHOOK_BODY_BYTES);
   } catch {
     sendJson(res, 400, { error: 'Invalid request body' });
