@@ -1,0 +1,124 @@
+/* Colour values are the CSS custom properties defined in index.css, which are
+   generated from theme-config.ts. No hex ever lands in this file. */
+
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 24px 24px 64px;
+  padding-top: calc(var(--global-header-height) + 32px);
+}
+
+@media (max-width: 576px) {
+  .page {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+.hero {
+  margin-bottom: 32px;
+}
+
+.heroTitle {
+  margin: 0 0 12px;
+}
+
+.heroSubtitle {
+  max-width: 62ch;
+}
+
+.firstBoard {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 4px 10px;
+  border-radius: var(--border-radius-full);
+  background: var(--neutral-100);
+  color: var(--bs-text-brand-muted);
+}
+
+.sectionHeading {
+  font-size: var(--font-size-xl);
+  margin: 0 0 4px;
+}
+
+.stepHeading {
+  margin: 0 0 4px;
+}
+
+.includedList {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.includedList li {
+  margin-bottom: 4px;
+}
+
+.tierGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.tierCard {
+  height: 100%;
+}
+
+.tierPrice {
+  margin: 4px 0 8px;
+}
+
+.contactCard {
+  background: var(--neutral-50);
+}
+
+.configurator {
+  margin-top: 32px;
+}
+
+/* One column on a phone, two once there is room: eleven selects in a single
+   column is a very long scroll on a laptop. */
+.optionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.summary {
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--border-radius-lg);
+  padding: 16px;
+}
+
+.summaryRow {
+  gap: 16px;
+}
+
+.trademarkNote {
+  margin-top: 32px;
+}
+
+.orderList {
+  margin-top: 24px;
+}
+
+.orderCard {
+  margin-bottom: 12px;
+}
+
+.orderMeta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px 24px;
+  margin-top: 8px;
+}
+
+.timeline {
+  margin: 16px 0 0;
+  padding-left: 20px;
+}
+
+.timeline li {
+  margin-bottom: 4px;
+}
