@@ -328,11 +328,20 @@ describe('computeTileWidth', () => {
     expect(peek).toBeLessThanOrEqual(tileWidth * MAX_PEEK_FRACTION);
   });
 
-  // The other side of that trade: capping everywhere is the original bug one
-  // width over, so a container that would leave a sliver still shrinks the tile.
-  it('shrinks the tile where capping would leave the row looking flush', () => {
-    expect(computeTileWidth(380, WORKOUT_TYPE_COUNT)).toBeLessThan(TILE_MAX_WIDTH);
-    expect(computeTileWidth(376, WORKOUT_TYPE_COUNT)).toBeLessThan(TILE_MAX_WIDTH);
+  // The other side of that trade. Capping wherever the tile overshoots is the
+  // original bug one width over: 580pt fits three capped tiles with 24pt to
+  // spare, 744pt fits four with 8pt. Both have to shrink the tile instead.
+  it.each([
+    [580, 'iPad 13" portrait content pane'],
+    [744, 'iPad mini full width'],
+  ])('shrinks the tile at %dpt (%s), where capping would leave a sliver', (containerWidth) => {
+    const cappedTiles = Math.floor((containerWidth - SHELF_HORIZONTAL_INSET) / (TILE_MAX_WIDTH + TILE_GAP));
+    const cappedPeek = containerWidth - SHELF_HORIZONTAL_INSET - cappedTiles * (TILE_MAX_WIDTH + TILE_GAP);
+    expect(cappedPeek).toBeLessThan(TILE_MAX_WIDTH * MIN_PEEK_FRACTION);
+
+    expect(computeTileWidth(containerWidth, WORKOUT_TYPE_COUNT)).toBeLessThan(TILE_MAX_WIDTH);
+    const { tileWidth, peek } = shelfLayout(containerWidth, WORKOUT_TYPE_COUNT);
+    expect(peek).toBeGreaterThanOrEqual(tileWidth * MIN_PEEK_FRACTION);
   });
 
   it('never lets a tile outgrow the pane it renders in', () => {
