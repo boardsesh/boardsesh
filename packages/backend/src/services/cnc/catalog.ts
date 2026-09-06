@@ -324,8 +324,10 @@ export function validateSetIds(
   }
 
   // A kicker is both panels or neither: one kicker set on its own would leave
-  // the generator building half a kicker row.
-  const chosenKickers = KICKER_SET_IDS.filter((setId) => submitted.has(setId));
+  // the generator building half a kicker row. Only sets this size actually
+  // offers count, so a kicker set on a kickerless wall reports once (above),
+  // not twice.
+  const chosenKickers = KICKER_SET_IDS.filter((setId) => submitted.has(setId) && allowedSetIds.has(setId));
   const availableKickers = KICKER_SET_IDS.filter((setId) => allowedSetIds.has(setId));
   if (chosenKickers.length > 0 && chosenKickers.length !== availableKickers.length) {
     errors.push('A kicker needs both of its sets, or neither.');
