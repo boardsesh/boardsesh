@@ -94,6 +94,8 @@ export function classifyPixelColor(
   if (palette === 'android') {
     if (Math.hypot(r - 255, g, b) < 35) return 'finish';
     if (Math.hypot(r, g - 255, b) < 35) return 'start';
+    // Blue spans #2961ff and #0066ff ring pixels (~41 RGB units apart).
+    // Its wider tolerance deliberately retains both observed shades.
     if (Math.hypot(r - 41, g - 97, b - 255) < 50) return 'hand';
     return null;
   }
@@ -220,12 +222,11 @@ function enclosedCircleCenters(
         count++;
         sumX += pixel.x;
         sumY += pixel.y;
-        stack.push(
-          { x: pixel.x + 1, y: pixel.y },
-          { x: pixel.x - 1, y: pixel.y },
-          { x: pixel.x, y: pixel.y + 1 },
-          { x: pixel.x, y: pixel.y - 1 },
-        );
+        // Do not allocate neighbors outside the component's bounding box.
+        if (pixel.x < right) stack.push({ x: pixel.x + 1, y: pixel.y });
+        if (pixel.x > left) stack.push({ x: pixel.x - 1, y: pixel.y });
+        if (pixel.y < bottom) stack.push({ x: pixel.x, y: pixel.y + 1 });
+        if (pixel.y > top) stack.push({ x: pixel.x, y: pixel.y - 1 });
       }
       // Reject the exterior and tiny lenses enclosed where two rings overlap.
       if (!touchesEdge && count >= cellWidth * cellHeight * 0.15) {
@@ -281,7 +282,7 @@ export function findCircleCenters(
         const enclosed = enclosedCircleCenters(component, width, width / 11, height / rows);
         // The helper currently returns zero or >=2 centers. Keep the >=2 guard
         // explicit: one interior must not replace the ordinary centroid path.
-        if (enclosed.length > 1) {
+        if (enclosed.length >= 2) {
           circles.push(
             ...enclosed.map((center) => ({
               ...center,

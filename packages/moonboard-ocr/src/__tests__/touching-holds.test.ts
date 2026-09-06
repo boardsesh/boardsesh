@@ -77,7 +77,7 @@ describe('touching MoonBoard hold outlines', () => {
     expect(holds.every((hold) => hold.type === role)).toBe(true);
   });
 
-  it('keeps near-miss outlines separate at 1.4 cells of center spacing', () => {
+  it('keeps independent components separate when rings do not touch', () => {
     const pixels = outlinedCircles(
       [
         [330, 870],
@@ -89,6 +89,25 @@ describe('touching MoonBoard hold outlines', () => {
     expect(centers.map(({ x, y }) => [x, y])).toEqual([
       [330, 870],
       [414, 870],
+    ]);
+    expect(centers).toHaveLength(2);
+    expect(centers.every((center) => center.type === 'start')).toBe(true);
+  });
+
+  it('separates one connected component when the two ring outlines barely touch', () => {
+    // Radius 34, centers 68 pixels apart: the outlines share one pixel.
+    // A merged centroid would be x=364; the interior scan must recover both.
+    const pixels = outlinedCircles(
+      [
+        [330, 870],
+        [398, 870],
+      ],
+      [0, 255, 0],
+    );
+    const centers = findCircleCenters(pixels);
+    expect(centers.map(({ x, y }) => [x, y])).toEqual([
+      [330, 870],
+      [398, 870],
     ]);
     expect(centers).toHaveLength(2);
     expect(centers.every((center) => center.type === 'start')).toBe(true);

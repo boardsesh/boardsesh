@@ -12,7 +12,9 @@ export type ImageRegions = {
  * includes labels). Reject other geometries instead of silently mislabeling holds.
  */
 export function calculateAndroidRegions(width: number, height: number, rows: GridRows): ImageRegions {
-  if (width !== 1008 || height !== 2244) throw new Error('Unvalidated Android screenshot dimensions');
+  if (width !== 1008 || height !== 2244) {
+    throw new Error('Unvalidated Android screenshot dimensions: expected 1008x2244');
+  }
   return {
     header: { x: 0, y: 247, width, height: 202 },
     board: { x: 107, y: rows === 12 ? 786 : 560, width: 853, height: rows === 12 ? 931 : 1396 },
