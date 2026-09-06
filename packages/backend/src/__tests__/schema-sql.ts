@@ -1230,6 +1230,8 @@ export const schemaSQL = `
     "by_tester" boolean DEFAULT true NOT NULL,
     "comment" text,
     "platform" text NOT NULL,
+    "device_model" text,
+    "os_version" text,
     "app_version" text,
     "update_id" text,
     "runtime_version" text,
