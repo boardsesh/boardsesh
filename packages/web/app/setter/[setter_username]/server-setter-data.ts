@@ -5,6 +5,7 @@ import { getClimbStars, getGradeLabel, withSerialPlan, type SerialPlanDb } from 
 import { dbzRead, executeRows } from '@/app/lib/db/db';
 import { boardClimbs, boardClimbStats } from '@/app/lib/db/schema';
 import { publishableAngleWhere, publishedAngleOrderBy } from '@/app/lib/seo/sitemap/published-angle';
+import { SETTER_PAGE_SIZE } from '@/app/lib/seo/sitemap/setter-page-contract';
 import type { Climb } from '@/app/lib/types';
 
 /**
@@ -26,9 +27,6 @@ import type { Climb } from '@/app/lib/types';
  *     names, which is how a page ends up linking every climb to a URL the
  *     climbs sitemap never submitted.
  */
-
-/** Rows per `?page=N` on the setter front door — the epic's ≥50-crawlable-links bar. */
-export const SETTER_PAGE_SIZE = 50;
 
 /**
  * One climb of this setter's, with the two array columns the canonical-config

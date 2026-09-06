@@ -14,10 +14,11 @@ import {
 import { buildGymEntries } from './gym-entries';
 import { playlistRowsToItems } from './playlist-entries';
 import { fetchPlaylistSitemapRows } from './playlist-query';
-import { buildSetterEntries } from './setter-entries';
+import { buildSetterSitemapItems, fetchSetterSitemapSummary } from './setter-query';
 import { buildStaticEntries } from './static-entries';
 import {
   CLIMB_URLS_PER_SHARD,
+  SETTER_URLS_PER_SHARD,
   MAX_SHARD_BYTES,
   MAX_URLS_PER_SHARD,
   pagedShardByteBudget,
@@ -27,7 +28,7 @@ import {
   type SitemapUrlEntry,
 } from './sitemap-xml';
 
-export type ShardId = 'static' | 'boards' | 'gyms' | 'setters' | 'playlists';
+export type ShardId = 'static' | 'boards' | 'gyms' | 'playlists';
 
 export type SitemapShard = {
   id: ShardId;
@@ -40,9 +41,9 @@ export type SitemapShard = {
    * shard must 503 instead of publishing an empty `<urlset>` that tells Google
    * those pages were deleted.
    *
-   * False for `gyms`/`setters` (declared-empty by design) and for `playlists`,
-   * where zero public playlists holding a climb is a legitimate state — failing
-   * closed there would take the whole index down because nobody shared a list.
+   * False for `gyms` (declared-empty by design) and for `playlists`, where zero
+   * public playlists holding a climb is a legitimate state — failing closed
+   * there would take the whole index down because nobody shared a list.
    */
   expectsUrls: boolean;
   /**
@@ -79,15 +80,6 @@ export const SHARD_REGISTRY: readonly SitemapShard[] = [
     build: async () => boardConfigsToItems(await getBoardsShardConfigsOrThrow()),
   },
   { id: 'gyms', path: '/sitemaps/gyms.xml', expectsUrls: false, build: async () => buildGymEntries() },
-  {
-    id: 'setters',
-    path: '/sitemaps/setters.xml',
-    expectsUrls: false,
-    // Setter pages cross-canonicalise too. Declared-empty today, so this is
-    // inert — set now so a future population cannot reintroduce the twins.
-    expansion: 'default-locale-only',
-    build: async () => buildSetterEntries(),
-  },
   {
     id: 'playlists',
     path: '/sitemaps/playlists.xml',
@@ -140,6 +132,16 @@ export const CLIMB_SOURCE_HEADER = 'X-Sitemap-Climbs-Source';
 const CLIMB_CACHE_CONTROL = 'public, s-maxage=21600, stale-while-revalidate=604800';
 const DISABLED_PAGED_SITEMAP_CACHE_CONTROL = 'public, s-maxage=3600, must-revalidate';
 
+/**
+ * The setters shard's own window, equal to the climbs one today by judgement
+ * rather than by construction — its own constant so retuning the climb window
+ * for a climb-specific reason cannot silently retune this one. Same reasoning:
+ * setter pages change on the order of a climb being set, Google refetches a
+ * sitemap on the order of days, and the CDN is what absorbs a crawl burst across
+ * three pages before it reaches a ten-connection pool.
+ */
+const SETTER_CACHE_CONTROL = 'public, s-maxage=21600, stale-while-revalidate=604800';
+
 function xmlResponse(
   body: string,
   cacheControl: string = CACHE_CONTROL,
@@ -188,8 +190,8 @@ function disabledPagedSitemapResponse(id: PagedShardId): Response {
 /**
  * A builder that *throws* must produce a 503, never a truncated 200: a short
  * 200 tells Google the missing URLs were removed, while a 5xx makes it retry
- * and keep the last good copy. A builder that returns `[]` on purpose (gyms,
- * setters) is a declared-empty shard, not a failure.
+ * and keep the last good copy. A builder that returns `[]` on purpose (gyms) is
+ * a declared-empty shard, not a failure.
  *
  * This is the *shard route's* rule. The index degrades instead — see
  * `buildSitemapIndexXml` — and only reaches here when no shard built at all.
@@ -305,7 +307,7 @@ export async function shardRouteHandler(id: ShardId): Promise<Response> {
  */
 export type ShardExpansion = 'all-locales' | 'default-locale-only';
 
-export type PagedShardId = 'climbs';
+export type PagedShardId = 'climbs' | 'setters';
 
 /**
  * The shard's total item count and freshness.
@@ -395,6 +397,48 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     buildPage: (page: number) => buildClimbShardPage(page),
     pageLastmods: () => fetchStoredClimbPageLastmods(),
     sourceHeader: CLIMB_SOURCE_HEADER,
+  },
+  {
+    id: 'setters',
+    routeDirectory: 'setters',
+    pagePath: (page: number) => `/sitemaps/setters/${page}.xml`,
+    // Paged, and default-locale-only for the same reason the climb shards are:
+    // setter pages cross-canonicalise onto the default locale, so listing the
+    // twins would advertise URLs whose own canonical points elsewhere.
+    //
+    // Locale expansion is NOT why this had to move off the fixed path — #4996
+    // gave every shard its own `expansion`, and the declared-empty fixed
+    // `setters` entry already carried `default-locale-only`. Volume is why: the
+    // dev image has ~108,000 distinct `(board_type, setter_username)` pairs
+    // against `MAX_ITEMS_PER_SHARD`'s 11,250, so one file cannot hold them at
+    // any expansion.
+    expansion: 'default-locale-only',
+    urlsPerShard: SETTER_URLS_PER_SHARD,
+    // A setters page that renders zero URLs is a regressed query, not a state:
+    // the summary already said there were items on it.
+    expectsUrls: true,
+    cacheControl: SETTER_CACHE_CONTROL,
+    summary: () => fetchSetterSitemapSummary(),
+    buildPage: async (page: number) => {
+      const items = await buildSetterSitemapItems();
+      const start = (page - 1) * SETTER_URLS_PER_SHARD;
+      return { items: items.slice(start, start + SETTER_URLS_PER_SHARD), totalItems: items.length };
+    },
+    // No `enabled` gate, unlike `climbs`. That shard's switch exists because it
+    // was PAUSED in production once (#4648) and needed a lever that did not
+    // require a deploy; this one has never shipped, so there is nothing to hold
+    // back. The rollback is a revert: the shard is derived — it writes nothing,
+    // owns no table, and dropping it from the registry withdraws every URL it
+    // published on the next crawl. Add a gate the day it needs pausing without
+    // a code change, not before.
+    //
+    // No `pageLastmods`, deliberately: every setters index entry carries the
+    // shard-level `lastModified` instead of a per-page one. The climbs shard
+    // can afford per-page timestamps because it reads them off the
+    // materialised `sitemap_climb_urls` store; setters has no such store, so
+    // the equivalent would be a second grouped scan over `board_climbs` — the
+    // same scan that is already tight against `SHARD_DEADLINE_MS` (#4583).
+    // Worth revisiting if per-page crawl scheduling turns out to matter.
   },
 ];
 
@@ -604,7 +648,7 @@ async function buildIndexEntry(shard: SitemapShard): Promise<SitemapIndexEntry |
   const items = await withDeadline(shard.build(), SHARD_DEADLINE_MS, `shard "${shard.id}"`);
 
   if (items.length === 0) {
-    // A declared-empty shard (gyms, setters, a site with no public playlists) is
+    // A declared-empty shard (gyms, a site with no public playlists) is
     // a success that contributes no entry. One that expects URLs is a regressed
     // query, and `emptinessError` says which is which.
     const emptiness = emptinessError(shard);

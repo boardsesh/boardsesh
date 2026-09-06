@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { buildGymEntries } from '../gym-entries';
-import { buildSetterEntries } from '../setter-entries';
 
 vi.mock('server-only', () => ({}));
 
@@ -47,6 +46,10 @@ vi.mock('../climb-store', () => ({
   fetchClimbShardSummary: async () => ({ itemCount: 0, lastModified: null }),
   buildClimbShardPage: async () => ({ items: [], totalItems: 0 }),
   fetchStoredClimbPageLastmods: async () => [],
+}));
+vi.mock('../setter-query', () => ({
+  fetchSetterSitemapSummary: async () => ({ itemCount: 0, lastModified: null }),
+  buildSetterSitemapItems: async () => [],
 }));
 
 const { PAGED_SHARD_REGISTRY, SHARD_REGISTRY } = await import('../shard-registry');
@@ -102,16 +105,16 @@ describe('SHARD_REGISTRY', () => {
       // gyms/setters is the declared-empty design — none of these may 503.
       playlists: false,
       gyms: false,
-      setters: false,
     });
   });
 
-  it('marks the paged climbs shard as expecting URLs on the shard route', () => {
-    // Fail-closed at the SHARD, degrade at the INDEX: a climbs page that renders
-    // zero URLs is a regressed query (the summary already said items were
-    // there), but a failing climbs summary must not 503 the whole index.
+  it('marks the paged shards as expecting URLs on the shard route', () => {
+    // Fail-closed at the SHARD, degrade at the INDEX: a page that renders zero
+    // URLs is a regressed query (the summary already said items were there),
+    // but a failing summary must not 503 the whole index.
     expect(Object.fromEntries(PAGED_SHARD_REGISTRY.map((shard) => [shard.id, shard.expectsUrls]))).toEqual({
       climbs: true,
+      setters: true,
     });
   });
 
@@ -138,6 +141,18 @@ describe('SHARD_REGISTRY', () => {
     expect(items.some((item) => item.path.startsWith('/kilter/'))).toBe(true);
   });
 
+  it('keeps every paged shard on the default-locale-only expansion', () => {
+    // These pages cross-canonicalise onto the default locale, so listing the
+    // twins would advertise URLs whose own canonical points elsewhere.
+    //
+    // Not why `setters` is paged, though — #4996 gave every shard its own
+    // `expansion`, so the fixed path could carry this too. Volume is why: see
+    // the registry entry.
+    for (const shard of PAGED_SHARD_REGISTRY) {
+      expect(shard.expansion, `${shard.id} must not fan out to every locale`).toBe('default-locale-only');
+    }
+  });
+
   it('keeps paged and fixed shard ids in one namespace', () => {
     const fixed = SHARD_REGISTRY.map((shard) => String(shard.id));
     const paged = PAGED_SHARD_REGISTRY.map((shard) => String(shard.id));
@@ -146,10 +161,10 @@ describe('SHARD_REGISTRY', () => {
 });
 
 describe('declared-empty shards', () => {
-  it('ships gyms and setters empty, on purpose', () => {
-    // Guards the #4381 hand-off: the routes answer 200 with a valid empty
-    // <urlset> and only need their builder filled.
+  it('ships gyms empty, on purpose', () => {
+    // Guards the #4381 hand-off: the route answers 200 with a valid empty
+    // <urlset> and only needs its builder filled. `setters` was the other half
+    // of that hand-off and is now a paged, data-backed shard.
     expect(buildGymEntries()).toEqual([]);
-    expect(buildSetterEntries()).toEqual([]);
   });
 });

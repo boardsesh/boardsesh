@@ -9,7 +9,9 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/db/db', () => ({ dbzRead: drizzle({} as never), executeRows: async () => [] }));
 vi.mock('@/app/lib/server-popular-configs', () => ({ getAllBoardConfigsOrThrow: async () => [] }));
 
-const { buildSetterClimbsQuery, buildSetterProfileQuery, SETTER_PAGE_SIZE } = await import('../server-setter-data');
+const { buildSetterClimbsQuery, buildSetterProfileQuery } = await import('../server-setter-data');
+// From the module that owns it: a re-export hop only gives a grep two answers.
+const { SETTER_PAGE_SIZE } = await import('@/app/lib/seo/sitemap/setter-page-contract');
 const { buildTier2ClimbQuery } = await import('@/app/lib/seo/sitemap/climb-query');
 
 const db = drizzle({} as never);

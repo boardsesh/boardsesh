@@ -61,6 +61,19 @@ export const MAX_ITEMS_PER_SHARD = Math.floor(MAX_URLS_PER_SHARD / SUPPORTED_LOC
 export const CLIMB_URLS_PER_SHARD = 10_000;
 
 /**
+ * Page budget for the setters shard. Equal to the climbs budget today by
+ * coincidence of arithmetic, not by construction — deliberately its own literal
+ * rather than an alias, so tuning the climbs page for a climbs-specific reason
+ * cannot silently resize the setters pages too.
+ *
+ * The reasoning is the same shape: one URL per setter, default locale only, and
+ * a `/setter/{name}` path is shorter than a climb's slug tuple — the climbs
+ * worst case is 297 B/URL — so 10,000 keeps every page well inside
+ * `pagedShardByteBudget`.
+ */
+export const SETTER_URLS_PER_SHARD = 10_000;
+
+/**
  * Hard stop on ANY sitemap file, fixed or paged, enforced on the RENDERED BODY
  * rather than on a row count — a constant alone is a comment, and a URL count
  * cannot see how expensive one URL is.
