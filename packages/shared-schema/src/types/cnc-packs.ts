@@ -42,6 +42,8 @@ export type CncManufacturingOption = {
   values: string[];
   defaultValue: string;
   valueType: string;
+  /** True when this option only matters on a wall that is building a kicker. */
+  kickerOnly: boolean;
 };
 
 /** One sellable board tuple. LED-kit size aliases resolve to `sizeId` server-side and are not published. */

@@ -41,10 +41,12 @@ export const cncPackMutations = {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, RATE_LIMIT_VALIDATE_ARTWORK, RATE_LIMIT_VALIDATE_ARTWORK_OP);
 
-    const { layoutRequest, artwork } = resolveCncConfig(config);
-
     let verdict: unknown;
     try {
+      // Run inside this try, alongside the generator call, so a mapping
+      // error out of resolveCncConfig (bad option, unparseable sheet stock)
+      // classifies as CNC_INVALID_CONFIG the same way a worker rejection does.
+      const { layoutRequest, artwork } = resolveCncConfig(config);
       verdict = await validateArtwork(layoutRequest, artwork);
     } catch (error) {
       throw toGraphQLWorkerError(error);
