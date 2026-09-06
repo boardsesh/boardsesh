@@ -353,6 +353,15 @@ describe('buildVerdictComment', () => {
     expect(noCommitDate).toContain('no commit date for abcdef1');
   });
 
+  it('names every missing half, not whichever is checked first', () => {
+    // A missing bundle date and an unreadable head are different things to go
+    // look at, and a verdict can be missing both at once.
+    const bothMissing = buildVerdictComment(commentPayload({ headSha: null }));
+
+    expect(bothMissing).toContain("the app reported no bundle publish time, and the PR's head commit is unknown");
+    expect(bothMissing).toContain('It may predate the current head.');
+  });
+
   it('reports other verdicts on the same head, and omits the line when there are none', () => {
     expect(buildVerdictComment(commentPayload({ otherApproved: 2, otherDeclined: 1 }))).toContain(
       'Other verdicts on this head: 2 approved · 1 declined',

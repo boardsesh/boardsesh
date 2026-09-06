@@ -520,11 +520,19 @@ function revisionAlert(
         ' on the latest preview before counting this verdict.',
     ];
   }
+  // Both halves of the comparison can be missing, and they fail for different
+  // reasons — a build that reported no publish time, versus a head commit we
+  // could not read. Name each one that is actually missing rather than picking
+  // whichever is checked first, so the note points at the thing to go look at.
+  const missing: string[] = [];
+  if (!bundleCreatedAt) missing.push('the app reported no bundle publish time');
+  if (!headShortSha) missing.push("the PR's head commit is unknown");
+  else if (!headCommittedAt) missing.push(`no commit date for ${headShortSha}`);
+
   return [
     '',
     '> [!NOTE]',
-    `> Could not tell which revision this ran: ${bundleCreatedAt ? `no commit date for ${head}` : 'the app reported no bundle publish time'}.` +
-      ` It may predate ${head}.`,
+    `> Could not tell which revision this ran: ${missing.join(', and ')}. It may predate ${head}.`,
   ];
 }
 
