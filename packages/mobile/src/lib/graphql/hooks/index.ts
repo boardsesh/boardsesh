@@ -778,6 +778,14 @@ export function useUnfollowBoard() {
 export function usePinBoard(options?: { onPinError?: (boardUuid: string, error: unknown) => void }) {
   const queryClient = useQueryClient();
   return useMutation({
+    // Serialize every pin toggle behind one scope. Two fast taps on the same
+    // card fire pin-then-unpin as two independent requests, and nothing stops
+    // the server answering them out of order — leaving it pinned while the glyph
+    // says otherwise until the next picker open. A scope makes the second wait
+    // for the first to settle, so arrival order is dispatch order. Deliberately
+    // not a `isPending` guard in the handler: that drops the tap the climber
+    // meant, and puts a churning value in `onTogglePin`'s deps.
+    scope: { id: 'pin-board' },
     mutationFn: async ({ boardUuid, pinned }: { boardUuid: string; pinned: boolean }) => {
       if (pinned) {
         const response = await getHttpClient().request<PinBoardMutationResponse>(PIN_BOARD, {

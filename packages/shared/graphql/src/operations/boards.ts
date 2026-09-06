@@ -346,6 +346,13 @@ export type PinBoardMutationResponse = {
   pinBoard: boolean;
 };
 
+// Same input as PinBoard — UNPIN_BOARD declares `$input: PinBoardInput!` — but
+// spelled out so the pair matches Follow/Unfollow above and a caller can name
+// the mutation it is actually sending.
+export type UnpinBoardMutationVariables = {
+  input: PinBoardInput;
+};
+
 export type UnpinBoardMutationResponse = {
   unpinBoard: boolean;
 };
