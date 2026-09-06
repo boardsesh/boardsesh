@@ -475,6 +475,17 @@
         "send": "Sent",
         "attempt": "Tried"
       },
+      "progress": {
+        "flashed": "Flashed",
+        "sent": "Sent",
+        "sentTimes": "Sent ×{{count}}",
+        "tries_one": "{{count}} try",
+        "tries_other": "{{count}} tries",
+        "mirror": "mirror",
+        "bothWays": "both ways",
+        "today": "today",
+        "daysAgo": "{{count}}d"
+      },
       "noMatch": "No matching",
       "campus": "Campus",
       "anyFeet": "Any feet",

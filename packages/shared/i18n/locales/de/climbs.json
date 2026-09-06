@@ -475,6 +475,17 @@
         "send": "Getoppt",
         "attempt": "Versucht"
       },
+      "progress": {
+        "flashed": "Geflasht",
+        "sent": "Getoppt",
+        "sentTimes": "Getoppt ×{{count}}",
+        "tries_one": "{{count}} Versuch",
+        "tries_other": "{{count}} Versuche",
+        "mirror": "gespiegelt",
+        "bothWays": "beide Seiten",
+        "today": "heute",
+        "daysAgo": "{{count}} Tg."
+      },
       "noMatch": "Kein Matchen",
       "campus": "Campus",
       "anyFeet": "Freie Füße",

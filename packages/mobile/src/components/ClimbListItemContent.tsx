@@ -18,24 +18,14 @@ import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { ClimbPlaylistChips } from './ClimbPlaylistChips';
+import { ClimbProgressLine } from './ClimbProgressLine';
+import { ASCENT_STATUS_ICON } from './ascent-status-icon';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
 import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
-import type { IconName } from './icon-map';
-import type { AscentStatusValue } from '../lib/ascent-status-utils';
 
-// Scan-line status marker. Status is carried by glyph SHAPE in a single neutral
-// grey — not a colour — so it can't be mistaken for the colour-coded grade right
-// beside it, and so it stays readable for colour-blind users. ⚡ flashed,
-// ✓ sent, ✗ attempted.
 // Hoisted so the compact tier hands `ClimbListThumbnail` a referentially stable
 // `size` — a fresh object per render would break its `React.memo` on every row.
 const COMPACT_THUMBNAIL_SIZE = thumbnailSizeForDensity('compact');
-
-const ASCENT_STATUS_ICON: Record<AscentStatusValue, IconName> = {
-  flash: 'flash',
-  send: 'tick.outline',
-  attempt: 'ascent.attempt',
-};
 
 /**
  * Minimal structural climb shape this visual needs. Kept permissive so BOTH the
@@ -395,6 +385,13 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             isNoMatch={climb.is_no_match}
           />
         </View>
+        {/* Line 2 of the rich tier: what YOU have done on this climb, above the
+            crowd line. Its own memo boundary (and the ONLY new logbook
+            subscriber) so a tick merge re-renders one text line, never the
+            thumbnail — see the comment on `AscentStatusGlyph`. Renders null for
+            a climb you have no history with, so a compact/default row and every
+            signed-out rich row stay byte-for-byte what they were. */}
+        {isRich ? <ClimbProgressLine climbUuid={climb.uuid} angle={angle} /> : null}
         {/* Compact drops the whole subtitle line — and with it `LiveClimbSubtitle`'s
             per-row `useEffectiveClimbStats` subscription, so a compact row costs
             strictly less than a default one rather than just looking smaller. */}

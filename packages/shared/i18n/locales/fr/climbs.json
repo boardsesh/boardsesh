@@ -475,6 +475,17 @@
         "send": "Enchaîné",
         "attempt": "Essayé"
       },
+      "progress": {
+        "flashed": "Flashé",
+        "sent": "Enchaîné",
+        "sentTimes": "Enchaîné ×{{count}}",
+        "tries_one": "{{count}} essai",
+        "tries_other": "{{count}} essais",
+        "mirror": "miroir",
+        "bothWays": "les deux sens",
+        "today": "aujourd’hui",
+        "daysAgo": "{{count}} j"
+      },
       "noMatch": "Une main par prise",
       "campus": "Campus",
       "anyFeet": "Pieds libres",
