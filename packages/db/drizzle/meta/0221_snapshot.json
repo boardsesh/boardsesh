@@ -1,6 +1,6 @@
 {
-  "id": "e9fab904-b28d-40c9-abd4-5c216454a666",
-  "prevId": "27778161-7aab-44fe-b96f-7210d91f122d",
+  "id": "ddd6ca2e-f07b-4949-a97b-d39df27d3f2f",
+  "prevId": "b8551b64-980a-4b2f-a259-eaa3fbbcdb68",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1074,6 +1074,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "tick_graded_at": {
+          "name": "tick_graded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp",
@@ -1369,6 +1375,19 @@
         "is_listed": {
           "name": "is_listed",
           "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_hidden": {
+          "name": "is_hidden",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "hidden_at": {
+          "name": "hidden_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -13397,7 +13416,8 @@
         "proposal_vote",
         "proposal_created",
         "new_climbs_synced",
-        "gym_claim_approved"
+        "gym_claim_approved",
+        "proposal_on_your_climb"
       ]
     },
     "public.feed_item_type": {
@@ -13436,7 +13456,8 @@
       "values": [
         "grade",
         "classic",
-        "benchmark"
+        "benchmark",
+        "hide"
       ]
     },
     "public.app_feedback_status": {
