@@ -30,6 +30,12 @@ export function userBoardToItem(
    * than offering to unfollow the user's own wall.
    */
   currentUserId?: string,
+  /**
+   * Whether this board is pinned, when the caller has an optimistic override for
+   * it. Defaults to the server's `isPinnedByMe`; the picker passes an override
+   * so a just-tapped pin flips instantly without waiting for a refetch.
+   */
+  isPinnedOverride?: boolean,
 ): DiscoveryBoardItem | null {
   const boardName = toBoardName(board.boardType);
   if (boardName === null) return null;
@@ -44,6 +50,7 @@ export function userBoardToItem(
     distanceMeters: board.distanceMeters ?? undefined,
     isActive: activeUuid != null && board.uuid === activeUuid,
     isViewerOwner: currentUserId === undefined ? undefined : boardIsOwnedBy(board, currentUserId),
+    isPinned: isPinnedOverride ?? board.isPinnedByMe ?? false,
     offlineState,
   };
 }
@@ -58,13 +65,21 @@ export function userBoardsToItems(
   activeUuid?: string | null,
   offlineStateFor?: (board: UserBoard) => BoardDownloadState,
   currentUserId?: string,
+  /** Uuids the user just toggled, pending the next fetch. See `userBoardToItem`. */
+  pinnedOverrides?: ReadonlyMap<string, boolean>,
 ): DiscoveryBoardItem[] {
   // Only boards that actually render take part: a board dropped for an
   // unsupported type must not push its neighbour into a disambiguation the user
   // can see no reason for.
   const rendered: { item: DiscoveryBoardItem; board: UserBoard }[] = [];
   for (const board of boards) {
-    const item = userBoardToItem(board, activeUuid, offlineStateFor?.(board), currentUserId);
+    const item = userBoardToItem(
+      board,
+      activeUuid,
+      offlineStateFor?.(board),
+      currentUserId,
+      pinnedOverrides?.get(board.uuid),
+    );
     if (item !== null) rendered.push({ item, board });
   }
   const subtitles = disambiguateBoardSubtitles(rendered.map((entry) => entry.board));

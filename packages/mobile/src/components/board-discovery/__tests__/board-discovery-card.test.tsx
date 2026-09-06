@@ -461,6 +461,108 @@ describe('BoardDiscoveryCard corner budget', () => {
   });
 });
 
+describe('BoardDiscoveryCard pin toggle', () => {
+  afterEach(resetCapture);
+
+  it('renders no pin control unless the host passes a handler', () => {
+    // Near you, Popular, onboarding and the offline branch all omit it; the
+    // absent handler is the gate, so there is nothing to talk past.
+    const { container } = render(
+      createElement(BoardDiscoveryCard, { item: { ...item, isPinned: false }, onPress: vi.fn() }),
+    );
+    expect(container.querySelector('[data-icon="pin"]')).toBeNull();
+    expect(container.querySelector('[data-icon="pin.fill"]')).toBeNull();
+  });
+
+  it('shows an outline pin when unpinned and a filled one when pinned', () => {
+    const { container, rerender } = render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, isPinned: false },
+        onPress: vi.fn(),
+        onTogglePin: vi.fn(),
+        pinLabel: 'Pin Tension 8x10',
+      }),
+    );
+    expect(container.querySelector('[data-icon="pin"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="pin.fill"]')).toBeNull();
+
+    rerender(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, isPinned: true },
+        onPress: vi.fn(),
+        onTogglePin: vi.fn(),
+        pinLabel: 'Unpin Tension 8x10',
+      }),
+    );
+    expect(container.querySelector('[data-icon="pin.fill"]')).not.toBeNull();
+  });
+
+  it('takes the bottom-right slot, and yields it to the distance pill', () => {
+    // The card's stated corner budget is two circles and two pills. The pin
+    // shares the distance pill's slot rather than adding a fifth, so a Near-you
+    // board must never render both.
+    const { container } = render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, isPinned: true },
+        onPress: vi.fn(),
+        onTogglePin: vi.fn(),
+        pinLabel: 'Unpin Tension 8x10',
+      }),
+    );
+    const pinPill = container.querySelector('[data-icon="pin.fill"]')!.parentElement;
+    expect(edgeKeys(pinPill)).toEqual(['bottom', 'right']);
+
+    resetCapture();
+    const withDistance = render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, isPinned: true, distanceMeters: 320 },
+        onPress: vi.fn(),
+        onTogglePin: vi.fn(),
+        pinLabel: 'Unpin Tension 8x10',
+      }),
+    );
+    expect(withDistance.container.querySelector('[data-icon="pin.fill"]')).toBeNull();
+    expect(withDistance.container.querySelector('[data-icon="location"]')).not.toBeNull();
+  });
+
+  it('toggles from a tap and from the accessibility rotor', () => {
+    const onTogglePin = vi.fn();
+    const onPress = vi.fn();
+    const { container } = render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, isPinned: false },
+        onPress,
+        onTogglePin,
+        pinLabel: 'Pin Tension 8x10',
+      }),
+    );
+
+    fireEvent.click(container.querySelector('[data-icon="pin"]')!.parentElement!);
+    expect(onTogglePin).toHaveBeenCalledWith({ ...item, isPinned: false });
+    // Tapping the pin must not also activate the board underneath it.
+    expect(onPress).not.toHaveBeenCalled();
+
+    const dispatch = cardRootProps.last?.onAccessibilityAction as (event: {
+      nativeEvent: { actionName: string };
+    }) => void;
+    dispatch({ nativeEvent: { actionName: 'pin' } });
+    expect(onTogglePin).toHaveBeenCalledTimes(2);
+  });
+
+  it('publishes the pin as a custom action, since the card is a leaf to VoiceOver', () => {
+    render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, isPinned: false },
+        onPress: vi.fn(),
+        onTogglePin: vi.fn(),
+        pinLabel: 'Pin Tension 8x10',
+      }),
+    );
+    const actions = cardRootProps.last?.accessibilityActions as Array<{ name: string; label?: string }>;
+    expect(actions.some((action) => action.name === 'pin' && action.label === 'Pin Tension 8x10')).toBe(true);
+  });
+});
+
 describe('BoardDiscoveryCard accessibility', () => {
   afterEach(resetCapture);
 

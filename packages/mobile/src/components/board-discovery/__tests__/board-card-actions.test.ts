@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { boardCardAction, sortViewerOwnedFirst, type BoardCardAction } from '../board-card-actions';
+import { boardCardAction, sortViewerOwnedFirst, hoistActiveBoard, type BoardCardAction } from '../board-card-actions';
 
 const board = (overrides: Partial<UserBoard> & { uuid: string }): UserBoard =>
   ({
@@ -79,5 +79,38 @@ describe('sortViewerOwnedFirst', () => {
     const snapshotFollowed = board({ uuid: 'snapshot-followed', ownerId: undefined, isOwned: false });
     const sorted = sortViewerOwnedFirst([snapshotFollowed, snapshotMine], 'me');
     expect(sorted.map((entry) => entry.uuid)).toEqual(['snapshot-mine', 'snapshot-followed']);
+  });
+});
+
+describe('hoistActiveBoard', () => {
+  const mine = board({ uuid: 'mine', ownerId: 'me' });
+  const gym = board({ uuid: 'gym', ownerId: 'someone-else' });
+  const otherGym = board({ uuid: 'other-gym', ownerId: 'someone-else' });
+
+  it('moves the active board to the front, keeping everything else in order', () => {
+    const hoisted = hoistActiveBoard([gym, mine, otherGym], 'mine');
+    expect(hoisted.map((entry) => entry.uuid)).toEqual(['mine', 'gym', 'other-gym']);
+  });
+
+  it('leaves the order alone when the active board already leads', () => {
+    const hoisted = hoistActiveBoard([mine, gym], 'mine');
+    expect(hoisted.map((entry) => entry.uuid)).toEqual(['mine', 'gym']);
+  });
+
+  it('leaves the order alone with no active board', () => {
+    expect(hoistActiveBoard([gym, mine], undefined).map((entry) => entry.uuid)).toEqual(['gym', 'mine']);
+    expect(hoistActiveBoard([gym, mine], null).map((entry) => entry.uuid)).toEqual(['gym', 'mine']);
+  });
+
+  // Hoist-only: a stored board the server no longer lists must not conjure a card.
+  it('injects nothing when the active board is not in the list', () => {
+    const hoisted = hoistActiveBoard([gym, mine], 'deleted-board');
+    expect(hoisted.map((entry) => entry.uuid)).toEqual(['gym', 'mine']);
+  });
+
+  it('never duplicates the active board', () => {
+    const hoisted = hoistActiveBoard([gym, mine, otherGym], 'gym');
+    expect(hoisted.filter((entry) => entry.uuid === 'gym')).toHaveLength(1);
+    expect(hoisted).toHaveLength(3);
   });
 });

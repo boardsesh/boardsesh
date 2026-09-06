@@ -7,19 +7,21 @@
 // that a picker opened mid-session must still switch boards when the identity
 // lookup fails.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 type Children = { children?: ReactNode };
 type ButtonProps = { title: string; onPress?: () => void };
-type CarouselItem = { key: string; title: string; isViewerOwner?: boolean };
+type CarouselItem = { key: string; title: string; isViewerOwner?: boolean; isPinned?: boolean };
 type CarouselProps = {
   items: CarouselItem[];
   onSelect: (item: CarouselItem) => void;
   actionFor?: (item: CarouselItem) => string | null;
   actionLabelFor?: (item: CarouselItem) => string;
   onAction?: (item: CarouselItem) => void;
+  onTogglePin?: (item: CarouselItem) => void;
+  pinLabelFor?: (item: CarouselItem) => string;
   isEditing?: boolean;
   pendingActionKey?: string | null;
 };
@@ -30,6 +32,12 @@ const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined)
 const clearActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const deleteBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const unfollowBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const pinBoardMock = vi.hoisted(() => vi.fn());
+// The screen passes usePinBoard an onPinError callback; capturing it is how the
+// rollback-on-failure path gets exercised without a real mutation.
+const pinBoardOptions = vi.hoisted(() => ({
+  last: null as { onPinError?: (boardUuid: string, error: unknown) => void } | null,
+}));
 const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const forgetOfflineBoardMock = vi.hoisted(() => vi.fn());
 // The last props the carousel was handed, so ownership can be asserted on the
@@ -111,6 +119,9 @@ vi.mock('react-i18next', () => ({
         'mobile.emptyTitle': 'No boards yet',
         'mobile.emptySubtitle': 'Search for a board to get started',
         'myBoards.title': 'Manage boards',
+        'mobile.discovery.pinAria': 'Pin {{name}}',
+        'mobile.discovery.unpinAria': 'Unpin {{name}}',
+        'mobile.discovery.pinError': "Couldn't update your pinned boards",
       };
       const template = map[key] ?? key;
       return options?.name === undefined ? template : template.replace('{{name}}', options.name);
@@ -147,6 +158,10 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
     isPending: state.unfollowPending !== null,
     variables: state.unfollowPending ?? undefined,
   }),
+  usePinBoard: (options?: { onPinError?: (boardUuid: string, error: unknown) => void }) => {
+    pinBoardOptions.last = options ?? null;
+    return { mutate: pinBoardMock };
+  },
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
@@ -261,6 +276,64 @@ beforeEach(() => {
   state.unfollowPending = null;
 });
 
+describe('the pin toggle', () => {
+  it('pins a board that is not pinned yet', () => {
+    render(createElement(BoardSelection));
+    carouselProps.last?.onTogglePin?.({ key: 'gym', title: 'High Point Orlando', isPinned: false });
+    expect(pinBoardMock).toHaveBeenCalledWith({ boardUuid: 'gym', pinned: true });
+  });
+
+  it('unpins one that is', () => {
+    state.myBoards = [{ ...myWall, isPinnedByMe: true }, gymBoard];
+    render(createElement(BoardSelection));
+    const pinned = carouselProps.last?.items.find((item) => item.key === 'mine');
+    expect(pinned?.isPinned).toBe(true);
+    carouselProps.last?.onTogglePin?.(pinned!);
+    expect(pinBoardMock).toHaveBeenCalledWith({ boardUuid: 'mine', pinned: false });
+  });
+
+  // The regression this whole optimistic design exists for: the glyph flips at
+  // once, but the carousel must NOT reorder, or the card slides out from under
+  // the finger that just tapped it. The reorder lands on the next open.
+  it('flips the glyph immediately without moving the card', () => {
+    render(createElement(BoardSelection));
+    const before = carouselProps.last?.items.map((item) => item.key);
+    expect(carouselProps.last?.items.find((item) => item.key === 'gym')?.isPinned).toBe(false);
+
+    act(() => {
+      carouselProps.last?.onTogglePin?.({ key: 'gym', title: 'High Point Orlando', isPinned: false });
+    });
+
+    expect(carouselProps.last?.items.find((item) => item.key === 'gym')?.isPinned).toBe(true);
+    expect(carouselProps.last?.items.map((item) => item.key)).toEqual(before);
+  });
+
+  it('puts the glyph back and says so when the pin fails', () => {
+    render(createElement(BoardSelection));
+    act(() => {
+      carouselProps.last?.onTogglePin?.({ key: 'gym', title: 'High Point Orlando', isPinned: false });
+    });
+    expect(carouselProps.last?.items.find((item) => item.key === 'gym')?.isPinned).toBe(true);
+
+    act(() => {
+      pinBoardOptions.last?.onPinError?.('gym', new Error('offline'));
+    });
+
+    expect(carouselProps.last?.items.find((item) => item.key === 'gym')?.isPinned).toBe(false);
+    expect(toastMock.showToast).toHaveBeenCalledWith("Couldn't update your pinned boards", 'error');
+  });
+
+  it('labels the toggle for a screen reader, both ways round', () => {
+    render(createElement(BoardSelection));
+    expect(carouselProps.last?.pinLabelFor?.({ key: 'gym', title: 'High Point Orlando', isPinned: false })).toBe(
+      'Pin High Point Orlando',
+    );
+    expect(carouselProps.last?.pinLabelFor?.({ key: 'gym', title: 'High Point Orlando', isPinned: true })).toBe(
+      'Unpin High Point Orlando',
+    );
+  });
+});
+
 describe('the per-card ownership action', () => {
   it('opens the edit form for a board the viewer owns', () => {
     render(createElement(BoardSelection));
@@ -287,10 +360,29 @@ describe('the per-card ownership action', () => {
     ]);
   });
 
-  it('leads with the boards the viewer owns', () => {
+  // The screen no longer re-partitions by ownership: myBoards arrives ordered by
+  // pin, then by when the climber last opened each board (#4884). Re-sorting
+  // here would file a pinned gym board behind a wall they own and never touch.
+  it('keeps the order the server sent', () => {
     state.myBoards = [gymBoard, myWall];
     render(createElement(BoardSelection));
+    expect(carouselProps.last?.items.map((item) => item.key)).toEqual(['gym', 'mine']);
+  });
+
+  // The one thing the server cannot order, because it lives in AsyncStorage on
+  // this device.
+  it('hoists the active board to the front', () => {
+    state.myBoards = [gymBoard, myWall];
+    state.activeBoard = { uuid: 'mine' };
+    render(createElement(BoardSelection));
     expect(carouselProps.last?.items.map((item) => item.key)).toEqual(['mine', 'gym']);
+  });
+
+  it('never injects a stored active board the list does not contain', () => {
+    state.myBoards = [gymBoard, myWall];
+    state.activeBoard = { uuid: 'a-board-that-was-deleted' };
+    render(createElement(BoardSelection));
+    expect(carouselProps.last?.items.map((item) => item.key)).toEqual(['gym', 'mine']);
   });
 
   it('labels the action for a screen reader', () => {

@@ -123,6 +123,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'me' } }),
   useDeleteBoard: () => ({ mutateAsync: vi.fn(), isPending: false, variables: undefined }),
   useUnfollowBoard: () => ({ mutateAsync: vi.fn(), isPending: false, variables: undefined }),
+  usePinBoard: () => ({ mutate: vi.fn() }),
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({

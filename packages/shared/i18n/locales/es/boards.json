@@ -93,7 +93,11 @@
       "create": "Crear plafón",
       "createTile": "Crear",
       "followed": "{{name}} añadido a tus plafones",
-      "followError": "No se pudo añadir {{name}} a tus plafones"
+      "followError": "No se pudo añadir {{name}} a tus plafones",
+      "pinAria": "Fijar {{name}}",
+      "unpinAria": "Desfijar {{name}}",
+      "pinnedBadgeAria": "Fijado",
+      "pinError": "No se pudieron actualizar tus plafones fijados"
     },
     "create": {
       "screenTitle": "Configura tu plafón",

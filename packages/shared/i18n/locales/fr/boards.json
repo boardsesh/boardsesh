@@ -93,7 +93,11 @@
       "create": "Créer une board",
       "createTile": "Créer",
       "followed": "{{name}} ajoutée à tes boards",
-      "followError": "Impossible d'ajouter {{name}} à tes boards"
+      "followError": "Impossible d'ajouter {{name}} à tes boards",
+      "pinAria": "Épingler {{name}}",
+      "unpinAria": "Désépingler {{name}}",
+      "pinnedBadgeAria": "Épinglée",
+      "pinError": "Impossible de mettre à jour tes boards épinglées"
     },
     "create": {
       "screenTitle": "Configure ta board",

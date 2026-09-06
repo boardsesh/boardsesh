@@ -210,3 +210,30 @@ describe('offline state on discovery items', () => {
     expect(item?.key.startsWith('popular:')).toBe(true);
   });
 });
+
+describe('pin state', () => {
+  it('takes the pin from the board by default', () => {
+    const pinned = { ...board, isPinnedByMe: true } as unknown as UserBoard;
+    expect(userBoardToItem(pinned)?.isPinned).toBe(true);
+    expect(userBoardToItem(board)?.isPinned).toBe(false);
+  });
+
+  // An offline snapshot written before the field existed carries no answer; the
+  // card must read "not pinned" rather than undefined.
+  it('reads a board with no pin field as unpinned', () => {
+    const legacy = { ...board } as Record<string, unknown>;
+    delete legacy.isPinnedByMe;
+    expect(userBoardToItem(legacy as unknown as UserBoard)?.isPinned).toBe(false);
+  });
+
+  it('lets an optimistic override win over the server answer', () => {
+    const overrides = new Map([['b-1', true]]);
+    const [item] = userBoardsToItems([board], null, undefined, undefined, overrides);
+    expect(item.isPinned).toBe(true);
+
+    const unpinning = new Map([['b-1', false]]);
+    const pinnedBoard = { ...board, isPinnedByMe: true } as unknown as UserBoard;
+    const [flipped] = userBoardsToItems([pinnedBoard], null, undefined, undefined, unpinning);
+    expect(flipped.isPinned).toBe(false);
+  });
+});

@@ -93,7 +93,11 @@
       "create": "Board anlegen",
       "createTile": "Erstellen",
       "followed": "{{name}} zu deinen Boards hinzugefügt",
-      "followError": "{{name}} ließ sich nicht zu deinen Boards hinzufügen"
+      "followError": "{{name}} ließ sich nicht zu deinen Boards hinzufügen",
+      "pinAria": "{{name}} anpinnen",
+      "unpinAria": "{{name}} abpinnen",
+      "pinnedBadgeAria": "Angepinnt",
+      "pinError": "Deine angepinnten Boards ließen sich nicht aktualisieren"
     },
     "create": {
       "screenTitle": "Richte dein Board ein",

@@ -212,6 +212,24 @@ export const UNFOLLOW_BOARD = gql`
   }
 `;
 
+export const PIN_BOARD = gql`
+  mutation PinBoard($input: PinBoardInput!) {
+    pinBoard(input: $input)
+  }
+`;
+
+export const UNPIN_BOARD = gql`
+  mutation UnpinBoard($input: PinBoardInput!) {
+    unpinBoard(input: $input)
+  }
+`;
+
+export const RECORD_BOARD_OPENED = gql`
+  mutation RecordBoardOpened($input: RecordBoardOpenedInput!) {
+    recordBoardOpened(input: $input)
+  }
+`;
+
 export const RECORD_BOARD_SERIAL = gql`
   mutation RecordBoardSerial($input: RecordBoardSerialInput!) {
     recordBoardSerial(input: $input) {
@@ -314,6 +332,34 @@ export type UnfollowBoardMutationVariables = {
 
 export type UnfollowBoardMutationResponse = {
   unfollowBoard: boolean;
+};
+
+export type PinBoardInput = {
+  boardUuid: string;
+};
+
+export type PinBoardMutationVariables = {
+  input: PinBoardInput;
+};
+
+export type PinBoardMutationResponse = {
+  pinBoard: boolean;
+};
+
+export type UnpinBoardMutationResponse = {
+  unpinBoard: boolean;
+};
+
+export type RecordBoardOpenedInput = {
+  boardUuid: string;
+};
+
+export type RecordBoardOpenedMutationVariables = {
+  input: RecordBoardOpenedInput;
+};
+
+export type RecordBoardOpenedMutationResponse = {
+  recordBoardOpened: boolean;
 };
 
 export type GetPopularBoardConfigsQueryVariables = {
