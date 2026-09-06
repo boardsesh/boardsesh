@@ -18,6 +18,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Mirror your Woods board climbs — toggle Mirror in the play drawer to light and log a mirrored send, same as Tension. ([#5205](https://github.com/boardsesh/boardsesh/pull/5205))
 - Woods: the climb creator only offers holds that are really on your wall — no more tapping bare plywood. ([#5204](https://github.com/boardsesh/boardsesh/pull/5204))
 - Long climb summaries no longer squash the Logbook heading into a column of single letters ([#5191](https://github.com/boardsesh/boardsesh/pull/5191))
 - Routes now light up properly on the wall — the whole route, not a scrambled mix of moves. ([#4761](https://github.com/boardsesh/boardsesh/pull/4761))

@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-06T12:26:06.300Z",
+  "generatedAt": "2026-09-06T12:34:37.837Z",
   "entries": [
+    {
+      "prNumber": 5205,
+      "category": "fixed",
+      "title": "Mirror your Woods board climbs — toggle Mirror in the play drawer to light and log a mirrored send, same as Tension.",
+      "mergedAt": "2026-09-06T12:27:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5205"
+    },
     {
       "prNumber": 5202,
       "category": "new",
