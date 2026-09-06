@@ -1,0 +1,274 @@
+{
+  "metadata": {
+    "buildPlans": {
+      "title": "Build plans for a home board",
+      "description": "Cut-ready CNC files for a home climbing wall: every panel, T-nut and LED hole placed, laid out on the sheets your shop stocks."
+    },
+    "orders": {
+      "title": "Your build plans",
+      "description": "Every build pack you have bought and where each one is up to."
+    },
+    "order": {
+      "title": "Build plan {{licenceId}}",
+      "description": "Status and download for one Boardsesh build pack."
+    }
+  },
+  "hero": {
+    "title": "Build plans for your home board",
+    "subtitle": "DXF files a CNC shop cuts straight from. Every panel, the T-nut grid, the LED holes and the kicker, laid out on the sheets your shop already stocks.",
+    "firstBoard": "Kilter Homewall is the first supported board. More boards follow.",
+    "included": {
+      "heading": "What you get",
+      "dxf": "One DXF per panel, plus assembly drawings for the whole wall.",
+      "pdf": "Printable A3 or Tabloid sheets, so you can check the layout before anyone cuts.",
+      "bom": "A cut list: sheet count, panel sizes, and every hole counted.",
+      "licence": "A licence with your name on it, good for one wall."
+    },
+    "trademarkNote": "Boardsesh is not affiliated with Aurora Climbing, Kilter or any board maker. These are plans for building a wall that works with holds and LEDs you buy yourself."
+  },
+  "tiers": {
+    "heading": "Pick a licence",
+    "intro": "One licence, one wall. A second wall needs a second licence.",
+    "personal": {
+      "name": "Personal",
+      "blurb": "Build one wall for yourself. Your garage, your shed, your spare room."
+    },
+    "commercial": {
+      "name": "Commercial, single build",
+      "blurb": "Build one wall for one customer or one gym. The installation is named on the licence."
+    },
+    "contact": {
+      "heading": "Building more than one?",
+      "body": "Ten-build packs and OEM terms are a conversation, not a checkout button. Tell us what you are building and we will come back with a price.",
+      "cta": "Email us",
+      "subject": "Build plans: multi-build licence"
+    },
+    "licenceLink": "Read the licence",
+    "ordersLink": "Your build plans"
+  },
+  "configurator": {
+    "heading": "Configure your wall",
+    "intro": "Everything below changes what gets cut. Pick the numbers your shop works to.",
+    "board": {
+      "label": "Board",
+      "help": "Kilter Homewall is the only board on sale today."
+    },
+    "size": {
+      "label": "Wall size",
+      "help": "The Kilter size you are building. It sets the hold grid and the wall dimensions."
+    },
+    "kicker": {
+      "label": "Kicker",
+      "help": "The angled panel at the bottom. Only the 12 ft walls have one.",
+      "include": "Include the kicker",
+      "exclude": "No kicker"
+    },
+    "options": {
+      "heading": "Manufacturing",
+      "help": "Defaults are what we build to. Change them to match your shop.",
+      "sheetStock": {
+        "label": "Sheet size",
+        "help": "The plywood your shop cuts from. A 3.6 m sheet lets a wall row be cut without a seam.",
+        "values": {
+          "2440x1220": "2440 × 1220 mm",
+          "3600x1220": "3600 × 1220 mm"
+        }
+      },
+      "panelThicknessMm": {
+        "label": "Panel thickness",
+        "help": "18 mm is standard. Thinner flexes, thicker is heavier to hang.",
+        "values": {
+          "15": "15 mm",
+          "18": "18 mm",
+          "21": "21 mm"
+        }
+      },
+      "tnutHoleDiameterMm": {
+        "label": "T-nut hole",
+        "help": "Match the barrel on the T-nuts you bought. 12.5 mm suits the common M10.",
+        "values": {
+          "11_1": "11.1 mm",
+          "12": "12 mm",
+          "12_5": "12.5 mm",
+          "13": "13 mm"
+        }
+      },
+      "ledHoleDiameterMm": {
+        "label": "LED hole",
+        "help": "Match the LED kit you are running behind the wall.",
+        "values": {
+          "8": "8 mm",
+          "10": "10 mm",
+          "12_5": "12.5 mm",
+          "12_7": "12.7 mm"
+        }
+      },
+      "kickerMatClearanceMm": {
+        "label": "Kicker clearance above the mat",
+        "help": "How much space the kicker leaves above your mat.",
+        "values": {
+          "50": "50 mm",
+          "75": "75 mm",
+          "100": "100 mm"
+        }
+      },
+      "studClearanceOffsetMm": {
+        "label": "Stud clearance",
+        "help": "Shifts the hold grid sideways so no hole lands on a stud.",
+        "values": {
+          "0": "None",
+          "30": "30 mm",
+          "60": "60 mm"
+        }
+      },
+      "gridPitchMm": {
+        "label": "Hold spacing",
+        "help": "100 mm for a metric build, 101.6 mm if you want exactly 4 inches.",
+        "values": {
+          "100": "100 mm",
+          "101_6": "101.6 mm (4 in)"
+        }
+      },
+      "dxfFlavour": {
+        "label": "DXF format",
+        "help": "R12 writes real circles, which more machine controllers read as drill points.",
+        "values": {
+          "R12_circles": "R12, circles",
+          "R2010_polylines": "R2010, polylines"
+        }
+      },
+      "paper": {
+        "label": "Printed sheets",
+        "help": "The paper size the check prints come on.",
+        "values": {
+          "A3": "A3",
+          "TABLOID": "Tabloid"
+        }
+      },
+      "engraveHoldIds": {
+        "label": "Engrave hold numbers",
+        "help": "Routes the Kilter hold number next to every T-nut.",
+        "values": {
+          "false": "Off",
+          "true": "On"
+        }
+      },
+      "engraveAngleTicks": {
+        "label": "Engrave set-screw angles",
+        "help": "Routes a tick showing which way each set screw points.",
+        "values": {
+          "false": "Off",
+          "true": "On"
+        }
+      }
+    },
+    "engrave": {
+      "heading": "Engraving",
+      "help": "Both are off by default. They only make sense on a Kilter wall, and the pack cuts fine without them.",
+      "note": "Hold numbers and set-screw angles come from Kilter's own layout. We are still getting legal advice on shipping them, so leave them off if you would rather not wait for that answer."
+    },
+    "summary": {
+      "heading": "What gets cut",
+      "loading": "Working out the panels…",
+      "wall": "Wall",
+      "wallValue": "{{width}} × {{height}} mm",
+      "kickerHeight": "Kicker height",
+      "kickerHeightValue": "{{height}} mm",
+      "panels": "Panels",
+      "panelsValue_one": "{{count}} panel",
+      "panelsValue_other": "{{count}} panels",
+      "sheets": "Sheets",
+      "sheetsValue_one": "{{count}} sheet",
+      "sheetsValue_other": "{{count}} sheets",
+      "tnuts": "T-nut holes",
+      "leds": "LED holes",
+      "skippedLeds": "LEDs skipped at a seam",
+      "warningsHeading": "Worth knowing"
+    },
+    "licensee": {
+      "heading": "Who the licence names",
+      "help": "This goes on every file in the pack, so a leaked copy traces back to the licence.",
+      "name": "Name on the licence",
+      "email": "Email",
+      "emailHelp": "Where the pack lands when it is ready.",
+      "siteName": "Customer or gym name",
+      "siteHelp": "The one installation this commercial licence covers.",
+      "required": "Fill this in before you buy."
+    },
+    "licence": {
+      "accept": "I accept the manufacturing licence",
+      "link": "Read it first"
+    }
+  },
+  "cta": {
+    "buy": "Buy the plans",
+    "buySignedOut": "Sign in and buy",
+    "buying": "Opening checkout…",
+    "signInTitle": "Sign in to buy",
+    "signInBody": "Your licence needs an account to live on. We will bring you straight back to your configuration."
+  },
+  "errors": {
+    "CNC_INVALID_CONFIG": "That combination will not cut. Change something above and we will re-check it.",
+    "CNC_WORKER_UNAVAILABLE": "The plan generator is not answering right now. Nothing was charged. Try again in a minute.",
+    "CNC_CHECKOUT_UNAVAILABLE": "Payments are not available right now. Nothing was charged. Try again shortly.",
+    "generic": "That did not go through. Nothing was charged."
+  },
+  "status": {
+    "pending_payment": "Waiting on payment",
+    "queued": "In the queue",
+    "generating": "Cutting the files",
+    "ready": "Ready to download",
+    "failed": "Did not build",
+    "cancelled": "Checkout expired",
+    "refunded": "Refunded"
+  },
+  "orders": {
+    "heading": "Your build plans",
+    "intro": "Every pack you have bought, newest first. A licence stays yours whatever happens to this page.",
+    "empty": "Nothing here yet.",
+    "emptyCta": "Configure a wall",
+    "board": "Wall",
+    "tier": "Licence type",
+    "created": "Ordered",
+    "view": "Open",
+    "loadError": "We could not load your build plans. Reload the page."
+  },
+  "order": {
+    "heading": "Build plan {{licenceId}}",
+    "back": "All your build plans",
+    "licence": "Licence",
+    "board": "Wall",
+    "tier": "Licence type",
+    "placed": "Ordered",
+    "size": "Pack size",
+    "sizeValue": "{{megabytes}} MB",
+    "downloads": "Downloads",
+    "timeline": {
+      "heading": "Where it is up to",
+      "paid": "Paid",
+      "queued": "Queued for the generator",
+      "generating": "Cutting the files",
+      "ready": "Ready to download"
+    },
+    "waiting": "Packs take a couple of minutes. This page updates itself.",
+    "download": "Download the pack",
+    "downloading": "Getting your link…",
+    "downloadError": "That link did not come through. Try again.",
+    "checkoutSuccess": "Payment went through. Your pack is being cut now.",
+    "checkoutCancelled": "Checkout was cancelled. Nothing was charged.",
+    "failed": {
+      "heading": "This one did not build",
+      "contact": "Email us and we will sort it out",
+      "subject": "Build plan {{licenceId}} did not build"
+    },
+    "refunded": {
+      "heading": "Refunded",
+      "body": "This order was refunded, so the download is switched off. Buy again whenever you are ready to build."
+    },
+    "notFound": {
+      "heading": "No such build plan",
+      "body": "Either that licence does not exist or it belongs to another account."
+    },
+    "loadError": "We could not load this build plan. Reload the page."
+  }
+}
