@@ -153,7 +153,9 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
         branch,
         verdict,
         comment: trimmedComment.length > 0 ? trimmedComment : null,
-        screenshotKeys,
+        // null, not [], for "none" — the same shape FeedbackSheet sends down the
+        // same path, and the same shape the column stores.
+        screenshotKeys: screenshotKeys.length > 0 ? screenshotKeys : null,
       });
       // Written before the dismissal so a relaunch that beats the surf still
       // knows this bundle is signed off — leaving usually can't reload the app,

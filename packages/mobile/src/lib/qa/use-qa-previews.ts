@@ -63,8 +63,12 @@ export type QaVerdictSubmission = {
   branch: string;
   verdict: QaVerdictKind;
   comment: string | null;
-  /** Storage keys minted by `uploadFeedbackScreenshots`, in the order picked. */
-  screenshotKeys?: string[];
+  /**
+   * Storage keys minted by `uploadFeedbackScreenshots`, in the order picked;
+   * null when none were attached. Required-and-nullable like `comment` above,
+   * rather than optional, so a caller cannot silently drop the shots it staged.
+   */
+  screenshotKeys: string[] | null;
 };
 
 /**
@@ -84,7 +88,7 @@ export function useSubmitQaVerdict() {
           branch: submission.branch,
           verdict: submission.verdict,
           comment: submission.comment,
-          screenshotKeys: submission.screenshotKeys ?? null,
+          screenshotKeys: submission.screenshotKeys,
           platform: getMobilePlatform(),
           // The handset, so a PR author reading the comment knows an iPhone 17
           // Pro pass says nothing about a Pixel. Null on a simulator without a
