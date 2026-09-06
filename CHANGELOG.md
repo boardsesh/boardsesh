@@ -13,6 +13,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Mobile: route and circuit thumbnails in the climb list now show every hold in the route, not just the first frame. ([#4291](https://github.com/boardsesh/boardsesh/pull/4291))
+- See the five most recent senders right below the climber who lit the wall. ([#4160](https://github.com/boardsesh/boardsesh/pull/4160))
+- Swiping between climbs now follows the list you opened the climb from, even after switching boards ([#5154](https://github.com/boardsesh/boardsesh/pull/5154))
+  Open a climb from the queue and swipes walk the queue again
 - The playlist start prompt now says what starting does, not just what it clears ([#5156](https://github.com/boardsesh/boardsesh/pull/5156))
 - Your Sessions tab now shows every day you climbed, even the days you never pressed Start. ([#5152](https://github.com/boardsesh/boardsesh/pull/5152))
   Climbs you tick from the climbs list, a playlist or the board now land in the session you're running.

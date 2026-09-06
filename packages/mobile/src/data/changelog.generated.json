@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-09-06T03:30:48.627Z",
+  "generatedAt": "2026-09-06T03:39:16.838Z",
   "entries": [
+    {
+      "prNumber": 4291,
+      "category": "fixed",
+      "title": "Mobile: route and circuit thumbnails in the climb list now show every hold in the route, not just the first frame.",
+      "mergedAt": "2026-09-06T03:35:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4291"
+    },
+    {
+      "prNumber": 4160,
+      "category": "fixed",
+      "title": "See the five most recent senders right below the climber who lit the wall.",
+      "mergedAt": "2026-09-06T03:32:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4160"
+    },
+    {
+      "prNumber": 5154,
+      "category": "fixed",
+      "title": "Swiping between climbs now follows the list you opened the climb from, even after switching boards",
+      "mergedAt": "2026-09-06T03:31:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5154",
+      "body": "Open a climb from the queue and swipes walk the queue again"
+    },
     {
       "prNumber": 5156,
       "category": "fixed",
