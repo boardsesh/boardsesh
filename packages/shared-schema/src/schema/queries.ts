@@ -456,6 +456,14 @@ export const queriesTypeDefs = /* GraphQL */ `
     boardHistory(boardId: Int!, limit: Int, before: String): [BoardPresenceClimb!]!
 
     """
+    The five most recent distinct climbers to send or flash a climb at the
+    displayed angle on this physical board, newest sender first. Canonical and
+    aliased climb UUIDs share one sender list. Anonymous access is allowed for
+    public and system-shared boards; private boards are masked as NOT_FOUND.
+    """
+    boardClimbRecentSenders(boardId: Int!, climbUuid: String!, angle: Int!): [BoardClimbRecentSender!]!
+
+    """
     Lightweight stats for a board's wall feed — durable counts derived from
     \`boardsesh_ticks\` stamped with this board_id, plus the live window.
     Anonymous access is allowed for public and system-shared boards; private

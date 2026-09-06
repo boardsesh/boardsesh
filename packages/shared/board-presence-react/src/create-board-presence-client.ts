@@ -18,6 +18,7 @@
 // up without a reconnect catch-up before this factory existed.
 
 import {
+  BOARD_CLIMB_RECENT_SENDERS,
   BOARD_CONNECTION,
   BOARD_HISTORY,
   BOARD_NOW_PLAYING,
@@ -32,6 +33,7 @@ import {
   RESOLVE_BOARD_FOR_UUID,
 } from '@boardsesh/graphql/operations/board-presence';
 import type {
+  BoardClimbRecentSender,
   BoardConnectionHolder,
   BoardPresenceClimb,
   BoardPresenceEvent,
@@ -45,6 +47,7 @@ import type { BoardPresenceClient } from './types';
 type BoardNowPlayingData = { boardNowPlaying: BoardPresenceEvent };
 type BoardRecentClimbsData = { boardRecentClimbs: BoardPresenceClimb[] };
 type BoardHistoryData = { boardHistory: BoardPresenceClimb[] };
+type BoardClimbRecentSendersData = { boardClimbRecentSenders: BoardClimbRecentSender[] };
 type BoardPresenceStatsData = { boardPresenceStats: BoardPresenceStats };
 type BoardConnectionData = { boardConnection: BoardConnectionHolder | null };
 type ReportBoardClimbData = { reportBoardClimb: boolean };
@@ -185,6 +188,14 @@ export function createBoardPresenceClient(transport: BoardPresenceTransport): Fu
         variables: { boardId, limit: opts?.limit ?? null, before: opts?.before ?? null },
       });
       return data.boardHistory ?? [];
+    },
+
+    async fetchClimbRecentSenders(boardId, climbUuid, angle) {
+      const data = await transport.execute<BoardClimbRecentSendersData>({
+        query: BOARD_CLIMB_RECENT_SENDERS,
+        variables: { boardId, climbUuid, angle },
+      });
+      return data.boardClimbRecentSenders ?? [];
     },
 
     async fetchStats(boardId) {

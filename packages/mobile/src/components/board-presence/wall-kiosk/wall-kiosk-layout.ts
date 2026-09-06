@@ -15,12 +15,15 @@
  * board as large as possible we pick the reserve axis by argmax(board area): a
  * tall board leaves a side gutter a RAIL eats for free; a wide board leaves a
  * vertical gutter a BAND eats for free; a near-pane-AR board makes both steal, and
- * argmax picks the axis that shrinks the board least. The board is then docked
+ * argmax picks the axis that shrinks the board least at the stable design-preferred
+ * extents. Content floors size the chosen region afterward, so copy or an added
+ * byline cannot teleport a board between rail and band. The board is then docked
  * flush to the chrome (dead letterbox pools on the far edge — handled by the
  * component's flexbox), and drawn square-cornered so it is literally shown in full.
  */
 
 import { computeContainedBoardSize, type BoardBox } from '../../play-drawer/play-drawer-layout';
+import type { WallStateMode } from './WallStateStrip';
 
 // ── Named constants (device-relative via heroScale so a smaller iPad is never
 //    starved; the actual mins can be raised further by the caller's content
@@ -169,9 +172,14 @@ export function resolveWallKioskLayout({
   const containRail = (extent: number) => computeContainedBoardSize(W - extent - WALL_KIOSK_GAP, H, boardAspectRatio);
   const containBand = (extent: number) => computeContainedBoardSize(W, H - extent - WALL_KIOSK_GAP, boardAspectRatio);
 
-  // ── Argmax axis on board area at the preferred thickness ──
-  const railArea = areaOf(containRail(railPref));
-  const bandArea = areaOf(containBand(bandPref));
+  // ── Argmax axis on board area at the DESIGN-preferred thickness ──
+  // Content floors deliberately do not participate here. They describe how the
+  // selected region arranges its children, not board geometry; letting a copy or
+  // byline-height change feed axis selection causes large rail↔band teleports.
+  const railAxisPref = Math.max(RAIL_MIN * heroScale, RAIL_PREF * heroScale);
+  const bandAxisPref = Math.max(BAND_MIN * heroScale, BAND_PREF * heroScale);
+  const railArea = areaOf(containRail(railAxisPref));
+  const bandArea = areaOf(containBand(bandAxisPref));
   let region: WallKioskRegion = railArea >= bandArea ? 'rail' : 'band';
   if (previous?.region && previous.region !== region) {
     const incumbentArea = previous.region === 'rail' ? railArea : bandArea;
@@ -254,4 +262,14 @@ export function resolveWallKioskLayout({
     isFreeAxis,
     compact,
   };
+}
+
+/**
+ * Whether the recent-sender byline has earned its query. Compact chrome sheds
+ * the byline and an idle wall has no climb to attribute, so neither should spend
+ * a request against the board's rate-limit budget. Lives here rather than in the
+ * screen so it unit-tests as a plain function, like the rest of this module.
+ */
+export function shouldFetchRecentSenders(layout: WallKioskLayout | null, mode: WallStateMode): boolean {
+  return layout !== null && !layout.compact && mode !== 'idle';
 }

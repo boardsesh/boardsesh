@@ -1,15 +1,19 @@
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, max, or } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type {
+  BoardClimbRecentSender,
   ConnectionContext,
   BoardPresenceClimb,
   BoardPresenceStats,
   BoardConnectionHolder,
 } from '@boardsesh/shared-schema';
+import { resolveCanonicalClimbUuid } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../../../pubsub/index';
-import { applyRateLimit } from '../shared/helpers';
+import { applyRateLimit, validateInput } from '../shared/helpers';
+import { BoardClimbRecentSendersArgsSchema } from '../../../validation/schemas';
+import { parsePostgresUtcTimestamp } from '../../../utils/postgres-timestamps';
 import {
   assertAnonReadableBoard,
   requireActiveBoardWithVisibilityById,
@@ -17,6 +21,16 @@ import {
   resolveBoardHolder,
 } from './shared';
 import { computeBoardPresenceStats, getCachedBoardPresenceStats, setCachedBoardPresenceStats } from './stats';
+
+const RECENT_CLIMB_SENDERS_LIMIT = 5;
+/**
+ * Rows to ask Postgres for. Postgres applies the LIMIT, then we drop any row
+ * whose `climbed_at` will not parse — so asking for exactly 5 would hand back 4
+ * whenever a corrupt row landed in the top 5, with valid senders sitting just
+ * under the cut and no way to reach them. Asking for a few extra absorbs that;
+ * the result is sliced back to `RECENT_CLIMB_SENDERS_LIMIT`.
+ */
+const RECENT_CLIMB_SENDERS_FETCH_LIMIT = RECENT_CLIMB_SENDERS_LIMIT + 3;
 
 export const boardPresenceQueries = {
   /**
@@ -135,6 +149,92 @@ export const boardPresenceQueries = {
       sentAt: row.confirmedAt,
       seq: Number(row.seq),
     }));
+  },
+
+  /**
+   * The latest successful climbers for one climb on this physical wall.
+   * "Recent" is deliberately a fixed, newest-first distinct-user cap rather
+   * than a time window: a quiet wall still shows useful history, while the
+   * response and avatar row stay bounded.
+   *
+   * Ticks can retain an Aurora/Kilter alias UUID after catalog deduplication,
+   * so resolve the requested climb to its canonical UUID and include every
+   * known alias. Angle is exact; mirror is intentionally not filtered because
+   * BoardPresenceClimb does not currently carry mirror state.
+   */
+  boardClimbRecentSenders: async (
+    _: unknown,
+    { boardId, climbUuid, angle }: { boardId: number; climbUuid: string; angle: number },
+    ctx: ConnectionContext,
+  ): Promise<BoardClimbRecentSender[]> => {
+    await applyRateLimit(ctx, 60, 'boardClimbRecentSenders');
+    const board = await requireActiveBoardWithVisibilityById(boardId);
+    assertAnonReadableBoard(board, ctx.userId);
+    const validated = validateInput(BoardClimbRecentSendersArgsSchema, { climbUuid, angle }, 'recent senders');
+
+    const canonicalClimbUuid = await resolveCanonicalClimbUuid(db, board.boardType, validated.climbUuid);
+    // The alias fan-out stays a subquery rather than its own round-trip: a
+    // merged climb can carry an unbounded number of aliases, and this way the
+    // resolver is two DB calls per kiosk refresh instead of three.
+    const aliasedClimbUuids = db
+      .select({ aliasUuid: dbSchema.boardClimbAliases.aliasUuid })
+      .from(dbSchema.boardClimbAliases)
+      .where(
+        and(
+          eq(dbSchema.boardClimbAliases.boardType, board.boardType),
+          eq(dbSchema.boardClimbAliases.canonicalUuid, canonicalClimbUuid),
+        ),
+      );
+    const latestSentAt = max(dbSchema.boardseshTicks.climbedAt);
+
+    const rows = await db
+      .select({
+        userId: dbSchema.boardseshTicks.userId,
+        senderName: dbSchema.users.name,
+        senderImage: dbSchema.users.image,
+        profileDisplayName: dbSchema.userProfiles.displayName,
+        profileAvatarUrl: dbSchema.userProfiles.avatarUrl,
+        lastSentAt: latestSentAt,
+      })
+      .from(dbSchema.boardseshTicks)
+      .innerJoin(dbSchema.users, eq(dbSchema.boardseshTicks.userId, dbSchema.users.id))
+      .leftJoin(dbSchema.userProfiles, eq(dbSchema.boardseshTicks.userId, dbSchema.userProfiles.userId))
+      .where(
+        and(
+          eq(dbSchema.boardseshTicks.boardId, boardId),
+          eq(dbSchema.boardseshTicks.boardType, board.boardType),
+          or(
+            eq(dbSchema.boardseshTicks.climbUuid, canonicalClimbUuid),
+            inArray(dbSchema.boardseshTicks.climbUuid, aliasedClimbUuids),
+          ),
+          eq(dbSchema.boardseshTicks.angle, validated.angle),
+          inArray(dbSchema.boardseshTicks.status, ['flash', 'send']),
+        ),
+      )
+      .groupBy(
+        dbSchema.boardseshTicks.userId,
+        dbSchema.users.name,
+        dbSchema.users.image,
+        dbSchema.userProfiles.displayName,
+        dbSchema.userProfiles.avatarUrl,
+      )
+      .orderBy(desc(latestSentAt), asc(dbSchema.boardseshTicks.userId))
+      .limit(RECENT_CLIMB_SENDERS_FETCH_LIMIT);
+
+    const senders = rows.flatMap((row) => {
+      const lastSentAt = parsePostgresUtcTimestamp(row.lastSentAt);
+      return lastSentAt
+        ? [
+            {
+              userId: row.userId,
+              displayName: row.profileDisplayName ?? row.senderName ?? null,
+              avatarUrl: row.profileAvatarUrl ?? row.senderImage ?? null,
+              lastSentAt,
+            },
+          ]
+        : [];
+    });
+    return senders.slice(0, RECENT_CLIMB_SENDERS_LIMIT);
   },
 
   /**

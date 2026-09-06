@@ -1,9 +1,9 @@
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { BoardClimbRecentSender, BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { WallStateStrip, type WallStateMode } from './WallStateStrip';
-import { WallIdentityBlock } from './WallIdentityBlock';
+import { WallAttributionBlock, WallIdentityBlock } from './WallIdentityBlock';
 import { WallScrubber } from './WallScrubber';
 import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
@@ -11,7 +11,7 @@ import { useDisplayGrade } from '../../../hooks/use-display-grade';
 import { formatRelativeTime } from '../../../lib/format-relative-time';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { WallKioskRegion } from './wall-kiosk-layout';
-import type { WallKioskTypeScale } from './wall-kiosk-type';
+import { resolveWallKioskBandColumns, type WallKioskTypeScale } from './wall-kiosk-type';
 import type { WallPreviewState } from './useWallPreview';
 
 /**
@@ -64,20 +64,17 @@ function WallIdleRecovery({
   );
 }
 
-/** A band wider than this can seat identity and controls side by side; narrower
- *  than this stacks them (a tall board's band is only board-width). */
-const BAND_TWO_COLUMN_MIN = 640;
-
 type WallChromeRegionProps = {
   region: WallKioskRegion;
   mode: WallStateMode;
   preview: WallPreviewState;
   typeScale: WallKioskTypeScale;
-  /** The chrome region's width, to pick two-column vs stacked in a band. */
+  /** The chrome region's width, to pick one-, two-, or three-column band content. */
   bandWidth: number;
   /** The dominance cap starved the region (extreme aspect ratio) → shed the
    *  lower-priority identity lines so the controls still fit. */
   compact: boolean;
+  recentSenders: BoardClimbRecentSender[];
 };
 
 /**
@@ -87,9 +84,21 @@ type WallChromeRegionProps = {
  * wide enough and stacks when narrow. Sits on an opaque surface so its text needs
  * no scrim; nothing here ever touches the board.
  */
-function WallChromeRegionComponent({ region, mode, preview, typeScale, bandWidth, compact }: WallChromeRegionProps) {
+function WallChromeRegionComponent({
+  region,
+  mode,
+  preview,
+  typeScale,
+  bandWidth,
+  compact,
+  recentSenders,
+}: WallChromeRegionProps) {
+  const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { displayedClimb, liveClimb, isPreviewing, stepsBack, previewTimestamp, lastLitClimb } = preview;
+  const bandColumns = region === 'band' ? resolveWallKioskBandColumns(bandWidth) : 1;
+  const separateAttribution = bandColumns >= 2;
+  const setter = displayedClimb?.setter?.trim() || null;
 
   const stateStrip = (
     <WallStateStrip
@@ -108,10 +117,24 @@ function WallChromeRegionComponent({ region, mode, preview, typeScale, bandWidth
         climb={displayedClimb}
         typeScale={typeScale}
         isPreviewing={isPreviewing}
+        recentSenders={recentSenders}
+        showAttribution={!separateAttribution}
+        showSetter={bandColumns !== 3}
+        nameLines={bandColumns === 3 ? 1 : 2}
         driverSize={region === 'rail' ? 32 : 28}
         compact={compact}
       />
     );
+  const attribution =
+    mode !== 'idle' && separateAttribution ? (
+      <WallAttributionBlock
+        climb={displayedClimb}
+        typeScale={typeScale}
+        recentSenders={recentSenders}
+        driverSize={28}
+        compact={compact}
+      />
+    ) : null;
   const scrubber = <WallScrubber preview={preview} />;
 
   const surface = [styles.surface, { backgroundColor: systemColors.elevatedSurface }];
@@ -128,7 +151,31 @@ function WallChromeRegionComponent({ region, mode, preview, typeScale, bandWidth
     );
   }
 
-  if (bandWidth >= BAND_TWO_COLUMN_MIN) {
+  if (bandColumns === 3) {
+    return (
+      <View style={[surface, styles.bandRow]}>
+        <View style={styles.bandPrimaryThree}>{identity}</View>
+        <View style={[styles.bandSeparator, { backgroundColor: systemColors.separator }]} />
+        <View style={styles.bandAttributionThree}>
+          {stateStrip}
+          {setter ? (
+            <Text
+              numberOfLines={1}
+              color={systemColors.secondaryLabel}
+              style={{ fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight }}
+            >
+              {t('mobile.boardPresence.setByLine', { setter })}
+            </Text>
+          ) : null}
+          {attribution}
+        </View>
+        <View style={[styles.bandSeparator, { backgroundColor: systemColors.separator }]} />
+        <View style={styles.bandControlsThree}>{scrubber}</View>
+      </View>
+    );
+  }
+
+  if (bandColumns === 2) {
     return (
       <View style={[surface, styles.bandRow]}>
         <View style={styles.bandLeft}>
@@ -136,7 +183,10 @@ function WallChromeRegionComponent({ region, mode, preview, typeScale, bandWidth
           {identity}
         </View>
         <View style={[styles.bandSeparator, { backgroundColor: systemColors.separator }]} />
-        <View style={styles.bandRight}>{scrubber}</View>
+        <View style={styles.bandRight}>
+          {attribution}
+          {scrubber}
+        </View>
       </View>
     );
   }
@@ -182,6 +232,21 @@ const styles = StyleSheet.create({
   },
   bandRight: {
     flex: 0.45,
+    justifyContent: 'center',
+    gap: spacing[4],
+  },
+  bandPrimaryThree: {
+    flex: 0.46,
+    gap: spacing[3],
+    justifyContent: 'flex-start',
+  },
+  bandAttributionThree: {
+    flex: 0.26,
+    gap: spacing[3],
+    justifyContent: 'center',
+  },
+  bandControlsThree: {
+    flex: 0.28,
     justifyContent: 'center',
   },
   bandStacked: {

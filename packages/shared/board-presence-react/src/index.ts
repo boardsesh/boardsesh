@@ -50,3 +50,6 @@ export type {
 
 export { boardHistoryEntryKey, useBoardHistoryPagination } from './use-board-history-pagination';
 export type { BoardHistoryPageLoadedInfo, BoardHistoryPagination } from './use-board-history-pagination';
+
+export { useBoardClimbRecentSenders } from './use-board-climb-recent-senders';
+export type { BoardClimbRecentSendersOptions, BoardClimbRecentSendersState } from './use-board-climb-recent-senders';

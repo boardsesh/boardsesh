@@ -42,6 +42,21 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   }
 
   """
+  One distinct climber who recently sent the displayed climb on this physical
+  board. Results are ordered by each climber's latest successful tick.
+  """
+  type BoardClimbRecentSender {
+    "Boardsesh user id, for linking the avatar to their profile"
+    userId: ID!
+    "Profile display name, falling back to the auth-account name"
+    displayName: String
+    "Profile avatar URL, falling back to the auth-account image"
+    avatarUrl: String
+    "ISO 8601 timestamp of this climber's latest successful tick for the climb"
+    lastSentAt: String!
+  }
+
+  """
   Event: a climb was set (lit) on the wall.
   """
   type BoardClimbSet {

@@ -43,6 +43,16 @@ describe('screenshot-wall-seed', () => {
     expect(await client.fetchHistory(SCREENSHOT_SEED_BOARD_ID)).toEqual(climbs);
   });
 
+  it('seeds recent senders only for a matching climb and angle', async () => {
+    const client = createScreenshotBoardPresenceClient();
+    publishScreenshotWallClimbs([makeClimb({ climbUuid: 'a', angle: 40 })], null);
+
+    const senders = await client.fetchClimbRecentSenders(SCREENSHOT_SEED_BOARD_ID, 'a', 40);
+    expect(senders.map((recentSender) => recentSender.displayName)).toEqual(['Alex', 'Maya', 'Sam']);
+    expect(await client.fetchClimbRecentSenders(SCREENSHOT_SEED_BOARD_ID, 'a', 45)).toEqual([]);
+    expect(await client.fetchClimbRecentSenders(SCREENSHOT_SEED_BOARD_ID, 'b', 40)).toEqual([]);
+  });
+
   it('defers the one-shot fetches until the seed is published', async () => {
     const client = createScreenshotBoardPresenceClient();
     // The board-presence hook calls these once at boot, before the Climbs screen

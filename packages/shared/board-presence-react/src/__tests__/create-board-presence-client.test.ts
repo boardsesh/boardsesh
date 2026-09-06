@@ -147,6 +147,26 @@ describe('createBoardPresenceClient', () => {
     expect(await client.fetchHistory(7)).toEqual([]);
   });
 
+  it('fetches recent climb senders with the board, climb, and angle, falling back to []', async () => {
+    const client = createBoardPresenceClient(harness.transport);
+    const senders = [
+      {
+        userId: 'u1',
+        displayName: 'Alex',
+        avatarUrl: 'https://example.test/alex.png',
+        lastSentAt: '2026-07-31T12:00:00.000Z',
+      },
+    ];
+    harness.setExecuteResult({ boardClimbRecentSenders: senders });
+
+    expect(await client.fetchClimbRecentSenders(7, 'climb-1', 40)).toEqual(senders);
+    expect(harness.executeCalls[0].variables).toEqual({ boardId: 7, climbUuid: 'climb-1', angle: 40 });
+    expect(harness.executeCalls[0].query).toContain('boardClimbRecentSenders');
+
+    harness.setExecuteResult({});
+    expect(await client.fetchClimbRecentSenders(7, 'climb-1', 40)).toEqual([]);
+  });
+
   it('fetches stats and unwraps the boardPresenceStats field', async () => {
     const client = createBoardPresenceClient(harness.transport);
     const stats = {

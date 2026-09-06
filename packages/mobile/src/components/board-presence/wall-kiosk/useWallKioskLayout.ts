@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, Platform, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { resolveWallKioskLayout, type WallKioskInsets, type WallKioskLayout } from './wall-kiosk-layout';
+import {
+  quantizeDimension,
+  resolveWallKioskLayout,
+  type WallKioskInsets,
+  type WallKioskLayout,
+} from './wall-kiosk-layout';
 import {
   bandContentFloor,
   estimatePhysicalLongSideMm,
@@ -83,13 +88,14 @@ export function useWallKioskLayout(boardAspectRatio: number | null): WallKioskLa
     if (!pane || !boardAspectRatio || boardAspectRatio <= 0) {
       return { layout: null as WallKioskLayout | null, typeScale: baseType };
     }
+    const contentWidth = quantizeDimension(pane.width - insets.left - insets.right);
     const layout = resolveWallKioskLayout({
       paneW: pane.width,
       paneH: pane.height,
       insets,
       boardAspectRatio,
       heroScale,
-      contentFloorBand: bandContentFloor(baseType),
+      contentFloorBand: bandContentFloor(baseType, contentWidth),
       previous: prevRegionRef.current,
     });
     if (!layout) return { layout: null, typeScale: baseType };

@@ -19,7 +19,13 @@
 // Everything here is reached only from inlined `EXPO_PUBLIC_SCREENSHOT_MODE === '1'`
 // branches, so babel/terser dead-strips the whole module from normal builds.
 
-import type { BoardConnectionHolder, BoardPresenceClimb, BoardPresenceStats, Climb } from '@boardsesh/shared-schema';
+import type {
+  BoardClimbRecentSender,
+  BoardConnectionHolder,
+  BoardPresenceClimb,
+  BoardPresenceStats,
+  Climb,
+} from '@boardsesh/shared-schema';
 import type { MobileBoardPresenceClient } from './board-presence-client';
 
 /** How many of the active board's climbs the wall kiosk history is seeded with. */
@@ -127,6 +133,14 @@ function seedStats(): BoardPresenceStats {
   };
 }
 
+function seedRecentSenders(lastSentAt: string): BoardClimbRecentSender[] {
+  return [
+    { userId: 'screenshot-sender-alex', displayName: 'Alex', avatarUrl: null, lastSentAt },
+    { userId: 'screenshot-sender-maya', displayName: 'Maya', avatarUrl: null, lastSentAt },
+    { userId: 'screenshot-sender-sam', displayName: 'Sam', avatarUrl: null, lastSentAt },
+  ];
+}
+
 /**
  * A `MobileBoardPresenceClient` that serves the module seed instead of a
  * graphql-ws transport. Every feed method reads the published climbs; the
@@ -168,6 +182,11 @@ export function createScreenshotBoardPresenceClient(): MobileBoardPresenceClient
     async fetchHistory() {
       await whenSeeded();
       return seedClimbs;
+    },
+    async fetchClimbRecentSenders(_boardId, climbUuid, angle) {
+      await whenSeeded();
+      const climb = seedClimbs.find((candidate) => candidate.climbUuid === climbUuid && candidate.angle === angle);
+      return climb ? seedRecentSenders(climb.sentAt) : [];
     },
     async fetchStats() {
       await whenSeeded();

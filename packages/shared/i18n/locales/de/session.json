@@ -28,7 +28,9 @@
     "open": "An der Wand",
     "railDark": "Gerade ist nichts beleuchtet",
     "openAria": "Zeigen, was an der Wand ist",
-    "openAriaWithClimb": "Zeigen, was an der Wand ist: {{name}}"
+    "openAriaWithClimb": "Zeigen, was an der Wand ist: {{name}}",
+    "litByLine": "Beleuchtet von {{name}}",
+    "sentByLabel": "Getoppt von"
   },
   "detail": {
     "subtitleSends_one": "{{count}} Begehung",

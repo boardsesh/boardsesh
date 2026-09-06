@@ -8,6 +8,7 @@
 // only sees these methods.
 
 import type {
+  BoardClimbRecentSender,
   BoardConnectionHolder,
   BoardPresenceClimb,
   BoardPresenceEvent,
@@ -67,6 +68,12 @@ export interface BoardPresenceClient {
    * recent backfill still satisfy the interface.
    */
   fetchHistory?(boardId: number, opts?: { limit?: number; before?: BoardHistoryCursor }): Promise<BoardPresenceClimb[]>;
+
+  /**
+   * Up to five distinct recent senders for one climb + angle on this physical
+   * board. Optional so existing read-only/fake clients degrade to no byline.
+   */
+  fetchClimbRecentSenders?(boardId: number, climbUuid: string, angle: number): Promise<BoardClimbRecentSender[]>;
 
   /** Durable + live stats for the board's wall feed. */
   fetchStats(boardId: number): Promise<BoardPresenceStats>;

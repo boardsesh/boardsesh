@@ -28,7 +28,9 @@
     "open": "Sur le mur",
     "railDark": "Rien d'allumé pour l'instant",
     "openAria": "Voir ce qui est sur le mur",
-    "openAriaWithClimb": "Voir ce qui est sur le mur : {{name}}"
+    "openAriaWithClimb": "Voir ce qui est sur le mur : {{name}}",
+    "litByLine": "Allumé par {{name}}",
+    "sentByLabel": "Enchaîné par"
   },
   "detail": {
     "subtitleSends_one": "{{count}} croix",

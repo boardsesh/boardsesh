@@ -98,31 +98,99 @@ export function fitGradeToChrome(
   return { ...scale, gradeFontSize, gradeLineHeight: Math.round(gradeFontSize * 1.05) };
 }
 
+/** Band column breakpoints are shared by measurement and rendering so the
+ * content floor always describes the arrangement that is actually mounted. */
+export const BAND_TWO_COLUMN_MIN = 640;
+export const BAND_THREE_COLUMN_MIN = 1100;
+
+export type WallKioskBandColumns = 1 | 2 | 3;
+
+export function resolveWallKioskBandColumns(bandWidth: number): WallKioskBandColumns {
+  if (bandWidth >= BAND_THREE_COLUMN_MIN) return 3;
+  if (bandWidth >= BAND_TWO_COLUMN_MIN) return 2;
+  return 1;
+}
+
+// Fixed parts of the band's vertical budget, in the same points the components
+// lay out with. Named here rather than inline so a component-tree change and
+// this floor can be diffed against each other — the geometry tests pin the
+// resulting heights, but only a reader can tell that `24` was the on-wall row.
+const TIGHT_GAP = 8; // spacing[2]
+const BLOCK_GAP = 12; // spacing[3]
+const BAND_STRIP_PADDING = 16; // state strip paddingVertical 8×2
+const BAND_CHIP_PADDING = 4; // grade chip paddingVertical 2×2
+const BAND_DRIVER_ROW = 36; // avatar + line
+const BAND_CONTROL_ROW = 56; // nav row / Light-this min height
+const BAND_BACK_TO_LIVE_ROW = 30;
+const BAND_CONTROLS_COLUMN = BAND_CONTROL_ROW + BAND_CONTROL_ROW + BAND_BACK_TO_LIVE_ROW;
+const BAND_STACKED_BLOCK_GAPS = BLOCK_GAP * 4; // between stacked blocks
+const BAND_SURFACE_PADDING = 32; // spacing[4] top + bottom
+const ON_WALL_ROW = 24; // fixed-size "on the wall now" row
+const STATE_LINE_INNER_GAP = 2;
+const ATTRIBUTION_ROW_MIN = 28; // avatar diameter floors the Lit-by / Sent-by row
+const ATTRIBUTION_ROW_PADDING = 2; // inside each row, not between them — that gap is TIGHT_GAP
+const HISTORY_TIMESTAMP_RATIO = 0.7; // history timestamp, relative to the state line
+
 /**
  * The minimum band HEIGHT that funds its content, so a band is never sized below
- * what it must show (else `overflow: hidden` clips the scrubber below the fold).
- * The band spans the full content width and lays its identity + controls out in
- * two columns, so the height is the taller of the two columns (not their sum),
- * plus surface padding + inter-block gaps. The identity column measures at the
- * real `gradeLineHeight` (not the name-line proxy) and includes the driver row.
+ * what its selected arrangement must show (else `overflow: hidden` clips the
+ * scrubber below the fold). Two-column bands move the paired Lit-by/Sent-by block
+ * into the controls column's existing vertical slack, so the new sender row does
+ * not increase the long-standing two-column floor. Very wide, shallow bands use
+ * three columns plus a fitted one-line name; their middle column combines the
+ * state strip and short metadata so even the taller HISTORY state fits without
+ * shrinking the board into a lossy rail.
  */
-export function bandContentFloor(scale: WallKioskTypeScale): number {
-  const stripPadding = 16; // state strip paddingVertical 8×2
-  const chipPadding = 4; // grade chip paddingVertical 2×2
-  const driverRow = 36; // avatar + line
-  const controlRow = 56; // nav row / Light-this min height
-  const blockGaps = 12 * 4; // spacing[3] between stacked blocks
-  const surfacePadding = 32; // spacing[4] top + bottom
+export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): number {
+  const columns = resolveWallKioskBandColumns(bandWidth);
+  // One Lit-by / Sent-by line: the avatar floors it, the copy grows it. Shared by
+  // every arrangement so a row is measured the same way wherever it is mounted.
+  const attributionRow = Math.max(ATTRIBUTION_ROW_MIN, scale.metaLineHeight) + ATTRIBUTION_ROW_PADDING;
+
+  if (columns === 3) {
+    const primaryColumn = scale.gradeLineHeight + BAND_CHIP_PADDING + TIGHT_GAP + scale.nameLineHeight;
+    const historyStateStrip =
+      scale.stateLineHeight +
+      Math.round(scale.stateLineHeight * HISTORY_TIMESTAMP_RATIO) +
+      STATE_LINE_INNER_GAP +
+      BAND_STRIP_PADDING +
+      TIGHT_GAP +
+      ON_WALL_ROW;
+    const attributionColumn =
+      historyStateStrip +
+      BLOCK_GAP + // state strip → setter
+      scale.metaLineHeight +
+      BLOCK_GAP + // setter → paired attribution block
+      attributionRow +
+      TIGHT_GAP + // Lit by → Sent by
+      attributionRow;
+    return Math.round(Math.max(primaryColumn, attributionColumn, BAND_CONTROLS_COLUMN) + BAND_SURFACE_PADDING);
+  }
+
+  // Only the stacked band still funds the Lit-by driver row here. From two
+  // columns up, WallChromeRegion renders WallIdentityBlock with
+  // `showAttribution={false}` and hoists the whole attribution block into its
+  // own column, so charging the identity column for a row it no longer renders
+  // just makes the band taller than its content and steals it from the board.
   const identityColumn =
     scale.stateLineHeight +
-    stripPadding +
+    BAND_STRIP_PADDING +
     scale.gradeLineHeight +
-    chipPadding +
+    BAND_CHIP_PADDING +
     2 * scale.nameLineHeight +
     scale.metaLineHeight +
-    driverRow;
-  const controlsColumn = controlRow + controlRow + 30; // nav + Light-this + back-to-live
-  return Math.round(Math.max(identityColumn, controlsColumn) + blockGaps + surfacePadding);
+    (columns === 1 ? BAND_DRIVER_ROW : 0);
+  const baseFloor = Math.round(
+    Math.max(identityColumn, BAND_CONTROLS_COLUMN) + BAND_STACKED_BLOCK_GAPS + BAND_SURFACE_PADDING,
+  );
+
+  // Shared by the one- and two-column arrangements; the stacked band then adds
+  // the Sent-by row, because it has no sibling-column slack to put it in (its
+  // Lit-by row is already in `identityColumn` above). Common iPad panes are
+  // two/three-column bands. The row takes the driver-row height as a floor and
+  // grows with the copy: on a large external display heroScale can push the meta
+  // line past 36pt, and a fixed 36 would then undercut the row it is funding.
+  return columns === 1 ? baseFloor + Math.max(BAND_DRIVER_ROW, attributionRow) + TIGHT_GAP : baseFloor;
 }
 
 function clamp(min: number, value: number, max: number): number {
