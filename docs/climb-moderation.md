@@ -44,6 +44,12 @@ Feature issue: #5049.
 `already_reported` is a success, not an error — a client retry (a flaky connection, a double tap)
 can never inflate the tally.
 
+**Auto-approval runs on all three paths, `already_reported` included.** A retry whose vote committed
+but whose approval did not is exactly the case where a proposal sits at threshold with nobody left to
+carry it over. The tally is idempotent and the `open → approved` flip is guarded on `status = 'open'`
+under the proposal lock, so a duplicate report can never approve twice. Only the comment fan-out and
+the vote event are suppressed on that path — those describe writes that did not happen.
+
 **One vote and one comment per user per report.** The vote is the tally; the comment is the reason,
 and every reason hangs off the same proposal so a moderator reads one thread instead of five
 near-identical rows. A report deliberately does **not** publish `comment.created`, so reasons stay
@@ -97,6 +103,12 @@ tunable per climb, per board, and globally through `community_settings` (`key = 
 `5` in `resolvers/social/community-settings.ts`. Admins and community leaders can also resolve a
 report outright with `resolveProposal`.
 
+The threshold is resolved **before** the proposal lock is taken (`resolveApprovalThreshold` in
+`proposals/grade-analysis.ts`); only the vote sum runs inside it (`checkAutoApproval`). The settings
+cascade reads through the `db` singleton, so resolving it under the lock would hold a second pool
+connection while the first was still checked out — ten concurrent reports and the (max 10) pool
+deadlocks. The threshold is config, not tally state, so reading it a moment early changes nothing.
+
 Roles are board-scoped or global: a `kilter`-scoped `community_leader` carries no extra weight on a
 Tension report. The rules are pure functions in `packages/shared/community-roles/` so the backend and
 both clients reach the same verdict from the same rows.
@@ -148,6 +160,15 @@ The predicate lives in one place: `hiddenClimbCondition` in
 **Filtered** — every browse surface: climb lists and their counts, search without a name, the activity
 feed, recommendations, similar-climb discovery, setter stats, the sitemap.
 
+Three of those read `board_climbs` through their own join rather than through `hiddenClimbCondition`,
+so they carry their own copy of the rule:
+
+| Surface                                                                                       | How it filters                                                                                             |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `followingAscentsFeed` / `globalAscentsFeed` (`resolvers/social/feed.ts`)                       | `is_hidden IS NOT TRUE` in the WHERE. `IS NOT TRUE`, not `= false`: `board_climbs` is LEFT JOINed there, and a tick whose climb row is missing must keep rendering as "Unknown Climb". |
+| The setter front door, `/setter/[setter_username]` (`server-setter-data.ts`)                    | `is_hidden = false` inside `visibleSetterClimbsWhere`, so the list, the paged count and the JSON-LD all agree. It is an indexable page, so a hidden climb must not come back through it. |
+| The MoonBoard sitemap config count (`lib/seo/sitemap/board-config-source.ts`)                    | `is_hidden = false` in the grouped count, so a layout whose only listed climbs are hidden drops its board URL instead of shipping one over zero climb URLs. |
+
 **Not filtered:**
 
 | Surface                          | Why                                                                              |
@@ -176,6 +197,12 @@ A climb points at a Boardsesh account two ways, and `resolveClimbSetterRecipient
 (`packages/backend/src/events/recipient-resolution.ts`) handles both: climbs authored on Boardsesh
 carry the user id in `board_climbs.user_id`; Aurora-synced climbs only carry the Aurora account number
 in `board_climbs.setter_id`, matched against `aurora_credentials.aurora_user_id` for that board type.
+
+That match is restricted to a **live** claim — `sync_status` in (`pending`, `active`, `error`), i.e.
+anything but `expired`. It is the same set `assertNoConflictingAuroraOwner`
+(`services/aurora-credentials.ts`) lets a re-linker step over, so one Aurora account number can carry
+an abandoned row beside the current owner's. Matching on the number alone would tell whoever used to
+hold that login about every report on a stranger's climbs.
 
 **A setter who also ticked their own climb gets one notification, not two** — the setter row wins
 (`mergeProposalCreatedRecipients`). The reporter never notifies themselves.

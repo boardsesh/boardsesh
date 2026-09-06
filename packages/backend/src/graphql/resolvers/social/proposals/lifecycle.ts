@@ -10,7 +10,7 @@ import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
 import { getUserVoteWeight } from '../roles';
 import { resolveCommunitySetting } from '../community-settings';
 import { applyProposalEffect } from './effects';
-import { checkAutoApproval } from './grade-analysis';
+import { checkAutoApproval, resolveApprovalThreshold } from './grade-analysis';
 import { assertClimbBoardType } from './climb-board-type';
 import crypto from 'crypto';
 
@@ -371,17 +371,18 @@ export async function flipVoteToUpvote(
  * uncommitted transaction would be invisible to it.
  */
 export async function runAutoApproval(proposal: ProposalRow, actorId: string): Promise<ProposalRow> {
+  // The threshold is resolved BEFORE the lock is taken. `resolveCommunitySetting`
+  // reads through the `db` singleton, so resolving it inside the locked
+  // transaction would check out a second pool connection while holding one —
+  // ten concurrent reports is a pool (max 10) deadlock. The number itself is
+  // config, not tally state, so reading it a moment early changes nothing.
+  const required = await resolveApprovalThreshold(proposal.climbUuid, proposal.angle, proposal.boardType);
+
   // Tally, status flip and effect all happen under the proposal's advisory lock
   // in one transaction: counted outside it, a voter toggling off between the
   // count and the flip could approve a proposal that is no longer at threshold.
   const approved = await withProposalLock(proposal.climbUuid, proposal.type, async (tx) => {
-    const shouldApprove = await checkAutoApproval(
-      proposal.id,
-      proposal.boardType,
-      proposal.climbUuid,
-      proposal.angle,
-      tx,
-    );
+    const shouldApprove = await checkAutoApproval(proposal.id, required, tx);
     if (!shouldApprove) return null;
 
     const [row] = await tx

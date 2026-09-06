@@ -341,6 +341,45 @@ describe('reportClimb', () => {
     expect(climb.hiddenAt).toBeInstanceOf(Date);
   });
 
+  it('carries a stalled at-threshold proposal over on a duplicate report', async () => {
+    // The retry case: a reporter's vote committed but the approval that should
+    // have followed it did not — a dropped connection, a restarted process. The
+    // client retries and gets `already_reported`; if auto-approval were skipped
+    // on that path the proposal would sit at threshold forever with nobody left
+    // to carry it. "Open AND already at threshold" can only be reached by
+    // writing the extra weight straight to `proposal_votes`, because every
+    // resolver door runs the approval on its way out.
+    await reportHide(REPORTER_A);
+    const [stalled] = await readProposals();
+    expect(stalled.status).toBe('open');
+
+    // REPORTER_A's own +1 weighs 1; this takes the tally to the required 5.
+    await db.insert(dbSchema.proposalVotes).values({
+      proposalId: stalled.id,
+      userId: REPORTER_B,
+      value: 1,
+      weight: 4,
+    });
+    expect((await readClimbHiddenState()).isHidden).toBe(false);
+
+    const retry = await reportHide(REPORTER_A);
+
+    // The duplicate still writes nothing: no second vote, no second reason.
+    expect(retry.status).toBe('already_reported');
+    expect(await readVotes(stalled.id)).toHaveLength(2);
+    expect(await readComments(stalled.uuid)).toHaveLength(1);
+
+    // ...and the approval the proposal was owed finally ran.
+    expect(retry.proposal.status).toBe('approved');
+    const [resolved] = await readProposals();
+    expect(resolved.status).toBe('approved');
+    expect(resolved.resolvedAt).toBeInstanceOf(Date);
+
+    const climb = await readClimbHiddenState();
+    expect(climb.isHidden).toBe(true);
+    expect(climb.hiddenAt).toBeInstanceOf(Date);
+  });
+
   it('unhides the climb when an admin deletes the approved hide proposal', async () => {
     await grantAdmin(ADMIN);
     await reportHide(REPORTER_A);

@@ -87,18 +87,34 @@ export async function analyzeGradeOutlier(
 }
 
 /**
- * Check if a proposal has reached the auto-approval threshold.
+ * The weighted-upvote count a proposal on this climb needs to carry.
+ *
+ * Split out from `checkAutoApproval` because `resolveCommunitySetting` reads
+ * through the `db` singleton: called from inside a locked transaction it would
+ * check out a SECOND pool connection while the first is held, and a burst of
+ * reports would exhaust the (max 10) pool. Callers resolve the threshold
+ * BEFORE they take the proposal lock and hand the number in.
+ */
+export async function resolveApprovalThreshold(
+  climbUuid: string,
+  angle: number | null,
+  boardType: string,
+): Promise<number> {
+  const threshold = await resolveCommunitySetting('approval_threshold', climbUuid, angle, boardType);
+  return parseInt(threshold, 10) || 5;
+}
+
+/**
+ * Has the proposal reached `required` weighted upvotes?
+ *
+ * Pure tally, one query, no settings lookup — see `resolveApprovalThreshold` for
+ * why the number arrives pre-resolved.
  */
 export async function checkAutoApproval(
   proposalId: number,
-  boardType: string,
-  climbUuid: string,
-  angle: number | null,
+  required: number,
   executor: ProposalExecutor = db,
 ): Promise<boolean> {
-  const threshold = await resolveCommunitySetting('approval_threshold', climbUuid, angle, boardType);
-  const required = parseInt(threshold, 10) || 5;
-
   // Sum weighted upvotes — through the caller's executor so the tally that
   // approves a proposal is read inside the same locked transaction that flips it.
   const result = await executor

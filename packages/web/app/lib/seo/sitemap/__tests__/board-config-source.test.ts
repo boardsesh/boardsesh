@@ -310,18 +310,22 @@ describe('the MoonBoard climb-count query', () => {
   const { sql, params } = buildMoonBoardClimbCountQuery(drizzle({} as never) as never).toSQL();
   const normalised = sql.toLowerCase().replace(/\s+/g, ' ');
 
-  it('counts only listed, non-draft MoonBoard climbs, grouped by layout', () => {
+  it('counts only listed, non-draft, non-hidden MoonBoard climbs, grouped by layout', () => {
     expect(normalised).toMatch(/"board_climbs"\."board_type" = \$\d+ and "board_climbs"\."is_listed" = \$\d+/);
     expect(normalised).toMatch(/"board_climbs"\."is_listed" = \$\d+ and "board_climbs"\."is_draft" = \$\d+/);
-    // POSITIONAL, not `toContain` three times. Drizzle renders the predicate as
-    // `board_type = $1 and is_listed = $2 and is_draft = $3`, so swapping the two
-    // booleans leaves the SQL text identical and a position-blind assertion still
-    // green — while the query counts drafted, unlisted MoonBoard climbs, of which
-    // the dev image has zero. `fetchMoonBoardClimbCounts` would return an empty
-    // Map, all seven layouts would be dropped, and both shards would ship exactly
-    // what they ship today with `expectsUrls` never firing, because Kilter and
-    // Tension keep them non-empty.
-    expect(params).toEqual(['moonboard', true, false]);
+    // A layout whose only listed climbs have been community-hidden drops out of
+    // the sitemap entirely, instead of shipping a board URL over zero climb URLs.
+    expect(normalised).toMatch(/"board_climbs"\."is_draft" = \$\d+ and "board_climbs"\."is_hidden" = \$\d+/);
+    // POSITIONAL, not `toContain` four times. Drizzle renders the predicate as
+    // `board_type = $1 and is_listed = $2 and is_draft = $3 and is_hidden = $4`,
+    // so swapping the booleans leaves the SQL text identical and a position-blind
+    // assertion still green — while the query counts drafted, unlisted, hidden
+    // MoonBoard climbs, of which the dev image has zero.
+    // `fetchMoonBoardClimbCounts` would return an empty Map, all seven layouts
+    // would be dropped, and both shards would ship exactly what they ship today
+    // with `expectsUrls` never firing, because Kilter and Tension keep them
+    // non-empty.
+    expect(params).toEqual(['moonboard', true, false, false]);
     expect(normalised).toContain('group by "board_climbs"."layout_id"');
   });
 

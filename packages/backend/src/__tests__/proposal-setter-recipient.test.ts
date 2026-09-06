@@ -72,10 +72,15 @@ async function insertClimb(params: {
   `);
 }
 
-async function linkAuroraAccount(userId: string, boardType: string, auroraUserId: number): Promise<void> {
+async function linkAuroraAccount(
+  userId: string,
+  boardType: string,
+  auroraUserId: number,
+  syncStatus: 'pending' | 'active' | 'error' | 'expired' = 'active',
+): Promise<void> {
   await db.execute(sql`
     INSERT INTO "aurora_credentials" (user_id, board_type, aurora_user_id, sync_status, created_at, updated_at)
-    VALUES (${userId}, ${boardType}, ${auroraUserId}, 'active', now(), now())
+    VALUES (${userId}, ${boardType}, ${auroraUserId}, ${syncStatus}, now(), now())
   `);
 }
 
@@ -242,6 +247,55 @@ describe('climb setter recipients (real DB)', () => {
     const recipients = await resolveClimbSetterRecipients(climbUuid, 'kilter', reporterId);
 
     expect(recipients).toEqual([{ recipientId: setterId, notificationType: 'proposal_on_your_climb' }]);
+  });
+
+  it('notifies the live owner of an Aurora account, not the expired claim on it', async () => {
+    // `services/aurora-credentials.ts` lets someone re-link an Aurora account
+    // once the previous row is `expired` — that is the whole point of the
+    // exception in `assertNoConflictingAuroraOwner`. So one `aurora_user_id`
+    // can carry an abandoned row next to the current owner's, and matching on
+    // the number alone would tell whoever used to hold that login about every
+    // report on a stranger's climbs, forever.
+    const formerOwnerId = nextId();
+    const currentOwnerId = nextId();
+    const reporterId = nextId();
+    const climbUuid = `${nextId()}-climb`;
+    await insertUser(formerOwnerId);
+    await insertUser(currentOwnerId);
+    await insertUser(reporterId);
+    await insertClimb({ uuid: climbUuid, boardType: 'kilter', userId: null, setterId: 838383 });
+    await linkAuroraAccount(formerOwnerId, 'kilter', 838383, 'expired');
+    await linkAuroraAccount(currentOwnerId, 'kilter', 838383, 'active');
+
+    expect(await resolveClimbSetterRecipients(climbUuid, 'kilter', reporterId)).toEqual([
+      { recipientId: currentOwnerId, notificationType: 'proposal_on_your_climb' },
+    ]);
+  });
+
+  it('keeps notifying a link that is pending or erroring — only `expired` is a released claim', async () => {
+    // The syncable set is positive (`pending` | `active` | `error`; see the
+    // partial indexes in `schema/auth/mappings.ts`). A credential that is
+    // mid-first-sync or failing still belongs to its owner, so a report on
+    // their climb must reach them.
+    const pendingOwnerId = nextId();
+    const erroringOwnerId = nextId();
+    const reporterId = nextId();
+    const pendingClimbUuid = `${nextId()}-climb`;
+    const erroringClimbUuid = `${nextId()}-climb`;
+    await insertUser(pendingOwnerId);
+    await insertUser(erroringOwnerId);
+    await insertUser(reporterId);
+    await insertClimb({ uuid: pendingClimbUuid, boardType: 'kilter', userId: null, setterId: 848484 });
+    await insertClimb({ uuid: erroringClimbUuid, boardType: 'kilter', userId: null, setterId: 858585 });
+    await linkAuroraAccount(pendingOwnerId, 'kilter', 848484, 'pending');
+    await linkAuroraAccount(erroringOwnerId, 'kilter', 858585, 'error');
+
+    expect(await resolveClimbSetterRecipients(pendingClimbUuid, 'kilter', reporterId)).toEqual([
+      { recipientId: pendingOwnerId, notificationType: 'proposal_on_your_climb' },
+    ]);
+    expect(await resolveClimbSetterRecipients(erroringClimbUuid, 'kilter', reporterId)).toEqual([
+      { recipientId: erroringOwnerId, notificationType: 'proposal_on_your_climb' },
+    ]);
   });
 
   it('ignores an Aurora account linked for a different board type', async () => {

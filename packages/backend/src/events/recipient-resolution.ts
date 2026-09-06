@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { NotificationType } from '@boardsesh/db/schema';
@@ -221,10 +221,13 @@ export async function resolveProposalCreatedRecipients(
  * 1. Climbs authored on Boardsesh store the Boardsesh user id in
  *    `board_climbs.user_id`.
  * 2. Aurora-synced climbs only carry the Aurora account number in
- *    `board_climbs.setter_id`, so the setter is every Boardsesh account that
- *    has linked that Aurora account for this board type. That is normally one
- *    account, but nothing stops two people linking the same Aurora login, so
- *    this returns a list and de-duplicates it.
+ *    `board_climbs.setter_id`, so the setter is every Boardsesh account whose
+ *    LIVE link to that Aurora account covers this board type. That is normally
+ *    one account, but nothing stops two people linking the same Aurora login,
+ *    so this returns a list and de-duplicates it. Rows whose `sync_status` is
+ *    `expired` are skipped: that is exactly the state a re-linker is allowed to
+ *    step over, so an abandoned claim would otherwise keep notifying whoever
+ *    used to hold the login about the new owner's climbs.
  *
  * Both are resolved, not one or the other. `setter-overrides.ts` grants setter
  * powers on either match, so a climb carrying a `user_id` AND a `setter_id` has
@@ -260,6 +263,13 @@ export async function resolveClimbSetterRecipients(
         and(
           eq(dbSchema.auroraCredentials.boardType, boardType),
           eq(dbSchema.auroraCredentials.auroraUserId, climb.setterId),
+          // Only a LIVE claim on the upstream account counts. `expired` is the
+          // one status `services/aurora-credentials.ts` lets a re-linker step
+          // over (`assertNoConflictingAuroraOwner`), so the same Aurora account
+          // number can carry an abandoned row alongside the current owner's.
+          // Notifying both would tell whoever used to hold the login that a
+          // stranger's climb was reported — and would keep telling them forever.
+          ne(dbSchema.auroraCredentials.syncStatus, 'expired'),
         ),
       );
     for (const account of linkedAccounts) setterUserIds.push(account.userId);

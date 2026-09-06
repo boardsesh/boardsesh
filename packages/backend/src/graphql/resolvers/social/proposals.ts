@@ -3,5 +3,5 @@ export { socialProposalQueries, socialProposalMutations } from './proposals/inde
 // Re-export helpers for any external consumers
 export { enrichProposal, batchEnrichProposals } from './proposals/enrichment';
 export { applyProposalEffect, revertProposalEffect } from './proposals/effects';
-export { analyzeGradeOutlier, checkAutoApproval } from './proposals/grade-analysis';
+export { analyzeGradeOutlier, checkAutoApproval, resolveApprovalThreshold } from './proposals/grade-analysis';
 export { setterOverrideCommunityStatus, freezeClimb } from './proposals/setter-overrides';

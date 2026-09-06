@@ -287,6 +287,8 @@ export const socialProposalMutations = {
       return { status: 'created' as const, proposal: created, comment };
     });
 
+    // Events describe what this call wrote, so a duplicate report announces
+    // nothing: no comment fan-out, no second vote event.
     if (outcome.status !== 'already_reported') {
       // Live comment fan-out only — a report deliberately does NOT publish
       // `comment.created`, which would push every reason into the activity feed.
@@ -296,10 +298,18 @@ export const socialProposalMutations = {
       if (outcome.status === 'added') {
         publishProposalVoted(outcome.proposal, reporterId, 1);
       }
-      await runAutoApproval(outcome.proposal, reporterId);
-      if (outcome.status === 'created') {
-        publishProposalCreated(outcome.proposal, reporterId);
-      }
+    }
+
+    // Auto-approval runs on every path, `already_reported` included. A client
+    // retrying after its vote committed but before approval did — a dropped
+    // connection, a process restart — is precisely the case where a proposal
+    // sits at threshold with nobody left to carry it over. The tally is
+    // idempotent and the status flip is guarded on `status = 'open'` under the
+    // proposal lock, so a duplicate report can never approve twice.
+    await runAutoApproval(outcome.proposal, reporterId);
+
+    if (outcome.status === 'created') {
+      publishProposalCreated(outcome.proposal, reporterId);
     }
 
     return {
