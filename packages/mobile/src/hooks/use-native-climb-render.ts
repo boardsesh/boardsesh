@@ -2136,7 +2136,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       const unmatchedCount = litHoldIds.size - matchedCount;
       if (unmatchedCount > 0) {
         const noMatches = matchedCount === 0;
-        if (claimConfigMismatchKey(currentCacheKey)) {
+        // Claimed per surface as well as per key: the prefetch warms the SAME
+        // key the play board asks for next, and a claim shared between them
+        // would let the warm-up report the mismatch as `surface: 'prefetch'`
+        // and leave the play view — the one a climber actually saw — silent.
+        if (claimConfigMismatchKey(`${failureTelemetryContext.surface}:${currentCacheKey}`)) {
           noteRenderFailure({
             stage: 'config',
             failureKind: noMatches ? 'no_matching_holds' : 'partial_hold_match',
@@ -2410,7 +2414,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // above owns that, and retrying a write on a full volume is the storm)
         // and NOT for a capability fallback (the degraded re-render IS the
         // retry). The keyed guard is what makes a recycled row safe.
-        if (kind === 'render_failed' && !retriedCacheKeysRef.current.has(currentCacheKey)) {
+        // ...and never for a prefetch: nobody is waiting on it, and the play
+        // view that follows makes its own attempt under the same key.
+        if (kind === 'render_failed' && !prefetch && !retriedCacheKeysRef.current.has(currentCacheKey)) {
           retriedCacheKeysRef.current.add(currentCacheKey);
           if (renderRetryTimerRef.current !== null) clearTimeout(renderRetryTimerRef.current);
           renderRetryTimerRef.current = setTimeout(() => {

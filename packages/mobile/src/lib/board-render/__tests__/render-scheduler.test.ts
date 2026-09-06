@@ -473,3 +473,43 @@ describe('the prefetch rank', () => {
     await expect(warmedHandle.promise).resolves.toBe('file:///shared.png');
   });
 });
+
+// The upgrade path had to learn to pump: a queued prefetch is holding back from
+// a slot it is not allowed to take, so the moment it becomes a real request the
+// slot is its — waiting for the occupant to settle would make the swipe the
+// climber just made slower than if nothing had been warmed at all.
+describe('upgrading a queued prefetch', () => {
+  it('dispatches it into a free slot immediately, without waiting for the occupant', () => {
+    setRenderConcurrency(2);
+    const occupant = controlledRender();
+    const warmed = controlledRender();
+    requestRender('key-occupant', 'full', occupant.start);
+    requestRender('key-warmed', 'prefetch', warmed.start);
+    expect(warmed.startCount()).toBe(0);
+
+    // The climber swiped to the climb being warmed.
+    requestRender('key-warmed', 'play', warmed.start);
+
+    expect(warmed.startCount()).toBe(1);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-occupant', 'key-warmed'],
+      queuedKeys: [],
+    });
+  });
+
+  it('still waits its turn when every slot is taken', () => {
+    const occupant = controlledRender();
+    const warmed = controlledRender();
+    requestRender('key-occupant', 'full', occupant.start);
+    requestRender('key-warmed', 'prefetch', warmed.start);
+
+    requestRender('key-warmed', 'play', warmed.start);
+
+    // One slot, and the occupant is inside native — the upgrade cannot evict it.
+    expect(warmed.startCount()).toBe(0);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-occupant'],
+      queuedKeys: ['key-warmed'],
+    });
+  });
+});

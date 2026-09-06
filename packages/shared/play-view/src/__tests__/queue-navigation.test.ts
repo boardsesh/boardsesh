@@ -532,7 +532,7 @@ describe('findUpcomingQueueItemsWithSuggestions', () => {
     ]);
   });
 
-  it('stops at a climb the queue holds twice, whose render is already warm', () => {
+  it('skips a climb the queue holds twice, whose render is already warm', () => {
     const a = makeClimb('a');
     const b = makeClimb('b');
     // Re-activating a playlist appends a fresh pass, so the same climb can sit
@@ -540,5 +540,30 @@ describe('findUpcomingQueueItemsWithSuggestions', () => {
     const queue = [itemFor(a), itemFor(b), { uuid: 'item-a-second-pass', climb: a }];
 
     expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], null, 3)).toEqual([queue[1]]);
+  });
+
+  it('walks past a repeated climb rather than ending the walk there', () => {
+    const a = makeClimb('a');
+    const b = makeClimb('b');
+    const c = makeClimb('c');
+    // The second `a` is a different queue item with the same climb: its render
+    // is already warm, but the climbs behind it are not.
+    const queue = [itemFor(a), { uuid: 'item-a-again', climb: a }, itemFor(b), itemFor(c)];
+
+    expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], null, 3)).toEqual([queue[2], queue[3]]);
+  });
+
+  it('ends the walk when a list loops back to a target it already returned', () => {
+    const a = makeClimb('a');
+    const b = makeClimb('b');
+    const c = makeClimb('c');
+    // The list ends where it began, so a fourth step would hand back `b`.
+    const queue = [itemFor(a)];
+    const source = makeSource(a, [a, b, c, a]);
+
+    expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], source, 10).map(({ climb }) => climb.uuid)).toEqual([
+      'b',
+      'c',
+    ]);
   });
 });

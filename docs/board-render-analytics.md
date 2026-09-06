@@ -291,8 +291,11 @@ pair, so a board whose sets do not cover a climb's holds produces one on every
 row of a list. Sharing a budget would let a single scroll spend the whole
 session's telemetry on one unchanging answer and silence the native and
 image_load signals, which are the ones that move. Config events are also deduped
-by cache key across every hook instance (a bounded 200-key set, so a recycled
-FlashList row cannot re-report a climb it already answered for).
+by surface + cache key across every hook instance (a bounded 200-key set, so a
+recycled FlashList row cannot re-report a climb it already answered for). The
+surface is part of the claim because the queue prefetch warms the SAME key the
+play board asks for next; a claim shared between them would report the mismatch
+as `prefetch` and leave the play view a climber actually saw silent.
 
 On the 25 for the other stages: The failure this event exists for is a device that fails
 EVERY render from some point on, and `getOrStartInflightRender` drops the settled

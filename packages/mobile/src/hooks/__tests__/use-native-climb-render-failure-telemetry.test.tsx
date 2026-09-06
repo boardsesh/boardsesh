@@ -447,6 +447,24 @@ describe('one bounded self-retry after a native render failure', () => {
     expect(fakeNativeModule.renderHoldsOverlay.mock.calls.length).toBe(callsAfterFirstFailure);
   });
 
+  // A prefetch is a warm-up nobody is waiting on, and the play board that wants
+  // the same key asks for it again anyway — so a retry here only spends native
+  // time the visible board could have had.
+  it('never retries a prefetch, unlike the same failure on a visible surface', async () => {
+    vi.useFakeTimers();
+    renderRow({ prefetch: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+
+    // Well past the 1.5s the visible surfaces retry after (asserted above).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+  });
+
   it('drops a pending retry when the surface unmounts', async () => {
     vi.useFakeTimers();
     const { unmount } = renderRow();
@@ -520,6 +538,22 @@ describe('Board Render Failed — the config stage', () => {
     });
 
     expect(failureEvents().filter((event) => event.stage === 'config')).toHaveLength(1);
+  });
+
+  // The claim is per SURFACE as well as per key. The prefetch warms exactly the
+  // key the play board asks for next, so a shared claim would let the warm-up
+  // spend the report — and the mismatch the climber actually ran into would be
+  // filed as `surface: 'prefetch'`, or not at all.
+  it('reports the mismatch once per surface, so a prefetch cannot eat the play board’s report', async () => {
+    renderRow({ frames: OFF_BOARD_FRAMES, prefetch: true });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+
+    renderRow({ frames: OFF_BOARD_FRAMES, playSurface: true });
+    await waitFor(() => expect(failureEvents()).toHaveLength(2));
+
+    const configEvents = failureEvents().filter((event) => event.stage === 'config');
+    expect(configEvents.map(({ surface }) => surface)).toEqual(['prefetch', 'play']);
+    expect(configEvents.every(({ failure_kind }) => failure_kind === 'no_matching_holds')).toBe(true);
   });
 
   // The regression that would have shipped: builds before this fix cached

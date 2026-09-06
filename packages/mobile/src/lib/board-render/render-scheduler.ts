@@ -282,8 +282,11 @@ export function requestRender<T>(
     }
   } else if (PRIORITY_RANK[priority] < PRIORITY_RANK[request.priority]) {
     // Sticky upgrade: the peek that became the play board. Selection scans the
-    // queue on every dispatch, so nothing needs re-sorting here.
+    // queue on every dispatch, so nothing needs re-sorting here — but a queued
+    // PREFETCH may have been holding back from a free slot (its idle rule), and
+    // as a real request it is entitled to that slot now, so pump.
     request.priority = priority;
+    if (request.start !== null) pump();
   }
   const joined = request;
   joined.consumers += 1;
