@@ -79,6 +79,12 @@ export const ClimbProgressLine = React.memo(function ClimbProgressLine({
 
     let recency: string | null = null;
     if (progress.latestClimbedAtMs !== null) {
+      // The clock is read inside the memo and is deliberately NOT a dependency:
+      // a row left mounted across midnight keeps yesterday's wording until it
+      // next re-renders (a scroll, a recycle, or a tick merge). The alternative
+      // is a per-row clock, and `LogbookDayDivider` already spells out why that
+      // is the wrong trade — it owns its own `useFocusEffect` clock precisely so
+      // the climb rows beside it do not pay for one.
       const bucket = describeClimbProgressRecency(progress.latestClimbedAtMs, Date.now());
       recency =
         bucket.kind === 'today'
@@ -92,6 +98,9 @@ export const ClimbProgressLine = React.memo(function ClimbProgressLine({
     return tokens.slice(0, climbProgressTokenBudget(fontScale)).join(' · ');
   }, [progress, fontScale, t, i18n.language]);
 
+  // `label` is non-null whenever `progress` is, so the second half is unreachable
+  // at runtime — but it is what narrows `label` to `string` for the
+  // `accessibilityLabel` below, which takes no null.
   if (!progress || label === null) return null;
 
   return (
