@@ -14,9 +14,12 @@ import Divider from '@mui/material/Divider';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormHelperText from '@mui/material/FormHelperText';
+import FormLabel from '@mui/material/FormLabel';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import MuiLink from '@mui/material/Link';
+import Radio from '@mui/material/Radio';
+import RadioGroup from '@mui/material/RadioGroup';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
@@ -390,40 +393,45 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
           </Box>
 
           <Box>
-            <Typography variant="subtitle1" className={styles.stepHeading}>
-              {t('tiers.heading')}
-            </Typography>
-            <Stack spacing={1} sx={{ mt: 1 }}>
-              {TIERS.map((tier) => {
-                const tierAmount = tierPrice(entry, tier);
-                return (
-                  <FormControlLabel
-                    key={tier}
-                    control={
-                      <Checkbox
-                        checked={state.tier === tier}
-                        onChange={() => {
-                          dispatch({ type: 'setTier', tier });
-                          reportStep('tier');
-                        }}
-                      />
-                    }
-                    label={
-                      <span>
-                        <Typography component="span" fontWeight={themeTokens.typography.fontWeight.semibold}>
-                          {tier === 'personal' ? t('tiers.personal.name') : t('tiers.commercial.name')}
-                        </Typography>
-                        {tierAmount ? (
-                          <Typography component="span" color="text.secondary">
-                            {` · ${formatPrice(tierAmount.amountCents, tierAmount.currency, locale)}`}
+            {/* A licence tier is a mutually exclusive choice, not a set of
+                independent switches — a `RadioGroup` says that in the
+                accessibility tree, where the old checkbox row let a screen
+                reader user believe both tiers could be on at once. */}
+            <FormControl component="fieldset">
+              <FormLabel component="legend" className={styles.stepHeading}>
+                {t('tiers.heading')}
+              </FormLabel>
+              <RadioGroup
+                value={state.tier}
+                onChange={(event) => {
+                  dispatch({ type: 'setTier', tier: event.target.value as CncLicenceTier });
+                  reportStep('tier');
+                }}
+              >
+                {TIERS.map((tier) => {
+                  const tierAmount = tierPrice(entry, tier);
+                  return (
+                    <FormControlLabel
+                      key={tier}
+                      value={tier}
+                      control={<Radio />}
+                      label={
+                        <span>
+                          <Typography component="span" fontWeight={themeTokens.typography.fontWeight.semibold}>
+                            {tier === 'personal' ? t('tiers.personal.name') : t('tiers.commercial.name')}
                           </Typography>
-                        ) : null}
-                      </span>
-                    }
-                  />
-                );
-              })}
-            </Stack>
+                          {tierAmount ? (
+                            <Typography component="span" color="text.secondary">
+                              {` · ${formatPrice(tierAmount.amountCents, tierAmount.currency, locale)}`}
+                            </Typography>
+                          ) : null}
+                        </span>
+                      }
+                    />
+                  );
+                })}
+              </RadioGroup>
+            </FormControl>
           </Box>
 
           <Box>

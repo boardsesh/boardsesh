@@ -5,7 +5,11 @@ import { describe, expect, it, vi, beforeEach } from 'vite-plus/test';
 import { render } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Persister } from '@tanstack/react-query-persist-client';
+import { CNC_CONFIGURATOR_DRAFT_KEY } from '@/app/build-plans/configurator/configurator-state';
 import { SessionCacheBuster } from '../query-client-provider';
+
+const removePreference = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/user-preferences-db', () => ({ removePreference }));
 
 function makeFakePersister(): Persister & { removeClient: ReturnType<typeof vi.fn> } {
   return {
@@ -35,6 +39,7 @@ function setup() {
 describe('SessionCacheBuster', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    removePreference.mockReset();
   });
 
   it('does not wipe on the first effect (initial mount, authenticated)', () => {
@@ -105,6 +110,45 @@ describe('SessionCacheBuster', () => {
 
     expect(persister.removeClient).toHaveBeenCalledTimes(1);
     expect(removeQueriesSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the build-plans draft on sign-out (user → null)', () => {
+    const { persister, queryClient, renderWith } = setup();
+    const view = renderWith('user-1');
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <SessionCacheBuster persister={persister} sessionUserId={null} />
+      </QueryClientProvider>,
+    );
+
+    // A build-plans draft (a buyer's name and email) sits outside the React
+    // Query cache, but it is still per-user state that must not survive into
+    // the next signed-out visitor sharing this browser.
+    expect(removePreference).toHaveBeenCalledWith(CNC_CONFIGURATOR_DRAFT_KEY);
+  });
+
+  it('clears the build-plans draft on account switch (user A → user B)', () => {
+    const { persister, queryClient, renderWith } = setup();
+    const view = renderWith('user-1');
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <SessionCacheBuster persister={persister} sessionUserId="user-2" />
+      </QueryClientProvider>,
+    );
+
+    expect(removePreference).toHaveBeenCalledWith(CNC_CONFIGURATOR_DRAFT_KEY);
+  });
+
+  it('does not touch the draft on a non-transition (first mount, same user)', () => {
+    const { persister, queryClient, renderWith } = setup();
+    const view = renderWith('user-1');
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <SessionCacheBuster persister={persister} sessionUserId="user-1" />
+      </QueryClientProvider>,
+    );
+
+    expect(removePreference).not.toHaveBeenCalled();
   });
 
   it('removeQueries predicate only matches queries flagged with meta.persist', () => {

@@ -12,6 +12,7 @@ import type { CncCatalog, CncOrder } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
+import { createOrderDateFormatter } from '../format-date';
 import { orderStatusChipColor, wallLabel } from '../order-display';
 import styles from '../build-plans.module.css';
 
@@ -33,7 +34,7 @@ export default async function OrdersList({
   locale: string;
 }) {
   const { t } = await getServerTranslation('cnc');
-  const dateFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' });
+  const dateFormat = createOrderDateFormatter(locale, { dateStyle: 'medium' });
 
   if (orders.length === 0) {
     return (

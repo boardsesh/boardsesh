@@ -8,7 +8,9 @@ import {
   type CreateCncCheckoutSessionMutationVariables,
 } from '@boardsesh/graphql/operations/cnc-packs';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { removePreference } from '@/app/lib/user-preferences-db';
 import { cncErrorKey, type CncErrorKey } from '../cnc-error';
+import { CNC_CONFIGURATOR_DRAFT_KEY } from './configurator-state';
 
 export type CncCheckoutResult = {
   startCheckout: (input: CreateCncCheckoutSessionInput) => Promise<void>;
@@ -44,6 +46,11 @@ export function useCncCheckout(authToken: string | null): CncCheckoutResult {
           CreateCncCheckoutSessionMutationResponse,
           CreateCncCheckoutSessionMutationVariables
         >(CREATE_CNC_CHECKOUT_SESSION, { input });
+        // The sale is confirmed: the draft has done its job, and a buyer's name
+        // and email have no reason to sit in this browser's IndexedDB once
+        // Stripe has the order. `removePreference` swallows its own errors, so
+        // a failed wipe never blocks the redirect that follows it.
+        await removePreference(CNC_CONFIGURATOR_DRAFT_KEY);
         window.location.assign(response.createCncCheckoutSession.checkoutUrl);
       } catch (error) {
         setErrorKey(cncErrorKey(error));
