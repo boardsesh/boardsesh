@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as openApiRegistry from '../openapi-registry';
@@ -19,6 +19,26 @@ function toRouteDir(path: string): string {
 function routeFileExists(path: string): boolean {
   const dir = toRouteDir(path);
   return existsSync(join(WEB_ROOT, dir, 'route.ts')) || existsSync(join(WEB_ROOT, dir, 'route.tsx'));
+}
+
+/** The route file's source, or null when there is no route file. */
+function routeSource(path: string): string | null {
+  const dir = toRouteDir(path);
+  for (const candidate of ['route.ts', 'route.tsx']) {
+    const file = join(WEB_ROOT, dir, candidate);
+    if (existsSync(file)) return readFileSync(file, 'utf8');
+  }
+  return null;
+}
+
+/**
+ * Read as SOURCE, not by importing: a route module opens a database pool in its
+ * body, and this suite must run with no `DATABASE_URL`. Next recognises a
+ * handler declared any of these three ways.
+ */
+function routeExportsMethod(source: string, method: string): boolean {
+  const verb = method.toUpperCase();
+  return new RegExp(`export\\s+(?:async\\s+function|function|const)\\s+${verb}\\b`).test(source);
 }
 
 describe('generated OpenAPI document', () => {
@@ -69,6 +89,29 @@ describe('generated OpenAPI document', () => {
     // Delete-safety half: an over-broad edit that empties the spec reds here.
     expect(paths.length).toBeGreaterThan(10);
     expect(paths).toContain('/api/internal/profile');
+  });
+
+  it('never advertises an operation whose route file does not export that verb', () => {
+    // The path-only check below cannot see this. `/api/internal/profile` was
+    // published as a POST while the route exported GET and PUT, and
+    // `/api/auth/verify-email` as a JSON POST while the route was a GET that
+    // redirects — two operations on `/docs` and in the crawlable
+    // `/openapi.json` that answered 405 to anyone who believed them (#4662).
+    // A wrong verb is worse than a missing entry: it reads as a working
+    // contract.
+    const wrong: string[] = [];
+
+    for (const [path, item] of Object.entries(document.paths ?? {})) {
+      const source = routeSource(path);
+      // A missing route file is the next test's finding, not this one's.
+      if (source === null) continue;
+
+      for (const method of Object.keys(item as Record<string, unknown>)) {
+        if (!routeExportsMethod(source, method)) wrong.push(`${method.toUpperCase()} ${path}`);
+      }
+    }
+
+    expect(wrong).toEqual([]);
   });
 
   it('never advertises a registered path whose route file is gone', () => {
