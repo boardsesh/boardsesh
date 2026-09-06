@@ -25,6 +25,22 @@ export class CncJobPayloadError extends Error {
   }
 }
 
+/**
+ * Where one artwork item sits, in wall millimetres.
+ *
+ * Every field is required and every field is a real number. The generator has
+ * no defaults for any of them — a missing `xMm` is not "route it at zero", it
+ * is a router head that does not know where to go — so an incomplete placement
+ * is caught here rather than becoming a pack nobody can cut.
+ */
+export type CncWorkerJobPlacement = {
+  panelIndex: number;
+  xMm: number;
+  yMm: number;
+  widthMm: number;
+  rotationDeg: number;
+};
+
 /** One artwork item on the job. */
 export type CncWorkerJobArtworkItem = {
   /** Uploaded asset the worker fetches from `/api/cnc/worker/assets/:assetId`. Null for a text label. */
@@ -39,8 +55,14 @@ export type CncWorkerJobArtworkItem = {
   mime: string | null;
   /** The label to route. Null for an uploaded asset. */
   text: string | null;
+  /**
+   * The face the label is routed in, when one was stored with the item. Null
+   * means the generator picks its own default — which is the right answer for
+   * an uploaded asset, where there is no text to set.
+   */
+  font: string | null;
   mode: string;
-  placement: Record<string, unknown> | null;
+  placement: CncWorkerJobPlacement;
 };
 
 export type CncWorkerJob = {
@@ -54,7 +76,11 @@ export type CncWorkerJob = {
   attempt: number;
   tier: CncOrder['tier'];
   licensee: {
-    name: string | null;
+    /**
+     * Never null: it is printed on every sheet in the pack, so a job without
+     * one has nothing to license and is refused at build time.
+     */
+    name: string;
     email: string | null;
     /** The installation a commercial_single licence names. Null for personal. */
     customerSiteName: string | null;
@@ -118,24 +144,55 @@ function optionString(options: CncOrderOptions, key: string): string {
 type StoredArtworkItem = {
   assetId?: unknown;
   text?: unknown;
+  font?: unknown;
   mode?: unknown;
   placement?: unknown;
 };
 
+/** The five placement numbers, in the order they are reported when one is missing. */
+const PLACEMENT_FIELDS = ['panelIndex', 'xMm', 'yMm', 'widthMm', 'rotationDeg'] as const;
+
+/**
+ * Read a stored placement, or throw.
+ *
+ * `artwork` is a JSON column: it was validated by zod at checkout, but that was
+ * a different process on a different day and nothing in the database enforces
+ * the shape. A half-written placement — an editor bug, a hand-edited row, a
+ * migration that reshaped the column — used to sail through as
+ * `Record<string, unknown>` and reach the generator, which would either crash
+ * mid-job (three attempts, three identical crashes) or route the item
+ * somewhere nobody asked for. Both are worse than refusing the job.
+ */
+function toJobPlacement(raw: unknown, index: number): CncWorkerJobPlacement {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new CncJobPayloadError(`Artwork item ${String(index)} has no placement`);
+  }
+  const stored = raw as Record<string, unknown>;
+  const placement = {} as Record<(typeof PLACEMENT_FIELDS)[number], number>;
+  for (const field of PLACEMENT_FIELDS) {
+    const value = stored[field];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new CncJobPayloadError(`Artwork item ${String(index)} placement is missing a finite "${field}"`);
+    }
+    placement[field] = value;
+  }
+  return placement;
+}
+
 function toJobArtwork(artwork: CncOrder['artwork']): CncWorkerJobArtworkItem[] {
   if (!Array.isArray(artwork)) return [];
-  return artwork.map((raw) => {
+  return artwork.map((raw, index) => {
     const item = (typeof raw === 'object' && raw !== null ? raw : {}) as StoredArtworkItem;
     return {
       assetId: typeof item.assetId === 'string' ? item.assetId : null,
       // TODO(PR 7): read the mime off `cnc_art_assets` once that table exists.
       mime: null,
       text: typeof item.text === 'string' ? item.text : null,
+      // Passed through when the buyer picked one; the generator falls back to
+      // its own default rather than us inventing a face name here.
+      font: typeof item.font === 'string' && item.font.length > 0 ? item.font : null,
       mode: typeof item.mode === 'string' ? item.mode : 'engrave',
-      placement:
-        typeof item.placement === 'object' && item.placement !== null
-          ? (item.placement as Record<string, unknown>)
-          : null,
+      placement: toJobPlacement(item.placement, index),
     };
   });
 }
@@ -160,6 +217,17 @@ export function buildWorkerJob(order: CncOrder, { bucket, issuedAt }: BuildWorke
     throw new CncJobPayloadError('Claimed order has no claim token');
   }
 
+  // The licensee name is printed on every sheet in the pack. Generating one
+  // that says "undefined" across the title block is worse than not generating
+  // it: the buyer would have to notice, and a licence with no name on it is
+  // not a licence. Checkout requires the field, so an order without one is a
+  // data problem an operator has to look at, which is exactly what failing the
+  // order and mailing them does.
+  const licenseeName = order.licenseeName?.trim();
+  if (!licenseeName) {
+    throw new CncJobPayloadError('Order has no licensee name to print on the pack');
+  }
+
   const setIds = parseSetIds(order.setIds);
   if (!setIds) {
     throw new CncJobPayloadError(`Order set ids "${order.setIds}" are not a valid set id list`);
@@ -182,7 +250,7 @@ export function buildWorkerJob(order: CncOrder, { bucket, issuedAt }: BuildWorke
     attempt: order.attempts,
     tier: order.tier,
     licensee: {
-      name: order.licenseeName,
+      name: licenseeName,
       email: order.licenseeEmail,
       customerSiteName: order.customerSiteName,
     },

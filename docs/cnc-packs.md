@@ -200,7 +200,16 @@ the worker polls every few seconds. Otherwise:
       "sizeId": 25,
       "setIds": [26, 27, 28, 29],
       "options": { "sheetStock": "2440x1220", "…": "…" },
-      "artwork": [{ "assetId": null, "mime": null, "text": "Send it", "mode": "engrave", "placement": { "…": "…" } }]
+      "artwork": [
+        {
+          "assetId": null,
+          "mime": null,
+          "text": "Send it",
+          "font": null,
+          "mode": "engrave",
+          "placement": { "panelIndex": 0, "xMm": 600, "yMm": 900, "widthMm": 200, "rotationDeg": 0 }
+        }
+      ]
     },
     "catalogVersion": "2026-09-06.1",
     "layoutRequest": {
@@ -284,9 +293,24 @@ that says ready and 404s is worse than one still generating:
 | its size equals `sizeBytes` | 409 |
 | the lease is still yours | 409 |
 
-On success the order moves to `ready`, the claim token is cleared, and the buyer
-gets the pack-ready email. `bomSummary`, `previewKeys` and `generatorVersion` are
-folded into the stored manifest. **The manifest is never logged and never
+On success the order moves to `ready` and the buyer gets the pack-ready email.
+`bomSummary`, `previewKeys` and `generatorVersion` are folded into the stored
+manifest.
+
+**Complete is idempotent by claim token.** The token is *not* cleared on the
+ready transition — it becomes the receipt for that completion. A worker whose
+200 was lost to a dropped connection can send the identical body again and gets
+`{"ok": true, "status": "ready", "duplicate": true}`: no second transition, no
+second email. Any other token, and any other status, is still 409 — including a
+report from a worker whose lease was reclaimed while it was uploading. Nothing
+else can act on the surviving token either: heartbeat and fail both require
+`generating`, and an admin regenerate clears it.
+
+A job that cannot be turned into a payload never reaches this route. `claim`
+refuses an order with no licensee name (it is printed on every sheet) and one
+whose stored artwork placement is missing any of `panelIndex`, `xMm`, `yMm`,
+`widthMm` or `rotationDeg`. Both fail the order outright and mail an operator,
+because a retry would rebuild the identical unbuildable payload. **The manifest is never logged and never
 leaves the backend** — it is the map of which covert channels carry which
 values, and publishing it would tell a leaker exactly what to strip.
 
@@ -295,6 +319,11 @@ values, and publishing it would tell a leaker exactly what to strip.
 ```json
 { "claimToken": "0f0a…", "errorCode": "SEAM_TOO_CLOSE_TO_HOLE", "message": "row 12", "retryable": true }
 ```
+
+`message` has no length limit — a generator traceback is easily longer than a
+few thousand characters, and a 400 on the failure report would leave the order
+stuck in `generating` with nobody told. Boardsesh truncates it to 2000
+characters on the way into `last_error`; the 2 MB body cap is the real ceiling.
 
 The worker reports what happened; the state machine decides what it means:
 
@@ -401,6 +430,13 @@ Runbook, when a buyer's pack failed:
 
 The attempt reset is not cosmetic: a `failed` order has already spent its three
 attempts, and requeueing without it would give the rebuild exactly one try.
+
+**Known limitation.** A regenerate that itself fails leaves the *previous* zip
+sitting at the output key. Nothing serves it — `isDownloadable` refuses an order
+that is not `ready`, so the buyer's download stays shut — but the object is not
+deleted either, and a later successful regenerate simply overwrites it. Nobody
+gets a stale pack; an operator just has to regenerate again to make the licence
+downloadable, rather than the old build quietly standing in for the new one.
 
 ## Environment
 
