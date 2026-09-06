@@ -205,10 +205,7 @@ export async function resolveCurrentValue(params: {
       .select({ isClassic: dbSchema.climbClassicStatus.isClassic })
       .from(dbSchema.climbClassicStatus)
       .where(
-        and(
-          eq(dbSchema.climbClassicStatus.climbUuid, climbUuid),
-          eq(dbSchema.climbClassicStatus.boardType, boardType),
-        ),
+        and(eq(dbSchema.climbClassicStatus.climbUuid, climbUuid), eq(dbSchema.climbClassicStatus.boardType, boardType)),
       )
       .limit(1);
     return String(classicStatus?.isClassic || false);
@@ -354,10 +351,7 @@ export async function flipVoteToUpvote(
   executor: ProposalExecutor = db,
 ): Promise<number> {
   const weight = await getUserVoteWeight(userId, proposal.boardType, executor);
-  await executor
-    .update(dbSchema.proposalVotes)
-    .set({ value: 1, weight })
-    .where(eq(dbSchema.proposalVotes.id, voteId));
+  await executor.update(dbSchema.proposalVotes).set({ value: 1, weight }).where(eq(dbSchema.proposalVotes.id, voteId));
   return weight;
 }
 

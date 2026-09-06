@@ -430,7 +430,13 @@ describe('proposal.approved feed fan-out (real DB)', () => {
 
     const handleEvent = captureWorkerHandler();
     await handleEvent(
-      proposalApprovedEvent({ actorId: reporterId, proposalUuid, climbUuid, boardType: 'kilter', proposalType: 'hide' }),
+      proposalApprovedEvent({
+        actorId: reporterId,
+        proposalUuid,
+        climbUuid,
+        boardType: 'kilter',
+        proposalType: 'hide',
+      }),
     );
 
     expect(fanoutProposalApprovedFeedItems).not.toHaveBeenCalled();
