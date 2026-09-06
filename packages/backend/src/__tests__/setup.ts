@@ -50,6 +50,8 @@ const TABLES_TO_RESET = [
   'climb_community_status',
   'proposal_votes',
   'climb_proposals',
+  'cnc_stripe_events',
+  'cnc_orders',
   'users',
 ];
 
