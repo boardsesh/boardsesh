@@ -1,27 +1,18 @@
 import { memo, useCallback, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { PlaylistChipsRow } from '../ClimbPlaylistChips';
 import { useClimbPlaylistMemberships } from '../../hooks/use-climb-playlist-memberships';
 import { useClimbPlaylistMembershipQuery } from '../../hooks/use-climb-playlist-membership-query';
 import { usePlaylistsContextOptional } from '../../providers/playlists-provider';
 import { hasPlaylistForBoard } from '../../lib/sort-filter-playlists';
+import { iosSystemColors } from '../../theme/ios-colors';
 
 /**
- * Height of the reserved chips slot, in points.
- *
- * The play drawer's first screen is a FIXED height and the board art under the
- * header is `flex: 1` inside it, so every point the header takes comes off the
- * board. If the strip's height varied per climb — present for a climb in a
- * playlist, absent for the next one — the board would resize on every swipe, and
- * again whenever a membership fetch landed. So the slot is constant whenever it
- * is rendered at all, and the chips paint inside it.
- *
- * Sized for the tallest chip the strip can produce: `caption1` (16pt line height)
- * scaled by the chips' 1.3 accessibility cap, plus 4pt of chip padding and the
- * row's 4pt top margin, rounded up for headroom.
+ * How many playlists get named here before the rest collapse into "+N". One, not
+ * the list row's two: these tags share the stats line with sends, quality and
+ * setter, and two full names would ellipsize both to noise.
  */
-export const PLAY_DRAWER_CHIPS_SLOT_HEIGHT = 30;
+const HEADER_MAX_VISIBLE_CHIPS = 1;
 
 type PlayDrawerPlaylistChipsProps = {
   climbUuid: string;
@@ -31,14 +22,14 @@ type PlayDrawerPlaylistChipsProps = {
    * Whether this header may fetch membership. True for the climb on screen;
    * false for the swipe "peek" header, whose climb changes continuously during a
    * fling — firing a request per peek would spray one per climb passed. The peek
-   * still paints from the cache/seed, and the reserved slot keeps both headers
-   * the same height, so nothing shifts as the swipe settles.
+   * still paints from the cache/seed, and the stats row it rides is a fixed
+   * height either way, so nothing shifts as the swipe settles.
    */
   fetchMembership: boolean;
 };
 
 /**
- * Playlist-membership tags under the climb name in the play drawer.
+ * Playlist-membership tags in the play drawer, riding the header's stats line.
  *
  * Not the list variant. `ClimbPlaylistChips` reads the shared
  * `playlistMembershipStore`, which is written by exactly one hook
@@ -48,11 +39,17 @@ type PlayDrawerPlaylistChipsProps = {
  * climber did come from the Climbs tab) and confirms with its own per-climb
  * fetch, sharing the query key the add-to-playlist picker writes to.
  *
+ * Costs the board art nothing. The drawer's first screen is a FIXED height with
+ * the board `flex: 1` inside it, so every point the header takes comes straight
+ * off the board — which is why these tags do NOT get a line of their own, and are
+ * not capsules. They render as `caption1` text inside the existing
+ * "42 sends · 3.2★ · setter" line, in that line's own grey, so the row is exactly
+ * one caption tall whether the climb is in a playlist or not. See
+ * `STATS_ROW_MARGIN_TOP` in `PlayDrawerHeader` for the full budget.
+ *
  * Shown unconditionally: the "Show playlist tags" setting is list-scoped, gating
- * a third line on every row, and a detail header carries no such density cost.
- * The slot only exists for climbers who actually have playlists on this
- * board+layout — the only people who can ever see a chip here — so it costs
- * everyone else no board space at all.
+ * a third line on every row, and a header that adds no line carries no such
+ * density cost.
  */
 export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   climbUuid,
@@ -67,15 +64,8 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
 
   // Whether the climber has any playlist a chip could name. Board-scoped with the
   // same rule the `playlistsForClimb` resolver applies, so this is exactly "can a
-  // chip ever appear here" — and it does not vary per climb, which is what keeps
-  // the reserved slot's height constant while swiping through the queue.
-  //
-  // It can still flip once, from false to true, if a climber opens a climb before
-  // the app-root playlists query has resolved: the slot appears and the board
-  // settles 30pt. Reserving the slot while that query is in flight would trade
-  // that for the same settle in reverse, and would charge it to everyone who has
-  // no playlists — the majority — instead of only to playlist owners inside a
-  // one-or-two-second window at cold start. This is the cheaper side of the trade.
+  // chip ever appear here". It costs no height either way — it only decides
+  // whether the stats row shares its width.
   const hasBoardPlaylists = useMemo(
     () => (playlists ? hasPlaylistForBoard(playlists, boardName, layoutId) : false),
     [playlists, boardName, layoutId],
@@ -98,7 +88,7 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
   // array, the store's cached `Set`), so the coalesce is stable on its own.
   const members: Iterable<string> = memberUuids ?? seededMembers;
 
-  // Every playlist by name, not just the two that fit — a "+2" token tells a
+  // Every playlist by name, not just the one that fits — a "+2" token tells a
   // VoiceOver user nothing. The list variant stays hidden from the accessibility
   // tree (it would triple the length of every row); on a detail surface this is
   // the only place membership is announced at all.
@@ -107,24 +97,19 @@ export const PlayDrawerPlaylistChips = memo(function PlayDrawerPlaylistChips({
     [t],
   );
 
-  // No slot at all — not even an empty one — for a signed-out climber or one with
-  // no playlist on this board. They can never see a chip here, so they should not
-  // pay for the space either.
+  // Nothing at all for a signed-out climber or one with no playlist on this
+  // board: they can never see a chip here, so they should not pay the width
+  // either — the stats line keeps the room to itself.
   if (!isAuthenticated || !hasBoardPlaylists) return null;
 
   return (
-    <View style={styles.slot}>
-      <PlaylistChipsRow playlistUuids={members} align="center" describeForAccessibility={describeForAccessibility} />
-    </View>
+    <PlaylistChipsRow
+      playlistUuids={members}
+      align="inline"
+      maxVisible={HEADER_MAX_VISIBLE_CHIPS}
+      // The exact grey the stats text beside it uses — one line, one colour.
+      inlineLabelColor={iosSystemColors.systemGray}
+      describeForAccessibility={describeForAccessibility}
+    />
   );
-});
-
-const styles = StyleSheet.create({
-  slot: {
-    height: PLAY_DRAWER_CHIPS_SLOT_HEIGHT,
-    alignSelf: 'stretch',
-    justifyContent: 'flex-start',
-    // Backstop: an unusually tall chip clips rather than pushing the board art.
-    overflow: 'hidden',
-  },
 });

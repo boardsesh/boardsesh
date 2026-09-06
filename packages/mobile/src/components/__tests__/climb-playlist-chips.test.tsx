@@ -198,12 +198,38 @@ describe('PlaylistChipsRow', () => {
     expect(container.textContent).not.toContain('+1');
   });
 
-  it('left-aligns by default and centers on request', () => {
+  it('keeps its own top margin on a list row and drops it when inline', () => {
+    // The list row is the strip's own third line, so it owns the 4pt gap above
+    // it. Inline in the play drawer's stats row it must add NO height at all —
+    // the board art below is `flex: 1` in a fixed-height screen, so a stray
+    // margin here comes straight off the board.
+    //
     ctrl.playlistsById = new Map([['p1', playlist('p1', 'Sunday sends')]]);
-    const left = render(<PlaylistChipsRow playlistUuids={['p1']} />);
-    expect(rowStyle(left.container)).not.toContain('justifyContent');
-    const centered = render(<PlaylistChipsRow playlistUuids={['p1']} align="center" />);
-    expect(rowStyle(centered.container)).toContain('"justifyContent":"center"');
+    const listRow = render(<PlaylistChipsRow playlistUuids={['p1']} />);
+    expect(rowStyle(listRow.container)).toContain('"marginTop":4');
+    // The inline override is appended to the same style array, so the base row's
+    // marginTop:4 is still in the serialized string — only its ABSENCE from the
+    // list row's proves the two branches differ.
+    expect(rowStyle(listRow.container)).not.toContain('"marginTop":0');
+    const inline = render(<PlaylistChipsRow playlistUuids={['p1']} align="inline" />);
+    expect(rowStyle(inline.container)).toContain('"marginTop":0');
+  });
+
+  it('collapses to "+N" past the caller\'s visible cap', () => {
+    // The play drawer passes 1: its chips share a line with the sends/quality/
+    // setter stats, so a second full name would ellipsize both to noise.
+    ctrl.playlistsById = new Map([
+      ['p1', playlist('p1', 'Sunday sends')],
+      ['p2', playlist('p2', 'Project@40')],
+    ]);
+    const two = render(<PlaylistChipsRow playlistUuids={['p1', 'p2']} />);
+    expect(two.container.textContent).toContain('Project@40');
+    expect(two.container.textContent).not.toContain('+1');
+
+    const capped = render(<PlaylistChipsRow playlistUuids={['p1', 'p2']} maxVisible={1} />);
+    expect(capped.container.textContent).toContain('Sunday sends');
+    expect(capped.container.textContent).not.toContain('Project@40');
+    expect(capped.container.textContent).toContain('+1');
   });
 
   it('builds an accessibility label from every name, including the ones "+N" hides', () => {

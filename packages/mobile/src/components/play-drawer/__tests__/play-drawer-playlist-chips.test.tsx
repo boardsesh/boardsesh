@@ -32,6 +32,8 @@ vi.mock('react-native', () => ({
       children,
     ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios ?? spec.default },
+  PlatformColor: (name: string) => name,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -91,7 +93,7 @@ vi.mock('../../../lib/show-playlist-tags-preference', () => ({
   useShowPlaylistTagsPreference: () => ({ enabled: false, loaded: true, setEnabled: vi.fn() }),
 }));
 
-import { PlayDrawerPlaylistChips, PLAY_DRAWER_CHIPS_SLOT_HEIGHT } from '../PlayDrawerPlaylistChips';
+import { PlayDrawerPlaylistChips } from '../PlayDrawerPlaylistChips';
 
 function playlist(uuid: string, name: string, layoutId: number | null = 1): Playlist {
   return {
@@ -116,7 +118,7 @@ function renderChips(overrides: Partial<typeof baseProps> = {}) {
   return render(createElement(PlayDrawerPlaylistChips, { ...baseProps, ...overrides }));
 }
 
-function slotStyle(container: HTMLElement): string {
+function rowStyle(container: HTMLElement): string {
   return container.querySelector('[data-view]')?.getAttribute('data-style') ?? '';
 }
 
@@ -141,8 +143,8 @@ describe('PlayDrawerPlaylistChips', () => {
   });
 
   it('renders nothing, and fetches nothing, when the climber has no playlist on this board', () => {
-    // Playlists on another board can never produce a chip here, so no slot and
-    // no request.
+    // Playlists on another board can never produce a tag here, so nothing renders
+    // and nothing is requested.
     ctrl.playlists = [{ ...playlist('p9', 'Tension list'), boardType: 'tension' }];
     const { container } = renderChips();
     expect(container.textContent).toBe('');
@@ -152,7 +154,7 @@ describe('PlayDrawerPlaylistChips', () => {
 
   it('renders nothing, and fetches nothing, for a playlist on another layout of this board', () => {
     // Layout-scoped playlists don't cross layouts, so this climber still can't
-    // see a chip here — the slot must not appear and eat board art.
+    // see a tag here — nothing should render, and nothing should be fetched.
     ctrl.playlists = [playlist('p8', 'Original layout list', 2)];
     const { container } = renderChips();
     expect(container.textContent).toBe('');
@@ -171,16 +173,32 @@ describe('PlayDrawerPlaylistChips', () => {
     expect(ctrl.queryArgs.some((args) => args.enabled)).toBe(false);
   });
 
-  it('keeps the reserved slot the same height whether or not the climb is in a playlist', () => {
-    // Load-bearing: the board art below is `flex: 1` inside a fixed-height first
-    // screen, so a per-climb header height would resize the board on every swipe.
-    const empty = renderChips();
-    expect(slotStyle(empty.container)).toContain(`"height":${PLAY_DRAWER_CHIPS_SLOT_HEIGHT}`);
-
+  it('sets no height and no margin of its own', () => {
+    // Half of what keeps the board art whole. The strip rides inside the header's
+    // existing stats line, so it must contribute no vertical space itself: no
+    // fixed height, no top margin, and no chip `minHeight` taller than the caption
+    // it sits in. That the header actually NESTS it in that line — rather than
+    // dropping it below as a third line, the shape QA declined — is pinned by
+    // `play-drawer-header-layout-budget.test.tsx`, which renders the real header.
     ctrl.memberUuids = ['p1'];
-    const filled = renderChips();
-    expect(slotStyle(filled.container)).toContain(`"height":${PLAY_DRAWER_CHIPS_SLOT_HEIGHT}`);
-    expect(filled.container.textContent).toContain('Sunday sends');
+    const { container } = renderChips();
+    expect(container.textContent).toContain('Sunday sends');
+    expect(rowStyle(container)).toContain('"marginTop":0');
+    expect(rowStyle(container)).not.toContain('"height"');
+    // The chip itself: no capsule padding, no minHeight — a dot and a name, as
+    // tall as the caption line and no taller.
+    const chip = container.querySelectorAll('[data-view]')[1];
+    expect(chip?.getAttribute('data-style') ?? '').not.toContain('minHeight');
+  });
+
+  it('shows one playlist by name and collapses the rest, to share the stats line', () => {
+    // Two full names beside "42 sends · 3.2★ · setter" ellipsize both to noise on
+    // a phone-width centre column, so the header caps at one and counts the rest.
+    ctrl.memberUuids = ['p1', 'p2'];
+    const { container } = renderChips();
+    expect(container.textContent).toContain('Sunday sends');
+    expect(container.textContent).not.toContain('Project@40');
+    expect(container.textContent).toContain('+1');
   });
 
   it('paints from the shared store seed before its own fetch resolves', () => {
@@ -234,7 +252,7 @@ describe('PlayDrawerPlaylistChips', () => {
     ];
     ctrl.memberUuids = ['p1', 'p2', 'p3', 'p4'];
     const { container } = renderChips();
-    expect(container.textContent).toContain('+2');
+    expect(container.textContent).toContain('+3');
     const label = container.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
     expect(label).toBe('mobile.detail.inPlaylists|Sunday sends, Project@40, Warmups, Benchmarks');
   });

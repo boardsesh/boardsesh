@@ -29,8 +29,8 @@ export function filterPlaylistsByBoard(playlists: Playlist[], boardName: string,
 /**
  * Whether the climber has any playlist on this board+layout, by the same rule
  * `filterPlaylistsByBoard` applies. Short-circuits and allocates nothing — for
- * callers that only need the yes/no, like the play drawer deciding whether to
- * reserve its playlist-chips slot.
+ * callers that only need the yes/no, like the play drawer deciding whether a
+ * playlist tag can appear on this climb at all.
  */
 export function hasPlaylistForBoard(playlists: Playlist[], boardName: string, layoutId: number): boolean {
   return playlists.some((playlist) => matchesBoard(playlist, boardName, layoutId));
