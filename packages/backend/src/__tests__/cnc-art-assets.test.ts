@@ -157,7 +157,7 @@ describe('attachAssetsToOrder', () => {
     const second = await insertAsset('buyer-1');
     const order = await insertOrder('buyer-1');
 
-    await expect(attachAssetsToOrder(order.id, [first.id, second.id])).resolves.toBe(2);
+    await expect(attachAssetsToOrder(order.id, 'buyer-1', [first.id, second.id])).resolves.toBe(2);
 
     const rows = await db.select().from(cncArtAssets).where(eq(cncArtAssets.orderId, order.id));
     expect(rows.map((row) => row.id).sort()).toEqual([first.id, second.id].sort());
@@ -168,14 +168,28 @@ describe('attachAssetsToOrder', () => {
     const firstOrder = await insertOrder('buyer-1');
     const secondOrder = await insertOrder('buyer-1');
 
-    await attachAssetsToOrder(firstOrder.id, [asset.id]);
+    await attachAssetsToOrder(firstOrder.id, 'buyer-1', [asset.id]);
     // The field answers "may this file be deleted", and the answer is no from
     // the moment ANY licence depends on it — so the second order changes
     // nothing rather than moving the stamp off the licence that needs it.
-    await expect(attachAssetsToOrder(secondOrder.id, [asset.id])).resolves.toBe(0);
+    await expect(attachAssetsToOrder(secondOrder.id, 'buyer-1', [asset.id])).resolves.toBe(0);
 
     const [row] = await db.select().from(cncArtAssets).where(eq(cncArtAssets.id, asset.id));
     expect(row.orderId).toBe(firstOrder.id);
+  });
+
+  it('does not attach an asset that belongs to somebody else', async () => {
+    // Every caller has already run the asset through `resolveArtworkAssets`
+    // against the same userId, so this is defense in depth — but it is what
+    // keeps the function's own contract honest even if a future caller skips
+    // that check.
+    const foreignAsset = await insertAsset('buyer-2');
+    const order = await insertOrder('buyer-1');
+
+    await expect(attachAssetsToOrder(order.id, 'buyer-1', [foreignAsset.id])).resolves.toBe(0);
+
+    const [row] = await db.select().from(cncArtAssets).where(eq(cncArtAssets.id, foreignAsset.id));
+    expect(row.orderId).toBeNull();
   });
 });
 
@@ -183,7 +197,7 @@ describe('getAssetForJob', () => {
   it('returns the asset the order actually bought', async () => {
     const asset = await insertAsset('buyer-1');
     const order = await insertOrder('buyer-1');
-    await attachAssetsToOrder(order.id, [asset.id]);
+    await attachAssetsToOrder(order.id, 'buyer-1', [asset.id]);
 
     await expect(getAssetForJob(order.id, asset.id)).resolves.toMatchObject({
       id: asset.id,
@@ -196,7 +210,7 @@ describe('getAssetForJob', () => {
     const asset = await insertAsset('buyer-1');
     const boughtBy = await insertOrder('buyer-1');
     const otherOrder = await insertOrder('buyer-1');
-    await attachAssetsToOrder(boughtBy.id, [asset.id]);
+    await attachAssetsToOrder(boughtBy.id, 'buyer-1', [asset.id]);
 
     await expect(getAssetForJob(otherOrder.id, asset.id)).resolves.toBeNull();
   });
@@ -204,7 +218,7 @@ describe('getAssetForJob', () => {
   it('returns null once the asset row is gone, leaving the order intact', async () => {
     const asset = await insertAsset('buyer-1');
     const order = await insertOrder('buyer-1');
-    await attachAssetsToOrder(order.id, [asset.id]);
+    await attachAssetsToOrder(order.id, 'buyer-1', [asset.id]);
 
     // What happens in production when a buyer closes their account:
     // `cnc_art_assets.user_id` CASCADEs while `cnc_orders.user_id` is SET NULL,

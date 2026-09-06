@@ -131,28 +131,57 @@ export async function getOwnedArtAssets(
 /**
  * Stamp the order that bought these assets onto them.
  *
- * Only assets that are still unattached are claimed. An asset reused in a
- * second order keeps its first order's stamp, which is what the field is for:
- * it answers "may this file be deleted", and the answer is no from the moment
- * ANY licence depends on it. Nothing downstream reads `order_id` to decide what
- * a job may fetch — the order's own artwork JSON does that — so a second order
- * losing the stamp costs nothing.
+ * Only assets that are still unattached, and still this buyer's, are claimed.
+ * The ownership clause is defense in depth — every caller has already run
+ * `resolveArtworkAssets` against the same `userId` — but it is what keeps this
+ * function's own contract honest: nothing calling it can walk away with a
+ * returned count that includes somebody else's asset, even if a future caller
+ * skips the earlier check. An asset reused in a second order keeps its first
+ * order's stamp, which is what the field is for: it answers "may this file be
+ * deleted", and the answer is no from the moment ANY licence depends on it.
+ * Nothing downstream reads `order_id` to decide what a job may fetch — the
+ * order's own artwork JSON does that — so a second order losing the stamp
+ * costs nothing.
  *
- * Best-effort by design: it runs after the order row exists, and a lost write
- * here means an attached file looks like a draft to a cleanup sweep, never a
- * checkout that fails.
+ * The returned count is authoritative, not best-effort: a caller comparing it
+ * against `assetIds.length` is how a foreign or already-claimed id gets
+ * noticed at all, since the UPDATE itself silently skips rows that fail either
+ * half of the WHERE.
  */
-export async function attachAssetsToOrder(orderId: number, assetIds: readonly string[]): Promise<number> {
+export async function attachAssetsToOrder(
+  orderId: number,
+  userId: string,
+  assetIds: readonly string[],
+): Promise<number> {
   const wanted = [...new Set(assetIds)];
   if (wanted.length === 0) return 0;
 
   const attached = await db
     .update(cncArtAssets)
     .set({ orderId })
-    .where(and(inArray(cncArtAssets.id, wanted), isNull(cncArtAssets.orderId)))
+    .where(and(inArray(cncArtAssets.id, wanted), eq(cncArtAssets.userId, userId), isNull(cncArtAssets.orderId)))
     .returning({ id: cncArtAssets.id });
 
   return attached.length;
+}
+
+/**
+ * One asset, looked up by id alone — no ownership and no order scoping.
+ *
+ * The only caller is the worker asset route's UNLEASED path: pre-purchase
+ * `validateCncArtwork` has no order yet, so there is nothing to lease and
+ * nothing to scope to. The worker fleet secret is the sole gate at that point,
+ * and the asset id is exactly what `asset_ref` carries — the generator never
+ * sees or invents one, it only echoes back what Boardsesh sent it. Every other
+ * lookup in this module scopes by owner or by order because a caller could
+ * otherwise be tricked into naming somebody else's upload; this one is
+ * deliberately unscoped because the worker route already restricts the id's
+ * charset before it reaches here and the caller is the trusted generator
+ * fleet, not a buyer.
+ */
+export async function getArtAssetById(assetId: string): Promise<CncArtAsset | null> {
+  const [asset] = await db.select().from(cncArtAssets).where(eq(cncArtAssets.id, assetId)).limit(1);
+  return asset ?? null;
 }
 
 /**
