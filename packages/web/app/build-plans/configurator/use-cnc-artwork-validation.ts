@@ -46,9 +46,10 @@ export type CncArtworkValidationResult = {
    * Whether the placement is routable.
    *
    * Null means "no answer yet" — nothing placed, signed out, still in flight,
-   * or the call failed. Callers must treat null as "do not block", not as a
-   * pass: the authoritative check runs again at checkout, which is what stops
-   * an unanswered validation from selling an unroutable pack.
+   * or the call failed. Callers must treat null as blocking, the same as a
+   * hard `false`, never as a pass: the authoritative check runs again at
+   * checkout, but that is a second gate, not a reason to let an unanswered
+   * validation wave a buyer through here.
    */
   ok: boolean | null;
   collisions: CncArtworkCollision[];
