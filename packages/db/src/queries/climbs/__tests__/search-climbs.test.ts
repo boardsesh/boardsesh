@@ -481,6 +481,8 @@ void describe('community-hidden climbs (#5049)', () => {
     assert.match(popularCountsWhere, /"board_climbs"\."is_hidden" = false/);
     // ...while the page itself still answers the name search.
     assert.doesNotMatch(pageWhere, /is_hidden/);
+  });
+});
 
 /**
  * Personal grades (#4828). The sort has to key on the SAME expression the WHERE
