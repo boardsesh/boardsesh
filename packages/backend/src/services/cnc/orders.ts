@@ -117,6 +117,51 @@ export async function getOrderByLicenceId(licenceId: string): Promise<CncOrder |
   return order ?? null;
 }
 
+/** One order by row id. The Stripe webhook's lookup: sessions carry `metadata.orderId`. */
+export async function getOrderById(orderId: number): Promise<CncOrder | null> {
+  const [order] = await db.select().from(cncOrders).where(eq(cncOrders.id, orderId)).limit(1);
+  return order ?? null;
+}
+
+/**
+ * One order by Stripe PaymentIntent id.
+ *
+ * `charge.refunded` arrives with a charge and its payment intent, and no
+ * session at all — the checkout that produced it may have been months ago — so
+ * this is the only handle a refund gives us on the order.
+ */
+export async function getOrderByPaymentIntentId(paymentIntentId: string): Promise<CncOrder | null> {
+  const [order] = await db
+    .select()
+    .from(cncOrders)
+    .where(eq(cncOrders.stripePaymentIntentId, paymentIntentId))
+    .limit(1);
+  return order ?? null;
+}
+
+/**
+ * Record which Checkout Session an order was sent to.
+ *
+ * Not a transition: the order is already `pending_payment` and stays there —
+ * opening a checkout is not a payment. The status is still in the WHERE so a
+ * session id can never be stamped onto an order that has meanwhile been paid,
+ * cancelled or refunded; that would only ever be a bug, and overwriting is the
+ * worst way to find out about it.
+ *
+ * Returns null when nothing matched, which the caller treats the way it treats
+ * a lost transition race: log it, do not fail the buyer's checkout. The session
+ * id is a support convenience — the webhook finds the order by
+ * `metadata.orderId` regardless.
+ */
+export async function attachCheckoutSession(orderId: number, sessionId: string): Promise<CncOrder | null> {
+  const [order] = await db
+    .update(cncOrders)
+    .set({ stripeCheckoutSessionId: sessionId, updatedAt: new Date() })
+    .where(and(eq(cncOrders.id, orderId), eq(cncOrders.status, 'pending_payment')))
+    .returning();
+  return order ?? null;
+}
+
 /** A buyer's orders, newest first. Served by `cnc_orders_user_created_idx`. */
 export async function listOrdersForUser(userId: string): Promise<CncOrder[]> {
   return db.select().from(cncOrders).where(eq(cncOrders.userId, userId)).orderBy(desc(cncOrders.createdAt));
@@ -146,6 +191,11 @@ export type CncOrderPatch = {
   generation?: number;
   stripeCheckoutSessionId?: string | null;
   stripePaymentIntentId?: string | null;
+  // Writable by the paid webhook, which records what Stripe ACTUALLY charged
+  // rather than the catalogue price the order was reserved at — with Stripe Tax
+  // on, those are different numbers.
+  amountCents?: number | null;
+  currency?: string | null;
   paidAt?: Date | null;
   refundedAt?: Date | null;
   generatedAt?: Date | null;
