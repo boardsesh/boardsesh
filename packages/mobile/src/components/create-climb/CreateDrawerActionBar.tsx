@@ -41,6 +41,9 @@ type CreateDrawerActionBarProps = {
    *  that CHANGE them live in the transport card under the board, and the
    *  destructive ones in the header's overflow menu. */
   frameCount: number;
+  /** Monotonic count of frame deletions, so a delete can be announced without
+   *  inferring it from the frame count falling — which a reset also does. */
+  frameDeletions: number;
   currentFrameIndex: number;
   canSetActive: boolean;
   onSetActive: () => void;
@@ -77,6 +80,7 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onRedo,
   onClearHolds,
   frameCount,
+  frameDeletions,
   currentFrameIndex,
   canSetActive,
   onSetActive,
@@ -96,28 +100,34 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   // Adding and removing a frame are both undoable, so they need feedback rather
   // than a confirm: the only other sign the strip changed is a chip appearing or
   // vanishing, which a screen reader never sees. Both controls live in the route
-  // slot, so this keys on the COUNT MOVING rather than on a press here. Frame
+  // slot, so add keys on the COUNT GOING UP rather than on a press here. Frame
   // navigation moves the index, not the count, so it stays silent. Announcing
   // from this component (rather than from the slot that owns the buttons) keeps
   // ONE voice on the surface, so a frame announcement and a draft-status
   // transition still can't talk over each other.
-  //
-  // A delete gets its own line rather than the plain counter: after it, focus is
-  // gone and the strip has reshuffled under the reader, so "3 of 4" alone would
-  // not say that anything was removed. It carries no ordinal — the index this
-  // component sees has already been clamped past the frame that went, so naming
-  // one here would name the wrong frame.
   const previousFrameCountRef = useRef(frameCount);
   useEffect(() => {
-    const previousFrameCount = previousFrameCountRef.current;
+    const gainedAFrame = frameCount > previousFrameCountRef.current;
     previousFrameCountRef.current = frameCount;
-    if (frameCount === previousFrameCount) return;
-    if (frameCount > previousFrameCount) {
-      announce(t('mobile.create.frames.counter', { index: currentFrameIndex + 1, total: frameCount }));
-      return;
-    }
-    announce(t('mobile.create.playback.frameDeleted', { total: frameCount }));
+    if (!gainedAFrame) return;
+    announce(t('mobile.create.frames.counter', { index: currentFrameIndex + 1, total: frameCount }));
   }, [frameCount, currentFrameIndex, announce, t]);
+
+  // A delete gets its own line rather than the plain counter: after it, focus is
+  // gone and the strip has reshuffled under the reader, so "3 of 4" alone would
+  // not say anything was removed. It carries no ordinal — the index this
+  // component sees has already been clamped past the frame that went, so naming
+  // one here would name the wrong frame.
+  //
+  // Keyed on a counter the delete path bumps, NOT on the count falling: "Start a
+  // new climb" and "Clear holds" both RESET to one empty frame, and undoing an
+  // add walks the count back. All three would have announced a delete.
+  const previousFrameDeletionsRef = useRef(frameDeletions);
+  useEffect(() => {
+    if (frameDeletions === previousFrameDeletionsRef.current) return;
+    previousFrameDeletionsRef.current = frameDeletions;
+    announce(t('mobile.create.playback.frameDeleted', { total: frameCount }));
+  }, [frameDeletions, frameCount, announce, t]);
 
   const paintRoles = useMemo(() => getPaintRoles(boardName), [boardName]);
   const roleChips = useMemo(

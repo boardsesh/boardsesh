@@ -26,7 +26,7 @@ import { hapticLight, hapticSelection, hapticSuccess } from '../../lib/haptics';
 import { brandColors as staticBrandColors, withAlpha } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { glassSize } from '../../theme/layout';
-import { spacing, borderRadius, opacity } from '../../theme/tokens';
+import { spacing, borderRadius } from '../../theme/tokens';
 import { springs, timing } from '../../theme/animations';
 import {
   clampPaceSeconds,
@@ -336,6 +336,11 @@ function FrameStrip({
           variant="caption1"
           color={systemColors.secondaryLabel}
           numberOfLines={1}
+          // Capped below the 1.5 default: this row is a fixed 32dp inside a card
+          // that clips, and caption1's 16dp line box at 1.5 plus 8dp of padding
+          // is exactly 32 with nothing spare. The reader's copy of this chip, in
+          // the transport row, keeps the full range.
+          maxFontSizeMultiplier={1.2}
           style={[styles.wallStateChip, { backgroundColor: systemColors.fill }]}
         >
           {wallStateLabel}
@@ -429,7 +434,10 @@ function FrameEditPair({
         }
         accessibilityHint={canDelete ? tClimbs('mobile.create.playback.deleteFrameHint') : undefined}
         accessibilityState={{ disabled: !canDelete }}
-        style={[styles.framePairButton, !canDelete && styles.framePairButtonDisabled]}
+        // Dimmed by the glyph colour alone, the way the prev/next chevrons 40dp
+        // away are. Stacking an opacity on `tertiaryLabel` (already ~30% alpha on
+        // iOS) puts the mark near 15% and under the 3:1 non-text floor.
+        style={styles.framePairButton}
         testID="playback-delete-frame"
       >
         <Icon name="minus" size={20} color={canDelete ? systemColors.secondaryLabel : systemColors.tertiaryLabel} />
@@ -1052,9 +1060,6 @@ const styles = StyleSheet.create({
     height: glassSize.inline,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  framePairButtonDisabled: {
-    opacity: opacity.disabled,
   },
   framePairDivider: {
     width: StyleSheet.hairlineWidth,

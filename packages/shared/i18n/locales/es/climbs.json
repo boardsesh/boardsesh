@@ -540,7 +540,7 @@
         "addFrame": "Añadir fotograma",
         "addFrameHint": "Copia el fotograma {{index}} y coloca la copia después",
         "deleteFrameA11y": "Eliminar el fotograma {{index}} de {{total}}",
-        "deleteFrameBlocked": "Eliminar fotograma: una ruta conserva al menos uno",
+        "deleteFrameBlocked": "Eliminar fotograma: una vía conserva al menos uno",
         "deleteFrameHint": "Deshacer está en la barra de abajo",
         "frameDeleted": "Fotograma eliminado. Quedan {{total}}."
       },

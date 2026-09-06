@@ -112,6 +112,19 @@ describe('CreateDrawerHeader overflow menu', () => {
     expect(onSelectOverflowAction).toHaveBeenLastCalledWith('newClimb');
   });
 
+  it('resolves the FIRST row on a board that renders fewer of them', () => {
+    // With the frame commands gone, Woods is the only state whose menu is a
+    // different LENGTH — one row where every other state has two. Index 0 there
+    // is newClimb, not the makeRoute that sits at 0 everywhere else, so this is
+    // what guards the header's index-to-action mapping against a stale row set.
+    const { onSelectOverflowAction, container } = renderHeader({ supportsMultiFrame: false });
+    const rows = Array.from(container.querySelectorAll('[data-row]')) as HTMLButtonElement[];
+
+    expect(rows).toHaveLength(1);
+    rows[0]?.click();
+    expect(onSelectOverflowAction).toHaveBeenLastCalledWith('newClimb');
+  });
+
   it('marks the blocked route-to-boulder row disabled rather than dropping it', () => {
     const { row } = renderHeader({ routeMode: true, frameCount: 4 });
     expect(row('mobile.create.routeMenu.makeBoulderBlocked')?.getAttribute('data-disabled')).toBe('true');

@@ -538,11 +538,11 @@
       },
       "playback": {
         "addFrame": "Bild hinzufügen",
-        "addFrameHint": "Kopiert Frame {{index}} und setzt die Kopie dahinter",
-        "deleteFrameA11y": "Frame {{index}} von {{total}} löschen",
-        "deleteFrameBlocked": "Frame löschen — eine Route behält mindestens einen",
+        "addFrameHint": "Kopiert Bild {{index}} und setzt die Kopie dahinter",
+        "deleteFrameA11y": "Bild {{index}} von {{total}} löschen",
+        "deleteFrameBlocked": "Bild löschen — eine Route behält mindestens eins",
         "deleteFrameHint": "Rückgängig findest du in der Leiste darunter",
-        "frameDeleted": "Frame gelöscht. Noch {{total}} übrig."
+        "frameDeleted": "Bild gelöscht. Noch {{total}} übrig."
       },
       "holdRole": {
         "title": "Griff-Rolle festlegen",

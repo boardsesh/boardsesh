@@ -111,24 +111,6 @@ vi.mock('../../Icon', () => ({
   Icon: ({ name, size }: { name?: string; size?: number }) =>
     createElement('span', { 'data-icon': name, 'data-size': size }),
 }));
-vi.mock('../../Button', () => ({
-  Button: ({
-    title,
-    onPress,
-    variant,
-    minHeight,
-  }: {
-    title?: string;
-    onPress?: () => void;
-    variant?: string;
-    minHeight?: number;
-  }) =>
-    createElement(
-      'button',
-      { 'data-title': title, 'data-variant': variant, 'data-min-height': minHeight, onClick: onPress },
-      title,
-    ),
-}));
 vi.mock('../../GlassCluster', () => ({
   GlassCluster: ({ children, spacing }: { children?: ReactNode; spacing?: number }) =>
     createElement('div', { 'data-node': 'cluster', 'data-spacing': spacing }, children),

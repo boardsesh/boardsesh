@@ -61,6 +61,7 @@ vi.mock('../../../theme/colors', () => ({ brandColors: { primary: '#6D28D9', suc
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 }, borderRadius: { md: 8 } }));
 
 import { CreateDrawerActionBar } from '../CreateDrawerActionBar';
+import { ANNOUNCE_MIN_INTERVAL_MS } from '../use-rate-limited-announcer';
 import type { DraftStatusView } from '../draft-status-view';
 
 const baseProps = {
@@ -73,6 +74,7 @@ const baseProps = {
   onRedo: vi.fn(),
   onClearHolds: vi.fn(),
   frameCount: 1,
+  frameDeletions: 0,
   currentFrameIndex: 0,
   canSetActive: true,
   onSetActive: vi.fn(),
@@ -209,7 +211,7 @@ describe('CreateDrawerActionBar', () => {
     expect(scroller.contains(save)).toBe(false);
   });
 
-  it('speaks the new count when a frame is ADDED, and stays silent on navigation or delete', () => {
+  it('speaks the new count when a frame is ADDED, and stays silent on navigation', () => {
     // Adding a frame is undoable, so it gets feedback rather than a confirm —
     // the only other sign it worked is the transport's "2 / 2". The button that
     // does it now lives in the route slot, so this keys on the count going UP
@@ -229,10 +231,42 @@ describe('CreateDrawerActionBar', () => {
     // Stepping between frames moves the INDEX, not the count.
     rerender(bar(2, 0));
     expect(announceSpy).toHaveBeenCalledTimes(1);
+  });
 
-    // A delete moves the count DOWN; the status line speaks for that, not this.
-    rerender(bar(1, 0));
-    expect(announceSpy).toHaveBeenCalledTimes(1);
+  it('speaks a delete off the delete COUNTER, never off the count falling', () => {
+    // Three things lower the frame count without a frame being deleted: "Start a
+    // new climb" and "Clear holds" both RESET to one empty frame, and undoing an
+    // add walks it back. Keying on the count would announce "Frame deleted" for
+    // all three, so the controller counts real deletes and this reads that.
+    //
+    // Fake timers because the announcer is rate-limited to one utterance per
+    // ANNOUNCE_MIN_INTERVAL_MS across the whole surface: without advancing them,
+    // a second announcement is parked on a timeout and never reaches the spy —
+    // which is how the previous version of this test passed while asserting the
+    // opposite of what the component did.
+    vi.useFakeTimers();
+    try {
+      const bar = (frameCount: number, frameDeletions: number) =>
+        createElement(CreateDrawerActionBar, { ...baseProps, frameCount, frameDeletions, currentFrameIndex: 0 });
+
+      // A reset: four frames collapse to one, and no delete was counted. The
+      // timer advance is what makes this assertion mean anything — a parked
+      // announcement would otherwise look identical to no announcement.
+      const reset = render(bar(4, 0));
+      reset.rerender(bar(1, 0));
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS);
+      expect(announceSpy).not.toHaveBeenCalled();
+      reset.unmount();
+
+      // A real delete: the count falls AND the counter moves.
+      const deleted = render(bar(4, 0));
+      deleted.rerender(bar(3, 1));
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS);
+      expect(announceSpy).toHaveBeenCalledTimes(1);
+      expect(announceSpy).toHaveBeenLastCalledWith('mobile.create.playback.frameDeleted');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('labels Set Active with a queue glyph, not a play glyph', () => {

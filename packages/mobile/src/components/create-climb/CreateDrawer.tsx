@@ -184,9 +184,12 @@ export function CreateDrawer({
       supportsMultiFrame: controller.supportsMultiFrame,
       routeMode: controller.routeMode,
       frameCount: controller.frameCount,
-      frameIndex: controller.currentFrameIndex,
     }),
-    [controller.supportsMultiFrame, controller.routeMode, controller.frameCount, controller.currentFrameIndex],
+    // Deliberately NOT currentFrameIndex: the menu stopped reading it when the
+    // frame commands moved to the transport card, and CreateDrawerHeader is
+    // memo'd — keeping it here handed the header a new object on every playback
+    // tick, as often as twice a second.
+    [controller.supportsMultiFrame, controller.routeMode, controller.frameCount],
   );
 
   const handleOverflowAction = useCallback(
@@ -398,6 +401,7 @@ export function CreateDrawer({
               onRedo={controller.redo}
               onClearHolds={controller.handleClearHolds}
               frameCount={controller.frameCount}
+              frameDeletions={controller.frameDeletions}
               currentFrameIndex={controller.currentFrameIndex}
               canSetActive={controller.canSetActive}
               onSetActive={controller.handleSetActive}

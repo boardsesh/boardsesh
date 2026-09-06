@@ -1015,10 +1015,25 @@ export function useCreateClimbScreen({
     duplicateFrame();
   }, [duplicateFrame, reclaimWall]);
 
+  // Counts deletes rather than letting the announcer infer one from the frame
+  // count falling. Three other things lower that count — "Start a new climb" and
+  // "Clear holds" both RESET to a single empty frame, and undoing an add walks it
+  // back — and every one of them would have announced "Frame deleted".
+  const [frameDeletions, setFrameDeletions] = useState(0);
   const handleDeleteFrame = useCallback(() => {
+    // Mirrors the reducer's own `length <= 1` refusal. The button is disabled
+    // there, but a counter that ticks for a delete that did not happen would
+    // announce a phantom one.
+    if (frameCount <= 1) return;
+    // Stop the clock first. Delete used to be two taps deep in a menu; it is one
+    // tap beside the strip now, and while playback runs the active index moves
+    // on its own — so the frame that went would be whichever the clock had
+    // reached, not the one the button named when the setter read it.
+    playback.pause();
     reclaimWall();
     deleteFrame();
-  }, [deleteFrame, reclaimWall]);
+    setFrameDeletions((count) => count + 1);
+  }, [deleteFrame, reclaimWall, frameCount, playback]);
 
   // Undo/redo change what the wall should show as surely as a paint stroke does,
   // so they take the wall back too. Without this, undoing a hold after Set Active
@@ -1605,6 +1620,7 @@ export function useCreateClimbScreen({
     currentFrameIndex,
     duplicateFrame: guardedDuplicateFrame,
     deleteFrame: handleDeleteFrame,
+    frameDeletions,
     // route playback (transport)
     playback: playbackControls,
     handedOff,
