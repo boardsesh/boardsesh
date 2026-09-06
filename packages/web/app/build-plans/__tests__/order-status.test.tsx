@@ -27,13 +27,23 @@ vi.mock('@/app/lib/i18n/use-locale-router', () => ({
 }));
 
 const graphqlRequest = vi.hoisted(() => vi.fn());
+// The same helper the component derives the download origin from, so the two
+// agree in the test exactly as they do at runtime.
+const BACKEND_GRAPHQL_URL = 'https://backend.example/graphql';
 vi.mock('@/app/lib/graphql/client', () => ({
   createGraphQLHttpClient: () => ({ request: graphqlRequest }),
+  getGraphQLHttpUrl: () => BACKEND_GRAPHQL_URL,
 }));
 
 const OrderStatusModule = await import('../orders/[licenceId]/order-status');
 const OrderStatus = OrderStatusModule.default;
-const { orderRefetchInterval, ORDER_POLL_INTERVAL_MS } = OrderStatusModule;
+const {
+  orderRefetchInterval,
+  nextOrderPollInterval,
+  isBackendDownloadUrl,
+  ORDER_POLL_INTERVAL_MS,
+  MAX_CONSECUTIVE_NULL_POLLS,
+} = OrderStatusModule;
 
 function order(overrides: Partial<CncOrder> = {}): CncOrder {
   return {
@@ -107,6 +117,49 @@ describe('polling', () => {
     }
   });
 
+  it('does not stop on a transient null — it polls the last known status', () => {
+    // `cncOrder` answers null for a blip as well as for a revoked licence.
+    // Reading `false` out of that would settle the page forever on a pack that
+    // is still being cut.
+    for (let nullPolls = 0; nullPolls < MAX_CONSECUTIVE_NULL_POLLS; nullPolls += 1) {
+      expect({ nullPolls, interval: nextOrderPollInterval('generating', nullPolls) }).toEqual({
+        nullPolls,
+        interval: ORDER_POLL_INTERVAL_MS,
+      });
+    }
+  });
+
+  it('gives up after enough nulls in a row', () => {
+    expect(nextOrderPollInterval('generating', MAX_CONSECUTIVE_NULL_POLLS)).toBe(false);
+    expect(nextOrderPollInterval('generating', MAX_CONSECUTIVE_NULL_POLLS + 3)).toBe(false);
+  });
+
+  it('still stops on a terminal status however many nulls came before it', () => {
+    for (const status of ['ready', 'failed', 'cancelled', 'refunded'] satisfies CncOrderStatus[]) {
+      expect({ status, interval: nextOrderPollInterval(status, 0) }).toEqual({ status, interval: false });
+    }
+  });
+
+  it('keeps asking after a null answer, then stops at the cap', async () => {
+    vi.useFakeTimers();
+    try {
+      graphqlRequest.mockResolvedValue({ cncOrder: null });
+      renderStatus(order({ status: 'queued' }));
+
+      // One tick per interval while the nulls keep coming.
+      for (let poll = 1; poll <= MAX_CONSECUTIVE_NULL_POLLS; poll += 1) {
+        await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS + 50);
+        expect({ poll, calls: graphqlRequest.mock.calls.length }).toEqual({ poll, calls: poll });
+      }
+
+      // And nothing after the cap, however long the tab stays open.
+      await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS * 4);
+      expect(graphqlRequest).toHaveBeenCalledTimes(MAX_CONSECUTIVE_NULL_POLLS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not re-fetch a ready order after the first render', async () => {
     renderStatus(order({ status: 'ready' }));
 
@@ -142,6 +195,53 @@ describe('download', () => {
     const [document, variables] = graphqlRequest.mock.calls[0] as [string, Record<string, unknown>];
     expect(document).toContain('CreateCncDownloadGrant');
     expect(variables).toEqual({ licenceId: 'BS-CNC-K7QM3T' });
+  });
+
+  it('refuses a grant URL on any other origin', async () => {
+    graphqlRequest.mockResolvedValue({
+      createCncDownloadGrant: {
+        url: 'https://evil.example/api/cnc/packs/BS-CNC-K7QM3T/download?token=abc',
+        expiresAt: '2026-09-01T02:22:00.000Z',
+      },
+    });
+
+    renderStatus(order({ status: 'ready' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download the pack' }));
+
+    await waitFor(() => expect(screen.getByText('That link did not come through. Try again.')).toBeTruthy());
+    expect(locationAssign).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Download the pack' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('shows the same error for a malformed grant URL instead of throwing', async () => {
+    graphqlRequest.mockResolvedValue({
+      createCncDownloadGrant: { url: 'not a url', expiresAt: '2026-09-01T02:22:00.000Z' },
+    });
+
+    renderStatus(order({ status: 'ready' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download the pack' }));
+
+    await waitFor(() => expect(screen.getByText('That link did not come through. Try again.')).toBeTruthy());
+    expect(locationAssign).not.toHaveBeenCalled();
+  });
+
+  it('accepts only the backend origin the GraphQL client already talks to', () => {
+    for (const url of [
+      'https://backend.example/api/cnc/packs/BS-CNC-K7QM3T/download?token=abc',
+      'https://backend.example/anything',
+    ]) {
+      expect({ url, allowed: isBackendDownloadUrl(url) }).toEqual({ url, allowed: true });
+    }
+
+    for (const url of [
+      'https://backend.example.evil.test/api/cnc/packs/BS-CNC-K7QM3T/download',
+      'http://backend.example/api/cnc/packs/BS-CNC-K7QM3T/download',
+      'https://evil.test/api/cnc/packs/BS-CNC-K7QM3T/download',
+      '/api/cnc/packs/BS-CNC-K7QM3T/download',
+      '',
+    ]) {
+      expect({ url, allowed: isBackendDownloadUrl(url) }).toEqual({ url, allowed: false });
+    }
   });
 
   it('shows an error and re-enables the button when the grant fails', async () => {

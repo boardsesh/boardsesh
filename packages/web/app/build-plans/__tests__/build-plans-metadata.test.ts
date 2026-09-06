@@ -1,4 +1,6 @@
+import type { ReactElement } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import type { CncOrder } from '@boardsesh/shared-schema';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('server-only', () => ({}));
@@ -43,6 +45,45 @@ const ROUTES = [
   { name: '/build-plans', generateMetadata: buildPlansRoute.generateMetadata, base: '/build-plans' },
   { name: '/build-plans/orders', generateMetadata: ordersRoute.generateMetadata, base: '/build-plans/orders' },
 ];
+
+/**
+ * The props the route hands `OrderStatus`, read off the returned element tree.
+ *
+ * The page is a server component that returns plain elements, so walking them
+ * beats mounting the whole MUI + i18n stack to learn what one prop resolved to.
+ */
+function orderStatusProps(tree: ReactElement): { checkoutOutcome: 'success' | 'cancelled' | null } {
+  const page = (tree.props as { children: ReactElement }).children;
+  const orderStatus = (page.props as { children: ReactElement }).children;
+  return orderStatus.props as { checkoutOutcome: 'success' | 'cancelled' | null };
+}
+
+function cncOrder(overrides: Partial<CncOrder> = {}): CncOrder {
+  return {
+    id: '41',
+    licenceId: 'BS-CNC-K7QM3T',
+    tier: 'personal',
+    status: 'queued',
+    boardName: 'kilter',
+    layoutId: 8,
+    sizeId: 25,
+    setIds: '26,27,28,29',
+    options: {},
+    artwork: [],
+    licenseeName: 'Sam Bouldering',
+    customerSiteName: null,
+    amountCents: 14900,
+    currency: 'AUD',
+    createdAt: '2026-09-01T02:14:11.402Z',
+    paidAt: null,
+    generatedAt: null,
+    zipSizeBytes: null,
+    downloadCount: 0,
+    lastDownloadedAt: null,
+    errorMessage: null,
+    ...overrides,
+  };
+}
 
 function mockLocale(locale: string) {
   getServerTranslation.mockResolvedValue({
@@ -188,5 +229,128 @@ describe('the orders pages need a session', () => {
       }),
     ).rejects.toThrow('NEXT_REDIRECT');
     expect(redirect).toHaveBeenCalledWith('/auth/login?callbackUrl=%2Fbuild-plans%2Forders%2FBS-CNC-K7QM3T');
+  });
+});
+
+describe('metadata while the flag is off', () => {
+  const ORDER_ROUTE_PROPS = {
+    params: Promise.resolve({ licenceId: 'BS-CNC-K7QM3T' }),
+    searchParams: Promise.resolve({}),
+  };
+
+  it('says nothing but noindex on any of the three routes', async () => {
+    getServerFeatureFlag.mockResolvedValue(false);
+
+    const all = [
+      { route: '/build-plans', metadata: await buildPlansRoute.generateMetadata() },
+      { route: '/build-plans/orders', metadata: await ordersRoute.generateMetadata() },
+      { route: '/build-plans/orders/[licenceId]', metadata: await orderRoute.generateMetadata(ORDER_ROUTE_PROPS) },
+    ];
+
+    for (const { route, metadata } of all) {
+      // Bare on purpose: `generateMetadata` runs before the page body can
+      // `notFound()`, so a title, description or canonical here would describe
+      // the shape of a surface that answers 404 to everyone.
+      expect({ route, metadata }).toEqual({ route, metadata: { robots: { index: false, follow: true } } });
+    }
+  });
+
+  it('leaks neither the licence id nor a route-shaped canonical', async () => {
+    getServerFeatureFlag.mockResolvedValue(false);
+
+    const metadata = await orderRoute.generateMetadata(ORDER_ROUTE_PROPS);
+
+    expect(metadata.title).toBeUndefined();
+    expect(metadata.description).toBeUndefined();
+    expect(metadata.alternates).toBeUndefined();
+    expect(metadata.openGraph).toBeUndefined();
+    expect(JSON.stringify(metadata)).not.toContain('BS-CNC-K7QM3T');
+  });
+
+  it('resolves the flag through the same gate the page body uses', async () => {
+    getServerFeatureFlag.mockResolvedValue(false);
+
+    await buildPlansRoute.generateMetadata();
+
+    expect(getServerFeatureFlag).toHaveBeenCalledWith('cnc-packs', {
+      distinctId: 'user-uuid-1',
+      allowAnonymous: true,
+    });
+  });
+
+  it('goes back to the full metadata the moment the flag is on', async () => {
+    const metadata = await buildPlansRoute.generateMetadata();
+
+    expect(metadata.alternates?.canonical).toBe('/build-plans');
+    expect(metadata.description).toBeTruthy();
+  });
+});
+
+describe('the licence id in the path', () => {
+  async function openOrder(licenceId: string) {
+    return orderRoute.default({
+      params: Promise.resolve({ licenceId }),
+      searchParams: Promise.resolve({}),
+    });
+  }
+
+  it('404s anything that is not a licence id, before it reaches a query', async () => {
+    for (const licenceId of [
+      '../../etc/passwd',
+      'bs-cnc-k7qm3t',
+      'BS-CNC-K7QM3',
+      'BS-CNC-K7QM3TT',
+      'BS-CNC-K7QM3T\n',
+      'BS-CNC-K7QM_T',
+      '',
+    ]) {
+      notFound.mockClear();
+      executeAuthenticatedGraphQL.mockClear();
+
+      await expect(openOrder(licenceId)).rejects.toThrow('NEXT_NOT_FOUND');
+      // The point of checking first: a junk id must never reach the login
+      // callback URL or the GraphQL variables.
+      expect({ licenceId, queried: executeAuthenticatedGraphQL.mock.calls.length }).toEqual({ licenceId, queried: 0 });
+      expect(redirect).not.toHaveBeenCalled();
+    }
+  });
+
+  it('lets a well-formed licence id through', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({ cncOrder: cncOrder() });
+
+    await expect(openOrder('BS-CNC-K7QM3T')).resolves.toBeTruthy();
+    expect(notFound).not.toHaveBeenCalled();
+  });
+});
+
+describe('the ?checkout= param', () => {
+  async function openOrderWith(checkout: string | string[] | undefined) {
+    executeAuthenticatedGraphQL.mockResolvedValue({ cncOrder: cncOrder() });
+    return orderRoute.default({
+      params: Promise.resolve({ licenceId: 'BS-CNC-K7QM3T' }),
+      searchParams: Promise.resolve({ checkout }),
+    });
+  }
+
+  it('reads the outcome out of a repeated param', async () => {
+    // `?checkout=success&checkout=success` parses as an array. Comparing that
+    // to a string is always false, which silently swallows the alert Stripe
+    // sent the buyer back for.
+    for (const outcome of ['success', 'cancelled'] as const) {
+      const tree = await openOrderWith([outcome, 'cancelled']);
+      expect(orderStatusProps(tree).checkoutOutcome).toBe(outcome);
+    }
+  });
+
+  it('still reads a plain string param', async () => {
+    const tree = await openOrderWith('success');
+    expect(orderStatusProps(tree).checkoutOutcome).toBe('success');
+  });
+
+  it('ignores an unknown outcome, an empty array and a missing param', async () => {
+    for (const checkout of ['whatever', [], ['nope'], undefined] as (string | string[] | undefined)[]) {
+      const tree = await openOrderWith(checkout);
+      expect({ checkout, outcome: orderStatusProps(tree).checkoutOutcome }).toEqual({ checkout, outcome: null });
+    }
   });
 });

@@ -11,7 +11,7 @@ import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
-import { fetchCncCatalog, requireCncPacksFlag } from '../build-plans-page';
+import { CNC_FLAG_OFF_METADATA, fetchCncCatalog, isCncPacksEnabled, requireCncPacksFlag } from '../build-plans-page';
 import styles from '../build-plans.module.css';
 import OrdersList from './orders-list';
 
@@ -26,6 +26,8 @@ const ORDERS_PATH = '/build-plans/orders';
  * TODO on `/build-plans` does not apply here.
  */
 export async function generateMetadata(): Promise<Metadata> {
+  if (!(await isCncPacksEnabled())) return CNC_FLAG_OFF_METADATA;
+
   const { t, locale } = await getServerTranslation('cnc');
   return createNoIndexMetadata({
     title: t('metadata.orders.title'),

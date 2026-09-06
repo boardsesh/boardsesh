@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
@@ -12,7 +12,7 @@ import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
-import { fetchCncCatalog, requireCncPacksFlag } from '../../build-plans-page';
+import { CNC_FLAG_OFF_METADATA, fetchCncCatalog, isCncPacksEnabled, requireCncPacksFlag } from '../../build-plans-page';
 import { wallLabel } from '../../order-display';
 import styles from '../../build-plans.module.css';
 import OrderStatus from './order-status';
@@ -25,12 +25,38 @@ type OrderRouteProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
+const LICENCE_ID_LENGTH = 'BS-CNC-'.length + 6;
+
+/**
+ * The shape the backend mints: `BS-CNC-` plus six characters (see
+ * `generateLicenceId` in `packages/backend/src/services/cnc/licence-id.ts`,
+ * whose alphabet is a subset of this one — the route only needs to reject
+ * junk, and the backend still answers null for anything it did not issue).
+ *
+ * Checked before the id reaches the login callback URL or the GraphQL
+ * variables, so a crafted path cannot smuggle an arbitrary string through this
+ * route. The explicit length check is not redundant with the anchored pattern:
+ * `$` also matches before a trailing newline.
+ */
+const LICENCE_ID_PATTERN = /^BS-CNC-[A-Z0-9]{6}$/;
+
+/**
+ * `notFound()` rather than a 400: it matches what an unknown-but-well-formed
+ * licence already gets, which keeps "no such order", "not your order" and "not
+ * a licence id at all" indistinguishable from outside.
+ */
+function isLicenceIdShape(licenceId: string): boolean {
+  return licenceId.length === LICENCE_ID_LENGTH && LICENCE_ID_PATTERN.test(licenceId);
+}
+
 /**
  * `noindex, follow`. Stays that way after launch — a purchase receipt is a
  * utility surface. The licence id is in the title because that is how a buyer
  * picks this tab out of five open ones.
  */
 export async function generateMetadata(props: OrderRouteProps): Promise<Metadata> {
+  if (!(await isCncPacksEnabled())) return CNC_FLAG_OFF_METADATA;
+
   const { licenceId } = await props.params;
   const { t, locale } = await getServerTranslation('cnc');
   return createNoIndexMetadata({
@@ -45,6 +71,9 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
   await requireCncPacksFlag();
 
   const { licenceId } = await props.params;
+  if (!isLicenceIdShape(licenceId)) {
+    notFound();
+  }
   const searchParams = await props.searchParams;
 
   const authToken = await getServerAuthToken();
@@ -85,7 +114,11 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
     );
   }
 
-  const checkoutParam = searchParams.checkout;
+  // `?checkout=success&checkout=cancelled` parses as an array, so take the
+  // first entry rather than comparing an array to a string and silently
+  // dropping the alert Stripe sent the buyer back for.
+  const rawCheckoutParam = searchParams.checkout;
+  const checkoutParam = Array.isArray(rawCheckoutParam) ? rawCheckoutParam[0] : rawCheckoutParam;
   const checkoutOutcome = checkoutParam === 'success' || checkoutParam === 'cancelled' ? checkoutParam : null;
 
   return (
