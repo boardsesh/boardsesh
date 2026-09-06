@@ -437,6 +437,17 @@ Only the **first** order to use an asset stamps it. `order_id` answers whether
 the file may be deleted, and the answer is no from the moment any licence
 depends on it — so a reuse leaves the first order's stamp in place.
 
+A cancelled checkout hands the stamp back. `releaseArtAssetsForOrder` clears
+`order_id` for the order in both cancel paths: the resolver's own
+`checkoutFailed` (Stripe would not open a session, or the attach came back
+short) and the webhook's `checkout.session.expired` / `async_payment_failed`.
+The stamp goes on before Stripe is asked for a session, so without the release
+an upload would stay bound to an order nobody will ever pay for — and a stamped
+asset is exactly what `attachAssetsToOrder` skips, so the buyer's retry could
+never attach it again. The release is best-effort: a failure is logged and the
+cancellation goes through regardless, because a re-upload is a nuisance and a
+stuck `pending_payment` order is a support ticket.
+
 ### What the job carries
 
 Checkout copies each asset's key and mime **onto the order's `artwork` JSON**,
