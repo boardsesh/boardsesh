@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 vi.mock('../../../../db/client', () => ({ db: {}, dbRead: {} }));
@@ -10,15 +10,39 @@ vi.mock('../../shared/helpers', async (importOriginal) => ({
   applyRateLimit: vi.fn(async () => {}),
 }));
 
-const { validateArtworkMock } = vi.hoisted(() => ({ validateArtworkMock: vi.fn() }));
+const {
+  validateArtworkMock,
+  createPendingOrderMock,
+  transitionOrderMock,
+  attachCheckoutSessionMock,
+  createCheckoutSessionMock,
+} = vi.hoisted(() => ({
+  validateArtworkMock: vi.fn(),
+  createPendingOrderMock: vi.fn(),
+  transitionOrderMock: vi.fn(),
+  attachCheckoutSessionMock: vi.fn(),
+  createCheckoutSessionMock: vi.fn(),
+}));
 
 vi.mock('../../../../services/cnc/worker-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../services/cnc/worker-client')>()),
   validateArtwork: validateArtworkMock,
 }));
 
+vi.mock('../../../../services/cnc/orders', () => ({
+  createPendingOrder: createPendingOrderMock,
+  transitionOrder: transitionOrderMock,
+  attachCheckoutSession: attachCheckoutSessionMock,
+}));
+
+vi.mock('../../../../services/cnc/stripe', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../services/cnc/stripe')>()),
+  createCheckoutSessionForOrder: createCheckoutSessionMock,
+}));
+
 import { cncPackMutations } from '../mutations';
 import { CncWorkerUnavailableError, CncWorkerValidationError } from '../../../../services/cnc/worker-client';
+import { CncStripeUnavailableError } from '../../../../services/cnc/stripe';
 
 const authCtx = (): ConnectionContext => ({
   connectionId: 'conn-user-1',
@@ -65,9 +89,42 @@ function config(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const STRIPE_ENV_KEYS = ['STRIPE_SECRET_KEY', 'WEB_PUBLIC_URL', 'BOARDSESH_URL'] as const;
+const savedEnv = new Map<string, string | undefined>();
+
 beforeEach(() => {
   vi.clearAllMocks();
+  for (const key of STRIPE_ENV_KEYS) savedEnv.set(key, process.env[key]);
+  process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
+  process.env.WEB_PUBLIC_URL = 'https://www.boardsesh.com';
+
+  createPendingOrderMock.mockResolvedValue({ id: 7, licenceId: 'BS-CNC-ABC234' });
+  attachCheckoutSessionMock.mockResolvedValue({ id: 7 });
+  transitionOrderMock.mockResolvedValue({ id: 7, status: 'cancelled' });
+  createCheckoutSessionMock.mockResolvedValue({
+    sessionId: 'cs_test_1',
+    url: 'https://checkout.stripe.com/c/pay/cs_test_1',
+  });
 });
+
+afterEach(() => {
+  for (const [key, value] of savedEnv) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+});
+
+/** A well-formed checkout input; every test bends one field of it. */
+function checkoutInput(overrides: Record<string, unknown> = {}) {
+  return {
+    config: config({ artwork: [] }),
+    tier: 'personal',
+    licenseeName: 'Marco de Jongh',
+    licenseeEmail: 'buyer@example.com',
+    acceptLicence: true,
+    ...overrides,
+  };
+}
 
 describe('validateCncArtwork', () => {
   it('requires authentication', async () => {
@@ -227,5 +284,163 @@ describe('validateCncArtwork', () => {
     await expect(cncPackMutations.validateCncArtwork(undefined, { config: config() }, authCtx())).rejects.toMatchObject(
       { extensions: { code: 'CNC_INVALID_CONFIG' } },
     );
+  });
+});
+
+describe('createCncCheckoutSession', () => {
+  it('requires authentication', async () => {
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, anonCtx()),
+    ).rejects.toThrow(/Authentication required/);
+    expect(createPendingOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('reserves an order and returns the hosted checkout URL', async () => {
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx()),
+    ).resolves.toEqual({
+      orderId: '7',
+      licenceId: 'BS-CNC-ABC234',
+      checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1',
+    });
+
+    const [orderInput] = createPendingOrderMock.mock.calls[0] as [Record<string, unknown>];
+    // Written in pending_payment with the catalogue's price — never queued
+    // here. `pending_payment -> queued` happens in the paid webhook alone.
+    expect(orderInput).toMatchObject({
+      userId: 'user-1',
+      tier: 'personal',
+      boardName: 'kilter',
+      layoutId: 8,
+      sizeId: 25,
+      amountCents: 14900,
+      currency: 'AUD',
+      licenseeEmail: 'buyer@example.com',
+    });
+    expect(attachCheckoutSessionMock).toHaveBeenCalledWith(7, 'cs_test_1');
+
+    const [sessionInput] = createCheckoutSessionMock.mock.calls[0] as [{ successUrl: string; cancelUrl: string }];
+    expect(sessionInput.successUrl).toBe('https://www.boardsesh.com/build-plans/orders/BS-CNC-ABC234?checkout=success');
+    expect(sessionInput.cancelUrl).toBe(
+      'https://www.boardsesh.com/build-plans/orders/BS-CNC-ABC234?checkout=cancelled',
+    );
+  });
+
+  it('refuses an order when the licence was not accepted', async () => {
+    await expect(
+      cncPackMutations.createCncCheckoutSession(
+        undefined,
+        { input: checkoutInput({ acceptLicence: false }) },
+        authCtx(),
+      ),
+    ).rejects.toThrow(/accept the manufacturing licence/);
+    expect(createPendingOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a commercial licence with no named installation', async () => {
+    // Without the site name a commercial single-build licence is just a more
+    // expensive personal one, and the licence record says nothing useful.
+    await expect(
+      cncPackMutations.createCncCheckoutSession(
+        undefined,
+        { input: checkoutInput({ tier: 'commercial_single' }) },
+        authCtx(),
+      ),
+    ).rejects.toThrow(/one named installation/);
+    expect(createPendingOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts a commercial licence that names its installation', async () => {
+    await expect(
+      cncPackMutations.createCncCheckoutSession(
+        undefined,
+        { input: checkoutInput({ tier: 'commercial_single', customerSiteName: 'Northside Climbing' }) },
+        authCtx(),
+      ),
+    ).resolves.toMatchObject({ licenceId: 'BS-CNC-ABC234' });
+
+    const [orderInput] = createPendingOrderMock.mock.calls[0] as [{ tier: string; customerSiteName: string | null }];
+    expect(orderInput).toMatchObject({ tier: 'commercial_single', customerSiteName: 'Northside Climbing' });
+  });
+
+  it('treats an empty site name on a personal licence as no site name', async () => {
+    // A configurator that keeps the field mounted after a tier switch submits
+    // "", which is an empty field rather than a value.
+    await expect(
+      cncPackMutations.createCncCheckoutSession(
+        undefined,
+        { input: checkoutInput({ customerSiteName: '  ' }) },
+        authCtx(),
+      ),
+    ).resolves.toMatchObject({ licenceId: 'BS-CNC-ABC234' });
+
+    const [orderInput] = createPendingOrderMock.mock.calls[0] as [{ customerSiteName: string | null }];
+    expect(orderInput.customerSiteName).toBeNull();
+  });
+
+  it('refuses a personal licence that names a customer site', async () => {
+    await expect(
+      cncPackMutations.createCncCheckoutSession(
+        undefined,
+        { input: checkoutInput({ customerSiteName: 'Northside Climbing' }) },
+        authCtx(),
+      ),
+    ).rejects.toThrow(/commercial tier/);
+  });
+
+  it('refuses a board that is not on sale, before writing anything', async () => {
+    await expect(
+      cncPackMutations.createCncCheckoutSession(
+        undefined,
+        { input: checkoutInput({ config: config({ sizeId: 999, artwork: [] }) }) },
+        authCtx(),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
+    expect(createPendingOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses to take an order when Stripe is not configured', async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
+    expect(createPendingOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('will not sell artwork the generator says does not fit', async () => {
+    validateArtworkMock.mockResolvedValue({ ok: false, collisions: [{ artwork_index: 0, kind: 'keepout' }] });
+
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput({ config: config() }) }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
+    expect(createPendingOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('does not call the generator when there is no artwork', async () => {
+    await cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx());
+    expect(validateArtworkMock).not.toHaveBeenCalled();
+  });
+
+  it('cancels the reserved order and reports CNC_CHECKOUT_UNAVAILABLE when Stripe fails', async () => {
+    createCheckoutSessionMock.mockRejectedValue(new CncStripeUnavailableError('Stripe is down'));
+
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
+
+    // Without a session there is no `checkout.session.expired` to cancel the
+    // row, so it would sit in the buyer's order list forever.
+    expect(transitionOrderMock).toHaveBeenCalledWith(7, 'checkoutFailed');
+  });
+
+  it('still returns the checkout URL when the session id could not be attached', async () => {
+    // The session id is a support convenience; the webhook finds the order by
+    // metadata regardless, so losing it must not cost the buyer their checkout.
+    attachCheckoutSessionMock.mockResolvedValue(null);
+
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx()),
+    ).resolves.toMatchObject({ checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1' });
   });
 });

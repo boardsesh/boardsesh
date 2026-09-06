@@ -91,6 +91,13 @@ function shell(heading: string, body: string): string {
   `;
 }
 
+// Shared with the other transactional-email modules (see `cnc-emails.ts`) so
+// every Boardsesh email uses one shell, one button and one escaping story
+// rather than each module growing its own near-identical copy. Exported as a
+// block at the end of the private helpers so the definitions above stay
+// unannotated and it is obvious in one place what leaves this module.
+export { colors as emailColors, escapeHtml, headerSafe, fromAddress, getTransporter, button, shell };
+
 /**
  * Send the domain-verification email for a gym claim. Clicking the link proves
  * the claimant controls an address at the gym's website domain and transfers
