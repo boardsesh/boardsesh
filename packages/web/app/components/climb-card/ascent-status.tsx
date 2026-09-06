@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import type { LogbookEntry } from '@boardsesh/board-react';
+import { boardSupportsMirroring } from '@boardsesh/play-view';
 import { AscentStatusIcon } from '@/app/components/ascent-status/ascent-status-icon';
 import {
   normalizeAscentStatus,
@@ -22,6 +23,10 @@ type AscentStatusProps = {
   logbook?: readonly LogbookEntry[];
   /** Board being viewed; decides whether mirrored ticks get their own badge. */
   boardName?: BoardName;
+  /** Layout on that board — only matters for Tension's non-mirroring layout 11.
+   *  Omit when the caller doesn't have it; every other board/layout mirrors
+   *  the same regardless. */
+  layoutId?: number;
   fontSize?: number;
   /** Class for the badge wrapper (e.g. positioning on a thumbnail).
    *  For mirroring boards this is applied to each individual badge. */
@@ -49,6 +54,7 @@ export const AscentStatus = ({
   // 'kilter' keeps the pre-props behaviour for a caller that has no board in
   // hand: a non-mirroring board, so one badge.
   boardName = 'kilter',
+  layoutId,
   fontSize,
   className,
   mirroredClassName,
@@ -69,7 +75,9 @@ export const AscentStatus = ({
     () => getHighestStatus(ascentsForClimb.filter(({ is_mirror }) => is_mirror)),
     [ascentsForClimb],
   );
-  const supportsMirroring = boardName === 'tension' || boardName === 'decoy' || boardName === 'woods';
+  // layoutId only matters for Tension's non-mirroring layout 11; a caller
+  // without it (no layout in scope) gets the common case for every board.
+  const supportsMirroring = boardSupportsMirroring(boardName, layoutId ?? 1);
 
   if (supportsMirroring) {
     if (!regularStatus && !mirroredStatus) return null;

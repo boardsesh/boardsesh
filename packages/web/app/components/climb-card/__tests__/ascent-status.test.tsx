@@ -255,6 +255,49 @@ describe('AscentStatus', () => {
     expect(screen.getByTestId('ascent-badge-mirrored').getAttribute('data-status')).toBe('flash');
   });
 
+  it('renders separate mirrored and regular statuses on Woods, same as Tension', () => {
+    renderWithLogbook({
+      boardName: 'woods',
+      logbook: [
+        {
+          uuid: '1',
+          climb_uuid: 'climb-1',
+          angle: 40,
+          is_mirror: false,
+          tries: 2,
+          quality: null,
+          difficulty: null,
+          comment: '',
+          climbed_at: '2025-01-01T00:00:00.000Z',
+          is_ascent: true,
+          status: 'send',
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+        },
+        {
+          uuid: '2',
+          climb_uuid: 'climb-1',
+          angle: 40,
+          is_mirror: true,
+          tries: 1,
+          quality: null,
+          difficulty: null,
+          comment: '',
+          climbed_at: '2025-01-02T00:00:00.000Z',
+          is_ascent: true,
+          status: 'flash',
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+        },
+      ],
+    });
+
+    expect(screen.getByTestId('ascent-badge').getAttribute('data-status')).toBe('send');
+    expect(screen.getByTestId('ascent-badge-mirrored').getAttribute('data-status')).toBe('flash');
+  });
+
   it('renders the badge immediately from accumulated logbook cache updates without a refetch', async () => {
     mockRequest.mockResolvedValue({ ticks: [] });
 
