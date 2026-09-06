@@ -1,6 +1,12 @@
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { CNC_CATALOG, CNC_CATALOG_VERSION, type CncCatalogEntry } from '../../../services/cnc/catalog';
+import {
+  CNC_ARTWORK_FONTS,
+  CNC_CATALOG,
+  CNC_CATALOG_VERSION,
+  CNC_DEFAULT_ARTWORK_FONT,
+  type CncCatalogEntry,
+} from '../../../services/cnc/catalog';
 import { getOrderByLicenceId, listOrdersForUser } from '../../../services/cnc/orders';
 import {
   CncConfigMappingError,
@@ -10,7 +16,13 @@ import {
 } from '../../../services/cnc/worker-client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { logger } from '../../../utils/logger';
-import { CncLicenceIdSchema } from '../../../validation/schemas';
+import {
+  CNC_MAX_ARTWORK_ITEMS,
+  CNC_MAX_ARTWORK_TEXT_LENGTH,
+  CNC_MAX_ARTWORK_WIDTH_MM,
+  CNC_MIN_ARTWORK_WIDTH_MM,
+  CncLicenceIdSchema,
+} from '../../../validation/schemas';
 import { CNC_WORKER_UNAVAILABLE_CODE, invalidConfigError, resolveCncConfig } from './config';
 import { toGraphQLOrder } from './order-mapper';
 
@@ -164,6 +176,19 @@ function requireUserId(ctx: ConnectionContext): string {
   return ctx.userId;
 }
 
+/**
+ * The font list with the default at the front.
+ *
+ * The schema documents position rather than adding a `defaultFont` field: a
+ * client renders a select and preselects the first entry, which is exactly the
+ * behaviour a separate field would have to be wired up to produce. Computed
+ * once at module load — the list is a constant.
+ */
+const ARTWORK_FONTS_DEFAULT_FIRST: string[] = [
+  CNC_DEFAULT_ARTWORK_FONT,
+  ...CNC_ARTWORK_FONTS.filter((font) => font !== CNC_DEFAULT_ARTWORK_FONT),
+];
+
 export const cncPackQueries = {
   /**
    * Everything on sale. Public and unauthenticated: the configurator renders
@@ -174,6 +199,16 @@ export const cncPackQueries = {
     return {
       version: CNC_CATALOG_VERSION,
       entries: CNC_CATALOG.map(toGraphQLCatalogEntry),
+      artworkFonts: ARTWORK_FONTS_DEFAULT_FIRST,
+      // Published from the same constants that enforce them at checkout, so a
+      // configurator's slider bounds and the server's rejection can never
+      // disagree. A client that ignores them still gets CNC_INVALID_CONFIG.
+      artworkRules: {
+        maxItems: CNC_MAX_ARTWORK_ITEMS,
+        minWidthMm: CNC_MIN_ARTWORK_WIDTH_MM,
+        maxWidthMm: CNC_MAX_ARTWORK_WIDTH_MM,
+        maxTextChars: CNC_MAX_ARTWORK_TEXT_LENGTH,
+      },
     };
   },
 

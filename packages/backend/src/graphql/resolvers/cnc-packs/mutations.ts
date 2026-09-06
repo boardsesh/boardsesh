@@ -8,6 +8,7 @@ import {
   getOrderByLicenceId,
   transitionOrder,
 } from '../../../services/cnc/orders';
+import { attachAssetsToOrder } from '../../../services/cnc/art-assets';
 import { createCheckoutSessionForOrder, isStripeConfigured } from '../../../services/cnc/stripe';
 import { sendCncOrderStuckAdminEmail } from '../../../email/cnc-emails';
 import { isDownloadable } from '../../../services/cnc/order-state';
@@ -17,7 +18,7 @@ import { logger } from '../../../utils/logger';
 import { CncLicenceIdSchema, CreateCncCheckoutSessionInputSchema } from '../../../validation/schemas';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { requireAdmin } from '../social/roles';
-import { invalidConfigError, resolveCncConfig } from './config';
+import { artworkAssetIds, invalidConfigError, resolveArtworkAssets, resolveCncConfig } from './config';
 import { toGraphQLOrder } from './order-mapper';
 import { toGraphQLWorkerError } from './queries';
 
@@ -108,10 +109,15 @@ export const cncPackMutations = {
       // Run inside this try, alongside the generator call, so a mapping
       // error out of resolveCncConfig (bad option, unparseable sheet stock)
       // classifies as CNC_INVALID_CONFIG the same way a worker rejection does.
-      const { layoutRequest, artwork } = resolveCncConfig(config);
+      const { layoutRequest, artwork, artworkInput } = resolveCncConfig(config);
+      // The same ownership gate checkout runs, and for the same reason: this
+      // call makes the generator FETCH an asset, so an unchecked id here would
+      // be a way to have Boardsesh read somebody else's upload on request —
+      // even if the only thing that comes back is "it fits".
+      await resolveArtworkAssets(ctx.userId!, artworkInput);
       verdict = await validateArtwork(layoutRequest, artwork);
     } catch (error) {
-      throw toGraphQLWorkerError(error);
+      throw error instanceof GraphQLError ? error : toGraphQLWorkerError(error);
     }
 
     // Fail closed on a shape we do not recognise. A malformed verdict read as
@@ -172,7 +178,13 @@ export const cncPackMutations = {
     } catch (error) {
       throw error instanceof GraphQLError ? error : toGraphQLWorkerError(error);
     }
-    const { entry, options, setIds, layoutRequest, artwork } = resolved;
+    const { entry, options, setIds, layoutRequest, artwork, artworkInput } = resolved;
+
+    // Every asset the buyer named has to be theirs. Checked before the order
+    // row and before Stripe, because the alternative is charging for a pack
+    // built from a file we had no right to route — and because a foreign id is
+    // the buyer's to fix, not an outage.
+    const storedArtwork = await resolveArtworkAssets(ctx.userId!, artworkInput);
 
     const tierPrice = entry.tiers.find((candidate) => candidate.tier === validated.tier);
     if (!tierPrice) {
@@ -209,7 +221,10 @@ export const cncPackMutations = {
       sizeId: entry.sizeId,
       setIds: setIds.join(','),
       options,
-      artwork: validated.config.artwork ?? null,
+      // The enriched copy, not the raw input: it carries each asset's key and
+      // mime, so the order can still be generated after the upload rows are
+      // gone with their owner's account.
+      artwork: storedArtwork.length > 0 ? storedArtwork : null,
       licenseeName: validated.licenseeName,
       licenseeEmail: validated.licenseeEmail,
       customerSiteName: validated.customerSiteName,
@@ -220,6 +235,19 @@ export const cncPackMutations = {
       currency: tierPrice.currency,
       amountCents: tierPrice.priceCents,
     });
+
+    // Stamped after the row exists, so an asset is only ever marked as bought
+    // once there is an order to point at. Best-effort: a lost write here makes
+    // an attached file look like a draft to a cleanup sweep, which is a far
+    // better failure than a checkout that dies after the row is written.
+    const assetIds = artworkAssetIds(artworkInput);
+    if (assetIds.length > 0) {
+      try {
+        await attachAssetsToOrder(order.id, assetIds);
+      } catch (error) {
+        logger.warn('[cnc-checkout] could not attach art assets to the order', { orderId: order.id, error });
+      }
+    }
 
     const orderUrl = `${webPublicUrl()}/build-plans/orders/${encodeURIComponent(order.licenceId)}`;
 
