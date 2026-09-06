@@ -8,7 +8,7 @@ import {
   getOrderByLicenceId,
   transitionOrder,
 } from '../../../services/cnc/orders';
-import { attachAssetsToOrder } from '../../../services/cnc/art-assets';
+import { attachAssetsToOrder, releaseArtAssetsForOrder } from '../../../services/cnc/art-assets';
 import { createCheckoutSessionForOrder, isStripeConfigured } from '../../../services/cnc/stripe';
 import { sendCncOrderStuckAdminEmail } from '../../../email/cnc-emails';
 import { isDownloadable } from '../../../services/cnc/order-state';
@@ -254,6 +254,11 @@ export const cncPackMutations = {
         } catch (cancelError) {
           logger.error('[cnc-checkout] failed to cancel the reserved order', { orderId: order.id, cancelError });
         }
+        // A short attach still stamped the rows it did claim. Leaving them
+        // pointed at a cancelled order would make the buyer's next checkout
+        // fail the same way forever, since `attachAssetsToOrder` skips an
+        // asset that already carries an order id.
+        await releaseArtAssetsForOrder(order.id);
         throw invalidConfigError('That artwork is not yours. Upload it again and retry.');
       };
 
@@ -333,6 +338,10 @@ export const cncPackMutations = {
           cancelError: cancelError instanceof Error ? cancelError.message : String(cancelError),
         });
       }
+      // Hand the artwork back. The stamp went on before Stripe was asked for a
+      // session, so without this the buyer's upload stays bound to an order
+      // that was never paid for and their retry cannot attach it again.
+      await releaseArtAssetsForOrder(order.id);
       throw checkoutUnavailableError();
     }
 

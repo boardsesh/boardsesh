@@ -21,6 +21,7 @@ const {
   requireAdminMock,
   getOwnedArtAssetsMock,
   attachAssetsToOrderMock,
+  releaseArtAssetsForOrderMock,
 } = vi.hoisted(() => ({
   validateArtworkMock: vi.fn(),
   createPendingOrderMock: vi.fn(),
@@ -32,6 +33,7 @@ const {
   requireAdminMock: vi.fn(async () => {}),
   getOwnedArtAssetsMock: vi.fn(async () => new Map()),
   attachAssetsToOrderMock: vi.fn(async () => 0),
+  releaseArtAssetsForOrderMock: vi.fn(async () => 0),
 }));
 
 vi.mock('../../../../services/cnc/worker-client', async (importOriginal) => ({
@@ -58,6 +60,7 @@ vi.mock('../../../../services/cnc/art-assets', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../services/cnc/art-assets')>()),
   getOwnedArtAssets: getOwnedArtAssetsMock,
   attachAssetsToOrder: attachAssetsToOrderMock,
+  releaseArtAssetsForOrder: releaseArtAssetsForOrderMock,
 }));
 
 vi.mock('../../../../services/cnc/stripe', async (importOriginal) => ({
@@ -142,6 +145,7 @@ beforeEach(() => {
   getAccountEmailMock.mockResolvedValue('account-holder@example.com');
   getOwnedArtAssetsMock.mockResolvedValue(new Map());
   attachAssetsToOrderMock.mockResolvedValue(0);
+  releaseArtAssetsForOrderMock.mockResolvedValue(0);
 });
 
 afterEach(() => {
@@ -507,6 +511,9 @@ describe('createCncCheckoutSession', () => {
     ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
 
     expect(transitionOrderMock).toHaveBeenCalledWith(7, 'checkoutFailed');
+    // A partial attach stamped whatever it did claim; those rows go back to
+    // the buyer with the order they were claimed for.
+    expect(releaseArtAssetsForOrderMock).toHaveBeenCalledWith(7);
   });
 
   it('cancels the order and refuses checkout when stamping the asset throws', async () => {
@@ -521,6 +528,26 @@ describe('createCncCheckoutSession', () => {
     ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
 
     expect(transitionOrderMock).toHaveBeenCalledWith(7, 'checkoutFailed');
+  });
+
+  it('hands the artwork back when Stripe will not open a session, so the buyer can retry', async () => {
+    // The stamp goes on before Stripe is asked for anything. Leaving it there
+    // would bind the upload to an order nobody will ever pay for, and
+    // `attachAssetsToOrder` skips an asset that already carries an order id —
+    // so the buyer's next checkout would fail the same way forever.
+    getOwnedArtAssetsMock.mockResolvedValue(
+      new Map([['asset-1', { id: 'asset-1', key: 'cnc-art/user-1/asset-1.svg', mime: 'image/svg+xml' }]]),
+    );
+    validateArtworkMock.mockResolvedValue({ ok: true, collisions: [] });
+    attachAssetsToOrderMock.mockResolvedValue(1);
+    createCheckoutSessionMock.mockRejectedValue(new CncStripeUnavailableError('Stripe is down'));
+
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutWithAsset('asset-1') }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
+
+    expect(transitionOrderMock).toHaveBeenCalledWith(7, 'checkoutFailed');
+    expect(releaseArtAssetsForOrderMock).toHaveBeenCalledWith(7);
   });
 
   it('requires authentication', async () => {
