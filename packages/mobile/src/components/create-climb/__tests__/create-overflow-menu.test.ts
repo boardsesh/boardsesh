@@ -59,7 +59,16 @@ describe('buildCreateOverflowMenu', () => {
   it('treats a multi-frame climb as a route even without the flag', () => {
     // An edit or a fork opens on frames that already exist; the controller seeds
     // the flag from them, but the menu must not depend on that having happened.
-    expect(actionsOf(state({ routeMode: false, frameCount: 3 }))).toEqual(['deleteFrame', 'makeBoulder', 'newClimb']);
+    const rows = buildCreateOverflowMenu(state({ routeMode: false, frameCount: 3 }), translate);
+    expect(rows.map((row) => row.action)).toEqual(['deleteFrame', 'makeBoulder', 'newClimb']);
+
+    // And the way out is blocked here for the same reason it is with the flag
+    // set: the block keys off the FRAMES, not the mode. Asserting only the row
+    // set would leave it open to reading as an enabled row that silently no-ops
+    // against `leaveRouteMode`'s own guard.
+    const makeBoulder = rows.find((row) => row.action === 'makeBoulder');
+    expect(makeBoulder?.disabled).toBe(true);
+    expect(makeBoulder?.label).toBe('mobile.create.routeMenu.makeBoulderBlocked');
   });
 
   it('offers no route rows at all on a single-frame board', () => {
