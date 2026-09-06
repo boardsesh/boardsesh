@@ -9,6 +9,17 @@ import { BACKEND_URL } from '../env';
 const SCREENSHOT_ENDPOINT = `${BACKEND_URL}/api/feedback-screenshots`;
 
 /**
+ * Deadline for one screenshot.
+ *
+ * `authenticatedFetch` sets no deadline of its own, and a request that never
+ * settles is worse here than a failed one: the sheet's `finally` never runs, so
+ * `isUploading` stays true, the submit button stays disabled, and the reporter
+ * gets no error — a form that silently refuses to submit. Generous enough for a
+ * few hundred KB on a bad gym connection, finite so the UI always recovers.
+ */
+const UPLOAD_TIMEOUT_MS = 30_000;
+
+/**
  * Upload one picked (and already-compressed) screenshot and return the storage
  * key the feedback/verdict mutation carries. Reuses `authenticatedFetch`, which
  * attaches the bearer token, refreshes it when stale, and retries once on 401.
@@ -36,6 +47,7 @@ export async function uploadFeedbackScreenshot(uri: string): Promise<string> {
   const response = await authenticatedFetch(SCREENSHOT_ENDPOINT, {
     method: 'POST',
     body: formData,
+    signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -90,21 +102,35 @@ export function clearScreenshotUploadCache(): void {
 /**
  * Upload every picked screenshot and return their keys in the order they were
  * picked — the order the thumbnails were shown in, and the order they appear in
- * the GitHub comment. One request per file (the endpoint takes a single file),
- * fired in parallel. Any failure rejects: the caller keeps the typed report and
- * toasts, rather than filing a half-illustrated one, and the shots that DID land
- * are remembered so the retry only sends what is missing.
+ * the GitHub comment. One request per file, because the endpoint takes one file.
+ *
+ * ONE AT A TIME, deliberately. Reading a picked file goes through
+ * `expo-file-system`'s `File.bytes()`, and every Expo `AsyncFunction` that does
+ * not ask for its own queue runs on a single shared SERIAL dispatch queue
+ * (`expo.modules.AsyncFunctionQueue`). Firing four uploads at once puts four
+ * `bytes()` reads in that one queue, interleaved with whatever else is using it
+ * — the board renderer is a heavy user (see #5187) — so the reads starve behind
+ * unrelated native work and the requests never settle. Parallelism buys nothing
+ * against a serial queue anyway. The avatar upload never hit this because it
+ * only ever sends one file.
+ *
+ * Any failure rejects: the caller keeps the typed report and toasts rather than
+ * filing a half-illustrated one, and the shots that DID land are remembered so
+ * the retry only sends what is missing.
  */
 export async function uploadFeedbackScreenshots(uris: readonly string[]): Promise<string[]> {
-  return Promise.all(
-    uris.map(async (uri) => {
-      const cached = uploadedKeysByUri.get(uri);
-      if (cached) return cached;
-      const key = await uploadFeedbackScreenshot(uri);
-      rememberUploadedKey(uri, key);
-      return key;
-    }),
-  );
+  const keys: string[] = [];
+  for (const uri of uris) {
+    const cached = uploadedKeysByUri.get(uri);
+    if (cached) {
+      keys.push(cached);
+      continue;
+    }
+    const key = await uploadFeedbackScreenshot(uri);
+    rememberUploadedKey(uri, key);
+    keys.push(key);
+  }
+  return keys;
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
