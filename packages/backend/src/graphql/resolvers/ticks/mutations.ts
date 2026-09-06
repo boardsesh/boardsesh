@@ -35,6 +35,7 @@ import { resolveClimbCatalogPresence } from '../../../db/queries/climbs';
 import { resolveMoonBoardTickAngle } from '@boardsesh/db/queries';
 import { captureBackendEvent } from '../../../services/analytics/posthog';
 import { logger } from '../../../utils/logger';
+import { reconcileInferredSessions } from '../../../services/inferred-sessions/reconcile';
 import {
   acquireUserTickMutationLock,
   isDirectAuroraTwin,
@@ -714,6 +715,14 @@ export const tickMutations = {
         await tx.update(sessions).set({ lastActivity: new Date() }).where(inArray(sessions.id, sessionIds));
       }
 
+      // Removing a climb can split a run in two or empty a session outright, so the
+      // window around each deleted tick is redrawn. Deduped by timestamp because a
+      // logical ascent's rows share one climbed_at and would otherwise reconcile the
+      // same window repeatedly.
+      for (const climbedAt of new Set(affectedTicks.map((tick) => tick.climbedAt))) {
+        await reconcileInferredSessions(tx, userId, new Date(climbedAt));
+      }
+
       return { affectedTicks, detachedBetaLinks: detachedBetaLinks.length > 0 };
     });
 
@@ -1136,6 +1145,12 @@ export const tickMutations = {
             .onConflictDoNothing();
         }
 
+        // Group this climb into the session it belongs to, inside the same
+        // transaction so the tick and its assignment commit together. Inert unless
+        // INFERRED_SESSIONS_ENABLED is set. A tick that already carries an explicit
+        // session still goes through, because the run around it may need redrawing.
+        await reconcileInferredSessions(tx, userId, new Date(createdTick.climbedAt));
+
         return [createdTick];
       },
       { isolationLevel: 'read committed' },
@@ -1433,6 +1448,16 @@ export const tickMutations = {
       const sessionIds = distinctTickSessions(existingTicks);
       if (sessionIds.length > 0) {
         await tx.update(sessions).set({ lastActivity: new Date() }).where(inArray(sessions.id, sessionIds));
+      }
+
+      // An edit can move climbed_at, which moves the tick between runs — so both the
+      // window it left and the one it joined need redrawing. Reconciling the old
+      // timestamp first leaves the tick's new home authoritative.
+      for (const climbedAt of new Set([
+        ...existingTicks.map((tick) => tick.climbedAt),
+        ...updatedTicks.map((tick) => tick.climbedAt),
+      ])) {
+        await reconcileInferredSessions(tx, userId, new Date(climbedAt));
       }
 
       return { existingTicks, updatedTicks, updatedTarget, movedBetaLinks };
