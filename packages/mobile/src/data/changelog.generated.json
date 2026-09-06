@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-06T00:26:48.986Z",
+  "generatedAt": "2026-09-06T01:42:49.615Z",
   "entries": [
+    {
+      "prNumber": 5153,
+      "category": "new",
+      "title": "Favourited climbs now show a heart in the climb list, so you can spot your saved projects while scrolling",
+      "mergedAt": "2026-09-06T01:41:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5153"
+    },
     {
       "prNumber": 5150,
       "category": "fixed",
