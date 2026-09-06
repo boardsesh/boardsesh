@@ -10,6 +10,7 @@ import {
   type ConnectivityTransitionEvent,
   type DeviceReachability,
   type DeviceState,
+  type OfflineModeChange,
   type ProbeVerdict,
 } from '../connectivity-store';
 
@@ -40,6 +41,7 @@ function createHarness(options?: { random?: number }) {
   const pendingProbes: Deferred[] = [];
   const onlineWrites: boolean[] = [];
   const transitions: ConnectivityTransitionEvent[] = [];
+  const offlineModeChanges: OfflineModeChange[] = [];
   const deviceReading: { device: DeviceState; deviceReachability: DeviceReachability } = {
     device: 'unknown',
     deviceReachability: 'unknown',
@@ -70,6 +72,9 @@ function createHarness(options?: { random?: number }) {
     onTransition: (event) => {
       transitions.push(event);
     },
+    onOfflineModeChange: (change) => {
+      offlineModeChanges.push(change);
+    },
   });
 
   return {
@@ -78,6 +83,7 @@ function createHarness(options?: { random?: number }) {
     readDeviceState,
     onlineWrites,
     transitions,
+    offlineModeChanges,
     deviceReading,
     get time() {
       return currentTime;
@@ -543,6 +549,108 @@ describe('connectivity store — recovery', () => {
 });
 
 describe('connectivity store — offline mode, kill switch and dev override', () => {
+  // PR-B: the store stays pure, so persistence and the `Offline Mode Toggled`
+  // event both ride this one callback out to `start-connectivity.ts`.
+  it('hands the deliberate flip to the binding, with the source and the pre-flip reason', () => {
+    const harness = createHarness();
+
+    harness.store.setOfflineMode(true, 'more');
+
+    expect(harness.offlineModeChanges).toEqual([{ enabled: true, source: 'more', reasonBefore: null }]);
+  });
+
+  // The whole reason `reasonBefore` is captured before the flip: read afterwards
+  // it would say `offline_mode` on every event, and the banner's escape hatch
+  // during an outage would be indistinguishable from a calm deliberate choice.
+  it('reports the reason from BEFORE the flip, not the one the flip creates', async () => {
+    const harness = createHarness();
+    await forceOutage(harness);
+    expect(harness.store.getSnapshot().reason).toBe('backend_unreachable');
+
+    harness.store.setOfflineMode(true, 'banner');
+
+    expect(harness.offlineModeChanges).toEqual([
+      { enabled: true, source: 'banner', reasonBefore: 'backend_unreachable' },
+    ]);
+    expect(harness.store.getSnapshot().reason).toBe('offline_mode');
+  });
+
+  it('reports turning it back off too, so the event pairs up', () => {
+    const harness = createHarness();
+    harness.store.setOfflineMode(true, 'more');
+    harness.store.setOfflineMode(false, 'sign_out');
+
+    expect(harness.offlineModeChanges.map((change) => [change.enabled, change.source])).toEqual([
+      [true, 'more'],
+      [false, 'sign_out'],
+    ]);
+  });
+
+  it('says nothing when the switch was already where the caller asked for', () => {
+    const harness = createHarness();
+    harness.store.setOfflineMode(true, 'more');
+    harness.offlineModeChanges.length = 0;
+
+    harness.store.setOfflineMode(true, 'banner');
+
+    expect(harness.offlineModeChanges).toEqual([]);
+  });
+
+  // Seeding is the persisted value coming back in — at launch, or as the echo of
+  // our own write. Filing an event for it would double-count every toggle and
+  // stamp one on every cold start of a phone left in offline mode.
+  it('seeds the persisted value without persisting or reporting it again', () => {
+    const harness = createHarness();
+
+    harness.store.seedOfflineMode(true);
+
+    expect(harness.store.getSnapshot()).toMatchObject({ offlineMode: true, reason: 'offline_mode' });
+    expect(harness.offlineModeChanges).toEqual([]);
+  });
+
+  it('closes the write/echo loop: seeding the value we just set changes nothing', () => {
+    const harness = createHarness();
+    harness.store.setOfflineMode(true, 'more');
+    const listener = vi.fn();
+    harness.store.subscribe(listener);
+
+    harness.store.seedOfflineMode(true);
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(harness.offlineModeChanges).toHaveLength(1);
+  });
+
+  // A seed that turns the mode OFF is the same state machine as the toggle: the
+  // stale outage goes, and the server is asked again.
+  it('a seed that turns it off re-asks the server like the toggle does', async () => {
+    const harness = createHarness();
+    await forceOutage(harness);
+    harness.store.seedOfflineMode(true);
+    harness.probe.mockClear();
+
+    harness.store.seedOfflineMode(false);
+
+    expect(harness.store.getSnapshot()).toMatchObject({ backend: 'unknown', effectiveOffline: false });
+    expect(harness.probe).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the flip when the binding throws — the UI already moved', () => {
+    const store = createConnectivityStore({
+      now: () => 1_000,
+      schedule: () => () => undefined,
+      probe: () => Promise.resolve<ProbeVerdict>('healthy'),
+      readDeviceState: () => Promise.resolve({ device: 'unknown' as const, deviceReachability: 'unknown' as const }),
+      random: () => 0.5,
+      onOnlineChange: vi.fn(),
+      onOfflineModeChange: () => {
+        throw new Error('mmkv is on fire');
+      },
+    });
+
+    expect(() => store.setOfflineMode(true, 'more')).not.toThrow();
+    expect(store.getSnapshot()).toMatchObject({ offlineMode: true, effectiveOffline: true });
+  });
+
   it('re-asks the server the moment offline mode is turned back off', async () => {
     const harness = createHarness();
     await forceOutage(harness);

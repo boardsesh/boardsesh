@@ -335,6 +335,8 @@
       },
       "offline": {
         "title": "Offline",
+        "offlineMode": "Offline-Modus",
+        "offlineModeDescription": "Stoppt jede Anfrage, bis du ihn wieder ausschaltest. Heruntergeladene Boards funktionieren weiter und deine Begehungen warten auf deinem Handy.",
         "autoDownload": "Boards offline halten",
         "autoDownloadDescription": "Lade jedes Board herunter, das du nutzt, damit du ohne Empfang stöbern und Begehungen eintragen kannst. Neue Boards laden automatisch.",
         "downloadingAll_one": "1 Board wird für offline geladen",

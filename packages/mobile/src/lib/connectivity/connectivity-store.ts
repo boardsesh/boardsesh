@@ -42,6 +42,27 @@ export type BackendState = 'reachable' | 'unreachable' | 'unknown';
 export type OfflineModeSource = 'more' | 'banner' | 'sign_out';
 
 /**
+ * One deliberate flip of the offline-mode switch, handed to the platform
+ * binding so persistence and the `Offline Mode Toggled` event happen in ONE
+ * place — `start-connectivity.ts` — instead of at each of the three call sites.
+ *
+ * `reasonBefore` is the snapshot's `reason` from BEFORE the flip, which is the
+ * only thing that separates "I chose to go offline while everything was fine"
+ * from "I took the banner's escape hatch during an outage". Read it off the
+ * event: by the time a listener runs, the flip has already rewritten it.
+ *
+ * There is deliberately no pending-write count here. The outbox lives in
+ * SQLite, so the store would have to run a query — on the UI tap, from a module
+ * that owns no database handle — to fill it in, and the same number is already
+ * on `Offline Read Served` and the drain events. Not worth a query per toggle.
+ */
+export type OfflineModeChange = {
+  enabled: boolean;
+  source: OfflineModeSource;
+  reasonBefore: ConnectivityReason | null;
+};
+
+/**
  * What moved the machine. Read as the CHANNEL, not the polarity: `failure` is
  * the request-outcome channel (`reportBackendOutcome`), so a recovery confirmed
  * by a request that finally succeeded also arrives with `failure`.
@@ -101,6 +122,8 @@ export type ConnectivityStoreDeps = {
   /** The ONE place React Query's `onlineManager.setOnline` is called. */
   onOnlineChange: (online: boolean) => void;
   onTransition?: (event: ConnectivityTransitionEvent) => void;
+  /** Fires only for a DELIBERATE toggle, never for `seedOfflineMode`. */
+  onOfflineModeChange?: (change: OfflineModeChange) => void;
 };
 
 export type ConnectivityStoreHandle = {
@@ -116,6 +139,13 @@ export type ConnectivityStoreHandle = {
   confirmBackendAvailability: () => Promise<boolean>;
   setAppActive: (active: boolean) => void;
   setOfflineMode: (enabled: boolean, source: OfflineModeSource) => void;
+  /**
+   * Adopt a persisted/echoed value WITHOUT re-persisting it or filing a toggle
+   * event. This is how the stored setting reaches the store at launch, and how
+   * a write from anywhere else gets mirrored — including the echo of our own
+   * write, which lands back here and no-ops because the value already matches.
+   */
+  seedOfflineMode: (enabled: boolean) => void;
   setDetectionEnabled: (enabled: boolean) => void;
   setDevForcedUnreachable: (forced: boolean) => void;
   dispose: () => void;
@@ -573,11 +603,9 @@ export function createConnectivityStore(deps: ConnectivityStoreDeps): Connectivi
     }
   }
 
-  // `_source` is carried by the type (not used here) so the toggle's telemetry
-  // and PR-B's persistence both read it off ONE call, rather than every caller
-  // remembering to emit its own event.
-  function setOfflineMode(enabled: boolean, _source: OfflineModeSource): void {
-    if (disposed || state.offlineMode === enabled) return;
+  /** The state machine half of the toggle. Answers whether anything moved. */
+  function applyOfflineMode(enabled: boolean): boolean {
+    if (disposed || state.offlineMode === enabled) return false;
     state.offlineMode = enabled;
     if (!enabled) {
       // Leaving offline mode: nothing we believed about the server while nobody
@@ -592,11 +620,30 @@ export function createConnectivityStore(deps: ConnectivityStoreDeps): Connectivi
     publish();
     if (enabled) {
       cancelProbeTimer();
-      return;
+      return true;
     }
     // Guarded like the ladder itself: with no uplink, or with detection killed,
     // there is nothing a probe could tell us.
     if (state.device !== 'offline' && state.detectionEnabled) void runProbe('offline_mode_off');
+    return true;
+  }
+
+  // `source` is carried on the change event rather than used here, so the
+  // toggle's persistence and its telemetry both read it off ONE call instead of
+  // every caller remembering to write the setting and emit its own event.
+  function setOfflineMode(enabled: boolean, source: OfflineModeSource): void {
+    // Captured BEFORE the flip: `reason` becomes `offline_mode` the moment the
+    // switch goes on, so read after the fact it would say the same thing on
+    // every event and could never distinguish the outage escape hatch.
+    const reasonBefore = currentSnapshot.reason;
+    if (!applyOfflineMode(enabled)) return;
+    try {
+      deps.onOfflineModeChange?.({ enabled, source, reasonBefore });
+    } catch (error) {
+      // The state already moved and the UI already re-rendered. A binding that
+      // failed to persist or to file the event must not undo that.
+      if (__DEV__) console.warn('[connectivity] offline-mode sink threw', error);
+    }
   }
 
   function setDetectionEnabled(enabled: boolean): void {
@@ -655,6 +702,9 @@ export function createConnectivityStore(deps: ConnectivityStoreDeps): Connectivi
     confirmBackendAvailability,
     setAppActive,
     setOfflineMode,
+    seedOfflineMode: (enabled: boolean) => {
+      applyOfflineMode(enabled);
+    },
     setDetectionEnabled,
     setDevForcedUnreachable,
     dispose: () => {
@@ -716,6 +766,7 @@ const lateBoundDeps: ConnectivityStoreDeps = {
   onOnlineChange: (online) =>
     bindings.onOnlineChange ? bindings.onOnlineChange(online) : defaultOnOnlineChange(online),
   onTransition: (event) => bindings.onTransition?.(event),
+  onOfflineModeChange: (change) => bindings.onOfflineModeChange?.(change),
 };
 
 function store(): ConnectivityStoreHandle {
@@ -775,10 +826,28 @@ export function setDevForcedUnreachable(forced: boolean): void {
   store().setDevForcedUnreachable(forced);
 }
 
-/** In-memory for PR-A; PR-B persists it. Inert on Expo web, which has no toggle. */
+/**
+ * The deliberate toggle, from all three surfaces (More, the banner, sign-out).
+ * Persistence and the `Offline Mode Toggled` event ride the binding's
+ * `onOfflineModeChange`, so no caller has to remember either. Inert on Expo web,
+ * which has no toggle and no native store behind one.
+ */
 export function setOfflineMode(enabled: boolean, source: OfflineModeSource): void {
   if (bindings.offlineModeSupported === false) return;
   store().setOfflineMode(enabled, source);
+}
+
+/**
+ * Whether this build has an offline-mode switch at all, so a surface can decide
+ * not to draw one rather than draw a dead one. False only on Expo web, where
+ * `setOfflineMode` is inert and nothing persists the choice. Unbound reads as
+ * supported, matching `setOfflineMode`: a consumer that runs before the app root
+ * started the store is on native.
+ *
+ * A launch constant, not reactive — nothing flips it after `bindConnectivityStore`.
+ */
+export function isOfflineModeSupported(): boolean {
+  return bindings.offlineModeSupported !== false;
 }
 
 export function __resetConnectivityStoreForTests(): void {

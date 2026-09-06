@@ -591,6 +591,8 @@
       },
       "offline": {
         "title": "Sin conexión",
+        "offlineMode": "Modo sin conexión",
+        "offlineModeDescription": "Detiene todas las peticiones hasta que lo desactives. Los plafones descargados siguen funcionando y tus encadenes quedan en cola en el móvil.",
         "autoDownload": "Mantener los plafones sin conexión",
         "autoDownloadDescription": "Descarga todos los plafones que usas para explorarlos y registrar tus ascensos sin conexión. Los plafones nuevos se descargan automáticamente.",
         "downloadingAll_one": "Descargando 1 plafón para usarlo sin conexión",

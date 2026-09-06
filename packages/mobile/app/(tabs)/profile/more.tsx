@@ -26,7 +26,7 @@ import {
   forgetDownloadAllTap,
 } from '../../../src/settings';
 import { useConnectivity } from '../../../src/lib/connectivity/use-connectivity';
-import { setDevForcedUnreachable } from '../../../src/lib/connectivity/connectivity-store';
+import { isOfflineModeSupported, setDevForcedUnreachable } from '../../../src/lib/connectivity/connectivity-store';
 import { notifyOutboxChanged, useOutboxSummary } from '../../../src/offline/outbox-store';
 import { RECLAIMABLE_VISIBLE_BYTES } from '../../../src/db/storage-usage';
 import {
@@ -41,6 +41,7 @@ import { useDownloadedScopeKeys } from '../../../src/offline/use-downloaded-scop
 import { getHttpClient } from '../../../src/lib/graphql/client';
 import { hapticLight, hapticSelection } from '../../../src/lib/haptics';
 import { getDevMetadataSection } from '../../../src/components/dev-metadata-section';
+import { buildOfflineModeRow } from '../../../src/components/offline-mode-row';
 import { useBottomChromeDiagnosticsEligible } from '../../../src/components/BottomChromeDebugOverlay';
 import { MoreForm } from '../../../src/components/MoreForm';
 import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../../src/components/MoreForm.types';
@@ -174,7 +175,7 @@ export default function MoreScreen() {
   // signal, our backend being unreachable, and Offline mode alike, which is
   // exactly the "nothing is going out right now" the two offline surfaces below
   // branch on. `devForcedUnreachable` drives the tester switch in Development.
-  const { effectiveOffline, devForcedUnreachable } = useConnectivity();
+  const { effectiveOffline, devForcedUnreachable, offlineMode } = useConnectivity();
   const { data: deadLetterCount = 0, refetch: refetchDeadLetters } = useQuery({
     queryKey: ['deadLetters', 'count', schemaReady],
     queryFn: () => getDeadLetterCount(db),
@@ -638,15 +639,26 @@ export default function MoreScreen() {
     ],
   });
 
-  // Offline — keep boards available with no signal. Gated by the offline feature
-  // flag (the whole offline surface is flag-gated). Turning it on downloads every
-  // current board now; future boards auto-download via the adopt-on-select flow.
+  // Offline — the switch that stops every request, then keeping boards available
+  // with no signal. Gated by the offline feature flag (the whole offline surface
+  // is flag-gated). Turning auto-download on downloads every current board now;
+  // future boards auto-download via the adopt-on-select flow.
   if (offlineEnabled) {
     sections.push({
       key: 'offline',
       title: t('mobile.more.offline.title'),
       footer: offlineFooter,
       rows: [
+        // First, because it decides whether anything below it can reach the
+        // network at all. Native only: on Expo web there is no storage behind
+        // the switch and `setOfflineMode` is inert, and a row that did nothing
+        // would be worse than no row.
+        //
+        // It sits inside the `offlineEnabled` gate with the rest of the section.
+        // That gate is a constant today, but if it ever went false with the mode
+        // ON, the climber is not stranded: the connectivity banner is up the
+        // whole time offline mode is on, and its "Go online" turns it back off.
+        ...(isOfflineModeSupported() ? [buildOfflineModeRow(t, offlineMode)] : []),
         {
           kind: 'toggle',
           key: 'autoOfflineBoards',

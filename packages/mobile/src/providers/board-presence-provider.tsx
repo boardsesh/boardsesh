@@ -38,6 +38,7 @@ import {
   SCREENSHOT_SEED_BOARD_ID,
 } from '../lib/board-presence/screenshot-wall-seed';
 import { getWsClient } from '../lib/graphql/ws-client';
+import { selectOfflineMode, useConnectivityField } from '../lib/connectivity/use-connectivity';
 import { track } from '../lib/analytics';
 import { BoardDisambiguationSheet } from '../components/board-discovery/BoardDisambiguationSheet';
 
@@ -184,19 +185,44 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     candidates: BoardCandidate[];
   } | null>(null);
 
-  // The injected transport, built once. Presence is always-on, so the shared
-  // hook always has a client to attach its subscription to. Screenshot builds
-  // swap in a seed client that serves canned real climbs (no graphql-ws), so the
-  // kiosk lights up in the simulator; the branch dead-strips in normal builds.
+  // Screenshot builds swap in a seed client that serves canned real climbs (no
+  // graphql-ws), so the kiosk lights up in the simulator; the branch dead-strips
+  // in normal builds. Read once here so the offline gate below can tell a
+  // network transport from a purely local one.
+  const usesSeedTransport = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+
+  // The injected transport, built once.
   const client = useMemo<MobileBoardPresenceClient | null>(
-    () =>
-      process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1'
-        ? createScreenshotBoardPresenceClient()
-        : createMobileBoardPresenceClient(getWsClient),
-    [],
+    () => (usesSeedTransport ? createScreenshotBoardPresenceClient() : createMobileBoardPresenceClient(getWsClient)),
+    [usesSeedTransport],
   );
   const clientRef = useRef(client);
   clientRef.current = client;
+
+  // Offline mode has to reach the wall feed too (issue #4862). The shared
+  // presence hook subscribes whenever it holds a board AND a client, and every
+  // one of its transport calls — the subscription, each catch-up fetch, the
+  // foreground refresh — goes through `getWsClient()`, which OPENS a socket on
+  // demand. So the socket `ConnectivityBridge` disposes would come straight back
+  // the next time a board binds or the app is foregrounded.
+  //
+  // Handing the hook `null` is its documented inert state: it resets, subscribes
+  // to nothing, and `refresh()` becomes a no-op. Passing the real client back on
+  // the store's edge re-subscribes and catches up from the durable history in one
+  // go — the same defer-and-resume shape as `use-session-realtime`, expressed
+  // through the prop the hook already understands.
+  //
+  // Gated on `offlineMode` alone, NOT `effectiveOffline`. A dropped signal or a
+  // backend blip already has an answer here: graphql-ws retries, the feed stays
+  // on screen and goes not-live. Widening the gate would blank the wall's history
+  // on every tunnel. Offline mode is a deliberate, sticky choice, and clearing a
+  // live feed nobody is allowed to fetch is what the climber asked for.
+  //
+  // The imperative controls below keep the ungated `clientRef`: resolving and
+  // binding a board, or reporting a lit climb, is one-shot and user-initiated, so
+  // it fails visibly instead of redialling in the background.
+  const offlineMode = useConnectivityField(selectOfflineMode);
+  const liveClient = offlineMode && !usesSeedTransport ? null : client;
 
   // A bound identity is cached by the exact resolver key. A same-key reconnect
   // can reuse it; a different serial/config/UUID must resolve independently.
@@ -502,7 +528,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
 
   return (
     <BoardPresenceControlsContext.Provider value={controls}>
-      <BoardPresenceProvider boardId={boardId} client={client} onCatchUp={handleCatchUp}>
+      <BoardPresenceProvider boardId={boardId} client={liveClient} onCatchUp={handleCatchUp}>
         <BoardPresenceForegroundSync />
         {children}
       </BoardPresenceProvider>

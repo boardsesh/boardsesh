@@ -335,6 +335,8 @@
       },
       "offline": {
         "title": "Hors ligne",
+        "offlineMode": "Mode hors ligne",
+        "offlineModeDescription": "Coupe toutes les requêtes jusqu'à ce que tu le désactives. Les boards téléchargées continuent de fonctionner et tes croix attendent sur ton téléphone.",
         "autoDownload": "Garder les boards hors ligne",
         "autoDownloadDescription": "Télécharge toutes les boards que tu utilises pour les parcourir et enregistrer tes croix hors ligne. Les nouvelles boards se téléchargent automatiquement.",
         "downloadingAll_one": "Téléchargement d'1 board pour le hors ligne",
