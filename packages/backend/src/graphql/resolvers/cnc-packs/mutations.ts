@@ -5,20 +5,25 @@ import {
   attachCheckoutSession,
   createPendingOrder,
   getAccountEmail,
+  getOrderByLicenceId,
   transitionOrder,
 } from '../../../services/cnc/orders';
 import { createCheckoutSessionForOrder, isStripeConfigured } from '../../../services/cnc/stripe';
-import { webPublicUrl } from '../../../email/email-service';
 import { sendCncOrderStuckAdminEmail } from '../../../email/cnc-emails';
+import { isDownloadable } from '../../../services/cnc/order-state';
+import { createDownloadGrant, isDownloadGrantConfigured } from '../../../services/cnc/download-grant';
+import { backendPublicUrl, webPublicUrl } from '../../../utils/public-urls';
 import { logger } from '../../../utils/logger';
-import { CreateCncCheckoutSessionInputSchema } from '../../../validation/schemas';
+import { CncLicenceIdSchema, CreateCncCheckoutSessionInputSchema } from '../../../validation/schemas';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
+import { requireAdmin } from '../social/roles';
 import { invalidConfigError, resolveCncConfig } from './config';
+import { toGraphQLOrder } from './order-mapper';
 import { toGraphQLWorkerError } from './queries';
 
 /**
- * Write side of CNC build packs: artwork validation and checkout. Downloads and
- * regeneration land in a later PR.
+ * Write side of CNC build packs: artwork validation, checkout, the download
+ * grant a browser redeems, and the admin rebuild.
  */
 
 /**
@@ -50,6 +55,31 @@ function checkoutUnavailableError(): GraphQLError {
   return new GraphQLError('Checkout is unavailable right now. Nothing has been charged — try again in a minute.', {
     extensions: { code: CNC_CHECKOUT_UNAVAILABLE_CODE },
   });
+}
+
+/**
+ * Ceiling on download grants per minute.
+ *
+ * A grant is cheap to mint but it is the thing that turns into a licensed file,
+ * so this is what stops a compromised session from farming an unbounded supply
+ * of five-minute links. Twenty is far more than a person clicking Download.
+ */
+const RATE_LIMIT_DOWNLOAD_GRANT = 20;
+const RATE_LIMIT_DOWNLOAD_GRANT_OP = 'createCncDownloadGrant';
+
+/** The order exists and is the caller's, but there is nothing to download yet. */
+export const CNC_PACK_NOT_DOWNLOADABLE_CODE = 'CNC_PACK_NOT_DOWNLOADABLE';
+
+/**
+ * Not this caller's order — or not an order at all.
+ *
+ * One error for both, exactly as `Query.cncOrder` returns null for both: a
+ * licence id identifies an order, it never grants access to one, and a
+ * distinguishable "exists but not yours" turns the 29-bit id space into an
+ * oracle for which licences are real.
+ */
+function orderNotFoundError(): GraphQLError {
+  return new GraphQLError('No such order.', { extensions: { code: 'NOT_FOUND' } });
 }
 
 export const cncPackMutations = {
@@ -265,5 +295,104 @@ export const cncPackMutations = {
     }
 
     return { orderId: String(order.id), licenceId: order.licenceId, checkoutUrl: session.url };
+  },
+
+  /**
+   * Mint a five-minute download link for the caller's own pack.
+   *
+   * The grant exists because a browser navigation cannot carry an
+   * Authorization header, and putting a session token in a URL — where it lands
+   * in history, in a referrer and in every proxy log — is not an option. So the
+   * grant is the weakest thing that works: one order, one user, five minutes,
+   * no revocation, and the download route re-checks ownership and refund status
+   * when it is redeemed anyway. The token says who asked; it never says what
+   * they may have.
+   *
+   * `isDownloadable` is checked here as well as at redemption, so the order
+   * page can show an accurate error rather than handing the buyer a link that
+   * 409s.
+   */
+  createCncDownloadGrant: async (
+    _: unknown,
+    { licenceId }: { licenceId: string },
+    ctx: ConnectionContext,
+  ): Promise<{ url: string; expiresAt: string }> => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_DOWNLOAD_GRANT, RATE_LIMIT_DOWNLOAD_GRANT_OP);
+
+    const validLicenceId = validateInput(CncLicenceIdSchema, licenceId, 'licenceId');
+
+    if (!isDownloadGrantConfigured()) {
+      logger.error('[cnc-download] CNC_DOWNLOAD_TOKEN_SECRET is not set; cannot mint a grant');
+      throw new GraphQLError('Downloads are unavailable right now. Try again in a minute.', {
+        extensions: { code: CNC_PACK_NOT_DOWNLOADABLE_CODE },
+      });
+    }
+
+    const order = await getOrderByLicenceId(validLicenceId);
+    if (!order || order.userId !== ctx.userId) throw orderNotFoundError();
+
+    if (!isDownloadable(order)) {
+      throw new GraphQLError('This pack is not ready to download.', {
+        extensions: { code: CNC_PACK_NOT_DOWNLOADABLE_CODE, status: order.status },
+      });
+    }
+
+    const { token, expiresAt } = createDownloadGrant({ orderId: order.id, userId: order.userId! }, new Date());
+
+    return {
+      url: `${backendPublicUrl()}/api/cnc/packs/${encodeURIComponent(order.licenceId)}/download?token=${encodeURIComponent(token)}`,
+      expiresAt: expiresAt.toISOString(),
+    };
+  },
+
+  /**
+   * Rebuild a pack. Admin only.
+   *
+   * Same licence id and same output key, so the regenerated zip REPLACES the
+   * old one rather than issuing a second licensed copy of the same wall. The
+   * generation counter is what tells the fingerprint trail the two builds
+   * apart.
+   *
+   * The attempt budget resets: a `failed` order has already spent its three
+   * attempts, and requeueing without a reset would give the rebuild exactly one
+   * try. Reading `generation` outside the UPDATE is safe because the transition
+   * is conditional on `ready`/`failed` — two concurrent regenerates cannot both
+   * win, since the first moves the row to `queued`.
+   */
+  regenerateCncPack: async (_: unknown, { licenceId }: { licenceId: string }, ctx: ConnectionContext) => {
+    await requireAdmin(ctx);
+
+    const validLicenceId = validateInput(CncLicenceIdSchema, licenceId, 'licenceId');
+
+    const order = await getOrderByLicenceId(validLicenceId);
+    if (!order) throw orderNotFoundError();
+
+    const now = new Date();
+    const requeued = await transitionOrder(order.id, 'regenerate', {
+      generation: order.generation + 1,
+      queuedAt: now,
+      attempts: 0,
+      claimToken: null,
+      workerId: null,
+      claimedAt: null,
+      heartbeatAt: null,
+      lastError: null,
+    });
+
+    if (!requeued) {
+      throw new GraphQLError(`An order in "${order.status}" cannot be regenerated.`, {
+        extensions: { code: CNC_PACK_NOT_DOWNLOADABLE_CODE, status: order.status },
+      });
+    }
+
+    logger.info('[cnc-regenerate] requeued a pack', {
+      orderId: requeued.id,
+      licenceId: requeued.licenceId,
+      generation: requeued.generation,
+      by: ctx.userId,
+    });
+
+    return toGraphQLOrder(requeued);
   },
 };
