@@ -69,6 +69,8 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     defaultValue: String!
     "How to read \`values\` and \`defaultValue\`: string, number or boolean."
     valueType: String!
+    "True when this option only matters on a wall that is building a kicker. A kickerless wall (or one where the buyer left the kicker off) can hide it."
+    kickerOnly: Boolean!
   }
 
   """

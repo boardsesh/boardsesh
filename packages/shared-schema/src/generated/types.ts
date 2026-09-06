@@ -1432,6 +1432,8 @@ export type CncManufacturingOption = {
   defaultValue: Scalars['String']['output'];
   /** Camel-case option key, e.g. `sheetStock` or `tnutHoleDiameterMm`. */
   key: Scalars['String']['output'];
+  /** True when this option only matters on a wall that is building a kicker. A kickerless wall (or one where the buyer left the kicker off) can hide it. */
+  kickerOnly: Scalars['Boolean']['output'];
   /** How to read `values` and `defaultValue`: string, number or boolean. */
   valueType: Scalars['String']['output'];
   /** The complete allowed set. Anything outside it is rejected, not clamped. */
@@ -5446,8 +5448,10 @@ export type Query = {
    * validated against the catalogue before the generator is touched.
    *
    * Set `includeHoles` to draw the drill pattern; it adds roughly 40 KB of
-   * hole positions and is left off for a plain panel outline. Hold ids and
-   * set-screw angles are never returned.
+   * hole positions and is left off for a plain panel outline. Requesting the
+   * hole list requires a signed-in user and is held to a tighter rate limit
+   * than the hole-free preview. Hold ids and set-screw angles are never
+   * returned.
    */
   cncLayout: Scalars['JSON']['output'];
   /**
@@ -10417,6 +10421,7 @@ export type CncManufacturingOptionResolvers<
 > = ResolversObject<{
   defaultValue?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   key?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  kickerOnly?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   valueType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   values?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;

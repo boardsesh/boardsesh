@@ -36,8 +36,12 @@ vi.mock('../../../../services/cnc/worker-client', async (importOriginal) => ({
   fetchLayout: fetchLayoutMock,
 }));
 
-import { cncPackQueries } from '../queries';
+import { cncPackQueries, toGraphQLWorkerError } from '../queries';
+import { applyRateLimit } from '../../shared/helpers';
 import { CNC_CATALOG_VERSION } from '../../../../services/cnc/catalog';
+import { CncConfigMappingError } from '../../../../services/cnc/worker-client';
+
+const applyRateLimitMock = vi.mocked(applyRateLimit);
 
 const OWNER_ID = 'user-owner';
 const OTHER_ID = 'user-other';
@@ -159,9 +163,21 @@ describe('cncCatalog', () => {
       values: ['2440x1220', '3600x1220'],
       defaultValue: '2440x1220',
       valueType: 'string',
+      kickerOnly: false,
     });
     expect(byKey.get('tnutHoleDiameterMm')).toMatchObject({ defaultValue: '12.5', valueType: 'number' });
     expect(byKey.get('engraveHoldIds')).toMatchObject({ values: ['false', 'true'], valueType: 'boolean' });
+  });
+
+  it('flags kickerMatClearanceMm as the only kicker-only option', () => {
+    const entry = cncPackQueries.cncCatalog().entries[3];
+    const byKey = new Map(entry.manufacturingOptions.map((option) => [option.key, option]));
+
+    expect(byKey.get('kickerMatClearanceMm')).toMatchObject({ kickerOnly: true });
+    for (const [key, option] of byKey) {
+      if (key === 'kickerMatClearanceMm') continue;
+      expect(option.kickerOnly).toBe(false);
+    }
   });
 
   it("reports prices as amountCents, not the service layer's priceCents", () => {
@@ -237,12 +253,52 @@ describe('cncLayout', () => {
     expect(fetchLayoutMock).toHaveBeenCalledTimes(1);
   });
 
-  it('passes includeHoles through to the generator', async () => {
+  it('passes includeHoles through to the generator for an authenticated caller', async () => {
     fetchLayoutMock.mockResolvedValue({ panels: [] });
 
-    await cncPackQueries.cncLayout(undefined, { config: config(), includeHoles: true }, anonCtx());
+    await cncPackQueries.cncLayout(undefined, { config: config(), includeHoles: true }, authCtx(OWNER_ID));
 
     expect(fetchLayoutMock).toHaveBeenCalledWith(expect.anything(), { includeHoles: true });
+  });
+
+  it('requires authentication when includeHoles is set', async () => {
+    await expect(
+      cncPackQueries.cncLayout(undefined, { config: config(), includeHoles: true }, anonCtx()),
+    ).rejects.toThrow(/Authentication required/);
+
+    expect(fetchLayoutMock).not.toHaveBeenCalled();
+  });
+
+  it('stays public without includeHoles', async () => {
+    fetchLayoutMock.mockResolvedValue({ panels: [] });
+
+    await expect(cncPackQueries.cncLayout(undefined, { config: config() }, anonCtx())).resolves.toEqual({
+      panels: [],
+    });
+  });
+
+  it('applies the public 30/min ceiling when includeHoles is left off', async () => {
+    fetchLayoutMock.mockResolvedValue({ panels: [] });
+
+    await cncPackQueries.cncLayout(undefined, { config: config() }, anonCtx());
+
+    expect(applyRateLimitMock).toHaveBeenCalledWith(anonCtx(), 30, 'cncLayout');
+  });
+
+  it('applies the tighter 10/min ceiling when includeHoles is set', async () => {
+    fetchLayoutMock.mockResolvedValue({ panels: [] });
+
+    await cncPackQueries.cncLayout(undefined, { config: config(), includeHoles: true }, authCtx(OWNER_ID));
+
+    expect(applyRateLimitMock).toHaveBeenCalledWith(authCtx(OWNER_ID), 10, 'cncLayoutHoles');
+  });
+
+  it('classifies a config-mapping error the same as a worker rejection: CNC_INVALID_CONFIG', () => {
+    const error = toGraphQLWorkerError(
+      new CncConfigMappingError('Manufacturing option "sheetStock" is not <length>x<width>: bogus'),
+    );
+
+    expect(error).toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
   });
 });
 

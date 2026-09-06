@@ -51,6 +51,23 @@ export class CncWorkerValidationError extends Error {
 }
 
 /**
+ * A submitted manufacturing option could not be translated into the
+ * generator's request shape — not a finite number, not a `<length>x<width>`
+ * sheet stock string, or anything else that means the value itself is
+ * malformed rather than merely unavailable.
+ *
+ * Distinct from `CncWorkerUnavailableError` on purpose: nothing left the
+ * process, so this is not an outage. The resolvers classify it the same way
+ * as `CncWorkerValidationError` — `CNC_INVALID_CONFIG`, the buyer's to fix.
+ */
+export class CncConfigMappingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CncConfigMappingError';
+  }
+}
+
+/**
  * Wall clock budget for one generator call.
  *
  * The layout call sits in front of a keystroke-driven configurator, so a slow
@@ -210,7 +227,7 @@ function numericOption(options: CncOrderOptions, key: string): number {
   const value = options[key];
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed)) {
-    throw new CncWorkerUnavailableError(`Manufacturing option "${key}" is not a number`);
+    throw new CncConfigMappingError(`Manufacturing option "${key}" is not a number`);
   }
   return parsed;
 }
@@ -226,9 +243,7 @@ function parseSheetStock(sheetStock: unknown): { lengthMm: number; widthMm: numb
   const lengthMm = Number(parts[0]);
   const widthMm = Number(parts[1]);
   if (parts.length !== 2 || !Number.isFinite(lengthMm) || !Number.isFinite(widthMm)) {
-    throw new CncWorkerUnavailableError(
-      `Manufacturing option "sheetStock" is not <length>x<width>: ${String(sheetStock)}`,
-    );
+    throw new CncConfigMappingError(`Manufacturing option "sheetStock" is not <length>x<width>: ${String(sheetStock)}`);
   }
   return { lengthMm, widthMm };
 }
@@ -364,10 +379,21 @@ function toValidationError(status: number, body: unknown): CncWorkerValidationEr
   return new CncWorkerValidationError(code, message, parsed.details ?? parsed.detail ?? null);
 }
 
-async function readJson(response: Response): Promise<unknown> {
+/**
+ * Parse a response body as JSON.
+ *
+ * A body read aborted by the same timeout that guards the request is reported
+ * as `CncWorkerUnavailableError`, not folded into the generic "unreadable
+ * body" case: the generator answered headers but then stalled streaming the
+ * body, which is exactly the outage the timeout exists to catch.
+ */
+async function readJson(response: Response, signal: AbortSignal): Promise<unknown> {
   try {
     return await response.json();
-  } catch {
+  } catch (error) {
+    if (signal.aborted) {
+      throw new CncWorkerUnavailableError('The pack generator did not respond in time', error);
+    }
     return null;
   }
 }
@@ -377,8 +403,11 @@ async function readJson(response: Response): Promise<unknown> {
  *
  * The timeout is an explicit AbortController rather than `AbortSignal.timeout`
  * so the timer is a normal `setTimeout` — schedulable, cancellable, and visible
- * to fake timers in tests. It is always cleared, including on the success path,
- * so a slow-but-finished request does not leave the event loop holding a timer.
+ * to fake timers in tests. It covers reading the response body as well as
+ * receiving headers: a generator that answers instantly but then stalls
+ * streaming the body must not hang past `WORKER_TIMEOUT_MS` either. The timer
+ * is always cleared exactly once, in a `finally` around the whole call, so a
+ * slow-but-finished request does not leave the event loop holding it.
  */
 async function postToWorker(path: string, body: unknown): Promise<unknown> {
   if (!isWorkerConfigured()) {
@@ -388,52 +417,54 @@ async function postToWorker(path: string, body: unknown): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), WORKER_TIMEOUT_MS);
 
-  let response: Response;
   try {
-    response = await fetch(`${workerBaseUrl()}${path}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${process.env.CNC_WORKER_SECRET}`,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    const aborted = controller.signal.aborted;
-    logger.warn('[cnc-worker] request failed', { path, aborted, error });
-    throw new CncWorkerUnavailableError(
-      aborted ? 'The pack generator did not respond in time' : 'The pack generator could not be reached',
-      error,
-    );
+    let response: Response;
+    try {
+      response = await fetch(`${workerBaseUrl()}${path}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${process.env.CNC_WORKER_SECRET}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      const aborted = controller.signal.aborted;
+      logger.warn('[cnc-worker] request failed', { path, aborted, error });
+      throw new CncWorkerUnavailableError(
+        aborted ? 'The pack generator did not respond in time' : 'The pack generator could not be reached',
+        error,
+      );
+    }
+
+    if (response.status === 422) {
+      throw toValidationError(response.status, await readJson(response, controller.signal));
+    }
+
+    if (!response.ok) {
+      // 401/403 means our secret is wrong or rotated — an outage from the
+      // buyer's side, but an operator problem, so it is logged at error while
+      // every other bad status is a warning.
+      const isAuthFailure = response.status === 401 || response.status === 403;
+      const detail = { path, status: response.status };
+      if (isAuthFailure) {
+        logger.error('[cnc-worker] rejected our credentials; check CNC_WORKER_SECRET', detail);
+      } else {
+        logger.warn('[cnc-worker] unexpected status', detail);
+      }
+      throw new CncWorkerUnavailableError(`The pack generator returned HTTP ${response.status}`);
+    }
+
+    const parsed = await readJson(response, controller.signal);
+    if (parsed === null || typeof parsed !== 'object') {
+      logger.warn('[cnc-worker] response body was not an object', { path });
+      throw new CncWorkerUnavailableError('The pack generator returned an unreadable response');
+    }
+    return parsed;
   } finally {
     clearTimeout(timeout);
   }
-
-  if (response.status === 422) {
-    throw toValidationError(response.status, await readJson(response));
-  }
-
-  if (!response.ok) {
-    // 401/403 means our secret is wrong or rotated — an outage from the
-    // buyer's side, but an operator problem, so it is logged at error while
-    // every other bad status is a warning.
-    const isAuthFailure = response.status === 401 || response.status === 403;
-    const detail = { path, status: response.status };
-    if (isAuthFailure) {
-      logger.error('[cnc-worker] rejected our credentials; check CNC_WORKER_SECRET', detail);
-    } else {
-      logger.warn('[cnc-worker] unexpected status', detail);
-    }
-    throw new CncWorkerUnavailableError(`The pack generator returned HTTP ${response.status}`);
-  }
-
-  const parsed = await readJson(response);
-  if (parsed === null || typeof parsed !== 'object') {
-    logger.warn('[cnc-worker] response body was not an object', { path });
-    throw new CncWorkerUnavailableError('The pack generator returned an unreadable response');
-  }
-  return parsed;
 }
 
 export type FetchLayoutOptions = {

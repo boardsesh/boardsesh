@@ -7,6 +7,7 @@ vi.mock('../../../utils/logger', () => ({
 import { logger } from '../../../utils/logger';
 import { findCatalogEntry, validateCatalogOptions, type CncCatalogEntry } from '../catalog';
 import {
+  CncConfigMappingError,
   clearCncWorkerCache,
   CncWorkerUnavailableError,
   CncWorkerValidationError,
@@ -147,6 +148,20 @@ describe('toLayoutRequest', () => {
     const request = toLayoutRequest({ entry: aliased, options: defaultOptions(aliased), setIds: [26, 27] });
     expect(request.board.size_id).toBe(25);
   });
+
+  it('throws CncConfigMappingError for a sheetStock that is not <length>x<width>', () => {
+    const entry = entry10x12();
+    const options = { ...defaultOptions(entry), sheetStock: '2440' };
+
+    expect(() => toLayoutRequest({ entry, options, setIds: [26, 27] })).toThrow(CncConfigMappingError);
+  });
+
+  it('throws CncConfigMappingError for a manufacturing option that is not a number', () => {
+    const entry = entry10x12();
+    const options = { ...defaultOptions(entry), panelThicknessMm: 'thick' };
+
+    expect(() => toLayoutRequest({ entry, options, setIds: [26, 27] })).toThrow(CncConfigMappingError);
+  });
 });
 
 describe('toArtworkItems', () => {
@@ -240,6 +255,30 @@ describe('fetchLayout', () => {
         new Promise<Response>((_resolve, reject) => {
           init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
         }),
+    );
+
+    const pending = fetchLayout(toLayoutRequestForDefaults());
+    const assertion = expect(pending).rejects.toBeInstanceOf(CncWorkerUnavailableError);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await assertion;
+  });
+
+  it('turns a timeout stalled reading the response body into unavailable rather than hanging', async () => {
+    // Headers resolve immediately — only the body read stalls. If the abort
+    // timer were cleared as soon as `fetch()` resolved (before the body is
+    // read), this would hang forever instead of timing out.
+    vi.useFakeTimers();
+    stubFetch(
+      async (_url, init) =>
+        ({
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+            }),
+          text: async () => '{}',
+        }) as Response,
     );
 
     const pending = fetchLayout(toLayoutRequestForDefaults());

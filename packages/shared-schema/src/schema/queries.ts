@@ -947,8 +947,10 @@ export const queriesTypeDefs = /* GraphQL */ `
     validated against the catalogue before the generator is touched.
 
     Set \`includeHoles\` to draw the drill pattern; it adds roughly 40 KB of
-    hole positions and is left off for a plain panel outline. Hold ids and
-    set-screw angles are never returned.
+    hole positions and is left off for a plain panel outline. Requesting the
+    hole list requires a signed-in user and is held to a tighter rate limit
+    than the hole-free preview. Hold ids and set-screw angles are never
+    returned.
     """
     cncLayout(config: CncBoardConfigInput!, includeHoles: Boolean): JSON!
 
