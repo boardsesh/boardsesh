@@ -98,10 +98,39 @@ const WIDTH_STEP_MM = 10;
 /** Font size the hidden measuring text is drawn at. Anything works; this keeps the maths obvious. */
 const MEASURE_FONT_SIZE = 100;
 
+/**
+ * The font the generator cuts a label with. `getBBox` measures whatever font
+ * actually resolves in the browser rendering this element, and a system-default
+ * sans varies by OS and browser — a shape that never matches Liberation Sans
+ * throws the measured width and aspect off by enough to nudge a placement that
+ * reads "clear" here into a collision once the backend actually cuts it.
+ * Liberation Sans is metric-compatible with Arial, so pinning both the drawn
+ * label and the hidden measuring text to the same stack keeps the measurement
+ * close to the real outline. Must match the drawn `<text>` below exactly, or
+ * the two would measure two different shapes.
+ */
+const LABEL_FONT_FAMILY = "'Liberation Sans', Arial, Helvetica, sans-serif";
+
 const RESIZE_HANDLES: readonly ResizeHandle[] = ['bottomLeft', 'bottomRight', 'topRight', 'topLeft'];
 
 /** How far above the label the rotate handle floats, as a fraction of the label's height. */
 const ROTATE_HANDLE_GAP = 0.9;
+
+/**
+ * Keep the drag/resize/rotate handles a usable size across the catalogue's
+ * whole width range. A fixed fraction of the WALL (the old `wall.widthMm / 70`)
+ * draws a handle the size of a dinner plate on a small logo and swamps it, so
+ * this scales with the ITEM instead, clamped so neither a tiny nor a huge item
+ * gets a silly-sized handle.
+ */
+const HANDLE_RADIUS_MIN_MM = 6;
+const HANDLE_RADIUS_MAX_MM = 30;
+const HANDLE_RADIUS_WIDTH_DIVISOR = 8;
+
+/** Corner-to-cursor mapping: the diagonal a corner actually sits on. */
+function resizeHandleClassName(handle: ResizeHandle): string {
+  return handle === 'topLeft' || handle === 'bottomRight' ? styles.wallHandleNwse : styles.wallHandleNesw;
+}
 
 export default function WallSvg({
   wall,
@@ -128,6 +157,11 @@ export default function WallSvg({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const measureRef = useRef<SVGTextElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // The one pointer a gesture captured. `isDragging` alone is not enough: an
+  // unrelated pointer lifting (a second finger, or a stray pointerup bubbling
+  // through) must not end a gesture it never started, or a two-finger touch
+  // would drop a drag mid-move the instant the other finger lifts.
+  const activePointerIdRef = useRef<number | null>(null);
 
   const viewBox = {
     minXMm: -VIEWBOX_PADDING_MM,
@@ -182,7 +216,10 @@ export default function WallSvg({
 
   const heightMm = metrics.aspect > 0 ? placement.widthMm / metrics.aspect : placement.widthMm;
   const fontSize = heightMm * metrics.fontSizePerHeightMm;
-  const handleRadiusMm = Math.max(wall.widthMm / 70, PLACEMENT_GRID_MM);
+  const handleRadiusMm = Math.min(
+    Math.max(placement.widthMm / HANDLE_RADIUS_WIDTH_DIVISOR, HANDLE_RADIUS_MIN_MM),
+    HANDLE_RADIUS_MAX_MM,
+  );
   const hasCollision = collisions.offPanel || collisions.holes.length > 0 || collisions.seams.length > 0;
   const artColour = hasCollision ? theme.palette.error.main : theme.palette.primary.main;
   const collidingHoles = new Set(collisions.holes);
@@ -215,8 +252,17 @@ export default function WallSvg({
     // Guarded because pointer capture is missing in jsdom, and a gesture that
     // only works where the API exists is a gesture nobody can test.
     if (node && typeof node.setPointerCapture === 'function') node.setPointerCapture(event.pointerId);
+    activePointerIdRef.current = event.pointerId;
     setIsDragging(true);
     onPointerDownArt(kind, handle, event.pointerId, toWallMm(event.clientX, event.clientY));
+  };
+
+  /** True only for the pointer a gesture actually captured. */
+  const endGesture = (pointerId: number) => {
+    if (pointerId !== activePointerIdRef.current) return;
+    activePointerIdRef.current = null;
+    setIsDragging(false);
+    onPointerUpArt(pointerId);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -267,14 +313,8 @@ export default function WallSvg({
         if (!isDragging) return;
         onPointerMoveArt(event.pointerId, toWallMm(event.clientX, event.clientY), event.shiftKey);
       }}
-      onPointerUp={(event) => {
-        setIsDragging(false);
-        onPointerUpArt(event.pointerId);
-      }}
-      onPointerCancel={(event) => {
-        setIsDragging(false);
-        onPointerUpArt(event.pointerId);
-      }}
+      onPointerUp={(event) => endGesture(event.pointerId)}
+      onPointerCancel={(event) => endGesture(event.pointerId)}
     >
       {/* Everything measured from the wall, drawn upside down once. */}
       <g transform="scale(1 -1)">
@@ -323,7 +363,7 @@ export default function WallSvg({
         data-testid="cnc-art"
         transform={`translate(${String(placement.xMm)} ${String(-placement.yMm)}) rotate(${String(-placement.rotationDeg)})`}
         onPointerDown={(event) => startGesture(event, 'move', undefined)}
-        style={{ cursor: 'move' }}
+        className={styles.wallDragTarget}
       >
         <rect
           x={-placement.widthMm / 2}
@@ -348,7 +388,6 @@ export default function WallSvg({
             width={placement.widthMm}
             height={heightMm}
             preserveAspectRatio="xMidYMid meet"
-            style={{ userSelect: 'none' }}
           >
             <title>{t('configurator.artwork.upload.previewAlt')}</title>
           </image>
@@ -359,8 +398,8 @@ export default function WallSvg({
             textAnchor="middle"
             dominantBaseline="central"
             fontSize={fontSize}
+            fontFamily={LABEL_FONT_FAMILY}
             fill={artColour}
-            style={{ userSelect: 'none' }}
           >
             {text}
           </text>
@@ -379,7 +418,7 @@ export default function WallSvg({
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
           onPointerDown={(event) => startGesture(event, 'resize', handle)}
-          style={{ cursor: 'nwse-resize' }}
+          className={resizeHandleClassName(handle)}
         >
           <title>{t('configurator.artwork.editor.resizeHandle')}</title>
         </circle>
@@ -392,7 +431,7 @@ export default function WallSvg({
         r={handleRadiusMm}
         fill={artColour}
         onPointerDown={(event) => startGesture(event, 'rotate', undefined)}
-        style={{ cursor: 'grab' }}
+        className={styles.wallRotateHandle}
       >
         <title>{t('configurator.artwork.editor.rotateHandle')}</title>
       </circle>
@@ -401,7 +440,15 @@ export default function WallSvg({
           can be scaled to the millimetre width the buyer asked for. An upload
           has no glyphs to measure and gets its ratio from the image instead. */}
       {!isImage && (
-        <text ref={measureRef} x={0} y={0} fontSize={MEASURE_FONT_SIZE} visibility="hidden" aria-hidden="true">
+        <text
+          ref={measureRef}
+          x={0}
+          y={0}
+          fontSize={MEASURE_FONT_SIZE}
+          fontFamily={LABEL_FONT_FAMILY}
+          visibility="hidden"
+          aria-hidden="true"
+        >
           {text}
         </text>
       )}
