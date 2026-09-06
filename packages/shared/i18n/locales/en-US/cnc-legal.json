@@ -1,0 +1,105 @@
+{
+  "metadata": {
+    "licence": {
+      "title": "Build Plans Manufacturing Licence",
+      "description": "The licence that comes with a Boardsesh build plans pack: what you may manufacture, what you may not share, and who is responsible for the finished wall."
+    }
+  },
+  "licence": {
+    "headerTitle": "Build plans manufacturing licence",
+    "draft": {
+      "title": "Draft licence",
+      "body": "Draft licence, pending review by an Australian IP lawyer; do not rely on it yet. The wording will change before build plans go on sale."
+    },
+    "intro": {
+      "title": "Boardsesh Build Plans Manufacturing Licence",
+      "p1": "This is the agreement that comes with every build plans pack. It says what you may build, what you may not pass on, and who carries the risk once the parts are cut. Plain language on purpose."
+    },
+    "parties": {
+      "title": "1. Parties and definitions",
+      "boardsesh": {
+        "term": "Boardsesh",
+        "definition": "The project that generates the files, issues the licence and keeps the licence record."
+      },
+      "licensee": {
+        "term": "The licensee (you)",
+        "definition": "The person or company named on the licence record for a pack. The licence is issued to that name and is not transferable without our written agreement."
+      },
+      "pack": {
+        "term": "The pack",
+        "definition": "The set of files Boardsesh generated for one order, identified by the licence id printed in them (for example BS-CNC-4K7QP2). Every pack is generated for its own order; no two are the same file."
+      },
+      "wall": {
+        "term": "One wall",
+        "definition": "One physical installation, built once, at one address. Rebuilding the same wall after damage is the same wall. A second wall anywhere else is a second wall."
+      }
+    },
+    "grant": {
+      "title": "2. What you get",
+      "p1": "Buying a pack buys a licence to manufacture. It does not transfer ownership of the files, the geometry or the generator that produced them. Boardsesh keeps every right it holds in the pack.",
+      "p2": "The licence starts when the pack is delivered and lasts as long as you keep to the terms below. There is nothing to renew."
+    },
+    "personal": {
+      "title": "3. Personal licence (A$149)",
+      "summary": "One wall, your own non-commercial use.",
+      "allowed1": "Manufacture one wall from the pack for your own non-commercial use.",
+      "allowed2": "Cut the parts yourself or hand them to a fabricator, as long as the finished wall is yours.",
+      "notAllowed1": "No manufacture for sale, and no manufacture on behalf of anyone else.",
+      "notAllowed2": "No resale, redistribution, sharing or public posting of the files, whole or in part, modified or not.",
+      "notAllowed3": "No using the files or the templates in them to produce derivative manufacturing files for third parties.",
+      "notAllowed4": "A second wall needs a second licence."
+    },
+    "commercial": {
+      "title": "4. Commercial single-build licence (A$750)",
+      "summary": "One identified customer installation, named on the licence.",
+      "allowed1": "Manufacture one wall for the customer installation named on the licence.",
+      "allowed2": "Charge that customer whatever you like for the build. That is the point of this tier.",
+      "notAllowed1": "No resale, redistribution, sharing or public posting of the files, whole or in part, modified or not.",
+      "notAllowed2": "No using the files or the templates in them to produce derivative manufacturing files for third parties, including other customers of yours.",
+      "notAllowed3": "Each further installation needs its own licence, named on its own licence record."
+    },
+    "labels": {
+      "allowed": "You may",
+      "notAllowed": "You may not"
+    },
+    "volume": {
+      "title": "5. Ten builds and OEM",
+      "body": "Cutting at volume, or putting these panels into a product you sell? Ten-build packs and OEM terms are by agreement. <mail>Email us</mail> with what you are building and how many."
+    },
+    "fingerprint": {
+      "title": "6. Fingerprinting and enforcement",
+      "p1": "Every pack is generated individually for one order and carries its licence id in the files.",
+      "p2": "The files also carry markings tied to the purchase. A pack that turns up somewhere it should not can be traced back to the order that bought it.",
+      "p3": "Breaking the terms above ends the licence. Manufacturing after that point is manufacturing without a licence, and we will pursue it."
+    },
+    "compatibility": {
+      "title": "7. Compatibility",
+      "p1": "Build plans are compatible with the Kilter Homewall hole pattern. That is a compatibility statement about hole positions, nothing more.",
+      "p2": "Boardsesh is not affiliated with, endorsed by or sponsored by Aurora Climbing or any board manufacturer. Product names appear only to describe hardware compatibility — see our <legal>legal and intellectual property policy</legal>.",
+      "p3": "Holds, LED kits and app access are not part of a pack. Buy those from the manufacturer."
+    },
+    "safety": {
+      "title": "8. Safety and responsibility",
+      "p1": "You are responsible for the structural engineering, the fixings, the materials and the local building codes for your wall. A climbing wall carries dynamic load and hurts people when it fails.",
+      "p2": "The files are supplied as-is, with no warranty of fitness for any build. Check every dimension against your own sheets, your machine and your space before you cut.",
+      "p3": "Boardsesh is not liable for loss, damage or injury arising from a wall built from a pack. Nothing here removes a right you have under Australian Consumer Law that cannot be excluded."
+    },
+    "refunds": {
+      "title": "9. Refunds",
+      "body": "Generated files cannot be un-delivered, so a pack is not refundable once it has been downloaded. Before download, refunds are at Boardsesh's discretion — email us and we will sort it out."
+    },
+    "privacy": {
+      "title": "10. Privacy",
+      "body": "The licence record — your name, email, licence id and the configuration you ordered — is kept as a contract record. It stays after an account is deleted, because the licence and its proof of purchase outlive the account. Everything else follows the <privacy>privacy policy</privacy>."
+    },
+    "governingLaw": {
+      "title": "11. Governing law",
+      "body": "This licence is governed by the law of Victoria, Australia, and the courts of Victoria have jurisdiction. Placeholder wording, pending legal review."
+    },
+    "contact": {
+      "title": "12. Contact",
+      "body": "Questions about the licence, or a licence you need reissued: <mail>legal@boardsesh.com</mail>."
+    },
+    "footer": "This page is a draft, is provided for information, and is not legal advice."
+  }
+}
