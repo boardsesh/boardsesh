@@ -92,6 +92,7 @@ import { AnalyticsGymProperties } from '../src/components/analytics/AnalyticsGym
 import { AnalyticsPersonProperties } from '../src/components/analytics/AnalyticsPersonProperties';
 import { BoardOpenRecorder } from '../src/components/board-activity/BoardOpenRecorder';
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
+import { LowPowerModeTracker } from '../src/components/analytics/LowPowerModeTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
@@ -838,6 +839,7 @@ function RootLayout() {
                                                               <AnalyticsScreenTracker />
                                                               <ImageCacheTabSweeper />
                                                               <OtaUpdateTracker />
+                                                              <LowPowerModeTracker />
                                                               <InstallReferrerTracker />
                                                             </ShareTargetProvider>
                                                           </DeepLinkProvider>
