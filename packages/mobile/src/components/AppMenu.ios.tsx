@@ -1,11 +1,12 @@
 // AppMenu — iOS implementation, a real native UIMenu via @expo/ui/swift-ui `Menu`.
 //
-// The anchor is a neutral Liquid Glass capsule (`buttonStyle('glass')`) whose label
-// is the active scope text + a trailing chevron — matching the hand-built `clear`
-// glass pill it replaces (neutral, NOT brand-tinted). Each action is a `Button`; the
-// selected row shows a `checkmark` (the native active marker, replacing its scope
-// glyph in the single SF Symbol slot), destructive rows take the system destructive
-// role. SF Symbols come straight from `action.systemIcon`.
+// The text anchor is a neutral Liquid Glass capsule (`buttonStyle('glass')`) whose
+// label is the active scope text + a trailing chevron — matching the hand-built
+// `clear` glass pill it replaces (neutral, NOT brand-tinted). The icon anchor is a
+// bare glyph instead (see `menuModifiers`). Each action is a `Button`; the selected
+// row shows a `checkmark` (the native active marker, replacing its scope glyph in the
+// single SF Symbol slot), destructive rows take the system destructive role, disabled
+// rows take SwiftUI's `.disabled`. SF Symbols come straight from `action.systemIcon`.
 //
 // The menu popup is always a native UIMenu, so this file is OS-split (iOS), not
 // variant-routed — a user who forces the Material variant on iOS still gets it.
@@ -14,7 +15,10 @@ import { Host } from '@expo/ui';
 import { Menu, Button, HStack, Text, Image } from '@expo/ui/swift-ui';
 import {
   buttonStyle,
+  clipShape,
   controlSize,
+  backgroundOverlay,
+  disabled as disabledModifier,
   frame,
   font,
   lineLimit,
@@ -26,8 +30,9 @@ import { useMemo, type ComponentProps } from 'react';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
-import { resolveMenuActions } from './AppMenu.logic';
+import { isMenuActionSelectable, resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
+import { iconMap } from './icon-map';
 
 // Floor the Host height in RN's layout: the native iOS Host under-reports the glass
 // capsule's intrinsic height to React Native, so without a floor the anchor renders
@@ -35,32 +40,47 @@ import type { AppMenuProps } from './AppMenu.types';
 // SwitchRow caveat; ~44pt ≈ the old pill's `glassSize.capsule`.
 const ANCHOR_MIN_HEIGHT = 44;
 
-export function AppMenu({
-  label,
-  actions,
-  onSelectIndex,
-  showCaret = true,
-  maxWidth,
-  accessibilityLabel,
-  accessibilityHint,
-  style,
-}: AppMenuProps) {
+// The glyph inside the 44pt circle, matching the 20–24pt SF Symbols the sibling
+// header buttons draw at that diameter.
+const ICON_ANCHOR_GLYPH_SIZE = 20;
+
+export function AppMenu(props: AppMenuProps) {
+  const { actions, onSelectIndex, maxWidth, accessibilityLabel, accessibilityHint, style } = props;
   const { systemColors } = useTheme();
+  const fillColor = systemColors.fill;
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
+  const iconName = props.iconName;
 
   // Memoised so a re-render with stable inputs doesn't hand the native Menu a fresh
   // modifier array (avoids redundant SwiftUI diffs).
   const menuModifiers = useMemo(
-    () => [
-      // Neutral translucent glass capsule (no brand tint) — matches the old `clear`
-      // GlassSurface pill. iOS 26 Liquid Glass, degrades gracefully on older iOS.
-      buttonStyle('glass'),
-      controlSize('large'),
-      ...(maxWidth != null ? [frame({ maxWidth })] : []),
-      ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
-      ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
-    ],
-    [maxWidth, accessibilityLabel, accessibilityHint],
+    () =>
+      iconName != null
+        ? [
+            // A glyph anchor deliberately skips `buttonStyle('glass')`: the glass
+            // style grows a capsule around its label, which around three dots reads
+            // as a stretched pill next to round siblings. Instead it copies the
+            // creator header's own buttons — a 44pt `systemFill` circle — so the
+            // overflow trigger sits in the same row as the close chevron and the BLE
+            // lightbulb without looking like a different control.
+            frame({ width: ANCHOR_MIN_HEIGHT, height: ANCHOR_MIN_HEIGHT }),
+            backgroundOverlay({ color: fillColor }),
+            clipShape('circle'),
+            buttonStyle('plain'),
+            ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
+            ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
+          ]
+        : [
+            // Neutral translucent glass capsule (no brand tint) — matches the old
+            // `clear` GlassSurface pill. iOS 26 Liquid Glass, degrades gracefully on
+            // older iOS.
+            buttonStyle('glass'),
+            controlSize('large'),
+            ...(maxWidth != null ? [frame({ maxWidth })] : []),
+            ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
+            ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
+          ],
+    [iconName, fillColor, maxWidth, accessibilityLabel, accessibilityHint],
   );
 
   return (
@@ -68,12 +88,20 @@ export function AppMenu({
       <Menu
         modifiers={menuModifiers}
         label={
-          <HStack spacing={spacing[1]} alignment="center">
-            {/* Headline weight + label colour by default — reads like the old pill's
-                bold title; truncates a long scope name within the capped frame. */}
-            <Text modifiers={[font({ textStyle: 'headline' }), lineLimit(1), truncationMode('tail')]}>{label}</Text>
-            {showCaret ? <Image systemName="chevron.down" size={13} color={systemColors.secondaryLabel} /> : null}
-          </HStack>
+          props.iconName != null ? (
+            <Image systemName={iconMap[props.iconName].ios} size={ICON_ANCHOR_GLYPH_SIZE} color={systemColors.label} />
+          ) : (
+            <HStack spacing={spacing[1]} alignment="center">
+              {/* Headline weight + label colour by default — reads like the old pill's
+                  bold title; truncates a long scope name within the capped frame. */}
+              <Text modifiers={[font({ textStyle: 'headline' }), lineLimit(1), truncationMode('tail')]}>
+                {props.label}
+              </Text>
+              {props.showCaret !== false ? (
+                <Image systemName="chevron.down" size={13} color={systemColors.secondaryLabel} />
+              ) : null}
+            </HStack>
+          )
         }
       >
         {resolved.map((action, index) => (
@@ -88,7 +116,11 @@ export function AppMenu({
             // isn't directly resolvable here).
             systemImage={action.iosSystemImage as ComponentProps<typeof Button>['systemImage']}
             role={action.isDestructive ? 'destructive' : undefined}
-            onPress={() => onSelectIndex(index)}
+            modifiers={action.isDisabled ? [disabledModifier(true)] : undefined}
+            onPress={() => {
+              if (!isMenuActionSelectable(resolved, index)) return;
+              onSelectIndex(index);
+            }}
           />
         ))}
       </Menu>

@@ -2,9 +2,10 @@
 // @expo/ui/jetpack-compose. Replaces the react-native-paper `Menu` (a JS M3
 // re-creation) with the real Compose dropdown — M3 ripple, elevation, open/close
 // motion for free. The anchor is a flat `Text` + caret trigger (the M3 app-bar
-// title-menu); the active row shows a leading ✓ (no SF Symbols on Android) and
-// destructive rows take the `m3.error` text colour. Controlled `expanded` state,
-// closed on each select.
+// title-menu) or a bare glyph trigger in icon mode; the active row shows a leading ✓
+// (no SF Symbols on Android), destructive rows take the `m3.error` text colour and
+// disabled rows are `enabled={false}`. Controlled `expanded` state, closed on each
+// select.
 
 import { useMemo, useState } from 'react';
 import { Host } from '@expo/ui';
@@ -13,23 +14,16 @@ import { clickable, padding } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
-import { resolveMenuActions } from './AppMenu.logic';
+import { anchorGlyphForIcon, isMenuActionSelectable, resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
 
 // Down-caret glyph: the Compose `Icon` needs a vector-drawable source and @expo/ui
 // bundles none for a chevron, so a muted glyph stands in (mirrors MoreForm's `›`).
+// The icon anchor's glyph comes from `anchorGlyphForIcon` for the same reason.
 const CARET = '▾';
 
-export function AppMenu({
-  label,
-  actions,
-  onSelectIndex,
-  showCaret = true,
-  maxWidth,
-  accessibilityLabel,
-  accessibilityHint,
-  style,
-}: AppMenuProps) {
+export function AppMenu(props: AppMenuProps) {
+  const { actions, onSelectIndex, maxWidth, accessibilityLabel, accessibilityHint, style } = props;
   const { brandColors, m3, systemColors, colorScheme } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
@@ -41,6 +35,11 @@ export function AppMenu({
   // scheme (the bug this fixes). Sourced from `useTheme()`, which is scheme-aware.
   const labelColor = systemColors.label as string;
   const caretColor = systemColors.secondaryLabel as string;
+  // Same reason a disabled row needs its own colour here: `disabledTextColor` only
+  // reaches the item's default content, not the `Text` we hand to its slot.
+  const disabledColor = systemColors.tertiaryLabel as string;
+
+  const showCaret = props.iconName == null && props.showCaret !== false;
 
   return (
     // `matchContents` (content width AND height): the title-menu hugs its label so it
@@ -63,7 +62,7 @@ export function AppMenu({
       matchContents
       colorScheme={colorScheme}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityLabel={accessibilityLabel ?? props.label}
       accessibilityHint={accessibilityHint}
       style={[maxWidth != null ? { maxWidth } : null, style]}
     >
@@ -73,9 +72,15 @@ export function AppMenu({
             modifiers={[clickable(() => setExpanded(true)), padding(spacing[2], spacing[1], spacing[2], spacing[1])]}
             verticalAlignment="center"
           >
-            <Text style={{ typography: 'titleMedium' }} color={labelColor} maxLines={1} overflow="ellipsis">
-              {label}
-            </Text>
+            {props.iconName != null ? (
+              <Text style={{ typography: 'titleLarge' }} color={labelColor}>
+                {anchorGlyphForIcon(props.iconName)}
+              </Text>
+            ) : (
+              <Text style={{ typography: 'titleMedium' }} color={labelColor} maxLines={1} overflow="ellipsis">
+                {props.label}
+              </Text>
+            )}
             {showCaret ? (
               <Text style={{ typography: 'titleMedium' }} color={caretColor}>
                 {` ${CARET}`}
@@ -85,14 +90,20 @@ export function AppMenu({
         </DropdownMenu.Trigger>
         <DropdownMenu.Items>
           {resolved.map((action, index) => {
-            const itemColor = action.isDestructive ? (m3.error as string) : labelColor;
+            const itemColor = action.isDisabled
+              ? disabledColor
+              : action.isDestructive
+                ? (m3.error as string)
+                : labelColor;
             return (
               <DropdownMenuItem
                 // Composite key: scope entries can share a display name (two gyms named
                 // the same), so the label alone isn't unique — pair it with the position.
                 key={`${index}-${action.label}`}
-                elementColors={{ textColor: itemColor }}
+                enabled={!action.isDisabled}
+                elementColors={{ textColor: itemColor, disabledTextColor: disabledColor }}
                 onClick={() => {
+                  if (!isMenuActionSelectable(resolved, index)) return;
                   setExpanded(false);
                   onSelectIndex(index);
                 }}

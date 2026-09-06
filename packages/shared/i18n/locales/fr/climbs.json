@@ -534,13 +534,15 @@
         "closeHint": "Votre brouillon reste sur ce téléphone."
       },
       "frames": {
-        "delete": "Supprimer l'image",
         "counter": "{{index}}/{{total}}"
       },
       "playback": {
-        "emptyHint": "Ajoute une image pour la jouer comme une voie",
         "addFrame": "Ajouter une image",
-        "emptyA11y": "Lecture de la voie. Ajoute une deuxième image pour l'activer"
+        "addFrameHint": "Copie l'image {{index}} et place la copie juste après",
+        "deleteFrameA11y": "Supprimer l'image {{index}} sur {{total}}",
+        "deleteFrameBlocked": "Supprimer l'image : une voie en garde au moins une",
+        "deleteFrameHint": "Annuler se trouve dans la barre en dessous",
+        "frameDeleted": "Image supprimée. Il en reste {{total}}."
       },
       "holdRole": {
         "title": "Définir le rôle de la prise",
@@ -604,7 +606,13 @@
       "publish": {
         "blocked": "Ajoutez une prise de départ et une prise d'arrivée pour publier"
       },
-      "wallSizeMismatch": "Sélectionne ce format de Woods comme pan actif pour l’allumer."
+      "wallSizeMismatch": "Sélectionne ce format de Woods comme pan actif pour l’allumer.",
+      "routeMenu": {
+        "open": "Plus d'actions",
+        "makeRoute": "Convertir en voie",
+        "makeBoulder": "Convertir en bloc",
+        "makeBoulderBlocked": "Convertir en bloc — supprime d'abord les images"
+      }
     },
     "holdFilter": {
       "title": "Types de prise",

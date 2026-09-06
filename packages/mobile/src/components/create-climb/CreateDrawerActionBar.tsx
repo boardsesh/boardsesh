@@ -37,11 +37,13 @@ type CreateDrawerActionBarProps = {
   onRedo: () => void;
   /** Empty this frame's holds. Undoable; leaves name/description/storage alone. */
   onClearHolds: () => void;
-  /** Park this climb and start a blank one (confirms when nothing is saved yet). */
-  onNewClimb: () => void;
   /** Frame count and index are read only to announce a new frame — the buttons
-   *  that CHANGE them live in the route slot under the board. */
+   *  that CHANGE them live in the transport card under the board, and the
+   *  destructive ones in the header's overflow menu. */
   frameCount: number;
+  /** Monotonic count of frame deletions, so a delete can be announced without
+   *  inferring it from the frame count falling — which a reset also does. */
+  frameDeletions: number;
   currentFrameIndex: number;
   canSetActive: boolean;
   onSetActive: () => void;
@@ -77,8 +79,8 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onUndo,
   onRedo,
   onClearHolds,
-  onNewClimb,
   frameCount,
+  frameDeletions,
   currentFrameIndex,
   canSetActive,
   onSetActive,
@@ -95,14 +97,14 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   // announcement can't talk over each other.
   const announce = useRateLimitedAnnouncer();
 
-  // Adding a frame is undoable, so it needs feedback rather than a confirm: the
-  // only other sign a frame appeared is the transport's "2 / 2". Add frame now
-  // lives in the route slot, so this keys on the COUNT GOING UP rather than on a
-  // press here. Frame navigation moves the index, not the count, so it stays
-  // silent, and a delete is a decrease and stays silent too. Announcing from
-  // this component (rather than from the slot that owns the button) keeps ONE
-  // voice on the surface, so a frame announcement and a draft-status transition
-  // still can't talk over each other.
+  // Adding and removing a frame are both undoable, so they need feedback rather
+  // than a confirm: the only other sign the strip changed is a chip appearing or
+  // vanishing, which a screen reader never sees. Both controls live in the route
+  // slot, so add keys on the COUNT GOING UP rather than on a press here. Frame
+  // navigation moves the index, not the count, so it stays silent. Announcing
+  // from this component (rather than from the slot that owns the buttons) keeps
+  // ONE voice on the surface, so a frame announcement and a draft-status
+  // transition still can't talk over each other.
   const previousFrameCountRef = useRef(frameCount);
   useEffect(() => {
     const gainedAFrame = frameCount > previousFrameCountRef.current;
@@ -110,6 +112,22 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
     if (!gainedAFrame) return;
     announce(t('mobile.create.frames.counter', { index: currentFrameIndex + 1, total: frameCount }));
   }, [frameCount, currentFrameIndex, announce, t]);
+
+  // A delete gets its own line rather than the plain counter: after it, focus is
+  // gone and the strip has reshuffled under the reader, so "3 of 4" alone would
+  // not say anything was removed. It carries no ordinal — the index this
+  // component sees has already been clamped past the frame that went, so naming
+  // one here would name the wrong frame.
+  //
+  // Keyed on a counter the delete path bumps, NOT on the count falling: "Start a
+  // new climb" and "Clear holds" both RESET to one empty frame, and undoing an
+  // add walks the count back. All three would have announced a delete.
+  const previousFrameDeletionsRef = useRef(frameDeletions);
+  useEffect(() => {
+    if (frameDeletions === previousFrameDeletionsRef.current) return;
+    previousFrameDeletionsRef.current = frameDeletions;
+    announce(t('mobile.create.playback.frameDeleted', { total: frameCount }));
+  }, [frameDeletions, frameCount, announce, t]);
 
   const paintRoles = useMemo(() => getPaintRoles(boardName), [boardName]);
   const roleChips = useMemo(
@@ -209,15 +227,6 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
             iconName="delete"
             onPress={onClearHolds}
             accessibilityLabel={t('mobile.create.actions.clear')}
-          />
-          {/* Last in the scroller: the least-used control in the row, and the one
-              it's fine to scroll for. `plus`, not `refresh` — that's already the
-              playback-restart glyph. */}
-          <ActionButton
-            size="sm"
-            iconName="plus"
-            onPress={onNewClimb}
-            accessibilityLabel={t('mobile.create.actions.newClimb')}
           />
         </ScrollView>
 

@@ -534,13 +534,15 @@
         "closeHint": "Dein Entwurf bleibt auf diesem Handy."
       },
       "frames": {
-        "delete": "Bild löschen",
         "counter": "{{index}}/{{total}}"
       },
       "playback": {
-        "emptyHint": "Füg ein Bild hinzu, um sie als Route abzuspielen",
         "addFrame": "Bild hinzufügen",
-        "emptyA11y": "Routen-Wiedergabe. Füg ein zweites Bild hinzu, um sie zu aktivieren"
+        "addFrameHint": "Kopiert Bild {{index}} und setzt die Kopie dahinter",
+        "deleteFrameA11y": "Bild {{index}} von {{total}} löschen",
+        "deleteFrameBlocked": "Bild löschen — eine Route behält mindestens eins",
+        "deleteFrameHint": "Rückgängig findest du in der Leiste darunter",
+        "frameDeleted": "Bild gelöscht. Noch {{total}} übrig."
       },
       "holdRole": {
         "title": "Griff-Rolle festlegen",
@@ -604,7 +606,13 @@
       "publish": {
         "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen"
       },
-      "wallSizeMismatch": "Wähle diese Woods-Größe als aktives Board, um es zu beleuchten."
+      "wallSizeMismatch": "Wähle diese Woods-Größe als aktives Board, um es zu beleuchten.",
+      "routeMenu": {
+        "open": "Mehr Aktionen",
+        "makeRoute": "Zur Route machen",
+        "makeBoulder": "Zum Boulder machen",
+        "makeBoulderBlocked": "Zum Boulder machen — erst Bilder löschen"
+      }
     },
     "holdFilter": {
       "title": "Grifftypen",

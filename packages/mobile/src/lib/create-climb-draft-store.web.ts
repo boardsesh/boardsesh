@@ -23,6 +23,10 @@ export type CreateClimbDraft = {
   campus?: boolean;
   /** "Any feet" toggle. Optional for drafts created before this field. */
   anyFeet?: boolean;
+  /** Route mode. See the native fork for why inferring it from frame count isn't enough. */
+  routeMode?: boolean;
+  /** Authored per-frame pace in ms — the published climb's `frames_pace`. See the native fork. */
+  framesPaceMs?: number;
   /** JSON.stringify of the attached `SavedClimbSnapshot`. See the native fork. */
   savedClimbJson?: string;
   /** Payload signature at the last successful server save. See the native fork. */

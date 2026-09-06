@@ -25,6 +25,7 @@ import {
   type SavedClimbSnapshot,
 } from '@boardsesh/create-climb-react';
 import { useBoardActions, isDuplicateClimbError } from '@boardsesh/board-react';
+import { DEFAULT_PACE_MS, clampAuthoredPaceMs, resolveStoredPaceMs } from '@boardsesh/playback-react';
 import { GraphQLOperationError } from '@boardsesh/graphql-client';
 import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -100,10 +101,11 @@ type PayloadSignatureFields = {
   campus: boolean;
   anyFeet: boolean;
   isDraft: boolean;
+  framesPaceMs: number;
 };
 
 function createPayloadSignature(fields: PayloadSignatureFields): string {
-  return [
+  const parts = [
     fields.holdsJson,
     fields.framesJson,
     fields.name,
@@ -113,7 +115,19 @@ function createPayloadSignature(fields: PayloadSignatureFields): string {
     fields.campus ? '1' : '0',
     fields.anyFeet ? '1' : '0',
     fields.isDraft ? '1' : '0',
-  ].join(SIGNATURE_SEPARATOR);
+  ];
+  // Appended only when the setter moved it off the default, which keeps every
+  // signature written before the pace was authorable byte-identical. Signatures
+  // are opaque equality checks compared against a value PERSISTED in the draft
+  // slot, so widening the format unconditionally would make every stored draft
+  // on every phone announce "unsynced edits" once after the update — a lie, for
+  // a field the climber never touched.
+  //
+  // Only the pace is signed, not `routeMode`: the pace changes what Save writes,
+  // whereas toggling route mode at one frame changes no field of the payload at
+  // all (a single-frame climb always publishes `frames_pace: 0`).
+  if (fields.framesPaceMs !== DEFAULT_PACE_MS) parts.push(`pace:${fields.framesPaceMs}`);
+  return parts.join(SIGNATURE_SEPARATOR);
 }
 
 /**
@@ -333,6 +347,27 @@ export function useCreateClimbScreen({
   const [isDraft, setIsDraft] = useState(true);
   const [showAllHolds, setShowAllHolds] = useState(false);
 
+  // ---- Route mode. ----
+  // Whether this climb is being authored as a route. Route-ness is inferred from
+  // `frames.length > 1` everywhere else in the product (search filters read
+  // `frames_count`), but the creator needs a state the data cannot express: the
+  // moment after "Make it a route" and before the second frame exists. Without
+  // it the transport could only appear once a route already existed, which is
+  // the discoverability hole #4761 was opened to fix — and every boulder would
+  // keep paying for route chrome it never uses.
+  //
+  // Deliberately NOT in the shared editor reducer: it is not an edit, so it must
+  // not land in the undo stack. Seeded true when the editor opens on something
+  // that already has frames (a fork, an edit, or a restored multi-frame draft).
+  const [routeMode, setRouteMode] = useState(() => initialFrames != null && initialFrames.length > 1);
+
+  // Authored per-frame pace, in milliseconds. This is the value the published
+  // climb carries as `frames_pace`, and what the creator's own preview plays at,
+  // so "0.8s" in the transport is honestly the shipped speed. Aurora, Kilter and
+  // our own schema all store exactly ONE pace per climb — there is no per-frame
+  // duration anywhere in the format — so this is a single scalar by design.
+  const [framesPaceMs, setFramesPaceMs] = useState<number>(DEFAULT_PACE_MS);
+
   // The MoonBoard "method" of the climb this session is attached to, if any. The
   // editor cannot set or clear a method token (that is creation-time-only, via
   // SaveMoonBoardClimbInput), so a footless problem's own row keeps saying "no
@@ -506,11 +541,13 @@ export function useCreateClimbScreen({
   // Apply a stored working copy over whatever the editor currently holds.
   const applyStoredDraft = useCallback(
     (draft: CreateClimbDraft) => {
+      let restoredFrameCount = 0;
       try {
         const restoredFrames = draft.framesJson
           ? (JSON.parse(draft.framesJson) as Parameters<typeof loadFrames>[0])
           : [JSON.parse(draft.holdsJson) as Parameters<typeof loadFrames>[0][number]];
         loadFrames(restoredFrames);
+        restoredFrameCount = restoredFrames.length;
       } catch {
         // Corrupt holds payload — keep whatever is already loaded.
       }
@@ -527,6 +564,10 @@ export function useCreateClimbScreen({
       setCampusState(draft.campus ?? false);
       setAnyFeetState(!draft.campus && (draft.anyFeet ?? false));
       setIsDraft(draft.isDraft);
+      // Explicit flag first, then infer from the restored frames: a slot written
+      // before route mode existed carries no flag but may well carry a route.
+      setRouteMode(draft.routeMode ?? restoredFrameCount > 1);
+      setFramesPaceMs(resolveStoredPaceMs(draft.framesPaceMs));
     },
     [loadFrames, usesNoMatchDescription],
   );
@@ -602,6 +643,9 @@ export function useCreateClimbScreen({
     const serverCampus = isCampus(editClimb.characteristics);
     const serverAnyFeet = !serverCampus && isAnyFeet(editClimb.characteristics);
     const serverIsDraft = editClimb.is_draft ?? false;
+    // 0/null mean "never authored" and play at the default, so that is what the
+    // control opens on. Preserved as stored otherwise — see `resolveStoredPaceMs`.
+    const serverPaceMs = resolveStoredPaceMs(editClimb.framesPace);
     const serverSignature = createPayloadSignature({
       holdsJson: JSON.stringify(serverFrames[0] ?? {}),
       framesJson: JSON.stringify(serverFrames),
@@ -612,6 +656,11 @@ export function useCreateClimbScreen({
       campus: serverCampus,
       anyFeet: serverAnyFeet,
       isDraft: serverIsDraft,
+      // Signed by the same rule the live signature uses — the pace this payload
+      // would PUBLISH. A single-frame row carrying a stray pace publishes none,
+      // so counting it here would make the two sides disagree forever and the
+      // climb read as permanently edited.
+      framesPaceMs: serverFrames.length > 1 ? serverPaceMs : DEFAULT_PACE_MS,
     });
     const serverSnapshot: SavedClimbSnapshot = {
       uuid: editClimb.uuid,
@@ -621,6 +670,8 @@ export function useCreateClimbScreen({
       isDraft: serverIsDraft,
     };
     setSavedClimb(serverSnapshot);
+    setFramesPaceMs(serverPaceMs);
+    setRouteMode(serverFrames.length > 1);
     setSavedSignature(serverSignature);
     setSavedSignatureUnknown(false);
     // Outside the reseed guard below: the row's MoonBoard method belongs to the
@@ -755,6 +806,22 @@ export function useCreateClimbScreen({
   // stale save-failure the moment the payload moves, and `handleSave` compares it
   // before and after the round trip so a publish never clears work typed while
   // the mutation was in flight.
+  // The `frames_pace` every write path publishes.
+  //
+  // Null on anything that is not a multi-frame route, and that guard is
+  // load-bearing rather than tidiness: `assertWoodsSingleFrame` rejects a
+  // non-zero pace outright, so a Woods climb carrying one fails the mutation.
+  // A boulder has no gap between frames to pace either, and 0/null both read as
+  // "use the default" downstream in `useClimbFrames`.
+  //
+  // Passed through rather than re-clamped: the authoring slider's 10s ceiling
+  // bounds what this control can PRODUCE, not what a climb may hold. An Aurora
+  // climb synced with a slower pace keeps it here, so opening one and saving an
+  // unrelated edit republishes the pace its setter chose instead of quietly
+  // halving it. The two writers are already bounded — `setFramesPace` clamps the
+  // control, and the server bounds what it accepts.
+  const publishedFramesPace = frameCount > 1 ? Math.round(framesPaceMs) : null;
+
   const payloadSignature = createPayloadSignature({
     holdsJson,
     framesJson,
@@ -765,6 +832,10 @@ export function useCreateClimbScreen({
     campus,
     anyFeet,
     isDraft,
+    // The PUBLISHED pace, not the control's raw value: a boulder writes no pace
+    // at all, so a leftover one from a spell in route mode must not make two
+    // identical boulders look like different payloads.
+    framesPaceMs: publishedFramesPace ?? DEFAULT_PACE_MS,
   });
   const payloadSignatureRef = useRef(payloadSignature);
   payloadSignatureRef.current = payloadSignature;
@@ -788,6 +859,8 @@ export function useCreateClimbScreen({
       noKickboard,
       campus,
       anyFeet,
+      routeMode,
+      framesPaceMs,
       savedClimbJson,
       savedPayloadSignature: savedSignature ?? undefined,
       origin: isEditing ? 'edit' : isForking ? 'fork' : 'new',
@@ -802,6 +875,8 @@ export function useCreateClimbScreen({
       noKickboard,
       campus,
       anyFeet,
+      routeMode,
+      framesPaceMs,
       isDraft,
       savedClimbJson,
       savedSignature,
@@ -829,6 +904,7 @@ export function useCreateClimbScreen({
     boardName: board.boardName,
     currentFrameIndex,
     goToFrame,
+    paceMs: framesPaceMs,
   });
 
   // True once Set-Active handed the route to the queue. The auto-sender then
@@ -939,10 +1015,25 @@ export function useCreateClimbScreen({
     duplicateFrame();
   }, [duplicateFrame, reclaimWall]);
 
+  // Counts deletes rather than letting the announcer infer one from the frame
+  // count falling. Three other things lower that count — "Start a new climb" and
+  // "Clear holds" both RESET to a single empty frame, and undoing an add walks it
+  // back — and every one of them would have announced "Frame deleted".
+  const [frameDeletions, setFrameDeletions] = useState(0);
   const handleDeleteFrame = useCallback(() => {
+    // Mirrors the reducer's own `length <= 1` refusal. The button is disabled
+    // there, but a counter that ticks for a delete that did not happen would
+    // announce a phantom one.
+    if (frameCount <= 1) return;
+    // Stop the clock first. Delete used to be two taps deep in a menu; it is one
+    // tap beside the strip now, and while playback runs the active index moves
+    // on its own — so the frame that went would be whichever the clock had
+    // reached, not the one the button named when the setter read it.
+    playback.pause();
     reclaimWall();
     deleteFrame();
-  }, [deleteFrame, reclaimWall]);
+    setFrameDeletions((count) => count + 1);
+  }, [deleteFrame, reclaimWall, frameCount, playback]);
 
   // Undo/redo change what the wall should show as surely as a paint stroke does,
   // so they take the wall back too. Without this, undoing a hold after Set Active
@@ -1022,6 +1113,11 @@ export function useCreateClimbScreen({
       // A blank climb is nobody's remix and nobody's edit, so it inherits no
       // MoonBoard method either — the Any-feet row comes back with it.
       setSeededMethod(null);
+      // And it is a boulder, like every fresh climb. Without this the transport
+      // stays on a blank single-frame climb the setter never asked to be a
+      // route — the boulder-pays-nothing invariant, broken one climb later.
+      setRouteMode(false);
+      setFramesPaceMs(DEFAULT_PACE_MS);
       setIsDraft(true);
       setSavedClimb(null);
       setPublishDuplicateError(null);
@@ -1118,9 +1214,11 @@ export function useCreateClimbScreen({
       userAscents: 0,
       userAttempts: 0,
       framesCount: frameCount,
-      // 0/null both mean "use the default pace" — useClimbFrames falls back to
-      // DEFAULT_PACE_MS whenever framesPace isn't a positive number.
-      framesPace: null,
+      // Mirrors what Save writes, so the queue plays a WIP route at the pace the
+      // setter dialled rather than at the default. Null on a boulder: 0/null both
+      // mean "use the default pace" to `useClimbFrames`, and a one-frame climb has
+      // no pace to honour anyway.
+      framesPace: publishedFramesPace,
     }),
     [
       name,
@@ -1138,6 +1236,7 @@ export function useCreateClimbScreen({
       board.sizeId,
       t,
       frameCount,
+      publishedFramesPace,
     ],
   );
 
@@ -1283,7 +1382,7 @@ export function useCreateClimbScreen({
           // against the wrong wall.
           sizeId: board.sizeId,
           framesCount: frameCount,
-          framesPace: 0,
+          framesPace: publishedFramesPace ?? 0,
           isDraft,
           characteristics,
           // Explicit booleans, never null: an omitted flag PRESERVES whatever the
@@ -1318,7 +1417,7 @@ export function useCreateClimbScreen({
           is_draft: isDraft,
           frames,
           frames_count: frameCount,
-          frames_pace: 0,
+          frames_pace: publishedFramesPace ?? 0,
           angle: board.angle,
           characteristics,
           no_match: noMatch,
@@ -1412,6 +1511,7 @@ export function useCreateClimbScreen({
     litUpHoldsMap,
     generateFramesString,
     frameCount,
+    publishedFramesPace,
     updateClimb,
     saveClimb,
     board,
@@ -1446,6 +1546,36 @@ export function useCreateClimbScreen({
     if (!supportsMultiFrame) return;
     handleDuplicateFrame();
   }, [supportsMultiFrame, handleDuplicateFrame]);
+
+  // ---- Route mode, entered and left from the header's overflow menu. ----
+  // Entering changes no data: the transport simply appears, sitting on frame 1
+  // with an add-frame chip. Deliberately NOT auto-creating frame 2 — a mode
+  // switch that silently mutates the climb is a surprise, and the tool it
+  // reveals is one tap away.
+  const enterRouteMode = useCallback(() => {
+    if (!supportsMultiFrame) return;
+    setRouteMode(true);
+  }, [supportsMultiFrame]);
+
+  // Leaving is only offered while the climb is still one frame. Above that there
+  // is no honest answer: frames are absolute snapshots, so "keep frame 1" throws
+  // away every hold painted after the start position, and flattening silently
+  // rewrites the climb. Deleting frames down to one is the explicit, undoable
+  // path, so the menu row stays visible and disabled rather than doing either.
+  const canLeaveRouteMode = frameCount === 1;
+  const leaveRouteMode = useCallback(() => {
+    if (frameCount > 1) return;
+    setRouteMode(false);
+  }, [frameCount]);
+
+  // A route that lost its frames is a boulder again in every other reader's eyes
+  // (search filters key off `frames_count`), but the setter is still in route
+  // mode and may be about to re-add one. Only the flag's own control clears it.
+  const showRouteTransport = supportsMultiFrame && (routeMode || frameCount > 1);
+
+  const setFramesPace = useCallback((paceMs: number) => {
+    setFramesPaceMs(clampAuthoredPaceMs(paceMs));
+  }, []);
 
   const canSetActive = isValid;
 
@@ -1490,9 +1620,19 @@ export function useCreateClimbScreen({
     currentFrameIndex,
     duplicateFrame: guardedDuplicateFrame,
     deleteFrame: handleDeleteFrame,
+    frameDeletions,
     // route playback (transport)
     playback: playbackControls,
     handedOff,
+    // route mode (the header's overflow menu owns entering and leaving)
+    routeMode,
+    showRouteTransport,
+    enterRouteMode,
+    leaveRouteMode,
+    canLeaveRouteMode,
+    /** Authored per-frame pace in ms — published as the climb's `frames_pace`. */
+    framesPaceMs,
+    setFramesPace,
     // undo/redo (current editing session only)
     undo: handleUndo,
     redo: handleRedo,

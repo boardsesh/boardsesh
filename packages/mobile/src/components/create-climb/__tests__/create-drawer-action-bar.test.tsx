@@ -61,6 +61,7 @@ vi.mock('../../../theme/colors', () => ({ brandColors: { primary: '#6D28D9', suc
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 }, borderRadius: { md: 8 } }));
 
 import { CreateDrawerActionBar } from '../CreateDrawerActionBar';
+import { ANNOUNCE_MIN_INTERVAL_MS } from '../use-rate-limited-announcer';
 import type { DraftStatusView } from '../draft-status-view';
 
 const baseProps = {
@@ -72,8 +73,8 @@ const baseProps = {
   onUndo: vi.fn(),
   onRedo: vi.fn(),
   onClearHolds: vi.fn(),
-  onNewClimb: vi.fn(),
   frameCount: 1,
+  frameDeletions: 0,
   currentFrameIndex: 0,
   canSetActive: true,
   onSetActive: vi.fn(),
@@ -139,21 +140,22 @@ describe('CreateDrawerActionBar', () => {
     expect(scroller.querySelector('[data-action="redo"]')).toBeTruthy();
   });
 
-  it('keeps the trash glyph for Clear holds and adds a separate Start-a-new-climb', () => {
-    // Two buttons, two jobs. `eraser` is not available for Clear holds — it is
-    // already the Erase BRUSH chip in the row above, and one glyph can't mean both
-    // a mode you enter and a destructive command you fire.
-    const { container, scroller } = renderBar(1);
+  it('keeps the trash glyph for Clear holds, and no longer carries a plus', () => {
+    // `eraser` is not available for Clear holds — it is already the Erase BRUSH
+    // chip in the row above, and one glyph can't mean both a mode you enter and a
+    // destructive command you fire.
+    //
+    // The `plus` is gone: "Start a new climb" moved to the header's overflow
+    // menu, because on a route screen a `+` that DISCARDS the climb sat a thumb's
+    // width from the `+` that adds a frame to it. Two plusses, opposite
+    // consequences, one row apart.
+    const { container } = renderBar(1);
 
     const clear = container.querySelector('[data-action="delete"]') as HTMLElement;
-    const newClimb = container.querySelector('[data-action="plus"]') as HTMLElement;
     expect(clear).toBeTruthy();
     expect(clear.getAttribute('data-label')).toBe('mobile.create.actions.clear');
-    expect(newClimb).toBeTruthy();
-    expect(newClimb.getAttribute('data-label')).toBe('mobile.create.actions.newClimb');
     expect(container.querySelector('[data-action="eraser"]')).toBeNull();
-    // "Start a new climb" is the least-used control, so it's the one that scrolls.
-    expect(scroller.contains(newClimb)).toBe(true);
+    expect(container.querySelector('[data-action="plus"]')).toBeNull();
   });
 
   it('floors the Save pill at the 44dp touch target', () => {
@@ -209,7 +211,7 @@ describe('CreateDrawerActionBar', () => {
     expect(scroller.contains(save)).toBe(false);
   });
 
-  it('speaks the new count when a frame is ADDED, and stays silent on navigation or delete', () => {
+  it('speaks the new count when a frame is ADDED, and stays silent on navigation', () => {
     // Adding a frame is undoable, so it gets feedback rather than a confirm —
     // the only other sign it worked is the transport's "2 / 2". The button that
     // does it now lives in the route slot, so this keys on the count going UP
@@ -229,10 +231,42 @@ describe('CreateDrawerActionBar', () => {
     // Stepping between frames moves the INDEX, not the count.
     rerender(bar(2, 0));
     expect(announceSpy).toHaveBeenCalledTimes(1);
+  });
 
-    // A delete moves the count DOWN; the status line speaks for that, not this.
-    rerender(bar(1, 0));
-    expect(announceSpy).toHaveBeenCalledTimes(1);
+  it('speaks a delete off the delete COUNTER, never off the count falling', () => {
+    // Three things lower the frame count without a frame being deleted: "Start a
+    // new climb" and "Clear holds" both RESET to one empty frame, and undoing an
+    // add walks it back. Keying on the count would announce "Frame deleted" for
+    // all three, so the controller counts real deletes and this reads that.
+    //
+    // Fake timers because the announcer is rate-limited to one utterance per
+    // ANNOUNCE_MIN_INTERVAL_MS across the whole surface: without advancing them,
+    // a second announcement is parked on a timeout and never reaches the spy —
+    // which is how the previous version of this test passed while asserting the
+    // opposite of what the component did.
+    vi.useFakeTimers();
+    try {
+      const bar = (frameCount: number, frameDeletions: number) =>
+        createElement(CreateDrawerActionBar, { ...baseProps, frameCount, frameDeletions, currentFrameIndex: 0 });
+
+      // A reset: four frames collapse to one, and no delete was counted. The
+      // timer advance is what makes this assertion mean anything — a parked
+      // announcement would otherwise look identical to no announcement.
+      const reset = render(bar(4, 0));
+      reset.rerender(bar(1, 0));
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS);
+      expect(announceSpy).not.toHaveBeenCalled();
+      reset.unmount();
+
+      // A real delete: the count falls AND the counter moves.
+      const deleted = render(bar(4, 0));
+      deleted.rerender(bar(3, 1));
+      vi.advanceTimersByTime(ANNOUNCE_MIN_INTERVAL_MS);
+      expect(announceSpy).toHaveBeenCalledTimes(1);
+      expect(announceSpy).toHaveBeenLastCalledWith('mobile.create.playback.frameDeleted');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('labels Set Active with a queue glyph, not a play glyph', () => {

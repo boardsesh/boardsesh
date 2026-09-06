@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
+import { DEFAULT_PACE_MS } from '@boardsesh/playback-react';
 import { useCreateClimbPlayback } from '../use-create-climb-playback';
 
 const START = { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00FF00' };
@@ -11,7 +12,13 @@ const frameOne: LitUpHoldsMap = { 100: START, 200: HAND };
 const frameTwo: LitUpHoldsMap = { 100: START, 200: HAND, 300: HAND };
 const frameThree: LitUpHoldsMap = { 100: START, 200: HAND, 300: HAND, 400: HAND };
 
-type Props = { frames: LitUpHoldsMap[]; currentFrameIndex: number; goToFrame: (index: number) => void };
+type Props = {
+  frames: LitUpHoldsMap[];
+  currentFrameIndex: number;
+  goToFrame: (index: number) => void;
+  /** The setter's authored pace. Defaults to what a fresh climb starts at. */
+  paceMs?: number;
+};
 
 function renderPlayback(initialProps: Props) {
   return renderHook(
@@ -21,6 +28,7 @@ function renderPlayback(initialProps: Props) {
         boardName: 'kilter',
         currentFrameIndex: props.currentFrameIndex,
         goToFrame: props.goToFrame,
+        paceMs: props.paceMs ?? DEFAULT_PACE_MS,
       }),
     { initialProps },
   );

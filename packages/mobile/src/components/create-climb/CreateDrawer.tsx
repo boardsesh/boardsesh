@@ -40,6 +40,8 @@ import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
 import { CreateDrawerForm } from './CreateDrawerForm';
 import { CreateRoutePlaybackSlot } from './CreateRoutePlaybackSlot';
+import type { CreateOverflowAction } from './create-overflow-menu';
+import { computeBoardMaxHeight } from './create-drawer-layout';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
@@ -68,31 +70,6 @@ type CreateDrawerProps = {
   /** Open the climb that a publish collided with (the duplicate banner link). */
   onViewDuplicate: (uuid: string) => void;
 };
-
-// Space the header + action bar + draft-status line + handle + safe areas need,
-// so the board is sized to leave them on-screen at the peek (a rough reserve —
-// the peek snap itself is measured from the real above-fold height, so erring
-// high only costs a few dp of board).
-//
-// Raised from 300 by exactly what the status line costs the action bar: +32 for
-// its line box and padding, −8 from the action row's bottom padding, so +24. The
-// board shrinks by the same 24, which makes the peek height IDENTICAL to what it
-// was before the line existed — the status line is free at the peek, in every
-// state (the row reserves its height even when empty, so this doesn't drift as
-// you paint). Deliberately not rounded: a round number here would silently make
-// the peek taller and eat into an already-tight budget on a tall board.
-const ABOVE_FOLD_CHROME = 324;
-
-// PlaybackControls' resting height (paddingVertical 12 x 2 + the 52dp play
-// button + marginTop 8 = 84) plus the frame-actions row under it (a 44dp button
-// row + its 8dp margin = 52). Claimed once a climb actually has frames to play.
-const PLAYBACK_TRANSPORT_RESERVE = 136;
-
-// The single-frame route strip: a 44dp control row plus its 8dp marginTop. It
-// costs the board 52dp on a fresh climb, which is the price of the transport
-// being discoverable at all — the feature was invisible until you found a bare
-// `copy` glyph fourth inside the action bar's scroller (#4761 QA).
-const ROUTE_STRIP_RESERVE = 52;
 
 // The peek must never grow into the '100%' snap — at that point the two snap
 // points collapse into one, the sheet has no travel and the "drag up for the
@@ -202,16 +179,45 @@ export function CreateDrawer({
     [resetBoardZoom, onLoadDraft],
   );
 
-  // Woods pays neither reserve: the slot renders nothing there.
-  const routeSlotReserve = controller.supportsMultiFrame
-    ? controller.frameCount > 1
-      ? PLAYBACK_TRANSPORT_RESERVE
-      : ROUTE_STRIP_RESERVE
-    : 0;
-  const boardMaxHeight = Math.max(
-    200,
-    windowHeight - insets.top - windowInsetBottom - ABOVE_FOLD_CHROME - routeSlotReserve,
+  const overflowState = useMemo(
+    () => ({
+      supportsMultiFrame: controller.supportsMultiFrame,
+      routeMode: controller.routeMode,
+      frameCount: controller.frameCount,
+    }),
+    // Deliberately NOT currentFrameIndex: the menu stopped reading it when the
+    // frame commands moved to the transport card, and CreateDrawerHeader is
+    // memo'd — keeping it here handed the header a new object on every playback
+    // tick, as often as twice a second.
+    [controller.supportsMultiFrame, controller.routeMode, controller.frameCount],
   );
+
+  const handleOverflowAction = useCallback(
+    (action: CreateOverflowAction) => {
+      switch (action) {
+        case 'makeRoute':
+          controller.enterRouteMode();
+          return;
+        case 'makeBoulder':
+          controller.leaveRouteMode();
+          return;
+        case 'newClimb':
+          controller.handleNewClimb();
+      }
+    },
+    [controller],
+  );
+
+  // A boulder pays nothing for route chrome now that route mode is opt-in from
+  // the header's overflow menu — #4761 charged every climb 52dp for a strip
+  // pitching a feature most setters never use. Woods, which can only ever hold
+  // one frame, likewise.
+  const boardMaxHeight = computeBoardMaxHeight({
+    windowHeight,
+    insetTop: insets.top,
+    insetBottom: windowInsetBottom,
+    showRouteTransport: controller.showRouteTransport,
+  });
 
   // Compute the on-screen board size up front (window width minus the board
   // section margins, capped by the height budget) so the board paints on the
@@ -308,6 +314,8 @@ export function CreateDrawer({
               bleConnected={controller.bleConnected}
               bleConnecting={controller.bleConnecting}
               onToggleBle={controller.handleToggleBle}
+              overflow={overflowState}
+              onSelectOverflowAction={handleOverflowAction}
             />
           </View>
 
@@ -373,13 +381,14 @@ export function CreateDrawer({
             </View>
 
             <CreateRoutePlaybackSlot
-              supportsMultiFrame={controller.supportsMultiFrame}
+              showRouteTransport={controller.showRouteTransport}
               frameCount={controller.frameCount}
               frameIndex={controller.currentFrameIndex}
               playback={controller.playback}
               wallStateLabel={controller.handedOff ? tSession('playView.wallState.onWall') : null}
               onAddFrame={controller.duplicateFrame}
               onDeleteFrame={controller.deleteFrame}
+              onPaceChange={controller.setFramesPace}
             />
 
             <CreateDrawerActionBar
@@ -391,8 +400,8 @@ export function CreateDrawer({
               onUndo={controller.undo}
               onRedo={controller.redo}
               onClearHolds={controller.handleClearHolds}
-              onNewClimb={controller.handleNewClimb}
               frameCount={controller.frameCount}
+              frameDeletions={controller.frameDeletions}
               currentFrameIndex={controller.currentFrameIndex}
               canSetActive={controller.canSetActive}
               onSetActive={controller.handleSetActive}

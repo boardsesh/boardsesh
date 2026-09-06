@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { resolveMenuAction, resolveMenuActions } from '../AppMenu.logic';
+import { anchorGlyphForIcon, isMenuActionSelectable, resolveMenuAction, resolveMenuActions } from '../AppMenu.logic';
 import type { AppMenuAction } from '../AppMenu.types';
 
 // AppMenu's per-platform rendering is native (@expo/ui SwiftUI `Menu` / Compose
@@ -37,6 +37,19 @@ describe('AppMenu.logic — resolveMenuAction', () => {
     expect(resolveMenuAction({ label: 'Delete', destructive: true }).isDestructive).toBe(true);
     expect(resolveMenuAction({ label: 'Keep' }).isDestructive).toBe(false);
   });
+
+  it('flags disabled rows and leaves the rest selectable', () => {
+    expect(resolveMenuAction({ label: 'Save', disabled: true }).isDisabled).toBe(true);
+    expect(resolveMenuAction({ label: 'Save', disabled: false }).isDisabled).toBe(false);
+    expect(resolveMenuAction({ label: 'Save' }).isDisabled).toBe(false);
+  });
+
+  it('keeps a disabled row otherwise intact — it still shows its label, check and icon', () => {
+    const resolved = resolveMenuAction({ label: 'Save', disabled: true, selected: true, systemIcon: 'tray' });
+    expect(resolved.label).toBe('Save');
+    expect(resolved.showCheck).toBe(true);
+    expect(resolved.iosSystemImage).toBe('checkmark');
+  });
 });
 
 describe('AppMenu.logic — resolveMenuActions', () => {
@@ -50,6 +63,54 @@ describe('AppMenu.logic — resolveMenuActions', () => {
     expect(resolved.map((action) => action.label)).toEqual(['My crew', 'Everyone', 'Find a gym']);
     expect(resolved.map((action) => action.showCheck)).toEqual([true, false, false]);
     expect(resolved[2].iosSystemImage).toBe('mappin.and.ellipse');
+  });
+
+  it('keeps a disabled row in its slot so the indices after it do not shift', () => {
+    const actions: AppMenuAction[] = [
+      { label: 'Undo' },
+      { label: 'Save', disabled: true },
+      { label: 'Delete', destructive: true },
+    ];
+    const resolved = resolveMenuActions(actions);
+    expect(resolved.map((action) => action.label)).toEqual(['Undo', 'Save', 'Delete']);
+    expect(resolved.map((action) => action.isDisabled)).toEqual([false, true, false]);
+    // The row after the disabled one still answers to its own index.
+    expect(resolved[2].isDestructive).toBe(true);
+  });
+});
+
+describe('AppMenu.logic — isMenuActionSelectable', () => {
+  const RESOLVED = resolveMenuActions([{ label: 'Undo' }, { label: 'Save', disabled: true }]);
+
+  it('blocks a disabled row and allows the rest', () => {
+    expect(isMenuActionSelectable(RESOLVED, 0)).toBe(true);
+    expect(isMenuActionSelectable(RESOLVED, 1)).toBe(false);
+  });
+
+  it('blocks an index past the end rather than throwing', () => {
+    expect(isMenuActionSelectable(RESOLVED, 2)).toBe(false);
+  });
+
+  it('is the guard each impl runs before calling onSelectIndex', () => {
+    const onSelectIndex = vi.fn();
+    // What every platform's row handler does: guard, then report the tapped index.
+    [0, 1].forEach((index) => {
+      if (!isMenuActionSelectable(RESOLVED, index)) return;
+      onSelectIndex(index);
+    });
+    expect(onSelectIndex).toHaveBeenCalledTimes(1);
+    expect(onSelectIndex).toHaveBeenCalledWith(0);
+  });
+});
+
+describe('AppMenu.logic — anchorGlyphForIcon', () => {
+  it('maps the overflow family to its matching text glyph', () => {
+    expect(anchorGlyphForIcon('more')).toBe('⋯');
+    expect(anchorGlyphForIcon('more.vertical')).toBe('⋮');
+  });
+
+  it('falls back to the horizontal ellipsis for an icon with no text stand-in', () => {
+    expect(anchorGlyphForIcon('settings')).toBe('⋯');
   });
 });
 
@@ -109,5 +170,21 @@ describe('AppMenu stub — interaction contract', () => {
     expect(onSelectIndex).toHaveBeenCalledWith(1);
     fireEvent.click(getByText('Find a gym'));
     expect(onSelectIndex).toHaveBeenCalledWith(2);
+  });
+
+  it('takes an icon anchor with no label, naming it by its required accessibilityLabel', () => {
+    const { container, getByLabelText } = render(
+      createElement(AppMenu, {
+        iconName: 'more',
+        actions: ACTIONS,
+        onSelectIndex: () => {},
+        accessibilityLabel: 'More actions',
+      }),
+    );
+    const anchor = getByLabelText('More actions');
+    // A glyph anchor has no visible text, so the a11y label is its only name.
+    expect(anchor.textContent).toBe('');
+    // The rows are unaffected by which anchor the menu wears.
+    expect(container.querySelectorAll('button[data-role="button"]').length).toBe(ACTIONS.length + 1);
   });
 });

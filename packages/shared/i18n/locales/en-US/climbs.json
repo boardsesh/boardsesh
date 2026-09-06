@@ -534,13 +534,15 @@
         "closeHint": "Your draft stays on this phone."
       },
       "frames": {
-        "delete": "Delete frame",
         "counter": "{{index}}/{{total}}"
       },
       "playback": {
-        "emptyHint": "Add a frame to play it as a route",
         "addFrame": "Add frame",
-        "emptyA11y": "Route playback. Add a second frame to enable it"
+        "addFrameHint": "Copies frame {{index}} and puts the copy after it",
+        "deleteFrameA11y": "Delete frame {{index}} of {{total}}",
+        "deleteFrameBlocked": "Delete frame — a route keeps at least one",
+        "deleteFrameHint": "Undo is in the toolbar below",
+        "frameDeleted": "Frame deleted. {{total}} left."
       },
       "holdRole": {
         "title": "Set hold role",
@@ -604,7 +606,13 @@
       "publish": {
         "blocked": "Add a start and a finish hold to publish"
       },
-      "wallSizeMismatch": "Switch your active board to this Woods size to light it."
+      "wallSizeMismatch": "Switch your active board to this Woods size to light it.",
+      "routeMenu": {
+        "open": "More climb actions",
+        "makeRoute": "Make it a route",
+        "makeBoulder": "Make it a boulder",
+        "makeBoulderBlocked": "Make it a boulder — delete frames first"
+      }
     },
     "holdFilter": {
       "title": "Hold types",

@@ -125,6 +125,7 @@ vi.mock('../brush-roles', () => ({
 }));
 
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
+import { DEFAULT_PACE_MS } from '@boardsesh/playback-react';
 import { climbToQueueItem, toClimbInput } from '../../../lib/climb-to-queue-item';
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
@@ -145,6 +146,7 @@ beforeEach(() => {
   board.isDuplicateClimbError.mockReturnValue(false);
   board.saveClimb.mockReset();
   board.updateClimb.mockReset();
+  createClimb.frameCount = 1;
 });
 
 describe('create-climb queue hand-off carries board identity', () => {
@@ -272,6 +274,159 @@ describe('create-climb queue hand-off carries board identity', () => {
     const { climb } = lastQueuedItem();
     expect(climb.framesCount).toBe(1);
     expect(climb.framesPace).toBeNull();
+  });
+});
+
+// The creator wrote `frames_pace: 0` on every save, so a published route always
+// played at the 750ms default however the setter set the transport — the speed
+// control authored nothing. These pin the value actually reaching the wire.
+describe('authored pace reaches the queue and the server', () => {
+  it('publishes the pace the setter dialled on a route', async () => {
+    createClimb.frameCount = 3;
+    board.saveClimb.mockResolvedValue({ uuid: 'route-1', createdAt: null, publishedAt: null, isDraft: true });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setName('Paced Route'));
+    act(() => result.current.setFramesPace(2000));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(board.saveClimb).toHaveBeenCalledTimes(1);
+    expect(board.saveClimb.mock.calls[0][0]).toMatchObject({ frames_count: 3, frames_pace: 2000 });
+  });
+
+  it('clamps an out-of-range pace rather than publishing it', () => {
+    createClimb.frameCount = 2;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setFramesPace(50_000));
+    expect(result.current.framesPaceMs).toBe(10_000);
+
+    act(() => result.current.setFramesPace(10));
+    expect(result.current.framesPaceMs).toBe(300);
+  });
+
+  it('publishes no pace on a boulder, whatever the control last held', async () => {
+    // Load-bearing rather than tidiness: `assertWoodsSingleFrame` rejects a
+    // non-zero pace outright, so a single-frame climb carrying one fails the
+    // mutation on Woods. A boulder has no gap between frames to pace anyway.
+    board.saveClimb.mockResolvedValue({ uuid: 'boulder-1', createdAt: null, publishedAt: null, isDraft: true });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setName('Just A Boulder'));
+    act(() => result.current.setFramesPace(2000));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(board.saveClimb.mock.calls[0][0]).toMatchObject({ frames_count: 1, frames_pace: 0 });
+  });
+
+  it('does not let a boulder look edited over a pace it will never publish', () => {
+    // The pace signs into the payload signature, which is what decides whether
+    // the draft reads "unsynced edits". A boulder writes `frames_pace: 0`
+    // whatever the control last held, so signing the raw control value would
+    // make two byte-identical boulders look like different payloads.
+    createClimb.frameCount = 1;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    const before = result.current.draftStatus;
+    act(() => result.current.setFramesPace(2000));
+    expect(result.current.framesPaceMs).toBe(2000);
+    expect(result.current.draftStatus).toEqual(before);
+  });
+
+  it('plays the preview at the authored pace, so the transport is honest', () => {
+    createClimb.frameCount = 2;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setFramesPace(1500));
+    expect(result.current.playback.paceMs).toBe(1500);
+  });
+});
+
+// Route mode is an explicit state now, not something inferred from frame count.
+// It decides whether the board pays for route chrome at all, which is the whole
+// reason #5189 exists.
+describe('route mode', () => {
+  it('starts a fresh climb as a boulder showing no route chrome', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    expect(result.current.routeMode).toBe(false);
+    expect(result.current.showRouteTransport).toBe(false);
+  });
+
+  it('shows the transport from the first frame once route mode is on', () => {
+    // The point of an explicit mode: the control that makes frame 2 has to be on
+    // screen BEFORE frame 2 exists, or the feature is only discoverable to
+    // someone who already knows it is there.
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.enterRouteMode());
+    expect(result.current.showRouteTransport).toBe(true);
+    expect(result.current.frameCount).toBe(1);
+  });
+
+  it('lets a one-frame route go back to being a boulder', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.enterRouteMode());
+    expect(result.current.canLeaveRouteMode).toBe(true);
+    act(() => result.current.leaveRouteMode());
+    expect(result.current.showRouteTransport).toBe(false);
+  });
+
+  it('refuses to leave route mode while frames would be destroyed', () => {
+    // Frames are absolute snapshots, so there is no lossless answer here: keeping
+    // frame 1 discards every hold painted after the start position. The setter
+    // deletes frames down to one instead, which is undoable.
+    createClimb.frameCount = 4;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.enterRouteMode());
+    expect(result.current.canLeaveRouteMode).toBe(false);
+    act(() => result.current.leaveRouteMode());
+    expect(result.current.showRouteTransport).toBe(true);
+  });
+
+  it('never enters route mode on a board that can only hold one frame', () => {
+    // Woods: a second frame puts a comma in the frames string, which its packet
+    // builder rejects outright.
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({ board: { ...kilterBoard, boardName: 'woods' as const } }),
+    );
+
+    act(() => result.current.enterRouteMode());
+    expect(result.current.routeMode).toBe(false);
+    expect(result.current.showRouteTransport).toBe(false);
+  });
+
+  it('hands back a boulder when you start a new climb from a route', async () => {
+    // Every other authoring field resets here; these two have to as well, or the
+    // next climb opens wearing route chrome nobody asked for — the exact thing
+    // this issue exists to stop, one climb later.
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.enterRouteMode());
+    act(() => result.current.setFramesPace(2000));
+    expect(result.current.showRouteTransport).toBe(true);
+
+    act(() => result.current.handleNewClimb());
+    await act(async () => {
+      await result.current.confirmNewClimb();
+    });
+
+    expect(result.current.routeMode).toBe(false);
+    expect(result.current.showRouteTransport).toBe(false);
+    expect(result.current.framesPaceMs).toBe(DEFAULT_PACE_MS);
+  });
+
+  it('treats an already-multi-frame climb as a route without being told', () => {
+    createClimb.frameCount = 3;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    expect(result.current.showRouteTransport).toBe(true);
   });
 });
 

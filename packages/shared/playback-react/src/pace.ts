@@ -16,3 +16,46 @@ export const DEFAULT_PACE_MS = 750;
  * looking fast on a route.
  */
 export const MIN_PACE_MS = 200;
+
+/**
+ * Slowest pace a setter can author, in milliseconds. Matches the upper end of
+ * the "seconds per frame" control (#4633 asked for a linear range up to 10s).
+ */
+export const MAX_PACE_MS = 10_000;
+
+/**
+ * Fastest pace a setter can author, in milliseconds.
+ *
+ * Deliberately above `MIN_PACE_MS`, not equal to it. `MIN_PACE_MS` is the
+ * transport's own floor — the point below which the BLE writer physically
+ * cannot keep up — and sitting an authored value exactly on a hardware limit
+ * leaves the wall no headroom on a slow GATT link. 300ms keeps a 100ms margin
+ * while still reading as fast on a route.
+ */
+export const MIN_AUTHORED_PACE_MS = 300;
+
+/** Clamps an authored pace into the range the "seconds per frame" control offers. */
+export function clampAuthoredPaceMs(paceMs: number): number {
+  if (!Number.isFinite(paceMs)) return DEFAULT_PACE_MS;
+  return Math.round(Math.min(Math.max(paceMs, MIN_AUTHORED_PACE_MS), MAX_PACE_MS));
+}
+
+/**
+ * Read a pace that came from storage — a synced climb, a server row, a restored
+ * draft — preserving whatever it holds.
+ *
+ * Deliberately NOT `clampAuthoredPaceMs`. That one bounds what the authoring
+ * CONTROL may produce, and its 10s ceiling is a property of the slider, not of
+ * the data: Aurora climbs are synced with whatever pace their setter chose, and
+ * the server accepts up to 30s precisely so those survive a round trip. Clamping
+ * on the way in would silently rewrite a 20s route to 10s the next time its
+ * owner opened and re-saved it, with nothing on screen to show a change — the
+ * pace would simply be halved.
+ *
+ * 0 and null both mean "never authored" in the Aurora encoding, so they resolve
+ * to the default rather than to a real value.
+ */
+export function resolveStoredPaceMs(paceMs: number | null | undefined): number {
+  if (paceMs == null || !Number.isFinite(paceMs) || paceMs <= 0) return DEFAULT_PACE_MS;
+  return Math.round(paceMs);
+}
