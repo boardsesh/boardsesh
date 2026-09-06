@@ -13,6 +13,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- The playlist start prompt now says what starting does, not just what it clears ([#5156](https://github.com/boardsesh/boardsesh/pull/5156))
 - Your Sessions tab now shows every day you climbed, even the days you never pressed Start. ([#5152](https://github.com/boardsesh/boardsesh/pull/5152))
   Climbs you tick from the climbs list, a playlist or the board now land in the session you're running.
 - Pinch-zoom and panning on the board now work smoothly while you're building a climb on Android. ([#5107](https://github.com/boardsesh/boardsesh/pull/5107))

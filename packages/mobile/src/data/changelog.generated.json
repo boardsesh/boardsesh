@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-06T03:21:05.050Z",
+  "generatedAt": "2026-09-06T03:30:48.627Z",
   "entries": [
+    {
+      "prNumber": 5156,
+      "category": "fixed",
+      "title": "The playlist start prompt now says what starting does, not just what it clears",
+      "mergedAt": "2026-09-06T03:22:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5156"
+    },
     {
       "prNumber": 5152,
       "category": "fixed",
