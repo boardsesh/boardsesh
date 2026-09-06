@@ -375,6 +375,40 @@ describe('POST /api/cnc/stripe/webhook', () => {
     expect((await readOrder(order.id)).status).toBe('pending_payment');
   });
 
+  it('falls back to the order amount when Stripe reports no amount_total', async () => {
+    // A price the fixture's 14900 could never be mistaken for, so the assertion
+    // proves the fallback ran rather than the event's own number.
+    const order = await createPendingOrder({
+      userId: BUYER_ID,
+      tier: 'personal',
+      boardName: 'kilter',
+      layoutId: 8,
+      sizeId: 25,
+      setIds: '26,27,28,29',
+      options: { sheetStock: '2440x1220', panelThicknessMm: 18 },
+      licenseeName: 'Test Buyer',
+      licenseeEmail: 'buyer@example.com',
+      licenceAcceptedAt: new Date(),
+      currency: 'AUD',
+      amountCents: 12345,
+    });
+
+    const res = await deliver(completedEvent(order, { amount_total: null }));
+
+    expect(res.statusCode).toBe(200);
+    const updated = await readOrder(order.id);
+    expect(updated.status).toBe('queued');
+    expect(updated.amountCents).toBe(12345);
+    expect(captureEventMock).toHaveBeenCalledWith(
+      'Build Plans Pack Purchased',
+      expect.objectContaining({
+        // No total to subtract the tax from, so the GST-exclusive figure is
+        // null rather than derived from a guessed rate.
+        properties: expect.objectContaining({ amount_cents: 12345, amount_excluding_tax_cents: null }),
+      }),
+    );
+  });
+
   it('cancels the order when the checkout session expires', async () => {
     const order = await createOrder();
 
@@ -475,6 +509,35 @@ describe('POST /api/cnc/stripe/webhook', () => {
     });
 
     expect((await readOrder(order.id)).status).toBe('refunded');
+  });
+
+  it('refunds an order when the charge carries an expanded payment intent object', async () => {
+    // Stripe sends `payment_intent` as an id, but an expanded event (or a
+    // dashboard resend with expansion on) sends the object. Same order either
+    // way — `idOf` reads the id off both.
+    const order = await createOrder();
+    await deliver(completedEvent(order));
+    vi.clearAllMocks();
+
+    const res = await deliver({
+      id: nextEventId(),
+      object: 'event',
+      type: 'charge.refunded',
+      created: Math.floor(Date.now() / 1000),
+      data: {
+        object: {
+          id: `ch_test_expanded_${String(order.id)}`,
+          object: 'charge',
+          payment_intent: { id: `pi_test_${String(order.id)}`, object: 'payment_intent' },
+          refunded: true,
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const refunded = await readOrder(order.id);
+    expect(refunded.status).toBe('refunded');
+    expect(refunded.refundedAt).toBeInstanceOf(Date);
   });
 
   it('acknowledges a refund for a charge that is not ours', async () => {

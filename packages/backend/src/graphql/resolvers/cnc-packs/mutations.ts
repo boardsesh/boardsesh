@@ -9,6 +9,7 @@ import {
 } from '../../../services/cnc/orders';
 import { createCheckoutSessionForOrder, isStripeConfigured } from '../../../services/cnc/stripe';
 import { webPublicUrl } from '../../../email/email-service';
+import { sendCncOrderStuckAdminEmail } from '../../../email/cnc-emails';
 import { logger } from '../../../utils/logger';
 import { CreateCncCheckoutSessionInputSchema } from '../../../validation/schemas';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
@@ -227,7 +228,27 @@ export const cncPackMutations = {
       try {
         await transitionOrder(order.id, 'checkoutFailed');
       } catch (cancelError) {
-        logger.error('[cnc-checkout] failed to cancel the reserved order', { orderId: order.id, cancelError });
+        // Both halves failed, so the row is stranded: no session means no
+        // `checkout.session.expired` webhook will ever cancel it, and the
+        // cleanup that exists for exactly that case just threw. Nothing was
+        // charged, but somebody has to retire this order by hand — so this is
+        // the one path here that pages a human rather than only logging.
+        logger.error('[cnc-checkout] order is stuck in pending_payment: checkout and its cleanup both failed', {
+          orderId: order.id,
+          licenceId: order.licenceId,
+          error: error instanceof Error ? error.message : error,
+          cancelError,
+        });
+        // Best-effort, like every other send: `sendCncOrderStuckAdminEmail`
+        // logs and swallows its own failures, and the buyer's error must not
+        // depend on SMTP.
+        await sendCncOrderStuckAdminEmail({
+          licenceId: order.licenceId,
+          orderId: order.id,
+          licenseeEmail: validated.licenseeEmail,
+          checkoutError: error instanceof Error ? error.message : String(error),
+          cancelError: cancelError instanceof Error ? cancelError.message : String(cancelError),
+        });
       }
       throw checkoutUnavailableError();
     }
