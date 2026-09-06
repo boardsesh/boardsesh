@@ -3891,6 +3891,26 @@ type GroupedNotification {
   climbs that carry no angle; clients fall back to the reader's own board.
   """
   climbAngle: Int
+  """
+  The climb's hold frames, so a row can draw the board art without a second
+  round trip. Present wherever climbUuid is.
+  """
+  climbFrames: String
+  """
+  Sizes the climb fits. Boards whose sizes number holds independently (Woods)
+  render a COMPLETELY different climb on the layout's default size, so a client
+  drawing the art needs this to pick the right one.
+  """
+  climbCompatibleSizeIds: [Int!]
+  """
+  The comment thread this notification belongs to, when it has one. For a
+  comment or a vote on a comment that is the commented-on entity (a tick, a
+  session, a playlist climb) rather than the comment itself, so a client can
+  open the thread directly.
+  """
+  threadEntityType: SocialEntityType
+  "ID of the entity named by threadEntityType."
+  threadEntityId: String
   "Proposal UUID (for deep-linking to a specific proposal)"
   proposalUuid: String
   "Setter username (for new_climbs_synced notifications)"
@@ -3915,6 +3935,25 @@ type GroupedNotificationConnection {
   unreadCount: Int!
   "Whether more groups are available"
   hasMore: Boolean!
+}
+
+"""
+Input for listing the distinct actors behind one notification group — the
+people in "Sarah and 4 others started following you". The triple is the same
+one groupedNotifications groups by, so a client passes back the fields off the
+row it tapped.
+"""
+input NotificationActorsInput {
+  "Notification type of the group"
+  type: NotificationType!
+  "Entity type of the group (null for types that carry none, like new_follower)"
+  entityType: SocialEntityType
+  "Entity ID of the group"
+  entityId: String
+  "Maximum number of actors to return"
+  limit: Int
+  "Number of actors to skip"
+  offset: Int
 }
 
 """
@@ -6033,6 +6072,16 @@ type Query {
   Get unread notification count for the current user.
   """
   unreadNotificationCount: Int!
+
+  """
+  Get every distinct actor behind one notification group, newest first.
+  A grouped row only carries the first three actors, so this is how a client
+  shows all of them — the follow-back list behind "Sarah and 4 others started
+  following you". Returns FollowConnection because PublicUserProfile already
+  carries isFollowedByMe, which is what a follow-back list needs.
+  Requires authentication; scoped to the caller's own notifications.
+  """
+  notificationActors(input: NotificationActorsInput!): FollowConnection!
 
   # ============================================
   # Community Proposals Queries

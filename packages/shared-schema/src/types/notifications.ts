@@ -65,6 +65,13 @@ export type GroupedNotification = {
   climbLayoutId?: number | null;
   /** Angle the climb was set at, when the setter fixed one (often null). */
   climbAngle?: number | null;
+  /** The climb's hold frames, so a row can draw the board art with no second round trip. */
+  climbFrames?: string | null;
+  /** Sizes the climb fits — Woods numbers holds per size, so the default size draws a different climb. */
+  climbCompatibleSizeIds?: number[] | null;
+  /** The commented-on entity behind a comment/vote row, so a client can open the thread. */
+  threadEntityType?: SocialEntityType | null;
+  threadEntityId?: string | null;
   proposalUuid?: string | null;
   setterUsername?: string | null;
   /** Gym name (for gym_claim_approved notifications). */

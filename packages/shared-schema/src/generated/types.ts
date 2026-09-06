@@ -2415,6 +2415,17 @@ export type GroupedNotification = {
    */
   climbAngle?: Maybe<Scalars['Int']['output']>;
   /**
+   * Sizes the climb fits. Boards whose sizes number holds independently (Woods)
+   * render a COMPLETELY different climb on the layout's default size, so a client
+   * drawing the art needs this to pick the right one.
+   */
+  climbCompatibleSizeIds?: Maybe<Array<Scalars['Int']['output']>>;
+  /**
+   * The climb's hold frames, so a row can draw the board art without a second
+   * round trip. Present wherever climbUuid is.
+   */
+  climbFrames?: Maybe<Scalars['String']['output']>;
+  /**
    * Layout the climb was set on. Clients need this to build a board URL that
    * actually resolves: the climb query filters on layoutId, so guessing the
    * board's first layout misses every Kilter Homewall / Tension Board 2 climb.
@@ -2440,6 +2451,15 @@ export type GroupedNotification = {
   proposalUuid?: Maybe<Scalars['String']['output']>;
   /** Setter username (for new_climbs_synced notifications) */
   setterUsername?: Maybe<Scalars['String']['output']>;
+  /** ID of the entity named by threadEntityType. */
+  threadEntityId?: Maybe<Scalars['String']['output']>;
+  /**
+   * The comment thread this notification belongs to, when it has one. For a
+   * comment or a vote on a comment that is the commented-on entity (a tick, a
+   * session, a playlist climb) rather than the comment itself, so a client can
+   * open the thread directly.
+   */
+  threadEntityType?: Maybe<SocialEntityType>;
   /** Type of notification */
   type: NotificationType;
   /** UUID of the most recent notification in the group */
@@ -4564,6 +4584,25 @@ export type Notification = {
   uuid: Scalars['ID']['output'];
 };
 
+/**
+ * Input for listing the distinct actors behind one notification group — the
+ * people in "Sarah and 4 others started following you". The triple is the same
+ * one groupedNotifications groups by, so a client passes back the fields off the
+ * row it tapped.
+ */
+export type NotificationActorsInput = {
+  /** Entity ID of the group */
+  entityId?: InputMaybe<Scalars['String']['input']>;
+  /** Entity type of the group (null for types that carry none, like new_follower) */
+  entityType?: InputMaybe<SocialEntityType>;
+  /** Maximum number of actors to return */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Number of actors to skip */
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  /** Notification type of the group */
+  type: NotificationType;
+};
+
 /** Paginated list of notifications with counts. */
 export type NotificationConnection = {
   __typename?: 'NotificationConnection';
@@ -5432,6 +5471,15 @@ export type Query = {
   nearbySessions: Array<DiscoverableSession>;
   /** Get a feed of newly created climbs for a board type and layout. */
   newClimbFeed: NewClimbFeedResult;
+  /**
+   * Get every distinct actor behind one notification group, newest first.
+   * A grouped row only carries the first three actors, so this is how a client
+   * shows all of them — the follow-back list behind "Sarah and 4 others started
+   * following you". Returns FollowConnection because PublicUserProfile already
+   * carries isFollowedByMe, which is what a follow-back list needs.
+   * Requires authentication; scoped to the caller's own notifications.
+   */
+  notificationActors: FollowConnection;
   /** Get notifications for the current user. */
   notifications: NotificationConnection;
   /**
@@ -6025,6 +6073,11 @@ export type QueryNearbySessionsArgs = {
 /** Root query type for all read operations. */
 export type QueryNewClimbFeedArgs = {
   input: NewClimbFeedInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryNotificationActorsArgs = {
+  input: NotificationActorsInput;
 };
 
 /** Root query type for all read operations. */
@@ -8897,6 +8950,7 @@ export type ResolversTypes = ResolversObject<{
   NewClimbSubscription: ResolverTypeWrapper<NewClimbSubscription>;
   NewClimbSubscriptionInput: NewClimbSubscriptionInput;
   Notification: ResolverTypeWrapper<Notification>;
+  NotificationActorsInput: NotificationActorsInput;
   NotificationConnection: ResolverTypeWrapper<NotificationConnection>;
   NotificationEvent: ResolverTypeWrapper<NotificationEvent>;
   NotificationType: NotificationType;
@@ -9277,6 +9331,7 @@ export type ResolversParentTypes = ResolversObject<{
   NewClimbSubscription: NewClimbSubscription;
   NewClimbSubscriptionInput: NewClimbSubscriptionInput;
   Notification: Notification;
+  NotificationActorsInput: NotificationActorsInput;
   NotificationConnection: NotificationConnection;
   NotificationEvent: NotificationEvent;
   OrphanGym: OrphanGym;
@@ -10589,6 +10644,8 @@ export type GroupedNotificationResolvers<
   actors?: Resolver<Array<ResolversTypes['GroupedNotificationActor']>, ParentType, ContextType>;
   boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbAngle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  climbCompatibleSizeIds?: Resolver<Maybe<Array<ResolversTypes['Int']>>, ParentType, ContextType>;
+  climbFrames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbLayoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   climbName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -10600,6 +10657,8 @@ export type GroupedNotificationResolvers<
   isRead?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   proposalUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  threadEntityId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  threadEntityType?: Resolver<Maybe<ResolversTypes['SocialEntityType']>, ParentType, ContextType>;
   type?: Resolver<ResolversTypes['NotificationType'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
@@ -12552,6 +12611,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryNewClimbFeedArgs, 'input'>
+  >;
+  notificationActors?: Resolver<
+    ResolversTypes['FollowConnection'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryNotificationActorsArgs, 'input'>
   >;
   notifications?: Resolver<
     ResolversTypes['NotificationConnection'],

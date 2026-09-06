@@ -748,6 +748,16 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     unreadNotificationCount: Int!
 
+    """
+    Get every distinct actor behind one notification group, newest first.
+    A grouped row only carries the first three actors, so this is how a client
+    shows all of them — the follow-back list behind "Sarah and 4 others started
+    following you". Returns FollowConnection because PublicUserProfile already
+    carries isFollowedByMe, which is what a follow-back list needs.
+    Requires authentication; scoped to the caller's own notifications.
+    """
+    notificationActors(input: NotificationActorsInput!): FollowConnection!
+
     # ============================================
     # Community Proposals Queries
     # ============================================
