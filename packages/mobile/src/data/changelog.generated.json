@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-06T07:08:30.591Z",
+  "generatedAt": "2026-09-06T09:04:01.392Z",
   "entries": [
+    {
+      "prNumber": 5191,
+      "category": "fixed",
+      "title": "Long climb summaries no longer squash the Logbook heading into a column of single letters",
+      "mergedAt": "2026-09-06T09:02:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5191"
+    },
     {
       "prNumber": 4761,
       "category": "fixed",

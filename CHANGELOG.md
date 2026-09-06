@@ -14,6 +14,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Long climb summaries no longer squash the Logbook heading into a column of single letters ([#5191](https://github.com/boardsesh/boardsesh/pull/5191))
 - Routes now light up properly on the wall — the whole route, not a scrambled mix of moves. ([#4761](https://github.com/boardsesh/boardsesh/pull/4761))
   Play your route in the climb creator before you publish it, with the same transport and speed control the play drawer has.
   The creator's play button was never a play button. It's now a queue glyph that says "Put it on the wall", and it tells you why it's greyed out.
