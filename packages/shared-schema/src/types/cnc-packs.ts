@@ -24,6 +24,15 @@ export type CncOrderStatus =
 /** How a piece of artwork is cut: scored, cleared to depth, or right through the panel. */
 export type CncArtworkMode = 'engrave' | 'pocket' | 'cut_through';
 
+/**
+ * What a piece of artwork is: a routed label, an uploaded drawing, or an
+ * uploaded raster the generator traces first.
+ *
+ * The vocabulary, not the menu — `CncArtworkRules.allowedKinds` says which of
+ * these checkout accepts today.
+ */
+export type CncArtworkKind = 'text' | 'svg' | 'png';
+
 export type CncTierPrice = {
   tier: CncLicenceTier;
   amountCents: number;
@@ -70,6 +79,8 @@ export type CncArtworkRules = {
   minWidthMm: number;
   maxWidthMm: number;
   maxTextChars: number;
+  /** The kinds checkout accepts today. A client hides anything not listed here. */
+  allowedKinds: CncArtworkKind[];
 };
 
 export type CncCatalog = {

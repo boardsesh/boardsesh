@@ -49,6 +49,7 @@ const CNC_CATALOG_FIELDS = `
     minWidthMm
     maxWidthMm
     maxTextChars
+    allowedKinds
   }
 `;
 

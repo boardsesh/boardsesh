@@ -1,6 +1,7 @@
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import {
+  CNC_ALLOWED_ARTWORK_KINDS,
   CNC_ARTWORK_FONTS,
   CNC_CATALOG,
   CNC_CATALOG_VERSION,
@@ -208,6 +209,9 @@ export const cncPackQueries = {
         minWidthMm: CNC_MIN_ARTWORK_WIDTH_MM,
         maxWidthMm: CNC_MAX_ARTWORK_WIDTH_MM,
         maxTextChars: CNC_MAX_ARTWORK_TEXT_LENGTH,
+        // Spread into a fresh array: the constant is readonly and GraphQL
+        // hands the value straight to the serialiser.
+        allowedKinds: [...CNC_ALLOWED_ARTWORK_KINDS],
       },
     };
   },
