@@ -280,7 +280,7 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
       <View style={styles.iconGradeRow}>
         {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
         <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
-          {gradeLines[0] ?? formattedGrade}
+          {gradeLines[0]}
         </Text>
       </View>
       {gradeLines.length > 1 ? (
