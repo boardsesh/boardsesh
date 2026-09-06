@@ -45,6 +45,7 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 }));
 
 import { socialProposalMutations } from '../graphql/resolvers/social/proposals/mutations';
+import { activityFeedQueries } from '../graphql/resolvers/social/activity-feed';
 
 const BOARD_TYPE = 'kilter';
 const ANGLE = 40;
@@ -54,7 +55,9 @@ const REPORTER_A = 'rc-reporter-a';
 const REPORTER_B = 'rc-reporter-b';
 const REPORTER_C = 'rc-reporter-c';
 const ADMIN = 'rc-admin';
-const ALL_USERS = [REPORTER_A, REPORTER_B, REPORTER_C, ADMIN];
+const FEED_READER = 'rc-feed-reader';
+const FEED_ACTOR = 'rc-feed-actor';
+const ALL_USERS = [REPORTER_A, REPORTER_B, REPORTER_C, ADMIN, FEED_READER, FEED_ACTOR];
 
 const HIDE_REASON = 'These holds fell off the wall last week and it cannot be climbed.';
 const GRADE_REASON = 'Everyone at the gym agrees this is at least two grades harder.';
@@ -182,26 +185,31 @@ const createHideProposal = (userId: string, overrides: Record<string, unknown> =
     authCtx(userId),
   );
 
+async function resetFixtures() {
+  await db.execute(sql`DELETE FROM "comments" WHERE entity_type = 'proposal'`);
+  await db.execute(sql`DELETE FROM "proposal_votes"`);
+  await db.execute(sql`DELETE FROM "climb_community_status"`);
+  await db.execute(sql`DELETE FROM "climb_classic_status"`);
+  await db.execute(sql`DELETE FROM "climb_proposals"`);
+  await db.execute(sql`DELETE FROM "community_settings"`);
+  await db.execute(sql`DELETE FROM "community_roles"`);
+  await db.execute(sql`DELETE FROM "board_climb_stats"`);
+  await db.execute(sql`DELETE FROM "feed_items"`);
+  await db.execute(sql`DELETE FROM "board_climbs" WHERE "uuid" = ${CLIMB_UUID}`);
+
+  for (const userId of ALL_USERS) {
+    await insertUser(userId);
+  }
+  await insertClimb();
+}
+
 describe('reportClimb', () => {
   beforeEach(async () => {
     mockPublishSocialEvent.mockClear();
     mockNotifyClimbRevalidated.mockClear();
     mockPublishCommentEvent.mockClear();
 
-    await db.execute(sql`DELETE FROM "comments" WHERE entity_type = 'proposal'`);
-    await db.execute(sql`DELETE FROM "proposal_votes"`);
-    await db.execute(sql`DELETE FROM "climb_community_status"`);
-    await db.execute(sql`DELETE FROM "climb_classic_status"`);
-    await db.execute(sql`DELETE FROM "climb_proposals"`);
-    await db.execute(sql`DELETE FROM "community_settings"`);
-    await db.execute(sql`DELETE FROM "community_roles"`);
-    await db.execute(sql`DELETE FROM "board_climb_stats"`);
-    await db.execute(sql`DELETE FROM "board_climbs" WHERE "uuid" = ${CLIMB_UUID}`);
-
-    for (const userId of ALL_USERS) {
-      await insertUser(userId);
-    }
-    await insertClimb();
+    await resetFixtures();
   });
 
   it('opens a hide proposal with the reporter vote and their reason as a comment', async () => {
@@ -680,5 +688,97 @@ describe('reportClimb', () => {
     const climb = await readClimbHiddenState();
     expect(climb.isHidden).toBe(false);
     expect(climb.hiddenAt).toBeNull();
+  });
+});
+
+describe('activityFeed hides fanned-out rows for hidden climbs', () => {
+  /**
+   * The feed is fanned out on write, so a tick on a climb the community hides
+   * later is already sitting in every follower's `feed_items`. The filter has to
+   * drop that row at read time without deleting it — an unhide has to bring the
+   * same row back — and it has to leave rows that carry no climb alone.
+   */
+  const TICK_ON_REPORTED_CLIMB = 'rc-feed-tick-reported';
+  const TICK_ON_MISSING_CLIMB = 'rc-feed-tick-missing';
+  const SESSION_WITHOUT_CLIMB = 'rc-feed-session-summary';
+
+  type FeedItemFixture = {
+    entityId: string;
+    entityType: 'tick' | 'session';
+    feedType: 'ascent' | 'session_summary';
+    metadata: Record<string, unknown>;
+    createdAt: Date;
+  };
+
+  const insertFeedItem = ({ entityId, entityType, feedType, metadata, createdAt }: FeedItemFixture) =>
+    db.insert(dbSchema.feedItems).values({
+      recipientId: FEED_READER,
+      actorId: FEED_ACTOR,
+      type: feedType,
+      entityType,
+      entityId,
+      metadata,
+      createdAt,
+    });
+
+  const readFeedEntityIds = async () => {
+    const feed = await activityFeedQueries.activityFeed(null, { input: { limit: 10 } }, authCtx(FEED_READER));
+    return feed.items.map((item) => item.entityId);
+  };
+
+  const countStoredFeedRows = async () => {
+    const storedRows = await db
+      .select()
+      .from(dbSchema.feedItems)
+      .where(eq(dbSchema.feedItems.recipientId, FEED_READER));
+    return storedRows.length;
+  };
+
+  const setReportedClimbHidden = (hidden: boolean) =>
+    db.update(dbSchema.boardClimbs).set({ isHidden: hidden }).where(eq(dbSchema.boardClimbs.uuid, CLIMB_UUID));
+
+  beforeEach(async () => {
+    await resetFixtures();
+
+    await insertFeedItem({
+      entityId: TICK_ON_REPORTED_CLIMB,
+      entityType: 'tick',
+      feedType: 'ascent',
+      metadata: { climbUuid: CLIMB_UUID, climbName: 'Reported Climb', boardType: BOARD_TYPE, angle: ANGLE },
+      createdAt: new Date('2026-03-01T10:00:00.000Z'),
+    });
+    await insertFeedItem({
+      entityId: TICK_ON_MISSING_CLIMB,
+      entityType: 'tick',
+      feedType: 'ascent',
+      metadata: { climbUuid: 'rc-feed-climb-that-does-not-exist', climbName: 'Some Other Climb' },
+      createdAt: new Date('2026-03-02T10:00:00.000Z'),
+    });
+    await insertFeedItem({
+      entityId: SESSION_WITHOUT_CLIMB,
+      entityType: 'session',
+      feedType: 'session_summary',
+      metadata: { actorDisplayName: 'Feed Actor' },
+      createdAt: new Date('2026-03-03T10:00:00.000Z'),
+    });
+  });
+
+  it('drops the row while the climb is hidden and brings it back on unhide', async () => {
+    expect(await readFeedEntityIds()).toEqual([SESSION_WITHOUT_CLIMB, TICK_ON_MISSING_CLIMB, TICK_ON_REPORTED_CLIMB]);
+
+    await setReportedClimbHidden(true);
+
+    // Only the hidden climb's row goes. A row whose climbUuid matches no climb
+    // and a row with no climbUuid at all both still read through — `->>` on a
+    // missing key is NULL, which must not swallow the whole feed.
+    expect(await readFeedEntityIds()).toEqual([SESSION_WITHOUT_CLIMB, TICK_ON_MISSING_CLIMB]);
+
+    // Filtered, not purged: the row is still on disk waiting for the unhide.
+    expect(await countStoredFeedRows()).toBe(3);
+
+    await setReportedClimbHidden(false);
+
+    expect(await readFeedEntityIds()).toEqual([SESSION_WITHOUT_CLIMB, TICK_ON_MISSING_CLIMB, TICK_ON_REPORTED_CLIMB]);
+    expect(await countStoredFeedRows()).toBe(3);
   });
 });

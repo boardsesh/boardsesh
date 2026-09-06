@@ -183,14 +183,13 @@ hides.
 
 ---
 
-### Already fanned-out feed rows are eventually consistent
+### Already fanned-out feed rows
 
-`activityFeed` reads the materialised `feed_items` table without joining `board_climbs`, so a
-tick or "new climb" row fanned out **before** the climb was hidden keeps showing in followers'
-feeds until it ages out of the window. The write side is guarded (a hide approval fans out
-nothing, and the live `trendingFeed`, ascent feeds, search and lists all filter at read time);
-the stale materialised rows are the one place a hidden climb lingers. Filtering them would mean
-resolving every `tick` row back to its climb on read — deliberately not done in the first cut.
+`activityFeed` reads the materialised `feed_items` table, so a tick or "new climb" row fanned out
+**before** the climb was hidden would otherwise keep showing in followers' feeds. Every tick, climb
+and proposal row carries the climb's uuid in its `metadata`, and the read excludes rows whose climb
+is currently hidden (`NOT EXISTS … board_climbs.is_hidden`). Nothing is purged, so an unhide brings
+the rows straight back. The write side is also guarded: a hide approval fans out nothing.
 
 ## Notifications
 
