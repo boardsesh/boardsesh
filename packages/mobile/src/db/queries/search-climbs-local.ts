@@ -341,35 +341,14 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
   const crowdRange = gradeInRange(roundedGrade);
   if (crowdRange) {
     if (usesMyGrades(input)) {
-      const personalRange = gradeInRange(clampToBoulderScale('my_grade_tick.difficulty'))!;
-      push(
-        `((NOT EXISTS (SELECT 1 FROM boardsesh_ticks my_grade_any
-            WHERE my_grade_any.climb_uuid = c.uuid AND my_grade_any.board_type = ? AND my_grade_any.angle = ?
-            AND ${ownedTicks('my_grade_any')} AND my_grade_any.difficulty IS NOT NULL)
-          AND ${crowdRange.clause})
-          OR EXISTS (SELECT 1 FROM boardsesh_ticks my_grade_tick
-            WHERE my_grade_tick.climb_uuid = c.uuid AND my_grade_tick.board_type = ? AND my_grade_tick.angle = ?
-            AND ${ownedTicks('my_grade_tick')} AND my_grade_tick.difficulty IS NOT NULL
-            AND ${personalRange.clause}
-            AND NOT EXISTS (SELECT 1 FROM boardsesh_ticks my_grade_newer
-              WHERE my_grade_newer.climb_uuid = my_grade_tick.climb_uuid
-              AND my_grade_newer.board_type = my_grade_tick.board_type
-              AND my_grade_newer.angle = my_grade_tick.angle
-              AND ${ownedTicks('my_grade_newer')}
-              AND my_grade_newer.difficulty IS NOT NULL
-              AND (my_grade_newer.climbed_at > my_grade_tick.climbed_at
-                OR (my_grade_newer.climbed_at = my_grade_tick.climbed_at
-                  AND my_grade_newer.uuid > my_grade_tick.uuid)))))`,
-        boardType,
-        angle,
-        ownerUserId,
-        ...crowdRange.binds,
-        boardType,
-        angle,
-        ownerUserId,
-        ...personalRange.binds,
-        ownerUserId,
-      );
+      // The SAME expression the sort and the projection use, not a second
+      // spelling of the rule. This filter was originally written as
+      // NOT EXISTS / EXISTS halves under an OR — the exact shape that measured
+      // a 7.1x regression on the server before a review caught it — and it also
+      // meant the local filter and the local sort could drift apart while both
+      // looked right. One probe per candidate row, one definition.
+      const personalRange = gradeInRange(EFFECTIVE_GRADE_EXPR)!;
+      push(personalRange.clause, ...myGradeBinds(boardType, angle, ownerUserId), ...personalRange.binds);
     } else {
       push(crowdRange.clause, ...crowdRange.binds);
     }
@@ -483,10 +462,16 @@ function sortColumnSql(sortBy: string, useMyGrades: boolean): string {
     case 'ascents':
       return 's.ascensionist_count';
     case 'difficulty':
-      // With personal grades on, order by the SAME expression the filter
-      // admitted the row on, so a climb the climber re-graded to V10 sorts
-      // among the V10s rather than staying with the V0s (#4828).
-      return useMyGrades ? EFFECTIVE_GRADE_EXPR : ROUNDED_CROWD_GRADE;
+      // With personal grades on, order by the SAME value the filter admitted
+      // the row on, so a climb the climber re-graded to V10 sorts among the
+      // V10s rather than staying with the V0s (#4828).
+      //
+      // Ordering on the PROJECTED alias rather than repeating the subquery:
+      // SQLite happily takes a result-column alias inside an ORDER BY
+      // expression, and doing so evaluates the per-row probe once instead of
+      // once for the SELECT and again for the sort. The alias only exists when
+      // personal grades are on, which is exactly this branch.
+      return useMyGrades ? `COALESCE(my_difficulty, ${ROUNDED_CROWD_GRADE})` : ROUNDED_CROWD_GRADE;
     case 'name':
       // NOCASE so 'apple' sorts before 'Zebra', matching Postgres's locale
       // collation (SQLite's default BINARY puts all uppercase first). ASCII
@@ -692,14 +677,11 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
     LIMIT ? OFFSET ?
   `;
 
-  // ORDER BY sits between WHERE and LIMIT/OFFSET in the SQL text: the random
-  // seed `?` for a shuffle, or the personal-grade probe's three binds when the
-  // difficulty sort is keyed off the climber's own grade.
-  const orderBinds: Bind[] = isRandom
-    ? [randomSeedBind]
-    : useMyGrades && sortBy === 'difficulty'
-      ? myGradeBinds(boardType, angle, ownerUserId)
-      : [];
+  // ORDER BY sits between WHERE and LIMIT/OFFSET in the SQL text, and carries
+  // the random seed `?` for a shuffle. The difficulty sort needs no binds of
+  // its own: it reads the `my_difficulty` alias the SELECT already computed,
+  // rather than repeating that subquery and its three binds here.
+  const orderBinds: Bind[] = isRandom ? [randomSeedBind] : [];
   const binds: Bind[] = [...selectBinds, ...joinBinds, ...whereBinds, ...orderBinds, pageSize + 1, page * pageSize];
   const rows = await db.getAllAsync<LocalClimbRow>(query, binds);
 
