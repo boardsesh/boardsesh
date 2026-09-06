@@ -12,6 +12,7 @@ import {
   isNoMatch,
 } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
+import { Text } from './Text';
 import { useTheme } from '../providers/theme-provider';
 
 type ClimbAttributeIconsProps = {
@@ -27,7 +28,12 @@ type ClimbAttributeIconsProps = {
    * (e.g. session-tick rows). Ignored when `characteristics` is provided.
    */
   isNoMatch?: boolean | null;
-  /** Glyph size; defaults to 14 to sit beside body-sized climb names. */
+  /**
+   * Glyph size; defaults to 14 to sit beside body-sized climb names. Applies to
+   * the ICONS only — the text badges ride the shared `caption1` type scale so they
+   * follow the per-UI-variant scale and Dynamic Type, rather than a fixed size
+   * derived from this (#4883).
+   */
   size?: number;
 };
 
@@ -105,10 +111,12 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
         </View>
       ) : null}
       {method ? (
-        <Text style={[styles.method, { fontSize: size - 2, color: theme.systemColors.secondaryLabel }]}>{method}</Text>
+        <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.method}>
+          {method}
+        </Text>
       ) : null}
       {extraLabels.length > 0 ? (
-        <Text style={[styles.method, { fontSize: size - 2, color: theme.systemColors.secondaryLabel }]}>
+        <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.method}>
           {extraLabels.join(' · ')}
         </Text>
       ) : null}
@@ -121,11 +129,15 @@ const styles = StyleSheet.create({
     marginStart: 4,
     flexShrink: 0,
   },
+  // No `textTransform: 'uppercase'` and no tracking: #4883 is about this cluster
+  // shouting FOOTLESS / NO KB / CAMPUS beside a quietly-set no-match glyph. Sentence
+  // case at the shared caption weight puts the two on the same footing, and the
+  // catalog strings stay ABBREVIATED on purpose — see the PR body's width budget:
+  // spelling "No KB" out in full costs the German row roughly three times the
+  // badge width at Dynamic Type 1.5×, all of it taken from the climb's name.
   method: {
     marginStart: 6,
     flexShrink: 0,
     fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
   },
 });
