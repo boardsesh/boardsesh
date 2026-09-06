@@ -160,7 +160,7 @@ describe('ClimbListItemContent favourite heart', () => {
 
   const heart = (container: HTMLElement) => container.querySelector('[data-icon="favorite.fill"]');
 
-  it('renders a filled heart in the favourite colour when the store says favorited', () => {
+  it('renders a filled heart in the same neutral grey as the ascent-status glyph', () => {
     favoritesStore.setIsFavorited('c1', true);
     const { container } = render(
       <ClimbListItemContent
@@ -173,7 +173,8 @@ describe('ClimbListItemContent favourite heart', () => {
         showFavorite
       />,
     );
-    expect(heart(container)?.getAttribute('data-color')).toBe('#FF3B30');
+    // Matches AscentStatusGlyph: this cluster means by shape, not colour.
+    expect(heart(container)?.getAttribute('data-color')).toBe('#8E8E93');
   });
 
   it('renders no heart for a climb that is not favorited', () => {

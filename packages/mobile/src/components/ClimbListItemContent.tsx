@@ -125,21 +125,26 @@ type ClimbListItemContentProps = {
  * only part of the row subscribed to `favoritesStore`, over a primitive uuid, so
  * favouriting one climb re-renders one 14px icon rather than every visible row.
  *
- * Filled rather than outlined, and drawn in the platform's favourite colour
- * (`actionColors.favorite` — red under Material, monochrome under Liquid Glass,
- * matching the heart in the actions sheet). Renders nothing when the climb isn't
- * favourited, which is the common case, so it costs an unfavourited row nothing
- * but the subscription.
+ * Same neutral grey and size as the ascent-status glyph it sits beside, for the
+ * reason given above `ASCENT_STATUS_ICON`: this cluster carries meaning by glyph
+ * SHAPE, leaving colour to mean grade and nothing else. A red heart here would
+ * read as a third colour signal next to the colour-coded grade and would carry
+ * its meaning in a way colour-blind users can't see. The filled silhouette is
+ * what distinguishes it — the actions sheet keeps the red heart, where it's a
+ * control rather than a scan-line marker.
+ *
+ * Renders nothing when the climb isn't favourited, which is the common case, so
+ * it costs an unfavourited row nothing but the subscription.
  */
 const FavoriteGlyph = React.memo(function FavoriteGlyph({ climbUuid }: { climbUuid: string }) {
   const { t } = useTranslation('climbs');
-  const { actionColors } = useTheme();
+  const theme = useTheme();
   const isFavorited = useIsClimbFavorited(climbUuid);
 
   if (!isFavorited) return null;
   return (
     <View accessibilityRole="image" accessibilityLabel={t('mobile.climbRow.favorited')}>
-      <Icon name="favorite.fill" size={14} color={actionColors.favorite} />
+      <Icon name="favorite.fill" size={16} color={theme.systemColors.secondaryLabel} />
     </View>
   );
 });
