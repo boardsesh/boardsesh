@@ -51,11 +51,35 @@ headers see none of it.
 | Verdict sheet                                   | `src/components/user-drawer/QaVerdictSheet.tsx`                                  |
 | xprem wrapper (the only deep-import site)       | `src/lib/qa/qa-surf.ts`                                                          |
 | Branch-name parsing, session keys, row ordering | `src/lib/qa/{pr-branch,qa-keys,qa-pick-rows}.ts`                                 |
+| Search parsing, filtering, list state           | `src/lib/qa/qa-pick-rows.ts` (`parsePrQuery`, `filterQaPickRows`, `qaPickListState`) |
+| The search field itself                         | `src/components/SearchField.tsx` (shared with climber search)                    |
 | Which QA rows a menu offers                     | `src/lib/qa/qa-drawer-rows.ts`, `src/lib/qa/use-qa-menu.ts`                      |
 | GraphQL hooks                                   | `src/lib/qa/use-qa-previews.ts`                                                  |
 | Event names                                     | `src/lib/qa/qa-analytics.ts`                                                     |
 
-## Four things that are easy to get wrong
+## Searching, and the PR that isn't in the list
+
+The pick list has a search field that matches the PR's **title** and its **number**.
+`5203`, `#5203`, `pr-5203` and `PR 5203` are all the same query. Titles match as an AND of
+whatever words you type, so `fix queue` finds "Fix the queue reducer".
+
+Numbers match by **prefix**, never by their tail: `520` finds #5203, `203` does not. That is not
+fussiness. The list has to be able to narrow all the way to zero, because reaching zero matches is
+what offers the escape hatch below — under substring matching, `5` would keep #4795 and #1523
+alongside #5203 and the hatch would be unreachable for exactly the short queries that need it.
+
+Only rows that exist can be searched by title. A PR with no preview has no title on the device
+(`qaPreviews` is asked about the branches we have), so its title finds nothing. The number is the
+only handle that works for a PR this build has never heard of — which is what the next section is
+for.
+
+**When a number matches nothing, the screen offers to load `pr-<n>` anyway.** It re-asks the
+update server first, because the branch list is cached for 30s and the commonest honest reason a
+PR is missing is that it published a moment ago; if it turns up, the ordinary path takes over. If
+it still is not there, `surfToUnlistedPr` pins it speculatively — and puts the pin back if the
+server has nothing to serve.
+
+## Seven things that are easy to get wrong
 
 **The branch list is the spine, not the PR list.** A branch the backend knows nothing about (GitHub
 down, PR closed) still gets a tappable row, rendered as bare `pr-N`. Testing must never be blocked
@@ -87,6 +111,17 @@ production is not _newer_ than a freshly published `pr-N` bundle, so `checkForUp
 "nothing available" and the tester keeps running the preview until production publishes again. That
 is why a verdict is persisted as `qaVerdictSubmittedKey` (a `<branch>:<updateId>` session key): the
 marker, not the reload, is what stops the gate re-prompting and the drawer re-offering.
+
+**A speculative pin has to be undone, and not with `surfTo`.** A branch pin is persistent. `surfTo`
+sets the header BEFORE `checkForUpdateAsync` and restores it only inside its own `catch`, so a
+branch that answers "nothing available" leaves the device pinned to it across relaunches. For a
+real branch that is wanted — its next publish lands on relaunch. For a branch that does not exist
+it is a device that has silently stopped receiving production updates, which is why
+`surfToUnlistedPr` exists and why it drives the pin, the check and the reload itself: xprem tracks
+the previous pin in a module-private variable, so a restoring `surfTo(previous)` would record the
+BOGUS branch as its own rollback target and re-pin it if the restore threw. The restore target is
+`readLoadedState().branch` — the branch that actually served the running bundle — because xprem's
+own bookkeeping reads as `undefined` on a fresh launch even while an override persists.
 
 **`isTester === undefined` is not `false`.** The profile is network-only, so on a cold offline start
 it is undefined for a moment. `decideQaGate` returns `wait` there. Treating it as "not a tester"

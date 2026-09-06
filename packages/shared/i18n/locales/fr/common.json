@@ -623,7 +623,14 @@
       "buildingChip": "En cours de build",
       "buildingNewerChip": "Nouveau build en cours",
       "buildingToast": "Toujours en cours de publication — il apparaîtra ici une fois le build prêt",
-      "buildingHint": "Cet aperçu est encore en cours de publication et ne peut pas être chargé pour l'instant"
+      "buildingHint": "Cet aperçu est encore en cours de publication et ne peut pas être chargé pour l'instant",
+      "searchPlaceholder": "Cherche par titre ou numéro",
+      "clearSearch": "Effacer la recherche",
+      "noMatchTitle": "Aucune PR ne correspond",
+      "noMatchBody": "Rien de publié pour cette version ne correspond à « {{query}} ».",
+      "trySurfAction": "Essayer quand même la #{{prNumber}}",
+      "trySurfHint": "Elle n'a peut-être pas de preview que cette version peut charger.",
+      "notServableToast": "Pas de preview de la #{{prNumber}} pour cette version — il lui faut peut-être un rebase sur main"
     },
     "brief": {
       "screenTitle": "Quoi tester",

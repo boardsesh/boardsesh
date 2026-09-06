@@ -9,6 +9,7 @@ import type { TFunction } from 'i18next';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
+import { SearchField } from '../SearchField';
 import { Text } from '../Text';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useAppColorScheme, useTheme } from '../../providers/theme-provider';
@@ -17,12 +18,21 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
-import { listPrBranches, qaSurfingAvailable, readRefusedPrNumber, surfToPr } from '../../lib/qa/qa-surf';
+import {
+  listPrBranches,
+  qaSurfingAvailable,
+  readRefusedPrNumber,
+  surfToPr,
+  surfToUnlistedPr,
+} from '../../lib/qa/qa-surf';
 import { parsePrNumberList } from '../../lib/qa/pr-branch';
 import {
   buildQaPickRows,
   fallbackRowTitle,
+  filterQaPickRows,
   labelChipColor,
+  parsePrQuery,
+  qaPickListState,
   riskTone,
   visibleLabels,
   type QaPickRow,
@@ -34,6 +44,7 @@ import {
   QA_PREVIEW_PICKED_EVENT,
   QA_PREVIEW_SKIPPED_EVENT,
   QA_SURF_FAILED_EVENT,
+  QA_UNLISTED_SURF_MISSED_EVENT,
   surfFailureReason,
 } from '../../lib/qa/qa-analytics';
 
@@ -75,6 +86,7 @@ export function QaPickScreen() {
     retry: 1,
   });
   const branches = branchesQuery.data ?? null;
+  const { refetch: refetchBranches } = branchesQuery;
 
   const prNumbers = branches === null ? seedPrNumbers : branches.map((entry) => entry.prNumber);
   // Metadata needs an account; the branch list does not. A signed-out user still
@@ -87,6 +99,10 @@ export function QaPickScreen() {
     if (branches === null) return NO_ROWS;
     return buildQaPickRows({ branches, previews: previewsQuery.data ?? [], refusedPrNumber });
   }, [branches, previewsQuery.data, refusedPrNumber]);
+
+  const [query, setQuery] = useState('');
+  const visibleRows = useMemo(() => filterQaPickRows(rows, query), [rows, query]);
+  const queryPrNumber = useMemo(() => parsePrQuery(query), [query]);
 
   const [surfingPrNumber, setSurfingPrNumber] = useState<number | null>(null);
   // Swipe-dismiss pops the route without touching Skip, so the "left without
@@ -139,7 +155,7 @@ export function QaPickScreen() {
       surfInFlightRef.current = true;
       setSurfingPrNumber(row.prNumber);
       pickedRef.current = true;
-      track(QA_PREVIEW_PICKED_EVENT, { prNumber: row.prNumber, risk: row.risk });
+      track(QA_PREVIEW_PICKED_EVENT, { prNumber: row.prNumber, risk: row.risk, source: 'list' });
       void surfToPr(row.prNumber)
         .then((outcome) => {
           // 'reloading' never gets here in practice — the app restarts onto the
@@ -168,6 +184,69 @@ export function QaPickScreen() {
     [showToast, surfingAvailable, t],
   );
 
+  // The escape hatch behind a no-match search: a PR the branch list never offered.
+  // Shares `surfInFlightRef` with `handlePick` so the two entry points cannot race
+  // each other into two header overrides and two reloads.
+  const handleTrySurf = useCallback(
+    (prNumber: number) => {
+      if (!surfingAvailable || surfInFlightRef.current) return;
+      surfInFlightRef.current = true;
+      setSurfingPrNumber(prNumber);
+      pickedRef.current = true;
+      // A forced surf is still a pick: it runs a bundle and ends in a brief and a
+      // verdict, so it belongs in the same funnel. `risk` is unknown — an unlisted
+      // PR has no metadata here.
+      track(QA_PREVIEW_PICKED_EVENT, { prNumber, risk: null, source: 'search' });
+
+      const rearm = () => {
+        surfInFlightRef.current = false;
+        setSurfingPrNumber(null);
+      };
+
+      void (async () => {
+        // Ask the server again before pinning anything. The list is cached for 30s,
+        // so the commonest honest reason a PR is missing is that it published a
+        // moment ago — and that case deserves the ordinary, pin-safe path.
+        const refreshed = await refetchBranches();
+        if (refreshed.data === null) {
+          // Surfing was switched off since the screen loaded. Pinning now would put
+          // the device into exactly the state the server is switching off.
+          rearm();
+          pickedRef.current = false;
+          showToast(t('qa.pick.surfingOffTitle'), 'info');
+          return;
+        }
+        if (refreshed.data?.some((branch) => branch.prNumber === prNumber)) {
+          // It was a stale-cache miss, not an unlisted PR. Take the ordinary path,
+          // where 'nothing-to-load' means "you already have its newest bundle" and
+          // the pin is meant to stand.
+          const outcome = await surfToPr(prNumber);
+          if (outcome === 'nothing-to-load') {
+            rearm();
+            showToast(t('qa.pick.nothingNewToast', { prNumber }), 'info');
+          }
+          return;
+        }
+        const outcome = await surfToUnlistedPr(prNumber);
+        if (outcome === 'not-servable') {
+          rearm();
+          pickedRef.current = false;
+          track(QA_UNLISTED_SURF_MISSED_EVENT, { prNumber, refetchFailed: refreshed.isError });
+          showToast(t('qa.pick.notServableToast', { prNumber }), 'info');
+        }
+      })().catch((error: unknown) => {
+        rearm();
+        pickedRef.current = false;
+        reportHandledError(error, { tags: { source: 'qa', op: 'surf-to-unlisted-pr' } });
+        track(QA_SURF_FAILED_EVENT, { prNumber, reason: surfFailureReason(error) });
+        const message =
+          error instanceof Error && error.message.length > 0 ? error.message : t('qa.pick.unreachableTitle');
+        showToast(message, 'error');
+      });
+    },
+    [refetchBranches, showToast, surfingAvailable, t],
+  );
+
   // Every row goes flat while a surf is in flight, not just the one that was
   // tapped: the app is on its way to another bundle and a second choice cannot
   // be honoured, so offering it would be a lie.
@@ -186,9 +265,19 @@ export function QaPickScreen() {
     [handlePick, rowsDisabled, surfingPrNumber, t],
   );
 
-  const surfingDisabledForChannel = branchesQuery.isSuccess && branches === null;
-  const listFailed = branchesQuery.isError;
-  const listLoading = branchesQuery.isPending;
+  const listState = qaPickListState({
+    isPending: branchesQuery.isPending,
+    isError: branchesQuery.isError,
+    surfingOff: branchesQuery.isSuccess && branches === null,
+    rows,
+    visibleRows,
+    hasQuery: query.trim().length > 0,
+  });
+
+  // Hidden only where there is no list to filter. Shown while the list loads, so
+  // the layout does not jump when rows land, and shown on a dev build, where
+  // filtering a read-only list is still useful.
+  const showSearchField = listState.kind !== 'surfing-off' && listState.kind !== 'unreachable';
 
   return (
     <View style={[styles.root, { backgroundColor: systemColors.groupedBackground, paddingTop: insets.top }]}>
@@ -215,33 +304,113 @@ export function QaPickScreen() {
         </Text>
       ) : null}
 
-      {listLoading ? (
+      {showSearchField ? (
+        <View style={styles.searchWrap}>
+          <SearchField
+            value={query}
+            onChangeText={setQuery}
+            placeholder={t('qa.pick.searchPlaceholder')}
+            clearAccessibilityLabel={t('qa.pick.clearSearch')}
+          />
+        </View>
+      ) : null}
+
+      {listState.kind === 'loading' ? (
         <View style={styles.centered}>
           <ActivityIndicator />
         </View>
       ) : null}
 
-      {surfingDisabledForChannel ? (
+      {listState.kind === 'surfing-off' ? (
         <Placard title={t('qa.pick.surfingOffTitle')} body={t('qa.pick.surfingOffBody')} />
       ) : null}
 
-      {listFailed ? (
+      {listState.kind === 'unreachable' ? (
         <Placard
           title={t('qa.pick.unreachableTitle')}
           body={branchesQuery.error instanceof Error ? branchesQuery.error.message : ''}
         />
       ) : null}
 
-      {!listLoading && !listFailed && !surfingDisabledForChannel && rows.length === 0 ? (
-        <Placard title={t('qa.pick.emptyTitle')} body={t('qa.pick.emptyBody')} />
+      {listState.kind === 'empty' ? <Placard title={t('qa.pick.emptyTitle')} body={t('qa.pick.emptyBody')} /> : null}
+
+      {listState.kind === 'no-match' ? (
+        <NoMatchState
+          query={query}
+          prNumber={queryPrNumber}
+          canSurf={surfingAvailable}
+          busy={surfingPrNumber !== null}
+          onTrySurf={handleTrySurf}
+          t={t}
+        />
       ) : null}
 
       <FlashList
-        data={rows}
+        data={listState.kind === 'rows' ? listState.rows : NO_ROWS}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         contentContainerStyle={styles.listContent}
+        // Without this the first tap on a row after typing is eaten by the keyboard
+        // dismissal, and the tester has to tap twice to pick anything.
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       />
+    </View>
+  );
+}
+
+type NoMatchStateProps = {
+  query: string;
+  prNumber: number | null;
+  canSurf: boolean;
+  busy: boolean;
+  onTrySurf: (prNumber: number) => void;
+  t: TFunction<'common'>;
+};
+
+/**
+ * Nothing matched what the tester typed — which is a different fact from "nothing
+ * is published for this build", and reads differently.
+ *
+ * When the query names a PR number, this is also the only place that offers to load
+ * it anyway. A title-shaped query gets the message and no button: there is no
+ * branch name to guess from a handful of words.
+ */
+function NoMatchState({ query, prNumber, canSurf, busy, onTrySurf, t }: NoMatchStateProps) {
+  const { systemColors, brandColors } = useTheme();
+
+  return (
+    <View style={styles.centered}>
+      <Text variant="headline" style={styles.placardTitle}>
+        {t('qa.pick.noMatchTitle')}
+      </Text>
+      <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.placardBody}>
+        {t('qa.pick.noMatchBody', { query })}
+      </Text>
+
+      {prNumber !== null && canSurf ? (
+        <>
+          <PressableSurface
+            onPress={() => onTrySurf(prNumber)}
+            feedback="opacity"
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel={t('qa.pick.trySurfAction', { prNumber })}
+            style={[styles.trySurfButton, { borderColor: brandColors.primary }]}
+          >
+            {busy ? (
+              <ActivityIndicator />
+            ) : (
+              <Text variant="subheadline" color={brandColors.primary}>
+                {t('qa.pick.trySurfAction', { prNumber })}
+              </Text>
+            )}
+          </PressableSurface>
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.placardBody}>
+            {t('qa.pick.trySurfHint')}
+          </Text>
+        </>
+      ) : null}
     </View>
   );
 }
@@ -390,6 +559,20 @@ const styles = StyleSheet.create({
   hint: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
+  },
+  searchWrap: {
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[2],
+  },
+  trySurfButton: {
+    marginTop: spacing[2],
+    minHeight: 44,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.full,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   centered: {
     alignItems: 'center',

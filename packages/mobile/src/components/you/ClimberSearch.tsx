@@ -1,5 +1,5 @@
-import { forwardRef, useEffect, useState, type ComponentType } from 'react';
-import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { PublicUserProfile, UserSearchResult } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
@@ -8,7 +8,6 @@ import { PressableAvatar } from '../PressableAvatar';
 import { ListRow } from '../ListRow';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 
@@ -55,56 +54,6 @@ export function personSubtitle(person: SocialPerson, t: (key: string, options?: 
     t('mobile.social.followingCount', { count: person.followingCount }),
   ].join(' · ');
 }
-
-type SearchInputComponent = ComponentType<TextInputProps>;
-
-type ClimberSearchFieldProps = {
-  value: string;
-  onChangeText: (value: string) => void;
-  inputComponent?: SearchInputComponent;
-  autoFocus?: boolean;
-};
-
-export const ClimberSearchField = forwardRef<TextInput, ClimberSearchFieldProps>(function ClimberSearchField(
-  { value, onChangeText, inputComponent, autoFocus },
-  ref,
-) {
-  const { t } = useTranslation('you');
-  const { systemColors } = useTheme();
-  // Cast so `ref` + `autoFocus` type-check: the default TextInput and the
-  // BottomSheetTextInput callers both forward a TextInput instance at runtime.
-  const Input = (inputComponent ?? TextInput) as typeof TextInput;
-
-  return (
-    <View style={[styles.searchField, { backgroundColor: systemColors.fill }]}>
-      <Icon name="search" size={18} color={systemColors.secondaryLabel} />
-      <Input
-        ref={ref}
-        autoFocus={autoFocus}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={t('mobile.social.searchPlaceholder')}
-        placeholderTextColor={iosSystemColors.systemGray}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-        accessibilityLabel={t('mobile.social.searchPlaceholder')}
-        style={[styles.searchInput, { color: systemColors.label }]}
-      />
-      {value.length > 0 ? (
-        <Pressable
-          onPress={() => onChangeText('')}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.social.clearSearch')}
-          style={styles.clearButton}
-        >
-          <Icon name="close" size={16} color={systemColors.secondaryLabel} />
-        </Pressable>
-      ) : null}
-    </View>
-  );
-});
 
 type ClimberSearchPersonRowProps = {
   person: SocialPerson;
@@ -212,26 +161,6 @@ export function ClimberSearchErrorState({ onRetry }: { onRetry: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  searchField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    minHeight: 42,
-    borderRadius: 10,
-    paddingHorizontal: spacing[3],
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 17,
-    paddingVertical: 0,
-  },
-  clearButton: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: -spacing[3],
-  },
   followButton: {
     minWidth: 84,
     minHeight: 44,

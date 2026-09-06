@@ -4,9 +4,13 @@ import {
   MAX_LABEL_CHIPS,
   buildQaPickRows,
   fallbackRowTitle,
+  filterQaPickRows,
   labelChipColor,
+  parsePrQuery,
+  qaPickListState,
   riskTone,
   visibleLabels,
+  type QaPickRow,
 } from '../qa-pick-rows';
 import type { QaPrBranch } from '../qa-surf';
 
@@ -360,5 +364,131 @@ describe('labelChipColor', () => {
       expect(labelChipColor('', scheme)).toBeNull();
       expect(labelChipColor('nothex', scheme)).toBeNull();
     }
+  });
+});
+
+function row(prNumber: number, title: string | null): QaPickRow {
+  return {
+    prNumber,
+    branch: `pr-${prNumber}`,
+    lastUpdateAt: '2026-08-25T10:00:00.000Z',
+    updatedAt: '2026-08-25T10:00:00.000Z',
+    title,
+    author: 'marco',
+    url: null,
+    isDraft: false,
+    risk: null,
+    myVerdict: null,
+    verdictIsStale: false,
+    refused: false,
+    loadable: true,
+    otaBuild: 'ready',
+    labels: [],
+  };
+}
+
+const prNumbersOf = (rows: QaPickRow[]) => rows.map((entry) => entry.prNumber);
+
+describe('parsePrQuery', () => {
+  it('accepts every spelling a tester types for a PR number', () => {
+    expect(parsePrQuery('5203')).toBe(5203);
+    expect(parsePrQuery('#5203')).toBe(5203);
+    expect(parsePrQuery('pr-5203')).toBe(5203);
+    expect(parsePrQuery('PR 5203')).toBe(5203);
+    expect(parsePrQuery('pr5203')).toBe(5203);
+    expect(parsePrQuery('  #5203  ')).toBe(5203);
+  });
+
+  // Unlike `parsePrBranch`, which rejects `pr-05203` because our workflow never
+  // publishes that name. This parses human input, and the branch name is
+  // regenerated from the number.
+  it('accepts a leading zero that the branch-name parser rejects', () => {
+    expect(parsePrQuery('05203')).toBe(5203);
+  });
+
+  it('rejects anything that does not name exactly one PR', () => {
+    expect(parsePrQuery('queue reducer')).toBeNull();
+    expect(parsePrQuery('5203 queue')).toBeNull();
+    expect(parsePrQuery('pr-')).toBeNull();
+    expect(parsePrQuery('')).toBeNull();
+    expect(parsePrQuery('0')).toBeNull();
+    expect(parsePrQuery('999999999999999999999')).toBeNull();
+  });
+});
+
+describe('filterQaPickRows', () => {
+  const rows = [row(5203, 'Fix the queue reducer'), row(4792, 'Add a café filter'), row(1523, null)];
+
+  it('returns the same array when nothing is typed', () => {
+    // Identity, not equality: the screen hands this straight to a virtualized
+    // list, and a fresh array every render would defeat its bail-out.
+    expect(filterQaPickRows(rows, '')).toBe(rows);
+    expect(filterQaPickRows(rows, '   ')).toBe(rows);
+  });
+
+  it('matches a title substring regardless of case', () => {
+    expect(prNumbersOf(filterQaPickRows(rows, 'QUEUE'))).toEqual([5203]);
+  });
+
+  it('matches across diacritics', () => {
+    expect(prNumbersOf(filterQaPickRows(rows, 'cafe'))).toEqual([4792]);
+  });
+
+  it('requires every typed word, in any order', () => {
+    expect(prNumbersOf(filterQaPickRows(rows, 'fix queue'))).toEqual([5203]);
+    expect(prNumbersOf(filterQaPickRows(rows, 'queue fix'))).toEqual([5203]);
+    expect(prNumbersOf(filterQaPickRows(rows, 'fix filter'))).toEqual([]);
+  });
+
+  // The list has to be able to narrow all the way to nothing, because reaching
+  // zero matches is what offers the escape hatch.
+  it('matches a PR number by prefix, never by its tail', () => {
+    expect(prNumbersOf(filterQaPickRows(rows, '5'))).toEqual([5203]);
+    expect(prNumbersOf(filterQaPickRows(rows, '520'))).toEqual([5203]);
+    expect(prNumbersOf(filterQaPickRows(rows, '5203'))).toEqual([5203]);
+    expect(prNumbersOf(filterQaPickRows(rows, '203'))).toEqual([]);
+  });
+
+  it('finds every spelling of a number', () => {
+    expect(prNumbersOf(filterQaPickRows(rows, '#4792'))).toEqual([4792]);
+    expect(prNumbersOf(filterQaPickRows(rows, 'pr-4792'))).toEqual([4792]);
+  });
+
+  // Testing is never blocked on metadata, and neither is finding the row.
+  it('finds a row the backend could not name, by number or branch', () => {
+    expect(prNumbersOf(filterQaPickRows(rows, '1523'))).toEqual([1523]);
+    expect(prNumbersOf(filterQaPickRows(rows, 'pr-1523'))).toEqual([1523]);
+  });
+});
+
+describe('qaPickListState', () => {
+  const base = { isPending: false, isError: false, surfingOff: false, hasQuery: false };
+  const rows = [row(5203, 'Fix the queue reducer')];
+
+  it('reports the channel serving no previews ahead of everything else', () => {
+    expect(qaPickListState({ ...base, isPending: true, surfingOff: true, rows: [], visibleRows: [] }).kind).toBe(
+      'surfing-off',
+    );
+  });
+
+  it('reports loading, then an unreachable server', () => {
+    expect(qaPickListState({ ...base, isPending: true, rows: [], visibleRows: [] }).kind).toBe('loading');
+    expect(qaPickListState({ ...base, isError: true, rows: [], visibleRows: [] }).kind).toBe('unreachable');
+  });
+
+  it('separates "nothing published" from "nothing matches what you typed"', () => {
+    expect(qaPickListState({ ...base, rows: [], visibleRows: [] }).kind).toBe('empty');
+    expect(qaPickListState({ ...base, hasQuery: true, rows, visibleRows: [] }).kind).toBe('no-match');
+  });
+
+  // An empty list is the signature of a fingerprint drift — exactly when someone
+  // hands a tester a PR number — so the escape hatch has to win here.
+  it('prefers no-match over empty when a query is typed and nothing is published', () => {
+    expect(qaPickListState({ ...base, hasQuery: true, rows: [], visibleRows: [] }).kind).toBe('no-match');
+  });
+
+  it('hands back the filtered rows, not the unfiltered ones', () => {
+    const state = qaPickListState({ ...base, hasQuery: true, rows: [...rows, row(1, 'Other')], visibleRows: rows });
+    expect(state).toEqual({ kind: 'rows', rows });
   });
 });

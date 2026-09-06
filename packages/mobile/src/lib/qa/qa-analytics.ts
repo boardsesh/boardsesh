@@ -29,7 +29,15 @@ export const QA_PREVIEW_PROMPTED_EVENT = 'QA Preview Prompted';
  */
 export const QA_PREVIEW_SKIPPED_EVENT = 'QA Preview Skipped';
 
-/** A PR was chosen from the pick list. Properties: `prNumber`, `risk`. */
+/**
+ * A PR was chosen. Properties: `prNumber`, `risk`, `source`.
+ *
+ * `source` is `'list'` for a tapped row and `'search'` for the "try it anyway"
+ * affordance behind a no-match search. Both are picks and both belong in the same
+ * event: a forced surf still runs a bundle and still ends in a brief and a verdict,
+ * so splitting it out would fork the funnel this file exists to keep whole. `risk`
+ * is null for a `'search'` pick — an unlisted PR has no metadata on the device.
+ */
 export const QA_PREVIEW_PICKED_EVENT = 'QA Preview Picked';
 
 /** The brief (what to test) was shown on the surfed bundle. Properties: `prNumber`. */
@@ -57,3 +65,13 @@ export function surfFailureReason(error: unknown): string {
 
 /** The tester left a preview without filing a verdict. Properties: `prNumber`. */
 export const QA_PREVIEW_LEFT_EVENT = 'QA Preview Left';
+
+/**
+ * A forced surf found nothing: the server would not serve that `pr-<n>` here, and
+ * the branch pin has been put back. Properties: `prNumber`, `refetchFailed`.
+ *
+ * The counterweight to a `'search'` pick. Picks minus misses is the whole argument
+ * for whether the escape hatch earns its place, and `refetchFailed` separates "the
+ * PR really has no preview for this build" from "we could not re-check the list".
+ */
+export const QA_UNLISTED_SURF_MISSED_EVENT = 'QA Unlisted Surf Missed';

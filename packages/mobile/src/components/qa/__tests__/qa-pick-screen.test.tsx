@@ -54,6 +54,13 @@ vi.mock('react-i18next', () => ({
           'qa.pick.buildingNewerChip': 'Building newer',
           'qa.pick.buildingToast': 'Still publishing — it appears here when the bundle lands',
           'qa.pick.buildingHint': 'This preview is still publishing and cannot be loaded yet',
+          'qa.pick.searchPlaceholder': 'Search by title or number',
+          'qa.pick.clearSearch': 'Clear search',
+          'qa.pick.noMatchTitle': 'No PR matches that',
+          'qa.pick.noMatchBody': 'Nothing published for this build matches “{{query}}”.',
+          'qa.pick.trySurfAction': 'Try #{{prNumber}} anyway',
+          'qa.pick.trySurfHint': 'It may not have a preview this build can load.',
+          'qa.pick.notServableToast': 'No preview of #{{prNumber}} for this build — it may need a rebase onto main',
         }[key] ?? key;
       return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
     },
@@ -88,6 +95,22 @@ vi.mock('../../PressableSurface', () => ({
     disabled?: boolean;
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
+}));
+vi.mock('../../SearchField', () => ({
+  SearchField: ({
+    value,
+    onChangeText,
+    placeholder,
+  }: {
+    value: string;
+    onChangeText: (text: string) => void;
+    placeholder: string;
+  }) =>
+    createElement('input', {
+      value,
+      placeholder,
+      onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
+    }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
@@ -124,12 +147,14 @@ const qa = vi.hoisted(() => ({
   surfingAvailable: true,
   listPrBranches: vi.fn(),
   surfToPr: vi.fn(),
+  surfToUnlistedPr: vi.fn(),
   refusedPrNumber: null as number | null,
 }));
 vi.mock('../../../lib/qa/qa-surf', () => ({
   qaSurfingAvailable: () => qa.surfingAvailable,
   listPrBranches: qa.listPrBranches,
   surfToPr: qa.surfToPr,
+  surfToUnlistedPr: qa.surfToUnlistedPr,
   readRefusedPrNumber: () => qa.refusedPrNumber,
 }));
 
@@ -178,6 +203,7 @@ beforeEach(() => {
   qa.refusedPrNumber = null;
   qa.listPrBranches.mockReset().mockResolvedValue(BRANCHES);
   qa.surfToPr.mockReset().mockResolvedValue('reloading');
+  qa.surfToUnlistedPr.mockReset().mockResolvedValue('reloading');
 });
 
 describe('QaPickScreen', () => {
@@ -255,7 +281,7 @@ describe('QaPickScreen', () => {
     fireEvent.click(await screen.findByLabelText('#4792 pr-4792'));
 
     expect(qa.surfToPr).toHaveBeenCalledWith(4792);
-    expect(trackMock).toHaveBeenCalledWith('QA Preview Picked', { prNumber: 4792, risk: null });
+    expect(trackMock).toHaveBeenCalledWith('QA Preview Picked', { prNumber: 4792, risk: null, source: 'list' });
   });
 
   it('says so when the pin took but there was nothing new to load', async () => {
@@ -399,5 +425,192 @@ describe('QaPickScreen', () => {
 
     expect((await screen.findByLabelText('#4792 pr-4792')).hasAttribute('disabled')).toBe(true);
     expect(screen.getByText('Surfing is unavailable in a dev build — the list is read-only here.')).toBeTruthy();
+  });
+});
+
+describe('QaPickScreen search', () => {
+  const TITLED_PREVIEWS = [
+    {
+      prNumber: 4792,
+      branch: 'pr-4792',
+      title: 'Fix the queue reducer',
+      url: 'https://github.com/boardsesh/boardsesh/pull/4792',
+      author: 'marcodejongh',
+      isDraft: false,
+      headSha: 'abc',
+      headCommittedAt: null,
+      updatedAt: '2026-08-26T10:00:00.000Z',
+      risk: 2,
+      riskReason: null,
+      testPlan: null,
+      testPlanSteps: [],
+      myLatestVerdict: null,
+      labels: [],
+      otaBuild: 'ready',
+    },
+  ];
+
+  async function search(text: string) {
+    const field = await screen.findByPlaceholderText('Search by title or number');
+    fireEvent.change(field, { target: { value: text } });
+    return field;
+  }
+
+  it('filters the list by title', async () => {
+    previews.data = TITLED_PREVIEWS;
+    renderScreen();
+    expect(await screen.findByText('Fix the queue reducer')).toBeTruthy();
+    expect(screen.getByText('pr-4800')).toBeTruthy();
+
+    await search('queue');
+
+    expect(screen.getByText('Fix the queue reducer')).toBeTruthy();
+    expect(screen.queryByText('pr-4800')).toBeNull();
+  });
+
+  it('filters the list by PR number, and clearing brings the rest back', async () => {
+    renderScreen();
+    await screen.findByText('pr-4792');
+
+    const field = await search('479');
+    expect(screen.getByText('pr-4792')).toBeTruthy();
+    expect(screen.queryByText('pr-4800')).toBeNull();
+
+    fireEvent.change(field, { target: { value: '' } });
+    expect(screen.getByText('pr-4800')).toBeTruthy();
+  });
+
+  it('offers to load an unlisted PR when a number matches nothing', async () => {
+    renderScreen();
+    await screen.findByText('pr-4792');
+
+    await search('9999');
+
+    expect(screen.getByText('No PR matches that')).toBeTruthy();
+    expect(screen.getByText('Try #9999 anyway')).toBeTruthy();
+  });
+
+  // There is no branch name to guess from a handful of words.
+  it('offers nothing to load when the query is not a PR number', async () => {
+    renderScreen();
+    await screen.findByText('pr-4792');
+
+    await search('zzz');
+
+    expect(screen.getByText('No PR matches that')).toBeTruthy();
+    expect(screen.queryByText(/anyway/)).toBeNull();
+  });
+
+  // An empty list is the signature of a fingerprint drift, which is exactly when
+  // somebody hands a tester a PR number.
+  it('offers the escape hatch even when nothing at all is published', async () => {
+    qa.listPrBranches.mockResolvedValue([]);
+    renderScreen();
+    await screen.findByPlaceholderText('Search by title or number');
+
+    await search('9999');
+
+    expect(screen.getByText('Try #9999 anyway')).toBeTruthy();
+    expect(screen.queryByText('Nothing to test right now')).toBeNull();
+  });
+
+  it('hides the escape hatch on a build that cannot surf, but keeps the field', async () => {
+    qa.surfingAvailable = false;
+    renderScreen();
+    await search('9999');
+
+    expect(screen.getByText('No PR matches that')).toBeTruthy();
+    expect(screen.queryByText('Try #9999 anyway')).toBeNull();
+  });
+
+  it('re-asks the server first, and takes the ordinary path when the PR is now listed', async () => {
+    // The 30s cache is the commonest honest reason a PR is missing, and that case
+    // must never reach the speculative pin.
+    qa.listPrBranches
+      .mockResolvedValueOnce(BRANCHES)
+      .mockResolvedValue([
+        ...BRANCHES,
+        { prNumber: 9999, branch: 'pr-9999', lastUpdateAt: '2026-08-26T11:00:00.000Z' },
+      ]);
+    renderScreen();
+    await screen.findByText('pr-4792');
+    await search('9999');
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try #9999 anyway'));
+    });
+
+    expect(qa.surfToPr).toHaveBeenCalledWith(9999);
+    expect(qa.surfToUnlistedPr).not.toHaveBeenCalled();
+    expect(trackMock).toHaveBeenCalledWith('QA Preview Picked', { prNumber: 9999, risk: null, source: 'search' });
+  });
+
+  it('surfs speculatively when the refreshed list still omits the PR, and reports a miss', async () => {
+    qa.surfToUnlistedPr.mockResolvedValue('not-servable');
+    renderScreen();
+    await screen.findByText('pr-4792');
+    await search('9999');
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try #9999 anyway'));
+    });
+
+    expect(qa.surfToUnlistedPr).toHaveBeenCalledWith(9999);
+    expect(showToast).toHaveBeenCalledWith(
+      'No preview of #9999 for this build — it may need a rebase onto main',
+      'info',
+    );
+    expect(trackMock).toHaveBeenCalledWith('QA Unlisted Surf Missed', { prNumber: 9999, refetchFailed: false });
+  });
+
+  it('re-arms after a miss so an ordinary row is still pickable', async () => {
+    qa.surfToUnlistedPr.mockResolvedValue('not-servable');
+    qa.surfToPr.mockResolvedValue('nothing-to-load');
+    renderScreen();
+    await screen.findByText('pr-4792');
+
+    const field = await search('9999');
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try #9999 anyway'));
+    });
+
+    fireEvent.change(field, { target: { value: '' } });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('#4792 pr-4792'));
+    });
+
+    expect(qa.surfToPr).toHaveBeenCalledWith(4792);
+  });
+
+  // Pinning after the server has switched surfing off would push the device into
+  // exactly the state the server is switching off.
+  it('never pins when surfing was switched off since the screen loaded', async () => {
+    qa.listPrBranches.mockResolvedValueOnce(BRANCHES).mockResolvedValue(null);
+    renderScreen();
+    await screen.findByText('pr-4792');
+    await search('9999');
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try #9999 anyway'));
+    });
+
+    expect(qa.surfToUnlistedPr).not.toHaveBeenCalled();
+    expect(qa.surfToPr).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith('Previews are switched off', 'info');
+  });
+
+  it('ignores a second tap while the first surf is in flight', async () => {
+    qa.surfToUnlistedPr.mockResolvedValue('not-servable');
+    renderScreen();
+    await screen.findByText('pr-4792');
+    await search('9999');
+
+    await act(async () => {
+      const button = screen.getByText('Try #9999 anyway');
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+
+    expect(qa.surfToUnlistedPr).toHaveBeenCalledTimes(1);
   });
 });
