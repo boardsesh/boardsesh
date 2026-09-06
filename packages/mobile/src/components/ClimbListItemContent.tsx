@@ -18,19 +18,10 @@ import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
 import type { IconName } from './icon-map';
 import type { AscentStatusValue } from '../lib/ascent-status-utils';
 
-/**
- * Fixed width of the trailing rail when `stableRail` is on: two 16pt status
- * slots, their 6pt gaps, and 44pt for the grade.
- *
- * Reserving the status slots costs a plain row ~44pt, and buys the list ONE
- * truncation edge. Without it the rail is 40 / 62 / 84pt depending on whether
- * that particular climb is favourited and/or ticked — the glyphs return null
- * and a missing child emits no flex gap — so names cut at three different x
- * positions down a single screen, and the rows that lose the most are the
- * favourited-and-tried ones the climber cares about most.
- */
-const STABLE_RAIL_WIDTH = 88;
-
+/** Size of each status glyph in the rail (favourite heart, ascent status). */
+const RAIL_GLYPH_SIZE = 16;
+/** Gap between the rail's status glyphs and the grade. */
+const RAIL_GLYPH_GAP = 6;
 // Scan-line status marker. Status is carried by glyph SHAPE in a single neutral
 // grey — not a colour — so it can't be mistaken for the colour-coded grade right
 // beside it, and so it stays readable for colour-blind users. ⚡ flashed,
@@ -136,13 +127,6 @@ type ClimbListItemContentProps = {
    */
   showFavorite?: boolean;
   /**
-   * Pin the trailing rail to a constant width so every row in the list
-   * truncates at the same x. Opt-in: surfaces with a tighter budget than the
-   * climbs list (`QueueItemRow` runs a ~97pt text column) would rather have the
-   * variable rail's extra room than the alignment.
-   */
-  stableRail?: boolean;
-  /**
    * Rendered UNDER the grade, inside the trailing rail, spending the vertical
    * space the rail already occupies rather than taking another 56pt of the text
    * column. The climbs list puts its ⋮ quick-actions button here.
@@ -174,7 +158,7 @@ const FavoriteGlyph = React.memo(function FavoriteGlyph({ climbUuid }: { climbUu
   if (!isFavorited) return null;
   return (
     <View accessibilityRole="image" accessibilityLabel={t('mobile.climbRow.favorited')}>
-      <Icon name="favorite.fill" size={16} color={theme.systemColors.secondaryLabel} />
+      <Icon name="favorite.fill" size={RAIL_GLYPH_SIZE} color={theme.systemColors.secondaryLabel} />
     </View>
   );
 });
@@ -240,7 +224,7 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   if (!ascentStatus) return null;
   return (
     <View accessibilityRole="image" accessibilityLabel={ascentStatusLabel}>
-      <Icon name={ASCENT_STATUS_ICON[ascentStatus]} size={16} color={theme.systemColors.secondaryLabel} />
+      <Icon name={ASCENT_STATUS_ICON[ascentStatus]} size={RAIL_GLYPH_SIZE} color={theme.systemColors.secondaryLabel} />
     </View>
   );
 });
@@ -373,7 +357,6 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   gradeIsConsensus = false,
   showPlaylistChips = false,
   showFavorite = false,
-  stableRail = false,
   trailingAccessory,
 }: ClimbListItemContentProps) {
   const { t: tSession } = useTranslation('session');
@@ -399,7 +382,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             {tSession('mobile.queue.unknownClimb')}
           </Text>
         </View>
-        <View style={[styles.rightSection, stableRail && styles.rightSectionStable]} />
+        <View style={styles.rightSection} />
       </>
     );
   }
@@ -457,7 +440,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
 
       {/* Right rail: status glyphs + colorized grade, with any trailing
           accessory stacked beneath them in the rail's own vertical space. */}
-      <View style={[styles.rightSection, stableRail && styles.rightSectionStable]}>
+      <View style={styles.rightSection}>
         <View style={styles.railPrimaryRow}>
           {showFavorite ? <FavoriteGlyph climbUuid={climb.uuid} /> : null}
           {showAscentStatus ? <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} /> : null}
@@ -521,15 +504,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
-  rightSectionStable: {
-    width: STABLE_RAIL_WIDTH,
-  },
   railPrimaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     alignSelf: 'stretch',
-    gap: 6,
+    gap: RAIL_GLYPH_GAP,
   },
   gradeText: {
     fontWeight: '700',

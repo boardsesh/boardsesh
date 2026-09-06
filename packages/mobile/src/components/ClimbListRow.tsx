@@ -206,12 +206,6 @@ type ClimbListRowProps = {
    */
   showFavorite?: boolean;
   /**
-   * Pin the trailing rail to a constant width so the whole list truncates at
-   * one x. Only the climbs list opts in; tighter surfaces prefer the room.
-   * Ignored when `renderContent` supplies a custom layout.
-   */
-  stableRail?: boolean;
-  /**
    * Show a trailing ⋮ button that opens the reaction menu on tap — a visible,
    * discoverable entry point beside the long-press. The climbs list passes the
    * "Show quick-actions button" user setting (on by default), other surfaces keep
@@ -240,7 +234,6 @@ const ClimbListRow = React.memo(function ClimbListRow({
   showSeparator = true,
   showPlaylistChips = false,
   showFavorite = false,
-  stableRail = false,
   showMoreButton = false,
 }: ClimbListRowProps) {
   const { t } = useTranslation('climbs');
@@ -486,27 +479,42 @@ const ClimbListRow = React.memo(function ClimbListRow({
     [dragArmedRef],
   );
 
-  const moreButton =
-    showMoreButton && onOpenActions ? (
-      <GestureDetector gesture={moreButtonGesture} touchAction="pan-y">
-        <View
-          testID="climb-row-more-button"
-          style={[styles.moreButton, isMaterial && styles.moreButtonMaterial]}
-          accessible
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.climbRow.moreActions')}
-          onAccessibilityTap={handleOpenActions}
-          accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
-          onAccessibilityAction={handleMoreButtonAccessibilityAction}
-        >
-          {/* iOS has no vertical-ellipsis SF Symbol, so rotate the horizontal one;
+  // Memoized: it is handed to a `React.memo` child, so a fresh element each
+  // render would defeat that boundary — and this row re-renders on every
+  // active-climb change and twice per swipe arm/disarm.
+  const moreButton = useMemo(
+    () =>
+      showMoreButton && onOpenActions ? (
+        <GestureDetector gesture={moreButtonGesture} touchAction="pan-y">
+          <View
+            testID="climb-row-more-button"
+            style={[styles.moreButton, isMaterial && styles.moreButtonMaterial]}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.climbRow.moreActions')}
+            onAccessibilityTap={handleOpenActions}
+            accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+            onAccessibilityAction={handleMoreButtonAccessibilityAction}
+          >
+            {/* iOS has no vertical-ellipsis SF Symbol, so rotate the horizontal one;
               Android's dots-vertical is already vertical (no rotation). */}
-          <View style={Platform.OS === 'ios' ? styles.moreIconRotate : undefined}>
-            <Icon name="more.vertical" size={20} color={systemColors.secondaryLabel} />
+            <View style={Platform.OS === 'ios' ? styles.moreIconRotate : undefined}>
+              <Icon name="more.vertical" size={20} color={systemColors.secondaryLabel} />
+            </View>
           </View>
-        </View>
-      </GestureDetector>
-    ) : null;
+        </GestureDetector>
+      ) : null,
+    [
+      showMoreButton,
+      onOpenActions,
+      moreButtonGesture,
+      isMaterial,
+      t,
+      handleOpenActions,
+      handleMoreButtonAccessibilityAction,
+      systemColors.secondaryLabel,
+    ],
+  );
 
   const rowContent = renderContent ? (
     renderContent({ climb, boardName, layoutId, sizeId, setIds, angle })
@@ -520,7 +528,6 @@ const ClimbListRow = React.memo(function ClimbListRow({
       angle={angle}
       showPlaylistChips={showPlaylistChips}
       showFavorite={showFavorite}
-      stableRail={stableRail}
       // Stacked under the grade rather than beside the text: the rail already
       // occupies the row's full height for a 25pt grade, so the button is free
       // there, where as a fourth flex child it cost 56pt (its 44 plus a gap) of
