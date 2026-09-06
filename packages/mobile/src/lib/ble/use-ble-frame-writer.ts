@@ -53,7 +53,10 @@ export function useBleFrameWriter({ frame, send, mirrored, resetKey, onWrite }: 
   }, [resetKey]);
 
   useEffect(() => {
-    if (!send || !frame) {
+    // `frame === null`, not falsy: '' is a REAL frame — a route frame whose every
+    // hold has been erased — and its clear packet has to reach the wall, or the
+    // previous frame stays lit through it.
+    if (!send || frame === null) {
       // Standing down — this surface is no longer driving the wall (the creator
       // handed it to the queue, playback paused, the drawer closed). Drop any
       // frame queued behind an in-flight write: without this the drain wakes when
