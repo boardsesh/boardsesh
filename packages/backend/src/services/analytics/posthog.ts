@@ -38,7 +38,19 @@ export type BackendAnalyticsEvent =
   // below. Contract: services/analytics/community-monthly-events.ts and
   // docs/growth-metrics.md.
   | 'Community Monthly Summary'
-  | 'Community Monthly Rank';
+  | 'Community Monthly Rank'
+  // Fires from the Stripe webhook once a build-pack payment is confirmed —
+  // never from the browser. The purchase is a server fact, and a client-side
+  // "Checkout Started" is not one: it fires whether or not the card clears,
+  // and an ad blocker eats it either way. Stratify revenue by `tier` and
+  // `board_name`; the two tiers are 5x apart in price, so pooling them makes
+  // the average meaningless.
+  | 'Build Plans Pack Purchased'
+  // Fires from the authenticated download route, once per successful stream.
+  // Counts EVENTS, not distinct users, on purpose: a buyer re-downloading their
+  // own pack is the signal (a pack that is fetched twenty times is a pack
+  // someone is having trouble with, or sharing).
+  | 'Build Plans Pack Downloaded';
 
 /**
  * Backend events are operational telemetry sent under legitimate interest, not

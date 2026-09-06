@@ -34,6 +34,7 @@ import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
 import { handleSprayWallTestDataUpload } from './handlers/spray-wall-test-data';
 import { handlePosthogProxy } from './handlers/posthog';
 import { handleUserDataExport, handleUserDataExportDownload } from './handlers/user-data-export';
+import { handleCncStripeWebhook } from './handlers/cnc-stripe-webhook';
 import { pruneSyncDeletions } from './services/sync-deletions-prune';
 import { handleAuroraCredentials, handleAuroraCredentialsUnsynced } from './handlers/aurora-credentials';
 import { handleAuroraImport } from './handlers/aurora-import';
@@ -479,6 +480,15 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
 
       if (pathname === '/api/user-data-export/download' && (req.method === 'GET' || req.method === 'OPTIONS')) {
         await handleUserDataExportDownload(req, res, url);
+        return;
+      }
+
+      // Stripe webhook for CNC build packs. Deliberately no CORS and no bearer
+      // token: the only caller is Stripe, and the `stripe-signature` header
+      // over the raw body is the authentication. 404s when Stripe is not
+      // configured rather than accepting unverifiable bodies.
+      if (pathname === '/api/cnc/stripe/webhook' && req.method === 'POST') {
+        await handleCncStripeWebhook(req, res);
         return;
       }
 
