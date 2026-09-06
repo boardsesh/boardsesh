@@ -68,11 +68,12 @@ describe('CollapsibleSection collapsed header layout', () => {
   it('sizes the title by its own text so a long summary cannot shrink it to zero', async () => {
     const { title } = await renderHeader();
 
-    // `flex: 1` and a literal `flexBasis: 0` both zero the base size, which is
-    // exactly what let the summary starve the title.
+    // `flex` (any value) and an explicit `flexBasis` both take the base size
+    // away from the text, which is what let the summary starve the title.
+    // `flexGrow` unset keeps the spare width with the summary.
     expect(title.flex).toBeUndefined();
-    expect(title.flexBasis).not.toBe(0);
-    expect(title.flexGrow).not.toBe(1);
+    expect(title.flexBasis).toBeUndefined();
+    expect(title.flexGrow).toBeUndefined();
     expect(title.flexShrink).toBe(1);
   });
 
