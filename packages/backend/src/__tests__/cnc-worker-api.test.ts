@@ -1,4 +1,5 @@
-import { Readable } from 'node:stream';
+import { once } from 'node:events';
+import { Readable, Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 /**
@@ -125,6 +126,45 @@ async function callWorker(
     res as unknown as import('http').ServerResponse,
     new URL(path, 'http://backend.test'),
   );
+  return res;
+}
+
+/** A writable stand-in for ServerResponse, for the one route that pipes a body. */
+class StreamingTestResponse extends Writable {
+  statusCode = 0;
+  headers: Record<string, string | string[]> = {};
+  private readonly chunks: Buffer[] = [];
+
+  setHeader(name: string, value: string | string[]): void {
+    this.headers[name] = value;
+  }
+
+  writeHead(statusCode: number, headers: Record<string, string | string[]> = {}): void {
+    this.statusCode = statusCode;
+    this.headers = { ...this.headers, ...headers };
+  }
+
+  override _write(chunk: Buffer, _encoding: string, callback: () => void): void {
+    this.chunks.push(Buffer.from(chunk));
+    callback();
+  }
+
+  get body(): string {
+    return Buffer.concat(this.chunks).toString('utf8');
+  }
+}
+
+/** GET a worker route and wait for the piped body to finish arriving. */
+async function callWorkerStreaming(path: string): Promise<StreamingTestResponse> {
+  const res = new StreamingTestResponse();
+  const req = makeRequest({ method: 'GET', headers: { authorization: `Bearer ${WORKER_SECRET}` } });
+  const finished = once(res, 'finish');
+  await handleCncWorkerApi(
+    req as unknown as import('http').IncomingMessage,
+    res as unknown as import('http').ServerResponse,
+    new URL(path, 'http://backend.test'),
+  );
+  await finished;
   return res;
 }
 
@@ -324,14 +364,53 @@ describe('POST /api/cnc/worker/claim', () => {
 
   it('carries a complete placement and the stored font through to the job', async () => {
     await insertQueuedOrder({
-      artwork: [{ text: 'MARCO', font: 'Inter', mode: 'engrave', placement: COMPLETE_PLACEMENT }],
+      artwork: [{ text: 'MARCO', font: 'liberation-sans', mode: 'engrave', placement: COMPLETE_PLACEMENT }],
     });
 
     const job = await claimJob();
 
     const config = job?.config as { artwork: unknown[] } | undefined;
     expect(config?.artwork).toEqual([
-      { assetId: null, mime: null, text: 'MARCO', font: 'Inter', mode: 'engrave', placement: COMPLETE_PLACEMENT },
+      {
+        assetId: null,
+        assetKey: null,
+        mime: null,
+        text: 'MARCO',
+        font: 'liberation-sans',
+        mode: 'engrave',
+        placement: COMPLETE_PLACEMENT,
+      },
+    ]);
+  });
+
+  it('carries the asset key and mime checkout stored, not a live asset lookup', async () => {
+    await insertQueuedOrder({
+      artwork: [
+        {
+          assetId: 'asset-1',
+          assetKey: 'cnc-art/user-123/0b3f5a1c-1111-4222-8333-444455556666.svg',
+          mime: 'image/svg+xml',
+          mode: 'cut_through',
+          placement: COMPLETE_PLACEMENT,
+        },
+      ],
+    });
+
+    const job = await claimJob();
+
+    // Read off the ORDER: `cnc_art_assets.user_id` cascades, so a buyer who
+    // deleted their account would otherwise strand a regenerate with no key.
+    const config = job?.config as { artwork: unknown[] } | undefined;
+    expect(config?.artwork).toEqual([
+      {
+        assetId: 'asset-1',
+        assetKey: 'cnc-art/user-123/0b3f5a1c-1111-4222-8333-444455556666.svg',
+        mime: 'image/svg+xml',
+        text: null,
+        font: null,
+        mode: 'cut_through',
+        placement: COMPLETE_PLACEMENT,
+      },
     ]);
   });
 
@@ -657,9 +736,58 @@ describe('POST /api/cnc/worker/jobs/:orderId/fail', () => {
 });
 
 describe('GET /api/cnc/worker/assets/:assetId', () => {
-  it('404s with a clear message while artwork assets have no stored key', async () => {
+  /** One artwork entry as checkout writes it: the asset id plus the key and mime taken at purchase. */
+  const STORED_SVG = {
+    assetId: 'asset-1',
+    assetKey: 'cnc-art/user-123/0b3f5a1c-1111-4222-8333-444455556666.svg',
+    mime: 'image/svg+xml',
+    mode: 'engrave',
+    placement: COMPLETE_PLACEMENT,
+  };
+
+  it('streams the asset the claimed order bought', async () => {
+    const order = await insertQueuedOrder({ artwork: [STORED_SVG] });
+    const job = await claimJob();
+    getFromS3Mock.mockResolvedValue({
+      stream: Readable.from([Buffer.from('<svg/>')]),
+      contentType: 'application/octet-stream',
+      contentLength: 6,
+    });
+
+    // A real Writable, unlike the plain object every other route here is given:
+    // this is the one handler that pipes rather than calling `end`, so the
+    // response has to actually be a stream destination.
+    const res = await callWorkerStreaming(
+      `/api/cnc/worker/assets/asset-1?orderId=${String(order.id)}&claimToken=${String(job?.claimToken)}`,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('<svg/>');
+    expect(getFromS3Mock).toHaveBeenCalledWith('private', STORED_SVG.assetKey);
+    // The mime we sniffed at upload wins over whatever the bucket reports,
+    // and `nosniff` holds the generator to it.
+    expect(res.headers['Content-Type']).toBe('image/svg+xml');
+    expect(res.headers['X-Content-Type-Options']).toBe('nosniff');
+  });
+
+  it('404s an asset id this order never bought', async () => {
+    const order = await insertQueuedOrder({ artwork: [STORED_SVG] });
+    const job = await claimJob();
+
+    const res = await callWorker(
+      `/api/cnc/worker/assets/asset-2?orderId=${String(order.id)}&claimToken=${String(job?.claimToken)}`,
+      { method: 'GET' },
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect(getFromS3Mock).not.toHaveBeenCalled();
+  });
+
+  it('404s without reading storage when the stored key is not an artwork key', async () => {
+    // The private bucket also holds user data exports, so a key that reached
+    // the JSON column through some future bug must never become a read.
     const order = await insertQueuedOrder({
-      artwork: [{ assetId: 'asset-1', mode: 'engrave', placement: COMPLETE_PLACEMENT }],
+      artwork: [{ ...STORED_SVG, assetKey: 'exports/user-999/data.zip' }],
     });
     const job = await claimJob();
 
@@ -669,13 +797,24 @@ describe('GET /api/cnc/worker/assets/:assetId', () => {
     );
 
     expect(res.statusCode).toBe(404);
-    expect(String((res.json() as { error: string }).error)).toContain('not stored yet');
+    expect(getFromS3Mock).not.toHaveBeenCalled();
+  });
+
+  it('404s when the order names an asset that is missing from storage', async () => {
+    const order = await insertQueuedOrder({ artwork: [STORED_SVG] });
+    const job = await claimJob();
+    getFromS3Mock.mockResolvedValue(null);
+
+    const res = await callWorker(
+      `/api/cnc/worker/assets/asset-1?orderId=${String(order.id)}&claimToken=${String(job?.claimToken)}`,
+      { method: 'GET' },
+    );
+
+    expect(res.statusCode).toBe(404);
   });
 
   it('409s an asset request that does not carry the current lease', async () => {
-    const order = await insertQueuedOrder({
-      artwork: [{ assetId: 'asset-1', mode: 'engrave', placement: COMPLETE_PLACEMENT }],
-    });
+    const order = await insertQueuedOrder({ artwork: [STORED_SVG] });
     await claimJob();
 
     const res = await callWorker(
@@ -684,6 +823,7 @@ describe('GET /api/cnc/worker/assets/:assetId', () => {
     );
 
     expect(res.statusCode).toBe(409);
+    expect(getFromS3Mock).not.toHaveBeenCalled();
   });
 });
 
