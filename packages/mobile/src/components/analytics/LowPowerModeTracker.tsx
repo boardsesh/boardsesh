@@ -14,9 +14,12 @@ import { registerLowPowerMode } from '../../lib/analytics-low-power-mode';
 export function LowPowerModeTracker(): null {
   useEffect(() => {
     let cancelled = false;
+    // A listener event that lands while the initial read is still in flight is
+    // the newer fact; the read must not overwrite it when it finally resolves.
+    let heardFromListener = false;
     isLowPowerModeEnabledAsync()
       .then((lowPowerMode) => {
-        if (!cancelled) registerLowPowerMode(lowPowerMode);
+        if (!cancelled && !heardFromListener) registerLowPowerMode(lowPowerMode);
       })
       .catch(() => {
         // No power-state API on this platform: leave the property unset rather
@@ -27,6 +30,7 @@ export function LowPowerModeTracker(): null {
     let subscription: { remove(): void } | undefined;
     try {
       subscription = addLowPowerModeListener(({ lowPowerMode }) => {
+        heardFromListener = true;
         registerLowPowerMode(lowPowerMode);
       });
     } catch {
