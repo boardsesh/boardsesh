@@ -192,10 +192,21 @@ export function createBoardContentPageMetadata(options: PageMetadataOptions): Me
   };
 }
 
+/**
+ * The robots directive every `createNoIndexMetadata` page ships.
+ *
+ * Exported for the pages that need the directive without the description: a
+ * flag-gated route whose off branch calls `notFound()` still has to say
+ * `noindex`, but must not hand a crawler a title and description for a page
+ * that 404s. Importing this is what keeps such a branch from restating the
+ * literal and drifting from the helper.
+ */
+export const NOINDEX_FOLLOW_ROBOTS = { index: false, follow: true } as const;
+
 export function createNoIndexMetadata(options: Omit<PageMetadataOptions, 'robots'>): Metadata {
   return createPageMetadata({
     ...options,
-    robots: { index: false, follow: true },
+    robots: NOINDEX_FOLLOW_ROBOTS,
   });
 }
 
