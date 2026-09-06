@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 import { logger } from '../../utils/logger';
-import { webPublicUrl } from '../../email/email-service';
+import { webPublicUrl } from '../../utils/public-urls';
 import type { CncTierPrice } from './catalog';
 
 /**
