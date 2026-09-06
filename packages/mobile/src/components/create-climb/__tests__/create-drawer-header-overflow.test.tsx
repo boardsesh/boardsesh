@@ -75,11 +75,11 @@ function renderHeader(overflow: Partial<Parameters<typeof CreateDrawerHeader>[0]
       bleConnected: false,
       bleConnecting: false,
       onToggleBle: vi.fn(),
-      overflow: { supportsMultiFrame: true, routeMode: false, frameCount: 1, frameIndex: 0, ...overflow },
+      overflow: { supportsMultiFrame: true, routeMode: false, frameCount: 1, ...overflow },
       onSelectOverflowAction,
     }),
   );
-  // Looked up by scanning rather than a CSS selector: the Delete label carries
+  // Looked up by scanning rather than a CSS selector: a label may carry
   // interpolated JSON, whose quotes and braces are not selector-safe.
   const row = (label: string) =>
     (Array.from(container.querySelectorAll('[data-row]')).find((node) => node.getAttribute('data-row') === label) ??
@@ -102,13 +102,11 @@ describe('CreateDrawerHeader overflow menu', () => {
   });
 
   it('resolves a tap through the rows the CURRENT state rendered', () => {
-    // A route at four frames grows a Delete row ahead of the others. Resolving
-    // by position against a stale row set would fire delete for a tap on the
-    // row after it.
-    const { onSelectOverflowAction, row } = renderHeader({ routeMode: true, frameCount: 4, frameIndex: 2 });
+    // A boulder's first row is Make it a route; a route's is Make it a boulder.
+    // Resolving by position against a stale row set would fire the wrong one.
+    const { onSelectOverflowAction, row } = renderHeader({ routeMode: true, frameCount: 4 });
 
-    row('mobile.create.routeMenu.deleteFrame:{"index":3}')?.click();
-    expect(onSelectOverflowAction).toHaveBeenLastCalledWith('deleteFrame');
+    expect(row('mobile.create.routeMenu.makeRoute')).toBeNull();
 
     row('mobile.create.actions.newClimb')?.click();
     expect(onSelectOverflowAction).toHaveBeenLastCalledWith('newClimb');

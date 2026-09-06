@@ -537,7 +537,12 @@
         "counter": "{{index}}/{{total}}"
       },
       "playback": {
-        "addFrame": "Añadir fotograma"
+        "addFrame": "Añadir fotograma",
+        "addFrameHint": "Copia el fotograma {{index}} y coloca la copia después",
+        "deleteFrameA11y": "Eliminar el fotograma {{index}} de {{total}}",
+        "deleteFrameBlocked": "Eliminar fotograma: una ruta conserva al menos uno",
+        "deleteFrameHint": "Deshacer está en la barra de abajo",
+        "frameDeleted": "Fotograma eliminado. Quedan {{total}}."
       },
       "holdRole": {
         "title": "Asignar rol de presa",
@@ -606,8 +611,7 @@
         "open": "Más acciones",
         "makeRoute": "Convertir en vía",
         "makeBoulder": "Convertir en bloque",
-        "makeBoulderBlocked": "Convertir en bloque — elimina primero los fotogramas",
-        "deleteFrame": "Eliminar fotograma {{index}}"
+        "makeBoulderBlocked": "Convertir en bloque — elimina primero los fotogramas"
       }
     },
     "holdFilter": {

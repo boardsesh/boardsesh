@@ -15,7 +15,6 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { Button } from '../Button';
 import { GlassCluster } from '../GlassCluster';
 import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
@@ -27,7 +26,7 @@ import { hapticLight, hapticSelection, hapticSuccess } from '../../lib/haptics';
 import { brandColors as staticBrandColors, withAlpha } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { glassSize } from '../../theme/layout';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { spacing, borderRadius, opacity } from '../../theme/tokens';
 import { springs, timing } from '../../theme/animations';
 import {
   clampPaceSeconds,
@@ -59,11 +58,12 @@ const PACE_STEPS = [0.5, 0.8, 1.5, 3, 5] as const;
 const MAGNET_PACE_SECONDS = 0.75;
 
 // Frame-strip geometry. Chips read as chips at 32dp and reach the 44dp touch
-// floor through hitSlop, but the row itself is 44 so the labelled add-frame
-// Button in it clears the floor on its own — a native Button has no hitSlop to
-// borrow. That fixes the card's resting height in strip mode at 128dp (8 margin
-// + 12 padding + 44 strip + 8 gap + 44 transport + 12 padding); CreateDrawer
-// reserves that number, so changing any of these changes a layout contract.
+// floor through hitSlop, and the row is now exactly one chip tall: the 44 it used
+// to be bought the touch floor for a native add Button that has since moved into
+// the transport row as an icon. That fixes the card's resting height in strip
+// mode at 116dp (8 margin + 12 padding + 32 strip + 8 gap + 44 transport + 12
+// padding); CreateDrawer reserves that number, so changing any of these changes
+// a layout contract.
 const CHIP_SIZE = 32;
 const CHIP_GAP = spacing[2];
 const CHIP_STEP = CHIP_SIZE + CHIP_GAP;
@@ -110,13 +110,16 @@ type PlaybackControlsBaseProps = {
    */
   wallStateLabel?: string | null;
   /**
-   * Creator-only. Present ⇒ the card grows a frame strip and an add-frame chip.
-   * Absent (the play drawer) ⇒ the card renders the plain counter exactly as it
-   * always has, so this transport stays one component across both callers.
+   * Creator-only. Present ⇒ the card grows a frame strip, and the transport
+   * row's left slot carries add/remove instead of the counter. Absent (the play
+   * drawer) ⇒ the card renders the plain counter exactly as it always has, so
+   * this transport stays one component across both callers.
    */
   frameEditing?: {
     /** Inserts a copy of the active frame after it. */
     onAddFrame: () => void;
+    /** Removes the active frame. No-ops at one frame; the button is disabled there. */
+    onDeleteFrame: () => void;
   };
   onPlay: () => void;
   onPause: () => void;
@@ -228,7 +231,7 @@ const FrameChip = memo(function FrameChip({
         styles.frameChip,
         {
           borderRadius: radii.button,
-          backgroundColor: selected ? withAlpha(brandColors.primary, 0.18) : systemColors.fill,
+          backgroundColor: selected ? withAlpha(brandColors.primary, 0.32) : systemColors.fill,
         },
       ]}
     >
@@ -244,13 +247,14 @@ const FrameChip = memo(function FrameChip({
 });
 
 /**
- * The creator's frame strip: one tappable chip per frame plus a labelled add
- * chip, in place of the reader's `1 / 4` counter.
+ * The creator's frame strip: one tappable chip per frame, in place of the
+ * reader's `1 / 4` counter.
  *
- * The add chip is pinned OUTSIDE the scroller (the CreateDrawerActionBar idiom)
- * because it is the one control that must never scroll out of reach — two
- * earlier attempts at this feature came back QA-declined for exactly that, and
- * for reducing it to a bare glyph. It stays a word.
+ * Add and remove used to live here — add as a labelled button pinned outside the
+ * scroller, remove in the header's overflow menu. Both moved into the transport
+ * row below as one icon pair (`FrameEditPair`), which is what the strip's empty
+ * left slot was for. The scroller now owns the full row width, so the chips no
+ * longer share it with a control that must never scroll away.
  *
  * The 2dp underline is driven by the SAME shared value the reader's top progress
  * bar uses, so it glides at `paceMs / speed` during playback: one position cue on
@@ -261,21 +265,19 @@ function FrameStrip({
   frameIndex,
   progress,
   onSeek,
-  onAddFrame,
+  wallStateLabel,
 }: {
   frameCount: number;
   frameIndex: number;
   progress: SharedValue<number>;
   onSeek: (index: number) => void;
-  onAddFrame: () => void;
+  /** Rendered at the strip's trailing edge, in the space the add button left.
+   *  The reader shows this in the transport row's left slot, but in edit mode
+   *  that slot is permanently the add/remove pair. */
+  wallStateLabel: string | null;
 }) {
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const { t } = useTranslation('session');
-  // A SEPARATE hook, not `useTranslation(['session', 'climbs'])`: with an array,
-  // `t('a.b.c')` resolves against the FIRST namespace only, so the add-frame key
-  // — which lives in climbs.json — would fall through and the chip would render
-  // its raw key. CreateDrawer hit exactly this and only the emulator caught it.
-  const { t: tClimbs } = useTranslation('climbs');
   const scrollRef = useRef<ScrollView>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
 
@@ -329,17 +331,109 @@ function FrameStrip({
         </ScrollView>
       </View>
 
-      <Button
-        title={tClimbs('mobile.create.playback.addFrame')}
-        variant="tonal"
-        size="small"
-        // Floored at 44 rather than sized to the 32dp chip rung. It is the action
-        // the whole feature depends on being tappable, and unlike the chips it
-        // cannot reach the floor through hitSlop — @expo/ui renders a native
-        // button, so the row is 44 and the card's reserve is 128.
-        minHeight={glassSize.inline}
-        onPress={onAddFrame}
-      />
+      {wallStateLabel ? (
+        <Text
+          variant="caption1"
+          color={systemColors.secondaryLabel}
+          numberOfLines={1}
+          style={[styles.wallStateChip, { backgroundColor: systemColors.fill }]}
+        >
+          {wallStateLabel}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Add and remove frame, as one capsule in the transport row's left slot.
+ *
+ * Contained rather than two bare glyphs, because the row would otherwise read as
+ * five interchangeable marks: the pair is a filled capsule on `systemColors.fill`
+ * and prev/play/next are bare, so the card gets one grammar — fill is a frame
+ * command, bare is transport. The ink stays `secondaryLabel` so the only white
+ * glyph in the row is still play.
+ *
+ * `minus` rather than a trash can, even though this deletes: the action bar 60dp
+ * below already spends a trash on "clear every hold", and two trash cans a thumb
+ * apart meaning different things is a worse confusion than the one stroke
+ * between + and −. Delete is a decrement of the strip directly above it.
+ *
+ * Neither half is red. `DELETE_FRAME` pushes onto the undo stack (see
+ * `use-create-climb.ts`), so Undo three rows down restores the frame AND the
+ * index — colour is for loss you cannot walk back, and a standing red glyph here
+ * would outshout Save.
+ */
+function FrameEditPair({
+  frameIndex,
+  frameCount,
+  onAddFrame,
+  onDeleteFrame,
+}: {
+  frameIndex: number;
+  frameCount: number;
+  onAddFrame: () => void;
+  onDeleteFrame: () => void;
+}) {
+  // A SEPARATE hook, not `useTranslation(['session', 'climbs'])`: with an array,
+  // `t('a.b.c')` resolves against the FIRST namespace only, so these keys — which
+  // live in climbs.json — would fall through and the buttons would announce their
+  // raw key. CreateDrawer hit exactly this and only the emulator caught it.
+  const { t: tClimbs } = useTranslation('climbs');
+  const { systemColors } = useTheme();
+  // A route always keeps one frame, so the last one cannot be removed. Disabled
+  // rather than hidden: hiding it would reflow the capsule from 88 to 44 the
+  // moment a second frame appears, walking the whole transport row sideways.
+  const canDelete = frameCount > 1;
+
+  const handleAdd = useCallback(() => {
+    hapticSelection();
+    onAddFrame();
+  }, [onAddFrame]);
+  const handleDelete = useCallback(() => {
+    hapticLight();
+    onDeleteFrame();
+  }, [onDeleteFrame]);
+
+  return (
+    <View style={[styles.framePair, { backgroundColor: systemColors.fill }]} testID="playback-frame-edit-pair">
+      <Pressable
+        onPress={handleAdd}
+        // Asymmetric on purpose. Nothing reaches UP: the frame chips sit 8dp
+        // above with 6dp of their own slop, and a chip tap that slid into a
+        // frame command would be the one mis-tap this layout could cause.
+        hitSlop={{ top: 0, bottom: 6, left: 4, right: 0 }}
+        accessibilityRole="button"
+        accessibilityLabel={tClimbs('mobile.create.playback.addFrame')}
+        accessibilityHint={tClimbs('mobile.create.playback.addFrameHint', { index: frameIndex + 1 })}
+        style={styles.framePairButton}
+        testID="playback-add-frame"
+      >
+        <Icon name="plus" size={20} color={systemColors.secondaryLabel} />
+      </Pressable>
+
+      <View style={[styles.framePairDivider, { backgroundColor: systemColors.separator }]} />
+
+      <Pressable
+        onPress={handleDelete}
+        disabled={!canDelete}
+        hitSlop={{ top: 0, bottom: 6, left: 0, right: 4 }}
+        accessibilityRole="button"
+        // The ordinal AND the total live in the label, not the hint: the label is
+        // the only text this control has now, and "delete frame 1" without "of 1"
+        // does not tell a blind setter the route is about to lose its last frame.
+        accessibilityLabel={
+          canDelete
+            ? tClimbs('mobile.create.playback.deleteFrameA11y', { index: frameIndex + 1, total: frameCount })
+            : tClimbs('mobile.create.playback.deleteFrameBlocked')
+        }
+        accessibilityHint={canDelete ? tClimbs('mobile.create.playback.deleteFrameHint') : undefined}
+        accessibilityState={{ disabled: !canDelete }}
+        style={[styles.framePairButton, !canDelete && styles.framePairButtonDisabled]}
+        testID="playback-delete-frame"
+      >
+        <Icon name="minus" size={20} color={canDelete ? systemColors.secondaryLabel : systemColors.tertiaryLabel} />
+      </Pressable>
     </View>
   );
 }
@@ -739,7 +833,15 @@ export function PlaybackControls({
   const pillLabel = inSeconds ? formatPace(liveValue) : formatSpeed(liveValue);
 
   return (
-    <View style={[styles.container, { backgroundColor: systemColors.tertiaryBackground }]}>
+    <View
+      style={[
+        styles.container,
+        // Scheme-resolved, not the static light `iosSystemColors.separator` this
+        // used to hardcode — that value is a dark translucent grey and vanished
+        // against the card's own dark fill, so the card had no edge at night.
+        { backgroundColor: systemColors.tertiaryBackground, borderColor: systemColors.separator },
+      ]}
+    >
       {/* The strip carries its own underline off the same shared value, so the
           top hairline would be a second cue for one position. */}
       {!frameEditing && (
@@ -755,13 +857,23 @@ export function PlaybackControls({
           frameIndex={frameIndex}
           progress={progress}
           onSeek={onSeek}
-          onAddFrame={frameEditing.onAddFrame}
+          wallStateLabel={wallStateLabel}
         />
       )}
 
       <View style={styles.transportRow}>
-        <View style={styles.sideLeft}>
-          {wallStateLabel ? (
+        {/* Sized to its content in edit mode, not `flex: 1`. Two 44dp halves need
+            88 and an even third of an SE's 311dp card is 81.5 — the capsule would
+            have overflowed a container that clips. */}
+        <View style={[styles.sideLeft, frameEditing && styles.sideLeftEditing]}>
+          {frameEditing ? (
+            <FrameEditPair
+              frameIndex={frameIndex}
+              frameCount={frameCount}
+              onAddFrame={frameEditing.onAddFrame}
+              onDeleteFrame={frameEditing.onDeleteFrame}
+            />
+          ) : wallStateLabel ? (
             <Text
               variant="caption1"
               color={systemColors.secondaryLabel}
@@ -770,7 +882,7 @@ export function PlaybackControls({
             >
               {wallStateLabel}
             </Text>
-          ) : frameEditing ? null : (
+          ) : (
             <Text
               variant="footnote"
               style={styles.counter}
@@ -856,7 +968,6 @@ const styles = StyleSheet.create({
     marginTop: spacing[2],
     borderRadius: borderRadius.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: iosSystemColors.separator,
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
     gap: spacing[2],
@@ -869,20 +980,19 @@ const styles = StyleSheet.create({
     right: 0,
     height: 3,
   },
-  // 44 rather than one chip tall, so the labelled add chip in it meets the touch
-  // floor without a hitSlop it can't have. The card's 128dp strip-mode reserve is
-  // 8 margin + 12 padding + 44 here + 8 gap + 44 transport + 12 padding.
+  // One chip tall. It was 44 only so the native add Button in it could reach the
+  // touch floor — that button is now the icon pair in the transport row, and the
+  // chips reach 44 through hitSlop. The card's 116dp strip-mode reserve is
+  // 8 margin + 12 padding + 32 here + 8 gap + 44 transport + 12 padding.
   stripRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
-    height: glassSize.inline,
+    height: CHIP_SIZE,
   },
   stripScroller: {
-    // Claims the row's leftover width so the add chip is pinned to the trailing
-    // edge; anything that doesn't fit scrolls in here, never off the card. Held
-    // at chip height inside the taller row so the underline still lands on the
-    // chip's own bottom edge rather than 6dp below it.
+    // Claims the row's whole width now that nothing is pinned beside it, except
+    // when the wall-state chip takes the trailing edge.
     flex: 1,
     height: CHIP_SIZE,
   },
@@ -903,11 +1013,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Out of flow, so it neither takes a slot in the gapped row nor grows it.
+  // Inset from the chip's edges rather than spanning it: a full-width 2dp bar
+  // flush against a rounded chip reads as a rendering seam, not a cue.
   frameUnderline: {
     position: 'absolute',
     bottom: 0,
-    left: 0,
-    width: CHIP_SIZE,
+    left: spacing[1],
+    width: CHIP_SIZE - spacing[2],
     height: UNDERLINE_HEIGHT,
     borderRadius: UNDERLINE_HEIGHT / 2,
   },
@@ -918,6 +1030,35 @@ const styles = StyleSheet.create({
   sideLeft: {
     flex: 1,
     alignItems: 'flex-start',
+  },
+  // Content-sized, so the 88dp capsule is never squeezed by an even three-way
+  // split of a narrow card. Costs the centre cluster ~6dp of optical centring on
+  // the smallest phone, which is the cheaper of the two.
+  sideLeftEditing: {
+    flex: 0,
+    flexShrink: 0,
+  },
+  // One capsule holding + and −, the Stepper idiom. `overflow: hidden` clips the
+  // Android ripple to the capsule.
+  framePair: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: borderRadius.full,
+    overflow: 'hidden',
+    height: glassSize.inline,
+  },
+  framePairButton: {
+    width: glassSize.inline,
+    height: glassSize.inline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  framePairButtonDisabled: {
+    opacity: opacity.disabled,
+  },
+  framePairDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 20,
   },
   sideRight: {
     flex: 1,
@@ -952,7 +1093,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 52,
+    // Wide enough for the longest label the pill cycles to ("0.8s"), so stepping
+    // through the presets doesn't resize it and walk the transport row sideways.
+    minWidth: 64,
     // Meets the 44dp touch floor on its own now that the card has the room —
     // it used to reach it only via hitSlop, which left the pill visually
     // shorter than every control it shares the row with.

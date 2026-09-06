@@ -198,9 +198,6 @@ export function CreateDrawer({
         case 'makeBoulder':
           controller.leaveRouteMode();
           return;
-        case 'deleteFrame':
-          controller.deleteFrame();
-          return;
         case 'newClimb':
           controller.handleNewClimb();
       }
@@ -387,6 +384,7 @@ export function CreateDrawer({
               playback={controller.playback}
               wallStateLabel={controller.handedOff ? tSession('playView.wallState.onWall') : null}
               onAddFrame={controller.duplicateFrame}
+              onDeleteFrame={controller.deleteFrame}
               onPaceChange={controller.setFramesPace}
             />
 

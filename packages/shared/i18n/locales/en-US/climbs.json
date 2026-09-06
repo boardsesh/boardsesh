@@ -537,7 +537,12 @@
         "counter": "{{index}}/{{total}}"
       },
       "playback": {
-        "addFrame": "Add frame"
+        "addFrame": "Add frame",
+        "addFrameHint": "Copies frame {{index}} and puts the copy after it",
+        "deleteFrameA11y": "Delete frame {{index}} of {{total}}",
+        "deleteFrameBlocked": "Delete frame — a route keeps at least one",
+        "deleteFrameHint": "Undo is in the toolbar below",
+        "frameDeleted": "Frame deleted. {{total}} left."
       },
       "holdRole": {
         "title": "Set hold role",
@@ -606,8 +611,7 @@
         "open": "More climb actions",
         "makeRoute": "Make it a route",
         "makeBoulder": "Make it a boulder",
-        "makeBoulderBlocked": "Make it a boulder — delete frames first",
-        "deleteFrame": "Delete frame {{index}}"
+        "makeBoulderBlocked": "Make it a boulder — delete frames first"
       }
     },
     "holdFilter": {

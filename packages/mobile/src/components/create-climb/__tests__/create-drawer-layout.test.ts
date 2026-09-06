@@ -34,6 +34,11 @@ describe('create drawer board budget', () => {
     const route = computeBoardMaxHeight({ ...SE, showRouteTransport: true });
 
     expect(boulder - route).toBe(PLAYBACK_TRANSPORT_RESERVE);
+    // Pinned as a number too, not only as the difference: the difference is
+    // computed FROM the reserve, so on its own it stays green no matter what the
+    // reserve becomes. This is the assertion that notices the card changing
+    // height. 667 - 20 - 290 - 116.
+    expect(route).toBe(241);
   });
 
   it('keeps the smallest phone off the board-height floor in both states', () => {

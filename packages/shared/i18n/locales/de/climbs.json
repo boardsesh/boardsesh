@@ -537,7 +537,12 @@
         "counter": "{{index}}/{{total}}"
       },
       "playback": {
-        "addFrame": "Bild hinzufügen"
+        "addFrame": "Bild hinzufügen",
+        "addFrameHint": "Kopiert Frame {{index}} und setzt die Kopie dahinter",
+        "deleteFrameA11y": "Frame {{index}} von {{total}} löschen",
+        "deleteFrameBlocked": "Frame löschen — eine Route behält mindestens einen",
+        "deleteFrameHint": "Rückgängig findest du in der Leiste darunter",
+        "frameDeleted": "Frame gelöscht. Noch {{total}} übrig."
       },
       "holdRole": {
         "title": "Griff-Rolle festlegen",
@@ -606,8 +611,7 @@
         "open": "Mehr Aktionen",
         "makeRoute": "Zur Route machen",
         "makeBoulder": "Zum Boulder machen",
-        "makeBoulderBlocked": "Zum Boulder machen — erst Bilder löschen",
-        "deleteFrame": "Bild {{index}} löschen"
+        "makeBoulderBlocked": "Zum Boulder machen — erst Bilder löschen"
       }
     },
     "holdFilter": {

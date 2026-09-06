@@ -12,26 +12,39 @@ import { createElement, forwardRef, useImperativeHandle, type ReactNode } from '
 const hapticSelection = vi.hoisted(() => vi.fn());
 const scrollTo = vi.hoisted(() => vi.fn());
 
+type HitSlop = number | { top?: number; bottom?: number; left?: number; right?: number };
 type PressProps = {
   children?: ReactNode;
   onPress?: () => void;
   accessibilityLabel?: string;
   accessibilityState?: { selected?: boolean; disabled?: boolean };
   disabled?: boolean;
-  hitSlop?: number;
+  // An object here is the point, not an incidental: the frame-edit pair's slop is
+  // asymmetric so it can never reach up into the chip row above it.
+  hitSlop?: HitSlop;
+  testID?: string;
 };
 type ViewProps = { children?: ReactNode; testID?: string; accessibilityLabel?: string };
 
 vi.mock('react-native', () => {
   const View = ({ children, testID, accessibilityLabel }: ViewProps) =>
     createElement('div', { 'data-testid': testID, 'data-label': accessibilityLabel }, children);
-  const Pressable = ({ children, onPress, accessibilityLabel, accessibilityState, disabled, hitSlop }: PressProps) =>
+  const Pressable = ({
+    children,
+    onPress,
+    accessibilityLabel,
+    accessibilityState,
+    disabled,
+    hitSlop,
+    testID,
+  }: PressProps) =>
     createElement(
       'button',
       {
+        'data-testid': testID,
         'data-label': accessibilityLabel,
         'data-selected': accessibilityState?.selected == null ? undefined : String(accessibilityState.selected),
-        'data-hit-slop': hitSlop,
+        'data-hit-slop': typeof hitSlop === 'object' ? JSON.stringify(hitSlop) : hitSlop,
         disabled,
         onClick: onPress,
       },
@@ -149,6 +162,7 @@ vi.mock('../../../theme/ios-colors', () => ({
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
   borderRadius: { lg: 12, full: 9999 },
+  opacity: { subtle: 0.7, peek: 0.62, disabled: 0.5 },
 }));
 vi.mock('../../../theme/animations', () => ({
   springs: { snappy: {}, bouncy: {} },
@@ -192,7 +206,9 @@ function renderControls(overrides: Partial<ControlsProps> = {}) {
     strip,
     chips,
     scroller: container.querySelector('[data-node="scroller"]') as HTMLElement | null,
-    addFrame: container.querySelector('[data-title="mobile.create.playback.addFrame"]') as HTMLButtonElement | null,
+    editPair: container.querySelector('[data-testid="playback-frame-edit-pair"]') as HTMLElement | null,
+    addFrame: container.querySelector('[data-testid="playback-add-frame"]') as HTMLButtonElement | null,
+    deleteFrame: container.querySelector('[data-testid="playback-delete-frame"]') as HTMLButtonElement | null,
     pill: container.querySelector('[data-label^="playView.speed,"]') as HTMLButtonElement | null,
   };
 }
@@ -237,7 +253,7 @@ describe('PlaybackControls — play drawer (no creator props)', () => {
 });
 
 describe('PlaybackControls — creator frame strip', () => {
-  const frameEditing = { onAddFrame: vi.fn() };
+  const frameEditing = { onAddFrame: vi.fn(), onDeleteFrame: vi.fn() };
 
   it('replaces the counter with one chip per frame', () => {
     const { container, strip, chips } = renderControls({ frameCount: 4, frameIndex: 1, frameEditing });
@@ -251,27 +267,65 @@ describe('PlaybackControls — creator frame strip', () => {
     expect(chips[0]?.getAttribute('data-selected')).toBe('false');
   });
 
-  it('pins Add frame outside the scroller as a labelled chip', () => {
-    // Twice QA-declined: once as a bare glyph, once for scrolling out of view.
-    const { addFrame, scroller } = renderControls({ frameCount: 12, frameEditing });
+  it('keeps add and remove out of the scroller, at any frame count', () => {
+    // Twice QA-declined before this: once for a control that scrolled out of
+    // view, once for one that was a bare unlabelled glyph. The pair is a glyph
+    // now by design, so the label has to survive in the accessible name — and
+    // the pair must never enter the scroller, whatever the frame count.
+    const { addFrame, deleteFrame, scroller, editPair } = renderControls({ frameCount: 12, frameEditing });
 
-    expect(addFrame).toBeTruthy();
-    expect(addFrame?.textContent).toBe('mobile.create.playback.addFrame');
+    expect(editPair).toBeTruthy();
     expect(scroller).toBeTruthy();
     expect(scroller?.contains(addFrame)).toBe(false);
-    // Floored at 44 on its own: a native Button has no hitSlop to reach the
-    // touch target with, unlike the 32dp chips beside it. That is what makes the
-    // strip row 44 and the card's reserve 128dp.
-    expect(addFrame?.getAttribute('data-min-height')).toBe('44');
-    expect(addFrame?.getAttribute('data-variant')).toBe('tonal');
+    expect(scroller?.contains(deleteFrame)).toBe(false);
+    expect(addFrame?.getAttribute('data-label')).toBe('mobile.create.playback.addFrame');
+    expect(deleteFrame?.getAttribute('data-label')).toBe('mobile.create.playback.deleteFrameA11y:1/12');
   });
 
-  it('adds a frame from the pinned chip', () => {
+  it('adds a frame from the pair', () => {
     const onAddFrame = vi.fn();
-    const { addFrame } = renderControls({ frameEditing: { onAddFrame } });
+    const { addFrame } = renderControls({ frameEditing: { onAddFrame, onDeleteFrame: vi.fn() } });
 
     addFrame?.click();
     expect(onAddFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes the frame the transport is sitting on', () => {
+    const onDeleteFrame = vi.fn();
+    const { deleteFrame } = renderControls({
+      frameCount: 4,
+      frameIndex: 2,
+      frameEditing: { onAddFrame: vi.fn(), onDeleteFrame },
+    });
+
+    // The ordinal AND the total are in the label: this is the only text the
+    // control has, and "delete frame 3" without "of 4" does not tell a blind
+    // setter whether the route is about to lose its last frame.
+    expect(deleteFrame?.getAttribute('data-label')).toBe('mobile.create.playback.deleteFrameA11y:3/4');
+    deleteFrame?.click();
+    expect(onDeleteFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables remove at one frame rather than hiding it', () => {
+    // Hiding it would reflow the capsule from 88 to 44 the moment a second frame
+    // appears, walking the whole transport row sideways under the thumb.
+    const { deleteFrame, addFrame } = renderControls({ frameCount: 1, frameEditing });
+
+    expect(deleteFrame).toBeTruthy();
+    expect(deleteFrame?.disabled).toBe(true);
+    expect(deleteFrame?.getAttribute('data-label')).toBe('mobile.create.playback.deleteFrameBlocked');
+    expect(addFrame?.disabled).toBeFalsy();
+  });
+
+  it('never lets either half of the pair reach up into the chip row', () => {
+    // The chips sit 8dp above with 6dp of their own slop. A chip tap that slid
+    // down into a frame command is the one mis-tap this layout could cause, so
+    // the pair's slop is asymmetric: down and outwards, never up, and never into
+    // each other.
+    const { addFrame, deleteFrame } = renderControls({ frameCount: 4, frameEditing });
+
+    expect(addFrame?.getAttribute('data-hit-slop')).toBe('{"top":0,"bottom":6,"left":4,"right":0}');
+    expect(deleteFrame?.getAttribute('data-hit-slop')).toBe('{"top":0,"bottom":6,"left":0,"right":4}');
   });
 
   it('seeks to the tapped frame', () => {
@@ -290,11 +344,20 @@ describe('PlaybackControls — creator frame strip', () => {
     expect(chips.every((chip) => chip.getAttribute('data-hit-slop') === '6')).toBe(true);
   });
 
-  it('still shows the wall-state chip in place of the counter slot', () => {
-    const { container, chips } = renderControls({ frameCount: 3, frameEditing, wallStateLabel: 'On the wall' });
+  it('moves the wall-state chip to the strip, keeping the pair in its slot', () => {
+    // The reader shows "On the wall" in the transport row's left slot. In edit
+    // mode that slot is permanently the add/remove pair, so the chip takes the
+    // trailing edge of the strip — the space the old Add frame button vacated.
+    const { container, chips, editPair, strip } = renderControls({
+      frameCount: 3,
+      frameEditing,
+      wallStateLabel: 'On the wall',
+    });
 
     expect(container.textContent).toContain('On the wall');
     expect(chips).toHaveLength(3);
+    expect(editPair).toBeTruthy();
+    expect(strip?.textContent).toContain('On the wall');
   });
 });
 

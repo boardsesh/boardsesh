@@ -31,23 +31,23 @@ export const ABOVE_FOLD_CHROME = 290;
 
 /**
  * The route transport card, which carries the whole route control set: marginTop
- * 8 + paddingVertical 12 x 2 + the 44dp frame-strip row + an 8dp row gap + the
+ * 8 + paddingVertical 12 x 2 + the 32dp frame-strip row + an 8dp row gap + the
  * 44dp transport row.
  *
  * A contract with `PlaybackControls`' strip mode — if the rendered card and this
  * number disagree, the peek drifts against the real content height.
  *
- * The strip row is 44 rather than the 32 its chips occupy so the "+ Add frame"
- * button in it clears the touch floor: `Button` sizes itself from `minHeight`
- * and exposes no `hitSlop`, so unlike the frame chips it cannot borrow the extra
- * 12dp. Paying 12dp of board for the strip's primary action to be tappable is
- * the right trade on a screen this issue exists to fix the touch targets of.
+ * The strip row is exactly one chip tall. It was 44 while a labelled "+ Add
+ * frame" `Button` sat in it: `Button` sizes itself from `minHeight` and exposes
+ * no `hitSlop`, so unlike the frame chips it could not borrow the missing 12dp.
+ * Add and remove are now one icon capsule in the transport row's left slot — the
+ * empty space beside prev/play/next — which meets the touch floor there and
+ * hands the 12dp back to the board.
  *
- * It still replaces more than it costs: an 84dp card plus a detached 52dp button
- * row (136 total). Delete moved into the header's overflow menu and add became a
- * chip pinned inside the strip, so one card now does the work of two rows.
+ * It replaces far more than it costs: an 84dp card plus a detached 52dp button
+ * row (136 total) before #5189, and 128 in that PR's first cut.
  */
-export const PLAYBACK_TRANSPORT_RESERVE = 128;
+export const PLAYBACK_TRANSPORT_RESERVE = 116;
 
 /**
  * Floor on the board's height. A board this small is already unusable, so

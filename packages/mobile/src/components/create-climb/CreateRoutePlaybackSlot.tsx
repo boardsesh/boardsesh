@@ -28,6 +28,8 @@ type CreateRoutePlaybackSlotProps = {
   wallStateLabel: string | null;
   /** Adds a frame. Wired to the controller's GUARDED duplicate. */
   onAddFrame: () => void;
+  /** Removes the frame the transport is sitting on. Guarded the same way. */
+  onDeleteFrame: () => void;
   /** The setter's authored per-frame pace, in ms. Published as `frames_pace`. */
   onPaceChange: (paceMs: number) => void;
 };
@@ -42,10 +44,11 @@ type CreateRoutePlaybackSlotProps = {
  * an explicit state the header's overflow menu owns, which means a boulder can
  * render nothing here and a route can show its transport from frame one.
  *
- * Frame editing lives inside the transport card (a frame strip, with add pinned
- * to it) rather than in a detached row of pills underneath, and deleting a frame
- * moved to the same overflow menu that turned route mode on. One card, one
- * control set.
+ * Frame editing lives inside the transport card rather than in a detached row of
+ * pills underneath: a chip strip on top, and add/remove as one icon capsule in
+ * the transport row beside prev/play/next. One card, one control set — and both
+ * frame commands sit where the frames are, rather than one of them hiding in the
+ * header's overflow menu a board's height away.
  */
 export const CreateRoutePlaybackSlot = memo(function CreateRoutePlaybackSlot({
   showRouteTransport,
@@ -54,6 +57,7 @@ export const CreateRoutePlaybackSlot = memo(function CreateRoutePlaybackSlot({
   playback,
   wallStateLabel,
   onAddFrame,
+  onDeleteFrame,
   onPaceChange,
 }: CreateRoutePlaybackSlotProps) {
   if (!showRouteTransport) return null;
@@ -82,7 +86,7 @@ export const CreateRoutePlaybackSlot = memo(function CreateRoutePlaybackSlot({
         // keeps the ×multiplier, which is a reader's lens over the setter's pace.
         paceUnit="seconds"
         onPaceChange={onPaceChange}
-        frameEditing={{ onAddFrame }}
+        frameEditing={{ onAddFrame, onDeleteFrame }}
       />
     </GestureHandlerRootView>
   );

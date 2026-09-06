@@ -537,7 +537,12 @@
         "counter": "{{index}}/{{total}}"
       },
       "playback": {
-        "addFrame": "Ajouter une image"
+        "addFrame": "Ajouter une image",
+        "addFrameHint": "Copie l’image {{index}} et place la copie juste après",
+        "deleteFrameA11y": "Supprimer l’image {{index}} sur {{total}}",
+        "deleteFrameBlocked": "Supprimer l’image : une voie en garde au moins une",
+        "deleteFrameHint": "Annuler se trouve dans la barre en dessous",
+        "frameDeleted": "Image supprimée. Il en reste {{total}}."
       },
       "holdRole": {
         "title": "Définir le rôle de la prise",
@@ -606,8 +611,7 @@
         "open": "Plus d'actions",
         "makeRoute": "Convertir en voie",
         "makeBoulder": "Convertir en bloc",
-        "makeBoulderBlocked": "Convertir en bloc — supprime d'abord les images",
-        "deleteFrame": "Supprimer l'image {{index}}"
+        "makeBoulderBlocked": "Convertir en bloc — supprime d'abord les images"
       }
     },
     "holdFilter": {

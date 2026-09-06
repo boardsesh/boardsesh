@@ -62,6 +62,7 @@ const playback = {
 
 function renderSlot(overrides: Partial<Parameters<typeof CreateRoutePlaybackSlot>[0]> = {}) {
   const onAddFrame = vi.fn();
+  const onDeleteFrame = vi.fn();
   const onPaceChange = vi.fn();
   const { container } = render(
     createElement(CreateRoutePlaybackSlot, {
@@ -71,6 +72,7 @@ function renderSlot(overrides: Partial<Parameters<typeof CreateRoutePlaybackSlot
       playback,
       wallStateLabel: null,
       onAddFrame,
+      onDeleteFrame,
       onPaceChange,
       ...overrides,
     }),
@@ -78,6 +80,7 @@ function renderSlot(overrides: Partial<Parameters<typeof CreateRoutePlaybackSlot
   return {
     container,
     onAddFrame,
+    onDeleteFrame,
     onPaceChange,
     transport: container.querySelector('[data-node="transport"]'),
     gestureRoot: container.querySelector('[data-node="gesture-root"]'),

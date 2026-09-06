@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { buildCreateOverflowMenu, type CreateOverflowMenuState } from '../create-overflow-menu';
 
 // The overflow menu is the ONLY way into and out of route mode, so "which rows
-// exist in which state" is behaviour rather than presentation. It is also the
-// only place a frame can be deleted now, and the rows are addressed by index —
-// a state that drops a row must not shift a tap onto a neighbouring action.
+// exist in which state" is behaviour rather than presentation. Rows are
+// addressed by index — a state that drops a row must not shift a tap onto a
+// neighbouring action.
 
 const translate = (key: string, params?: Record<string, number | string>) =>
   params ? `${key}:${JSON.stringify(params)}` : key;
@@ -13,7 +13,6 @@ const state = (overrides: Partial<CreateOverflowMenuState> = {}): CreateOverflow
   supportsMultiFrame: true,
   routeMode: false,
   frameCount: 1,
-  frameIndex: 0,
   ...overrides,
 });
 
@@ -44,23 +43,21 @@ describe('buildCreateOverflowMenu', () => {
     expect(makeBoulder?.label).toBe('mobile.create.routeMenu.makeBoulderBlocked');
   });
 
-  it('names the frame that Delete would remove', () => {
-    // "Delete frame" beside a strip of four makes you guess which one it means.
-    const rows = buildCreateOverflowMenu(state({ routeMode: true, frameCount: 4, frameIndex: 2 }), translate);
-    const deleteFrame = rows.find((row) => row.action === 'deleteFrame');
-    expect(deleteFrame?.label).toBe('mobile.create.routeMenu.deleteFrame:{"index":3}');
-    expect(deleteFrame?.destructive).toBe(true);
-  });
-
-  it('offers no frame to delete while a route is still one frame', () => {
-    expect(actionsOf(state({ routeMode: true }))).not.toContain('deleteFrame');
+  it('keeps frame commands out of the menu at every frame count', () => {
+    // Add and remove live on the transport card, beside the strip they act on.
+    // A second door in the header would put a destructive action a board's
+    // height from the frames it deletes, and leave two controls to keep in step.
+    for (const frameCount of [1, 2, 4, 12]) {
+      const rows = buildCreateOverflowMenu(state({ routeMode: true, frameCount }), translate);
+      expect(rows.map((row) => row.action)).not.toContain('deleteFrame');
+    }
   });
 
   it('treats a multi-frame climb as a route even without the flag', () => {
     // An edit or a fork opens on frames that already exist; the controller seeds
     // the flag from them, but the menu must not depend on that having happened.
     const rows = buildCreateOverflowMenu(state({ routeMode: false, frameCount: 3 }), translate);
-    expect(rows.map((row) => row.action)).toEqual(['deleteFrame', 'makeBoulder', 'newClimb']);
+    expect(rows.map((row) => row.action)).toEqual(['makeBoulder', 'newClimb']);
 
     // And the way out is blocked here for the same reason it is with the flag
     // set: the block keys off the FRAMES, not the mode. Asserting only the row
@@ -82,7 +79,7 @@ describe('buildCreateOverflowMenu', () => {
     const everyState: CreateOverflowMenuState[] = [
       state(),
       state({ routeMode: true }),
-      state({ routeMode: true, frameCount: 4, frameIndex: 3 }),
+      state({ routeMode: true, frameCount: 4 }),
       state({ supportsMultiFrame: false }),
     ];
     for (const input of everyState) {
