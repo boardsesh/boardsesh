@@ -39,6 +39,9 @@ const RAW_LAYOUT = {
     { panel_index: 0, set_id: 26, kind: 'tnut', x_mm: 300, y_mm: 300, diameter_mm: 12.5, keepout_radius_mm: 26 },
     { panel_index: 0, set_id: 26, kind: 'led', x_mm: 900, y_mm: 900, diameter_mm: 12.5, keepout_radius_mm: 11 },
     { panel_index: 1, set_id: 26, kind: 'tnut', x_mm: 1500, y_mm: 300, diameter_mm: 12.5, keepout_radius_mm: 26 },
+    // 10 mm inside panel 1, just across the seam from panel 0 — too far for a
+    // 1x keep-out to reach, but within a cut-through's 1.5x one.
+    { panel_index: 1, set_id: 26, kind: 'tnut', x_mm: 1210, y_mm: 600, diameter_mm: 12.5, keepout_radius_mm: 25 },
   ],
   keepout: {
     tnut_radius_mm: 6.25,
@@ -210,6 +213,47 @@ describe('the placement editor', () => {
 
     expect(onLocalCollisions).toHaveBeenLastCalledWith(true);
     expect(screen.getByText(/lands on 1 hole/)).toBeDefined();
+  });
+
+  it('keeps dragging when an unrelated pointer lifts mid-gesture', () => {
+    const { onChange } = renderEditor();
+    const art = screen.getByTestId('cnc-art');
+    const surface = screen.getByRole('application');
+
+    fireEvent.pointerDown(art, { pointerId: 1, ...clientFromWall(600, 600) });
+    fireEvent.pointerMove(surface, { pointerId: 1, ...clientFromWall(700, 600) });
+    expect(lastPlacement(onChange)).toMatchObject({ xMm: 700, yMm: 600 });
+
+    // A second finger's pointerup (or pointercancel) must not end the drag it
+    // never started — only the pointer the gesture actually captured can.
+    fireEvent.pointerUp(surface, { pointerId: 2 });
+
+    fireEvent.pointerMove(surface, { pointerId: 1, ...clientFromWall(803, 600) });
+    fireEvent.pointerUp(surface, { pointerId: 1 });
+
+    expect(lastPlacement(onChange)).toMatchObject({ panelIndex: 0, xMm: 800, yMm: 600 });
+  });
+});
+
+describe('collisions across a seam', () => {
+  it('flags a hole just inside the neighbouring panel once cut-through widens the keep-out', () => {
+    // Right edge at 1180 mm, 15 mm inside panel 0's margin — but the hole 30 mm
+    // away, in panel 1, has a keep-out that only reaches this far once scaled
+    // by the cut-through multiplier. The generator checks every hole on the
+    // wall for this, not just the selected panel's.
+    const { onLocalCollisions } = renderEditor({
+      item: { ...item(), mode: 'cut_through' as const, xMm: 1150, widthMm: 60 },
+    });
+
+    expect(onLocalCollisions).toHaveBeenLastCalledWith(true);
+  });
+
+  it('does not flag the same placement without the cut-through multiplier', () => {
+    const { onLocalCollisions } = renderEditor({
+      item: { ...item(), xMm: 1150, widthMm: 60 },
+    });
+
+    expect(onLocalCollisions).toHaveBeenLastCalledWith(false);
   });
 });
 

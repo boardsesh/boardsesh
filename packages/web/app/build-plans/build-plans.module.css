@@ -185,3 +185,25 @@
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
 }
+
+/* The label/logo drag target: a move cursor, and no accidental text selection
+   while dragging. Set once here rather than on its `<image>`/`<text>`
+   children — `user-select` inherits, so one class covers all three. */
+.wallDragTarget {
+  cursor: move;
+  user-select: none;
+}
+
+/* Corner-resize cursors, matched to the diagonal each handle actually sits on:
+   top-left/bottom-right share the "\" cursor, top-right/bottom-left the "/" one. */
+.wallHandleNwse {
+  cursor: nwse-resize;
+}
+
+.wallHandleNesw {
+  cursor: nesw-resize;
+}
+
+.wallRotateHandle {
+  cursor: grab;
+}
