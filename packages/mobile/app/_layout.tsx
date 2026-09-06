@@ -67,6 +67,7 @@ import { toBoardName } from '@boardsesh/board-config';
 import { PersistentQueueBar } from '../src/components/queue-control/persistent-queue-bar';
 import { UserDrawerProvider } from '../src/components/user-drawer/UserDrawerProvider';
 import { OfflineSyncBridge, OfflineEngineFlagSync } from '../src/components/offline-sync-bridge';
+import { ConnectivityBridge } from '../src/components/connectivity-bridge';
 import { useMobileClimbActionsData } from '../src/lib/graphql/hooks';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 import { useActiveBoardSelfHeal } from '../src/lib/boards/use-active-board-self-heal';
@@ -93,6 +94,7 @@ import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
+import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
@@ -578,6 +580,11 @@ function RootLayout() {
                       {/* First child on purpose: publishes the offline-engine flag to the
                           non-React store before any later sibling's query effects run. */}
                       <OfflineEngineFlagSync />
+                      {/* Drives the connectivity store: NetInfo, transport-failure
+                          counting and the backend probe. Sits beside
+                          OfflineEngineFlagSync because both publish into non-React
+                          stores that later siblings read. Null render. */}
+                      <ConnectivityBridge />
                       {/* Applies the Observe kill switch and sample rate once PostHog
                           resolves them. Until then the shipped defaults from
                           observe-bootstrap stand. Null render. */}
@@ -797,6 +804,14 @@ function RootLayout() {
                                                             presence globally and overlays both the native (iOS 26) and
                                                             JS bottom-bar variants. */}
                                                                   <AccessoryOnboardingTip />
+                                                                  {/* The one app-wide "we can't reach the server"
+                                                            banner (#4862). A root sibling like the tip above so
+                                                            it survives navigation and floats over every route;
+                                                            it publishes its own height so the bottom-chrome
+                                                            geometry can lift the FABs and list tails clear of
+                                                            it. Gated on the same ready signal as OnboardingGate
+                                                            so it never paints over the splash. */}
+                                                                  <ConnectivityBanner ready={authReady && fontsReady} />
                                                                   <OnboardingGate ready={authReady && fontsReady} />
                                                                   {/* Asks a tester to try a PR preview (or shows what to
                                                             test on the one already running). No-op for everyone

@@ -8,8 +8,10 @@ import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { Button } from '../../../src/components/Button';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
+import { OfflineState } from '../../../src/components/OfflineState';
 import { BetaVideoCard } from '../../../src/components/play-drawer/BetaVideoCard';
 import { useUserBetaLinks, type RecentBetaVideo } from '../../../src/lib/graphql/hooks';
+import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { spacing } from '../../../src/theme/tokens';
@@ -54,10 +56,29 @@ export default function UserBetaScreen() {
     [],
   );
 
+  // `useUserBetaLinks` is a hand-rolled offset-paged store, not a React Query
+  // result, so hand the reducer the same three facts in its own shape: it only
+  // ever reads status / fetchStatus / data.
+  const offlineQuery = useOfflineQueryState({
+    status: hasError ? 'error' : isLoading ? 'pending' : 'success',
+    fetchStatus: isLoading ? 'fetching' : 'idle',
+    data: videos.length > 0 ? videos : undefined,
+  });
+
   if (isLoading && videos.length === 0) {
     return (
       <View style={[styles.flex, styles.centered, { backgroundColor: systemColors.background }]}>
         <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  // "Couldn't load this" is the wrong story when nothing could have loaded —
+  // say whether it is the phone, us, or a switch the climber flipped.
+  if (offlineQuery.isBlocked && offlineQuery.reason) {
+    return (
+      <View style={[styles.flex, styles.centered, { backgroundColor: systemColors.background }]}>
+        <OfflineState reason={offlineQuery.reason} onRetry={refetch} />
       </View>
     );
   }

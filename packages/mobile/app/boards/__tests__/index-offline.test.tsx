@@ -26,6 +26,9 @@ const rememberDownloadedBoardsMock = vi.hoisted(() => vi.fn());
 
 const state = vi.hoisted(() => ({
   isOffline: false,
+  // Which side is actually down. The notice reads differently for each, so the
+  // reason travels alongside `isOffline` instead of being inferred from it.
+  connectivityReason: null as 'device_offline' | 'offline_mode' | 'backend_unreachable' | null,
   offlineCards: [] as unknown[],
   downloadedScopeKeys: [] as string[],
   enabledScopeKeys: [] as string[],
@@ -81,6 +84,7 @@ vi.mock('react-i18next', () => ({
         'mobile.offline.pickerNotice': "No signal — here are the boards you've downloaded.",
         'mobile.offline.pickerNoticeUnreachable':
           "Can't reach your boards right now — here are the ones you've downloaded.",
+        'mobile.offline.pickerNoticeOfflineMode': "Offline mode is on. Here are the boards you've downloaded.",
         'mobile.offline.pickerEmptyTitle': 'Nothing downloaded yet',
         'mobile.offline.pickerEmptyBody': 'Boards you make available offline show up here.',
         'mobile.offline.pickerQueuedNotice': "{{name}} is queued — it downloads the moment you're back online.",
@@ -163,7 +167,9 @@ vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
-vi.mock('../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
+vi.mock('../../../src/lib/connectivity/use-connectivity', () => ({
+  useConnectivity: () => ({ effectiveOffline: state.isOffline, reason: state.connectivityReason }),
+}));
 vi.mock('../../../src/settings', () => ({
   useOfflineBoards: () => state.offlineCards,
   useSetting: () => [state.enabledScopeKeys, vi.fn()],
@@ -268,6 +274,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   setActiveBoardMock.mockResolvedValue(undefined);
   state.isOffline = false;
+  state.connectivityReason = null;
   state.offlineCards = [];
   state.downloadedScopeKeys = [];
   state.offlineCatalog = null;
@@ -279,6 +286,7 @@ beforeEach(() => {
 describe('board picker with no usable network list', () => {
   it('lists the downloaded board and switches to it on tap', async () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
     state.offlineCards = [downloadedBoard];
     state.downloadedScopeKeys = ['kilter:8:17'];
 
@@ -297,6 +305,7 @@ describe('board picker with no usable network list', () => {
 
   it('does not fire the follow/adopt mutation while offline', async () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
     state.offlineCards = [downloadedBoard];
     state.downloadedScopeKeys = ['kilter:8:17'];
 
@@ -311,6 +320,7 @@ describe('board picker with no usable network list', () => {
 
   it('shows the offline empty state, not "create a board", when nothing is downloaded', () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
 
     render(createElement(BoardSelection));
 
@@ -325,6 +335,7 @@ describe('board picker with no usable network list', () => {
   // to tap and no sign anything happened, so the queued line takes its place.
   it('acknowledges the queued download once the board has been armed', () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
     state.activeBoard = downloadedBoard;
     state.offlineCards = [downloadedBoard];
     state.offlineCatalog = 'queued';
@@ -341,6 +352,7 @@ describe('board picker with no usable network list', () => {
   // is actually showing in.
   it('offers the download beside the carousel, not only in the empty state', () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
     state.activeBoard = downloadedBoard;
     state.offlineCards = [downloadedBoard];
     state.offlineCatalog = 'missing';
@@ -375,11 +387,42 @@ describe('board picker with no usable network list', () => {
     expect(adoptFoundBoardMock).not.toHaveBeenCalled();
   });
 
+  // #4862: the notice blamed the phone for everything. A climber standing in
+  // full LTE while Boardsesh is down was told they had no signal, and went off
+  // rebooting their router.
+  it('blames our server, not the signal, when the backend is the thing that is down', () => {
+    state.isOffline = true;
+    state.connectivityReason = 'backend_unreachable';
+    state.offlineCards = [downloadedBoard];
+    state.downloadedScopeKeys = ['kilter:8:17'];
+
+    render(createElement(BoardSelection));
+
+    expect(screen.getByText("Can't reach your boards right now — here are the ones you've downloaded.")).toBeTruthy();
+    expect(screen.queryByText("No signal — here are the boards you've downloaded.")).toBeNull();
+    // Retry is for the lying connection only: this query is paused, and React
+    // Query resumes it on the reconnect edge by itself.
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  it('names Offline mode when the climber turned it on themselves', () => {
+    state.isOffline = true;
+    state.connectivityReason = 'offline_mode';
+    state.offlineCards = [downloadedBoard];
+    state.downloadedScopeKeys = ['kilter:8:17'];
+
+    render(createElement(BoardSelection));
+
+    expect(screen.getByText("Offline mode is on. Here are the boards you've downloaded.")).toBeTruthy();
+    expect(screen.queryByText("No signal — here are the boards you've downloaded.")).toBeNull();
+  });
+
   // Every board action on this screen is a server mutation, so the offline branch
   // offers none of them — and no Edit control either, since there is nothing
   // behind it that could succeed.
   it('offers no per-card action and no Edit control on the offline branch', () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
     state.offlineCards = [downloadedBoard];
     state.downloadedScopeKeys = ['kilter:8:17'];
 

@@ -145,6 +145,9 @@ export const iconMap = {
   'offline.downloaded': { ios: 'checkmark.icloud.fill', android: 'cloud-check-variant' },
   'offline.pending': { ios: 'icloud', android: 'cloud-outline' },
   'offline.unavailable': { ios: 'wifi.slash', android: 'wifi-off' },
+  // Distinct from offline.unavailable on purpose: a crossed-out wifi glyph
+  // blames the climber's connection for a problem that is ours (issue #4862).
+  'server.unreachable': { ios: 'icloud.slash', android: 'cloud-off-outline' },
 
   // Social
   person: { ios: 'person', android: 'account-outline' },

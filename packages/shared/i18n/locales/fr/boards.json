@@ -299,6 +299,7 @@
       "enableConfirm": "Télécharger",
       "pickerNotice": "Pas de réseau — voici les boards que tu as téléchargées.",
       "pickerNoticeUnreachable": "Impossible de charger tes boards pour l'instant — voici celles que tu as téléchargées.",
+      "pickerNoticeOfflineMode": "Le mode hors ligne est activé. Voici les boards que tu as téléchargées.",
       "pickerEmptyTitle": "Rien de téléchargé pour le moment",
       "pickerEmptyBody": "Les boards que tu rends disponibles hors ligne apparaissent ici. Télécharge-en une quand tu as du réseau.",
       "retryFastDownload": "Réessayer le téléchargement rapide",

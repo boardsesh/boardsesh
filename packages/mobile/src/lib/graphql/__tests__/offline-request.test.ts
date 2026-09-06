@@ -63,6 +63,15 @@ vi.mock('../../../offline/offline-usage-signal', () => ({
   recordOfflineReadUnavailable,
 }));
 
+// The connectivity store decides WHICH offline lane a local read belongs to
+// (issue #4862): our outage, the climber's choice, or a tunnel.
+const connectivity = vi.hoisted(() => ({
+  snapshot: { effectiveOffline: false, reason: null as string | null },
+}));
+vi.mock('../../connectivity/connectivity-store', () => ({
+  getConnectivitySnapshot: () => connectivity.snapshot,
+}));
+
 const fakeDb = { tag: 'db' };
 
 import { offlineAwareRequest } from '../offline-request';
@@ -107,6 +116,15 @@ const localGrade = {
 
 function setOnline(online: boolean) {
   vi.spyOn(onlineManager, 'isOnline').mockReturnValue(online);
+  // onlineManager is DOWNSTREAM of the store since #4862, so a test that moves
+  // one and not the other would assert a state the app cannot reach.
+  connectivity.snapshot = { effectiveOffline: !online, reason: online ? null : 'device_offline' };
+}
+
+/** Offline for a specific reason — the split the lanes exist to make. */
+function setOfflineBecause(reason: 'backend_unreachable' | 'offline_mode' | 'device_offline') {
+  vi.spyOn(onlineManager, 'isOnline').mockReturnValue(false);
+  connectivity.snapshot = { effectiveOffline: true, reason };
 }
 
 afterEach(() => {
@@ -115,6 +133,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  connectivity.snapshot = { effectiveOffline: false, reason: null };
   setOfflineEngineEnabled(true);
   getDatabaseHandle.mockReturnValue(fakeDb);
   isOfflineSearchSupported.mockReturnValue(true);
@@ -661,6 +680,7 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
       reason: 'board_not_downloaded',
       surface: 'search',
       boardName: 'kilter',
+      connectivityReason: 'device_offline',
     });
     expect(recordOfflineRead).not.toHaveBeenCalled();
   });
@@ -676,6 +696,7 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
       reason: 'filter_unsupported',
       surface: 'search',
       boardName: 'kilter',
+      connectivityReason: 'device_offline',
     });
   });
 
@@ -693,6 +714,7 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
       reason: 'board_not_downloaded',
       surface: 'search',
       boardName: 'kilter',
+      connectivityReason: 'device_offline',
     });
   });
 
@@ -710,6 +732,7 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
       reason: 'board_not_downloaded',
       surface: 'search',
       boardName: 'kilter',
+      connectivityReason: 'device_offline',
     });
   });
 
@@ -773,6 +796,7 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
       reason: 'local_db_unavailable',
       surface: 'search',
       boardName: 'kilter',
+      connectivityReason: 'device_offline',
     });
   });
 
@@ -811,6 +835,88 @@ describe('offlineAwareRequest — offline-usage signal lanes (#4317)', () => {
     await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS);
 
     expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
+  });
+
+  // #4862 split the offline lane in three. The reads that carried a climber
+  // through OUR outage are the value a downloaded board earned when we broke,
+  // and they were indistinguishable from a tunnel before this.
+  it('records backend_unreachable_local when our server is what went down', async () => {
+    setOfflineBecause('backend_unreachable');
+    isBoardDownloadedLocally.mockResolvedValue(true);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'backend_unreachable_local',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  // Chosen, not suffered — it belongs in the north-star but never in "how often
+  // is anyone stranded?".
+  it('records offline_mode_local when the climber turned offline mode on', async () => {
+    setOfflineBecause('offline_mode');
+    isBoardDownloadedLocally.mockResolvedValue(true);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'offline_mode_local',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  // The residual bucket: offline before the store resolved a reason, i.e. a
+  // cold start.
+  it('records offline_local when the app is offline with no resolved reason', async () => {
+    vi.spyOn(onlineManager, 'isOnline').mockReturnValue(false);
+    connectivity.snapshot = { effectiveOffline: true, reason: null };
+    isBoardDownloadedLocally.mockResolvedValue(true);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'offline_local',
+      surface: 'search',
+      boardName: 'kilter',
+    });
+  });
+
+  // A gap our own outage created is not a climber who never downloaded a board,
+  // and only one of those is an argument for a download nudge.
+  it('stamps an empty read with the reason the app was offline', async () => {
+    setOfflineBecause('backend_unreachable');
+    isBoardDownloadedLocally.mockResolvedValue(false);
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
+      reason: 'board_not_downloaded',
+      surface: 'search',
+      boardName: 'kilter',
+      connectivityReason: 'backend_unreachable',
+    });
+  });
+
+  // The rescue lane is unchanged on purpose: it is a lying connection the store
+  // has not classified yet, so relabelling it would claim a confirmation we do
+  // not have.
+  it('leaves the network-rescue lane alone during a confirmed outage', async () => {
+    setOfflineEngineEnabled(false);
+    vi.spyOn(onlineManager, 'isOnline').mockReturnValue(true);
+    connectivity.snapshot = { effectiveOffline: false, reason: null };
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    request.mockRejectedValue(new Error('Network request failed'));
+
+    await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+
+    expect(recordOfflineRead).toHaveBeenCalledExactlyOnceWith({
+      lane: 'network_error_local',
+      surface: 'search',
+      boardName: 'kilter',
+    });
   });
 
   it('reports the board the read was scoped to, not a hardcoded one', async () => {

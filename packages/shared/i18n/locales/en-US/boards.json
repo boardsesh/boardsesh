@@ -299,6 +299,7 @@
       "enableConfirm": "Download",
       "pickerNotice": "No signal — here are the boards you've downloaded.",
       "pickerNoticeUnreachable": "Can't reach your boards right now — here are the ones you've downloaded.",
+      "pickerNoticeOfflineMode": "Offline mode is on. Here are the boards you've downloaded.",
       "pickerEmptyTitle": "Nothing downloaded yet",
       "pickerEmptyBody": "Boards you make available offline show up here. Grab one while you have signal.",
       "retryFastDownload": "Try the fast download again",

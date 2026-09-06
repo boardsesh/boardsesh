@@ -278,6 +278,8 @@
       },
       "offlineFilter": {
         "title": "Ce filtre nécessite une connexion",
+        "titleServer": "Ce filtre nécessite notre serveur",
+        "titleOfflineMode": "Ce filtre nécessite d'être en ligne",
         "subtitle": "Les brouillons, les betas, les zones et les filtres de prises ne fonctionnent qu'en ligne. Efface-le pour continuer à parcourir hors ligne.",
         "cta": "Effacer le filtre"
       },

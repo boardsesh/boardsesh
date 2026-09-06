@@ -55,6 +55,13 @@ vi.mock('../../offline/outbox-telemetry', () => ({
 // own shape is covered in offline/__tests__/local-write-telemetry.test.ts.
 vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
 
+// The live outbox gauge (issue #4862). Stubbed here for two reasons: the real
+// module pulls React + AppState into this node-env suite, and the assertion that
+// matters is only that every committed write announces itself — the store's own
+// read policy is covered in offline/__tests__/outbox-store.test.ts.
+const notifyOutboxChangedMock = vi.hoisted(() => vi.fn());
+vi.mock('../../offline/outbox-store', () => ({ notifyOutboxChanged: notifyOutboxChangedMock }));
+
 import {
   writeTickLocal,
   addFavoriteLocal,
@@ -124,6 +131,7 @@ let db: TestSqliteDb;
 beforeEach(async () => {
   invalidateQueries.mockClear();
   reportEnqueueSuppressedMock.mockClear();
+  notifyOutboxChangedMock.mockClear();
   __resetDrainerStateForTests();
   db = createTestDatabase();
   await runMigrations(db);
@@ -160,6 +168,11 @@ describe('writeTickLocal', () => {
     const payload = JSON.parse(queued[0].payload as string) as Record<string, unknown>;
     expect(payload.climbedAt).toBe('2024-05-30T10:00:00.000Z');
     expect(payload.sessionId).toBe('session-7');
+
+    // Exactly once per committed write — the connectivity banner's "N changes
+    // waiting" count is driven off this, and a write that queues silently would
+    // leave the climber's send uncounted until the next drain tick.
+    expect(notifyOutboxChangedMock).toHaveBeenCalledTimes(1);
   });
 
   it('persists a null session_id when the input omits sessionId', async () => {
@@ -206,6 +219,9 @@ describe('writeTickLocal', () => {
 
     const ticks = await db.getAllAsync<Row>('SELECT * FROM boardsesh_ticks');
     expect(ticks).toHaveLength(0);
+    // Nothing was queued, so nothing may claim it was: the connectivity banner
+    // would show "1 change waiting" over an outbox that never got the row.
+    expect(notifyOutboxChangedMock).not.toHaveBeenCalled();
   });
 
   // The adapter stamps input.uuid before the first write so the queued replay and
@@ -351,6 +367,12 @@ describe('addFavoriteLocal', () => {
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
     expect(queued).toHaveLength(1);
     expect(queued[0].idempotency_key).toBe('add:user_favorites:kilter:climb-9:40');
+  });
+
+  it('announces the queued write so the banner count can move', async () => {
+    await addFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
+
+    expect(notifyOutboxChangedMock).toHaveBeenCalledTimes(1);
   });
 
   it('dedupes a double-tap add into a single queue row', async () => {

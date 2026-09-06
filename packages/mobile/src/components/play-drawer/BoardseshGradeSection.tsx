@@ -9,6 +9,7 @@ import { buildDumbbellByAngleModel } from './by-angle-comparison';
 import { buildAngleGradeBars } from './community-utils';
 import { useBoardseshGrade, useBoardseshGradesForAngles, useClimbStatsHistory } from '../../lib/graphql/hooks';
 import { useGradeFormat } from '../../hooks/use-grade-format';
+import { useIsOffline } from '../../hooks/use-is-offline';
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -28,8 +29,12 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   angle,
 }: BoardseshGradeSectionProps) {
   const { t } = useTranslation('climbs');
+  const { t: tCommon } = useTranslation('common');
   const { gradeFormat } = useGradeFormat();
   const { brandColors } = useTheme();
+  // The cheap boolean, not the whole snapshot — see BetaVideosSection: a memo'd
+  // drawer section must not re-render on every probe tick.
+  const effectiveOffline = useIsOffline();
 
   // MoonBoard and Woods have no community grade data in our feed, so skip the
   // fetch (see the crowdGrade row of the board-capability table).
@@ -80,6 +85,20 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
 
   if (!noCrowdGrade && isLoading) {
     return <View style={[styles.skeleton, styles.skeletonBlock]} />;
+  }
+
+  // Nothing can reach us and no grade is cached. A tappable "Couldn't load"
+  // row invites a retry that cannot land, and falling through to the
+  // setter-only view would assert something we never got to ask about. One
+  // muted line instead — the global connectivity banner owns the recovery.
+  if (!noCrowdGrade && effectiveOffline && !grade) {
+    return (
+      <View style={styles.row}>
+        <Text variant="subheadline" color={iosSystemColors.systemGray}>
+          {tCommon('mobile.connectivity.needsConnection')}
+        </Text>
+      </View>
+    );
   }
 
   if (!noCrowdGrade && isError) {

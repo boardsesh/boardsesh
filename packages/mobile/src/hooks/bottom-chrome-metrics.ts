@@ -103,6 +103,24 @@ export type BottomChromeInputs = {
    * off the native-tab-bar path — the JS bars sit outside every UIKit inset.
    */
   measuredTabContentInsetBottom?: number | null;
+  /**
+   * Measured height of the app-wide connectivity banner (issue #4862),
+   * published by `ConnectivityBanner` via `connectivity-banner-inset-store` and
+   * already including the gap it leaves under itself. `0` (the default) means no
+   * banner is on screen.
+   *
+   * The banner is a root-level absolute overlay pinned above the bottom chrome
+   * on every route, so it occludes exactly what `floatingControlBottom` and
+   * `scrollBottomPadding` exist to clear — the filter FAB, the queue-added
+   * snackbar, the last row of every list. Folding it in here rather than at each
+   * call site is what keeps a route from having to know whether the app is
+   * currently offline.
+   *
+   * The banner itself must NOT position against those two outputs — it would
+   * stack on its own height and walk up the screen one layout pass at a time.
+   * It anchors to {@link BottomChromeMetrics.connectivityBannerBottom} instead.
+   */
+  connectivityBannerHeight?: number;
 };
 
 export type BottomChromeMetrics = {
@@ -130,6 +148,15 @@ export type BottomChromeMetrics = {
   scrollBottomPadding: number;
   /** Bottom offset for floating controls (FABs, snackbar) so they clear all chrome. */
   floatingControlBottom: number;
+  /**
+   * Where the connectivity banner itself sits: `floatingControlBottom` as it was
+   * BEFORE its own height was folded in. A banner anchored to
+   * `floatingControlBottom` would re-read a value that already contains its own
+   * measurement and climb the screen one layout pass at a time, so it gets its
+   * own fixed-point-free anchor. Everything else keeps using
+   * `floatingControlBottom` and therefore floats above the banner.
+   */
+  connectivityBannerBottom: number;
   /**
    * Bottom padding for fixed footers. NativeTabs overlays content, so fixed
    * footers use the raw UIKit inset that already clears native chrome. Material
@@ -179,6 +206,12 @@ export type BottomChromeMetrics = {
  * tab implementations; fixed footers use `fixedFooterBottom` because they need
  * the in-flow-vs-overlay tab-bar distinction. `floatingControlBottom` clears
  * the physical tab bar because those controls are absolute overlays.
+ *
+ * `connectivityBannerHeight` rides on top of those same two outputs, and only
+ * those two: the banner is an absolute overlay pinned above all of the above, so
+ * it occludes floating controls and the tail of a scroll view but nothing that
+ * is docked in flow. `connectivityBannerBottom` is the banner's own anchor and
+ * therefore excludes it.
  */
 export function computeBottomChromeMetrics({
   uiVariant,
@@ -191,6 +224,7 @@ export function computeBottomChromeMetrics({
   usesSidebar = false,
   detailPaneOwnsQueue = usesSidebar,
   measuredTabContentInsetBottom = null,
+  connectivityBannerHeight = 0,
 }: BottomChromeInputs): BottomChromeMetrics {
   // Regular-width iPad with the detail pane mounted: the left sidebar replaces
   // the bottom tab bar and the selected-climb pane replaces the floating queue
@@ -209,8 +243,12 @@ export function computeBottomChromeMetrics({
       tabBarBottom: insetsBottom,
       jsQueueReserve: 0,
       nativeAccessoryReserve: 0,
-      scrollBottomPadding: insetsBottom,
-      floatingControlBottom: insetsBottom,
+      // The connectivity banner floats on the iPad sidebar shell too — it is a
+      // root sibling with no idea which shell is on screen — so it still has to
+      // be cleared here even though every other reserve collapses to the inset.
+      scrollBottomPadding: insetsBottom + connectivityBannerHeight,
+      floatingControlBottom: insetsBottom + connectivityBannerHeight,
+      connectivityBannerBottom: insetsBottom,
       fixedFooterBottom: insetsBottom,
       inSessionListBottom: insetsBottom,
       preSessionFooterBottom: insetsBottom,
@@ -291,8 +329,11 @@ export function computeBottomChromeMetrics({
     tabBarBottom,
     jsQueueReserve,
     nativeAccessoryReserve,
-    scrollBottomPadding: scrollTabBarBottom + jsQueueReserve,
-    floatingControlBottom: tabBarBottom + Math.max(jsQueueReserve, nativeAccessoryReserve),
+    scrollBottomPadding: scrollTabBarBottom + jsQueueReserve + connectivityBannerHeight,
+    floatingControlBottom: tabBarBottom + activeQueueChromeReserve + connectivityBannerHeight,
+    // Deliberately the pre-banner value — see the field doc. `activeQueueChromeReserve`
+    // is the same Math.max the floating offset used inline before the banner existed.
+    connectivityBannerBottom: tabBarBottom + activeQueueChromeReserve,
     fixedFooterBottom,
     // selectByVariant (vs a raw ternary) keeps these exhaustive: a new UiVariant is
     // a compile error here, since this file is outside the components/ guard scope.

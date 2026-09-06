@@ -12,6 +12,7 @@ import { betaLinkIdentity } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { useBetaLinks } from '../../lib/graphql/hooks';
+import { useIsOffline } from '../../hooks/use-is-offline';
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -30,7 +31,12 @@ const CARD_GAP = spacing[3];
 // Videos" title). This component just renders the count + carousel + states.
 export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, boardName }: BetaVideosSectionProps) {
   const { t } = useTranslation('session');
+  const { t: tCommon } = useTranslation('common');
   const { brandColors } = useTheme();
+  // The cheap boolean, not the whole snapshot: this section is memo'd inside
+  // the play drawer, and subscribing to every probe result and failure-counter
+  // tick would re-render it for changes it does not read.
+  const effectiveOffline = useIsOffline();
   const { data: links, isLoading, isError, refetch, isRefetching } = useBetaLinks(boardName, climbUuid);
 
   const handleRetry = useCallback(() => {
@@ -61,6 +67,16 @@ export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, bo
             <View key={`skeleton-${index}`} style={styles.skeletonCard} />
           ))}
         </ScrollView>
+      ) : effectiveOffline && !hasContent ? (
+        // Nothing can reach us, so a red error glyph and a Retry that cannot
+        // possibly work are noise in a drawer that is otherwise happily offline
+        // — and "No beta videos yet" would be a claim we can't back. One muted
+        // line; the global connectivity banner owns the recovery.
+        <View style={styles.errorContainer}>
+          <Text variant="subheadline" color={iosSystemColors.systemGray} style={styles.errorText}>
+            {tCommon('mobile.connectivity.needsConnection')}
+          </Text>
+        </View>
       ) : isError ? (
         <View style={styles.errorContainer}>
           <Icon name="error" size={20} color={iosSystemColors.systemRed} />

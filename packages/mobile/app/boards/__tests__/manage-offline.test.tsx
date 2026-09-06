@@ -38,6 +38,9 @@ const reportAbandonedDownloadOnDisableMock = vi.hoisted(() => vi.fn(async (..._a
 
 const state = vi.hoisted(() => ({
   isOffline: false,
+  // Which side is down. The offline notice above the list reads differently for
+  // each, so the reason travels alongside `isOffline`.
+  connectivityReason: null as 'device_offline' | 'offline_mode' | 'backend_unreachable' | null,
   profileId: undefined as string | undefined,
   /** What the JWT already in SecureStore decodes to — the offline id source. */
   storedUserId: undefined as string | undefined,
@@ -161,6 +164,7 @@ vi.mock('react-i18next', () => ({
         'mobile.offline.pickerNotice': "No signal — here are the boards you've downloaded.",
         'mobile.offline.pickerNoticeUnreachable':
           "Can't reach your boards right now — here are the ones you've downloaded.",
+        'mobile.offline.pickerNoticeOfflineMode': "Offline mode is on. Here are the boards you've downloaded.",
       };
       return map[key] ?? key;
     },
@@ -279,6 +283,9 @@ vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
 vi.mock('../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
+vi.mock('../../../src/lib/connectivity/use-connectivity', () => ({
+  useConnectivity: () => ({ effectiveOffline: state.isOffline, reason: state.connectivityReason }),
+}));
 // Mirrors the real hook's contract: disabled → undefined, otherwise the id decoded
 // from the stored JWT. Mocked at the hook boundary so this suite never has to pull
 // in expo-secure-store.
@@ -387,6 +394,7 @@ beforeEach(() => {
   confirmMock.mockResolvedValue(false);
   estimateScopeDownloadMock.mockReturnValue({ kind: 'unknown' });
   state.isOffline = false;
+  state.connectivityReason = null;
   state.profileId = undefined;
   state.storedUserId = undefined;
   state.isStoredUserIdLoading = false;
@@ -1019,6 +1027,7 @@ describe('My Boards with no usable network list', () => {
 
   it('renders the downloaded boards instead of the hard error state when the profile is missing', () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
     state.offlineCards = [board({ uuid: 'board-a', name: 'Marco garage' })];
     state.downloadedScopeKeys = ['kilter:8:17'];
 
@@ -1031,12 +1040,41 @@ describe('My Boards with no usable network list', () => {
     expect(screen.getByText("No signal — here are the boards you've downloaded.")).toBeTruthy();
   });
 
+  // #4862: the notice blamed the phone for every fallback. A climber on full LTE
+  // during a Boardsesh outage was told they had no signal, and the fix they
+  // reached for (reboot the router) could not possibly work.
+  it('blames our server, not the signal, when the backend is the thing that is down', () => {
+    state.isOffline = true;
+    state.connectivityReason = 'backend_unreachable';
+    state.offlineCards = [board({ uuid: 'board-a', name: 'Marco garage' })];
+    state.downloadedScopeKeys = ['kilter:8:17'];
+
+    render(createElement(ManageBoards));
+
+    expect(screen.getByText('Marco garage')).toBeTruthy();
+    expect(screen.getByText("Can't reach your boards right now — here are the ones you've downloaded.")).toBeTruthy();
+    expect(screen.queryByText("No signal — here are the boards you've downloaded.")).toBeNull();
+  });
+
+  it('names Offline mode when the climber turned it on themselves', () => {
+    state.isOffline = true;
+    state.connectivityReason = 'offline_mode';
+    state.offlineCards = [board({ uuid: 'board-a', name: 'Marco garage' })];
+    state.downloadedScopeKeys = ['kilter:8:17'];
+
+    render(createElement(ManageBoards));
+
+    expect(screen.getByText("Offline mode is on. Here are the boards you've downloaded.")).toBeTruthy();
+    expect(screen.queryByText("No signal — here are the boards you've downloaded.")).toBeNull();
+  });
+
   // Create is the last network-only affordance on this screen: #4623 moved edit,
   // delete and unfollow onto the /boards picker cards, so there is no per-row
   // mutation left to hide. What remains is that the offline list offers no way to
   // POST a new board while the rows keep their local offline toggle.
   it('hides Create offline while the local offline toggle keeps working', () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
     state.offlineCards = [board({ uuid: 'board-a', name: 'Marco garage' })];
     state.enabledBoards = ['kilter:8:17'];
     state.downloadedScopeKeys = ['kilter:8:17'];
@@ -1138,6 +1176,7 @@ describe('My Boards with no usable network list', () => {
 
   it('still shows the retry state offline when nothing has been downloaded', () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
 
     render(createElement(ManageBoards));
 
@@ -1148,6 +1187,7 @@ describe('My Boards with no usable network list', () => {
 describe('My Boards offline with a persisted user id (#4003)', () => {
   it("files the user's own wall under Your boards and the rest under Following", () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
     state.storedUserId = 'me';
     state.offlineCards = [
       board({ uuid: 'board-a', name: 'Marco garage', ownerId: 'me', isOwned: true }),
@@ -1168,6 +1208,7 @@ describe('My Boards offline with a persisted user id (#4003)', () => {
 
   it('stays flat when the keychain yields no id at all', () => {
     state.isOffline = true;
+    state.connectivityReason = 'device_offline';
     state.storedUserId = undefined;
     state.offlineCards = [board({ uuid: 'board-a', name: 'Marco garage' })];
     state.downloadedScopeKeys = ['kilter:8:17'];

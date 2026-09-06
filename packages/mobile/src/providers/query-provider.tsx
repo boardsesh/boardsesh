@@ -1,16 +1,14 @@
 import { useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
-import NetInfo from '@react-native-community/netinfo';
-import {
-  QueryCache,
-  QueryClient,
-  QueryClientProvider,
-  MutationCache,
-  focusManager,
-  onlineManager,
-} from '@tanstack/react-query';
+import { QueryCache, QueryClient, QueryClientProvider, MutationCache, focusManager } from '@tanstack/react-query';
 import { reportHandledError } from '../lib/error-reporting';
+import { isBackendUnavailableError } from '../lib/connectivity/backend-unavailable-error';
+import { startConnectivityStore } from '../lib/connectivity/start-connectivity';
 import { isGraphqlRateLimitedError } from '../lib/graphql/extract-error-message';
+// From the leaf module, not `graphql/client`: the client statically imports the
+// auth interceptor and the whole secure-store chain behind it, which has no
+// business in the query provider's graph for a one-line predicate.
+import { isGraphqlRequestTimeoutError } from '../lib/graphql/request-timeout';
 
 // React Query keys `refetchOnReconnect` / `refetchOnWindowFocus` off a browser's
 // `navigator.onLine` and window-focus events, neither of which exists on React
@@ -20,23 +18,18 @@ import { isGraphqlRateLimitedError } from '../lib/graphql/extract-error-message'
 // (the canonical Expo offline-support pattern). A single root QueryProvider
 // lives for the whole app, so there's nothing to tear down.
 //
+// `onlineManager` is no longer wired to NetInfo from here. It sits DOWNSTREAM of
+// the connectivity store now (issue #4862), which separates the three facts the
+// old single `isConnected` boolean conflated — a network being attached, that
+// network reaching the internet, and OUR backend answering — and writes the
+// resulting one-bit answer into `onlineManager` from one place. That is what
+// stops a backend outage reading as "online" and looking like a broken app.
+// NetInfo, AppState and the onlineManager bridge are wired inside
+// `startConnectivityStore()`.
+//
 // NetInfo is a native module; the fingerprint runtimeVersion policy gates the
 // OTA so a binary running this JS has the matching native module compiled in.
-onlineManager.setEventListener((setOnline) => {
-  // Seed the current state up front: onlineManager defaults to online and would
-  // otherwise stay there until the first NetInfo change event arrives. Combined
-  // with `networkMode: 'offlineFirst'` below, a wrong/late offline signal can
-  // no longer strand the initial fetch.
-  void NetInfo.fetch()
-    .then((state) => setOnline(state.isConnected ?? true))
-    .catch(() => {
-      // A failed seed leaves the default (online); the live listener below
-      // still delivers real state, so there's nothing actionable to report.
-    });
-  return NetInfo.addEventListener((state) => {
-    setOnline(state.isConnected ?? true);
-  });
-});
+startConnectivityStore();
 
 if (Platform.OS !== 'web') {
   // Mirror onlineManager's setEventListener wiring so focusManager owns the
@@ -102,8 +95,19 @@ export function createQueryClient(): QueryClient {
         // Never retry a RATE_LIMITED rejection — retrying only hammers the
         // already-throttled endpoint harder (#3285). Everything else keeps
         // the previous retry-up-to-2-times behavior.
+        //
+        // The two #4862 additions are the same argument for a dead server. A
+        // BackendUnavailableError never reached the network at all (the client
+        // short-circuited on known-bad connectivity), so a retry can only
+        // produce the identical local rejection two more times — and delay the
+        // degraded UI by exactly that long. A request timeout is the backend
+        // not answering within 20s, and the connectivity store's own backoff
+        // ladder is already asking whether it is back; three 20s hangs per query
+        // on top of that is how an outage turns into a frozen app.
         retry: (failureCount, error) => {
           if (isGraphqlRateLimitedError(error)) return false;
+          if (isBackendUnavailableError(error)) return false;
+          if (isGraphqlRequestTimeoutError(error)) return false;
           return failureCount < 2;
         },
       },

@@ -7,6 +7,8 @@ import { Icon } from '../../../src/components/Icon';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { Button } from '../../../src/components/Button';
 import { SegmentedControl } from '../../../src/components/SegmentedControl';
+import { OfflineState } from '../../../src/components/OfflineState';
+import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
 import { PublicProfileHeaderBlock } from '../../../src/components/you/PublicProfileHeaderBlock';
 import { ProgressTab } from '../../../src/components/you/ProgressTab';
 import { SessionsTab } from '../../../src/components/you/SessionsTab';
@@ -70,6 +72,25 @@ export default function PublicProfileScreen() {
   const handleRetry = useCallback(() => {
     void publicProfile.refetch();
   }, [publicProfile]);
+
+  // Placed BEFORE the spinner, not merely before the error block: with
+  // `networkMode: 'offlineFirst'` a profile query that cannot reach anything
+  // PAUSES rather than failing, so `isPending` stays true forever and this
+  // screen would spin for good. `fetchStatus` is the honest signal, and the
+  // placard names which side is down.
+  const offlineQuery = useOfflineQueryState({
+    status: publicProfile.status,
+    fetchStatus: publicProfile.fetchStatus,
+    data: publicProfile.data,
+  });
+
+  if (offlineQuery.isBlocked && offlineQuery.reason) {
+    return (
+      <View style={[styles.centered, { backgroundColor: systemColors.groupedBackground }]}>
+        <OfflineState reason={offlineQuery.reason} onRetry={handleRetry} />
+      </View>
+    );
+  }
 
   if (publicProfile.isPending) {
     return (

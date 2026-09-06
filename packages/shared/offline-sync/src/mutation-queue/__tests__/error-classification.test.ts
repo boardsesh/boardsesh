@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  BACKEND_UNAVAILABLE_ERROR_NAME,
   GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
+  hasGraphqlErrorCode,
   isGraphQLEmptyResponseError,
   isRetryable,
   getErrorStatus,
   isNetworkError,
+  isServerFailureSignal,
+  isServerUnavailableError,
   isTransportNetworkError,
 } from '../error-classification';
 
@@ -346,5 +350,187 @@ describe('isNetworkError / isRetryable — resolved status beats the English-pro
     const error = Object.assign(new Error('boom'), { status: 400, code: 'ECONNREFUSED' });
     expect(isNetworkError(error)).toBe(true);
     expect(isRetryable(error)).toBe(true);
+  });
+});
+
+describe('BackendUnavailableError', () => {
+  // The mobile app throws this synthetically INSTEAD OF sending a request, when
+  // its connectivity store already knows the backend is unreachable, the device
+  // is offline, or offline mode is on. Nothing reached a server, so it must
+  // behave exactly like a dropped connection: the drain stops, retry_count is
+  // untouched, and the write goes out when the backend comes back (#4862).
+  function makeBackendUnavailableError(extras: Record<string, unknown> = {}): Error {
+    return Object.assign(new Error('Backend is unreachable'), {
+      name: BACKEND_UNAVAILABLE_ERROR_NAME,
+      ...extras,
+    });
+  }
+
+  it('classifies as a network failure and stays retryable', () => {
+    const backendUnavailable = makeBackendUnavailableError();
+    expect(isNetworkError(backendUnavailable)).toBe(true);
+    expect(isRetryable(backendUnavailable)).toBe(true);
+  });
+
+  it('matches through a bounded cause chain, like the empty-response case', () => {
+    const wrapped = Object.assign(new Error('mutation failed'), { cause: makeBackendUnavailableError() });
+    expect(isNetworkError(wrapped)).toBe(true);
+    expect(isRetryable(wrapped)).toBe(true);
+  });
+
+  it('keeps precedence over a status that also resolves', () => {
+    // It is a locale-independent signal, so it wins the same way an errno code
+    // does — the name is a stable identifier, not a guess at prose.
+    const backendUnavailable = makeBackendUnavailableError({ status: 400 });
+    expect(getErrorStatus(backendUnavailable)).toBe(400);
+    expect(isNetworkError(backendUnavailable)).toBe(true);
+  });
+
+  it('does not match an unrelated named error', () => {
+    expect(isNetworkError(Object.assign(new Error('nope'), { name: 'BackendError' }))).toBe(false);
+  });
+});
+
+describe('hasGraphqlErrorCode', () => {
+  it('finds a string code in a top-level errors array', () => {
+    const graphqlError = { errors: [{ message: 'boom', extensions: { code: 'INTERNAL_SERVER_ERROR' } }] };
+    expect(hasGraphqlErrorCode(graphqlError, 'INTERNAL_SERVER_ERROR')).toBe(true);
+  });
+
+  it('finds a string code in graphql-request ClientError response.errors', () => {
+    const clientError = {
+      response: { status: 200, errors: [{ message: 'boom', extensions: { code: 'INTERNAL_SERVER_ERROR' } }] },
+    };
+    expect(hasGraphqlErrorCode(clientError, 'INTERNAL_SERVER_ERROR')).toBe(true);
+  });
+
+  it('finds a string code in extensions on the error itself', () => {
+    const singleGraphqlError = Object.assign(new Error('boom'), {
+      extensions: { code: 'INTERNAL_SERVER_ERROR' },
+    });
+    expect(hasGraphqlErrorCode(singleGraphqlError, 'INTERNAL_SERVER_ERROR')).toBe(true);
+  });
+
+  it('walks a bounded .cause chain, like the stable-name checks do', () => {
+    const clientError = {
+      response: { status: 200, errors: [{ message: 'boom', extensions: { code: 'INTERNAL_SERVER_ERROR' } }] },
+    };
+    const wrapped = new Error('fetch wrapper', { cause: new Error('middle', { cause: clientError }) });
+    expect(hasGraphqlErrorCode(wrapped, 'INTERNAL_SERVER_ERROR')).toBe(true);
+
+    // Past the depth bound the code is not found — no unbounded recursion.
+    const tooDeep = new Error('a', {
+      cause: new Error('b', { cause: new Error('c', { cause: new Error('d', { cause: clientError }) }) }),
+    });
+    expect(hasGraphqlErrorCode(tooDeep, 'INTERNAL_SERVER_ERROR')).toBe(false);
+  });
+
+  it('ignores a NUMERIC extensions.code — that is a status, read by getErrorStatus', () => {
+    expect(hasGraphqlErrorCode({ errors: [{ extensions: { code: 500 } }] }, '500')).toBe(false);
+    expect(hasGraphqlErrorCode({ response: { errors: [{ extensions: { code: 400 } }] } }, '400')).toBe(false);
+  });
+
+  it('does not match a different code', () => {
+    const graphqlError = { errors: [{ extensions: { code: 'BAD_USER_INPUT' } }] };
+    expect(hasGraphqlErrorCode(graphqlError, 'INTERNAL_SERVER_ERROR')).toBe(false);
+  });
+
+  it('is null-safe on shapes that carry no GraphQL errors at all', () => {
+    expect(hasGraphqlErrorCode(null, 'INTERNAL_SERVER_ERROR')).toBe(false);
+    expect(hasGraphqlErrorCode(undefined, 'INTERNAL_SERVER_ERROR')).toBe(false);
+    expect(hasGraphqlErrorCode('boom', 'INTERNAL_SERVER_ERROR')).toBe(false);
+    expect(hasGraphqlErrorCode({ errors: null }, 'INTERNAL_SERVER_ERROR')).toBe(false);
+    expect(hasGraphqlErrorCode({ response: null }, 'INTERNAL_SERVER_ERROR')).toBe(false);
+    expect(hasGraphqlErrorCode({ errors: [null, {}] }, 'INTERNAL_SERVER_ERROR')).toBe(false);
+    expect(hasGraphqlErrorCode(new Error('boom'), 'INTERNAL_SERVER_ERROR')).toBe(false);
+  });
+});
+
+describe('isServerUnavailableError', () => {
+  it('is true only for the edge/upstream verdicts 502, 503 and 504', () => {
+    expect(isServerUnavailableError({ status: 502 })).toBe(true);
+    expect(isServerUnavailableError({ status: 503 })).toBe(true);
+    expect(isServerUnavailableError({ status: 504 })).toBe(true);
+  });
+
+  it('is false for a 500 — that is the server answering, not an unreachable one', () => {
+    expect(isServerUnavailableError({ status: 500 })).toBe(false);
+  });
+
+  it('is false for a 200 and for an error carrying no status', () => {
+    expect(isServerUnavailableError({ status: 200 })).toBe(false);
+    expect(isServerUnavailableError(new Error('boom'))).toBe(false);
+  });
+
+  it('reads a nested graphql-request status the same way getErrorStatus does', () => {
+    expect(isServerUnavailableError({ response: { status: 503 } })).toBe(true);
+    expect(isServerUnavailableError({ errors: [{ extensions: { status: 504 } }] })).toBe(true);
+  });
+});
+
+describe('isServerFailureSignal', () => {
+  it('is true for a real 5xx', () => {
+    expect(isServerFailureSignal({ status: 500 })).toBe(true);
+    expect(isServerFailureSignal({ status: 503 })).toBe(true);
+  });
+
+  it('is true for the masked INTERNAL_SERVER_ERROR shape served over HTTP 200', () => {
+    const masked = { response: { status: 200, errors: [{ extensions: { code: 'INTERNAL_SERVER_ERROR' } }] } };
+    expect(isServerFailureSignal(masked)).toBe(true);
+  });
+
+  it('is false for a client error and for a plain 200 carrying no masked code', () => {
+    expect(isServerFailureSignal({ status: 400 })).toBe(false);
+    expect(
+      isServerFailureSignal({ response: { status: 200, errors: [{ extensions: { code: 'BAD_USER_INPUT' } }] } }),
+    ).toBe(false);
+    expect(isServerFailureSignal({ status: 200 })).toBe(false);
+  });
+});
+
+describe('the masked INTERNAL_SERVER_ERROR shape (issue #4862)', () => {
+  // packages/backend/src/graphql/mask-error.ts scrubs any unexpected server-side
+  // failure — a Postgres outage included — into a GraphQLError carrying the
+  // STRING extensions.code 'INTERNAL_SERVER_ERROR', served over HTTP 200.
+  // graphql-request wraps that in a ClientError whose response.status is 200, so
+  // every status-based rule reads 200: the queued tick used to be dead-lettered
+  // on its FIRST attempt, with the write permanently lost.
+  function makeMaskedClientError(): Error {
+    return Object.assign(new Error('Something went wrong on our end. Please try again.'), {
+      response: {
+        status: 200,
+        errors: [
+          {
+            message: 'Something went wrong on our end. Please try again.',
+            extensions: { code: 'INTERNAL_SERVER_ERROR' },
+          },
+        ],
+      },
+    });
+  }
+
+  it('still resolves as HTTP 200 and is still not a network error', () => {
+    const masked = makeMaskedClientError();
+    expect(getErrorStatus(masked)).toBe(200);
+    expect(isNetworkError(masked)).toBe(false);
+  });
+
+  it('is retryable — the regression that dead-lettered a tick queued during a DB outage', () => {
+    expect(isRetryable(makeMaskedClientError())).toBe(true);
+  });
+
+  it('reads as a server failure signal but not as an unavailability verdict', () => {
+    const masked = makeMaskedClientError();
+    expect(isServerFailureSignal(masked)).toBe(true);
+    expect(isServerUnavailableError(masked)).toBe(false);
+  });
+
+  it('leaves an ordinary validation rejection dead-lettering as before', () => {
+    // Guard the blast radius: only the masked code changes verdict, so a real
+    // 4xx still fails fast instead of burning ten retries.
+    const validationError = {
+      response: { status: 200, errors: [{ message: 'title is required', extensions: { code: 'BAD_USER_INPUT' } }] },
+    };
+    expect(isRetryable(validationError)).toBe(false);
   });
 });

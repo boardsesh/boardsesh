@@ -1,4 +1,6 @@
 import { deduplicatedRefresh } from './auth-interceptor';
+import { BackendUnavailableError } from './connectivity/backend-unavailable-error';
+import { getConnectivitySnapshot } from './connectivity/connectivity-store';
 import { reportHandledError } from './error-reporting';
 import {
   captureAuthCredentialGeneration,
@@ -68,6 +70,20 @@ export async function resolveAuthSession(): Promise<AuthSessionResult> {
 
   if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
   if (!tokenExpiringSoon) return authenticatedSession(currentToken, credentialGeneration);
+
+  // The token is expiring AND we already know nothing can reach the server
+  // (issue #4862). Refreshing would hang or fail, and `unavailable` is exactly
+  // what that failure would resolve to — so take the same outcome without
+  // spending the round trip, and keep the already-established local session.
+  // The climber stays signed in through the outage; the next successful request
+  // refreshes for real.
+  const connectivity = getConnectivitySnapshot();
+  if (connectivity.effectiveOffline) {
+    return authenticatedSession(currentToken, credentialGeneration, {
+      stage: 'refresh-unavailable',
+      error: new BackendUnavailableError(connectivity.reason ?? 'backend_unreachable'),
+    });
+  }
 
   let refreshResult: Awaited<ReturnType<typeof deduplicatedRefresh>>;
   try {

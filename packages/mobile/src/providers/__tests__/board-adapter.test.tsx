@@ -11,6 +11,42 @@ const wsMocks = vi.hoisted(() => ({
 }));
 wsMocks.getClient.mockReturnValue({ on: wsMocks.on, subscribe: wsMocks.subscribe });
 
+// Controllable connectivity store (#4862). `effectiveOffline` is read
+// synchronously by the stats-subscription gate; `emit` changes the snapshot AND
+// notifies subscribers, like a real snapshot change.
+const connectivity = vi.hoisted(() => {
+  let effectiveOffline = false;
+  const listeners = new Set<() => void>();
+  return {
+    getSnapshot: () => ({
+      effectiveOffline,
+      reason: effectiveOffline ? 'backend_unreachable' : null,
+      backend: effectiveOffline ? 'unreachable' : 'reachable',
+      device: 'online',
+    }),
+    /** Change the snapshot without notifying — models an outage starting while
+     *  a retry timer is already armed. */
+    setOffline: (next: boolean) => {
+      effectiveOffline = next;
+    },
+    emit: (next: boolean) => {
+      effectiveOffline = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe: vi.fn((listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }),
+    listenerCount: () => listeners.size,
+    reset: () => {
+      effectiveOffline = false;
+      listeners.clear();
+    },
+  };
+});
+
 // BoardAdapterWrapper is the mobile flag boundary for the tick dual-write:
 // `saveTickOffline` must only exist on the adapter when the offline engine is
 // on — the shared useSaveTick optional-chains it, so `undefined` IS the
@@ -75,6 +111,11 @@ vi.mock('../../lib/graphql/ws-client', () => ({
   getWsClient: wsMocks.getClient,
 }));
 
+vi.mock('../../lib/connectivity/connectivity-store', () => ({
+  getConnectivitySnapshot: connectivity.getSnapshot,
+  subscribeConnectivity: connectivity.subscribe,
+}));
+
 const reportHandledErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({
   reportHandledError: reportHandledErrorMock,
@@ -103,6 +144,9 @@ import { BoardAdapterWrapper } from '../board-adapter';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // vi.clearAllMocks() only clears the spy; the listener set and the offline
+  // flag live outside it.
+  connectivity.reset();
   offlineEnabled = false;
   capturedAdapter = undefined;
   isOnlineMock.mockReturnValue(true);
@@ -156,6 +200,61 @@ describe('BoardAdapterWrapper offline gating', () => {
       vi.advanceTimersByTime(1_000);
 
       expect(wsMocks.subscribe).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Issue #4862. Live climb stats need a reachable backend: during an outage
+  // the subscribe can only fail and the exponential ladder just wakes the
+  // socket for nothing, so the subscription parks on the connectivity store
+  // instead and resumes on the edge back to reachable.
+  it('defers the initial stats subscribe during an outage and resumes on the edge', () => {
+    connectivity.setOffline(true);
+    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+    const handlers = { next: vi.fn(), connected: vi.fn(), error: vi.fn() };
+
+    const unsubscribe = capturedAdapter?.subscribeClimbStats?.('kilter', 1, handlers);
+
+    expect(wsMocks.subscribe).not.toHaveBeenCalled();
+    expect(connectivity.listenerCount()).toBe(1);
+
+    connectivity.emit(false);
+    expect(wsMocks.subscribe).toHaveBeenCalledTimes(1);
+
+    // Cleanup drops the store listener, so a later flip cannot resurrect a
+    // subscription for a disposed consumer.
+    unsubscribe?.();
+    expect(connectivity.listenerCount()).toBe(0);
+    connectivity.emit(true);
+    connectivity.emit(false);
+    expect(wsMocks.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('arms no stats retry timer while offline, and resubscribes exactly once when the backend returns', () => {
+    vi.useFakeTimers();
+    try {
+      render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+      const handlers = { next: vi.fn(), connected: vi.fn(), error: vi.fn() };
+      const unsubscribe = capturedAdapter?.subscribeClimbStats?.('kilter', 1, handlers);
+      const subscriptionHandlers = wsMocks.subscribe.mock.calls.at(-1)?.[1] as { complete: () => void } | undefined;
+      expect(wsMocks.subscribe).toHaveBeenCalledTimes(1);
+
+      // The backend goes down, then the stream completes: no timer is armed, so
+      // 60s pass without a single retry.
+      connectivity.setOffline(true);
+      subscriptionHandlers?.complete();
+      vi.advanceTimersByTime(60_000);
+      expect(wsMocks.subscribe).toHaveBeenCalledTimes(1);
+
+      // One resubscribe on the edge back to reachable...
+      connectivity.emit(false);
+      expect(wsMocks.subscribe).toHaveBeenCalledTimes(2);
+      // ...and no more from the store's other snapshot changes.
+      connectivity.emit(false);
+      expect(wsMocks.subscribe).toHaveBeenCalledTimes(2);
+
+      unsubscribe?.();
     } finally {
       vi.useRealTimers();
     }

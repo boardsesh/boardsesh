@@ -8,7 +8,8 @@ import { getClimbLocal } from '../../db/queries/get-climb-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
 import { isBoardDownloadedLocally, isBoardTypeDownloadedLocally } from '../../db/queries/board-download-status';
 import { getHttpClient } from './client';
-import type { OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
+import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
+import { getConnectivitySnapshot } from '../connectivity/connectivity-store';
 import { recordOfflineRead, recordOfflineReadUnavailable } from '../../offline/offline-usage-signal';
 import {
   BOARDSESH_GRADE,
@@ -200,6 +201,22 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
 });
 
 /**
+ * WHICH offline the app is in, for a read the downloaded board just served
+ * (issue #4862). Before the connectivity store there was one bucket for all of
+ * it, so the reads that carried a climber through OUR backend outage were
+ * indistinguishable from the ones that carried them through a tunnel — and the
+ * outage case is the one that says a downloaded board earned its disk space
+ * when we broke. `offline_local` stays as the residual: a cold start whose
+ * connectivity has not resolved yet has no reason to name.
+ */
+function offlineReadLane(): OfflineReadLane {
+  const reason = getConnectivitySnapshot().reason;
+  if (reason === 'backend_unreachable') return 'backend_unreachable_local';
+  if (reason === 'offline_mode') return 'offline_mode_local';
+  return 'offline_local';
+}
+
+/**
  * Client-level interceptor: run the request local-first when the document is
  * registered and the active board can serve it, otherwise hit the network. Falls
  * through to plain HTTP for any unregistered document, so it's a safe drop-in for
@@ -260,7 +277,7 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
           // invent a gap number we can't verify.
           if (!localMiss) {
             recordOfflineRead({
-              lane: isOnline ? 'online_local' : 'offline_local',
+              lane: isOnline ? 'online_local' : offlineReadLane(),
               surface: operation.surface,
               boardName: operation.boardNameOf(variables as never),
             });
@@ -285,6 +302,10 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
               : 'local_db_unavailable',
             surface: operation.surface,
             boardName: operation.boardNameOf(variables as never),
+            // WHY we were offline, alongside WHAT was missing (#4862). A gap our
+            // own outage caused is not the same finding as a gap a tunnel
+            // caused, and only one of them argues for a download nudge.
+            connectivityReason: getConnectivitySnapshot().reason,
           });
         }
         return operation.offlineFallback() as TResponse;

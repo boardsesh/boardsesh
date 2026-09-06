@@ -768,4 +768,84 @@ describe('computeBottomChromeMetrics', () => {
       expect(withoutFlag.scrollBottomPadding).toBe(SYNTHETIC_ROOT_INSET + TAB_BAR_HEIGHT);
     });
   });
+
+  describe('connectivity banner height (issue #4862)', () => {
+    // A plausible measured card: two lines of copy, an actions row, plus the gap
+    // the banner publishes with itself. SYNTHETIC — the banner sizes itself from
+    // Dynamic Type, so no single number is device ground truth.
+    const BANNER_HEIGHT = 96;
+
+    const nativeTabInputs = {
+      uiVariant: 'liquidGlass',
+      usesNativeTabBar: true,
+      insetsBottom: ROOT_WINDOW_INSET,
+      insideTabs: true,
+      onAccessorySurface: true,
+      hasCurrentClimb: true,
+      nativeAccessoryPresented: false,
+      measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
+    } as const;
+
+    it('folds the banner into the two offsets it actually occludes', () => {
+      const metrics = computeBottomChromeMetrics({ ...nativeTabInputs, connectivityBannerHeight: BANNER_HEIGHT });
+      const withoutBanner = computeBottomChromeMetrics(nativeTabInputs);
+
+      expect(metrics.scrollBottomPadding).toBe(withoutBanner.scrollBottomPadding + BANNER_HEIGHT);
+      expect(metrics.floatingControlBottom).toBe(withoutBanner.floatingControlBottom + BANNER_HEIGHT);
+    });
+
+    it('leaves the docked-footer offsets alone', () => {
+      // The banner is an absolute overlay above the floating chrome; a footer
+      // docked in flow is not underneath it, so adding the height there would be
+      // dead space on every offline screen.
+      const metrics = computeBottomChromeMetrics({ ...nativeTabInputs, connectivityBannerHeight: BANNER_HEIGHT });
+      const withoutBanner = computeBottomChromeMetrics(nativeTabInputs);
+
+      expect(metrics.fixedFooterBottom).toBe(withoutBanner.fixedFooterBottom);
+      expect(metrics.inSessionListBottom).toBe(withoutBanner.inSessionListBottom);
+      expect(metrics.preSessionFooterBottom).toBe(withoutBanner.preSessionFooterBottom);
+      expect(metrics.tabBarBottom).toBe(withoutBanner.tabBarBottom);
+    });
+
+    it('excludes the banner from its own anchor, so it cannot stack on itself', () => {
+      const metrics = computeBottomChromeMetrics({ ...nativeTabInputs, connectivityBannerHeight: BANNER_HEIGHT });
+
+      expect(metrics.connectivityBannerBottom).toBe(IN_TAB_INFERRED_BAR_INSET + TOOLBAR_RESERVE);
+      expect(metrics.connectivityBannerBottom).toBe(metrics.floatingControlBottom - BANNER_HEIGHT);
+      // The anchor is fixed under a re-measure: feeding a taller banner back in
+      // must not move where the banner is drawn.
+      const taller = computeBottomChromeMetrics({ ...nativeTabInputs, connectivityBannerHeight: BANNER_HEIGHT * 2 });
+      expect(taller.connectivityBannerBottom).toBe(metrics.connectivityBannerBottom);
+    });
+
+    it('defaults to zero, so every existing call site is unchanged', () => {
+      const omitted = computeBottomChromeMetrics(nativeTabInputs);
+      const explicitZero = computeBottomChromeMetrics({ ...nativeTabInputs, connectivityBannerHeight: 0 });
+
+      expect(omitted).toEqual(explicitZero);
+      expect(omitted.connectivityBannerBottom).toBe(omitted.floatingControlBottom);
+    });
+
+    it('clears the banner on the iPad sidebar shell too', () => {
+      // The banner is a root sibling with no idea which shell is on screen, so
+      // the early-return branch has to fold it in as well — otherwise the iPad
+      // FAB sits behind the card.
+      const metrics = computeBottomChromeMetrics({
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: false,
+        insetsBottom: 20,
+        insideTabs: true,
+        onAccessorySurface: true,
+        hasCurrentClimb: true,
+        nativeAccessoryPresented: true,
+        usesSidebar: true,
+        connectivityBannerHeight: BANNER_HEIGHT,
+      });
+
+      expect(metrics.scrollBottomPadding).toBe(20 + BANNER_HEIGHT);
+      expect(metrics.floatingControlBottom).toBe(20 + BANNER_HEIGHT);
+      expect(metrics.connectivityBannerBottom).toBe(20);
+      expect(metrics.fixedFooterBottom).toBe(20);
+    });
+  });
 });

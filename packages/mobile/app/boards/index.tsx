@@ -35,7 +35,8 @@ import {
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
-import { useIsOffline } from '../../src/hooks/use-is-offline';
+import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
+import { deriveLocalOnly, pickerNoticeKey } from '../../src/lib/boards/local-only';
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
 import { forgetOfflineBoard, offlineBoardKeyForBoard, useOfflineBoards } from '../../src/settings';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
@@ -119,7 +120,7 @@ export default function BoardSelection() {
   // so the screen used to render the "No boards yet — create one" empty state, a
   // false claim whose only CTA also needs the network. Fall back to the boards this
   // device has actually downloaded.
-  const isOffline = useIsOffline();
+  const { effectiveOffline, reason: connectivityReason } = useConnectivity();
   const { data: downloadedScopeKeys } = useDownloadedScopeKeys();
   const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
   const { confirmAndDownload } = useConfirmBoardDownload();
@@ -128,10 +129,13 @@ export default function BoardSelection() {
   const offlineCatalog = useOfflineCatalogState(activeBoard);
   const offlineCards = useOfflineBoards();
   // `isError && nothing cached` is the lying-connection case: captive portal or gym
-  // wifi with a dead upstream, where onlineManager says online, the request fails for
-  // real, and retries never pause. Same belt-and-braces reasoning as
+  // wifi with a dead upstream, where the phone reports a network, the request fails
+  // for real, and retries never pause. Same belt-and-braces reasoning as
   // offlineAwareRequest's network-failure catch.
-  const isLocalOnly = isOffline || (isError && myBoards.length === 0);
+  const isLocalOnly = deriveLocalOnly({ effectiveOffline, isError, myBoardsCount: myBoards.length });
+  // Which of the three "here's what's on your phone" lines to print — the notice
+  // has to name the side that is actually down, not always the signal.
+  const noticeKey = pickerNoticeKey({ reason: connectivityReason, isError });
   const offlineRows = useMemo(
     () =>
       isLocalOnly
@@ -553,10 +557,15 @@ export default function BoardSelection() {
         contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* "No signal" is only true on the offline branch. The lying-connection branch
-            has bars — it just can't reach us — so it gets its own line. */}
+        {/* "No signal" is only true when the phone is the thing that is down.
+            Offline mode and a Boardsesh outage each get their own line — literal
+            `t()` keys, because the i18n linter rejects a computed one. */}
         <Text variant="subheadline" style={styles.offlineNotice}>
-          {isOffline ? t('mobile.offline.pickerNotice') : t('mobile.offline.pickerNoticeUnreachable')}
+          {noticeKey === 'pickerNoticeOfflineMode'
+            ? t('mobile.offline.pickerNoticeOfflineMode')
+            : noticeKey === 'pickerNoticeUnreachable'
+              ? t('mobile.offline.pickerNoticeUnreachable')
+              : t('mobile.offline.pickerNotice')}
         </Text>
         {offlineItems.length > 0 ? (
           <Section title={t('mobile.discovery.yourBoardsTitle')}>

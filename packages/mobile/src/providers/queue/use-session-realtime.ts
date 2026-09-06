@@ -26,6 +26,7 @@ import {
   type SessionUpdateEvent,
   type SessionLiveStatsEvent,
 } from '../../lib/graphql/operations';
+import { getConnectivitySnapshot, subscribeConnectivity } from '../../lib/connectivity/connectivity-store';
 import { getStoredActiveBoard } from '../../lib/active-board-store';
 import { clearStoredQueueSnapshot } from '../../lib/queue-snapshot-store';
 import { toClimbQueueItem, type SubscriptionQueueItem } from '../../lib/queue-conversion';
@@ -303,6 +304,13 @@ export function useSessionRealtime({
     let joinDeferredForBackground = false;
     const isBackgrounded = () => AppState.currentState === 'background';
 
+    // The same idea for a backend we already know we can't reach: while the
+    // connectivity store says we're effectively offline (offline mode, no
+    // device network, or a backend that failed its probe), a JOIN_SESSION can
+    // only time out. Park it here and let the connectivity listener below
+    // re-run the join on the edge back to reachable (#4862).
+    let joinDeferredForConnectivity = false;
+
     const clearJoinRetryTimer = () => {
       if (!joinRetryTimer) return;
       clearTimeout(joinRetryTimer);
@@ -373,6 +381,8 @@ export function useSessionRealtime({
       })();
     };
 
+    // Only reached from the join catch below, AFTER its own offline gate, so a
+    // retry is never armed against a server the store says is unreachable.
     const scheduleJoinRetry = (failedStartToken: number, preserveExistingSubscriptions = false) => {
       const retryDelayMs =
         JOIN_SESSION_RETRY_BACKOFF_MS[Math.min(joinRetryCount, JOIN_SESSION_RETRY_BACKOFF_MS.length - 1)];
@@ -398,6 +408,29 @@ export function useSessionRealtime({
         cleanupSubscriptions();
         return;
       }
+
+      // Same shape for an effectively-offline app: the offline banner already
+      // owns the message, a join can only time out against an unreachable
+      // server, and looping every 5s burns battery for nothing (#4862).
+      // Supersede any in-flight join and tear down, exactly like the
+      // background branch — the connectivity listener re-joins on the edge.
+      if (getConnectivitySnapshot().effectiveOffline) {
+        subscriptionStartToken++;
+        joinDeferredForConnectivity = true;
+        joinRetryCount = 0;
+        cleanupSubscriptions();
+        return;
+      }
+
+      // Past both gates, so this run IS the resume for whichever deferral(s)
+      // were armed. Clear both flags here rather than in the listeners: the
+      // app can be backgrounded and offline at once, and on recovery the
+      // connectivity store's own AppState subscriber runs before this effect's,
+      // so the connectivity listener would join first and the AppState listener
+      // would then find its flag still set and join a second time — a duplicate
+      // JOIN_SESSION plus a teardown/resubscribe of both streams.
+      joinDeferredForBackground = false;
+      joinDeferredForConnectivity = false;
 
       const currentStartToken = ++subscriptionStartToken;
       const retainedQueueUpdatesCleanup = preserveExistingSubscriptions ? queueUpdatesCleanup : null;
@@ -436,6 +469,21 @@ export function useSessionRealtime({
         if (joinError instanceof GraphQLOperationError && joinError.extensions?.code === 'SESSION_ENDED') {
           void clearSessionRef.current();
           showToastRef.current(tRef.current('mobile.toast.sessionEnded'), 'success');
+          return;
+        }
+        // An outage, not a defect: the connectivity store says we're
+        // effectively offline, so this join never had a server to reach. The
+        // offline banner says it once — a `syncError` toast plus a Sentry
+        // report on top of it is noise, and the retry below would keep firing
+        // at the clamped 5s backoff (#4862). Defer instead; the connectivity
+        // listener re-joins on the edge. Deliberately checked AFTER the
+        // SESSION_ENDED branch: that code can only come back from a backend
+        // that answered, so it stays authoritative even if offline mode
+        // flipped on while this join was in flight.
+        if (getConnectivitySnapshot().effectiveOffline) {
+          joinDeferredForConnectivity = true;
+          joinRetryCount = 0;
+          clearJoinRetryTimer();
           return;
         }
         logJoinFailure(joinError);
@@ -860,6 +908,19 @@ export function useSessionRealtime({
       }
     });
 
+    // The connectivity mirror of that listener: restart a join parked by any of
+    // the three gates above once the app is no longer effectively offline. The
+    // listener fires on every snapshot change (backend probe result, device
+    // reachability, offline-mode toggle), so the flag is what keeps this to
+    // exactly one restart per deferral — an unrelated field moving inside the
+    // snapshot must not re-enter the join path.
+    const unsubscribeConnectivity = subscribeConnectivity(() => {
+      if (!getConnectivitySnapshot().effectiveOffline && joinDeferredForConnectivity) {
+        joinDeferredForConnectivity = false;
+        void startJoinedSubscriptions();
+      }
+    });
+
     // Expose the restart path for resyncQueueFromServer's membership
     // fallback (see there): startJoinedSubscriptions bumps the start token
     // and tears down first, so an external call is exactly as safe as the
@@ -879,6 +940,7 @@ export function useSessionRealtime({
       unsubConnected();
       unsubClosed();
       appStateSub.remove();
+      unsubscribeConnectivity();
       // Reset live analytics/presence on EVERY session change (not only on
       // teardown to null). A direct A→B switch (joinSession) flips sessionId
       // without an intermediate null, so without this the previous session's

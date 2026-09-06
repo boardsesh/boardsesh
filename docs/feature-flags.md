@@ -110,7 +110,12 @@ diagnostic) applies on native. The whole surface lives in three files:
   kill switch for expo-observe, and `observe-sample-rate` is the live
   multivariate flag carrying its sample rate. Both are read in
   `packages/mobile/src/hooks/use-observe-runtime-config.ts`; see
-  `docs/mobile-ota-updates.md`.
+  `docs/mobile-ota-updates.md`. A third, `backend-outage-detection`, is the
+  kill switch for the connectivity store's backend-reachability flip and the
+  fail-fast GraphQL short-circuit (#4862): on unless explicitly `false`, read by
+  `useBackendOutageDetectionEnabled` and published to the store by
+  `ConnectivityBridge`; the 20 s request deadline stays on either way. See
+  `docs/offline-sync-plan.md` → "Backend reachability".
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,

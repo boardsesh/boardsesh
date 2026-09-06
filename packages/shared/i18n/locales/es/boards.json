@@ -299,6 +299,7 @@
       "enableConfirm": "Descargar",
       "pickerNotice": "Sin conexión: estos son los plafones que has descargado.",
       "pickerNoticeUnreachable": "Ahora mismo no podemos cargar tus plafones: estos son los que has descargado.",
+      "pickerNoticeOfflineMode": "El modo sin conexión está activado. Estos son los plafones que has descargado.",
       "pickerEmptyTitle": "Todavía no has descargado nada",
       "pickerEmptyBody": "Los plafones que dejes disponibles sin conexión aparecen aquí. Descarga uno cuando tengas conexión.",
       "retryFastDownload": "Reintentar la descarga rápida",

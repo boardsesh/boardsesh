@@ -68,6 +68,8 @@ import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infi
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { isOfflineSearchSupported } from '../../../src/db/queries/search-climbs-local';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
+import { useConnectivity } from '../../../src/lib/connectivity/use-connectivity';
+import { offlineReasonFor, type OfflineQueryReason } from '../../../src/hooks/use-offline-query-state';
 import { useOfflineCatalogState } from '../../../src/offline/use-offline-catalog-state';
 import { OfflineCatalogCta } from '../../../src/components/offline/OfflineCatalogCta';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
@@ -464,6 +466,8 @@ function ClimbListInner() {
 
   // Reactive connectivity, for the offline-only empty state below.
   const isOffline = useIsOffline();
+  // ...and which side is down, so the filter placard blames the right one.
+  const { reason: connectivityReason } = useConnectivity();
   // 'missing' (offer the download) vs 'queued' (already asked for) vs null.
   const offlineCatalog = useOfflineCatalogState(activeBoard);
 
@@ -1450,6 +1454,12 @@ function ClimbListInner() {
   // scenario these states exist for. Judging it by connectivity alone left that
   // user on the generic "no climbs" with no way out.
   const noUsableConnection = isOffline || isClimbsError;
+  // Who the offline-filter placard blames. The store's verdict, except for the
+  // lying connection — no verdict at all, yet the search itself failed — which
+  // has bars and a request that cannot land, so it reads as our end being
+  // unreachable, exactly as the boards picker's `pickerNoticeUnreachable` does.
+  const offlineFilterReason: OfflineQueryReason =
+    connectivityReason === null && isClimbsError ? 'backend_unreachable' : offlineReasonFor(connectivityReason);
   // No connection, with a filter we can't answer on-device (drafts, beta, zones,
   // hold state) — the search returns an empty result, so tell the user why
   // instead of the generic "no climbs". Tall/wide are offline-expressible, so
@@ -1495,9 +1505,22 @@ function ClimbListInner() {
             <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
           ) : offlineFilterUnavailable ? (
             <View style={styles.emptyContainer}>
-              <Icon name="offline.unavailable" size={48} color={iosSystemColors.systemGray4} />
+              {/* The glyph carries the same blame as the title: a wifi-slash over
+                  "needs our server" would contradict itself. */}
+              <Icon
+                name={offlineFilterReason === 'backend_unreachable' ? 'server.unreachable' : 'offline.unavailable'}
+                size={48}
+                color={iosSystemColors.systemGray4}
+              />
+              {/* "Needs a signal" is a lie when the phone has four bars and we
+                  are the ones who are down, or when the climber chose Offline
+                  mode. Literal keys — the i18n linter rejects a computed one. */}
               <Text variant="headline" style={styles.emptyTitle}>
-                {t('mobile.emptyState.offlineFilter.title')}
+                {offlineFilterReason === 'backend_unreachable'
+                  ? t('mobile.emptyState.offlineFilter.titleServer')
+                  : offlineFilterReason === 'offline_mode'
+                    ? t('mobile.emptyState.offlineFilter.titleOfflineMode')
+                    : t('mobile.emptyState.offlineFilter.title')}
               </Text>
               <Text variant="subheadline" style={styles.emptySubtitle}>
                 {t('mobile.emptyState.offlineFilter.subtitle')}

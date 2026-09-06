@@ -99,6 +99,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Offer the full 0-70° MoonBoard angle range (matching Kilter/Tension) in angle pickers instead of just the 25°/40° Moon Climbing grades. Nothing server-side enforces the narrow range, so this is purely a UI rollout control.',
   },
+  {
+    key: 'backend-outage-detection',
+    label: 'Backend outage detection',
+    description:
+      'Probe /health/db when requests fail and fail fast while the server is unreachable. Kill switch: set to false.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -200,6 +206,23 @@ export function useAnonymousClimbViewEnabled(): boolean {
  */
 export function useBoardseshGradeEnabled(): boolean {
   return useFeatureFlag('boardsesh-grade') === true;
+}
+
+/**
+ * Kill switch for backend outage detection (issue #4862). A KILL switch, and the
+ * direction is the whole point: PostHog flags resolve asynchronously, so a
+ * positive flag reads as OFF for the first frames of a cold open — which here
+ * would mean the app spends the start of every launch unable to tell an outage
+ * from a working server. Missing/undefined therefore reads as ON, and setting
+ * the flag to `false` in PostHog turns the probe and the fail-fast path off
+ * fleet-wide without a store release.
+ *
+ * Turning it off does NOT strand queued work: the drainer is never gated on
+ * this, and the store keeps its device-level offline signal either way. It only
+ * stops the app CONCLUDING that our server is down.
+ */
+export function useBackendOutageDetectionEnabled(): boolean {
+  return useFeatureFlag('backend-outage-detection') !== false;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {

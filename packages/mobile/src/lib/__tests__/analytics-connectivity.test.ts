@@ -1,13 +1,37 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { onlineManager } from '@tanstack/react-query';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const posthogClientMocks = vi.hoisted(() => ({ getPostHogClient: vi.fn() }));
 
 vi.mock('../posthog-client', () => ({ getPostHogClient: posthogClientMocks.getPostHogClient }));
 
+// The super property reads the connectivity store now (#4862), not React Query's
+// onlineManager — that is what lets a dead BACKEND on a healthy phone stamp
+// 'offline' instead of 'online'.
+const connectivity = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const state = { snapshot: { effectiveOffline: false, reason: null as string | null } };
+  return {
+    state,
+    listeners,
+    publish(next: { effectiveOffline: boolean; reason: string | null }) {
+      state.snapshot = next;
+      for (const listener of listeners) listener();
+    },
+  };
+});
+vi.mock('../connectivity/connectivity-store', () => ({
+  getConnectivitySnapshot: () => connectivity.state.snapshot,
+  subscribeConnectivity: (listener: () => void) => {
+    connectivity.listeners.add(listener);
+    return () => connectivity.listeners.delete(listener);
+  },
+}));
+
 import {
   CONNECTIVITY_SUPER_PROPERTY,
+  OFFLINE_REASON_SUPER_PROPERTY,
   currentConnectivityState,
+  currentOfflineReason,
   registerConnectivitySuperProperty,
   startConnectivityTracking,
 } from '../analytics-connectivity';
@@ -15,6 +39,8 @@ import {
 // Issue #4317: without this property nothing in the app's telemetry says whether
 // the network was usable when an event was captured, so "did anyone use the app
 // away from signal?" — the whole premise of offline mode — is unanswerable.
+// Issue #4862 added the reason, because 'offline' alone cannot tell a climber in
+// a tunnel from a climber whose SERVER is down.
 describe('analytics connectivity super property', () => {
   let register: ReturnType<typeof vi.fn>;
 
@@ -22,29 +48,48 @@ describe('analytics connectivity super property', () => {
     vi.clearAllMocks();
     register = vi.fn();
     posthogClientMocks.getPostHogClient.mockReturnValue({ register });
-    onlineManager.setOnline(true);
+    connectivity.listeners.clear();
+    connectivity.state.snapshot = { effectiveOffline: false, reason: null };
   });
 
-  afterEach(() => {
-    onlineManager.setOnline(true);
-  });
-
-  it('reads the current state from onlineManager', () => {
+  it('reads the current state from the connectivity store', () => {
     expect(currentConnectivityState()).toBe('online');
-    onlineManager.setOnline(false);
+    expect(currentOfflineReason()).toBeNull();
+
+    connectivity.state.snapshot = { effectiveOffline: true, reason: 'backend_unreachable' };
     expect(currentConnectivityState()).toBe('offline');
+    expect(currentOfflineReason()).toBe('backend_unreachable');
   });
 
-  it('registers the resolved client singleton when no client is passed', () => {
-    onlineManager.setOnline(false);
+  // Both in ONE register() call: each call is a persisted write, and a state
+  // registered without its reason would put a self-contradicting pair on every
+  // event captured in between.
+  it('registers the state and its reason together', () => {
+    connectivity.state.snapshot = { effectiveOffline: true, reason: 'backend_unreachable' };
     registerConnectivitySuperProperty();
-    expect(register).toHaveBeenCalledWith({ [CONNECTIVITY_SUPER_PROPERTY]: 'offline' });
+
+    expect(register).toHaveBeenCalledExactlyOnceWith({
+      [CONNECTIVITY_SUPER_PROPERTY]: 'offline',
+      [OFFLINE_REASON_SUPER_PROPERTY]: 'backend_unreachable',
+    });
+  });
+
+  it('clears the reason explicitly when the app is online', () => {
+    registerConnectivitySuperProperty();
+
+    expect(register).toHaveBeenCalledExactlyOnceWith({
+      [CONNECTIVITY_SUPER_PROPERTY]: 'online',
+      [OFFLINE_REASON_SUPER_PROPERTY]: null,
+    });
   });
 
   it('registers on the passed client without resolving the singleton', () => {
     const explicitRegister = vi.fn();
     registerConnectivitySuperProperty({ register: explicitRegister });
-    expect(explicitRegister).toHaveBeenCalledWith({ [CONNECTIVITY_SUPER_PROPERTY]: 'online' });
+    expect(explicitRegister).toHaveBeenCalledExactlyOnceWith({
+      [CONNECTIVITY_SUPER_PROPERTY]: 'online',
+      [OFFLINE_REASON_SUPER_PROPERTY]: null,
+    });
     expect(posthogClientMocks.getPostHogClient).not.toHaveBeenCalled();
   });
 
@@ -69,7 +114,10 @@ describe('analytics connectivity super property', () => {
 
   it('registers immediately on start', () => {
     const stop = startConnectivityTracking();
-    expect(register).toHaveBeenCalledExactlyOnceWith({ [CONNECTIVITY_SUPER_PROPERTY]: 'online' });
+    expect(register).toHaveBeenCalledExactlyOnceWith({
+      [CONNECTIVITY_SUPER_PROPERTY]: 'online',
+      [OFFLINE_REASON_SUPER_PROPERTY]: null,
+    });
     stop();
   });
 
@@ -77,21 +125,40 @@ describe('analytics connectivity super property', () => {
     const stop = startConnectivityTracking();
     register.mockClear();
 
-    onlineManager.setOnline(false);
+    connectivity.publish({ effectiveOffline: true, reason: 'device_offline' });
 
-    expect(register).toHaveBeenCalledExactlyOnceWith({ [CONNECTIVITY_SUPER_PROPERTY]: 'offline' });
+    expect(register).toHaveBeenCalledExactlyOnceWith({
+      [CONNECTIVITY_SUPER_PROPERTY]: 'offline',
+      [OFFLINE_REASON_SUPER_PROPERTY]: 'device_offline',
+    });
     stop();
   });
 
-  // NetInfo's change stream is chatty and onlineManager notifies on every
-  // setOnline call, including same-value ones. Each register() is a persisted
-  // write, so a repeat must not cost one.
-  it('does not re-register when the state has not changed', () => {
+  // Same 'offline' state, different cause: a tunnel that turns out to be our own
+  // outage has to re-stamp, or every event in between carries the wrong blame.
+  it('re-registers when only the reason changes', () => {
+    connectivity.state.snapshot = { effectiveOffline: true, reason: 'device_offline' };
     const stop = startConnectivityTracking();
     register.mockClear();
 
-    onlineManager.setOnline(true);
-    onlineManager.setOnline(true);
+    connectivity.publish({ effectiveOffline: true, reason: 'backend_unreachable' });
+
+    expect(register).toHaveBeenCalledExactlyOnceWith({
+      [CONNECTIVITY_SUPER_PROPERTY]: 'offline',
+      [OFFLINE_REASON_SUPER_PROPERTY]: 'backend_unreachable',
+    });
+    stop();
+  });
+
+  // The store notifies on every snapshot change, including ones neither property
+  // cares about (a probe starting, a failure counter ticking). Each register() is
+  // a persisted write, so a repeat must not cost one.
+  it('does not re-register when neither property changed', () => {
+    const stop = startConnectivityTracking();
+    register.mockClear();
+
+    connectivity.publish({ effectiveOffline: false, reason: null });
+    connectivity.publish({ effectiveOffline: false, reason: null });
 
     expect(register).not.toHaveBeenCalled();
     stop();
@@ -102,8 +169,23 @@ describe('analytics connectivity super property', () => {
     register.mockClear();
     stop();
 
-    onlineManager.setOnline(false);
+    connectivity.publish({ effectiveOffline: true, reason: 'device_offline' });
 
     expect(register).not.toHaveBeenCalled();
+  });
+
+  // analytics.reset() clears every super property, so it re-registers this pair
+  // on the client it already holds — otherwise every event after a sign-out
+  // would drop both.
+  it('re-registers on a client handed in after a reset', () => {
+    connectivity.state.snapshot = { effectiveOffline: true, reason: 'offline_mode' };
+    const clientAfterReset = vi.fn();
+
+    registerConnectivitySuperProperty({ register: clientAfterReset });
+
+    expect(clientAfterReset).toHaveBeenCalledExactlyOnceWith({
+      [CONNECTIVITY_SUPER_PROPERTY]: 'offline',
+      [OFFLINE_REASON_SUPER_PROPERTY]: 'offline_mode',
+    });
   });
 });

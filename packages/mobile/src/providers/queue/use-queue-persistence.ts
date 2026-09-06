@@ -80,6 +80,14 @@ export function useQueuePersistence({
           await hydrateLocalSnapshot();
           return;
         }
+        // During a backend outage this call no longer hangs the cold start: the
+        // interactive HTTP client is timed (20s) and, while the connectivity
+        // store says we're offline, short-circuits with a
+        // BackendUnavailableError. That error carries no `response`, so it
+        // falls to the optimistic-restore branch below — the queue comes back
+        // and the realtime join that follows is DEFERRED by
+        // use-session-realtime.ts rather than retrying every 5s. A session
+        // that turns out to be dead stays escapable via End Session (#4862).
         try {
           // Verify the stored session is still alive before rejoining. Without
           // this, JOIN_SESSION recreates a server-ended room as an empty zombie

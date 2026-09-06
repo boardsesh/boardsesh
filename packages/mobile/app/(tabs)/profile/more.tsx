@@ -25,7 +25,9 @@ import {
   takeDownloadAllTap,
   forgetDownloadAllTap,
 } from '../../../src/settings';
-import { useIsOffline } from '../../../src/hooks/use-is-offline';
+import { useConnectivity } from '../../../src/lib/connectivity/use-connectivity';
+import { setDevForcedUnreachable } from '../../../src/lib/connectivity/connectivity-store';
+import { notifyOutboxChanged, useOutboxSummary } from '../../../src/offline/outbox-store';
 import { RECLAIMABLE_VISIBLE_BYTES } from '../../../src/db/storage-usage';
 import {
   getDeadLetterCount,
@@ -168,11 +170,15 @@ export default function MoreScreen() {
   // whereas gating would spin forever whenever init genuinely fails.
   const schemaReady = useOfflineSchemaReady();
   const queryClient = useQueryClient();
-  const isOffline = useIsOffline();
+  // One connectivity read for the whole screen: `effectiveOffline` covers no
+  // signal, our backend being unreachable, and Offline mode alike, which is
+  // exactly the "nothing is going out right now" the two offline surfaces below
+  // branch on. `devForcedUnreachable` drives the tester switch in Development.
+  const { effectiveOffline, devForcedUnreachable } = useConnectivity();
   const { data: deadLetterCount = 0, refetch: refetchDeadLetters } = useQuery({
     queryKey: ['deadLetters', 'count', schemaReady],
     queryFn: () => getDeadLetterCount(db),
-    enabled: !isOffline,
+    enabled: !effectiveOffline,
     // Dead letters are sticky (they don't resolve without a user Retry), so a slow
     // poll is plenty — no need to wake every 5s. With the offline flag off there
     // is still ONE initial fetch (never a recurring poll): legacy dead letters
@@ -197,6 +203,22 @@ export default function MoreScreen() {
   const showStorage =
     offlineEnabled || (downloadedScopeKeys?.length ?? 0) > 0 || reclaimableBytes >= RECLAIMABLE_VISIBLE_BYTES;
 
+  // What is still sitting in the outbox. Gated on `schemaReady` the same way the
+  // dead-letter count is — on a contended launch the SQLite handle is handed out
+  // before the tables exist — and null until then, which the summary reports as
+  // "nothing to say" rather than "nothing pending".
+  const outboxSummary = useOutboxSummary(schemaReady ? db : null);
+  const pendingCount = outboxSummary?.pendingCount ?? 0;
+  // The two things a climber who just logged a send with no signal wants to
+  // know: that it is not lost, and that it goes out by itself. Online with work
+  // still queued, the same line becomes a live "sending it now".
+  const offlineFooter =
+    pendingCount === 0
+      ? undefined
+      : effectiveOffline
+        ? t('mobile.more.offline.pendingFooter', { count: pendingCount })
+        : t('mobile.more.offline.syncingFooter', { count: pendingCount });
+
   // Guard against a rapid double-tap spawning overlapping retries (the drain is
   // single-flight internally, but this avoids the wasted re-entrant work).
   const retryingRef = useRef(false);
@@ -216,6 +238,10 @@ export default function MoreScreen() {
       }
       const graphqlFetch: GraphQLFetch = (query, variables) => getHttpClient().request(query, variables);
       await drainMutationQueue(db, queryClient, graphqlFetch);
+      // The drain just changed what is in the outbox, and nothing else tells the
+      // summary that — without this the pending footer keeps quoting the count
+      // from before the retry.
+      notifyOutboxChanged();
     } catch (error) {
       reportError(error);
     } finally {
@@ -251,12 +277,13 @@ export default function MoreScreen() {
   // cannot load a preview still hides it.
   const { show: showQaPreviews, prNumber: qaPrNumber } = useQaMenu();
 
-  // Don't render an empty "Development" section header when no tool applies.
+  // Dev, testers and admins. The section can no longer come out empty: the
+  // "Force server unreachable" switch below is available to everyone who passes
+  // this gate, in every build, so the old "…and at least one tool applies"
+  // conjunct would only ever have hidden a section that has a row.
   // Store-build previews now use xprem's everyone-facing blue edge marker, so
   // the retired OTA channel switcher is no longer listed here.
-  const showDevSection =
-    (__DEV__ || Boolean(profile?.isTester) || isAdmin) &&
-    (showDevServerSwitcher || showFeatureFlags || showOfflineWrites || showOutlineEditor);
+  const showDevSection = __DEV__ || Boolean(profile?.isTester) || isAdmin;
 
   // 'System' follows the device language; the rest are the supported locales,
   // labelled in their own script (English / Español / Français) from
@@ -362,7 +389,7 @@ export default function MoreScreen() {
   // Sync issues — surfaced high and only when online with writes stuck failing, so
   // it's noticeable when it matters and invisible otherwise. Retry only; there is no
   // discard — an unsynced write is never thrown away, it waits and re-sends.
-  if (!isOffline && deadLetterCount > 0) {
+  if (!effectiveOffline && deadLetterCount > 0) {
     sections.push({
       key: 'syncIssues',
       title: t('mobile.more.syncIssues.title'),
@@ -618,6 +645,7 @@ export default function MoreScreen() {
     sections.push({
       key: 'offline',
       title: t('mobile.more.offline.title'),
+      footer: offlineFooter,
       rows: [
         {
           kind: 'toggle',
@@ -903,6 +931,21 @@ export default function MoreScreen() {
         onPress: navAction(() => router.push('/(tabs)/profile/sentry-diagnostics')),
       });
     }
+    // Pretend the server is down, so the banner, the per-surface placards and
+    // the outbox can all be exercised without unplugging anything. Translated
+    // rather than i18n-ignored like its neighbours: testers run the app in their
+    // own language, and this is the row that tells them what the switch does.
+    devRows.push({
+      kind: 'toggle',
+      key: 'forceServerUnreachable',
+      label: t('mobile.more.dev.forceServerUnreachable'),
+      subtitle: t('mobile.more.dev.forceServerUnreachableDescription'),
+      value: devForcedUnreachable,
+      onValueChange: (next) => {
+        hapticSelection();
+        setDevForcedUnreachable(next);
+      },
+    });
     sections.push({ key: 'development', title: t('mobile.more.development'), rows: devRows });
   }
 

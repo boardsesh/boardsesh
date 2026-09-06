@@ -1,6 +1,7 @@
 import { isBleWriteTimeoutError } from '@boardsesh/ble-protocol/connection-error';
 import { getErrorStatus, isNetworkError as isSharedNetworkError } from '@boardsesh/offline-sync/error-classification';
 import { addBreadcrumbToSentry, captureToSentry, type ErrorReportContext } from './sentry';
+import { isBackendUnavailableError } from './connectivity/backend-unavailable-error';
 import { captureToObserve } from './observe-runtime';
 import {
   isExpectedAuthError,
@@ -128,6 +129,7 @@ function isExpectedDuplicateBoardError(error: unknown): boolean {
  * inline message, or degraded state) rather than letting crash. Applies the
  * noise policy so error tracking stays signal-rich:
  *   - cancellations are dropped entirely,
+ *   - backend-unavailable short-circuits are dropped entirely (#4862),
  *   - expected auth-required GraphQL failures are dropped entirely,
  *   - expected beta-attach validation rejections are dropped entirely,
  *   - expected board-account credential rejections (wrong password, already
@@ -147,6 +149,14 @@ function isExpectedDuplicateBoardError(error: unknown): boolean {
  */
 export function reportHandledError(error: unknown, context?: ErrorReportContext): void {
   if (isCancellation(error)) return;
+  // A synthetic LOCAL decision, not a failure: the GraphQL client refused to
+  // send because the app already knows the backend is unreachable (or the
+  // climber turned offline mode on). Nothing was attempted, so there is nothing
+  // to diagnose — and it is fired once PER QUERY, so a single outage would file
+  // a Sentry issue per screen. The connectivity store emits one
+  // `Backend Reachability Changed` event for the whole episode instead, and
+  // leaves a Sentry breadcrumb on the way, which is the signal we actually want.
+  if (isBackendUnavailableError(error)) return;
   if (isExpectedAuthError(error)) return;
   if (isExpectedBetaValidationError(error)) return;
   if (isExpectedBoardAccountError(error)) return;

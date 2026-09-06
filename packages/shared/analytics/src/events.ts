@@ -681,6 +681,12 @@ export const SHARED_EVENTS = {
   // during global deletion work; `expected` is true for transport-shaped
   // failures. Raw exception text stays in Sentry rather than analytics; an
   // unchanged signature is emitted at most once per five minutes.
+  // `errorKind` is 'aborted' | 'server_unavailable' | 'network' | 'server' |
+  // 'exception' | 'non-error', in that precedence. 'server_unavailable' (#4862)
+  // is a 502/503/504, or any failure raised while the connectivity store had
+  // already confirmed the backend was down — split out because those cycles used
+  // to land in 'server'/'exception' next to real defects, and an outage read as
+  // a spike of sync bugs. Series from before #4862 have no such bucket.
   OfflineSyncCycleFailed: 'Offline Sync Cycle Failed',
   // Offline sync — the local SQLite setup lost the write lock at launch and a
   // later retry won, so offline storage came up after all. Fired at most once
@@ -704,11 +710,22 @@ export const SHARED_EVENTS = {
   // was crossed — 1 / 10 / 100 — never a raw per-read counter, and the absence
   // of a follow-up event means "fewer than the next rung", not "no more reads".
   //
-  // Props: { lane: 'offline_local' | 'network_error_local' | 'online_local',
+  // Props: { lane: 'offline_local' | 'backend_unreachable_local' |
+  //   'offline_mode_local' | 'network_error_local' | 'online_local',
   //   surface: 'search' | 'climb_detail' | 'grade', boardName, readCount }.
   // `lane` is the source: served while offline, served after the network threw
   // (a lying connection — real offline value), or the online flag-on latency
-  // short-circuit (NOT offline usage; excluded from the north-star). `surface`
+  // short-circuit (NOT offline usage; excluded from the north-star).
+  //
+  // #4862 SPLIT THE OFFLINE LANE IN THREE, so any series that filters on
+  // `lane = 'offline_local'` alone now under-counts. `backend_unreachable_local`
+  // is a read the downloaded board served while OUR server was confirmed down
+  // and the phone was fine — the value that was invisible while a dead backend
+  // read as "online". `offline_mode_local` is a climber who CHOSE offline mode,
+  // so it belongs in the north-star but never in "how often is anyone
+  // stranded?". `offline_local` is now the residual: offline for a reason the
+  // store had not resolved yet, typically a cold start. The north-star is the
+  // union of the four non-`online_local` lanes. `surface`
   // is the read that crossed the rung, not an exhaustive list of what was used.
   //
   // A read that found NOTHING locally is not served, in any lane: climb detail
@@ -730,6 +747,12 @@ export const SHARED_EVENTS = {
   // and only the filter blocked the read — when both are missing the reason is
   // `board_not_downloaded`, since fixing filters would still serve that read
   // nothing.
+  // Plus `connectivityReason: 'offline_mode' | 'device_offline' |
+  // 'backend_unreachable' | null` (#4862): WHY the app was offline, next to
+  // `reason`'s WHAT was missing. `backend_unreachable` here is a gap OUR outage
+  // created, not one the climber walked into — do not aim #4318's "download a
+  // board" nudge at it, and do not count it as evidence that a nudge was
+  // needed. `null` is a build or a moment with no resolved reason.
   OfflineReadUnavailable: 'Offline Read Unavailable',
   // Offline sync — an explicit, confirmed sign-out (or an account deletion) wiped
   // the device's local data, downloaded board catalogs included (issue #3621).
@@ -842,6 +865,76 @@ export const SHARED_EVENTS = {
   // the funnel can never read a climber who backed out as one who never arrived.
   BoardLookStepShown: 'Board Look Step Shown',
   BoardLookStepResolved: 'Board Look Step Resolved',
+  // Connectivity (issue #4862) — a backend outage used to look like a broken
+  // app: the ONLY connectivity signal was NetInfo's `isConnected`, so a dead
+  // server read "online" and every screen answered with a spinner that never
+  // settled. The six events below are the whole story of one outage episode.
+  //
+  // ONE EVENT PER EDGE, NOT PER FAILED REQUEST. The connectivity store confirms
+  // the backend once (a `/health/db` probe on a 5/10/20/30s jittered ladder) and
+  // fires this when its verdict CHANGES, so a ten-minute outage that ate two
+  // hundred queries is two events, not two hundred. Props: { from, to:
+  // 'reachable' | 'unreachable' | 'unknown', verdict: 'healthy' | 'db_down' |
+  // 'edge' | 'transport' | 'captive_portal' | 'answered_non_health' | null,
+  // reason: 'offline_mode' | 'device_offline' | 'backend_unreachable' | null,
+  // deviceState, deviceReachability, unreachableForMs (recoveries only, null
+  // otherwise), trigger }.
+  //
+  // READ `verdict` BEFORE BLAMING THE BACKEND. `db_down` is our handler saying
+  // Postgres will not answer; `edge` is a 502/504/52x from something in front of
+  // us; `captive_portal` and most `transport` verdicts are the PHONE (hotel
+  // wifi, a dead gym upstream), which is why `reason` can say `device_offline`
+  // on a `to: 'unreachable'` event. An outage rate built on `to` alone counts
+  // every captive portal in the world as Boardsesh downtime.
+  //
+  // `trigger` names the CHANNEL that moved the machine, not its polarity:
+  // 'failure' is the request-outcome channel, so a recovery confirmed by a
+  // request that finally succeeded also arrives as 'failure'. The rest are
+  // 'timer' (the backoff ladder), 'foreground', 'netinfo', 'retry' (the
+  // climber's tap), 'offline_mode_off', 'dev_override' and 'seed'.
+  BackendReachabilityChanged: 'Backend Reachability Changed',
+  // The degraded-state banner appeared. Fired once per presentation, so
+  // Shown → Recovered is the episode a climber actually sat through — the
+  // reachability events above include outages nobody was looking at.
+  // Props: { reason: 'offline_mode' | 'device_offline' | 'backend_unreachable',
+  // pendingCount (queued offline mutations at that moment), signedIn }.
+  ConnectivityBannerShown: 'Connectivity Banner Shown',
+  // The climber dismissed the banner rather than waiting it out. Props:
+  // { reason, episodeMs (since the banner appeared), pendingCount }. A high
+  // dismissal rate at a low `episodeMs` says the banner is in the way, not that
+  // the outage ended.
+  ConnectivityBannerDismissed: 'Connectivity Banner Dismissed',
+  // The climber tapped "Try again". Props: { outcome: 'reachable' |
+  // 'unreachable' | 'unknown', episodeMs, tapIndex }. `outcome` is the PROBE's
+  // verdict, so it carries the store's third answer too: 'unknown' is a probe
+  // that could not decide (or threw), and the banner treats it as "still down"
+  // rather than as recovery. `tapIndex` is 1-based and CAPPED AT 10: past ten
+  // taps the number stops measuring the outage and starts being unbounded
+  // cardinality, and "gave up after ten" is the same finding as "gave up after
+  // forty".
+  ConnectivityRetryTapped: 'Connectivity Retry Tapped',
+  // The episode ended. THE event to measure this work by: everything above
+  // describes the outage, this one says what the climber got back and whether
+  // their queued work survived. Props: { reasonBefore, episodeMs,
+  // pendingAtRecovery, drainMs, deadLettered, outcome: 'synced' |
+  // 'nothing_pending' | 'needs_retry' | 'timeout' | 'dismissed' |
+  // 'interrupted' }.
+  // `outcome` is about the OUTBOX, not the network: 'synced' means the queued
+  // writes landed and 'nothing_pending' means there were none. The other four
+  // are the ways a drain that started did not finish, and only ONE of them is a
+  // failure: 'needs_retry' (rows we gave up on) and 'timeout' (the drain
+  // deadline) are real, while 'dismissed' (the climber hid the banner) and
+  // 'interrupted' (a second outage landed mid-drain) just mean we stopped
+  // watching — the queue is intact and the next reconnection drains it. Pooling
+  // those last two into 'timeout' would make the timeout rate read far worse
+  // than it is.
+  ConnectivityRecovered: 'Connectivity Recovered',
+  // The offline-mode switch was flipped, either way. Props: { enabled, source:
+  // 'more' | 'banner' | 'sign_out', pendingCount, reasonBefore }. `source`
+  // separates the deliberate More-tab choice from the one-tap escape the banner
+  // offers during an outage — different intents, and only the second is evidence
+  // the degraded state needed an escape hatch at all.
+  OfflineModeToggled: 'Offline Mode Toggled',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

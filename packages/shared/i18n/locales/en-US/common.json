@@ -14,6 +14,10 @@
       "title": "More",
       "library": "Library",
       "development": "Development",
+      "dev": {
+        "forceServerUnreachable": "Force server unreachable",
+        "forceServerUnreachableDescription": "Pretend the server is down so you can test the banner and offline behaviour."
+      },
       "metroServersTitle": "Metro servers",
       "metroServersSubtitle": "Switch between Tailnet bundlers",
       "boardLook": {
@@ -334,7 +338,11 @@
         "autoDownload": "Keep boards offline",
         "autoDownloadDescription": "Download every board you use so you can browse and log sends with no signal. New boards download automatically.",
         "downloadingAll_one": "Downloading 1 board for offline",
-        "downloadingAll_other": "Downloading {{count}} boards for offline"
+        "downloadingAll_other": "Downloading {{count}} boards for offline",
+        "pendingFooter_one": "1 change waiting to sync. It goes out the moment you're back online.",
+        "pendingFooter_other": "{{count}} changes waiting to sync. They go out the moment you're back online.",
+        "syncingFooter_one": "Syncing 1 change…",
+        "syncingFooter_other": "Syncing {{count}} changes…"
       },
       "language": {
         "title": "Language",
@@ -503,9 +511,48 @@
         "message": "Something went wrong getting the latest version. Try again in a bit."
       }
     },
+    "connectivity": {
+      "serverDown": {
+        "title": "We're having server trouble",
+        "body": "Your climbing isn't lost. Sends you log now wait on your phone and go out when we're back.",
+        "pill": "Server down",
+        "retry": "Try again",
+        "stillDown": "Still down. We'll keep checking and reconnect on our own.",
+        "stayOffline": "Stay offline"
+      },
+      "noSignal": {
+        "title": "No signal",
+        "body": "Downloaded boards still browse, search and log. Sends wait on your phone until you're back.",
+        "pill": "No signal"
+      },
+      "offlineMode": {
+        "title": "Offline mode is on",
+        "body": "Nothing leaves your phone until you turn it off. Downloaded boards keep working.",
+        "pill": "Offline mode",
+        "goOnline": "Go online"
+      },
+      "pending_one": "1 change waiting",
+      "pending_other": "{{count}} changes waiting",
+      "recovering": {
+        "backOnline": "Back online",
+        "syncing_one": "Back online. Syncing 1 change…",
+        "syncing_other": "Back online. Syncing {{count}} changes…",
+        "synced": "All synced",
+        "needsRetry_one": "1 change needs a retry",
+        "needsRetry_other": "{{count}} changes need a retry",
+        "openSyncIssues": "Open sync issues"
+      },
+      "needsConnection": "Needs a connection",
+      "expand": "Show connection details",
+      "dismiss": "Hide"
+    },
     "offlineState": {
       "title": "No signal",
       "body": "This one needs a connection. Boards you've downloaded still browse, search and log offline.",
+      "serverTitle": "Can't reach Boardsesh right now",
+      "serverBody": "This one needs our server. Downloaded boards still browse, search and log, and your sends wait on your phone.",
+      "offlineModeTitle": "Offline mode is on",
+      "offlineModeBody": "This one needs a connection. Turn Offline mode off from the banner or in More to load it.",
       "errorTitle": "Couldn't load this",
       "errorBody": "That didn't come through. Give it another go.",
       "retry": "Try again"

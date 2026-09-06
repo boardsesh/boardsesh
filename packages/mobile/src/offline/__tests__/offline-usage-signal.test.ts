@@ -36,6 +36,9 @@ describe('mobile offline-usage signal binding', () => {
       surface: 'search',
       boardName: 'tension',
       readCount: 1,
+      // Not passed by this caller → null, so the property is always present and
+      // a PostHog breakdown never has to treat "missing" as a fourth value.
+      connectivityReason: null,
     });
   });
 

@@ -7,6 +7,7 @@ import {
   storeTokensForGeneration,
 } from './auth-store';
 import { signOutForGeneration } from './auth';
+import { getConnectivitySnapshot, reportBackendOutcome } from './connectivity/connectivity-store';
 import { BACKEND_URL } from './env';
 import { reportError, reportHandledError } from './error-reporting';
 import type { AuthRejectionResult } from './auth-rejection-result';
@@ -44,12 +45,26 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
     if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
     if (!currentRefreshToken) return rejectedRefreshResult(credentialGeneration);
 
-    const response = await fetch(`${BACKEND_URL}/auth/native/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: currentRefreshToken }),
-      signal: AbortSignal.timeout(15_000),
-    });
+    // Only the FETCH is wrapped. A keychain read that threw above is not a
+    // backend signal, and reporting it as one would send the connectivity store
+    // probing a server that is perfectly fine.
+    let response: Response;
+    try {
+      response = await fetch(`${BACKEND_URL}/auth/native/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: currentRefreshToken }),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (transportError) {
+      reportBackendOutcome({ kind: 'failure', error: transportError });
+      throw transportError;
+    }
+
+    // A refresh is a plain reachability sample like any other request: a 401 or
+    // 403 means the SERVER answered and rejected the token, which is a healthy
+    // backend telling us something true. Only a 5xx says the backend is broken.
+    reportBackendOutcome(response.status >= 500 ? { kind: 'failure', status: response.status } : { kind: 'success' });
 
     if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
 
@@ -107,6 +122,15 @@ export function deduplicatedRefresh(): Promise<AuthRefreshResult> {
 }
 
 export async function ensureFreshToken(): Promise<boolean> {
+  // Degraded, but still signed in (issue #4862). With the backend unreachable —
+  // or the climber in offline mode — a PROACTIVE refresh can only hang or fail,
+  // and its `false` would make every caller treat a perfectly good local session
+  // as gone: an outage would sign people out of their own app. Nothing is lost
+  // by waiting, because the reactive 401 path below still refreshes the instant
+  // the server answers again, and the refresh fetch itself is deliberately NOT
+  // gated — it is one of the requests that discovers the recovery.
+  if (getConnectivitySnapshot().effectiveOffline) return true;
+
   const expiring = await isTokenExpiringSoon();
   if (!expiring) return true;
   return (await deduplicatedRefresh()).status === 'refreshed';

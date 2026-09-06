@@ -18,7 +18,8 @@ import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { OfflineState } from '../../../src/components/OfflineState';
-import { useIsOffline } from '../../../src/hooks/use-is-offline';
+import { useConnectivity } from '../../../src/lib/connectivity/use-connectivity';
+import { offlineReasonFor } from '../../../src/hooks/use-offline-query-state';
 import { Button } from '../../../src/components/Button';
 import { SectionHeader } from '../../../src/components/SectionHeader';
 import { HorizontalScrollSection } from '../../../src/components/HorizontalScrollSection';
@@ -423,10 +424,14 @@ export default function DiscoverLibrary() {
   // Every section here is network-only, and under `networkMode: 'offlineFirst'`
   // an offline fetch pauses rather than failing — so `showLoadError` never fires
   // and the hub renders "No playlists yet" to someone who has plenty.
-  const isOffline = useIsOffline();
+  const { effectiveOffline, reason: connectivityReason } = useConnectivity();
   const hasAnyDiscoverContent =
     hasVisiblePinnedItems || userPlaylists.length > 0 || forYouSmartCards.length > 0 || communityItems.length > 0;
-  const showOfflineState = isOffline && !hasAnyDiscoverContent && !showSignInPrompt && !showLoadError;
+  const showOfflineState = effectiveOffline && !hasAnyDiscoverContent && !showSignInPrompt && !showLoadError;
+  // The placard hard-coded "offline" here, so a Boardsesh outage told a climber
+  // with full bars that they had no signal. One shared ladder does the mapping,
+  // so this hub can never drift from the placards every other surface renders.
+  const offlineStateReason = offlineReasonFor(connectivityReason);
 
   const handleRetryLoad = useCallback(() => {
     if (userError) refetchUser();
@@ -608,7 +613,7 @@ export default function DiscoverLibrary() {
           </View>
         ) : null}
 
-        {showOfflineState ? <OfflineState reason="offline" onRetry={handleRetryLoad} /> : null}
+        {showOfflineState ? <OfflineState reason={offlineStateReason} /> : null}
 
         {/* Empty state: signed in, nothing anywhere, nothing loading, no error. */}
         {!showOfflineState &&

@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/theme-provider';
 import { isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
 import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
+import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-store';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { isBottomAccessoryAvailable, useNativeTabBar } from './use-bottom-accessory';
 import { useDeviceLayout } from './use-device-layout';
@@ -78,6 +79,12 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // accessory — is published by NativeTabContentInsetProbe from inside the
   // focused tab; see the sampling-point contract in bottom-chrome-metrics.ts.
   const measuredTabContentInsetBottom = useNativeTabContentInsetBottom();
+  // The connectivity banner (issue #4862) is a root-level absolute overlay above
+  // ALL of this chrome, on every route. It measures itself and publishes through
+  // another module store for the same reason the in-tab probe does: `Toast` reads
+  // the same number from ABOVE this provider. `0` while no banner is showing, so
+  // the arithmetic below is unchanged in the ordinary case.
+  const connectivityBannerHeight = useConnectivityBannerHeight();
 
   return useMemo(
     () =>
@@ -92,6 +99,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         usesSidebar,
         detailPaneOwnsQueue,
         measuredTabContentInsetBottom,
+        connectivityBannerHeight,
       }),
     [
       variant,
@@ -104,6 +112,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       usesSidebar,
       detailPaneOwnsQueue,
       measuredTabContentInsetBottom,
+      connectivityBannerHeight,
     ],
   );
 }
