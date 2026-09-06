@@ -85,7 +85,7 @@ Common commands:
 
 ### Database
 
-- `vp exec drizzle-kit generate` from `packages/db/` to create migrations. **Never hand-write migration SQL** — it must be in `_journal.json`, which `drizzle-kit generate` updates for you.
+- **`vp run build:db` first, then `vp exec drizzle-kit generate`** from `packages/db/` to create migrations. `drizzle.config.ts` reads `./dist/schema/index.js`, so generating against a stale build diffs the OLD schema against the CURRENT snapshot and emits `DROP COLUMN` / `DROP TYPE` for everything the build lacks — **and exits 0**. **Always read the generated `.sql` before committing**; for a single index it is one line, and any `DROP` you did not intend means the build was stale. **Never hand-write migration SQL** — it must be in `_journal.json`, which `drizzle-kit generate` updates for you.
 - **When main takes your migration number, run `vp run db:renumber`** — it rebases onto main, moves the migration to the next free number and keeps your SQL. CI usually does it for you: PRs adding a migration get the `db-migration` label, and a merge to main fans out a renumber for every stranded PR. `vp run check:db-migrations` guards the folder on every PR. Full details, including why the bot sometimes hands it back: `docs/db-migrations.md`.
 - Dev DB is a pre-built image (`ghcr.io/boardsesh/boardsesh-dev-db`) with all board data, a test user (`test@boardsesh.com` / `test`), and seed data. Reset: `docker compose down -v && vp run db:up`. Its board catalogue is loaded from the nightly board snapshots at build time (`packages/db/scripts/load-board-snapshots.ts`), not from Aurora APKs — see `docs/board-snapshots.md`.
 
