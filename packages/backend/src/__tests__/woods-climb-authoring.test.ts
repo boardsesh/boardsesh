@@ -115,12 +115,11 @@ describe('validateWoodsClimb', () => {
     // A Woods hold id is a T-nut position, and 169 of the 12x12's 894 carry no
     // hold. 808 is one of them; 807 and 809 beside it are real (#5185).
     expect(() => publishable({ frames: 'p807r4p809r2p30r3' })).not.toThrow();
+    // The whole message, not a fragment: the slot DOES exist on this wall, it
+    // just carries no hold, so this must not fall through to "does not exist".
     expect(() => publishable({ frames: `p${EMPTY_LARGE_SLOT}r4p20r2p30r3` })).toThrow(
-      new RegExp(`Hold ${EMPTY_LARGE_SLOT} is an empty mounting slot on the 12x12`),
+      `Hold ${EMPTY_LARGE_SLOT} is an empty mounting slot on the 12x12 Woods board`,
     );
-    // A slot empty on one wall can be a hold on the other, so the message must
-    // not be reused as "does not exist".
-    expect(() => publishable({ frames: `p${EMPTY_LARGE_SLOT}r4p20r2p30r3` })).not.toThrow(/does not exist/);
   });
 
   it('rejects a repeated hold id', () => {

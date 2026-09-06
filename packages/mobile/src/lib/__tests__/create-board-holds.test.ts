@@ -107,7 +107,7 @@ describe('getCreateBoardHolds', () => {
     ).toEqual([807, 809]);
   });
 
-  it('keeps 8x10 holds the catalog never uses', () => {
+  it('keeps 8x10 holds the catalog never uses, and still drops its empty slots', () => {
     mockedGetBoardRenderData.mockReturnValue({
       boardWidth: 720,
       boardHeight: 1000,
