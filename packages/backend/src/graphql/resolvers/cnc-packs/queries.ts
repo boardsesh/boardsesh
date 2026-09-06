@@ -3,7 +3,12 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import type { CncOrder } from '@boardsesh/db/schema';
 import { CNC_CATALOG, CNC_CATALOG_VERSION, type CncCatalogEntry } from '../../../services/cnc/catalog';
 import { getOrderByLicenceId, listOrdersForUser, toPublicOrder } from '../../../services/cnc/orders';
-import { CncWorkerUnavailableError, CncWorkerValidationError, fetchLayout } from '../../../services/cnc/worker-client';
+import {
+  CncConfigMappingError,
+  CncWorkerUnavailableError,
+  CncWorkerValidationError,
+  fetchLayout,
+} from '../../../services/cnc/worker-client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { CncLicenceIdSchema } from '../../../validation/schemas';
 import { CNC_WORKER_UNAVAILABLE_CODE, invalidConfigError, resolveCncConfig } from './config';
@@ -25,6 +30,17 @@ const RATE_LIMIT_CNC_LAYOUT = 30;
 const RATE_LIMIT_CNC_LAYOUT_OP = 'cncLayout';
 
 /**
+ * Ceiling on hole-included layout previews per minute.
+ *
+ * Tighter than the hole-free preview because the response is ~40 KB bigger
+ * and the endpoint is authenticated-only: there is no anonymous caller to
+ * protect it from, only an authenticated one hammering it, so a lower human
+ * ceiling is the right default.
+ */
+const RATE_LIMIT_CNC_LAYOUT_HOLES = 10;
+const RATE_LIMIT_CNC_LAYOUT_HOLES_OP = 'cncLayoutHoles';
+
+/**
  * What a buyer is told when generation failed.
  *
  * Fixed text, never `lastError`: the generator's message names internal
@@ -39,6 +55,7 @@ type GraphQLManufacturingOption = {
   values: string[];
   defaultValue: string;
   valueType: string;
+  kickerOnly: boolean;
 };
 
 /**
@@ -58,6 +75,7 @@ function toGraphQLManufacturingOption(option: CncCatalogEntry['manufacturingOpti
     values: option.values.map((value) => String(value)),
     defaultValue: String(option.defaultValue),
     valueType: typeof option.defaultValue,
+    kickerOnly: option.kickerOnly,
   } satisfies GraphQLManufacturingOption;
 }
 
@@ -131,15 +149,25 @@ export function toGraphQLOrder(order: CncOrder) {
  * means try again shortly, `CNC_INVALID_CONFIG` means change something. A UI
  * that cannot tell them apart shows "something went wrong" for both, and the
  * buyer with a genuinely bad configuration keeps retrying it.
+ *
+ * `resolveCncConfig` runs inside the same try/catch as the generator call
+ * (see `cncLayout` / `validateCncArtwork`), so this also sees its errors: a
+ * `CncConfigMappingError` classifies the same as a worker-side rejection, and
+ * anything else — a `GraphQLError` `resolveCncConfig` already threw with its
+ * own `extensions.code`, or a plain validation `Error` — passes through
+ * unchanged rather than being reclassified as an outage.
  */
-export function toGraphQLWorkerError(error: unknown): GraphQLError {
-  if (error instanceof CncWorkerValidationError) {
+export function toGraphQLWorkerError(error: unknown): Error {
+  if (error instanceof CncWorkerValidationError || error instanceof CncConfigMappingError) {
     return invalidConfigError(error.message, undefined);
   }
   if (error instanceof CncWorkerUnavailableError) {
     return new GraphQLError('The build-pack service is unavailable right now. Try again in a minute.', {
       extensions: { code: CNC_WORKER_UNAVAILABLE_CODE },
     });
+  }
+  if (error instanceof Error) {
+    return error;
   }
   return new GraphQLError('The build-pack service could not be reached.', {
     extensions: { code: CNC_WORKER_UNAVAILABLE_CODE },
@@ -162,21 +190,30 @@ export const cncPackQueries = {
    * Public, because the preview is the thing that makes someone want to buy —
    * but rate-limited and catalogue-gated first, so an unauthenticated caller
    * can only ask for layouts of walls that are actually for sale, and only at
-   * a human pace.
+   * a human pace. The hole-included variant is authenticated and held to a
+   * tighter ceiling: it is roughly 40 KB bigger per response and exists for
+   * the placement editor, not the anonymous preview that sells the pack.
    */
   cncLayout: async (
     _: unknown,
     { config, includeHoles }: { config: unknown; includeHoles?: boolean | null },
     ctx: ConnectionContext,
   ): Promise<unknown> => {
-    await applyRateLimit(ctx, RATE_LIMIT_CNC_LAYOUT, RATE_LIMIT_CNC_LAYOUT_OP);
-
-    // Throws CNC_INVALID_CONFIG before any request leaves the process, so a
-    // bad tuple or an out-of-range option never costs a generator round trip.
-    const { layoutRequest } = resolveCncConfig(config);
+    const wantsHoles = includeHoles ?? false;
+    if (wantsHoles) {
+      requireAuthenticated(ctx);
+      await applyRateLimit(ctx, RATE_LIMIT_CNC_LAYOUT_HOLES, RATE_LIMIT_CNC_LAYOUT_HOLES_OP);
+    } else {
+      await applyRateLimit(ctx, RATE_LIMIT_CNC_LAYOUT, RATE_LIMIT_CNC_LAYOUT_OP);
+    }
 
     try {
-      return await fetchLayout(layoutRequest, { includeHoles: includeHoles ?? false });
+      // Throws CNC_INVALID_CONFIG before any request leaves the process, so a
+      // bad tuple or an out-of-range option never costs a generator round
+      // trip. Run inside this try so a mapping error (bad option, unparseable
+      // sheet stock) classifies the same way a worker rejection would.
+      const { layoutRequest } = resolveCncConfig(config);
+      return await fetchLayout(layoutRequest, { includeHoles: wantsHoles });
     } catch (error) {
       throw toGraphQLWorkerError(error);
     }

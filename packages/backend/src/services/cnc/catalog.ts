@@ -27,6 +27,13 @@ export type CncManufacturingOption = {
   /** The complete allowed set. Anything outside it is rejected, not clamped. */
   values: readonly CncManufacturingOptionValue[];
   defaultValue: CncManufacturingOptionValue;
+  /**
+   * True when this option only means anything on a wall that is actually
+   * building a kicker. The web configurator hides it for a kickerless wall
+   * (or one where the buyer left the kicker off) instead of showing a
+   * clearance the pack will never cut.
+   */
+  kickerOnly: boolean;
 };
 
 export type CncTierPrice = {
@@ -68,25 +75,26 @@ export type CncCatalogEntry = {
 const KILTER_HOMEWALL_MANUFACTURING_OPTIONS: readonly CncManufacturingOption[] = [
   // Standard AU sheet, plus the 3.6 m sheet that lets a 10 ft wall row be cut
   // without a seam.
-  { key: 'sheetStock', values: ['2440x1220', '3600x1220'], defaultValue: '2440x1220' },
-  { key: 'panelThicknessMm', values: [15, 18, 21], defaultValue: 18 },
+  { key: 'sheetStock', values: ['2440x1220', '3600x1220'], defaultValue: '2440x1220', kickerOnly: false },
+  { key: 'panelThicknessMm', values: [15, 18, 21], defaultValue: 18, kickerOnly: false },
   // 12.5 mm suits the common M10 T-nut barrel; the others cover the sizes sold
   // in other markets.
-  { key: 'tnutHoleDiameterMm', values: [11.1, 12, 12.5, 13], defaultValue: 12.5 },
-  { key: 'ledHoleDiameterMm', values: [8, 10, 12.5, 12.7], defaultValue: 12.5 },
-  // How much clearance the kicker leaves above the mat.
-  { key: 'kickerMatClearanceMm', values: [50, 75, 100], defaultValue: 50 },
-  { key: 'studClearanceOffsetMm', values: [0, 30, 60], defaultValue: 60 },
+  { key: 'tnutHoleDiameterMm', values: [11.1, 12, 12.5, 13], defaultValue: 12.5, kickerOnly: false },
+  { key: 'ledHoleDiameterMm', values: [8, 10, 12.5, 12.7], defaultValue: 12.5, kickerOnly: false },
+  // How much clearance the kicker leaves above the mat — meaningless on a
+  // kickerless wall, which is why this is the one option flagged kicker-only.
+  { key: 'kickerMatClearanceMm', values: [50, 75, 100], defaultValue: 50, kickerOnly: true },
+  { key: 'studClearanceOffsetMm', values: [0, 30, 60], defaultValue: 60, kickerOnly: false },
   // 101.6 mm is exactly 4 inches; 100 mm is what the metric builds use.
-  { key: 'gridPitchMm', values: [100, 101.6], defaultValue: 100 },
+  { key: 'gridPitchMm', values: [100, 101.6], defaultValue: 100, kickerOnly: false },
   // R12 writes native CIRCLE entities, which more machine controllers read as
   // drill points than R2010 polylines — hence the default.
-  { key: 'dxfFlavour', values: ['R12_circles', 'R2010_polylines'], defaultValue: 'R12_circles' },
-  { key: 'paper', values: ['A3', 'TABLOID'], defaultValue: 'A3' },
+  { key: 'dxfFlavour', values: ['R12_circles', 'R2010_polylines'], defaultValue: 'R12_circles', kickerOnly: false },
+  { key: 'paper', values: ['A3', 'TABLOID'], defaultValue: 'A3', kickerOnly: false },
   // Both engrave layers default off pending the IP review of the Kilter-derived
   // hold ids and set-screw angles.
-  { key: 'engraveHoldIds', values: [false, true], defaultValue: false },
-  { key: 'engraveAngleTicks', values: [false, true], defaultValue: false },
+  { key: 'engraveHoldIds', values: [false, true], defaultValue: false, kickerOnly: false },
+  { key: 'engraveAngleTicks', values: [false, true], defaultValue: false, kickerOnly: false },
 ];
 
 const KILTER_HOMEWALL_TIERS: readonly CncTierPrice[] = [

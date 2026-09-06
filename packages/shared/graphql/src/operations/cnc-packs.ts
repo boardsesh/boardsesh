@@ -27,6 +27,7 @@ const CNC_CATALOG_FIELDS = `
       values
       defaultValue
       valueType
+      kickerOnly
     }
     tiers {
       tier
