@@ -116,8 +116,16 @@ export function maskDatabaseError(error: unknown): Error {
       });
       markErrorReported(error);
     }
+    // `http.status: 503` makes the masked failure an honest Service Unavailable
+    // on the wire instead of a 200 with an error body. graphql-yoga reads
+    // `extensions.http.status` when it builds the response (issue #4862): the
+    // mobile outbox drainer classifies a 503 as "server unavailable, stop the
+    // cycle" rather than a verdict on the queued write, and the web/mobile
+    // reachability probes get a status they can act on without parsing bodies.
+    // Clients keep reading the same `extensions.code`; graphql-request wraps a
+    // non-2xx GraphQL body in the same ClientError shape as a 2xx one.
     return new GraphQLError('Something went wrong on our end. Please try again.', {
-      extensions: { code: 'INTERNAL_SERVER_ERROR' },
+      extensions: { code: 'INTERNAL_SERVER_ERROR', http: { status: 503 } },
     });
   }
 

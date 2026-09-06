@@ -62,6 +62,9 @@ describe('maskDatabaseError', () => {
     expect(masked).toBeInstanceOf(GraphQLError);
     expect(masked.message).not.toMatch(/select|Failed query|users/i);
     expect((masked as GraphQLError).extensions?.code).toBe('INTERNAL_SERVER_ERROR');
+    // An honest 503 on the wire (#4862): the mobile outbox drainer treats it as
+    // "server unavailable, stop the cycle" instead of charging the queued write.
+    expect((masked as GraphQLError).extensions?.http).toEqual({ status: 503 });
 
     // Captured the real pg cause with the code as a tag, and marked reported.
     expect(sentryCaptureMock).toHaveBeenCalledTimes(1);
