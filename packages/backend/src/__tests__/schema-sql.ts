@@ -1450,7 +1450,7 @@ export const schemaSQL = `
   CREATE UNIQUE INDEX IF NOT EXISTS "cnc_orders_licence_id_unique" ON "cnc_orders" ("licence_id");
   CREATE UNIQUE INDEX IF NOT EXISTS "cnc_orders_stripe_checkout_session_unique" ON "cnc_orders" ("stripe_checkout_session_id");
   CREATE INDEX IF NOT EXISTS "cnc_orders_stripe_payment_intent_idx" ON "cnc_orders" ("stripe_payment_intent_id");
-  CREATE INDEX IF NOT EXISTS "cnc_orders_user_created_idx" ON "cnc_orders" ("user_id", "created_at" DESC);
+  CREATE INDEX IF NOT EXISTS "cnc_orders_user_created_idx" ON "cnc_orders" ("user_id", "created_at" DESC NULLS LAST);
   CREATE INDEX IF NOT EXISTS "cnc_orders_status_queued_idx" ON "cnc_orders" ("status", "queued_at");
 
   CREATE TABLE IF NOT EXISTS "cnc_stripe_events" (

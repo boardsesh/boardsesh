@@ -265,3 +265,56 @@ export function parseSetIds(setIds: string): number[] | null {
   }
   return parsed.length > 0 ? parsed : null;
 }
+
+/**
+ * Set ids for the removable kicker panel on the Kilter Homewall's 12 ft walls.
+ *
+ * board-constants has no notion of "kicker" as a first-class concept —
+ * `getSetsForLayoutAndSize` returns every set for a size (Aurora names 28/29
+ * "Mainline/Auxiliary Kickboard" in `generated/product-sizes-data.ts`, but
+ * that is a display label, not something exported for matching against), so
+ * there is no helper to derive this from. Pinned here as a named constant
+ * instead of inlining `28`/`29` at the call site: see the
+ * `sizeAliases`/`kickerOptional` comment on `KILTER_HOMEWALL_SIZES` above for
+ * why only the 12 ft walls (23, 25) have a kicker to opt out of.
+ */
+const KICKER_SET_IDS: readonly number[] = [28, 29];
+
+/**
+ * Check a buyer's chosen set ids against a catalogue entry's full set list.
+ *
+ * Every submitted id must belong to the entry (buying a set from a different
+ * size's wall makes no sense); a kicker set may be left off only when the
+ * entry says the kicker is optional; anything else the entry lists is
+ * required, since a pack missing a mainline panel is not the wall the buyer
+ * thinks they are getting. Duplicates are rejected rather than deduped so a
+ * malformed request fails loudly instead of silently halving a quantity.
+ */
+export function validateSetIds(
+  entry: CncCatalogEntry,
+  setIds: number[],
+): { ok: true; setIds: number[] } | { ok: false; errors: string[] } {
+  const errors: string[] = [];
+  const allowedSetIds = new Set(parseSetIds(entry.setIds) ?? []);
+
+  const submitted = new Set<number>();
+  for (const setId of setIds) {
+    if (submitted.has(setId)) {
+      errors.push(`Set ${setId} was submitted more than once.`);
+      continue;
+    }
+    submitted.add(setId);
+    if (!allowedSetIds.has(setId)) {
+      errors.push(`Set ${setId} is not part of this size's catalogue entry.`);
+    }
+  }
+
+  for (const setId of allowedSetIds) {
+    if (submitted.has(setId)) continue;
+    const isOptionalKicker = KICKER_SET_IDS.includes(setId) && entry.kickerOptional;
+    if (!isOptionalKicker) errors.push(`Set ${setId} is required for this size.`);
+  }
+
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true, setIds: [...submitted].sort((left, right) => left - right) };
+}
