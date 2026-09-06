@@ -320,6 +320,13 @@
         "font": "Französisch",
         "both": "Beide"
       },
+      "climbListDensity": {
+        "title": "Boulder-Liste",
+        "description": "Kompakt zeigt mehr Boulder auf einmal. Ausführlich blendet unter jedem Boulder die Playlist-Tags ein.",
+        "compact": "Kompakt",
+        "standard": "Standard",
+        "rich": "Ausführlich"
+      },
       "displayOptions": {
         "title": "Anzeige",
         "playlistTags": "Playlist-Tags anzeigen",

@@ -583,6 +583,13 @@
         "font": "Francés",
         "both": "Ambos"
       },
+      "climbListDensity": {
+        "title": "Lista de bloques",
+        "description": "Compacta muestra más bloques en pantalla. Ampliada añade las etiquetas de playlist bajo cada bloque.",
+        "compact": "Compacta",
+        "standard": "Estándar",
+        "rich": "Ampliada"
+      },
       "displayOptions": {
         "title": "Visualización",
         "playlistTags": "Mostrar etiquetas de playlist",

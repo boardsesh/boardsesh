@@ -90,6 +90,7 @@ import {
 } from '../../../src/lib/onboarding/onboarding-storage';
 import { ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
 import { useClimbQuickActionsButton } from '../../../src/lib/climb-quick-actions-button-preference';
+import { useClimbListDensity } from '../../../src/lib/climb-list-density-preference';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { ensureBackgroundsCached } from '../../../src/lib/background-image-cache';
 import {
@@ -210,6 +211,10 @@ function ClimbListInner() {
   // The ⋮ quick-actions button is a user setting that defaults on (More → Display
   // lets climbers turn it off).
   const { enabled: quickActionsButtonEnabled } = useClimbQuickActionsButton();
+  // Row density is a user setting too (More → Climb list), and ONLY this list reads
+  // it — the other four surfaces that render a ClimbListRow keep the default shape.
+  // A primitive, so it drops straight into renderClimbItem's deps below.
+  const { density: rowDensity } = useClimbListDensity();
   const { addToQueue } = useQueueActions();
   const {
     filters,
@@ -1378,6 +1383,17 @@ function ClimbListInner() {
     [useNativeSearch, t, handleNativeSearchChange, handleSearchFocus, handleSearchBlur, handleNativeSearchCancel],
   );
 
+  // A density change relayouts every row, and FlashList v2 needs nothing extra for
+  // it. `rowDensity` in these deps gives `renderItem` a new identity, which is one
+  // of the props ViewHolder's memo compares (ViewHolder.tsx), so every mounted cell
+  // re-renders; its `onLayout` reports the new height (nothing sets
+  // `enforcedHeight` for a vertical list — LinearLayoutManager only enforces
+  // width), and the layout manager recomputes from the lowest changed index. There
+  // is no `estimatedItemSize` in v2 to keep in sync, and `getItemType` would be
+  // actively wrong here: the tier is global, so every item shares one type at any
+  // instant and a density-keyed type would add no estimate accuracy while throwing
+  // away the whole recycling pool on each switch — fresh mounts of every visible
+  // row on the app's largest memory consumer.
   const renderClimbItem = useCallback(
     ({ item: climb }: { item: Climb }) => (
       <ActiveAwareClimbListRow
@@ -1395,6 +1411,7 @@ function ClimbListInner() {
         showFavorite
         showMoreButton={quickActionsButtonEnabled}
         surface="climbs_list"
+        density={rowDensity}
       />
     ),
     [
@@ -1408,6 +1425,7 @@ function ClimbListInner() {
       openAddToPlaylist,
       handleAddToQueue,
       quickActionsButtonEnabled,
+      rowDensity,
     ],
   );
 

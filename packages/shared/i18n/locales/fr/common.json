@@ -320,6 +320,13 @@
         "font": "Français",
         "both": "Les deux"
       },
+      "climbListDensity": {
+        "title": "Liste des blocs",
+        "description": "Compacte affiche plus de blocs à l'écran. Détaillée ajoute les étiquettes de playlist sous chaque bloc.",
+        "compact": "Compacte",
+        "standard": "Standard",
+        "rich": "Détaillée"
+      },
       "displayOptions": {
         "title": "Affichage",
         "playlistTags": "Afficher les étiquettes de playlist",
