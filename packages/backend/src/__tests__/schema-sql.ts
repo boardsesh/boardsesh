@@ -1461,7 +1461,7 @@ export const schemaSQL = `
     "processed_at" timestamp
   );
 
-  -- Mirrors migration 0216. user_id CASCADEs (an upload is the buyer's own
+  -- Mirrors migration 0217. user_id CASCADEs (an upload is the buyer's own
   -- file) while order_id is SET NULL (losing an order must not delete the
   -- file it named); the art-asset tests turn on exactly that asymmetry.
   DROP TABLE IF EXISTS "cnc_art_assets" CASCADE;
