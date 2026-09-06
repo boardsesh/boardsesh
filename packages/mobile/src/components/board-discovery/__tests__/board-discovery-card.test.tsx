@@ -113,7 +113,7 @@ vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string, alpha: numb
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: { tertiaryBackground: '#eee', separator: '#ccc', tertiaryLabel: '#999', secondaryLabel: '#888' },
-    brandColors: { primary: '#6D28D9', primaryFill: '#6D28D9', error: '#C81E1E' },
+    brandColors: { primary: '#6D28D9', primaryFill: '#6D28D9', onPrimary: '#FFFFFF', error: '#C81E1E' },
     radii: { button: 10 },
   }),
 }));
@@ -180,12 +180,27 @@ const item: DiscoveryBoardItem = {
   title: 'Tension 8x10',
 };
 
-function edgeKeys(element: Element | null): string[] {
+function styleOf(element: Element | null): Record<string, unknown> {
   const raw = element?.getAttribute('data-style');
-  if (raw === null || raw === undefined) return [];
+  if (raw === null || raw === undefined) return {};
   const parsed: unknown = JSON.parse(raw);
-  const style = (Array.isArray(parsed) ? Object.assign({}, ...parsed) : parsed) as Record<string, unknown>;
+  // A Pressable's style can be an array (base + a state override); flatten it the
+  // way RN would so an assertion reads the value that actually renders.
+  return (Array.isArray(parsed) ? Object.assign({}, ...parsed.filter((entry) => entry !== null)) : parsed) as Record<
+    string,
+    unknown
+  >;
+}
+
+function edgeKeys(element: Element | null): string[] {
+  const style = styleOf(element);
   return ['top', 'bottom', 'left', 'right'].filter((edge) => style[edge] !== undefined);
+}
+
+/** The disc geometry every tappable corner glyph shares (#5179). */
+function discShape(element: Element | null): Record<string, unknown> {
+  const { width, height, borderRadius } = styleOf(element);
+  return { width, height, borderRadius };
 }
 
 function resetCapture() {
@@ -498,9 +513,8 @@ describe('BoardDiscoveryCard pin toggle', () => {
   });
 
   it('takes the bottom-right slot, and yields it to the distance pill', () => {
-    // The card's stated corner budget is two circles and two pills. The pin
-    // shares the distance pill's slot rather than adding a fifth, so a Near-you
-    // board must never render both.
+    // The pin takes the bottom-right slot rather than adding a fifth corner, so a
+    // Near-you board must never render both it and the distance pill.
     const { container } = render(
       createElement(BoardDiscoveryCard, {
         item: { ...item, isPinned: true },
@@ -509,8 +523,8 @@ describe('BoardDiscoveryCard pin toggle', () => {
         pinLabel: 'Unpin Tension 8x10',
       }),
     );
-    const pinPill = container.querySelector('[data-icon="pin.fill"]')!.parentElement;
-    expect(edgeKeys(pinPill)).toEqual(['bottom', 'right']);
+    const pinDisc = container.querySelector('[data-icon="pin.fill"]')!.parentElement;
+    expect(edgeKeys(pinDisc)).toEqual(['bottom', 'right']);
 
     resetCapture();
     const withDistance = render(
@@ -523,6 +537,65 @@ describe('BoardDiscoveryCard pin toggle', () => {
     );
     expect(withDistance.container.querySelector('[data-icon="pin.fill"]')).toBeNull();
     expect(withDistance.container.querySelector('[data-icon="location"]')).not.toBeNull();
+  });
+
+  // QA declined #5179 on exactly this: a wide dark pill under two white circles
+  // reads as a different kind of control. The pin is a BUTTON, so it wears the
+  // button shape — and pinning inverts that disc instead of reshaping it.
+  it('wears the same disc as the download and edit buttons', () => {
+    const { container } = render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, offlineState: 'off' },
+        onPress: vi.fn(),
+        onDownload: vi.fn(),
+        downloadLabel: 'Download Tension 8x10',
+        action: 'edit',
+        onAction: vi.fn(),
+        actionLabel: 'Edit Tension 8x10',
+        onTogglePin: vi.fn(),
+        pinLabel: 'Pin Tension 8x10',
+      }),
+    );
+    const downloadDisc = container.querySelector('[data-icon="offline.download"]')!.parentElement;
+    const editDisc = container.querySelector('[data-icon="edit"]')!.parentElement;
+    const pinDisc = container.querySelector('[data-icon="pin"]')!.parentElement;
+
+    expect(discShape(pinDisc)).toEqual(discShape(downloadDisc));
+    expect(discShape(pinDisc)).toEqual(discShape(editDisc));
+    // Unpinned it is indistinguishable from its two neighbours: same white fill.
+    expect(styleOf(pinDisc).backgroundColor).toBe(styleOf(editDisc).backgroundColor);
+  });
+
+  it('inverts the disc when pinned rather than changing its shape', () => {
+    const { container } = render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, offlineState: 'off' },
+        onPress: vi.fn(),
+        onDownload: vi.fn(),
+        downloadLabel: 'Download Tension 8x10',
+        onTogglePin: vi.fn(),
+        pinLabel: 'Pin Tension 8x10',
+      }),
+    );
+    const restingFill = styleOf(container.querySelector('[data-icon="pin"]')!.parentElement).backgroundColor;
+
+    resetCapture();
+    const pinned = render(
+      createElement(BoardDiscoveryCard, {
+        item: { ...item, offlineState: 'off', isPinned: true },
+        onPress: vi.fn(),
+        onDownload: vi.fn(),
+        downloadLabel: 'Download Tension 8x10',
+        onTogglePin: vi.fn(),
+        pinLabel: 'Unpin Tension 8x10',
+      }),
+    );
+    const pinnedDisc = pinned.container.querySelector('[data-icon="pin.fill"]')!.parentElement;
+    const downloadDisc = pinned.container.querySelector('[data-icon="offline.download"]')!.parentElement;
+
+    // The fill flips, the geometry does not.
+    expect(styleOf(pinnedDisc).backgroundColor).not.toBe(restingFill);
+    expect(discShape(pinnedDisc)).toEqual(discShape(downloadDisc));
   });
 
   it('toggles from a tap and from the accessibility rotor', () => {

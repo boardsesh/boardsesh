@@ -335,7 +335,8 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
             style={styles.offlineBadge}
             // The glyph is a 26pt disc inside a 168pt card, so widen the touch
             // area rather than the visual: 26 + 2 × 9 lands exactly on the 44pt
-            // floor. The two corner rects sit 82pt apart and never overlap.
+            // floor. The three corner rects sit 80pt apart on each axis and
+            // never overlap.
             hitSlop={CORNER_BADGE_HIT_SLOP}
           >
             <Icon name="offline.download" size={15} color={brandColors.primaryFill} />
@@ -377,22 +378,26 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
           </View>
         ) : null}
 
-        {/* The pin lives in the distance pill's slot. A board can't be both a
-            proximity result and one of yours to pin, but guard anyway so the two
-            can never stack. */}
+        {/* The pin is a corner disc, not an overlay pill: it is a BUTTON, and the
+            two other buttons on this thumb are white discs. Pinned inverts the
+            same disc (violet fill, white glyph) rather than changing its shape,
+            so on/off reads without the control drifting out of the family.
+            It still yields the bottom-right slot to the distance pill — a board
+            can't be both a proximity result and one of yours to pin, but guard
+            anyway so the two can never stack. */}
         {onTogglePin && item.distanceMeters == null ? (
           <Pressable
             onPress={handleTogglePin}
             accessibilityRole="button"
             accessibilityState={{ selected: item.isPinned === true }}
             accessibilityLabel={pinLabel}
-            style={styles.pinBadge}
+            style={[styles.pinBadge, item.isPinned ? { backgroundColor: brandColors.primaryFill } : null]}
             hitSlop={CORNER_BADGE_HIT_SLOP}
           >
             <Icon
               name={item.isPinned ? 'pin.fill' : 'pin'}
-              size={13}
-              color={item.isPinned ? brandColors.primaryFill : overlays.onScrim}
+              size={15}
+              color={item.isPinned ? brandColors.onPrimary : brandColors.primaryFill}
             />
           </Pressable>
         ) : null}
@@ -456,18 +461,21 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   );
 });
 
-// Shared geometry for the two top-corner discs and the two bottom overlay pills.
-// Only the horizontal edge differs, so the corner budget stays literally two
-// circles and two pills — never four circles, never a destructive one.
+// Shared geometry for the corner discs and the bottom overlay pills. Only the
+// edges differ, so every tappable glyph on the thumb is the same 26pt circle and
+// every status strip is the same pill — never a disc that is almost a disc.
 //
-// The bottom-right pill is shared, not duplicated: it carries the distance on
-// Near you and the pin toggle in "Your boards" (#4884). Those two never coexist
-// — `distanceMeters` is only set by proximity queries, and the pin control is
-// only handed to the saved-boards carousel — and the card asserts it by
-// rendering the pin solely when distance is absent.
+// Discs are for BUTTONS (download, edit, pin); pills are for STATUS (active,
+// distance). That split is why the pin left the pill family in #5179: QA read a
+// wide dark pill sitting under two white circles as a different kind of thing.
+//
+// The bottom-right slot is shared, not duplicated: the distance pill takes it on
+// Near you, the pin disc in "Your boards" (#4884). Those two never coexist —
+// `distanceMeters` is only set by proximity queries, and the pin control is only
+// handed to the saved-boards carousel — and the card asserts it by rendering the
+// pin solely when distance is absent.
 const cornerBadge = {
   position: 'absolute',
-  top: CORNER_BADGE_INSET,
   width: CORNER_BADGE_SIZE,
   height: CORNER_BADGE_SIZE,
   borderRadius: borderRadius.full,
@@ -516,10 +524,12 @@ const styles = StyleSheet.create({
   },
   offlineBadge: {
     ...cornerBadge,
+    top: CORNER_BADGE_INSET,
     left: CORNER_BADGE_INSET,
   },
   actionBadge: {
     ...cornerBadge,
+    top: CORNER_BADGE_INSET,
     right: CORNER_BADGE_INSET,
   },
   activeBadge: {
@@ -530,11 +540,14 @@ const styles = StyleSheet.create({
     ...overlayPill,
     right: spacing[2],
   },
-  // Shares the distance pill's slot and its exact geometry — the two never
-  // appear together, so they should read as the same object in the same place.
+  // Same disc as the download and edit buttons, on the free bottom corner. The
+  // inset doubles as the hitSlop for the same reason it does up top: `thumb`
+  // clips a child's touch rect on Android, so 26 + 2 × 9 lands the 44pt square
+  // exactly on the bottom edge — 80pt clear of the edit disc's rect above it.
   pinBadge: {
-    ...overlayPill,
-    right: spacing[2],
+    ...cornerBadge,
+    bottom: CORNER_BADGE_INSET,
+    right: CORNER_BADGE_INSET,
   },
   title: {
     fontWeight: '600',
