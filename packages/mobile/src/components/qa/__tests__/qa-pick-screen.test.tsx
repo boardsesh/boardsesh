@@ -603,6 +603,29 @@ describe('QaPickScreen search', () => {
     expect(trackMock).toHaveBeenCalledWith('QA Unlisted Surf Missed', { prNumber: 9999, refetchFailed: true });
   });
 
+  it('surfaces the error and re-arms when the surf itself throws', async () => {
+    qa.listPrBranches
+      .mockResolvedValueOnce(BRANCHES)
+      .mockResolvedValue([
+        ...BRANCHES,
+        { prNumber: 9999, branch: 'pr-9999', lastUpdateAt: '2026-08-26T11:00:00.000Z' },
+      ]);
+    qa.surfToPr.mockRejectedValue(new Error('Could not reach the update server (502).'));
+    renderScreen();
+    await screen.findByText('pr-4792');
+    await search('9999');
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try #9999 anyway'));
+    });
+
+    expect(showToast).toHaveBeenCalledWith('Could not reach the update server (502).', 'error');
+    expect(trackMock).toHaveBeenCalledWith('QA Surf Failed', {
+      prNumber: 9999,
+      reason: 'Could not reach the update server (502).',
+    });
+  });
+
   it('re-arms after a miss so an ordinary row is still pickable', async () => {
     qa.surfToPr.mockResolvedValue('nothing-to-load');
     renderScreen();
