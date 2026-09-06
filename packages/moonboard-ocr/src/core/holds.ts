@@ -85,7 +85,10 @@ export function classifyPixelColor(r: number, g: number, b: number): HoldType | 
   // Also matches rendered color ~RGB(225, 82, 64)
   const redDist = Math.sqrt(Math.pow(r - 244, 2) + Math.pow(g - 67, 2) + Math.pow(b - 54, 2));
   const redDist2 = Math.sqrt(Math.pow(r - 225, 2) + Math.pow(g - 82, 2) + Math.pow(b - 64, 2));
-  if (redDist < 50 || redDist2 < 50) {
+  // Stock Android Moon Climbing 1.3.68 renders saturated RGB circles. Keep
+  // the iOS palette too; screenshots from both platforms feed this package.
+  const androidRedDist = Math.sqrt(Math.pow(r - 255, 2) + Math.pow(g, 2) + Math.pow(b, 2));
+  if (redDist < 50 || redDist2 < 50 || androidRedDist < 35) {
     return 'finish';
   }
 
@@ -101,7 +104,8 @@ export function classifyPixelColor(r: number, g: number, b: number): HoldType | 
   // Actual rendered: ~RGB(85, 171, 103) or ~RGB(100, 160, 80)
   const greenDist1 = Math.sqrt(Math.pow(r - 76, 2) + Math.pow(g - 175, 2) + Math.pow(b - 80, 2));
   const greenDist2 = Math.sqrt(Math.pow(r - 100, 2) + Math.pow(g - 160, 2) + Math.pow(b - 80, 2));
-  if ((greenDist1 < 40 || greenDist2 < 40) && g > r && g > b) {
+  const androidGreenDist = Math.sqrt(Math.pow(r, 2) + Math.pow(g - 255, 2) + Math.pow(b, 2));
+  if ((greenDist1 < 40 || greenDist2 < 40 || androidGreenDist < 35) && g > r && g > b) {
     return 'start';
   }
 
