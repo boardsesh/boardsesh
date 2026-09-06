@@ -44,6 +44,8 @@ const TABLES_TO_RESET = [
   'integration_credentials',
   'integration_exports',
   'sync_deletions',
+  'cnc_stripe_events',
+  'cnc_orders',
   'users',
 ];
 

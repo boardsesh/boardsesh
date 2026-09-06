@@ -1395,6 +1395,76 @@ export const schemaSQL = `
     "hostname" text
   );
 
+  -- Mirrors packages/db schema/app/cnc-packs.ts (migration 0214). The order row
+  -- IS the generation queue, so the claim tests need the real enum types and the
+  -- (status, queued_at) index they scan.
+  DO $$ BEGIN
+    CREATE TYPE cnc_order_status AS ENUM ('pending_payment', 'queued', 'generating', 'ready', 'failed', 'cancelled', 'refunded');
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE TYPE cnc_licence_tier AS ENUM ('personal', 'commercial_single');
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+
+  DROP TABLE IF EXISTS "cnc_stripe_events" CASCADE;
+  DROP TABLE IF EXISTS "cnc_orders" CASCADE;
+  CREATE TABLE IF NOT EXISTS "cnc_orders" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "licence_id" text NOT NULL,
+    "user_id" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "tier" cnc_licence_tier NOT NULL,
+    "status" cnc_order_status NOT NULL,
+    "board_name" text NOT NULL,
+    "layout_id" integer NOT NULL,
+    "size_id" integer NOT NULL,
+    "set_ids" text NOT NULL,
+    "options" jsonb NOT NULL,
+    "artwork" jsonb,
+    "catalog_version" text NOT NULL,
+    "licensee_name" text,
+    "licensee_email" text,
+    "customer_site_name" text,
+    "licence_accepted_at" timestamp,
+    "currency" text,
+    "amount_cents" integer,
+    "stripe_checkout_session_id" text,
+    "stripe_payment_intent_id" text,
+    "paid_at" timestamp,
+    "refunded_at" timestamp,
+    "queued_at" timestamp,
+    "claimed_at" timestamp,
+    "heartbeat_at" timestamp,
+    "worker_id" text,
+    "claim_token" text,
+    "attempts" integer DEFAULT 0 NOT NULL,
+    "last_error" text,
+    "generation" integer DEFAULT 1 NOT NULL,
+    "generated_at" timestamp,
+    "zip_key" text,
+    "zip_size_bytes" bigint,
+    "zip_sha256" text,
+    "fingerprint_manifest" jsonb,
+    "download_count" integer DEFAULT 0 NOT NULL,
+    "last_downloaded_at" timestamp,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "cnc_orders_licence_id_unique" ON "cnc_orders" ("licence_id");
+  CREATE UNIQUE INDEX IF NOT EXISTS "cnc_orders_stripe_checkout_session_unique" ON "cnc_orders" ("stripe_checkout_session_id");
+  CREATE INDEX IF NOT EXISTS "cnc_orders_stripe_payment_intent_idx" ON "cnc_orders" ("stripe_payment_intent_id");
+  CREATE INDEX IF NOT EXISTS "cnc_orders_user_created_idx" ON "cnc_orders" ("user_id", "created_at" DESC);
+  CREATE INDEX IF NOT EXISTS "cnc_orders_status_queued_idx" ON "cnc_orders" ("status", "queued_at");
+
+  CREATE TABLE IF NOT EXISTS "cnc_stripe_events" (
+    "id" text PRIMARY KEY NOT NULL,
+    "type" text NOT NULL,
+    "order_id" bigint REFERENCES "cnc_orders"("id") ON DELETE SET NULL,
+    "received_at" timestamp DEFAULT now() NOT NULL,
+    "processed_at" timestamp
+  );
+
   -- Mirrors 0146: sync cursor indexes lead with board_type; deleted_at serves
   -- the daily prune's DELETE WHERE deleted_at < cutoff.
   CREATE INDEX IF NOT EXISTS "sync_deletions_deleted_at_idx" ON "sync_deletions" ("deleted_at");
