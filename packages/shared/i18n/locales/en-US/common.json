@@ -336,7 +336,7 @@
       "offline": {
         "title": "Offline",
         "offlineMode": "Offline mode",
-        "offlineModeDescription": "Stop every request until you turn this off. Downloaded boards keep working and sends queue up on your phone.",
+        "offlineModeDescription": "Stop talking to the Boardsesh server until you turn this off. Downloaded boards keep working and sends queue up on your phone.",
         "autoDownload": "Keep boards offline",
         "autoDownloadDescription": "Download every board you use so you can browse and log sends with no signal. New boards download automatically.",
         "downloadingAll_one": "Downloading 1 board for offline",
@@ -529,7 +529,7 @@
       },
       "offlineMode": {
         "title": "Offline mode is on",
-        "body": "Nothing leaves your phone until you turn it off. Downloaded boards keep working.",
+        "body": "No more talking to the Boardsesh server until you turn it off. Downloaded boards keep working.",
         "pill": "Offline mode",
         "goOnline": "Go online"
       },

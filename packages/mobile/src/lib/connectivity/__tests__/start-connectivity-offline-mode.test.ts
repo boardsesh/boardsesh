@@ -11,7 +11,11 @@ const settingsStore = vi.hoisted(() => ({
   offlineMode: false,
   listeners: [] as Array<() => void>,
   writes: [] as Array<{ key: string; value: unknown }>,
+  // MMKV is a native module: a full disk or a corrupt store makes a write throw.
+  failWrites: false,
 }));
+
+const reportHandledError = vi.hoisted(() => vi.fn());
 
 const trackedEvents = vi.hoisted(() => [] as Array<{ name: string; properties: Record<string, unknown> }>);
 
@@ -46,7 +50,10 @@ vi.mock('../../analytics', () => ({
   },
 }));
 
-vi.mock('../../error-reporting', () => ({ addErrorBreadcrumb: () => undefined }));
+vi.mock('../../error-reporting', () => ({
+  addErrorBreadcrumb: () => undefined,
+  reportHandledError: (error: unknown, context?: unknown) => reportHandledError(error, context),
+}));
 
 // Turning offline mode OFF re-asks the server, and the store's default probe is
 // a real `fetch` at BACKEND_URL. Answer it here so no test in this file puts a
@@ -65,6 +72,7 @@ vi.mock('../../../settings/hooks', () => ({
     return settingsStore.offlineMode;
   },
   setSetting: (key: string, value: unknown) => {
+    if (settingsStore.failWrites) throw new Error('mmkv write failed');
     settingsStore.writes.push({ key, value });
     if (key === 'offlineMode') settingsStore.offlineMode = value === true;
     for (const listener of settingsStore.listeners) listener();
@@ -99,7 +107,9 @@ describe('start-connectivity — offline mode', () => {
     settingsStore.offlineMode = false;
     settingsStore.listeners = [];
     settingsStore.writes = [];
+    settingsStore.failWrites = false;
     trackedEvents.length = 0;
+    reportHandledError.mockClear();
     __resetConnectivityStoreForTests();
     __resetStartConnectivityForTests();
     // AFTER the resets: they close the previous test's subscriptions, and those
@@ -183,6 +193,27 @@ describe('start-connectivity — offline mode', () => {
       { key: 'offlineMode', value: true },
       { key: 'offlineMode', value: false },
     ]);
+  });
+
+  // A silent failure here is the nastiest kind: the switch moves, the banner says
+  // offline mode is on, and the next launch quietly comes back online with no
+  // record of why. Keep the flip (the climber asked for it, and it is honest for
+  // this launch) and file the write failure.
+  it('reports a failed persist without undoing the flip', () => {
+    startConnectivityStore();
+    settingsStore.failWrites = true;
+
+    setOfflineMode(true, 'more');
+
+    expect(getConnectivitySnapshot()).toMatchObject({ offlineMode: true, reason: 'offline_mode' });
+    expect(reportHandledError).toHaveBeenCalledTimes(1);
+    expect(reportHandledError.mock.calls[0]![1]).toMatchObject({
+      tags: { source: 'connectivity', kind: 'offline-mode-persist' },
+    });
+    // Nothing landed on disk — which is exactly what the report is for.
+    expect(settingsStore.offlineMode).toBe(false);
+    // The event still goes out: the toggle happened, whatever storage did.
+    expect(toggleEvents()).toEqual([{ enabled: true, source: 'more', reasonBefore: null }]);
   });
 
   // A listener kept past the reset would still fire on every later settings

@@ -3,7 +3,7 @@ import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { onlineManager } from '@tanstack/react-query';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
-import { addErrorBreadcrumb } from '../error-reporting';
+import { addErrorBreadcrumb, reportHandledError } from '../error-reporting';
 import { getSetting, setSetting, subscribeSettings } from '../../settings/hooks';
 import {
   bindConnectivityStore,
@@ -124,7 +124,16 @@ function reportBackendReachabilityTransition(event: ConnectivityTransitionEvent)
  * matches, so the loop closes after one comparison.
  */
 function persistAndReportOfflineMode(change: OfflineModeChange): void {
-  setSetting('offlineMode', change.enabled);
+  try {
+    setSetting('offlineMode', change.enabled);
+  } catch (error) {
+    // MMKV is a native module and can genuinely fail — a full disk, a corrupt
+    // store. Swallowing that would be the worst of both: the switch moves, the
+    // banner says offline mode is on, and the next launch quietly comes back
+    // online with no record of why. Report it and keep going: the in-memory flip
+    // is what the climber asked for, and it is honest for THIS launch.
+    reportHandledError(error, { tags: { source: 'connectivity', kind: 'offline-mode-persist' } });
+  }
   track(SHARED_EVENTS.OfflineModeToggled, {
     enabled: change.enabled,
     source: change.source,

@@ -92,7 +92,7 @@ describe('ConnectivityBridge', () => {
   });
 
   // graphql-ws reconnects on its own schedule and knows nothing about the store,
-  // so "stop every request" would leave exactly one kind of traffic running.
+  // so "stop talking to the server" would leave one kind of traffic running.
   it('closes the realtime socket when offline mode is switched on', () => {
     const { rerender } = render(createElement(ConnectivityBridge));
     expect(disposeWsClient).not.toHaveBeenCalled();
