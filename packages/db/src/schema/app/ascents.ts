@@ -92,7 +92,15 @@ export const boardseshTicks = pgTable(
     status: tickStatusEnum('status').notNull(), // flash, send, or attempt
     attemptCount: integer('attempt_count').notNull().default(1), // Always 1 for flash
     quality: integer('quality'), // 1-5 star rating (null for attempts)
-    difficulty: integer('difficulty'), // Difficulty grade ID (null for attempts)
+    // The climber's own grade for this climb, on the Aurora difficulty scale.
+    // NULL means they didn't give one, NOT "this is an attempt": an attempt may
+    // carry a grade, which is how you re-grade a sandbagged climb you haven't
+    // sent yet (#4828). Every consumer that must not hear from a non-sender
+    // already filters `status IN ('flash','send')` — the grade model's rater
+    // sample, the profile and session OG cards, the board leaderboard and the
+    // session summary — so a graded attempt is contained by those, not by this
+    // column being empty.
+    difficulty: integer('difficulty'),
     isBenchmark: boolean('is_benchmark').default(false),
     comment: text('comment').default(''),
 
@@ -162,6 +170,44 @@ export const boardseshTicks = pgTable(
       table.climbUuid,
     ),
     syncCursorIdx: index('boardsesh_ticks_sync_cursor_idx').on(table.userId, table.updatedAt, table.id),
+    // Covering index for the personal-grade read (#4828): "the difficulty of
+    // this climber's LATEST graded tick for (board, angle, climb)". The search
+    // builds that whole set once per query as a
+    //   DISTINCT ON (climb_uuid) … ORDER BY climb_uuid, climbed_at DESC, uuid DESC
+    // subquery, so the leading three columns are equality-bound, `climb_uuid`
+    // hands the DISTINCT ON its grouping already in order, (climbed_at DESC,
+    // uuid DESC) puts the latest of each group first with no sort, and the
+    // trailing `difficulty` makes the scan index-only.
+    //
+    // ⚠️ `.nullsFirst()` on the two DESC columns is load-bearing, not decoration.
+    // A bare `DESC` in a Postgres ORDER BY means DESC NULLS FIRST, while a bare
+    // `.desc()` index column emits `DESC NULLS LAST`. Those are different
+    // pathkeys, so the mismatched form cannot satisfy the ordering and Postgres
+    // stacks a Sort node on top of the index scan (measured: `Limit -> Sort ->
+    // Index Only Scan` with NULLS LAST, a bare `Index Only Scan` with this
+    // form). Both columns are NOT NULL, so the two declarations are semantically
+    // identical — only the pathkey match differs.
+    //
+    // `difficulty` is a trailing KEY column rather than an INCLUDE payload
+    // because drizzle-kit 0.31 / drizzle-orm 0.45 cannot express INCLUDE, and
+    // migrations here are generated, never hand-written. Same covering effect,
+    // a few bytes wider per entry.
+    //
+    // Partial on `difficulty IS NOT NULL`: an ungraded tick can never be the
+    // answer, and most ticks carry no grade, so the index stays a small slice of
+    // the table. `0` is a real difficulty id, so the predicate is a NULL test,
+    // never a falsy one.
+    userGradeLatestIdx: index('boardsesh_ticks_user_grade_latest_idx')
+      .on(
+        table.userId,
+        table.boardType,
+        table.angle,
+        table.climbUuid,
+        table.climbedAt.desc().nullsFirst(),
+        table.uuid.desc().nullsFirst(),
+        table.difficulty,
+      )
+      .where(sql`${table.difficulty} IS NOT NULL`),
     // Partial index for the hourly recompute self-heal (aurora daemon): the
     // in-process debounced recompute uses setTimeout, so a deploy drops any
     // pending recompute and leaves board_climb_stats.updated_at older than the

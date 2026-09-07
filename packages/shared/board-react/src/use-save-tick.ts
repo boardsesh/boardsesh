@@ -218,7 +218,10 @@ export function useSaveTick(boardName: BoardName | null) {
       // library reads ['infiniteSearchClimbs'] plus ['searchClimbsCount'];
       // ['searchClimbs'] is the paged web/other-surface variant. A tick at an
       // angle the climb had no stats row for changes the grade those rows show,
-      // so all three have to refetch (issue #4798).
+      // so all three have to refetch (issue #4798). Personal grades (#4828)
+      // make that load-bearing rather than cosmetic: a tick carrying the
+      // climber's own grade changes which band the climb belongs in, so a stale
+      // list keeps showing a re-graded climb in the band it just left.
       void queryClient.invalidateQueries({ queryKey: ['climb'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });

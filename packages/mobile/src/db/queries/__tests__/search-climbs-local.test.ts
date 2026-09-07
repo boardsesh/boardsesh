@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { runMigrations } from '@boardsesh/offline-sync';
 import { ensureMutationQueueTable, stampLocalUserId } from '@boardsesh/offline-sync';
+import type { OfflineDatabase, SqlExecutor, SqlRunResult, SqlValue } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { canAddClimbToBoard, type BoardCompatibilityTarget } from '@boardsesh/board-config';
 import {
@@ -162,6 +163,9 @@ async function insertTick(
     // Star rating and when it was given — the personal-rating filter reads both
     // (latest rating wins).
     quality?: number | null;
+    // The climber's own grade for the climb, on the Aurora difficulty scale.
+    // NULL means "they gave no grade" — 0 is a real difficulty id (#4828).
+    difficulty?: number | null;
     climbedAt?: string;
     // Whose tick. Defaults to the stamped device owner; pass something else to
     // stand in for rows a failed sign-out wipe left behind, or `null` for a row
@@ -171,8 +175,8 @@ async function insertTick(
 ): Promise<void> {
   const timestamp = opts.climbedAt ?? '2026-02-01T00:00:00Z';
   await db.runAsync(
-    `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, is_mirror, status, attempt_count, quality, is_benchmark, climbed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?, 0, ?, ?, ?)`,
+    `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, is_mirror, status, attempt_count, quality, difficulty, is_benchmark, climbed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?, ?, 0, ?, ?, ?)`,
     [
       opts.uuid,
       opts.userId === undefined ? LOCAL_OWNER : opts.userId,
@@ -181,6 +185,7 @@ async function insertTick(
       opts.angle ?? 40,
       opts.status,
       opts.quality ?? null,
+      opts.difficulty ?? null,
       timestamp,
       timestamp,
       timestamp,
@@ -632,6 +637,10 @@ describe('isOfflineSearchSupported', () => {
     // Tall/wide are expressible against the synced compatible_size_ids.
     expect(isOfflineSearchSupported(makeInput({ onlyTallClimbs: true }))).toBe(true);
     expect(isOfflineSearchSupported(makeInput({ onlyWideClimbs: true }))).toBe(true);
+    // Personal grades read the synced ticks, which carry both `difficulty` and
+    // `uuid` — so the local SQL implements the same latest-graded-tick rule the
+    // server does and this search may be answered on-device (#4828).
+    expect(isOfflineSearchSupported(makeInput({ useMyGrades: true, minGrade: 26, maxGrade: 28 }))).toBe(true);
   });
 
   it('falls back for filters that need un-synced tables or the drafts path', () => {
@@ -774,4 +783,376 @@ describe('searchClimbsLocal: compatibleSizeIds survives the row -> Climb mapping
     expect(canAddClimbToBoard(climb, woodsWall(2))).toEqual({ ok: false, reason: 'size' });
     expect(canAddClimbToBoard(climb, woodsWall(1))).toEqual({ ok: true });
   });
+});
+
+/**
+ * Personal grades on-device (#4796 / #4828).
+ *
+ * A downloaded board reads locally even while ONLINE, so this SQL is not a
+ * degraded offline fallback — it is what a user with a downloaded board sees
+ * every time. If it answered the grade filter differently from the server, the
+ * same search would return different climbs depending on whether the board
+ * happened to be downloaded, with no error anywhere.
+ *
+ * The cases mirror packages/backend/src/__tests__/climb-queries.test.ts one for
+ * one, against the same crowd grade on every fixture so any difference can only
+ * have come from the personal grade.
+ */
+describe('searchClimbsLocal: personal grades (#4828)', () => {
+  let db: TestSqliteDb;
+
+  // The crowd's grade on every fixture.
+  const CROWD_GRADE = 16;
+
+  const gradeInput = (overrides: Partial<ClimbSearchInput> = {}): ClimbSearchInput =>
+    makeInput({ useMyGrades: true, sortBy: 'creation', sortOrder: 'desc', ...overrides });
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+
+    for (const uuid of [
+      'ungraded',
+      'graded-hard',
+      'graded-easy',
+      'regraded-up',
+      'regraded-down',
+      'graded-zero',
+      'over-scale',
+      'other-angle',
+      'other-user',
+    ]) {
+      await insertClimb(db, { uuid });
+      await insertStat(db, { climbUuid: uuid, displayDifficulty: CROWD_GRADE, difficultyAverage: CROWD_GRADE });
+    }
+
+    await insertTick(db, { uuid: 't-hard', climbUuid: 'graded-hard', status: 'send', difficulty: 27 });
+    await insertTick(db, { uuid: 't-easy', climbUuid: 'graded-easy', status: 'send', difficulty: 13 });
+    // Re-graded UP: the stale 13 must not keep it out of the band.
+    await insertTick(db, {
+      uuid: 't-up-old',
+      climbUuid: 'regraded-up',
+      status: 'send',
+      difficulty: 13,
+      climbedAt: '2026-01-01T00:00:00Z',
+    });
+    await insertTick(db, {
+      uuid: 't-up-new',
+      climbUuid: 'regraded-up',
+      status: 'send',
+      difficulty: 27,
+      climbedAt: '2026-03-01T00:00:00Z',
+    });
+    // Re-graded DOWN: the stale 27 must not keep it IN. A MAX(difficulty)
+    // implementation passes every other case here and fails this one.
+    await insertTick(db, {
+      uuid: 't-down-old',
+      climbUuid: 'regraded-down',
+      status: 'send',
+      difficulty: 27,
+      climbedAt: '2026-01-01T00:00:00Z',
+    });
+    await insertTick(db, {
+      uuid: 't-down-new',
+      climbUuid: 'regraded-down',
+      status: 'send',
+      difficulty: 13,
+      climbedAt: '2026-03-01T00:00:00Z',
+    });
+    // 0 is a real difficulty id, not an absence.
+    await insertTick(db, { uuid: 't-zero', climbUuid: 'graded-zero', status: 'send', difficulty: 0 });
+    // Above the top of the scale — clamped, not dropped.
+    await insertTick(db, { uuid: 't-over', climbUuid: 'over-scale', status: 'send', difficulty: 99 });
+    // Graded 27 at 20 degrees; the browsed angle is 40.
+    await insertTick(db, {
+      uuid: 't-other-angle',
+      climbUuid: 'other-angle',
+      status: 'send',
+      difficulty: 27,
+      angle: 20,
+    });
+    // Someone else's grade, left behind by a failed sign-out wipe.
+    await insertTick(db, {
+      uuid: 't-other-user',
+      climbUuid: 'other-user',
+      status: 'send',
+      difficulty: 27,
+      userId: 'someone-else',
+    });
+  });
+
+  it('filters the band on my own grade, falling back to the crowd grade', async () => {
+    const input = gradeInput({ minGrade: 26, maxGrade: 28 });
+    const result = await searchClimbsLocal(db, input);
+
+    expect(uuids(result).sort()).toEqual(['graded-hard', 'regraded-up']);
+    expect(await countClimbsLocal(db, input)).toBe(2);
+  });
+
+  it('clamps an out-of-scale grade rather than dropping the climb', async () => {
+    expect(uuids(await searchClimbsLocal(db, gradeInput({ minGrade: 33, maxGrade: 33 })))).toContain('over-scale');
+    expect(uuids(await searchClimbsLocal(db, gradeInput({ minGrade: 99, maxGrade: 99 })))).not.toContain('over-scale');
+  });
+
+  it('treats difficulty 0 as a real grade, not as ungraded', async () => {
+    expect(uuids(await searchClimbsLocal(db, gradeInput({ minGrade: 10, maxGrade: 10 })))).toContain('graded-zero');
+    expect(
+      uuids(await searchClimbsLocal(db, gradeInput({ minGrade: CROWD_GRADE, maxGrade: CROWD_GRADE }))),
+    ).not.toContain('graded-zero');
+  });
+
+  it('keeps a graded tick at another angle out of this angle answer', async () => {
+    const atCrowdGrade = uuids(
+      await searchClimbsLocal(db, gradeInput({ minGrade: CROWD_GRADE, maxGrade: CROWD_GRADE })),
+    );
+    expect(atCrowdGrade).toContain('other-angle');
+
+    const inPersonalBand = uuids(await searchClimbsLocal(db, gradeInput({ minGrade: 26, maxGrade: 28 })));
+    expect(inPersonalBand).not.toContain('other-angle');
+  });
+
+  it('reads only my ticks, so a stale row from another account cannot re-grade a climb', async () => {
+    const inPersonalBand = uuids(await searchClimbsLocal(db, gradeInput({ minGrade: 26, maxGrade: 28 })));
+    expect(inPersonalBand).not.toContain('other-user');
+  });
+
+  it('sorts on the effective grade, so a re-graded climb lands among the hard ones', async () => {
+    const order = uuids(await searchClimbsLocal(db, gradeInput({ sortBy: 'difficulty', sortOrder: 'desc' })));
+    const rank = (uuid: string) => order.indexOf(uuid);
+
+    expect(rank('over-scale')).toBeLessThan(rank('ungraded'));
+    expect(rank('graded-hard')).toBeLessThan(rank('ungraded'));
+    expect(rank('regraded-up')).toBeLessThan(rank('ungraded'));
+    expect(rank('graded-easy')).toBeGreaterThan(rank('ungraded'));
+    expect(rank('regraded-down')).toBeGreaterThan(rank('ungraded'));
+    expect(rank('graded-zero')).toBeGreaterThan(rank('graded-easy'));
+    // Nothing is dropped: an ungraded climb keeps its crowd position.
+    expect(order).toHaveLength(9);
+  });
+
+  it('projects myDifficulty so a row cannot disagree with its own position', async () => {
+    const result = await searchClimbsLocal(db, gradeInput({ sortBy: 'difficulty', sortOrder: 'desc' }));
+    const byUuid = new Map(result.climbs.map((climb) => [climb.uuid, climb]));
+
+    expect(byUuid.get('graded-hard')?.myDifficulty).toBe(27);
+    expect(byUuid.get('regraded-down')?.myDifficulty).toBe(13);
+    expect(byUuid.get('graded-zero')?.myDifficulty).toBe(10);
+    expect(byUuid.get('over-scale')?.myDifficulty).toBe(33);
+    expect(byUuid.get('ungraded')?.myDifficulty).toBeNull();
+    expect(byUuid.get('other-angle')?.myDifficulty).toBeNull();
+    expect(byUuid.get('other-user')?.myDifficulty).toBeNull();
+  });
+
+  it('omits myDifficulty entirely when the search did not ask for personal grades', async () => {
+    const result = await searchClimbsLocal(db, makeInput());
+    const row = result.climbs.find((climb) => climb.uuid === 'graded-hard');
+
+    expect(row).toBeDefined();
+    expect('myDifficulty' in row!).toBe(false);
+  });
+
+  it('keeps the crowd grade filter when personal grades are off', async () => {
+    const crowdOnly = makeInput({ minGrade: 26, maxGrade: 28 });
+    expect(uuids(await searchClimbsLocal(db, crowdOnly))).toEqual([]);
+    expect(await countClimbsLocal(db, crowdOnly)).toBe(0);
+  });
+});
+
+/**
+ * The plan shape behind the personal grade (#4828).
+ *
+ * SQLite has no LATERAL, so the local path cannot copy the server's single
+ * `LEFT JOIN (SELECT DISTINCT ON (climb_uuid) ...)`; it resolves the climber's
+ * own grade with correlated scalar subqueries over `boardsesh_ticks` instead —
+ * once per candidate climb, in the projection, the ORDER BY and the count's
+ * WHERE. That is only cheap while every one of those probes is served by
+ * `idx_ticks_climb (climb_uuid, board_type, angle)`.
+ *
+ * The server's first attempt at the same rule is why this is asserted rather
+ * than assumed: an OR of EXISTS halves that Postgres could not unnest measured
+ * 198 ms → 1,400 ms on a 220k-climb replica, and nobody noticed until someone
+ * ran EXPLAIN. The equivalent cliff here, measured on this harness with 3,000
+ * climbs and 21,000 ticks (node:sqlite, 5-run mean):
+ *
+ *   idx_ticks_climb present   search 14.9 ms   count (band 26..28) 13.1 ms
+ *   idx_ticks_climb dropped   search 4,564 ms  count (band 26..28) 16,205 ms
+ *
+ * — 306x on the list and 1,237x on the count. Neither number changes a single
+ * row, so no behavioural test in this file can see it.
+ */
+describe('searchClimbsLocal: personal-grade probe plan (#4828)', () => {
+  /** One statement the query layer sent, with the binds it sent alongside. */
+  type CapturedQuery = { sql: string; binds: SqlValue[] };
+
+  /**
+   * Delegates to a real database while recording what it was asked to read, so
+   * the plan below explains the EXACT text `searchClimbsLocal` built. Copying
+   * the SQL into the test by hand would let the two drift, and a plan guard
+   * over stale SQL guards nothing.
+   */
+  class RecordingDatabase implements OfflineDatabase {
+    readonly captured: CapturedQuery[] = [];
+
+    constructor(private readonly inner: TestSqliteDb) {}
+
+    private record(source: string, params: (SqlValue | SqlValue[])[]): void {
+      const binds = params.length === 1 && Array.isArray(params[0]) ? params[0] : (params as SqlValue[]);
+      this.captured.push({ sql: source, binds });
+    }
+
+    execAsync(source: string): Promise<void> {
+      return this.inner.execAsync(source);
+    }
+
+    runAsync(source: string, ...params: (SqlValue | SqlValue[])[]): Promise<SqlRunResult> {
+      return this.inner.runAsync(source, ...(params as SqlValue[]));
+    }
+
+    getFirstAsync<T>(source: string, ...params: (SqlValue | SqlValue[])[]): Promise<T | null> {
+      this.record(source, params);
+      return this.inner.getFirstAsync<T>(source, ...(params as SqlValue[]));
+    }
+
+    getAllAsync<T>(source: string, ...params: (SqlValue | SqlValue[])[]): Promise<T[]> {
+      this.record(source, params);
+      return this.inner.getAllAsync<T>(source, ...(params as SqlValue[]));
+    }
+
+    withExclusiveTransactionAsync(task: (txn: SqlExecutor) => Promise<void>): Promise<void> {
+      return this.inner.withExclusiveTransactionAsync(task);
+    }
+  }
+
+  /** The catalogue read, not the `sync_meta` owner lookup that precedes it. */
+  function catalogueQuery(recorder: RecordingDatabase): CapturedQuery {
+    const climbReads = recorder.captured.filter((query) => query.sql.includes('FROM board_climbs c'));
+    expect(climbReads).toHaveLength(1);
+    return climbReads[0];
+  }
+
+  type PlanRow = { detail: string };
+
+  async function planRows(db: TestSqliteDb, query: CapturedQuery): Promise<string[]> {
+    const rows = await db.getAllAsync<PlanRow>(`EXPLAIN QUERY PLAN ${query.sql}`, query.binds);
+    return rows.map((row) => row.detail);
+  }
+
+  /** Every name the query gives `boardsesh_ticks`, read off the SQL itself so a
+   *  renamed subquery alias cannot quietly drop out of the assertion below. */
+  function tickAliases(sql: string): Set<string> {
+    return new Set([...sql.matchAll(/FROM\s+boardsesh_ticks\s+(\w+)/g)].map((match) => match[1]));
+  }
+
+  /**
+   * Asserts the one plan fact that decides the cost: every time SQLite touches
+   * the ticks table, it does so through the full `idx_ticks_climb` key.
+   *
+   * Both halves are load-bearing, and each has caught a different break:
+   *  - anything other than SEARCH-by-index means the probe reads the table per
+   *    candidate climb, the shape that cost the server 198 ms -> 1,400 ms;
+   *  - the index NAME and its full (climb_uuid, board_type, angle) key matter
+   *    because the fallback is not a SCAN. Make the correlation non-sargable and
+   *    SQLite happily reports `SEARCH mg USING INDEX idx_ticks_board_climbed_at
+   *    (board_type=?)` — still a SEARCH, still an index, and it walks every tick
+   *    on the board once per candidate climb.
+   *
+   * The plan is matched by alias rather than by whole-plan text, so join order,
+   * node ids and the unrelated `json_each` membership scan can churn freely.
+   */
+  function expectTicksProbesAreIndexServed(sql: string, plan: string[]): void {
+    const aliases = tickAliases(sql);
+    expect(aliases.size).toBeGreaterThan(0);
+
+    const tickAccesses = plan.filter((detail) => {
+      const alias = /^(?:SEARCH|SCAN)\s+(\w+)\b/.exec(detail)?.[1];
+      return alias !== undefined && aliases.has(alias);
+    });
+
+    expect(tickAccesses.length).toBeGreaterThan(0);
+    for (const access of tickAccesses) {
+      expect(access).toMatch(
+        /^SEARCH \w+ USING (?:COVERING )?INDEX idx_ticks_climb \(climb_uuid=\? AND board_type=\? AND angle=\?\)$/,
+      );
+    }
+  }
+
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+
+    // A candidate set big enough that a per-row probe has something to multiply
+    // against, and a climber who graded every one of them.
+    for (let index = 0; index < 200; index += 1) {
+      const uuid = `plan-${index}`;
+      await insertClimb(db, { uuid });
+      await insertStat(db, { climbUuid: uuid, displayDifficulty: 16, difficultyAverage: 16 });
+      await insertTick(db, { uuid: `plan-tick-${index}`, climbUuid: uuid, status: 'send', difficulty: 20 });
+    }
+  });
+
+  const planInput = (overrides: Partial<ClimbSearchInput> = {}): ClimbSearchInput =>
+    makeInput({ useMyGrades: true, sortBy: 'difficulty', sortOrder: 'desc', ...overrides });
+
+  it('serves the list probe from idx_ticks_climb, in the projection and the sort', async () => {
+    const recorder = new RecordingDatabase(db);
+    await searchClimbsLocal(recorder, planInput());
+
+    const query = catalogueQuery(recorder);
+    expectTicksProbesAreIndexServed(query.sql, await planRows(db, query));
+  });
+
+  it('serves the count probe from idx_ticks_climb, including the latest-tick half', async () => {
+    // The count's filter is the OR of "never graded it" against "the latest
+    // graded tick is in the band" — three separate reads of the ticks table,
+    // the innermost nested inside another. All three have to be index-served.
+    const recorder = new RecordingDatabase(db);
+    await countClimbsLocal(recorder, planInput({ minGrade: 26, maxGrade: 28 }));
+
+    const query = catalogueQuery(recorder);
+    expectTicksProbesAreIndexServed(query.sql, await planRows(db, query));
+  });
+
+  // Wall-clock, so it is the one assertion here a contended CI runner could
+  // flake — and on a real regression it would ALSO make the suite crawl before
+  // failing. Skipped on CI: the two plan assertions above catch the same three
+  // breaks deterministically and instantly. This stays for local use, where the
+  // question "is the shape worth having" is actually worth asking.
+  it.skipIf(!!process.env.CI)(
+    'stays fast with a big logbook on a densely populated board',
+    async () => {
+      // The plan assertions above say the shape is right; this says the shape is
+      // worth having. 3,000 climbs and 7 graded ticks on each — a power user who
+      // has logged a board out. Measured on this harness: 15 ms with the index,
+      // 4,564 ms without it, so a 1.5 s ceiling clears the healthy number by 100x
+      // and still fails long before the regression finishes one query.
+      for (let index = 200; index < 3000; index += 1) {
+        const uuid = `plan-${index}`;
+        await insertClimb(db, { uuid });
+        await insertStat(db, { climbUuid: uuid, displayDifficulty: 10 + (index % 20), difficultyAverage: 16 });
+        for (let tick = 0; tick < 7; tick += 1) {
+          await insertTick(db, {
+            uuid: `plan-tick-${index}-${tick}`,
+            climbUuid: uuid,
+            status: 'send',
+            difficulty: 10 + ((index + tick) % 20),
+            climbedAt: `2026-02-${String((tick % 27) + 1).padStart(2, '0')}T00:00:00Z`,
+          });
+        }
+      }
+
+      const startedAt = performance.now();
+      const result = await searchClimbsLocal(db, planInput());
+      const elapsedMs = performance.now() - startedAt;
+
+      expect(result.climbs).toHaveLength(20);
+      expect(elapsedMs).toBeLessThan(1500);
+    },
+    60_000,
+  );
 });

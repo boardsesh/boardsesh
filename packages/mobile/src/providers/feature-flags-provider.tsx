@@ -44,6 +44,12 @@ export type FeatureFlagDefinition = {
 
 export const FEATURE_FLAG_DEFINITIONS = [
   {
+    key: 'personal-grades',
+    label: 'Personal grades',
+    description:
+      "Default for 'Use my grades' (More -> Display options): show the grade you gave a climb instead of the crowd's, and filter/sort by it. Only the default — an explicit choice in that setting always wins.",
+  },
+  {
     key: 'strava-integration',
     label: 'Strava integration',
     description: 'Share sends to Strava and the Strava connect option in Integrations.',
@@ -215,6 +221,7 @@ export function useBoardseshGradeEnabled(): boolean {
 }
 
 /**
+/**
  * Kill switch for backend outage detection (issue #4862). A KILL switch, and the
  * direction is the whole point: PostHog flags resolve asynchronously, so a
  * positive flag reads as OFF for the first frames of a cold open — which here
@@ -240,6 +247,23 @@ export function useBackendOutageDetectionEnabled(): boolean {
  */
 export function useInteractiveRequestDeadlineEnabled(): boolean {
   return useFeatureFlag('interactive-request-deadline') !== false;
+}
+
+/**
+ * DEFAULT for the personal-grades setting (#4796, #4828) — not a gate.
+ *
+ * The behaviour itself is user config (`lib/personal-grades-preference.ts`);
+ * this flag only decides what climbers who have never touched that setting get.
+ * An explicit choice always wins over it, in either direction.
+ *
+ * Read strictly, like `useBoardseshGradeEnabled` above: missing/undefined
+ * (flags not loaded, or PostHog unreachable) reads as OFF. So the default
+ * arrives by a deliberate rollout rather than by an outage being
+ * indistinguishable from one, and nobody's list silently re-sorts because flag
+ * resolution was slow.
+ */
+export function usePersonalGradesDefault(): boolean {
+  return useFeatureFlag('personal-grades') === true;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {

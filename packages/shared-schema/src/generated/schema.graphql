@@ -64,6 +64,8 @@ type Climb {
   boardseshDifficulty: Float
   "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'. The estimate tier is projected from other angles and has no ascents at this angle. Null when no grade row exists."
   boardseshConfidence: String
+  "The signed-in climber's OWN grade for this climb at this angle: the difficulty of their latest tick that carries one, clamped to the boulder scale. Populated only when the search asked for useMyGrades — that search's filter and difficulty sort key off exactly this value (falling back to the crowd's grade where it is null), so a row can never disagree with its own position in the list. Never round-tripped through the party queue: it is one climber's private opinion, not a property of the climb."
+  myDifficulty: Int
   "Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route."
   renderBoard: RenderBoardConfig
   """
@@ -215,6 +217,8 @@ input ClimbSearchInput {
   minUserRating: Int
   "Only show climbs the user has rated at this angle (requires auth)"
   onlyRatedByMe: Boolean
+  "Key the grade filter and the difficulty sort off the climber's own grade instead of the crowd's: the difficulty of their latest tick for this climb+angle that carries one, clamped to the boulder scale, falling back to the rounded display difficulty where they never graded it. Keeps a re-graded climb in the band its row already displays. (requires auth)"
+  useMyGrades: Boolean
   "Show only the user's draft climbs (requires auth)"
   onlyDrafts: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"

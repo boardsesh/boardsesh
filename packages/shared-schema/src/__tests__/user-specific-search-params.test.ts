@@ -17,6 +17,7 @@ describe('USER_SPECIFIC_SEARCH_PARAMS', () => {
         'showOnlyCompleted',
         'minUserRating',
         'onlyRatedByMe',
+        'useMyGrades',
         'onlyDrafts',
       ].sort(),
     );
@@ -25,5 +26,13 @@ describe('USER_SPECIFIC_SEARCH_PARAMS', () => {
   it('includes the personal rating filters (#2645)', () => {
     expect(USER_SPECIFIC_SEARCH_PARAMS).toContain('minUserRating');
     expect(USER_SPECIFIC_SEARCH_PARAMS).toContain('onlyRatedByMe');
+  });
+
+  // Without this entry the resolver never resolves a userId for a useMyGrades
+  // search, so the personal-grade filter/sort has nobody to read ticks for and
+  // quietly falls back to the crowd's grade — the row would then display one
+  // grade and be filtered by another (#4828).
+  it('includes the personal grade toggle (#4828)', () => {
+    expect(USER_SPECIFIC_SEARCH_PARAMS).toContain('useMyGrades');
   });
 });

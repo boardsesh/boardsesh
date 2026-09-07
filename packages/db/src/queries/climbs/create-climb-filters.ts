@@ -1,6 +1,8 @@
-import { type SQL, eq, gt, gte, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
+import { type SQL, desc, eq, gt, gte, isNotNull, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
+import { QueryBuilder } from 'drizzle-orm/pg-core';
 import { getMoonBoardGeometryByLayoutId, woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
+import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import {
   boardClimbs,
   boardClimbStats,
@@ -12,6 +14,214 @@ import {
 } from '../../schema/index';
 import type { BoardRouteParams, ClimbSearchParams } from './types';
 import { climbHoldPlacementMatchSql } from './placement-match';
+
+// ---------------------------------------------------------------------------
+// Personal grades (#4796 / #4828) — the ONE definition of the rule.
+//
+//   personal grade  := difficulty of the LATEST tick for
+//                      (user, board_type, climb_uuid, angle) whose difficulty is
+//                      NOT NULL, ordered by (climbed_at DESC, uuid DESC)
+//   effective grade := COALESCE(clamped personal grade, ROUND(display_difficulty))
+//
+// Every read that filters, sorts, or projects a personal grade builds it from
+// the helpers below rather than re-deriving it, because the failure mode is a
+// row that READS V10 while a V9-V11 filter hides it — the exact defect the
+// Boardsesh-grade toggle shipped once already (rows displayed one grade while
+// filter and sort still keyed display_difficulty).
+//
+// One join serves all three. `buildPersonalGradeJoinTarget` returns a
+// `DISTINCT ON (climb_uuid)` subquery of the climber's latest graded tick per
+// climb, joined once under the alias `my_grade`; filter, ORDER BY and the
+// projected `myDifficulty` then all read `COALESCE("my_grade"."difficulty",
+// ROUND(display_difficulty))`. Three separate expressions would be three places
+// to drift.
+//
+// Three rules the helpers encode, none of them negotiable:
+//  - LATEST, never MAX. A stiff grade from one bad day must not stick.
+//  - `difficulty IS NOT NULL`, never a falsy check — 0 is a real difficulty id.
+//  - the tie-break is `uuid`, never the `id` bigserial. boardsesh_ticks has
+//    both, but only `uuid` ever reaches the client, and the client half
+//    (pickLatestGradedTick in @boardsesh/logbook) orders by (climbed_at, uuid).
+//    Ordering on `id` here would let server and client disagree about which
+//    grade is current whenever two ticks share a climbed_at.
+// ---------------------------------------------------------------------------
+
+/**
+ * The difficulty-id bounds of the boulder scale, derived from the table rather
+ * than hardcoded so a future extension of `BOULDER_GRADES` moves them for free.
+ * The write side bounds the same way (packages/backend/src/validation/schemas/ticks.ts),
+ * so a clamp only ever has work to do for a row that predates that validation
+ * or arrived through an import.
+ */
+export const PERSONAL_GRADE_MIN_ID = BOULDER_GRADES[0].difficulty_id;
+export const PERSONAL_GRADE_MAX_ID = BOULDER_GRADES[BOULDER_GRADES.length - 1].difficulty_id;
+
+/** Alias the personal-grade subquery is joined under, in every query that joins it. */
+export const PERSONAL_GRADE_ALIAS = 'my_grade';
+
+/** The column that alias exposes. */
+const PERSONAL_GRADE_COLUMN = 'difficulty';
+
+/**
+ * `"my_grade"."difficulty"` — the joined personal grade, ALWAYS table-qualified.
+ *
+ * Written with `sql.identifier` rather than by interpolating the subquery's
+ * `.as('difficulty')` field: drizzle drops the subquery alias when an aliased
+ * field is interpolated into a `sql` template, so that form renders a bare
+ * `"difficulty"` that only resolves by luck (nothing else in the join tree
+ * happens to expose that name). One renamed column elsewhere and the filter
+ * would silently key on the wrong thing.
+ */
+export function personalGradeColumnSql(): SQL {
+  return sql`${sql.identifier(PERSONAL_GRADE_ALIAS)}.${sql.identifier(PERSONAL_GRADE_COLUMN)}`;
+}
+
+/** Clamp a difficulty expression onto the boulder scale. */
+export function clampToBoulderScaleSql(difficultyExpr: SQL): SQL {
+  return sql`LEAST(GREATEST(${difficultyExpr}, ${PERSONAL_GRADE_MIN_ID}), ${PERSONAL_GRADE_MAX_ID})`;
+}
+
+/**
+ * The crowd's grade for a climb at the joined angle — the integer the grade
+ * filter and the difficulty sort have always keyed on. Extracted so the
+ * personal-grade COALESCE fallback and the plain crowd filter cannot drift.
+ */
+export function crowdGradeSql(): SQL {
+  return sql`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`;
+}
+
+/** Who the personal grade belongs to, and which board+angle it was given at. */
+export type PersonalGradeScope = {
+  boardType: string;
+  angle: number;
+  userId: string;
+};
+
+/**
+ * The climber's whole grade book for this board+angle, as ONE subquery: their
+ * latest graded tick per climb, already clamped.
+ *
+ * `DISTINCT ON (climb_uuid) … ORDER BY climb_uuid, climbed_at DESC, uuid DESC`
+ * is the direct spelling of "latest per climb", and it is the shape that keeps
+ * this feature cheap. Two shapes were measured and rejected:
+ *
+ *  - a per-row `LEFT JOIN LATERAL … LIMIT 1` probes boardsesh_ticks once per
+ *    surviving candidate climb, so it costs whatever the filter leaves behind;
+ *  - `EXISTS … OR NOT EXISTS …` inside the WHERE never unnests. Postgres only
+ *    pulls up sublinks that are AND-ed at the top of the qual; a sublink under
+ *    an `OR` is never converted to a semi/anti join.
+ *
+ * Measured on the dev DB (kilter/40, 84,243 candidate climbs, a climber with
+ * 595 graded ticks) over a V1-V11 band, both shapes returning the identical
+ * 82,141 rows (EXCEPT empty in both directions):
+ *
+ *   list   crowd-only baseline    735 ms /  38,441 shared buffers
+ *   list   the OR-sublink shape  1225 ms / 288,502 shared buffers
+ *   list   this shape             823 ms /  38,458 shared buffers
+ *   count  the OR-sublink shape  1030 ms / 288,500 shared buffers
+ *   count  this shape             642 ms /  38,456 shared buffers
+ *
+ * Joined once, this scales with the CLIMBER'S tick count (hundreds) rather than
+ * with candidate climbs (hundreds of thousands), and the partial covering index
+ * `boardsesh_ticks_user_grade_latest_idx` serves the whole build index-only —
+ * 17 shared buffers, zero heap fetches, no Sort. The EXPLAIN harness
+ * (`search-climbs-explain.integration.test.ts`) pins that plan shape.
+ *
+ * LEFT JOIN it, never INNER — an inner join drops every climb the climber has
+ * not graded, i.e. nearly the whole board. `buildPersonalGradeJoinTarget`
+ * returns both halves so a caller cannot join it on the wrong key.
+ */
+export function buildPersonalGradeSubquery(scope: PersonalGradeScope) {
+  return (
+    new QueryBuilder()
+      .selectDistinctOn([boardseshTicks.climbUuid], {
+        climbUuid: boardseshTicks.climbUuid,
+        difficulty: clampToBoulderScaleSql(sql`${boardseshTicks.difficulty}`).as(PERSONAL_GRADE_COLUMN),
+      })
+      .from(boardseshTicks)
+      .where(
+        and(
+          eq(boardseshTicks.userId, scope.userId),
+          eq(boardseshTicks.boardType, scope.boardType),
+          eq(boardseshTicks.angle, scope.angle),
+          // Explicit NULL check, not falsiness: difficulty 0 is a real id.
+          isNotNull(boardseshTicks.difficulty),
+        ),
+      )
+      // Bare DESC (= NULLS FIRST) on purpose: it matches the index's declared
+      // `DESC NULLS FIRST` pathkeys, so the DISTINCT ON needs no Sort node. See
+      // `userGradeLatestIdx` in packages/db/src/schema/app/ascents.ts.
+      .orderBy(boardseshTicks.climbUuid, desc(boardseshTicks.climbedAt), desc(boardseshTicks.uuid))
+      .as(PERSONAL_GRADE_ALIAS)
+  );
+}
+
+export type PersonalGradeSubquery = ReturnType<typeof buildPersonalGradeSubquery>;
+
+/** A personal-grade subquery plus the ON condition it must be joined with. */
+export type PersonalGradeJoinTarget = {
+  subquery: PersonalGradeSubquery;
+  on: SQL;
+};
+
+/**
+ * The subquery and its join key together, so the three query builders that need
+ * it (both search paths and `countClimbs`) cannot join it on anything else.
+ */
+export function buildPersonalGradeJoinTarget(scope: PersonalGradeScope): PersonalGradeJoinTarget {
+  const subquery = buildPersonalGradeSubquery(scope);
+  return {
+    subquery,
+    on: sql`${sql.identifier(PERSONAL_GRADE_ALIAS)}.${sql.identifier('climb_uuid')} = ${boardClimbs.uuid}`,
+  };
+}
+
+/**
+ * `COALESCE(my grade, the crowd's)` — the ONE expression the grade filter, the
+ * difficulty sort and the row projection all key on when the climber asked for
+ * their own grades. A climb they never graded keeps its crowd position, so the
+ * list stays a single ordered sequence rather than two interleaved ones.
+ *
+ * Requires the personal-grade subquery to be joined under `PERSONAL_GRADE_ALIAS`.
+ */
+export function effectiveDifficultySql(): SQL {
+  return sql`COALESCE(${personalGradeColumnSql()}, ${crowdGradeSql()})`;
+}
+
+/**
+ * Render the in-range test for a grade expression, or `null` when neither bound
+ * is set (no filter at all).
+ *
+ * `minGrade`/`maxGrade` are checked for truthiness rather than `!= null` to
+ * match the crowd-grade filter above it, which has always read them that way —
+ * grade id 0 is below the scale's floor (10) and never a real bound.
+ */
+function gradeInRangeSql(gradeExpr: SQL, minGrade: number | undefined, maxGrade: number | undefined): SQL | null {
+  if (minGrade && maxGrade) return sql`${gradeExpr} BETWEEN ${minGrade} AND ${maxGrade}`;
+  if (minGrade) return sql`${gradeExpr} >= ${minGrade}`;
+  if (maxGrade) return sql`${gradeExpr} <= ${maxGrade}`;
+  return null;
+}
+
+/**
+ * The grade-range filter, keyed on the climber's own grade where they gave one.
+ *
+ * One plain range test over `COALESCE(my grade, the crowd's)`, resolved by the
+ * joined `my_grade` subquery. That single expression already says both halves of
+ * the rule: a climb the climber graded is admitted on THEIR number, a climb they
+ * never graded falls through to the crowd's and behaves exactly as before. A
+ * climb with neither (no stats row at this angle, never graded) yields NULL and
+ * is excluded — same as the crowd-only filter it replaces.
+ *
+ * Keeping it a bare comparison rather than a pair of sublinks is what lets
+ * Postgres keep pushing the range into the `board_climb_stats` scan.
+ *
+ * Requires the caller to have joined `buildPersonalGradeJoinTarget()`. Returns
+ * `null` when no bound is set, so callers can spread the result.
+ */
+export function personalGradeRangeCondition(minGrade: number | undefined, maxGrade: number | undefined): SQL | null {
+  return gradeInRangeSql(effectiveDifficultySql(), minGrade, maxGrade);
+}
 
 // Escape LIKE/ILIKE metacharacters so user-supplied search text is matched
 // literally. Postgres' default escape character is backslash, so `\%`, `\_`,
@@ -176,6 +386,36 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     ? [sql`COALESCE(${boardClimbStats.ascensionistCount}, 0) = 0`]
     : [];
 
+  // Personal grades (#4828). Active only for a signed-in climber who asked for
+  // it, and never on a drafts query — drafts have no stats row, so the whole
+  // grade filter is skipped there today and staying consistent matters more
+  // than filtering a handful of self-owned drafts.
+  //
+  // `personalGradeScope` is also what the sort and the projection read: when it
+  // is null they key on the crowd's grade exactly as before.
+  const personalGradeScope: PersonalGradeScope | null =
+    searchParams.useMyGrades && userId && !isOnlyDrafts
+      ? { boardType: params.board_name, angle: params.angle, userId }
+      : null;
+
+  // The subquery every personal-grade query joins, built once here so the
+  // filter, the sort and the projection all read the same alias. Null exactly
+  // when `personalGradeScope` is.
+  const personalGradeJoin: PersonalGradeJoinTarget | null = personalGradeScope
+    ? buildPersonalGradeJoinTarget(personalGradeScope)
+    : null;
+
+  // Kept OUT of climbStatsConditions on purpose. `searchClimbs` routes on
+  // `getClimbStatsConditions().length > 0` and takes the stats-driven INNER JOIN
+  // on board_climb_stats when it is non-empty — which would silently drop a
+  // personally-graded climb that has no stats row at this angle, from BOTH the
+  // list and the count. Same escape hatch `projectsOnlyConditions` uses.
+  const personalGradeConditions: SQL[] = [];
+  if (personalGradeScope) {
+    const rangeCondition = personalGradeRangeCondition(searchParams.minGrade, searchParams.maxGrade);
+    if (rangeCondition) personalGradeConditions.push(rangeCondition);
+  }
+
   // Conditions for climb stats
   const climbStatsConditions: SQL[] = [];
 
@@ -185,14 +425,18 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     climbStatsConditions.push(gte(boardClimbStats.ascensionistCount, searchParams.minAscents));
   }
 
-  if (searchParams.minGrade && searchParams.maxGrade) {
-    climbStatsConditions.push(
-      sql`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0) BETWEEN ${searchParams.minGrade} AND ${searchParams.maxGrade}`,
-    );
-  } else if (searchParams.minGrade) {
-    climbStatsConditions.push(sql`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0) >= ${searchParams.minGrade}`);
-  } else if (searchParams.maxGrade) {
-    climbStatsConditions.push(sql`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0) <= ${searchParams.maxGrade}`);
+  // The crowd-grade range. Skipped entirely when the personal-grade filter above
+  // took over the same bounds — applying both would AND two different grades
+  // together and hide every climb whose grades disagree, which is precisely the
+  // set the feature exists for.
+  if (!personalGradeScope) {
+    if (searchParams.minGrade && searchParams.maxGrade) {
+      climbStatsConditions.push(sql`${crowdGradeSql()} BETWEEN ${searchParams.minGrade} AND ${searchParams.maxGrade}`);
+    } else if (searchParams.minGrade) {
+      climbStatsConditions.push(sql`${crowdGradeSql()} >= ${searchParams.minGrade}`);
+    } else if (searchParams.maxGrade) {
+      climbStatsConditions.push(sql`${crowdGradeSql()} <= ${searchParams.maxGrade}`);
+    }
   }
 
   if (searchParams.minRating) {
@@ -700,7 +944,22 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
       ...setIdsConditions,
       ...personalProgressConditions,
       ...projectsOnlyConditions,
+      ...personalGradeConditions,
     ],
+    /**
+     * Non-null only when the personal-grade rule is actually in force (the
+     * climber asked for it, is signed in, and this is not a drafts query).
+     */
+    getPersonalGradeScope: (): PersonalGradeScope | null => personalGradeScope,
+    /**
+     * The `my_grade` subquery and its ON condition, or null when the rule is
+     * off. Every query that spreads `getClimbWhereConditions()` MUST left-join
+     * this when it is non-null: the grade filter, the difficulty sort and the
+     * `myDifficulty` projection all reference the alias it introduces, so they
+     * cannot disagree about whose grade a row was selected, ordered and
+     * labelled by.
+     */
+    getPersonalGradeJoin: (): PersonalGradeJoinTarget | null => personalGradeJoin,
     getSizeConditions: () => sizeConditions,
     getClimbStatsConditions: () => climbStatsConditions,
     getClimbStatsJoinConditions: () => [
@@ -734,6 +993,7 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     sizeConditions,
     personalProgressConditions,
     projectsOnlyConditions,
+    personalGradeConditions,
     anyHolds,
     notHolds,
     holdStateFilters,

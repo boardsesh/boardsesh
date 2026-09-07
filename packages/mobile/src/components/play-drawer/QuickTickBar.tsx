@@ -6,9 +6,13 @@
 // row is a `TickFormRow`, so the label seam and the control seam are the same
 // two verticals here as in the edit sheet.
 import React, { useCallback } from 'react';
+import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { StarRating } from '../StarRating';
+import { Text } from '../Text';
 import { GradeSingleSelectRail } from '../grade';
+import { spacing } from '../../theme/tokens';
+import { useTheme } from '../../providers/theme-provider';
 import {
   TickCountRail,
   TickDateRow,
@@ -28,6 +32,9 @@ export type QuickTickBarProps = {
 export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTickBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
+  // Resolved through the provider, never the static palette: these sheets sit
+  // on an opaque ground and a module-scope colour always picks the light set.
+  const { systemColors } = useTheme();
 
   const {
     climbUuid,
@@ -98,6 +105,14 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
         ) : null}
       </TickFormRow>
 
+      {/* #4796 was filed because nothing told the climber this field was the
+          lever — they graded a climb V10 and watched it keep saying V0. The
+          label alone ("My grade") does not say what picking one DOES, so the
+          consequence is spelled out once, permanently, right under the rail. */}
+      <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.gradeHelp}>
+        {tClimbs('mobile.tick.gradeHelp')}
+      </Text>
+
       <TickFormRow label={tClimbs('mobile.tick.starsLabel')} testID="tick-row-stars">
         <StarRating
           value={tickState.quality ?? undefined}
@@ -134,4 +149,13 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
       </TickFormRow>
     </>
   );
+});
+
+const styles = StyleSheet.create({
+  gradeHelp: {
+    // Sits under the grade rail's bleed row, so it needs the form's own
+    // horizontal inset back rather than inheriting the rail's edge-to-edge one.
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[2],
+  },
 });

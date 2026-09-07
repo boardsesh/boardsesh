@@ -136,6 +136,41 @@ above is the sharpest example of this rule; the two render-mode flags below are
 a plainer one — the shipped defaults ARE the unresolved reading, so there is
 nothing to invert.
 
+### A flag that sets a SETTING's default, not a gate
+
+`personal-grades` is the one flag in the catalog that gates nothing. The
+behaviour it names — a climber's own grade outranking the crowd's on the climb
+row, the play header, the Grades section, and the grade filter and difficulty
+sort (#4796, #4828) — is **user config**, persisted in
+`packages/mobile/src/lib/personal-grades-preference.ts`. The flag only decides
+what climbers who have never touched that setting get.
+
+Resolution lives in `packages/mobile/src/hooks/use-personal-grades.ts`:
+
+    usePersonalGradesActive() = choice ?? usePersonalGradesDefault()
+
+The stored choice is deliberately **tri-state**. `null` means "never chosen" and
+defers to the flag; a stored `false` does not. Collapsing the two would let a
+later flag change silently reverse a decision someone made on purpose, which is
+the opposite of what a setting is for.
+
+The flag itself is read strictly (`=== true`), so an unresolved or unreachable
+PostHog leaves the default OFF — the rule in the section above, applied. That is
+what makes the rollout deliberate rather than an outage looking like one.
+
+Two things to keep in mind when touching this:
+
+- **Both halves must read the same resolution.** `useMyGrade` covers everything
+  that displays a grade and the climbs screen covers the search input. A state
+  where rows showed your grade while the filter and sort reverted would put a
+  V10 row behind a V0 filter, which is precisely the defect the feature exists
+  to remove.
+- **A flag absent from `FEATURE_FLAG_DEFINITIONS` never resolves at all.**
+  `readPosthogFeatureFlags` iterates the catalog, so an unregistered key reads
+  `undefined` forever. Under a strict `=== true` that is indistinguishable from
+  a permanent "off", and a feature defaulted this way ships dead. Register the
+  key in the catalog in the same change that first reads it.
+
 ### Boolean vs multivariate
 
 Most flags are plain on/off: `FeatureFlags[key]` is `boolean | undefined`, read

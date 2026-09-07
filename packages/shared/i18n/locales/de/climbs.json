@@ -150,6 +150,14 @@
       "singleAngle_one": "Bei {{angle}}° · alter Grad {{crowd}} · Boardsesh-Grad {{boardsesh}} · {{count}} Begehung",
       "singleAngle_other": "Bei {{angle}}° · alter Grad {{crowd}} · Boardsesh-Grad {{boardsesh}} · {{count}} Begehungen",
       "crowdOnlyNote": "Noch zu wenige Begehungen über Boards hinweg, um nach Winkel zu vergleichen."
+    },
+    "yours": {
+      "label": "Dein Grad",
+      "meta": "Bei {{angle}}°",
+      "boardGrade": "Board-Grad",
+      "community": "Community-Grad",
+      "matches": "Du siehst das genauso.",
+      "emptyBody": "Zu hart für seinen Grad? Gib ihm deinen eigenen. Geht auch ohne Begehung."
     }
   },
   "similarClimbs": {
@@ -304,7 +312,8 @@
     "tick": {
       "dateLabel": "Datum",
       "timeLabel": "Zeit",
-      "gradeLabel": "Grad",
+      "gradeLabel": "Mein Grad",
+      "gradeHelp": "Der Grad, den du ab jetzt bei diesem Boulder siehst. Geht auch ohne Begehung.",
       "starsLabel": "Sterne",
       "triesLabel": "Versuche",
       "noteLabel": "Notiz",
