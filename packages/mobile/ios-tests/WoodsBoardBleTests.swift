@@ -274,6 +274,7 @@ final class WoodsBoardBleManagerTests: XCTestCase {
         // in BoardPlacementData — it would refuse every climb).
         let peripheral = displayWoods(frames: "p0r4", mirrored: true)
         XCTAssertEqual(reassembled(peripheral), "28,4,!")
+        XCTAssertEqual(peripheral.writtenChunks.first?.type, .withResponse)
     }
 
     func testEmptyFramesItemClearsWithTheWoodsTerminatorNotAnAuroraPacket() {

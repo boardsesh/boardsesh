@@ -532,6 +532,14 @@ enum BoardBleEncoding {
         // malformed role as a skipped role (and a malformed placement under a
         // valid role as a skipped position), while parseFrames drops malformed
         // tokens before counting — and the two sides' skip telemetry must agree.
+        //
+        // Two documented divergences from JS, both unreachable from real data
+        // and pinned by WoodsBoardBleTests rather than emulated:
+        //   - an empty numeric field ("pr2"): JS Number('') is 0 and lights
+        //     placement 0; Swift's Int("") is nil and skips the token.
+        //   - Swift's split omits empty subsequences, so all-separator input
+        //     ("ppp") tokenizes to nothing and hits the refusal below, where
+        //     JS's dispatcher lets it through as a clear.
         let tokens = frames.split(separator: "p")
         var pairs: [String] = []
         var skippedRoleCount = 0
