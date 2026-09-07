@@ -16,6 +16,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
+import {
+  trackLinkFailed,
+  trackLinkStarted,
+  trackLinkSucceeded,
+  type BoardLinkFailureReason,
+} from '../../lib/integrations/board-link-analytics';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   AURORA_BOARDS,
@@ -101,6 +107,12 @@ const AURORA_UNSYNCED_QUERY_KEY = ['auroraCredentials', 'unsynced'] as const;
 
 // MoonBoard isn't an Aurora board, so it has no credential/sync flow.
 const MOONBOARD_SUPPORT_EMAIL = 'moonboardsupport@moonclimbing.com';
+
+// This screen is the one surface that offers linking today, so its funnel `source`
+// is fixed. Later surfaces (the empty logbook, onboarding) report their own, which
+// is the whole point of splitting the funnel by source — a climber who came here
+// deliberately is not comparable to one we interrupted.
+const LINK_SOURCE = 'integrations' as const;
 
 // Brand names, not a capitalised slug: `charAt(0).toUpperCase()` renders `soill`
 // as "Soill", which shipped a mangled trademark on the So iLL card and into every
@@ -249,6 +261,13 @@ async function saveBoardCredential(input: { boardType: AuroraBoardName; username
   return saveAuroraCredential(input);
 }
 
+// The funnel's `reason`. A non-`BoardAccountError` is a thrown network/parse
+// failure rather than a code the server sent, so it reports as `request_failed` —
+// the same bucket its user-facing copy falls into below.
+function failureReasonFor(error: unknown): BoardLinkFailureReason {
+  return error instanceof BoardAccountError ? error.code : 'request_failed';
+}
+
 function errorMessageFor(error: unknown, t: TFunction<'settings'>): string {
   if (error instanceof BoardAccountError) {
     switch (error.code) {
@@ -301,6 +320,7 @@ export function BoardAccountsSection() {
   const saveCredentialMutation = useMutation({
     mutationFn: saveBoardCredential,
     onSuccess: async (_credential, variables) => {
+      trackLinkSucceeded({ boardType: variables.boardType, source: LINK_SOURCE });
       const boardName = boardDisplayName(variables.boardType);
       showToast(t('aurora.mobile.linkSuccess', { boardName }), 'success');
       setLinkBoard(null);
@@ -311,7 +331,10 @@ export function BoardAccountsSection() {
         queryClient.invalidateQueries({ queryKey: AURORA_UNSYNCED_QUERY_KEY }),
       ]);
     },
-    onError: (error) => {
+    // `variables` is taken here, not just `error`, so the failure lands on the same
+    // board as its Started — a funnel split by boardType is useless otherwise.
+    onError: (error, variables) => {
+      trackLinkFailed({ boardType: variables.boardType, source: LINK_SOURCE }, failureReasonFor(error));
       showToast(errorMessageFor(error, t), 'error');
     },
   });
@@ -364,6 +387,10 @@ export function BoardAccountsSection() {
 
   const handleSubmitLink = useCallback(() => {
     if (!linkBoard) return;
+    // Started fires on the attempt, not on opening the dialog: a climber who opens
+    // it and closes it never tried, and counting that as a start would understate
+    // the success rate of the people who did.
+    trackLinkStarted({ boardType: linkBoard, source: LINK_SOURCE });
     saveCredentialMutation.mutate({
       boardType: linkBoard,
       username: username.trim(),

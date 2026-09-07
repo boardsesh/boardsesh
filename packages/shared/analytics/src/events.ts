@@ -369,6 +369,26 @@ export const SHARED_EVENTS = {
   // { boardId?, pageSize: number, returnedCount: number }. `returnedCount <
   // pageSize` means that page was the last one.
   BoardHistoryPageLoaded: 'Board History Page Loaded',
+  // Board-account linking — the Kilter/Tension/Aurora credential funnel. These are
+  // deliberately NOT the Integration* events below: those mean an external platform
+  // (Apple Health, Strava) and they feed the `integrations_connected_count` person
+  // property, so folding board accounts in would silently change what that number
+  // means. A board account is the climber's login WITH THE BOARD MAKER, which is what
+  // brings their existing sends across.
+  //
+  // Invariant: every Started resolves to exactly one BoardAccountLinked or
+  // BoardAccountLinkFailed. `cancelled` is a Failed `reason`, not a separate event,
+  // but it is kept distinct from the error codes so a dismissed browser sheet never
+  // inflates the real failure rate.
+  //
+  // Props on all three: { boardType, source: 'integrations' | 'onboarding' |
+  //   'progress_empty' | 'logbook_empty' }. Failed adds { reason }, one of the
+  //   BoardAccountError codes ('invalid_credentials' | 'account_already_linked' |
+  //   'rate_limited' | 'not_allowed' | 'unauthorized' | 'request_failed') or
+  //   'cancelled'.
+  BoardAccountLinkStarted: 'Board Account Link Started',
+  BoardAccountLinked: 'Board Account Linked',
+  BoardAccountLinkFailed: 'Board Account Link Failed',
   // External platform integrations (Apple Health, Strava). Props:
   // { integration: 'apple_health' | 'strava', trigger?: 'auto' | 'manual',
   //   enabled?: boolean }

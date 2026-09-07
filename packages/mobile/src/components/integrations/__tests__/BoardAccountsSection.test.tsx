@@ -23,6 +23,17 @@ const mocks = vi.hoisted(() => ({
   refetch: vi.fn(() => Promise.resolve()),
   flags: {} as Record<string, boolean | undefined>,
   credentials: [] as AuroraCredentialStatus[],
+  linkStarted: vi.fn(),
+  linkSucceeded: vi.fn(),
+  linkFailed: vi.fn(),
+}));
+
+// Mocked at the analytics seam rather than at `track`, so the assertions read as
+// "what does this screen report about the funnel" and no test drags in posthog.
+vi.mock('../../../lib/integrations/board-link-analytics', () => ({
+  trackLinkStarted: mocks.linkStarted,
+  trackLinkSucceeded: mocks.linkSucceeded,
+  trackLinkFailed: mocks.linkFailed,
 }));
 
 vi.mock('../../../lib/aurora-credentials', () => ({
@@ -50,7 +61,7 @@ vi.mock('@boardsesh/shared-schema', () => ({
 type MutationOptions = {
   mutationFn: (vars: unknown) => unknown;
   onSuccess?: (result: unknown, vars: unknown) => unknown;
-  onError?: (error: unknown) => unknown;
+  onError?: (error: unknown, variables: unknown) => unknown;
 };
 
 vi.mock('@tanstack/react-query', () => ({
@@ -70,7 +81,10 @@ vi.mock('@tanstack/react-query', () => ({
     mutate: (vars: unknown) => {
       void Promise.resolve(opts.mutationFn(vars))
         .then((result) => opts.onSuccess?.(result, vars))
-        .catch((error) => opts.onError?.(error));
+        // Real React Query passes `(error, variables)` — verified against the
+        // installed @tanstack/query-core 5.101.4 type. The stub used to drop the
+        // second argument, which hid whether a caller could read it.
+        .catch((error) => opts.onError?.(error, vars));
     },
     isPending: false,
     variables: undefined,
@@ -148,7 +162,10 @@ vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
   borderRadius: { md: 8, lg: 12, full: 999 },
 }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
+// `iosDarkColors` is what the section actually imports. The mock used to export only
+// `iosSystemColors`, which passed by luck: the dark branch is inside a ternary that
+// never evaluates while `colorScheme` is 'light'.
+vi.mock('../../../theme/ios-colors', () => ({ iosDarkColors: { separator: '#38383A' } }));
 
 type TextProps = { children?: ReactNode };
 vi.mock('../../Text', () => ({
@@ -247,6 +264,63 @@ describe('BoardAccountsSection — Kilter password card', () => {
       expect(mocks.saveKilterViaPassword).toHaveBeenCalledWith({ username: 'climber', password: 'secret' });
     });
     expect(mocks.saveAurora).not.toHaveBeenCalled();
+  });
+});
+
+// The funnel these guard did not exist before: nothing emitted an event, a person
+// property or a log line when a climber linked a board account. The invariant worth
+// protecting is that every Started resolves to exactly one Linked or Failed, and
+// that both carry the board the attempt was actually for.
+describe('BoardAccountsSection — link funnel', () => {
+  beforeEach(() => {
+    mocks.saveAurora.mockReset().mockResolvedValue(null);
+    mocks.showToast.mockReset();
+    mocks.invalidate.mockClear();
+    mocks.linkStarted.mockReset();
+    mocks.linkSucceeded.mockReset();
+    mocks.linkFailed.mockReset();
+    mocks.flags = {};
+    mocks.credentials = [];
+  });
+
+  const submitTensionLink = (container: HTMLElement) => {
+    fireEvent.click(button(container, 'aurora.card.link')!);
+    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, {
+      target: { value: 'climber' },
+    });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, {
+      target: { value: 'secret' },
+    });
+    fireEvent.click(button(container, 'aurora.linkDialog.submit')!);
+  };
+
+  it('reports a start and a success, tagged with the board and the surface', async () => {
+    const { container } = render(<BoardAccountsSection />);
+    submitTensionLink(container);
+
+    await waitFor(() => expect(mocks.linkSucceeded).toHaveBeenCalledTimes(1));
+    expect(mocks.linkStarted).toHaveBeenCalledWith({ boardType: 'tension', source: 'integrations' });
+    expect(mocks.linkSucceeded).toHaveBeenCalledWith({ boardType: 'tension', source: 'integrations' });
+    expect(mocks.linkFailed).not.toHaveBeenCalled();
+  });
+
+  it('reports a failure with its reason, on the board the attempt was for', async () => {
+    // A plain Error, not a BoardAccountError: a thrown network/parse failure is the
+    // case that would otherwise report no reason at all.
+    mocks.saveAurora.mockRejectedValue(new Error('offline'));
+    const { container } = render(<BoardAccountsSection />);
+    submitTensionLink(container);
+
+    await waitFor(() => expect(mocks.linkFailed).toHaveBeenCalledTimes(1));
+    expect(mocks.linkFailed).toHaveBeenCalledWith({ boardType: 'tension', source: 'integrations' }, 'request_failed');
+    expect(mocks.linkStarted).toHaveBeenCalledTimes(1);
+    expect(mocks.linkSucceeded).not.toHaveBeenCalled();
+  });
+
+  it('does not report a start when the dialog is opened but never submitted', () => {
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.card.link')!);
+    expect(mocks.linkStarted).not.toHaveBeenCalled();
   });
 });
 
