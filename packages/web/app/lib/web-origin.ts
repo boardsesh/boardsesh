@@ -1,3 +1,5 @@
+import 'server-only';
+
 /** Shared secret is server-only; never use a NEXT_PUBLIC_ variable for it. */
 export const WEB_ORIGIN_HEADER = 'x-boardsesh-origin-verify';
 

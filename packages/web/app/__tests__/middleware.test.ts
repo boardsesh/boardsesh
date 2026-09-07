@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vite-plus/test';
+
+vi.mock('server-only', () => ({}));
 import { NextRequest } from 'next/server';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+
+vi.mock('server-only', () => ({}));
 import { NextRequest } from 'next/server';
 import { middleware } from '@/middleware';
 import { WEB_ORIGIN_HEADER } from '@/app/lib/web-origin';
