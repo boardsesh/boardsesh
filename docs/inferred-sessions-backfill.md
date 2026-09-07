@@ -229,14 +229,14 @@ that its same-UTC-day assumptions reflected separate visits to the wall.
 
 ### Eight-hour audit before resuming
 
-At `2026-09-07T01:34:31.113Z`, a read-only audit covered the 27 climbers present
+At `2026-09-07T01:37:09.505Z`, a read-only audit covered the 27 climbers present
 in operator logs plus four other owners of recently created inferred sessions:
-31 climbers, 14,435 ticks, and 726 inferred sessions created since the preflight.
-This includes concurrent live inference; the 726 are not all backfill creations.
+31 climbers, 14,438 ticks, and 727 inferred sessions created since the preflight.
+This includes concurrent live inference; the 727 are not all backfill creations.
 
 Four recent inferred sessions contain gaps over eight hours. Replanning complete
-histories proposes four inferred-session merges, zero emptied sessions, and 43
-already-assigned inferred ticks changing destination across three climbers. It
+histories proposes five inferred-session merges, zero emptied sessions, and 44
+already-assigned inferred ticks changing destination across four climbers. It
 also proposes 564 new sessions, including groups from 5,388 still-unassigned ticks;
 those new-session totals are not solely repairs.
 
@@ -249,3 +249,9 @@ written. Merge/removal guards remain enabled pending a reviewed repair.
 Ticks already absorbed into explicit sessions have no assignment provenance, so
 this audit cannot distinguish those from deliberately assigned members. Existing
 explicit assignments remain fixed under the approved policy.
+
+The four splits move eight ticks into four new sessions while retaining each original
+session's anchor. Their largest internal gaps are 8.41, 10.65, 15.10, and 17.22 hours.
+The five proposed merge losers contain 36 ticks in total and have no names, edits,
+comments, or votes. These are concrete repair candidates, not authorized removals;
+the backfill's removal guard remains in place.
