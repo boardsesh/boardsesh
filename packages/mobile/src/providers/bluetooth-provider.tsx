@@ -86,6 +86,20 @@ type BluetoothContextValue = {
    */
   invalidateWallState: () => void;
   /**
+   * Ask the wall for a given orientation of the climb it is currently showing.
+   * The mirror toggle lives in the play drawer's own state, so this is how that
+   * intent reaches the auto-sender — which then re-pushes through its normal
+   * write path, keeping the dedup signature and the wall-confirm honest. Falls
+   * back to the queue item's own `mirrored` as soon as the climb changes.
+   */
+  setMirrorIntent: (climbUuid: string, mirrored: boolean) => void;
+  /**
+   * The orientation currently asked for on `climbUuid`. A flip outlives the
+   * screen that made it, so a play drawer opening on that climb seeds its
+   * toggle from here rather than assuming un-mirrored.
+   */
+  getMirrorIntent: (climbUuid: string | undefined) => boolean;
+  /**
    * Restore the climb captured before this device's latest accepted wall report.
    * The platform relights it over BLE first, then reports it to board presence.
    */
@@ -213,6 +227,7 @@ function BluetoothAutoSender({
   reassertNonce,
   connectInitialSendRef,
   lastPhysicalFramesRef,
+  mirrorIntentRef,
   colorSignature,
   encodingSignature,
   activeConfig,
@@ -236,6 +251,10 @@ function BluetoothAutoSender({
   // changed the wall out from under a byte-identical queue climb would make the
   // dedup path report the queue climb (a phantom, not on the wall).
   lastPhysicalFramesRef: React.MutableRefObject<string | null>;
+  // The orientation the play drawer's mirror toggle asked for, and the climb it
+  // asked for it on. Mobile's toggle never writes `climb.mirrored`, so this is
+  // the only way a flip reaches the send — see `setMirrorIntent`.
+  mirrorIntentRef: React.MutableRefObject<{ climbUuid: string; mirrored: boolean } | null>;
   colorSignature: string;
   // Semantic identity of packet-encoding preferences that affect the physical
   // MoonBoard output. Kept separate from colours so Aurora stays on `default`.
@@ -422,6 +441,16 @@ function BluetoothAutoSender({
           }
           lastUnresolvedReportedUuidRef.current = null;
 
+          // The orientation to put on the wall. The play drawer's mirror toggle
+          // is drawer-local and never reaches `climb.mirrored`, so a live intent
+          // for THIS climb wins; anything else (including after navigating away)
+          // falls back to the queue item's own flag. Everything below — the
+          // dedup signature, the physical-frames record and the write itself —
+          // reads this one value, so the wall and our record of it agree.
+          const intent = mirrorIntentRef.current;
+          const effectiveMirrored =
+            intent && intent.climbUuid === item.climb.uuid ? intent.mirrored : !!item.climb.mirrored;
+
           // connect() may have just written these exact frames as its
           // initialFrames (connect-and-light flows like the play drawer).
           // Seed the dedup signature so this freshly mounted AutoSender
@@ -434,15 +463,15 @@ function BluetoothAutoSender({
             if (
               lastSentSignatureRef.current === null &&
               connectSend.frames === item.climb.frames &&
-              connectSend.mirrored === !!item.climb.mirrored &&
+              connectSend.mirrored === effectiveMirrored &&
               connectSend.colorSignature === requestColorSignature &&
               connectSend.encodingSignature === requestEncodingSignature
             ) {
-              lastSentSignatureRef.current = `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}::${requestColorSignature}::${requestEncodingSignature}`;
+              lastSentSignatureRef.current = `${item.climb.uuid}::${item.climb.frames}::${effectiveMirrored ? 1 : 0}::${requestColorSignature}::${requestEncodingSignature}`;
               // connect() physically wrote these frames, so record them as what's on
               // the wall — else the dedup-confirm below (which now requires the wall
               // to actually show the climb) would suppress the confirm.
-              lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, !!item.climb.mirrored);
+              lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, effectiveMirrored);
             }
           }
 
@@ -459,13 +488,13 @@ function BluetoothAutoSender({
           // re-send is functionally fine, but we'd double-fire haptics. A mirror
           // toggle, hold edit, colour change, or MoonBoard adjacent-hold setting
           // change updates the signature and re-pushes.
-          const sendSignature = `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}::${requestColorSignature}::${requestEncodingSignature}`;
+          const sendSignature = `${item.climb.uuid}::${item.climb.frames}::${effectiveMirrored ? 1 : 0}::${requestColorSignature}::${requestEncodingSignature}`;
           if (sendSignature === lastSentSignatureRef.current) {
             // Re-broadcast of the byte-identical climb: skip the physical write —
             // but only CONFIRM it if the wall still physically shows these frames.
             // A relight/undo may have changed the wall out from under us, in which
             // case confirming here would report a climb that isn't lit (a phantom).
-            if (physicalFramesSignature(item.climb.frames, !!item.climb.mirrored) === lastPhysicalFramesRef.current) {
+            if (physicalFramesSignature(item.climb.frames, effectiveMirrored) === lastPhysicalFramesRef.current) {
               onWallConfirmedRef.current(item);
             }
             toSend = pendingSendRef.current;
@@ -474,7 +503,7 @@ function BluetoothAutoSender({
           }
 
           try {
-            const result = await requestSendFramesToBoard(item.climb.frames, !!item.climb.mirrored, signal, {
+            const result = await requestSendFramesToBoard(item.climb.frames, effectiveMirrored, signal, {
               sendSource: 'auto',
               targetQueueItemUuid: item.uuid,
               climbUuid: item.climb.uuid,
@@ -488,7 +517,7 @@ function BluetoothAutoSender({
 
             if (result === true) {
               lastSentSignatureRef.current = sendSignature;
-              lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, !!item.climb.mirrored);
+              lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, effectiveMirrored);
               onWallConfirmedRef.current(item);
               hapticSuccess();
             }
@@ -625,6 +654,15 @@ export function BluetoothProvider({
   // write path (auto-sender, undo, kiosk relight). Shared with the AutoSender so
   // its dedup-report branch never confirms a queue climb the wall isn't showing.
   const lastPhysicalFramesRef = useRef<string | null>(null);
+  // The orientation asked for on a climb, and which climb it was asked for on.
+  // One slot: whichever climb was stated most recently owns it, which is why
+  // moving to another climb forgets the previous flip. Lives beside the physical
+  // record because every write path reads both.
+  const mirrorIntentRef = useRef<{ climbUuid: string; mirrored: boolean } | null>(null);
+  const mirrorIntentMatches = useCallback((climbUuid: string | undefined) => {
+    const intent = mirrorIntentRef.current;
+    return intent != null && intent.climbUuid === climbUuid && intent.mirrored;
+  }, []);
   const pendingReportSignatureRef = useRef<string | null>(null);
   const pendingWallReportRef = useRef<PendingWallReport | null>(null);
   const pendingPresenceResolveRef = useRef(false);
@@ -1296,7 +1334,13 @@ export function BluetoothProvider({
     }
 
     lastAcceptedReportSignatureRef.current = null;
-    const writeSucceeded = await sendFramesToBoardWithActivityReset(frames, false, undefined, {
+    // A flip belongs to the climb, so every write path honours it — not just the
+    // auto-sender. Restoring this climb un-mirrored while its flip still stands
+    // would leave the wall disagreeing with the toggle the drawer will show.
+    // (Board presence carries no mirror field, so the orientation can only come
+    // from our own intent, never from the report — see #5238.)
+    const undoMirrored = mirrorIntentMatches(undoTarget.climbUuid);
+    const writeSucceeded = await sendFramesToBoardWithActivityReset(frames, undoMirrored, undefined, {
       sendSource: 'undo',
       climbUuid: undoTarget.climbUuid,
     }).catch((error: unknown) => {
@@ -1306,7 +1350,7 @@ export function BluetoothProvider({
     if (writeSucceeded !== true) {
       return false;
     }
-    lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
+    lastPhysicalFramesRef.current = physicalFramesSignature(frames, undoMirrored);
 
     const accepted = await reportClimbForBoardRef
       .current(boardId, presenceClimbToQueueInput(undoTarget), undoTarget.angle ?? null)
@@ -1342,7 +1386,11 @@ export function BluetoothProvider({
       }
 
       lastAcceptedReportSignatureRef.current = null;
-      const writeSucceeded = await sendFramesToBoardWithActivityReset(frames, false, undefined, {
+      // Honour a standing flip for this climb, as undo does above: relighting it
+      // un-mirrored would leave the wall disagreeing with the toggle a drawer
+      // opening on it will show.
+      const relightMirrored = mirrorIntentMatches(climb.climbUuid);
+      const writeSucceeded = await sendFramesToBoardWithActivityReset(frames, relightMirrored, undefined, {
         sendSource: 'wall-relight',
         climbUuid: climb.climbUuid,
       }).catch((error: unknown) => {
@@ -1352,7 +1400,7 @@ export function BluetoothProvider({
       if (writeSucceeded !== true) {
         return false;
       }
-      lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
+      lastPhysicalFramesRef.current = physicalFramesSignature(frames, relightMirrored);
 
       const accepted = await reportClimbForBoardRef
         .current(boardId, presenceClimbToQueueInput(climb), climb.angle ?? null)
@@ -1458,6 +1506,49 @@ export function BluetoothProvider({
     lastPhysicalFramesRef.current = null;
   }, []);
 
+  // The orientation the user has asked for on the climb currently on the wall.
+  // Mobile's mirror toggle is drawer-local — it never writes `climb.mirrored`
+  // (mobile doesn't call `mirrorCurrentClimb`, which needs a party session and
+  // only lands via a server delta) — so without this the auto-sender cannot see
+  // a flip: it would re-derive `mirrored: false` from the queue item and either
+  // skip (confirming the wrong orientation to board presence) or re-push the
+  // un-mirrored frames, silently un-flipping the wall under a button that still
+  // reads active. Keyed by uuid so moving to another climb falls back to that
+  // item's own flag, which is the drawer's reset-on-navigate behaviour.
+  const setMirrorIntent = useCallback(
+    (climbUuid: string, mirrored: boolean) => {
+      const previous = mirrorIntentRef.current;
+      mirrorIntentRef.current = { climbUuid, mirrored };
+      // A nonce bump punches through the auto-sender's dedup, so spend one only
+      // when the wall would otherwise be left showing the wrong orientation:
+      // a toggle on the climb already lit. The caller also re-states the
+      // orientation whenever the current climb changes — that is what stops a
+      // stale flip outliving a navigation — but those climbs are about to be
+      // written anyway, so forcing there would duplicate the write and
+      // double-fire the success haptic. A first statement asking for `true` is
+      // still forced: nothing has recorded that orientation yet.
+      const orientationChanged = previous?.climbUuid === climbUuid ? previous.mirrored !== mirrored : mirrored;
+      if (orientationChanged) {
+        // Route the flip through the auto-sender's normal write instead of a
+        // direct `sendFramesToBoard`, so dedup, wall-confirm and haptics all
+        // stay in step with what the wall is actually showing.
+        reassertWall();
+      }
+    },
+    [reassertWall],
+  );
+
+  // The orientation currently asked for on a climb, or false if none is.
+  //
+  // A flip belongs to the climb, not to the screen that made it: on iPhone the
+  // play drawer is a route, and the climb keeps moving without it (Live Activity
+  // next/prev, the session screen, playlist activation, a party peer). So the
+  // intent outlives the drawer, and a drawer opening on that climb reads it back
+  // here to seed its toggle — otherwise the wall would sit mirrored under a
+  // button reading off, and reopening the player would either lie or silently
+  // un-flip a wall someone is climbing on.
+  const getMirrorIntent = mirrorIntentMatches;
+
   const disconnectInFlightRef = useRef<Promise<void> | null>(null);
 
   // Coalesce adapter disconnect calls. The hook consumes and reports the active
@@ -1555,6 +1646,8 @@ export function BluetoothProvider({
       clearBoard,
       reassertWall,
       invalidateWallState,
+      setMirrorIntent,
+      getMirrorIntent,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
@@ -1578,6 +1671,8 @@ export function BluetoothProvider({
       clearBoard,
       reassertWall,
       invalidateWallState,
+      setMirrorIntent,
+      getMirrorIntent,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
@@ -1620,6 +1715,7 @@ export function BluetoothProvider({
             reassertNonce={reassertNonce}
             connectInitialSendRef={connectInitialSendRef}
             lastPhysicalFramesRef={lastPhysicalFramesRef}
+            mirrorIntentRef={mirrorIntentRef}
             colorSignature={holdColorSignature}
             encodingSignature={encodingSignature}
             activeConfig={currentBoardConfig}

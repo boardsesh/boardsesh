@@ -81,7 +81,7 @@ export function useParseFrames(
         let renderCy = placement.cy;
         let renderRadius = placement.r;
 
-        if (mirrored && placement.mirroredHoldId) {
+        if (mirrored && placement.mirroredHoldId != null) {
           const mirroredPlacement = holdLookup.get(placement.mirroredHoldId);
           if (mirroredPlacement) {
             renderCx = mirroredPlacement.cx;

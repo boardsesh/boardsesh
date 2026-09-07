@@ -296,7 +296,12 @@ export function PlayDrawer({
   // translate) — it can't be a child of the 32pt pill in the header's flank.
   const [wallCalloutOpen, setWallCalloutOpen] = useState(false);
   const [headerBottomY, setHeaderBottomY] = useState(0);
-  const [isMirrored, setIsMirrored] = useState(false);
+  // The mirror toggle, scoped to the climb it was made on. A bare boolean went
+  // stale whenever the current climb changed by a route the drawer doesn't own
+  // (a party peer advancing the queue, a reorder, the accessory bar) — the
+  // drawer only resets it in its own navigation handlers. `isMirrored` is
+  // derived below, so a climb this flip wasn't made on simply reads false.
+  const [mirrorFlip, setMirrorFlip] = useState<{ climbUuid: string; mirrored: boolean } | null>(null);
   // Local optimistic override for the heart. `null` means "no local change —
   // show the server's favorite status". A tap sets it optimistically, the
   // mutation's returned `favorited` confirms it, and a failure rolls it back.
@@ -438,6 +443,27 @@ export function PlayDrawer({
   // never set `drawerPreviewItem`, so this is true only for genuine previews
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
   const isPreview = drawerPreviewItem != null;
+
+  const displayedClimbUuid = displayedClimb?.uuid;
+  // A flip only applies to the climb it was made on. With no local flip for the
+  // climb on screen, fall back to the orientation the wall was last asked for:
+  // the drawer is a route on iPhone, so reopening it must show the flip that is
+  // actually lit rather than assuming none and lying about the wall.
+  //
+  // The fallback reads a ref through a context callback, which is safe on two
+  // invariants — break either and this silently shows the wrong orientation:
+  //  - Single writer. Only the effect below states an intent, and it writes back
+  //    exactly what this line computed, so the ref cannot drift from the toggle.
+  //  - Single instance. `/play` and the iPad pane are mutually exclusive
+  //    (`(tabs)/_layout.tsx`), so two drawers never state intents at once.
+  // The React Compiler memoises this on `mirrorFlip`/`displayedClimbUuid`/
+  // `bluetooth`, so a ref changed underneath is NOT re-read, and the read is
+  // invisible to `react-hooks/refs` — lint will not catch a second writer.
+  const isMirrored =
+    mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid
+      ? mirrorFlip.mirrored
+      : (bluetooth?.getMirrorIntent(displayedClimbUuid) ?? false);
+  const clearMirror = useCallback(() => setMirrorFlip(null), []);
 
   // #5099: the shown climb does not have to belong to the board the climber has
   // selected. A queue item left over from a board switch, a party peer on
@@ -622,7 +648,6 @@ export function PlayDrawer({
   // Auto-close tick bar and drop the favorite override when climb changes, so the
   // new climb's heart shows its real (server) status rather than the previous
   // climb's optimistic value.
-  const displayedClimbUuid = displayedClimb?.uuid;
   useEffect(() => {
     setIsTickBarActive(false);
     setFavoriteOverride(null);
@@ -726,7 +751,7 @@ export function PlayDrawer({
     // Mirroring is drawer-local per displayed climb: every other navigation
     // resets it, and carrying a preview's mirror onto the committed head would
     // render (and, once animatable playback resumes, re-send) the head flipped.
-    setIsMirrored(false);
+    clearMirror();
     // Close the callout explicitly rather than trusting the stale-state effect
     // above: previewing the committed climb itself changes neither
     // `wallPillState` nor `displayedClimbUuid` on exit, which would strand the
@@ -804,7 +829,7 @@ export function PlayDrawer({
       setDrawerPreviewItem(previewItem);
       setDrawerPreviewSuggestionSource(previewItem ? playlistSuggestionSource : null);
       setDrawerPreviewIsWallClimb(previewItem ? (options?.previewIsWallClimb ?? false) : false);
-      setIsMirrored(false);
+      clearMirror();
       // Drop any stale optimistic heart so the opened climb shows its real
       // (server) favorite status rather than a leftover from the last climb.
       setFavoriteOverride(null);
@@ -855,7 +880,7 @@ export function PlayDrawer({
       // Swiping off the lit climb makes "this is the wall climb" false — the
       // flag means displayed-equals-wall, and the wall didn't move.
       setDrawerPreviewIsWallClimb(false);
-      setIsMirrored(false);
+      clearMirror();
       // The favorite override is cleared by the climb-change effect.
       return;
     }
@@ -863,7 +888,7 @@ export function PlayDrawer({
     setDrawerPreviewItem(null);
     setDrawerPreviewIsWallClimb(false);
     previousClimb();
-    setIsMirrored(false);
+    clearMirror();
     // The favorite override is cleared by the climb-change effect.
   }, [
     drawerPreviewSuggestionSource,
@@ -890,7 +915,7 @@ export function PlayDrawer({
       // See handlePrev: displayed-equals-wall stops being true the moment the
       // swipe lands somewhere else.
       setDrawerPreviewIsWallClimb(false);
-      setIsMirrored(false);
+      clearMirror();
       // The favorite override is cleared by the climb-change effect.
       return;
     }
@@ -898,7 +923,7 @@ export function PlayDrawer({
     setDrawerPreviewItem(null);
     setDrawerPreviewIsWallClimb(false);
     nextClimb();
-    setIsMirrored(false);
+    clearMirror();
     // The favorite override is cleared by the climb-change effect.
   }, [
     drawerPreviewSuggestionSource,
@@ -921,20 +946,38 @@ export function PlayDrawer({
     setDrawerPreviewIsWallClimb(false);
   }, [drawerPreviewItem, drawerPreviewSuggestionSource, setCurrentClimb, markLatchExit]);
 
+  // Keep the wall's orientation in lockstep with the toggle, declaratively.
+  //
+  // `isMirrored` is reset to false at eight different navigation sites, and the
+  // provider can't see any of them: an intent set once by the tap would outlive
+  // the reset, so returning to a climb you had flipped would light it mirrored
+  // under a screen (and a button) showing it un-mirrored. Re-stating it here
+  // means there is one place the two can disagree, and it is this line.
+  //
+  // Not gated on `isConnected`: recording the intent while disconnected is what
+  // lets a flip survive until the lightbulb re-takes the wall. A preview is
+  // deliberately excluded — mirroring what you are merely looking at must not
+  // re-light the live climb (the Browsing chrome promises the wall stays put).
+  //
+  // Known gap: while a party peer's `climb.mirrored` and this local toggle
+  // disagree, the local one wins on this device's wall — for a toggle made on
+  // the climb already showing. On a peer-driven climb CHANGE the auto-sender
+  // runs first and falls back to `climb.mirrored`, and the restatement below
+  // deliberately doesn't reassert, so the peer's orientation would stand with
+  // the screen reading un-mirrored. Unreachable today: nothing in the app calls
+  // `mirrorCurrentClimb`, so that fallback is always false.
+  useEffect(() => {
+    if (isPreview || !displayedClimbUuid) return;
+    bluetooth?.setMirrorIntent(displayedClimbUuid, isMirrored);
+  }, [bluetooth, displayedClimbUuid, isMirrored, isPreview]);
+
+  // Local state only — the effect above is what carries the flip to the wall,
+  // through the AutoSender's normal write so the dedup record and the
+  // wall-confirm describe the orientation actually lit.
   const handleMirror = useCallback(() => {
-    const nextMirrored = !isMirrored;
-    setIsMirrored(nextMirrored);
-    // The wall doesn't follow the toggle by itself: the AutoSender keys off
-    // the queue item's own `climb.mirrored`, not this drawer-local state, so
-    // without an explicit re-push the LEDs would keep showing the previous
-    // orientation. isConnected means this device holds the BLE link (and
-    // therefore drives the wall). While a preview is pinned the toggle acts
-    // on-screen only — mirroring what you're merely looking at must not
-    // replace the live climb on the wall.
-    if (bluetooth?.isConnected && displayedClimb?.frames && !isPreview) {
-      void bluetooth.sendFramesToBoard(displayedClimb.frames, nextMirrored);
-    }
-  }, [isMirrored, bluetooth, displayedClimb, isPreview]);
+    if (!displayedClimbUuid) return;
+    setMirrorFlip({ climbUuid: displayedClimbUuid, mirrored: !isMirrored });
+  }, [displayedClimbUuid, isMirrored]);
 
   const handleToggleFavorite = useCallback(() => {
     if (!displayedClimb) return;
@@ -1093,7 +1136,7 @@ export function PlayDrawer({
         noteClimbViewed(queueItem.climb.uuid);
         // A different climb is on screen now, so it is not the lit one.
         setDrawerPreviewIsWallClimb(false);
-        setIsMirrored(false);
+        clearMirror();
         setIsTickBarActive(false);
         return;
       }
@@ -1106,7 +1149,7 @@ export function PlayDrawer({
       // clear any preview that was showing.
       setDrawerPreviewItem(null);
       setDrawerPreviewSuggestionSource(null);
-      setIsMirrored(false);
+      clearMirror();
       // The favorite override is cleared by the climb-change effect.
       setIsTickBarActive(false);
       setCurrentClimb(queueItem, { playlistSuggestionSource: null });
