@@ -18,18 +18,20 @@ vi.mock('../posthog-client', () => ({
 }));
 
 const shouldEmitScreenForSessionMock = vi.fn<(screenName: string) => boolean>(() => true);
+const resetScreenSessionGateMock = vi.fn();
 vi.mock('../analytics-screen-session-gate', () => ({
   shouldEmitScreenForSession: (screenName: string) => shouldEmitScreenForSessionMock(screenName),
-  resetScreenSessionGate: vi.fn(),
+  resetScreenSessionGate: () => resetScreenSessionGateMock(),
 }));
 
-import { trackScreen } from '../analytics';
+import { reset, trackScreen } from '../analytics';
 
 beforeEach(() => {
   screenMock.mockClear();
   registerForSessionMock.mockClear();
   shouldEmitScreenForSessionMock.mockClear();
   shouldEmitScreenForSessionMock.mockReturnValue(true);
+  resetScreenSessionGateMock.mockClear();
   resetMock.mockClear();
   client = {
     screen: screenMock,
@@ -84,14 +86,15 @@ describe('trackScreen', () => {
 });
 
 describe('reset', () => {
-  it('clears the screen gate, so a new sign-out path cannot forget it', async () => {
+  it('clears the screen gate, so a new sign-out path cannot forget it', () => {
     // The gate is reset here rather than at each sign-out call site. This test is
-    // the guard on that: it fails if the call moves back out of reset().
-    const { reset } = await import('../analytics');
-    const { resetScreenSessionGate } = await import('../analytics-screen-session-gate');
+    // the guard on that: it fails if the call moves back out of reset(). The mock
+    // is cleared in beforeEach, so the count below cannot be inherited from an
+    // earlier test in this file.
+    expect(resetScreenSessionGateMock).not.toHaveBeenCalled();
 
     reset();
 
-    expect(vi.mocked(resetScreenSessionGate)).toHaveBeenCalled();
+    expect(resetScreenSessionGateMock).toHaveBeenCalledOnce();
   });
 });
