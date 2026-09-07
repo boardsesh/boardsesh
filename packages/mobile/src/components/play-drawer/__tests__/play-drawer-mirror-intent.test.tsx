@@ -62,6 +62,12 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'web', select: (spec: Record<string, unknown>) => spec.web ?? spec.default },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
+  // Needed at MODULE scope by @expo/ui's bottom sheet, which `ModalSheet` pulls
+  // into this graph. Whether that module gets evaluated depends on which test
+  // file loads the mock first, so CI's `--changed` shard hit it where the full
+  // local run did not. Declared here so load order can't decide it.
+  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('react-native-mmkv', () => {
   const store = new Map<string, string>();
