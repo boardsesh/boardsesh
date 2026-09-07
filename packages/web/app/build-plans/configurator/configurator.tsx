@@ -21,6 +21,7 @@ import Skeleton from '@mui/material/Skeleton';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import { KILTER_ORIGINAL_LAYOUT_ID } from '@boardsesh/board-constants';
 import type {
   CncArtworkKind,
   CncCatalog,
@@ -38,7 +39,6 @@ import {
   type CncConfigProps,
   type CncConfiguratorStep,
 } from '@boardsesh/analytics';
-import { getBoardDisplayName } from '@boardsesh/climb-actions';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
@@ -67,7 +67,7 @@ import {
   findEntry,
   formatPrice,
   fromDraft,
-  hasKickerSets,
+  supportsKicker,
   initialConfiguratorState,
   isPreviewStale,
   optionValueKey,
@@ -82,6 +82,7 @@ import {
   type CncArtworkDraft,
   type CncConfiguratorState,
 } from './configurator-state';
+import { boardLayoutLabel } from '../order-display';
 import type { CncErrorKey } from '../cnc-error';
 import type { CncLayoutPanel, CncLayoutSummary } from './layout-summary';
 import ArtworkStep from './artwork-step';
@@ -142,6 +143,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   const entries = catalog.entries;
   const [state, dispatch] = useReducer(configuratorReducer, entries[0], initialConfiguratorState);
   const entry = findEntry(entries, state) ?? entries[0];
+  const isOriginal = entry.boardName === 'kilter' && entry.layoutId === KILTER_ORIGINAL_LAYOUT_ID;
 
   const configInput = useMemo(() => toBoardConfigInput(state, entry), [state, entry]);
   const currentConfigKey = useMemo(() => configKey(configInput), [configInput]);
@@ -323,16 +325,22 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
 
   // ------------------------------------------------------------------- actions
   const handleSizeChange = (sizeId: number) => {
-    const next = entries.find((candidate) => candidate.sizeId === sizeId);
+    const next = entries.find(
+      (candidate) =>
+        candidate.boardName === state.boardName && candidate.layoutId === state.layoutId && candidate.sizeId === sizeId,
+    );
     if (!next) return;
-    dispatch({ type: 'selectSize', entry: next });
-    // Picking a size is also picking a board, because a catalogue entry names
-    // both. Today every entry is a Kilter Homewall so this branch never fires,
-    // and `board` would be the one step in the funnel contract that never
-    // appears — leaving a gap in the funnel the day a second board goes on
-    // sale and the size select starts spanning two of them.
-    if (next.boardName !== entry.boardName) reportStep('board');
+    dispatch({ type: 'selectEntry', entry: next });
     reportStep('size');
+  };
+
+  const handleLayoutChange = (layoutId: number) => {
+    const next = entries.find(
+      (candidate) => candidate.boardName === state.boardName && candidate.layoutId === layoutId,
+    );
+    if (!next) return;
+    dispatch({ type: 'selectEntry', entry: next });
+    reportStep('board');
   };
 
   const handleAddArtwork = () => {
@@ -483,8 +491,18 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                 description={t('configurator.wall.help')}
               />
               <Box className={styles.stepBody}>
-                <WallStep entries={entries} state={state} onSizeChange={handleSizeChange} />
-                {hasKickerSets(entry) && entry.kickerOptional && (
+                <WallStep
+                  entries={entries}
+                  state={state}
+                  onSizeChange={handleSizeChange}
+                  onLayoutChange={handleLayoutChange}
+                />
+                {isOriginal && (
+                  <Typography variant="body2" component="p" className={styles.stepNote}>
+                    {t('configurator.original.drilling')} {t('configurator.original.compatibility')}
+                  </Typography>
+                )}
+                {supportsKicker(entry) && entry.kickerOptional && (
                   <Box className={styles.switchRow}>
                     <FormControlLabel
                       control={
@@ -567,7 +585,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                   step={3}
                   done
                   title={t('configurator.engrave.heading')}
-                  description={t('configurator.engrave.help')}
+                  description={isOriginal ? t('configurator.original.engraveHelp') : t('configurator.engrave.help')}
                 />
                 <Box className={styles.stepBody}>
                   {engraveToggles.map((option) => (
@@ -586,13 +604,21 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                             }}
                           />
                         }
-                        label={t(`configurator.options.${option.key}.label`)}
+                        label={
+                          isOriginal && option.key === 'engraveAngleTicks'
+                            ? t('configurator.original.angleLabel')
+                            : t(`configurator.options.${option.key}.label`)
+                        }
                       />
-                      <FormHelperText>{t(`configurator.options.${option.key}.help`)}</FormHelperText>
+                      <FormHelperText>
+                        {isOriginal && option.key === 'engraveAngleTicks'
+                          ? t('configurator.original.angleHelp')
+                          : t(`configurator.options.${option.key}.help`)}
+                      </FormHelperText>
                     </Box>
                   ))}
                   <Typography variant="body2" component="p" className={styles.stepNote}>
-                    {t('configurator.engrave.note')}
+                    {isOriginal ? t('configurator.original.engraveNote') : t('configurator.engrave.note')}
                   </Typography>
                 </Box>
               </SectionCard>
@@ -908,28 +934,41 @@ function WallStep({
   entries,
   state,
   onSizeChange,
+  onLayoutChange,
 }: {
   entries: readonly CncCatalogEntry[];
   state: CncConfiguratorState;
   onSizeChange: (sizeId: number) => void;
+  onLayoutChange: (layoutId: number) => void;
 }) {
   const { t } = useTranslation('cnc');
-  // Boards, not sizes: v1 sells one board, so the board control is a read-only
-  // statement of that rather than a select with a single option pretending to
-  // be a choice. It becomes a select the day a second board is on sale.
-  const boardNames = [...new Set(entries.map((candidate) => getBoardDisplayName(candidate.boardName)))];
+  const layoutIds = [
+    ...new Set(
+      entries.filter((candidate) => candidate.boardName === state.boardName).map((candidate) => candidate.layoutId),
+    ),
+  ];
+  const sizeEntries = entries.filter(
+    (candidate) => candidate.boardName === state.boardName && candidate.layoutId === state.layoutId,
+  );
 
   return (
     <FieldGrid>
-      <Box>
-        <Typography variant="body2" component="p" className={styles.readOnlyLabel}>
-          {t('configurator.board.label')}
-        </Typography>
-        <Typography variant="body1" component="p">
-          {boardNames.join(', ')}
-        </Typography>
+      <FormControl fullWidth size="small">
+        <InputLabel id="cnc-board">{t('configurator.board.label')}</InputLabel>
+        <Select
+          labelId="cnc-board"
+          label={t('configurator.board.label')}
+          value={String(state.layoutId)}
+          onChange={(event) => onLayoutChange(Number(event.target.value))}
+        >
+          {layoutIds.map((layoutId) => (
+            <MenuItem key={layoutId} value={String(layoutId)}>
+              {boardLayoutLabel({ boardName: state.boardName, layoutId }, t)}
+            </MenuItem>
+          ))}
+        </Select>
         <FormHelperText>{t('configurator.board.help')}</FormHelperText>
-      </Box>
+      </FormControl>
 
       <FormControl fullWidth size="small">
         <InputLabel id="cnc-size">{t('configurator.size.label')}</InputLabel>
@@ -939,7 +978,7 @@ function WallStep({
           value={String(state.sizeId)}
           onChange={(event) => onSizeChange(Number(event.target.value))}
         >
-          {entries.map((candidate) => (
+          {sizeEntries.map((candidate) => (
             <MenuItem key={candidate.sizeId} value={String(candidate.sizeId)}>
               {candidate.label}
             </MenuItem>
@@ -1043,9 +1082,19 @@ function SummaryRail({
     },
   ];
 
+  const spareMountCount = summary?.spareMountCount ?? null;
+  if (spareMountCount !== null && spareMountCount > 0) {
+    items.push({
+      key: 'spareMounts',
+      label: t('configurator.summary.spareMounts'),
+      value: String(spareMountCount),
+      hint: t('configurator.summary.spareMountsHelp'),
+    });
+  }
+
   // Two rows that only exist for some walls, so they are appended rather than
   // held open: a wall with no kicker has no kicker height to skeleton, and a
-  // wall whose seams miss every LED has no notches to explain.
+  // wall whose seams miss every LED has no assembly drilling to explain.
   const kickerHeightMm = summary?.kickerHeightMm ?? null;
   if (kickerHeightMm !== null) {
     items.push({
@@ -1060,10 +1109,17 @@ function SummaryRail({
       key: 'seamNotches',
       label: t('configurator.summary.seamNotches'),
       value: String(seamNotches),
-      // A figure nobody can act on without knowing what it means: a notch on a
-      // seam looks like a mistake on the sheet until you are told the LED goes
-      // in it.
       hint: t('configurator.summary.seamNotchesHelp'),
+    });
+  }
+  const skippedSeamLeds = summary?.skippedSeamLeds ?? null;
+  if (skippedSeamLeds !== null && skippedSeamLeds > 0) {
+    items.push({
+      key: 'skippedSeamLeds',
+      label: t('configurator.summary.skippedSeamLeds'),
+      value: String(skippedSeamLeds),
+      // The assembly instructions retain these positions for drilling after joining panels.
+      hint: t('configurator.summary.skippedSeamLedsHelp'),
     });
   }
 

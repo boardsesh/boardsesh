@@ -16,7 +16,7 @@
   "hero": {
     "title": "Baupläne für dein Board zu Hause",
     "subtitle": "DXF-Dateien, die eine CNC-Werkstatt direkt fräst. Jedes Panel, das Einschlagmutter-Raster, die LED-Bohrungen und die Fußleiste, aufgeteilt auf die Platten, die deine Werkstatt ohnehin hat.",
-    "firstBoard": "Das Kilter Homewall ist das erste unterstützte Board. Weitere folgen.",
+    "firstBoard": "Baupläne passend für Kilter Homewall und Kilter Original (OG).",
     "included": {
       "heading": "Was du bekommst",
       "dxf": "Montagezeichnungen für die ganze Wand sind dabei, damit die Panels ohne Rätselraten zusammenpassen.",
@@ -61,14 +61,17 @@
     },
     "board": {
       "label": "Board",
-      "help": "Das Kilter Homewall ist heute das einzige Board im Verkauf."
+      "help": "Wähle das Griff-Layout für dein Board.",
+      "original": "Kilter Original (OG)",
+      "homewall": "Kilter Homewall",
+      "unknownLayout": "{{board}} · Layout {{layoutId}}"
     },
     "size": {
       "label": "Wandgröße",
       "help": "Die Kilter-Größe, die du baust. Sie legt das Griffraster und die Wandmaße fest."
     },
     "kicker": {
-      "help": "Das schräge Panel ganz unten. Nur die 12-ft-Wände haben eine.",
+      "help": "Das untere Panel. Bei Wänden mit 12 Fuß Höhe verfügbar.",
       "include": "Fußleiste einbauen",
       "exclude": "Ohne Fußleiste"
     },
@@ -280,12 +283,16 @@
       "sheets": "Platten",
       "sheetsValue_one": "{{count}} Platte",
       "sheetsValue_other": "{{count}} Platten",
-      "tnuts": "Einschlagmutter-Bohrungen",
-      "leds": "LED-Bohrungen",
-      "seamNotches": "LED-Bohrungen auf einem Stoß",
-      "seamNotchesHelp": "Diese LED-Bohrungen liegen auf einem Stoß zwischen zwei Panelen. Jede wird als Aussparung in beide Panele gefräst, und die LED sitzt in der Aussparung, sobald die Panele verbunden sind.",
+      "tnuts": "Einzubauende Einschlagmuttern",
+      "leds": "Einzubauende LEDs",
       "warningsHeading": "Gut zu wissen",
-      "unavailable": "Die Frästeileliste lädt gerade nicht. Alles, was du gewählt hast, ist noch da."
+      "unavailable": "Die Frästeileliste lädt gerade nicht. Alles, was du gewählt hast, ist noch da.",
+      "spareMounts": "Zusätzliche Befestigungsbohrungen",
+      "spareMountsHelp": "Zusätzliche Positionen für das passende Homewall-Layout. Das sind Bohrungen, keine zusätzlichen Beschläge für deinen OG-Aufbau.",
+      "skippedSeamLeds": "LED-Bohrungen nach dem Zusammenbau",
+      "skippedSeamLedsHelp": "Diese Positionen liegen auf einem Panelstoß. Verbinde die Panele und bohre dann die nötigen Löcher mit den Montagekoordinaten und Durchmessern aus deinem Paket.",
+      "seamNotches": "LED-Bohrungen auf einem Stoß",
+      "seamNotchesHelp": "Diese LED-Bohrungen liegen auf einem Stoß zwischen zwei Panelen. Jede wird als Aussparung in beide Panele gefräst, und die LED sitzt in der Aussparung, sobald die Panele verbunden sind."
     },
     "licensee": {
       "name": "Name auf der Lizenz",
@@ -320,6 +327,14 @@
       "heading": "Auf wen die Lizenz läuft",
       "help": "Die Lizenz steht in jeder Datei im Pack, eine geleakte Kopie führt also zu ihr zurück.",
       "stale": "Hol dir zuerst die Vorschau neu — die Wand hat sich seit diesen Bögen geändert."
+    },
+    "original": {
+      "drilling": "Wir empfehlen drei Bohrungen pro angeschraubtem OG-Tritt: eine 13-mm-Mitte für eine LED und zwei LED-Bohrungen jeweils 20 mm darüber und darunter. Lass die Mitte bei OG-Tritten ohne Einschlagmutter.",
+      "compatibility": "Zusätzliche Bohrungen decken das vollständige passende Homewall-Layout ab: 7×10 oder 8×12 sowie ein mittiges 10×12 auf den größeren OG-Wänden.",
+      "angleLabel": "Ausrichtungsmarken für Griffnummern gravieren",
+      "angleHelp": "Nutzt den OG Number Angle, um die Ausrichtung der aufgedruckten Griffnummer zu markieren. Fehlende Winkel bleiben ohne Markierung.",
+      "engraveHelp": "Griffnummern und Ausrichtungsmarken werden beim Zuschnitt eingraviert. Beide sind standardmäßig aktiviert.",
+      "engraveNote": "OG-Markierungen folgen der Griffnummer, nicht der Sicherungsschraube. Daraus werden keine Schraubenlöcher gebohrt."
     }
   },
   "cta": {

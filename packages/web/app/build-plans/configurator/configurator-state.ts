@@ -1,3 +1,4 @@
+import { KILTER_ORIGINAL_LAYOUT_ID } from '@boardsesh/board-constants';
 import type {
   CncArtworkInput,
   CncArtworkKind,
@@ -167,7 +168,7 @@ export type CncConfiguratorState = {
 };
 
 export type CncConfiguratorAction =
-  | { type: 'selectSize'; entry: CncCatalogEntry }
+  | { type: 'selectEntry'; entry: CncCatalogEntry }
   | { type: 'setKicker'; includeKicker: boolean }
   | { type: 'setOption'; key: string; value: string }
   | { type: 'addArtwork'; item: CncArtworkDraft }
@@ -226,7 +227,7 @@ export function findEntry(entries: readonly CncCatalogEntry[], state: CncConfigu
 
 export function configuratorReducer(state: CncConfiguratorState, action: CncConfiguratorAction): CncConfiguratorState {
   switch (action.type) {
-    case 'selectSize': {
+    case 'selectEntry': {
       // Options are reset to the new entry's defaults rather than carried over.
       // Two entries can publish different option sets, and a value carried onto
       // a size that does not allow it is a checkout the backend rejects with an
@@ -245,6 +246,9 @@ export function configuratorReducer(state: CncConfiguratorState, action: CncConf
         // entirely — most likely off the panel, which is a checkout the
         // generator refuses with a collision the buyer never caused.
         artwork: [],
+        previewOrderId: null,
+        previewLicenceId: null,
+        previewConfigKey: null,
       };
     }
     case 'setKicker':
@@ -306,7 +310,10 @@ export function visibleMachiningOptions(
   includeKicker: boolean,
 ): readonly CncManufacturingOption[] {
   return entry.manufacturingOptions.filter(
-    (option) => !CNC_ENGRAVE_OPTION_KEYS.includes(option.key) && (includeKicker || !option.kickerOnly),
+    (option) =>
+      option.key !== 'includeKicker' &&
+      !CNC_ENGRAVE_OPTION_KEYS.includes(option.key) &&
+      (includeKicker || !option.kickerOnly),
   );
 }
 
@@ -359,8 +366,9 @@ export function setIdsFor(entry: CncCatalogEntry, includeKicker: boolean): strin
   return setIds.filter((setId) => !CNC_KICKER_SET_IDS.includes(Number(setId))).join(',');
 }
 
-/** Whether this entry's set list actually contains kicker sets to drop. */
-export function hasKickerSets(entry: CncCatalogEntry): boolean {
+/** Whether the entry supports a kicker, through separate sets or an explicit option. */
+export function supportsKicker(entry: CncCatalogEntry): boolean {
+  if (entry.boardName === 'kilter' && entry.layoutId === KILTER_ORIGINAL_LAYOUT_ID) return entry.kickerOptional;
   return entry.setIds.split(',').some((segment) => CNC_KICKER_SET_IDS.includes(Number(segment.trim())));
 }
 
@@ -393,7 +401,10 @@ export function coerceOptionValue(raw: string, valueType: string): string | numb
 export function toBoardConfigInput(state: CncConfiguratorState, entry: CncCatalogEntry): CncBoardConfigInput {
   const options: Record<string, string | number | boolean> = {};
   for (const option of entry.manufacturingOptions) {
-    const raw = state.options[option.key] ?? option.defaultValue;
+    const raw =
+      option.key === 'includeKicker'
+        ? String(entry.kickerOptional && state.includeKicker)
+        : (state.options[option.key] ?? option.defaultValue);
     options[option.key] = coerceOptionValue(raw, option.valueType);
   }
 

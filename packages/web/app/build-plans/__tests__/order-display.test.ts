@@ -1,6 +1,8 @@
+import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import { describe, it, expect } from 'vite-plus/test';
 import type { CncCatalog, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
+  boardLayoutLabel,
   finaliseHref,
   isPreviewStatus,
   newestPreviewReadyLicenceId,
@@ -175,4 +177,16 @@ describe('previewImageLabel', () => {
     // captioned; disappearing would be the worse answer.
     expect(previewImageLabel('kicker_detail.png', (key) => key)).toBe('kicker_detail');
   });
+});
+
+it('distinguishes Original and Homewall orders sharing the Kilter board name', () => {
+  expect(boardLayoutLabel({ boardName: 'kilter', layoutId: 1 }, translateToKey)).toBe('configurator.board.original');
+  expect(boardLayoutLabel({ boardName: 'kilter', layoutId: 8 }, translateToKey)).toBe('configurator.board.homewall');
+});
+
+it('names an unknown layout without presenting it as Homewall', () => {
+  const label = boardLayoutLabel({ boardName: 'kilter', layoutId: 99 }, (key, options) =>
+    tFromCatalog('cnc', key, options),
+  );
+  expect(label).toBe('Kilter · layout 99');
 });
