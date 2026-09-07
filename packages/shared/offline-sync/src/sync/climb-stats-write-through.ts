@@ -128,7 +128,12 @@ ON CONFLICT(board_type, climb_uuid, angle) DO UPDATE SET
   sync_seq = excluded.sync_seq
 WHERE excluded.sync_seq > COALESCE(board_climb_stats.sync_seq, -1)`;
 
-/** Decimal digits with no leading zero — the wire shape of a Postgres bigint. */
+/**
+ * Decimal digits with no leading zero — the wire shape of a Postgres bigint.
+ * Mirrors `validRevision` in `@boardsesh/board-react`'s climb-stats-store.ts:
+ * offline-sync cannot import board-react, and the two must agree, or the store
+ * and the local row would disagree about which events count as revisions.
+ */
 const REVISION_PATTERN = /^(0|[1-9]\d*)$/;
 
 /**
