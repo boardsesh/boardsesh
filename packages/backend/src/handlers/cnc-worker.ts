@@ -13,12 +13,25 @@ import {
   transitionOrder,
   type CncOrderPatch,
 } from '../services/cnc/orders';
-import { nextStatusAfterFailure, type CncOrderStatus } from '../services/cnc/order-state';
-import { buildWorkerJob, cncPackOutputKey, CncJobPayloadError } from '../services/cnc/job-payload';
+import {
+  deliverableForStatus,
+  nextStatusAfterFailure,
+  type CncDeliverable,
+  type CncOrderStatus,
+} from '../services/cnc/order-state';
+import {
+  buildWorkerJob,
+  cncPackOutputKey,
+  cncPreviewOutputKey,
+  cncPreviewPrefix,
+  CncJobPayloadError,
+} from '../services/cnc/job-payload';
 import { getArtAssetById, getAssetForJob, isCncArtKey } from '../services/cnc/art-assets';
 import { describeBoard } from '../services/cnc/catalog';
 import { sendCncPackFailedAdminEmail, sendCncPackReadyEmail } from '../email/cnc-emails';
 import { webPublicUrl } from '../email/email-service';
+import { captureBackendEvent } from '../services/analytics/posthog';
+import { CNC_KICKER_SET_IDS, parseSetIds } from '../services/cnc/catalog';
 
 /**
  * The pack generator's job API.
@@ -157,7 +170,13 @@ const CompleteBodySchema = z.object({
   zipKey: z.string().min(1).max(1024),
   sizeBytes: z.number().int().nonnegative(),
   sha256: z.string().regex(/^[0-9a-f]{64}$/, 'sha256 must be 64 lowercase hex characters'),
-  fingerprintManifest: z.record(z.string(), z.unknown()),
+  /**
+   * Nullish because a PREVIEW has none: no covert channels are written into a
+   * watermarked raster, so there is nothing to record. A `full` completion that
+   * omits it stores an empty manifest, which is loud in the admin view rather
+   * than a rejected report from a worker that already did the work.
+   */
+  fingerprintManifest: z.record(z.string(), z.unknown()).nullish(),
   bomSummary: z.record(z.string(), z.unknown()).nullish(),
   previewKeys: z.array(z.string().max(1024)).nullish(),
   generatorVersion: z.string().max(200).nullish(),
@@ -179,12 +198,15 @@ const FailBodySchema = z.object({
 });
 
 /** The order this report is about, or null having already answered. */
+const LEASED_STATUSES: readonly CncOrderStatus[] = ['generating', 'preview_generating'];
+
 async function loadLeasedOrder(res: ServerResponse, orderId: number, claimToken: string): Promise<CncOrder | null> {
   const order = await getOrderById(orderId);
   // A report for an order that never existed and one whose lease has moved on
   // get the same 409: either way the worker's job is gone, and the action is
-  // identical (drop it).
-  if (!order || order.status !== 'generating' || !matchesClaimToken(claimToken, order.claimToken)) {
+  // identical (drop it). Both queues are accepted here — which of the two this
+  // job is comes off the status, never off the worker's say-so.
+  if (!order || !LEASED_STATUSES.includes(order.status) || !matchesClaimToken(claimToken, order.claimToken)) {
     sendJson(res, 409, { error: 'This job is no longer yours' });
     return null;
   }
@@ -207,23 +229,47 @@ function requirePrivateBucket(res: ServerResponse): boolean {
  * `failed` and mails an operator rather than burning the attempt budget.
  */
 async function abandonUnbuildableOrder(order: CncOrder, reason: string): Promise<void> {
+  const deliverable = deliverableForStatus(order.status);
   logger.error('[cnc-worker] claimed order cannot be turned into a job; failing it', {
     orderId: order.id,
     licenceId: order.licenceId,
+    deliverable,
     reason,
   });
 
   const failed = await transitionOrder(
     order.id,
-    'fail',
-    { status: 'failed', lastError: reason.slice(0, MAX_LAST_ERROR_LENGTH), claimToken: null },
+    deliverable === 'preview' ? 'previewFail' : 'fail',
+    {
+      status: deliverable === 'preview' ? 'preview_failed' : 'failed',
+      lastError: reason.slice(0, MAX_LAST_ERROR_LENGTH),
+      claimToken: null,
+    },
     { claimToken: order.claimToken ?? undefined },
   );
   if (failed) await announceFailure(failed);
 }
 
-/** Tell an operator a paid pack gave up. Best-effort: the order is already durable. */
+/**
+ * Tell an operator a paid pack gave up. Best-effort: the order is already
+ * durable.
+ *
+ * A failed PREVIEW is not mailed. Nobody paid for it, the buyer sees
+ * `preview_failed` on the page they are looking at and can ask again, and one
+ * operator email per misconfigured wall someone is experimenting with would
+ * bury the emails that mean a purchase is stuck.
+ */
 async function announceFailure(order: CncOrder): Promise<void> {
+  if (deliverableForStatus(order.status) === 'preview') {
+    logger.error('[cnc-worker] preview generation gave up', {
+      orderId: order.id,
+      licenceId: order.licenceId,
+      attempts: order.attempts,
+      lastError: order.lastError,
+    });
+    return;
+  }
+
   try {
     await sendCncPackFailedAdminEmail({
       licenceId: order.licenceId,
@@ -310,6 +356,157 @@ async function handleHeartbeat(req: IncomingMessage, res: ServerResponse, orderI
 }
 
 /**
+ * The completion checks that are the same for both deliverables.
+ *
+ * The object is verified before the order moves, because the status is what
+ * unlocks a download: an order that says ready and 404s on the object is worse
+ * than one that is still generating. Returns false having already answered.
+ */
+async function verifyUploadedObject(
+  res: ServerResponse,
+  orderId: number,
+  expectedKey: string,
+  reportedKey: string,
+  reportedSize: number,
+): Promise<boolean> {
+  if (reportedKey !== expectedKey) {
+    logger.error('[cnc-worker] completion reported a key we did not ask for', {
+      orderId,
+      expectedKey,
+      reportedKey,
+    });
+    sendJson(res, 409, { error: 'The pack was not written to the key this job specified' });
+    return false;
+  }
+
+  const metadata = await getS3ObjectMetadata('private', expectedKey);
+  if (!metadata) {
+    sendJson(res, 409, { error: 'No object exists at that key' });
+    return false;
+  }
+  if (metadata.contentLength !== reportedSize) {
+    logger.error('[cnc-worker] uploaded pack size does not match the completion report', {
+      orderId,
+      reported: reportedSize,
+      actual: metadata.contentLength,
+    });
+    sendJson(res, 409, { error: 'The uploaded object size does not match the reported size' });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * The preview PNG keys, or null having already answered.
+ *
+ * Every key has to sit under the prefix this job dictated and end in `.png`.
+ * These strings are stored and later turned into reads of the private bucket by
+ * the preview image route, and that bucket also holds user data exports — so a
+ * worker that reported `../../exports/…` must be refused here, once, rather
+ * than have every reader re-derive the rule. Belt and braces with the route's
+ * own basename match, and deliberately so: this is the write.
+ */
+function validatePreviewKeys(
+  res: ServerResponse,
+  orderId: number,
+  previewPrefix: string,
+  reportedKeys: string[] | null | undefined,
+): string[] | null {
+  const keys = reportedKeys ?? [];
+  const rejected = keys.filter((key) => !key.startsWith(previewPrefix) || !key.endsWith('.png'));
+  if (rejected.length > 0) {
+    logger.error('[cnc-worker] preview completion reported keys outside its prefix', {
+      orderId,
+      previewPrefix,
+      rejected,
+    });
+    sendJson(res, 409, { error: 'Preview images must be PNGs written under the previewPrefix this job specified' });
+    return null;
+  }
+  return keys;
+}
+
+/** Board-shaped properties every build-plans analytics event carries. */
+function boardProperties(order: CncOrder): Record<string, string | number | boolean | null> {
+  const setIds = parseSetIds(order.setIds) ?? [];
+  return {
+    board_name: order.boardName,
+    layout_id: order.layoutId,
+    size_id: order.sizeId,
+    kicker: setIds.some((setId) => CNC_KICKER_SET_IDS.includes(setId)),
+    has_artwork: Array.isArray(order.artwork) && order.artwork.length > 0,
+  };
+}
+
+/**
+ * A finished preview: store the watermarked artifacts and stop.
+ *
+ * No email, no fingerprint manifest, no `zip_key`. A preview is not a sale, so
+ * none of the machinery a sale drags along runs — the buyer is looking at the
+ * order page and the status flipping to `preview_ready` is the whole
+ * notification.
+ */
+async function completePreview(
+  res: ServerResponse,
+  order: CncOrder,
+  body: z.infer<typeof CompleteBodySchema>,
+): Promise<void> {
+  const expectedKey = cncPreviewOutputKey(order);
+  if (!(await verifyUploadedObject(res, order.id, expectedKey, body.zipKey, body.sizeBytes))) return;
+
+  const previewKeys = validatePreviewKeys(res, order.id, cncPreviewPrefix(order), body.previewKeys);
+  if (!previewKeys) return;
+
+  // The manifest column is not the fingerprint trail on a preview — there is no
+  // fingerprint to record. What is worth keeping is the generator's own
+  // bookkeeping: the BOM the configurator shows next to the images, and which
+  // build produced them.
+  const previewManifest =
+    body.bomSummary || body.generatorVersion
+      ? {
+          deliverable: 'preview',
+          ...(body.bomSummary ? { bomSummary: body.bomSummary } : {}),
+          ...(body.generatorVersion ? { generatorVersion: body.generatorVersion } : {}),
+        }
+      : null;
+
+  const ready = await transitionOrder(
+    order.id,
+    'previewComplete',
+    {
+      previewZipKey: expectedKey,
+      previewZipSizeBytes: body.sizeBytes,
+      previewGeneratedAt: new Date(),
+      previewKeys,
+      previewsGenerated: order.previewsGenerated + 1,
+      fingerprintManifest: previewManifest,
+      lastError: null,
+      // Kept, exactly as the paid completion keeps it, so a redelivered report
+      // is recognised as this worker's own rather than as a stranger's.
+    },
+    { claimToken: body.claimToken },
+  );
+  if (!ready) {
+    sendJson(res, 409, { error: 'This job is no longer yours' });
+    return;
+  }
+
+  sendJson(res, 200, { ok: true, status: ready.status });
+
+  captureBackendEvent('Build Plans Preview Generated', {
+    distinctId: ready.userId ?? ready.licenceId,
+    properties: {
+      ...boardProperties(ready),
+      // Which preview of this configuration this is. A row that has produced
+      // three is a generator retrying, not a buyer iterating — iterating writes
+      // a new row.
+      preview_index: ready.previewsGenerated,
+      image_count: previewKeys.length,
+    },
+  });
+}
+
+/**
  * POST /api/cnc/worker/jobs/:orderId/complete
  *
  * The zip is verified before the order is marked ready, because "ready" is what
@@ -322,11 +519,14 @@ async function handleHeartbeat(req: IncomingMessage, res: ServerResponse, orderI
  * - a HEAD must find the object at the size the worker reported, so a partial
  *   or aborted upload is caught here rather than by the buyer.
  *
+ * A preview completion adds a third: every key in `previewKeys` must be a PNG
+ * under the job's `previewPrefix`.
+ *
  * Idempotent by claim token. The order keeps the completing token when it goes
- * `ready`, so a worker retrying a completion whose response it never saw gets
- * `{ok: true, status: 'ready', duplicate: true}` and no second email. Any
- * other token, or any other status, is still 409 — including a report from a
- * worker whose lease was reclaimed while it was uploading.
+ * `ready` (or `preview_ready`), so a worker retrying a completion whose response
+ * it never saw gets `{ok: true, status, duplicate: true}` and no second email.
+ * Any other token, or any other status, is still 409 — including a report from
+ * a worker whose lease was reclaimed while it was uploading.
  */
 async function handleComplete(req: IncomingMessage, res: ServerResponse, orderId: number): Promise<void> {
   const body = await readBody(req, res, CompleteBodySchema);
@@ -341,39 +541,25 @@ async function handleComplete(req: IncomingMessage, res: ServerResponse, orderId
   // caller that can present it. No email, no second transition; just the
   // answer the first attempt already earned.
   const existing = await getOrderById(orderId);
-  if (existing && existing.status === 'ready' && matchesClaimToken(body.claimToken, existing.claimToken)) {
-    sendJson(res, 200, { ok: true, status: 'ready', duplicate: true });
+  if (
+    existing &&
+    (existing.status === 'ready' || existing.status === 'preview_ready') &&
+    matchesClaimToken(body.claimToken, existing.claimToken)
+  ) {
+    sendJson(res, 200, { ok: true, status: existing.status, duplicate: true });
     return;
   }
 
   const order = await loadLeasedOrder(res, orderId, body.claimToken);
   if (!order) return;
 
-  const expectedKey = cncPackOutputKey(order);
-  if (body.zipKey !== expectedKey) {
-    logger.error('[cnc-worker] completion reported a key we did not ask for', {
-      orderId,
-      expectedKey,
-      reportedKey: body.zipKey,
-    });
-    sendJson(res, 409, { error: 'The pack was not written to the key this job specified' });
+  if (deliverableForStatus(order.status) === 'preview') {
+    await completePreview(res, order, body);
     return;
   }
 
-  const metadata = await getS3ObjectMetadata('private', expectedKey);
-  if (!metadata) {
-    sendJson(res, 409, { error: 'No object exists at that key' });
-    return;
-  }
-  if (metadata.contentLength !== body.sizeBytes) {
-    logger.error('[cnc-worker] uploaded pack size does not match the completion report', {
-      orderId,
-      reported: body.sizeBytes,
-      actual: metadata.contentLength,
-    });
-    sendJson(res, 409, { error: 'The uploaded object size does not match the reported size' });
-    return;
-  }
+  const expectedKey = cncPackOutputKey(order);
+  if (!(await verifyUploadedObject(res, orderId, expectedKey, body.zipKey, body.sizeBytes))) return;
 
   const patch: CncOrderPatch = {
     generatedAt: new Date(),
@@ -426,8 +612,9 @@ async function handleComplete(req: IncomingMessage, res: ServerResponse, orderId
  *
  * Where a failure lands depends on the attempt budget, not on the worker:
  * `retryable: false` is terminal immediately, and a retryable failure goes back
- * to `queued` until the budget is spent. The worker reports what happened; the
- * state machine decides what it means.
+ * to the queue it came from until the budget is spent. The worker reports what
+ * happened; the state machine decides what it means. A preview runs the same
+ * budget on its own pair of statuses.
  */
 async function handleFail(req: IncomingMessage, res: ServerResponse, orderId: number): Promise<void> {
   const body = await readBody(req, res, FailBodySchema);
@@ -436,14 +623,18 @@ async function handleFail(req: IncomingMessage, res: ServerResponse, orderId: nu
   const order = await loadLeasedOrder(res, orderId, body.claimToken);
   if (!order) return;
 
+  const deliverable: CncDeliverable = deliverableForStatus(order.status);
+  const terminalStatus: CncOrderStatus = deliverable === 'preview' ? 'preview_failed' : 'failed';
   // `order.attempts` is the count AFTER the claim incremented it, which is what
   // nextStatusAfterFailure expects.
-  const status: CncOrderStatus = body.retryable ? nextStatusAfterFailure(order.attempts) : 'failed';
+  const status: CncOrderStatus = body.retryable
+    ? nextStatusAfterFailure(order.attempts, undefined, deliverable)
+    : terminalStatus;
   const lastError = `${body.errorCode}: ${body.message}`.slice(0, MAX_LAST_ERROR_LENGTH);
 
   const updated = await transitionOrder(
     orderId,
-    'fail',
+    deliverable === 'preview' ? 'previewFail' : 'fail',
     { status, lastError, claimToken: null },
     { claimToken: body.claimToken },
   );
@@ -454,7 +645,7 @@ async function handleFail(req: IncomingMessage, res: ServerResponse, orderId: nu
 
   sendJson(res, 200, { ok: true, status: updated.status, attempts: updated.attempts });
 
-  if (updated.status === 'failed') {
+  if (updated.status === terminalStatus) {
     await announceFailure(updated);
   }
 }
