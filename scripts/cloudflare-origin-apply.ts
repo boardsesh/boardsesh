@@ -55,7 +55,7 @@ export function planOriginRule(
   return { action: matches ? 'none' : 'update', id: current.id };
 }
 
-export async function applyOriginRule(env: NodeJS.ProcessEnv, apply: boolean): Promise<string> {
+export async function applyOriginRule(env: Record<string, string | undefined>, apply: boolean): Promise<string> {
   const token = env.CLOUDFLARE_API_TOKEN;
   const secret = env.WEB_ORIGIN_VERIFY_SECRET ?? '';
   const desired = originRule(secret);
