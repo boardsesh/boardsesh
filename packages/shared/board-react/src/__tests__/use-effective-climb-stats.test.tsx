@@ -1,6 +1,7 @@
 import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbStatsForClimbEntry } from '@boardsesh/graphql/operations';
+import type { ClimbStatsEvent } from '@boardsesh/shared-schema';
 import { GraphQLOperationError } from '@boardsesh/graphql-client';
 import type { BoardAdapter } from '../adapter';
 import {
@@ -1128,5 +1129,101 @@ describe('useEffectiveClimbStats', () => {
 
     await act(async () => pendingBatches[2]?.([batchRow('climb-token', 5, '3')]));
     await waitFor(() => expect(getClimbStatsSnapshot(statsKey).optimisticFloor).toBeNull());
+  });
+});
+
+describe('useClimbStatsLayoutSync — persisting events locally', () => {
+  beforeEach(() => {
+    resetClimbStatsStoreForTests();
+    resetClimbStatsReadCoordinatorForTests();
+  });
+
+  function streamEvent(overrides: Partial<ClimbStatsEvent> = {}): ClimbStatsEvent {
+    return {
+      boardType: 'kilter',
+      layoutId: 1,
+      climbUuid: 'climb-1',
+      angle: 40,
+      ascensionistCount: 9,
+      qualityAverage: 3,
+      difficultyAverage: 18.5,
+      displayDifficulty: 18,
+      difficulty: '6b/V4',
+      faUsername: null,
+      faAt: null,
+      syncSeq: '77',
+      ...overrides,
+    };
+  }
+
+  function mountLayoutSync(persistClimbStatsEvent?: (event: ClimbStatsEvent) => void) {
+    let deliver: ((event: ClimbStatsEvent) => void) | undefined;
+    const { wrapper } = createWrapper({
+      fetchClimbStatsForClimbs: vi.fn().mockResolvedValue([]),
+      subscribeClimbStats: (_boardType, _layoutId, handlers) => {
+        deliver = handlers.next;
+        return vi.fn();
+      },
+      persistClimbStatsEvent,
+    });
+    const view = renderHook(() => useClimbStatsLayoutSync('kilter', 1), { wrapper });
+    return { deliver: (event: ClimbStatsEvent) => act(() => deliver?.(event)), view };
+  }
+
+  it('persists an event no mounted selector retains', () => {
+    const seenCanonical: Array<unknown> = [];
+    const persist = vi.fn((event: ClimbStatsEvent) => {
+      // Nothing retains this key, so the store dropped the payload — which is
+      // exactly why the local catalog needs its own copy.
+      seenCanonical.push(
+        getClimbStatsSnapshot({ boardType: 'kilter', layoutId: 1, climbUuid: event.climbUuid, angle: event.angle })
+          .canonical,
+      );
+    });
+    const { deliver } = mountLayoutSync(persist);
+
+    deliver(streamEvent());
+
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist.mock.calls[0][0]).toMatchObject({ climbUuid: 'climb-1', syncSeq: '77' });
+    expect(seenCanonical).toEqual([null]);
+  });
+
+  it('never persists an event from another board or layout', () => {
+    const persist = vi.fn();
+    const { deliver } = mountLayoutSync(persist);
+
+    deliver(streamEvent({ boardType: 'tension' }));
+    deliver(streamEvent({ layoutId: 8 }));
+
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it('runs after the store, so the persisted event is already the store’s canonical revision', () => {
+    const order: string[] = [];
+    const statsKey: ClimbStatsKey = { boardType: 'kilter', layoutId: 1, climbUuid: 'climb-1', angle: 40 };
+    const unsubscribe = subscribeClimbStats(statsKey, () => order.push('store'));
+    const revisionsSeenByPersist: Array<string | null | undefined> = [];
+    const persist = vi.fn(() => {
+      order.push('persist');
+      revisionsSeenByPersist.push(getClimbStatsSnapshot(statsKey).canonical?.syncSeq);
+    });
+    const { deliver } = mountLayoutSync(persist);
+
+    deliver(streamEvent());
+
+    expect(order).toEqual(['store', 'persist']);
+    expect(revisionsSeenByPersist).toEqual(['77']);
+    unsubscribe();
+  });
+
+  it('is optional — an adapter without it handles events unchanged', () => {
+    const statsKey: ClimbStatsKey = { boardType: 'kilter', layoutId: 1, climbUuid: 'climb-1', angle: 40 };
+    const unsubscribe = subscribeClimbStats(statsKey, vi.fn());
+    const { deliver } = mountLayoutSync(undefined);
+
+    expect(() => deliver(streamEvent())).not.toThrow();
+    expect(getClimbStatsSnapshot(statsKey).canonical?.ascensionistCount).toBe(9);
+    unsubscribe();
   });
 });
