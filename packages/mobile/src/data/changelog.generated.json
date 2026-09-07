@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-06T23:20:05.628Z",
+  "generatedAt": "2026-09-07T00:00:14.359Z",
   "entries": [
+    {
+      "prNumber": 5192,
+      "category": "new",
+      "title": "Tap any notification and it now goes somewhere — comments and likes open the thread they're about",
+      "mergedAt": "2026-09-06T23:54:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5192",
+      "body": "New-climb notifications show the climb on the board, with the setter's face in the corner\n\"Sarah and 4 others followed you\" opens the whole list, so you can follow back in one go"
+    },
     {
       "prNumber": 5212,
       "category": "fixed",

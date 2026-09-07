@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Tap any notification and it now goes somewhere — comments and likes open the thread they're about ([#5192](https://github.com/boardsesh/boardsesh/pull/5192))
+  New-climb notifications show the climb on the board, with the setter's face in the corner
+  "Sarah and 4 others followed you" opens the whole list, so you can follow back in one go
 - The next few climbs in your queue are drawn ahead of time, so swiping to them is instant ([#5211](https://github.com/boardsesh/boardsesh/pull/5211))
 - Your boards now lead with the one you're on, then the boards you use most ([#5179](https://github.com/boardsesh/boardsesh/pull/5179))
   Pin a board to keep it at the front, however long it's been
