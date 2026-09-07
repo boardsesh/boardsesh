@@ -1883,5 +1883,17 @@ describe('tickQueries — behavior fixes', () => {
       const item = (result.items as unknown as CharacteristicsFeedItem[]).find((row) => row.climbUuid === climbUuid);
       expect(item?.characteristics).toBeNull();
     });
+
+    it('userAscentCaptionMatches: carries characteristics through (it reuses userAscentsFeed)', async () => {
+      const climbUuid = `${CLIMB_PREFIX}chars-caption`;
+      await insertClimb(climbUuid, 'Characteristics Caption');
+      await insertClimbCharacteristics(climbUuid, ['no_match']);
+      await insertTick({ uuid: 'tick-chars-caption', climbUuid, climbedAt: '2026-05-12T10:00:00', status: 'send' });
+
+      const result = await callUserAscentCaptionMatches(TEST_USER_ID, 'sent "Characteristics Caption" today');
+      const match = (result as unknown as CharacteristicsFeedItem[]).find((row) => row.climbUuid === climbUuid);
+      expect(match?.characteristics).toEqual(['no_match']);
+      expect(match?.isNoMatch).toBe(true);
+    });
   });
 });
