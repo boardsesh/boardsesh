@@ -94,11 +94,11 @@ type BluetoothContextValue = {
    */
   setMirrorIntent: (climbUuid: string, mirrored: boolean) => void;
   /**
-   * Forget the flip without touching the wall. The surface owning the toggle
-   * calls this when it goes away, so a remembered mirror can't be re-lit with
-   * no button showing it.
+   * The orientation currently asked for on `climbUuid`. A flip outlives the
+   * screen that made it, so a play drawer opening on that climb seeds its
+   * toggle from here rather than assuming un-mirrored.
    */
-  clearMirrorIntent: () => void;
+  getMirrorIntent: (climbUuid: string | undefined) => boolean;
   /**
    * Restore the climb captured before this device's latest accepted wall report.
    * The platform relights it over BLE first, then reports it to board presence.
@@ -1520,17 +1520,18 @@ export function BluetoothProvider({
     [reassertWall],
   );
 
-  // Forget the flip, without touching the wall.
+  // The orientation currently asked for on a climb, or false if none is.
   //
-  // For when the surface that owns the toggle goes away: on iPhone the play
-  // drawer is a route, and the current climb keeps moving without it (Live
-  // Activity next/prev, the session screen, playlist activation, a party peer).
-  // An intent left behind would re-light a remembered mirror with no button
-  // anywhere showing it. Deliberately lazy — no reassert — because there is no
-  // longer a drawer whose screen could disagree with the wall; whatever is lit
-  // stays lit until something else changes it.
-  const clearMirrorIntent = useCallback(() => {
-    mirrorIntentRef.current = null;
+  // A flip belongs to the climb, not to the screen that made it: on iPhone the
+  // play drawer is a route, and the climb keeps moving without it (Live Activity
+  // next/prev, the session screen, playlist activation, a party peer). So the
+  // intent outlives the drawer, and a drawer opening on that climb reads it back
+  // here to seed its toggle — otherwise the wall would sit mirrored under a
+  // button reading off, and reopening the player would either lie or silently
+  // un-flip a wall someone is climbing on.
+  const getMirrorIntent = useCallback((climbUuid: string | undefined) => {
+    const intent = mirrorIntentRef.current;
+    return intent != null && intent.climbUuid === climbUuid && intent.mirrored;
   }, []);
 
   const disconnectInFlightRef = useRef<Promise<void> | null>(null);
@@ -1631,7 +1632,7 @@ export function BluetoothProvider({
       reassertWall,
       invalidateWallState,
       setMirrorIntent,
-      clearMirrorIntent,
+      getMirrorIntent,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
@@ -1656,7 +1657,7 @@ export function BluetoothProvider({
       reassertWall,
       invalidateWallState,
       setMirrorIntent,
-      clearMirrorIntent,
+      getMirrorIntent,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,

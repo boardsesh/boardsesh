@@ -445,8 +445,14 @@ export function PlayDrawer({
   const isPreview = drawerPreviewItem != null;
 
   const displayedClimbUuid = displayedClimb?.uuid;
-  // A flip only applies to the climb it was made on.
-  const isMirrored = mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid && mirrorFlip.mirrored;
+  // A flip only applies to the climb it was made on. With no local flip for the
+  // climb on screen, fall back to the orientation the wall was last asked for:
+  // the drawer is a route on iPhone, so reopening it must show the flip that is
+  // actually lit rather than assuming none and lying about the wall.
+  const isMirrored =
+    mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid
+      ? mirrorFlip.mirrored
+      : (bluetooth?.getMirrorIntent(displayedClimbUuid) ?? false);
   const clearMirror = useCallback(() => setMirrorFlip(null), []);
 
   // #5099: the shown climb does not have to belong to the board the climber has
@@ -954,15 +960,6 @@ export function PlayDrawer({
     if (isPreview || !displayedClimbUuid) return;
     bluetooth?.setMirrorIntent(displayedClimbUuid, isMirrored);
   }, [bluetooth, displayedClimbUuid, isMirrored, isPreview]);
-
-  // On iPhone the drawer is a route, and the current climb keeps moving after
-  // it closes (Live Activity next/prev, the session screen, playlist
-  // activation, a party peer). Leave the intent behind and coming back round to
-  // a climb you once flipped re-lights the mirror with no button showing it, so
-  // the toggle's owner takes the intent with it. Unmount only — the iPad's
-  // persistent pane never runs this.
-  const clearMirrorIntent = bluetooth?.clearMirrorIntent;
-  useEffect(() => () => clearMirrorIntent?.(), [clearMirrorIntent]);
 
   // Local state only — the effect above is what carries the flip to the wall,
   // through the AutoSender's normal write so the dedup record and the

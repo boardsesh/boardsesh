@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
-// #5217 — the wall's orientation follows the mirror toggle, and never outlives it.
+// #5217 — the wall's orientation follows the mirror toggle, and the button
+// follows the wall.
 //
-// The drawer owns `isMirrored` locally and resets it to false at eight separate
-// navigation sites. The provider cannot see any of those, so the drawer has to
-// re-state the orientation on every climb change; without that, flipping a climb
-// and coming back to it later would re-light it mirrored under a screen (and a
-// button) showing it un-mirrored — the reported bug, in reverse.
+// A flip belongs to the CLIMB, not to the screen that made it. The drawer resets
+// its toggle at eight separate navigation sites and the provider can see none of
+// them, so the drawer re-states the orientation on every climb change; without
+// that, flipping a climb and coming back to it would re-light the mirror under a
+// button reading off — the reported bug, in reverse. And because the drawer is a
+// route on iPhone, the flip outlives it: reopening the player reads the
+// orientation back rather than assuming none and lying about a lit wall.
 //
 // The provider half is pinned in `bluetooth-provider-wall-confirm.test.tsx`.
 // This file renders the real PlayDrawer so the hand-off itself is covered.
@@ -31,7 +34,7 @@ const recorded = vi.hoisted(() => ({
 const bluetooth = vi.hoisted(() => ({
   context: null as unknown,
   setMirrorIntent: vi.fn(),
-  clearMirrorIntent: vi.fn(),
+  intent: null as { climbUuid: string; mirrored: boolean } | null,
 }));
 const queueState = vi.hoisted(() => ({
   queue: [] as unknown[],
@@ -272,12 +275,17 @@ beforeEach(() => {
   queueState.currentClimbQueueItem = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
   prefetchWalk.items = [];
-  bluetooth.setMirrorIntent = vi.fn();
-  bluetooth.clearMirrorIntent = vi.fn();
+  bluetooth.intent = null;
+  // Record the statement AND remember it, the way the provider does — the
+  // drawer seeds its toggle by reading it back.
+  bluetooth.setMirrorIntent = vi.fn((climbUuid: string, mirrored: boolean) => {
+    bluetooth.intent = { climbUuid, mirrored };
+  });
   bluetooth.context = {
     isConnected: true,
     setMirrorIntent: bluetooth.setMirrorIntent,
-    clearMirrorIntent: bluetooth.clearMirrorIntent,
+    getMirrorIntent: (climbUuid?: string) =>
+      bluetooth.intent != null && bluetooth.intent.climbUuid === climbUuid && bluetooth.intent.mirrored,
     sendFramesToBoard: vi.fn(),
   };
 });
@@ -325,34 +333,35 @@ describe('PlayDrawer mirror intent (#5217)', () => {
     expect(mirrorIntentCalls().at(-1)).toEqual([CLIMB_B.uuid, false]);
   });
 
-  it('forgets the flip when the drawer goes away', () => {
-    // On iPhone the drawer is a route. The current climb keeps moving after it
-    // closes (Live Activity next/prev, a party peer), so an intent left behind
-    // would re-light a remembered mirror with no button showing it.
+  it('still shows the flip when the player is dismissed and reopened on the same climb', () => {
+    // iPhone's drawer is a route. The flip belongs to the climb, so reopening
+    // must show what is actually lit — otherwise the wall sits mirrored under a
+    // button reading off, and closing the player would silently change the
+    // orientation someone is climbing on.
     queueState.currentClimbQueueItem = queueItem(CLIMB_A, 'queue-a');
     const { unmount } = renderDrawer();
 
     tapMirror();
     expect(mirrorIntentCalls().at(-1)).toEqual([CLIMB_A.uuid, true]);
-    expect(bluetooth.clearMirrorIntent).not.toHaveBeenCalled();
 
     act(() => {
       unmount();
     });
+    recorded.actionBar = [];
+    bluetooth.setMirrorIntent.mockClear();
 
-    expect(bluetooth.clearMirrorIntent).toHaveBeenCalled();
+    renderDrawer();
+
+    // The toggle reads the flip back, and nothing new is asked of the wall.
+    expect(recorded.actionBar.at(-1)?.isMirrored).toBe(true);
+    expect(mirrorIntentCalls()).toEqual([[CLIMB_A.uuid, true]]);
   });
 
   it('states the orientation even while disconnected, so a flip survives taking the wall', () => {
     // Recording the intent is free; the auto-sender only acts on it once a link
     // exists. Gating on isConnected lost the flip when the lightbulb re-took
     // the wall afterwards.
-    bluetooth.context = {
-      isConnected: false,
-      setMirrorIntent: bluetooth.setMirrorIntent,
-      clearMirrorIntent: bluetooth.clearMirrorIntent,
-      sendFramesToBoard: vi.fn(),
-    };
+    bluetooth.context = { ...(bluetooth.context as Record<string, unknown>), isConnected: false };
     queueState.currentClimbQueueItem = queueItem(CLIMB_A, 'queue-a');
     renderDrawer();
 
