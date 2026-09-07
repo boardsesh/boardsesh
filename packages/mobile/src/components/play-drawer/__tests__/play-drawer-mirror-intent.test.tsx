@@ -62,12 +62,6 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'web', select: (spec: Record<string, unknown>) => spec.web ?? spec.default },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
-  // Needed at MODULE scope by @expo/ui's bottom sheet, which `ModalSheet` pulls
-  // into this graph. Whether that module gets evaluated depends on which test
-  // file loads the mock first, so CI's `--changed` shard hit it where the full
-  // local run did not. Declared here so load order can't decide it.
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('react-native-mmkv', () => {
   const store = new Map<string, string>();
@@ -90,6 +84,18 @@ vi.mock('react-native-reanimated', () => ({
   useAnimatedReaction: () => undefined,
   useSharedValue: (initial: unknown) => ({ value: initial }),
   runOnJS: (fn: unknown) => fn,
+}));
+// `play-drawer/use-quick-tick-form.ts` pulls `ModalSheet` into this graph, and
+// @expo/ui's bottom sheet reads `ScrollView`/`FlatList` off react-native at
+// MODULE scope — so a partial react-native mock breaks on whichever export it
+// happens to reach first. Whether it evaluates at all depends on which test file
+// installs the mock first, which is why the full local run (839 files) stayed
+// green while CI's `--changed` shard did not. Mocking the sheet stops the module
+// executing at all, instead of chasing its imports one error at a time.
+vi.mock('@expo/ui/community/bottom-sheet', () => ({
+  BottomSheetModal: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  BottomSheetScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  BottomSheetView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('expo-router', () => ({ router: { dismiss: vi.fn() } }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'random-uuid' }));
