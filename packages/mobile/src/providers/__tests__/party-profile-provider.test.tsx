@@ -81,6 +81,10 @@ vi.mock('../../lib/analytics', () => ({
   alias: vi.fn(),
   reset: vi.fn(),
   setPersonProperties: setPersonPropertiesMock,
+  // Feeds reconcileAnalyticsIdentity's cold-start guard. Null here means "the SDK
+  // reports no persisted distinct_id", so these tests keep exercising the full
+  // anon → user switch rather than the skip path.
+  getAnalyticsClient: () => null,
 }));
 
 import { PartyProfileProvider, usePartyProfile } from '../party-profile-provider';
@@ -206,6 +210,7 @@ describe('PartyProfileProvider', () => {
     expect(setPersonPropertiesMock).toHaveBeenLastCalledWith(
       {
         role: 'tester',
+        email: 'climber@example.com',
         primary_board: 'kilter',
         favorite_count: 5,
         integrations_connected_count: 1,
@@ -240,6 +245,7 @@ describe('PartyProfileProvider', () => {
     await waitFor(() => expect(setPersonPropertiesMock).toHaveBeenCalledTimes(1));
     expect(setPersonPropertiesMock.mock.calls[0][0]).toEqual({
       role: 'user',
+      email: 'climber@example.com',
       primary_board: 'kilter',
       favorite_count: 2,
       integrations_connected_count: undefined,
@@ -252,6 +258,7 @@ describe('PartyProfileProvider', () => {
     await waitFor(() => expect(setPersonPropertiesMock).toHaveBeenCalledTimes(2));
     expect(setPersonPropertiesMock.mock.calls[1][0]).toEqual({
       role: 'user',
+      email: 'climber@example.com',
       primary_board: 'kilter',
       favorite_count: 2,
       integrations_connected_count: 1,

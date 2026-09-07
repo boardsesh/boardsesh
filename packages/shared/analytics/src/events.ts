@@ -87,11 +87,6 @@ export const SHARED_EVENTS = {
   // failed seed from wiping the live queue, plus the re-seed it kicks off. Lets
   // us measure how often the seed lifecycle degrades in the field (#3878).
   QueueSeedFullSyncGuarded: 'Queue Seed FullSync Guarded',
-  // Climb actions
-  // Fired when the climb reaction/actions menu is opened, with a `source` prop
-  // ('long_press' | 'more_button'). Powers the ⋮-button discoverability experiment:
-  // compare open rates + entry point between the flag's control/treatment cohorts.
-  ClimbActionsOpened: 'Climb Actions Opened',
   // Fired when the climber toggles the "Show quick-actions button" setting, with an
   // `enabled` prop — measures opt-in (control) vs opt-out (treatment) against the flag.
   ClimbQuickActionsSettingChanged: 'Climb Quick Actions Setting Changed',
@@ -151,8 +146,6 @@ export const SHARED_EVENTS = {
   // never carried it. The CTA href itself stays UTM-free — attribution is
   // these properties, because the app route has to match the bare pathname.
   ClimbHandoffClicked: 'Climb Handoff Clicked',
-  // Logbook
-  LogbookRowClicked: 'Logbook Row Clicked',
   // Logbook search / filter usage — privacy-safe (counts, field names, and the
   // sort preset only; never the raw query text or grade/date values). Drives the
   // "promote the most-used facets to the top level" call.
@@ -364,12 +357,6 @@ export const SHARED_EVENTS = {
   // Props: { boardId?, historyCount }.
   BoardSwapTapped: 'Board Swap Tapped',
   BoardSwapInvokedFromSheet: 'Board Swap Invoked From Sheet',
-  // Fired after a board-history catch-up completes. Props:
-  // { boardId?, reason: 'gap' | 'reconnect' | 'foreground' | 'manual',
-  //   recoveredThroughSeqDelta }. `recoveredThroughSeqDelta > 0` means live
-  //   events were silently dropped (Redis pub/sub has no replay) and just
-  //   recovered — the signal for "history was slow/stale to update".
-  BoardHistoryCatchUp: 'Board History Catch Up',
   // Fired each time "load older" resolves a page of durable history (past the
   // live feed's in-memory HISTORY_CAP window). Props:
   // { boardId?, pageSize: number, returnedCount: number }. `returnedCount <

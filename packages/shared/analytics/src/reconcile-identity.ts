@@ -19,6 +19,9 @@ export type IdentityClient = {
   identify(distinctId: string, properties?: AnalyticsProperties): unknown;
   reset(): unknown;
   alias(newId: string): unknown;
+  // The distinct_id the SDK has persisted across launches, when the platform can
+  // supply it. Optional so a caller that cannot read it keeps the old behaviour.
+  getDistinctId?(): string | null | undefined;
 };
 
 export type ReconcileAnalyticsIdentityInput = {
@@ -50,6 +53,22 @@ export function reconcileAnalyticsIdentity(input: ReconcileAnalyticsIdentityInpu
     // Already switched to this user — nothing to do (avoids re-firing identify on
     // every navigation/state tick).
     if (lastDistinctId === authUserId) return lastDistinctId;
+
+    // Cold start on a device that is already identified as this user.
+    // `lastDistinctId` lives in a ref that is null at every mount, but the SDK
+    // persists its distinct_id, so without this guard every launch re-anchors a
+    // known user onto the anonymous UUID and immediately switches back: two
+    // `$identify` per launch, and `$anon_distinct_id` on the first one is the
+    // PREVIOUS user's id. The alias is already recorded (the store is persisted),
+    // so the round-trip has nothing left to accomplish.
+    //
+    // The trade: `identify(authUserId, {email})` is skipped too, so an email
+    // changed after the first login is not re-sent until the next identity
+    // switch. Person traits that do change are written by the cohort
+    // person-properties effect instead.
+    if (lastDistinctId === null && authUserId === client.getDistinctId?.()) {
+      return authUserId;
+    }
 
     // Coming from a different authed user — clear that identity before re-anchoring.
     if (lastDistinctId && lastDistinctId !== profileId) {

@@ -22,12 +22,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
-import {
-  BoardPresenceProvider,
-  useBoardPresenceActions,
-  type BoardPresenceCatchUpInfo,
-} from '@boardsesh/board-presence-react';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { BoardPresenceProvider, useBoardPresenceActions } from '@boardsesh/board-presence-react';
 import type { BoardCandidate, ClimbQueueItemInput, ResolvedBoard } from '@boardsesh/shared-schema';
 import {
   createMobileBoardPresenceClient,
@@ -39,7 +34,6 @@ import {
 } from '../lib/board-presence/screenshot-wall-seed';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { selectOfflineMode, useConnectivityField } from '../lib/connectivity/use-connectivity';
-import { track } from '../lib/analytics';
 import { BoardDisambiguationSheet } from '../components/board-discovery/BoardDisambiguationSheet';
 
 /** Board config needed to find-or-bind the shared board on first sighting. */
@@ -492,19 +486,6 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     setPendingDisambiguation(null);
   }, [settleActiveResolution]);
 
-  // Telemetry only when a catch-up recovered missed wall events. Foreground and
-  // reconnect catch-ups with a zero delta happen often and add no product signal.
-  // Stable identity (reads boardIdRef) so it never re-binds the presence
-  // subscription.
-  const handleCatchUp = useCallback((info: BoardPresenceCatchUpInfo) => {
-    if (info.recoveredThroughSeqDelta <= 0) return;
-    track(SHARED_EVENTS.BoardHistoryCatchUp, {
-      boardId: boardIdRef.current ?? undefined,
-      reason: info.reason,
-      recoveredThroughSeqDelta: info.recoveredThroughSeqDelta,
-    });
-  }, []);
-
   const controls = useMemo<BoardPresenceControlsValue>(
     () => ({
       enabled,
@@ -530,7 +511,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
 
   return (
     <BoardPresenceControlsContext.Provider value={controls}>
-      <BoardPresenceProvider boardId={boardId} client={liveClient} onCatchUp={handleCatchUp}>
+      <BoardPresenceProvider boardId={boardId} client={liveClient}>
         <BoardPresenceForegroundSync />
         {children}
       </BoardPresenceProvider>
