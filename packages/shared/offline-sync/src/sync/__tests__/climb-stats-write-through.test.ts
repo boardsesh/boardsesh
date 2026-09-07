@@ -75,11 +75,13 @@ function wrapDb(overrides: Partial<OfflineDatabase>): OfflineDatabase {
   return { ...base, ...overrides };
 }
 
-async function seedClimb(overrides: { boardType?: string; uuid?: string; compatibleSizeIds?: string | null } = {}) {
+async function seedClimb(
+  overrides: { boardType?: string; uuid?: string; layoutId?: number | null; compatibleSizeIds?: string | null } = {},
+) {
   await db.runAsync('INSERT INTO board_climbs (board_type, uuid, layout_id, compatible_size_ids) VALUES (?, ?, ?, ?)', [
     overrides.boardType ?? 'kilter',
     overrides.uuid ?? CLIMB_UUID,
-    1,
+    overrides.layoutId === undefined ? 1 : overrides.layoutId,
     overrides.compatibleSizeIds === undefined ? '[5,6]' : overrides.compatibleSizeIds,
   ]);
 }
@@ -141,7 +143,9 @@ describe('writeClimbStatsEvent — inserting a row the pull has not seen', () =>
 
     const result = await writeClimbStatsEvent(db, makeEvent());
 
-    expect(result).toEqual({ status: 'applied', compatibleSizeIds: [5, 6] });
+    // layoutId is the climb's OWN board_climbs.layout_id, never the event's —
+    // the caller gates list refreshes on it.
+    expect(result).toEqual({ status: 'applied', compatibleSizeIds: [5, 6], layoutId: 1 });
     const row = await readStatsRow();
     expect(row).toMatchObject({
       display_difficulty: 17,
@@ -264,7 +268,7 @@ describe('writeClimbStatsEvent — the revision gate', () => {
 
     const result = await writeClimbStatsEvent(countingDb, makeEvent({ syncSeq }));
 
-    expect(result).toEqual({ status: 'invalid_revision', compatibleSizeIds: null });
+    expect(result).toEqual({ status: 'invalid_revision', compatibleSizeIds: null, layoutId: null });
     expect(reads).not.toHaveBeenCalled();
     expect(writes).not.toHaveBeenCalled();
   });
@@ -284,7 +288,7 @@ describe('writeClimbStatsEvent — climbs this device does not hold', () => {
 
     const result = await writeClimbStatsEvent(countingDb, makeEvent());
 
-    expect(result).toEqual({ status: 'climb_not_local', compatibleSizeIds: null });
+    expect(result).toEqual({ status: 'climb_not_local', compatibleSizeIds: null, layoutId: null });
     expect(writes).not.toHaveBeenCalled();
     expect(await readStatsRow()).toBeNull();
   });
@@ -361,7 +365,7 @@ describe('writeClimbStatsEvent — the write connection', () => {
 
     const result = await writeClimbStatsEvent(lockedDb, makeEvent());
 
-    expect(result).toEqual({ status: 'lock_lost', compatibleSizeIds: [5, 6] });
+    expect(result).toEqual({ status: 'lock_lost', compatibleSizeIds: [5, 6], layoutId: 1 });
   });
 
   it('drops the event when the database was closed underneath it', async () => {
@@ -471,12 +475,12 @@ describe('writeClimbStatsEvents — the batch', () => {
 
   it('keeps settled results when a later pre-read hits a closed handle', async () => {
     await seedClimb();
-    let reads = 0;
+    // Every read throws. The first event never reaches one — an unparseable
+    // revision settles before the query — so its result must survive the
+    // batch-wide lock_lost fill.
     const closingDb = wrapDb({
-      getFirstAsync: (async (source: string, ...params: never[]) => {
-        reads += 1;
-        if (reads >= 1) throw new Error('Access to closed resource: the database is closed');
-        return db.getFirstAsync(source, ...params);
+      getFirstAsync: (async () => {
+        throw new Error('Access to closed resource: the database is closed');
       }) as unknown as OfflineDatabase['getFirstAsync'],
     });
 
@@ -485,8 +489,62 @@ describe('writeClimbStatsEvents — the batch', () => {
       makeEvent({ climbUuid: 'climb-bbb' }),
     ]);
 
-    // The first settled without a read at all, so the wipe cannot rewrite it.
     expect(results.map((result) => result.status)).toEqual(['invalid_revision', 'lock_lost']);
+  });
+
+  it('returns the CLIMB’s layout, not the layout the event was labelled with', async () => {
+    // A reconciliation read stamps its rows with the layout the user is
+    // browsing, which is not necessarily the climb's. The caller gates list
+    // refreshes on this value, so it has to come from board_climbs.
+    await seedClimb({ layoutId: 8 });
+
+    const [result] = await writeClimbStatsEvents(db, [makeEvent({ layoutId: 1 })]);
+
+    expect(result).toMatchObject({ status: 'applied', layoutId: 8 });
+  });
+
+  it('reports a null layout rather than inventing one when the local row has none', async () => {
+    await seedClimb({ layoutId: null });
+
+    const [result] = await writeClimbStatsEvents(db, [makeEvent({ layoutId: 1 })]);
+
+    expect(result).toMatchObject({ status: 'applied', layoutId: null });
+  });
+
+  it('attributes each upsert’s own changes when a row vanishes between the pre-read and the lock', async () => {
+    // The pre-read runs in autocommit, so a scope teardown (or a sign-out
+    // purge) can delete a climb after it was cleared and before the lock is
+    // taken. Its statement matches nothing, and the WRONG behaviour is to let
+    // that shift every later row's status by one — or to leave an orphan stats
+    // row the teardown can no longer find.
+    await seedClimb({ uuid: 'climb-aaa' });
+    await seedClimb({ uuid: 'climb-bbb', compatibleSizeIds: '[7]' });
+    await seedClimb({ uuid: 'climb-ccc', compatibleSizeIds: '[8]' });
+
+    const vanishingDb = wrapDb({
+      withExclusiveTransactionAsync: (async (task: (txn: SqlExecutor) => Promise<void>) => {
+        await db.runAsync('DELETE FROM board_climbs WHERE uuid = ?', ['climb-bbb']);
+        return db.withExclusiveTransactionAsync(task);
+      }) as unknown as OfflineDatabase['withExclusiveTransactionAsync'],
+    });
+
+    const results = await writeClimbStatsEvents(vanishingDb, [
+      makeEvent({ climbUuid: 'climb-aaa', angle: 40 }),
+      makeEvent({ climbUuid: 'climb-bbb', angle: 40 }),
+      makeEvent({ climbUuid: 'climb-ccc', angle: 40 }),
+    ]);
+
+    expect(results.map((result) => result.status)).toEqual(['applied', 'stale', 'applied']);
+    // The size hints stay pinned to their own event, not shifted along with it.
+    expect(results[0].compatibleSizeIds).toEqual([5, 6]);
+    expect(results[2].compatibleSizeIds).toEqual([8]);
+    // No orphan: the vanished climb's WHERE EXISTS kept its row out.
+    const orphan = await db.getFirstAsync<{ climb_uuid: string }>(
+      'SELECT climb_uuid FROM board_climb_stats WHERE climb_uuid = ?',
+      ['climb-bbb'],
+    );
+    expect(orphan).toBeNull();
+    expect((await readStatsRow(40))?.sync_seq).toBe(500);
   });
 });
 
