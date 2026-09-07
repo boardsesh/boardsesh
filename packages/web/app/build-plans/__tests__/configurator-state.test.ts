@@ -2,11 +2,13 @@ import { describe, it, expect } from 'vite-plus/test';
 import type { CncCatalogEntry } from '@boardsesh/shared-schema';
 import {
   CNC_ENGRAVE_OPTION_KEYS,
-  checkoutBlockers,
+  configKey,
   configuratorReducer,
   defaultOptions,
   engraveOptions,
+  finaliseBlockers,
   fromDraft,
+  isPreviewStale,
   hasKickerSets,
   initialConfiguratorState,
   optionValueKey,
@@ -201,7 +203,7 @@ describe('config to mutation input', () => {
   });
 });
 
-describe('buy gate', () => {
+describe('finalise gate', () => {
   const ready: CncConfiguratorState = {
     ...initialConfiguratorState(tenByTwelve()),
     licenseeName: 'Sam Bouldering',
@@ -210,19 +212,59 @@ describe('buy gate', () => {
   };
 
   it('lets a complete personal order through', () => {
-    expect(checkoutBlockers(ready)).toEqual([]);
+    expect(finaliseBlockers(ready)).toEqual([]);
   });
 
   it('blocks on a missing name, a broken email, and an unaccepted licence', () => {
-    expect(checkoutBlockers({ ...ready, licenseeName: '   ' })).toContain('licenseeName');
-    expect(checkoutBlockers({ ...ready, licenseeEmail: 'sam@example' })).toContain('licenseeEmail');
-    expect(checkoutBlockers({ ...ready, licenceAccepted: false })).toContain('licenceAccepted');
+    expect(finaliseBlockers({ ...ready, licenseeName: '   ' })).toContain('licenseeName');
+    expect(finaliseBlockers({ ...ready, licenseeEmail: 'sam@example' })).toContain('licenseeEmail');
+    expect(finaliseBlockers({ ...ready, licenceAccepted: false })).toContain('licenceAccepted');
   });
 
   it('requires a customer site name only for a commercial licence', () => {
     const commercial = { ...ready, tier: 'commercial_single' as const, customerSiteName: '' };
-    expect(checkoutBlockers(commercial)).toContain('customerSiteName');
-    expect(checkoutBlockers({ ...commercial, customerSiteName: 'Northside Boulder' })).toEqual([]);
+    expect(finaliseBlockers(commercial)).toContain('customerSiteName');
+    expect(finaliseBlockers({ ...commercial, customerSiteName: 'Northside Boulder' })).toEqual([]);
+  });
+});
+
+describe('preview pointers', () => {
+  const previewed = configuratorReducer(initialConfiguratorState(tenByTwelve()), {
+    type: 'previewCreated',
+    orderId: '41',
+    licenceId: 'BS-CNC-K7QM3T',
+    configKey: 'the-wall-that-was-previewed',
+  });
+
+  it('remembers which order to poll and which to finalise', () => {
+    expect({
+      orderId: previewed.previewOrderId,
+      licenceId: previewed.previewLicenceId,
+      key: previewed.previewConfigKey,
+    }).toEqual({ orderId: '41', licenceId: 'BS-CNC-K7QM3T', key: 'the-wall-that-was-previewed' });
+  });
+
+  it('is stale the moment the wall on screen stops matching the one previewed', () => {
+    expect(isPreviewStale(previewed, 'the-wall-that-was-previewed')).toBe(false);
+    expect(isPreviewStale(previewed, 'a-thicker-panel')).toBe(true);
+  });
+
+  it('is never stale before there is a preview at all', () => {
+    const fresh = initialConfiguratorState(tenByTwelve());
+    expect(isPreviewStale(fresh, configKey(toBoardConfigInput(fresh, tenByTwelve())))).toBe(false);
+  });
+
+  it('gives one wall one key, and two walls two', () => {
+    const wall = initialConfiguratorState(tenByTwelve());
+    const thicker: CncConfiguratorState = {
+      ...wall,
+      options: { ...defaultOptions(tenByTwelve()), sheetStock: '3600x1220' },
+    };
+
+    expect(configKey(toBoardConfigInput(wall, tenByTwelve()))).toBe(configKey(toBoardConfigInput(wall, tenByTwelve())));
+    expect(configKey(toBoardConfigInput(thicker, tenByTwelve()))).not.toBe(
+      configKey(toBoardConfigInput(wall, tenByTwelve())),
+    );
   });
 });
 
@@ -254,6 +296,35 @@ describe('draft persistence', () => {
       licenceAccepted: false,
     });
     expect(restored?.options.sheetStock).toBe('3600x1220');
+  });
+
+  it('brings the preview back with the wall, so a reload resumes the gallery', () => {
+    const state = configuratorReducer(initialConfiguratorState(tenByTwelve()), {
+      type: 'previewCreated',
+      orderId: '41',
+      licenceId: 'BS-CNC-K7QM3T',
+      configKey: 'the-wall-that-was-previewed',
+    });
+
+    const restored = fromDraft(JSON.parse(JSON.stringify(toDraft(state))), [tenByTwelve()]);
+
+    expect(restored).toMatchObject({
+      previewOrderId: '41',
+      previewLicenceId: 'BS-CNC-K7QM3T',
+      previewConfigKey: 'the-wall-that-was-previewed',
+    });
+  });
+
+  it('drops a half-written preview pointer rather than restoring a gallery it cannot check', () => {
+    // A licence id with no config key behind it would come back looking fresh
+    // however much the buyer had changed since.
+    const draft = { ...toDraft(initialConfiguratorState(tenByTwelve())), previewLicenceId: 'BS-CNC-K7QM3T' };
+
+    expect(fromDraft(draft, [tenByTwelve()])).toMatchObject({
+      previewOrderId: null,
+      previewLicenceId: null,
+      previewConfigKey: null,
+    });
   });
 
   it('falls back to today’s default for an option value the catalogue has dropped', () => {
