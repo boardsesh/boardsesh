@@ -123,7 +123,7 @@
       },
       "studClearanceOffsetMm": {
         "label": "Abstand zu den Ständern",
-        "help": "Verschiebt das Griffraster seitlich, damit keine Bohrung auf einem Ständer landet.",
+        "help": "Verschiebt das Griffraster seitlich, damit keine Bohrung auf einem Ständer landet. Bei 0 mm bleibt das Raster mittig auf der Wand.",
         "values": {
           "0": "Keiner",
           "30": "30 mm",
