@@ -55,6 +55,10 @@
   "configurator": {
     "heading": "Konfiguriere deine Wand",
     "intro": "Alles hier unten ändert, was gefräst wird. Nimm die Werte, mit denen deine Werkstatt arbeitet.",
+    "wall": {
+      "heading": "Deine Wand",
+      "help": "Das Board und die Größe, die du baust. Alles Weitere folgt daraus."
+    },
     "board": {
       "label": "Board",
       "help": "Das Kilter Homewall ist heute das einzige Board im Verkauf."
@@ -64,7 +68,6 @@
       "help": "Die Kilter-Größe, die du baust. Sie legt das Griffraster und die Wandmaße fest."
     },
     "kicker": {
-      "label": "Fußleiste",
       "help": "Das schräge Panel ganz unten. Nur die 12-ft-Wände haben eine.",
       "include": "Fußleiste einbauen",
       "exclude": "Ohne Fußleiste"
@@ -170,8 +173,8 @@
     },
     "engrave": {
       "heading": "Gravur",
-      "help": "Beides ist standardmäßig aus. Es ergibt nur an einer Kilter-Wand Sinn, und das Pack lässt sich auch ohne sauber fräsen.",
-      "note": "Griffnummern und Madenschrauben-Winkel stammen aus Kilters eigenem Layout. Wir klären rechtlich noch, ob wir sie mitliefern dürfen. Lass sie also aus, wenn du auf diese Antwort nicht warten willst."
+      "help": "Griffnummern und Madenschrauben-Winkel, beim Fräsen direkt ins Panel. Beides ist standardmäßig an.",
+      "note": "Beides stammt aus dem Kilter-Layout und zahlt sich aus, sobald du die Griffe montierst: die Nummer neben jeder Einschlagmutter sagt, welcher Griff dorthin gehört, und der Strich zeigt, wohin die Madenschraube zeigt."
     },
     "artwork": {
       "heading": "Eigener Text und Logos",
@@ -212,7 +215,6 @@
       "fits": "Passt. Frei von jedem Loch und jeder Fuge.",
       "doesNotFit": "So lässt sich das nicht fräsen. Verschieb sie, dann prüfen wir neu.",
       "signInToCheck": "Melde dich an, dann prüfen wir deine Beschriftungen gegen das Lochraster.",
-      "blocksCheckout": "Verschieb deine Beschriftungen dorthin, wo sie passen, bevor du kaufst.",
       "issues": {
         "text": "Schreib, was auf dieser Beschriftung stehen soll.",
         "textTooLong": "Das ist länger als {{chars}} Zeichen.",
@@ -262,11 +264,11 @@
         "holesInTheWay_other": "Sie liegt auf {{count}} Löchern. Verschieb sie.",
         "crossesSeam": "Sie läuft über eine Fuge, sie würde in zwei Teile geschnitten.",
         "clear": "Frei von jedem Loch und jeder Fuge auf diesem Panel."
-      }
+      },
+      "blocksPreview": "Verschieb deine Beschriftungen dorthin, wo sie passen, bevor du die Vorschau holst."
     },
     "summary": {
       "heading": "Was gefräst wird",
-      "loading": "Panele werden berechnet…",
       "wall": "Wand",
       "wallValue": "{{width}} × {{height}} mm",
       "kickerHeight": "Höhe der Fußleiste",
@@ -280,11 +282,10 @@
       "tnuts": "Einschlagmutter-Bohrungen",
       "leds": "LED-Bohrungen",
       "skippedLeds": "An einem Stoß ausgelassene LEDs",
-      "warningsHeading": "Gut zu wissen"
+      "warningsHeading": "Gut zu wissen",
+      "unavailable": "Die Frästeileliste lädt gerade nicht. Alles, was du gewählt hast, ist noch da."
     },
     "licensee": {
-      "heading": "Auf wen die Lizenz läuft",
-      "help": "Das steht in jeder Datei im Pack, eine geleakte Kopie führt also zur Lizenz zurück.",
       "name": "Name auf der Lizenz",
       "email": "E-Mail",
       "emailHelp": "Wohin das Pack geht, sobald es fertig ist.",
@@ -295,20 +296,48 @@
     "licence": {
       "accept": "Ich akzeptiere die Fertigungslizenz",
       "link": "Lies sie vorher"
+    },
+    "preview": {
+      "heading": "Deine Vorschau",
+      "signedOut": "Melde dich an, dann zeichnen wir deine Wand. Vorschauen sind kostenlos, ganz ohne Karte.",
+      "idle": "Wir teilen alle Bögen auf und schicken dir Zeichnungen mit Wasserzeichen zurück. Ändere etwas und hol dir die nächste.",
+      "working": "Wir zeichnen deine Bögen. Das dauert etwa fünfzehn Sekunden.",
+      "ready": "Mit Wasserzeichen, 110 dpi. Schließ ab, dann bekommst du die DXF-Dateien.",
+      "stale": "Du hast die Wand seit diesen Bögen geändert. Hol dir die Vorschau neu.",
+      "failed": "Diese Vorschau wurde nicht erstellt. Es wurde nichts abgebucht — probier es nochmal.",
+      "rateLimited": "Das waren alle kostenlosen Vorschauen dieser Stunde. Die vorhandenen liegen bei deinen Bauplänen, die nächste gibt es zur vollen Stunde.",
+      "download": "Vorschau herunterladen",
+      "downloading": "Link wird geholt…",
+      "galleryLabel": "Vorschaubögen",
+      "bomLabel": "Was diese Bögen ergeben",
+      "panel": "Panel {{number}}",
+      "assembly": "Montage",
+      "generated": "Vorschau vom"
+    },
+    "finalise": {
+      "heading": "Auf wen die Lizenz läuft",
+      "help": "Die Lizenz steht in jeder Datei im Pack, eine geleakte Kopie führt also zu ihr zurück.",
+      "stale": "Hol dir zuerst die Vorschau neu — die Wand hat sich seit diesen Bögen geändert."
     }
   },
   "cta": {
-    "buy": "Pläne kaufen",
-    "buySignedOut": "Anmelden und kaufen",
-    "buying": "Kasse wird geöffnet…",
-    "signInTitle": "Zum Kaufen anmelden",
-    "signInBody": "Deine Lizenz braucht ein Konto, auf dem sie liegt. Wir bringen dich direkt zurück zu deiner Konfiguration."
+    "preview": "Kostenlose Vorschau holen",
+    "previewSignedOut": "Für die kostenlose Vorschau anmelden",
+    "previewUpdate": "Vorschau aktualisieren",
+    "previewing": "Deine Vorschau wird gezeichnet…",
+    "previewRetry": "Nochmal versuchen",
+    "finalise": "Abschließen und kaufen",
+    "finalising": "Kasse wird geöffnet…",
+    "free": "Vorschauen sind kostenlos. Keine Karte nötig.",
+    "signInTitle": "Für deine kostenlose Vorschau anmelden",
+    "signInBody": "Deine Vorschau braucht ein Konto, auf dem sie liegt. Wir bringen dich direkt zurück zu deiner Konfiguration."
   },
   "errors": {
     "CNC_INVALID_CONFIG": "Diese Kombination lässt sich nicht fräsen. Änder oben etwas, dann prüfen wir es neu.",
     "CNC_WORKER_UNAVAILABLE": "Der Plangenerator antwortet gerade nicht. Es wurde nichts abgebucht. Probier es in einer Minute nochmal.",
     "CNC_CHECKOUT_UNAVAILABLE": "Zahlungen sind gerade nicht möglich. Es wurde nichts abgebucht. Probier es gleich nochmal.",
-    "generic": "Das ist nicht durchgegangen. Es wurde nichts abgebucht."
+    "generic": "Das ist nicht durchgegangen. Es wurde nichts abgebucht.",
+    "RATE_LIMITED": "Das sind ziemlich viele Vorschauen für eine Stunde. Es wurde nichts abgebucht — die nächste gibt es zur vollen Stunde."
   },
   "status": {
     "pending_payment": "Warten auf Zahlung",
@@ -325,38 +354,60 @@
   },
   "orders": {
     "heading": "Deine Baupläne",
-    "intro": "Jedes Pack, das du gekauft hast, neuestes zuerst. Eine Lizenz bleibt deine, egal was mit dieser Seite passiert.",
-    "empty": "Hier ist noch nichts.",
+    "intro": "Jede Wand, die du dir angesehen oder gekauft hast, neueste zuerst. Eine Lizenz bleibt deine, egal was mit dieser Seite passiert.",
+    "configureAnother": "Noch eine Wand konfigurieren",
+    "empty": "Hier ist noch keine Wand.",
+    "emptyBody": "Konfigurier eine Wand und wir zeichnen dir gratis eine Vorschau von jeder Platte. Abgebucht wird erst, wenn du abschließt.",
     "emptyCta": "Wand konfigurieren",
-    "board": "Wand",
-    "tier": "Lizenztyp",
-    "created": "Bestellt",
+    "previewTier": "Vorschau",
+    "orderedOn": "Bestellt am {{date}}",
+    "previewedOn": "Vorschau vom {{date}}",
     "view": "Öffnen",
+    "viewOne": "Bauplan {{licenceId}} öffnen",
+    "finalise": "Abschließen",
     "loadError": "Wir konnten deine Baupläne nicht laden. Lad die Seite neu."
   },
   "order": {
-    "heading": "Bauplan {{licenceId}}",
     "back": "Alle deine Baupläne",
-    "licence": "Lizenz",
     "board": "Wand",
-    "tier": "Lizenztyp",
-    "placed": "Bestellt",
+    "tier": "Lizenz",
+    "placed": "Angefangen",
+    "previewed": "Vorschau gezeichnet",
     "size": "Größe des Packs",
     "sizeValue": "{{megabytes}} MB",
     "downloads": "Downloads",
+    "facts": {
+      "heading": "Worum es geht"
+    },
     "timeline": {
       "heading": "Wie weit es ist",
-      "paid": "Bezahlt",
-      "queued": "In der Warteschlange für den Generator",
-      "generating": "Dateien werden zugeschnitten",
+      "preview": "Gratis-Vorschau gezeichnet",
+      "finalised": "Lizenz auf deinen Namen und bezahlt",
+      "building": "Dateien werden zugeschnitten",
       "ready": "Bereit zum Download"
     },
     "waiting": "Ein Pack braucht ein paar Minuten. Diese Seite aktualisiert sich selbst.",
+    "previewWaiting": "Eine Vorschau braucht rund fünfzehn Sekunden. Diese Seite aktualisiert sich selbst.",
+    "preview": {
+      "heading": "Deine Gratis-Vorschau",
+      "note": "Mit Wasserzeichen, 110 dpi. Schließ ab, dann bekommst du die DXF-Dateien, aus denen deine Werkstatt schneidet.",
+      "drawing": "Wir zeichnen deine Platten. Sie landen hier, sobald sie fertig sind.",
+      "panel": "Platte {{number}}",
+      "assembly": "Montage"
+    },
+    "finalise": "Abschließen und kaufen",
+    "downloadPreview": "Vorschau herunterladen",
     "download": "Pack herunterladen",
     "downloading": "Link wird geholt…",
     "downloadError": "Der Link ist nicht angekommen. Probier es nochmal.",
     "checkoutSuccess": "Die Zahlung ist durch. Dein Pack wird gerade zugeschnitten.",
     "checkoutCancelled": "Die Bezahlung wurde abgebrochen. Es wurde nichts abgebucht.",
+    "previewFailed": {
+      "heading": "Diese Vorschau wurde nicht gezeichnet",
+      "body": "Es wurde nichts abgebucht. Änder etwas an deiner Wand und hol dir eine neue Vorschau, oder sag uns Bescheid und wir schauen es uns an.",
+      "contact": "Schreib uns, wir kümmern uns darum",
+      "subject": "Die Vorschau für Bauplan {{licenceId}} wurde nicht gezeichnet"
+    },
     "failed": {
       "heading": "Dieser wurde nicht erstellt",
       "contact": "Schreib uns, wir kümmern uns darum",
@@ -370,7 +421,11 @@
       "heading": "Diesen Bauplan gibt es nicht",
       "body": "Entweder existiert die Lizenz nicht oder sie gehört zu einem anderen Konto."
     },
-    "loadError": "Wir konnten diesen Bauplan nicht laden. Lad die Seite neu."
+    "loadError": "Wir konnten diesen Bauplan nicht laden. Lad die Seite neu.",
+    "downloadCard": {
+      "heading": "Dein Bau-Pack",
+      "note": "Eine DXF-Datei pro Platte, die Montagezeichnungen, die Druckbögen und deine Lizenz, alles in einem Zip."
+    }
   },
   "flow": {
     "heading": "So läuft das",
