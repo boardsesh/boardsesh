@@ -33,6 +33,17 @@ function isPathCrawlable(rules: ReturnType<typeof getRules>, url: string): boole
 }
 
 describe('robots', () => {
+  it('opts AI crawlers out without closing traditional search or share previews', () => {
+    const rules = robots().rules;
+    expect(Array.isArray(rules)).toBe(true);
+    const allRules = Array.isArray(rules) ? rules : [rules];
+    const aiRule = allRules.find((rule) => toList(rule.userAgent).includes('gptbot'));
+    expect(aiRule?.disallow).toBe('/');
+    expect(aiRule?.allow).toBeUndefined();
+    expect(toList(aiRule?.userAgent)).toEqual(expect.arrayContaining(['claude-searchbot', 'Google-Extended']));
+    expect(toList(aiRule?.userAgent)).not.toContain('googlebot');
+    expect(toList(aiRule?.userAgent)).not.toContain('facebookexternalhit');
+  });
   it('allows crawling the root path', () => {
     const result = robots();
     const rules = getRules(result);

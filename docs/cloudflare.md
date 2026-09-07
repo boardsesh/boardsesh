@@ -339,7 +339,18 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
   2. `block` for commercial SEO/backlink crawlers (Ahrefs, Semrush, DataForSEO,
      MJ12, DotBot, BLEXBot, Barkrowler, serpstat, Seznam, Zoominfo, Screaming
      Frog). Each was verified reaching our origin on 2026-08-24. They sell
-     backlink data and send Boardsesh no traffic.
+     backlink data and send Boardsesh no traffic. The same rule also blocks
+     automated AI training and search crawlers, using the shared tokens in
+     `packages/web/app/lib/crawler-policy.ts`. Google, Bing, Yandex, Brave and
+     share-card unfurlers remain allowed. Human-triggered AI fetchers are not
+     added to this automated-crawler list.
+
+  Web middleware rejects those AI agents before page rendering, including on
+  the direct Railway hostname. Robots.txt publishes the same opt-out plus
+  `Google-Extended` (a robots-only token). Production logs on 2026-09-07 showed
+  GPTBot using the Railway hostname and Claude-SearchBot reaching www despite
+  synthetic Cloudflare probes returning 403; the managed AI block alone is
+  insufficient. UA rules only catch agents that identify themselves.
 
   **Order is load-bearing and enforced by the tool.** `upsertCacheRule` rewrites
   our rules as one contiguous group in declared order, because a rule-by-rule
@@ -348,10 +359,8 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
 
   Two things the tool will not do, both deliberate:
   - It never reorders our group relative to **foreign** rules. Cloudflare's own
-    AI-crawler block (which already 403s ClaudeBot, GPTBot, PerplexityBot,
-    Bytespider, CCBot and friends — verified 2026-08-24) runs ahead of ours and
-    stays there. That is also why those agents are absent from our block list:
-    duplicating them would be dead config that drifts.
+    AI-crawler block remains in its existing position. Our explicit policy
+    also covers these agents so it does not depend on that unmanaged rule.
   - It never uses `cf.client.bot` as the allowlist. Ahrefs and Semrush are
     themselves Cloudflare _verified bots_, so that field is true for precisely
     the crawlers we are blocking.

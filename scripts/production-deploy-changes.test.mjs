@@ -513,3 +513,9 @@ void test('the human-readable summary names every target the outputs do', () => 
   // And it must not leak the base sha, which the caller prints separately.
   assert.ok(!summary.includes('deployment_base_sha'), summary);
 });
+
+void test('deploys both web and Cloudflare when the shared crawler policy changes', () => {
+  const targets = classifyChangedFiles(['packages/web/app/lib/crawler-policy.ts']);
+  assert.equal(targets.web, true);
+  assert.equal(targets.cloudflare, true);
+});

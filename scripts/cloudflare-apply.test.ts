@@ -752,6 +752,11 @@ describe('www cost-control rules (#4650)', () => {
 
   it('matches the scrapers it is meant to block', () => {
     const blockedUserAgents = [
+      'Mozilla/5.0 (compatible; GPTBot/1.4; +https://openai.com/gptbot)',
+      'Mozilla/5.0 (compatible; Claude-SearchBot/1.0; +searchbot@anthropic.com)',
+      'Mozilla/5.0 (compatible; Amzn-SearchBot/0.1)',
+      'OAI-SearchBot/1.0',
+      'PerplexityBot/1.0',
       'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)',
       'Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)',
       'Mozilla/5.0 (compatible; DataForSeoBot/1.0; +https://dataforseo.com/dataforseo-bot)',
