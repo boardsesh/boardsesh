@@ -9,6 +9,8 @@ vi.mock('@/app/lib/graphql/client', () => ({
 }));
 
 const { useCncPreview, isBackendDownloadUrl } = await import('../configurator/use-cnc-preview');
+const { previewRefetchInterval, PREVIEW_POLL_INTERVAL_MS, MAX_CONSECUTIVE_NULL_POLLS } =
+  await import('../configurator/use-cnc-preview-poll');
 
 const windowOpen = vi.fn();
 
@@ -150,5 +152,25 @@ describe('useCncPreview', () => {
 
     expect(windowOpen).not.toHaveBeenCalled();
     await waitFor(() => expect(result.current.errorKey).toBe('generic'));
+  });
+});
+
+describe('previewRefetchInterval', () => {
+  it('polls while the generator has the job and stops the moment the buyer does', () => {
+    expect(previewRefetchInterval('preview_queued')).toBe(PREVIEW_POLL_INTERVAL_MS);
+    expect(previewRefetchInterval('preview_generating')).toBe(PREVIEW_POLL_INTERVAL_MS);
+    // Both of these wait on a person: one for a finalise, one for a retry.
+    expect(previewRefetchInterval('preview_ready')).toBe(false);
+    expect(previewRefetchInterval('preview_failed')).toBe(false);
+    // Once the browser has left for Stripe, the order page takes over.
+    expect(previewRefetchInterval('pending_payment')).toBe(false);
+  });
+
+  it('gives a licence that answers nothing a few tries, then gives up', () => {
+    expect(previewRefetchInterval(null, 0)).toBe(PREVIEW_POLL_INTERVAL_MS);
+    expect(previewRefetchInterval(null, MAX_CONSECUTIVE_NULL_POLLS - 1)).toBe(PREVIEW_POLL_INTERVAL_MS);
+    // A draft can name an order that is genuinely gone; that must not become a
+    // request every five seconds for as long as the tab is open.
+    expect(previewRefetchInterval(null, MAX_CONSECUTIVE_NULL_POLLS)).toBe(false);
   });
 });
