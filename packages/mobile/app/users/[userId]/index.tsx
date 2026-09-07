@@ -143,7 +143,9 @@ export default function PublicProfileScreen() {
       </View>
 
       <View style={styles.flex}>
-        {activeSection === 'progress' ? <ProgressTab data={youData} topInset={0} userId={userId} /> : null}
+        {activeSection === 'progress' ? (
+          <ProgressTab data={youData} topInset={0} userId={userId} viewerIsOwner={isSelf} />
+        ) : null}
         {activeSection === 'sessions' ? <SessionsTab userId={userId} topInset={0} /> : null}
         {activeSection === 'logbook' ? <LogbookTab userId={userId} topInset={0} viewerIsOwner={isSelf} /> : null}
         {activeSection === 'climbs' ? <ProfileClimbsTab userId={userId} topInset={0} /> : null}

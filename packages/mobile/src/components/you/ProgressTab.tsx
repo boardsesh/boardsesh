@@ -17,6 +17,7 @@ import { LayoutShareDonut } from './LayoutShareDonut';
 import { layoutChartColor, flashRedpointColor } from './profile-chart-colors';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { OnboardingTipBanner } from '../onboarding/OnboardingTipBanner';
+import { BoardLinkPrompt } from './BoardLinkPrompt';
 import { hasSeenTip, markTipSeen } from '../../lib/onboarding/onboarding-storage';
 import { getCachedNumberFormat } from '../../lib/intl-formatter-cache';
 import { ONBOARDING_TIP_RECORD_KEY } from '@boardsesh/key-value-storage';
@@ -33,9 +34,21 @@ type ProgressTabProps = {
   /** Climber whose beta-video shelf to show above the stats. Omit to hide it
    *  (e.g. before the viewer's own id resolves). */
   userId?: string;
+  /**
+   * Whether the viewer owns this profile. Mirrors `LogbookTab`, and defaults the
+   * same way, because this tab renders on `users/[userId]` for other climbers too:
+   * without it the empty state would offer to link *your* board account while you
+   * are looking at a stranger's empty stats.
+   */
+  viewerIsOwner?: boolean;
 };
 
-export const ProgressTab = memo(function ProgressTab({ data, topInset, userId }: ProgressTabProps) {
+export const ProgressTab = memo(function ProgressTab({
+  data,
+  topInset,
+  userId,
+  viewerIsOwner = true,
+}: ProgressTabProps) {
   const { t } = useTranslation('profile');
   const { t: tYou } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
@@ -124,12 +137,17 @@ export const ProgressTab = memo(function ProgressTab({ data, topInset, userId }:
       ) : null}
 
       {totalAscents === 0 ? (
-        <View style={styles.empty}>
-          <Icon name="chart.bar" size={48} color={systemColors.tertiaryLabel} />
-          <Text variant="headline" style={styles.emptyTitle}>
-            {tYou('mobile.progress.empty')}
-          </Text>
-        </View>
+        <>
+          {/* Above the placard, not inside it: the placard explains the empty
+              chart, this explains why the history they already have is missing. */}
+          <BoardLinkPrompt viewerIsOwner={viewerIsOwner} hasNoSends />
+          <View style={styles.empty}>
+            <Icon name="chart.bar" size={48} color={systemColors.tertiaryLabel} />
+            <Text variant="headline" style={styles.emptyTitle}>
+              {tYou('mobile.progress.empty')}
+            </Text>
+          </View>
+        </>
       ) : (
         <>
           <SectionHeader title={t('stats.summary')} />
