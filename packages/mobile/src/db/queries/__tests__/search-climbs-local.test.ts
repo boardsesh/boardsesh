@@ -8,8 +8,11 @@ import {
   searchClimbsLocal,
   countClimbsLocal,
   isOfflineSearchSupported,
-  parseCompatibleSizeIds,
+  normalizeSortBy,
 } from '../search-climbs-local';
+// The decode lives with the scope SQL that reads the same column; mobile is a
+// consumer of it, not its owner.
+import { parseCompatibleSizeIds } from '@boardsesh/offline-sync';
 
 // The climber whose rows this device holds — written into sync_meta by the
 // offline-sync bridge on sign-in, and the value every tick predicate binds.
@@ -646,6 +649,28 @@ describe('isOfflineSearchSupported', () => {
   // Random needs no un-synced tables, so it stays offline-supported.
   it('supports the random sort offline', () => {
     expect(isOfflineSearchSupported(makeInput({ sortBy: 'random', sortSeed: '42' }))).toBe(true);
+  });
+});
+
+describe('normalizeSortBy', () => {
+  // Exported so the live-stats consumer answers "does this sort read stats?"
+  // off the same rule the SQL runs. An absent sortBy is the interesting case:
+  // it is the default list, and it is `ascents`.
+  it.each([undefined, null, ''])('reads %p as the ascents default', (sortBy) => {
+    expect(normalizeSortBy(sortBy)).toBe('ascents');
+  });
+
+  it('resolves the aliases the server sends', () => {
+    expect(normalizeSortBy('created_at')).toBe('creation');
+    expect(normalizeSortBy('published_at')).toBe('creation');
+  });
+
+  it('falls back to creation for a sort it does not know', () => {
+    expect(normalizeSortBy('nonsense')).toBe('creation');
+  });
+
+  it.each(['ascents', 'difficulty', 'quality', 'popular', 'name', 'random'])('passes %s through', (sortBy) => {
+    expect(normalizeSortBy(sortBy)).toBe(sortBy);
   });
 });
 
