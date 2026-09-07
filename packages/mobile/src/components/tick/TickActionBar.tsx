@@ -10,14 +10,14 @@
 //
 // It adds NO padding of its own: Sheet/ModalSheet's footer bar already applies
 // the gutter, the top inset and the window bottom inset.
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import type { IconName } from '../icon-map';
-import { TICK_ACTION_HEIGHT, TICK_ERROR_SLOT_HEIGHT } from './tick-sheet-metrics';
+import { TICK_ACTION_HEIGHT, TICK_ERROR_SLOT_HEIGHT, tickActionHeight } from './tick-sheet-metrics';
 
 const ERROR_ICON_SIZE = 13;
 
@@ -44,6 +44,10 @@ type TickActionBarProps = {
 
 export const TickActionBar = React.memo(function TickActionBar({ primary, secondary, error }: TickActionBarProps) {
   const { brandColors, spacing } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  // Memoized: `Button` is a native host, so a fresh style object every render is
+  // a fresh prop on both of them.
+  const buttonStyles = useMemo(() => tickButtonStyles(tickActionHeight(fontScale)), [fontScale]);
 
   return (
     <View>
@@ -76,7 +80,7 @@ export const TickActionBar = React.memo(function TickActionBar({ primary, second
             disabled={secondary.disabled}
             variant="tonal"
             size="large"
-            style={styles.secondaryButton}
+            style={buttonStyles.secondary}
           />
         ) : null}
         <Button
@@ -88,9 +92,7 @@ export const TickActionBar = React.memo(function TickActionBar({ primary, second
           icon={primary.icon}
           variant="filled"
           size="large"
-          // 2:1 beside a secondary so the defining action reads as the bigger
-          // object; 1 on its own so it fills the bar instead of hugging its label.
-          style={secondary ? styles.primaryButtonPaired : styles.primaryButtonAlone}
+          style={secondary ? buttonStyles.primaryPaired : buttonStyles.primaryAlone}
         />
       </View>
     </View>
@@ -109,15 +111,22 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
+    alignItems: 'center',
+    // Never the row that gives when the keyboard squeezes the column.
+    flexShrink: 0,
     minHeight: TICK_ACTION_HEIGHT,
   },
-  secondaryButton: {
-    flex: 1,
-  },
-  primaryButtonPaired: {
-    flex: 2,
-  },
-  primaryButtonAlone: {
-    flex: 1,
-  },
 });
+
+/**
+ * The two buttons' styles: one shared height (see `tickActionHeight`), and the
+ * 1:2 flex split that makes the defining action the bigger object. A lone
+ * primary takes the whole bar instead of hugging its label.
+ */
+function tickButtonStyles(height: number) {
+  return {
+    secondary: { flex: 1, height },
+    primaryPaired: { flex: 2, height },
+    primaryAlone: { flex: 1, height },
+  };
+}

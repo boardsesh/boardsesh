@@ -6,6 +6,9 @@ import { flattenStyle } from '../../../../test/flatten-style';
 import type { ButtonProps } from '../../Button.types';
 
 const buttonCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+// The OS text scale the component reads. Every test but the Dynamic-Type one
+// leaves it at 1.
+const screen = vi.hoisted(() => ({ fontScale: 1 }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
@@ -34,6 +37,7 @@ vi.mock('react-native', () => ({
       children,
     ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: screen.fontScale }),
 }));
 
 // Capture what the native Button primitive is handed — the 1:2 split lives in
@@ -61,7 +65,7 @@ vi.mock('../../../providers/theme-provider', async () => {
 });
 
 import { TickActionBar } from '../TickActionBar';
-import { TICK_ERROR_SLOT_HEIGHT } from '../tick-sheet-metrics';
+import { TICK_ACTION_HEIGHT, TICK_ERROR_SLOT_HEIGHT, tickActionHeight } from '../tick-sheet-metrics';
 import { brandColors } from '../../../theme/colors';
 
 function renderBar(props: Partial<Parameters<typeof TickActionBar>[0]> = {}) {
@@ -81,7 +85,17 @@ function styleOf(container: HTMLElement, testID: string): Record<string, unknown
 describe('TickActionBar', () => {
   beforeEach(() => {
     buttonCalls.props.length = 0;
+    screen.fontScale = 1;
   });
+
+  // The style each Button was handed, by role. Reading the spy by index breaks
+  // the moment a render order or a render count changes; the title is what the
+  // assertion actually means.
+  function buttonStyle(title: string): Record<string, unknown> {
+    const call = buttonCalls.props.find((props) => props.title === title);
+    expect(call, `no Button rendered with title ${title}`).toBeDefined();
+    return flattenStyle(call?.style);
+  }
 
   it('gives the primary twice the secondary width when both are present', () => {
     renderBar({ secondary: { title: 'Attempt', onPress: vi.fn() } });
@@ -110,6 +124,43 @@ describe('TickActionBar', () => {
     const failed = renderBar({ error: "Couldn't save your tick" });
     expect(styleOf(failed.container, 'tick-action-error-slot')).toEqual(restSlot);
     expect(styleOf(failed.container, 'tick-action-row')).toEqual(restRow);
+  });
+
+  it('holds its shape when the keyboard squeezes the column', () => {
+    // ModalSheet pads the bottom by the keyboard height INSIDE a fixed-height
+    // column, so everything above competes for what is left. Not this row.
+    const { container } = renderBar();
+    const row = styleOf(container, 'tick-action-row');
+
+    expect(row.flexShrink).toBe(0);
+    expect(row.alignItems).toBe('center');
+    expect(row.minHeight).toBe(TICK_ACTION_HEIGHT);
+  });
+
+  it('pins both buttons to one height, so the tonal and filled pills cannot measure apart', () => {
+    renderBar({ secondary: { title: 'Attempt', onPress: vi.fn() } });
+
+    expect(buttonStyle('Attempt').height).toBe(TICK_ACTION_HEIGHT);
+    expect(buttonStyle('Send').height).toBe(TICK_ACTION_HEIGHT);
+  });
+
+  it('pins the height of a lone primary too', () => {
+    renderBar();
+
+    expect(buttonStyle('Send').height).toBe(TICK_ACTION_HEIGHT);
+  });
+
+  it('grows the shared height with the OS text scale, and still shares it', () => {
+    screen.fontScale = 2;
+    renderBar({ secondary: { title: 'Attempt', onPress: vi.fn() } });
+
+    const grown = tickActionHeight(2);
+    expect(grown).toBeGreaterThan(TICK_ACTION_HEIGHT);
+    expect(buttonStyle('Attempt').height).toBe(grown);
+    expect(buttonStyle('Send').height).toBe(grown);
+    // The flex split is not what the text scale moves.
+    expect(buttonStyle('Attempt').flex).toBe(1);
+    expect(buttonStyle('Send').flex).toBe(2);
   });
 
   it('announces a failure: these used to go through showToast, which announced', () => {

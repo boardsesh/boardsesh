@@ -23,11 +23,17 @@ import {
   Text,
   TextButton,
 } from '@expo/ui/jetpack-compose';
-import { defaultMinSize, fillMaxWidth, padding, size } from '@expo/ui/jetpack-compose/modifiers';
+import {
+  defaultMinSize,
+  fillMaxWidth,
+  height as heightModifier,
+  padding,
+  size,
+} from '@expo/ui/jetpack-compose/modifiers';
 import type { ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
-import { isFullWidthStyle, makeButtonPressHandler } from './Button.logic';
+import { buttonFillAxes, buttonMatchContents, makeButtonPressHandler, pinnedButtonHeight } from './Button.logic';
 import { sizeConfig, type ButtonProps } from './Button.types';
 import type { IconName } from './icon-map';
 
@@ -131,7 +137,8 @@ export function Button({
           ? TextButton
           : ComposeButton;
 
-  const isFullWidth = isFullWidthStyle(style);
+  const fills = buttonFillAxes(style);
+  const pinnedHeight = pinnedButtonHeight(style);
   const iconSource = icon ? BUTTON_ICON_SOURCE[icon] : undefined;
 
   // Compose has no discrete height buckets: a button is exactly its content plus
@@ -139,18 +146,18 @@ export function Button({
   // that sit in a row of 44dp controls pass `minHeight`; `defaultMinSize` is the
   // Compose idiom for exactly that (a floor, not a fixed height, so a long label
   // or large Dynamic Type still grows the button).
+  //
+  // A pinned `height` is the caller asking for one height across a row of buttons
+  // whose native styles measure differently (the tick bar). Compose takes it
+  // directly; the Host stops measuring that axis so the value survives.
   const composeModifiers = [
-    ...(isFullWidth ? [fillMaxWidth()] : []),
+    ...(fills.width ? [fillMaxWidth()] : []),
+    ...(pinnedHeight != null ? [heightModifier(pinnedHeight)] : []),
     ...(minHeight != null ? [defaultMinSize({ minHeight })] : []),
   ];
 
   return (
-    <Host
-      matchContents={isFullWidth ? { vertical: true } : true}
-      colorScheme={colorScheme}
-      style={style}
-      testID={testID}
-    >
+    <Host matchContents={buttonMatchContents(style)} colorScheme={colorScheme} style={style} testID={testID}>
       <Comp
         onClick={handlePress}
         enabled={!(disabled || loading)}

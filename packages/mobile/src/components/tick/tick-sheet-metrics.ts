@@ -43,6 +43,35 @@ export const TICK_HEADER_HEIGHT = 56;
  *  the same object as every other defining action. */
 export const TICK_ACTION_HEIGHT = glassSize.hero; // 56
 
+/** How much of TICK_ACTION_HEIGHT is label rather than the native control's own
+ *  padding. Only the label grows with the OS text scale — a SwiftUI/Compose
+ *  button's padding is fixed — so a scaled action height adds the growth of this
+ *  one line and nothing else.
+ *
+ *  Approximate, and deliberately one number for both platforms: an iOS `body`
+ *  line is 17pt at the system 1.29 leading (~22) and a Compose `bodyLarge` line
+ *  is 24sp, so Android under-grows by ~2dp per full step of scale. The button is
+ *  exactly this tall either way; the slack is padding, not a clipped label. A
+ *  per-platform constant would buy those 2dp at the cost of two numbers that can
+ *  drift apart. */
+export const TICK_ACTION_LABEL_HEIGHT = 22;
+
+/**
+ * The action row's button height at a given OS text scale.
+ *
+ * The row pins ONE height across both buttons because the tonal Attempt and the
+ * filled Send are different native controls: each derives its own padding, so
+ * left to measure themselves they land ~7pt apart and the row reads crooked.
+ * The pin has to hold at every text scale — a button that only sometimes carries
+ * a height would flip `Host`'s `matchContents` mid-life, and the axis it stops
+ * measuring is the axis nothing else sizes.
+ *
+ * Never below TICK_ACTION_HEIGHT: that is the hero floor, not a measurement.
+ */
+export function tickActionHeight(fontScale: number): number {
+  return Math.round(TICK_ACTION_HEIGHT + TICK_ACTION_LABEL_HEIGHT * (Math.max(1, fontScale) - 1));
+}
+
 /** Always-reserved height of the action bar's error slot. Reserved even when
  *  empty so a failed save prints its reason without moving the buttons under
  *  the climber's thumb. One `footnote` line. */

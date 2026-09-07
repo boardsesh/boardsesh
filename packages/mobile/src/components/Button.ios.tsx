@@ -40,7 +40,7 @@ import { useGlassCapability } from '../hooks/use-glass-capability';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { overlays } from '../theme/tokens';
-import { isFullWidthStyle, makeButtonPressHandler } from './Button.logic';
+import { buttonFillAxes, buttonMatchContents, makeButtonPressHandler } from './Button.logic';
 import { useButtonSurface } from './Button.surface';
 import { iconMap } from './icon-map';
 import type { ButtonProps, ButtonSize } from './Button.types';
@@ -117,16 +117,21 @@ export function Button({
     }
   }
 
-  // A footer button styled to fill its row needs the native Button to stretch (it
-  // content-hugs otherwise); an inline button hugs its content in BOTH axes.
-  const isFullWidth = isFullWidthStyle(style);
+  // Which axes the caller sized for us: a positive `flex`/`width: '100%'` across,
+  // a pinned `height` down. An unsized axis is measured by SwiftUI instead
+  // (`matchContents`), which is the inline, content-hugging case.
+  const fills = buttonFillAxes(style);
+  const fillFrame = {
+    ...(fills.width ? { maxWidth: Infinity } : {}),
+    ...(fills.height ? { maxHeight: Infinity } : {}),
+  };
 
   const modifiers: ModifierConfig[] = [
     styleModifier,
     buttonBorderShape('roundedRectangle', radii.button),
     controlSize(CONTROL_SIZE[size]),
     font({ textStyle: TEXT_STYLE[size], weight: 'semibold' }),
-    frame({ minHeight, ...(isFullWidth ? { maxWidth: Infinity } : {}) }),
+    frame({ minHeight, ...fillFrame }),
     disabledModifier(disabled || loading),
     accessibilityLabelModifier(accessibilityLabel ?? title),
   ];
@@ -141,14 +146,12 @@ export function Button({
   const buttonRole = isDestructive ? 'destructive' : role === 'cancel' ? 'cancel' : undefined;
 
   return (
-    <Host
-      matchContents={isFullWidth ? { vertical: true } : true}
-      colorScheme={colorScheme}
-      style={style}
-      testID={testID}
-    >
+    <Host matchContents={buttonMatchContents(style)} colorScheme={colorScheme} style={style} testID={testID}>
       <SwiftUIButton role={buttonRole} onPress={handlePress} modifiers={modifiers}>
-        <HStack spacing={6}>
+        {/* The fill frame is repeated on the LABEL because that is the view
+            `.buttonStyle()` paints its background around — see buttonFillAxes.
+            The copy on the Button itself only keeps the tap target honest. */}
+        <HStack spacing={6} modifiers={fills.width || fills.height ? [frame(fillFrame)] : undefined}>
           {loading ? (
             <ProgressView modifiers={[tint(spinnerColor)]} />
           ) : icon ? (
