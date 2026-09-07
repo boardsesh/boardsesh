@@ -92,7 +92,10 @@ describe('LicenceContent', () => {
     const { container } = renderLicence();
     const nav = container.querySelector('nav');
     const targets = Array.from(nav?.querySelectorAll('a') ?? []).map((anchor) => anchor.getAttribute('href'));
-    const clauseIds = Array.from(container.querySelectorAll('article > ol > li')).map((item) => `#${item.id}`);
+    // Every clause carries the id its contents entry links to; nothing else in
+    // the document has one, so this is the clause list without depending on
+    // where the card wrapper puts the <ol>.
+    const clauseIds = Array.from(container.querySelectorAll('article li[id]')).map((item) => `#${item.id}`);
     expect(targets).toEqual(clauseIds);
     expect(targets).toHaveLength(12);
   });
