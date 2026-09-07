@@ -24,15 +24,20 @@ describe('AI crawler origin rejection', () => {
     expect(response.headers.has('x-middleware-rewrite')).toBe(false);
   });
 
-  it.each(['Googlebot/2.1', 'bingbot/2.0', 'YandexBot/3.0', 'facebookexternalhit/1.1', 'Mozilla/5.0'])(
-    'preserves %s',
-    (userAgent) => {
-      const response = middleware(
-        new NextRequest('https://www.boardsesh.com/', { headers: { 'user-agent': userAgent } }),
-      );
-      expect(response.status).not.toBe(403);
-    },
-  );
+  it.each([
+    'Googlebot/2.1',
+    'bingbot/2.0',
+    'YandexBot/3.0',
+    'facebookexternalhit/1.1',
+    'ChatGPT-User/1.0',
+    'Claude-User/1.0',
+    'Mozilla/5.0',
+  ])('preserves %s', (userAgent) => {
+    const response = middleware(
+      new NextRequest('https://www.boardsesh.com/', { headers: { 'user-agent': userAgent } }),
+    );
+    expect(response.status).not.toBe(403);
+  });
 });
 
 const TTL_24H = 86400;
