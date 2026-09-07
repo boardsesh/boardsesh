@@ -196,7 +196,6 @@ vi.mock('../../offline/climb-stats-live-sync', () => ({
 
 type LiveSyncSeams = {
   getDb: () => unknown;
-  getActiveBoard: () => { boardType: string; layoutId: number; sizeId: number; angle: number } | null;
   isScopeDownloaded: unknown;
   shouldSkipWrites: () => boolean;
   hasEnabledScopeForLayout: (boardType: string, layoutId: number) => boolean;
@@ -210,7 +209,6 @@ function liveSyncSeams(index = 0): LiveSyncSeams {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { setBackgrounded, setSigningOut } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { ACTIVE_BOARD_QUERY_KEY } from '../../lib/graphql/use-active-board';
 import { BoardAdapterWrapper } from '../board-adapter';
 
 let queryClient: QueryClient;
@@ -587,23 +585,6 @@ describe('BoardAdapterWrapper live climb-stat write-through', () => {
     expect(seams.isScopeDownloaded).toBe(isBoardDownloadedLocallyMock);
   });
 
-  it('reads the browsed board from the active-board query, live', () => {
-    renderWrapper();
-    const seams = liveSyncSeams();
-
-    expect(seams.getActiveBoard()).toBeNull();
-
-    queryClient.setQueryData(ACTIVE_BOARD_QUERY_KEY, {
-      boardType: 'kilter',
-      layoutId: 1,
-      sizeId: 5,
-      angle: 40,
-      name: 'Home wall',
-    });
-
-    expect(seams.getActiveBoard()).toEqual({ boardType: 'kilter', layoutId: 1, sizeId: 5, angle: 40 });
-  });
-
   it('only accepts layouts the user actually downloads', () => {
     renderWrapper();
     const seams = liveSyncSeams();
@@ -611,6 +592,20 @@ describe('BoardAdapterWrapper live climb-stat write-through', () => {
     expect(seams.hasEnabledScopeForLayout('kilter', 1)).toBe(true);
     expect(seams.hasEnabledScopeForLayout('kilter', 2)).toBe(false);
     expect(seams.hasEnabledScopeForLayout('tension', 1)).toBe(false);
+  });
+
+  it('answers false rather than throwing when the stored setting is not a list', () => {
+    // This runs inside the graphql-ws `next` handler, where a throw closes the
+    // shared singleton socket. A corrupt or legacy MMKV value must not do that.
+    renderWrapper();
+    const seams = liveSyncSeams();
+    const restore = enabledScopeKeys.value;
+    enabledScopeKeys.value = { 'kilter:1:5': true } as unknown as string[];
+
+    expect(() => seams.hasEnabledScopeForLayout('kilter', 1)).not.toThrow();
+    expect(seams.hasEnabledScopeForLayout('kilter', 1)).toBe(false);
+
+    enabledScopeKeys.value = restore;
   });
 
   it('skips writes while backgrounded or signing out', () => {
