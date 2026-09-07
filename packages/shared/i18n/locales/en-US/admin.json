@@ -30,7 +30,9 @@
   },
   "buildPlans": {
     "title": "Build-pack orders",
-    "subtitle": "Every order, newest first. Read the generator's error, then requeue the pack.",
+    "subtitle": "Every order, free previews included, newest first. Read the generator's error, then requeue the pack.",
+    "previewsLastHour_one": "{{count}} preview drawn in the last hour, on the orders loaded here.",
+    "previewsLastHour_other": "{{count}} previews drawn in the last hour, on the orders loaded here.",
     "backToAdmin": "Back to admin",
     "statusFilter": {
       "all": "All"

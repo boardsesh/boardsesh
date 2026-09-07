@@ -1,8 +1,6 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import { GET_CNC_ORDER, type GetCncOrderQueryResponse } from '@boardsesh/graphql/operations/cnc-packs';
 import type { CncOrder } from '@boardsesh/shared-schema';
@@ -14,7 +12,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { CNC_FLAG_OFF_METADATA, fetchCncCatalog, isCncPacksEnabled, requireCncPacksFlag } from '../../build-plans-page';
 import { wallLabel } from '../../order-display';
-import styles from '../../build-plans.module.css';
+import { PageFrame } from '../../ui';
 import OrderStatus from './order-status';
 
 /** One person's order, with a live status. Never cached, never static. */
@@ -99,17 +97,18 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
   if (!order) {
     return (
       <I18nProvider locale={locale} namespaces={['common', 'cnc']}>
-        <Box component="main" className={styles.page}>
-          <Typography variant="h1" className={styles.heroTitle}>
-            {t('order.notFound.heading')}
-          </Typography>
-          <Typography variant="body1" className={styles.heroSubtitle}>
-            {t('order.notFound.body')}
-          </Typography>
-          <MuiLink component={LocaleLink} href="/build-plans/orders" variant="body2" sx={{ mt: 2, display: 'block' }}>
-            {t('order.back')}
-          </MuiLink>
-        </Box>
+        <PageFrame
+          title={t('order.notFound.heading')}
+          intro={t('order.notFound.body')}
+          width="prose"
+          actions={
+            <MuiLink component={LocaleLink} href="/build-plans/orders" variant="body2">
+              {t('order.back')}
+            </MuiLink>
+          }
+        >
+          {null}
+        </PageFrame>
       </I18nProvider>
     );
   }
@@ -123,14 +122,14 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'cnc']}>
-      <Box component="main" className={styles.page}>
-        <OrderStatus
-          initialOrder={order}
-          wallLabel={wallLabel(catalog, order)}
-          checkoutOutcome={checkoutOutcome}
-          locale={locale}
-        />
-      </Box>
+      {/* `OrderStatus` owns the page frame: the header carries a live status
+          chip, so it cannot be rendered on the server half of this page. */}
+      <OrderStatus
+        initialOrder={order}
+        wallLabel={wallLabel(catalog, order)}
+        checkoutOutcome={checkoutOutcome}
+        locale={locale}
+      />
     </I18nProvider>
   );
 }
