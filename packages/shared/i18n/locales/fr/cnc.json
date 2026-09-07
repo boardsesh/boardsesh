@@ -123,7 +123,7 @@
       },
       "studClearanceOffsetMm": {
         "label": "Dégagement des montants",
-        "help": "Décale la trame de prises latéralement pour qu'aucun perçage ne tombe sur un montant.",
+        "help": "Décale la trame de prises latéralement pour qu'aucun perçage ne tombe sur un montant. À 0 mm, le motif reste centré sur le mur.",
         "values": {
           "0": "Aucun",
           "30": "30 mm",
