@@ -20,7 +20,6 @@ import { useMyGrade } from '../../hooks/use-my-grade';
 import { renderDifficulty } from '../../lib/boardsesh-grade-display';
 import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
 import { splitGradeLabel } from '@boardsesh/play-view';
-import { Icon } from '../Icon';
 
 type PlayDrawerHeaderProps = {
   name: string;
