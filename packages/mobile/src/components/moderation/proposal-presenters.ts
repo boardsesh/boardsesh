@@ -167,8 +167,12 @@ export function proposalToClimb(proposal: Proposal): Climb | null {
  * is how the backend deletes a vote, so tapping Support twice lands on
  * `userVote: 0`. The weighted totals move by 1 on each side that changed —
  * a placeholder, since the viewer's real weight (2 for a leader, 3 for an admin)
- * is only known server-side. `onSuccess` overwrites the row with the server's
- * numbers, so the guess never outlives the round trip.
+ * is only known server-side. `upvoterCount` is the backend's count of distinct
+ * upvoters, unweighted (the "N reporters" line next to the vote bar), so it
+ * moves by exactly 1 whenever the viewer joins or leaves the support side —
+ * otherwise the bar shows one more vote while the reporter count lags a round
+ * trip behind. `onSuccess` overwrites the row with the server's numbers, so the
+ * guess never outlives the round trip.
  */
 export function applyOptimisticVote(proposal: Proposal, value: ProposalVoteValue): Proposal {
   const previousVote = proposal.userVote;
@@ -176,9 +180,16 @@ export function applyOptimisticVote(proposal: Proposal, value: ProposalVoteValue
 
   let weightedUpvotes = proposal.weightedUpvotes;
   let weightedDownvotes = proposal.weightedDownvotes;
-  if (previousVote === 1) weightedUpvotes -= 1;
+  let upvoterCount = proposal.upvoterCount;
+  if (previousVote === 1) {
+    weightedUpvotes -= 1;
+    upvoterCount -= 1;
+  }
   if (previousVote === -1) weightedDownvotes -= 1;
-  if (nextVote === 1) weightedUpvotes += 1;
+  if (nextVote === 1) {
+    weightedUpvotes += 1;
+    upvoterCount += 1;
+  }
   if (nextVote === -1) weightedDownvotes += 1;
 
   return {
@@ -186,6 +197,7 @@ export function applyOptimisticVote(proposal: Proposal, value: ProposalVoteValue
     userVote: nextVote,
     weightedUpvotes: Math.max(0, weightedUpvotes),
     weightedDownvotes: Math.max(0, weightedDownvotes),
+    upvoterCount: Math.max(0, upvoterCount),
   };
 }
 

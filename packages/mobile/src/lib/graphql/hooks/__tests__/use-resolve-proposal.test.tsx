@@ -9,8 +9,10 @@
 //   - the proposals prefix AND every climb read must be invalidated — the detail
 //     query and all three search caches — because an approved hide flips
 //     `is_hidden` on a climb the lists are still holding;
-//   - a failed request must leave the caches exactly as they were: there is
-//     nothing optimistic to roll back, so a write here would be a lie.
+//   - a failed request must leave the caches exactly as they were (there is
+//     nothing optimistic to roll back, so a write here would be a lie), tell
+//     the moderator, and refetch — the hook owns that, not the call site, so
+//     an unmounted card cannot swallow the error.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -19,8 +21,11 @@ import { RESOLVE_PROPOSAL_FEED } from '@boardsesh/graphql/operations/proposals';
 import type { Proposal } from '@boardsesh/shared-schema';
 
 const requestMock = vi.hoisted(() => vi.fn());
+const showToastMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('../../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
 
 import { browseProposalsKey, climbProposalsKey } from '../use-browse-proposals';
 import { CLIMB_EFFECT_QUERY_KEYS } from '../proposal-cache';
@@ -108,6 +113,7 @@ function watchInvalidations(queryClient: QueryClient) {
 
 beforeEach(() => {
   requestMock.mockReset();
+  showToastMock.mockReset();
 });
 
 describe('useResolveProposal', () => {
@@ -165,7 +171,7 @@ describe('useResolveProposal', () => {
     });
   });
 
-  it('rejects and leaves the caches untouched when the request fails', async () => {
+  it('rejects, toasts, and refetches instead of writing anything when the request fails', async () => {
     requestMock.mockRejectedValue(new Error('offline'));
 
     const { queryClient, Wrapper } = makeWrapper();
@@ -181,6 +187,24 @@ describe('useResolveProposal', () => {
     // may have been written either.
     expect(readBrowse(queryClient, 'p1')).toMatchObject({ status: 'open' });
     expect(readClimbProposals(queryClient, 'p1')).toMatchObject({ status: 'open' });
-    expect(invalidations.keys).toHaveLength(0);
+    // The hook itself tells the moderator and pulls the current row, without
+    // the caller having to pass an `onError`.
+    expect(showToastMock).toHaveBeenCalledWith('mobile.moderation.resolveError', 'error');
+    expect(invalidations.keys).toEqual([PROPOSALS_QUERY_KEY]);
+  });
+
+  it('does not toast on success', async () => {
+    requestMock.mockResolvedValue({ resolveProposal: makeProposal({ status: 'approved' }) });
+
+    const { queryClient, Wrapper } = makeWrapper();
+    seedCaches(queryClient, makeProposal({ status: 'open' }));
+    watchInvalidations(queryClient);
+    const { result } = renderHook(() => useResolveProposal(), { wrapper: Wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ proposalUuid: 'p1', status: 'approved' });
+    });
+
+    expect(showToastMock).not.toHaveBeenCalled();
   });
 });

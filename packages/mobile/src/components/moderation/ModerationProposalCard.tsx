@@ -147,12 +147,11 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
         destructive: hidesTheClimb || status === 'rejected',
       });
       if (!confirmed) return;
-      resolveProposal(
-        { proposalUuid: proposal.uuid, status },
-        { onError: () => showToast(t('mobile.moderation.resolveError'), 'error') },
-      );
+      // Errors toast and refetch from inside the hook, so there is nothing to
+      // pass here — and nothing to lose if this card unmounts mid-request.
+      resolveProposal({ proposalUuid: proposal.uuid, status });
     },
-    [confirm, proposal, resolveProposal, showToast, t, tCommon, canModerate],
+    [confirm, proposal, resolveProposal, t, tCommon, canModerate],
   );
 
   const handleApprove = useCallback(() => void submitResolve('approved'), [submitResolve]);

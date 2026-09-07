@@ -214,25 +214,44 @@ describe('proposalToClimb', () => {
 });
 
 describe('applyOptimisticVote', () => {
-  it('adds a support vote', () => {
-    const next = applyOptimisticVote(makeProposal({ userVote: 0, weightedUpvotes: 1 }), 1);
-    expect(next).toMatchObject({ userVote: 1, weightedUpvotes: 2, weightedDownvotes: 0 });
+  it('adds a support vote and counts the climber as a reporter', () => {
+    // The reporter line reads `upvoterCount`; if only the weighted bar moved,
+    // the card would say "2 of 5 votes · 1 reporter" until the server replied.
+    const next = applyOptimisticVote(makeProposal({ userVote: 0, weightedUpvotes: 1, upvoterCount: 1 }), 1);
+    expect(next).toMatchObject({ userVote: 1, weightedUpvotes: 2, weightedDownvotes: 0, upvoterCount: 2 });
   });
 
   it('clears the vote when the same value is sent again', () => {
     // The backend has no "clear" value — re-sending the recorded one deletes it.
-    const next = applyOptimisticVote(makeProposal({ userVote: 1, weightedUpvotes: 2 }), 1);
-    expect(next).toMatchObject({ userVote: 0, weightedUpvotes: 1 });
+    const next = applyOptimisticVote(makeProposal({ userVote: 1, weightedUpvotes: 2, upvoterCount: 2 }), 1);
+    expect(next).toMatchObject({ userVote: 0, weightedUpvotes: 1, upvoterCount: 1 });
   });
 
   it('moves both sides when the climber switches support to oppose', () => {
-    const next = applyOptimisticVote(makeProposal({ userVote: 1, weightedUpvotes: 2, weightedDownvotes: 1 }), -1);
-    expect(next).toMatchObject({ userVote: -1, weightedUpvotes: 1, weightedDownvotes: 2 });
+    const next = applyOptimisticVote(
+      makeProposal({ userVote: 1, weightedUpvotes: 2, weightedDownvotes: 1, upvoterCount: 2 }),
+      -1,
+    );
+    expect(next).toMatchObject({ userVote: -1, weightedUpvotes: 1, weightedDownvotes: 2, upvoterCount: 1 });
+  });
+
+  it('counts a new reporter when oppose flips to support', () => {
+    const next = applyOptimisticVote(
+      makeProposal({ userVote: -1, weightedUpvotes: 1, weightedDownvotes: 1, upvoterCount: 1 }),
+      1,
+    );
+    expect(next).toMatchObject({ userVote: 1, weightedUpvotes: 2, weightedDownvotes: 0, upvoterCount: 2 });
+  });
+
+  it('leaves the reporter count alone when only the oppose side changes', () => {
+    const next = applyOptimisticVote(makeProposal({ userVote: 0, weightedDownvotes: 0, upvoterCount: 3 }), -1);
+    expect(next).toMatchObject({ userVote: -1, weightedDownvotes: 1, upvoterCount: 3 });
   });
 
   it('never drives a total below zero', () => {
-    const next = applyOptimisticVote(makeProposal({ userVote: 1, weightedUpvotes: 0 }), 1);
+    const next = applyOptimisticVote(makeProposal({ userVote: 1, weightedUpvotes: 0, upvoterCount: 0 }), 1);
     expect(next.weightedUpvotes).toBe(0);
+    expect(next.upvoterCount).toBe(0);
   });
 
   it('leaves the rest of the proposal untouched', () => {
