@@ -94,7 +94,9 @@
   font-size: 36px;
   line-height: 1.14;
   letter-spacing: -0.02em;
-  max-width: 18ch;
+  /* Two lines for the titles this surface actually has. 18ch broke the licence
+     title over three. */
+  max-width: 24ch;
 }
 
 @media (max-width: 900px) {

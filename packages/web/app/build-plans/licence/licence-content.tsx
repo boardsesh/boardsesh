@@ -9,7 +9,7 @@ import Typography from '@mui/material/Typography';
 import { Trans, useTranslation } from 'react-i18next';
 import BackButton from '@/app/components/back-button';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { PageFrame } from '../ui';
+import { PageFrame, SectionCard } from '../ui';
 import styles from '../build-plans.module.css';
 
 const LICENCE_EMAIL = 'mailto:legal@boardsesh.com';
@@ -218,7 +218,7 @@ export default function LicenceContent() {
       intro={t('licence.intro.p1')}
       eyebrow={<BackButton fallbackUrl="/build-plans" />}
     >
-      <Alert severity="warning">
+      <Alert severity="warning" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
         <AlertTitle>{t('licence.draft.title')}</AlertTitle>
         {t('licence.draft.body')}
       </Alert>
@@ -239,7 +239,11 @@ export default function LicenceContent() {
           </Box>
         </Box>
 
-        <Box component="article">
+        {/* The document sits on a card and the contents rail does not: the card
+            is the sheet of paper the terms are printed on, and the rail is
+            navigation around it. Inside the sheet the clauses are separated by
+            rules rather than by twelve more cards. */}
+        <SectionCard component="article">
           <Typography variant="h2" component="h2" className={styles.documentTitle}>
             {t('licence.intro.title')}
           </Typography>
@@ -256,7 +260,7 @@ export default function LicenceContent() {
           <Typography variant="body2" component="p" className={styles.licenceFooter}>
             {t('licence.footer')}
           </Typography>
-        </Box>
+        </SectionCard>
       </Box>
     </PageFrame>
   );
