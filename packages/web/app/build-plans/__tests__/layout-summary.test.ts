@@ -64,7 +64,19 @@ describe('readLayoutSummary', () => {
   });
 
   it('reads generator warning messages and drops malformed warnings', () => {
-    const noisy = { ...GENERATOR_LAYOUT, warnings: ['a real warning', 42, null, { message: 'an object' }] };
+    const noisy = {
+      ...GENERATOR_LAYOUT,
+      warnings: [
+        'a real warning',
+        42,
+        null,
+        '',
+        '  \t\n',
+        { message: 'an object' },
+        { message: '' },
+        { message: ' \n ' },
+      ],
+    };
 
     expect(readLayoutSummary(noisy).warnings).toEqual(['a real warning', 'an object']);
   });
