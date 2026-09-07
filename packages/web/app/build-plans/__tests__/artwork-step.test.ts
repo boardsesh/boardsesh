@@ -119,7 +119,7 @@ describe('configuratorReducer artwork actions', () => {
       item: label(),
     });
 
-    const switched = configuratorReducer(base, { type: 'selectSize', entry: { ...entry(), sizeId: 17 } });
+    const switched = configuratorReducer(base, { type: 'selectEntry', entry: { ...entry(), sizeId: 17 } });
 
     expect(switched.artwork).toEqual([]);
   });

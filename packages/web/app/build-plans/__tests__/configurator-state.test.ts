@@ -9,7 +9,7 @@ import {
   finaliseBlockers,
   fromDraft,
   isPreviewStale,
-  hasKickerSets,
+  supportsKicker,
   initialConfiguratorState,
   optionValueKey,
   partitionByControl,
@@ -117,7 +117,7 @@ describe('option defaults', () => {
       licenseeEmail: 'sam@example.com',
     };
 
-    const next = configuratorReducer(start, { type: 'selectSize', entry: sevenByTen() });
+    const next = configuratorReducer(start, { type: 'selectEntry', entry: sevenByTen() });
 
     // A value carried onto a size that does not allow it is a checkout the
     // backend rejects with an error the buyer cannot act on.
@@ -202,7 +202,7 @@ describe('set ids', () => {
   });
 
   it('leaves a kickerless wall alone', () => {
-    expect(hasKickerSets(sevenByTen())).toBe(false);
+    expect(supportsKicker(sevenByTen())).toBe(false);
     expect(setIdsFor(sevenByTen(), false)).toBe('26,27');
   });
 });
@@ -431,16 +431,63 @@ describe('Kilter Original configuration', () => {
       setIds: '1,20',
       options: { includeKicker: false },
     });
-    expect(hasKickerSets(entry)).toBe(true);
+    expect(supportsKicker(entry)).toBe(true);
     expect(visibleMachiningOptions(entry, true).map((option) => option.key)).not.toContain('includeKicker');
   });
 
   it('cannot include a kicker on the OG 7x10', () => {
     const entry = original(false);
-    expect(hasKickerSets(entry)).toBe(false);
+    expect(supportsKicker(entry)).toBe(false);
     expect(
       toBoardConfigInput({ ...initialConfiguratorState(entry), includeKicker: true }, entry).options?.includeKicker,
     ).toBe(false);
+  });
+
+  it('resets an OG 8x12 to OG 12x12 while preserving both sets and the buyer', () => {
+    const eightByTwelve = { ...original(), sizeId: 8, label: '8x12' };
+    const twelveByTwelve = { ...original(), sizeId: 10, label: '12x12' };
+    const previous: CncConfiguratorState = {
+      ...initialConfiguratorState(eightByTwelve),
+      includeKicker: false,
+      options: { ...defaultOptions(eightByTwelve), sheetStock: '3600x1220' },
+      artwork: [
+        {
+          id: 'placed-label',
+          kind: 'text',
+          assetId: null,
+          text: 'Crew',
+          font: 'liberation-sans',
+          mode: 'engrave',
+          panelIndex: 1,
+          xMm: 400,
+          yMm: 600,
+          widthMm: 100,
+          rotationDeg: 0,
+        },
+      ],
+      previewOrderId: '8x12-order',
+      previewLicenceId: '8x12-licence',
+      previewConfigKey: '8x12-preview',
+      licenseeName: 'Sam',
+    };
+    expect(toBoardConfigInput(previous, eightByTwelve).setIds).toBe('1,20');
+    const next = configuratorReducer(previous, { type: 'selectEntry', entry: twelveByTwelve });
+    expect(toBoardConfigInput(next, twelveByTwelve)).toMatchObject({
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,20',
+      options: { includeKicker: true, sheetStock: '2440x1220' },
+    });
+    expect(next).toMatchObject({
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      artwork: [],
+      previewOrderId: null,
+      previewLicenceId: null,
+      previewConfigKey: null,
+      licenseeName: 'Sam',
+    });
   });
 
   it('drops the old layout artwork and preview when switching to OG', () => {
@@ -451,7 +498,7 @@ describe('Kilter Original configuration', () => {
       previewConfigKey: 'homewall-config',
       licenseeName: 'Sam',
     };
-    const next = configuratorReducer(previous, { type: 'selectSize', entry: original() });
+    const next = configuratorReducer(previous, { type: 'selectEntry', entry: original() });
     expect(next).toMatchObject({
       layoutId: 1,
       sizeId: 28,

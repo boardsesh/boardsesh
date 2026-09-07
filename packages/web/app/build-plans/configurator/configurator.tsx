@@ -67,7 +67,7 @@ import {
   findEntry,
   formatPrice,
   fromDraft,
-  hasKickerSets,
+  supportsKicker,
   initialConfiguratorState,
   isPreviewStale,
   optionValueKey,
@@ -330,7 +330,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
         candidate.boardName === state.boardName && candidate.layoutId === state.layoutId && candidate.sizeId === sizeId,
     );
     if (!next) return;
-    dispatch({ type: 'selectSize', entry: next });
+    dispatch({ type: 'selectEntry', entry: next });
     reportStep('size');
   };
 
@@ -339,7 +339,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
       (candidate) => candidate.boardName === state.boardName && candidate.layoutId === layoutId,
     );
     if (!next) return;
-    dispatch({ type: 'selectSize', entry: next });
+    dispatch({ type: 'selectEntry', entry: next });
     reportStep('board');
   };
 
@@ -502,7 +502,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                     {t('configurator.original.drilling')} {t('configurator.original.compatibility')}
                   </Typography>
                 )}
-                {hasKickerSets(entry) && entry.kickerOptional && (
+                {supportsKicker(entry) && entry.kickerOptional && (
                   <Box className={styles.switchRow}>
                     <FormControlLabel
                       control={
