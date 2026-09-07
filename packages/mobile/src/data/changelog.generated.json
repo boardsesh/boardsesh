@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-07T03:29:05.952Z",
+  "generatedAt": "2026-09-07T04:16:38.074Z",
   "entries": [
+    {
+      "prNumber": 5244,
+      "category": "fixed",
+      "title": "Woods climbs show their real matching and feet rules everywhere you open them — playlists, favourites, a setter's climbs, your own climbs and similar climbs.",
+      "mergedAt": "2026-09-07T04:06:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5244",
+      "body": "No-match climbs get their ⊘ back in those lists on every board."
+    },
     {
       "prNumber": 5188,
       "category": "new",

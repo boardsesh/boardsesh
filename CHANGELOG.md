@@ -14,6 +14,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Woods climbs show their real matching and feet rules everywhere you open them — playlists, favourites, a setter's climbs, your own climbs and similar climbs. ([#5244](https://github.com/boardsesh/boardsesh/pull/5244))
+  No-match climbs get their ⊘ back in those lists on every board.
 - The no-matching symbol now shows on every Kilter and Tension climb that calls for it, not ([#5243](https://github.com/boardsesh/boardsesh/pull/5243))
   just the ones whose notes lead with the rule — about 1,100 more on the Tension Board 2
   Spray alone.
