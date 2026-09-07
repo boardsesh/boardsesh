@@ -459,10 +459,18 @@ export function PlayDrawer({
   // The React Compiler memoises this on `mirrorFlip`/`displayedClimbUuid`/
   // `bluetooth`, so a ref changed underneath is NOT re-read, and the read is
   // invisible to `react-hooks/refs` — lint will not catch a second writer.
+  //
+  // With nothing stated for this climb either, fall back to the climb's OWN
+  // mirror: activating a mirrored logbook tick carries `mirrored: true` through
+  // `tickToClimb`, and that ascent must relight the way it was climbed. A stated
+  // `false` is not the same as nothing stated, which is why the reader is
+  // tri-state — otherwise turning a mirrored tick's flip off would be undone by
+  // its own `climb.mirrored` on the next render.
+  const statedMirror = bluetooth?.getMirrorIntent(displayedClimbUuid);
   const isMirrored =
     mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid
       ? mirrorFlip.mirrored
-      : (bluetooth?.getMirrorIntent(displayedClimbUuid) ?? false);
+      : (statedMirror ?? !!displayedClimb?.mirrored);
   const clearMirror = useCallback(() => setMirrorFlip(null), []);
 
   // #5099: the shown climb does not have to belong to the board the climber has
@@ -651,6 +659,12 @@ export function PlayDrawer({
   useEffect(() => {
     setIsTickBarActive(false);
     setFavoriteOverride(null);
+    // Drop the local flip on EVERY climb change, not just the drawer's own
+    // navigation handlers. A climb change it doesn't own (a party peer, Live
+    // Activity, the accessory bar) would otherwise leave the flip parked on its
+    // old climb, and coming back to that climb would resurrect it — remembering
+    // a flip that swiping away forgets.
+    setMirrorFlip(null);
     // A new climb's Logbook re-lays out from scratch — don't let a stale expand
     // intent auto-scroll it.
     pendingLogbookScrollRef.current = false;

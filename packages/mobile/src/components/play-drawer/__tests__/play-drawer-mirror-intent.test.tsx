@@ -229,6 +229,12 @@ function climb(uuid: string, frames: string): Climb {
 }
 
 const CLIMB_A = climb('AAAA0000000000000000000000000001', 'p1145r15');
+// An ascent activated from the logbook keeps the orientation it was climbed in
+// (`tickToClimb` carries `isMirror` through as `climb.mirrored`).
+const MIRRORED_TICK = {
+  ...climb('CCCC0000000000000000000000000003', 'p3145r15'),
+  mirrored: true,
+} as unknown as Climb;
 const CLIMB_B = climb('BBBB0000000000000000000000000002', 'p2145r15');
 
 function queueItem(c: Climb, uuid: string): ClimbQueueItem {
@@ -285,7 +291,7 @@ beforeEach(() => {
     isConnected: true,
     setMirrorIntent: bluetooth.setMirrorIntent,
     getMirrorIntent: (climbUuid?: string) =>
-      bluetooth.intent != null && bluetooth.intent.climbUuid === climbUuid && bluetooth.intent.mirrored,
+      bluetooth.intent != null && bluetooth.intent.climbUuid === climbUuid ? bluetooth.intent.mirrored : undefined,
     sendFramesToBoard: vi.fn(),
   };
 });
@@ -355,6 +361,63 @@ describe('PlayDrawer mirror intent (#5217)', () => {
     // The toggle reads the flip back, and nothing new is asked of the wall.
     expect(recorded.actionBar.at(-1)?.isMirrored).toBe(true);
     expect(mirrorIntentCalls()).toEqual([[CLIMB_A.uuid, true]]);
+  });
+
+  it('relights a climb that was logged mirrored in the orientation it was climbed', () => {
+    // Regression: the drawer used to state an explicit un-mirrored intent here,
+    // which the auto-sender prefers over the queue item's own flag — so opening
+    // a mirrored ascent lit the wall the wrong way round.
+    queueState.currentClimbQueueItem = queueItem(MIRRORED_TICK, 'queue-tick');
+    renderDrawer();
+
+    expect(recorded.actionBar.at(-1)?.isMirrored).toBe(true);
+    expect(mirrorIntentCalls().at(-1)).toEqual([MIRRORED_TICK.uuid, true]);
+  });
+
+  it('lets you turn off a mirrored ascent without its own flag putting it back', () => {
+    // "Nothing stated" and "stated false" have to stay distinguishable, or the
+    // climb's own `mirrored` would immediately undo the tap.
+    queueState.currentClimbQueueItem = queueItem(MIRRORED_TICK, 'queue-tick');
+    renderDrawer();
+
+    tapMirror();
+
+    expect(recorded.actionBar.at(-1)?.isMirrored).toBe(false);
+    expect(mirrorIntentCalls().at(-1)).toEqual([MIRRORED_TICK.uuid, false]);
+  });
+
+  it('forgets a flip when the climb changes outside the drawer and later returns', () => {
+    // A peer or Live Activity moving the climb doesn't run the drawer's own
+    // navigation handlers, so the local flip has to be dropped on the climb
+    // change itself — otherwise coming back resurrects it.
+    queueState.currentClimbQueueItem = queueItem(CLIMB_A, 'queue-a');
+    const { rerender } = renderDrawer();
+    tapMirror();
+    expect(mirrorIntentCalls().at(-1)).toEqual([CLIMB_A.uuid, true]);
+
+    const rerenderNow = () =>
+      act(() => {
+        rerender(
+          createElement(PlayDrawer, {
+            presentation: 'pane' as const,
+            boardConfig: BOARD,
+            openTarget: null,
+            onOpenQueue: vi.fn(),
+            onSwitchBoard: vi.fn(),
+          }),
+        );
+      });
+
+    // Externally driven: no drawer handler runs.
+    queueState.currentClimbQueueItem = queueItem(CLIMB_B, 'queue-b');
+    rerenderNow();
+    expect(mirrorIntentCalls().at(-1)).toEqual([CLIMB_B.uuid, false]);
+
+    queueState.currentClimbQueueItem = queueItem(CLIMB_A, 'queue-a');
+    rerenderNow();
+
+    expect(recorded.actionBar.at(-1)?.isMirrored).toBe(false);
+    expect(mirrorIntentCalls().at(-1)).toEqual([CLIMB_A.uuid, false]);
   });
 
   it('states the orientation even while disconnected, so a flip survives taking the wall', () => {

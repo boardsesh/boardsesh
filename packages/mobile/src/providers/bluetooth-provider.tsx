@@ -98,7 +98,7 @@ type BluetoothContextValue = {
    * screen that made it, so a play drawer opening on that climb seeds its
    * toggle from here rather than assuming un-mirrored.
    */
-  getMirrorIntent: (climbUuid: string | undefined) => boolean;
+  getMirrorIntent: (climbUuid: string | undefined) => boolean | undefined;
   /**
    * Restore the climb captured before this device's latest accepted wall report.
    * The platform relights it over BLE first, then reports it to board presence.
@@ -659,9 +659,14 @@ export function BluetoothProvider({
   // moving to another climb forgets the previous flip. Lives beside the physical
   // record because every write path reads both.
   const mirrorIntentRef = useRef<{ climbUuid: string; mirrored: boolean } | null>(null);
-  const mirrorIntentMatches = useCallback((climbUuid: string | undefined) => {
+  // `undefined` when nothing has been stated for this climb — distinct from a
+  // stated `false`. A climb can arrive already mirrored (activating a mirrored
+  // logbook tick carries `climb.mirrored` through `tickToClimb`), and only the
+  // caller knows what to fall back to; collapsing "unstated" into `false` would
+  // relight such an ascent un-mirrored.
+  const mirrorIntentFor = useCallback((climbUuid: string | undefined): boolean | undefined => {
     const intent = mirrorIntentRef.current;
-    return intent != null && intent.climbUuid === climbUuid && intent.mirrored;
+    return intent != null && intent.climbUuid === climbUuid ? intent.mirrored : undefined;
   }, []);
   const pendingReportSignatureRef = useRef<string | null>(null);
   const pendingWallReportRef = useRef<PendingWallReport | null>(null);
@@ -1339,7 +1344,7 @@ export function BluetoothProvider({
     // would leave the wall disagreeing with the toggle the drawer will show.
     // (Board presence carries no mirror field, so the orientation can only come
     // from our own intent, never from the report — see #5238.)
-    const undoMirrored = mirrorIntentMatches(undoTarget.climbUuid);
+    const undoMirrored = mirrorIntentFor(undoTarget.climbUuid) ?? false;
     const writeSucceeded = await sendFramesToBoardWithActivityReset(frames, undoMirrored, undefined, {
       sendSource: 'undo',
       climbUuid: undoTarget.climbUuid,
@@ -1389,7 +1394,7 @@ export function BluetoothProvider({
       // Honour a standing flip for this climb, as undo does above: relighting it
       // un-mirrored would leave the wall disagreeing with the toggle a drawer
       // opening on it will show.
-      const relightMirrored = mirrorIntentMatches(climb.climbUuid);
+      const relightMirrored = mirrorIntentFor(climb.climbUuid) ?? false;
       const writeSucceeded = await sendFramesToBoardWithActivityReset(frames, relightMirrored, undefined, {
         sendSource: 'wall-relight',
         climbUuid: climb.climbUuid,
@@ -1547,7 +1552,7 @@ export function BluetoothProvider({
   // here to seed its toggle — otherwise the wall would sit mirrored under a
   // button reading off, and reopening the player would either lie or silently
   // un-flip a wall someone is climbing on.
-  const getMirrorIntent = mirrorIntentMatches;
+  const getMirrorIntent = mirrorIntentFor;
 
   const disconnectInFlightRef = useRef<Promise<void> | null>(null);
 
