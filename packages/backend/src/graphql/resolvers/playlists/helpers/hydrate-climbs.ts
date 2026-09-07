@@ -105,6 +105,11 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       // the only field that stops an 8x10 climb reading as an exact fit on a
       // 12x12 wall whose hold ids happen to cover the same numbers.
       compatible_size_ids: tables.climbs.compatibleSizeIds,
+      // Structured climb rules ('no_match', 'any_feet', 'campus', method_*). The
+      // play drawer states both Woods rules from this array and every board draws
+      // its glyphs from it, so a playlist climb without it reads as "not
+      // recorded" rather than as the rules its setter chose (issue #5214).
+      characteristics: tables.climbs.characteristics,
       statsAngle: tables.climbStats.angle,
       ascensionist_count: tables.climbStats.ascensionistCount,
       difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
@@ -187,6 +192,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       framesCount: row.frames_count ?? null,
       framesPace: row.frames_pace ?? null,
       compatibleSizeIds: row.compatible_size_ids ?? null,
+      characteristics: row.characteristics ?? null,
       angle,
       ascensionist_count: Number(row.ascensionist_count || 0),
       difficulty: getGradeLabel(row.difficulty_id),
