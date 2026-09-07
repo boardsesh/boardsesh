@@ -8,12 +8,17 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Thousands more MoonBoard problems, with fresh grades and repeat counts across all seven boards ([#5250](https://github.com/boardsesh/boardsesh/pull/5250))
+  Beta videos now show on MoonBoard climbs — see how other climbers did it before you pull on
+  Problems the setter has pulled down no longer clutter MoonBoard search
 - Report a junk climb from its menu and the crew votes to hide it ([#5188](https://github.com/boardsesh/boardsesh/pull/5188))
   New Moderation feed under More: vote on reports and grade changes, or decide them if you are a community leader
   Hidden climbs say why in their Community section, and setters hear when their climb gets reported
 
 ### Fixed
 
+- Board setup switches now respond when you tap them directly on Android. ([#5269](https://github.com/boardsesh/boardsesh/pull/5269))
+- Fresh beta links show their thumbnail when you browse climbs. ([#5256](https://github.com/boardsesh/boardsesh/pull/5256))
 - Woods climbs show their real matching and feet rules everywhere you open them — playlists, favourites, a setter's climbs, your own climbs and similar climbs. ([#5244](https://github.com/boardsesh/boardsesh/pull/5244))
   No-match climbs get their ⊘ back in those lists on every board.
 - The no-matching symbol now shows on every Kilter and Tension climb that calls for it, not ([#5243](https://github.com/boardsesh/boardsesh/pull/5243))

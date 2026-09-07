@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-09-07T04:16:38.074Z",
+  "generatedAt": "2026-09-07T10:09:59.587Z",
   "entries": [
+    {
+      "prNumber": 5269,
+      "category": "fixed",
+      "title": "Board setup switches now respond when you tap them directly on Android.",
+      "mergedAt": "2026-09-07T10:08:18Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5269"
+    },
+    {
+      "prNumber": 5256,
+      "category": "fixed",
+      "title": "Fresh beta links show their thumbnail when you browse climbs.",
+      "mergedAt": "2026-09-07T04:52:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5256"
+    },
+    {
+      "prNumber": 5250,
+      "category": "new",
+      "title": "Thousands more MoonBoard problems, with fresh grades and repeat counts across all seven boards",
+      "mergedAt": "2026-09-07T04:43:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5250",
+      "body": "Beta videos now show on MoonBoard climbs — see how other climbers did it before you pull on\nProblems the setter has pulled down no longer clutter MoonBoard search"
+    },
     {
       "prNumber": 5244,
       "category": "fixed",
