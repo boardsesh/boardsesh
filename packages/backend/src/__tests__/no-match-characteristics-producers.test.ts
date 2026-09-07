@@ -24,8 +24,12 @@ const RUN_ID = crypto.randomUUID().slice(0, 8);
 // layout id and can run against the same database.
 // Per-run layout id, so `cleanup()` can wipe the whole layout — which is what
 // makes it leak-proof when a run dies before afterAll — without a concurrent
-// run on a shared DB ever deleting fixtures out from under this one.
-const LAYOUT_ID = 901000 + (parseInt(RUN_ID, 16) % 1000);
+// run on a shared DB ever deleting fixtures out from under this one. The range
+// is 50M wide (1-in-50M collision, off a 32-bit run id) and each of the two
+// no-match test files owns a disjoint band, so they cannot collide with each
+// other at all. Rows leaked by a crashed run land on a layout nobody queries
+// again, so they can never reach an assertion.
+const LAYOUT_ID = 950000000 + (parseInt(RUN_ID, 16) % 50_000_000);
 const OWNER_ID = `nm5127p-owner-${RUN_ID}`;
 const SETTER = `nm5127p-setter-${RUN_ID}`;
 const ANGLE = 40;
