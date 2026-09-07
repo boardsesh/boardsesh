@@ -34,6 +34,10 @@ type PlayDrawerHeaderProps = {
   benchmarkDifficulty?: string | null;
   /** Climb characteristics; no-match and MoonBoard method_* tokens render as glyphs/labels. */
   characteristics?: string[] | null;
+  /** Fallback no-match flag for a climb that carries the bool but no characteristics
+   *  array (tick- and notification-sourced rows). Ignored when the rules line states
+   *  matching in full, so the two never say it twice. */
+  isNoMatch?: boolean | null;
   /** The board being played. Boards whose `explicitClimbRules` capability is on
    *  (Woods) print both climb rules under the subtitle; everything else keeps the
    *  exception-only glyph cluster beside the name. */
@@ -57,6 +61,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   setterUsername,
   benchmarkDifficulty,
   characteristics,
+  isNoMatch,
   boardName,
   leading,
   onLongPressName,
@@ -122,6 +127,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
             <ClimbAttributeIcons
               benchmarkDifficulty={benchmarkDifficulty}
               characteristics={residualCharacteristics?.length ? residualCharacteristics : null}
+              isNoMatch={ruleLabels ? undefined : isNoMatch}
             />
           </View>
           <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
@@ -193,6 +199,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
       setterUsername={climb.setter_username}
       benchmarkDifficulty={climb.benchmark_difficulty}
       characteristics={climb.characteristics}
+      isNoMatch={climb.is_no_match}
       boardName={boardName}
       leading={leading}
       onLongPressName={onLongPressName}

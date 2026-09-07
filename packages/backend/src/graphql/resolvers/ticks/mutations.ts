@@ -7,7 +7,13 @@ import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sessions } from '../../../db/schema';
-import { applyRateLimit, requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/helpers';
+import {
+  applyRateLimit,
+  requireAuthenticated,
+  validateInput,
+  isNoMatchClimb,
+  usesAuroraNoMatchDescription,
+} from '../shared/helpers';
 import { getConsensusDifficultyName } from '../shared/sql-expressions';
 import {
   SaveTickInputSchema,
@@ -1644,7 +1650,7 @@ async function publishAscentEvent(
           angle: String(tick.angle),
           isMirror: String(tick.isMirror ?? false),
           isBenchmark: String(tick.isBenchmark ?? false),
-          isNoMatch: String(isNoMatchClimb(climbData?.description)),
+          isNoMatch: String(usesAuroraNoMatchDescription(tick.boardType) && isNoMatchClimb(climbData?.description)),
           quality: String(tick.quality ?? ''),
           attemptCount: String(tick.attemptCount),
           comment: tick.comment || '',

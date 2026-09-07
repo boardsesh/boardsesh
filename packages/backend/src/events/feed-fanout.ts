@@ -4,7 +4,7 @@ import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { and, eq, or } from 'drizzle-orm';
 import { buildFeedItemMetadata } from './feed-metadata';
-import { isNoMatchClimb } from '../graphql/resolvers/shared/helpers';
+import { isNoMatchClimb, usesAuroraNoMatchDescription } from '../graphql/resolvers/shared/helpers';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 
 export { buildFeedItemMetadata } from './feed-metadata';
@@ -168,7 +168,8 @@ async function buildNewClimbMetadata(event: SocialEvent): Promise<Record<string,
     angle: metadata.angle ?? climb.angle ?? null,
     frames: metadata.frames || climb.frames || null,
     difficultyName: metadata.difficultyName || climb.difficultyName || null,
-    isNoMatch: metadata.isNoMatch || isNoMatchClimb(climb.description),
+    isNoMatch:
+      metadata.isNoMatch || (usesAuroraNoMatchDescription(climb.boardType) && isNoMatchClimb(climb.description)),
   };
 }
 
@@ -238,7 +239,7 @@ async function getCommentContextMetadata(
       frames: tickContext.frames,
       setterUsername: tickContext.setterUsername,
       difficultyName: tickContext.difficultyName,
-      isNoMatch: isNoMatchClimb(tickContext.climbDescription),
+      isNoMatch: usesAuroraNoMatchDescription(tickContext.boardType) && isNoMatchClimb(tickContext.climbDescription),
     };
   }
 
@@ -271,7 +272,7 @@ async function getCommentContextMetadata(
       frames: climbContext.frames,
       setterUsername: climbContext.setterUsername,
       angle: climbContext.angle,
-      isNoMatch: isNoMatchClimb(climbContext.description),
+      isNoMatch: usesAuroraNoMatchDescription(climbContext.boardType) && isNoMatchClimb(climbContext.description),
     };
   }
 
@@ -347,7 +348,7 @@ async function getProposalContextMetadata(proposalUuid: string): Promise<Record<
     layoutId: proposalContext.layoutId,
     frames: proposalContext.frames,
     setterUsername: proposalContext.setterUsername,
-    isNoMatch: isNoMatchClimb(proposalContext.description),
+    isNoMatch: usesAuroraNoMatchDescription(proposalContext.boardType) && isNoMatchClimb(proposalContext.description),
   };
 }
 

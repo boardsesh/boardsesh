@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Drives the create-climb controller through Clear, then a fresh Save, asserting
 // the leftover "No match" toggle does not leak into the next brand-new climb.
-// Uses a real-ish `withNoMatch` (prefixes when enabled) so the description sent
-// to `saveClimb` reflects whether `noMatch` was reset.
+// The real `withNoMatch` runs here, so the description sent to `saveClimb`
+// reflects whether `noMatch` was reset.
 
 const board = vi.hoisted(() => ({
   isAuthenticated: true,
@@ -61,20 +61,9 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
-// Real-ish no-match encoding: enabling prepends the canonical marker so the
-// leaked-toggle bug is observable in the description sent to saveClimb.
-const NO_MATCH_PREFIX = 'No match\n';
-// Partial: the controller now reads @boardsesh/board-config too, which imports
-// this package for real (SUPPORTED_BOARDS). A total mock breaks that import.
-vi.mock('@boardsesh/shared-schema', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@boardsesh/shared-schema')>()),
-  isNoMatchClimb: (description: string | null | undefined) => /^no match/i.test(description ?? ''),
-  withNoMatch: (description: string | null | undefined, enabled: boolean) => {
-    const current = description ?? '';
-    if (enabled) return /^no match/i.test(current) ? current : `${NO_MATCH_PREFIX}${current}`;
-    return current.replace(/^no match(?:\r?\n|$)/i, '');
-  },
-}));
+// No stub for the no-match encoding: the real isNoMatchClimb/withNoMatch keep the
+// leaked-toggle bug observable in the description sent to saveClimb, and a copy
+// here would drift from them (it did — it predated the trailing form, #5127).
 
 vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: () => createClimb,

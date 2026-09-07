@@ -9,6 +9,7 @@ import {
 import type { BoardName } from '@boardsesh/board-constants';
 import {
   CLIMB_CHARACTERISTICS,
+  NO_MATCH_TRAILING_SQL_PATTERN,
   buildRuleSignature,
   isNoMatchClimb,
   usesAuroraNoMatchDescription,
@@ -174,8 +175,13 @@ function ruleMatchSql(
   description: SQLWrapper,
   signature: string,
 ): SQL {
+  // Both halves of isNoMatchClimb: Aurora's leading marker, and the declaration
+  // appended after the setter's prose. Dropping either half here would make the
+  // gate disagree with buildStoredRuleSignature and stop matching.
   const legacyNoMatch = usesAuroraNoMatchDescription(boardType)
-    ? sql`CASE WHEN LOWER(COALESCE(${description}, '')) LIKE 'no match%' THEN ARRAY['no_match']::text[] ELSE '{}'::text[] END`
+    ? sql`CASE WHEN LOWER(COALESCE(${description}, '')) LIKE 'no match%'
+             OR COALESCE(${description}, '') ~* ${NO_MATCH_TRAILING_SQL_PATTERN}
+          THEN ARRAY['no_match']::text[] ELSE '{}'::text[] END`
     : sql`'{}'::text[]`;
   const stored = sql`COALESCE(${characteristics}, ${legacyNoMatch})`;
   const tokens = signature ? signature.split(',') : [];
