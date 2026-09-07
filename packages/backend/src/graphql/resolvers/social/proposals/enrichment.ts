@@ -2,7 +2,7 @@ import { eq, and, sql, inArray, count, isNull } from 'drizzle-orm';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { resolveCommunitySetting, DEFAULTS } from '../community-settings';
-import { isNoMatchClimb } from '../../shared/helpers';
+import { isNoMatchClimb, usesAuroraNoMatchDescription } from '../../shared/helpers';
 
 /**
  * Enrich a single proposal with proposer info, vote counts, climb data, and stats.
@@ -183,7 +183,7 @@ export async function enrichProposal(
     climbAscensionistCount,
     climbDifficultyError,
     climbBenchmarkDifficulty,
-    climbIsNoMatch: isNoMatchClimb(climb?.description),
+    climbIsNoMatch: usesAuroraNoMatchDescription(proposal.boardType) && isNoMatchClimb(climb?.description),
     upvoterCount,
     commentCount,
     climbIsHidden: climb?.isHidden ?? false,
@@ -451,7 +451,7 @@ export async function batchEnrichProposals(
         stats?.benchmarkDifficulty != null && stats.benchmarkDifficulty > 0
           ? String(stats.benchmarkDifficulty)
           : undefined,
-      climbIsNoMatch: isNoMatchClimb(climb?.description),
+      climbIsNoMatch: usesAuroraNoMatchDescription(proposal.boardType) && isNoMatchClimb(climb?.description),
       upvoterCount: votes.upvoterCount,
       commentCount: commentCountMap.get(proposal.uuid) ?? 0,
       climbIsHidden: climb?.isHidden ?? false,

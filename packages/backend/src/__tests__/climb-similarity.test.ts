@@ -338,6 +338,17 @@ describe('buildStoredRuleSignature', () => {
     expect(buildStoredRuleSignature('woods', null, 'no match for the feet here')).toBe('');
     expect(buildStoredRuleSignature('moonboard', null, 'no match for the feet here')).toBe('');
   });
+
+  // #5127: the declaration is far more often appended than led with. The gate's
+  // SQL twin (`ruleMatchSql`) has to agree with this, or it silently stops
+  // matching — which reads as "duplicates allowed".
+  it('reads a declaration appended after the setter prose', () => {
+    expect(buildStoredRuleSignature('tension', null, 'Kick board is off. No matching.')).toBe('no_match');
+    expect(buildStoredRuleSignature('tension', [], 'Kick board is off. No matching.')).toBe('');
+    expect(buildStoredRuleSignature('moonboard', null, 'Kick board is off. No matching.')).toBe('');
+    // Prose that merely ends with the phrase is not a declaration.
+    expect(buildStoredRuleSignature('tension', null, 'Campus, no match')).toBe('');
+  });
 });
 
 describe('acquireDuplicateGateLock', () => {

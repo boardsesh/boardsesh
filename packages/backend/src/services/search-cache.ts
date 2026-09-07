@@ -25,8 +25,12 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  * and a missing value reads as "no compatibility data", which switches the
  * client-side size check off — on Woods that is the difference between skipping
  * an 8x10 climb on a 12x12 wall and lighting the wrong holds.
+ * v7: `is_no_match` now also picks up a no-match declaration appended after the
+ * setter's prose ("Kick board is off. No matching."), so ~14.9k climbs flip from
+ * false to true (#5127). Without the bump a cached v6 page keeps serving the
+ * missing glyph for the full 24h TTL.
  */
-export const CACHE_VERSION = 'v6';
+export const CACHE_VERSION = 'v7';
 
 /**
  * Recursively sorts the keys of an object so that JSON.stringify produces

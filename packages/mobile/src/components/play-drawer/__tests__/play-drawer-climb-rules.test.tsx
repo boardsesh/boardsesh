@@ -68,8 +68,17 @@ vi.mock('../../DrawerHeader', () => ({
 // so a test can prove the header stops feeding it the tokens the rules line
 // already spells out.
 vi.mock('../../ClimbAttributeIcons', () => ({
-  ClimbAttributeIcons: ({ characteristics }: { characteristics?: string[] | null }) =>
-    createElement('i', { 'data-attr-icons': characteristics === null ? 'null' : JSON.stringify(characteristics) }),
+  ClimbAttributeIcons: ({
+    characteristics,
+    isNoMatch,
+  }: {
+    characteristics?: string[] | null;
+    isNoMatch?: boolean | null;
+  }) =>
+    createElement('i', {
+      'data-attr-icons': characteristics === null ? 'null' : JSON.stringify(characteristics),
+      'data-no-match-fallback': isNoMatch === undefined ? 'undefined' : String(isNoMatch),
+    }),
 }));
 
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
@@ -122,6 +131,21 @@ describe('play-drawer climb rules line', () => {
     expect(rules?.getAttribute('aria-label')).toBe(
       'mobile.climbRules.spoken(mobile.climbRules.matchingAllowed|mobile.climbRules.anyFeet)',
     );
+  });
+
+  // #5127: a climb sourced from a path that carries the bool but no
+  // characteristics array (tick and notification rows) still has to show the
+  // glyph — but only where the rules line is not already saying it.
+  it('hands the no-match fallback to the glyph cluster on an Aurora board', () => {
+    const { rules, attrIcons } = renderHeader({ boardName: 'kilter', characteristics: null, isNoMatch: true });
+    expect(rules).toBeNull();
+    expect(attrIcons?.getAttribute('data-no-match-fallback')).toBe('true');
+  });
+
+  it('withholds the fallback on Woods, where the rules line already states matching', () => {
+    const { rules, attrIcons } = renderHeader({ boardName: 'woods', characteristics: [NO_MATCH], isNoMatch: true });
+    expect(rules?.textContent).toBe('mobile.climbRules.noMatching · mobile.climbRules.markedHoldsOnly');
+    expect(attrIcons?.getAttribute('data-no-match-fallback')).toBe('undefined');
   });
 
   it('lets the rules wrap rather than truncating them', () => {

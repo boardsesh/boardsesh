@@ -3,7 +3,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { withSerialPlan } from '@boardsesh/db/queries';
-import { requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/helpers';
+import { requireAuthenticated, validateInput, isNoMatchClimb, usesAuroraNoMatchDescription } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeCursor, decodeCursor } from '../../../utils/feed-cursor';
 
@@ -115,7 +115,7 @@ function mapTickRowToFeedItem({
     commentBody: null,
     isMirror: tick.isMirror ?? false,
     isBenchmark: tick.isBenchmark ?? false,
-    isNoMatch: isNoMatchClimb(climbDescription),
+    isNoMatch: usesAuroraNoMatchDescription(tick.boardType) && isNoMatchClimb(climbDescription),
     difficulty: tick.difficulty,
     difficultyName,
     quality: tick.quality,
