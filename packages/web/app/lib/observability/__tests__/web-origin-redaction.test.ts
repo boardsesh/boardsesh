@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
+
+vi.mock('server-only', () => ({}));
 import { redactWebOriginEvent, redactWebOriginLog, redactWebOriginSpan } from '../web-origin-redaction';
 
 describe('origin verification telemetry redaction', () => {
