@@ -217,6 +217,75 @@ describe('SNAPSHOT_IMPORT_BATCH_ROWS', () => {
   });
 });
 
+describe('the import cannot revert a newer stream-written stats row', () => {
+  // `board_climb_stats` has a SECOND local writer — the live climbStatsUpdated
+  // write-through (#5227) — so the import upserts under the same `sync_seq`
+  // guard the pull uses. A re-bootstrap over a live board must not walk a fresh
+  // recompute backwards.
+  async function seedLocalStats(db: TestSqliteDb, syncSeq: number, displayDifficulty: number): Promise<void> {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO board_climb_stats
+         (board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty, updated_at, sync_seq)
+       VALUES ('kilter', 'k1-10-0', 40, ?, NULL, '1970-01-01T00:00:00.000Z', ?)`,
+      [displayDifficulty, syncSeq],
+    );
+  }
+
+  async function readK40(db: OfflineDatabase) {
+    return db.getFirstAsync<{ display_difficulty: number; sync_seq: number; updated_at: string }>(
+      "SELECT display_difficulty, sync_seq, updated_at FROM board_climb_stats WHERE climb_uuid = 'k1-10-0' AND angle = 40",
+    );
+  }
+
+  it('leaves a local row NEWER than the artifact alone', async () => {
+    const { db } = await freshClientDb('guard-newer');
+    // The stream wrote revision 1000; the artifact was built at 900.
+    await seedLocalStats(db, 1_000, 30.5);
+
+    await bootstrapScopeFromSnapshot({
+      db,
+      scope: KILTER_SCOPE,
+      scopeKey: KILTER_SCOPE_KEY,
+      filePath: artifactPath,
+      batchRows: 3,
+    });
+
+    expect(await readK40(db)).toMatchObject({ display_difficulty: 30.5, sync_seq: 1_000 });
+  });
+
+  it('still applies an EQUAL-revision artifact row, which is what fills updated_at', async () => {
+    const { db } = await freshClientDb('guard-equal');
+    // The stream's row carries the epoch updated_at (it is the pull cursor) —
+    // a `>` guard would strand the artifact's real watermark forever.
+    await seedLocalStats(db, Number(WATERMARK_SEQ), 30.5);
+
+    await bootstrapScopeFromSnapshot({
+      db,
+      scope: KILTER_SCOPE,
+      scopeKey: KILTER_SCOPE_KEY,
+      filePath: artifactPath,
+      batchRows: 3,
+    });
+
+    expect(await readK40(db)).toMatchObject({ display_difficulty: 21.5, updated_at: WATERMARK_AT });
+  });
+
+  it('applies the artifact row when the local one is older', async () => {
+    const { db } = await freshClientDb('guard-older');
+    await seedLocalStats(db, 10, 30.5);
+
+    await bootstrapScopeFromSnapshot({
+      db,
+      scope: KILTER_SCOPE,
+      scopeKey: KILTER_SCOPE_KEY,
+      filePath: artifactPath,
+      batchRows: 3,
+    });
+
+    expect(await readK40(db)).toMatchObject({ display_difficulty: 21.5, sync_seq: Number(WATERMARK_SEQ) });
+  });
+});
+
 describe('batched import row-set equivalence', () => {
   // The failure this guards is permanent and silent: an import filter NARROWER
   // than the resolver's scope loses rows forever, because the strict `>` delta
