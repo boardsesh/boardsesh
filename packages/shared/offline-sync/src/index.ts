@@ -196,18 +196,15 @@ export { TABLE_INVALIDATE_KEYS, invalidateKeysForTable } from './sync/invalidate
 // The second local writer of `board_climb_stats`: one gated statement per event
 // from the layout-wide `climbStatsUpdated` stream, so a downloaded board's
 // local-first reads see a recompute without waiting for the next pull.
-export {
-  writeClimbStatsEvent,
-  parseClimbStatsRevision,
-  CLIMB_STATS_WRITE_THROUGH_COLUMNS,
-  CLIMB_STATS_WRITE_THROUGH_UNTOUCHED_COLUMNS,
-  CLIMB_STATS_WRITE_THROUGH_LOCK_TIMEOUT_MS,
-} from './sync/climb-stats-write-through';
+export { writeClimbStatsEvent, writeClimbStatsEvents } from './sync/climb-stats-write-through';
 export type {
   ClimbStatsWriteThroughInput,
   ClimbStatsWriteThroughResult,
   ClimbStatsWriteThroughStatus,
 } from './sync/climb-stats-write-through';
+// The `board_climbs.compatible_size_ids` decode, shared with mobile's local
+// search so the column has one reader.
+export { parseCompatibleSizeIds } from './sync/board-scope-sql';
 export {
   LOCAL_USER_ID_KEY,
   USER_DATA_COMPLETE_KEY,

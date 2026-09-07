@@ -1,4 +1,4 @@
-import { getLocalUserId, type OfflineDatabase } from '@boardsesh/offline-sync';
+import { getLocalUserId, parseCompatibleSizeIds, type OfflineDatabase } from '@boardsesh/offline-sync';
 import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { isNoMatch } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
@@ -128,6 +128,11 @@ function parseHoldsFilter(holdsFilter: unknown): HoldFilters {
   }
   return { anyHolds, notHolds, hasHoldState };
 }
+
+// Re-exported so the local-search module stays the one import site for row
+// decoding on mobile; the implementation lives with the scope SQL that reads
+// the same column (@boardsesh/offline-sync).
+export { parseCompatibleSizeIds };
 
 /**
  * Whether this search's active filters are fully expressible against the local
@@ -446,24 +451,6 @@ export function parseCharacteristics(raw: string | null): string[] | null {
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as string[]) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Decode the JSON-in-TEXT `compatible_size_ids` column into the number array the
- * shared `Climb` carries. Anything that isn't an array of finite numbers reads
- * as "no compatibility data" (null) rather than as an empty list, because an
- * empty list would otherwise be read as "fits nothing" by a stricter consumer.
- */
-export function parseCompatibleSizeIds(raw: string | null): number[] | null {
-  if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    const sizeIds = parsed.filter((sizeId): sizeId is number => typeof sizeId === 'number' && Number.isFinite(sizeId));
-    return sizeIds.length > 0 ? sizeIds : null;
   } catch {
     return null;
   }
