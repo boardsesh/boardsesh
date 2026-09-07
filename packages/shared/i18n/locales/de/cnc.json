@@ -22,9 +22,14 @@
       "dxf": "Eine DXF-Datei pro Panel, dazu Montagezeichnungen für die ganze Wand.",
       "pdf": "Druckbare Bögen in A3 oder Tabloid, damit du das Layout prüfen kannst, bevor jemand zuschneidet.",
       "bom": "Eine Zuschnittliste: Plattenzahl, Panelmaße und jede Bohrung gezählt.",
-      "licence": "Eine Lizenz mit deinem Namen, gültig für eine Wand."
+      "licence": "Eine Lizenz mit deinem Namen, gültig für eine Wand.",
+      "dxfLabel": "Eine DXF-Datei pro Panel",
+      "pdfLabel": "Kontrollbögen",
+      "bomLabel": "Eine Zuschnittliste",
+      "licenceLabel": "Deine Lizenz"
     },
-    "trademarkNote": "Boardsesh ist weder mit Aurora Climbing noch mit Kilter noch mit einem anderen Board-Hersteller verbunden. Das hier sind Pläne für eine Wand, die mit Griffen und LEDs läuft, die du selbst kaufst."
+    "trademarkNote": "Boardsesh ist weder mit Aurora Climbing noch mit Kilter noch mit einem anderen Board-Hersteller verbunden. Das hier sind Pläne für eine Wand, die mit Griffen und LEDs läuft, die du selbst kaufst.",
+    "cta": "Wand konfigurieren"
   },
   "tiers": {
     "heading": "Wähl eine Lizenz",
@@ -44,7 +49,8 @@
       "subject": "Baupläne: Lizenz für mehrere Bauten"
     },
     "licenceLink": "Lizenz lesen",
-    "ordersLink": "Deine Baupläne"
+    "ordersLink": "Deine Baupläne",
+    "perWall": "pro Wand"
   },
   "configurator": {
     "heading": "Konfiguriere deine Wand",
@@ -311,7 +317,11 @@
     "ready": "Bereit zum Download",
     "failed": "Nicht erstellt",
     "cancelled": "Bezahlung abgelaufen",
-    "refunded": "Erstattet"
+    "refunded": "Erstattet",
+    "preview_queued": "Vorschau in der Warteschlange",
+    "preview_generating": "Vorschau wird gezeichnet",
+    "preview_ready": "Vorschau bereit",
+    "preview_failed": "Vorschau nicht erstellt"
   },
   "orders": {
     "heading": "Deine Baupläne",
@@ -361,5 +371,21 @@
       "body": "Entweder existiert die Lizenz nicht oder sie gehört zu einem anderen Konto."
     },
     "loadError": "Wir konnten diesen Bauplan nicht laden. Lad die Seite neu."
+  },
+  "flow": {
+    "heading": "So läuft das",
+    "intro": "Vorschauen sind kostenlos. Bis zum Abschluss wird nichts abgebucht.",
+    "configure": {
+      "title": "Wand konfigurieren",
+      "body": "Wähl die Größe, die Platten, mit denen deine Werkstatt arbeitet, die Bohrungsdurchmesser und alles, was in ein Panel gefräst werden soll."
+    },
+    "preview": {
+      "title": "Kostenlose Vorschau holen",
+      "body": "Wir teilen alle Bögen auf und schicken dir die Zeichnungen mit Wasserzeichen zurück. Ändere etwas und hol dir die nächste, so oft du willst."
+    },
+    "finalise": {
+      "title": "Abschließen und bauen",
+      "body": "Trag den Namen für die Lizenz ein, bezahl, und die fräsfertigen DXF-Dateien und Druckbögen landen in deinem Konto."
+    }
   }
 }
