@@ -93,9 +93,20 @@ The main app process can maintain a CoreBluetooth connection in the background i
 
 ## Phases
 
-### Phase 1: Native CoreBluetooth Manager [IMPLEMENTED FOR AURORA]
+### Phase 1: Native CoreBluetooth Manager [IMPLEMENTED FOR AURORA + MOONBOARD + WOODS]
 
 Move BLE from JS-only to a native Swift layer that can run when the webview is suspended.
+
+> **Board coverage (2026):** the Swift layer now encodes all three protocol families —
+> Aurora (binary packets), MoonBoard (`l#…#` ASCII, #3392), and Woods (`led,role,…,!`
+> ASCII with acknowledged writes, #3314). Woods' LED tables live in
+> `packages/mobile/modules/live-activity/ios/WoodsBoardData.swift`, generated together
+> with the TS maps by `packages/board-constants/scripts/generate-woods-led-maps.ts` and
+> drift-tested against the docs JSON. Because OTA'd JS can run on binaries older than
+> the encoder they need, JS gates every native board behaviour on the module's
+> `nativeBoardControlBoards` constant (`nativeBleSupportsBoard` in
+> `packages/mobile/src/lib/ble/native-ios-adapter.ts`); an old binary keeps Woods on
+> the ble-plx adapter with widget navigation hidden.
 
 **Files to create:**
 

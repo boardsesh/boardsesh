@@ -33,7 +33,9 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     climbCreation: true,
     explicitClimbRules: true,
     multiFrameClimbs: false,
-    nativeBoardControl: false,
+    // The static PRODUCT capability (Swift drives Woods since #3314); consumers
+    // still gate per-binary via nativeBleSupportsBoard.
+    nativeBoardControl: true,
     auroraAppLink: false,
   },
 };

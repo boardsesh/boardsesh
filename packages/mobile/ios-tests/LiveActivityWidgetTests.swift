@@ -461,6 +461,58 @@ final class LiveActivityWidgetTests: XCTestCase {
         // 2.0: the thumbnail is composited server-side (matches the Capacitor app);
         // the on-device bundled-art compositing is deferred to the revisit issue.
         XCTAssertTrue(url?.absoluteString.contains("include_background=1") ?? false)
+        // The climber's saved look is always explicit; unset resolves to aura
+        // (the app default since 2.4 and the server's default for an absent param).
+        XCTAssertTrue(url?.absoluteString.contains("render_mode=aura") ?? false)
+    }
+
+    func testBoardRenderUrlUsesSavedClassicRenderMode() {
+        defaults.set("https://www.boardsesh.com", forKey: SharedConstants.serverUrlKey)
+        defaults.set("kilter", forKey: SharedConstants.boardNameKey)
+        defaults.set(1, forKey: SharedConstants.layoutIdKey)
+        defaults.set(12, forKey: SharedConstants.sizeIdKey)
+        defaults.set("10,12", forKey: SharedConstants.setIdsKey)
+        defaults.set("classic", forKey: SharedConstants.renderModeKey)
+
+        let url = SharedQueueState.boardRenderUrl(for: makeQueueItem(), from: defaults)
+
+        XCTAssertTrue(url?.absoluteString.contains("render_mode=classic") ?? false)
+    }
+
+    func testBoardRenderUrlRejectsGarbageRenderMode() {
+        defaults.set("https://www.boardsesh.com", forKey: SharedConstants.serverUrlKey)
+        defaults.set("kilter", forKey: SharedConstants.boardNameKey)
+        defaults.set(1, forKey: SharedConstants.layoutIdKey)
+        defaults.set(12, forKey: SharedConstants.sizeIdKey)
+        defaults.set("10,12", forKey: SharedConstants.setIdsKey)
+        defaults.set("neon", forKey: SharedConstants.renderModeKey)
+
+        let url = SharedQueueState.boardRenderUrl(for: makeQueueItem(), from: defaults)
+
+        // Validation lives in one choke point (SharedBoardRenderMode.resolve):
+        // anything but "classic" resolves to aura rather than reaching the server.
+        XCTAssertTrue(url?.absoluteString.contains("render_mode=aura") ?? false)
+    }
+
+    // The fetcher (module target) writes and the widget (extension target)
+    // reads by this one filename contract; a look change must never serve the
+    // other mode's cached bytes.
+    func testThumbnailFileNameCarriesRenderMode() {
+        XCTAssertEqual(SharedBoardRenderMode.resolve(from: defaults), "aura")
+        defaults.set("classic", forKey: SharedConstants.renderModeKey)
+        XCTAssertEqual(SharedBoardRenderMode.resolve(from: defaults), "classic")
+        defaults.set("neon", forKey: SharedConstants.renderModeKey)
+        XCTAssertEqual(SharedBoardRenderMode.resolve(from: defaults), "aura")
+        XCTAssertEqual(SharedBoardRenderMode.resolve(from: nil), "aura")
+
+        XCTAssertEqual(
+            SharedBoardRenderMode.thumbnailFileName(climbUuid: "climb-1", renderMode: "aura"),
+            "climb-1-aura.webp"
+        )
+        XCTAssertEqual(
+            SharedBoardRenderMode.thumbnailFileName(climbUuid: "climb-1", renderMode: "classic"),
+            "climb-1-classic.webp"
+        )
     }
 
     // The disconnect-reason dict feeds the JS `disconnected` event
@@ -516,6 +568,12 @@ final class LiveActivityWidgetTests: XCTestCase {
         // can't be written either way (CoreBluetooth drops/ rejects the write and
         // the wall stays dark) — we just don't pick the unacknowledged path for it.
         XCTAssertEqual(BoardBleEncoding.preferredWriteType(for: [.read], boardName: "moonboard"), .withResponse)
+        // Woods: unconditionally acknowledged (spec §8) — the property bits
+        // never override it, mirroring Aurora's fixed choice the other way.
+        XCTAssertEqual(BoardBleEncoding.preferredWriteType(for: .write, boardName: "woods"), .withResponse)
+        XCTAssertEqual(BoardBleEncoding.preferredWriteType(for: .writeWithoutResponse, boardName: "woods"), .withResponse)
+        XCTAssertEqual(BoardBleEncoding.preferredWriteType(for: [.write, .writeWithoutResponse], boardName: "woods"), .withResponse)
+        XCTAssertEqual(BoardBleEncoding.preferredWriteType(for: [.read], boardName: "woods"), .withResponse)
     }
 
     // Transport chunk sizing (#3230). Aurora without-response chunks come from
@@ -548,6 +606,10 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 509, writeType: .withResponse, boardName: "moonboard"), 20)
         // Any with-response path stays at 20 regardless of board.
         XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 512, writeType: .withResponse, boardName: "kilter"), 20)
+        // Woods: spec §8 mandates 20-byte chunks on both write types (the
+        // without-response case is unreachable but must not size from the MTU).
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 509, writeType: .withResponse, boardName: "woods"), 20)
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 509, writeType: .withoutResponse, boardName: "woods"), 20)
     }
 
     // MARK: - Aurora packet encoding (parity with @boardsesh/ble-protocol)

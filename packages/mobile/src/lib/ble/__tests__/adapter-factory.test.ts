@@ -14,6 +14,10 @@ const harness = vi.hoisted(() => ({
   }),
   // boardBleNative is null when the native module isn't linked — fallback path.
   module: { boardBleNative: { _placeholder: true } as object | null },
+  // The #3314 binary-capability probe. Its real per-binary behaviour is unit
+  // tested in native-ble-supports-board.test.ts; here it's a switch for the
+  // factory's routing decision.
+  nativeBleSupportsBoard: vi.fn(() => true),
 }));
 
 vi.mock('react-native', () => ({
@@ -26,6 +30,7 @@ vi.mock('../adapter', () => ({ RNBleAdapter: harness.RNBleAdapter }));
 vi.mock('../native-ios-adapter', () => ({
   NativeIosBleAdapter: harness.NativeIosBleAdapter,
   nativeBleSupportsConnectionAdoption: vi.fn(() => false),
+  nativeBleSupportsBoard: harness.nativeBleSupportsBoard,
 }));
 vi.mock('../../../../modules/live-activity/src/index', () => ({
   get boardBleNative() {
@@ -44,6 +49,8 @@ const noopPicker = () => Promise.resolve('');
 beforeEach(() => {
   RNBleAdapter.mockClear();
   NativeIosBleAdapter.mockClear();
+  harness.nativeBleSupportsBoard.mockReset();
+  harness.nativeBleSupportsBoard.mockReturnValue(true);
 });
 
 describe('createBluetoothAdapter', () => {
@@ -71,21 +78,39 @@ describe('createBluetoothAdapter', () => {
     expect(NativeIosBleAdapter).not.toHaveBeenCalled();
   });
 
-  // A board that needs acknowledged writes (Woods, protocol spec §8) can't take
-  // the native path: the Swift writer hardcodes write-without-response for every
-  // non-moonboard board and has no Woods encoder at all (#3314).
-  it('returns RNBleAdapter on iOS with the native module linked when the board prefers acknowledged writes', () => {
+  // A board that needs acknowledged writes (Woods, protocol spec §8) takes the
+  // native path only when the running binary's Swift layer can drive it. An
+  // old binary (probe false) hardcodes write-without-response for every
+  // non-moonboard board and would encode Woods as Aurora, so it stays on
+  // RNBleAdapter (#3314).
+  it('returns RNBleAdapter on iOS for an acknowledged-writes board on a binary that cannot drive it', () => {
     platformMock.OS = 'ios';
     harness.module.boardBleNative = { _placeholder: true };
-    createBluetoothAdapter(noopPicker, 'moonboard', { preferWriteWithResponse: true });
+    harness.nativeBleSupportsBoard.mockReturnValue(false);
+    const options = { preferWriteWithResponse: true, boardName: 'woods' };
+    createBluetoothAdapter(noopPicker, 'moonboard', options);
+    expect(harness.nativeBleSupportsBoard).toHaveBeenCalledWith('woods');
     expect(RNBleAdapter).toHaveBeenCalledTimes(1);
-    expect(RNBleAdapter).toHaveBeenCalledWith(noopPicker, 'moonboard', { preferWriteWithResponse: true });
+    expect(RNBleAdapter).toHaveBeenCalledWith(noopPicker, 'moonboard', options);
     expect(NativeIosBleAdapter).not.toHaveBeenCalled();
+  });
+
+  it('returns NativeIosBleAdapter on iOS for an acknowledged-writes board on a binary that drives it', () => {
+    platformMock.OS = 'ios';
+    harness.module.boardBleNative = { _placeholder: true };
+    harness.nativeBleSupportsBoard.mockReturnValue(true);
+    const options = { preferWriteWithResponse: true, boardName: 'woods' };
+    createBluetoothAdapter(noopPicker, 'moonboard', options);
+    expect(NativeIosBleAdapter).toHaveBeenCalledTimes(1);
+    expect(NativeIosBleAdapter).toHaveBeenCalledWith(noopPicker, 'moonboard', options);
+    expect(RNBleAdapter).not.toHaveBeenCalled();
   });
 
   it('still returns NativeIosBleAdapter on iOS when the board does not prefer acknowledged writes', () => {
     platformMock.OS = 'ios';
     harness.module.boardBleNative = { _placeholder: true };
+    // The probe is not even consulted on the proven default path.
+    harness.nativeBleSupportsBoard.mockReturnValue(false);
     createBluetoothAdapter(noopPicker, 'moonboard', { preferWriteWithResponse: false });
     expect(NativeIosBleAdapter).toHaveBeenCalledTimes(1);
     expect(NativeIosBleAdapter).toHaveBeenCalledWith(noopPicker, 'moonboard', { preferWriteWithResponse: false });

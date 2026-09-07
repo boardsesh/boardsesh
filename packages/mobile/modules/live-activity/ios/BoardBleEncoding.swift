@@ -79,10 +79,17 @@ enum BoardBleEncoding {
     /// up-front from the property bit is exactly what regressed the fleet in #3228
     /// (a stale GATT cache can drop the bit on a healthy board), so this function
     /// deliberately keeps Aurora on without-response regardless of the bit.
+    ///
+    /// Woods is the third family: its spec (§8) calls for acknowledged writes
+    /// UP FRONT — the controller reassembles 20-byte chunks until the `,!`
+    /// terminator and the ATT ack paces the stream — so Woods always takes
+    /// `.withResponse`, regardless of the property bits (the same stale-GATT
+    /// reasoning as Aurora, just with the opposite proven write type).
     static func preferredWriteType(
         for properties: CBCharacteristicProperties,
         boardName: String?
     ) -> CBCharacteristicWriteType {
+        if boardName == "woods" { return .withResponse }
         guard boardName == "moonboard" else { return .withoutResponse }
         return properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
     }
@@ -104,14 +111,16 @@ enum BoardBleEncoding {
     ///
     /// Aurora on write-without-response sizes chunks from the connection's
     /// negotiated `maximumWriteValueLength`, clamped to [20, 244]. MoonBoard —
-    /// both the Nordic-UART and RedBearLab boxes — and any with-response path
-    /// stay at the proven 20 bytes.
+    /// both the Nordic-UART and RedBearLab boxes — Woods (spec §8 mandates
+    /// 20-byte chunks), and any with-response path stay at the proven 20 bytes.
     static func effectiveChunkSize(
         negotiatedMaxWriteLength: Int,
         writeType: CBCharacteristicWriteType,
         boardName: String?
     ) -> Int {
-        guard writeType == .withoutResponse, boardName != "moonboard" else { return classicChunkSize }
+        guard writeType == .withoutResponse, boardName != "moonboard", boardName != "woods" else {
+            return classicChunkSize
+        }
         return min(max(negotiatedMaxWriteLength, classicChunkSize), maxAttChunkSize)
     }
 
@@ -487,6 +496,80 @@ enum BoardBleEncoding {
             skippedPositionCount: skippedPositionCount,
             skippedRoleCount: skippedRoleCount,
             totalPlacements: parsedFrames.count
+        )
+    }
+
+    // MARK: - Woods
+
+    // Woods Board speaks a plain-ASCII protocol: `led,role` pairs joined by
+    // commas and closed with a literal `,!` (docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md
+    // §5), with LED indices looked up per board size from WoodsBoardData and
+    // wire role codes Foot 1 / Hand 2 / Finish 3 / Start 4 (§6). Ported from
+    // packages/shared/ble-protocol/src/woods.ts; keep the two in lockstep
+    // (parity asserted in WoodsBoardBleTests).
+    private static let woodsWireRoleCodes: Set<Int> = [1, 2, 3, 4]
+    private static let woodsTerminator = ",!"
+
+    static func makeWoodsPacket(frames: String, ledMap: [Int: Int]) -> BoardBlePacketResult {
+        // Woods has no Aurora-style multi-frame climbs; a comma can only mean a
+        // frames string this encoder was never meant to see (the JS encoder
+        // throws WoodsMultiFrameError). Refuse with an empty packet rather than
+        // risk a corrupt wire command.
+        guard !frames.contains(",") else {
+            return BoardBlePacketResult(packet: Data(), skippedPositionCount: 0, skippedRoleCount: 0, totalPlacements: 0)
+        }
+
+        // Bare `,!` — zero pairs — is Woods' clear-all (spec §5). Gate on the
+        // RAW string: only the deliberate-clear input (`frames == ""`) may
+        // produce it; a non-empty frames string that encodes to nothing falls
+        // through to the zero-encodable refusal below.
+        if frames.isEmpty {
+            return BoardBlePacketResult(packet: Data(woodsTerminator.utf8), skippedPositionCount: 0, skippedRoleCount: 0, totalPlacements: 0)
+        }
+
+        // Woods' own tokenizer, NOT the shared parseFrames: the JS encoder
+        // counts every raw `p`-split token toward totalPlacements and buckets a
+        // malformed role as a skipped role (and a malformed placement under a
+        // valid role as a skipped position), while parseFrames drops malformed
+        // tokens before counting — and the two sides' skip telemetry must agree.
+        let tokens = frames.split(separator: "p")
+        var pairs: [String] = []
+        var skippedRoleCount = 0
+        var skippedPositionCount = 0
+
+        for token in tokens {
+            let parts = token.split(separator: "r")
+            guard parts.count >= 2, let roleCode = Int(parts[1]), woodsWireRoleCodes.contains(roleCode) else {
+                skippedRoleCount += 1
+                continue
+            }
+            guard let placementId = Int(parts[0]), let ledIndex = ledMap[placementId] else {
+                skippedPositionCount += 1
+                continue
+            }
+            pairs.append("\(ledIndex),\(roleCode)")
+        }
+
+        // Zero encodable holds on a non-empty climb → refuse: writing the bare
+        // terminator would silently dark the wall while reporting success.
+        // (Deliberately stricter than the JS encoder, whose dispatcher applies
+        // the same guard one layer up — use-board-bluetooth.ts's `incompatible`
+        // outcome — and which lets a degenerate all-separator string like "ppp"
+        // tokenize to nothing and slip through as a clear.)
+        guard !pairs.isEmpty else {
+            return BoardBlePacketResult(
+                packet: Data(),
+                skippedPositionCount: skippedPositionCount,
+                skippedRoleCount: skippedRoleCount,
+                totalPlacements: tokens.count
+            )
+        }
+
+        return BoardBlePacketResult(
+            packet: Data((pairs.joined(separator: ",") + woodsTerminator).utf8),
+            skippedPositionCount: skippedPositionCount,
+            skippedRoleCount: skippedRoleCount,
+            totalPlacements: tokens.count
         )
     }
 

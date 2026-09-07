@@ -42,6 +42,10 @@ const TEST_SOURCE_FILES = [
     projectPath: 'BoardseshTests/BoardRendererErrorClassificationTests.swift',
   },
   {
+    sourcePath: '../ios-tests/WoodsBoardBleTests.swift',
+    projectPath: 'BoardseshTests/WoodsBoardBleTests.swift',
+  },
+  {
     sourcePath: '../modules/board-renderer/ios/BoardRendererErrorClassification.swift',
     projectPath: 'BoardseshTests/BoardRendererSources/BoardRendererErrorClassification.swift',
   },
@@ -68,6 +72,10 @@ const TEST_SOURCE_FILES = [
   {
     sourcePath: '../modules/live-activity/ios/BoardPlacementData.swift',
     projectPath: 'BoardseshTests/LiveActivitySources/BoardPlacementData.swift',
+  },
+  {
+    sourcePath: '../modules/live-activity/ios/WoodsBoardData.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/WoodsBoardData.swift',
   },
   {
     sourcePath: '../modules/live-activity/ios/SharedConstants.swift',

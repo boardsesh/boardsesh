@@ -80,8 +80,12 @@ export type BleWriteDiagnostics = {
     | 'moonboardCharacteristic'
     // The board itself demands the write type, whatever the characteristic
     // advertises — see BleAdapterOptions.preferWriteWithResponse. JS-adapter
-    // only; the Swift writer has no equivalent source.
-    | 'boardPreference';
+    // only; the Swift writer reports its equivalent as `woodsProtocol`.
+    | 'boardPreference'
+    // Swift writer only: the Woods spec-§8 acknowledged-write mandate, and the
+    // proactive bare-Aurora-name with-response hint.
+    | 'woodsProtocol'
+    | 'bareNameHint';
   chunkSize?: number;
   // PLANNED chunks for the write on both platforms (stamped at enqueue), not
   // progress — a write that fails mid-stream still reports the full plan.
@@ -121,13 +125,18 @@ export type BleConnectDiagnostics = {
  * Arduino-class firmware. Aurora boards must never set it — write-without-
  * response is their proven path.
  *
- * Only `RNBleAdapter` honours it. `NativeIosBleAdapter` accepts it for
- * signature symmetry but cannot act on it, because the write type of a native
- * write is chosen in Swift (`BoardBleEncoding.preferredWriteType`); the factory
- * routes boards that need acknowledged writes through `RNBleAdapter` instead.
+ * Only `RNBleAdapter` acts on it in JS. `NativeIosBleAdapter` accepts it for
+ * signature symmetry: the write type of a native write is chosen in Swift
+ * (`BoardBleEncoding.preferredWriteType`), which honours acknowledged-write
+ * boards itself on binaries ≥ #3314. The factory routes such a board through
+ * `RNBleAdapter` whenever the running binary can't (`nativeBleSupportsBoard`).
+ *
+ * `boardName` exists for that routing decision — the factory asks the native
+ * module whether this binary's Swift encoder supports the board.
  */
 export type BleAdapterOptions = {
   preferWriteWithResponse?: boolean;
+  boardName?: string;
 };
 
 export type BluetoothAdapter = {

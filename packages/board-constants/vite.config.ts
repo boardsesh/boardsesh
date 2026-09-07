@@ -5,6 +5,6 @@ export default defineConfig({
     name: 'board-constants',
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
   },
 });

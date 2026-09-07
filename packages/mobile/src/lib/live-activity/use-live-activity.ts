@@ -4,6 +4,7 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 import { parseSetIds, toBoardName } from '@boardsesh/board-config';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import type { BoardConnection } from '../../components/play-drawer/lightbulb-control';
+import type { LiveActivityBoardRenderMode } from '../../../modules/live-activity/src/index';
 import { getAuthToken } from '../auth-store';
 import { BACKEND_URL } from '../env';
 import {
@@ -44,6 +45,13 @@ type UseLiveActivityOptions = {
   boardConnection: BoardConnection;
   /** Display name of the peer holding the board (heldByPeer only). */
   holderDisplayName?: string | null;
+  /**
+   * The climber's saved board look, for the iOS server-rendered thumbnail.
+   * Sent on start AND on every update so a settings change reaches a running
+   * activity (the session is never restarted for it). Android ignores it —
+   * its notification thumbnail is rendered on-device in the climber's look.
+   */
+  renderMode: LiveActivityBoardRenderMode;
   /** Localized strings for the Android foreground-service notification (ignored on iOS). */
   androidNotification?: AndroidNotificationStrings;
   /** Android-only on-device thumbnail (BoardRenderer overlay + bundled backgrounds). */
@@ -146,6 +154,7 @@ export function useLiveActivity({
   isPartySession,
   boardConnection,
   holderDisplayName,
+  renderMode,
   androidNotification,
   androidThumbnailOverlayPath,
   androidThumbnailOverlayLoadKey,
@@ -184,6 +193,8 @@ export function useLiveActivity({
   boardConnectionRef.current = boardConnection;
   const holderDisplayNameRef = useRef(holderDisplayName);
   holderDisplayNameRef.current = holderDisplayName;
+  const renderModeRef = useRef(renderMode);
+  renderModeRef.current = renderMode;
   const overlayPathRef = useRef(androidThumbnailOverlayPath);
   overlayPathRef.current = androidThumbnailOverlayPath;
   const overlayLoadKeyRef = useRef(androidThumbnailOverlayLoadKey);
@@ -331,6 +342,7 @@ export function useLiveActivity({
             isPartySession: isPartySessionRef.current,
             boardConnection: boardConnectionRef.current,
             holderDisplayName: holderDisplayNameRef.current,
+            renderMode: renderModeRef.current,
             boardBackgroundPaths,
             androidNotification: androidNotificationRef.current,
           });
@@ -358,6 +370,7 @@ export function useLiveActivity({
             isPartySession: isPartySessionRef.current,
             boardConnection: boardConnectionRef.current,
             holderDisplayName: holderDisplayNameRef.current,
+            renderMode: renderModeRef.current,
             androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
             androidThumbnailBackgroundPaths: backgroundPathsRef.current,
           });
@@ -455,6 +468,7 @@ export function useLiveActivity({
       isPartySession,
       boardConnection,
       holderDisplayName,
+      renderMode,
       androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
       androidThumbnailBackgroundPaths,
     });
@@ -469,6 +483,9 @@ export function useLiveActivity({
     getCurrentAndroidOverlayPath,
     holderDisplayName,
     isPartySession,
+    // A board-look change must push mid-session so the iOS widget re-fetches
+    // its thumbnail in the new mode.
+    renderMode,
     serializedQueue,
     stableBoard,
     widgetNavigationAllowed,
@@ -498,6 +515,7 @@ export function useLiveActivity({
       isPartySession,
       boardConnection,
       holderDisplayName,
+      renderMode,
       androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
       androidThumbnailBackgroundPaths,
     });
@@ -512,6 +530,8 @@ export function useLiveActivity({
     holderDisplayName,
     isPartySession,
     queue,
+    // See Effect 1: a board-look change must push mid-session.
+    renderMode,
     stableBoard,
     widgetNavigationAllowed,
   ]);

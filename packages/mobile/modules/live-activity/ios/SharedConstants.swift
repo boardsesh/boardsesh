@@ -32,6 +32,13 @@ enum SharedConstants {
     /// board art over the network (the no-network-board-art rule). Empty when no
     /// bundled background resolved — the overlay is then written as-is.
     static let boardBackgroundPathsKey = "bs_board_background_paths"
+    /// The climber's requested board-render look ("classic" | "aura"), staged
+    /// by `startSession` and refreshed by session updates so a settings change
+    /// reaches a running activity. Read when building the server thumbnail URL
+    /// and the cached thumbnail's filename (`SharedBoardRenderMode`); absent —
+    /// an older OTA'd JS bundle that never writes it — resolves to aura, the
+    /// app and server default.
+    static let renderModeKey = "bs_render_mode"
     /// Version of the cached Live Activity thumbnail's content contract. When it
     /// differs from `ThumbnailFetcher.cacheVersion`, the (update-surviving) App
     /// Group thumbnail cache is purged so an upgraded build doesn't serve the
@@ -191,6 +198,27 @@ struct SharedQueueItem: Codable, Hashable {
     }
 }
 
+// MARK: - Shared Board Render Mode
+
+enum SharedBoardRenderMode {
+    static let aura = "aura"
+    static let classic = "classic"
+
+    /// Validated saved look: anything but "classic" — absent key, garbage, an
+    /// older JS bundle that never writes it — resolves to aura, the app
+    /// default since 2.4 and the server's default for an absent param.
+    static func resolve(from defaults: UserDefaults?) -> String {
+        defaults?.string(forKey: SharedConstants.renderModeKey) == classic ? classic : aura
+    }
+
+    /// One filename contract for ThumbnailFetcher (module target) and the
+    /// widget's loadThumbnail (extension target): the mode is part of the name
+    /// so a look change never serves the other mode's cached bytes.
+    static func thumbnailFileName(climbUuid: String, renderMode: String) -> String {
+        "\(climbUuid)-\(renderMode).webp"
+    }
+}
+
 // MARK: - Shared Queue State
 
 enum SharedQueueState {
@@ -225,7 +253,10 @@ enum SharedQueueState {
         return items[currentIndex]
     }
 
-    static func boardRenderUrl(for item: SharedQueueItem, from defaults: UserDefaults) -> URL? {
+    /// `renderMode` lets a caller pin the look it resolved earlier in the same
+    /// operation (ThumbnailFetcher pairs the URL with a mode-suffixed cache
+    /// filename); nil resolves the saved look from `defaults`.
+    static func boardRenderUrl(for item: SharedQueueItem, from defaults: UserDefaults, renderMode: String? = nil) -> URL? {
         guard let serverUrl = defaults.string(forKey: SharedConstants.serverUrlKey),
               let boardName = defaults.string(forKey: SharedConstants.boardNameKey),
               let setIds = defaults.string(forKey: SharedConstants.setIdsKey)
@@ -255,6 +286,12 @@ enum SharedQueueState {
             // LayeredClimbImage `dim` (rgba(0,0,0,0.18)). Bump
             // ThumbnailFetcher.cacheVersion whenever this value changes.
             URLQueryItem(name: "dim_background", value: "0.18"),
+            // The climber's saved board look. Sent explicitly for BOTH values —
+            // every Boardsesh caller names its render mode rather than leaning
+            // on the server default (docs/og-climb.md convention). The mode is
+            // also baked into the cached thumbnail's filename, so no cache
+            // version bump is needed when a climber flips the setting.
+            URLQueryItem(name: "render_mode", value: renderMode ?? SharedBoardRenderMode.resolve(from: defaults)),
         ]
 
         return components?.url

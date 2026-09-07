@@ -24,6 +24,13 @@ export function isNativeIosBleAdapter(_adapter: BluetoothAdapter): _adapter is N
   return false;
 }
 
+// No native Swift BLE layer exists in a browser. Mirrors the null-module
+// fallback in native-ios-adapter.ts so shared consumers (the live-activity
+// bridge) resolve the same answer on every platform.
+export function nativeBleSupportsBoard(boardName: string | undefined): boolean {
+  return boardName !== 'woods';
+}
+
 export function subscribeNativeBleConnected(
   _listener: (payload: NativeBleConnectedEvent) => void,
 ): { remove: () => void } | null {
