@@ -22,7 +22,10 @@
 
 import { CanvasImageProcessor } from './image-processor/canvas-processor';
 // Import from parser-core to avoid pulling in sharp via parser.ts
-import { parseWithProcessor, deduplicateClimbs } from './parser-core';
+import { parseWithProcessor, deduplicateClimbs, type ParseOptions } from './parser-core';
+export type { ParseOptions } from './parser-core';
+export { BOARD_PROFILES } from './board-profiles';
+export type { HoldSetup, GridRows } from './board-profiles';
 import type { ParseResult, MoonBoardClimb, DetectedHold, GridCoordinate, HoldType } from './types';
 
 // Re-export types for consumers
@@ -34,10 +37,10 @@ export type { ParseResult, MoonBoardClimb, DetectedHold, GridCoordinate, HoldTyp
  * @param image - A File or Blob containing the screenshot image
  * @returns ParseResult containing the extracted climb data or error
  */
-export async function parseScreenshot(image: File | Blob): Promise<ParseResult> {
+export async function parseScreenshot(image: File | Blob, options: ParseOptions = {}): Promise<ParseResult> {
   const processor = new CanvasImageProcessor();
   await processor.load(image);
-  return parseWithProcessor(processor);
+  return parseWithProcessor(processor, options);
 }
 
 /**
@@ -50,6 +53,7 @@ export async function parseScreenshot(image: File | Blob): Promise<ParseResult> 
 export async function parseMultipleScreenshots(
   images: Array<File | Blob>,
   onProgress?: (current: number, total: number, name: string) => void,
+  options: ParseOptions = {},
 ): Promise<{ climbs: MoonBoardClimb[]; errors: Array<{ name: string; error: string }> }> {
   const climbs: MoonBoardClimb[] = [];
   const errors: Array<{ name: string; error: string }> = [];
@@ -60,7 +64,7 @@ export async function parseMultipleScreenshots(
     onProgress?.(i + 1, images.length, name);
 
     try {
-      const result = await parseScreenshot(image);
+      const result = await parseScreenshot(image, options);
       if (result.success && result.climb) {
         climbs.push(result.climb);
       } else {

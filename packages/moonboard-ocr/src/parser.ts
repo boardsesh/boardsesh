@@ -30,6 +30,7 @@ export async function parseScreenshot(imagePath: string, options: ParseOptions =
 export async function parseMultipleScreenshots(
   imagePaths: string[],
   onProgress?: (current: number, total: number, file: string) => void,
+  options: ParseOptions = {},
 ): Promise<{ climbs: MoonBoardClimb[]; errors: Array<{ file: string; error: string }> }> {
   const climbs: MoonBoardClimb[] = [];
   const errors: Array<{ file: string; error: string }> = [];
@@ -38,7 +39,7 @@ export async function parseMultipleScreenshots(
     const imagePath = imagePaths[i];
     onProgress?.(i + 1, imagePaths.length, path.basename(imagePath));
 
-    const result = await parseScreenshot(imagePath);
+    const result = await parseScreenshot(imagePath, options);
     if (result.success && result.climb) {
       climbs.push(result.climb);
     } else {

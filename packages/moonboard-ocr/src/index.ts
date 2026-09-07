@@ -17,6 +17,9 @@
 
 // Main parsing functions
 export { parseScreenshot, parseMultipleScreenshots, parseWithProcessor, deduplicateClimbs } from './parser';
+export type { ParseOptions } from './parser';
+export { BOARD_PROFILES } from './board-profiles';
+export type { HoldSetup, GridRows } from './board-profiles';
 
 // Image processor for advanced use cases
 export { SharpImageProcessor } from './image-processor/sharp-processor';

@@ -1,9 +1,25 @@
 import type { ImageRegion } from '../image-processor/types';
+import type { GridRows } from '../board-profiles';
 
 export type ImageRegions = {
   header: ImageRegion;
   board: ImageRegion;
 };
+
+/** Observed stock Android 1.3.68 on a Pixel 8 Pro at 1008×2244.
+ * Mini boards are centered with additional vertical space, not stretched to 18
+ * rows. These bounds describe cell edges, not the yellow artwork (which also
+ * includes labels). Reject other geometries instead of silently mislabeling holds.
+ */
+export function calculateAndroidRegions(width: number, height: number, rows: GridRows): ImageRegions {
+  if (width !== 1008 || height !== 2244) {
+    throw new Error('Unvalidated Android screenshot dimensions: expected 1008x2244');
+  }
+  return {
+    header: { x: 0, y: 247, width, height: 202 },
+    board: { x: 107, y: rows === 12 ? 786 : 560, width: 853, height: rows === 12 ? 931 : 1396 },
+  };
+}
 
 /**
  * Calculate header and board regions based on image dimensions.
