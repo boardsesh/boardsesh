@@ -142,9 +142,12 @@ vi.mock('../../offline/offline-sync-adapter', () => ({
 // The sync cycle's collaborators. `snapshotSource` is the one that must reach
 // triggerSync: without it the pull paged-crawls an enabled-but-undownloaded
 // scope and permanently disqualifies the snapshot path for it.
-const snapshotSourceMock = vi.hoisted(() => ({ tag: 'snapshot-source' }));
+// Held in a box so a test can swap it between renders: it is one of the four
+// deps of the adapter's useMemo, so changing it is how a real adapter identity
+// change happens (a re-subscribe of the layout stream).
+const snapshotSourceMock = vi.hoisted(() => ({ current: { tag: 'snapshot-source' } as object }));
 vi.mock('../../offline/use-snapshot-source', () => ({
-  useSnapshotSource: () => snapshotSourceMock,
+  useSnapshotSource: () => snapshotSourceMock.current,
 }));
 
 const enabledScopeKeys = vi.hoisted(() => ({ value: ['kilter:1:5'] as string[] }));
@@ -228,6 +231,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   liveSyncMocks.instances.length = 0;
+  snapshotSourceMock.current = { tag: 'snapshot-source' };
   enabledScopeKeys.value = ['kilter:1:5'];
   setBackgrounded(false);
   setSigningOut(false);
@@ -474,7 +478,7 @@ describe('BoardAdapterWrapper tick degrade + telemetry', () => {
         onProgress: syncCollaboratorMocks.setSyncProgress,
         onBootstrapMetadataChanged: syncCollaboratorMocks.notifyBootstrapMetadataChanged,
         onScopeDownloadComplete: syncCollaboratorMocks.notifyScopeDownloadComplete,
-        snapshotSource: snapshotSourceMock,
+        snapshotSource: snapshotSourceMock.current,
       },
     );
     expect(drainMutationQueueMock).not.toHaveBeenCalled();
@@ -655,7 +659,9 @@ describe('BoardAdapterWrapper live climb-stat write-through', () => {
   it('keeps one consumer across re-renders and adapter identity changes', () => {
     offlineEnabled = true;
     const view = renderWrapper();
+    const firstAdapter = capturedAdapter;
 
+    // A plain re-render: same adapter, same consumer.
     view.rerender(
       <QueryClientProvider client={queryClient}>
         <BoardAdapterWrapper>
@@ -663,9 +669,26 @@ describe('BoardAdapterWrapper live climb-stat write-through', () => {
         </BoardAdapterWrapper>
       </QueryClientProvider>,
     );
+    expect(capturedAdapter).toBe(firstAdapter);
 
+    // Now move a real dep of the adapter memo, which is what churns the adapter
+    // identity in production and re-subscribes the layout stream. The consumer
+    // must survive it, or a pending flush would be thrown away every time.
+    snapshotSourceMock.current = { tag: 'snapshot-source-2' };
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <BoardAdapterWrapper>
+          <span>changed again</span>
+        </BoardAdapterWrapper>
+      </QueryClientProvider>,
+    );
+
+    expect(capturedAdapter).not.toBe(firstAdapter);
     expect(liveSyncMocks.create).toHaveBeenCalledTimes(1);
     expect(liveSyncMocks.instances[0].dispose).not.toHaveBeenCalled();
+    // And the fresh adapter still forwards into the SAME consumer.
+    capturedAdapter?.persistClimbStatsEvent?.({ climbUuid: 'climb-1' } as never);
+    expect(liveSyncMocks.instances[0].handleEvent).toHaveBeenCalledTimes(1);
   });
 
   it('disposes the consumer on unmount', () => {

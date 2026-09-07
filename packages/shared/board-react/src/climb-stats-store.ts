@@ -48,12 +48,7 @@ export function climbStatsKeyString(key: ClimbStatsKey): string {
   return `${key.boardType}\u0000${key.layoutId}\u0000${key.climbUuid}\u0000${key.angle}`;
 }
 
-/**
- * The wire shape of a `sync_seq`: decimal digits, no sign, no leading zero.
- * Exported so consumers that persist an event (mobile's SQLite write-through)
- * reject exactly the revisions this store rejects.
- */
-export function validRevision(revision: string): boolean {
+function validRevision(revision: string): boolean {
   return /^(0|[1-9]\d*)$/.test(revision);
 }
 
