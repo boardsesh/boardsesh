@@ -439,9 +439,20 @@ export function withdrawnCanonicalUuids(args: {
   canonicalByAlias: ReadonlyMap<string, string>;
 }): string[] {
   const { problemId, angles, existingClimbUuids, canonicalByAlias } = args;
-  const owned = existingClimbUuidsForProblem({ problemId, angles, existingClimbUuids });
+  const candidateUuids = new Set([
+    catalogClimbUuid({ id: problemId }),
+    ...angles.map((angle) => legacyCatalogClimbUuid({ id: problemId, angle })),
+  ]);
+
   const resolved = new Set<string>();
-  for (const uuid of owned) {
+  for (const uuid of candidateUuids) {
+    // Resolve FIRST, then ask whether the result is a climb row — not the other
+    // way round. The merge parks most problems on a pre-existing uuid, which
+    // makes their `moonboard:{id}` uuid an alias rather than a climb row; a
+    // "is this candidate a climb row?" test would find nothing for exactly the
+    // problems most likely to have been imported. (This is not a hypothetical:
+    // testing the candidate first found 4 of 384 withdrawn problems.)
+    //
     // A cyclic alias chain resolves to undefined. Same stance as the hijack
     // guard: refuse to act on a redirect we cannot follow.
     const canonicalUuid = terminalCanonicalUuid(uuid, canonicalByAlias);

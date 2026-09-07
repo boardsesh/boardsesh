@@ -424,7 +424,9 @@ void test('a withdrawn problem merged onto another uuid unlists the merge target
 
   const { withdrawnClimbUuids } = stage({
     problems: [gone],
-    existingClimbUuids: new Set([ownIdUuid, mergeTarget]),
+    // Deliberately NOT including ownIdUuid: after a merge it is an alias row,
+    // not a climb row. Resolution has to start from the alias.
+    existingClimbUuids: new Set([mergeTarget]),
     canonicalByAlias: new Map([[ownIdUuid, mergeTarget]]),
   });
 
@@ -625,4 +627,45 @@ void test('every problem is accounted for across all the skip paths at once', ()
   // Withdrawn and the holdless problem both land in skippedProblems.
   assert.equal(counters.skippedProblems, 2);
   assert.equal(accountedFor(counters), problems.length);
+});
+
+void test('a withdrawn problem merged onto a LEGACY per-angle row is still found', () => {
+  // Regression for the shape that made a real dry run report 4 of 384
+  // withdrawn problems as owning a climb: the candidate uuid is an alias, and
+  // testing it for climb-row membership before resolving finds nothing.
+  const gone = problem({
+    id: 700280,
+    dateDeleted: '2026-03-01T10:00:00',
+    configurations: [config({ dateDeleted: '2026-03-01T10:00:00' })],
+  });
+  const legacyUuid = legacyCatalogClimbUuid({ id: 700280, angle: 40 });
+  const mergeTarget = 'merge-target-uuid';
+
+  const { withdrawnClimbUuids, counters } = stage({
+    problems: [gone],
+    existingClimbUuids: new Set([mergeTarget]),
+    canonicalByAlias: new Map([
+      [catalogClimbUuid({ id: 700280 }), mergeTarget],
+      [legacyUuid, mergeTarget],
+    ]),
+  });
+
+  assert.equal(counters.withdrawnWithClimbs, 1);
+  assert.deepEqual(withdrawnClimbUuids, [mergeTarget]);
+});
+
+void test('a withdrawn problem resolving through a chain of aliases is found', () => {
+  const gone = problem({ id: 700290, dateDeleted: '2026-03-01T10:00:00' });
+  const finalTarget = 'final-target-uuid';
+
+  const { withdrawnClimbUuids } = stage({
+    problems: [gone],
+    existingClimbUuids: new Set([finalTarget]),
+    canonicalByAlias: new Map([
+      [catalogClimbUuid({ id: 700290 }), 'intermediate-uuid'],
+      ['intermediate-uuid', finalTarget],
+    ]),
+  });
+
+  assert.deepEqual(withdrawnClimbUuids, [finalTarget]);
 });
