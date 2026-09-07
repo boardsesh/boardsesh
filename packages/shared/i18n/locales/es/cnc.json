@@ -22,9 +22,14 @@
       "dxf": "Un DXF por panel, más los planos de montaje del muro entero.",
       "pdf": "Hojas imprimibles en A3 o Tabloid, para revisar la distribución antes de que nadie corte.",
       "bom": "Una lista de corte: cuántas planchas, las medidas de los paneles y todos los agujeros contados.",
-      "licence": "Una licencia a tu nombre, válida para un muro."
+      "licence": "Una licencia a tu nombre, válida para un muro.",
+      "dxfLabel": "Un DXF por panel",
+      "pdfLabel": "Hojas de comprobación",
+      "bomLabel": "Una lista de corte",
+      "licenceLabel": "Tu licencia"
     },
-    "trademarkNote": "Boardsesh no está afiliado a Aurora Climbing, a Kilter ni a ningún fabricante de plafones. Estos son planos para construir un muro que funciona con presas y LEDs que compras por tu cuenta."
+    "trademarkNote": "Boardsesh no está afiliado a Aurora Climbing, a Kilter ni a ningún fabricante de plafones. Estos son planos para construir un muro que funciona con presas y LEDs que compras por tu cuenta.",
+    "cta": "Configura tu muro"
   },
   "tiers": {
     "heading": "Elige una licencia",
@@ -44,7 +49,8 @@
       "subject": "Planos de construcción: licencia para varias construcciones"
     },
     "licenceLink": "Lee la licencia",
-    "ordersLink": "Tus planos de construcción"
+    "ordersLink": "Tus planos de construcción",
+    "perWall": "por muro"
   },
   "configurator": {
     "heading": "Configura tu muro",
@@ -311,7 +317,11 @@
     "ready": "Listo para descargar",
     "failed": "No se generó",
     "cancelled": "El pago caducó",
-    "refunded": "Reembolsado"
+    "refunded": "Reembolsado",
+    "preview_queued": "Vista previa en cola",
+    "preview_generating": "Dibujando la vista previa",
+    "preview_ready": "Vista previa lista",
+    "preview_failed": "La vista previa no se generó"
   },
   "orders": {
     "heading": "Tus planos de construcción",
@@ -361,5 +371,21 @@
       "body": "O esa licencia no existe o pertenece a otra cuenta."
     },
     "loadError": "No hemos podido cargar este plano de construcción. Recarga la página."
+  },
+  "flow": {
+    "heading": "Cómo funciona",
+    "intro": "Las vistas previas son gratis. No se cobra nada hasta que cierras la compra.",
+    "configure": {
+      "title": "Configura tu muro",
+      "body": "Elige la medida, las planchas con las que corta tu taller, los diámetros de los agujeros y lo que quieras fresar en un panel."
+    },
+    "preview": {
+      "title": "Pide una vista previa gratis",
+      "body": "Repartimos todas las hojas y te devolvemos los planos con marca de agua. Cambia algo y vuelve a pedirla, las veces que quieras."
+    },
+    "finalise": {
+      "title": "Cierra la compra y construye",
+      "body": "Pon el nombre en la licencia, paga, y los DXF listos para cortar y las hojas de impresión llegan a tu cuenta."
+    }
   }
 }

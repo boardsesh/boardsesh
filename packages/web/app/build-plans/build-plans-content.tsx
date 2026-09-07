@@ -1,16 +1,14 @@
 import 'server-only';
 import React from 'react';
 import Box from '@mui/material/Box';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
+import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
-import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import type { CncCatalog, CncLicenceTier } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { themeTokens } from '@/app/theme/theme-config';
 import { formatPrice } from './configurator/configurator-state';
+import { KeyValueList, PageSection, PriceTag, SectionCard, StepHeading } from './ui';
 import styles from './build-plans.module.css';
 
 /**
@@ -21,18 +19,24 @@ import styles from './build-plans.module.css';
 const MULTI_BUILD_CONTACT_EMAIL = 'support@boardsesh.com';
 
 /**
- * The server-rendered half of `/build-plans`: heading, what you get, and what
- * the two licences cost.
+ * The server-rendered half of `/build-plans`: how the free preview works, what
+ * lands in your account, and what a licence costs.
  *
  * Server, not client, and that is the point of splitting it from the
- * configurator. This is the copy a search engine and a first paint see — an h1,
- * real paragraphs, real prices, and crawlable links to the licence and to the
+ * configurator. This is the copy a search engine and a first paint see — real
+ * paragraphs, real prices, and crawlable links to the licence and to the
  * buyer's own orders — none of which should wait on hydration or on a flag the
  * browser has to resolve for itself.
  *
  * Prices are formatted from the catalogue's `amountCents` with the request's
  * own locale, so the number on the page is the number Stripe will charge, in
  * the currency the catalogue set it in.
+ *
+ * Reading order is the buying order: how it works (three steps, because it
+ * genuinely is a sequence — nothing else on this surface is numbered), what you
+ * get, what it costs, then the configurator. The page's one filled button sits
+ * in the header and jumps to `#configure`; everything on the way down is a text
+ * link.
  */
 export default async function BuildPlansContent({ catalog, locale }: { catalog: CncCatalog | null; locale: string }) {
   const { t } = await getServerTranslation('cnc');
@@ -49,125 +53,89 @@ export default async function BuildPlansContent({ catalog, locale }: { catalog: 
 
   const contactHref = `mailto:${MULTI_BUILD_CONTACT_EMAIL}?subject=${encodeURIComponent(t('tiers.contact.subject'))}`;
 
+  const flowSteps = [
+    { key: 'configure', title: t('flow.configure.title'), body: t('flow.configure.body') },
+    { key: 'preview', title: t('flow.preview.title'), body: t('flow.preview.body') },
+    { key: 'finalise', title: t('flow.finalise.title'), body: t('flow.finalise.body') },
+  ];
+
+  const included = [
+    { key: 'dxf', label: t('hero.included.dxfLabel'), value: t('hero.included.dxf') },
+    { key: 'pdf', label: t('hero.included.pdfLabel'), value: t('hero.included.pdf') },
+    { key: 'bom', label: t('hero.included.bomLabel'), value: t('hero.included.bom') },
+    { key: 'licence', label: t('hero.included.licenceLabel'), value: t('hero.included.licence') },
+  ];
+
+  const personalPrice = priceFor('personal');
+  const commercialPrice = priceFor('commercial_single');
+
   return (
     <>
-      <Box component="section" className={styles.hero}>
-        <Typography variant="h1" className={styles.heroTitle}>
-          {t('hero.title')}
-        </Typography>
-        <Typography variant="body1" className={styles.heroSubtitle}>
-          {t('hero.subtitle')}
-        </Typography>
-        <Typography variant="body2" component="p" className={styles.firstBoard}>
-          {t('hero.firstBoard')}
-        </Typography>
-
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="h2" className={styles.sectionHeading}>
-            {t('hero.included.heading')}
-          </Typography>
-          <ul className={styles.includedList}>
-            <li>
-              <Typography variant="body1" component="span">
-                {t('hero.included.dxf')}
-              </Typography>
-            </li>
-            <li>
-              <Typography variant="body1" component="span">
-                {t('hero.included.pdf')}
-              </Typography>
-            </li>
-            <li>
-              <Typography variant="body1" component="span">
-                {t('hero.included.bom')}
-              </Typography>
-            </li>
-            <li>
-              <Typography variant="body1" component="span">
-                {t('hero.included.licence')}
-              </Typography>
-            </li>
-          </ul>
+      <PageSection id="how-it-works" title={t('flow.heading')} intro={t('flow.intro')}>
+        <Box className={styles.flowGrid}>
+          {flowSteps.map((flowStep, index) => (
+            <SectionCard key={flowStep.key} padding="tight">
+              <StepHeading step={index + 1} title={flowStep.title} description={flowStep.body} />
+            </SectionCard>
+          ))}
         </Box>
-      </Box>
+      </PageSection>
 
-      <Box component="section">
-        <Typography variant="h2" className={styles.sectionHeading}>
-          {t('tiers.heading')}
-        </Typography>
-        <Typography variant="body1" sx={{ mb: 2 }}>
-          {t('tiers.intro')}
-        </Typography>
+      <PageSection id="what-you-get" title={t('hero.included.heading')}>
+        <SectionCard>
+          <KeyValueList items={included} columns={2} layout="stacked" />
+        </SectionCard>
+      </PageSection>
 
+      <PageSection id="licences" title={t('tiers.heading')} intro={t('tiers.intro')}>
         <Box className={styles.tierGrid}>
-          <Card className={styles.tierCard} variant="outlined">
-            <CardContent>
-              <Typography variant="h3" className={styles.sectionHeading}>
-                {t('tiers.personal.name')}
-              </Typography>
-              {priceFor('personal') && (
-                <Typography
-                  variant="h4"
-                  className={styles.tierPrice}
-                  sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}
-                >
-                  {priceFor('personal')}
-                </Typography>
-              )}
-              <Typography variant="body2" color="text.secondary">
-                {t('tiers.personal.blurb')}
-              </Typography>
-            </CardContent>
-          </Card>
+          <SectionCard title={t('tiers.personal.name')}>
+            {personalPrice && <PriceTag amount={personalPrice} note={t('tiers.perWall')} size="lg" />}
+            <Typography variant="body2" component="p" className={styles.tierBlurb}>
+              {t('tiers.personal.blurb')}
+            </Typography>
+          </SectionCard>
 
-          <Card className={styles.tierCard} variant="outlined">
-            <CardContent>
-              <Typography variant="h3" className={styles.sectionHeading}>
-                {t('tiers.commercial.name')}
-              </Typography>
-              {priceFor('commercial_single') && (
-                <Typography
-                  variant="h4"
-                  className={styles.tierPrice}
-                  sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}
-                >
-                  {priceFor('commercial_single')}
-                </Typography>
-              )}
-              <Typography variant="body2" color="text.secondary">
-                {t('tiers.commercial.blurb')}
-              </Typography>
-            </CardContent>
-          </Card>
+          <SectionCard title={t('tiers.commercial.name')}>
+            {commercialPrice && <PriceTag amount={commercialPrice} note={t('tiers.perWall')} size="lg" />}
+            <Typography variant="body2" component="p" className={styles.tierBlurb}>
+              {t('tiers.commercial.blurb')}
+            </Typography>
+          </SectionCard>
         </Box>
 
-        <Card className={styles.contactCard} variant="outlined" sx={{ mt: 2 }}>
-          <CardContent>
-            <Typography variant="h3" className={styles.sectionHeading}>
-              {t('tiers.contact.heading')}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {t('tiers.contact.body')}
-            </Typography>
+        <Box className={styles.contactRow}>
+          <SectionCard tone="quiet" title={t('tiers.contact.heading')} description={t('tiers.contact.body')}>
             <MuiLink href={contactHref} variant="body2">
               {t('tiers.contact.cta')}
             </MuiLink>
-          </CardContent>
-        </Card>
+          </SectionCard>
+        </Box>
+      </PageSection>
+    </>
+  );
+}
 
-        <Stack direction="row" spacing={3} sx={{ mt: 2 }} flexWrap="wrap">
-          <MuiLink component={LocaleLink} href="/build-plans/licence" variant="body2">
-            {t('tiers.licenceLink')}
-          </MuiLink>
-          <MuiLink component={LocaleLink} href="/build-plans/orders" variant="body2">
-            {t('tiers.ordersLink')}
-          </MuiLink>
-        </Stack>
-      </Box>
-
-      <Typography variant="body2" color="text.secondary" className={styles.trademarkNote}>
-        {t('hero.trademarkNote')}
-      </Typography>
+/**
+ * The header block's actions, rendered by the page into `PageFrame`.
+ *
+ * Split out from the body so the frame owns where they sit: the primary button
+ * and the two crawlable links belong above the fold, on the plate, not halfway
+ * down the page after the prices.
+ */
+export async function BuildPlansHeaderActions() {
+  const { t } = await getServerTranslation('cnc');
+  return (
+    <>
+      <Button component="a" href="#configure" variant="contained" size="large">
+        {t('hero.cta')}
+      </Button>
+      <MuiLink component={LocaleLink} href="/build-plans/licence" variant="body2">
+        {t('tiers.licenceLink')}
+      </MuiLink>
+      <MuiLink component={LocaleLink} href="/build-plans/orders" variant="body2">
+        {t('tiers.ordersLink')}
+      </MuiLink>
     </>
   );
 }
