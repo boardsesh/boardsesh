@@ -241,11 +241,31 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
     expect(container.querySelector('[data-row="mobile.climbActions.edit"]')).not.toBeNull();
   });
 
-  it('shows add to playlist and removes report from the action list', () => {
+  it('shows add to playlist, and no report row unless the host wires one', () => {
     render(<ClimbActionsSheet visible={true} {...baseProps} onOpenPlaylist={vi.fn()} />);
 
     expect(screen.getByText('actions.playlist.popover.title')).toBeTruthy();
+    // The host gates this on auth + the moderation kill switch, so an unwired
+    // sheet must not offer it.
     expect(screen.queryByText('mobile.climbActions.report')).toBeNull();
+  });
+
+  it('renders the report row last and fires onReportClimb then onClose', () => {
+    const onReportClimb = vi.fn();
+    const onClose = vi.fn();
+    const { container } = render(
+      <ClimbActionsSheet visible={true} {...baseProps} onClose={onClose} onReportClimb={onReportClimb} />,
+    );
+
+    // Below every action a climber came here to do.
+    const rows = Array.from(container.querySelectorAll('[data-row]')).map((row) => row.getAttribute('data-row'));
+    expect(rows[rows.length - 1]).toBe('mobile.climbActions.report');
+    expect(container.querySelector('[data-icon="flag"]')).not.toBeNull();
+
+    fireEvent.click(screen.getByText('mobile.climbActions.report'));
+
+    expect(onReportClimb).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('opens the playlist sheet callback from the add-to-playlist row', () => {

@@ -213,6 +213,17 @@
       "retry": "Try again"
     },
     "community": {
+      "moderation": {
+        "hiddenTitle": "Hidden by the community",
+        "decidedByCrew": "Decided by the crew's votes",
+        "decidedByModerator": "Decided by a moderator",
+        "openReport_one": "Reported by {{count}} climber · {{current}} of {{required}} votes to hide",
+        "openReport_other": "Reported by {{count}} climbers · {{current}} of {{required}} votes to hide",
+        "openUnhide": "Unhide requested · {{current}} of {{required}} votes",
+        "openGrade": "Grade change proposed: {{from}} → {{to}} · {{current}} of {{required}} votes",
+        "seeInModeration": "See in Moderation",
+        "voteInModeration": "Vote in Moderation"
+      },
       "title": "Community",
       "empty": "No community data yet",
       "ascensionists_one": "{{count}} ascensionist",

@@ -181,6 +181,7 @@ vi.mock('../../components/AddToPlaylistSheet', () => ({
     return createElement('div', { 'data-add-to-playlist': 'true' });
   },
 }));
+vi.mock('../../components/report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
 vi.mock('../../components/AddBetaVideoSheet', () => ({
   AddBetaVideoSheet: (props: Record<string, unknown>) => {
     betaVideoSheet.props = props;

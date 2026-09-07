@@ -374,6 +374,16 @@ waits out the whole transition and is disabled in screenshot mode.
 
 - **Queue / Board / LogAscent / Angle / ClimbActions / AddBetaVideo** — secondary, opened on
   demand → `ModalSheet`. The bread and butter.
+- **Report climb** — `ReportClimbSheet`, a `ModalSheet` opened from the climb actions menu; from
+  the player it runs through the in-tree opener override (`onReportClimb`, same shape as
+  `onAddBetaVideo`), so `PlayDrawer` mounts its own copy and the root `DrawerHostProvider` mounts
+  the other.
+- **Moderation feed** (`app/moderation.tsx`) — root-stack `modal` card, so it presents above the
+  player as well as from the More tab and from a proposal notification in either tab. It lived in
+  both tab stacks first, and that was wrong: the play drawer's Community section links into it, and
+  `/play` is itself a root `transparentModal`, so a tab-stack push landed *beneath* the player (the
+  rule-1 trap above). The deep-link param is `proposalUuid`, plus `climbUuid` / `boardType` when the
+  caller has them.
 - **Create-climb** — a drawer that shows the dimmed climbs list behind it, with one sibling
   sub-sheet (`HoldRoleSheet`, which stacks via its own SwiftUI host) → `transparentModal` route
   hosting a `Sheet` (`CreateDrawer`). Correctly _not_ a full-screen cover.

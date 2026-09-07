@@ -28,6 +28,7 @@ vi.mock('react-native', () => ({
       children,
     ),
 }));
+vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: () => '#abcdef',

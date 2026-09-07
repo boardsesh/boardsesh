@@ -63,6 +63,11 @@ type ClimbReactionMenuProps = {
    *  forces UIKit to dismiss `/play` and the tick sheet closes immediately.
    *  Receives the climb/board snapshot the menu was opened for. */
   onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /** When provided, the "Report climb" action runs this instead of opening the
+   *  root report sheet — the play drawer passes its own in-tree opener so the
+   *  sheet stacks above the `/play` modal (#3505). Receives the climb/board
+   *  snapshot the menu was opened for. */
+  onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
   /** Native sheet underneath this custom overlay, if any. */
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** Supplied only when this menu was opened from the `/play` route. */
@@ -145,6 +150,7 @@ export function ClimbReactionMenu({
   onEditEntry,
   onAddBetaVideo,
   onTick,
+  onReportClimb,
   dismissSourceSheet,
   dismissPlayerAndWait,
   reduceMotion,
@@ -243,6 +249,7 @@ export function ClimbReactionMenu({
     onSelectPlaylist: openPlaylist,
     onAddBetaVideo,
     onTick,
+    onReportClimb,
     dismissSourceSheet,
     dismissPlayerAndWait,
   });
@@ -259,15 +266,18 @@ export function ClimbReactionMenu({
   const gradeColor = getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR;
   const formattedGrade = formatGrade(climb.difficulty);
 
-  // Subtle byline under the name: sends · quality★ · setter (each dropped when
-  // absent). Mirrors the climb-list row's primary subtitle.
+  // Subtle byline under the name: sends · quality★ · setter · hidden (each dropped
+  // when absent). Mirrors the climb-list row's primary subtitle, plus the
+  // community-hidden state — a climb the crew voted down still opens from a
+  // queue or a link, and this is the only place that says so.
   const byline = useMemo(() => {
     const parts: string[] = [];
     if (!climb.is_draft && climb.ascensionist_count) parts.push(formatSends(climb.ascensionist_count, t));
     if (parseFloat(climb.quality_average) > 0) parts.push(`${formatQuality(climb.quality_average)}★`);
     if (climb.setter_username) parts.push(climb.setter_username);
+    if (climb.is_hidden) parts.push(t('mobile.hidden.short'));
     return parts.join(' · ');
-  }, [climb.is_draft, climb.ascensionist_count, climb.quality_average, climb.setter_username, t]);
+  }, [climb.is_draft, climb.ascensionist_count, climb.quality_average, climb.setter_username, climb.is_hidden, t]);
 
   // Track the keyboard height (the inline create form focuses a TextInput). When it's
   // up, the card's bottom must sit at the keyboard's top (not the screen's), and the

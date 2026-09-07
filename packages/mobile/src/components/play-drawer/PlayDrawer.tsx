@@ -63,6 +63,7 @@ import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
+import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { Icon } from '../Icon';
 import {
@@ -75,6 +76,7 @@ import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider'
 import { useSetting } from '../../settings';
 import type { OpenClimbActionsOptions } from '../../providers/drawer-host-provider';
 import { useAuth } from '../../providers/auth-provider';
+import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
@@ -312,6 +314,11 @@ export function PlayDrawer({
   // to the live displayedClimb (the FAB path). Mirrors betaVideoTarget so a party-
   // session queue/angle change mid-menu can't retarget the sheet.
   const [tickTarget, setTickTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
+  // Pinned climb/board the reaction menu opened the report sheet for; null falls
+  // back to the live displayedClimb (the Android actions-sheet path). Mirrors
+  // betaVideoTarget for the same reason.
+  const [reportTarget, setReportTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
+  const [reportClimbOpen, setReportClimbOpen] = useState(false);
   const {
     requested: belowFoldContentRequested,
     request: requestBelowFoldContent,
@@ -431,6 +438,9 @@ export function PlayDrawer({
   // tick picker's default grade below.
   const { boardseshActive } = useDisplayGrade();
   const { isAuthenticated } = useAuth();
+  // Kill switch: unresolved reads as enabled, so the Report row never pops in a
+  // beat after the sheet opens. See useClimbModerationEnabled.
+  const moderationEnabled = useClimbModerationEnabled();
 
   const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
   const displayedClimb = displayedQueueItem?.climb;
@@ -1009,6 +1019,27 @@ export function PlayDrawer({
     setIsTickBarActive(true);
   }, []);
 
+  // Android actions-sheet report: null target → the sheet tracks the live
+  // displayedClimb, same as the beta "+" path.
+  const handleOpenReportClimb = useCallback(() => {
+    setReportTarget(null);
+    setReportClimbOpen(true);
+  }, []);
+
+  // Reaction-menu report: open the drawer's OWN in-tree sheet (it stacks above
+  // the `/play` modal) instead of the root one, and pin the climb/board the menu
+  // was opened for so a party-session queue/angle change can't retarget it (#3505).
+  const handleOpenReportClimbForClimb = useCallback((targetClimb: Climb, targetBoardConfig: BoardConfig) => {
+    setReportTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
+    setReportClimbOpen(true);
+  }, []);
+
+  // Same rule as handleCloseAddBetaVideo: leave reportTarget alone while the
+  // sheet animates out, the next open overwrites it.
+  const handleCloseReportClimb = useCallback(() => {
+    setReportClimbOpen(false);
+  }, []);
+
   // Don't clear betaVideoTarget here: the sheet is still animating out and reads
   // from it, so nulling it mid-dismiss would swap the shown climb for a frame. The
   // next open overwrites it (the "+" path to null, the reaction path to its snapshot).
@@ -1026,11 +1057,18 @@ export function PlayDrawer({
       onOpenClimbActions(displayedClimb, undefined, {
         onAddBetaVideo: handleOpenAddBetaVideoForClimb,
         onTick: handleOpenTickForClimb,
+        onReportClimb: handleOpenReportClimbForClimb,
       });
       return;
     }
     setActiveSubDrawer('actions');
-  }, [onOpenClimbActions, displayedClimb, handleOpenAddBetaVideoForClimb, handleOpenTickForClimb]);
+  }, [
+    onOpenClimbActions,
+    displayedClimb,
+    handleOpenAddBetaVideoForClimb,
+    handleOpenTickForClimb,
+    handleOpenReportClimbForClimb,
+  ]);
 
   // Arm (expand) / disarm (collapse) the scroll-into-view for the Logbook peek.
   const handleLogbookToggle = useCallback((expanded: boolean) => {
@@ -1164,6 +1202,7 @@ export function PlayDrawer({
   const angleSelectorVisible = activeSubDrawer === 'angleSelector';
   const mountClimbActions = useMountedOnFirstOpen(climbActionsVisible);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
+  const mountReportClimb = useMountedOnFirstOpen(reportClimbOpen);
   const mountAngleSelector = useMountedOnFirstOpen(angleSelectorVisible);
   const mountLogAscent = useMountedOnFirstOpen(isTickBarActive);
   const mountBleControl = useMountedOnFirstOpen(bleControlVisible);
@@ -1495,6 +1534,7 @@ export function PlayDrawer({
           }}
           onToggleFavorite={handleToggleFavorite}
           onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
+          onReportClimb={isAuthenticated && moderationEnabled ? handleOpenReportClimb : undefined}
           dismissPlayerAndWait={dismissPlayerAndWait}
           onClose={handleCloseSubDrawer}
         />
@@ -1510,6 +1550,23 @@ export function PlayDrawer({
           layoutId={betaVideoTarget?.boardConfig.layoutId ?? layoutId}
           angle={betaVideoTarget?.boardConfig.angle ?? angle}
           onClose={handleCloseAddBetaVideo}
+        />
+      )}
+
+      {/* Sub-drawer: Report climb — opened from the reaction menu (iOS) or the
+          actions sheet's "Report climb" row (Android). Mounted on first open and
+          then kept, so it never unmounts between reports — which is why it
+          resets its own form on each fresh open rather than on unmount. */}
+      {mountReportClimb && (
+        <ReportClimbSheet
+          visible={reportClimbOpen}
+          climb={reportTarget?.climb ?? displayedClimb ?? null}
+          boardName={(reportTarget?.boardConfig.boardName ?? boardName) as BoardName}
+          layoutId={reportTarget?.boardConfig.layoutId ?? layoutId}
+          sizeId={reportTarget?.boardConfig.sizeId ?? sizeId}
+          setIds={reportTarget?.boardConfig.setIds ?? setIds}
+          angle={reportTarget?.boardConfig.angle ?? angle}
+          onClose={handleCloseReportClimb}
         />
       )}
 

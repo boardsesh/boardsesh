@@ -17,3 +17,19 @@ import type { MyBoardsInput } from '@boardsesh/shared-schema';
 
 /** Key `useMyBoards(input)` writes under; call with no argument for the plain roster. */
 export const myBoardsQueryKey = (input?: MyBoardsInput) => ['myBoards', input] as const;
+
+/**
+ * Root keys for the climb reads a moderation verdict changes.
+ *
+ * `useClimb`, `useSearchClimbs`, `useSearchClimbsCount` and
+ * `useInfiniteSearchClimbs` append their input to these roots; the proposal
+ * mutations invalidate the roots. They live here rather than next to those
+ * hooks because the invalidating side is `proposal-cache.ts`, which must not
+ * pull the `hooks` barrel in for a key — an approved hide flips `is_hidden` and
+ * an approved grade rewrites the community grade, both baked into rows the
+ * lists already hold, so the two sides have to name the same arrays.
+ */
+export const CLIMB_QUERY_KEY = ['climb'] as const;
+export const SEARCH_CLIMBS_QUERY_KEY = ['searchClimbs'] as const;
+export const INFINITE_SEARCH_CLIMBS_QUERY_KEY = ['infiniteSearchClimbs'] as const;
+export const SEARCH_CLIMBS_COUNT_QUERY_KEY = ['searchClimbsCount'] as const;

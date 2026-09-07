@@ -723,6 +723,22 @@ function RootLayout() {
                                                                           headerShown: false,
                                                                         }}
                                                                       />
+                                                                      {/* The moderation feed — ONE root modal, not a copy in each
+                                                      tab stack. The play drawer's Community section links into
+                                                      it, and /play is itself a root transparentModal, so a push
+                                                      aimed at a tab stack lands BENEATH the player (dead tap,
+                                                      stranded screen). A root modal card presents above whatever
+                                                      is open, so the More tab, both tabs' proposal notifications
+                                                      and the drawer all push the same route. app/moderation.tsx
+                                                      titles itself on its own Stack.Screen, the way
+                                                      about/changelog/scout do. */}
+                                                                      <Stack.Screen
+                                                                        name="moderation"
+                                                                        options={{
+                                                                          presentation: 'modal',
+                                                                          headerShown: true,
+                                                                        }}
+                                                                      />
                                                                       {/* First-run walkthrough. Full-screen cover over the
                                                       Climbs tab; gesture disabled because the flow is
                                                       mandatory (#4961) — every step's only way on is its
