@@ -724,16 +724,10 @@ export const boardClimbStats = pgTable(
     // Boardsesh activity. Lets downstream reasoning tell "upstream owns this
     // row's FA/difficulty" from "these fields were only ever tick-derived".
     upstreamSyncedAt: timestamp('upstream_synced_at', { mode: 'string' }),
-    // Provenance marker for display_difficulty: non-NULL means the stored grade
-    // was written from Boardsesh ticks (the UTC time the recompute last wrote
-    // it); NULL means the grade, if any, is upstream's — never tick-graded, or
-    // predates this column. The recompute derives a grade when this is set or
-    // the row has no grade, and upstream writers clear it whenever they supply
-    // a grade (Aurora shared-sync always; kilter-sync and the Woods importer
-    // when their incoming difficulty is non-NULL, mirroring their COALESCE).
-    // It is deliberately NOT compared against upstream_synced_at — kilter-sync
-    // restamps that on every pass, grade or no grade. Written by
-    // recomputeClimbStats / recomputeClimbStatsBulk and the writers above.
+    // Provenance marker for display_difficulty: non-NULL = the grade was
+    // written from Boardsesh ticks (UTC wall time); NULL = upstream's, or never
+    // graded. Upstream writers clear it when they supply a grade. Never compared
+    // with upstream_synced_at (kilter-sync restamps that every pass).
     tickGradedAt: timestamp('tick_graded_at', { mode: 'string' }),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),

@@ -194,36 +194,18 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
             const db = getDatabaseHandle();
             if (!db) return null;
 
-            // A landed tick needs a full cycle — drain, then pull — not the bare
-            // drain this used to run. The server seeds and grades a
-            // `board_climb_stats` row for the tick's angle as the mutation
-            // lands, and on a downloaded board the climb list reads that row out
-            // of SQLite; only the pull brings it down, and its invalidation is
-            // what refreshes ['infiniteSearchClimbs'] (issue #4798). `runSync`
-            // is single-flight with one queued re-run, so a burst of ticks
-            // collapses into one cycle — the cost is one keyset cycle per tick,
-            // the same as every app foreground. Offline it no-ops exactly like
-            // the bare drain did.
-            //
-            // The cycle uses the offline-sync HTTP client, never the adapter's
-            // interactive `executeHttp`: only the sync client carries the hard
-            // request deadline (lib/graphql/client.ts), and a fetch that never
-            // resolves would hold `runSync`'s single-flight latch for the
-            // process lifetime — every later foreground sync and board download
-            // would queue behind it. The bare drain could afford the interactive
-            // client because it held no global latch. Failures are not lost by
-            // dropping the old `.catch`: the wrapper passes `warnCycleError`,
-            // which warns in __DEV__ and reports non-transport errors to Sentry.
-            //
-            // Ordering caveat: if another ad-hoc drain already holds the
-            // drainer's in-flight latch, this cycle's drain returns at once and
-            // that drain delivers the tick, so the pull can still read the
-            // pre-grade row; the next cycle (foreground, reconnect, next tick)
-            // brings the graded row down.
-            //
-            // `snapshotSource` is mandatory, not decoration: without it the pull
-            // paged-crawls an enabled-but-undownloaded scope, and that first
-            // checkpoint permanently disqualifies the snapshot path for it.
+            // Drain, then pull — not a bare drain: the server grades the
+            // board_climb_stats row for the tick's angle as the mutation lands,
+            // and on a downloaded board only the pull brings it into SQLite and
+            // refreshes ['infiniteSearchClimbs'] (#4798). runSync is
+            // single-flight with one queued re-run, so bursts collapse. Uses
+            // the offline-sync client: it carries the hard request deadline,
+            // and a hung fetch would otherwise hold runSync's latch for the
+            // process lifetime. Failures surface via warnCycleError. If another
+            // drain holds the drainer latch the pull may read the pre-grade
+            // row; the next cycle repairs it. snapshotSource is mandatory —
+            // without it the pull paged-crawls an undownloaded scope and
+            // disqualifies its snapshot path for good.
             const syncFetch: GraphQLFetch = (query, syncVariables) =>
               getOfflineSyncHttpClient().request(query, syncVariables);
             const drainQueue = () => drainMutationQueue(db, queryClient, syncFetch);

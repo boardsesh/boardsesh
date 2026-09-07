@@ -25,25 +25,12 @@ function buildKey(boardType: string, climbUuid: string, angle: number): string {
 }
 
 /**
- * Runs the recompute inline, right now, for one (boardType, climbUuid, angle).
- *
- * The tick mutations invalidate their climb-list queries the moment the
- * mutation resolves, so the client's refetch races the 2s debounce below and
- * reads the pre-recompute board_climb_stats row — missing entirely at an angle
- * nobody has ticked before, so the climb comes back ungraded (#4798). Awaiting
- * the recompute before the mutation returns means the row the refetch reads is
- * already the recomputed one.
- *
- * Cheap enough to sit in the mutation path: recomputeClimbStats is one short
- * transaction — a PK-guarded seed INSERT plus one aggregate UPDATE over the
- * ticks at that (board_type, climb_uuid, angle) key — and it is idempotent, so
- * running it here and again from the debounced timer is safe.
- *
- * This does NOT replace queueClimbStatsRecompute — that still runs, both to
- * coalesce bursts of saves on the same climb and because the debounced path
- * owns the canonical `climbStatsUpdated` publish.
- *
- * Never rejects: a stats recompute must not fail the tick that triggered it.
+ * Runs the recompute inline for one (boardType, climbUuid, angle) before the
+ * mutation returns: clients invalidate their climb lists as soon as saveTick
+ * resolves, so a refetch would otherwise race the 2 s debounce and read an
+ * ungraded or missing row (#4798). One short PK-keyed transaction, idempotent,
+ * so the debounced pass still runs for coalescing and the canonical
+ * `climbStatsUpdated` publish. Never rejects: stats must not fail the tick.
  */
 export async function recomputeClimbStatsNow(boardType: string, climbUuid: string, angle: number): Promise<void> {
   const key = buildKey(boardType, climbUuid, angle);
