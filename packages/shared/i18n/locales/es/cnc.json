@@ -342,6 +342,7 @@
     },
     "tb2": {
       "boardName": "Tension Board 2",
+      "savedConfigurationUnavailable": "Configuración guardada no disponible",
       "sizeHelp": "Alto × ancho en pies. Tension indica primero la altura.",
       "engraveHelp": "Graba Mirror, Spray o ambas distribuciones en los mismos paneles. Ambas están seleccionadas por defecto.",
       "engraveNote": "Las etiquetas de Mirror van a la izquierda de cada orificio, con una marca de orientación. Las de Spray van a la derecha, con dos marcas. Cada panel grabado incluye una leyenda."
