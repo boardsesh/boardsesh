@@ -97,8 +97,12 @@ function buildStatsUpsertSql(
   return (whereSql: string) =>
     `${guardTail ? 'INSERT INTO' : 'INSERT OR REPLACE INTO'} main.board_climb_stats (${statsTargetList})
          SELECT ${statsSelectList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
-         WHERE ${whereSql}${guardTail ? `
-         ${guardTail}` : ''}`;
+         WHERE ${whereSql}${
+           guardTail
+             ? `
+         ${guardTail}`
+             : ''
+         }`;
 }
 
 /**
