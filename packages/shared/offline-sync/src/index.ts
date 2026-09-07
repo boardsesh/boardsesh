@@ -262,11 +262,7 @@ export {
 // `parseClimbStatsRevision` is exported for the mobile consumer's queue, which
 // has to compare two events' revisions before either reaches SQLite — a second
 // copy of the wire-format rule there could silently drop the newer one.
-export {
-  writeClimbStatsEvent,
-  writeClimbStatsEvents,
-  parseClimbStatsRevision,
-} from './sync/climb-stats-write-through';
+export { writeClimbStatsEvent, writeClimbStatsEvents, parseClimbStatsRevision } from './sync/climb-stats-write-through';
 export type {
   ClimbStatsWriteThroughInput,
   ClimbStatsWriteThroughResult,
