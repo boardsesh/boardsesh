@@ -31,13 +31,11 @@ import type {
 export const CNC_KICKER_SET_IDS: readonly number[] = [28, 29];
 
 /**
- * The two manufacturing options that are engraving decisions rather than
- * machining ones.
+ * Manufacturing options that choose installation engravings.
  *
- * They live in the catalogue's `manufacturingOptions` like everything else, but
- * they get their own step in the UI: both are Kilter-specific, both are off
- * pending the IP review, and burying them among sheet sizes and hole diameters
- * would have people flipping them without reading why they are off.
+ * They live in the catalogue's `manufacturingOptions`, but have their own UI
+ * step: Kilter offers hold IDs and angle ticks; TB2 selects Mirror, Spray,
+ * both layouts, or neither.
  */
 export const CNC_ENGRAVE_OPTION_KEYS: readonly string[] = ['engraveHoldIds', 'engraveAngleTicks', 'tb2Engraving'];
 
