@@ -82,7 +82,14 @@ const RANDOM_ORDER_EXPR = `(
    + ?) * 2654435761
 ) % 2147483647`;
 
-function normalizeSortBy(sortBy: string | null | undefined): string {
+/**
+ * The sort this search actually runs, after aliases and the default. Exported
+ * because the live-stats consumer has to answer "does this query sort on a
+ * stats column?" for the same input, and an absent `sortBy` means `ascents`
+ * here — a second copy of that rule would silently under-invalidate the
+ * default list.
+ */
+export function normalizeSortBy(sortBy: string | null | undefined): string {
   if (!sortBy) return 'ascents';
   return SORT_ALIASES[sortBy] ?? 'creation';
 }
@@ -124,10 +131,6 @@ function parseHoldsFilter(holdsFilter: unknown): HoldFilters {
   }
   return { anyHolds, notHolds, hasHoldState };
 }
-
-// Keep the local-search module as the mobile import site for row decoding; the
-// shared implementation lives beside the scope SQL that queries this column.
-export { parseCompatibleSizeIds };
 
 /**
  * Whether this search's active filters are fully expressible against the local

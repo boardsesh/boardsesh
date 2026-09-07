@@ -78,6 +78,14 @@ export type ClimbStatsWriteThroughResult = {
    * not local, or when the column is NULL / not a number array.
    */
   compatibleSizeIds: number[] | null;
+  /**
+   * The local climb's OWN `board_climbs.layout_id`. The caller must gate list
+   * refreshes on this, never on the layout the event or the read was labelled
+   * with: a reconciliation read stamps its rows with the layout the user is
+   * BROWSING, which is not necessarily the layout the climb belongs to. Null
+   * when the climb is not local, or when the column is NULL.
+   */
+  layoutId: number | null;
 };
 
 /** Columns this write owns. Everything else on the row is the pull's business. */
@@ -169,7 +177,13 @@ function isDroppableWriteFailure(error: unknown): boolean {
 /** What the autocommit pre-read decided about one event. */
 type PreparedWrite =
   | { kind: 'settled'; result: ClimbStatsWriteThroughResult }
-  | { kind: 'write'; revision: number; compatibleSizeIds: number[] | null; event: ClimbStatsWriteThroughInput };
+  | {
+      kind: 'write';
+      revision: number;
+      compatibleSizeIds: number[] | null;
+      layoutId: number | null;
+      event: ClimbStatsWriteThroughInput;
+    };
 
 /**
  * The autocommit half: decide, without taking any lock, whether this event can
@@ -185,26 +199,33 @@ type PreparedWrite =
 async function prepareWrite(db: OfflineDatabase, event: ClimbStatsWriteThroughInput): Promise<PreparedWrite> {
   const revision = parseClimbStatsRevision(event.syncSeq);
   if (revision === null) {
-    return { kind: 'settled', result: { status: 'invalid_revision', compatibleSizeIds: null } };
+    return { kind: 'settled', result: { status: 'invalid_revision', compatibleSizeIds: null, layoutId: null } };
   }
 
-  const row = await db.getFirstAsync<{ compatible_size_ids: string | null; local_sync_seq: number | null }>(
-    `SELECT c.compatible_size_ids AS compatible_size_ids, s.sync_seq AS local_sync_seq
+  const row = await db.getFirstAsync<{
+    compatible_size_ids: string | null;
+    layout_id: number | null;
+    local_sync_seq: number | null;
+  }>(
+    `SELECT c.compatible_size_ids AS compatible_size_ids, c.layout_id AS layout_id, s.sync_seq AS local_sync_seq
      FROM board_climbs c
      LEFT JOIN board_climb_stats s
        ON s.board_type = c.board_type AND s.climb_uuid = c.uuid AND s.angle = ?
      WHERE c.board_type = ? AND c.uuid = ?`,
     [event.angle, event.boardType, event.climbUuid],
   );
-  if (!row) return { kind: 'settled', result: { status: 'climb_not_local', compatibleSizeIds: null } };
-
-  const compatibleSizeIds = parseCompatibleSizeIds(row.compatible_size_ids);
-  const localRevision = typeof row.local_sync_seq === 'number' ? row.local_sync_seq : Number(row.local_sync_seq);
-  if (row.local_sync_seq !== null && Number.isFinite(localRevision) && localRevision >= revision) {
-    return { kind: 'settled', result: { status: 'stale', compatibleSizeIds } };
+  if (!row) {
+    return { kind: 'settled', result: { status: 'climb_not_local', compatibleSizeIds: null, layoutId: null } };
   }
 
-  return { kind: 'write', revision, compatibleSizeIds, event };
+  const compatibleSizeIds = parseCompatibleSizeIds(row.compatible_size_ids);
+  const layoutId = typeof row.layout_id === 'number' && Number.isFinite(row.layout_id) ? row.layout_id : null;
+  const localRevision = typeof row.local_sync_seq === 'number' ? row.local_sync_seq : Number(row.local_sync_seq);
+  if (row.local_sync_seq !== null && Number.isFinite(localRevision) && localRevision >= revision) {
+    return { kind: 'settled', result: { status: 'stale', compatibleSizeIds, layoutId } };
+  }
+
+  return { kind: 'write', revision, compatibleSizeIds, layoutId, event };
 }
 
 function upsertBinds(event: ClimbStatsWriteThroughInput, revision: number): (string | number | null)[] {
@@ -257,7 +278,9 @@ export async function writeClimbStatsEvents(
     // landing mid-batch). That is contention, not a broken database, so it
     // must not be reported.
     if (isDroppableWriteFailure(error)) {
-      return events.map((_event, index) => results[index] ?? { status: 'lock_lost', compatibleSizeIds: null });
+      return events.map(
+        (_event, index) => results[index] ?? { status: 'lock_lost', compatibleSizeIds: null, layoutId: null },
+      );
     }
     throw error;
   }
@@ -275,7 +298,11 @@ export async function writeClimbStatsEvents(
     } catch (error) {
       if (!isDroppableWriteFailure(error)) throw error;
       for (const { index, prepared } of pendingWrites) {
-        results[index] = { status: 'lock_lost', compatibleSizeIds: prepared.compatibleSizeIds };
+        results[index] = {
+          status: 'lock_lost',
+          compatibleSizeIds: prepared.compatibleSizeIds,
+          layoutId: prepared.layoutId,
+        };
       }
     }
     for (const { index, prepared } of pendingWrites) {
@@ -283,11 +310,12 @@ export async function writeClimbStatsEvents(
       results[index] = {
         status: (changesByIndex.get(index) ?? 0) > 0 ? 'applied' : 'stale',
         compatibleSizeIds: prepared.compatibleSizeIds,
+        layoutId: prepared.layoutId,
       };
     }
   }
 
-  return results.map((result) => result ?? { status: 'stale', compatibleSizeIds: null });
+  return results.map((result) => result ?? { status: 'stale', compatibleSizeIds: null, layoutId: null });
 }
 
 /** One event, through the batched writer. */

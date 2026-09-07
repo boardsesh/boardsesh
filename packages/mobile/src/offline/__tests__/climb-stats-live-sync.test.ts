@@ -7,6 +7,9 @@
 // themselves rather than on a mock's arguments — a predicate that quietly
 // matches nothing looks identical to a correct one from the call site.
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -20,10 +23,12 @@ import {
   canStreamChangeList,
   climbDetailMatchesBatch,
   createClimbStatsLiveSync,
-  isStatsDependentSearch,
+  hasStatsDependentFilter,
   searchInputScope,
   CLIMB_STATS_INVALIDATE_MAX_WAIT_MS,
   CLIMB_STATS_INVALIDATE_TRAILING_MS,
+  CLIMB_STATS_LOCK_BACKOFF_MS,
+  CLIMB_STATS_TRACKED_REVISIONS,
   type ClimbStatsLiveSyncOptions,
   type FlushedClimbStat,
 } from '../climb-stats-live-sync';
@@ -31,6 +36,9 @@ import {
 const BASE_SEARCH = { boardName: 'kilter', layoutId: 1, sizeId: 5, setIds: '1,2', angle: 40 };
 
 const fakeDb = { name: 'offline-db' } as unknown as OfflineDatabase;
+
+/** Every scope this suite's default probe reports as downloaded. */
+const DOWNLOADED = new Map([['kilter:1:5', true]]);
 
 function makeEvent(overrides: Partial<ClimbStatsWriteThroughInput> = {}): ClimbStatsWriteThroughInput {
   return {
@@ -47,8 +55,8 @@ function makeEvent(overrides: Partial<ClimbStatsWriteThroughInput> = {}): ClimbS
   };
 }
 
-function applied(compatibleSizeIds: number[] | null = [5, 6]): ClimbStatsWriteThroughResult {
-  return { status: 'applied', compatibleSizeIds };
+function applied(compatibleSizeIds: number[] | null = [5, 6], layoutId: number | null = 1): ClimbStatsWriteThroughResult {
+  return { status: 'applied', compatibleSizeIds, layoutId };
 }
 
 function flushed(overrides: Partial<FlushedClimbStat> = {}): FlushedClimbStat {
@@ -56,15 +64,15 @@ function flushed(overrides: Partial<FlushedClimbStat> = {}): FlushedClimbStat {
 }
 
 /** The batch writer's default: every event applies. */
-function allApplied(compatibleSizeIds: number[] | null = [5, 6]) {
+function allApplied(compatibleSizeIds: number[] | null = [5, 6], layoutId: number | null = 1) {
   return async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) =>
-    events.map(() => applied(compatibleSizeIds));
+    events.map(() => applied(compatibleSizeIds, layoutId));
 }
 
 /** The batch writer settling every event with one status (contention, staleness…). */
 function allSettled(status: ClimbStatsWriteThroughStatus) {
   return async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) =>
-    events.map(() => ({ status, compatibleSizeIds: [5, 6] }));
+    events.map(() => ({ status, compatibleSizeIds: [5, 6], layoutId: 1 }));
 }
 
 type Harness = {
@@ -80,8 +88,13 @@ type Harness = {
 let queryClient: QueryClient;
 
 function createHarness(overrides: Partial<ClimbStatsLiveSyncOptions> = {}): Harness {
-  const writeEvents = vi.fn(allApplied());
-  const isScopeDownloaded = vi.fn(async () => true);
+  // Both seams are wrapped rather than replaced, so `harness.writeEvents` and
+  // `harness.isScopeDownloaded` observe every call even when a test supplies
+  // its own behaviour — a replaced seam silently leaves the harness's spy at
+  // zero calls, which reads exactly like a guard that fired.
+  const { writeEvents: writeEventsOverride, isScopeDownloaded: probeOverride, ...rest } = overrides;
+  const writeEvents = vi.fn(writeEventsOverride ?? (allApplied() as never));
+  const isScopeDownloaded = vi.fn(probeOverride ?? ((async () => true) as never));
   const onError = vi.fn();
   const sync = createClimbStatsLiveSync({
     getDb: () => fakeDb,
@@ -91,7 +104,7 @@ function createHarness(overrides: Partial<ClimbStatsLiveSyncOptions> = {}): Harn
     hasEnabledScopeForLayout: () => true,
     writeEvents: writeEvents as unknown as ClimbStatsLiveSyncOptions['writeEvents'],
     onError,
-    ...overrides,
+    ...rest,
   });
   return {
     sync,
@@ -103,13 +116,19 @@ function createHarness(overrides: Partial<ClimbStatsLiveSyncOptions> = {}): Harn
   };
 }
 
-function seedInfiniteList(input: Record<string, unknown>, climbUuids: string[]) {
+function seedInfinitePages(input: Record<string, unknown>, pages: string[][]) {
   const key = ['infiniteSearchClimbs', input];
   queryClient.setQueryData(key, {
-    pages: [{ searchClimbs: { climbs: climbUuids.map((uuid) => ({ uuid })), hasMore: false, totalCount: 1 } }],
-    pageParams: [0],
+    pages: pages.map((climbUuids) => ({
+      searchClimbs: { climbs: climbUuids.map((uuid) => ({ uuid })), hasMore: false, totalCount: 1 },
+    })),
+    pageParams: pages.map((_page, index) => index),
   });
   return key;
+}
+
+function seedInfiniteList(input: Record<string, unknown>, climbUuids: string[]) {
+  return seedInfinitePages(input, [climbUuids]);
 }
 
 function seedCount(input: Record<string, unknown>) {
@@ -118,8 +137,8 @@ function seedCount(input: Record<string, unknown>) {
   return key;
 }
 
-function seedClimbDetail(climbUuid: string, angle = 40) {
-  const key = ['climb', { ...BASE_SEARCH, angle, climbUuid }];
+function seedClimbDetail(climbUuid: string, overrides: Record<string, unknown> = {}) {
+  const key = ['climb', { ...BASE_SEARCH, ...overrides, climbUuid }];
   queryClient.setQueryData(key, { climb: { uuid: climbUuid } });
   return key;
 }
@@ -193,8 +212,78 @@ describe('createClimbStatsLiveSync — the pre-write gates', () => {
   });
 });
 
+describe('createClimbStatsLiveSync — dropping revisions already settled', () => {
+  it('never re-writes a revision this instance already applied', async () => {
+    // The 120 s reconciliation read re-offers every angle row of every retained
+    // climb; a 50-climb batch is ~700 of them, nearly all unchanged.
+    const harness = createHarness();
+
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+
+    expect(harness.writeEvents).toHaveBeenCalledTimes(1);
+    expect(harness.writtenEvents()).toHaveLength(1);
+  });
+
+  it('never re-writes a revision the writer already reported stale', async () => {
+    const harness = createHarness({ writeEvents: allSettled('stale') as never });
+
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+
+    expect(harness.writeEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it('still writes a newer revision for the same climb and angle', async () => {
+    const harness = createHarness();
+
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    harness.sync.handleEvent(makeEvent({ syncSeq: '501' }));
+    await settleWrites();
+
+    expect(harness.writtenEvents().map((event) => event.syncSeq)).toEqual(['500', '501']);
+  });
+
+  it('still writes a repeat the writer could not settle', async () => {
+    // `climb_not_local` says nothing about a local revision — the climb could
+    // be downloaded a minute later.
+    const harness = createHarness({ writeEvents: allSettled('climb_not_local') as never });
+
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+
+    expect(harness.writeEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it('evicts the oldest key at the cap rather than growing for the app’s lifetime', async () => {
+    const harness = createHarness();
+    const firstEvent = makeEvent({ climbUuid: 'climb-0' });
+
+    harness.sync.handleEvent(firstEvent);
+    await settleWrites();
+    // Fill past the cap so the very first key is evicted.
+    for (let index = 1; index <= CLIMB_STATS_TRACKED_REVISIONS; index += 1) {
+      harness.sync.handleEvent(makeEvent({ climbUuid: `climb-${index}` }));
+    }
+    await settleWrites();
+
+    const before = harness.writtenEvents().length;
+    harness.sync.handleEvent(firstEvent);
+    await settleWrites();
+
+    expect(harness.writtenEvents()).toHaveLength(before + 1);
+  });
+});
+
 describe('createClimbStatsLiveSync — refreshing the browsed list', () => {
-  it('refreshes a stats-dependent list and count once the stream goes quiet', async () => {
+  it('refreshes a stats-filtered list and count once the stream goes quiet', async () => {
     const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
     const gradeCount = seedCount({ ...BASE_SEARCH, minGrade: 17 });
     const harness = createHarness();
@@ -212,22 +301,6 @@ describe('createClimbStatsLiveSync — refreshing the browsed list', () => {
     // Both queries share one scope, so it is probed once, not once per query.
     expect(harness.isScopeDownloaded).toHaveBeenCalledTimes(1);
     expect(harness.isScopeDownloaded).toHaveBeenCalledWith(fakeDb, { boardType: 'kilter', layoutId: 1, sizeId: 5 });
-  });
-
-  it('narrows the climb detail to the climbs and angles it actually wrote', async () => {
-    const flushedDetail = seedClimbDetail('climb-1');
-    const otherAngle = seedClimbDetail('climb-1', 25);
-    const otherDetail = seedClimbDetail('climb-other');
-    seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
-    const harness = createHarness();
-
-    harness.sync.handleEvent(makeEvent());
-    await settleWrites();
-    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
-
-    expect(isInvalidated(flushedDetail)).toBe(true);
-    expect(isInvalidated(otherAngle)).toBe(false);
-    expect(isInvalidated(otherDetail)).toBe(false);
   });
 
   it('leaves a name-sorted, unfiltered list alone when the climb is not on a loaded page', async () => {
@@ -299,11 +372,10 @@ describe('createClimbStatsLiveSync — refreshing the browsed list', () => {
   it('refreshes only the downloaded scope when two are cached', async () => {
     const downloaded = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
     const otherSize = seedInfiniteList({ ...BASE_SEARCH, sizeId: 9, minGrade: 17 }, []);
-    const isScopeDownloaded = vi.fn(async (_db: OfflineDatabase, scope: { sizeId: number }) => scope.sizeId === 5);
     // The climb fits BOTH sizes, so the size gate cannot do this on its own —
     // only the per-scope download probe separates the two lists.
     const harness = createHarness({
-      isScopeDownloaded: isScopeDownloaded as never,
+      isScopeDownloaded: (async (_db: OfflineDatabase, scope: { sizeId: number }) => scope.sizeId === 5) as never,
       writeEvents: allApplied([5, 9]) as never,
     });
 
@@ -314,7 +386,22 @@ describe('createClimbStatsLiveSync — refreshing the browsed list', () => {
     expect(isInvalidated(downloaded)).toBe(true);
     expect(isInvalidated(otherSize)).toBe(false);
     // One probe per distinct scope, not one per cached query.
-    expect(isScopeDownloaded).toHaveBeenCalledTimes(2);
+    expect(harness.isScopeDownloaded).toHaveBeenCalledTimes(2);
+  });
+
+  it('probes no scope the batch cannot touch', async () => {
+    // A cached list on another layout can never be moved by this batch, so it
+    // is not worth a board_climbs EXISTS probe on every flush.
+    seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
+    seedInfiniteList({ ...BASE_SEARCH, layoutId: 8, minGrade: 17 }, []);
+    const harness = createHarness();
+
+    harness.sync.handleEvent(makeEvent());
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+
+    expect(harness.isScopeDownloaded).toHaveBeenCalledTimes(1);
+    expect(harness.isScopeDownloaded).toHaveBeenCalledWith(fakeDb, { boardType: 'kilter', layoutId: 1, sizeId: 5 });
   });
 
   it.each([
@@ -350,6 +437,127 @@ describe('createClimbStatsLiveSync — refreshing the browsed list', () => {
       expect(call[0]?.predicate).toBeTypeOf('function');
     }
   });
+
+  it('reads the default sort from the local reader rather than a second copy', () => {
+    // `normalizeSortBy` maps an absent sortBy to `ascents`; a private copy of
+    // that rule here would drift the moment the SQL default changed.
+    const source = readFileSync(fileURLToPath(new URL('../climb-stats-live-sync.ts', import.meta.url)), 'utf8');
+    expect(source).toContain('normalizeSortBy');
+    expect(source).toContain("from '../db/queries/search-climbs-local'");
+    expect(source).not.toMatch(/sortBy\s*\?\?\s*'ascents'/);
+    expect(source).not.toMatch(/!sortBy\)\s*return 'ascents'/);
+  });
+});
+
+describe('createClimbStatsLiveSync — a stats sort only moves rows already on screen', () => {
+  it('leaves the default ascents-sorted list alone for a climb it has never shown', async () => {
+    // This is the ordinary Climbs tab. Invalidating it here would refetch every
+    // loaded page every few seconds because a stranger logged a send.
+    const defaultSorted = seedInfinitePages({ ...BASE_SEARCH, sortBy: 'ascents' }, [['climb-a'], ['climb-b']]);
+    const harness = createHarness();
+
+    harness.sync.handleEvent(makeEvent());
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_MAX_WAIT_MS);
+
+    expect(isInvalidated(defaultSorted)).toBe(false);
+  });
+
+  it('refreshes the same list when the climb is on a deeper loaded page', async () => {
+    const defaultSorted = seedInfinitePages({ ...BASE_SEARCH, sortBy: 'ascents' }, [
+      ['climb-a'],
+      ['climb-b'],
+      ['climb-1'],
+    ]);
+    const harness = createHarness();
+
+    harness.sync.handleEvent(makeEvent());
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+
+    expect(isInvalidated(defaultSorted)).toBe(true);
+  });
+
+  it('refreshes a grade-filtered list for a climb it has never shown', async () => {
+    // A filter decides membership, so an off-page climb can enter the results.
+    const gradeFiltered = seedInfinitePages({ ...BASE_SEARCH, minGrade: 17 }, [['climb-a'], ['climb-b']]);
+    const harness = createHarness();
+
+    harness.sync.handleEvent(makeEvent());
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+
+    expect(isInvalidated(gradeFiltered)).toBe(true);
+  });
+
+  it('refreshes a popular-sorted list from another angle only for a climb it shows', async () => {
+    // `popular` sums ascents over every angle, so a 25° send reorders a 40°
+    // list — but only the rows that list is actually rendering.
+    const showsClimb = seedInfiniteList({ ...BASE_SEARCH, sortBy: 'popular' }, ['climb-1']);
+    const doesNot = seedInfiniteList({ ...BASE_SEARCH, sortBy: 'popular', setIds: '3,4' }, ['climb-other']);
+    const ascentsSorted = seedInfiniteList({ ...BASE_SEARCH, sortBy: 'ascents' }, ['climb-1']);
+    const popularCount = seedCount({ ...BASE_SEARCH, sortBy: 'popular' });
+    const harness = createHarness();
+
+    harness.sync.handleEvent(makeEvent({ angle: 25 }));
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+
+    expect(isInvalidated(showsClimb)).toBe(true);
+    expect(isInvalidated(doesNot)).toBe(false);
+    // Per-angle sorts cannot move on another angle's event at all.
+    expect(isInvalidated(ascentsSorted)).toBe(false);
+    // A sort still cannot change a total, cross-angle or not.
+    expect(isInvalidated(popularCount)).toBe(false);
+  });
+});
+
+describe('createClimbStatsLiveSync — the climb detail', () => {
+  it('narrows the detail to the climbs and angles it actually wrote', async () => {
+    const flushedDetail = seedClimbDetail('climb-1');
+    const otherAngle = seedClimbDetail('climb-1', { angle: 25 });
+    const otherDetail = seedClimbDetail('climb-other');
+    const harness = createHarness();
+
+    harness.sync.handleEvent(makeEvent());
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+
+    expect(isInvalidated(flushedDetail)).toBe(true);
+    expect(isInvalidated(otherAngle)).toBe(false);
+    expect(isInvalidated(otherDetail)).toBe(false);
+  });
+
+  it('never refreshes a detail whose scope is served over the network', async () => {
+    // Same rule the lists get: an opted-in scope still mid-crawl, or a size the
+    // user never downloaded, is fetched over HTTP — a global stream must not
+    // make it refetch.
+    const localDetail = seedClimbDetail('climb-1');
+    const networkDetail = seedClimbDetail('climb-1', { sizeId: 9 });
+    const harness = createHarness({
+      isScopeDownloaded: (async (_db: OfflineDatabase, scope: { sizeId: number }) => scope.sizeId === 5) as never,
+      writeEvents: allApplied([5, 9]) as never,
+    });
+
+    harness.sync.handleEvent(makeEvent());
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+
+    expect(isInvalidated(localDetail)).toBe(true);
+    expect(isInvalidated(networkDetail)).toBe(false);
+  });
+
+  it('never refreshes a detail on another layout', async () => {
+    const otherLayout = seedClimbDetail('climb-1', { layoutId: 8 });
+    seedClimbDetail('climb-1');
+    const harness = createHarness();
+
+    harness.sync.handleEvent(makeEvent());
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+
+    expect(isInvalidated(otherLayout)).toBe(false);
+  });
 });
 
 describe('createClimbStatsLiveSync — a switch inside the coalescing window', () => {
@@ -371,24 +579,6 @@ describe('createClimbStatsLiveSync — a switch inside the coalescing window', (
     expect(isInvalidated(switchedAngle)).toBe(true);
     expect(isInvalidated(startingAngle)).toBe(true);
   });
-
-  it('refreshes a list at an angle no event in the batch touched only when the sort is cross-angle', async () => {
-    // `popular` orders by SUM(ascensionist_count) over every angle, so a send
-    // at 25° reorders a 40° list. Every other stats column is per-angle.
-    const popularSorted = seedInfiniteList({ ...BASE_SEARCH, angle: 40, sortBy: 'popular' }, []);
-    const ascentsSorted = seedInfiniteList({ ...BASE_SEARCH, angle: 40, sortBy: 'ascents' }, []);
-    const popularCount = seedCount({ ...BASE_SEARCH, angle: 40, sortBy: 'popular' });
-    const harness = createHarness();
-
-    harness.sync.handleEvent(makeEvent({ angle: 25 }));
-    await settleWrites();
-    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
-
-    expect(isInvalidated(popularSorted)).toBe(true);
-    expect(isInvalidated(ascentsSorted)).toBe(false);
-    // A sort still cannot change a total, cross-angle or not.
-    expect(isInvalidated(popularCount)).toBe(false);
-  });
 });
 
 describe('createClimbStatsLiveSync — which writes may arm a refresh', () => {
@@ -407,11 +597,27 @@ describe('createClimbStatsLiveSync — which writes may arm a refresh', () => {
     },
   );
 
-  it('does not refresh a list on another layout', async () => {
-    const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
-    const harness = createHarness();
+  it('refreshes the layout the CLIMB belongs to, not the one the event was labelled with', async () => {
+    // A reconciliation read stamps its rows with the layout the user is
+    // browsing. The write reads the climb's own layout_id, and that is what the
+    // list gate has to use.
+    const climbsLayout = seedInfiniteList({ ...BASE_SEARCH, layoutId: 8, minGrade: 17 }, []);
+    const eventsLayout = seedInfiniteList({ ...BASE_SEARCH, layoutId: 1, minGrade: 17 }, []);
+    const harness = createHarness({ writeEvents: allApplied([5, 6], 8) as never });
 
-    harness.sync.handleEvent(makeEvent({ layoutId: 8 }));
+    harness.sync.handleEvent(makeEvent({ layoutId: 1 }));
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+
+    expect(isInvalidated(climbsLayout)).toBe(true);
+    expect(isInvalidated(eventsLayout)).toBe(false);
+  });
+
+  it('arms nothing when the write could not resolve the climb’s layout', async () => {
+    const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
+    const harness = createHarness({ writeEvents: allApplied([5, 6], null) as never });
+
+    harness.sync.handleEvent(makeEvent());
     await settleWrites();
     await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_MAX_WAIT_MS);
 
@@ -542,7 +748,7 @@ describe('createClimbStatsLiveSync — contention and transient gates', () => {
     // the batch would silently lose every recompute of that window.
     let locked = true;
     const writeEvents = vi.fn(async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) =>
-      events.map(() => (locked ? { status: 'lock_lost' as const, compatibleSizeIds: null } : applied())),
+      events.map(() => (locked ? { status: 'lock_lost' as const, compatibleSizeIds: null, layoutId: null } : applied())),
     );
     const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
     const harness = createHarness({ writeEvents: writeEvents as never });
@@ -552,48 +758,77 @@ describe('createClimbStatsLiveSync — contention and transient gates', () => {
     expect(isInvalidated(gradeFiltered)).toBe(false);
 
     locked = false;
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_LOCK_BACKOFF_MS);
     harness.sync.handleEvent(makeEvent({ climbUuid: 'climb-later' }));
     await settleWrites();
     await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
 
     // The event held back by the lock is retried alongside the new one.
-    expect((writeEvents.mock.calls[1][1] as ClimbStatsWriteThroughInput[]).map((event) => event.climbUuid)).toEqual([
+    expect(harness.writtenEvents().map((event) => event.climbUuid)).toEqual([
+      'climb-locked',
       'climb-locked',
       'climb-later',
     ]);
     expect(isInvalidated(gradeFiltered)).toBe(true);
   });
 
-  it('stops the drain on contention rather than re-paying the lock wait per event', async () => {
+  it('stands down after contention instead of re-driving on every event', async () => {
+    // Without the backoff each arriving event pays a fresh pre-read pass, a new
+    // native connection and the full 250 ms lock wait, all doomed.
     const writeEvents = vi.fn(allSettled('lock_lost'));
     const harness = createHarness({ writeEvents: writeEvents as never });
 
     harness.sync.handleEvent(makeEvent({ climbUuid: 'climb-1' }));
     await settleWrites();
+    await vi.advanceTimersByTimeAsync(100);
     harness.sync.handleEvent(makeEvent({ climbUuid: 'climb-2' }));
     await settleWrites();
 
-    // Two handleEvents, two passes — not one pass per queued event.
+    // The second event joined the queue; it did not buy a second lock wait.
+    expect(writeEvents).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_LOCK_BACKOFF_MS);
+
     expect(writeEvents).toHaveBeenCalledTimes(2);
+    expect((writeEvents.mock.calls[1][1] as ClimbStatsWriteThroughInput[]).map((event) => event.climbUuid)).toEqual([
+      'climb-1',
+      'climb-2',
+    ]);
   });
 
-  it('keeps the flush batch when it lands during a momentary background', async () => {
+  it('arms no timer of its own when a flush lands during a background', async () => {
+    // The ceiling used to re-arm itself here, which ticks forever while the app
+    // sits in the background.
     const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
     let backgrounded = false;
-    const harness = createHarness({ shouldSkipWrites: () => backgrounded });
+    const scheduled: number[] = [];
+    const harness = createHarness({
+      shouldSkipWrites: () => backgrounded,
+      scheduleTask: (callback, delayMs) => {
+        scheduled.push(delayMs);
+        const timer = setTimeout(callback, delayMs);
+        return () => clearTimeout(timer);
+      },
+    });
 
     harness.sync.handleEvent(makeEvent());
     await settleWrites();
     backgrounded = true;
     await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
-    expect(isInvalidated(gradeFiltered)).toBe(false);
+    const scheduledByFlush = scheduled.length;
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_MAX_WAIT_MS * 5);
 
-    // Nothing re-arms on foreground, so the ceiling has to carry the batch:
-    // clearing it here would drop the refresh for good.
+    expect(isInvalidated(gradeFiltered)).toBe(false);
+    expect(scheduled).toHaveLength(scheduledByFlush);
+
+    // The next event is the first moment the app can be foregrounded again.
     backgrounded = false;
-    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_MAX_WAIT_MS);
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'climb-2' }));
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
 
     expect(isInvalidated(gradeFiltered)).toBe(true);
+    expect(harness.isScopeDownloaded).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the flush batch when the handle is null at flush time', async () => {
@@ -608,7 +843,9 @@ describe('createClimbStatsLiveSync — contention and transient gates', () => {
     expect(isInvalidated(gradeFiltered)).toBe(false);
 
     db = fakeDb;
-    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_MAX_WAIT_MS);
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'climb-2' }));
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
 
     expect(isInvalidated(gradeFiltered)).toBe(true);
   });
@@ -646,6 +883,18 @@ describe('createClimbStatsLiveSync — teardown and failures', () => {
     harness.sync.dispose();
 
     expect(cancels.filter((cancel) => cancel.mock.calls.length > 0)).toHaveLength(2);
+  });
+
+  it('cancels a scheduled contention retry on dispose', async () => {
+    const writeEvents = vi.fn(allSettled('lock_lost'));
+    const harness = createHarness({ writeEvents: writeEvents as never });
+
+    harness.sync.handleEvent(makeEvent());
+    await settleWrites();
+    harness.sync.dispose();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_LOCK_BACKOFF_MS * 3);
+
+    expect(writeEvents).toHaveBeenCalledTimes(1);
   });
 
   it('arms no timer from a write that resolves after dispose', async () => {
@@ -798,7 +1047,7 @@ describe('createClimbStatsLiveSync — teardown and failures', () => {
   });
 });
 
-describe('isStatsDependentSearch', () => {
+describe('hasStatsDependentFilter', () => {
   it.each([
     ['minGrade', { minGrade: 17 }],
     ['maxGrade', { maxGrade: 22 }],
@@ -808,37 +1057,20 @@ describe('isStatsDependentSearch', () => {
     ['onlyBenchmarks', { onlyBenchmarks: true }],
     ['projectsOnly', { projectsOnly: true }],
   ])('is true for %s', (_label, filter) => {
-    expect(isStatsDependentSearch({ ...BASE_SEARCH, ...filter })).toBe(true);
-  });
-
-  it.each(['ascents', 'difficulty', 'quality', 'popular'])('is true for the %s sort', (sortBy) => {
-    expect(isStatsDependentSearch({ ...BASE_SEARCH, sortBy })).toBe(true);
-  });
-
-  it.each(['ascents', 'difficulty', 'quality', 'popular'])(
-    'is false for the %s sort when the sort cannot matter',
-    (sortBy) => {
-      expect(isStatsDependentSearch({ ...BASE_SEARCH, sortBy }, false)).toBe(false);
-    },
-  );
-
-  it('still reads filters when the sort cannot matter', () => {
-    expect(isStatsDependentSearch({ ...BASE_SEARCH, sortBy: 'name', minAscents: 5 }, false)).toBe(true);
+    expect(hasStatsDependentFilter({ ...BASE_SEARCH, ...filter })).toBe(true);
   });
 
   it.each([
     ['no filters at all', {}],
-    ['the name sort', { sortBy: 'name' }],
-    ['the creation sort', { sortBy: 'creation' }],
-    ['the random sort', { sortBy: 'random' }],
+    ['any stats sort, which is not a filter', { sortBy: 'ascents' }],
+    ['the popular sort', { sortBy: 'popular' }],
     ['a name search', { name: 'crimpy' }],
     ['a setter filter', { setter: ['someone'] }],
     ['a hold filter', { holdsFilter: { 12: 'STARTING' } }],
-    ['a zone filter', { zoneBox: { edgeLeft: 0, edgeRight: 10, edgeBottom: 0, edgeTop: 10 } }],
     ['personal-progress filters', { hideCompleted: true, showOnlyAttempted: true }],
     ['a disabled benchmarks toggle', { onlyBenchmarks: false }],
   ])('is false for %s', (_label, filter) => {
-    expect(isStatsDependentSearch({ ...BASE_SEARCH, ...filter } as never)).toBe(false);
+    expect(hasStatsDependentFilter({ ...BASE_SEARCH, ...filter } as never)).toBe(false);
   });
 });
 
@@ -888,25 +1120,51 @@ describe('canStreamChangeList', () => {
     expect(canStreamChangeList('infiniteSearchClimbs', input, undefined, otherBoard)).toBe(false);
     expect(canStreamChangeList('infiniteSearchClimbs', input, undefined, otherLayout)).toBe(false);
   });
+
+  it('treats an absent sortBy as the ascents default, not as sort-independent', () => {
+    // `{}` is the default Climbs tab. It sorts on stats, so it must behave like
+    // an explicit `ascents` — on-page only, and never cross-angle.
+    const onPage = { pages: [{ searchClimbs: { climbs: [{ uuid: 'climb-1' }] } }], pageParams: [0] };
+    const noSort = { ...BASE_SEARCH };
+    const explicit = { ...BASE_SEARCH, sortBy: 'ascents' };
+    const otherAngle = [flushed({ angle: 25 })];
+
+    expect(canStreamChangeList('infiniteSearchClimbs', noSort, onPage, batch)).toBe(
+      canStreamChangeList('infiniteSearchClimbs', explicit, onPage, batch),
+    );
+    expect(canStreamChangeList('infiniteSearchClimbs', noSort, onPage, otherAngle)).toBe(
+      canStreamChangeList('infiniteSearchClimbs', explicit, onPage, otherAngle),
+    );
+    expect(canStreamChangeList('infiniteSearchClimbs', noSort, onPage, otherAngle)).toBe(false);
+  });
 });
 
 describe('climbDetailMatchesBatch', () => {
   const batch = [flushed()];
 
   it('matches the uuid at the written angle only', () => {
-    expect(climbDetailMatchesBatch({ climbUuid: 'climb-1', angle: 40 }, batch)).toBe(true);
-    expect(climbDetailMatchesBatch({ climbUuid: 'climb-1', angle: 25 }, batch)).toBe(false);
-    expect(climbDetailMatchesBatch({ climbUuid: 'climb-other', angle: 40 }, batch)).toBe(false);
+    expect(climbDetailMatchesBatch({ ...BASE_SEARCH, climbUuid: 'climb-1' }, batch, DOWNLOADED)).toBe(true);
+    expect(climbDetailMatchesBatch({ ...BASE_SEARCH, angle: 25, climbUuid: 'climb-1' }, batch, DOWNLOADED)).toBe(false);
+    expect(climbDetailMatchesBatch({ ...BASE_SEARCH, climbUuid: 'climb-other' }, batch, DOWNLOADED)).toBe(false);
   });
 
-  it('matches on the uuid alone when the variables carry no angle', () => {
-    expect(climbDetailMatchesBatch({ climbUuid: 'climb-1' }, batch)).toBe(true);
+  it('fails closed when the scope was never resolved as downloaded', () => {
+    expect(climbDetailMatchesBatch({ ...BASE_SEARCH, climbUuid: 'climb-1' }, batch, new Map())).toBe(false);
+    expect(
+      climbDetailMatchesBatch({ ...BASE_SEARCH, climbUuid: 'climb-1' }, batch, new Map([['kilter:1:5', false]])),
+    ).toBe(false);
+  });
+
+  it('accepts any downloaded scope of the board and layout when the key carries no size', () => {
+    const noSize = { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'climb-1' };
+    expect(climbDetailMatchesBatch(noSize, batch, DOWNLOADED)).toBe(true);
+    expect(climbDetailMatchesBatch(noSize, batch, new Map([['kilter:8:5', true]]))).toBe(false);
   });
 
   it.each([
     ['a non-object key', 'not-an-input'],
-    ['a key with no uuid', { angle: 40 }],
+    ['a key with no uuid', { ...BASE_SEARCH }],
   ])('returns false for %s', (_label, variables) => {
-    expect(climbDetailMatchesBatch(variables, batch)).toBe(false);
+    expect(climbDetailMatchesBatch(variables, batch, DOWNLOADED)).toBe(false);
   });
 });
