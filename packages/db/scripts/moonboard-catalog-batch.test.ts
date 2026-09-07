@@ -383,3 +383,159 @@ void test('grades the map resolves are never reported as unmapped', () => {
     [32, 33],
   );
 });
+
+// ---------------------------------------------------------------------------
+// Withdrawn problems (dateDeleted upstream) → unlist the climb they own
+// ---------------------------------------------------------------------------
+
+void test('a withdrawn problem we never imported leaves nothing to unlist', () => {
+  const gone = problem({ id: 700200, dateDeleted: '2026-03-01T10:00:00' });
+  const { climbs, withdrawnClimbUuids, counters } = stage({ problems: [gone] });
+
+  assert.equal(counters.withdrawn, 1);
+  assert.equal(counters.withdrawnWithClimbs, 0);
+  assert.equal(counters.skippedProblems, 1);
+  assert.deepEqual(withdrawnClimbUuids, []);
+  assert.equal(climbs.length, 0);
+});
+
+void test('a withdrawn problem that owns a climb reports it for unlisting', () => {
+  const gone = problem({ id: 700210, dateDeleted: '2026-03-01T10:00:00' });
+  const ownedUuid = catalogClimbUuid({ id: 700210 });
+
+  const { withdrawnClimbUuids, withdrawnSamples, counters } = stage({
+    problems: [gone],
+    existingClimbUuids: new Set([ownedUuid]),
+  });
+
+  assert.equal(counters.withdrawn, 1);
+  assert.equal(counters.withdrawnWithClimbs, 1);
+  assert.deepEqual(withdrawnClimbUuids, [ownedUuid]);
+  assert.deepEqual(withdrawnSamples, [{ problemId: 700210, name: 'Problem 700210', climbUuids: [ownedUuid] }]);
+});
+
+void test('a withdrawn problem merged onto another uuid unlists the merge target, not its own id-based uuid', () => {
+  // The non-destructive merge routinely parks a problem on a pre-existing uuid
+  // and records that with an alias. Unlisting the id-based uuid would miss the
+  // row that actually holds the climb.
+  const gone = problem({ id: 700220, dateDeleted: '2026-03-01T10:00:00' });
+  const ownIdUuid = catalogClimbUuid({ id: 700220 });
+  const mergeTarget = 'merge-target-uuid';
+
+  const { withdrawnClimbUuids } = stage({
+    problems: [gone],
+    existingClimbUuids: new Set([ownIdUuid, mergeTarget]),
+    canonicalByAlias: new Map([[ownIdUuid, mergeTarget]]),
+  });
+
+  assert.deepEqual(withdrawnClimbUuids, [mergeTarget]);
+});
+
+void test('a withdrawn problem is found through its LEGACY per-angle uuid too', () => {
+  // Pre-rewrite imports minted one row per graded angle. A problem withdrawn
+  // today may only own `moonboard:{id}:{angle}` rows, and its configurations
+  // are usually soft-deleted with it — so today's graded angles cannot be the
+  // lookup key. ownedClimbAngles covers every angle we have ever imported at.
+  const gone = problem({
+    id: 700230,
+    dateDeleted: '2026-03-01T10:00:00',
+    configurations: [config({ dateDeleted: '2026-03-01T10:00:00' })],
+  });
+  const legacyUuid = legacyCatalogClimbUuid({ id: 700230, angle: 25 });
+
+  const { withdrawnClimbUuids, counters } = stage({
+    problems: [gone],
+    existingClimbUuids: new Set([legacyUuid]),
+  });
+
+  assert.equal(counters.withdrawnWithClimbs, 1);
+  assert.deepEqual(withdrawnClimbUuids, [legacyUuid]);
+});
+
+void test('a climb a LIVE problem also writes is never unlisted', () => {
+  // The correctness crux. Two problems can share holds and collapse onto one
+  // climb. If the withdrawn one resolved to that same uuid and we unlisted it,
+  // we would hide a climb upstream still publishes.
+  const withdrawnUuid = catalogClimbUuid({ id: 700240 });
+  const gone = problem({ id: 700240, dateDeleted: '2026-03-01T10:00:00' });
+  const live = problem({ id: 700241, name: 'Still Published' });
+
+  const existing: ExistingCatalogClimb[] = [{ uuid: withdrawnUuid, name: 'Shared Holds' }];
+  const { climbs, withdrawnClimbUuids, counters } = stage({
+    problems: [gone, live],
+    existingClimbUuids: new Set([withdrawnUuid]),
+    // The live problem's holds match the very climb the withdrawn one owns.
+    existingIndex: new Map([[catalogFingerprintKey(LAYOUT_ID, fingerprintOf(live)), existing]]),
+  });
+
+  assert.equal(counters.withdrawn, 1);
+  assert.equal(counters.withdrawnWithClimbs, 1);
+  assert.equal(counters.matched, 1);
+  assert.equal(climbs.length, 1);
+  assert.equal(climbs[0].uuid, withdrawnUuid);
+  // Staged as withdrawn, then subtracted because the batch wrote it.
+  assert.deepEqual(withdrawnClimbUuids, []);
+});
+
+void test('an Active=false problem is treated as withdrawn', () => {
+  const gone = problem({ id: 700250, Active: false });
+  const { counters, withdrawnClimbUuids } = stage({
+    problems: [gone],
+    existingClimbUuids: new Set([catalogClimbUuid({ id: 700250 })]),
+  });
+
+  assert.equal(counters.withdrawn, 1);
+  assert.deepEqual(withdrawnClimbUuids, [catalogClimbUuid({ id: 700250 })]);
+});
+
+void test('a holdless or ungraded problem is skipped WITHOUT being treated as withdrawn', () => {
+  // Only "upstream deleted this" licenses unlisting. "We cannot map this" says
+  // nothing about rows we already have, so it must never reach the unlist pass.
+  const ownedHoldless = catalogClimbUuid({ id: 700260 });
+  const ownedUngraded = catalogClimbUuid({ id: 700261 });
+
+  const { counters, withdrawnClimbUuids } = stage({
+    problems: [
+      problem({ id: 700260, moves: '' }),
+      problem({ id: 700261, moves: MOVES_OTHER, configurations: [config({ grade: '' })] }),
+    ],
+    existingClimbUuids: new Set([ownedHoldless, ownedUngraded]),
+  });
+
+  assert.equal(counters.skippedProblems, 2);
+  assert.equal(counters.withdrawn, 0);
+  assert.deepEqual(withdrawnClimbUuids, []);
+});
+
+void test('a withdrawn problem whose alias chain is cyclic is left alone', () => {
+  // Same stance as the hijack guard: never act on a redirect we cannot follow.
+  const gone = problem({ id: 700270, dateDeleted: '2026-03-01T10:00:00' });
+  const ownIdUuid = catalogClimbUuid({ id: 700270 });
+  const other = 'other-uuid';
+
+  const { withdrawnClimbUuids, counters } = stage({
+    problems: [gone],
+    existingClimbUuids: new Set([ownIdUuid, other]),
+    canonicalByAlias: new Map([
+      [ownIdUuid, other],
+      [other, ownIdUuid],
+    ]),
+  });
+
+  assert.equal(counters.withdrawnWithClimbs, 0);
+  assert.deepEqual(withdrawnClimbUuids, []);
+});
+
+void test('withdrawn samples are capped so a big capture cannot drown the log', () => {
+  const problems = Array.from({ length: 15 }, (_unused, index) =>
+    problem({ id: 700300 + index, dateDeleted: '2026-03-01T10:00:00' }),
+  );
+  const { withdrawnSamples, counters } = stage({
+    problems,
+    existingClimbUuids: new Set(problems.map((each) => catalogClimbUuid({ id: each.id }))),
+  });
+
+  assert.equal(counters.withdrawn, 15);
+  assert.equal(counters.withdrawnWithClimbs, 15);
+  assert.equal(withdrawnSamples.length, 10);
+});

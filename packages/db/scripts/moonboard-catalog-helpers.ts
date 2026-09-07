@@ -388,13 +388,66 @@ export function hijackedClimbUuidsForProblem(args: {
   );
 }
 
+/**
+ * Why a problem is not importable, or `null` when it is.
+ *
+ * `withdrawn` is split out from the rest because it is the only reason that
+ * carries a positive instruction: upstream is telling us this problem is gone,
+ * so a climb we already imported for it should stop being listed. Every other
+ * reason is "we can't map this", which says nothing about rows we already have.
+ *
+ * MoonBoard marks a withdrawn problem two ways at once — `dateDeleted` is set
+ * AND the setter is rewritten to `MoonBoardSystem` — while still returning the
+ * row from the API. `Active === false` has never been observed in a capture;
+ * it is treated as withdrawn too on the same reasoning.
+ */
+export type ProblemSkipReason = 'withdrawn' | 'no-holds' | 'no-configurations';
+
+export function problemSkipReason(problem: MoonBoardCatalogProblem): ProblemSkipReason | null {
+  if (problem.dateDeleted) return 'withdrawn';
+  if (problem.Active === false) return 'withdrawn';
+  if (!problem.moves || problem.moves.trim().length === 0) return 'no-holds';
+  if (!problem.configurations || problem.configurations.length === 0) return 'no-configurations';
+  return null;
+}
+
 /** A problem is importable if it isn't soft-deleted and has holds + configs. */
 export function isImportableProblem(problem: MoonBoardCatalogProblem): boolean {
-  if (problem.dateDeleted) return false;
-  if (problem.Active === false) return false;
-  if (!problem.moves || problem.moves.trim().length === 0) return false;
-  if (!problem.configurations || problem.configurations.length === 0) return false;
-  return true;
+  return problemSkipReason(problem) === null;
+}
+
+/**
+ * The canonical climb uuid a withdrawn problem's rows live under, or undefined
+ * when it never had any (withdrawn before we ever imported it — the common case
+ * for a problem deleted long ago).
+ *
+ * Resolution goes through the alias table rather than assuming the id-based
+ * uuid IS the climb: the non-destructive merge routinely parks a problem on a
+ * pre-existing uuid, and `catalogAliasRows` records that with an alias. Reusing
+ * `existingClimbUuidsForProblem` keeps the "which uuids does this problem own"
+ * question in one place, so the unlist pass and the drift guard can never
+ * disagree about it.
+ *
+ * `ownedClimbAngles` is applied by the caller: a withdrawn problem's
+ * configurations may be soft-deleted too, so today's graded angles are not a
+ * reliable list of the angles it once owned rows at.
+ */
+export function withdrawnCanonicalUuids(args: {
+  problemId: number;
+  angles: number[];
+  existingClimbUuids: ReadonlySet<string>;
+  canonicalByAlias: ReadonlyMap<string, string>;
+}): string[] {
+  const { problemId, angles, existingClimbUuids, canonicalByAlias } = args;
+  const owned = existingClimbUuidsForProblem({ problemId, angles, existingClimbUuids });
+  const resolved = new Set<string>();
+  for (const uuid of owned) {
+    // A cyclic alias chain resolves to undefined. Same stance as the hijack
+    // guard: refuse to act on a redirect we cannot follow.
+    const canonicalUuid = terminalCanonicalUuid(uuid, canonicalByAlias);
+    if (canonicalUuid && existingClimbUuids.has(canonicalUuid)) resolved.add(canonicalUuid);
+  }
+  return [...resolved];
 }
 
 /** A configuration is importable if it isn't soft-deleted and the setter graded it. */

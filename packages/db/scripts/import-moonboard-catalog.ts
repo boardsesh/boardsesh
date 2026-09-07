@@ -2,10 +2,10 @@ import { mergeCatalogCharacteristicsSql } from '../src/queries/climbs/catalog-ch
 import { CLIMB_CHARACTERISTICS, isMethodCharacteristic } from '@boardsesh/shared-schema/characteristics';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { sql, eq, and, isNull } from 'drizzle-orm';
+import { sql, eq, and, isNull, inArray } from 'drizzle-orm';
 import { boardClimbs, boardClimbStats, boardClimbHolds, boardClimbAliases } from '../src/schema/boards/unified.js';
 import { blendedQualityAverageSql } from '../src/queries/climb-stats/quality-blend.js';
 import { fingerprintFromHolds } from './moonboard-2024-helpers.js';
@@ -41,12 +41,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // new, and it's skipped loudly instead. Stat upserts are monotonic — they never
 // overwrite an existing grade/quality with null or drop an ascent count.
 //
+// WITHDRAWN PROBLEMS: MoonBoard soft-deletes a withdrawn problem (sets
+// dateDeleted, rewrites the setter to "MoonBoardSystem") and keeps returning it
+// from the API. We skip importing it AND stop listing the climb it already owns
+// — rows, holds, aliases, ticks and beta links all stay, so a logbook entry
+// still resolves; the climb just leaves search, matching the MoonBoard app. A
+// problem that vanishes from the API entirely is NOT handled here: absence from
+// a paginated capture is much weaker evidence than a dateDeleted flag (the app
+// API filters rows out of its own pagination window). Use
+// report-moonboard-withdrawn.ts to see those.
+//
 // The ~390 MB of catalog files are NOT committed. Point the script at a local
 // copy of the app-catalog directory:
 //   DB_URL=<target> vp run '@boardsesh/db#db:import-moonboard-catalog' "/path/to/app-catalog"
 // (The package-scoped task name is required — plain `vp run
 // db:import-moonboard-catalog` resolves no task. DB_URL must be set inline: it
 // beats the dev-db .env override and is how you target prod vs local.)
+//
+// Rehearse against the real target first with --dry-run: it does every write,
+// then rolls each file's transaction back, so constraints are exercised for
+// real and the counters are the ones a live run would print.
 // =============================================================================
 
 const DEFAULT_DIR = path.join(__dirname, '../data/moonboard/app-catalog');
@@ -125,15 +139,73 @@ async function buildExistingIndex(
   return { index, climbUuids: new Set(climbRows.map((row) => row.uuid)), canonicalByAlias };
 }
 
-function parseFlag(name: string): string | undefined {
-  const index = process.argv.indexOf(name);
-  return index !== -1 ? process.argv[index + 1] : undefined;
+// Thrown to abort a --dry-run transaction after the writes have been attempted.
+// Same trick as import-aurora-board-unified.ts: the rehearsal exercises every
+// constraint, index and trigger for real, then rolls the whole file back.
+const DRY_RUN_ROLLBACK = new Error('__dry_run_rollback__');
+
+// Flags that consume the following argv entry. Needed so the positional catalog
+// directory can be told apart from a flag's value — otherwise
+// `--holdsetup 21` with no directory reads "21" as the path.
+const VALUE_FLAGS = new Set(['--holdsetup']);
+const BOOLEAN_FLAGS = new Set(['--dry-run']);
+
+export type CatalogCliArgs = { positional: string[]; holdsetup?: number; dryRun: boolean };
+
+/**
+ * Parse argv, rejecting anything unrecognised.
+ *
+ * Failing closed on an unknown flag is the whole point: a typo'd `-dry-run`
+ * (one dash) or `--dryrun` would otherwise be silently ignored and the
+ * rehearsal would commit to production instead.
+ */
+export function parseCatalogCliArgs(argv: string[]): CatalogCliArgs {
+  const positional: string[] = [];
+  let holdsetup: number | undefined;
+  let dryRun = false;
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--') {
+      // `vp run '@boardsesh/db#db:import-moonboard-catalog' -- --dry-run`
+      // forwards the separator verbatim, so skip it rather than rejecting it as
+      // an unknown flag. Both invocation styles then work.
+      continue;
+    }
+    if (BOOLEAN_FLAGS.has(arg)) {
+      dryRun = true;
+      continue;
+    }
+    if (VALUE_FLAGS.has(arg)) {
+      const value = argv[++i];
+      if (value === undefined) throw new Error(`${arg} needs a value`);
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed)) throw new Error(`${arg} needs an integer, got "${value}"`);
+      holdsetup = parsed;
+      continue;
+    }
+    if (arg.startsWith('-')) throw new Error(`Unknown flag: ${arg}`);
+    positional.push(arg);
+  }
+
+  return { positional, holdsetup, dryRun };
 }
 
 async function importMoonBoardCatalog() {
-  const positional = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
-  const catalogDir = positional ? path.resolve(process.cwd(), positional) : DEFAULT_DIR;
-  const onlyHoldsetup = parseFlag('--holdsetup') ? Number(parseFlag('--holdsetup')) : undefined;
+  let cli: CatalogCliArgs;
+  try {
+    cli = parseCatalogCliArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error(`❌ ${(error as Error).message}`);
+    console.error(
+      "   Usage: vp run '@boardsesh/db#db:import-moonboard-catalog' [/path/to/app-catalog] [--holdsetup N] [--dry-run]",
+    );
+    process.exit(1);
+  }
+
+  const catalogDir = cli.positional[0] ? path.resolve(process.cwd(), cli.positional[0]) : DEFAULT_DIR;
+  const onlyHoldsetup = cli.holdsetup;
+  const dryRun = cli.dryRun;
 
   if (!fs.existsSync(catalogDir) || !fs.statSync(catalogDir).isDirectory()) {
     console.error(`❌ Catalog directory not found: ${catalogDir}`);
@@ -153,6 +225,9 @@ async function importMoonBoardCatalog() {
   const databaseUrl = getScriptDatabaseUrl();
   console.info(`🔄 Importing MoonBoard catalog to: ${describeDatabaseHost(databaseUrl)}`);
   console.info(`📂 Reading catalog from: ${catalogDir} (${files.length} files)`);
+  if (dryRun) {
+    console.info('🧪 DRY RUN — every write is attempted and then rolled back. Nothing is committed.');
+  }
 
   const client = postgres(databaseUrl, { max: 1 });
   const db = drizzle(client);
@@ -168,6 +243,9 @@ async function importMoonBoardCatalog() {
     skippedDrifted: 0,
     skippedHijacked: 0,
     foldedInBatch: 0,
+    withdrawn: 0,
+    withdrawnWithClimbs: 0,
+    unlisted: 0,
   };
 
   try {
@@ -194,6 +272,8 @@ async function importMoonBoardCatalog() {
         stats: statsRecords,
         holds: holdsRecords,
         aliases: aliasRecords,
+        withdrawnClimbUuids,
+        withdrawnSamples,
         counters,
         unmappedGrades,
       } = stageCatalogBatch({
@@ -210,102 +290,149 @@ async function importMoonBoardCatalog() {
           `${counters.skippedProblems} problems skipped, ` +
           `${counters.skippedAmbiguous} skipped as ambiguous (duplicate listed rows), ` +
           `${counters.skippedDrifted} skipped as drifted (holds changed under an imported climb), ` +
-          `${counters.skippedHijacked} skipped to protect climb rows a merge would repoint`,
+          `${counters.skippedHijacked} skipped to protect climb rows a merge would repoint; ` +
+          `${counters.withdrawn} withdrawn upstream (${withdrawnClimbUuids.length} climbs to unlist)`,
       );
+      if (withdrawnSamples.length > 0) {
+        console.info('   Withdrawn upstream (first few):');
+        for (const sample of withdrawnSamples) {
+          console.info(`     ${sample.problemId} "${sample.name}" → ${sample.climbUuids.join(', ')}`);
+        }
+      }
       if (unmappedGrades.size > 0) {
         console.warn(
           `   ⚠️  Unmapped MoonBoard grades, imported with a NULL grade — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${formatUnmappedMoonBoardGrades(unmappedGrades)}`,
         );
       }
 
+      // Counted inside the transaction, read after it. On a dry run the
+      // transaction is rolled back but this keeps its value, which is the
+      // point: the rehearsal reports what a real run would change.
+      let unlistedThisFile = 0;
+
       // One transaction per board: a crash mid-file never leaves a climb without
       // its holds/aliases, and completed boards stay committed for an idempotent
-      // re-run.
-      await db.transaction(async (tx) => {
-        // Climbs — for matched rows the identity columns are already correct, so
-        // refresh only the method-derived fields (characteristics/description).
-        for (let i = 0; i < climbRecords.length; i += BATCH_SIZE) {
-          await tx
-            .insert(boardClimbs)
-            .values(climbRecords.slice(i, i + BATCH_SIZE))
-            .onConflictDoUpdate({
-              target: boardClimbs.uuid,
-              setWhere: isNull(boardClimbs.userId),
-              set: {
-                characteristics: mergeCatalogCharacteristicsSql(
-                  boardClimbs.characteristics,
-                  sql`excluded.characteristics`,
-                  Object.values(CLIMB_CHARACTERISTICS).filter(isMethodCharacteristic),
+      // re-run. On a dry run it always ends in DRY_RUN_ROLLBACK.
+      try {
+        await db.transaction(async (tx) => {
+          // Climbs — for matched rows the identity columns are already correct, so
+          // refresh only the method-derived fields (characteristics/description).
+          for (let i = 0; i < climbRecords.length; i += BATCH_SIZE) {
+            await tx
+              .insert(boardClimbs)
+              .values(climbRecords.slice(i, i + BATCH_SIZE))
+              .onConflictDoUpdate({
+                target: boardClimbs.uuid,
+                setWhere: isNull(boardClimbs.userId),
+                set: {
+                  characteristics: mergeCatalogCharacteristicsSql(
+                    boardClimbs.characteristics,
+                    sql`excluded.characteristics`,
+                    Object.values(CLIMB_CHARACTERISTICS).filter(isMethodCharacteristic),
+                  ),
+                  description: sql`excluded.description`,
+                },
+              });
+          }
+
+          // Stats — monotonic merge: take the new grade/benchmark, but never null
+          // out an existing grade/quality or shrink the upstream count. The total is
+          // rebuilt as upstream + existing Boardsesh, so re-running the import repairs
+          // any climb whose count was previously clobbered by a tick recompute without
+          // dropping the ticks it has since accrued.
+          //
+          // The NEW upstream count this upsert resolves to: monotonic GREATEST of the
+          // stored and incoming snapshot. Defined ONCE and reused for the count SET,
+          // the total, AND the blend weight — a SET expression reads the OLD value of
+          // a bare column, so the blend must weight by this NEW resolved count. Single
+          // source keeps the three in lockstep if the count policy ever changes.
+          const resolvedUpstreamAscensionistCount = sql`greatest(coalesce(excluded.upstream_ascensionist_count, 0), coalesce(${boardClimbStats.upstreamAscensionistCount}, 0))`;
+          const blendedQuality = blendedQualityAverageSql({
+            upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
+            upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
+            boardseshQualitySum: sql`${boardClimbStats.boardseshQualitySum}`,
+            boardseshQualityCount: sql`${boardClimbStats.boardseshQualityCount}`,
+          });
+          for (let i = 0; i < statsRecords.length; i += BATCH_SIZE) {
+            await tx
+              .insert(boardClimbStats)
+              .values(statsRecords.slice(i, i + BATCH_SIZE))
+              .onConflictDoUpdate({
+                target: [boardClimbStats.boardType, boardClimbStats.climbUuid, boardClimbStats.angle],
+                // Existing-side refs must be table-qualified — a bare column name is
+                // ambiguous between the target row and `excluded` in ON CONFLICT.
+                set: {
+                  displayDifficulty: sql`coalesce(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,
+                  benchmarkDifficulty: sql`excluded.benchmark_difficulty`,
+                  difficultyAverage: sql`coalesce(excluded.difficulty_average, ${boardClimbStats.difficultyAverage})`,
+                  upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
+                  ascensionistCount: sql`${resolvedUpstreamAscensionistCount} + coalesce(${boardClimbStats.boardseshAscensionistCount}, 0)`,
+                  // Manufacturer average lands in upstream_quality_average; quality_average
+                  // is the blend of it and Boardsesh's own votes.
+                  upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
+                  qualityAverage: blendedQuality,
+                  qualityNormalized: sql`true`,
+                  upstreamSyncedAt: sql`excluded.upstream_synced_at`,
+                },
+              });
+          }
+
+          for (let i = 0; i < holdsRecords.length; i += BATCH_SIZE) {
+            await tx
+              .insert(boardClimbHolds)
+              .values(holdsRecords.slice(i, i + BATCH_SIZE))
+              .onConflictDoNothing();
+          }
+
+          // Self-aliases so resolveCanonicalClimbUuid always hits, plus id-based
+          // aliases (moonboard:{id}:{angle} → canonical) so problem-id lookups from
+          // the logbook importer resolve merged/legacy climbs.
+          for (let i = 0; i < aliasRecords.length; i += BATCH_SIZE) {
+            await tx
+              .insert(boardClimbAliases)
+              .values(aliasRecords.slice(i, i + BATCH_SIZE))
+              .onConflictDoUpdate({
+                target: [boardClimbAliases.boardType, boardClimbAliases.aliasUuid],
+                set: catalogAliasConflictUpdate(),
+              });
+          }
+
+          // Stop listing climbs whose problem upstream has withdrawn. Rows,
+          // holds, aliases, ticks and beta links all stay — the climb just leaves
+          // search, matching what the MoonBoard app itself shows.
+          //
+          // `user_id IS NULL` is the same fence buildExistingIndex applies: a
+          // Boardsesh-native climb is never collateral, even if a withdrawn
+          // problem's alias chain somehow pointed at one. The IS DISTINCT FROM
+          // predicate makes a re-run a no-op instead of rewriting rows that are
+          // already unlisted, so the returned count is "what actually changed".
+          for (let i = 0; i < withdrawnClimbUuids.length; i += BATCH_SIZE) {
+            const unlistedRows = await tx
+              .update(boardClimbs)
+              .set({ isListed: false })
+              .where(
+                and(
+                  eq(boardClimbs.boardType, 'moonboard'),
+                  isNull(boardClimbs.userId),
+                  inArray(boardClimbs.uuid, withdrawnClimbUuids.slice(i, i + BATCH_SIZE)),
+                  sql`${boardClimbs.isListed} IS DISTINCT FROM false`,
                 ),
-                description: sql`excluded.description`,
-              },
-            });
-        }
+              )
+              .returning({ uuid: boardClimbs.uuid });
+            unlistedThisFile += unlistedRows.length;
+          }
 
-        // Stats — monotonic merge: take the new grade/benchmark, but never null
-        // out an existing grade/quality or shrink the upstream count. The total is
-        // rebuilt as upstream + existing Boardsesh, so re-running the import repairs
-        // any climb whose count was previously clobbered by a tick recompute without
-        // dropping the ticks it has since accrued.
-        //
-        // The NEW upstream count this upsert resolves to: monotonic GREATEST of the
-        // stored and incoming snapshot. Defined ONCE and reused for the count SET,
-        // the total, AND the blend weight — a SET expression reads the OLD value of
-        // a bare column, so the blend must weight by this NEW resolved count. Single
-        // source keeps the three in lockstep if the count policy ever changes.
-        const resolvedUpstreamAscensionistCount = sql`greatest(coalesce(excluded.upstream_ascensionist_count, 0), coalesce(${boardClimbStats.upstreamAscensionistCount}, 0))`;
-        const blendedQuality = blendedQualityAverageSql({
-          upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
-          upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
-          boardseshQualitySum: sql`${boardClimbStats.boardseshQualitySum}`,
-          boardseshQualityCount: sql`${boardClimbStats.boardseshQualityCount}`,
+          if (dryRun) throw DRY_RUN_ROLLBACK;
         });
-        for (let i = 0; i < statsRecords.length; i += BATCH_SIZE) {
-          await tx
-            .insert(boardClimbStats)
-            .values(statsRecords.slice(i, i + BATCH_SIZE))
-            .onConflictDoUpdate({
-              target: [boardClimbStats.boardType, boardClimbStats.climbUuid, boardClimbStats.angle],
-              // Existing-side refs must be table-qualified — a bare column name is
-              // ambiguous between the target row and `excluded` in ON CONFLICT.
-              set: {
-                displayDifficulty: sql`coalesce(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,
-                benchmarkDifficulty: sql`excluded.benchmark_difficulty`,
-                difficultyAverage: sql`coalesce(excluded.difficulty_average, ${boardClimbStats.difficultyAverage})`,
-                upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
-                ascensionistCount: sql`${resolvedUpstreamAscensionistCount} + coalesce(${boardClimbStats.boardseshAscensionistCount}, 0)`,
-                // Manufacturer average lands in upstream_quality_average; quality_average
-                // is the blend of it and Boardsesh's own votes.
-                upstreamQualityAverage: sql`coalesce(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
-                qualityAverage: blendedQuality,
-                qualityNormalized: sql`true`,
-                upstreamSyncedAt: sql`excluded.upstream_synced_at`,
-              },
-            });
-        }
+      } catch (error) {
+        // A dry run always lands here. Anything else is a real failure.
+        if (error !== DRY_RUN_ROLLBACK) throw error;
+      }
 
-        for (let i = 0; i < holdsRecords.length; i += BATCH_SIZE) {
-          await tx
-            .insert(boardClimbHolds)
-            .values(holdsRecords.slice(i, i + BATCH_SIZE))
-            .onConflictDoNothing();
-        }
-
-        // Self-aliases so resolveCanonicalClimbUuid always hits, plus id-based
-        // aliases (moonboard:{id}:{angle} → canonical) so problem-id lookups from
-        // the logbook importer resolve merged/legacy climbs.
-        for (let i = 0; i < aliasRecords.length; i += BATCH_SIZE) {
-          await tx
-            .insert(boardClimbAliases)
-            .values(aliasRecords.slice(i, i + BATCH_SIZE))
-            .onConflictDoUpdate({
-              target: [boardClimbAliases.boardType, boardClimbAliases.aliasUuid],
-              set: catalogAliasConflictUpdate(),
-            });
-        }
-      });
-
-      console.info(`   ✓ climbs ${climbRecords.length}, stats ${statsRecords.length}, holds ${holdsRecords.length}`);
+      console.info(
+        `   ✓ climbs ${climbRecords.length}, stats ${statsRecords.length}, holds ${holdsRecords.length}` +
+          `, unlisted ${unlistedThisFile}`,
+      );
       totals.matched += counters.matched;
       totals.inserted += counters.inserted;
       totals.climbs += climbRecords.length;
@@ -316,15 +443,22 @@ async function importMoonBoardCatalog() {
       totals.skippedDrifted += counters.skippedDrifted;
       totals.skippedHijacked += counters.skippedHijacked;
       totals.foldedInBatch += counters.foldedInBatch;
+      totals.withdrawn += counters.withdrawn;
+      totals.withdrawnWithClimbs += counters.withdrawnWithClimbs;
+      totals.unlisted += unlistedThisFile;
     }
 
-    console.info('\n✅ Import completed!');
+    console.info(dryRun ? '\n🧪 Dry run completed — nothing was committed.' : '\n✅ Import completed!');
     console.info(`   Matched existing: ${totals.matched}`);
     console.info(`   Newly inserted:   ${totals.inserted}`);
     console.info(`   Climbs upserted:  ${totals.climbs}`);
     console.info(`   Stats upserted:   ${totals.stats}`);
     console.info(`   Holds upserted:   ${totals.holds}`);
     console.info(`   Problems skipped: ${totals.skippedProblems}`);
+    console.info(
+      `   Withdrawn:        ${totals.withdrawn} upstream, ${totals.withdrawnWithClimbs} of them own climb rows, ` +
+        `${totals.unlisted} climbs unlisted`,
+    );
     if (totals.foldedInBatch > 0) {
       console.info(
         `   Folded in batch:  ${totals.foldedInBatch} — problems that share their holds with an earlier problem in ` +
@@ -363,4 +497,7 @@ async function importMoonBoardCatalog() {
   }
 }
 
-void importMoonBoardCatalog();
+// Only run when invoked as a script — the arg parser above is imported by
+// import-moonboard-catalog-args.test.ts, which must not kick off an import.
+const isDirectRun = process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
+if (isDirectRun) void importMoonBoardCatalog();
