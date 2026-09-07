@@ -65,6 +65,18 @@ describe('isStripeCheckoutUrl', () => {
     }
   });
 
+  it('accepts this site itself, which is where the dev-only bypass sends the buyer', () => {
+    expect(
+      isStripeCheckoutUrl(
+        'https://boardsesh.test/build-plans/orders/BS-CNC-ABC234?checkout=success',
+        'https://boardsesh.test',
+      ),
+    ).toBe(true);
+    expect(isStripeCheckoutUrl('https://evil.example/build-plans/orders/BS-CNC-ABC234', 'https://boardsesh.test')).toBe(
+      false,
+    );
+  });
+
   it('returns false rather than throwing on a URL that does not parse', () => {
     for (const url of ['', 'not a url', '/c/pay/cs_test', 'javascript:alert(1)']) {
       expect({ url, allowed: isStripeCheckoutUrl(url) }).toEqual({ url, allowed: false });
