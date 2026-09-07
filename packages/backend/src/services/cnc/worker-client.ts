@@ -184,16 +184,27 @@ export type CncWorkerKicker = {
 
 export type CncWorkerManufacturing = {
   sheet: CncWorkerSheet;
-  dimension_standard?: 'metric' | 'imperial';
-  grid_pitch_mm?: number;
-  tnut_hole_diameter_mm?: number;
-  led_hole_diameter_mm?: number;
-  stud_clearance_offset_mm?: number;
   /** Cut the seam backing strips. Changes the sheet count, so it is geometry. */
   support_strips: boolean;
-  /** Present only when the configuration includes kicker sets. */
-  kicker?: CncWorkerKicker;
-};
+} & (
+  | {
+      dimension_standard: 'metric' | 'imperial';
+      grid_pitch_mm?: never;
+      tnut_hole_diameter_mm?: never;
+      led_hole_diameter_mm?: never;
+      stud_clearance_offset_mm?: never;
+      kicker?: never;
+    }
+  | {
+      dimension_standard?: never;
+      grid_pitch_mm: number;
+      tnut_hole_diameter_mm: number;
+      led_hole_diameter_mm: number;
+      stud_clearance_offset_mm: number;
+      /** Present only when the configuration includes kicker sets. */
+      kicker?: CncWorkerKicker;
+    }
+);
 
 export type CncWorkerLayoutRequest = {
   board: CncWorkerBoardRef;
