@@ -37,13 +37,17 @@
 import type { OfflineDatabase } from '../database';
 import { beginImmediateWrite } from '../db/pragmas';
 import { isDatabaseLockedError } from '../db/lock-errors';
+import { parseCompatibleSizeIds } from './board-scope-sql';
 
 /**
  * One `ClimbStatsEvent` as this module needs it. Declared structurally rather
  * than imported: `@boardsesh/shared-schema` is only a devDependency here, and
  * the engine takes no runtime dependencies. `ClimbStatsEvent` is assignable to
- * it (asserted in the test), minus the `difficulty` label, which is a rendering
- * of `displayDifficulty` and has no local column.
+ * it (asserted in the test) — `difficulty` is a rendering of `displayDifficulty`
+ * with no local column, and `faUsername` / `faAt` are columns this write never
+ * touches, so they are not asked for. The same shape is satisfied by a
+ * `climbStatsForClimbs` row plus the read's board and layout, which is how the
+ * reconnect repair path reuses this writer.
  */
 export type ClimbStatsWriteThroughInput = {
   boardType: string;
@@ -54,8 +58,6 @@ export type ClimbStatsWriteThroughInput = {
   qualityAverage: number | null;
   difficultyAverage: number | null;
   displayDifficulty: number | null;
-  faUsername: string | null;
-  faAt: string | null;
   syncSeq: string;
 };
 
@@ -153,18 +155,6 @@ export function parseClimbStatsRevision(syncSeq: string): number | null {
   return Number.isSafeInteger(revision) ? revision : null;
 }
 
-function parseCompatibleSizeIds(raw: string | null | undefined): number[] | null {
-  if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    const sizeIds = parsed.filter((sizeId): sizeId is number => typeof sizeId === 'number' && Number.isFinite(sizeId));
-    return sizeIds.length > 0 ? sizeIds : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * True for the failures that mean "another writer had the file" — contention,
  * or a database closed underneath us by a sign-out wipe or a hot reload. Both
@@ -176,53 +166,135 @@ function isDroppableWriteFailure(error: unknown): boolean {
   return /database is closed|access to closed resource/i.test(message);
 }
 
+/** What the autocommit pre-read decided about one event. */
+type PreparedWrite =
+  | { kind: 'settled'; result: ClimbStatsWriteThroughResult }
+  | { kind: 'write'; revision: number; compatibleSizeIds: number[] | null; event: ClimbStatsWriteThroughInput };
+
 /**
- * Write one live stats event into local `board_climb_stats`.
+ * The autocommit half: decide, without taking any lock, whether this event can
+ * possibly change a local row.
  *
- * Never throws for contention or a closed database; any other SQLite failure
- * propagates so the caller can report it once.
+ * Two of the three outcomes never reach a write connection, which is the point.
+ * A global layout channel is mostly climbs this device never downloaded, and
+ * the publisher republishes on every debounced pass while `sync_seq` only moves
+ * on a client-visible change — so an equal-revision republish is the documented
+ * common case and settles here as `stale`. The write still re-checks the
+ * revision under the lock, since another writer can land between the two.
  */
+async function prepareWrite(db: OfflineDatabase, event: ClimbStatsWriteThroughInput): Promise<PreparedWrite> {
+  const revision = parseClimbStatsRevision(event.syncSeq);
+  if (revision === null) {
+    return { kind: 'settled', result: { status: 'invalid_revision', compatibleSizeIds: null } };
+  }
+
+  const row = await db.getFirstAsync<{ compatible_size_ids: string | null; local_sync_seq: number | null }>(
+    `SELECT c.compatible_size_ids AS compatible_size_ids, s.sync_seq AS local_sync_seq
+     FROM board_climbs c
+     LEFT JOIN board_climb_stats s
+       ON s.board_type = c.board_type AND s.climb_uuid = c.uuid AND s.angle = ?
+     WHERE c.board_type = ? AND c.uuid = ?`,
+    [event.angle, event.boardType, event.climbUuid],
+  );
+  if (!row) return { kind: 'settled', result: { status: 'climb_not_local', compatibleSizeIds: null } };
+
+  const compatibleSizeIds = parseCompatibleSizeIds(row.compatible_size_ids);
+  const localRevision = typeof row.local_sync_seq === 'number' ? row.local_sync_seq : Number(row.local_sync_seq);
+  if (row.local_sync_seq !== null && Number.isFinite(localRevision) && localRevision >= revision) {
+    return { kind: 'settled', result: { status: 'stale', compatibleSizeIds } };
+  }
+
+  return { kind: 'write', revision, compatibleSizeIds, event };
+}
+
+function upsertBinds(event: ClimbStatsWriteThroughInput, revision: number): (string | number | null)[] {
+  return [
+    event.boardType,
+    event.climbUuid,
+    event.angle,
+    event.displayDifficulty,
+    event.ascensionistCount,
+    event.difficultyAverage,
+    event.qualityAverage,
+    revision,
+    event.boardType,
+    event.climbUuid,
+  ];
+}
+
+/**
+ * Write a batch of live stats events into local `board_climb_stats`.
+ *
+ * Every pre-read runs on the main connection in autocommit; only the events
+ * that can still change a row reach ONE exclusive transaction, so a burst of
+ * recomputes costs one native connection and one 250 ms lock wait rather than
+ * one of each per event. Each upsert's own `changes` decides its status, so a
+ * row another writer moved between the pre-read and the lock still reports
+ * `stale` rather than `applied`.
+ *
+ * Never throws for contention or a closed database — those settle the whole
+ * batch as `lock_lost`, and the next pull heals every row in it. Any other
+ * SQLite failure propagates so the caller can report it once.
+ */
+export async function writeClimbStatsEvents(
+  db: OfflineDatabase,
+  events: readonly ClimbStatsWriteThroughInput[],
+): Promise<ClimbStatsWriteThroughResult[]> {
+  const results = new Array<ClimbStatsWriteThroughResult | undefined>(events.length);
+  const pendingWrites: { index: number; prepared: Extract<PreparedWrite, { kind: 'write' }> }[] = [];
+
+  try {
+    for (const [index, event] of events.entries()) {
+      const prepared = await prepareWrite(db, event);
+      if (prepared.kind === 'settled') {
+        results[index] = prepared.result;
+        continue;
+      }
+      pendingWrites.push({ index, prepared });
+    }
+  } catch (error) {
+    // A read can hit a closed handle too (a sign-out wipe or a hot reload
+    // landing mid-batch). That is contention, not a broken database, so it
+    // must not be reported.
+    if (isDroppableWriteFailure(error)) {
+      return events.map((_event, index) => results[index] ?? { status: 'lock_lost', compatibleSizeIds: null });
+    }
+    throw error;
+  }
+
+  if (pendingWrites.length > 0) {
+    const changesByIndex = new Map<number, number>();
+    try {
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        await beginImmediateWrite(txn, CLIMB_STATS_WRITE_THROUGH_LOCK_TIMEOUT_MS);
+        for (const { index, prepared } of pendingWrites) {
+          const result = await txn.runAsync(UPSERT_SQL, upsertBinds(prepared.event, prepared.revision));
+          changesByIndex.set(index, result.changes);
+        }
+      });
+    } catch (error) {
+      if (!isDroppableWriteFailure(error)) throw error;
+      for (const { index, prepared } of pendingWrites) {
+        results[index] = { status: 'lock_lost', compatibleSizeIds: prepared.compatibleSizeIds };
+      }
+    }
+    for (const { index, prepared } of pendingWrites) {
+      if (results[index]) continue;
+      results[index] = {
+        status: (changesByIndex.get(index) ?? 0) > 0 ? 'applied' : 'stale',
+        compatibleSizeIds: prepared.compatibleSizeIds,
+      };
+    }
+  }
+
+  return results.map((result) => result ?? { status: 'stale', compatibleSizeIds: null });
+}
+
+/** One event, through the batched writer. */
 export async function writeClimbStatsEvent(
   db: OfflineDatabase,
   event: ClimbStatsWriteThroughInput,
 ): Promise<ClimbStatsWriteThroughResult> {
-  const revision = parseClimbStatsRevision(event.syncSeq);
-  if (revision === null) return { status: 'invalid_revision', compatibleSizeIds: null };
-
-  // Autocommit read on the main connection. The common case for a global
-  // layout stream is a climb this device never downloaded, and that case must
-  // not open a write connection at all. The write below re-checks existence
-  // atomically, so this read is only the size hint.
-  const climbRow = await db.getFirstAsync<{ compatible_size_ids: string | null }>(
-    'SELECT compatible_size_ids FROM board_climbs WHERE board_type = ? AND uuid = ?',
-    [event.boardType, event.climbUuid],
-  );
-  if (!climbRow) return { status: 'climb_not_local', compatibleSizeIds: null };
-
-  const compatibleSizeIds = parseCompatibleSizeIds(climbRow.compatible_size_ids);
-
-  let changes = 0;
-  try {
-    await db.withExclusiveTransactionAsync(async (txn) => {
-      await beginImmediateWrite(txn, CLIMB_STATS_WRITE_THROUGH_LOCK_TIMEOUT_MS);
-      const result = await txn.runAsync(UPSERT_SQL, [
-        event.boardType,
-        event.climbUuid,
-        event.angle,
-        event.displayDifficulty,
-        event.ascensionistCount,
-        event.difficultyAverage,
-        event.qualityAverage,
-        revision,
-        event.boardType,
-        event.climbUuid,
-      ]);
-      changes = result.changes;
-    });
-  } catch (error) {
-    if (isDroppableWriteFailure(error)) return { status: 'lock_lost', compatibleSizeIds };
-    throw error;
-  }
-
-  return { status: changes > 0 ? 'applied' : 'stale', compatibleSizeIds };
+  const [result] = await writeClimbStatsEvents(db, [event]);
+  return result;
 }
