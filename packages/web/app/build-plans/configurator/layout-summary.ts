@@ -42,15 +42,10 @@ export type CncLayoutSummary = {
   sheets: number | null;
   tnutCount: number | null;
   ledCount: number | null;
-  /**
-   * LED holes that land on a panel seam.
-   *
-   * Not a count of anything lost: the generator cuts each of these as a
-   * notch in both neighbouring panels, and the LED drops into the notch once
-   * the wall is bolted together. It is on the card because a notch is a thing
-   * somebody will see on their sheets and wonder about.
-   */
+  /** LED holes cut as notches across adjoining panels. */
   seamNotches: number | null;
+  skippedSeamLeds: number | null;
+  spareMountCount: number | null;
   /** Every panel, in the generator's own order. Empty when the response had none. */
   panels: CncLayoutPanel[];
   warnings: string[];
@@ -122,9 +117,16 @@ export function readLayoutSummary(layout: unknown): CncLayoutSummary {
     panelCount: Array.isArray(panels) ? panels.length : null,
     panels: readPanels(panels),
     sheets: readNumber(bom, 'sheets'),
-    tnutCount: readNumber(bom, 'tnut_count'),
-    ledCount: readNumber(bom, 'led_count'),
+    tnutCount: readNumber(bom, 'installed_tnut_count') ?? readNumber(bom, 'tnut_count'),
+    ledCount: readNumber(bom, 'installed_led_count') ?? readNumber(bom, 'led_count'),
+    spareMountCount: readNumber(bom, 'spare_mount_count'),
+    skippedSeamLeds: readNumber(bom, 'skipped_seam_leds'),
     seamNotches: readNumber(bom, 'seam_notches'),
-    warnings: Array.isArray(warnings) ? warnings.filter((entry): entry is string => typeof entry === 'string') : [],
+    warnings: Array.isArray(warnings)
+      ? warnings.flatMap((entry) => {
+          const message = typeof entry === 'string' ? entry : readString(readRecord(entry), 'message');
+          return message === null ? [] : [message];
+        })
+      : [],
   };
 }

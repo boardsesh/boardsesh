@@ -14,6 +14,40 @@ The generator itself lives in a private repo and runs as a separate worker
 service. This document covers the Boardsesh half: previews, orders, payment,
 the job API the generator pulls work from, and the download routes.
 
+## Supported layouts and OG drilling
+
+The catalogue offers Kilter Homewall (layout `8`) and Kilter Original (layout
+`1`). Original sizes are `14` (7×10), `8` (8×12), `10` (12×12), and `28`
+(16×12). Both Original sets, `1` and `20`, are required at every size. Pricing
+uses the existing personal and commercial single-build tiers.
+
+Original orders store `options.includeKicker`: false for 7×10, true by default
+and optional for the other three sizes. Original main-wall and kicker holds
+share their set IDs, so removing sets cannot remove its kicker. Layout previews,
+artwork validation and claimed jobs send this as `manufacturing.include_kicker`;
+when true they also send the selected `kicker.mat_clearance_mm`. Homewall still
+selects the kicker with sets `28,29`, and older stored orders continue to infer
+that selection without acquiring an Original default.
+
+Original foot positions have a 13 mm center bore, plus LED bores 20 mm above
+and below. An Original foot LED uses the center bore instead of a T-nut. The
+additional pair allows that position to serve a Homewall hold later. Original
+LED bores default to 12.7 mm; the configurable bolt bore remains 12.5 mm by
+default elsewhere. Packs include the complete matching Homewall pattern:
+7×10, 8×12, or a centered 10×12 within either larger Original wall. They do not
+claim compatibility with a nonexistent larger Homewall layout.
+
+The worker layout JSON distinguishes `dual` center bores from ordinary bolt
+and LED bores. Installed hardware counts are separate from spare compatibility
+holes. Original orientation engraving follows the manufacturer's **Number
+Angle** column; it indicates the hold number's orientation rather than a
+set-screw drilling direction. The source workbooks, normalization and geometry
+are maintained in the private generator repo.
+
+Deploy the generator with Original support before deploying this catalogue
+version. The existing `cnc-packs` feature gate still controls the shop; there
+are no new public routes or database migrations.
+
 ## The order row is the queue
 
 One row in `cnc_orders` per configuration a buyer previewed, and the same row
@@ -876,16 +910,16 @@ still leave a publicly browsable shop.
 
 ### The configurator
 
-Seven steps, in the order they appear: **board**, **size**, **kicker**,
+Seven steps, in the order they appear: **layout**, **size**, **kicker**,
 **options**, **engrave**, **licensee**, **tier**. Each one fires a
 `CNC Configurator Changed` funnel event debounced by 900 ms, so a buyer
 dragging through the option list produces one event describing where they
 stopped rather than twenty describing where they passed through.
 
-Board is a read-only statement rather than a select, because v1 sells one board
-and a select with a single option is a choice that is not one. It becomes a
-select the day a second board goes on sale, and the `board` step is already in
-the funnel contract so that day does not also need an analytics change.
+The layout selector offers Kilter Homewall and Kilter Original. Sizes are
+filtered by layout; switching layout resets manufacturing options and artwork
+so a drawing cannot silently carry into different panel geometry. The existing
+`board` funnel step records layout changes.
 
 State lives in a reducer in `configurator-state.ts`, and the options a wall may
 carry come from the backend catalogue rather than the client — the same registry

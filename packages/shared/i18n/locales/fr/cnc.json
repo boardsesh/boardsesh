@@ -16,7 +16,7 @@
   "hero": {
     "title": "Plans de construction pour ta board maison",
     "subtitle": "Des fichiers DXF qu'un atelier CNC découpe tels quels. Chaque panneau, la trame d'écrous à griffes, les perçages LED et le kicker, répartis sur les plaques que ton atelier a déjà en stock.",
-    "firstBoard": "Le Kilter Homewall est la première board prise en charge. D'autres suivront.",
+    "firstBoard": "Plans compatibles avec Kilter Homewall et Kilter Original (OG).",
     "included": {
       "heading": "Ce que tu reçois",
       "dxf": "Un DXF par panneau, plus les plans de montage du mur complet.",
@@ -61,14 +61,16 @@
     },
     "board": {
       "label": "Board",
-      "help": "Le Kilter Homewall est la seule board en vente aujourd'hui."
+      "help": "Choisis le layout de prises de ta board.",
+      "original": "Kilter Original (OG)",
+      "homewall": "Kilter Homewall"
     },
     "size": {
       "label": "Taille du mur",
       "help": "La taille Kilter que tu construis. Elle fixe la trame de prises et les dimensions du mur."
     },
     "kicker": {
-      "help": "Le panneau incliné du bas. Seuls les murs de 12 ft en ont un.",
+      "help": "Le panneau du bas. Disponible sur les murs de 12 pieds de haut.",
       "include": "Inclure le kicker",
       "exclude": "Sans kicker"
     },
@@ -280,12 +282,16 @@
       "sheets": "Plaques",
       "sheetsValue_one": "{{count}} plaque",
       "sheetsValue_other": "{{count}} plaques",
-      "tnuts": "Perçages d'écrous à griffes",
-      "leds": "Perçages LED",
-      "seamNotches": "Perçages LED sur un raccord",
-      "seamNotchesHelp": "Ces perçages LED tombent sur un raccord entre panneaux. Chacun est découpé en encoche dans les deux panneaux, et la LED se loge dans l’encoche une fois les panneaux assemblés.",
+      "tnuts": "Écrous à griffes à installer",
+      "leds": "LED à installer",
       "warningsHeading": "Bon à savoir",
-      "unavailable": "La liste de découpe ne charge pas pour l’instant. Tout ce que tu as choisi est toujours là."
+      "unavailable": "La liste de découpe ne charge pas pour l’instant. Tout ce que tu as choisi est toujours là.",
+      "spareMounts": "Trous de fixation supplémentaires",
+      "spareMountsHelp": "Positions supplémentaires pour le layout Homewall compatible. Ce sont des perçages, pas du matériel supplémentaire à installer sur ton OG.",
+      "skippedSeamLeds": "Trous LED à percer après assemblage",
+      "skippedSeamLedsHelp": "Ces positions croisent un raccord. Assemble les panneaux, puis perce les trous nécessaires avec les coordonnées d’assemblage et les diamètres fournis dans ton pack.",
+      "seamNotches": "Perçages LED sur un raccord",
+      "seamNotchesHelp": "Ces perçages LED tombent sur un raccord entre panneaux. Chacun est découpé en encoche dans les deux panneaux, et la LED se loge dans l’encoche une fois les panneaux assemblés."
     },
     "licensee": {
       "name": "Nom sur la licence",
@@ -320,6 +326,14 @@
       "heading": "Au nom de qui est la licence",
       "help": "La licence figure sur chaque fichier du pack : une copie qui fuite y remonte.",
       "stale": "Mets d'abord ton aperçu à jour — le mur a changé depuis ces planches."
+    },
+    "original": {
+      "drilling": "Nous recommandons trois trous pour chaque prise de pied OG vissée : un centre de 13 mm pour une LED et deux trous LED à 20 mm au-dessus et en dessous. Laisse le centre sans écrou à griffes avec les pieds OG.",
+      "compatibility": "Les trous supplémentaires couvrent le layout Homewall complet correspondant : 7×10 ou 8×12, et un 10×12 centré sur les grands murs OG.",
+      "angleLabel": "Graver les repères d’orientation du numéro de prise",
+      "angleHelp": "Utilise le Number Angle OG pour indiquer l’orientation du numéro imprimé sur la prise. Les angles manquants restent sans repère.",
+      "engraveHelp": "Numéros de prises et repères d’orientation, gravés pendant la découpe du panneau. Les deux sont activés par défaut.",
+      "engraveNote": "Les repères OG suivent l’orientation du numéro de prise, pas celle de la vis de blocage. Ils ne servent pas à percer les trous de vis."
     }
   },
   "cta": {

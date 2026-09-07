@@ -157,11 +157,11 @@ function respond(document: string) {
   return Promise.resolve({});
 }
 
-function renderConfigurator() {
+function renderConfigurator(catalogOverride = catalog()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <Configurator catalog={catalog()} locale="en-US" />
+      <Configurator catalog={catalogOverride} locale="en-US" />
     </QueryClientProvider>,
   );
 }
@@ -338,4 +338,54 @@ describe('the finalise step', () => {
     });
     await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(STRIPE_URL));
   });
+});
+
+it('switches layouts, filters sizes, clears the preview and sends the OG kicker option', async () => {
+  const mixedCatalog = catalog();
+  const homewall = mixedCatalog.entries[0];
+  mixedCatalog.entries.push(
+    ...[14, 28].map((sizeId) => ({
+      ...homewall,
+      layoutId: 1,
+      sizeId,
+      label: sizeId === 14 ? '7x10' : '16x12',
+      setIds: '1,20',
+      kickerOptional: sizeId === 28,
+      manufacturingOptions: [
+        ...homewall.manufacturingOptions,
+        {
+          key: 'includeKicker',
+          values: ['true', 'false'],
+          defaultValue: String(sizeId === 28),
+          valueType: 'boolean',
+          kickerOnly: false,
+        },
+      ],
+    })),
+  );
+  renderConfigurator(mixedCatalog);
+  await previewThisWall();
+
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Board' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Kilter Original (OG)' }));
+  await waitFor(() => expect(screen.queryByRole('img', { name: 'Panel 1' })).toBeNull());
+  expect(screen.getByRole('button', { name: 'Get a free preview' })).toBeDefined();
+  expect(lastLayoutConfig()).toMatchObject({
+    layoutId: 1,
+    sizeId: 14,
+    setIds: '1,20',
+    options: { includeKicker: false },
+  });
+
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Wall size' }));
+  expect(screen.queryByRole('option', { name: '10x12' })).toBeNull();
+  fireEvent.click(screen.getByRole('option', { name: '16x12' }));
+  expect(lastLayoutConfig()).toMatchObject({
+    layoutId: 1,
+    sizeId: 28,
+    setIds: '1,20',
+    options: { includeKicker: true },
+  });
+  fireEvent.click(screen.getByRole('switch', { name: 'Include the kicker' }));
+  expect(lastLayoutConfig()).toMatchObject({ setIds: '1,20', options: { includeKicker: false } });
 });

@@ -16,7 +16,7 @@
   "hero": {
     "title": "Planos para construir tu plafón en casa",
     "subtitle": "Archivos DXF que un taller CNC corta directamente. Cada panel, la retícula de tuercas en T, los agujeros de LED y la repisa, repartidos en las planchas que tu taller ya tiene.",
-    "firstBoard": "El Kilter Homewall es el primer plafón compatible. Vendrán más.",
+    "firstBoard": "Planos compatibles con Kilter Homewall y Kilter Original (OG).",
     "included": {
       "heading": "Qué te llevas",
       "dxf": "Un DXF por panel, más los planos de montaje del muro entero.",
@@ -61,14 +61,16 @@
     },
     "board": {
       "label": "Plafón",
-      "help": "El Kilter Homewall es el único plafón a la venta hoy."
+      "help": "Elige el layout de presas que usará tu plafón.",
+      "original": "Kilter Original (OG)",
+      "homewall": "Kilter Homewall"
     },
     "size": {
       "label": "Tamaño del muro",
       "help": "El tamaño de Kilter que vas a construir. Define la retícula de presas y las medidas del muro."
     },
     "kicker": {
-      "help": "El panel inclinado de abajo. Solo la tienen los muros de 12 ft.",
+      "help": "El panel inferior. Disponible en los muros de 12 pies de alto.",
       "include": "Incluir la repisa",
       "exclude": "Sin repisa"
     },
@@ -280,12 +282,16 @@
       "sheets": "Planchas",
       "sheetsValue_one": "{{count}} plancha",
       "sheetsValue_other": "{{count}} planchas",
-      "tnuts": "Agujeros de tuerca en T",
-      "leds": "Agujeros de LED",
-      "seamNotches": "Agujeros de LED en una junta",
-      "seamNotchesHelp": "Estos agujeros de LED caen sobre una junta entre paneles. Cada uno se corta como una muesca en los dos paneles, y el LED queda alojado en la muesca cuando los paneles se unen.",
+      "tnuts": "Tuercas de araña a instalar",
+      "leds": "LED a instalar",
       "warningsHeading": "Conviene saberlo",
-      "unavailable": "La lista de corte no carga ahora mismo. Todo lo que has elegido sigue aquí."
+      "unavailable": "La lista de corte no carga ahora mismo. Todo lo que has elegido sigue aquí.",
+      "spareMounts": "Agujeros de montaje adicionales",
+      "spareMountsHelp": "Posiciones adicionales para el layout Homewall compatible. Son agujeros perforados, no herrajes adicionales para tu montaje OG.",
+      "skippedSeamLeds": "Agujeros LED a perforar tras el montaje",
+      "skippedSeamLedsHelp": "Estas posiciones cruzan una junta. Une los paneles y perfora los agujeros necesarios con las coordenadas de montaje y los diámetros incluidos en tu pack.",
+      "seamNotches": "Agujeros de LED en una junta",
+      "seamNotchesHelp": "Estos agujeros de LED caen sobre una junta entre paneles. Cada uno se corta como una muesca en los dos paneles, y el LED queda alojado en la muesca cuando los paneles se unen."
     },
     "licensee": {
       "name": "Nombre en la licencia",
@@ -320,6 +326,14 @@
       "heading": "A nombre de quién va la licencia",
       "help": "La licencia va en todos los archivos del pack, así que una copia filtrada se rastrea hasta ella.",
       "stale": "Actualiza antes la vista previa: el muro ha cambiado desde estas hojas."
+    },
+    "original": {
+      "drilling": "Recomendamos tres agujeros en cada presa de pie OG atornillada: un centro de 13 mm para un LED y dos agujeros LED a 20 mm por encima y por debajo. Deja el centro sin tuerca de araña al usar los pies OG.",
+      "compatibility": "Los agujeros adicionales cubren el layout Homewall completo correspondiente: 7×10 u 8×12, y un 10×12 centrado en los muros OG más grandes.",
+      "angleLabel": "Grabar marcas de orientación del número de presa",
+      "angleHelp": "Usa el Number Angle de OG para indicar hacia dónde debe mirar el número impreso de la presa. Los ángulos ausentes quedan sin marcar.",
+      "engraveHelp": "Números de presa y sus marcas de orientación, grabados al cortar el panel. Ambos están activados por defecto.",
+      "engraveNote": "Las marcas OG siguen la orientación del número de presa, no del tornillo de fijación. Estas marcas no se usan para perforar agujeros de tornillo."
     }
   },
   "cta": {
