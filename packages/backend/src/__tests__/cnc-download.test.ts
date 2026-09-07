@@ -31,7 +31,7 @@ vi.mock('../services/analytics/posthog', () => ({ captureBackendEvent: captureBa
 import { eq } from 'drizzle-orm';
 import { cncOrders, type CncOrderOptions } from '@boardsesh/db/schema';
 import { db } from '../db/client';
-import { handleCncPackDownload } from '../handlers/cnc-download';
+import { handleCncPackDownload, handleCncPackPreviewImage } from '../handlers/cnc-download';
 import { initCors } from '../handlers/cors';
 import { createDownloadGrant } from '../services/cnc/download-grant';
 
@@ -99,12 +99,21 @@ function makeRequest(headers: Record<string, string> = {}, method = 'GET') {
   return Object.assign(Readable.from([]), { method, headers });
 }
 
-type DownloadOptions = { bearer?: string; grant?: string; method?: string; origin?: string };
+type DownloadOptions = {
+  bearer?: string;
+  grant?: string;
+  method?: string;
+  origin?: string;
+  kind?: 'preview' | 'full';
+};
 
 async function download(licenceId: string, options: DownloadOptions = {}): Promise<TestResponse> {
   const res = new TestResponse();
+  const query = new URLSearchParams();
+  if (options.kind) query.set('kind', options.kind);
+  if (options.grant) query.set('token', options.grant);
   const url = new URL(
-    `/api/cnc/packs/${encodeURIComponent(licenceId)}/download${options.grant ? `?token=${encodeURIComponent(options.grant)}` : ''}`,
+    `/api/cnc/packs/${encodeURIComponent(licenceId)}/download${query.size > 0 ? `?${query.toString()}` : ''}`,
     'http://backend.test',
   );
   const headers: Record<string, string> = { host: 'backend.test' };
@@ -181,6 +190,44 @@ async function insertOrder(overrides: Partial<typeof cncOrders.$inferInsert> = {
 async function readOrder(orderId: number) {
   const [order] = await db.select().from(cncOrders).where(eq(cncOrders.id, orderId)).limit(1);
   return order;
+}
+
+/** Everything a preview adds to an order row, keyed off its licence id. */
+function previewColumns(licenceId: string) {
+  return {
+    previewZipKey: `cnc-packs/user-123/${licenceId}_preview.zip`,
+    previewZipSizeBytes: ZIP_BYTES,
+    previewGeneratedAt: new Date(),
+    previewKeys: [`cnc-packs/user-123/${licenceId}/preview/panel1.png`],
+    previewsGenerated: 1,
+  };
+}
+
+/** GET one preview image and wait for the piped body. */
+async function previewImage(
+  licenceId: string,
+  name: string,
+  options: { bearer?: string; grant?: string } = {},
+): Promise<TestResponse> {
+  const res = new TestResponse();
+  const url = new URL(
+    `/api/cnc/packs/${encodeURIComponent(licenceId)}/preview/${encodeURIComponent(name)}` +
+      (options.grant ? `?token=${encodeURIComponent(options.grant)}` : ''),
+    'http://backend.test',
+  );
+  const headers: Record<string, string> = { host: 'backend.test' };
+  if (options.bearer) headers.authorization = `Bearer ${options.bearer}`;
+  const req = makeRequest(headers, 'GET');
+  const settled = new Promise<void>((resolve) => {
+    res.once('close', () => resolve());
+  });
+  await handleCncPackPreviewImage(
+    req as unknown as import('http').IncomingMessage,
+    res as unknown as import('http').ServerResponse,
+    url,
+  );
+  await settled;
+  return res;
 }
 
 /** The bytes the stubbed bucket hands back, and the size the order row records. */
@@ -426,5 +473,178 @@ describe('GET /api/cnc/packs/:licenceId/download', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.headers['Access-Control-Allow-Origin']).toBeUndefined();
+  });
+});
+
+describe('GET /api/cnc/packs/:licenceId/download?kind=preview', () => {
+  it('streams the watermarked preview zip under its own filename', async () => {
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({ licenceId, status: 'preview_ready', zipKey: null, ...previewColumns(licenceId) });
+
+    const res = await download(order.licenceId, { bearer: 'session-token', kind: 'preview' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Disposition']).toBe(
+      `attachment; filename="boardsesh-build-plans-preview-${order.licenceId}.zip"`,
+    );
+    expect(getFromS3Mock).toHaveBeenCalledWith('private', `cnc-packs/user-123/${order.licenceId}_preview.zip`);
+  });
+
+  it('does not count a preview fetch as a pack download', async () => {
+    // `download_count` and its event exist to spot a LICENSED file being pulled
+    // over and over. A buyer flicking through their own watermarked preview is
+    // not that.
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({ licenceId, status: 'preview_ready', zipKey: null, ...previewColumns(licenceId) });
+
+    await download(order.licenceId, { bearer: 'session-token', kind: 'preview' });
+
+    expect((await readOrder(order.id)).downloadCount).toBe(0);
+    expect(captureBackendEventMock).not.toHaveBeenCalled();
+  });
+
+  it('still serves the preview after the pack has been bought and built', async () => {
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({ licenceId, ...previewColumns(licenceId) });
+
+    const res = await download(order.licenceId, { bearer: 'session-token', kind: 'preview' });
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('409s on the FULL pack of an order that has only been previewed', async () => {
+    // The whole point of the two kinds: a preview being ready is not the DXFs
+    // being paid for.
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({ licenceId, status: 'preview_ready', zipKey: null, ...previewColumns(licenceId) });
+
+    const res = await download(order.licenceId, { bearer: 'session-token' });
+
+    expect(res.statusCode).toBe(409);
+    expect(getFromS3Mock).not.toHaveBeenCalled();
+  });
+
+  it('409s on a preview that has not been generated yet', async () => {
+    const order = await insertOrder({ status: 'preview_queued', zipKey: null });
+
+    const res = await download(order.licenceId, { bearer: 'session-token', kind: 'preview' });
+
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('403s on a refunded order, preview and pack alike', async () => {
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({
+      licenceId,
+      status: 'refunded',
+      refundedAt: new Date(),
+      ...previewColumns(licenceId),
+    });
+
+    expect((await download(order.licenceId, { bearer: 'session-token', kind: 'preview' })).statusCode).toBe(403);
+    expect((await download(order.licenceId, { bearer: 'session-token' })).statusCode).toBe(403);
+  });
+
+  it('defaults to the full pack when no kind is given, so existing links keep working', async () => {
+    const order = await insertOrder();
+
+    const res = await download(order.licenceId, { bearer: 'session-token' });
+
+    expect(res.statusCode).toBe(200);
+    expect(getFromS3Mock).toHaveBeenCalledWith('private', `cnc-packs/user-123/${order.licenceId}.zip`);
+  });
+});
+
+describe('GET /api/cnc/packs/:licenceId/preview/:name', () => {
+  it('streams one sheet as a cacheable PNG', async () => {
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({ licenceId, status: 'preview_ready', zipKey: null, ...previewColumns(licenceId) });
+
+    const res = await previewImage(order.licenceId, 'panel1.png', { bearer: 'session-token' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Type']).toBe('image/png');
+    // An order page holds a dozen of these; re-fetching them on every scroll
+    // would be a dozen HMACs and a dozen bucket reads for an unchanging image.
+    expect(res.headers['Cache-Control']).toBe('private, max-age=3600');
+    expect(res.headers['X-Content-Type-Options']).toBe('nosniff');
+    expect(getFromS3Mock).toHaveBeenCalledWith('private', `cnc-packs/user-123/${order.licenceId}/preview/panel1.png`);
+  });
+
+  it('accepts a grant token, the way an <img src> has to', async () => {
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({ licenceId, status: 'preview_ready', zipKey: null, ...previewColumns(licenceId) });
+    const { token } = createDownloadGrant({ orderId: order.id, userId: 'user-123' }, new Date());
+
+    const res = await previewImage(order.licenceId, 'panel1.png', { grant: token });
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('404s a name this order does not have, rather than reading whatever it points at', async () => {
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({ licenceId, status: 'preview_ready', zipKey: null, ...previewColumns(licenceId) });
+
+    const res = await previewImage(order.licenceId, 'panel9.png', { bearer: 'session-token' });
+
+    expect(res.statusCode).toBe(404);
+    expect(getFromS3Mock).not.toHaveBeenCalled();
+  });
+
+  it('cannot be walked out of the licence directory', async () => {
+    // The name is matched against the BASENAMES of stored keys, so a traversal
+    // attempt matches nothing at all rather than being sanitised.
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({ licenceId, status: 'preview_ready', zipKey: null, ...previewColumns(licenceId) });
+
+    const res = await previewImage(order.licenceId, '../../exports/user-999/data.png', { bearer: 'session-token' });
+
+    expect(res.statusCode).toBe(404);
+    expect(getFromS3Mock).not.toHaveBeenCalled();
+  });
+
+  it('404s somebody else’s preview exactly as it 404s one that does not exist', async () => {
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({
+      licenceId,
+      userId: null,
+      status: 'preview_ready',
+      zipKey: null,
+      ...previewColumns(licenceId),
+    });
+
+    expect((await previewImage(order.licenceId, 'panel1.png', { bearer: 'session-token' })).statusCode).toBe(404);
+    expect((await previewImage('BS-CNC-ZZZZZZ', 'panel1.png', { bearer: 'session-token' })).statusCode).toBe(404);
+  });
+
+  it('409s while the preview is still generating', async () => {
+    const order = await insertOrder({ status: 'preview_generating', zipKey: null });
+
+    const res = await previewImage(order.licenceId, 'panel1.png', { bearer: 'session-token' });
+
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('403s once the order is refunded', async () => {
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({
+      licenceId,
+      status: 'refunded',
+      refundedAt: new Date(),
+      ...previewColumns(licenceId),
+    });
+
+    const res = await previewImage(order.licenceId, 'panel1.png', { bearer: 'session-token' });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('401s without any credentials at all', async () => {
+    const licenceId = nextLicenceId();
+    const order = await insertOrder({ licenceId, status: 'preview_ready', zipKey: null, ...previewColumns(licenceId) });
+
+    const res = await previewImage(order.licenceId, 'panel1.png');
+
+    expect(res.statusCode).toBe(401);
   });
 });

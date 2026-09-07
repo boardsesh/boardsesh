@@ -309,6 +309,17 @@ async function announcePurchase(order: CncOrder, amountExcludingTaxCents: number
   // The account is nullable (the licence outlives it — `set null` on account
   // deletion), so there may be nothing to look up.
   const accountEmail = order.userId ? await getAccountEmail(order.userId) : null;
+  // Never null on this path: `tier` is nullable only before finalise, and this
+  // runs on a paid order. Narrowed rather than asserted so a genuinely
+  // tier-less order skips the receipt instead of mailing "undefined licence".
+  const { tier } = order;
+  if (!tier) {
+    logger.error('[cnc-webhook] a paid order has no licence tier; skipping the receipt', {
+      orderId: order.id,
+      licenceId: order.licenceId,
+    });
+    return;
+  }
   const recipients = new Set<string>();
   if (accountEmail) recipients.add(accountEmail);
   if (order.licenseeEmail) recipients.add(order.licenseeEmail);
@@ -319,7 +330,7 @@ async function announcePurchase(order: CncOrder, amountExcludingTaxCents: number
       licenseeName: order.licenseeName ?? 'there',
       licenceId: order.licenceId,
       boardLabel,
-      tier: order.tier,
+      tier,
       orderUrl: `${webPublicUrl()}/build-plans/orders/${encodeURIComponent(order.licenceId)}`,
     });
   }
@@ -329,7 +340,7 @@ async function announcePurchase(order: CncOrder, amountExcludingTaxCents: number
     // the fallback identity — a purchase with no distinct id would be dropped.
     distinctId: order.userId ?? order.licenceId,
     properties: {
-      tier: order.tier,
+      tier,
       board_name: order.boardName,
       layout_id: order.layoutId,
       size_id: order.sizeId,

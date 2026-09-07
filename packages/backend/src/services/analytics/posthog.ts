@@ -39,6 +39,14 @@ export type BackendAnalyticsEvent =
   // (null otherwise); use it rather than deriving a pre-tax figure from
   // `amount_cents` with a guessed rate.
   | 'Build Plans Pack Purchased'
+  // Fires from the worker's preview completion — the free, watermarked pack
+  // that now stands between "configured a wall" and "paid for one". It is the
+  // top of the build-plans funnel and the denominator every later step is read
+  // against: previews generated → `Checkout Started` (client, at finalise) →
+  // `Build Plans Pack Purchased`. Count DISTINCT USERS for the funnel;
+  // `preview_index` above 1 is a generator retry, not a buyer iterating, since
+  // changing anything writes a new order row.
+  | 'Build Plans Preview Generated'
   // Fires from the authenticated download route, once per successful stream.
   // Counts EVENTS, not distinct users, on purpose: a buyer re-downloading their
   // own pack is the signal (a pack that is fetched twenty times is a pack

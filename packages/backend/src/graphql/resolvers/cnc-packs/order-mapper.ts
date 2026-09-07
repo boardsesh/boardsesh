@@ -1,5 +1,12 @@
 import type { CncOrder } from '@boardsesh/db/schema';
 import { toPublicOrder } from '../../../services/cnc/orders';
+import { orderConfigHash } from '../../../services/cnc/config-hash';
+import {
+  CNC_PREVIEW_IMAGE_GRANT_TTL_MS,
+  createDownloadGrant,
+  isDownloadGrantConfigured,
+} from '../../../services/cnc/download-grant';
+import { backendPublicUrl } from '../../../utils/public-urls';
 
 /**
  * One place that turns an order row into the GraphQL `CncOrder` type.
@@ -21,8 +28,55 @@ import { toPublicOrder } from '../../../services/cnc/orders';
 export const CNC_PUBLIC_FAILURE_MESSAGE =
   'This pack could not be generated. Boardsesh has been notified and will be in touch by email.';
 
+/**
+ * What a buyer is told when a free preview failed.
+ *
+ * Different from the paid message on purpose: nobody has been notified, nobody
+ * is going to email them, and the thing that fixes it is theirs to do — ask
+ * again, or change the wall.
+ */
+export const CNC_PUBLIC_PREVIEW_FAILURE_MESSAGE =
+  'This preview could not be generated. Try again, or change the configuration.';
+
 function isoOrNull(value: Date | null): string | null {
   return value ? value.toISOString() : null;
+}
+
+/**
+ * The watermarked sheets as `<img src>`-ready URLs.
+ *
+ * Each carries its own one-hour grant rather than the page fetching a link per
+ * image: an order page shows five to a dozen of these at once, and a round trip
+ * per thumbnail would be a dozen mutations to render one screen.
+ *
+ * The URL is built from the key's BASENAME, never the key. The stored keys are
+ * private-bucket paths, and the route resolves a basename back to a key it
+ * already trusts — so nothing a client holds is a path into the bucket.
+ *
+ * Empty when there are no previews, and also when `CNC_DOWNLOAD_TOKEN_SECRET`
+ * is unset: an image URL that cannot be signed is a broken image, and an empty
+ * gallery is the honest version of that.
+ */
+function toPreviewImages(order: CncOrder): { name: string; url: string }[] {
+  const keys = order.previewKeys;
+  const ownerId = order.userId;
+  if (!Array.isArray(keys) || keys.length === 0) return [];
+  if (!ownerId || !isDownloadGrantConfigured()) return [];
+
+  const now = new Date();
+  return keys.flatMap((key) => {
+    const name = key.split('/').pop();
+    if (!name) return [];
+    const { token } = createDownloadGrant({ orderId: order.id, userId: ownerId }, now, CNC_PREVIEW_IMAGE_GRANT_TTL_MS);
+    return [
+      {
+        name,
+        url:
+          `${backendPublicUrl()}/api/cnc/packs/${encodeURIComponent(order.licenceId)}` +
+          `/preview/${encodeURIComponent(name)}?token=${encodeURIComponent(token)}`,
+      },
+    ];
+  });
 }
 
 /**
@@ -31,6 +85,11 @@ function isoOrNull(value: Date | null): string | null {
  * Runs on the output of `toPublicOrder`, so the fingerprint manifest, the claim
  * token, the worker id and the raw error are already gone by the time this is
  * reached — this function cannot leak them because it never sees them.
+ *
+ * Two fields read off the RAW row, deliberately. `previewKeys` is stripped for
+ * the buyer (it is a bucket path) but is what the preview URLs are built from,
+ * and `configHash` is recomputed for rows written before that column existed so
+ * the field can stay non-null for every order in the list.
  */
 export function toGraphQLOrder(order: CncOrder) {
   const publicOrder = toPublicOrder(order);
@@ -55,7 +114,19 @@ export function toGraphQLOrder(order: CncOrder) {
     zipSizeBytes: publicOrder.zipSizeBytes,
     downloadCount: publicOrder.downloadCount,
     lastDownloadedAt: isoOrNull(publicOrder.lastDownloadedAt),
-    errorMessage: publicOrder.status === 'failed' ? CNC_PUBLIC_FAILURE_MESSAGE : null,
+    errorMessage:
+      publicOrder.status === 'failed'
+        ? CNC_PUBLIC_FAILURE_MESSAGE
+        : publicOrder.status === 'preview_failed'
+          ? CNC_PUBLIC_PREVIEW_FAILURE_MESSAGE
+          : null,
+    // Keyed off the zip, not the images: an order can have PNGs in the bucket
+    // and still be mid-completion, and this is what a client gates "Download
+    // preview" on.
+    hasPreview: publicOrder.previewGeneratedAt !== null,
+    previewGeneratedAt: isoOrNull(publicOrder.previewGeneratedAt),
+    previewImages: toPreviewImages(order),
+    configHash: orderConfigHash(order),
   };
 }
 

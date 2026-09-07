@@ -4,7 +4,14 @@ import { randomUUID } from 'node:crypto';
 import { cncOrders, users, type CncOrder, type CncOrderArtworkItem, type CncOrderOptions } from '@boardsesh/db/schema';
 import { db } from '../../db/client';
 import { generateLicenceId } from './licence-id';
-import { CNC_LEASE_MS, CNC_MAX_ATTEMPTS, transitionFor, type CncOrderEvent, type CncOrderStatus } from './order-state';
+import {
+  CNC_LEASE_MS,
+  CNC_MAX_ATTEMPTS,
+  deliverableForStatus,
+  transitionFor,
+  type CncOrderEvent,
+  type CncOrderStatus,
+} from './order-state';
 import { CNC_CATALOG_VERSION, type CncLicenceTier } from './catalog';
 
 export { CNC_MAX_ATTEMPTS } from './order-state';
@@ -48,9 +55,8 @@ const leaseExpiredSql = or(
   lt(cncOrders.heartbeatAt, sql`now() - make_interval(secs => ${CNC_LEASE_MS / 1000}::double precision)`),
 );
 
-export type CreatePendingOrderInput = {
+export type CreatePreviewOrderInput = {
   userId: string;
-  tier: CncLicenceTier;
   boardName: string;
   layoutId: number;
   sizeId: number;
@@ -59,12 +65,8 @@ export type CreatePendingOrderInput = {
   artwork?: CncOrderArtworkItem[] | null;
   /** Defaults to the current {@link CNC_CATALOG_VERSION} — callers only pass this to pin an older one. */
   catalogVersion?: string;
-  licenseeName: string;
-  licenseeEmail: string;
-  customerSiteName?: string | null;
-  licenceAcceptedAt: Date;
-  currency: string;
-  amountCents: number;
+  /** sha256 of the canonical configuration. The dedupe key, and the row's record of what it previewed. */
+  configHash: string;
 };
 
 /** Postgres unique-violation SQLSTATE. */
@@ -82,14 +84,26 @@ function isLicenceIdCollision(error: unknown): boolean {
 }
 
 /**
- * Insert an order in `pending_payment`, before Stripe Checkout opens.
+ * Insert an order in `preview_queued`: the free preview, and the first row of
+ * every build-pack purchase.
+ *
+ * No tier, no licensee, no price. Nothing has been sold yet — those columns are
+ * written by `finaliseCncOrder`, which is also where the licence is accepted.
+ * The licence id IS assigned here and reused at finalise: it is the order's
+ * public id, the order page works from the moment this returns, and it is
+ * printed on the preview sheets so a support conversation about a preview names
+ * the same thing as one about the pack it becomes.
+ *
+ * `queued_at` is stamped on insert, unlike the paid path where it waits for the
+ * webhook: a preview has no payment to wait for, so it is claimable the instant
+ * the row exists.
  *
  * The licence id is generated optimistically and retried on the unique-index
  * violation rather than checked for existence first — a check-then-insert races
- * with a concurrent purchase, and at ~29 bits a collision is rare enough that
+ * with a concurrent request, and at ~29 bits a collision is rare enough that
  * the retry never costs anything in practice.
  */
-export async function createPendingOrder(input: CreatePendingOrderInput): Promise<CncOrder> {
+export async function createPreviewOrder(input: CreatePreviewOrderInput): Promise<CncOrder> {
   const maxLicenceIdAttempts = 5;
   for (let attempt = 1; attempt <= maxLicenceIdAttempts; attempt += 1) {
     try {
@@ -98,8 +112,8 @@ export async function createPendingOrder(input: CreatePendingOrderInput): Promis
         .values({
           licenceId: generateLicenceId(),
           userId: input.userId,
-          tier: input.tier,
-          status: 'pending_payment',
+          tier: null,
+          status: 'preview_queued',
           boardName: input.boardName,
           layoutId: input.layoutId,
           sizeId: input.sizeId,
@@ -107,12 +121,8 @@ export async function createPendingOrder(input: CreatePendingOrderInput): Promis
           options: input.options,
           artwork: input.artwork ?? null,
           catalogVersion: input.catalogVersion ?? CNC_CATALOG_VERSION,
-          licenseeName: input.licenseeName,
-          licenseeEmail: input.licenseeEmail,
-          customerSiteName: input.customerSiteName ?? null,
-          licenceAcceptedAt: input.licenceAcceptedAt,
-          currency: input.currency,
-          amountCents: input.amountCents,
+          configHash: input.configHash,
+          queuedAt: new Date(),
         })
         .returning();
       return order;
@@ -122,6 +132,59 @@ export async function createPendingOrder(input: CreatePendingOrderInput): Promis
   }
   // Unreachable: the loop either returns or rethrows on its last attempt.
   throw new Error('[cnc-orders] exhausted licence id attempts');
+}
+
+/**
+ * Statuses a config-hash match may be handed back from.
+ *
+ * A preview that is queued, running or ready is the answer to "preview this
+ * configuration" — the buyer gets the order they already have and watches it
+ * finish. A `preview_failed` match is deliberately absent: asking again is the
+ * buyer retrying, and a retry has to produce a job. Everything past
+ * `pending_payment` is absent too, because a finalised order is a purchase in
+ * progress and must never be returned as if it were a fresh free preview.
+ */
+const PREVIEW_DEDUPE_STATUSES: readonly CncOrderStatus[] = ['preview_queued', 'preview_generating', 'preview_ready'];
+
+/**
+ * This buyer's live preview of exactly this configuration, if there is one.
+ *
+ * Served by `cnc_orders_user_config_hash_idx`. Newest first, because a
+ * `preview_ready` row and an older one for the same hash can coexist (a retry
+ * that raced), and the buyer wants the one that is furthest along.
+ */
+export async function findPreviewOrderByConfigHash(userId: string, configHash: string): Promise<CncOrder | null> {
+  const [order] = await db
+    .select()
+    .from(cncOrders)
+    .where(
+      and(
+        eq(cncOrders.userId, userId),
+        eq(cncOrders.configHash, configHash),
+        inArray(cncOrders.status, PREVIEW_DEDUPE_STATUSES),
+      ),
+    )
+    .orderBy(desc(cncOrders.createdAt), desc(cncOrders.id))
+    .limit(1);
+  return order ?? null;
+}
+
+/**
+ * How many orders this buyer has started since `since`.
+ *
+ * The hourly preview ceiling. Every order now begins as a preview, so counting
+ * rows created in the window IS the preview count — there is no second way to
+ * write one. A database count rather than the in-process limiter because
+ * `applyRateLimit`'s window is one minute: four previews a minute is not the
+ * limit anybody meant, and a limiter that resets on deploy is not a limit on a
+ * job that costs real generator seconds.
+ */
+export async function countOrdersCreatedSince(userId: string, since: Date): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(cncOrders)
+    .where(and(eq(cncOrders.userId, userId), gte(cncOrders.createdAt, since)));
+  return row?.count ?? 0;
 }
 
 export async function getOrderByLicenceId(licenceId: string): Promise<CncOrder | null> {
@@ -277,6 +340,13 @@ export async function getAccountEmail(userId: string): Promise<string | null> {
  */
 export type CncOrderPatch = {
   status?: CncOrderStatus;
+  // Written at finalise, which is where a free preview becomes a sale. Null
+  // until then — see the `tier` note on the schema.
+  tier?: CncLicenceTier | null;
+  licenseeName?: string | null;
+  licenseeEmail?: string | null;
+  customerSiteName?: string | null;
+  licenceAcceptedAt?: Date | null;
   queuedAt?: Date | null;
   claimedAt?: Date | null;
   heartbeatAt?: Date | null;
@@ -299,6 +369,11 @@ export type CncOrderPatch = {
   zipSizeBytes?: number | null;
   zipSha256?: string | null;
   fingerprintManifest?: Record<string, unknown> | null;
+  previewZipKey?: string | null;
+  previewZipSizeBytes?: number | null;
+  previewGeneratedAt?: Date | null;
+  previewKeys?: string[] | null;
+  previewsGenerated?: number;
 };
 
 export type TransitionOrderOptions = {
@@ -350,11 +425,11 @@ export async function transitionOrder(
   const transition = transitionFor(event);
   // 'new' is the pre-insert state — there is no row to condition an UPDATE on
   // — so it never belongs in the allowed-from list here. Only
-  // `createCheckoutSession` lists it, and that event goes through
-  // `createPendingOrder` instead of `transitionOrder`.
+  // `previewRequested` lists it, and that event goes through
+  // `createPreviewOrder` instead of `transitionOrder`.
   const allowedFromStatuses = transition.from.filter((status): status is CncOrderStatus => status !== 'new');
   if (allowedFromStatuses.length === 0) {
-    throw new Error(`[cnc-orders] "${event}" has no existing-row transition; use createPendingOrder instead`);
+    throw new Error(`[cnc-orders] "${event}" has no existing-row transition; use createPreviewOrder instead`);
   }
 
   const targetStatus = transition.to ?? patch.status;
@@ -394,7 +469,16 @@ export async function recordWorkerHeartbeat(orderId: number, claimToken: string)
   const rows = await db
     .update(cncOrders)
     .set({ heartbeatAt: sql`now()`, updatedAt: new Date() })
-    .where(and(eq(cncOrders.id, orderId), eq(cncOrders.status, 'generating'), eq(cncOrders.claimToken, claimToken)))
+    .where(
+      and(
+        eq(cncOrders.id, orderId),
+        // Both leases, one route: the worker heartbeats a preview job exactly
+        // the way it heartbeats a paid one, and the claim token is what says
+        // which job it holds.
+        inArray(cncOrders.status, ['generating', 'preview_generating']),
+        eq(cncOrders.claimToken, claimToken),
+      ),
+    )
     .returning({ id: cncOrders.id });
   return rows.length > 0;
 }
@@ -434,16 +518,25 @@ export async function recordDownload(orderId: number, now: Date): Promise<void> 
  * on the poll path.
  */
 export async function failStaleExhaustedJobs(): Promise<CncOrder[]> {
-  return db
+  const reapedAt = new Date();
+  const lastError = 'Lease expired after the final generation attempt';
+
+  // Two statements rather than one with a CASE: the two queues land in
+  // different terminal statuses, and a CASE inside `.set()` would be the only
+  // raw SQL in this file that a plain conditional already expresses.
+  const reapedFull = await db
     .update(cncOrders)
-    .set({
-      status: 'failed',
-      lastError: 'Lease expired after the final generation attempt',
-      claimToken: null,
-      updatedAt: new Date(),
-    })
+    .set({ status: 'failed', lastError, claimToken: null, updatedAt: reapedAt })
     .where(and(eq(cncOrders.status, 'generating'), leaseExpiredSql, gte(cncOrders.attempts, CNC_MAX_ATTEMPTS)))
     .returning();
+
+  const reapedPreview = await db
+    .update(cncOrders)
+    .set({ status: 'preview_failed', lastError, claimToken: null, updatedAt: reapedAt })
+    .where(and(eq(cncOrders.status, 'preview_generating'), leaseExpiredSql, gte(cncOrders.attempts, CNC_MAX_ATTEMPTS)))
+    .returning();
+
+  return [...reapedFull, ...reapedPreview];
 }
 
 /**
@@ -458,8 +551,9 @@ export async function failStaleExhaustedJobs(): Promise<CncOrder[]> {
  * READ COMMITTED, SKIP LOCKED only skips rows whose lock is currently held; if
  * this transaction commits between another claimer's snapshot and its lock
  * attempt, Postgres re-evaluates the WHERE quals (never the ORDER BY) against
- * the new row version. Both quals are falsified here: `status` leaves 'queued',
- * and `heartbeat_at` is stamped to now so the stale-lease branch is false too.
+ * the new row version. Both quals are falsified here: `status` leaves
+ * 'queued'/'preview_queued', and `heartbeat_at` is stamped to now so the
+ * stale-lease branch is false too.
  *
  * The lease stamps are written with the DATABASE clock, not `now`. The
  * staleness predicate reads `now()`, so a worker process whose clock runs slow
@@ -472,18 +566,31 @@ export async function claimNextJob(workerId: string, now: Date): Promise<CncOrde
 
   return db.transaction(async (tx) => {
     const candidates = await tx
-      .select({ id: cncOrders.id, attempts: cncOrders.attempts })
+      .select({ id: cncOrders.id, attempts: cncOrders.attempts, status: cncOrders.status })
       .from(cncOrders)
       .where(
         or(
           eq(cncOrders.status, 'queued'),
           and(eq(cncOrders.status, 'generating'), leaseExpiredSql, lt(cncOrders.attempts, CNC_MAX_ATTEMPTS)),
+          eq(cncOrders.status, 'preview_queued'),
+          and(eq(cncOrders.status, 'preview_generating'), leaseExpiredSql, lt(cncOrders.attempts, CNC_MAX_ATTEMPTS)),
         ),
       )
-      // Oldest queued first. NULLS FIRST is unreachable in practice (queued_at
-      // is stamped with the status) but keeps a row that somehow lost its stamp
-      // at the front rather than stranded at the back forever.
-      .orderBy(sql`${cncOrders.queuedAt} ASC NULLS FIRST`)
+      // Paid packs before free previews, then oldest first within each. A
+      // preview is a buyer still deciding; a full job is one who has paid and
+      // is waiting, so a burst of previews must never leave a purchase sitting
+      // behind them. Written as a sort key rather than as two queries because
+      // the whole point of the claim is that ONE `FOR UPDATE SKIP LOCKED` scan
+      // decides — two passes would need two locks and could hand the same
+      // worker nothing while a row sat free between them.
+      //
+      // NULLS FIRST on queued_at is unreachable in practice (queued_at is
+      // stamped with the status) but keeps a row that somehow lost its stamp at
+      // the front rather than stranded at the back forever.
+      .orderBy(
+        sql`CASE WHEN ${cncOrders.status} IN ('queued', 'generating') THEN 0 ELSE 1 END ASC`,
+        sql`${cncOrders.queuedAt} ASC NULLS FIRST`,
+      )
       .limit(1)
       .for('update', { skipLocked: true });
 
@@ -493,7 +600,7 @@ export async function claimNextJob(workerId: string, now: Date): Promise<CncOrde
     const [claimed] = await tx
       .update(cncOrders)
       .set({
-        status: 'generating',
+        status: deliverableForStatus(candidate.status) === 'preview' ? 'preview_generating' : 'generating',
         attempts: candidate.attempts + 1,
         // A fresh token per claim is what lets a complete/fail report from a
         // worker that lost its lease be recognised and ignored.
@@ -524,6 +631,8 @@ type CncOrderInternalColumn =
   | 'workerId'
   | 'lastError'
   | 'zipKey'
+  | 'previewZipKey'
+  | 'previewKeys'
   | 'stripeCheckoutSessionId'
   | 'stripePaymentIntentId'
   | 'claimedAt'
@@ -556,8 +665,10 @@ export type PublicCncOrder = Omit<CncOrder, CncOrderInternalColumn>;
  * — publishing it would tell a leaker exactly what to strip. `claimToken` is
  * the worker's proof of lease, `workerId` is infrastructure, and `lastError`
  * carries generator internals; the API surfaces a fixed public message
- * instead. `zipKey` is the object store path — the buyer downloads through a
- * signed-URL route, never the raw key. The Stripe ids are internal payment
+ * instead. `zipKey` and `previewZipKey` are object store paths — the buyer
+ * downloads through a grant-checked route, never the raw key — and
+ * `previewKeys` is the same thing for the preview images, which reach the
+ * client as `CncOrder.previewImages` URLs built from their BASENAMES. The Stripe ids are internal payment
  * references, and `claimedAt`/`heartbeatAt`/`attempts` are worker-lease
  * bookkeeping the buyer has no use for and that would otherwise hint at
  * generator internals under retry.
@@ -569,6 +680,8 @@ export function toPublicOrder(order: CncOrder): PublicCncOrder {
     workerId: _worker,
     lastError: _error,
     zipKey: _zipKey,
+    previewZipKey: _previewZipKey,
+    previewKeys: _previewKeys,
     stripeCheckoutSessionId: _checkoutSessionId,
     stripePaymentIntentId: _paymentIntentId,
     claimedAt: _claimedAt,

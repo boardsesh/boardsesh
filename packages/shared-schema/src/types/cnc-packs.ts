@@ -11,8 +11,16 @@
 /** What the buyer is allowed to build: one own wall, or one named customer installation. */
 export type CncLicenceTier = 'personal' | 'commercial_single';
 
-/** Lifecycle of one order. `refunded` is terminal for downloads; `cancelled` only ever means the checkout lapsed. */
+/**
+ * Lifecycle of one order. It begins as a free preview and only becomes a sale
+ * at `pending_payment`. `refunded` is terminal for downloads; `cancelled` only
+ * ever means the checkout lapsed.
+ */
 export type CncOrderStatus =
+  | 'preview_queued'
+  | 'preview_generating'
+  | 'preview_ready'
+  | 'preview_failed'
   | 'pending_payment'
   | 'queued'
   | 'generating'
@@ -129,11 +137,23 @@ export type CncBoardConfigInput = {
   artwork?: CncArtworkInput[] | null;
 };
 
+/** Which artifact a download link is for: the free watermarked preview, or the licensed pack. */
+export type CncDownloadKind = 'PREVIEW' | 'FULL';
+
+/** One watermarked preview sheet, with a ready-to-use one-hour URL. */
+export type CncPreviewImage = {
+  /** Filename of the sheet, e.g. `panel1.png`. Stable for one order. */
+  name: string;
+  /** The backend preview route with a grant token already on it. Good for an hour. */
+  url: string;
+};
+
 /** One order as its buyer may see it. The fingerprint manifest and raw generator errors never appear. */
 export type CncOrder = {
   id: string;
   licenceId: string;
-  tier: CncLicenceTier;
+  /** Null until the order is finalised — a preview is not a sale. */
+  tier: CncLicenceTier | null;
   status: CncOrderStatus;
   boardName: string;
   layoutId: number;
@@ -153,6 +173,13 @@ export type CncOrder = {
   lastDownloadedAt: string | null;
   /** A fixed public message when the order failed, null otherwise. */
   errorMessage: string | null;
+  /** True once the free preview exists. Stays true after the pack is bought. */
+  hasPreview: boolean;
+  previewGeneratedAt: string | null;
+  /** The watermarked sheets, in sheet order. Empty until `preview_ready`. */
+  previewImages: CncPreviewImage[];
+  /** sha256 of the configuration this order previewed and will build. */
+  configHash: string;
 };
 
 /**
@@ -188,16 +215,20 @@ export type CncArtworkValidation = {
 };
 
 /**
- * Everything checkout needs beyond the configuration: who the licence names,
- * how to reach them, and their acceptance of it.
+ * Everything buying a previewed order needs: who the licence names, how to
+ * reach them, and their acceptance of it.
+ *
+ * No configuration — the order already carries the wall the buyer previewed and
+ * approved.
  *
  * `acceptLicence` is typed as the literal `true` rather than a boolean. The
  * licence is the product, so a client that has not collected the acceptance has
  * nothing to send — and that is a compile error here rather than a rejection at
  * the server.
  */
-export type CreateCncCheckoutSessionInput = {
-  config: CncBoardConfigInput;
+export type FinaliseCncOrderInput = {
+  /** The preview order being bought. Must be the caller's own and `preview_ready`. */
+  orderId: string;
   tier: CncLicenceTier;
   licenseeName: string;
   licenseeEmail: string;

@@ -158,17 +158,25 @@ const OptionalTrimmedName = z
   .transform((value) => (value && value.length > 0 ? value : null));
 
 /**
- * Everything checkout needs beyond the configuration itself: who the licence
- * names, and their acceptance of it.
+ * Everything finalising an order needs beyond the preview it is finalising: who
+ * the licence names, and their acceptance of it.
+ *
+ * No configuration. The order already carries the exact tuple, options and
+ * artwork the buyer previewed and approved — re-submitting them here would let
+ * a client buy something other than what it was shown, which is the one thing
+ * the preview step exists to prevent.
  *
  * The licence is the product, so `acceptLicence` is a literal `true` rather
  * than a boolean — there is no such thing as a checkout that proceeds without
  * it, and a schema that merely *accepts* `false` leaves the "did they agree"
  * check to whichever caller remembers to write it.
  */
-export const CreateCncCheckoutSessionInputSchema = z
+export const FinaliseCncOrderInputSchema = z
   .object({
-    config: CncBoardConfigInputSchema,
+    orderId: z
+      .string()
+      .trim()
+      .regex(/^[1-9][0-9]{0,17}$/, 'Not a valid order id'),
     tier: CncLicenceTierSchema,
     licenseeName: z
       .string()
@@ -215,4 +223,4 @@ export const CreateCncCheckoutSessionInputSchema = z
     }
   });
 
-export type CreateCncCheckoutSessionInputValidated = z.infer<typeof CreateCncCheckoutSessionInputSchema>;
+export type FinaliseCncOrderInputValidated = z.infer<typeof FinaliseCncOrderInputSchema>;

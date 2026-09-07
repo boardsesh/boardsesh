@@ -40,6 +40,10 @@ vi.mock('../email/cnc-emails', () => ({
   sendCncPackFailedAdminEmail: sendPackFailedMock,
 }));
 
+const { captureBackendEventMock } = vi.hoisted(() => ({ captureBackendEventMock: vi.fn(() => true) }));
+
+vi.mock('../services/analytics/posthog', () => ({ captureBackendEvent: captureBackendEventMock }));
+
 import { eq } from 'drizzle-orm';
 import { cncArtAssets, cncOrders, users, type CncOrderOptions } from '@boardsesh/db/schema';
 import { db } from '../db/client';
@@ -210,6 +214,35 @@ async function insertQueuedOrder(overrides: Partial<typeof cncOrders.$inferInser
       amountCents: 14900,
       queuedAt: new Date(Date.now() - 60_000),
       paidAt: new Date(Date.now() - 60_000),
+      ...overrides,
+    })
+    .returning();
+  return order;
+}
+
+/**
+ * A free preview sitting in the queue.
+ *
+ * No tier, no licensee, no price — a preview is not a sale, and the job payload
+ * has to be buildable without any of them.
+ */
+async function insertQueuedPreview(overrides: Partial<typeof cncOrders.$inferInsert> = {}) {
+  const [order] = await db
+    .insert(cncOrders)
+    .values({
+      licenceId: nextLicenceId(),
+      userId: 'user-123',
+      tier: null,
+      status: 'preview_queued',
+      boardName: 'kilter',
+      layoutId: 8,
+      sizeId: 25,
+      setIds: '26,27,28,29',
+      options: DEFAULT_OPTIONS,
+      artwork: null,
+      catalogVersion: '2026-09-06.1',
+      configHash: 'a'.repeat(64),
+      queuedAt: new Date(Date.now() - 60_000),
       ...overrides,
     })
     .returning();
@@ -427,6 +460,242 @@ describe('POST /api/cnc/worker/claim', () => {
     const res = await callWorker('/api/cnc/worker/claim', { body: { workerId: 'worker-1' } });
 
     expect(res.statusCode).toBe(503);
+  });
+});
+
+describe('preview jobs', () => {
+  const previewSha = 'd'.repeat(64);
+
+  /** The keys a preview job is allowed to report. */
+  function previewKeysFor(licenceId: string): string[] {
+    return [
+      `cnc-packs/user-123/${licenceId}/preview/panel1.png`,
+      `cnc-packs/user-123/${licenceId}/preview/assembly.png`,
+    ];
+  }
+
+  it('hands the worker a preview job with its own output key and prefix', async () => {
+    const preview = await insertQueuedPreview();
+
+    const job = await claimJob();
+
+    expect(job).toMatchObject({
+      orderId: preview.id,
+      licenceId: preview.licenceId,
+      deliverable: 'preview',
+      // The `_preview.zip` sibling of the pack key, so the two can coexist for
+      // one licence.
+      outputKey: `cnc-packs/user-123/${preview.licenceId}_preview.zip`,
+      previewPrefix: `cnc-packs/user-123/${preview.licenceId}/preview/`,
+      // Nothing has been licensed yet, and the sheets say so with a watermark
+      // rather than a name.
+      tier: null,
+      licensee: { name: null, email: null, customerSiteName: null },
+    });
+    expect((await readOrder(preview.id)).status).toBe('preview_generating');
+  });
+
+  it('marks the order preview_ready, stores the images, and does NOT mail anybody', async () => {
+    const preview = await insertQueuedPreview();
+    const job = await claimJob();
+    const outputKey = `cnc-packs/user-123/${preview.licenceId}_preview.zip`;
+    getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 2048, contentType: 'application/zip' });
+
+    const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, {
+      body: {
+        claimToken: job?.claimToken,
+        zipKey: outputKey,
+        sizeBytes: 2048,
+        sha256: previewSha,
+        previewKeys: previewKeysFor(preview.licenceId),
+        bomSummary: { sheets: 4 },
+        generatorVersion: '1.2.3',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const ready = await readOrder(preview.id);
+    expect(ready.status).toBe('preview_ready');
+    expect(ready.previewZipKey).toBe(outputKey);
+    expect(ready.previewZipSizeBytes).toBe(2048);
+    expect(ready.previewGeneratedAt).not.toBeNull();
+    expect(ready.previewKeys).toEqual(previewKeysFor(preview.licenceId));
+    expect(ready.previewsGenerated).toBe(1);
+    // The paid pack's columns are untouched: a preview is not a pack.
+    expect(ready.zipKey).toBeNull();
+    expect(ready.generatedAt).toBeNull();
+    // No fingerprint trail on a watermarked raster — but the BOM the
+    // configurator shows beside the images is kept.
+    expect(ready.fingerprintManifest).toEqual({
+      deliverable: 'preview',
+      bomSummary: { sheets: 4 },
+      generatorVersion: '1.2.3',
+    });
+    expect(sendPackReadyMock).not.toHaveBeenCalled();
+  });
+
+  it('fires the funnel event a preview is the top of', async () => {
+    const preview = await insertQueuedPreview();
+    const job = await claimJob();
+    getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 2048, contentType: 'application/zip' });
+
+    await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, {
+      body: {
+        claimToken: job?.claimToken,
+        zipKey: `cnc-packs/user-123/${preview.licenceId}_preview.zip`,
+        sizeBytes: 2048,
+        sha256: previewSha,
+        previewKeys: previewKeysFor(preview.licenceId),
+      },
+    });
+
+    expect(captureBackendEventMock).toHaveBeenCalledWith(
+      'Build Plans Preview Generated',
+      expect.objectContaining({
+        distinctId: 'user-123',
+        properties: expect.objectContaining({ board_name: 'kilter', preview_index: 1, image_count: 2 }),
+      }),
+    );
+  });
+
+  it('refuses a preview key outside the prefix this job dictated', async () => {
+    // These strings become reads of the private bucket, which also holds user
+    // data exports. Refused at the write, once, rather than at every reader.
+    const preview = await insertQueuedPreview();
+    const job = await claimJob();
+    getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 2048, contentType: 'application/zip' });
+
+    const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, {
+      body: {
+        claimToken: job?.claimToken,
+        zipKey: `cnc-packs/user-123/${preview.licenceId}_preview.zip`,
+        sizeBytes: 2048,
+        sha256: previewSha,
+        previewKeys: ['exports/user-999/data.png'],
+      },
+    });
+
+    expect(res.statusCode).toBe(409);
+    const stored = await readOrder(preview.id);
+    expect(stored.status).toBe('preview_generating');
+    expect(stored.previewKeys).toBeNull();
+  });
+
+  it('refuses a preview key that is not a PNG', async () => {
+    const preview = await insertQueuedPreview();
+    const job = await claimJob();
+    getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 2048, contentType: 'application/zip' });
+
+    const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, {
+      body: {
+        claimToken: job?.claimToken,
+        zipKey: `cnc-packs/user-123/${preview.licenceId}_preview.zip`,
+        sizeBytes: 2048,
+        sha256: previewSha,
+        previewKeys: [`cnc-packs/user-123/${preview.licenceId}/preview/panel1.dxf`],
+      },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect((await readOrder(preview.id)).status).toBe('preview_generating');
+  });
+
+  it('refuses a completion written to the PACK key rather than the preview key', async () => {
+    const preview = await insertQueuedPreview();
+    const job = await claimJob();
+    getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 2048, contentType: 'application/zip' });
+
+    const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, {
+      body: {
+        claimToken: job?.claimToken,
+        zipKey: `cnc-packs/user-123/${preview.licenceId}.zip`,
+        sizeBytes: 2048,
+        sha256: previewSha,
+        previewKeys: [],
+      },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect((await readOrder(preview.id)).status).toBe('preview_generating');
+  });
+
+  it('answers a retried preview completion 200 duplicate', async () => {
+    const preview = await insertQueuedPreview();
+    const job = await claimJob();
+    getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 2048, contentType: 'application/zip' });
+    const body = {
+      claimToken: job?.claimToken,
+      zipKey: `cnc-packs/user-123/${preview.licenceId}_preview.zip`,
+      sizeBytes: 2048,
+      sha256: previewSha,
+      previewKeys: previewKeysFor(preview.licenceId),
+    };
+
+    await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, { body });
+    const retry = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, { body });
+
+    expect(retry.statusCode).toBe(200);
+    expect(retry.json()).toMatchObject({ ok: true, status: 'preview_ready', duplicate: true });
+    // One preview generated, not two.
+    expect((await readOrder(preview.id)).previewsGenerated).toBe(1);
+    expect(captureBackendEventMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('requeues a retryable preview failure and gives up on its own terminal status', async () => {
+    const preview = await insertQueuedPreview();
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const job = await claimJob(`worker-${String(attempt)}`);
+      const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/fail`, {
+        body: {
+          claimToken: job?.claimToken,
+          errorCode: 'RENDER_FAILED',
+          message: 'Pillow ran out of memory',
+          retryable: true,
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ status: attempt === 3 ? 'preview_failed' : 'preview_queued' });
+    }
+
+    // Nobody paid for it and nobody is going to email about it: the buyer sees
+    // `preview_failed` on the page they are looking at and asks again.
+    expect(sendPackFailedMock).not.toHaveBeenCalled();
+  });
+
+  it('ends a non-retryable preview failure immediately, without touching the paid statuses', async () => {
+    const preview = await insertQueuedPreview();
+    const job = await claimJob();
+
+    const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/fail`, {
+      body: { claimToken: job?.claimToken, errorCode: 'BAD_CONFIG', message: 'no', retryable: false },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect((await readOrder(preview.id)).status).toBe('preview_failed');
+    expect(sendPackFailedMock).not.toHaveBeenCalled();
+  });
+
+  it('heartbeats a preview lease exactly like a paid one', async () => {
+    const preview = await insertQueuedPreview();
+    const job = await claimJob();
+
+    const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/heartbeat`, {
+      body: { claimToken: job?.claimToken },
+    });
+
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('serves the paid pack before the free preview, however long the preview has waited', async () => {
+    const preview = await insertQueuedPreview({ queuedAt: new Date(Date.now() - 600_000) });
+    const paid = await insertQueuedOrder({ queuedAt: new Date() });
+
+    const first = await claimJob('worker-a');
+    expect(first).toMatchObject({ orderId: paid.id, deliverable: 'full' });
+
+    const second = await claimJob('worker-b');
+    expect(second).toMatchObject({ orderId: preview.id, deliverable: 'preview' });
   });
 });
 

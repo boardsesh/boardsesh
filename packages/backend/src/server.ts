@@ -32,7 +32,7 @@ import { handleUserDataExport, handleUserDataExportDownload } from './handlers/u
 import { handleCncArtUpload } from './handlers/cnc-art-upload';
 import { handleCncStripeWebhook } from './handlers/cnc-stripe-webhook';
 import { handleCncWorkerApi } from './handlers/cnc-worker';
-import { handleCncPackDownload } from './handlers/cnc-download';
+import { handleCncPackDownload, handleCncPackPreviewImage } from './handlers/cnc-download';
 import { pruneSyncDeletions } from './services/sync-deletions-prune';
 import { handleAuroraCredentials, handleAuroraCredentialsUnsynced } from './handlers/aurora-credentials';
 import { handleAuroraImport } from './handlers/aurora-import';
@@ -483,6 +483,19 @@ export async function startServer(): Promise<ServerResources> {
         return;
       }
 
+      // One watermarked preview sheet. Its own route rather than a `kind` on
+      // the download above because it is the only thing here a browser fetches
+      // as an `<img src>`: it answers `image/png` with a private hour-long
+      // cache, where every other route in this family is a `no-store`
+      // attachment.
+      if (
+        /^\/api\/cnc\/packs\/[^/]+\/preview\/[^/]+$/.test(pathname) &&
+        (req.method === 'GET' || req.method === 'OPTIONS')
+      ) {
+        await handleCncPackPreviewImage(req, res, url);
+        return;
+      }
+
       if (
         pathname === '/api/aurora-credentials' &&
         (req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE' || req.method === 'OPTIONS')
@@ -795,6 +808,7 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  User data export: ${httpScheme}://0.0.0.0:${PORT}/api/user-data-export`);
     logger.info(`  CNC worker API: ${httpScheme}://0.0.0.0:${PORT}/api/cnc/worker/claim`);
     logger.info(`  CNC pack download: ${httpScheme}://0.0.0.0:${PORT}/api/cnc/packs/:licenceId/download`);
+    logger.info(`  CNC preview image: ${httpScheme}://0.0.0.0:${PORT}/api/cnc/packs/:licenceId/preview/:name`);
     logger.info(`  CNC artwork upload: ${httpScheme}://0.0.0.0:${PORT}/api/cnc/art`);
     logger.info(`  Aurora credentials: ${httpScheme}://0.0.0.0:${PORT}/api/aurora-credentials`);
     logger.info(`  Aurora import: ${httpScheme}://0.0.0.0:${PORT}/api/aurora-import`);

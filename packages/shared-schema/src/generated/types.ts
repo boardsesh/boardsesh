@@ -1516,7 +1516,7 @@ export type CncCheckoutSession = {
 };
 
 /**
- * A short-lived link to one pack.
+ * A short-lived link to one pack or preview.
  *
  * It exists because a browser navigation cannot carry an Authorization header,
  * and a session token in a URL would land in history, in a referrer and in every
@@ -1532,6 +1532,15 @@ export type CncDownloadGrant = {
   /** Fetch or navigate to this. Streams the zip as an attachment. */
   url: Scalars['String']['output'];
 };
+
+/**
+ * Which artifact a download link is for.
+ *
+ * `PREVIEW` is the free watermarked, rasterised pack — available from
+ * `preview_ready` onward, including after the order is bought. `FULL` is the
+ * licensed pack with the DXFs and is only ever available at `ready`.
+ */
+export type CncDownloadKind = 'FULL' | 'PREVIEW';
 
 /**
  * What the buyer is allowed to build with a pack.
@@ -1565,19 +1574,21 @@ export type CncManufacturingOption = {
   values: Array<Scalars['String']['output']>;
 };
 
-/**
- * One order as its buyer may see it.
- *
- * The fingerprint manifest, the worker's claim token and the raw generator
- * error never appear here — a failed order reports a fixed public message
- * instead.
- */
 export type CncOrder = {
   __typename?: 'CncOrder';
   amountCents?: Maybe<Scalars['Int']['output']>;
   /** Artwork placements carried through to the generator. Empty list when there is none. */
   artwork: Scalars['JSON']['output'];
   boardName: Scalars['String']['output'];
+  /**
+   * sha256 of the configuration this order previewed and will build.
+   *
+   * Two uses: telling whether the configuration on screen still matches the
+   * preview being shown (if it does not, the buyer needs a new preview), and
+   * letting the server hand back an existing preview instead of generating the
+   * same one twice.
+   */
+  configHash: Scalars['String']['output'];
   createdAt: Scalars['String']['output'];
   currency?: Maybe<Scalars['String']['output']>;
   /** Set only for commercial_single orders: the installation the licence names. */
@@ -1586,6 +1597,8 @@ export type CncOrder = {
   /** A fixed public message when the order failed, null otherwise. Never generator internals. */
   errorMessage?: Maybe<Scalars['String']['output']>;
   generatedAt?: Maybe<Scalars['String']['output']>;
+  /** True once the free preview has been generated. Stays true after the pack is bought. */
+  hasPreview: Scalars['Boolean']['output'];
   id: Scalars['ID']['output'];
   lastDownloadedAt?: Maybe<Scalars['String']['output']>;
   layoutId: Scalars['Int']['output'];
@@ -1595,10 +1608,19 @@ export type CncOrder = {
   /** The normalised manufacturing options this pack was priced and built with. */
   options: Scalars['JSON']['output'];
   paidAt?: Maybe<Scalars['String']['output']>;
+  previewGeneratedAt?: Maybe<Scalars['String']['output']>;
+  /**
+   * The watermarked sheets, in sheet order. Empty until `preview_ready`.
+   *
+   * Each URL carries its own one-hour grant, so they are usable straight from an
+   * `<img>` and worthless to anyone the order does not belong to.
+   */
+  previewImages: Array<CncPreviewImage>;
   setIds: Scalars['String']['output'];
   sizeId: Scalars['Int']['output'];
   status: CncOrderStatus;
-  tier: CncLicenceTier;
+  /** Null until the order is finalised: a preview is not a sale, so nothing has been licensed yet. */
+  tier?: Maybe<CncLicenceTier>;
   zipSizeBytes?: Maybe<Scalars['Int']['output']>;
 };
 
@@ -1619,16 +1641,28 @@ export type CncOrderConnection = {
 };
 
 /**
- * Lifecycle of one order. Everything after `pending_payment` is driven by a
- * Stripe webhook or by the pack generator. `refunded` is terminal for
- * downloads and is deliberately distinct from `cancelled`, which only ever
- * means the checkout session expired before payment.
+ * Lifecycle of one order.
+ *
+ * An order starts as a FREE PREVIEW: `preview_queued -> preview_generating ->
+ * preview_ready`, repeatable and never charged. Finalising it moves it to
+ * `pending_payment`, and everything after that is driven by a Stripe webhook or
+ * by the pack generator. `refunded` is terminal for downloads and is
+ * deliberately distinct from `cancelled`, which only ever means the checkout
+ * session expired before payment.
+ *
+ * A `preview_failed` order can be previewed again; so can a `preview_ready` one
+ * whose configuration changed — both write a NEW order, because a preview is an
+ * immutable snapshot of one configuration.
  */
 export type CncOrderStatus =
   | 'cancelled'
   | 'failed'
   | 'generating'
   | 'pending_payment'
+  | 'preview_failed'
+  | 'preview_generating'
+  | 'preview_queued'
+  | 'preview_ready'
   | 'queued'
   | 'ready'
   | 'refunded';
@@ -1650,6 +1684,25 @@ export type CncPlacementInput = {
   xMm: Scalars['Float']['input'];
   /** Centre Y in wall millimetres. Must be finite; the generator does the panel-bounds check itself. */
   yMm: Scalars['Float']['input'];
+};
+
+/**
+ * One order as its buyer may see it.
+ *
+ * The fingerprint manifest, the worker's claim token and the raw generator
+ * error never appear here — a failed order reports a fixed public message
+ * instead.
+ */
+export type CncPreviewImage = {
+  __typename?: 'CncPreviewImage';
+  /** Filename of the watermarked sheet, e.g. `panel1.png` or `assembly.png`. Stable for one order. */
+  name: Scalars['String']['output'];
+  /**
+   * A ready-to-use `<img src>`: the backend preview route with a one-hour grant
+   * token already on it. Re-read the order for fresh URLs rather than caching
+   * these; nothing is lost by asking again.
+   */
+  url: Scalars['String']['output'];
 };
 
 /** One purchasable licence tier and its price, in the smallest currency unit. */
@@ -1881,25 +1934,6 @@ export type CreateBoardInput = {
   sizeId: Scalars['Int']['input'];
   /** Paired Rogue Fitness timer's advertised BLE name */
   timerName?: InputMaybe<Scalars['String']['input']>;
-};
-
-/**
- * Everything checkout needs beyond the configuration itself: who the licence
- * names, how to reach them, and their acceptance of it.
- *
- * `acceptLicence` must be `true`. The licence is the product, so there is no
- * such thing as a checkout that proceeds without it.
- */
-export type CreateCncCheckoutSessionInput = {
-  acceptLicence: Scalars['Boolean']['input'];
-  config: CncBoardConfigInput;
-  /** The installation the licence names. Required for `commercial_single`, rejected for `personal`. */
-  customerSiteName?: InputMaybe<Scalars['String']['input']>;
-  /** Where the licence and the download link are sent. Not taken from the account. */
-  licenseeEmail: Scalars['String']['input'];
-  /** The name printed on every file in the pack. */
-  licenseeName: Scalars['String']['input'];
-  tier: CncLicenceTier;
 };
 
 /** Input for creating a gym. */
@@ -2308,6 +2342,30 @@ export type FeedbackContextInput = {
   sessionName?: InputMaybe<Scalars['String']['input']>;
   url?: InputMaybe<Scalars['String']['input']>;
   userAgent?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Everything buying a previewed order needs: who the licence names, how to reach
+ * them, and their acceptance of it.
+ *
+ * No configuration. The order already carries the exact wall the buyer
+ * previewed and approved — re-submitting it here would let a client buy
+ * something other than what it was shown.
+ *
+ * `acceptLicence` must be `true`. The licence is the product, so there is no
+ * such thing as a checkout that proceeds without it.
+ */
+export type FinaliseCncOrderInput = {
+  acceptLicence: Scalars['Boolean']['input'];
+  /** The installation the licence names. Required for `commercial_single`, rejected for `personal`. */
+  customerSiteName?: InputMaybe<Scalars['String']['input']>;
+  /** Where the licence and the download link are sent. Not taken from the account. */
+  licenseeEmail: Scalars['String']['input'];
+  /** The name printed on every file in the pack. */
+  licenseeName: Scalars['String']['input'];
+  /** The preview order being bought. It must be the caller's own and it must be `preview_ready`. */
+  orderId: Scalars['ID']['input'];
+  tier: CncLicenceTier;
 };
 
 /**
@@ -3667,28 +3725,34 @@ export type Mutation = {
   /** Create a new board. */
   createBoard: UserBoard;
   /**
-   * Reserve a build-pack order and open a Stripe Checkout Session for it.
-   *
-   * The order row is written first, in `pending_payment`, so the webhook has
-   * something to find — but nothing is queued for generation until Stripe
-   * confirms the charge. If Stripe will not open a session the order is
-   * cancelled again and this throws `CNC_CHECKOUT_UNAVAILABLE`. The returned
-   * session expires 31 minutes after it is created.
-   *
-   * Requires authentication.
-   */
-  createCncCheckoutSession: CncCheckoutSession;
-  /**
-   * Mint a five-minute link to your own build pack.
+   * Mint a five-minute link to your own build pack, or to its free preview.
    *
    * Throws `NOT_FOUND` for a licence that does not exist and for one belonging
    * to someone else, identically — a licence id identifies an order, it never
-   * grants access to one. Throws `CNC_PACK_NOT_DOWNLOADABLE` when the pack is
-   * not ready or the order was refunded.
+   * grants access to one. Throws `CNC_PACK_NOT_DOWNLOADABLE` when that
+   * deliverable is not available yet or the order was refunded: `FULL` needs
+   * `ready`, `PREVIEW` needs `preview_ready` or anything after it.
    *
    * Requires authentication.
    */
   createCncDownloadGrant: CncDownloadGrant;
+  /**
+   * Generate a free, watermarked preview of a configuration.
+   *
+   * Nothing is charged and nothing is licensed: the order comes back in
+   * `preview_queued`, and its `previewImages` fill in once the generator is
+   * done. Asking again for a configuration this buyer has already previewed
+   * returns THAT order rather than queueing a second job — the configuration's
+   * `configHash` is the identity. Change anything and this writes a new order;
+   * a preview is an immutable snapshot of one configuration.
+   *
+   * Four previews per hour per buyer. Throws `RATE_LIMITED` past that, and
+   * `CNC_INVALID_CONFIG` for a wall that is not on sale, an option out of
+   * range or artwork that will not fit.
+   *
+   * Requires authentication.
+   */
+  createCncPreview: CncOrder;
   /** Create a new gym. */
   createGym: Gym;
   /**
@@ -3769,6 +3833,21 @@ export type Mutation = {
    * the returned SessionSummary.
    */
   endSession?: Maybe<SessionSummary>;
+  /**
+   * Buy a previewed order: attach the licence and open Stripe Checkout for it.
+   *
+   * The order must be the caller's own and in `preview_ready` — this is the
+   * only way a build pack is ever paid for, so nothing can be bought that was
+   * not previewed first. It takes the tier, the licensee and the acceptance,
+   * moves to `pending_payment` and returns the hosted page to send the buyer
+   * to; nothing is queued for generation until Stripe confirms the charge. If
+   * Stripe will not open a session the order goes back to `preview_ready` and
+   * this throws `CNC_CHECKOUT_UNAVAILABLE`. The returned session expires 31
+   * minutes after it is created.
+   *
+   * Requires authentication.
+   */
+  finaliseCncOrder: CncCheckoutSession;
   /** Follow a board. */
   followBoard: Scalars['Boolean']['output'];
   /** Follow a gym. */
@@ -4252,13 +4331,14 @@ export type MutationCreateBoardArgs = {
 };
 
 /** Root mutation type for all write operations. */
-export type MutationCreateCncCheckoutSessionArgs = {
-  input: CreateCncCheckoutSessionInput;
+export type MutationCreateCncDownloadGrantArgs = {
+  kind?: InputMaybe<CncDownloadKind>;
+  licenceId: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
-export type MutationCreateCncDownloadGrantArgs = {
-  licenceId: Scalars['String']['input'];
+export type MutationCreateCncPreviewArgs = {
+  config: CncBoardConfigInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4372,6 +4452,11 @@ export type MutationEndSessionArgs = {
   notes?: InputMaybe<Scalars['String']['input']>;
   sessionId: Scalars['ID']['input'];
   timezone?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationFinaliseCncOrderArgs = {
+  input: FinaliseCncOrderInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -9218,12 +9303,14 @@ export type ResolversTypes = ResolversObject<{
   CncCatalogEntry: ResolverTypeWrapper<CncCatalogEntry>;
   CncCheckoutSession: ResolverTypeWrapper<CncCheckoutSession>;
   CncDownloadGrant: ResolverTypeWrapper<CncDownloadGrant>;
+  CncDownloadKind: CncDownloadKind;
   CncLicenceTier: CncLicenceTier;
   CncManufacturingOption: ResolverTypeWrapper<CncManufacturingOption>;
   CncOrder: ResolverTypeWrapper<CncOrder>;
   CncOrderConnection: ResolverTypeWrapper<CncOrderConnection>;
   CncOrderStatus: CncOrderStatus;
   CncPlacementInput: CncPlacementInput;
+  CncPreviewImage: ResolverTypeWrapper<CncPreviewImage>;
   CncTierPrice: ResolverTypeWrapper<CncTierPrice>;
   Comment: ResolverTypeWrapper<Comment>;
   CommentAdded: ResolverTypeWrapper<CommentAdded>;
@@ -9242,7 +9329,6 @@ export type ResolversTypes = ResolversObject<{
   ControllerQueueSync: ResolverTypeWrapper<ControllerQueueSync>;
   ControllerRegistration: ResolverTypeWrapper<ControllerRegistration>;
   CreateBoardInput: CreateBoardInput;
-  CreateCncCheckoutSessionInput: CreateCncCheckoutSessionInput;
   CreateGymInput: CreateGymInput;
   CreateGymKioskInput: CreateGymKioskInput;
   CreatePlaylistInput: CreatePlaylistInput;
@@ -9272,6 +9358,7 @@ export type ResolversTypes = ResolversObject<{
   >;
   FavoritesCount: ResolverTypeWrapper<FavoritesCount>;
   FeedbackContextInput: FeedbackContextInput;
+  FinaliseCncOrderInput: FinaliseCncOrderInput;
   FindSimilarGymsInput: FindSimilarGymsInput;
   Float: ResolverTypeWrapper<Scalars['Float']['output']>;
   FollowBoardInput: FollowBoardInput;
@@ -9636,6 +9723,7 @@ export type ResolversParentTypes = ResolversObject<{
   CncOrder: CncOrder;
   CncOrderConnection: CncOrderConnection;
   CncPlacementInput: CncPlacementInput;
+  CncPreviewImage: CncPreviewImage;
   CncTierPrice: CncTierPrice;
   Comment: Comment;
   CommentAdded: CommentAdded;
@@ -9653,7 +9741,6 @@ export type ResolversParentTypes = ResolversObject<{
   ControllerQueueSync: ControllerQueueSync;
   ControllerRegistration: ControllerRegistration;
   CreateBoardInput: CreateBoardInput;
-  CreateCncCheckoutSessionInput: CreateCncCheckoutSessionInput;
   CreateGymInput: CreateGymInput;
   CreateGymKioskInput: CreateGymKioskInput;
   CreatePlaylistInput: CreatePlaylistInput;
@@ -9679,6 +9766,7 @@ export type ResolversParentTypes = ResolversObject<{
   EventsReplayResponse: Omit<EventsReplayResponse, 'events'> & { events: Array<ResolversParentTypes['QueueEvent']> };
   FavoritesCount: FavoritesCount;
   FeedbackContextInput: FeedbackContextInput;
+  FinaliseCncOrderInput: FinaliseCncOrderInput;
   FindSimilarGymsInput: FindSimilarGymsInput;
   Float: Scalars['Float']['output'];
   FollowBoardInput: FollowBoardInput;
@@ -10717,12 +10805,14 @@ export type CncOrderResolvers<
   amountCents?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   artwork?: Resolver<ResolversTypes['JSON'], ParentType, ContextType>;
   boardName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  configHash?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   currency?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   customerSiteName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   downloadCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   errorMessage?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   generatedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasPreview?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   lastDownloadedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
@@ -10730,10 +10820,12 @@ export type CncOrderResolvers<
   licenseeName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   options?: Resolver<ResolversTypes['JSON'], ParentType, ContextType>;
   paidAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  previewGeneratedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  previewImages?: Resolver<Array<ResolversTypes['CncPreviewImage']>, ParentType, ContextType>;
   setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   status?: Resolver<ResolversTypes['CncOrderStatus'], ParentType, ContextType>;
-  tier?: Resolver<ResolversTypes['CncLicenceTier'], ParentType, ContextType>;
+  tier?: Resolver<Maybe<ResolversTypes['CncLicenceTier']>, ParentType, ContextType>;
   zipSizeBytes?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
@@ -10745,6 +10837,15 @@ export type CncOrderConnectionResolvers<
   cursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   orders?: Resolver<Array<ResolversTypes['CncAdminOrder']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CncPreviewImageResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CncPreviewImage'] = ResolversParentTypes['CncPreviewImage'],
+> = ResolversObject<{
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  url?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -11802,17 +11903,17 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationCreateBoardArgs, 'input'>
   >;
-  createCncCheckoutSession?: Resolver<
-    ResolversTypes['CncCheckoutSession'],
-    ParentType,
-    ContextType,
-    RequireFields<MutationCreateCncCheckoutSessionArgs, 'input'>
-  >;
   createCncDownloadGrant?: Resolver<
     ResolversTypes['CncDownloadGrant'],
     ParentType,
     ContextType,
-    RequireFields<MutationCreateCncDownloadGrantArgs, 'licenceId'>
+    RequireFields<MutationCreateCncDownloadGrantArgs, 'kind' | 'licenceId'>
+  >;
+  createCncPreview?: Resolver<
+    ResolversTypes['CncOrder'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCreateCncPreviewArgs, 'config'>
   >;
   createGym?: Resolver<ResolversTypes['Gym'], ParentType, ContextType, RequireFields<MutationCreateGymArgs, 'input'>>;
   createGymKiosk?: Resolver<
@@ -11940,6 +12041,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationEndSessionArgs, 'sessionId'>
+  >;
+  finaliseCncOrder?: Resolver<
+    ResolversTypes['CncCheckoutSession'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationFinaliseCncOrderArgs, 'input'>
   >;
   followBoard?: Resolver<
     ResolversTypes['Boolean'],
@@ -14702,6 +14809,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CncManufacturingOption?: CncManufacturingOptionResolvers<ContextType>;
   CncOrder?: CncOrderResolvers<ContextType>;
   CncOrderConnection?: CncOrderConnectionResolvers<ContextType>;
+  CncPreviewImage?: CncPreviewImageResolvers<ContextType>;
   CncTierPrice?: CncTierPriceResolvers<ContextType>;
   Comment?: CommentResolvers<ContextType>;
   CommentAdded?: CommentAddedResolvers<ContextType>;
