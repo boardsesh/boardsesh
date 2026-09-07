@@ -23,7 +23,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 import { BoardPresenceProvider, useBoardPresenceActions } from '@boardsesh/board-presence-react';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardCandidate, ClimbQueueItemInput, ResolvedBoard } from '@boardsesh/shared-schema';
 import {
   createMobileBoardPresenceClient,
@@ -35,7 +34,6 @@ import {
 } from '../lib/board-presence/screenshot-wall-seed';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { selectOfflineMode, useConnectivityField } from '../lib/connectivity/use-connectivity';
-import { track } from '../lib/analytics';
 import { BoardDisambiguationSheet } from '../components/board-discovery/BoardDisambiguationSheet';
 
 /** Board config needed to find-or-bind the shared board on first sighting. */
