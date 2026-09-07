@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Your climbing history groups climbs into sessions, with breaks over eight hours starting a new one. ([#5194](https://github.com/boardsesh/boardsesh/pull/5194))
 - Thousands more MoonBoard problems, with fresh grades and repeat counts across all seven boards ([#5250](https://github.com/boardsesh/boardsesh/pull/5250))
   Beta videos now show on MoonBoard climbs — see how other climbers did it before you pull on
   Problems the setter has pulled down no longer clutter MoonBoard search

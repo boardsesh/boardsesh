@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-07T10:09:59.587Z",
+  "generatedAt": "2026-09-07T11:38:49.427Z",
   "entries": [
+    {
+      "prNumber": 5194,
+      "category": "new",
+      "title": "Your climbing history groups climbs into sessions, with breaks over eight hours starting a new one.",
+      "mergedAt": "2026-09-07T11:33:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5194"
+    },
     {
       "prNumber": 5269,
       "category": "fixed",
