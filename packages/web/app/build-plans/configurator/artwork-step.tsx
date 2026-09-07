@@ -181,15 +181,11 @@ export default function ArtworkStep({
   };
 
   return (
+    // No heading of its own: this is one card in the configurator's numbered
+    // flow, and the `StepHeading` above it already names the step. A second
+    // title here would number the sequence twice.
     <Box>
-      <Typography variant="subtitle1" className={styles.stepHeading}>
-        {t('configurator.artwork.heading')}
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        {t('configurator.artwork.help', { count: rules.maxItems })}
-      </Typography>
-
-      <Stack spacing={2} sx={{ mt: 2 }}>
+      <Stack spacing={2}>
         {artwork.map((item, index) => (
           <ArtworkItemFields
             key={item.id}

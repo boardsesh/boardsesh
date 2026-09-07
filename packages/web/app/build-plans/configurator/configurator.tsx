@@ -7,8 +7,6 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
-import CircularProgress from '@mui/material/CircularProgress';
-import Divider from '@mui/material/Divider';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormHelperText from '@mui/material/FormHelperText';
@@ -19,16 +17,24 @@ import MuiLink from '@mui/material/Link';
 import Radio from '@mui/material/Radio';
 import RadioGroup from '@mui/material/RadioGroup';
 import Select from '@mui/material/Select';
-import Stack from '@mui/material/Stack';
+import Skeleton from '@mui/material/Skeleton';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import type { CncArtworkKind, CncCatalog, CncCatalogEntry, CncLicenceTier } from '@boardsesh/shared-schema';
+import type {
+  CncArtworkKind,
+  CncCatalog,
+  CncCatalogEntry,
+  CncLicenceTier,
+  CncOrder,
+  CncOrderStatus,
+} from '@boardsesh/shared-schema';
 import {
   cncArtworkPlaced,
   cncBuildPlansPageViewed,
   cncConfiguratorChanged,
   cncCheckoutStarted,
+  cncPreviewRequested,
   type CncConfigProps,
   type CncConfiguratorStep,
 } from '@boardsesh/analytics';
@@ -38,20 +44,32 @@ import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { trackCncFunnelEvent } from '@/app/lib/cnc-funnel-analytics';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
-import { themeTokens } from '@/app/theme/theme-config';
-import { SectionCard } from '../ui';
+import {
+  FieldGrid,
+  KeyValueList,
+  PageSection,
+  PreviewGallery,
+  PriceTag,
+  SectionCard,
+  SplitLayout,
+  StatusChip,
+  StepHeading,
+  type KeyValueItem,
+} from '../ui';
 import styles from '../build-plans.module.css';
 import {
   CNC_CONFIGURATOR_DRAFT_KEY,
   CNC_FALLBACK_ARTWORK_FONT,
-  checkoutBlockers,
+  configKey,
   configuratorReducer,
   engraveOptions,
+  finaliseBlockers,
   findEntry,
   formatPrice,
   fromDraft,
   hasKickerSets,
   initialConfiguratorState,
+  isPreviewStale,
   optionValueKey,
   tierPrice,
   isArtworkLocallyValid,
@@ -63,11 +81,13 @@ import {
   type CncArtworkDraft,
   type CncConfiguratorState,
 } from './configurator-state';
-import type { CncLayoutPanel } from './layout-summary';
+import type { CncLayoutPanel, CncLayoutSummary } from './layout-summary';
 import ArtworkStep from './artwork-step';
 import { useCncArtworkValidation } from './use-cnc-artwork-validation';
-import { useCncCheckout } from './use-cnc-checkout';
+import { useCncFinalise } from './use-cnc-finalise';
 import { useCncLayout } from './use-cnc-layout';
+import { useCncPreview } from './use-cnc-preview';
+import { useCncPreviewPoll } from './use-cnc-preview-poll';
 
 const TIERS: readonly CncLicenceTier[] = ['personal', 'commercial_single'];
 
@@ -76,6 +96,9 @@ const EMPTY_PANELS: readonly CncLayoutPanel[] = [];
 
 /** Where the buyer lands after signing in, so the draft below is restored onto the right page. */
 const BUILD_PLANS_PATH = '/build-plans';
+
+/** The generator has the job and there is nothing for the buyer to do but wait. */
+const WORKING_STATUSES: readonly CncOrderStatus[] = ['preview_queued', 'preview_generating'];
 
 /**
  * Quiet period before a step's change is reported.
@@ -95,6 +118,19 @@ type ConfiguratorProps = {
   locale: string;
 };
 
+/**
+ * The guided flow: configure a wall, see it for free, then buy it.
+ *
+ * Six numbered steps in one column with a summary rail beside them. The order
+ * is the buying order and the numbers are real — what gets cut, how your shop
+ * cuts it, what it says, what goes on it, what it looks like, whose licence it
+ * is — so a buyer can stop after any of them and come back.
+ *
+ * Nothing here is gated behind an account except the preview itself. Reading
+ * the cut list, changing the sheet stock and placing a label all work signed
+ * out, because the whole funnel starts with a stranger deciding whether this
+ * wall is the one they want.
+ */
 export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   const { t } = useTranslation('cnc');
   const { openAuthModal } = useAuthModal();
@@ -106,6 +142,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   const entry = findEntry(entries, state) ?? entries[0];
 
   const configInput = useMemo(() => toBoardConfigInput(state, entry), [state, entry]);
+  const currentConfigKey = useMemo(() => configKey(configInput), [configInput]);
   const hasArtwork = state.artwork.length > 0;
   // The drill pattern comes down only once somebody is actually placing a
   // label, and only for a signed-in buyer: it is the authenticated half of the
@@ -117,10 +154,24 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     isLoading: isLayoutLoading,
     errorKey: layoutErrorKey,
   } = useCncLayout(configInput, { includeHoles: isAuthenticated && hasArtwork, authToken: token });
-  const { startCheckout, isStarting, errorKey: checkoutErrorKey } = useCncCheckout(token);
+
+  const {
+    requestPreview,
+    isRequesting: isRequestingPreview,
+    downloadPreview,
+    isDownloading: isDownloadingPreview,
+    errorKey: previewErrorKey,
+    isRateLimited,
+  } = useCncPreview(token);
+  const {
+    order: previewOrder,
+    errorKey: pollErrorKey,
+    seedOrder,
+  } = useCncPreviewPoll({ licenceId: state.previewLicenceId, token });
+  const { finalise, isFinalising, errorKey: finaliseErrorKey } = useCncFinalise(token);
 
   // Published from the same constants the backend enforces, so a slider's
-  // bounds and a rejected checkout can never disagree. The fallbacks only cover
+  // bounds and a rejected preview can never disagree. The fallbacks only cover
   // a catalogue that predates the artwork fields.
   const artworkRules = catalog.artworkRules;
   // The catalogue always publishes at least one face; the fallback is there so
@@ -136,7 +187,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   } = useCncArtworkValidation(configInput, token);
 
   const price = tierPrice(entry, state.tier);
-  const blockers = checkoutBlockers(state);
+  const blockers = finaliseBlockers(state);
   const machiningOptions = visibleMachiningOptions(entry, state.includeKicker);
   const engraveToggles = engraveOptions(entry);
 
@@ -152,15 +203,23 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   }, []);
   const hasLocalCollision = state.artwork.some((item) => collidingArtworkIds.includes(item.id));
 
-  // Buy waits on the GENERATOR's verdict, not on the local bounds check. The
-  // local one cannot see a T-nut keep-out, and an order whose artwork cannot be
-  // routed is a payment that is guaranteed to fail generation. `artworkOk` is
-  // null until an answer arrives, which is why this blocks on anything that is
-  // not an explicit `true` — and the editor's own live check blocks too, so a
-  // label visibly sitting on a hole cannot be bought while the generator is
-  // still being asked about it.
+  // A preview waits on the GENERATOR's verdict, not on the local bounds check.
+  // The local one cannot see a T-nut keep-out, and a preview whose artwork
+  // cannot be routed is a job that is guaranteed to fail. `artworkOk` is null
+  // until an answer arrives, which is why this blocks on anything that is not
+  // an explicit `true` — and the editor's own live check blocks too, so a label
+  // visibly sitting on a hole cannot be previewed while the generator is still
+  // being asked about it.
   const isArtworkBlocking =
     hasArtwork && (!isArtworkLocallyValid(state.artwork, artworkRules) || hasLocalCollision || artworkOk !== true);
+
+  // ------------------------------------------------------------ preview state
+  const previewStatus = previewOrder?.status ?? null;
+  const isPreviewWorking = previewStatus !== null && WORKING_STATUSES.includes(previewStatus);
+  const isStale = isPreviewStale(state, currentConfigKey);
+  const isPreviewReady = previewStatus === 'preview_ready';
+  const hasFreshPreview = isPreviewReady && !isStale;
+  const canFinalise = hasFreshPreview && blockers.length === 0 && !isArtworkBlocking && state.previewOrderId !== null;
 
   // ---------------------------------------------------------------- analytics
   const analyticsConfig: CncConfigProps = useMemo(
@@ -213,7 +272,8 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
 
   // -------------------------------------------------------------------- draft
   // Restored once, before the first save can run, so a sign-in round trip comes
-  // back to the wall the buyer configured rather than to the defaults.
+  // back to the wall the buyer configured — and to the preview it produced —
+  // rather than to the defaults.
   const [isDraftRestored, setIsDraftRestored] = useState(false);
   useEffect(() => {
     let cancelled = false;
@@ -318,7 +378,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     trackCncFunnelEvent(cncArtworkPlaced({ config: analyticsConfigRef.current, artwork_count: state.artwork.length }));
   }, [artworkOk, state.artwork]);
 
-  const handleBuy = () => {
+  const handlePreview = async () => {
     if (!isAuthenticated) {
       // The draft is already on disk, and OAuth leaves the page entirely, so the
       // callback has to carry the buyer back here for the restore to happen.
@@ -329,22 +389,42 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
       });
       return;
     }
-    // Mirrors the Buy button's own `disabled` condition rather than trusting
-    // it: this is the function a stale click, a re-render race, or a future
-    // caller could reach with the button's disabled state out of date, and
-    // unrouteable artwork is exactly the checkout the button exists to block.
-    if (blockers.length > 0 || isArtworkBlocking || !price) return;
+    // Mirrors the button's own `disabled` condition rather than trusting it:
+    // this is the function a stale click or a re-render race could reach with
+    // the button's disabled state out of date, and unrouteable artwork is
+    // exactly the job this check exists to keep out of the generator's queue.
+    if (isArtworkBlocking || isRequestingPreview) return;
 
-    trackCncFunnelEvent(
-      cncCheckoutStarted({
-        config: analyticsConfig,
-        tier: state.tier,
-        amount_cents: price.amountCents,
-        currency: price.currency,
-      }),
-    );
-    void startCheckout({
-      config: configInput,
+    trackCncFunnelEvent(cncPreviewRequested({ config: analyticsConfig, is_update: state.previewOrderId !== null }));
+
+    // The key is taken from the config that is actually being sent, not read
+    // back after the round trip: the buyer may well change something while the
+    // generator is drawing, and this preview belongs to the wall it was asked
+    // for.
+    const sentConfigKey = currentConfigKey;
+    const order = await requestPreview(configInput);
+    if (!order) return;
+    seedOrder(order);
+    dispatch({ type: 'previewCreated', orderId: order.id, licenceId: order.licenceId, configKey: sentConfigKey });
+  };
+
+  const handleFinalise = () => {
+    const orderId = state.previewOrderId;
+    if (!orderId || !canFinalise || isFinalising) return;
+
+    if (price) {
+      trackCncFunnelEvent(
+        cncCheckoutStarted({
+          config: analyticsConfig,
+          tier: state.tier,
+          amount_cents: price.amountCents,
+          currency: price.currency,
+        }),
+      );
+    }
+
+    void finalise({
+      orderId,
       tier: state.tier,
       licenseeName: state.licenseeName.trim(),
       licenseeEmail: state.licenseeEmail.trim(),
@@ -353,269 +433,432 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     });
   };
 
-  const errorKey = checkoutErrorKey ?? layoutErrorKey ?? artworkErrorKey;
+  const errorKey = finaliseErrorKey ?? previewErrorKey ?? pollErrorKey ?? layoutErrorKey ?? artworkErrorKey;
 
   return (
-    <SectionCard
-      component="section"
-      className={styles.configurator}
-      id="configure"
-      headingLevel="h2"
-      title={t('configurator.heading')}
-      description={t('configurator.intro')}
-    >
-      <Box>
-        <Stack spacing={3}>
-          <BoardAndSizeStep entries={entries} state={state} onSizeChange={handleSizeChange} />
-
-          {hasKickerSets(entry) && entry.kickerOptional && (
-            <Box>
-              <Typography variant="subtitle1" className={styles.stepHeading}>
-                {t('configurator.kicker.label')}
-              </Typography>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={state.includeKicker}
-                    onChange={(event) => {
-                      dispatch({ type: 'setKicker', includeKicker: event.target.checked });
-                      reportStep('kicker');
-                    }}
-                  />
-                }
-                label={state.includeKicker ? t('configurator.kicker.include') : t('configurator.kicker.exclude')}
-              />
-              <Typography variant="body2" color="text.secondary">
-                {t('configurator.kicker.help')}
-              </Typography>
-            </Box>
-          )}
-
-          <Divider />
-
-          <Box>
-            <Typography variant="subtitle1" className={styles.stepHeading}>
-              {t('configurator.options.heading')}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {t('configurator.options.help')}
-            </Typography>
-            <Box className={styles.optionGrid}>
-              {machiningOptions.map((option) => (
-                <FormControl key={option.key} fullWidth size="small">
-                  <InputLabel id={`cnc-option-${option.key}`}>
-                    {t(`configurator.options.${option.key}.label`)}
-                  </InputLabel>
-                  <Select
-                    labelId={`cnc-option-${option.key}`}
-                    label={t(`configurator.options.${option.key}.label`)}
-                    value={state.options[option.key] ?? option.defaultValue}
-                    onChange={(event) => {
-                      dispatch({ type: 'setOption', key: option.key, value: event.target.value });
-                      reportStep('options');
-                    }}
-                  >
-                    {option.values.map((value) => (
-                      <MenuItem key={value} value={value}>
-                        {t(`configurator.options.${option.key}.values.${optionValueKey(value)}`)}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                  <FormHelperText>{t(`configurator.options.${option.key}.help`)}</FormHelperText>
-                </FormControl>
-              ))}
-            </Box>
-          </Box>
-
-          {engraveToggles.length > 0 && (
-            <Box>
-              <Typography variant="subtitle1" className={styles.stepHeading}>
-                {t('configurator.engrave.heading')}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {t('configurator.engrave.help')}
-              </Typography>
-              <Stack sx={{ mt: 1 }}>
-                {engraveToggles.map((option) => (
-                  <FormControlLabel
-                    key={option.key}
-                    control={
-                      <Switch
-                        checked={(state.options[option.key] ?? option.defaultValue) === 'true'}
-                        onChange={(event) => {
-                          dispatch({
-                            type: 'setOption',
-                            key: option.key,
-                            value: event.target.checked ? 'true' : 'false',
-                          });
-                          reportStep('engrave');
-                        }}
-                      />
-                    }
-                    label={t(`configurator.options.${option.key}.label`)}
-                  />
-                ))}
-              </Stack>
-              <Typography variant="caption" color="text.secondary" component="p">
-                {t('configurator.engrave.note')}
-              </Typography>
-            </Box>
-          )}
-
-          <Divider />
-
-          <ArtworkStep
-            artwork={state.artwork}
-            rules={artworkRules}
-            fonts={artworkFonts}
-            panels={summary?.panels ?? EMPTY_PANELS}
-            layout={layoutModel}
-            validationOk={artworkOk}
-            collisions={collisions}
-            isChecking={isCheckingArtwork}
-            canValidate={isAuthenticated}
-            authToken={token}
-            onAdd={handleAddArtwork}
-            onAddAsset={handleAddAssetArtwork}
-            onChange={handleArtworkChange}
-            onRemove={(id) => dispatch({ type: 'removeArtwork', id })}
-            onLocalCollisions={handleLocalCollisions}
-          />
-
-          <LayoutSummaryCard summary={summary} isLoading={isLayoutLoading} hasError={layoutErrorKey !== null} />
-
-          <Divider />
-
-          <Box>
-            <Typography variant="subtitle1" className={styles.stepHeading}>
-              {t('configurator.licensee.heading')}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {t('configurator.licensee.help')}
-            </Typography>
-            <Stack spacing={2}>
-              <TextField
-                label={t('configurator.licensee.name')}
-                value={state.licenseeName}
-                onChange={(event) => dispatch({ type: 'setLicenseeName', value: event.target.value })}
-                onBlur={() => reportStep('licensee')}
-                size="small"
-                fullWidth
-                required
-              />
-              <TextField
-                label={t('configurator.licensee.email')}
-                helperText={t('configurator.licensee.emailHelp')}
-                type="email"
-                value={state.licenseeEmail}
-                onChange={(event) => dispatch({ type: 'setLicenseeEmail', value: event.target.value })}
-                onBlur={() => reportStep('licensee')}
-                size="small"
-                fullWidth
-                required
-              />
-              {state.tier === 'commercial_single' && (
-                <TextField
-                  label={t('configurator.licensee.siteName')}
-                  helperText={t('configurator.licensee.siteHelp')}
-                  value={state.customerSiteName}
-                  onChange={(event) => dispatch({ type: 'setCustomerSiteName', value: event.target.value })}
-                  onBlur={() => reportStep('licensee')}
-                  size="small"
-                  fullWidth
-                  required
-                />
-              )}
-            </Stack>
-          </Box>
-
-          <Box>
-            {/* A licence tier is a mutually exclusive choice, not a set of
-                independent switches — a `RadioGroup` says that in the
-                accessibility tree, where the old checkbox row let a screen
-                reader user believe both tiers could be on at once. */}
-            <FormControl component="fieldset">
-              <FormLabel component="legend" className={styles.stepHeading}>
-                {t('tiers.heading')}
-              </FormLabel>
-              <RadioGroup
-                value={state.tier}
-                onChange={(event) => {
-                  dispatch({ type: 'setTier', tier: event.target.value as CncLicenceTier });
-                  reportStep('tier');
-                }}
-              >
-                {TIERS.map((tier) => {
-                  const tierAmount = tierPrice(entry, tier);
-                  return (
-                    <FormControlLabel
-                      key={tier}
-                      value={tier}
-                      control={<Radio />}
-                      label={
-                        <span>
-                          <Typography component="span" fontWeight={themeTokens.typography.fontWeight.semibold}>
-                            {tier === 'personal' ? t('tiers.personal.name') : t('tiers.commercial.name')}
-                          </Typography>
-                          {tierAmount ? (
-                            <Typography component="span" color="text.secondary">
-                              {` · ${formatPrice(tierAmount.amountCents, tierAmount.currency, locale)}`}
-                            </Typography>
-                          ) : null}
-                        </span>
-                      }
-                    />
-                  );
-                })}
-              </RadioGroup>
-            </FormControl>
-          </Box>
-
-          <Box>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={state.licenceAccepted}
-                  onChange={(event) => dispatch({ type: 'setLicenceAccepted', accepted: event.target.checked })}
-                />
+    <Box id="configure" className={styles.configurator}>
+      <PageSection title={t('configurator.heading')} intro={t('configurator.intro')}>
+        <SplitLayout
+          railLabel={t('configurator.summary.heading')}
+          rail={
+            <SummaryRail
+              summary={summary}
+              isLoading={isLayoutLoading}
+              hasError={layoutErrorKey !== null}
+              price={price ? formatPrice(price.amountCents, price.currency, locale) : null}
+              tier={state.tier}
+              isAuthenticated={isAuthenticated}
+              isRequesting={isRequestingPreview}
+              isWorking={isPreviewWorking}
+              isStale={isStale}
+              isFailed={previewStatus === 'preview_failed'}
+              hasFreshPreview={hasFreshPreview}
+              canFinalise={canFinalise}
+              isFinalising={isFinalising}
+              blockedReason={
+                isArtworkBlocking
+                  ? t('configurator.artwork.blocksPreview')
+                  : hasFreshPreview && blockers.length > 0
+                    ? t('configurator.licensee.required')
+                    : null
               }
-              label={t('configurator.licence.accept')}
+              onPreview={() => void handlePreview()}
+              onFinalise={handleFinalise}
             />
-            <MuiLink component={LocaleLink} href="/build-plans/licence" variant="body2" sx={{ ml: 1 }}>
-              {t('configurator.licence.link')}
-            </MuiLink>
-          </Box>
+          }
+        >
+          <Box className={styles.steps}>
+            <SectionCard>
+              <StepHeading
+                step={1}
+                done
+                title={t('configurator.wall.heading')}
+                description={t('configurator.wall.help')}
+              />
+              <Box className={styles.stepBody}>
+                <WallStep entries={entries} state={state} onSizeChange={handleSizeChange} />
+                {hasKickerSets(entry) && entry.kickerOptional && (
+                  <Box className={styles.switchRow}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={state.includeKicker}
+                          onChange={(event) => {
+                            dispatch({ type: 'setKicker', includeKicker: event.target.checked });
+                            reportStep('kicker');
+                          }}
+                        />
+                      }
+                      label={state.includeKicker ? t('configurator.kicker.include') : t('configurator.kicker.exclude')}
+                    />
+                    <FormHelperText>{t('configurator.kicker.help')}</FormHelperText>
+                  </Box>
+                )}
+              </Box>
+            </SectionCard>
 
-          {errorKey && <Alert severity="error">{t(`errors.${errorKey}`)}</Alert>}
+            <SectionCard>
+              <StepHeading
+                step={2}
+                done
+                title={t('configurator.options.heading')}
+                description={t('configurator.options.help')}
+              />
+              <Box className={styles.stepBody}>
+                <FieldGrid>
+                  {machiningOptions.map((option) => (
+                    <FormControl key={option.key} fullWidth size="small">
+                      <InputLabel id={`cnc-option-${option.key}`}>
+                        {t(`configurator.options.${option.key}.label`)}
+                      </InputLabel>
+                      <Select
+                        labelId={`cnc-option-${option.key}`}
+                        label={t(`configurator.options.${option.key}.label`)}
+                        value={state.options[option.key] ?? option.defaultValue}
+                        onChange={(event) => {
+                          dispatch({ type: 'setOption', key: option.key, value: event.target.value });
+                          reportStep('options');
+                        }}
+                      >
+                        {option.values.map((value) => (
+                          <MenuItem key={value} value={value}>
+                            {t(`configurator.options.${option.key}.values.${optionValueKey(value)}`)}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                      <FormHelperText>{t(`configurator.options.${option.key}.help`)}</FormHelperText>
+                    </FormControl>
+                  ))}
+                </FieldGrid>
+              </Box>
+            </SectionCard>
 
-          <Box>
-            <Button
-              variant="contained"
-              size="large"
-              onClick={handleBuy}
-              disabled={isStarting || (isAuthenticated && (blockers.length > 0 || isArtworkBlocking || !price))}
-              sx={{ textTransform: 'none' }}
-            >
-              {isStarting ? t('cta.buying') : isAuthenticated ? t('cta.buy') : t('cta.buySignedOut')}
-            </Button>
-            {isAuthenticated && blockers.length > 0 && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                {t('configurator.licensee.required')}
-              </Typography>
+            {engraveToggles.length > 0 && (
+              <SectionCard>
+                <StepHeading
+                  step={3}
+                  done
+                  title={t('configurator.engrave.heading')}
+                  description={t('configurator.engrave.help')}
+                />
+                <Box className={styles.stepBody}>
+                  {engraveToggles.map((option) => (
+                    <Box key={option.key} className={styles.switchRow}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={(state.options[option.key] ?? option.defaultValue) === 'true'}
+                            onChange={(event) => {
+                              dispatch({
+                                type: 'setOption',
+                                key: option.key,
+                                value: event.target.checked ? 'true' : 'false',
+                              });
+                              reportStep('engrave');
+                            }}
+                          />
+                        }
+                        label={t(`configurator.options.${option.key}.label`)}
+                      />
+                      <FormHelperText>{t(`configurator.options.${option.key}.help`)}</FormHelperText>
+                    </Box>
+                  ))}
+                  <Typography variant="body2" component="p" className={styles.stepNote}>
+                    {t('configurator.engrave.note')}
+                  </Typography>
+                </Box>
+              </SectionCard>
             )}
-            {isAuthenticated && blockers.length === 0 && isArtworkBlocking && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                {t('configurator.artwork.blocksCheckout')}
-              </Typography>
+
+            <SectionCard>
+              <StepHeading
+                step={4}
+                done={hasArtwork && !isArtworkBlocking}
+                title={t('configurator.artwork.heading')}
+                description={t('configurator.artwork.help', { count: artworkRules.maxItems })}
+              />
+              <Box className={styles.stepBody}>
+                <ArtworkStep
+                  artwork={state.artwork}
+                  rules={artworkRules}
+                  fonts={artworkFonts}
+                  panels={summary?.panels ?? EMPTY_PANELS}
+                  layout={layoutModel}
+                  validationOk={artworkOk}
+                  collisions={collisions}
+                  isChecking={isCheckingArtwork}
+                  canValidate={isAuthenticated}
+                  authToken={token}
+                  onAdd={handleAddArtwork}
+                  onAddAsset={handleAddAssetArtwork}
+                  onChange={handleArtworkChange}
+                  onRemove={(id) => dispatch({ type: 'removeArtwork', id })}
+                  onLocalCollisions={handleLocalCollisions}
+                />
+              </Box>
+            </SectionCard>
+
+            <PreviewStep
+              order={previewOrder}
+              summary={summary}
+              isAuthenticated={isAuthenticated}
+              isStale={isStale}
+              isRateLimited={isRateLimited}
+              isDownloading={isDownloadingPreview}
+              locale={locale}
+              onDownload={() => {
+                if (previewOrder) void downloadPreview(previewOrder.licenceId);
+              }}
+            />
+
+            {isPreviewReady && (
+              <SectionCard>
+                <StepHeading
+                  step={6}
+                  done={blockers.length === 0}
+                  title={t('configurator.finalise.heading')}
+                  description={t('configurator.finalise.help')}
+                />
+                <Box className={styles.stepBody}>
+                  <FormControl component="fieldset" fullWidth>
+                    {/* A licence tier is a mutually exclusive choice, not a set of
+                        independent switches — a `RadioGroup` says that in the
+                        accessibility tree, where a checkbox row would let a
+                        screen reader user believe both tiers could be on at
+                        once. */}
+                    <FormLabel component="legend">{t('tiers.heading')}</FormLabel>
+                    <RadioGroup
+                      value={state.tier}
+                      onChange={(event) => {
+                        dispatch({ type: 'setTier', tier: event.target.value as CncLicenceTier });
+                        reportStep('tier');
+                      }}
+                    >
+                      {TIERS.map((tier) => {
+                        const tierAmount = tierPrice(entry, tier);
+                        return (
+                          <FormControlLabel
+                            key={tier}
+                            value={tier}
+                            control={<Radio />}
+                            label={
+                              <span>
+                                {tier === 'personal' ? t('tiers.personal.name') : t('tiers.commercial.name')}
+                                {tierAmount ? (
+                                  <Typography component="span" color="text.secondary">
+                                    {` · ${formatPrice(tierAmount.amountCents, tierAmount.currency, locale)}`}
+                                  </Typography>
+                                ) : null}
+                              </span>
+                            }
+                          />
+                        );
+                      })}
+                    </RadioGroup>
+                  </FormControl>
+
+                  <FieldGrid columns="single">
+                    <TextField
+                      label={t('configurator.licensee.name')}
+                      value={state.licenseeName}
+                      onChange={(event) => dispatch({ type: 'setLicenseeName', value: event.target.value })}
+                      onBlur={() => reportStep('licensee')}
+                      size="small"
+                      fullWidth
+                      required
+                    />
+                    <TextField
+                      label={t('configurator.licensee.email')}
+                      helperText={t('configurator.licensee.emailHelp')}
+                      type="email"
+                      value={state.licenseeEmail}
+                      onChange={(event) => dispatch({ type: 'setLicenseeEmail', value: event.target.value })}
+                      onBlur={() => reportStep('licensee')}
+                      size="small"
+                      fullWidth
+                      required
+                    />
+                    {state.tier === 'commercial_single' && (
+                      <TextField
+                        label={t('configurator.licensee.siteName')}
+                        helperText={t('configurator.licensee.siteHelp')}
+                        value={state.customerSiteName}
+                        onChange={(event) => dispatch({ type: 'setCustomerSiteName', value: event.target.value })}
+                        onBlur={() => reportStep('licensee')}
+                        size="small"
+                        fullWidth
+                        required
+                      />
+                    )}
+                  </FieldGrid>
+
+                  <Box>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={state.licenceAccepted}
+                          onChange={(event) => dispatch({ type: 'setLicenceAccepted', accepted: event.target.checked })}
+                        />
+                      }
+                      label={t('configurator.licence.accept')}
+                    />
+                    <MuiLink component={LocaleLink} href="/build-plans/licence" variant="body2">
+                      {t('configurator.licence.link')}
+                    </MuiLink>
+                  </Box>
+
+                  {isStale && (
+                    <Typography variant="body2" component="p" className={styles.stepNote}>
+                      {t('configurator.finalise.stale')}
+                    </Typography>
+                  )}
+                </Box>
+              </SectionCard>
+            )}
+
+            {errorKey && (
+              <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+                {t(`errors.${errorKey}`)}
+              </Alert>
             )}
           </Box>
-        </Stack>
+        </SplitLayout>
+      </PageSection>
+    </Box>
+  );
+}
+
+/**
+ * Step 5: the free preview.
+ *
+ * A step in the flow rather than a modal, because it sits between "what goes on
+ * the wall" and "whose licence is this" in the buyer's own sequence. Its state
+ * lives in the chip in the card head, and the sheets themselves are never
+ * dimmed, cropped or covered — the watermark is the whole point of the screen.
+ */
+function PreviewStep({
+  order,
+  summary,
+  isAuthenticated,
+  isStale,
+  isRateLimited,
+  isDownloading,
+  locale,
+  onDownload,
+}: {
+  order: CncOrder | null;
+  summary: CncLayoutSummary | null;
+  isAuthenticated: boolean;
+  isStale: boolean;
+  isRateLimited: boolean;
+  isDownloading: boolean;
+  locale: string;
+  onDownload: () => void;
+}) {
+  const { t } = useTranslation('cnc');
+  const status = order?.status ?? null;
+  const isReady = status === 'preview_ready';
+
+  const note = (() => {
+    if (isRateLimited) return t('configurator.preview.rateLimited');
+    if (!order) return isAuthenticated ? t('configurator.preview.idle') : t('configurator.preview.signedOut');
+    if (status === 'preview_failed') return t('configurator.preview.failed');
+    if (!isReady) return t('configurator.preview.working');
+    return isStale ? t('configurator.preview.stale') : t('configurator.preview.ready');
+  })();
+
+  /**
+   * A sheet's caption.
+   *
+   * The generator names its files `panel1.png` … `assembly.png`, and those
+   * names are a contract with the worker rather than copy — so they are
+   * translated here rather than shown raw, and a name we do not recognise falls
+   * back to itself instead of to an empty caption.
+   */
+  const sheetLabel = (name: string): string => {
+    const base = name.replace(/\.[^.]+$/, '');
+    const panel = /^panel(\d+)$/.exec(base);
+    if (panel) return t('configurator.preview.panel', { number: Number(panel[1]) });
+    if (base === 'assembly') return t('configurator.preview.assembly');
+    return base;
+  };
+
+  const generatedAt = order?.previewGeneratedAt ?? null;
+  const panelCount = summary?.panelCount ?? null;
+  const sheetCount = summary?.sheets ?? null;
+  const tnutCount = summary?.tnutCount ?? null;
+  const ledCount = summary?.ledCount ?? null;
+
+  const bom: KeyValueItem[] = [];
+  if (generatedAt !== null) {
+    bom.push({
+      key: 'generated',
+      label: t('configurator.preview.generated'),
+      value: new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(generatedAt)),
+    });
+  }
+  if (panelCount !== null) {
+    bom.push({
+      key: 'panels',
+      label: t('configurator.summary.panels'),
+      value: t('configurator.summary.panelsValue', { count: panelCount }),
+    });
+  }
+  if (sheetCount !== null) {
+    bom.push({
+      key: 'sheets',
+      label: t('configurator.summary.sheets'),
+      value: t('configurator.summary.sheetsValue', { count: sheetCount }),
+    });
+  }
+  if (tnutCount !== null) {
+    bom.push({ key: 'tnuts', label: t('configurator.summary.tnuts'), value: String(tnutCount) });
+  }
+  if (ledCount !== null) {
+    bom.push({ key: 'leds', label: t('configurator.summary.leds'), value: String(ledCount) });
+  }
+
+  return (
+    <SectionCard tone={isReady && !isStale ? 'accent' : 'default'}>
+      <Box className={styles.stepHead}>
+        <StepHeading step={5} done={isReady && !isStale} title={t('configurator.preview.heading')} />
+        {status && <StatusChip status={status} label={t(`status.${status}`)} />}
+      </Box>
+      <Box className={styles.stepBody}>
+        {status === 'preview_failed' && order?.errorMessage ? (
+          <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+            {order.errorMessage}
+          </Alert>
+        ) : null}
+
+        {order && isReady && order.previewImages.length > 0 ? (
+          <PreviewGallery
+            aria-label={t('configurator.preview.galleryLabel')}
+            images={order.previewImages.map((image) => ({
+              name: image.name,
+              url: image.url,
+              label: sheetLabel(image.name),
+            }))}
+            note={note}
+            actions={
+              <Button variant="outlined" onClick={onDownload} disabled={isDownloading}>
+                {isDownloading ? t('configurator.preview.downloading') : t('configurator.preview.download')}
+              </Button>
+            }
+          />
+        ) : (
+          <Typography variant="body2" component="p" className={styles.stepNote}>
+            {note}
+          </Typography>
+        )}
+
+        {isReady && bom.length > 0 && <KeyValueList items={bom} aria-label={t('configurator.preview.bomLabel')} />}
       </Box>
     </SectionCard>
   );
 }
 
-function BoardAndSizeStep({
+function WallStep({
   entries,
   state,
   onSizeChange,
@@ -628,18 +871,18 @@ function BoardAndSizeStep({
   // Boards, not sizes: v1 sells one board, so the board control is a read-only
   // statement of that rather than a select with a single option pretending to
   // be a choice. It becomes a select the day a second board is on sale.
-  const boardNames = [...new Set(entries.map((entry) => getBoardDisplayName(entry.boardName)))];
+  const boardNames = [...new Set(entries.map((candidate) => getBoardDisplayName(candidate.boardName)))];
 
   return (
-    <Stack spacing={2}>
+    <FieldGrid>
       <Box>
-        <Typography variant="subtitle1" className={styles.stepHeading}>
+        <Typography variant="body2" component="p" className={styles.readOnlyLabel}>
           {t('configurator.board.label')}
         </Typography>
-        <Typography variant="body1">{boardNames.join(', ')}</Typography>
-        <Typography variant="body2" color="text.secondary">
-          {t('configurator.board.help')}
+        <Typography variant="body1" component="p">
+          {boardNames.join(', ')}
         </Typography>
+        <FormHelperText>{t('configurator.board.help')}</FormHelperText>
       </Box>
 
       <FormControl fullWidth size="small">
@@ -650,112 +893,186 @@ function BoardAndSizeStep({
           value={String(state.sizeId)}
           onChange={(event) => onSizeChange(Number(event.target.value))}
         >
-          {entries.map((entry) => (
-            <MenuItem key={entry.sizeId} value={String(entry.sizeId)}>
-              {entry.label}
+          {entries.map((candidate) => (
+            <MenuItem key={candidate.sizeId} value={String(candidate.sizeId)}>
+              {candidate.label}
             </MenuItem>
           ))}
         </Select>
         <FormHelperText>{t('configurator.size.help')}</FormHelperText>
       </FormControl>
-    </Stack>
+    </FieldGrid>
   );
 }
 
-function LayoutSummaryCard({
+/**
+ * The rail: what gets cut, what it costs, and the one thing to press.
+ *
+ * The only element on this surface allowed a shadow, because it is the only one
+ * that floats — it follows the buyer down a long form so the figures they are
+ * changing and the button they are heading for are never off screen. On a phone
+ * it falls below the form in DOM order, which is where a buyer meets it after
+ * answering the questions.
+ */
+function SummaryRail({
   summary,
   isLoading,
   hasError,
+  price,
+  tier,
+  isAuthenticated,
+  isRequesting,
+  isWorking,
+  isStale,
+  isFailed,
+  hasFreshPreview,
+  canFinalise,
+  isFinalising,
+  blockedReason,
+  onPreview,
+  onFinalise,
 }: {
-  summary: ReturnType<typeof useCncLayout>['summary'];
+  summary: CncLayoutSummary | null;
   isLoading: boolean;
   hasError: boolean;
+  /** Already formatted for the request's locale, or null when the tier has no price. */
+  price: string | null;
+  tier: CncLicenceTier;
+  isAuthenticated: boolean;
+  isRequesting: boolean;
+  isWorking: boolean;
+  isStale: boolean;
+  isFailed: boolean;
+  hasFreshPreview: boolean;
+  canFinalise: boolean;
+  isFinalising: boolean;
+  /** Why the action is disabled. Never a disabled button with no explanation. */
+  blockedReason: string | null;
+  onPreview: () => void;
+  onFinalise: () => void;
 }) {
   const { t } = useTranslation('cnc');
 
-  // An outage does not blank the configurator: the summary is a confidence
-  // builder, and the error banner above already says what happened. Rendering
-  // nothing here beats rendering a card full of dashes.
-  if (hasError) return null;
+  // Rows keep their place while the layout is computed: a summary that changes
+  // height as figures arrive makes the whole card jump under the cursor.
+  const figure = (value: string | null): React.ReactNode =>
+    value !== null ? value : isLoading ? <Skeleton width={64} /> : '—';
+
+  const wallWidthMm = summary?.wallWidthMm ?? null;
+  const wallHeightMm = summary?.wallHeightMm ?? null;
+  const panelCount = summary?.panelCount ?? null;
+  const sheetCount = summary?.sheets ?? null;
+  const tnutCount = summary?.tnutCount ?? null;
+  const ledCount = summary?.ledCount ?? null;
+
+  const items: KeyValueItem[] = [
+    {
+      key: 'wall',
+      label: t('configurator.summary.wall'),
+      value: figure(
+        wallWidthMm !== null && wallHeightMm !== null
+          ? t('configurator.summary.wallValue', { width: wallWidthMm, height: wallHeightMm })
+          : null,
+      ),
+    },
+    {
+      key: 'panels',
+      label: t('configurator.summary.panels'),
+      value: figure(panelCount !== null ? t('configurator.summary.panelsValue', { count: panelCount }) : null),
+    },
+    {
+      key: 'sheets',
+      label: t('configurator.summary.sheets'),
+      value: figure(sheetCount !== null ? t('configurator.summary.sheetsValue', { count: sheetCount }) : null),
+    },
+    {
+      key: 'tnuts',
+      label: t('configurator.summary.tnuts'),
+      value: figure(tnutCount !== null ? String(tnutCount) : null),
+    },
+    {
+      key: 'leds',
+      label: t('configurator.summary.leds'),
+      value: figure(ledCount !== null ? String(ledCount) : null),
+    },
+  ];
+
+  // Two rows that only exist for some walls, so they are appended rather than
+  // held open: a wall with no kicker has no kicker height to skeleton, and a
+  // seam that swallowed no LEDs is not a figure anyone needs.
+  const kickerHeightMm = summary?.kickerHeightMm ?? null;
+  if (kickerHeightMm !== null) {
+    items.push({
+      key: 'kickerHeight',
+      label: t('configurator.summary.kickerHeight'),
+      value: t('configurator.summary.kickerHeightValue', { height: kickerHeightMm }),
+    });
+  }
+  const skippedSeamLeds = summary?.skippedSeamLeds ?? null;
+  if (skippedSeamLeds !== null && skippedSeamLeds > 0) {
+    items.push({
+      key: 'skippedLeds',
+      label: t('configurator.summary.skippedLeds'),
+      value: String(skippedSeamLeds),
+    });
+  }
+
+  const previewLabel = (() => {
+    if (isRequesting) return t('cta.previewing');
+    if (!isAuthenticated) return t('cta.previewSignedOut');
+    if (isFailed && !isStale) return t('cta.previewRetry');
+    if (isStale) return t('cta.previewUpdate');
+    return t('cta.preview');
+  })();
+
+  const showFinalise = hasFreshPreview;
 
   return (
-    <Box className={styles.summary}>
-      <Typography variant="subtitle1" className={styles.stepHeading}>
-        {t('configurator.summary.heading')}
-      </Typography>
-      {!summary && isLoading && (
-        <Stack direction="row" spacing={1} alignItems="center">
-          <CircularProgress size={16} />
-          <Typography variant="body2" color="text.secondary">
-            {t('configurator.summary.loading')}
+    <SectionCard tone="raised" title={t('configurator.summary.heading')}>
+      {hasError ? (
+        // An outage does not blank the rail: the error above already says what
+        // happened, and a card full of dashes says nothing.
+        <Typography variant="body2" component="p" className={styles.stepNote}>
+          {t('configurator.summary.unavailable')}
+        </Typography>
+      ) : (
+        <KeyValueList items={items} dense aria-label={t('configurator.summary.heading')} />
+      )}
+
+      {summary && summary.warnings.length > 0 && (
+        <Box className={styles.railWarnings}>
+          <Typography variant="body2" component="p" className={styles.railWarningsHeading}>
+            {t('configurator.summary.warningsHeading')}
           </Typography>
-        </Stack>
+          {summary.warnings.map((warning) => (
+            <Typography key={warning} variant="body2" component="p" className={styles.stepNote}>
+              {warning}
+            </Typography>
+          ))}
+        </Box>
       )}
-      {summary && (
-        <Stack spacing={0.5} sx={{ mt: 1 }}>
-          {summary.wallWidthMm !== null && summary.wallHeightMm !== null && (
-            <SummaryRow
-              label={t('configurator.summary.wall')}
-              value={t('configurator.summary.wallValue', {
-                width: summary.wallWidthMm,
-                height: summary.wallHeightMm,
-              })}
-            />
-          )}
-          {summary.kickerHeightMm !== null && (
-            <SummaryRow
-              label={t('configurator.summary.kickerHeight')}
-              value={t('configurator.summary.kickerHeightValue', { height: summary.kickerHeightMm })}
-            />
-          )}
-          {summary.panelCount !== null && (
-            <SummaryRow
-              label={t('configurator.summary.panels')}
-              value={t('configurator.summary.panelsValue', { count: summary.panelCount })}
-            />
-          )}
-          {summary.sheets !== null && (
-            <SummaryRow
-              label={t('configurator.summary.sheets')}
-              value={t('configurator.summary.sheetsValue', { count: summary.sheets })}
-            />
-          )}
-          {summary.tnutCount !== null && (
-            <SummaryRow label={t('configurator.summary.tnuts')} value={String(summary.tnutCount)} />
-          )}
-          {summary.ledCount !== null && (
-            <SummaryRow label={t('configurator.summary.leds')} value={String(summary.ledCount)} />
-          )}
-          {summary.skippedSeamLeds !== null && summary.skippedSeamLeds > 0 && (
-            <SummaryRow label={t('configurator.summary.skippedLeds')} value={String(summary.skippedSeamLeds)} />
-          )}
-          {summary.warnings.length > 0 && (
-            <Box sx={{ mt: 1 }}>
-              <Typography variant="body2" fontWeight={themeTokens.typography.fontWeight.semibold}>
-                {t('configurator.summary.warningsHeading')}
-              </Typography>
-              {summary.warnings.map((warning) => (
-                <Typography key={warning} variant="body2" color="text.secondary">
-                  {warning}
-                </Typography>
-              ))}
-            </Box>
-          )}
-        </Stack>
-      )}
-    </Box>
-  );
-}
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return (
-    <Stack direction="row" justifyContent="space-between" className={styles.summaryRow}>
-      <Typography variant="body2" color="text.secondary">
-        {label}
-      </Typography>
-      <Typography variant="body2" fontWeight={themeTokens.typography.fontWeight.semibold}>
-        {value}
-      </Typography>
-    </Stack>
+      <Box className={styles.railAction}>
+        <Typography variant="body2" component="p" className={styles.railPriceLabel}>
+          {tier === 'personal' ? t('tiers.personal.name') : t('tiers.commercial.name')}
+        </Typography>
+        <PriceTag amount={price ?? '—'} note={t('tiers.perWall')} />
+
+        <Button
+          variant="contained"
+          size="large"
+          fullWidth
+          className={styles.railButton}
+          disabled={showFinalise ? !canFinalise || isFinalising : isRequesting || isWorking}
+          onClick={showFinalise ? onFinalise : onPreview}
+        >
+          {showFinalise ? (isFinalising ? t('cta.finalising') : t('cta.finalise')) : previewLabel}
+        </Button>
+
+        <Typography variant="body2" component="p" className={styles.stepNote}>
+          {blockedReason ?? (isWorking ? t('configurator.preview.working') : t('cta.free'))}
+        </Typography>
+      </Box>
+    </SectionCard>
   );
 }
