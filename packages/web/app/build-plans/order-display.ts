@@ -43,7 +43,7 @@ export function tb2ConfigurationLabel(
 export function wallLabel(
   catalog: CncCatalog | null,
   order: { boardName: string; layoutId: number; sizeId: number; options?: Record<string, string | number | boolean> },
-  translate?: (key: string) => string,
+  translate: (key: string) => string,
 ): string {
   const entry = catalog?.entries.find(
     (candidate) =>
@@ -52,7 +52,7 @@ export function wallLabel(
       candidate.sizeId === order.sizeId,
   );
   const size = entry?.label ?? String(order.sizeId);
-  return order.boardName === 'tension' && translate
+  return order.boardName === 'tension' && (order.layoutId === 10 || order.layoutId === 11)
     ? `${size} · ${tb2ConfigurationLabel(order.options, translate)}`
     : size;
 }
