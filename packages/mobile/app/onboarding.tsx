@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useTheme as usePaperTheme } from 'react-native-paper';
 import { OnboardingPrompt } from '../src/components/onboarding/OnboardingPrompt';
 import { OnboardingBoardRoute } from '../src/components/onboarding/OnboardingBoardRoute';
+import { OnboardingLinkRoute } from '../src/components/onboarding/OnboardingLinkRoute';
 import { BoardLookStep } from '../src/components/board-look/BoardLookStep';
 import { useTheme } from '../src/providers/theme-provider';
 import { useVariantValue } from '../src/theme/variants';
@@ -76,6 +77,15 @@ export default function OnboardingScreen() {
   let stepContent: ReactNode;
   if (step === 'board-look') {
     stepContent = <BoardLookRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />;
+  } else if (step === 'link') {
+    stepContent = (
+      <OnboardingLinkRoute
+        accentColor={accentColor}
+        iconColor={iconColor}
+        bodyColor={bodyColor}
+        backgroundColor={backgroundColor}
+      />
+    );
   } else if (step === 'board') {
     stepContent = (
       <OnboardingBoardRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />
