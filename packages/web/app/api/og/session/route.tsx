@@ -4,6 +4,7 @@ import type { NextRequest } from 'next/server';
 import { darkTokens, themeTokens } from '@/app/theme/theme-config';
 import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
 import { BOULDER_GRADES } from '@/app/lib/board-data';
+import { gradeAxisFloorSteps, vGradeNumber } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { ogErrorResponse } from '@/app/lib/seo/og-error';
@@ -16,6 +17,14 @@ const DIFFICULTY_TO_GRADE: Record<number, string> = Object.fromEntries(
 );
 
 const GRADE_ORDER: string[] = BOULDER_GRADES.map((g) => g.font_grade);
+const DIFFICULTY_TO_V: Record<number, string> = Object.fromEntries(
+  BOULDER_GRADES.map((g) => [g.difficulty_id, g.v_grade]),
+);
+
+function gradeBarColor(grade: string, opacity: number): string {
+  const hex = FONT_GRADE_COLORS[grade.toLowerCase()];
+  return hex ? getGradeColorWithOpacity(hex, opacity) : 'rgba(209, 213, 219, 0.65)';
+}
 
 function buildGradeBars(gradeRows: Array<{ difficulty: number; count: number }>) {
   const gradeBars: Array<{ grade: string; count: number; color: string }> = [];
@@ -23,13 +32,28 @@ function buildGradeBars(gradeRows: Array<{ difficulty: number; count: number }>)
   for (const row of gradeRows) {
     const grade = DIFFICULTY_TO_GRADE[row.difficulty];
     if (!grade) continue;
-
-    const hex = FONT_GRADE_COLORS[grade.toLowerCase()];
-    const color = hex ? getGradeColorWithOpacity(hex, 0.72) : 'rgba(209, 213, 219, 0.65)';
-    gradeBars.push({ grade, count: row.count, color });
+    gradeBars.push({ grade, count: row.count, color: gradeBarColor(grade, 0.72) });
   }
 
   gradeBars.sort((a, b) => GRADE_ORDER.indexOf(a.grade) - GRADE_ORDER.indexOf(b.grade));
+
+  // Anchor the axis at the boulder floor (V0): prepend empty (count 0) bars for
+  // every V-step below the session's lowest send, so the chart spans the board's
+  // whole range instead of only the hard end climbed. Each floor bar renders at
+  // the minimum height with a faded grade colour.
+  if (gradeRows.length > 0) {
+    const minDifficulty = gradeRows.reduce((min, row) => Math.min(min, row.difficulty), Infinity);
+    const minV = vGradeNumber(DIFFICULTY_TO_V[minDifficulty] ?? '');
+    if (minV != null) {
+      const floorBars = gradeAxisFloorSteps(minV).map((entry) => ({
+        grade: entry.font_grade,
+        count: 0,
+        color: gradeBarColor(entry.font_grade, 0.4),
+      }));
+      return [...floorBars, ...gradeBars];
+    }
+  }
+
   return gradeBars;
 }
 

@@ -209,6 +209,58 @@ if [[ ! -f "$OUTPUT_DIR/index.html" ]]; then
   exit 1
 fi
 
+# Inject favicon + OpenGraph/Twitter tags into the static index.html. Expo's
+# `output: 'single'` export ships a default shell and only runs app/+html.tsx
+# inside the JS bundle, so link unfurlers (Discord/Slack/iMessage) — which read
+# the static HTML without executing JS — never saw a favicon or OG image. Assets
+# live in packages/mobile/public/{favicon,og}.png and ship at the export root.
+# The OG image must be an absolute URL, so it depends on the serve origin:
+#   --subdomain (baseUrl /) → app.boardsesh.com ; /app (default) → www.boardsesh.com.
+ASSET_BASE="${WEB_BASE_URL%/}" # '' for the subdomain root, '/app' for the legacy path
+if [[ "$WEB_BASE_URL" == "/" ]]; then
+  OG_ORIGIN="https://app.boardsesh.com"
+else
+  OG_ORIGIN="https://www.boardsesh.com"
+fi
+BOARDSESH_ASSET_BASE="$ASSET_BASE" BOARDSESH_OG_ORIGIN="$OG_ORIGIN" \
+  python3 - "$OUTPUT_DIR/index.html" <<'PY'
+import os, sys
+
+index_path = sys.argv[1]
+asset_base = os.environ["BOARDSESH_ASSET_BASE"]
+og_origin = os.environ["BOARDSESH_OG_ORIGIN"]
+favicon = f"{asset_base}/favicon.png"
+og_image = f"{og_origin}{asset_base}/og.png"
+description = "One app for your climbing boards. Browse climbs, build a queue, and climb with your crew."
+
+html = open(index_path, encoding="utf-8").read()
+if "data-boardsesh-og" in html:
+    sys.exit(0)  # already injected (idempotent)
+
+tags = f'''<link rel="icon" type="image/png" href="{favicon}" data-boardsesh-og>
+    <link rel="apple-touch-icon" href="{favicon}">
+    <meta name="theme-color" content="#15101e">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Boardsesh">
+    <meta property="og:title" content="Boardsesh">
+    <meta property="og:description" content="{description}">
+    <meta property="og:image" content="{og_image}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Boardsesh">
+    <meta name="twitter:description" content="{description}">
+    <meta name="twitter:image" content="{og_image}">
+  '''
+
+marker = "</head>"
+if marker not in html:
+    sys.stderr.write("[build-expo-web-export] no </head> in index.html; cannot inject OG tags\n")
+    sys.exit(1)
+open(index_path, "w", encoding="utf-8").write(html.replace(marker, tags + marker, 1))
+print(f"[build-expo-web-export] injected favicon + OG tags (image {og_image})")
+PY
+
 if [[ ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm.js" || ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm_bg.wasm" ]]; then
   echo "[build-expo-web-export] missing board-renderer WASM assets in $OUTPUT_DIR" >&2
   exit 1
