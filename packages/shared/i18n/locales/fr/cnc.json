@@ -55,6 +55,10 @@
   "configurator": {
     "heading": "Configure ton mur",
     "intro": "Tout ce qui suit change ce qui sera découpé. Prends les valeurs avec lesquelles ton atelier travaille.",
+    "wall": {
+      "heading": "Ton mur",
+      "help": "La board et la taille que tu construis. Tout le reste en découle."
+    },
     "board": {
       "label": "Board",
       "help": "Le Kilter Homewall est la seule board en vente aujourd'hui."
@@ -64,7 +68,6 @@
       "help": "La taille Kilter que tu construis. Elle fixe la trame de prises et les dimensions du mur."
     },
     "kicker": {
-      "label": "Kicker",
       "help": "Le panneau incliné du bas. Seuls les murs de 12 ft en ont un.",
       "include": "Inclure le kicker",
       "exclude": "Sans kicker"
@@ -170,8 +173,8 @@
     },
     "engrave": {
       "heading": "Gravure",
-      "help": "Les deux sont désactivés par défaut. Ça n'a de sens que sur un mur Kilter, et le pack se découpe très bien sans.",
-      "note": "Les numéros de prise et les angles de vis viennent du plan de Kilter. On attend encore un avis juridique pour les livrer, donc laisse-les désactivés si tu préfères ne pas attendre cette réponse."
+      "help": "Numéros de prise et angles de vis, gravés dans le panneau pendant la découpe. Les deux sont activés par défaut.",
+      "note": "Ils viennent du plan de Kilter et servent le jour où tu montes les prises : le numéro à côté de chaque écrou dit quelle prise va là, et le repère montre où pointe la vis."
     },
     "artwork": {
       "heading": "Texte et logos personnalisés",
@@ -212,7 +215,6 @@
       "fits": "Ça passe. Loin de tous les trous et de toutes les jonctions.",
       "doesNotFit": "Impossible de découper là. Déplace-la et on revérifie.",
       "signInToCheck": "Connecte-toi et on vérifie tes étiquettes contre la grille de trous.",
-      "blocksCheckout": "Déplace tes étiquettes là où elles passent avant d'acheter.",
       "issues": {
         "text": "Écris ce que doit dire cette étiquette.",
         "textTooLong": "C'est plus long que {{chars}} caractères.",
@@ -262,11 +264,11 @@
         "holesInTheWay_other": "Elle tombe sur {{count}} trous. Déplace-la.",
         "crossesSeam": "Elle traverse une jonction, elle serait coupée en deux.",
         "clear": "Loin de tous les trous et de toutes les jonctions de ce panneau."
-      }
+      },
+      "blocksPreview": "Déplace tes étiquettes là où elles passent avant de demander l'aperçu."
     },
     "summary": {
       "heading": "Ce qui sera découpé",
-      "loading": "Calcul des panneaux…",
       "wall": "Mur",
       "wallValue": "{{width}} × {{height}} mm",
       "kickerHeight": "Hauteur du kicker",
@@ -280,11 +282,10 @@
       "tnuts": "Perçages d'écrous à griffes",
       "leds": "Perçages LED",
       "skippedLeds": "LED sautées à un raccord",
-      "warningsHeading": "Bon à savoir"
+      "warningsHeading": "Bon à savoir",
+      "unavailable": "La liste de découpe ne charge pas pour l’instant. Tout ce que tu as choisi est toujours là."
     },
     "licensee": {
-      "heading": "Au nom de qui est la licence",
-      "help": "Ça figure sur chaque fichier du pack : une copie qui fuite remonte à la licence.",
       "name": "Nom sur la licence",
       "email": "E-mail",
       "emailHelp": "Là où le pack arrive une fois prêt.",
@@ -295,20 +296,48 @@
     "licence": {
       "accept": "J'accepte la licence de fabrication",
       "link": "Lis-la d'abord"
+    },
+    "preview": {
+      "heading": "Ton aperçu",
+      "signedOut": "Connecte-toi et on trace ton mur. Les aperçus sont gratuits, sans carte bancaire.",
+      "idle": "On répartit toutes les planches et on te renvoie des plans filigranés. Change quelque chose et redemande.",
+      "working": "On trace tes planches. Ça prend une quinzaine de secondes.",
+      "ready": "Filigranés, en 110 dpi. Valide pour récupérer les DXF.",
+      "stale": "Tu as changé le mur depuis ces planches. Mets l'aperçu à jour pour voir les nouvelles.",
+      "failed": "Cet aperçu n'a pas été généré. Rien n'a été débité : réessaie.",
+      "rateLimited": "C'est tous les aperçus gratuits de cette heure. Ceux que tu as sont dans tes plans ; le prochain, à l'heure pile.",
+      "download": "Télécharger l'aperçu",
+      "downloading": "Récupération du lien…",
+      "galleryLabel": "Planches de l'aperçu",
+      "bomLabel": "Ce que ces planches découpent",
+      "panel": "Panneau {{number}}",
+      "assembly": "Assemblage",
+      "generated": "Aperçu du"
+    },
+    "finalise": {
+      "heading": "Au nom de qui est la licence",
+      "help": "La licence figure sur chaque fichier du pack : une copie qui fuite y remonte.",
+      "stale": "Mets d'abord ton aperçu à jour — le mur a changé depuis ces planches."
     }
   },
   "cta": {
-    "buy": "Acheter les plans",
-    "buySignedOut": "Se connecter et acheter",
-    "buying": "Ouverture du paiement…",
-    "signInTitle": "Connecte-toi pour acheter",
-    "signInBody": "Ta licence a besoin d'un compte où vivre. On te ramène directement à ta configuration."
+    "preview": "Demander un aperçu gratuit",
+    "previewSignedOut": "Se connecter pour l'aperçu gratuit",
+    "previewUpdate": "Mettre l'aperçu à jour",
+    "previewing": "Tracé de ton aperçu…",
+    "previewRetry": "Réessayer",
+    "finalise": "Valider et acheter",
+    "finalising": "Ouverture du paiement…",
+    "free": "Les aperçus sont gratuits. Sans carte.",
+    "signInTitle": "Connecte-toi pour ton aperçu gratuit",
+    "signInBody": "Ton aperçu a besoin d'un compte où vivre. On te ramène directement à ta configuration."
   },
   "errors": {
     "CNC_INVALID_CONFIG": "Cette combinaison ne se découpe pas. Change quelque chose au-dessus et on revérifie.",
     "CNC_WORKER_UNAVAILABLE": "Le générateur de plans ne répond pas pour l'instant. Rien n'a été débité. Réessaie dans une minute.",
     "CNC_CHECKOUT_UNAVAILABLE": "Les paiements ne sont pas disponibles pour l'instant. Rien n'a été débité. Réessaie un peu plus tard.",
-    "generic": "Ça n'est pas passé. Rien n'a été débité."
+    "generic": "Ça n'est pas passé. Rien n'a été débité.",
+    "RATE_LIMITED": "Ça fait beaucoup d'aperçus pour une heure. Rien n'a été débité : le prochain, à l'heure pile."
   },
   "status": {
     "pending_payment": "En attente de paiement",
@@ -325,38 +354,60 @@
   },
   "orders": {
     "heading": "Tes plans de construction",
-    "intro": "Tous les packs que tu as achetés, du plus récent au plus ancien. Une licence reste la tienne quoi qu'il arrive à cette page.",
-    "empty": "Rien ici pour l'instant.",
+    "intro": "Tous les murs que tu as prévisualisés ou achetés, du plus récent au plus ancien. Une licence reste la tienne quoi qu'il arrive à cette page.",
+    "configureAnother": "Configurer un autre mur",
+    "empty": "Aucun mur ici pour l'instant.",
+    "emptyBody": "Configure un mur et on te trace gratuitement un aperçu de chaque panneau. Rien n'est débité tant que tu ne finalises pas.",
     "emptyCta": "Configurer un mur",
-    "board": "Mur",
-    "tier": "Type de licence",
-    "created": "Commandé",
+    "previewTier": "Aperçu",
+    "orderedOn": "Commandé le {{date}}",
+    "previewedOn": "Aperçu du {{date}}",
     "view": "Ouvrir",
+    "viewOne": "Ouvrir le plan de construction {{licenceId}}",
+    "finalise": "Finaliser",
     "loadError": "On n'a pas pu charger tes plans de construction. Recharge la page."
   },
   "order": {
-    "heading": "Plan de construction {{licenceId}}",
     "back": "Tous tes plans de construction",
-    "licence": "Licence",
     "board": "Mur",
-    "tier": "Type de licence",
-    "placed": "Commandé",
+    "tier": "Licence",
+    "placed": "Commencé",
+    "previewed": "Aperçu tracé",
     "size": "Taille du pack",
     "sizeValue": "{{megabytes}} Mo",
     "downloads": "Téléchargements",
+    "facts": {
+      "heading": "Ce que c'est"
+    },
     "timeline": {
       "heading": "Où ça en est",
-      "paid": "Payé",
-      "queued": "En file d'attente pour le générateur",
-      "generating": "Découpe des fichiers",
+      "preview": "Aperçu gratuit tracé",
+      "finalised": "Licence nommée et payée",
+      "building": "Découpe des fichiers",
       "ready": "Prêt à télécharger"
     },
     "waiting": "Un pack prend deux ou trois minutes. Cette page se met à jour toute seule.",
+    "previewWaiting": "Un aperçu prend une quinzaine de secondes. Cette page se met à jour toute seule.",
+    "preview": {
+      "heading": "Ton aperçu gratuit",
+      "note": "Filigrané, 110 ppp. Finalise pour avoir les DXF que ton atelier découpe.",
+      "drawing": "On trace tes panneaux. Ils arrivent ici dès qu'ils sont prêts.",
+      "panel": "Panneau {{number}}",
+      "assembly": "Montage"
+    },
+    "finalise": "Finaliser et acheter",
+    "downloadPreview": "Télécharger l'aperçu",
     "download": "Télécharger le pack",
     "downloading": "Récupération de ton lien…",
     "downloadError": "Ce lien n'est pas passé. Réessaie.",
     "checkoutSuccess": "Le paiement est passé. Ton pack est en cours de découpe.",
     "checkoutCancelled": "Le paiement a été annulé. Rien n'a été débité.",
+    "previewFailed": {
+      "heading": "Cet aperçu n'a pas été tracé",
+      "body": "Rien n'a été débité. Change quelque chose sur ton mur et redemande un aperçu, ou dis-le-nous et on regarde.",
+      "contact": "Écris-nous, on règle ça",
+      "subject": "L'aperçu du plan de construction {{licenceId}} n'a pas été tracé"
+    },
     "failed": {
       "heading": "Celui-ci n'a pas été généré",
       "contact": "Écris-nous, on règle ça",
@@ -370,7 +421,11 @@
       "heading": "Pas de plan de construction ici",
       "body": "Soit cette licence n'existe pas, soit elle appartient à un autre compte."
     },
-    "loadError": "On n'a pas pu charger ce plan de construction. Recharge la page."
+    "loadError": "On n'a pas pu charger ce plan de construction. Recharge la page.",
+    "downloadCard": {
+      "heading": "Ton pack de construction",
+      "note": "Un DXF par panneau, les plans de montage, les feuilles à imprimer et ta licence, dans un seul zip."
+    }
   },
   "flow": {
     "heading": "Comment ça marche",
