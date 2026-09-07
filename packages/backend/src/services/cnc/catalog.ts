@@ -1,4 +1,4 @@
-import type { BoardName } from '@boardsesh/shared-schema';
+import { tb2LayoutIdForEngraving, type BoardName } from '@boardsesh/shared-schema';
 import {
   getSetsForLayoutAndSize,
   KILTER_HOMEWALL_LAYOUT_ID,
@@ -425,7 +425,7 @@ export function validateCatalogOptions(entry: CncCatalogEntry, options: unknown)
   }
 
   if (isTensionBoard2(entry)) {
-    const expectedLayoutId = normalisedOptions.tb2Engraving === 'spray' ? 11 : 10;
+    const expectedLayoutId = tb2LayoutIdForEngraving(String(normalisedOptions.tb2Engraving));
     if (entry.layoutId !== expectedLayoutId) {
       errors.push({
         key: 'tb2Engraving',

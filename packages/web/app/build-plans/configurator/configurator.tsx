@@ -1,6 +1,5 @@
 'use client';
 
-import { tb2ConfigurationLabel } from '../order-display';
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +44,7 @@ import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { trackCncFunnelEvent } from '@/app/lib/cnc-funnel-analytics';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
+import { tb2ConfigurationLabel } from '../order-display';
 import {
   FieldGrid,
   KeyValueList,
