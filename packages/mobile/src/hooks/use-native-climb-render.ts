@@ -398,10 +398,10 @@ export function ensureBoardseshSupportProbed(): void {
     // `getNativeModule` retries across renders and only latches its failure
     // after exhausting the budget. Once it HAS given up there will never be a
     // binary to ask, so leaving the answer at `null` strands every consumer
-    // that waits for one — notably queue-provider, which withholds
-    // `Climb View Opened` while the mode is unresolved and would then report no
-    // views at all for the whole session. (That is reachable only now that the
-    // app default asks for the Boardsesh drawing: before, an unresolved answer
+    // that waits for one — notably queue-provider, whose `renderSettingsPending`
+    // gate holds back the resolved render mode (and the screenshot gate's log
+    // line) for the whole session. (That is reachable only now that the app
+    // default asks for the Boardsesh drawing: before, an unresolved answer
     // simply meant classic.) Deferred through the probe slot for the same
     // reason the real probe is: a synchronous store notification here would
     // fire during render.
