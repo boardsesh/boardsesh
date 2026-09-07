@@ -1,6 +1,6 @@
 import type { PostHog } from 'posthog-react-native';
 import { createAnalytics, type GlowFalloffSource } from '@boardsesh/analytics';
-import { shouldEmitScreenForSession } from './analytics-screen-session-gate';
+import { resetScreenSessionGate, shouldEmitScreenForSession } from './analytics-screen-session-gate';
 import { getPostHogClient, registerAppSuperProperties } from './posthog-client';
 import { registerConnectivitySuperProperty } from './analytics-connectivity';
 import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
@@ -223,6 +223,12 @@ export function registerRenderSuperProperties(effective: {
 // and every remaining event of the launch would lose its venue.
 export function reset(): boolean {
   const didReset = analytics.reset();
+  // Clear the screen gate here rather than at each sign-out call site, so a new
+  // "forget this person" path cannot forget it. analytics.reset() nulls the
+  // SDK's persisted SessionId, which would re-arm the gate on the next
+  // getSessionId() anyway — this just makes that explicit instead of a side
+  // effect a reader has to know about.
+  resetScreenSessionGate();
   const client = getClient();
   if (client) {
     registerAppSuperProperties(client);

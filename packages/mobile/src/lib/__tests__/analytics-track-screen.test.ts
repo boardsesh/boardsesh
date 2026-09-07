@@ -2,7 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const screenMock = vi.fn();
 const registerForSessionMock = vi.fn();
-let client: { screen: typeof screenMock; registerForSession: typeof registerForSessionMock } | null = null;
+const resetMock = vi.fn();
+type FakeClient = {
+  screen: typeof screenMock;
+  registerForSession: typeof registerForSessionMock;
+  reset: typeof resetMock;
+  register: () => void;
+  unregister: () => void;
+};
+let client: FakeClient | null = null;
 
 vi.mock('../posthog-client', () => ({
   getPostHogClient: () => client,
@@ -12,6 +20,7 @@ vi.mock('../posthog-client', () => ({
 const shouldEmitScreenForSessionMock = vi.fn<(screenName: string) => boolean>(() => true);
 vi.mock('../analytics-screen-session-gate', () => ({
   shouldEmitScreenForSession: (screenName: string) => shouldEmitScreenForSessionMock(screenName),
+  resetScreenSessionGate: vi.fn(),
 }));
 
 import { trackScreen } from '../analytics';
@@ -21,7 +30,14 @@ beforeEach(() => {
   registerForSessionMock.mockClear();
   shouldEmitScreenForSessionMock.mockClear();
   shouldEmitScreenForSessionMock.mockReturnValue(true);
-  client = { screen: screenMock, registerForSession: registerForSessionMock };
+  resetMock.mockClear();
+  client = {
+    screen: screenMock,
+    registerForSession: registerForSessionMock,
+    reset: resetMock,
+    register: () => {},
+    unregister: () => {},
+  };
 });
 
 describe('trackScreen', () => {
@@ -64,5 +80,18 @@ describe('trackScreen', () => {
 
     expect(() => trackScreen('/home')).not.toThrow();
     expect(shouldEmitScreenForSessionMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('reset', () => {
+  it('clears the screen gate, so a new sign-out path cannot forget it', async () => {
+    // The gate is reset here rather than at each sign-out call site. This test is
+    // the guard on that: it fails if the call moves back out of reset().
+    const { reset } = await import('../analytics');
+    const { resetScreenSessionGate } = await import('../analytics-screen-session-gate');
+
+    reset();
+
+    expect(vi.mocked(resetScreenSessionGate)).toHaveBeenCalled();
   });
 });
