@@ -81,6 +81,7 @@ import {
   type CncArtworkDraft,
   type CncConfiguratorState,
 } from './configurator-state';
+import type { CncErrorKey } from '../cnc-error';
 import type { CncLayoutPanel, CncLayoutSummary } from './layout-summary';
 import ArtworkStep from './artwork-step';
 import { useCncArtworkValidation } from './use-cnc-artwork-validation';
@@ -433,7 +434,10 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     });
   };
 
-  const errorKey = finaliseErrorKey ?? previewErrorKey ?? pollErrorKey ?? layoutErrorKey ?? artworkErrorKey;
+  // Errors sit in the card they belong to. What is left over here is the pair
+  // that belongs to no single step: the layout the whole page is drawn from,
+  // and the generator's artwork verdict.
+  const errorKey = pollErrorKey ?? layoutErrorKey ?? artworkErrorKey;
 
   return (
     <Box id="configure" className={styles.configurator}>
@@ -604,6 +608,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
               isAuthenticated={isAuthenticated}
               isStale={isStale}
               isRateLimited={isRateLimited}
+              errorKey={previewErrorKey}
               isDownloading={isDownloadingPreview}
               locale={locale}
               onDownload={() => {
@@ -712,6 +717,12 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                       {t('configurator.finalise.stale')}
                     </Typography>
                   )}
+
+                  {finaliseErrorKey && (
+                    <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+                      {t(`errors.${finaliseErrorKey}`)}
+                    </Alert>
+                  )}
                 </Box>
               </SectionCard>
             )}
@@ -742,6 +753,7 @@ function PreviewStep({
   isAuthenticated,
   isStale,
   isRateLimited,
+  errorKey,
   isDownloading,
   locale,
   onDownload,
@@ -751,6 +763,8 @@ function PreviewStep({
   isAuthenticated: boolean;
   isStale: boolean;
   isRateLimited: boolean;
+  /** A failed preview or download request. The ceiling is said in the note instead. */
+  errorKey: CncErrorKey | null;
   isDownloading: boolean;
   locale: string;
   onDownload: () => void;
@@ -825,6 +839,14 @@ function PreviewStep({
         {status && <StatusChip status={status} label={t(`status.${status}`)} />}
       </Box>
       <Box className={styles.stepBody}>
+        {errorKey && !isRateLimited ? (
+          <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+            {t(`errors.${errorKey}`)}
+          </Alert>
+        ) : null}
+
+        {/* The generator's own fixed public message, which says more than a
+            code ever could about a job that got as far as being drawn. */}
         {status === 'preview_failed' && order?.errorMessage ? (
           <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
             {order.errorMessage}
