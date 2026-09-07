@@ -183,7 +183,9 @@ async function main() {
     console.log(
       `Ambiguous  ${plan.ambiguous} ticks from ${plan.ambiguousUserIds.size} climbers who own several boards of that config`,
     );
-    console.log(`No board   ${plan.noOwnedBoard} ticks whose climber owns no board of that config (the feed is correct)`);
+    console.log(
+      `No board   ${plan.noOwnedBoard} ticks whose climber owns no board of that config (the feed is correct)`,
+    );
     console.log('');
 
     if (entries.length === 0) {
