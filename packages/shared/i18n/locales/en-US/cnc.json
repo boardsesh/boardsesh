@@ -123,7 +123,7 @@
       },
       "studClearanceOffsetMm": {
         "label": "Stud clearance",
-        "help": "Shifts the hold grid sideways so no hole lands on a stud.",
+        "help": "Shifts the hold grid sideways so no hole lands on a stud. 0 mm keeps the pattern centred on the wall.",
         "values": {
           "0": "None",
           "30": "30 mm",
