@@ -36,6 +36,7 @@ import { resolveMoonBoardTickAngle } from '@boardsesh/db/queries';
 import { captureBackendEvent } from '../../../services/analytics/posthog';
 import { logger } from '../../../utils/logger';
 import { reconcileInferredSessions } from '../../../services/inferred-sessions/reconcile';
+import { parseClimbedAt } from '../../../services/inferred-sessions/timestamps';
 import {
   acquireUserTickMutationLock,
   isDirectAuroraTwin,
@@ -720,7 +721,7 @@ export const tickMutations = {
       // logical ascent's rows share one climbed_at and would otherwise reconcile the
       // same window repeatedly.
       for (const climbedAt of new Set(affectedTicks.map((tick) => tick.climbedAt))) {
-        await reconcileInferredSessions(tx, userId, new Date(climbedAt));
+        await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
       }
 
       return { affectedTicks, detachedBetaLinks: detachedBetaLinks.length > 0 };
@@ -1149,7 +1150,7 @@ export const tickMutations = {
         // transaction so the tick and its assignment commit together. Inert unless
         // INFERRED_SESSIONS_ENABLED is set. A tick that already carries an explicit
         // session still goes through, because the run around it may need redrawing.
-        await reconcileInferredSessions(tx, userId, new Date(createdTick.climbedAt));
+        await reconcileInferredSessions(tx, userId, parseClimbedAt(createdTick.climbedAt));
 
         return [createdTick];
       },
@@ -1464,7 +1465,7 @@ export const tickMutations = {
         ...existingTicks.map((tick) => tick.climbedAt),
         ...updatedTicks.map((tick) => tick.climbedAt),
       ])) {
-        await reconcileInferredSessions(tx, userId, new Date(climbedAt));
+        await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
       }
 
       return { existingTicks, updatedTicks, updatedTarget, movedBetaLinks };

@@ -1,16 +1,5 @@
-/**
- * The gap that separates two sessions.
- *
- * Measured across the whole production tick table, inter-tick gaps are sharply
- * bimodal: 80% land under 15 minutes and 11% are over 12 hours, with only 0.4%
- * (243 of 60,385) anywhere in the 2–12 hour valley between. Any threshold in that
- * valley draws essentially the same boundaries, so this number is robust rather
- * than tuned — moving it to 2h or 12h changes well under 1% of session edges.
- *
- * 4h is what the pre-#2663 implementation used, and the data says it was a fine
- * choice. Kept identical so the two eras group history the same way.
- */
-export const SESSION_GAP_MS = 4 * 60 * 60 * 1000;
+/** Automatic grouping stops at gaps over eight hours; exactly eight hours stays connected. */
+export const SESSION_GAP_MS = 8 * 60 * 60 * 1000;
 
 /** The subset of a tick this module needs. Keeps the algorithm free of DB types. */
 export type InferenceTick = {
@@ -34,10 +23,6 @@ export type ExistingInferredSession = {
 /** An explicit (someone-pressed-Start) session overlapping the window. */
 export type ExistingExplicitSession = {
   id: string;
-  /** Epoch ms of the session's first tick. */
-  firstTickAt: number;
-  /** Epoch ms of the session's last tick. */
-  lastTickAt: number;
 };
 
 /**

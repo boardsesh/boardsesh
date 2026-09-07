@@ -8,4 +8,4 @@ export type {
   ResolvedRun,
   SessionMerge,
 } from './types';
-export { expandWindow, reconcileWindow } from './reconcile';
+export { expandWindow, expandReconciliationWindow, isReconciliationBoundary, reconcileWindow } from './reconcile';
