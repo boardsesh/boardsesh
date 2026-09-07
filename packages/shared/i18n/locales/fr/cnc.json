@@ -22,9 +22,14 @@
       "dxf": "Un DXF par panneau, plus les plans de montage du mur complet.",
       "pdf": "Des planches imprimables en A3 ou Tabloid, pour vérifier la disposition avant que quelqu'un découpe.",
       "bom": "Une liste de débit : nombre de plaques, dimensions des panneaux et chaque perçage compté.",
-      "licence": "Une licence à ton nom, valable pour un mur."
+      "licence": "Une licence à ton nom, valable pour un mur.",
+      "dxfLabel": "Un DXF par panneau",
+      "pdfLabel": "Planches de contrôle",
+      "bomLabel": "Une liste de débit",
+      "licenceLabel": "Ta licence"
     },
-    "trademarkNote": "Boardsesh n'est affilié ni à Aurora Climbing, ni à Kilter, ni à aucun fabricant de boards. Ce sont des plans pour construire un mur qui fonctionne avec des prises et des LED que tu achètes toi-même."
+    "trademarkNote": "Boardsesh n'est affilié ni à Aurora Climbing, ni à Kilter, ni à aucun fabricant de boards. Ce sont des plans pour construire un mur qui fonctionne avec des prises et des LED que tu achètes toi-même.",
+    "cta": "Configure ton mur"
   },
   "tiers": {
     "heading": "Choisis une licence",
@@ -44,7 +49,8 @@
       "subject": "Plans de construction : licence multi-constructions"
     },
     "licenceLink": "Lis la licence",
-    "ordersLink": "Tes plans de construction"
+    "ordersLink": "Tes plans de construction",
+    "perWall": "par mur"
   },
   "configurator": {
     "heading": "Configure ton mur",
@@ -311,7 +317,11 @@
     "ready": "Prêt à télécharger",
     "failed": "Pas généré",
     "cancelled": "Paiement expiré",
-    "refunded": "Remboursé"
+    "refunded": "Remboursé",
+    "preview_queued": "Aperçu dans la file",
+    "preview_generating": "Tracé de l'aperçu",
+    "preview_ready": "Aperçu prêt",
+    "preview_failed": "Aperçu pas généré"
   },
   "orders": {
     "heading": "Tes plans de construction",
@@ -361,5 +371,21 @@
       "body": "Soit cette licence n'existe pas, soit elle appartient à un autre compte."
     },
     "loadError": "On n'a pas pu charger ce plan de construction. Recharge la page."
+  },
+  "flow": {
+    "heading": "Comment ça marche",
+    "intro": "Les aperçus sont gratuits. Rien n'est débité tant que tu ne valides pas.",
+    "configure": {
+      "title": "Configure ton mur",
+      "body": "Choisis la taille, les plaques que ton atelier découpe, les diamètres de perçage et ce que tu veux graver dans un panneau."
+    },
+    "preview": {
+      "title": "Demande un aperçu gratuit",
+      "body": "On répartit toutes les planches et on te renvoie les plans filigranés. Change quelque chose et redemande, autant de fois que tu veux."
+    },
+    "finalise": {
+      "title": "Valide et construis",
+      "body": "Mets ton nom sur la licence, paie, et les DXF prêts à découper et les planches à imprimer arrivent dans ton compte."
+    }
   }
 }
