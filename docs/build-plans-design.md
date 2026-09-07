@@ -63,7 +63,7 @@ or use `PageFrame` / `PageSection` / `SectionCard`, which pin it for you.
 
 | Role | Size / weight / leading | Where |
 |---|---|---|
-| Page title (`h1`) | 36 / 700 / 1.14, `-0.02em`, max 18ch | `PageFrame` — 28px at ≤900px |
+| Page title (`h1`) | 36 / 700 / 1.14, `-0.02em`, max 24ch | `PageFrame` — 28px at ≤900px |
 | Page intro | 18 / 400 / 1.55, max 60ch, `--neutral-700` | `PageFrame` — 16px at ≤900px |
 | Section title (`h2`) | 24 / 700 / 1.25, `-0.01em` | `PageSection` — 20px at ≤900px |
 | Section intro | 16 / 400 / 1.5, max 68ch, `--neutral-500` | `PageSection` |
@@ -97,7 +97,7 @@ literal, in any `.module.css` on this surface.**
 | Secondary text, labels, notes | `--neutral-500` |
 | Links, step numerals, accent rule, focus | `--color-primary` (foreground violet) |
 | The one filled button | `--color-primary-fill` + `--color-on-primary` (MUI `variant="contained"`) |
-| Dot grid on the landing plate | `--semantic-selected` |
+| Dot grid on the landing plate | `--semantic-selected-hover`, 1.6px dots at a 24px pitch |
 | Accent card rule | `--color-primary` inset, `--semantic-selected-border` on the border |
 
 The amber `--color-accent` is **not** used on this surface. It is a fill-only spark with a
@@ -416,8 +416,12 @@ appear once — in the card, not in the header.
 ### `/build-plans/licence` — the terms
 
 A reading page, not a sales page. Contents rail left, document right; the rail sticks under
-the header. Clause numbers come from the catalog copy ("3. Personal licence (A$149)"), never
-from a CSS counter — those numbers are part of a licence someone may quote back at us.
+the header. The document sits on a card — the card is the sheet the terms are printed on —
+and the rail does not, because it is navigation around the sheet rather than part of it.
+Inside the sheet the clauses are separated by rules, not by twelve more cards.
+
+Clause numbers come from the catalog copy ("3. Personal licence (A$149)"), never from a CSS
+counter — those numbers are part of a licence someone may quote back at us.
 
 ```
 DESKTOP ≥1000px                    220px  │  minmax(0,1fr)
