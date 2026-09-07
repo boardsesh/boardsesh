@@ -10,6 +10,7 @@ import {
 } from '../../../services/cnc/orders';
 import { attachAssetsToOrder, releaseArtAssetsForOrder } from '../../../services/cnc/art-assets';
 import { createCheckoutSessionForOrder, isStripeConfigured } from '../../../services/cnc/stripe';
+import { isCheckoutBypassEnabled } from '../../../services/cnc/checkout-bypass';
 import { sendCncOrderStuckAdminEmail } from '../../../email/cnc-emails';
 import { isDownloadable } from '../../../services/cnc/order-state';
 import { createDownloadGrant, isDownloadGrantConfigured } from '../../../services/cnc/download-grant';
@@ -157,9 +158,17 @@ export const cncPackMutations = {
 
     const validated = validateInput(CreateCncCheckoutSessionInputSchema, input, 'input');
 
+    // Read once and reused below, so the "should this request skip Stripe"
+    // question is answered the same way at both ends of the resolver even if
+    // the env moves underneath it mid-request.
+    const bypassCheckout = isCheckoutBypassEnabled();
+
     // Checked before the order row is written, not after: an order created for
     // a checkout that can never open is a row that only ever gets cancelled.
-    if (!isStripeConfigured()) {
+    // The dev bypass is the one case where a missing key is not a refusal —
+    // and it is itself gated on that key being absent, so the two can never
+    // both be true.
+    if (!bypassCheckout && !isStripeConfigured()) {
       logger.error('[cnc-checkout] STRIPE_SECRET_KEY is not set; refusing to take an order');
       throw checkoutUnavailableError();
     }
@@ -280,6 +289,51 @@ export const cncPackMutations = {
     }
 
     const orderUrl = `${webPublicUrl()}/build-plans/orders/${encodeURIComponent(order.licenceId)}`;
+
+    // Development only: no Stripe, no webhook, no payment. The order is queued
+    // here because on this stack nothing else ever will — which is precisely
+    // why `isCheckoutBypassEnabled()` refuses to be true anywhere a card can be
+    // charged. Everything downstream (worker claim, generation, download grant)
+    // is the real path, unchanged.
+    //
+    // The buyer-facing side effects of a purchase are deliberately NOT fired:
+    // the "order received" email and the `Build Plans Pack Purchased` analytics
+    // event both live in the paid webhook, and a fake sale must not reach a
+    // real inbox or a real funnel.
+    if (bypassCheckout) {
+      const paidAt = new Date();
+      const queued = await transitionOrder(order.id, 'checkoutCompleted', {
+        paidAt,
+        queuedAt: paidAt,
+        // The catalogue price, since there is no Stripe charge to read the real
+        // number off. Same currency the order was reserved at.
+        amountCents: tierPrice.priceCents,
+        currency: tierPrice.currency,
+        // Recognisable on sight in the order row and in support: no Stripe
+        // session id ever looks like this.
+        stripeCheckoutSessionId: `bypass-${order.licenceId}`,
+        stripePaymentIntentId: null,
+      });
+      if (!queued) {
+        // The row was written as `pending_payment` microseconds ago and nothing
+        // else on this stack moves it, so zero rows means the state machine and
+        // this code disagree. Refuse rather than hand back a URL for an order
+        // that was never queued.
+        logger.error('[cnc-checkout] bypass could not queue the order it just created', {
+          orderId: order.id,
+          licenceId: order.licenceId,
+        });
+        throw checkoutUnavailableError();
+      }
+      logger.warn('[cnc-checkout] STRIPE BYPASSED: order queued without a payment (development only)', {
+        orderId: order.id,
+        licenceId: order.licenceId,
+        tier: tierPrice.tier,
+      });
+      // Straight to the order page the Stripe success_url would have landed on,
+      // so the web app's post-checkout handling is exercised too.
+      return { orderId: String(order.id), licenceId: order.licenceId, checkoutUrl: `${orderUrl}?checkout=success` };
+    }
 
     // Stripe's receipt and `customer_email` go to the signed-in account, not
     // the buyer-typed `licenseeEmail` — that field is the licence record (it

@@ -123,6 +123,10 @@ const STRIPE_ENV_KEYS = [
   'BOARDSESH_URL',
   'BACKEND_PUBLIC_URL',
   'CNC_DOWNLOAD_TOKEN_SECRET',
+  // The dev checkout bypass and one of the things that vetoes it. NODE_ENV is
+  // typed readonly, so that one goes through vi.stubEnv instead.
+  'CNC_CHECKOUT_BYPASS',
+  'RAILWAY_ENVIRONMENT',
 ] as const;
 const savedEnv = new Map<string, string | undefined>();
 
@@ -134,6 +138,9 @@ beforeEach(() => {
   process.env.BACKEND_PUBLIC_URL = 'https://ws.boardsesh.com';
   process.env.CNC_DOWNLOAD_TOKEN_SECRET = 'grant-secret-for-tests';
   requireAdminMock.mockResolvedValue(undefined);
+
+  delete process.env.CNC_CHECKOUT_BYPASS;
+  delete process.env.RAILWAY_ENVIRONMENT;
 
   createPendingOrderMock.mockResolvedValue({ id: 7, licenceId: 'BS-CNC-ABC234' });
   attachCheckoutSessionMock.mockResolvedValue({ id: 7 });
@@ -837,5 +844,133 @@ describe('regenerateCncPack', () => {
     await expect(
       cncPackMutations.regenerateCncPack(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx()),
     ).rejects.toMatchObject({ extensions: { code: 'CNC_PACK_NOT_DOWNLOADABLE' } });
+  });
+});
+
+describe('createCncCheckoutSession with the dev checkout bypass', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  /** The bypass's own precondition: it refuses to run where a card can be charged. */
+  function enableBypass(): void {
+    delete process.env.STRIPE_SECRET_KEY;
+    process.env.CNC_CHECKOUT_BYPASS = '1';
+  }
+
+  const ORDER_PAGE_URL = 'https://www.boardsesh.com/build-plans/orders/BS-CNC-ABC234';
+
+  it('queues the order at the catalogue price and returns the order page', async () => {
+    enableBypass();
+    transitionOrderMock.mockResolvedValue({ id: 7, status: 'queued' });
+
+    const result = await cncPackMutations.createCncCheckoutSession(
+      undefined,
+      { input: checkoutInput({ tier: 'personal' }) },
+      authCtx(),
+    );
+
+    // Stripe is not asked for anything at all.
+    expect(createCheckoutSessionMock).not.toHaveBeenCalled();
+    expect(attachCheckoutSessionMock).not.toHaveBeenCalled();
+
+    expect(transitionOrderMock).toHaveBeenCalledWith(7, 'checkoutCompleted', {
+      paidAt: expect.any(Date),
+      queuedAt: expect.any(Date),
+      // The personal tier's catalogue price, since there is no charge to read.
+      amountCents: 14900,
+      currency: 'AUD',
+      stripeCheckoutSessionId: 'bypass-BS-CNC-ABC234',
+      stripePaymentIntentId: null,
+    });
+
+    expect(result).toEqual({
+      orderId: '7',
+      licenceId: 'BS-CNC-ABC234',
+      checkoutUrl: `${ORDER_PAGE_URL}?checkout=success`,
+    });
+  });
+
+  it('prices the commercial tier from the catalogue too', async () => {
+    enableBypass();
+    transitionOrderMock.mockResolvedValue({ id: 7, status: 'queued' });
+
+    await cncPackMutations.createCncCheckoutSession(
+      undefined,
+      // A commercial licence names the installation it covers.
+      { input: checkoutInput({ tier: 'commercial_single', customerSiteName: 'Northside Climbing' }) },
+      authCtx(),
+    );
+
+    expect(transitionOrderMock).toHaveBeenCalledWith(
+      7,
+      'checkoutCompleted',
+      expect.objectContaining({ amountCents: 75000 }),
+    );
+  });
+
+  it('refuses the checkout when the order it just created will not queue', async () => {
+    // Zero rows back means the state machine and the bypass disagree. Handing
+    // the buyer an order-page URL for an order still sitting in
+    // `pending_payment` would look like a purchase that silently did nothing.
+    enableBypass();
+    transitionOrderMock.mockResolvedValue(null);
+
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
+  });
+
+  it('is off in production, even with the env var set', async () => {
+    // NODE_ENV is the hard guard: a production process with this variable
+    // inherited from somewhere must take the real path, which here means
+    // refusing outright because there is no Stripe key.
+    enableBypass();
+    vi.stubEnv('NODE_ENV', 'production');
+
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
+
+    expect(createPendingOrderMock).not.toHaveBeenCalled();
+    expect(transitionOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('takes the real Stripe path in production when Stripe is configured', async () => {
+    process.env.CNC_CHECKOUT_BYPASS = '1';
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.STRIPE_SECRET_KEY = 'sk_live_not_really';
+
+    const result = await cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx());
+
+    expect(createCheckoutSessionMock).toHaveBeenCalledTimes(1);
+    expect(result.checkoutUrl).toBe('https://checkout.stripe.com/c/pay/cs_test_1');
+    expect(transitionOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('is ignored whenever a Stripe secret key is present', async () => {
+    // The condition that makes "bypass" and "charging people" mutually
+    // exclusive: a stack that can take a payment never fakes one, dev or not.
+    process.env.CNC_CHECKOUT_BYPASS = '1';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
+
+    const result = await cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx());
+
+    expect(createCheckoutSessionMock).toHaveBeenCalledTimes(1);
+    expect(result.checkoutUrl).toBe('https://checkout.stripe.com/c/pay/cs_test_1');
+    expect(transitionOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('is off on a deployed Railway service', async () => {
+    // Railway prod leaves NODE_ENV unset, so the environment variable is the
+    // only thing that says "this is a deploy, not a laptop".
+    enableBypass();
+    process.env.RAILWAY_ENVIRONMENT = 'production';
+
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
+
+    expect(transitionOrderMock).not.toHaveBeenCalled();
   });
 });
