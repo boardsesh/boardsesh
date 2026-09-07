@@ -15,7 +15,7 @@ import type { CncOrderOptions } from '@boardsesh/db/schema';
  * stores the version it was priced and configured under, so a regenerate months
  * later rebuilds the pack the buyer paid for rather than today's defaults.
  */
-export const CNC_CATALOG_VERSION = '2026-09-07.1';
+export const CNC_CATALOG_VERSION = '2026-09-07.2';
 
 /**
  * sha256 of `JSON.stringify(CNC_CATALOG)`, pinned so the version above cannot
@@ -32,7 +32,7 @@ export const CNC_CATALOG_VERSION = '2026-09-07.1';
  * Never paste the new hash on its own — a hash change with an unchanged version
  * is exactly the bug this pair exists to catch.
  */
-export const CNC_CATALOG_CONTENT_HASH = 'a5d9174ee16a40ded5295906210eb48c806908ed3fdfcac0862965273fddce9b';
+export const CNC_CATALOG_CONTENT_HASH = 'c3d8e92bcab3bc946a7772e8011e77e56c17917e87c7f7935a61fa7d144ac069';
 
 export type CncLicenceTier = 'personal' | 'commercial_single';
 
@@ -107,9 +107,16 @@ const KILTER_HOMEWALL_MANUFACTURING_OPTIONS: readonly CncManufacturingOption[] =
   // R12 writes native CIRCLE entities, which more machine controllers read as
   // drill points than R2010 polylines — hence the default.
   { key: 'dxfFlavour', values: ['R12_circles', 'R2010_polylines'], defaultValue: 'R12_circles', kickerOnly: false },
-  { key: 'paper', values: ['A3', 'TABLOID'], defaultValue: 'A3', kickerOnly: false },
-  // Both engrave layers default off pending the IP review of the Kilter-derived
-  // hold ids and set-screw angles.
+  // A3 and Tabloid are what a print shop runs; A4 and Letter are what a buyer
+  // already has on their desk. The sheets fit the drawing to the page either
+  // way, so the smaller sizes print the same wall smaller rather than cropped.
+  { key: 'paper', values: ['A3', 'A4', 'TABLOID', 'LETTER'], defaultValue: 'A3', kickerOnly: false },
+  // The 150 mm plywood strips that back every horizontal seam. On by default —
+  // most home framing has nothing behind a seam — but a wall framed with a rail
+  // at every seam height does not need them, and they cost a sheet of ply.
+  { key: 'supportStrips', values: [true, false], defaultValue: true, kickerOnly: false },
+  // Both engrave layers default on: a builder holding a panel wants to know
+  // which hold goes where and which way its set screw points.
   { key: 'engraveHoldIds', values: [false, true], defaultValue: true, kickerOnly: false },
   { key: 'engraveAngleTicks', values: [false, true], defaultValue: true, kickerOnly: false },
 ];

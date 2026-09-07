@@ -104,6 +104,7 @@ const DEFAULT_OPTIONS = {
   gridPitchMm: 100,
   dxfFlavour: 'R12_circles',
   paper: 'A3',
+  supportStrips: true,
   engraveHoldIds: false,
   engraveAngleTicks: false,
 };
