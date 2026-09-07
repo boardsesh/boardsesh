@@ -26,11 +26,19 @@ import { users } from '../auth/users';
  */
 
 /**
- * Lifecycle of one order. `pending_payment` is written before Stripe Checkout
- * opens; everything after it is driven by a webhook or by the generator.
- * `refunded` is terminal for downloads (the pack stays generated, access stops)
- * and is deliberately distinct from `cancelled`, which only ever means the
- * checkout session expired before payment.
+ * Lifecycle of one order.
+ *
+ * A row is born as a FREE PREVIEW (`preview_queued`), not as a sale: the buyer
+ * iterates on watermarked, rasterised sheets for nothing and only pays when
+ * they finalise. `pending_payment` is written at finalise, before Stripe
+ * Checkout opens; everything after it is driven by a webhook or by the
+ * generator. `refunded` is terminal for downloads (the pack stays generated,
+ * access stops) and is deliberately distinct from `cancelled`, which only ever
+ * means the checkout session expired before payment.
+ *
+ * A preview is an immutable snapshot of one configuration, which is why
+ * re-previewing with a changed configuration writes a NEW row rather than
+ * moving this one backwards.
  */
 export const cncOrderStatusEnum = pgEnum('cnc_order_status', [
   'pending_payment',
@@ -40,6 +48,14 @@ export const cncOrderStatusEnum = pgEnum('cnc_order_status', [
   'failed',
   'cancelled',
   'refunded',
+  // Appended rather than slotted in front of `pending_payment`, even though a
+  // preview now comes first in time. Postgres enum order is only a sort order,
+  // nothing here sorts by status, and appending is the one form of
+  // `ALTER TYPE ... ADD VALUE` that needs no anchor and no type rewrite.
+  'preview_queued',
+  'preview_generating',
+  'preview_ready',
+  'preview_failed',
 ]);
 
 /**
@@ -79,7 +95,9 @@ export const cncOrders = pgTable(
     // table uses; the buyer's identity survives in licensee_name/licensee_email.
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
 
-    tier: cncLicenceTierEnum('tier').notNull(),
+    // Nullable until finalise: a preview is not a sale, so there is nothing to
+    // license yet. Every row that reached `pending_payment` or beyond has one.
+    tier: cncLicenceTierEnum('tier'),
     // No default, deliberately: an insert that forgets to set the status must
     // fail loudly rather than land in the queue as if it had been paid for.
     status: cncOrderStatusEnum('status').notNull(),
@@ -96,6 +114,14 @@ export const cncOrders = pgTable(
     // Which catalog produced `options`. A regenerate months later must rebuild
     // against the same option set, not whatever the catalog says today.
     catalogVersion: text('catalog_version').notNull(),
+
+    // sha256 over the canonical board + options + artwork JSON. Two things
+    // depend on it: asking for a preview of a configuration already previewed
+    // returns the existing order instead of burning a second generation, and
+    // the row records exactly which configuration the preview images show.
+    // Nullable only for rows written before previews existed; every new row
+    // has one (`computeCncConfigHash`).
+    configHash: text('config_hash'),
 
     // Licence identity, captured at checkout and printed into the pack.
     licenseeName: text('licensee_name'),
@@ -133,6 +159,24 @@ export const cncOrders = pgTable(
     // download route — see `toPublicOrder`.
     fingerprintManifest: jsonb('fingerprint_manifest').$type<CncFingerprintManifest>(),
 
+    // The free preview: a watermarked, rasterised zip plus the individual
+    // watermarked PNGs behind `CncOrder.previewImages`. Kept in their own
+    // columns rather than reusing `zip_key`/`generated_at`, because an order
+    // that has been finalised and generated holds BOTH — the buyer can still
+    // look at the preview they approved after they have the real pack.
+    previewZipKey: text('preview_zip_key'),
+    previewZipSizeBytes: bigint('preview_zip_size_bytes', { mode: 'number' }),
+    previewGeneratedAt: timestamp('preview_generated_at'),
+    // Object keys of the watermarked PNGs, in sheet order. Every one is
+    // verified to sit under the job's `previewPrefix` before it is stored, so
+    // the image route can serve a stored key without it becoming a way to read
+    // anything else in the private bucket.
+    previewKeys: jsonb('preview_keys').$type<string[]>(),
+    // How many previews this row has produced. A re-preview of a CHANGED
+    // configuration is a new row, so this only ever counts retries of the same
+    // one.
+    previewsGenerated: integer('previews_generated').default(0).notNull(),
+
     downloadCount: integer('download_count').default(0).notNull(),
     lastDownloadedAt: timestamp('last_downloaded_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -146,6 +190,9 @@ export const cncOrders = pgTable(
     // `charge.refunded` arrives with the payment intent, not the session.
     paymentIntentIdx: index('cnc_orders_stripe_payment_intent_idx').on(table.stripePaymentIntentId),
     userCreatedIdx: index('cnc_orders_user_created_idx').on(table.userId, table.createdAt.desc()),
+    // Serves the preview dedupe: "has this buyer already previewed exactly this
+    // configuration?" runs on every `createCncPreview`.
+    userConfigHashIdx: index('cnc_orders_user_config_hash_idx').on(table.userId, table.configHash),
     // Serves the claim query's candidate scan (queued rows and stale leases).
     statusQueuedIdx: index('cnc_orders_status_queued_idx').on(table.status, table.queuedAt),
   }),
