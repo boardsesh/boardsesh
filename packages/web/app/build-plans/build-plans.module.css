@@ -199,24 +199,60 @@
   color: var(--neutral-500);
 }
 
-/* ------------------------------------------------------ configurator (TODO)
+/* ------------------------------------------------------------ configurator
 
-   Everything below belongs to the configurator and the orders pages and is
-   restyled in their own change. New work there should reach for `ui/` —
-   `SectionCard`, `StepHeading`, `FieldGrid`, `SplitLayout`, `KeyValueList` —
-   rather than adding to this block. */
-
-.sectionHeading.sectionHeading {
-  font-size: var(--font-size-xl);
-  margin: 0 0 4px;
-}
-
-.stepHeading.stepHeading {
-  margin: 0 0 4px;
-}
+   The steps themselves are `SectionCard` + `StepHeading` from `ui/`; what is
+   left here is the spacing between them and the handful of rows the kit has no
+   opinion about. Anything reusable belongs in `ui/`, not in this block. */
 
 .configurator {
   scroll-margin-top: calc(var(--global-header-height) + 24px);
+}
+
+/* One step per card, 16 apart — the same gap as every other card grid on this
+   surface, so the flow reads as a sequence of cards rather than as a stack of
+   sections. */
+.steps {
+  display: grid;
+  gap: 16px;
+}
+
+/* The step's own head: number and title on the left, its status on the right.
+   Only the preview step has a status, and this is where its chip goes. */
+.stepHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+/* Everything under a `StepHeading`. The 20px matches `SectionCard`'s own
+   head-to-body step, so a card with a step heading and a card with a title sit
+   on the same rhythm. */
+.stepBody {
+  display: grid;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.stepNote.stepNote {
+  margin: 0;
+  max-width: 64ch;
+  color: var(--neutral-500);
+}
+
+/* A switch and the line that explains what it does. The helper sits under the
+   whole row rather than beside the label, so a two-line explanation does not
+   push the switch off its own baseline. */
+.switchRow {
+  display: grid;
+  gap: 0;
+}
+
+.readOnlyLabel.readOnlyLabel {
+  margin: 0 0 2px;
+  color: var(--neutral-500);
 }
 
 /* One column on a phone, two once there is room: eleven selects in a single
@@ -227,14 +263,36 @@
   gap: 16px;
 }
 
-.summary {
-  border: 1px solid var(--neutral-200);
-  border-radius: var(--border-radius-lg);
-  padding: 16px;
+/* ------------------------------------------------------------- summary rail */
+
+.railWarnings {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
 }
 
-.summaryRow {
-  gap: 16px;
+.railWarningsHeading.railWarningsHeading {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* The price and the one button, ruled off from the figures above them: the cut
+   list is what the wall IS, and this is what happens next. */
+.railAction {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--neutral-200);
+  display: grid;
+  gap: 12px;
+}
+
+.railPriceLabel.railPriceLabel {
+  margin: 0;
+  color: var(--neutral-500);
+}
+
+.railButton {
+  margin-top: 4px;
 }
 
 .orderList {

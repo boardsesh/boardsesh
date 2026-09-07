@@ -14,7 +14,17 @@
  * namespace, so a new code is a catalog entry plus one line here.
  */
 
-const KNOWN_ERROR_CODES = ['CNC_INVALID_CONFIG', 'CNC_WORKER_UNAVAILABLE', 'CNC_CHECKOUT_UNAVAILABLE'] as const;
+const KNOWN_ERROR_CODES = [
+  'CNC_INVALID_CONFIG',
+  'CNC_WORKER_UNAVAILABLE',
+  'CNC_CHECKOUT_UNAVAILABLE',
+  // The free-preview ceiling. Its own case because it is the one failure on
+  // this surface that is not a fault: the previews the buyer already asked for
+  // are still there, and the answer is "come back on the hour", not "try again
+  // in a minute". The backend raises it as `RATE_LIMITED` from both the burst
+  // guard and the hourly count.
+  'RATE_LIMITED',
+] as const;
 
 export type CncErrorKey = (typeof KNOWN_ERROR_CODES)[number] | 'generic';
 
