@@ -78,6 +78,9 @@ The rule, for `packages/mobile/**`:
 - `@expo/ui/jetpack-compose` (and sub-paths) only from `*.android.{ts,tsx}`.
 - `@expo/ui` (root, the universal `Host` etc.) and `@expo/ui/community/*` are unrestricted.
 
+Node-only mocks in `__tests__/*.test.{ts,tsx}` are exempt: Metro cannot load
+them, and mocks need the literal module specifier.
+
 A misplaced import crashes the _other_ platform at runtime ("Unable to get view config").
 
 Enforcement is the CI check **`vp run check:mobile-platform-imports`**
