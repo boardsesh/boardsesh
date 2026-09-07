@@ -477,6 +477,7 @@ function makeClimbRow(overrides: Record<string, unknown> = {}) {
     angle: 40,
     frames: 'p1080r12p1122r13',
     compatibleSizeIds: [17, 18],
+    characteristics: ['no_match'],
     ...overrides,
   };
 }
@@ -525,6 +526,20 @@ describe('groupedNotifications enrichment', () => {
     expect(group.climbLayoutId).toBe(8);
     expect(group.climbFrames).toBe('p1080r12p1122r13');
     expect(group.climbCompatibleSizeIds).toEqual([17, 18]);
+    // #5245: carried so notificationToClimb can show Woods' explicit matching/feet
+    // rules and the no-match glyph without a climb refetch.
+    expect(group.climbCharacteristics).toEqual(['no_match']);
+  });
+
+  it('#5245: a climb with no characteristics recorded carries undefined, not []', async () => {
+    const ctx = makeCtx();
+    mockExecute.mockResolvedValueOnce([makeGroupRow()]);
+    queueSelect([makeClimbRow({ characteristics: null })]); // climbs
+    queueSelect([{ count: 0 }]); // unread count
+
+    const [group] = (await socialNotificationQueries.groupedNotifications(null, {}, ctx)).groups;
+
+    expect(group.climbCharacteristics).toBeUndefined();
   });
 
   it('resolves a comment on an ascent to its thread AND its climb', async () => {

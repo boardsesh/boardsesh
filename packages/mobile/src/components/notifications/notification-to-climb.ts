@@ -10,7 +10,7 @@
 // ignores the preview flag. A notification carries the climb's frames, so it
 // never needed the round trip.
 
-import type { Climb, GroupedNotification } from '@boardsesh/shared-schema';
+import { isNoMatch, type Climb, type GroupedNotification } from '@boardsesh/shared-schema';
 
 /**
  * Returns null when the row has no frames — there is nothing to draw on the
@@ -37,7 +37,8 @@ export function notificationToClimb(notification: GroupedNotification, angle: nu
     stars: 0,
     benchmark_difficulty: null,
     mirrored: false,
-    is_no_match: false,
+    is_no_match: isNoMatch(notification.climbCharacteristics),
+    characteristics: notification.climbCharacteristics ?? null,
     boardType: notification.boardType ?? undefined,
     layoutId: notification.climbLayoutId ?? undefined,
   };

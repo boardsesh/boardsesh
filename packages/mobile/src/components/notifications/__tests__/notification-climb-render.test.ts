@@ -28,6 +28,7 @@ function makeNotification(overrides: Partial<GroupedNotification> = {}): Grouped
     climbAngle: 40,
     climbFrames: 'p1080r12p1122r13',
     climbCompatibleSizeIds: null,
+    climbCharacteristics: null,
     threadEntityType: null,
     threadEntityId: null,
     proposalUuid: null,
@@ -130,5 +131,25 @@ describe('notificationToClimb', () => {
 
   it('returns null without a climb uuid', () => {
     expect(notificationToClimb(makeNotification({ climbUuid: null }), 40)).toBeNull();
+  });
+
+  // #5245: a notification tap used to hardcode is_no_match: false and carry no
+  // characteristics at all, so a Woods no-match climb opened this way printed
+  // "Matching rule not recorded" and every board lost its no-match glyph.
+  it('carries characteristics through and derives is_no_match from it', () => {
+    const climb = notificationToClimb(makeNotification({ climbCharacteristics: ['no_match'] }), 40);
+
+    expect(climb!.characteristics).toEqual(['no_match']);
+    expect(climb!.is_no_match).toBe(true);
+  });
+
+  it('defaults characteristics to null (not []) and is_no_match to false when unrecorded', () => {
+    // decodeClimbRules treats null ("never recorded") and [] ("recorded under
+    // the defaults") as different answers — collapsing one into the other would
+    // put a rule on screen nobody authored.
+    const climb = notificationToClimb(makeNotification({ climbCharacteristics: null }), 40);
+
+    expect(climb!.characteristics).toBeNull();
+    expect(climb!.is_no_match).toBe(false);
   });
 });
