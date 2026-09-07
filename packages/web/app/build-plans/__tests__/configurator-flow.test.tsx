@@ -389,3 +389,13 @@ it('switches layouts, filters sizes, clears the preview and sends the OG kicker 
   fireEvent.click(screen.getByRole('switch', { name: 'Include the kicker' }));
   expect(lastLayoutConfig()).toMatchObject({ setIds: '1,20', options: { includeKicker: false } });
 });
+
+it('shows the layout number when the catalog introduces an unknown layout', async () => {
+  const futureCatalog = catalog();
+  futureCatalog.entries.push({ ...futureCatalog.entries[0], layoutId: 99 });
+  renderConfigurator(futureCatalog);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Board' }));
+  expect(screen.getByRole('option', { name: 'Kilter · layout 99' })).toBeDefined();
+  fireEvent.click(screen.getByRole('option', { name: 'Kilter · layout 99' }));
+  expect(lastLayoutConfig()).toMatchObject({ layoutId: 99 });
+});

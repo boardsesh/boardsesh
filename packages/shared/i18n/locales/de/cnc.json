@@ -63,7 +63,8 @@
       "label": "Board",
       "help": "Wähle das Griff-Layout für dein Board.",
       "original": "Kilter Original (OG)",
-      "homewall": "Kilter Homewall"
+      "homewall": "Kilter Homewall",
+      "unknownLayout": "{{board}} · Layout {{layoutId}}"
     },
     "size": {
       "label": "Wandgröße",
