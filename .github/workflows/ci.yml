@@ -394,6 +394,14 @@ jobs:
               - 'packages/db/scripts/migration-journal.ts'
               - 'packages/db/scripts/verify-migration-journal.ts'
               - 'packages/db/scripts/migration-journal-verification.integration.test.ts'
+              - 'packages/db/scripts/moonboard-reconciliation-report*'
+              - 'packages/db/scripts/report-moonboard-reconciliation*'
+              - 'packages/db/scripts/moonboard-catalog-helpers.ts'
+              - 'packages/db/scripts/moonboard-2024-helpers.ts'
+              - 'packages/db/scripts/moonboard-helpers.ts'
+              - 'packages/db/src/testing/moonboard-residual-dedup-replay.ts'
+              - 'packages/db/src/testing/moonboard-angle-dedup-replay.ts'
+              - 'packages/db/src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts'
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
               - 'packages/db/package.json'
@@ -683,11 +691,23 @@ jobs:
         env:
           MIGRATION_JOURNAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: vp run test:db:migration-journal
+      # These node:test files are outside Vitest's module graph. In particular,
+      # the report's projection must keep agreeing with the immutable SQL.
+      - name: Replay MoonBoard reconciliation and verify report projections
+        working-directory: packages/db
+        env:
+          MIGRATION_REPLAY_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: >-
+          vp exec tsx --test
+          scripts/moonboard-reconciliation-report.test.ts
+          scripts/report-moonboard-reconciliation.test.ts
+          scripts/moonboard-reconciliation-report.integration.test.ts
+          src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts
       # A trigger function with no pinned search_path cannot resolve an
       # unqualified type or table while pg_restore holds search_path at '',
       # which aborts a --data-only restore on the first affected table with zero
       # rows loaded (#4699). Textual, because this job's service is a stock
-      # postgres:17 with no PostGIS and it never executes the migration SQL. The
+      # postgres:17 with no PostGIS and cannot apply the full migration chain. The
       # catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
       - name: Every trigger function pins search_path
         run: vp test run --project scripts scripts/__tests__/db-trigger-search-path.test.ts
