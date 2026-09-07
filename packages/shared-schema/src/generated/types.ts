@@ -7646,6 +7646,14 @@ export type SimilarClimb = {
   /** Number of hold positions on the candidate climb. */
   candidateHoldCount: Scalars['Int']['output'];
   /**
+   * Structured climb rules ('no_match', 'any_feet', 'campus', 'no_kickboard',
+   * method_*). Nullable, unlike compatibleSizeIds above: null means the server
+   * did not record the rules, and an empty array means the climb is set under
+   * all the defaults. The Woods play drawer states both rules on every problem,
+   * so it has to be able to tell those two apart (issue #5214).
+   */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
+  /**
    * Product sizes this climb fits on (denormalised from edge bounds). Callers
    * on a smaller wall can use this to grey out climbs that extend beyond
    * their physical board — those climbs are still navigable in the actions
@@ -13710,6 +13718,7 @@ export type SimilarClimbResolvers<
   angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   ascensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   candidateHoldCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   compatibleSizeIds?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
   difficultyName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;

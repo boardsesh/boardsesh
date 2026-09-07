@@ -51,6 +51,13 @@ rejects conflicting catalog flags, and rolls back on concurrent row changes.
 Re-running an applied repair reports no changes. Existing database triggers
 advance the sync cursor, delivering repaired rules to downloaded boards.
 
+Bump `CACHE_VERSION` in `packages/backend/src/services/search-cache.ts` in the
+same change as any repair that alters stored rules. The climb-search cache holds
+results for 24 hours and has no invalidation hook, so a repair that changes
+content without changing code leaves already-cached pages serving the old rules
+for a full day. That is what issue #5214 reported after the September 2026
+repair: the data was correct and the app still showed "not recorded".
+
 ## Authoring and compatibility
 
 New Woods climbs are stored in Boardsesh; there is no upstream Woods publish
