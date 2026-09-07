@@ -15,7 +15,7 @@ import type { CncOrderOptions } from '@boardsesh/db/schema';
  * stores the version it was priced and configured under, so a regenerate months
  * later rebuilds the pack the buyer paid for rather than today's defaults.
  */
-export const CNC_CATALOG_VERSION = '2026-09-07.2';
+export const CNC_CATALOG_VERSION = '2026-09-07.3';
 
 /**
  * sha256 of `JSON.stringify(CNC_CATALOG)`, pinned so the version above cannot
@@ -32,7 +32,7 @@ export const CNC_CATALOG_VERSION = '2026-09-07.2';
  * Never paste the new hash on its own — a hash change with an unchanged version
  * is exactly the bug this pair exists to catch.
  */
-export const CNC_CATALOG_CONTENT_HASH = 'c3d8e92bcab3bc946a7772e8011e77e56c17917e87c7f7935a61fa7d144ac069';
+export const CNC_CATALOG_CONTENT_HASH = '21dce30f1df9a4ab4a2be636dab86fdad3af5dd55838a92a4365aa64764b4e2b';
 
 export type CncLicenceTier = 'personal' | 'commercial_single';
 
@@ -93,7 +93,6 @@ const KILTER_HOMEWALL_MANUFACTURING_OPTIONS: readonly CncManufacturingOption[] =
   // Standard AU sheet, plus the 3.6 m sheet that lets a 10 ft wall row be cut
   // without a seam.
   { key: 'sheetStock', values: ['2440x1220', '3600x1220'], defaultValue: '2440x1220', kickerOnly: false },
-  { key: 'panelThicknessMm', values: [15, 18, 21], defaultValue: 18, kickerOnly: false },
   // 12.5 mm suits the common M10 T-nut barrel; the others cover the sizes sold
   // in other markets.
   { key: 'tnutHoleDiameterMm', values: [11.1, 12, 12.5, 13], defaultValue: 12.5, kickerOnly: false },
@@ -273,6 +272,22 @@ export type CncOptionValidationResult =
   | { ok: false; errors: CncOptionValidationError[] };
 
 /**
+ * Manufacturing option keys the catalogue used to publish and no longer does.
+ *
+ * `validateCatalogOptions` treats a key in this list as silently ignored
+ * rather than an `unknown_option` error: an order's stored `options` blob is
+ * whatever the catalogue looked like on the day it was bought, and a
+ * regenerate of a preview or paid pack must still validate months or years
+ * after the key was retired. Adding to this list is safe on its own; removing
+ * from it is not, until nothing in production still stores the key.
+ *
+ * `panelThicknessMm` retired 2026-09-07: the drawings are 2D and never
+ * depended on sheet thickness, so the option only ever changed README/BOM
+ * wording, never geometry.
+ */
+export const RETIRED_OPTION_KEYS: readonly string[] = ['panelThicknessMm'];
+
+/**
  * Coerce one submitted value onto an allowed value, or return null.
  *
  * Form and JSON transports flatten types — a select sends "18" and "true" where
@@ -314,7 +329,7 @@ export function validateCatalogOptions(entry: CncCatalogEntry, options: unknown)
 
   const allowedKeys = new Set(entry.manufacturingOptions.map((option) => option.key));
   for (const submittedKey of Object.keys(submittedOptions)) {
-    if (!allowedKeys.has(submittedKey)) {
+    if (!allowedKeys.has(submittedKey) && !RETIRED_OPTION_KEYS.includes(submittedKey)) {
       errors.push({
         key: submittedKey,
         code: 'unknown_option',
