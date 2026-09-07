@@ -393,3 +393,24 @@ describe('validateArtwork', () => {
     expect(sentBody(init)).toEqual({ layout_request: request, artwork });
   });
 });
+
+describe('TB2 manufacturing contract', () => {
+  it.each(['metric', 'imperial'])('sends %s without Kilter dimensions or T-nuts', (standard) => {
+    for (const layoutId of [10, 11]) {
+      for (const sizeId of [9, 8, 7, 6, 10]) {
+        const entry = findCatalogEntry({ boardName: 'tension', layoutId, sizeId })!;
+        const options = validateCatalogOptions(entry, { tb2DimensionStandard: standard });
+        if (!options.ok) throw new Error('invalid TB2 options');
+        const setIds = entry.setIds.split(',').map(Number);
+        expect(toLayoutRequest({ entry, options: options.options, setIds })).toEqual({
+          board: { board_name: 'tension', layout_id: layoutId, size_id: sizeId, set_ids: setIds },
+          manufacturing: {
+            dimension_standard: standard,
+            sheet: { length_mm: 2440, width_mm: 1220 },
+            support_strips: true,
+          },
+        });
+      }
+    }
+  });
+});

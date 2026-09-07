@@ -184,10 +184,11 @@ export type CncWorkerKicker = {
 
 export type CncWorkerManufacturing = {
   sheet: CncWorkerSheet;
-  grid_pitch_mm: number;
-  tnut_hole_diameter_mm: number;
-  led_hole_diameter_mm: number;
-  stud_clearance_offset_mm: number;
+  dimension_standard?: 'metric' | 'imperial';
+  grid_pitch_mm?: number;
+  tnut_hole_diameter_mm?: number;
+  led_hole_diameter_mm?: number;
+  stud_clearance_offset_mm?: number;
   /** Cut the seam backing strips. Changes the sheet count, so it is geometry. */
   support_strips: boolean;
   /** Present only when the configuration includes kicker sets. */
@@ -306,6 +307,20 @@ export type ToLayoutRequestInput = {
  */
 export function toLayoutRequest({ entry, options, setIds }: ToLayoutRequestInput): CncWorkerLayoutRequest {
   const { lengthMm, widthMm } = parseSheetStock(options.sheetStock);
+  if (entry.boardName === 'tension' && (entry.layoutId === 10 || entry.layoutId === 11)) {
+    const standard = options.tb2DimensionStandard;
+    if (standard !== 'metric' && standard !== 'imperial') {
+      throw new CncConfigMappingError('TB2 dimension standard must be metric or imperial');
+    }
+    return {
+      board: { board_name: entry.boardName, layout_id: entry.layoutId, size_id: entry.sizeId, set_ids: setIds },
+      manufacturing: {
+        sheet: { length_mm: lengthMm, width_mm: widthMm },
+        dimension_standard: standard,
+        support_strips: booleanOption(options, 'supportStrips', true),
+      },
+    };
+  }
   // Including either kicker set is what tells the generator to emit the two
   // extra panels. `validateSetIds` has already ruled out the half-kicker case.
   const hasKicker = setIds.some((setId) => CNC_KICKER_SET_IDS.includes(setId));

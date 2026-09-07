@@ -2,7 +2,7 @@
   "metadata": {
     "buildPlans": {
       "title": "Plans de construction pour une board maison",
-      "description": "Des fichiers CNC prêts à découper pour un mur d'escalade maison : chaque panneau, chaque écrou à griffes et chaque perçage LED placé, répartis sur les plaques que ton atelier a en stock."
+      "description": "Fichiers CNC pour un mur d’escalade à domicile : panneaux et perçages répartis sur les plaques de votre atelier."
     },
     "orders": {
       "title": "Tes plans de construction",
@@ -15,8 +15,8 @@
   },
   "hero": {
     "title": "Plans de construction pour ta board maison",
-    "subtitle": "Des fichiers DXF qu'un atelier CNC découpe tels quels. Chaque panneau, la trame d'écrous à griffes, les perçages LED et le kicker, répartis sur les plaques que ton atelier a déjà en stock.",
-    "firstBoard": "Le Kilter Homewall est la première board prise en charge. D'autres suivront.",
+    "subtitle": "Des fichiers DXF pour votre atelier CNC. Panneaux et perçages répartis sur les plaques que votre atelier utilise déjà.",
+    "firstBoard": "Compatible avec Kilter Homewall et Tension Board 2, avec les configurations Mirror et Spray.",
     "included": {
       "heading": "Ce que tu reçois",
       "dxf": "Les plans de montage du mur complet sont inclus, pour que les panneaux s'alignent sans deviner.",
@@ -61,7 +61,8 @@
     },
     "board": {
       "label": "Board",
-      "help": "Le Kilter Homewall est la seule board en vente aujourd'hui."
+      "help": "Choisis la board pour laquelle tu fabriques les panneaux.",
+      "kilterHomewall": "Kilter Homewall"
     },
     "size": {
       "label": "Taille du mur",
@@ -77,7 +78,7 @@
       "help": "Les valeurs par défaut sont celles avec lesquelles on construit. Change-les pour coller à ton atelier.",
       "sheetStock": {
         "label": "Format de plaque",
-        "help": "Le contreplaqué dans lequel ton atelier découpe. Une plaque de 3,6 m permet de sortir une rangée du mur sans raccord.",
+        "help": "Choisis la plaque de contreplaqué utilisée par ton atelier. Les panneaux sont divisés pour y tenir.",
         "values": {
           "2440x1220": "2440 × 1220 mm",
           "3600x1220": "3600 × 1220 mm"
@@ -149,7 +150,7 @@
       },
       "supportStrips": {
         "label": "Lattes de renfort des joints",
-        "help": "Lattes de contreplaqué de 150 mm, rainurées pour les écrous à griffes, qui se placent derrière chaque joint horizontal. Laissez-les activées sauf si votre ossature soutient déjà les joints.",
+        "help": "Des bandes de contreplaqué de 150 mm renforcent les joints horizontaux et préservent l’accès aux trous.",
         "values": {
           "false": "Désactivé",
           "true": "Activé"
@@ -169,6 +170,24 @@
         "values": {
           "false": "Désactivé",
           "true": "Activé"
+        }
+      },
+      "tb2DimensionStandard": {
+        "label": "Dimensions TB2",
+        "help": "Métriques : grille principale de 200 mm et trous LED de 12 mm. Impériales : grille de 7⅞ pouces et trous de ½ pouce. Changer les dimensions efface les motifs placés.",
+        "values": {
+          "metric": "Métriques",
+          "imperial": "Impériales"
+        }
+      },
+      "tb2Engraving": {
+        "label": "Gravure TB2",
+        "help": "Identifiants des prises et repères de direction issus des plans de montage de Tension.",
+        "values": {
+          "none": "Sans gravure",
+          "mirror": "Mirror",
+          "spray": "Spray",
+          "both": "Mirror + Spray"
         }
       }
     },
@@ -320,6 +339,12 @@
       "heading": "Au nom de qui est la licence",
       "help": "La licence figure sur chaque fichier du pack : une copie qui fuite y remonte.",
       "stale": "Mets d'abord ton aperçu à jour — le mur a changé depuis ces planches."
+    },
+    "tb2": {
+      "boardName": "Tension Board 2",
+      "sizeHelp": "Hauteur × largeur en pieds. Tension indique la hauteur en premier.",
+      "engraveHelp": "Grave Mirror, Spray ou les deux sur les mêmes panneaux. Les deux dispositions sont sélectionnées par défaut.",
+      "engraveNote": "Les repères Mirror sont à gauche de chaque trou avec un trait de direction. Les repères Spray sont à droite avec deux traits. Chaque panneau gravé comporte une légende."
     }
   },
   "cta": {
