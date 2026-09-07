@@ -83,7 +83,7 @@ import { useShareClimb } from '../../hooks/use-share-climb';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
 import { hapticSuccess } from '../../lib/haptics';
-import { resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
+import { nextMirrorIntentAction, resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
 import { getSimilarClimbTapMode, getSwipeNavigationTarget, swipeStaysViewOnly } from './play-drawer-navigation';
@@ -983,18 +983,11 @@ export function PlayDrawer({
   // `mirrorCurrentClimb`, so that fallback is always false.
   useEffect(() => {
     if (isPreview || !displayedClimbUuid) return;
-    // Only an explicit TAP goes in the slot. Stating a derived default would
-    // make it sticky: a `false` computed from whatever `climb.mirrored` happened
-    // to be would then outrank a fresher one — a crew member activating their
-    // mirrored tick of this climb would have their orientation dropped.
-    if (mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid) {
-      bluetooth?.setMirrorIntent(displayedClimbUuid, mirrorFlip.mirrored);
-      return;
-    }
-    // No tap for the climb on screen: a flip parked on another climb is one we
-    // have navigated away from, so drop it. One on THIS climb is our own, from
-    // before the drawer remounted — that is what a reopen reads back.
-    bluetooth?.retainMirrorIntentFor(displayedClimbUuid);
+    // The rule itself lives in `nextMirrorIntentAction`, where it is unit-tested
+    // without a renderer — this effect is just the wiring.
+    const action = nextMirrorIntentAction({ isPreview, displayedClimbUuid, mirrorFlip });
+    if (action.kind === 'state') bluetooth?.setMirrorIntent(action.climbUuid, action.mirrored);
+    else if (action.kind === 'retain') bluetooth?.retainMirrorIntentFor(action.climbUuid);
   }, [bluetooth, displayedClimbUuid, mirrorFlip, isPreview]);
 
   // Local state only — the effect above is what carries the flip to the wall,
