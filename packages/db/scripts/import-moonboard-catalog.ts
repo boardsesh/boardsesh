@@ -233,6 +233,7 @@ async function importMoonBoardCatalog() {
   const db = drizzle(client);
 
   const totals = {
+    problems: 0,
     matched: 0,
     inserted: 0,
     climbs: 0,
@@ -243,6 +244,7 @@ async function importMoonBoardCatalog() {
     skippedDrifted: 0,
     skippedHijacked: 0,
     foldedInBatch: 0,
+    sharedClimbInBatch: 0,
     withdrawn: 0,
     withdrawnWithClimbs: 0,
     unlisted: 0,
@@ -433,6 +435,7 @@ async function importMoonBoardCatalog() {
         `   ✓ climbs ${climbRecords.length}, stats ${statsRecords.length}, holds ${holdsRecords.length}` +
           `, unlisted ${unlistedThisFile}`,
       );
+      totals.problems += dump.problems.length;
       totals.matched += counters.matched;
       totals.inserted += counters.inserted;
       totals.climbs += climbRecords.length;
@@ -443,6 +446,7 @@ async function importMoonBoardCatalog() {
       totals.skippedDrifted += counters.skippedDrifted;
       totals.skippedHijacked += counters.skippedHijacked;
       totals.foldedInBatch += counters.foldedInBatch;
+      totals.sharedClimbInBatch += counters.sharedClimbInBatch;
       totals.withdrawn += counters.withdrawn;
       totals.withdrawnWithClimbs += counters.withdrawnWithClimbs;
       totals.unlisted += unlistedThisFile;
@@ -459,6 +463,31 @@ async function importMoonBoardCatalog() {
       `   Withdrawn:        ${totals.withdrawn} upstream, ${totals.withdrawnWithClimbs} of them own climb rows, ` +
         `${totals.unlisted} climbs unlisted`,
     );
+
+    // Every problem in the capture takes exactly one of these paths. Printing
+    // the reconciliation — rather than leaving an operator to add it up — is how
+    // a silent drop becomes visible instead of looking like a rounding error.
+    const accountedFor =
+      totals.matched +
+      totals.inserted +
+      totals.sharedClimbInBatch +
+      totals.skippedProblems +
+      totals.skippedAmbiguous +
+      totals.skippedDrifted +
+      totals.skippedHijacked;
+    console.info(
+      `   Shared a climb:   ${totals.sharedClimbInBatch} problems collapsed onto another problem's climb ` +
+        `(${totals.foldedInBatch} of them brand new); their ids still resolve to it`,
+    );
+    if (accountedFor === totals.problems) {
+      console.info(`   Accounted for:    ${accountedFor}/${totals.problems} problems ✓`);
+    } else {
+      console.error(
+        `   ⚠️  Accounting mismatch: ${accountedFor} of ${totals.problems} problems accounted for ` +
+          `(${totals.problems - accountedFor} unexplained). Every problem should land in exactly one counter — ` +
+          `a gap means a code path is dropping problems without saying so.`,
+      );
+    }
     if (totals.foldedInBatch > 0) {
       console.info(
         `   Folded in batch:  ${totals.foldedInBatch} — problems that share their holds with an earlier problem in ` +

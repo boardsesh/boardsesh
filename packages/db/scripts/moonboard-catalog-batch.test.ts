@@ -539,3 +539,90 @@ void test('withdrawn samples are capped so a big capture cannot drown the log', 
   assert.equal(counters.withdrawnWithClimbs, 15);
   assert.equal(withdrawnSamples.length, 10);
 });
+
+// ---------------------------------------------------------------------------
+// Counter accounting — every problem lands in exactly one bucket
+// ---------------------------------------------------------------------------
+
+/**
+ * The identity the run log reconciles against. A path that returns early
+ * without incrementing anything makes problems vanish from the totals, which
+ * reads as a silent drop to whoever is deciding whether a prod import went
+ * cleanly.
+ */
+function accountedFor(counters: ReturnType<typeof stage>['counters']): number {
+  return (
+    counters.matched +
+    counters.inserted +
+    counters.sharedClimbInBatch +
+    counters.skippedProblems +
+    counters.skippedAmbiguous +
+    counters.skippedDrifted +
+    counters.skippedHijacked
+  );
+}
+
+void test('every problem is accounted for when several collapse onto one climb', () => {
+  // Three problems sharing holds: one contributes the climb, two share it.
+  // Before sharedClimbInBatch existed, the latter two were counted nowhere.
+  const problems = [
+    problem({ id: 700400, configurations: [config({ repeats: 5 })] }),
+    problem({ id: 700401, configurations: [config({ repeats: 99 })] }),
+    problem({ id: 700402, configurations: [config({ repeats: 1 })] }),
+  ];
+  const { counters } = stage({ problems });
+
+  assert.equal(counters.inserted, 1);
+  assert.equal(counters.sharedClimbInBatch, 2);
+  assert.equal(accountedFor(counters), problems.length);
+});
+
+void test('a problem that DISPLACES an earlier one is counted, not just the loser', () => {
+  // 700411 wins on repeats, so it replaces the incumbent rather than losing.
+  // Counting only `!accept` would miss it and the totals would still not balance.
+  const problems = [
+    problem({ id: 700410, name: 'Weak', configurations: [config({ repeats: 1 })] }),
+    problem({ id: 700411, name: 'Strong', configurations: [config({ repeats: 500 })] }),
+  ];
+  const { climbs, stats, counters } = stage({ problems });
+
+  assert.equal(climbs.length, 1);
+  assert.equal(stats[0].upstreamAscensionistCount, 500);
+  assert.equal(counters.sharedClimbInBatch, 1);
+  assert.equal(accountedFor(counters), problems.length);
+});
+
+void test('every problem is accounted for across all the skip paths at once', () => {
+  const withdrawnUuid = catalogClimbUuid({ id: 700421 });
+  const driftedUuid = catalogClimbUuid({ id: 700423 });
+  const ambiguousProblem = problem({ id: 700422, name: 'Ambiguous' });
+
+  const problems = [
+    problem({ id: 700420, moves: MOVES_OTHER }),
+    problem({ id: 700421, moves: MOVES_OTHER, dateDeleted: '2026-03-01T10:00:00' }),
+    ambiguousProblem,
+    problem({ id: 700423, moves: 'e~A2~|s~A3~' }),
+    problem({ id: 700424, moves: '' }),
+  ];
+
+  const { counters } = stage({
+    problems,
+    existingClimbUuids: new Set([withdrawnUuid, driftedUuid]),
+    existingIndex: new Map([
+      [
+        catalogFingerprintKey(LAYOUT_ID, fingerprintOf(ambiguousProblem)),
+        [
+          { uuid: 'listed-one', name: 'Ambiguous' },
+          { uuid: 'listed-two', name: 'Something Else' },
+        ],
+      ],
+    ]),
+  });
+
+  assert.equal(counters.skippedAmbiguous, 1);
+  assert.equal(counters.skippedDrifted, 1);
+  assert.equal(counters.withdrawn, 1);
+  // Withdrawn and the holdless problem both land in skippedProblems.
+  assert.equal(counters.skippedProblems, 2);
+  assert.equal(accountedFor(counters), problems.length);
+});

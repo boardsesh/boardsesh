@@ -48,6 +48,20 @@ export type CatalogBatchCounters = {
   skippedHijacked: number;
   /** Later problems folded onto an earlier same-holds problem in this batch. */
   foldedInBatch: number;
+  /**
+   * Problems that shared a climb with another problem in the same file, so
+   * they did not add a climb of their own. Their stats either lost the
+   * isBetterCatalogClimb contest or displaced an earlier problem's — either
+   * way exactly one problem's data survives per climb. Both ids still resolve
+   * to it (aliases are recorded before the contest).
+   *
+   * Counted so the run log balances: matched + inserted + sharedClimbInBatch
+   * plus every skip counter equals the problems in the file. Without it ~0.4%
+   * of a capture vanishes from the accounting and an operator reconciling the
+   * totals cannot tell a collapse from a silent drop. `foldedInBatch` is a
+   * narrower subset — only the brand-new-problem case.
+   */
+  sharedClimbInBatch: number;
   /** Problems upstream has withdrawn (a subset of skippedProblems). */
   withdrawn: number;
   /** Withdrawn problems that resolved to a climb row we can stop listing. */
@@ -138,6 +152,7 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
     skippedDrifted: 0,
     skippedHijacked: 0,
     foldedInBatch: 0,
+    sharedClimbInBatch: 0,
     withdrawn: 0,
     withdrawnWithClimbs: 0,
   };
@@ -296,6 +311,10 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
     }
 
     const incumbent = bestByUuid.get(uuid);
+    // Count before the contest resolves: whether this problem wins or loses, it
+    // is sharing a climb rather than contributing one, and both outcomes must
+    // land in the same bucket for the totals to balance.
+    if (incumbent) counters.sharedClimbInBatch++;
     const decision = resolveIncumbentReplacement(uuid, mapped, incumbent);
     if (!decision.accept) continue;
     if (!incumbent) {

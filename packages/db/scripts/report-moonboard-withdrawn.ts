@@ -4,6 +4,7 @@ import { pathToFileURL } from 'url';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { boardClimbAliases, boardClimbs } from '../src/schema/boards/unified.js';
 import { createScriptDb, describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
+import { executeRows } from '../src/client/index.js';
 import { HOLDSETUP_TO_LAYOUT, type MoonBoardCatalogFile } from './moonboard-catalog-helpers.js';
 import {
   buildCatalogProblemIndex,
@@ -208,7 +209,9 @@ async function attachUsage(
 ): Promise<(WithdrawnClimb & { ticks: number; betaLinks: number; ascents: number })[]> {
   if (climbs.length === 0) return [];
   const uuids = climbs.map((climb) => climb.uuid);
-  const rows = await db.execute<{ uuid: string; ticks: string; beta_links: string; ascents: string }>(sql`
+  const rows = await executeRows<{ uuid: string; ticks: string; beta_links: string; ascents: string }>(
+    db,
+    sql`
     SELECT u.uuid,
            (SELECT COUNT(*) FROM boardsesh_ticks t
              WHERE t.board_type = 'moonboard' AND t.climb_uuid = u.uuid)::text AS ticks,
@@ -217,9 +220,10 @@ async function attachUsage(
            (SELECT COALESCE(MAX(s.ascensionist_count), 0) FROM board_climb_stats s
              WHERE s.board_type = 'moonboard' AND s.climb_uuid = u.uuid)::text AS ascents
     FROM unnest(${uuids}::text[]) AS u(uuid)
-  `);
+  `,
+  );
   const usageByUuid = new Map(
-    (rows as unknown as { uuid: string; ticks: string; beta_links: string; ascents: string }[]).map((row) => [
+    rows.map((row) => [
       row.uuid,
       { ticks: Number(row.ticks), betaLinks: Number(row.beta_links), ascents: Number(row.ascents) },
     ]),
