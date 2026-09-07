@@ -22,6 +22,7 @@ import {
 } from '../lib/auth';
 import { SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD } from '../lib/screenshot-mode';
 import { reset as resetAnalytics, track } from '../lib/analytics';
+import { resetScreenSessionGate } from '../lib/analytics-screen-session-gate';
 import { resetOfflineUsageSignal } from '../offline/offline-usage-signal';
 import { reportError, reportHandledError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
@@ -172,6 +173,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // user's counters and the new user's first offline day would never fire
       // (#4317).
       resetOfflineUsageSignal();
+      resetScreenSessionGate();
     }
   }, []);
 
@@ -299,6 +301,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       const localDb = getDatabaseHandle();
       if (localDb) await reportOutboxDiscardedOnSignOut(localDb);
       resetOfflineUsageSignal();
+      resetScreenSessionGate();
       const stopTokenCleanup = stopTokenManagement(async () => {});
       if (Platform.OS === 'web') await waitForCleanupPhase(stopTokenCleanup);
       else await stopTokenCleanup;
