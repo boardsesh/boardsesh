@@ -1,3 +1,4 @@
+import { KILTER_ORIGINAL_LAYOUT_ID } from '@boardsesh/board-constants';
 import type {
   CncArtworkInput,
   CncArtworkKind,
@@ -359,7 +360,7 @@ export function setIdsFor(entry: CncCatalogEntry, includeKicker: boolean): strin
     .split(',')
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
-  if (includeKicker || (entry.boardName === 'kilter' && entry.layoutId === 1)) {
+  if (includeKicker) {
     return setIds.join(',');
   }
   return setIds.filter((setId) => !CNC_KICKER_SET_IDS.includes(Number(setId))).join(',');
@@ -367,7 +368,7 @@ export function setIdsFor(entry: CncCatalogEntry, includeKicker: boolean): strin
 
 /** Whether this entry's set list actually contains kicker sets to drop. */
 export function hasKickerSets(entry: CncCatalogEntry): boolean {
-  if (entry.boardName === 'kilter' && entry.layoutId === 1) return entry.kickerOptional;
+  if (entry.boardName === 'kilter' && entry.layoutId === KILTER_ORIGINAL_LAYOUT_ID) return entry.kickerOptional;
   return entry.setIds.split(',').some((segment) => CNC_KICKER_SET_IDS.includes(Number(segment.trim())));
 }
 
