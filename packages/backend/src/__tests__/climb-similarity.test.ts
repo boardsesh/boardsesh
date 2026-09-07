@@ -397,6 +397,7 @@ describe('findSimilarClimbs', () => {
         angle: 40,
         layout_id: 1,
         frames: 'p1117r12',
+        characteristics: ['no_match'],
         shared: 9,
         candidate_hold_count: 10,
         jaccard: 0.9,
@@ -423,12 +424,36 @@ describe('findSimilarClimbs', () => {
         qualityAverage: null,
         ascensionistCount: null,
         compatibleSizeIds: [],
+        characteristics: ['no_match'],
         similarity: 0.9,
         sharedHoldCount: 9,
         candidateHoldCount: 10,
         targetHoldCount: 2,
       },
     ]);
+  });
+
+  // A tapped similar climb opens the play drawer from this payload with no
+  // refetch, so the Woods rules line reads whatever lands here. `[]` is a climb
+  // set under all the defaults and null is a climb whose rules were never
+  // recorded — collapsing either into the other says the wrong thing (#5214).
+  it('keeps an empty characteristics array distinct from a missing one', async () => {
+    mockSimilarClimbRows([
+      { uuid: 'defaults', characteristics: [], shared: 9, candidate_hold_count: 10, jaccard: 0.9 },
+      { uuid: 'unrecorded', characteristics: null, shared: 9, candidate_hold_count: 10, jaccard: 0.9 },
+    ]);
+
+    const result = await findSimilarClimbs({
+      boardType: 'woods',
+      layoutId: 1,
+      holds: [
+        { holdId: 1117, holdState: 'STARTING' },
+        { holdId: 1140, holdState: 'HAND' },
+      ],
+      threshold: 0.9,
+    });
+
+    expect(result.map((climb) => climb.characteristics)).toEqual([[], null]);
   });
 
   it('emits CEIL(targetSize * threshold) as the HAVING cutoff at boundary values', async () => {

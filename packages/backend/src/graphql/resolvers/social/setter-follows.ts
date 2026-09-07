@@ -310,6 +310,8 @@ export const setterFollowQueries = {
           // needs it to tell Woods' two sizes apart (their hold ids overlap as
           // different holds).
           compatible_size_ids: tables.climbs.compatibleSizeIds,
+          // Structured climb rules — see the note in hydrate-climbs.ts (#5214).
+          characteristics: tables.climbs.characteristics,
           ascensionist_count: tables.climbStats.ascensionistCount,
           difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
           quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
@@ -360,6 +362,7 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        characteristics: result.characteristics ?? null,
         angle,
         ascensionist_count: Number(result.ascensionist_count || 0),
         difficulty: getGradeLabel(result.difficulty_id),
@@ -417,6 +420,8 @@ export const setterFollowQueries = {
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
           compatible_size_ids: tables.climbs.compatibleSizeIds,
+          // Structured climb rules — see the note in hydrate-climbs.ts (#5214).
+          characteristics: tables.climbs.characteristics,
           statsAngle: tables.climbStats.angle,
           ascensionist_count: tables.climbStats.ascensionistCount,
           difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
@@ -480,6 +485,7 @@ export const setterFollowQueries = {
           framesCount: result.frames_count ?? null,
           framesPace: result.frames_pace ?? null,
           compatibleSizeIds: result.compatible_size_ids ?? null,
+          characteristics: result.characteristics ?? null,
           angle: result.statsAngle ?? DEFAULT_ANGLE,
           ascensionist_count: Number(result.ascensionist_count || 0),
           difficulty: getGradeLabel(result.difficulty_id),
@@ -585,6 +591,7 @@ export const setterFollowQueries = {
       frames_count: number | null;
       frames_pace: number | null;
       compatible_size_ids: number[] | null;
+      characteristics: string[] | null;
       required_set_ids: number[] | null;
       is_hidden: boolean | null;
       stats_angle: number | null;
@@ -612,6 +619,7 @@ export const setterFollowQueries = {
           c.frames_count,
           c.frames_pace,
           c.compatible_size_ids,
+          c.characteristics,
           c.required_set_ids,
           c.is_hidden,
           c.created_at
@@ -645,6 +653,7 @@ export const setterFollowQueries = {
         owned_climbs.frames_count,
         owned_climbs.frames_pace,
         owned_climbs.compatible_size_ids,
+        owned_climbs.characteristics,
         owned_climbs.required_set_ids,
         owned_climbs.is_hidden,
         best.angle AS stats_angle,
@@ -688,6 +697,7 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        characteristics: result.characteristics ?? null,
         is_hidden: result.is_hidden ?? false,
         angle: result.stats_angle ?? DEFAULT_ANGLE,
         ascensionist_count: Number(result.ascensionist_count || 0),

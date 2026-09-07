@@ -40,7 +40,8 @@ async function insertClimb(params: {
       edge_bottom,
       edge_top,
       created_at,
-      user_id
+      user_id,
+      characteristics
     )
     VALUES (
       ${params.uuid},
@@ -58,7 +59,8 @@ async function insertClimb(params: {
       0,
       150,
       '2026-01-01',
-      ${params.userId ?? null}
+      ${params.userId ?? null},
+      ${sql.raw("ARRAY['no_match']::text[]")}
     )
   `);
 
@@ -140,6 +142,27 @@ describe('setterFollowQueries.userClimbs', () => {
 
     expect(result.totalCount).toBe(2);
     expect(result.climbs.map((climb) => climb.uuid)).toEqual([`${CLIMB_PREFIX}linked-kilter`, `${CLIMB_PREFIX}direct`]);
+  });
+
+  // The mocked guard in resolver-climb-fields.test.ts can only read the SQL text
+  // back; this proves the column actually survives the owned_climbs CTE and the
+  // outer SELECT against a real Postgres, as a text[] and not a string (#5214).
+  it('returns the stored characteristics array', async () => {
+    await insertClimb({
+      uuid: `${CLIMB_PREFIX}rules`,
+      boardType: 'tension',
+      setterUsername: 'local-user',
+      userId: TEST_USER_ID,
+      ascensionistCount: 3,
+    });
+
+    const result = await setterFollowQueries.userClimbs(
+      null,
+      { input: { userId: TEST_USER_ID, sortBy: 'popular', limit: 10, offset: 0 } },
+      {} as never,
+    );
+
+    expect(result.climbs[0]?.characteristics).toEqual(['no_match']);
   });
 });
 
