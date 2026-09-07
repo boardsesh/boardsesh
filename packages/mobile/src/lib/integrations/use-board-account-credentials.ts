@@ -3,6 +3,7 @@ import { getAuroraCredentials } from '../aurora-credentials';
 
 // The prompt and Connected apps share one cached response and invalidation key.
 export const AURORA_CREDENTIALS_QUERY_KEY = ['auroraCredentials'] as const;
+export const AURORA_UNSYNCED_QUERY_KEY = ['auroraCredentials', 'unsynced'] as const;
 
 export function useBoardAccountCredentials(enabled = true) {
   return useQuery({

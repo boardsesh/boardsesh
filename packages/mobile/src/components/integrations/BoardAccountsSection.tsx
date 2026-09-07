@@ -1,28 +1,16 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Linking,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Linking, Modal, ScrollView, StyleSheet, View } from 'react-native';
 import { File } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
-import { AURORA_CREDENTIALS_QUERY_KEY } from '../../lib/integrations/use-board-account-credentials';
+import { LinkBoardAccountModal, errorMessageFor } from './LinkBoardAccountModal';
 import {
-  trackLinkFailed,
-  trackLinkStarted,
-  trackLinkSucceeded,
-  type BoardLinkFailureReason,
-} from '../../lib/integrations/board-link-analytics';
+  AURORA_CREDENTIALS_QUERY_KEY,
+  AURORA_UNSYNCED_QUERY_KEY,
+} from '../../lib/integrations/use-board-account-credentials';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   AURORA_BOARDS,
@@ -44,14 +32,10 @@ import { useToast } from '../../providers/toast-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import {
-  BoardAccountError,
   deleteAuroraCredential,
   getAuroraCredentials,
   getAuroraUnsyncedCounts,
-  saveAuroraCredential,
-  saveKilterCredentialViaPassword,
   streamAuroraImport,
   streamMoonBoardImport,
   type AuroraCredentialStatus,
@@ -103,7 +87,6 @@ type MoonBoardSharedSchemaModule = {
 
 const MAX_IMPORT_SIZE_BYTES = 200 * 1024 * 1024;
 const IMPORT_RESULT_LIMIT = 8;
-const AURORA_UNSYNCED_QUERY_KEY = ['auroraCredentials', 'unsynced'] as const;
 
 // MoonBoard isn't an Aurora board, so it has no credential/sync flow.
 const MOONBOARD_SUPPORT_EMAIL = 'moonboardsupport@moonclimbing.com';
@@ -238,43 +221,10 @@ function getMoonBoardImportErrorMessage(t: TFunction<'settings'>, error: unknown
   return t('aurora.moonboard.csvImport.failed');
 }
 
-// Kilter links via the password grant (`/api/board-credentials/kilter/password`);
-// every other board posts username/password to the Aurora endpoint.
-async function saveBoardCredential(input: { boardType: AuroraBoardName; username: string; password: string }) {
-  if (input.boardType === 'kilter') {
-    await saveKilterCredentialViaPassword({ username: input.username, password: input.password });
-    return null;
-  }
-  return saveAuroraCredential(input);
-}
-
-function failureReasonFor(error: unknown): BoardLinkFailureReason {
-  return error instanceof BoardAccountError ? error.code : 'request_failed';
-}
-
-function errorMessageFor(error: unknown, t: TFunction<'settings'>): string {
-  if (error instanceof BoardAccountError) {
-    switch (error.code) {
-      case 'account_already_linked':
-        return t('aurora.linkDialog.accountAlreadyLinked');
-      case 'invalid_credentials':
-        return t('aurora.mobile.invalidCredentials');
-      case 'not_allowed':
-        return t('aurora.mobile.kilterNotAllowed');
-      case 'rate_limited':
-        return t('aurora.mobile.rateLimited');
-      case 'request_failed':
-      case 'unauthorized':
-        return t('aurora.mobile.requestFailed');
-    }
-  }
-  return t('aurora.mobile.requestFailed');
-}
-
 export function BoardAccountsSection() {
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors, brandColors, colorScheme } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -292,34 +242,12 @@ export function BoardAccountsSection() {
   const kilterOauthLinkingEnabled = useFeatureFlag('kilter-oauth-linking') === true;
 
   const [linkBoard, setLinkBoard] = useState<AuroraBoardName | null>(null);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [importBoard, setImportBoard] = useState<AuroraBoardName | null>(null);
   const [importPreview, setImportPreview] = useState<AuroraExportPreview | null>(null);
   const [importData, setImportData] = useState<StrippedAuroraExportData | null>(null);
   const [importPhase, setImportPhase] = useState<ImportPhase | null>(null);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
-
-  const saveCredentialMutation = useMutation({
-    mutationFn: saveBoardCredential,
-    onSuccess: async (_credential, variables) => {
-      trackLinkSucceeded({ boardType: variables.boardType, source: LINK_SOURCE });
-      const boardName = boardTypeLabel(variables.boardType);
-      showToast(t('aurora.mobile.linkSuccess', { boardName }), 'success');
-      setLinkBoard(null);
-      setUsername('');
-      setPassword('');
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: AURORA_CREDENTIALS_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: AURORA_UNSYNCED_QUERY_KEY }),
-      ]);
-    },
-    onError: (error, variables) => {
-      trackLinkFailed({ boardType: variables.boardType, source: LINK_SOURCE }, failureReasonFor(error));
-      showToast(errorMessageFor(error, t), 'error');
-    },
-  });
 
   const deleteCredentialMutation = useMutation({
     mutationFn: deleteAuroraCredential,
@@ -361,21 +289,10 @@ export function BoardAccountsSection() {
     setImportResult(null);
   }, []);
 
+  // The dialog owns its form state.
   const handleOpenLink = useCallback((boardType: AuroraBoardName) => {
     setLinkBoard(boardType);
-    setUsername('');
-    setPassword('');
   }, []);
-
-  const handleSubmitLink = useCallback(() => {
-    if (!linkBoard) return;
-    trackLinkStarted({ boardType: linkBoard, source: LINK_SOURCE });
-    saveCredentialMutation.mutate({
-      boardType: linkBoard,
-      username: username.trim(),
-      password,
-    });
-  }, [linkBoard, password, saveCredentialMutation, username]);
 
   const handleRequestData = useCallback(() => {
     void Linking.openURL(buildKilterDataRequestMailto(t)).catch(() => {
@@ -502,10 +419,6 @@ export function BoardAccountsSection() {
     })();
   }, [importBoard, importData, queryClient, showToast, t]);
 
-  const inputBackground = colorScheme === 'dark' ? iosSystemColors.white : '#FFFFFF';
-  const inputBorder = colorScheme === 'dark' ? 'rgba(60, 60, 67, 0.36)' : 'rgba(60, 60, 67, 0.18)';
-  const inputStyle = [styles.input, { backgroundColor: inputBackground, borderColor: inputBorder, color: '#000000' }];
-
   const credentials = credentialsQuery.data?.credentials;
   const hasKilterCredential = getCredential(credentials ?? [], 'kilter') !== null;
   // Show the new Kilter card when the `kilter-oauth-linking` flag is on, or whenever a
@@ -594,58 +507,7 @@ export function BoardAccountsSection() {
         })
       )}
 
-      <Modal visible={linkBoard !== null} transparent animationType="fade" onRequestClose={() => setLinkBoard(null)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: systemColors.secondaryBackground }]}>
-            <Text variant="headline" style={styles.modalTitle}>
-              {linkBoard === 'kilter'
-                ? t('aurora.kilterLinkDialog.title')
-                : t('aurora.linkDialog.title', { boardName: linkBoard ? boardTypeLabel(linkBoard) : '' })}
-            </Text>
-            <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.modalCopy}>
-              {linkBoard === 'kilter'
-                ? t('aurora.kilterLinkDialog.description')
-                : t('aurora.linkDialog.description', { boardName: linkBoard ? boardTypeLabel(linkBoard) : '' })}
-            </Text>
-            <TextInput
-              value={username}
-              onChangeText={setUsername}
-              placeholder={t('aurora.linkDialog.usernamePlaceholder')}
-              placeholderTextColor="rgba(60, 60, 67, 0.6)"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={inputStyle}
-            />
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder={t('aurora.linkDialog.passwordPlaceholder')}
-              placeholderTextColor="rgba(60, 60, 67, 0.6)"
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              style={inputStyle}
-            />
-            <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {linkBoard === 'kilter' ? t('aurora.kilterLinkDialog.passwordHelp') : t('aurora.mobile.passwordHelp')}
-            </Text>
-            <View style={styles.modalActions}>
-              <Button
-                title={tCommon('actions.cancel')}
-                variant="text"
-                role="cancel"
-                onPress={() => setLinkBoard(null)}
-              />
-              <Button
-                title={t('aurora.linkDialog.submit')}
-                onPress={handleSubmitLink}
-                loading={saveCredentialMutation.isPending}
-                disabled={username.trim().length === 0 || password.length === 0 || saveCredentialMutation.isPending}
-              />
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <LinkBoardAccountModal boardType={linkBoard} source={LINK_SOURCE} onClose={() => setLinkBoard(null)} />
 
       <ImportDialog
         visible={importPhase !== null}
