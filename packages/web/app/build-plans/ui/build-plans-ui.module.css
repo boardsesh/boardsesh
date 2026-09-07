@@ -318,9 +318,12 @@
 /* Two-up fills row by row, so the closing rule has to come off the last TWO
    rows, not the last one — otherwise the left column ends with a rule and the
    right column does not. Assumes an even number of items, which is what a
-   two-column list is for. */
-.kvTwoUp .kvRow:nth-last-child(-n + 2) {
-  border-bottom: 0;
+   two-column list is for. Only while there ARE two columns: below the collapse
+   it would strip the rule from the second-to-last row too. */
+@media (min-width: 701px) {
+  .kvTwoUp .kvRow:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
 }
 
 .kvDense .kvRow {

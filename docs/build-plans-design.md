@@ -122,6 +122,11 @@ preview flow adds — onto six tones. Tone is a verdict, not a colour choice:
 `preview_ready` and `ready` **must not look alike** — one wants finalising, the other is
 already yours. Violet vs green is the whole point.
 
+`orderStatusChipColor` in `order-display.ts` is superseded by `StatusChip` and should be
+deleted with the orders restyle: it maps onto MUI `Chip` colours, it has no case for the four
+preview states, and its exhaustive `switch` stops compiling the moment they land in
+`CncOrderStatus`.
+
 ---
 
 ## Cards and surfaces
