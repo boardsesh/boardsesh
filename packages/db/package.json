@@ -70,6 +70,11 @@
       "types": "./src/test-utils/sql-text.ts",
       "import": "./src/test-utils/sql-text.ts",
       "default": "./src/test-utils/sql-text.ts"
+    },
+    "./moonboard": {
+      "types": "./src/moonboard/index.ts",
+      "import": "./src/moonboard/index.ts",
+      "default": "./src/moonboard/index.ts"
     }
   },
   "scripts": {

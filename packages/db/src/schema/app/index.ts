@@ -35,6 +35,7 @@ export * from './location-sync';
 export * from './location-sync-unfreeze-audit';
 export * from './sync-deletions';
 export * from './sync-daemon-leases';
+export * from './moonboard-sync';
 export * from './logbook-sync-skips';
 export * from './sitemap-shard-refreshes';
 export * from './sitemap-climb-urls';

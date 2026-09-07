@@ -1,8 +1,9 @@
+import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, ne, and, or, isNotNull, sql } from 'drizzle-orm';
+import { eq, inArray, and, or, isNotNull, sql } from 'drizzle-orm';
 
 import { auroraCredentials } from '@boardsesh/db/schema/auth';
 import {
@@ -74,10 +75,9 @@ export function sharedSyncCooldownAfterError(error: unknown, configuredCooldownM
     : fullCooldownMs;
 }
 
-// aurora-sync owns every board EXCEPT kilter (which kilter-sync drives via its
-// own OAuth flow), so every credential query here excludes this board_type.
+// Claim only Aurora providers. Moon and Kilter have separate authentication and runners.
 // Named once so the scheduler filter and the health snapshot can't drift.
-const KILTER_BOARD_TYPE = 'kilter';
+const AURORA_BOARD_TYPES = AURORA_BOARDS.filter((board) => board !== 'kilter');
 
 // Consecutive-failure count at which we emit a distinct FLAPPING log event.
 // The credential is already backing off and rotating out (the starvation fix);
@@ -458,7 +458,7 @@ export class SyncRunner {
       isNotNull(auroraCredentials.encryptedUsername),
       isNotNull(auroraCredentials.encryptedPassword),
       isNotNull(auroraCredentials.auroraUserId),
-      ne(auroraCredentials.boardType, KILTER_BOARD_TYPE),
+      inArray(auroraCredentials.boardType, [...AURORA_BOARD_TYPES]),
     );
   }
 
@@ -813,9 +813,8 @@ export class SyncRunner {
    */
   private async getSyncHealthSnapshot(): Promise<SyncHealthSnapshot> {
     const { db } = this.getClient();
-    // Aurora's fleet is everything that isn't kilter; kilter-sync's runner
-    // passes the complementary predicate to the same query.
-    return getCredentialFleetSnapshot(db, ne(auroraCredentials.boardType, KILTER_BOARD_TYPE));
+    // Use the same provider allowlist as credential discovery.
+    return getCredentialFleetSnapshot(db, inArray(auroraCredentials.boardType, [...AURORA_BOARD_TYPES]));
   }
 
   /**

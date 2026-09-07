@@ -1,5 +1,8 @@
 import { pgTable, text, integer, timestamp, primaryKey } from 'drizzle-orm/pg-core';
-import type { AdapterAccount } from 'next-auth/adapters';
+
+// Persisted NextAuth v4 account kinds. Keep this storage contract independent
+// of the optional web adapter so non-web database clients can load the schema.
+type AccountType = 'oauth' | 'email' | 'credentials';
 
 // NextAuth.js tables
 export const users = pgTable('users', {
@@ -21,7 +24,7 @@ export const accounts = pgTable(
     userId: text('userId')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    type: text('type').$type<AdapterAccount['type']>().notNull(),
+    type: text('type').$type<AccountType>().notNull(),
     provider: text('provider').notNull(),
     providerAccountId: text('providerAccountId').notNull(),
     refresh_token: text('refresh_token'),

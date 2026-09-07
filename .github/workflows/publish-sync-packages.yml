@@ -1,0 +1,44 @@
+name: Publish sync packages
+on:
+  push:
+    tags: ['sync-packages-*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Immutable semver release (for example 1.0.1-sync.0)'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: publish-sync-packages
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          registry-url: https://npm.pkg.github.com
+          scope: '@boardsesh'
+      - name: Pack the versioned workspace closure
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          version="${REQUESTED_VERSION:-${GITHUB_REF_NAME#sync-packages-}}"
+          node scripts/pack-sync-packages.mjs "$version" artifacts/sync-packages
+      - name: Verify standalone import and types
+        run: node scripts/test-sync-packages.mjs artifacts/sync-packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sync-packages
+          path: artifacts/sync-packages
+      - name: Publish immutable package versions
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-sync-packages.mjs artifacts/sync-packages
