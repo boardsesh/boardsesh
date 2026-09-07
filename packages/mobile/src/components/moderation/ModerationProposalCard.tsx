@@ -21,7 +21,14 @@ import { Button } from '../Button';
 import { PressableSurface } from '../PressableSurface';
 import { ClimbListThumbnail } from '../ClimbListThumbnail';
 import { ProposalReasonsList } from './ProposalReasonsList';
-import { proposalTypeLine, statusChip, voteProgress, type ProposalVoteValue } from './proposal-presenters';
+import {
+  extraReasonCount,
+  isUnhideProposal,
+  proposalTypeLine,
+  statusChip,
+  voteProgress,
+  type ProposalVoteValue,
+} from './proposal-presenters';
 import { useVoteOnProposal } from '../../lib/graphql/hooks/use-vote-on-proposal';
 import { useResolveProposal } from '../../lib/graphql/hooks/use-resolve-proposal';
 import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
@@ -73,6 +80,9 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
   const progress = voteProgress(proposal);
   const isOpen = proposal.status === 'open';
   const canModerate = rolesGrantAdminOrLeader(roles, proposal.boardType);
+  // The reporter's reason is quoted above the expander AND stored as their first
+  // comment, so it is not one of the "more reasons" left to read.
+  const extraReasons = extraReasonCount(proposal);
   // A label the formatter can't parse still shows: the raw grade beats a blank.
   const displayGrade = proposal.climbDifficulty
     ? (formatGrade(proposal.climbDifficulty) ?? proposal.climbDifficulty)
@@ -118,12 +128,18 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
       // reject anyway.
       if (!canModerate) return;
       const isApprove = status === 'approved';
-      const hidesTheClimb = isApprove && proposal.type === 'hide';
+      // A `hide` proposal cuts both ways: `proposedValue: 'false'` puts the climb
+      // BACK. Approving that adds a climb to everyone's lists, so it is neither
+      // the hide warning nor a red button.
+      const unhidesTheClimb = isApprove && isUnhideProposal(proposal);
+      const hidesTheClimb = isApprove && proposal.type === 'hide' && !unhidesTheClimb;
       const confirmed = await confirm({
         title: t(isApprove ? 'mobile.moderation.confirm.approve.title' : 'mobile.moderation.confirm.reject.title'),
         message: hidesTheClimb
           ? t('mobile.moderation.confirm.approve.hideMessage')
-          : t(isApprove ? 'mobile.moderation.confirm.approve.message' : 'mobile.moderation.confirm.reject.message'),
+          : unhidesTheClimb
+            ? t('mobile.moderation.confirm.approve.unhideMessage')
+            : t(isApprove ? 'mobile.moderation.confirm.approve.message' : 'mobile.moderation.confirm.reject.message'),
         confirmLabel: t('mobile.moderation.confirm.confirm'),
         cancelLabel: tCommon('actions.cancel'),
         // Approving a hide takes a climb off everyone's lists, and a rejection
@@ -136,7 +152,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
         { onError: () => showToast(t('mobile.moderation.resolveError'), 'error') },
       );
     },
-    [confirm, proposal.type, proposal.uuid, resolveProposal, showToast, t, tCommon, canModerate],
+    [confirm, proposal, resolveProposal, showToast, t, tCommon, canModerate],
   );
 
   const handleApprove = useCallback(() => void submitResolve('approved'), [submitResolve]);
@@ -235,8 +251,9 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
         ) : null}
 
         {/* Later reporters join an existing proposal and leave their reason as a
-            comment, so the count is "how many other people said something". */}
-        {proposal.commentCount > 0 ? (
+            comment, so the count is "how many OTHER people said something" —
+            the proposer's own comment is the quote already rendered above. */}
+        {extraReasons > 0 ? (
           <PressableSurface
             onPress={handleToggleReasons}
             feedback="opacity"
@@ -245,13 +262,18 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
             style={styles.expander}
           >
             <Text variant="footnote" color={brandColors.primary}>
-              {t('mobile.moderation.moreReasons', { count: proposal.commentCount })}
+              {t('mobile.moderation.moreReasons', { count: extraReasons })}
             </Text>
             <Icon name={reasonsExpanded ? 'chevron.up' : 'chevron.down'} size={12} color={brandColors.primary} />
           </PressableSurface>
         ) : null}
 
-        <ProposalReasonsList proposalUuid={proposal.uuid} expanded={reasonsExpanded} />
+        <ProposalReasonsList
+          proposalUuid={proposal.uuid}
+          proposerId={proposal.proposerId}
+          reason={proposal.reason}
+          expanded={reasonsExpanded}
+        />
 
         <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.voteLine}>
           {tFeed('proposalVoteBar.votesNeeded', { current: progress.current, required: progress.required })}

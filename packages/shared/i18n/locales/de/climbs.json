@@ -299,6 +299,7 @@
       },
       "type": {
         "hide": "Boulder ausblenden",
+        "unhide": "Boulder einblenden",
         "grade": "Grad {{from}} → {{to}}",
         "classic": "Classic: {{value}}",
         "benchmark": "Benchmark: {{value}}",
@@ -308,7 +309,8 @@
         "approve": {
           "title": "Annehmen?",
           "message": "Damit gilt die Änderung für alle.",
-          "hideMessage": "Der Boulder verschwindet aus allen Listen."
+          "hideMessage": "Der Boulder verschwindet aus allen Listen.",
+          "unhideMessage": "Der Boulder taucht wieder in allen Listen auf."
         },
         "reject": {
           "title": "Ablehnen?",

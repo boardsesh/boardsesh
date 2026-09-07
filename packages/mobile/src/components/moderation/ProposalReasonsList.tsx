@@ -5,8 +5,14 @@
 // something", and this is where a moderator reads them before deciding. It only
 // mounts once the card is expanded — 20 cards each firing a comment query on
 // first paint would be 20 requests nobody asked for.
+//
+// The FIRST reporter's reason is stored twice — on the proposal and as their
+// comment — and the card already quotes the proposal copy above this list, so
+// that one comment is dropped here rather than saying the same sentence twice
+// under the same name. Same dedupe as `ClimbModerationStatus` runs on the hidden
+// banner; `extraReasonCount` keeps the expander's number in step with it.
 
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Comment } from '@boardsesh/shared-schema';
@@ -19,17 +25,33 @@ import { spacing } from '../../theme/tokens';
 
 type ProposalReasonsListProps = {
   proposalUuid: string;
+  /** Who opened the proposal — their first comment is the quoted reason. */
+  proposerId: string;
+  /** The proposal's own reason, already rendered above this list. */
+  reason?: string | null;
   /** The card's expander. False keeps the query unfired. */
   expanded: boolean;
 };
 
 export const ProposalReasonsList = memo(function ProposalReasonsList({
   proposalUuid,
+  proposerId,
+  reason,
   expanded,
 }: ProposalReasonsListProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
   const { data, isPending, isError } = useComments('proposal', proposalUuid, expanded);
+
+  const comments = useMemo(() => {
+    const loaded = data?.comments ?? [];
+    return loaded.filter((comment) => {
+      if (comment.isDeleted || !comment.body) return false;
+      // The one copy to drop: the proposer's comment repeating the reason the
+      // card already quotes above this list.
+      return !(comment.userId === proposerId && comment.body === reason);
+    });
+  }, [data, proposerId, reason]);
 
   if (!expanded) return null;
 
@@ -51,7 +73,6 @@ export const ProposalReasonsList = memo(function ProposalReasonsList({
     );
   }
 
-  const comments = data?.comments ?? [];
   if (comments.length === 0) {
     return (
       <View style={styles.state}>

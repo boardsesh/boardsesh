@@ -6,8 +6,9 @@
 //   - the server's row must land in every proposal cache BEFORE the
 //     invalidations fire, or the card flashes back to an open proposal while the
 //     refetch is in flight;
-//   - both the proposals prefix and the climb query must be invalidated, because
-//     an approved hide flips `is_hidden` on a climb the lists still hold;
+//   - the proposals prefix AND every climb read must be invalidated — the detail
+//     query and all three search caches — because an approved hide flips
+//     `is_hidden` on a climb the lists are still holding;
 //   - a failed request must leave the caches exactly as they were: there is
 //     nothing optimistic to roll back, so a write here would be a lie.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -22,13 +23,12 @@ const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
 
 import { browseProposalsKey, climbProposalsKey } from '../use-browse-proposals';
+import { CLIMB_EFFECT_QUERY_KEYS } from '../proposal-cache';
 import { PROPOSALS_QUERY_KEY } from '../use-report-climb';
 import { useResolveProposal } from '../use-resolve-proposal';
 
 const BROWSE_KEY = browseProposalsKey({ boardType: null, status: 'open' });
 const CLIMB_PROPOSALS_KEY = climbProposalsKey('c1');
-/** The key `useClimb` writes under — private to the hook, restated here. */
-const CLIMB_QUERY_KEY = ['climb'];
 
 function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   return {
@@ -133,10 +133,18 @@ describe('useResolveProposal', () => {
     // Every other row is untouched.
     expect(readBrowse(queryClient, 'other')).toMatchObject({ status: 'open' });
 
-    // The proposal lists AND the climb: an approved hide flips `is_hidden`, so a
-    // list still holding the climb has to go and ask again.
+    // The proposal lists AND every climb read: an approved hide flips
+    // `is_hidden`, so the open detail AND the search lists behind the card — the
+    // paged one, the infinite one, and the count in the filter bar — all have to
+    // go and ask again.
     expect(invalidations.keys).toContainEqual([...PROPOSALS_QUERY_KEY]);
-    expect(invalidations.keys).toContainEqual(CLIMB_QUERY_KEY);
+    for (const queryKey of CLIMB_EFFECT_QUERY_KEYS) {
+      expect(invalidations.keys).toContainEqual([...queryKey]);
+    }
+    expect(invalidations.keys).toContainEqual(['climb']);
+    expect(invalidations.keys).toContainEqual(['searchClimbs']);
+    expect(invalidations.keys).toContainEqual(['infiniteSearchClimbs']);
+    expect(invalidations.keys).toContainEqual(['searchClimbsCount']);
   });
 
   it('posts the resolve mutation with the proposal uuid and the verdict', async () => {

@@ -14,6 +14,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { decidedBy, selectModerationStatus } from './moderation-status';
+import { isUnhideProposal } from '../moderation/proposal-presenters';
 
 type ClimbModerationStatusProps = {
   climbUuid: string;
@@ -136,6 +137,11 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
     );
   }, [reasonThread, hidden]);
 
+  // An open `hide` proposal carrying `'false'` asks for the climb to come BACK.
+  // Saying "Reported by 2 climbers · 1 of 3 votes to hide" on a hidden climb the
+  // crew is voting back into view is the opposite of what is happening.
+  const openHideIsUnhide = !!openHide && isUnhideProposal(openHide);
+
   const showHiddenBanner = isHidden || !!hidden;
   const hasAnything = showHiddenBanner || !!openHide || openGradeAtAngle.length > 0;
 
@@ -186,13 +192,18 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
       {openHide ? (
         <View style={styles.block}>
           <View style={styles.titleRow}>
-            <Icon name="flag" size={16} color={systemColors.secondaryLabel} />
+            <Icon name={openHideIsUnhide ? 'visibility' : 'flag'} size={16} color={systemColors.secondaryLabel} />
             <Text variant="footnote">
-              {t('mobile.community.moderation.openReport', {
-                count: openHide.upvoterCount,
-                current: openHide.weightedUpvotes,
-                required: openHide.requiredUpvotes,
-              })}
+              {openHideIsUnhide
+                ? t('mobile.community.moderation.openUnhide', {
+                    current: openHide.weightedUpvotes,
+                    required: openHide.requiredUpvotes,
+                  })
+                : t('mobile.community.moderation.openReport', {
+                    count: openHide.upvoterCount,
+                    current: openHide.weightedUpvotes,
+                    required: openHide.requiredUpvotes,
+                  })}
             </Text>
           </View>
           <ModerationLink

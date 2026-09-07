@@ -299,6 +299,7 @@
       },
       "type": {
         "hide": "Hide climb",
+        "unhide": "Unhide climb",
         "grade": "Grade {{from}} → {{to}}",
         "classic": "Classic: {{value}}",
         "benchmark": "Benchmark: {{value}}",
@@ -308,7 +309,8 @@
         "approve": {
           "title": "Approve this?",
           "message": "This applies the change for everyone.",
-          "hideMessage": "The climb disappears from everyone's lists."
+          "hideMessage": "The climb disappears from everyone's lists.",
+          "unhideMessage": "The climb comes back into everyone's lists."
         },
         "reject": {
           "title": "Reject this?",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Proposal } from '@boardsesh/shared-schema';
 import { decidedBy, selectModerationStatus } from '../moderation-status';
+import { isUnhideProposal } from '../../moderation/proposal-presenters';
 
 function makeProposal(overrides: Partial<Proposal> & Pick<Proposal, 'uuid'>): Proposal {
   return {
@@ -118,6 +119,30 @@ describe('selectModerationStatus', () => {
     const classic = makeProposal({ uuid: 'classic-1', type: 'classic', angle: 40 });
     const benchmark = makeProposal({ uuid: 'benchmark-1', type: 'benchmark', angle: 40 });
     expect(selectModerationStatus([classic, benchmark], 40).openGradeAtAngle).toEqual([]);
+  });
+});
+
+describe('an open unhide request', () => {
+  it('is surfaced as the open hide proposal, and reads as an unhide', () => {
+    // There is no `unhide` type — it is a `hide` proposal carrying 'false'. The
+    // selector keeps it in `openHide` (it IS the live hide-type proposal), and
+    // the banner branches on the value: "Reported by 2 climbers · 1 of 3 votes
+    // to hide" on a climb the crew is voting back into view is backwards.
+    const unhide = makeProposal({
+      uuid: 'hide-1',
+      status: 'open',
+      proposedValue: 'false',
+      currentValue: 'true',
+    });
+    const status = selectModerationStatus([unhide], 40);
+    expect(status.openHide).toBe(unhide);
+    expect(status.hidden).toBeNull();
+    expect(isUnhideProposal(unhide)).toBe(true);
+  });
+
+  it('leaves a plain open report reading as a report', () => {
+    const report = makeProposal({ uuid: 'hide-1', status: 'open', proposedValue: 'true' });
+    expect(isUnhideProposal(selectModerationStatus([report], 40).openHide!)).toBe(false);
   });
 });
 

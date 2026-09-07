@@ -299,6 +299,7 @@
       },
       "type": {
         "hide": "Ocultar bloque",
+        "unhide": "Mostrar el bloque",
         "grade": "Grado {{from}} → {{to}}",
         "classic": "Clásico: {{value}}",
         "benchmark": "Referencia: {{value}}",
@@ -308,7 +309,8 @@
         "approve": {
           "title": "¿Aprobar esto?",
           "message": "Esto aplica el cambio para todos.",
-          "hideMessage": "El bloque desaparecerá de las listas de todos."
+          "hideMessage": "El bloque desaparecerá de las listas de todos.",
+          "unhideMessage": "El bloque vuelve a las listas de todos."
         },
         "reject": {
           "title": "¿Rechazar esto?",

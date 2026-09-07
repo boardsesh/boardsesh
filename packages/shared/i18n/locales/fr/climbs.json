@@ -299,6 +299,7 @@
       },
       "type": {
         "hide": "Masquer le bloc",
+        "unhide": "Réafficher le bloc",
         "grade": "Cotation {{from}} → {{to}}",
         "classic": "Classique : {{value}}",
         "benchmark": "Référence : {{value}}",
@@ -308,7 +309,8 @@
         "approve": {
           "title": "Approuver ?",
           "message": "Le changement s'applique pour tout le monde.",
-          "hideMessage": "Le bloc disparaît des listes de tout le monde."
+          "hideMessage": "Le bloc disparaît des listes de tout le monde.",
+          "unhideMessage": "Le bloc revient dans les listes de tout le monde."
         },
         "reject": {
           "title": "Rejeter ?",

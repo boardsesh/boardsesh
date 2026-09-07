@@ -219,6 +219,7 @@
         "decidedByModerator": "Decided by a moderator",
         "openReport_one": "Reported by {{count}} climber · {{current}} of {{required}} votes to hide",
         "openReport_other": "Reported by {{count}} climbers · {{current}} of {{required}} votes to hide",
+        "openUnhide": "Unhide requested · {{current}} of {{required}} votes",
         "openGrade": "Grade change proposed: {{from}} → {{to}} · {{current}} of {{required}} votes",
         "seeInModeration": "See in Moderation",
         "voteInModeration": "Vote in Moderation"

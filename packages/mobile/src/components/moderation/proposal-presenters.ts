@@ -44,6 +44,32 @@ export type ProposalVoteProgress = {
 };
 
 /**
+ * Whether this proposal asks for a climb to come BACK, not to go away.
+ *
+ * There is no separate `unhide` type: unhiding is a `hide` proposal carrying
+ * `proposedValue: 'false'`. Every surface that says "hide" has to check the
+ * value, or a climber voting a climb back into view reads a card telling them
+ * they are about to remove it.
+ */
+export function isUnhideProposal(proposal: Pick<Proposal, 'type' | 'proposedValue'>): boolean {
+  return proposal.type === 'hide' && proposal.proposedValue === 'false';
+}
+
+/**
+ * How many reasons the expander still has to offer.
+ *
+ * The reporter's reason is stored twice — once on the proposal, once as their
+ * first comment — and the card already quotes `proposal.reason` above the
+ * expander. So "3 more reasons" on a proposal with a reason and three comments
+ * is one reason short of a lie: two of those three are new, the third is the
+ * sentence already on screen. Floors at zero; a server that reports a reason and
+ * no comments must not produce "-1 more reasons".
+ */
+export function extraReasonCount(proposal: Pick<Proposal, 'commentCount' | 'reason'>): number {
+  return Math.max(0, proposal.commentCount - (proposal.reason ? 1 : 0));
+}
+
+/**
  * The sentence describing what this proposal changes.
  *
  * Grades arrive as raw labels (`6b+/V4`), so the caller passes its bound
@@ -57,7 +83,9 @@ export function proposalTypeLine(
 ): ProposalTypeLine {
   switch (proposal.type) {
     case 'hide':
-      return { textI18nKey: 'climbs:mobile.moderation.type.hide', params: {} };
+      return isUnhideProposal(proposal)
+        ? { textI18nKey: 'climbs:mobile.moderation.type.unhide', params: {} }
+        : { textI18nKey: 'climbs:mobile.moderation.type.hide', params: {} };
     case 'grade':
       return {
         textI18nKey: 'climbs:mobile.moderation.type.grade',

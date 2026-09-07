@@ -219,6 +219,7 @@
         "decidedByModerator": "Von der Moderation entschieden",
         "openReport_one": "Von {{count}} Kletterer*in gemeldet · {{current}} von {{required}} Stimmen zum Ausblenden",
         "openReport_other": "Von {{count}} Kletterer*innen gemeldet · {{current}} von {{required}} Stimmen zum Ausblenden",
+        "openUnhide": "Einblenden beantragt · {{current}} von {{required}} Stimmen",
         "openGrade": "Grad-Änderung vorgeschlagen: {{from}} → {{to}} · {{current}} von {{required}} Stimmen",
         "seeInModeration": "In Moderation ansehen",
         "voteInModeration": "In Moderation abstimmen"

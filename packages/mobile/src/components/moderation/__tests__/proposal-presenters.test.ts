@@ -5,11 +5,18 @@
 //   - the vote bar divides by `requiredUpvotes`, which the server can report as
 //     zero, and shows a `current` the weighted total can exceed;
 //   - a proposal without frames or a layout can't be drawn, and handing the play
-//     drawer a half-built climb renders an empty board instead of falling back.
+//     drawer a half-built climb renders an empty board instead of falling back;
+//   - unhiding is a `hide` proposal carrying 'false', so a card that reads the
+//     type without the value tells a climber they are removing the climb they
+//     are voting back into view;
+//   - the reporter's reason is stored on the proposal AND as their first
+//     comment, so the expander's count is one too many unless it subtracts it.
 import { describe, expect, it } from 'vitest';
 import type { Proposal, ProposalType } from '@boardsesh/shared-schema';
 import {
   applyOptimisticVote,
+  extraReasonCount,
+  isUnhideProposal,
   proposalToClimb,
   proposalTypeLine,
   statusChip,
@@ -59,10 +66,51 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   };
 }
 
+describe('isUnhideProposal', () => {
+  it('reads a hide carrying false as an unhide', () => {
+    expect(isUnhideProposal(makeProposal({ type: 'hide', proposedValue: 'false' }))).toBe(true);
+  });
+
+  it('leaves a plain hide alone', () => {
+    expect(isUnhideProposal(makeProposal({ type: 'hide', proposedValue: 'true' }))).toBe(false);
+  });
+
+  it('never fires on another proposal type carrying false', () => {
+    // A benchmark proposal saying 'false' is "not a benchmark", not an unhide.
+    expect(isUnhideProposal(makeProposal({ type: 'benchmark', proposedValue: 'false' }))).toBe(false);
+  });
+});
+
+describe('extraReasonCount', () => {
+  it("drops the proposer's own comment, which is the quoted reason", () => {
+    expect(extraReasonCount(makeProposal({ commentCount: 3, reason: 'Holds are spinning' }))).toBe(2);
+  });
+
+  it('counts every comment when the proposal carries no reason', () => {
+    expect(extraReasonCount(makeProposal({ commentCount: 3, reason: null }))).toBe(3);
+  });
+
+  it('hides the expander when the reason is the only comment', () => {
+    expect(extraReasonCount(makeProposal({ commentCount: 1, reason: 'Holds are spinning' }))).toBe(0);
+  });
+
+  it('never goes negative when a reason arrives with no comments', () => {
+    expect(extraReasonCount(makeProposal({ commentCount: 0, reason: 'Holds are spinning' }))).toBe(0);
+  });
+});
+
 describe('proposalTypeLine', () => {
   it('names the hide case without touching the grade formatter', () => {
-    expect(proposalTypeLine(makeProposal({ type: 'hide' }), rawGrade)).toEqual({
+    expect(proposalTypeLine(makeProposal({ type: 'hide', proposedValue: 'true' }), rawGrade)).toEqual({
       textI18nKey: 'climbs:mobile.moderation.type.hide',
+      params: {},
+    });
+  });
+
+  it('names an unhide as an unhide, not as a hide', () => {
+    // Same type, opposite ask: 'false' puts the climb back.
+    expect(proposalTypeLine(makeProposal({ type: 'hide', proposedValue: 'false' }), rawGrade)).toEqual({
+      textI18nKey: 'climbs:mobile.moderation.type.unhide',
       params: {},
     });
   });
