@@ -99,8 +99,7 @@ function createHarness(overrides: Partial<ClimbStatsLiveSyncOptions> = {}): Harn
     writeEvents,
     isScopeDownloaded,
     onError,
-    writtenEvents: () =>
-      writeEvents.mock.calls.flatMap((call) => call[1] as unknown as ClimbStatsWriteThroughInput[]),
+    writtenEvents: () => writeEvents.mock.calls.flatMap((call) => call[1] as unknown as ClimbStatsWriteThroughInput[]),
   };
 }
 
