@@ -9,7 +9,7 @@ import {
 
 /**
  * Scratch-Postgres replay of migration 0222_moonboard_residual_dedup —
- * LOCAL opt-in mode. Set MIGRATION_REPLAY_DB_URL to a throwaway superuser
+ * Local opt-in and db-migrations CI mode. Set MIGRATION_REPLAY_DB_URL to a throwaway superuser
  * Postgres (a plain `docker run postgres`), e.g.
  *
  *   cd packages/db && MIGRATION_REPLAY_DB_URL=postgres://postgres:postgres@localhost:5433/postgres \
@@ -21,6 +21,9 @@ import {
  * postgres on every CI backend job. Schema, seed, migration application, and
  * every assertion live in @boardsesh/db/testing/moonboard-residual-dedup-replay
  * so the two harnesses can't drift.
+ * Running both is intentional: db-migrations covers database-only changes
+ * on stock PostgreSQL, while the backend entry protects backend-only changes
+ * that affect the shared replay.
  */
 
 const REPLAY_URL = process.env.MIGRATION_REPLAY_DB_URL;

@@ -19,6 +19,9 @@ import {
  * @boardsesh/db/testing/moonboard-residual-dedup-replay, shared with the opt-in
  * local harness (packages/db moonboard-residual-dedup-replay.integration.test.ts)
  * so the two can't drift.
+ * The db-migrations CI job also runs that harness on stock PostgreSQL: it
+ * covers database-only changes, while this entry protects backend changes
+ * that affect the shared replay. Both deliberately execute the same checks.
  */
 
 // Same admin-connection derivation as worker-db.ts getBaseConnection(): take

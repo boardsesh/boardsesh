@@ -135,6 +135,8 @@ export async function queryReconciliationReport(
         if (climb) climb.fingerprint = fingerprintFromHolds(holds);
       };
       // Keyset pages bound memory while sharing the same read-only snapshot.
+      // board_climb_holds has PK (board_type, climb_uuid, hold_id), so the
+      // fixed board type makes this cursor unique, including page boundaries.
       let afterUuid: string | undefined;
       let afterHoldId = 0;
       while (true) {
