@@ -1,4 +1,5 @@
 import type { UserBoard } from './types/board-entities';
+import { isNoMatch, usesAuroraNoMatchDescription } from './characteristics';
 
 /** The board config tuple needed to prefer a same-config serial match. */
 export type SerialBoardConfig = {
@@ -115,6 +116,32 @@ export const NO_MATCH_TRAILING_SQL_PATTERN =
 export function isNoMatchClimb(description: string | null | undefined): boolean {
   const value = description || '';
   return NO_MATCH_LEADING.test(value) || NO_MATCH_TRAILING.test(value);
+}
+
+/**
+ * Whether a climb forbids matching — the ONE read path every surface should use.
+ *
+ * A non-null `characteristics` array is authoritative and ends the question: it is
+ * what makes `noMatch: false` stick on a climb whose prose still declares the rule
+ * (the editor stores `[]` as an explicit false). Only a null array falls back to
+ * Aurora's description convention, and only on the boards that have one — on
+ * MoonBoard and Woods the same words are the setter's own prose.
+ *
+ * `boardType` fails open when absent, because it is only populated in multi-board
+ * contexts (see `Climb.boardType`); an unknown board keeps the pre-capability
+ * behaviour rather than silently losing the rule.
+ *
+ * Feed, tick and notification payloads used to derive this from the description
+ * alone, so they disagreed with the climb view for any climb whose author had
+ * turned the rule off without editing their prose (#5127 review).
+ */
+export function resolveClimbNoMatch(
+  boardType: string | null | undefined,
+  characteristics: readonly string[] | null | undefined,
+  description: string | null | undefined,
+): boolean {
+  if (characteristics != null) return isNoMatch(characteristics);
+  return (boardType == null || usesAuroraNoMatchDescription(boardType)) && isNoMatchClimb(description);
 }
 
 /** Canonical marker prepended to a description to flag a "no match" climb. */

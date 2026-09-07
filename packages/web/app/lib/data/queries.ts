@@ -13,7 +13,7 @@ import { getGradeLabel } from '@boardsesh/db/queries';
 
 import type { Climb, ParsedBoardRouteParametersWithUuid, BoardName, LayoutId, Size } from '../types';
 import { getSizesForLayoutId, getAllLayouts, getSetsForLayoutAndSize } from '@/app/lib/board-constants';
-import { isNoMatchClimb, isNoMatch, usesAuroraNoMatchDescription } from '@/app/lib/no-match-climb';
+import { resolveClimbNoMatch } from '@/app/lib/no-match-climb';
 import { withReadDeadline } from '@/app/lib/db/read-deadline';
 import { remainingReadBudgetMs } from '@/app/lib/db/request-read-budget';
 
@@ -104,10 +104,7 @@ async function fetchClimbFromDb(
   return {
     ...row,
     difficulty: getGradeLabel(row.difficulty_id),
-    is_no_match:
-      row.characteristics != null
-        ? isNoMatch(row.characteristics)
-        : usesAuroraNoMatchDescription(boardName) && isNoMatchClimb(row.description),
+    is_no_match: resolveClimbNoMatch(boardName, row.characteristics, row.description),
   } as Climb;
 }
 
