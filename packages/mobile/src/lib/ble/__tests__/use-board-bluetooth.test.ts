@@ -1359,8 +1359,23 @@ describe('useBoardBluetooth', () => {
         await result.current.connect();
       });
 
-      expect(fakeAdapter.configureBoard).toHaveBeenCalledWith(
+      // The config is staged BEFORE the physical connect: native connection
+      // setup relights the shared queue with whatever config is persisted, so
+      // a stale previous-board config would encode the wrong protocol (an
+      // Aurora packet to a Woods wall). The pre-stage carries the board
+      // identity but no device-derived fields; the post-connect call re-stages
+      // with deviceName.
+      const requestAndConnectMock = fakeAdapter.requestAndConnect as ReturnType<typeof vi.fn>;
+      expect(fakeAdapter.configureBoard.mock.invocationCallOrder[0]).toBeLessThan(
+        requestAndConnectMock.mock.invocationCallOrder[0],
+      );
+      expect(fakeAdapter.configureBoard).toHaveBeenNthCalledWith(
+        1,
         expect.objectContaining({ boardName: 'woods', layoutId: 1, sizeId: 1 }),
+      );
+      expect(fakeAdapter.configureBoard.mock.calls[0][0].deviceName).toBeUndefined();
+      expect(fakeAdapter.configureBoard).toHaveBeenLastCalledWith(
+        expect.objectContaining({ boardName: 'woods', layoutId: 1, sizeId: 1, deviceName: 'Kilter Board#123@3' }),
       );
     } finally {
       vi.mocked(isNativeIosBleAdapter).mockReturnValue(false);

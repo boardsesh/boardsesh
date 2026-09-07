@@ -1392,6 +1392,35 @@ export function useBoardBluetooth({
           reconnect: !!targetSerial || !!targetDeviceId,
         });
 
+        // Stage the board configuration into the native manager BEFORE the
+        // physical connect: native connection setup relights the shared queue
+        // with whatever configuration is currently persisted, so on a board
+        // switch the first native write after a fresh connect would otherwise
+        // be encoded for the PREVIOUS board — e.g. an Aurora packet to a Woods
+        // wall. configure() and connect() land on the same serial BLE queue,
+        // so this ordering is honoured natively. The device-derived fields
+        // (deviceName, apiLevel) are unknown until the link exists; the
+        // post-connect configureBoard below re-stages the full picture.
+        if (
+          isNativeIosBleAdapter(adapter) &&
+          typeof adapter.configureBoard === 'function' &&
+          layoutId !== undefined &&
+          sizeId !== undefined
+        ) {
+          try {
+            await adapter.configureBoard({
+              boardName,
+              layoutId,
+              sizeId,
+              colorOverrides: sanitizedColorOverrides,
+              numRows: moonboardNumRowsForNative(boardName, layoutId),
+              lightAdjacentHolds: moonboardLightAdjacentHolds,
+            });
+          } catch (error) {
+            console.warn('[BLE] Failed to pre-stage board configuration to native side:', error);
+          }
+        }
+
         const connection = await adapter.requestAndConnect(targetSerial, targetDeviceId);
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;

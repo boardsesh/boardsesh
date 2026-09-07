@@ -856,6 +856,7 @@ public class LiveActivityModule: Module {
         guard #available(iOS 17.0, *) else { return }
 
         var wallControlChanged = false
+        var renderModeChanged = false
         if let defaults = SharedConstants.sharedDefaults {
             let previousWallControl = SharedWidgetWallControlState.load(from: defaults)
             let previousBoardConnection = defaults.string(forKey: SharedConstants.boardConnectionKey)
@@ -870,7 +871,8 @@ public class LiveActivityModule: Module {
             // mode. Set-if-present only — a nil from an older OTA'd JS bundle
             // must never clear the value startSession staged.
             if let renderMode = options.renderMode, !renderMode.isEmpty {
-                wallControlChanged = wallControlChanged || defaults.string(forKey: SharedConstants.renderModeKey) != renderMode
+                renderModeChanged = defaults.string(forKey: SharedConstants.renderModeKey) != renderMode
+                wallControlChanged = wallControlChanged || renderModeChanged
                 defaults.set(renderMode, forKey: SharedConstants.renderModeKey)
             }
 
@@ -915,6 +917,12 @@ public class LiveActivityModule: Module {
 
         let activityManager = LiveActivityManager.shared
         enqueueLifecycleWork {
+            // A look change re-renders the widget against a mode-suffixed
+            // thumbnail filename that doesn't exist yet — cache it BEFORE the
+            // push, or the image goes blank until an unrelated later update.
+            if renderModeChanged {
+                await activityManager.prefetchCurrentThumbnail()
+            }
             let elapsed = await activityManager.timeSinceLastUpdate()
             let unchanged = await activityManager.lastPushedState() == state
             if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
@@ -931,6 +939,7 @@ public class LiveActivityModule: Module {
         guard #available(iOS 17.0, *) else { return }
 
         var wallControlChanged = false
+        var renderModeChanged = false
         if let defaults = SharedConstants.sharedDefaults {
             let previousWallControl = SharedWidgetWallControlState.load(from: defaults)
             let previousBoardConnection = defaults.string(forKey: SharedConstants.boardConnectionKey)
@@ -941,7 +950,8 @@ public class LiveActivityModule: Module {
 
             // Same look-change bypass + set-if-present rule as updateActivity.
             if let renderMode = options.renderMode, !renderMode.isEmpty {
-                wallControlChanged = wallControlChanged || defaults.string(forKey: SharedConstants.renderModeKey) != renderMode
+                renderModeChanged = defaults.string(forKey: SharedConstants.renderModeKey) != renderMode
+                wallControlChanged = wallControlChanged || renderModeChanged
                 defaults.set(renderMode, forKey: SharedConstants.renderModeKey)
             }
 
@@ -973,6 +983,11 @@ public class LiveActivityModule: Module {
 
         let activityManager = LiveActivityManager.shared
         enqueueLifecycleWork {
+            // See updateActivity: a look change must cache the new mode's
+            // thumbnail before the push so the re-render never lands blank.
+            if renderModeChanged {
+                await activityManager.prefetchCurrentThumbnail()
+            }
             let elapsed = await activityManager.timeSinceLastUpdate()
             let unchanged = await activityManager.lastPushedState() == state
             if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
