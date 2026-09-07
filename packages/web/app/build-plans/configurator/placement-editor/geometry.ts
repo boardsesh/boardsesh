@@ -6,8 +6,9 @@
  * needs an answer every frame, and a round trip per frame is neither fast
  * enough nor allowed (the hole-bearing layout query is capped at 10 a minute).
  * So this module re-implements the same three checks the generator runs —
- * inside the panel, clear of every hole keep-out, not across a seam — against
- * the artwork's bounding rectangle rather than its outlined glyphs.
+ * inside the panel, clear of every hole keep-out, and, for a cut-through, not
+ * across a seam — against the artwork's bounding rectangle rather than its
+ * outlined glyphs.
  *
  * That difference is deliberate and it only ever errs one way: a rectangle is
  * bigger than the letters inside it, so anything this module calls clear really
@@ -71,7 +72,14 @@ export type ResizeHandle = 'bottomLeft' | 'bottomRight' | 'topLeft' | 'topRight'
 export type PlacementCollisions = {
   /** Ids of the holes whose keep-out the artwork reaches into. */
   holes: string[];
-  /** Indices, in the layout's own seam order, of the seams it spans. */
+  /**
+   * Indices, in the layout's own seam order, of the seams it spans.
+   *
+   * Only ever filled for a cut-through. An engraved or pocketed shape that runs
+   * over a joint is clipped into both panels and cut twice, which is a wall
+   * with a word across it rather than a fault — so the seams of one are not
+   * collisions and are not listed here.
+   */
   seams: number[];
   /** True when any corner leaves the panel, margin included. */
   offPanel: boolean;
@@ -237,7 +245,8 @@ function seamEnds(line: SeamLineMm): [PointMm, PointMm] {
 /**
  * Does the artwork land on both sides of a seam?
  *
- * Two ways it can, and neither one implies the other. Usually an edge crosses
+ * Asked only of a cut-through — see `findCollisions`. Two ways it can, and
+ * neither one implies the other. Usually an edge crosses
  * the seam. But a short seam can sit entirely UNDER a big label without any
  * edge meeting it, and that is still a word with a joint running through it, so
  * the span check is there as well. Touching counts either way: an edge that
@@ -347,13 +356,20 @@ export function rotateFromPointer(centre: PointMm, pointerMm: PointMm, snap: boo
  *
  * `keepoutScale` is the generator's cut-through multiplier: a shape cut right
  * through the sheet needs more room around a hole than one scored into it.
+ *
+ * `cutsThroughSheet` says whether the seams matter at all. A mark that only
+ * goes into the surface is clipped into both panels and cut on each of them, so
+ * it may run over a joint; a shape cut right through cannot, because the two
+ * halves would fall out of two different sheets. Passing the flag rather than
+ * inferring it from `keepoutScale` keeps the two rules independent: a catalog
+ * that ever sets a cut-through multiplier of 1 must still be held off the seams.
  */
 export function findCollisions(
   rect: ArtRectMm,
   panel: PanelRectMm | null,
   holes: readonly HoleMm[],
   seams: readonly SeamLineMm[],
-  keepout: { panelEdgeMarginMm: number; keepoutScale: number },
+  keepout: { panelEdgeMarginMm: number; keepoutScale: number; cutsThroughSheet: boolean },
 ): PlacementCollisions {
   const corners = rotatedRectCorners({ xMm: rect.xMm, yMm: rect.yMm }, rect.widthMm, rect.heightMm, rect.rotationDeg);
 
@@ -375,9 +391,11 @@ export function findCollisions(
   }
 
   const hitSeams: number[] = [];
-  seams.forEach((seam, index) => {
-    if (polygonCrossesLine(corners, seam)) hitSeams.push(index);
-  });
+  if (keepout.cutsThroughSheet) {
+    seams.forEach((seam, index) => {
+      if (polygonCrossesLine(corners, seam)) hitSeams.push(index);
+    });
+  }
 
   return { holes: hitHoles, seams: hitSeams, offPanel };
 }

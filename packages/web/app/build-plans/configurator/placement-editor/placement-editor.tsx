@@ -120,10 +120,14 @@ export default function PlacementEditor({
     isUpload ? SQUARE_ART_METRICS : estimateLabelMetrics(item.text),
   );
 
-  // A cut-through takes more material out than an engrave, so the generator
-  // holds it further off every hole. Checking against the wrong clearance would
-  // pass a placement the order then fails on.
-  const keepoutScale = item.mode === 'cut_through' ? keepout.cutThroughMultiplier : 1;
+  // A cut-through is the mode with the stricter geometry, on two counts. It
+  // takes more material out than an engrave, so the generator holds it further
+  // off every hole; and it is the only mode a seam can stop, because engraved
+  // and pocketed artwork is clipped into both panels and cut on each of them.
+  // Checking against the wrong rules would pass a placement the order then
+  // fails on — or refuse one it would have cut happily.
+  const cutsThroughSheet = item.mode === 'cut_through';
+  const keepoutScale = cutsThroughSheet ? keepout.cutThroughMultiplier : 1;
 
   // The generator checks a placement against every hole on the wall, not just
   // the panel it sits on: a cut-through keep-out is wide enough to reach across
@@ -144,11 +148,12 @@ export default function PlacementEditor({
       seams,
       panelEdgeMarginMm: keepout.panelEdgeMarginMm,
       keepoutScale,
+      cutsThroughSheet,
       aspect: metrics.aspect,
       minWidthMm: rules.minWidthMm,
       maxWidthMm: rules.maxWidthMm,
     }),
-    [panelRects, holes, seams, keepout.panelEdgeMarginMm, keepoutScale, metrics.aspect, rules],
+    [panelRects, holes, seams, keepout.panelEdgeMarginMm, keepoutScale, cutsThroughSheet, metrics.aspect, rules],
   );
 
   const [state, dispatch] = useReducer(placementReducer, { placement: toPlacementValue(item), context }, (start) =>

@@ -9,7 +9,7 @@ import { readLayoutSummary } from '../configurator/layout-summary';
  */
 const GENERATOR_LAYOUT = {
   wall: { width_mm: 3048, height_mm: 3658, kicker_height_mm: 305 },
-  bom_preview: { sheets: 6, tnut_count: 812, led_count: 411, skipped_seam_leds: 7 },
+  bom_preview: { sheets: 6, tnut_count: 812, led_count: 411, seam_notches: 7 },
   panels: [{ index: 0 }, { index: 1 }, { index: 2 }, { index: 3 }],
   warnings: ['Kicker clearance is below the recommended 60 mm'],
   // A field this module has never heard of. The generator adds these as it
@@ -33,7 +33,7 @@ describe('readLayoutSummary', () => {
       sheets: 6,
       tnutCount: 812,
       ledCount: 411,
-      skippedSeamLeds: 7,
+      seamNotches: 7,
       warnings: ['Kicker clearance is below the recommended 60 mm'],
     });
   });
@@ -83,7 +83,7 @@ describe('readLayoutSummary', () => {
       sheets: null,
       tnutCount: null,
       ledCount: null,
-      skippedSeamLeds: null,
+      seamNotches: null,
       warnings: [],
     });
   });

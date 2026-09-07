@@ -255,6 +255,27 @@ describe('collisions across a seam', () => {
 
     expect(onLocalCollisions).toHaveBeenLastCalledWith(false);
   });
+
+  // A label as wide as the panel it sits on has no legal centre, so it is
+  // parked in the middle and reaches both panel edges — which is the one way
+  // artwork actually lands on a seam in this editor.
+  const wallWideLabel = () => ({ ...item(), xMm: 600, yMm: 600, widthMm: 1200 });
+  const SEAM_MESSAGE = 'It runs across a seam, so it would be cut in half.';
+
+  it('still stops a cut-through that reaches a seam', () => {
+    renderEditor({ item: { ...wallWideLabel(), mode: 'cut_through' as const } });
+
+    expect(screen.getByText(SEAM_MESSAGE)).toBeDefined();
+  });
+
+  it('says nothing about the seam when the same shape is only engraved', () => {
+    // An engraved or pocketed mark is clipped into both panels and cut on each,
+    // so a word running over a joint is a wall with a word on it. Only a
+    // cut-through, whose two halves would fall out of two sheets, is stopped.
+    renderEditor({ item: wallWideLabel() });
+
+    expect(screen.queryByText(SEAM_MESSAGE)).toBeNull();
+  });
 });
 
 describe('an uploaded logo', () => {

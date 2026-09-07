@@ -30,6 +30,7 @@ const CONTEXT: PlacementContext = {
   seams: [],
   panelEdgeMarginMm: 15,
   keepoutScale: 1,
+  cutsThroughSheet: false,
   aspect: 2,
   minWidthMm: 40,
   maxWidthMm: 1200,
