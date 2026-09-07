@@ -17,14 +17,12 @@ import {
   type SaveTickMutationVariables,
 } from '@boardsesh/graphql/operations';
 import { useQueryClient } from '@tanstack/react-query';
-import type { UserBoard } from '@boardsesh/shared-schema';
 import { useAuth } from './auth-provider';
 import { useOfflineDownloadsEnabled } from './feature-flags-provider';
 import { useQueueSessionId } from './queue-provider';
 import { useToast } from './toast-provider';
 import { getDatabaseHandle } from '../db';
 import { isBoardDownloadedLocally } from '../db/queries/board-download-status';
-import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
 import { createClimbStatsLiveSync, type ClimbStatsLiveSync } from '../offline/climb-stats-live-sync';
 import { getConnectivitySnapshot, subscribeConnectivity } from '../lib/connectivity/connectivity-store';
 import { getHttpClient, getOfflineSyncHttpClient } from '../lib/graphql/client';
@@ -108,26 +106,19 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
     const liveSync = createClimbStatsLiveSync({
       getDb: getDatabaseHandle,
       queryClient,
-      // The list, the count and the preview all browse the active board's
-      // angle, and it is written synchronously on a board switch — so reading
-      // it here is exactly what the user is looking at.
-      getActiveBoard: () => {
-        const board = queryClient.getQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY);
-        if (!board) return null;
-        return {
-          boardType: board.boardType,
-          layoutId: board.layoutId,
-          sizeId: board.sizeId,
-          angle: board.angle,
-        };
-      },
       isScopeDownloaded: isBoardDownloadedLocally,
       shouldSkipWrites: () => isBackgrounded() || isSigningOut(),
-      hasEnabledScopeForLayout: (boardType, layoutId) =>
-        getSetting('syncEnabledBoards').some((scopeKey) => {
+      hasEnabledScopeForLayout: (boardType, layoutId) => {
+        // This runs inside the graphql-ws `next` handler, where a throw closes
+        // the shared socket. A corrupt or legacy MMKV value would be a plain
+        // object, not an array, so the shape is checked rather than trusted.
+        const enabled = getSetting('syncEnabledBoards');
+        if (!Array.isArray(enabled)) return false;
+        return enabled.some((scopeKey) => {
           const scope = parseOfflineBoardKey(scopeKey);
           return scope?.boardType === boardType && scope.layoutId === layoutId;
-        }),
+        });
+      },
       onError: (error) =>
         reportHandledError(error, { tags: { source: 'offline-sync', kind: 'climb-stats-write-through' } }),
     });

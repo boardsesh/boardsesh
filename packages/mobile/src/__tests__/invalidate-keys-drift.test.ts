@@ -129,9 +129,14 @@ describe('invalidation-key drift', () => {
     expect(drainerSource).not.toMatch(/const keyMap: Record<string, string\[]\[]>/);
     expect(tableConfigSource).not.toMatch(/^\s+invalidateKeys: \[/m);
     // The live consumer must not hand-roll the stats key list either. It names
-    // only the ['climb'] root, to narrow that one invalidation by climb uuid.
-    for (const rootKey of ['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount']) {
+    // exactly two roots, and only to apply a rule specific to each: ['climb'] is
+    // narrowed by climb uuid and angle, and ['searchClimbsCount'] ignores the
+    // query's sort, because no ORDER BY can change a total. The two search-list
+    // roots it treats identically must still come from the shared map.
+    for (const rootKey of ['searchClimbs', 'infiniteSearchClimbs']) {
       expect(liveStatsSource).not.toContain(`'${rootKey}'`);
     }
+    // …and the named ones must be single constants, never a second copy of the list.
+    expect(liveStatsSource).not.toMatch(/\[\s*\[?'searchClimbsCount'/);
   });
 });
