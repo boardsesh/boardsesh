@@ -20,7 +20,7 @@ describe('reconciliationStartTimestamps', () => {
     expect(reconciliationStartTimestamps(ticks)).toEqual([BASE]);
   });
 
-  it('keeps separated runs on the same UTC day together', () => {
+  it('loads separated same-day groups in one legacy-safe read window', () => {
     const ticks = [BASE, BASE + 20 * MINUTE, BASE + 10 * HOUR, BASE + 10 * HOUR + 15 * MINUTE];
 
     expect(reconciliationStartTimestamps(ticks)).toEqual([BASE]);

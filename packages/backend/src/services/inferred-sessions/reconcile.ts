@@ -104,30 +104,11 @@ export async function planReconciliation(
     .filter((row) => row.origin === 'inferred')
     .map((row) => ({ id: row.id, anchorTickId: row.anchorTickId, userEdited: row.userEdited }));
 
-  // Explicit sessions are matched by day, so their own tick spans are what matter —
-  // not the window's bounds, which is why this reads the ticks rather than the session
-  // rows' started_at/ended_at (those are wall-clock, and an inferred day is derived
-  // from climbed_at).
-  const explicitIds = sessionRows.filter((row) => row.origin === 'explicit').map((row) => row.id);
-  const explicitSpans = explicitIds.length
-    ? await tx
-        .select({
-          sessionId: dbSchema.boardseshTicks.sessionId,
-          firstTickAt: sql<string>`MIN(${dbSchema.boardseshTicks.climbedAt})`,
-          lastTickAt: sql<string>`MAX(${dbSchema.boardseshTicks.climbedAt})`,
-        })
-        .from(dbSchema.boardseshTicks)
-        .where(inArray(dbSchema.boardseshTicks.sessionId, explicitIds))
-        .groupBy(dbSchema.boardseshTicks.sessionId)
-    : [];
-
-  const existingExplicit: ExistingExplicitSession[] = explicitSpans
-    .filter((row): row is typeof row & { sessionId: string } => row.sessionId !== null)
-    .map((row) => ({
-      id: row.sessionId,
-      firstTickAt: parseClimbedAt(row.firstTickAt).getTime(),
-      lastTickAt: parseClimbedAt(row.lastTickAt).getTime(),
-    }));
+  // Eligibility comes from this user's assigned ticks within each connected run.
+  const existingExplicit: ExistingExplicitSession[] = sessionRows
+    .filter((row) => row.origin === 'explicit')
+    .map((row) => ({ id: row.id }));
+  const explicitIds = existingExplicit.map((session) => session.id);
 
   const result = reconcileWindow({ ticks, existingInferred, existingExplicit });
   const explicitSessionIds = new Set(explicitIds);

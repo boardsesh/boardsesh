@@ -7,7 +7,9 @@ the script does not authorize running `--apply` against production.
 
 - No flags: inventory eligible users and reconciliation windows. This does not
   predict the number of sessions. A window includes complete UTC days plus runs
-  connected across midnight, and can produce several sessions.
+  connected across midnight, and can produce several sessions. These are read
+  windows only: automatic groups always split at gaps over eight hours. Exactly
+  eight hours stays connected; existing explicit assignments remain fixed.
 - `--simulate`: use the live planner in a read-only, repeatable-read transaction
   per window. Reports new sessions, runs assigned to explicit sessions, merges,
   emptied sessions, and new-session size/duration. Explicit-assignment totals
@@ -29,7 +31,7 @@ the script does not authorize running `--apply` against production.
   inclusive and uses the database's user-ID ordering.
 
 The older production figures in the original PR body were measured before the
-same-day window fix. Re-measure counts and timing; they are not rollout gates.
+eight-hour grouping rule. Re-measure counts and timing; they are not rollout gates.
 
 ## Target and executable
 
@@ -112,8 +114,8 @@ First run one reviewed canary:
 node --import tsx src/scripts/backfill-inferred-sessions.ts --user "$BACKFILL_USER_ID" --apply --delay-ms 50 --progress-every 1
 ```
 
-Inspect that climber's Sessions and logbook: every tick appears, same-day loose
-ticks join the expected session, and existing session edits and comments remain.
+Inspect that climber's Sessions and logbook: every tick appears, gaps over eight
+hours separate automatic groups, and existing session edits and comments remain.
 Re-run the same canary command: it should create zero sessions and preserve IDs.
 If both passes succeed, proceed with a bounded batch, then the fleet:
 
@@ -212,9 +214,38 @@ planned ticks. Production-wide dangling-assignment and invalid-inferred-session
 counts remained zero. These were database checks; no visual app QA was performed.
 
 After explicit full-fleet approval, a single process started at
-`2026-09-06T23:49:14.875038Z` for the remaining 2,519 eligible climbers. It uses
-the public database connection with a 50 ms delay between windows and retains
-progress logs for recovery. Completion and final fleet integrity have not yet
-been confirmed. The process uses the already-loaded revision above; subsequent
-PR edits do not update that running process. Its timestamp centers already use
-`parseClimbedAt`; the later UTC fix concerns the live save/update/delete callers.
+`2026-09-06T23:49:14.875038Z` for the remaining 2,519 eligible climbers. It was
+stopped at `2026-09-07T00:34:56.756892Z` after the operator identified that UTC-day
+absorption could join an evening session to the following local morning. Completed
+windows remain committed; the unfinished transaction rolled back. The snapshot at
+pause had 428,393 unassigned ticks and 2,504 eligible climbers.
+
+A move to Railway's private database network was prepared and a read-only canary
+completed there. No Railway apply worker started. The temporary SSH key was revoked
+and its local private key removed. The backfill remains paused for the eight-hour
+policy change and an audit of already-written assignments. The previous audit
+validated storage and consistency with the former algorithm; it did not establish
+that its same-UTC-day assumptions reflected separate visits to the wall.
+
+### Eight-hour audit before resuming
+
+At `2026-09-07T01:34:31.113Z`, a read-only audit covered the 27 climbers present
+in operator logs plus four other owners of recently created inferred sessions:
+31 climbers, 14,435 ticks, and 726 inferred sessions created since the preflight.
+This includes concurrent live inference; the 726 are not all backfill creations.
+
+Four recent inferred sessions contain gaps over eight hours. Replanning complete
+histories proposes four inferred-session merges, zero emptied sessions, and 43
+already-assigned inferred ticks changing destination across three climbers. It
+also proposes 564 new sessions, including groups from 5,388 still-unassigned ticks;
+those new-session totals are not solely repairs.
+
+The audit found zero empty recent sessions, ownership errors, invalid anchors,
+timestamp/lifecycle mismatches, moved explicit ticks, missing/duplicate planned
+ticks, or prospective inferred gaps over eight hours. Applying the plan in memory
+and reconciling it again proposed zero further changes. No production repair was
+written. Merge/removal guards remain enabled pending a reviewed repair.
+
+Ticks already absorbed into explicit sessions have no assignment provenance, so
+this audit cannot distinguish those from deliberately assigned members. Existing
+explicit assignments remain fixed under the approved policy.

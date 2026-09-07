@@ -50,7 +50,7 @@ function toInferenceTick(row: { id: bigint | number; climbedAt: string; sessionI
 
 /**
  * Load every tick belonging to the run(s) around `touchedAt`, bounded on both sides by
- * a >4h gap across different UTC days.
+ * a >8h gap across different UTC days.
  *
  * Reconciliation is only correct over complete runs: a window that stops mid-run would
  * let it split that run in half. The obvious query — "everything within 12h" — cannot
@@ -58,8 +58,8 @@ function toInferenceTick(row: { id: bigint | number; climbedAt: string; sessionI
  * expands within it, and reloads wider if the expansion reached the block's boundary
  * with no gap to stop at.
  *
- * Expand complete UTC days as well: same-day lone ticks and explicit sessions must
- * be visible even across a >4h gap.
+ * Load complete UTC days as well so old same-day inferred assignments include their
+ * anchors when split. This is read padding, not a grouping override.
  */
 export async function loadReconciliationWindow(
   tx: ReconciliationTransaction,
@@ -99,7 +99,7 @@ export async function loadReconciliationWindow(
     const windowTicks = expandReconciliationWindow(loaded, centre, centre);
     if (windowTicks.length === 0) return { ticks: [], truncated: false };
 
-    // A safe edge needs both a >4h gap and a different UTC day. If either rule
+    // A safe edge needs both a >8h gap and a different UTC day. If either rule
     // could reach past the loaded block, widen before making any assignments.
     const clippedStart =
       windowTicks[0].id === loaded[0].id && !isReconciliationBoundary(from.getTime(), loaded[0].climbedAt);

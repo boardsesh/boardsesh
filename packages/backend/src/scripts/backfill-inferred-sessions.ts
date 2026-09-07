@@ -103,9 +103,9 @@ async function usersNeedingBackfill(options: Options): Promise<string[]> {
 /**
  * One timestamp per non-overlapping reconciliation window, from a climber's climb times in ascending order.
  *
- * Split only at a >4h gap across different UTC days. Same-day runs need to see
- * each other for lone-tick and explicit-session absorption. Midnight connections
- * bring the next whole day into the same window, so simulation never counts it twice.
+ * Partition broad reads at >8h gaps across different UTC days, keeping legacy
+ * same-day anchors visible for repair. Actual groups always split at >8h gaps.
+ * Connected read windows are counted once, even when they contain several groups.
  */
 export function reconciliationStartTimestamps(ascendingClimbedAt: readonly number[]): number[] {
   const starts: number[] = [];

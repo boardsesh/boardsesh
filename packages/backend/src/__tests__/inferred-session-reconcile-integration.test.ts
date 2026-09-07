@@ -12,6 +12,7 @@ import { tickMutations } from '../graphql/resolvers/ticks/mutations';
 vi.mock('../events', () => ({ publishSocialEvent: vi.fn(async () => undefined) }));
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
   queueClimbStatsRecompute: vi.fn(),
+  recomputeClimbStatsNow: vi.fn(async () => undefined),
 }));
 vi.mock('../graphql/resolvers/sessions/debounced-stats-publisher', () => ({
   publishDebouncedSessionStats: vi.fn(),
@@ -361,18 +362,18 @@ describe('reconcileInferredSessions (real DB)', () => {
     ).rejects.toThrow();
   });
 
-  it('absorbs a lone tick more than four hours from the larger same-day run', async () => {
+  it('keeps a lone tick separate across an eight-hour gap on the same UTC day', async () => {
     await insertTick(BASE);
     await insertTick(BASE + 10 * HOUR);
     await insertTick(BASE + 10 * HOUR + 15 * MINUTE);
     await reconcileAt(BASE);
-    expect(await sessionsForUser()).toHaveLength(1);
+    expect(await sessionsForUser()).toHaveLength(2);
     const ticks = await ticksForUser();
-    expect(new Set(ticks.map((tick) => tick.sessionId)).size).toBe(1);
+    expect(new Set(ticks.map((tick) => tick.sessionId)).size).toBe(2);
     expect(ticks[0].sessionId).not.toBeNull();
   });
 
-  it('discovers an explicit session outside the initial twelve-hour radius', async () => {
+  it('does not absorb loose ticks into a distant same-day explicit session', async () => {
     const explicitId = uuidv4();
     await db.insert(dbSchema.boardSessions).values({
       id: explicitId,
@@ -384,8 +385,10 @@ describe('reconcileInferredSessions (real DB)', () => {
     await insertTick(BASE - 8 * HOUR + 15 * MINUTE);
     await insertTick(BASE + 13 * HOUR, explicitId);
     await reconcileAt(BASE - 8 * HOUR);
-    expect((await ticksForUser()).every((tick) => tick.sessionId === explicitId)).toBe(true);
-    expect(await sessionsForUser()).toHaveLength(1);
+    const assigned = await ticksForUser();
+    expect(assigned[0].sessionId).not.toBe(explicitId);
+    expect(assigned[2].sessionId).toBe(explicitId);
+    expect(await sessionsForUser()).toHaveLength(2);
   });
 
   it('simulates connected days once, writes nothing, and matches apply on rerun', async () => {
@@ -399,12 +402,12 @@ describe('reconcileInferredSessions (real DB)', () => {
       expect(await runBackfill(parseArgs(['--user', USER_ID, '--simulate']))).toBe(0);
       expect(await ticksForUser()).toEqual(beforeTicks);
       expect(await sessionsForUser()).toEqual([]);
-      expect(messages).toHaveBeenCalledWith(expect.stringContaining('would create 1 session(s)'));
+      expect(messages).toHaveBeenCalledWith(expect.stringContaining('would create 3 session(s)'));
       expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
       const sessions = await sessionsForUser();
-      expect(sessions).toHaveLength(1);
+      expect(sessions).toHaveLength(3);
       const ticks = await ticksForUser();
-      expect(new Set(ticks.map((tick) => tick.sessionId))).toEqual(new Set([sessions[0].id]));
+      expect(new Set(ticks.map((tick) => tick.sessionId))).toEqual(new Set(sessions.map((session) => session.id)));
       expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
       expect(await sessionsForUser()).toEqual(sessions);
       expect(await ticksForUser()).toEqual(ticks);
@@ -431,7 +434,7 @@ describe('reconcileInferredSessions (real DB)', () => {
       createdByUserId: USER_ID,
       status: 'ended',
     });
-    await insertTick(BASE + 10 * HOUR, explicitId);
+    await insertTick(BASE + 6 * HOUR, explicitId);
     const beforeTicks = await ticksForUser();
     const beforeSessions = await sessionsForUser();
     expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(1);
@@ -470,7 +473,7 @@ describe('reconcileInferredSessions (real DB)', () => {
     expect(await sessionsForUser()).toHaveLength(2);
   });
 
-  it('settles explicit midnight absorption in one plan and keeps apply idempotent', async () => {
+  it('splits earlier climbing from an explicit midnight run and stays idempotent', async () => {
     const explicitId = uuidv4();
     await db.insert(dbSchema.boardSessions).values({
       id: explicitId,
@@ -484,11 +487,39 @@ describe('reconcileInferredSessions (real DB)', () => {
     await insertTick(BASE + 16 * HOUR, explicitId);
     expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
     const ticks = await ticksForUser();
-    expect(ticks.every((tick) => tick.sessionId === explicitId)).toBe(true);
-    expect(await sessionsForUser()).toHaveLength(1);
+    expect(ticks.slice(0, 2).every((tick) => tick.sessionId !== explicitId && tick.sessionId !== null)).toBe(true);
+    expect(ticks.slice(2).every((tick) => tick.sessionId === explicitId)).toBe(true);
+    expect(await sessionsForUser()).toHaveLength(2);
     expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
     expect(await ticksForUser()).toEqual(ticks);
-    expect(await sessionsForUser()).toHaveLength(1);
+    expect(await sessionsForUser()).toHaveLength(2);
+  });
+
+  it('repairs a legacy inferred gap without deleting its session or comments', async () => {
+    await insertTick(BASE);
+    await reconcileAt(BASE);
+    const [original] = await sessionsForUser();
+    await insertTick(BASE + 10 * HOUR, original.id);
+    await db.insert(dbSchema.comments).values({
+      uuid: uuidv4(),
+      userId: USER_ID,
+      entityType: 'session',
+      entityId: original.id,
+      body: 'Keep this history',
+    });
+    expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
+    const sessions = await sessionsForUser();
+    const ticks = await ticksForUser();
+    expect(sessions).toHaveLength(2);
+    expect(ticks[0].sessionId).toBe(original.id);
+    expect(ticks[1].sessionId).not.toBe(original.id);
+    expect(sessions.find((session) => session.id === original.id)?.anchorTickId).toBe(original.anchorTickId);
+    expect(await db.select().from(dbSchema.comments).where(eq(dbSchema.comments.entityId, original.id))).toHaveLength(
+      1,
+    );
+    expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
+    expect(await sessionsForUser()).toEqual(sessions);
+    expect(await ticksForUser()).toEqual(ticks);
   });
 
   it('keeps a live tick write when inference cannot load a complete window', async () => {
