@@ -85,6 +85,22 @@ vi.mock('react-native-reanimated', () => ({
   useSharedValue: (initial: unknown) => ({ value: initial }),
   runOnJS: (fn: unknown) => fn,
 }));
+// Unlike its sibling `play-drawer-cross-board.test.tsx`, the assertions here are
+// asynchronous (act / waitFor / rerenders) and hand the drawer a LIVE bluetooth
+// context. That lets floating promises actually run, which reaches native-backed
+// modules the sibling's synchronous single renders never evaluate — so it stays
+// green without these while this file does not, and only on CI, whose timing
+// differs again from a local run. Both mocks below exist for that reason, not
+// for anything the tests assert.
+//
+// `expo-secure-store` (auth token reads) drags in `expo-modules-core`, which
+// needs native globals; the repo's other suites stub it the same way.
+vi.mock('expo-secure-store', () => ({
+  AFTER_FIRST_UNLOCK: 'after-first-unlock',
+  getItemAsync: vi.fn(async () => null),
+  setItemAsync: vi.fn(async () => undefined),
+  deleteItemAsync: vi.fn(async () => undefined),
+}));
 // `play-drawer/use-quick-tick-form.ts` pulls `ModalSheet` into this graph, and
 // @expo/ui's bottom sheet reads `ScrollView`/`FlatList` off react-native at
 // MODULE scope — so a partial react-native mock breaks on whichever export it
