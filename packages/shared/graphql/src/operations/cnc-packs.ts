@@ -5,10 +5,11 @@ import type {
   CncCatalog,
   CncCheckoutSession,
   CncDownloadGrant,
+  CncDownloadKind,
   CncOrder,
   CncOrderConnection,
   CncOrderStatus,
-  CreateCncCheckoutSessionInput,
+  FinaliseCncOrderInput,
 } from '@boardsesh/shared-schema';
 
 // ============================================
@@ -82,6 +83,13 @@ const CNC_ORDER_FIELDS = `
   downloadCount
   lastDownloadedAt
   errorMessage
+  hasPreview
+  previewGeneratedAt
+  previewImages {
+    name
+    url
+  }
+  configHash
 `;
 
 // ============================================
@@ -165,16 +173,32 @@ export const VALIDATE_CNC_ARTWORK = gql`
 `;
 
 /**
- * Open Stripe Checkout for a configured pack.
+ * Generate a free watermarked preview of a configuration.
  *
- * The response is the reserved order plus the hosted page to send the buyer
- * to. Nothing is paid yet and nothing is queued for generation — the order
- * page at `/build-plans/orders/{licenceId}` works from the moment this
- * returns, showing `pending_payment` until the Stripe webhook lands.
+ * Returns the order immediately, in `preview_queued` — poll `GET_CNC_ORDER`
+ * until it reaches `preview_ready` and `previewImages` fills in. Asking again
+ * for a configuration this buyer has already previewed returns THAT order, so
+ * this is also the idempotent "give me the preview of what is on screen" call.
  */
-export const CREATE_CNC_CHECKOUT_SESSION = gql`
-  mutation CreateCncCheckoutSession($input: CreateCncCheckoutSessionInput!) {
-    createCncCheckoutSession(input: $input) {
+export const CREATE_CNC_PREVIEW = gql`
+  mutation CreateCncPreview($config: CncBoardConfigInput!) {
+    createCncPreview(config: $config) {
+      ${CNC_ORDER_FIELDS}
+    }
+  }
+`;
+
+/**
+ * Buy a preview: attach the licence and open Stripe Checkout for it.
+ *
+ * The response is the order plus the hosted page to send the buyer to. Nothing
+ * is paid yet and nothing is queued for generation — the order page at
+ * `/build-plans/orders/{licenceId}` shows `pending_payment` until the Stripe
+ * webhook lands. Only a `preview_ready` order the caller owns can be finalised.
+ */
+export const FINALISE_CNC_ORDER = gql`
+  mutation FinaliseCncOrder($input: FinaliseCncOrderInput!) {
+    finaliseCncOrder(input: $input) {
       orderId
       licenceId
       checkoutUrl
@@ -186,11 +210,12 @@ export const CREATE_CNC_CHECKOUT_SESSION = gql`
  * Ask for a fresh link every time the buyer clicks Download.
  *
  * The grant lasts five minutes, so caching one across a session hands the buyer
- * a dead link most of the time. It is one round trip; take it.
+ * a dead link most of the time. It is one round trip; take it. `kind` picks the
+ * free watermarked preview or the licensed pack; it defaults to `FULL`.
  */
 export const CREATE_CNC_DOWNLOAD_GRANT = gql`
-  mutation CreateCncDownloadGrant($licenceId: String!) {
-    createCncDownloadGrant(licenceId: $licenceId) {
+  mutation CreateCncDownloadGrant($licenceId: String!, $kind: CncDownloadKind) {
+    createCncDownloadGrant(licenceId: $licenceId, kind: $kind) {
       url
       expiresAt
     }
@@ -260,16 +285,26 @@ export type ValidateCncArtworkMutationResponse = {
   validateCncArtwork: CncArtworkValidation;
 };
 
-export type CreateCncCheckoutSessionMutationVariables = {
-  input: CreateCncCheckoutSessionInput;
+export type CreateCncPreviewMutationVariables = {
+  config: CncBoardConfigInput;
 };
 
-export type CreateCncCheckoutSessionMutationResponse = {
-  createCncCheckoutSession: CncCheckoutSession;
+export type CreateCncPreviewMutationResponse = {
+  createCncPreview: CncOrder;
+};
+
+export type FinaliseCncOrderMutationVariables = {
+  input: FinaliseCncOrderInput;
+};
+
+export type FinaliseCncOrderMutationResponse = {
+  finaliseCncOrder: CncCheckoutSession;
 };
 
 export type CreateCncDownloadGrantMutationVariables = {
   licenceId: string;
+  /** Defaults to `FULL` server-side. */
+  kind?: CncDownloadKind | null;
 };
 
 export type CreateCncDownloadGrantMutationResponse = {

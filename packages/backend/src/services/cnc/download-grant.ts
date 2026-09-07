@@ -19,6 +19,17 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 /** How long a grant is good for. Long enough to click a link, short enough that a leaked URL is worthless. */
 export const CNC_DOWNLOAD_GRANT_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * How long a preview-image grant is good for.
+ *
+ * An hour rather than five minutes because these are `<img src>` attributes on
+ * an order page a buyer leaves open while they think about a wall, not a click
+ * target — a five-minute image URL would turn into broken images while they
+ * read. The trade is safe: what it unlocks is a watermarked PNG stamped NOT FOR
+ * MANUFACTURE, and it is still one order, one user, and re-checked on redemption.
+ */
+export const CNC_PREVIEW_IMAGE_GRANT_TTL_MS = 60 * 60 * 1000;
+
 /** True when grants can be minted and verified at all. Read at call time so tests can set it. */
 export function isDownloadGrantConfigured(): boolean {
   return Boolean(process.env.CNC_DOWNLOAD_TOKEN_SECRET);
@@ -52,14 +63,17 @@ export type CncDownloadGrantClaims = {
  *
  * The payload is `orderId:userId:exp`, base64url-encoded so a colon in a user
  * id cannot shift the field boundaries, with the MAC over the ENCODED payload.
+ * The expiry is IN the payload, so a longer-lived grant (the preview images)
+ * needs no second token shape and no second verifier — only a different `ttlMs`.
  * Signing the encoded form is what makes the split unambiguous on the way back:
  * verification never has to re-encode anything to check the MAC.
  */
 export function createDownloadGrant(
   claims: Omit<CncDownloadGrantClaims, 'expiresAt'>,
   now: Date,
+  ttlMs: number = CNC_DOWNLOAD_GRANT_TTL_MS,
 ): { token: string; expiresAt: Date } {
-  const expiresAt = new Date(now.getTime() + CNC_DOWNLOAD_GRANT_TTL_MS);
+  const expiresAt = new Date(now.getTime() + ttlMs);
   const payload = base64url(Buffer.from(`${String(claims.orderId)}:${claims.userId}:${String(expiresAt.getTime())}`));
   return { token: `${payload}.${sign(payload)}`, expiresAt };
 }

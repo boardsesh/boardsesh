@@ -1,5 +1,6 @@
 import type { CncOrder, CncOrderOptions } from '@boardsesh/db/schema';
 import { parseSetIds } from './catalog';
+import { deliverableForStatus, type CncDeliverable } from './order-state';
 import { toLayoutRequest, type CncWorkerLayoutRequest } from './worker-client';
 
 /**
@@ -72,19 +73,32 @@ export type CncWorkerJobArtworkItem = {
 export type CncWorkerJob = {
   orderId: number;
   licenceId: string;
+  /**
+   * What to build.
+   *
+   * `preview` is the free, watermarked, rasterised pack: PNG sheets at 110 dpi
+   * with a diagonal "PREVIEW · NOT FOR MANUFACTURE · <licenceId>" overlay, no
+   * DXF, no manifest, no fingerprint. `full` is the licensed pack and is
+   * unchanged. The worker branches on this and nothing else — the order's
+   * status is ours, not its business.
+   */
+  deliverable: CncDeliverable;
   /** Proof of lease. Every report the worker makes about this job carries it back. */
   claimToken: string;
   /** Bumped by an admin regenerate. Same licence and same output key. */
   generation: number;
   /** Which attempt this is, 1-based, counting reclaims of a dead lease. */
   attempt: number;
+  /** Null on a preview: nothing has been licensed yet, and nothing is being sold. */
   tier: CncOrder['tier'];
   licensee: {
     /**
-     * Never null: it is printed on every sheet in the pack, so a job without
-     * one has nothing to license and is refused at build time.
+     * Null only on a preview, where the sheets are watermarked rather than
+     * licensed. A `full` job without one is refused at build time: the name is
+     * printed on every sheet in the pack, so a job that has none has nothing to
+     * license.
      */
-    name: string;
+    name: string | null;
     email: string | null;
     /** The installation a commercial_single licence names. Null for personal. */
     customerSiteName: string | null;
@@ -110,8 +124,20 @@ export type CncWorkerJob = {
     dxfFlavour: string;
     paper: string;
   };
-  /** Where the zip must be written. Boardsesh dictates the key; the worker never invents one. */
+  /**
+   * Where the zip must be written. Boardsesh dictates the key; the worker never
+   * invents one. A preview writes to the `_preview.zip` sibling of the pack's
+   * key, so the two can coexist for one licence.
+   */
   outputKey: string;
+  /**
+   * Where the individual watermarked PNGs go, one object per sheet
+   * (`panel1.png`, …, `assembly.png`). Only written on a `preview` job; every
+   * key the completion reports is checked against this prefix before it is
+   * stored, which is what stops a stored key becoming a read of anything else
+   * in the private bucket.
+   */
+  previewPrefix: string;
   /** The private bucket that key lives in. */
   bucket: string;
   issuedAt: string;
@@ -128,6 +154,29 @@ export type CncWorkerJob = {
  */
 export function cncPackOutputKey(order: Pick<CncOrder, 'userId' | 'licenceId'>): string {
   return `cnc-packs/${order.userId ?? 'anon'}/${order.licenceId}.zip`;
+}
+
+/**
+ * Where an order's PREVIEW zip is stored: the `_preview.zip` sibling of its
+ * pack key.
+ *
+ * A sibling rather than a subdirectory so one glance at the bucket says which
+ * licence a preview belongs to, and so the download route's key pattern can
+ * stay a single regex over one directory shape.
+ */
+export function cncPreviewOutputKey(order: Pick<CncOrder, 'userId' | 'licenceId'>): string {
+  return `cnc-packs/${order.userId ?? 'anon'}/${order.licenceId}_preview.zip`;
+}
+
+/**
+ * Where an order's individual preview PNGs are stored.
+ *
+ * A directory of its own, under the licence, because there are many of them and
+ * they are the only objects in this system a browser fetches one at a time.
+ * Every completion's `previewKeys` is checked against this exact prefix.
+ */
+export function cncPreviewPrefix(order: Pick<CncOrder, 'userId' | 'licenceId'>): string {
+  return `cnc-packs/${order.userId ?? 'anon'}/${order.licenceId}/preview/`;
 }
 
 /** Read a boolean option. Anything that is not an explicit `true` is off — the engrave gates fail closed. */
@@ -227,14 +276,19 @@ export function buildWorkerJob(order: CncOrder, { bucket, issuedAt }: BuildWorke
     throw new CncJobPayloadError('Claimed order has no claim token');
   }
 
-  // The licensee name is printed on every sheet in the pack. Generating one
+  const deliverable = deliverableForStatus(order.status);
+
+  // The licensee name is printed on every sheet in the PACK. Generating one
   // that says "undefined" across the title block is worse than not generating
   // it: the buyer would have to notice, and a licence with no name on it is
-  // not a licence. Checkout requires the field, so an order without one is a
+  // not a licence. Finalise requires the field, so a full job without one is a
   // data problem an operator has to look at, which is exactly what failing the
   // order and mailing them does.
-  const licenseeName = order.licenseeName?.trim();
-  if (!licenseeName) {
+  //
+  // A preview has none by design — it is not licensed to anybody, which is what
+  // the watermark says on every sheet.
+  const licenseeName = order.licenseeName?.trim() ?? null;
+  if (!licenseeName && deliverable === 'full') {
     throw new CncJobPayloadError('Order has no licensee name to print on the pack');
   }
 
@@ -255,6 +309,7 @@ export function buildWorkerJob(order: CncOrder, { bucket, issuedAt }: BuildWorke
   return {
     orderId: order.id,
     licenceId: order.licenceId,
+    deliverable,
     claimToken: order.claimToken,
     generation: order.generation,
     attempt: order.attempts,
@@ -282,7 +337,8 @@ export function buildWorkerJob(order: CncOrder, { bucket, issuedAt }: BuildWorke
       dxfFlavour: optionString(order.options, 'dxfFlavour'),
       paper: optionString(order.options, 'paper'),
     },
-    outputKey: cncPackOutputKey(order),
+    outputKey: deliverable === 'preview' ? cncPreviewOutputKey(order) : cncPackOutputKey(order),
+    previewPrefix: cncPreviewPrefix(order),
     bucket,
     issuedAt: issuedAt.toISOString(),
   };

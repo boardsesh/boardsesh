@@ -19,7 +19,7 @@ import Stripe from 'stripe';
 import { cncArtAssets, cncOrders, cncStripeEvents, type CncArtAsset, type CncOrder } from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { attachAssetsToOrder, cncArtAssetKey, createArtAsset } from '../services/cnc/art-assets';
-import { createPendingOrder, transitionOrder } from '../services/cnc/orders';
+import { createPreviewOrder, transitionOrder } from '../services/cnc/orders';
 import { resetStripeClientForTests } from '../services/cnc/stripe';
 import { handleCncStripeWebhook } from '../handlers/cnc-stripe-webhook';
 
@@ -163,21 +163,46 @@ async function clearFixtures(): Promise<void> {
   await db.execute(sql`DELETE FROM "users" WHERE "id" IN (${BUYER_ID}, ${SECOND_BUYER_ID})`);
 }
 
-async function createOrder(userId = BUYER_ID): Promise<CncOrder> {
-  return createPendingOrder({
+/**
+ * An order in `pending_payment`: a free preview that has been finalised.
+ *
+ * The webhook only ever sees rows that got here through the preview flow, so
+ * the fixture walks the same path rather than inserting the end state — the
+ * `finalise` transition is what puts the tier and the licensee on the row the
+ * receipt is built from.
+ */
+let previewSeed = 0;
+async function createOrder(
+  userId = BUYER_ID,
+  overrides: { licenseeEmail?: string; amountCents?: number } = {},
+): Promise<CncOrder> {
+  previewSeed += 1;
+  const preview = await createPreviewOrder({
     userId,
-    tier: 'personal',
     boardName: 'kilter',
     layoutId: 8,
     sizeId: 25,
     setIds: '26,27,28,29',
     options: { sheetStock: '2440x1220', panelThicknessMm: 18 },
+    configHash: `webhook-fixture-${String(previewSeed)}`,
+  });
+
+  const claimToken = `fixture-token-${String(preview.id)}`;
+  await transitionOrder(preview.id, 'previewClaim', { claimToken, attempts: 1 });
+  await transitionOrder(preview.id, 'previewComplete', { previewGeneratedAt: new Date() }, { claimToken });
+
+  const finalised = await transitionOrder(preview.id, 'finalise', {
+    tier: 'personal',
     licenseeName: 'Test Buyer',
-    licenseeEmail: 'buyer@example.com',
+    licenseeEmail: overrides.licenseeEmail ?? 'buyer@example.com',
     licenceAcceptedAt: new Date(),
     currency: 'AUD',
-    amountCents: 14900,
+    amountCents: overrides.amountCents ?? 14900,
+    attempts: 0,
+    claimToken: null,
   });
+  if (!finalised) throw new Error('failed to finalise fixture order');
+  return finalised;
 }
 
 /** One stored upload for `userId`, still unattached. */
@@ -322,21 +347,8 @@ describe('POST /api/cnc/stripe/webhook', () => {
   });
 
   it('sends only one receipt when the account email and the licensee email are the same', async () => {
-    const order = await createPendingOrder({
-      userId: BUYER_ID,
-      tier: 'personal',
-      boardName: 'kilter',
-      layoutId: 8,
-      sizeId: 25,
-      setIds: '26,27,28,29',
-      options: { sheetStock: '2440x1220', panelThicknessMm: 18 },
-      licenseeName: 'Test Buyer',
-      // Matches the account email inserted by `insertUser` for BUYER_ID.
-      licenseeEmail: `${BUYER_ID}@test.com`,
-      licenceAcceptedAt: new Date(),
-      currency: 'AUD',
-      amountCents: 14900,
-    });
+    // The licensee email matches the account email `insertUser` gave BUYER_ID.
+    const order = await createOrder(BUYER_ID, { licenseeEmail: `${BUYER_ID}@test.com` });
 
     await deliver(completedEvent(order));
 
@@ -401,20 +413,7 @@ describe('POST /api/cnc/stripe/webhook', () => {
   it('falls back to the order amount when Stripe reports no amount_total', async () => {
     // A price the fixture's 14900 could never be mistaken for, so the assertion
     // proves the fallback ran rather than the event's own number.
-    const order = await createPendingOrder({
-      userId: BUYER_ID,
-      tier: 'personal',
-      boardName: 'kilter',
-      layoutId: 8,
-      sizeId: 25,
-      setIds: '26,27,28,29',
-      options: { sheetStock: '2440x1220', panelThicknessMm: 18 },
-      licenseeName: 'Test Buyer',
-      licenseeEmail: 'buyer@example.com',
-      licenceAcceptedAt: new Date(),
-      currency: 'AUD',
-      amountCents: 12345,
-    });
+    const order = await createOrder(BUYER_ID, { amountCents: 12345 });
 
     const res = await deliver(completedEvent(order, { amount_total: null }));
 
