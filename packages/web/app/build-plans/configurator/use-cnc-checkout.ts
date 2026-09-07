@@ -36,12 +36,22 @@ export const STRIPE_CHECKOUT_ORIGIN = 'https://checkout.stripe.com';
  * throw here would escape as an unhandled rejection rather than showing the
  * buyer an error.
  */
-export function isStripeCheckoutUrl(url: string): boolean {
+export function isStripeCheckoutUrl(url: string, siteOrigin: string | null = currentSiteOrigin()): boolean {
   try {
-    return new URL(url).origin === STRIPE_CHECKOUT_ORIGIN;
+    const { origin } = new URL(url);
+    if (origin === STRIPE_CHECKOUT_ORIGIN) return true;
+    // The dev-only checkout bypass (`CNC_CHECKOUT_BYPASS`, see
+    // docs/cnc-packs.md) skips Stripe and sends the buyer straight to their
+    // order page on this site. Our own origin is the only other place a
+    // checkout URL may point.
+    return siteOrigin !== null && siteOrigin !== 'null' && origin === siteOrigin;
   } catch {
     return false;
   }
+}
+
+function currentSiteOrigin(): string | null {
+  return typeof window === 'undefined' ? null : window.location.origin;
 }
 
 /**
