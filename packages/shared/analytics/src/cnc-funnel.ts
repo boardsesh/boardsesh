@@ -51,6 +51,8 @@ export const CNC_FUNNEL_EVENTS = {
   PageViewed: 'Build Plans Page Viewed',
   ConfiguratorChanged: 'Build Plans Configurator Changed',
   ArtworkPlaced: 'Build Plans Artwork Placed',
+  /** The free preview: the step everything above this leads to, and the step buying starts from. */
+  PreviewRequested: 'Build Plans Preview Requested',
   CheckoutStarted: 'Build Plans Checkout Started',
   /** Backend-fired, on `checkout.session.completed`. */
   PackPurchased: 'Build Plans Pack Purchased',
@@ -133,6 +135,12 @@ export type CncArtworkPlacedInput = {
   artwork_count: number;
 };
 
+export type CncPreviewRequestedInput = {
+  config: CncConfigProps;
+  /** True when this replaces a preview the buyer already has, false for their first one on this wall. */
+  is_update: boolean;
+};
+
 export type CncCheckoutStartedInput = {
   config: CncConfigProps;
   tier: CncTier;
@@ -169,7 +177,25 @@ export function cncArtworkPlaced(
 }
 
 /**
- * Fired when the buyer presses Buy and the checkout mutation is sent — not when
+ * Fired when the buyer asks for a free preview, before the mutation answers.
+ *
+ * The funnel's middle step: previews are free, so the drop between this and
+ * `Checkout Started` is "saw their wall and did not buy it", which is the
+ * number the preview-first flow exists to move. `is_update` separates a first
+ * look from an iteration — a buyer on their fourth preview is engaged, not
+ * stuck, and pooling the two would read as the opposite.
+ */
+export function cncPreviewRequested(
+  input: CncPreviewRequestedInput,
+): CncFunnelPayload<typeof CNC_FUNNEL_EVENTS.PreviewRequested, CncConfigProps & { is_update: boolean }> {
+  return {
+    name: CNC_FUNNEL_EVENTS.PreviewRequested,
+    properties: { ...input.config, is_update: input.is_update },
+  };
+}
+
+/**
+ * Fired when the buyer presses Finalise and the mutation is sent — not when
  * Stripe answers. The paired confirmation is the backend's
  * `Build Plans Pack Purchased`, so the drop between the two is exactly "opened
  * Stripe and did not pay", which is the number worth watching.
