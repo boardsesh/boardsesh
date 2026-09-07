@@ -47,6 +47,7 @@ export {
   retireAcknowledgedOptimisticAscents,
   settleOfflineTickAscent,
   setClimbStatsAuthEpoch,
+  validRevision,
 } from './climb-stats-store';
 export type {
   ClimbStatsKey,

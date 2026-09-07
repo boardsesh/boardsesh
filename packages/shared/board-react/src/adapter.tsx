@@ -65,6 +65,18 @@ export type BoardAdapter = {
   fetchClimbStatsForClimbs?: (boardType: string, climbUuids: string[]) => Promise<ClimbStatsForClimbEntry[]>;
   /** Layout-wide stream multiplexed over the platform's singleton graphql-ws client. */
   subscribeClimbStats?: (boardType: string, layoutId: number, handlers: ClimbStatsSubscriptionHandlers) => () => void;
+  /**
+   * Optional local persistence for a live stats event. Called right after the
+   * in-memory store, for every event that matches the subscribed board and
+   * layout — regardless of whether any selector retains that climb, since the
+   * point is to keep the on-device catalog fresh for the reads that never touch
+   * the store (list re-reads, filters, the count, the detail).
+   *
+   * Must never throw and must never block: the shared hook calls it inside the
+   * subscription's `next` handler. Mobile forwards to the SQLite write-through;
+   * web has no local database and omits it.
+   */
+  persistClimbStatsEvent?: (event: ClimbStatsEvent) => void;
   /** Offline outbox acknowledgement/dead-letter notifications keyed by tick UUID. */
   subscribeOfflineMutationDelivery?: (listener: (event: OfflineMutationDelivery) => void) => () => void;
   /** Renderer timer seam; returns cancellation for the scheduled one-shot task. */
