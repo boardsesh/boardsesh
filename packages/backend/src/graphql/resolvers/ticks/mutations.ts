@@ -18,7 +18,7 @@ import {
   readTimestampFractionalSeconds,
 } from '../../../validation/schemas';
 import { resolveBoardFromPath } from '../social/boards';
-import { boardConfigMatchesTick, findActiveBoardById } from '../board-presence/shared';
+import { boardConfigMatchesTick, findActiveBoardById, isSharedConfigFeedBoard } from '../board-presence/shared';
 import { queueBoardStatsPublish } from '../board-presence/stats';
 import { publishSocialEvent } from '../../../events';
 import { publishDebouncedSessionStats } from '../sessions/debounced-stats-publisher';
@@ -887,7 +887,7 @@ export const tickMutations = {
       }
     }
 
-    // Resolve the tick's board_id. Four rungs, most specific first:
+    // Resolve the tick's board_id. Five rungs, most specific first:
     //  1. boardUuid — a named-board route (`/b/<slug>/...`); attaches to that
     //     exact board entity even when the climber doesn't own it (e.g. a
     //     seeded gym board owned by the system user). Config-gated exactly like
@@ -899,7 +899,9 @@ export const tickMutations = {
     //     it, and none of them fall back to config resolution.
     //  2. boardId — the board-presence connected wall (resolveBoardForSerial),
     //     flag-gated. On a stale/mismatched id we warn and fall back to the
-    //     config lookup rather than surfacing a raw FK/type mismatch.
+    //     config lookup rather than surfacing a raw FK/type mismatch. A
+    //     per-config SHARED FEED board is the exception: it identifies a
+    //     configuration, not a wall, so it drops to rung 5 (#5121).
     //  3. the session's board — a session is held on one physical wall, so a
     //     tick logged into it belongs to that wall. Config-gated exactly like
     //     rung 2, and deliberately not ownership-gated: in party mode the
@@ -908,7 +910,15 @@ export const tickMutations = {
     //  4. the legacy `/[board_name]/[layout_id]/...` config lookup, which names
     //     a configuration rather than a board; it takes the owner's lowest-id
     //     board with that config.
+    //  5. the per-config shared feed set aside by rung 2. Serial-less walls
+    //     (every MoonBoard) bind presence to one system-owned row per
+    //     configuration, shared by every climber on that config worldwide. That
+    //     is the right home for a tick only when nothing better exists — before
+    //     #5121 it outranked rungs 3 and 4, so a climber with their own board of
+    //     that exact config had every tick filed under the global feed and their
+    //     own board read as empty everywhere it is scoped by board_id.
     let boardId: number | null = null;
+    let sharedConfigFeedBoardId: number | null = null;
     let boardAssociationSource: 'boardUuid' | 'explicitBoardId' | 'config' | null = null;
     if (validatedInput.boardUuid) {
       boardAssociationSource = 'boardUuid';
@@ -957,8 +967,15 @@ export const tickMutations = {
       // from a different layout/size/set would otherwise stamp this tick onto
       // the wrong wall and corrupt that board's presence stats.
       if (explicitBoard && boardConfigMatchesTick(explicitBoard, validatedInput)) {
-        boardId = explicitBoard.id;
-        boardAssociationSource = 'explicitBoardId';
+        if (isSharedConfigFeedBoard(explicitBoard)) {
+          // Hold it for rung 5 instead of claiming the tick here, so the
+          // session's wall and the climber's own board of this config get their
+          // turn first.
+          sharedConfigFeedBoardId = explicitBoard.id;
+        } else {
+          boardId = explicitBoard.id;
+          boardAssociationSource = 'explicitBoardId';
+        }
       } else {
         logger.warn(
           `[board-presence] Ignoring tick boardId ${validatedInput.boardId} — config mismatch for ${validatedInput.boardType}`,
@@ -1006,6 +1023,15 @@ export const tickMutations = {
         validatedInput.setIds,
       );
       if (boardId !== null) boardAssociationSource = 'config';
+    }
+
+    // Rung 5: the per-config shared feed rung 2 set aside. Reached when the
+    // climber owns no board with this configuration and no session named one —
+    // the wall feed everyone on this config shares is then the best home the
+    // tick has, and its board stats keep counting it exactly as before #5121.
+    if (boardId == null && sharedConfigFeedBoardId != null) {
+      boardId = sharedConfigFeedBoardId;
+      boardAssociationSource = 'explicitBoardId';
     }
 
     // Run write-time beta-link validation before opening the transaction so a

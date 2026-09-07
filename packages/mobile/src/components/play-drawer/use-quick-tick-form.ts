@@ -23,10 +23,11 @@ import {
   useSaveTick,
   logbookClimbAngleKey,
 } from '@boardsesh/board-react';
-import { toBoardName } from '@boardsesh/board-config';
+import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
 import { useGrades } from '../../lib/graphql/hooks';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useToast } from '../../providers/toast-provider';
 import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
@@ -153,6 +154,27 @@ export function useQuickTickForm({
   const boardActions = useOptionalBoardActions();
   const boardLogbook = useOptionalBoardLogbook();
   const { data: localPendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
+
+  // The board the climber selected, sent so the tick attaches to THAT wall
+  // rather than to whatever the presence layer happens to be bound to. Every
+  // serial-less wall (all of MoonBoard) binds presence to one system-owned feed
+  // shared by that configuration globally, so without this the tick lands on
+  // the shared feed and the climber's own board reads as empty on Home (#5121).
+  //
+  // Guarded on a config match because the drawer sends the RENDER board's
+  // config for a climb that doesn't fit the selected wall, and the server drops
+  // a boardUuid whose config disagrees without falling back to anything
+  // (#4219) — sending it unguarded would leave those ticks with no board at all.
+  const { data: activeBoard } = useActiveBoard();
+  const selectedBoardUuid = useMemo(() => {
+    if (!activeBoard || layoutId == null || sizeId == null || !setIds) return null;
+    const isSelectedBoard =
+      activeBoard.boardType === boardName &&
+      activeBoard.layoutId === layoutId &&
+      activeBoard.sizeId === sizeId &&
+      normaliseSetIds(activeBoard.setIds) === normaliseSetIds(setIds);
+    return isSelectedBoard ? activeBoard.uuid : null;
+  }, [activeBoard, boardName, layoutId, sizeId, setIds]);
   // Read through a ref so the save handler's identity doesn't change on every
   // connectivity flip (the file's existing stable-identity idiom). A save that
   // fails while offline has already exhausted the local write, the retry ladder
@@ -299,6 +321,7 @@ export function useQuickTickForm({
           ...(layoutId != null ? { layoutId } : {}),
           ...(sizeId != null ? { sizeId } : {}),
           ...(setIds ? { setIds } : {}),
+          ...(selectedBoardUuid ? { boardUuid: selectedBoardUuid } : {}),
           ...(boardPresenceEnabled && boardPresenceBoardId != null ? { boardId: boardPresenceBoardId } : {}),
         },
         {
@@ -367,6 +390,7 @@ export function useQuickTickForm({
       setIds,
       boardPresenceEnabled,
       boardPresenceBoardId,
+      selectedBoardUuid,
       tickState,
       comment,
       climbedAt,
