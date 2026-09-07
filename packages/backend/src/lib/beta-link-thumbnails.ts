@@ -1,6 +1,8 @@
 import { getPublicUrl, isS3Configured, uploadToS3 } from '../storage/s3';
 import { assertAllowedImageHost, type ImageHostKind } from './safe-image-fetch';
 import { logger } from '../utils/logger';
+import { BETA_THUMBNAIL_REQUEST_SIZE } from '@boardsesh/shared-schema';
+import { writeImageVariants } from './image-resize';
 
 export { isS3Configured };
 
@@ -170,6 +172,18 @@ async function cacheRemoteThumbnail(key: string, sourceUrl: string, kind: ImageH
       logger.warn(`[BetaLinks] thumbnail body exceeded ${MAX_THUMBNAIL_BYTES} bytes; aborted`);
       return null;
     }
+    // The public media bucket cannot resize on demand. Publish the size used
+    // by web and mobile before returning a URL that can enter the beta feed.
+    await writeImageVariants(
+      buffer,
+      key,
+      (variantKey, body, variantContentType) =>
+        uploadToS3('media', body, variantKey, variantContentType, {
+          cacheControl: 'public, max-age=31536000, immutable',
+        }),
+      [BETA_THUMBNAIL_REQUEST_SIZE],
+      contentType,
+    );
     await uploadToS3('media', buffer, key, contentType);
     return getStaticThumbnailUrl(key);
   } catch (err) {
