@@ -9,34 +9,39 @@
 //     signing out, and the event's layout must have an opted-in offline scope.
 //     A phone with no downloads does no work at all.
 //   - Rows are written at EVERY angle (a later angle switch reads fresh values
-//     for free), but only the browsed angle and size can arm a refresh — that
-//     is the part that costs a list re-read.
+//     for free), and every applied write joins the pending refresh batch. What
+//     each cached query does with that batch is decided per query, at flush
+//     time, against the query's own filters — so an angle or board switch
+//     inside the coalescing window refreshes the list the user ended up on.
 //   - Refreshes coalesce on a 2 s trailing timer with a 6 s ceiling, and each
-//     cached query is invalidated only when this event could actually change
-//     it: the climb is already on a loaded page, or the query filters/sorts on
-//     stats. A name-sorted, unfiltered list never re-reads because a stranger
-//     logged a send.
+//     cached query is invalidated only when the batch could actually change it:
+//     the climb is already on a loaded page, or the query filters/sorts on
+//     stats. A name-sorted list only re-reads for a climb it is already
+//     showing; a stranger's send on a climb it has never listed changes nothing.
 //
-// Network-served lists get nothing extra here. Their rows already show live
-// values through the in-memory stats store, and membership catches up on the
-// next natural refetch — a global stream must never trigger multi-page network
-// refetches.
+// Two source gates keep the network out of it. A query whose scope this device
+// never downloaded is served over HTTP, and so is a query on a downloaded scope
+// whose filters SQLite cannot express (hold-state, zone, beta videos, drafts).
+// Neither may be invalidated: their rows already show live values through the
+// in-memory stats store, membership catches up on the next natural refetch, and
+// a global stream must never trigger multi-page network refetches.
 //
-// Nothing here is load-bearing for correctness. A flush that fires during a
-// momentary background, with no database handle, or against a handle that
-// closed underneath it, drops its batch and refreshes nothing; the rows are
-// already written, and the next pull brings the same values down again.
+// Nothing here is load-bearing for correctness. The rows are written before any
+// of this runs, and the next pull brings the same values down again.
 
-import type { QueryClient } from '@tanstack/react-query';
+import type { Query, QueryClient } from '@tanstack/react-query';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import {
   invalidateKeysForTable,
-  writeClimbStatsEvent,
+  offlineBoardKey,
+  writeClimbStatsEvents,
   type ClimbStatsWriteThroughInput,
   type OfflineBoardScope,
   type OfflineDatabase,
 } from '@boardsesh/offline-sync';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
+
+import { isOfflineSearchSupported } from '../db/queries/search-climbs-local';
 
 /** Quiet period after the last applied write before the list is refreshed. */
 export const CLIMB_STATS_INVALIDATE_TRAILING_MS = 2_000;
@@ -45,6 +50,8 @@ export const CLIMB_STATS_INVALIDATE_MAX_WAIT_MS = 6_000;
 
 /** The `['climb', variables]` root, whose predicate matches on the climb uuid. */
 const CLIMB_DETAIL_KEY_ROOT = 'climb';
+/** The count root, where the ORDER BY is irrelevant — a sort cannot move a total. */
+const CLIMB_COUNT_KEY_ROOT = 'searchClimbsCount';
 
 /**
  * Search fields whose value depends on a climb's stats. A change to any of them
@@ -68,6 +75,14 @@ const STATS_DEPENDENT_FILTERS = [
 const STATS_DEPENDENT_SORTS: ReadonlySet<string> = new Set(['ascents', 'difficulty', 'quality', 'popular']);
 
 /**
+ * The one sort whose key spans angles: `popular` orders by
+ * `SUM(ascensionist_count)` over EVERY angle of the climb (see
+ * `search-climbs-local.ts` `sortColumnSql`), so a send logged at 25° reorders a
+ * list browsing 40°. Every other stats column is read at the browsed angle only.
+ */
+const CROSS_ANGLE_SORT = 'popular';
+
+/**
  * Does this search read climb stats?
  *
  * A field counts as set unless it is absent or an explicitly disabled toggle.
@@ -75,14 +90,29 @@ const STATS_DEPENDENT_SORTS: ReadonlySet<string> = new Set(['ascents', 'difficul
  * `toClimbSearchInput` only sets these fields when they are non-null, and the
  * local SQL truthy-gates them — so the rule costs at most one extra local
  * re-read if that ever changes.
+ *
+ * `sortMatters` is false for the count root: `searchClimbsCount` returns a
+ * total, and no ORDER BY can change one. Since the default sort is `ascents`
+ * (`DEFAULT_CLIMB_FILTER_STATE`), leaving it in would make every filter-sheet
+ * preview count re-run over the whole catalogue on every flush.
  */
-export function isStatsDependentSearch(input: Partial<ClimbSearchInput>): boolean {
+export function isStatsDependentSearch(input: Partial<ClimbSearchInput>, sortMatters = true): boolean {
   for (const field of STATS_DEPENDENT_FILTERS) {
     const value = input[field];
     if (value !== undefined && value !== null && value !== false) return true;
   }
-  return typeof input.sortBy === 'string' && STATS_DEPENDENT_SORTS.has(input.sortBy);
+  return sortMatters && typeof input.sortBy === 'string' && STATS_DEPENDENT_SORTS.has(input.sortBy);
 }
+
+/** One applied write, as the refresh stage needs it. */
+export type FlushedClimbStat = {
+  boardType: string;
+  layoutId: number;
+  climbUuid: string;
+  angle: number;
+  /** From the write's own pre-read, so the size gate needs no second query. */
+  compatibleSizeIds: number[] | null;
+};
 
 type CachedClimbPage = { searchClimbs?: { climbs?: unknown } };
 
@@ -96,51 +126,92 @@ function pageHoldsAnyClimb(page: unknown, climbUuids: ReadonlySet<string>): bool
   });
 }
 
+function loadedPagesHoldAny(cachedData: unknown, climbUuids: ReadonlySet<string>): boolean {
+  if (cachedData === null || typeof cachedData !== 'object') return false;
+  const pages = (cachedData as { pages?: unknown }).pages;
+  if (Array.isArray(pages)) return pages.some((page) => pageHoldsAnyClimb(page, climbUuids));
+  return pageHoldsAnyClimb(cachedData, climbUuids);
+}
+
+/** The offline scope a cached search reads from, or null if the key is not a search input. */
+export function searchInputScope(input: unknown): OfflineBoardScope | null {
+  if (input === null || typeof input !== 'object') return null;
+  const { boardName, layoutId, sizeId } = input as Partial<ClimbSearchInput>;
+  if (typeof boardName !== 'string' || typeof layoutId !== 'number' || typeof sizeId !== 'number') return null;
+  return { boardType: boardName, layoutId, sizeId };
+}
+
 /**
- * Can these flushed climbs change what this cached query renders?
+ * Can this batch of applied writes change what this cached query renders?
  *
- * Two independent reasons, either of which is enough. The climb is already on a
- * loaded page, so its values (and its position under a stats sort) can move; or
- * the query filters/sorts on stats, so membership and order can change even for
- * a climb the list has never shown.
+ * Decided per query rather than against one "armed" board, because the user can
+ * switch angle, size or board inside the 2 s window and the list they end up on
+ * is the one that has to be right.
+ *
+ * An entry has to clear the size gate first — a climb that does not fit the
+ * browsed size is not in this list's result set at any angle. Then, at the
+ * query's own angle, either the query reads stats (membership and order can
+ * move for a climb it has never shown) or it is already showing the climb.
+ * At any OTHER angle only the cross-angle `popular` sort can be affected.
  *
  * `cachedData` is the RAW query data, before any `select` — the infinite list
  * caches `{ pages: [{ searchClimbs: { climbs } }] }`, the single-page list
  * `{ searchClimbs: { climbs } }`, and the count neither.
  */
-export function canStreamChangeList(input: unknown, cachedData: unknown, climbUuids: ReadonlySet<string>): boolean {
-  if (cachedData !== null && typeof cachedData === 'object') {
-    const pages = (cachedData as { pages?: unknown }).pages;
-    if (Array.isArray(pages)) {
-      if (pages.some((page) => pageHoldsAnyClimb(page, climbUuids))) return true;
-    } else if (pageHoldsAnyClimb(cachedData, climbUuids)) {
-      return true;
-    }
-  }
+export function canStreamChangeList(
+  root: string,
+  input: unknown,
+  cachedData: unknown,
+  batch: readonly FlushedClimbStat[],
+): boolean {
   if (input === null || typeof input !== 'object') return false;
-  return isStatsDependentSearch(input as Partial<ClimbSearchInput>);
+  const search = input as Partial<ClimbSearchInput>;
+  const sortMatters = root !== CLIMB_COUNT_KEY_ROOT;
+  const statsDependent = isStatsDependentSearch(search, sortMatters);
+  const sizeScoped = typeof search.boardName === 'string' && isSizeScopedBoard(search.boardName);
+
+  // Climbs that clear the size and angle gates but need the loaded pages
+  // checked. Collected first so the pages are walked once, not once per entry.
+  const onPageCandidates = new Set<string>();
+  for (const entry of batch) {
+    // A climb belongs to exactly one board and layout, so an event from another
+    // one cannot be in this list's result set at any angle.
+    if (search.boardName !== entry.boardType || search.layoutId !== entry.layoutId) continue;
+    if (sizeScoped && !(entry.compatibleSizeIds?.includes(search.sizeId as number) ?? false)) continue;
+    if (search.angle !== entry.angle) {
+      if (sortMatters && search.sortBy === CROSS_ANGLE_SORT) return true;
+      continue;
+    }
+    if (statsDependent) return true;
+    onPageCandidates.add(entry.climbUuid);
+  }
+  if (onPageCandidates.size === 0) return false;
+  return loadedPagesHoldAny(cachedData, onPageCandidates);
 }
 
-/** The board the user is browsing, as the climb list and count read it. */
-export type ClimbStatsLiveSyncBoard = {
-  boardType: string;
-  layoutId: number;
-  sizeId: number;
-  angle: number;
-};
+/**
+ * The `['climb', variables]` detail query. Its variables always carry an angle
+ * (`GetClimbQueryVariables`), but the angle check is conditional so a future
+ * angle-less variant still matches on the uuid rather than silently never
+ * refreshing.
+ */
+export function climbDetailMatchesBatch(variables: unknown, batch: readonly FlushedClimbStat[]): boolean {
+  if (variables === null || typeof variables !== 'object') return false;
+  const { climbUuid, angle } = variables as { climbUuid?: unknown; angle?: unknown };
+  if (typeof climbUuid !== 'string') return false;
+  return batch.some((entry) => entry.climbUuid === climbUuid && (typeof angle !== 'number' || entry.angle === angle));
+}
 
 export type ClimbStatsLiveSyncOptions = {
   /** Null until migrations publish the handle, and again after a hot reload. */
   getDb: () => OfflineDatabase | null;
   queryClient: QueryClient;
-  /** Resolved at call time — the user can switch boards mid-flush. */
-  getActiveBoard: () => ClimbStatsLiveSyncBoard | null;
   isScopeDownloaded: (db: OfflineDatabase, scope: OfflineBoardScope) => Promise<boolean>;
   /** Mobile: backgrounded or signing out. Both mean "do not touch SQLite". */
   shouldSkipWrites: () => boolean;
   hasEnabledScopeForLayout: (boardType: string, layoutId: number) => boolean;
   /** Test seam. */
-  writeEvent?: typeof writeClimbStatsEvent;
+  writeEvents?: typeof writeClimbStatsEvents;
   /** Test seam; defaults to setTimeout. */
   scheduleTask?: (callback: () => void, delayMs: number) => () => void;
   /** Called once per instance, for the first non-contention write failure. */
@@ -163,20 +234,19 @@ function pendingKey(event: ClimbStatsWriteThroughInput): string {
 
 export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): ClimbStatsLiveSync {
   const scheduleTask = options.scheduleTask ?? defaultScheduleTask;
-  const writeEvent = options.writeEvent ?? writeClimbStatsEvent;
+  const writeEvents = options.writeEvents ?? writeClimbStatsEvents;
 
   // Latest-wins per (board, climb, angle): a burst of recomputes for one climb
   // collapses to a single write of the newest payload, and the revision gate in
   // the SQL makes any ordering surprise a no-op rather than a regression.
   const pendingEvents = new Map<string, ClimbStatsWriteThroughInput>();
-  const flushedClimbUuids = new Set<string>();
+  const flushedStats = new Map<string, FlushedClimbStat>();
 
   let draining = false;
   let disposed = false;
   let hasReportedError = false;
   let cancelTrailing: (() => void) | null = null;
   let cancelMaxWait: (() => void) | null = null;
-  let armedBoard: ClimbStatsLiveSyncBoard | null = null;
 
   function reportFirstError(error: unknown): void {
     if (hasReportedError) return;
@@ -191,18 +261,23 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     cancelMaxWait = null;
   }
 
-  function armFlush(board: ClimbStatsLiveSyncBoard, climbUuid: string): void {
-    if (flushedClimbUuids.size === 0) {
-      // Capture the board the first applied write belonged to. If the user
-      // switches boards before the flush lands, the refresh is dropped rather
-      // than applied to a list it never described.
-      armedBoard = board;
-      cancelMaxWait = scheduleTask(() => {
-        cancelMaxWait = null;
-        void flush();
-      }, CLIMB_STATS_INVALIDATE_MAX_WAIT_MS);
-    }
-    flushedClimbUuids.add(climbUuid);
+  function armMaxWait(): void {
+    if (disposed || cancelMaxWait) return;
+    cancelMaxWait = scheduleTask(() => {
+      cancelMaxWait = null;
+      void flush();
+    }, CLIMB_STATS_INVALIDATE_MAX_WAIT_MS);
+  }
+
+  function armFlush(event: ClimbStatsWriteThroughInput, compatibleSizeIds: number[] | null): void {
+    flushedStats.set(pendingKey(event), {
+      boardType: event.boardType,
+      layoutId: event.layoutId,
+      climbUuid: event.climbUuid,
+      angle: event.angle,
+      compatibleSizeIds,
+    });
+    armMaxWait();
     cancelTrailing?.();
     cancelTrailing = scheduleTask(() => {
       cancelTrailing = null;
@@ -210,69 +285,90 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     }, CLIMB_STATS_INVALIDATE_TRAILING_MS);
   }
 
-  function invalidateForClimbs(climbUuids: ReadonlySet<string>): void {
+  /**
+   * Probe each distinct offline scope that is actually cached — typically one,
+   * the board being browsed. A scope the device never downloaded is served over
+   * the network, and must not be invalidated by a stream event.
+   */
+  async function downloadedScopes(
+    db: OfflineDatabase,
+    listRoots: readonly (readonly string[])[],
+  ): Promise<Map<string, boolean>> {
+    const downloaded = new Map<string, boolean>();
+    const cache = options.queryClient.getQueryCache();
+    for (const root of listRoots) {
+      for (const query of cache.findAll({ queryKey: root })) {
+        const scope = searchInputScope(query.queryKey[1]);
+        if (!scope) continue;
+        const scopeKey = offlineBoardKey(scope);
+        if (downloaded.has(scopeKey)) continue;
+        downloaded.set(scopeKey, await options.isScopeDownloaded(db, scope));
+      }
+    }
+    return downloaded;
+  }
+
+  async function invalidateForBatch(db: OfflineDatabase, batch: readonly FlushedClimbStat[]): Promise<void> {
     // The shared table → key map, never a local copy: a key added there for
     // board_climb_stats has to reach this consumer too.
-    for (const root of invalidateKeysForTable('board_climb_stats') ?? []) {
+    const roots = invalidateKeysForTable('board_climb_stats') ?? [];
+    const listRoots = roots.filter((root) => root[0] !== CLIMB_DETAIL_KEY_ROOT);
+    const downloaded = await downloadedScopes(db, listRoots);
+    if (disposed) return;
+
+    for (const root of roots) {
       if (root[0] === CLIMB_DETAIL_KEY_ROOT) {
         void options.queryClient.invalidateQueries({
           queryKey: root,
-          predicate: (query) => {
-            const variables = query.queryKey[1];
-            const climbUuid = (variables as { climbUuid?: unknown } | null)?.climbUuid;
-            return typeof climbUuid === 'string' && climbUuids.has(climbUuid);
-          },
+          predicate: (query: Query) => climbDetailMatchesBatch(query.queryKey[1], batch),
         });
         continue;
       }
       void options.queryClient.invalidateQueries({
         queryKey: root,
-        predicate: (query) => canStreamChangeList(query.queryKey[1], query.state.data, climbUuids),
+        predicate: (query: Query) => {
+          const input = query.queryKey[1];
+          const scope = searchInputScope(input);
+          if (!scope || downloaded.get(offlineBoardKey(scope)) !== true) return false;
+          // Downloaded scope, but these filters need tables we do not sync, so
+          // the query is served over HTTP even here. Refreshing it would refetch
+          // every loaded page over the network on every flush.
+          if (!isOfflineSearchSupported(input as ClimbSearchInput)) return false;
+          return canStreamChangeList(String(root[0]), input, query.state.data, batch);
+        },
       });
     }
   }
 
   async function flush(): Promise<void> {
     cancelTimers();
-    const board = armedBoard;
-    const climbUuids = new Set(flushedClimbUuids);
-    flushedClimbUuids.clear();
-    armedBoard = null;
+    if (disposed || flushedStats.size === 0) return;
 
-    if (disposed || !board || climbUuids.size === 0) return;
-    if (options.shouldSkipWrites()) return;
+    // Transient gates BEFORE the batch is consumed. A flush landing during a
+    // momentary background, or before migrations publish the handle, keeps its
+    // batch and re-arms the ceiling; clearing here would lose the refresh for
+    // good, because nothing re-arms until a new event arrives.
+    if (options.shouldSkipWrites()) {
+      armMaxWait();
+      return;
+    }
     const db = options.getDb();
-    if (!db) return;
-
-    const currentBoard = options.getActiveBoard();
-    if (
-      !currentBoard ||
-      currentBoard.boardType !== board.boardType ||
-      currentBoard.layoutId !== board.layoutId ||
-      currentBoard.sizeId !== board.sizeId ||
-      currentBoard.angle !== board.angle
-    ) {
+    if (!db) {
+      armMaxWait();
       return;
     }
 
+    const batch = [...flushedStats.values()];
+    flushedStats.clear();
+
     try {
-      // Only a downloaded scope reads from SQLite, so only a downloaded scope
-      // has anything to gain from a re-read.
-      //
       // The catch is mandatory, not defensive dressing: this runs from a timer
       // through `void flush()`, so a rejection here would surface as an
       // unhandled rejection and be reported as a crash. `isBoardDownloadedLocally`
       // really does throw when the handle closes underneath it — a hot reload,
       // or a sign-out wipe landing after the `shouldSkipWrites()` check above.
       // Dropping the batch is correct: the next pull refreshes the same rows.
-      const downloaded = await options.isScopeDownloaded(db, {
-        boardType: board.boardType,
-        layoutId: board.layoutId,
-        sizeId: board.sizeId,
-      });
-      if (!downloaded || disposed) return;
-
-      invalidateForClimbs(climbUuids);
+      await invalidateForBatch(db, batch);
     } catch (error) {
       reportFirstError(error);
     }
@@ -289,41 +385,64 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
         // engine does. The unwritten events stay in `pendingEvents`; the next
         // `handleEvent` re-drains them under this same gate.
         if (options.shouldSkipWrites()) break;
+        if (pendingEvents.size === 0) break;
 
-        const next = pendingEvents.entries().next();
-        if (next.done) break;
-        const [key, event] = next.value;
-        pendingEvents.delete(key);
+        const keys = [...pendingEvents.keys()];
+        const events = keys.map((key) => pendingEvents.get(key) as ClimbStatsWriteThroughInput);
+        pendingEvents.clear();
 
         const db = options.getDb();
-        if (!db) continue;
+        if (!db) {
+          // The handle is null for up to ~30 s during startup migrations, and
+          // again for a moment after a hot reload. Discarding here would lose
+          // every event of that window; keep them for the next handleEvent.
+          requeue(keys, events);
+          break;
+        }
 
-        let result;
+        let results;
         try {
-          result = await writeEvent(db, event);
+          results = await writeEvents(db, events);
         } catch (error) {
           // A broken database is worth one report per session, not one per
           // event on a chatty layout channel. Contention never lands here —
-          // writeClimbStatsEvent returns `lock_lost` for it.
+          // writeClimbStatsEvents returns `lock_lost` for it.
           reportFirstError(error);
           continue;
         }
-        if (result.status !== 'applied') continue;
+        if (disposed) break;
 
-        const board = options.getActiveBoard();
-        if (!board) continue;
-        if (board.boardType !== event.boardType || board.layoutId !== event.layoutId) continue;
-        // Other angles are written but never refresh the list: the browsed
-        // angle is the only one on screen.
-        if (board.angle !== event.angle) continue;
-        if (isSizeScopedBoard(event.boardType) && !(result.compatibleSizeIds?.includes(board.sizeId) ?? false)) {
-          continue;
+        // Contention means another writer holds the file (a VACUUM or a
+        // snapshot import can hold it for 5-20 s). Retrying immediately would
+        // pay the full lock wait again per pass, so keep the events and stop;
+        // the next event on the stream re-drains them.
+        let lostLock = false;
+        for (const [index, result] of results.entries()) {
+          if (result.status === 'lock_lost') {
+            lostLock = true;
+            continue;
+          }
+          if (result.status !== 'applied') continue;
+          armFlush(events[index], result.compatibleSizeIds);
         }
-
-        armFlush(board, event.climbUuid);
+        if (lostLock) {
+          requeue(
+            keys.filter((_key, index) => results[index]?.status === 'lock_lost'),
+            events.filter((_event, index) => results[index]?.status === 'lock_lost'),
+          );
+          break;
+        }
       }
     } finally {
       draining = false;
+    }
+  }
+
+  /** Put unwritten events back, unless a newer payload already replaced the key. */
+  function requeue(keys: readonly string[], events: readonly ClimbStatsWriteThroughInput[]): void {
+    for (const [index, key] of keys.entries()) {
+      if (pendingEvents.has(key)) continue;
+      pendingEvents.set(key, events[index]);
     }
   }
 
@@ -342,8 +461,7 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
       disposed = true;
       cancelTimers();
       pendingEvents.clear();
-      flushedClimbUuids.clear();
-      armedBoard = null;
+      flushedStats.clear();
     },
   };
 }
