@@ -274,7 +274,7 @@ export default function BuildPlansPanel({ catalog, locale }: { catalog: CncCatal
                       one of them "Commercial, single build". */}
                     <TableCell>{tierLabel(entry.order.tier, tCnc)}</TableCell>
                     <TableCell>
-                      {`${getBoardDisplayName(entry.order.boardName)} ${wallLabel(catalog, entry.order)}`}
+                      {`${entry.order.boardName === 'tension' ? tCnc('configurator.tb2.boardName') : getBoardDisplayName(entry.order.boardName)} ${wallLabel(catalog, entry.order, tCnc)}`}
                     </TableCell>
                     <TableCell>
                       <StatusChip status={entry.order.status} label={statusLabel(tCnc, entry.order.status)} />

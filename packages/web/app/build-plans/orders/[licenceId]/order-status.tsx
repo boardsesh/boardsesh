@@ -178,7 +178,11 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
   const previewFailedSubject = encodeURIComponent(t('order.previewFailed.subject', { licenceId }));
 
   const facts: KeyValueItem[] = [
-    { key: 'board', label: t('order.board'), value: `${getBoardDisplayName(order.boardName)} ${wallLabel}` },
+    {
+      key: 'board',
+      label: t('order.board'),
+      value: `${order.boardName === 'tension' ? t('configurator.tb2.boardName') : getBoardDisplayName(order.boardName)} ${wallLabel}`,
+    },
     { key: 'tier', label: t('order.tier'), value: tierLabel(order.tier, t) },
   ];
   // Chronological, because these are two moments in one order's life and a

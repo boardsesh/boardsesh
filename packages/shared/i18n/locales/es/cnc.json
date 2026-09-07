@@ -2,7 +2,7 @@
   "metadata": {
     "buildPlans": {
       "title": "Planos para construir un plafón en casa",
-      "description": "Archivos CNC listos para cortar de un muro de escalada en casa: cada panel, cada tuerca en T y cada agujero de LED colocados, repartidos en las planchas que tiene tu taller."
+      "description": "Archivos CNC para un muro de escalada en casa: paneles y puntos de perforación repartidos en las planchas de tu taller."
     },
     "orders": {
       "title": "Tus planos de construcción",
@@ -15,8 +15,8 @@
   },
   "hero": {
     "title": "Planos para construir tu plafón en casa",
-    "subtitle": "Archivos DXF que un taller CNC corta directamente. Cada panel, la retícula de tuercas en T, los agujeros de LED y la repisa, repartidos en las planchas que tu taller ya tiene.",
-    "firstBoard": "El Kilter Homewall es el primer plafón compatible. Vendrán más.",
+    "subtitle": "Archivos DXF para tu taller CNC. Paneles y puntos de perforación repartidos en las planchas que tu taller ya tiene.",
+    "firstBoard": "Compatible con Kilter Homewall y Tension Board 2, incluidas las distribuciones Mirror y Spray.",
     "included": {
       "heading": "Qué te llevas",
       "dxf": "Los planos de montaje del muro entero van incluidos, así los paneles encajan sin adivinar nada.",
@@ -61,7 +61,8 @@
     },
     "board": {
       "label": "Plafón",
-      "help": "El Kilter Homewall es el único plafón a la venta hoy."
+      "help": "Elige el plafón para el que vas a fabricar los paneles.",
+      "kilterHomewall": "Kilter Homewall"
     },
     "size": {
       "label": "Tamaño del muro",
@@ -77,7 +78,7 @@
       "help": "Los valores por defecto son con los que construimos nosotros. Cámbialos para que encajen con tu taller.",
       "sheetStock": {
         "label": "Tamaño de plancha",
-        "help": "El contrachapado del que corta tu taller. Con una plancha de 3,6 m sale una fila entera del muro sin junta.",
+        "help": "Elige la lámina de contrachapado que utiliza tu taller. Los paneles se dividen para ajustarse a ella.",
         "values": {
           "2440x1220": "2440 × 1220 mm",
           "3600x1220": "3600 × 1220 mm"
@@ -149,7 +150,7 @@
       },
       "supportStrips": {
         "label": "Listones de refuerzo de junta",
-        "help": "Listones de contrachapado de 150 mm, ranurados para las tuercas en T, que van detrás de cada junta horizontal. Déjalos activados salvo que tu estructura ya refuerce las juntas.",
+        "help": "Tiras de contrachapado de 150 mm refuerzan las juntas horizontales y mantienen el acceso a los orificios.",
         "values": {
           "false": "Desactivado",
           "true": "Activado"
@@ -169,6 +170,24 @@
         "values": {
           "false": "Desactivado",
           "true": "Activado"
+        }
+      },
+      "tb2DimensionStandard": {
+        "label": "Dimensiones de TB2",
+        "help": "Métricas: retícula principal de 200 mm y orificios LED de 12 mm. Imperiales: retícula de 7⅞ pulgadas y orificios de ½ pulgada. Cambiar las dimensiones elimina los diseños colocados.",
+        "values": {
+          "metric": "Métricas",
+          "imperial": "Imperiales"
+        }
+      },
+      "tb2Engraving": {
+        "label": "Grabado de TB2",
+        "help": "Identificadores de presas y marcas de orientación de los planos de instalación de Tension.",
+        "values": {
+          "none": "Sin grabado",
+          "mirror": "Mirror",
+          "spray": "Spray",
+          "both": "Mirror + Spray"
         }
       }
     },
@@ -320,6 +339,12 @@
       "heading": "A nombre de quién va la licencia",
       "help": "La licencia va en todos los archivos del pack, así que una copia filtrada se rastrea hasta ella.",
       "stale": "Actualiza antes la vista previa: el muro ha cambiado desde estas hojas."
+    },
+    "tb2": {
+      "boardName": "Tension Board 2",
+      "sizeHelp": "Alto × ancho en pies. Tension indica primero la altura.",
+      "engraveHelp": "Graba Mirror, Spray o ambas distribuciones en los mismos paneles. Ambas están seleccionadas por defecto.",
+      "engraveNote": "Las etiquetas de Mirror van a la izquierda de cada orificio, con una marca de orientación. Las de Spray van a la derecha, con dos marcas. Cada panel grabado incluye una leyenda."
     }
   },
   "cta": {
