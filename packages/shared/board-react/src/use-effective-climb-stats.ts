@@ -634,6 +634,10 @@ export function useClimbStatsLayoutSync(boardType: BoardName | null, layoutId: n
       next: (event) => {
         if (event.boardType !== boardType || event.layoutId !== layoutId) return;
         applyCanonicalClimbStats(event);
+        // After the store, and unconditionally: the store keeps only the keys a
+        // mounted selector retains, while the local catalog needs every event
+        // for the board the user is browsing. Mobile supplies this; web omits it.
+        adapter.persistClimbStatsEvent?.(event);
       },
       connected: refresh,
       // Redis-required subscription setup failures surface as operation errors.
