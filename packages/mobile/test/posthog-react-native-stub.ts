@@ -21,6 +21,10 @@ export class PostHog {
   reset(): void {}
   register(): void {}
   screen(): void {}
+  getSessionId(): string {
+    return '';
+  }
+  registerForSession(): void {}
   setPersonProperties(): void {}
   flush(): Promise<void> {
     return Promise.resolve();
