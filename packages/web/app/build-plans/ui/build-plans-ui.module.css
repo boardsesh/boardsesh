@@ -1,0 +1,539 @@
+/* Layout and surface language for /build-plans*.
+ *
+ * Every colour is a CSS custom property from app/components/index.css (mirrored
+ * from theme-config.ts). No hex, no rgba literal ever lands in this file.
+ *
+ * The rhythm is an 8-pt grid: 8 / 16 / 24 / 32 / 40 / 48. Sections are 48 apart
+ * on a laptop, 40 on a phone; everything inside a card is a multiple of 4.
+ */
+
+/* ---------------------------------------------------------------- page frame */
+
+.page {
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+  padding-top: calc(var(--global-header-height) + 32px);
+}
+
+.widthWide {
+  max-width: 1120px;
+}
+
+.widthProse {
+  max-width: 760px;
+}
+
+@media (max-width: 600px) {
+  .page {
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 56px;
+    padding-top: calc(var(--global-header-height) + 20px);
+  }
+}
+
+/* Vertical rhythm between top-level sections. One owner for the spacing so no
+   section has to carry a margin of its own (and cancel someone else's). */
+.stack > * + * {
+  margin-top: 48px;
+}
+
+@media (max-width: 900px) {
+  .stack > * + * {
+    margin-top: 40px;
+  }
+}
+
+/* ------------------------------------------------------------ header + plate */
+
+.header {
+  margin-bottom: 48px;
+}
+
+@media (max-width: 900px) {
+  .header {
+    margin-bottom: 40px;
+  }
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* The one loud surface on the whole surface: a plate carrying the T-nut grid the
+   product is actually about — 24px dots, the hold pitch, drawn in the selected
+   violet so it reads in both schemes without a second token. Used on the shop
+   landing only; every other page gets a plain header. */
+.plate {
+  position: relative;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--border-radius-xl);
+  background-color: var(--semantic-surface);
+  background-image: radial-gradient(circle at 1px 1px, var(--semantic-selected) 1.5px, transparent 1.6px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+  padding: 40px;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .plate {
+    padding: 24px;
+  }
+}
+
+/* h1/h2 are the only unpinned variants in the MUI theme, so they inherit the
+   browser default ramp (6rem / 3.75rem). Pinned here — 96px of display type is
+   what made this surface look like a template. */
+.pageTitle {
+  margin: 0;
+  font-size: 36px;
+  line-height: 1.14;
+  letter-spacing: -0.02em;
+  max-width: 18ch;
+}
+
+@media (max-width: 900px) {
+  .pageTitle {
+    font-size: 28px;
+    max-width: none;
+  }
+}
+
+.pageIntro {
+  margin: 16px 0 0;
+  font-size: var(--font-size-lg);
+  line-height: 1.55;
+  max-width: 60ch;
+  color: var(--neutral-700);
+}
+
+@media (max-width: 900px) {
+  .pageIntro {
+    font-size: var(--font-size-base);
+  }
+}
+
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.headerNote {
+  margin-top: 24px;
+  color: var(--neutral-500);
+}
+
+/* ------------------------------------------------------------ section titles */
+
+.sectionHeading {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 900px) {
+  .sectionHeading {
+    font-size: var(--font-size-xl);
+  }
+}
+
+.sectionIntro {
+  margin: 8px 0 0;
+  max-width: 68ch;
+  color: var(--neutral-500);
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 24px;
+  margin-bottom: 24px;
+}
+
+.sectionBody {
+  margin-top: 0;
+}
+
+/* ------------------------------------------------------------------- cards */
+
+/* Flat by default. Elevation is reserved for the one surface that floats — the
+   sticky summary rail — so a shadow means "this follows you", not "this is a
+   card". */
+.card {
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--border-radius-lg);
+  background: var(--semantic-surface);
+  padding: 24px;
+}
+
+@media (max-width: 600px) {
+  .card {
+    padding: 20px;
+  }
+}
+
+.cardQuiet {
+  background: var(--neutral-50);
+}
+
+.cardRaised {
+  background: var(--semantic-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Marks the card the page wants you to act on (the ready preview, the selected
+   tier). A violet rule down the leading edge, not a coloured fill. */
+.cardAccent {
+  border-color: var(--semantic-selected-border);
+  box-shadow: inset 3px 0 0 0 var(--color-primary);
+}
+
+.cardTight {
+  padding: 16px;
+}
+
+.cardFlush {
+  padding: 0;
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.cardDescription {
+  margin: 4px 0 0;
+  max-width: 64ch;
+  color: var(--neutral-500);
+}
+
+.cardContent {
+  margin-top: 20px;
+}
+
+/* ------------------------------------------------------------ step headings */
+
+/* The configurator really is a sequence, so the numerals carry information.
+   Nothing else on this surface is numbered. */
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.stepNumber {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--semantic-selected-border);
+  border-radius: var(--border-radius-full);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.stepDone {
+  background: var(--color-primary-fill);
+  border-color: var(--color-primary-fill);
+  color: var(--color-on-primary);
+}
+
+.stepTitle {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.stepDescription {
+  margin: 4px 0 0;
+  max-width: 64ch;
+  color: var(--neutral-500);
+}
+
+/* ---------------------------------------------------------- key/value lists */
+
+/* A cut list reads label-left, figure-right, hairline between. Figures are
+   tabular so a column of millimetres lines up. */
+.kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.kvTwoUp {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 40px;
+}
+
+@media (max-width: 700px) {
+  .kvTwoUp {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
+}
+
+.kvRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--neutral-200);
+}
+
+.kvRow:last-child {
+  border-bottom: 0;
+}
+
+.kvDense .kvRow {
+  padding: 6px 0;
+}
+
+.kvLabel {
+  margin: 0;
+  color: var(--neutral-500);
+}
+
+.kvValue {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.kvHint {
+  margin: 2px 0 0;
+  color: var(--neutral-500);
+}
+
+/* A stacked row: label above, value below. For terms that need a sentence, not
+   a figure ("One DXF per panel, plus assembly drawings"). */
+.kvStacked .kvRow {
+  display: block;
+}
+
+.kvStacked .kvValue {
+  text-align: left;
+  margin-top: 2px;
+  font-weight: 400;
+  color: var(--neutral-500);
+}
+
+/* -------------------------------------------------------------- price tags */
+
+.price {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.priceAmount {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.priceLarge .priceAmount {
+  font-size: 30px;
+}
+
+.priceNote {
+  margin: 0;
+  color: var(--neutral-500);
+}
+
+/* ------------------------------------------------------------ status chips */
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  border-radius: var(--border-radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--border-radius-full);
+  background: currentColor;
+  flex: none;
+}
+
+.toneNeutral {
+  color: var(--neutral-600);
+  background: var(--neutral-100);
+}
+
+.toneProgress {
+  color: var(--color-info);
+  background: var(--semantic-selected-light);
+}
+
+.toneBrand {
+  color: var(--color-primary);
+  background: var(--semantic-selected);
+}
+
+.toneSuccess {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.toneWarning {
+  color: var(--color-warning);
+  background: var(--color-warning-bg);
+}
+
+.toneError {
+  color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+/* ------------------------------------------------------------- split layout */
+
+/* Configurator on the left, the summary that follows you on the right. One
+   column until there is genuinely room for a 320px rail beside a readable form. */
+.split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+@media (min-width: 1000px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .rail {
+    position: sticky;
+    /* Clears the fixed header, then one 8-pt step. */
+    top: calc(var(--global-header-height) + 16px);
+  }
+}
+
+/* --------------------------------------------------------------- field grid */
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px 24px;
+}
+
+.fieldsSingle {
+  grid-template-columns: 1fr;
+}
+
+/* ---------------------------------------------------------- preview gallery */
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.galleryTile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.galleryFrame {
+  display: block;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--border-radius-md);
+  /* Drawings are black-on-white; a light plate keeps them readable in dark mode
+     without inverting the sheet. */
+  background: var(--neutral-50);
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+}
+
+.galleryImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.galleryCaption {
+  margin: 0;
+  color: var(--neutral-500);
+  font-variant-numeric: tabular-nums;
+}
+
+.galleryNote {
+  margin: 0 0 16px;
+  color: var(--neutral-500);
+  max-width: 64ch;
+}
+
+/* --------------------------------------------------------------- empty pane */
+
+.empty {
+  border: 1px dashed var(--neutral-300);
+  border-radius: var(--border-radius-lg);
+  background: var(--neutral-50);
+  padding: 32px 24px;
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.emptyBody {
+  margin: 8px 0 0;
+  max-width: 52ch;
+  color: var(--neutral-500);
+}
+
+.emptyAction {
+  margin-top: 24px;
+}
+
+/* ------------------------------------------------------------------ measure */
+
+/* Body copy that has to be read rather than scanned. 68ch is the ceiling. */
+.measure {
+  max-width: 68ch;
+}
