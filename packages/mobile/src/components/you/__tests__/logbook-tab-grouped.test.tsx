@@ -126,6 +126,7 @@ vi.mock('../LogbookEntryChooserSheet', () => ({
   },
 }));
 vi.mock('../LogbookDayDivider', () => ({ LogbookDayDivider: () => null }));
+vi.mock('../BoardLinkPrompt', () => ({ BoardLinkPrompt: () => null }));
 vi.mock('../LogbookEditSheet', () => ({
   LogbookEditSheet: ({ ascent }: { ascent: { uuid: string } | null }) => {
     editSheet.ascent = ascent;

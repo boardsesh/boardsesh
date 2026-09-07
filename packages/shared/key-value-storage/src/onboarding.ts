@@ -29,3 +29,8 @@ export const ONBOARDING_TIP_ACCESSORY_KEY = 'onboarding_tip_accessory_seen';
 // climb (or tap the ⋯ button) for queue / tick / playlists and more. Fires once,
 // after the board-reveal banner has had its turn.
 export const ONBOARDING_TIP_QUICKACTIONS_KEY = 'onboarding_tip_quickactions_seen';
+// Dismissal of the "your board account isn't linked" card on the empty Progress /
+// Logbook tabs. Not a tip: an empty logbook with no linked account is a standing
+// true condition rather than a one-time thing to teach, so only an explicit dismiss
+// hides it — it is not consumed on first render like the banners above.
+export const ONBOARDING_LINK_EMPTY_DISMISSED_KEY = 'onboarding_link_empty_dismissed';
