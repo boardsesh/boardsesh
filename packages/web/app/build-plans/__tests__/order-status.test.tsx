@@ -168,7 +168,7 @@ describe('the preview', () => {
 
     expect(screen.getByRole('img', { name: 'Panel 1' }).getAttribute('src')).toBe(PREVIEW_IMAGES[0].url);
     expect(screen.getByRole('img', { name: 'Assembly' })).toBeTruthy();
-    expect(screen.getByText(/Watermarked, 110 dpi/)).toBeTruthy();
+    expect(screen.getByText(/Watermarked check drawings/)).toBeTruthy();
   });
 
   it('keeps the preview on screen after the pack has been bought', () => {

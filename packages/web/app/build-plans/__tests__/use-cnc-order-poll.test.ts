@@ -66,4 +66,14 @@ describe('nextOrderPollInterval', () => {
       expect({ status, interval: nextOrderPollInterval(status, 0) }).toEqual({ status, interval: false });
     }
   });
+
+  it('keeps polling on no last-known status at all, then gives up', () => {
+    // The configurator starts from a licence id alone — before its first
+    // answer has ever landed there is no status to fall back on yet. A draft
+    // can also name an order that is genuinely gone, so this must not become a
+    // request every five seconds for as long as the tab is open.
+    expect(nextOrderPollInterval(null, 0)).toBe(ORDER_POLL_INTERVAL_MS);
+    expect(nextOrderPollInterval(null, MAX_CONSECUTIVE_NULL_POLLS - 1)).toBe(ORDER_POLL_INTERVAL_MS);
+    expect(nextOrderPollInterval(null, MAX_CONSECUTIVE_NULL_POLLS)).toBe(false);
+  });
 });
