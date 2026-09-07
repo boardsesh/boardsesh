@@ -15,6 +15,32 @@ function dayStart(epochMs: number): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
+/** Partition broad read windows, including legacy same-day assignments that may need splitting. */
+export function isReconciliationBoundary(previousAt: number, nextAt: number): boolean {
+  return nextAt - previousAt > SESSION_GAP_MS && dayStart(previousAt) !== dayStart(nextAt);
+}
+
+/**
+ * Load whole UTC days and connected runs so legacy same-day assignments include their anchors.
+ * This padding controls reads only: automatic grouping always stops at gaps over eight hours.
+ */
+export function expandReconciliationWindow(allTicks: InferenceTick[], from: number, to: number): InferenceTick[] {
+  let windowFrom = dayStart(from);
+  let windowTo = dayStart(to) + 24 * 60 * 60 * 1000 - 1;
+  // Each expansion reaches another tick's UTC day; allow one final stable pass.
+  // Bound by the input size, so long histories do not hit an arbitrary day limit.
+  for (let expansion = 0; expansion <= allTicks.length; expansion++) {
+    const ticks = expandWindow(allTicks, windowFrom, windowTo);
+    if (ticks.length === 0) return ticks;
+    const nextFrom = Math.min(windowFrom, dayStart(ticks[0].climbedAt));
+    const nextTo = Math.max(windowTo, dayStart(ticks[ticks.length - 1].climbedAt) + 24 * 60 * 60 * 1000 - 1);
+    if (nextFrom === windowFrom && nextTo === windowTo) return ticks;
+    windowFrom = nextFrom;
+    windowTo = nextTo;
+  }
+  throw new Error('Reconciliation window did not converge within its tick count');
+}
+
 /**
  * Widen `[from, to]` outwards until there is a gap greater than {@link SESSION_GAP_MS}
  * on both sides, and return the ticks inside.
@@ -81,104 +107,6 @@ function drawRuns(ticks: InferenceTick[]): InferenceTick[][] {
 }
 
 /**
- * The explicit session that owns a run, if any.
- *
- * Explicit sessions always win: someone deliberately pressed Start, so their record is
- * authoritative and a run overlapping their day is folded into them rather than
- * standing beside them. This is what stops the "I logged 9 climbs in my session and 2
- * before it, and the 2 vanished" case — those 2 join the session instead of forming a
- * card that the old day-suppression rule then hid entirely.
- *
- * Matching is by calendar day rather than by the session's tick span, because the
- * ticks being absorbed are by definition outside that span. When a day holds more than
- * one explicit session the nearest in time wins, so a morning run does not land in an
- * evening session.
- */
-function explicitSessionForRun(run: InferenceTick[], explicitSessions: ExistingExplicitSession[]): string | null {
-  // Only an id that belongs to an EXPLICIT session settles this. Ticks normally carry
-  // the inferred session they were last assigned to, so accepting any non-null id here
-  // would short-circuit anchor and merge resolution on nearly every reconciliation —
-  // and, where an inferred run sits next to a party session on the same day, would hand
-  // the party session's own ticks to the inferred one.
-  const explicitIds = new Set(explicitSessions.map((session) => session.id));
-  const assignedExplicit = run.find((tick) => tick.sessionId !== null && explicitIds.has(tick.sessionId));
-  if (assignedExplicit) return assignedExplicit.sessionId;
-
-  const runStart = run[0].climbedAt;
-  const runEnd = run[run.length - 1].climbedAt;
-  const runDays = new Set([dayStart(runStart), dayStart(runEnd)]);
-
-  const sameDay = explicitSessions.filter(
-    (session) => runDays.has(dayStart(session.firstTickAt)) || runDays.has(dayStart(session.lastTickAt)),
-  );
-  if (sameDay.length === 0) return null;
-
-  let best = sameDay[0];
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const session of sameDay) {
-    // Zero when the run overlaps the session's span, otherwise the nearer edge gap.
-    const distance =
-      runEnd < session.firstTickAt
-        ? session.firstTickAt - runEnd
-        : runStart > session.lastTickAt
-          ? runStart - session.lastTickAt
-          : 0;
-    if (distance < bestDistance) {
-      best = session;
-      bestDistance = distance;
-    }
-  }
-  return best.id;
-}
-
-/**
- * Fold lone ticks into a bigger run on the same day.
- *
- * A single-tick run is usually someone remembering hours later that they forgot to log
- * a climb, not a second trip to the wall — so when the day already has real climbing on
- * it, the stray tick belongs there. When the lone tick is all there is for that day it
- * stays its own session; hiding it would recreate the "where did my climb go" bug that
- * started all this.
- *
- * Fleet-wide this merges 605 runs and leaves 8,694 standing alone, of which only 1,874
- * are natively logged — the rest are bulk logbook imports sitting far back in history.
- */
-function absorbLoneRuns(runs: InferenceTick[][]): InferenceTick[][] {
-  if (runs.length < 2) return runs;
-
-  const result: InferenceTick[][] = runs.map((run) => [...run]);
-  const isLone = (run: InferenceTick[]) => run.length === 1;
-
-  for (let i = 0; i < result.length; i++) {
-    if (!isLone(result[i])) continue;
-    const day = dayStart(result[i][0].climbedAt);
-
-    // Nearest larger run on the same day, in either direction.
-    let target = -1;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    for (let j = 0; j < result.length; j++) {
-      if (j === i || result[j].length === 0 || isLone(result[j])) continue;
-      const otherStart = result[j][0].climbedAt;
-      const otherEnd = result[j][result[j].length - 1].climbedAt;
-      if (dayStart(otherStart) !== day && dayStart(otherEnd) !== day) continue;
-      const tickAt = result[i][0].climbedAt;
-      const distance = tickAt < otherStart ? otherStart - tickAt : tickAt > otherEnd ? tickAt - otherEnd : 0;
-      if (distance < bestDistance) {
-        target = j;
-        bestDistance = distance;
-      }
-    }
-
-    if (target !== -1) {
-      result[target] = [...result[target], ...result[i]].sort((a, b) => a.climbedAt - b.climbedAt);
-      result[i] = [];
-    }
-  }
-
-  return result.filter((run) => run.length > 0);
-}
-
-/**
  * Decide which inferred sessions in the window each run inherits.
  *
  * A run inherits the identity of any existing session whose anchor tick it still
@@ -198,6 +126,7 @@ function resolveIdentity(
     if (session.anchorTickId !== null) byAnchor.set(session.anchorTickId, session);
   }
 
+  const explicitIds = new Set(explicitSessions.map((session) => session.id));
   const resolved: ResolvedRun[] = [];
   const merges: SessionMerge[] = [];
 
@@ -207,11 +136,41 @@ function resolveIdentity(
     const firstTickAt = run[0].climbedAt;
     const lastTickAt = run[run.length - 1].climbedAt;
 
-    const explicitId = explicitSessionForRun(run, explicitSessions);
-    if (explicitId !== null) {
-      // Any inferred sessions anchored in here lose their ticks to the explicit
-      // session; the caller drops them via `emptiedSessionIds`.
-      resolved.push({ sessionId: explicitId, tickIds, anchorTickId, firstTickAt, lastTickAt });
+    const explicitTicks = run.filter((tick) => tick.sessionId !== null && explicitIds.has(tick.sessionId));
+    if (explicitTicks.length > 0) {
+      // Preserve assigned explicit ticks. Loose ticks choose the nearest explicit
+      // tick inside this connected run, never a session on an unrelated UTC day.
+      const ticksBySession = new Map<string, InferenceTick[]>();
+      let nextExplicitIndex = 0;
+      for (const tick of run) {
+        while (
+          nextExplicitIndex < explicitTicks.length &&
+          explicitTicks[nextExplicitIndex].climbedAt < tick.climbedAt
+        ) {
+          nextExplicitIndex++;
+        }
+        const previous = explicitTicks[nextExplicitIndex - 1];
+        const next = explicitTicks[nextExplicitIndex];
+        const nearest = !previous
+          ? next
+          : !next || tick.climbedAt - previous.climbedAt <= next.climbedAt - tick.climbedAt
+            ? previous
+            : next;
+        const sessionId =
+          tick.sessionId !== null && explicitIds.has(tick.sessionId) ? tick.sessionId : nearest.sessionId!;
+        const assignedTicks = ticksBySession.get(sessionId) ?? [];
+        assignedTicks.push(tick);
+        ticksBySession.set(sessionId, assignedTicks);
+      }
+      for (const [sessionId, assignedTicks] of ticksBySession) {
+        resolved.push({
+          sessionId,
+          tickIds: assignedTicks.map((tick) => tick.id),
+          anchorTickId: Math.min(...assignedTicks.map((tick) => tick.id)),
+          firstTickAt: assignedTicks[0].climbedAt,
+          lastTickAt: assignedTicks[assignedTicks.length - 1].climbedAt,
+        });
+      }
       continue;
     }
 
@@ -261,8 +220,7 @@ export function reconcileWindow({ ticks, existingInferred, existingExplicit }: R
   }
 
   const ordered = [...ticks].sort((a, b) => a.climbedAt - b.climbedAt || a.id - b.id);
-  const runs = absorbLoneRuns(drawRuns(ordered));
-  const { resolved, merges } = resolveIdentity(runs, existingInferred, existingExplicit);
+  const { resolved, merges } = resolveIdentity(drawRuns(ordered), existingInferred, existingExplicit);
 
   // Anything that kept no run of its own has been emptied — either absorbed by an
   // explicit session or merged away.

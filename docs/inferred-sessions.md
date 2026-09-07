@@ -11,32 +11,21 @@ happened once.
 
 ## The rule
 
-A session is a run of one climber's ticks with **no gap longer than 4 hours**
-(`SESSION_GAP_MS`), plus two adjustments:
+Automatic grouping joins consecutive ticks from the same climber when their gap is
+**eight hours or less** (`SESSION_GAP_MS`). A gap **over eight hours** is a hard
+boundary, including for lone ticks and loose ticks near an explicit session.
+Calendar dates never override this boundary.
 
-1. **An explicit session wins.** A run on the same day as a session someone actually
-   started is folded into it. Someone who logs two climbs, presses Start, then logs
-   nine more has one session of eleven, not a session of nine beside an orphan pair.
-2. **A lone tick joins the day's real climbing.** A single-tick run on a day that also
-   holds a larger run is almost always someone remembering later that they forgot to
-   log a climb, so it joins that run. A lone tick on a day of its own stays a
-   one-climb session — hiding it is how climbs go missing (#4975).
+Existing explicit assignments remain authoritative, even if someone deliberately
+keeps a session across a longer gap. Within each connected run, unassigned or inferred
+ticks join the nearest explicitly assigned tick's session; ties go to the earlier
+tick. Separate explicit sessions keep their original members.
 
-### Why 4 hours is not a tuning knob
-
-Across the production tick table, inter-tick gaps are sharply bimodal:
-
-| gap | share |
-| --- | --- |
-| ≤ 15 min | 80 % |
-| 15–60 min | 8 % |
-| 1–2 h | 0.7 % |
-| **2–12 h** | **0.4 %** |
-| > 12 h | 11 % |
-
-Only 243 of 60,385 gaps fall in the 2–12 hour valley, so every threshold in that range
-draws nearly the same boundaries. 4 h is what the original implementation used and the
-data says it was a good choice; it is kept so both eras group history identically.
+Eight hours is a product heuristic for separating overnight breaks, not proof that
+someone slept or returned to the wall. It can still join two visits less than eight
+hours apart. Since grouping uses elapsed time, the same evening-to-morning gap has
+the same result in every timezone. PostgreSQL timestamps are parsed consistently as
+UTC; UTC calendar dates are only used to pad database reads for legacy repair.
 
 ## Where they live
 
@@ -73,9 +62,10 @@ algorithm is testable in isolation. Callers load a window, call `reconcileWindow
 apply the result in one transaction.
 
 ```
-expandWindow(ticks, from, to)
-  widen outwards until there is a >4h gap on BOTH sides
-    → the blast radius covers whole runs, never a partial one
+expandReconciliationWindow(ticks, from, to)
+  include whole UTC days, expanding connected runs across midnight
+  stop only at a >8h gap across different UTC days on BOTH sides
+    → include legacy same-day session anchors when splitting old assignments
 
 reconcileWindow({ ticks, existingInferred, existingExplicit })
   → runs              each run and the session it belongs to
@@ -83,6 +73,13 @@ reconcileWindow({ ticks, existingInferred, existingExplicit })
   → merges            {survivorId, loserId} — re-point social rows, THEN delete
   → emptiedSessionIds sessions an explicit session took every tick from
 ```
+
+A read window can hold several sessions; it does not group them together. Whole-day
+padding keeps anchors from the former same-day grouping policy visible when old
+sessions split. The database loader widens
+up to a 192-hour radius; if the result is still clipped, live inference leaves
+assignments unchanged so the tick write can commit. The backfill reports a failure
+and leaves that window untouched. Database `climbed_at` strings are interpreted as UTC on every host.
 
 The window is the important part. Reconciling always decides about complete runs, so a
 tick inserted anywhere — mid-run, before the first, bridging two — produces a correct
@@ -131,6 +128,14 @@ assignment commit or roll back together:
 Still to wire: the Aurora / Kilter / MoonBoard / JSON importers (batched — one call per
 climber per contiguous window, never per tick, since a single import can carry 300k
 rows) and the offline outbox drain.
+
+## Historical backfill
+
+The manual script, production preflight, canary, and recovery procedure are in
+[inferred-sessions-backfill.md](./inferred-sessions-backfill.md). It defaults to a
+read-only inventory; `--simulate` plans grouping and `--apply` commits one complete
+window at a time. The backfill refuses windows that remove existing sessions, and
+reconciliation rejects moving ticks out of their assigned explicit sessions.
 
 ## What went wrong the first time
 
