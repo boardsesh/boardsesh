@@ -1,13 +1,14 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import Alert from '@mui/material/Alert';
-import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
-import BuildPlansContent from './build-plans-content';
+import BuildPlansContent, { BuildPlansHeaderActions } from './build-plans-content';
 import Configurator from './configurator/configurator';
 import { CNC_FLAG_OFF_METADATA, fetchCncCatalog, isCncPacksEnabled, requireCncPacksFlag } from './build-plans-page';
+import { PageFrame } from './ui';
 import styles from './build-plans.module.css';
 
 /**
@@ -43,19 +44,27 @@ export default async function BuildPlansPage() {
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'cnc']}>
-      <Box component="main" className={styles.page}>
+      <PageFrame
+        plate
+        title={t('hero.title')}
+        intro={t('hero.subtitle')}
+        actions={<BuildPlansHeaderActions />}
+        note={t('hero.firstBoard')}
+      >
         <BuildPlansContent catalog={catalog} locale={locale} />
         {catalog && catalog.entries.length > 0 ? (
           <Configurator catalog={catalog} locale={locale} />
         ) : (
-          // The hero above is fully server-rendered and still tells the story;
-          // only the part that needs live prices is missing, so say that rather
-          // than replacing the whole page with an error.
-          <Alert severity="warning" sx={{ mt: 4 }}>
-            {t('errors.CNC_WORKER_UNAVAILABLE')}
-          </Alert>
+          // The header and the sections above are fully server-rendered and
+          // still tell the story; only the part that needs live prices is
+          // missing, so say that rather than replacing the whole page with an
+          // error.
+          <Alert severity="warning">{t('errors.CNC_WORKER_UNAVAILABLE')}</Alert>
         )}
-      </Box>
+        <Typography variant="body2" component="p" className={styles.trademarkNote}>
+          {t('hero.trademarkNote')}
+        </Typography>
+      </PageFrame>
     </I18nProvider>
   );
 }

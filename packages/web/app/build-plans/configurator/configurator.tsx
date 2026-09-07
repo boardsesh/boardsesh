@@ -6,8 +6,6 @@ import { useTranslation } from 'react-i18next';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
 import Checkbox from '@mui/material/Checkbox';
 import CircularProgress from '@mui/material/CircularProgress';
 import Divider from '@mui/material/Divider';
@@ -41,6 +39,7 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { trackCncFunnelEvent } from '@/app/lib/cnc-funnel-analytics';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
 import { themeTokens } from '@/app/theme/theme-config';
+import { SectionCard } from '../ui';
 import styles from '../build-plans.module.css';
 import {
   CNC_CONFIGURATOR_DRAFT_KEY,
@@ -357,18 +356,16 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   const errorKey = checkoutErrorKey ?? layoutErrorKey ?? artworkErrorKey;
 
   return (
-    <Card component="section" className={styles.configurator} id="configure">
-      <CardContent>
+    <SectionCard
+      component="section"
+      className={styles.configurator}
+      id="configure"
+      headingLevel="h2"
+      title={t('configurator.heading')}
+      description={t('configurator.intro')}
+    >
+      <Box>
         <Stack spacing={3}>
-          <Box>
-            <Typography variant="h2" className={styles.sectionHeading}>
-              {t('configurator.heading')}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {t('configurator.intro')}
-            </Typography>
-          </Box>
-
           <BoardAndSizeStep entries={entries} state={state} onSizeChange={handleSizeChange} />
 
           {hasKickerSets(entry) && entry.kickerOptional && (
@@ -613,8 +610,8 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
             )}
           </Box>
         </Stack>
-      </CardContent>
-    </Card>
+      </Box>
+    </SectionCard>
   );
 }
 

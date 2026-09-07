@@ -1,41 +1,210 @@
-/* Colour values are the CSS custom properties defined in index.css, which are
-   generated from theme-config.ts. No hex ever lands in this file. */
+/* Page-level layout for /build-plans.
+ *
+ * The surface's shared vocabulary — frame, cards, headings, figures, statuses —
+ * lives in `ui/build-plans-ui.module.css`. What is left here is the handful of
+ * grids that belong to one page, plus the configurator's own internals.
+ *
+ * Colour values are the CSS custom properties defined in index.css, which are
+ * mirrored from theme-config.ts. No hex ever lands in this file.
+ */
 
-.page {
-  max-width: 900px;
-  margin: 0 auto;
-  width: 100%;
-  padding: 24px 24px 64px;
-  padding-top: calc(var(--global-header-height) + 32px);
+/* ------------------------------------------------------------ landing page */
+
+/* Three steps, side by side once there is room for all three. Never two-and-one:
+   a sequence that wraps mid-way reads as a broken grid, so the min column is
+   wide enough that the third card either joins the row or starts its own. */
+.flowGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
 }
 
-@media (max-width: 576px) {
-  .page {
-    padding-left: 16px;
-    padding-right: 16px;
+.tierGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.tierBlurb {
+  margin: 16px 0 0;
+  color: var(--neutral-500);
+}
+
+.contactRow {
+  margin-top: 16px;
+}
+
+.trademarkNote {
+  max-width: 68ch;
+  color: var(--neutral-500);
+}
+
+/* ---------------------------------------------------------- licence page */
+
+/* Contents rail on the left, the document on the right. The rail is what a
+   twelve-clause contract needs and a marketing page does not, so it appears
+   only here. Below 1000px it collapses to a plain list above the text.
+
+   Clause numbers are part of the catalog copy ("3. Personal licence (A$149)"),
+   not a CSS counter — the numbers appear in the licence text a buyer may quote
+   back at us, so they live in the string that gets translated, and a counter
+   here would print them twice. */
+.licenceLayout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+@media (min-width: 1000px) {
+  .licenceLayout {
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 48px;
+    align-items: start;
+  }
+
+  .licenceToc {
+    position: sticky;
+    top: calc(var(--global-header-height) + 16px);
   }
 }
 
-.hero {
-  margin-bottom: 32px;
-}
-
-.heroTitle {
+.tocHeading {
   margin: 0 0 12px;
+  color: var(--neutral-500);
 }
 
-.heroSubtitle {
-  max-width: 62ch;
+.tocList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.firstBoard {
-  display: inline-block;
-  margin-top: 12px;
-  padding: 4px 10px;
-  border-radius: var(--border-radius-full);
-  background: var(--neutral-100);
-  color: var(--bs-text-brand-muted);
+.tocList li {
+  border-top: 1px solid var(--neutral-200);
 }
+
+.tocList li:last-child {
+  border-bottom: 1px solid var(--neutral-200);
+}
+
+.tocLink {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  text-decoration: none;
+  color: var(--neutral-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.tocLink:hover {
+  color: var(--color-primary);
+}
+
+.documentTitle {
+  margin: 0 0 24px;
+  font-size: var(--font-size-2xl);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  max-width: 24ch;
+}
+
+/* One clause, separated from the last by a rule rather than by a card: twelve
+   cards down a legal page is twelve boxes to read past. */
+.clause {
+  padding-top: 24px;
+  border-top: 1px solid var(--neutral-200);
+  /* Anchored jumps from the contents rail must clear the fixed header. */
+  scroll-margin-top: calc(var(--global-header-height) + 24px);
+}
+
+.clauseList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clauseList > li + li {
+  margin-top: 32px;
+}
+
+.clauseTitle {
+  margin: 0 0 12px;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Legal copy is read, not scanned: a 68ch measure and a looser leading than the
+   product UI. Paragraphs are separated by space, not by an indent. */
+.clauseBody {
+  max-width: 68ch;
+}
+
+.clauseBody p {
+  margin: 0 0 12px;
+  line-height: 1.7;
+}
+
+.clauseBody p:last-child {
+  margin-bottom: 0;
+}
+
+.definition {
+  margin: 0 0 12px;
+  line-height: 1.7;
+}
+
+/* "You may" beside "You may not". Two rules a builder has to compare, so they
+   sit side by side rather than as two bullet lists a screen apart. */
+.ruleColumns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+@media (min-width: 760px) {
+  .ruleColumns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.ruleLabel {
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--neutral-200);
+  color: var(--neutral-500);
+}
+
+.ruleList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ruleList li {
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+.ruleList li:last-child {
+  margin-bottom: 0;
+}
+
+.licenceFooter {
+  margin: 32px 0 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--neutral-200);
+  color: var(--neutral-500);
+}
+
+/* ------------------------------------------------------ configurator (TODO)
+
+   Everything below belongs to the configurator and the orders pages and is
+   restyled in their own change. New work there should reach for `ui/` —
+   `SectionCard`, `StepHeading`, `FieldGrid`, `SplitLayout`, `KeyValueList` —
+   rather than adding to this block. */
 
 .sectionHeading {
   font-size: var(--font-size-xl);
@@ -46,35 +215,8 @@
   margin: 0 0 4px;
 }
 
-.includedList {
-  margin: 8px 0 0;
-  padding-left: 20px;
-}
-
-.includedList li {
-  margin-bottom: 4px;
-}
-
-.tierGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
-}
-
-.tierCard {
-  height: 100%;
-}
-
-.tierPrice {
-  margin: 4px 0 8px;
-}
-
-.contactCard {
-  background: var(--neutral-50);
-}
-
 .configurator {
-  margin-top: 32px;
+  scroll-margin-top: calc(var(--global-header-height) + 24px);
 }
 
 /* One column on a phone, two once there is room: eleven selects in a single
@@ -93,10 +235,6 @@
 
 .summaryRow {
   gap: 16px;
-}
-
-.trademarkNote {
-  margin-top: 32px;
 }
 
 .orderList {
