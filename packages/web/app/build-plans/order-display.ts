@@ -1,3 +1,4 @@
+import { KILTER_HOMEWALL_LAYOUT_ID, KILTER_ORIGINAL_LAYOUT_ID } from '@boardsesh/board-constants';
 import { getBoardDisplayName } from '@boardsesh/climb-actions';
 import type { CncCatalog, CncLicenceTier, CncOrderStatus } from '@boardsesh/shared-schema';
 
@@ -127,12 +128,18 @@ export function finaliseHref(licenceId: string): string {
 
 /** i18n-keep cnc:configurator.board.original
  * i18n-keep cnc:configurator.board.homewall
+ * i18n-keep cnc:configurator.board.unknownLayout
  */
 export function boardLayoutLabel(
   order: { boardName: string; layoutId: number },
-  translate: (key: string) => string,
+  translate: (key: string, options?: Record<string, unknown>) => string,
 ): string {
-  if (order.boardName === 'kilter' && order.layoutId === 1) return translate('configurator.board.original');
-  if (order.boardName === 'kilter' && order.layoutId === 8) return translate('configurator.board.homewall');
-  return getBoardDisplayName(order.boardName);
+  if (order.boardName === 'kilter' && order.layoutId === KILTER_ORIGINAL_LAYOUT_ID)
+    return translate('configurator.board.original');
+  if (order.boardName === 'kilter' && order.layoutId === KILTER_HOMEWALL_LAYOUT_ID)
+    return translate('configurator.board.homewall');
+  return translate('configurator.board.unknownLayout', {
+    board: getBoardDisplayName(order.boardName),
+    layoutId: order.layoutId,
+  });
 }

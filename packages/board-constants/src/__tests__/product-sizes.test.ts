@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  KILTER_ORIGINAL_LAYOUT_ID,
   KILTER_HOMEWALL_LAYOUT_ID,
   KILTER_HOMEWALL_PRODUCT_ID,
   getLayoutName,
@@ -12,7 +13,7 @@ const EMPTY_SCOPE = { narrowerSizeIds: [], shorterSizeIds: [], hasNarrower: fals
 
 describe('getLayoutName', () => {
   it('returns the human-readable name for a known board + layoutId', () => {
-    expect(getLayoutName('kilter', 1)).toBe('Kilter Board Original');
+    expect(getLayoutName('kilter', KILTER_ORIGINAL_LAYOUT_ID)).toBe('Kilter Board Original');
   });
 
   it("returns '' for an unknown layoutId", () => {
@@ -20,8 +21,9 @@ describe('getLayoutName', () => {
   });
 });
 
-describe('Kilter Homewall identifiers', () => {
+describe('Kilter identifiers', () => {
   it('pins the Aurora layout and product ids the filters key off', () => {
+    expect(KILTER_ORIGINAL_LAYOUT_ID).toBe(1);
     expect(KILTER_HOMEWALL_LAYOUT_ID).toBe(8);
     expect(KILTER_HOMEWALL_PRODUCT_ID).toBe(7);
   });

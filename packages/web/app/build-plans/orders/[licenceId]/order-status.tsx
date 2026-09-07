@@ -8,6 +8,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
+import { KILTER_ORIGINAL_LAYOUT_ID } from '@boardsesh/board-constants';
 import type { CncDownloadKind, CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
   CREATE_CNC_DOWNLOAD_GRANT,
@@ -269,7 +270,7 @@ function OwnedOrderStatus({
 
       <SectionCard title={t('order.facts.heading')} headingLevel="h2">
         <KeyValueList items={facts} aria-label={t('order.facts.heading')} />
-        {order.boardName === 'kilter' && order.layoutId === 1 && (
+        {order.boardName === 'kilter' && order.layoutId === KILTER_ORIGINAL_LAYOUT_ID && (
           <Typography variant="body2" component="p" className={styles.timelineNote}>
             {t('configurator.original.drilling')} {t('configurator.original.compatibility')}
           </Typography>

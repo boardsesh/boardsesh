@@ -1,5 +1,9 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import { getSetsForLayoutAndSize, KILTER_HOMEWALL_LAYOUT_ID } from '@boardsesh/board-constants';
+import {
+  getSetsForLayoutAndSize,
+  KILTER_HOMEWALL_LAYOUT_ID,
+  KILTER_ORIGINAL_LAYOUT_ID,
+} from '@boardsesh/board-constants';
 import type { CncOrderOptions } from '@boardsesh/db/schema';
 
 /**
@@ -16,8 +20,6 @@ import type { CncOrderOptions } from '@boardsesh/db/schema';
  * later rebuilds the pack the buyer paid for rather than today's defaults.
  */
 export const CNC_CATALOG_VERSION = '2026-09-07.4';
-
-export const CNC_KILTER_ORIGINAL_LAYOUT_ID = 1;
 
 /**
  * sha256 of `JSON.stringify(CNC_CATALOG)`, pinned so the version above cannot
@@ -178,9 +180,9 @@ export const CNC_CATALOG: readonly CncCatalogEntry[] = [
   })),
   ...KILTER_ORIGINAL_SIZES.map((size) => ({
     boardName: 'kilter' as BoardName,
-    layoutId: CNC_KILTER_ORIGINAL_LAYOUT_ID,
+    layoutId: KILTER_ORIGINAL_LAYOUT_ID,
     ...size,
-    setIds: defaultSetIdsFor(CNC_KILTER_ORIGINAL_LAYOUT_ID, size.sizeId),
+    setIds: defaultSetIdsFor(KILTER_ORIGINAL_LAYOUT_ID, size.sizeId),
     manufacturingOptions: [
       ...KILTER_HOMEWALL_MANUFACTURING_OPTIONS.map((option) =>
         option.key === 'ledHoleDiameterMm' ? { ...option, defaultValue: 12.7 } : option,
@@ -482,6 +484,6 @@ export const CNC_KICKER_SET_IDS: readonly number[] = KICKER_SET_IDS;
 export function describeBoard({ boardName, layoutId, sizeId }: CncBoardTuple): string {
   const entry = findCatalogEntry({ boardName, layoutId, sizeId });
   if (!entry) return `${boardName} ${String(sizeId)}`;
-  const layoutLabel = layoutId === CNC_KILTER_ORIGINAL_LAYOUT_ID ? 'Original' : 'Homewall';
+  const layoutLabel = layoutId === KILTER_ORIGINAL_LAYOUT_ID ? 'Original' : 'Homewall';
   return `Kilter ${layoutLabel} ${entry.label}`;
 }
