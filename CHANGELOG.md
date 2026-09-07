@@ -6,6 +6,12 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-09-07
 
+### New
+
+- Report a junk climb from its menu and the crew votes to hide it ([#5188](https://github.com/boardsesh/boardsesh/pull/5188))
+  New Moderation feed under More: vote on reports and grade changes, or decide them if you are a community leader
+  Hidden climbs say why in their Community section, and setters hear when their climb gets reported
+
 ### Fixed
 
 - The no-matching symbol now shows on every Kilter and Tension climb that calls for it, not ([#5243](https://github.com/boardsesh/boardsesh/pull/5243))

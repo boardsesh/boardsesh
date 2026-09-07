@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-07T03:18:53.180Z",
+  "generatedAt": "2026-09-07T03:29:05.952Z",
   "entries": [
+    {
+      "prNumber": 5188,
+      "category": "new",
+      "title": "Report a junk climb from its menu and the crew votes to hide it",
+      "mergedAt": "2026-09-07T03:18:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5188",
+      "body": "New Moderation feed under More: vote on reports and grade changes, or decide them if you are a community leader\nHidden climbs say why in their Community section, and setters hear when their climb gets reported"
+    },
     {
       "prNumber": 5243,
       "category": "fixed",
