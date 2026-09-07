@@ -189,6 +189,8 @@ export type CncWorkerManufacturing = {
   tnut_hole_diameter_mm: number;
   led_hole_diameter_mm: number;
   stud_clearance_offset_mm: number;
+  /** Cut the seam backing strips. Changes the sheet count, so it is geometry. */
+  support_strips: boolean;
   /** Present only when the configuration includes kicker sets. */
   kicker?: CncWorkerKicker;
 };
@@ -239,6 +241,25 @@ function numericOption(options: CncOrderOptions, key: string): number {
 }
 
 /**
+ * Read one option as a boolean, falling back for an order that predates it.
+ *
+ * `validateCatalogOptions` fills every key the catalogue publishes, so a live
+ * configuration always has one. An order stored under an older
+ * `CNC_CATALOG_VERSION` does not, and a regenerate has to rebuild the pack that
+ * buyer paid for — which for `supportStrips` means the strips they got.
+ */
+function booleanOption(options: CncOrderOptions, key: string, fallback: boolean): boolean {
+  const value = options[key];
+  if (value === undefined) {
+    return fallback;
+  }
+  if (typeof value !== 'boolean') {
+    throw new CncConfigMappingError(`Manufacturing option "${key}" is not a boolean`);
+  }
+  return value;
+}
+
+/**
  * Split a `sheetStock` value like "2440x1220" into millimetres.
  *
  * The catalogue stores sheet stock as one enumerated string because that is
@@ -277,6 +298,8 @@ export type ToLayoutRequestInput = {
  * output options (`dxfFlavour`, `paper`) and the engrave gates ride the
  * generation job instead — they change what is written, never where a hole
  * goes, so including them here would fragment the layout cache for nothing.
+ * `supportStrips` is on this side of that line: it adds or removes five cut
+ * parts and a whole sheet of ply from the layout the configurator prices.
  *
  * The catalogue's canonical `sizeId` is what is sent, not whichever LED-kit
  * alias the caller asked with: the alias walls are physically identical, so
@@ -305,6 +328,10 @@ export function toLayoutRequest({ entry, options, setIds }: ToLayoutRequestInput
       tnut_hole_diameter_mm: numericOption(options, 'tnutHoleDiameterMm'),
       led_hole_diameter_mm: numericOption(options, 'ledHoleDiameterMm'),
       stud_clearance_offset_mm: numericOption(options, 'studClearanceOffsetMm'),
+      // Not an output option: the strips are ply the estimate charges for, so
+      // switching them off is the difference between a nine-sheet and an
+      // eight-sheet cut summary on the reference 10x12.
+      support_strips: booleanOption(options, 'supportStrips', true),
       // Omitted rather than sent as null for a wall with no kicker: the
       // generator's pydantic model treats a present kicker block as "build
       // one", and a 10 ft wall has no kicker sets to build from.

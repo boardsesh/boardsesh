@@ -151,7 +151,17 @@
         "help": "The paper size the check prints come on.",
         "values": {
           "A3": "A3",
-          "TABLOID": "Tabloid"
+          "A4": "A4",
+          "TABLOID": "Tabloid (11 x 17 in)",
+          "LETTER": "Letter (8.5 x 11 in)"
+        }
+      },
+      "supportStrips": {
+        "label": "Seam backing strips",
+        "help": "150 mm plywood strips, slotted for the T-nuts, that sit behind each horizontal seam. Leave on unless your framing already supports the seams.",
+        "values": {
+          "false": "Off",
+          "true": "On"
         }
       },
       "engraveHoldIds": {
@@ -281,7 +291,8 @@
       "sheetsValue_other": "{{count}} sheets",
       "tnuts": "T-nut holes",
       "leds": "LED holes",
-      "skippedLeds": "LEDs skipped at a seam",
+      "seamNotches": "LED holes on a seam",
+      "seamNotchesHelp": "These LED holes sit on a panel seam. Each one is cut as a notch in both panels, and the LED sits in the notch once the panels are joined.",
       "warningsHeading": "Worth knowing",
       "unavailable": "The cut list is not loading right now. Everything you picked is still here."
     },

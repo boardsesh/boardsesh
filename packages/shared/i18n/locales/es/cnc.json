@@ -151,7 +151,17 @@
         "help": "El tamaño de papel en el que salen las impresiones de comprobación.",
         "values": {
           "A3": "A3",
-          "TABLOID": "Tabloid"
+          "A4": "A4",
+          "TABLOID": "Tabloide (11 x 17 in)",
+          "LETTER": "Carta (8,5 x 11 in)"
+        }
+      },
+      "supportStrips": {
+        "label": "Listones de refuerzo de junta",
+        "help": "Listones de contrachapado de 150 mm, ranurados para las tuercas en T, que van detrás de cada junta horizontal. Déjalos activados salvo que tu estructura ya refuerce las juntas.",
+        "values": {
+          "false": "Desactivado",
+          "true": "Activado"
         }
       },
       "engraveHoldIds": {
@@ -281,7 +291,8 @@
       "sheetsValue_other": "{{count}} planchas",
       "tnuts": "Agujeros de tuerca en T",
       "leds": "Agujeros de LED",
-      "skippedLeds": "LEDs omitidos en una junta",
+      "seamNotches": "Agujeros de LED en una junta",
+      "seamNotchesHelp": "Estos agujeros de LED caen sobre una junta entre paneles. Cada uno se corta como una muesca en los dos paneles, y el LED queda alojado en la muesca cuando los paneles se unen.",
       "warningsHeading": "Conviene saberlo",
       "unavailable": "La lista de corte no carga ahora mismo. Todo lo que has elegido sigue aquí."
     },

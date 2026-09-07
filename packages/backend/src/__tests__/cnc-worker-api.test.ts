@@ -62,6 +62,7 @@ const DEFAULT_OPTIONS: CncOrderOptions = {
   gridPitchMm: 100,
   dxfFlavour: 'R12_circles',
   paper: 'A3',
+  supportStrips: true,
   engraveHoldIds: false,
   engraveAngleTicks: false,
 };
@@ -340,6 +341,7 @@ describe('POST /api/cnc/worker/claim', () => {
         tnut_hole_diameter_mm: 12.5,
         led_hole_diameter_mm: 12.5,
         stud_clearance_offset_mm: 60,
+        support_strips: true,
         kicker: { mat_clearance_mm: 50 },
       },
     });

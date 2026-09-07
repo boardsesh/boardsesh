@@ -32,7 +32,7 @@ describe('CNC catalogue', () => {
   });
 
   it('has a version string orders can be pinned to', () => {
-    expect(CNC_CATALOG_VERSION).toBe('2026-09-07.1');
+    expect(CNC_CATALOG_VERSION).toBe('2026-09-07.2');
   });
 
   it('takes its default set ids from board-constants rather than a second hardcoded list', () => {
@@ -110,9 +110,28 @@ describe('validateCatalogOptions', () => {
       gridPitchMm: 100,
       dxfFlavour: 'R12_circles',
       paper: 'A3',
+      supportStrips: true,
       engraveHoldIds: true,
       engraveAngleTicks: true,
     });
+  });
+
+  it('offers the four paper sizes and defaults to the print-shop one', () => {
+    const paper = entry.manufacturingOptions.find((option) => option.key === 'paper');
+    expect(paper?.values).toEqual(['A3', 'A4', 'TABLOID', 'LETTER']);
+    expect(paper?.defaultValue).toBe('A3');
+  });
+
+  it('offers the seam backing strips as a boolean that is on by default', () => {
+    const strips = entry.manufacturingOptions.find((option) => option.key === 'supportStrips');
+    expect(strips).toEqual({ key: 'supportStrips', values: [true, false], defaultValue: true, kickerOnly: false });
+  });
+
+  it('takes the seam backing strips off when the buyer says so', () => {
+    const result = validateCatalogOptions(entry, { supportStrips: false });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.options.supportStrips).toBe(false);
   });
 
   it('keeps chosen values and still returns the complete set', () => {
