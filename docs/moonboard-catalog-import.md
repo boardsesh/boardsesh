@@ -185,6 +185,15 @@ tick count and beta-link count, in three classes:
 Without `--previous`, the middle class collapses into the last one and the report
 says so. Always pass the previous capture directory when you have it.
 
+**Run it after step 2, not before.** Every classification resolves a problem id
+through `board_climb_aliases`, and the older MoonBoard importers never wrote
+id-based aliases — before the catalog import has run over a database, roughly
+half the capture resolves to nothing and those climbs pile into
+`no-catalog-alias` looking like mass deletion. (On production before the
+2026-09-07 import: 141,802 of 279,035 problems resolved, and the report called
+130,694 listed climbs unbacked.) The report prints its alias coverage first and
+refuses to be read as fact below 90%.
+
 ## After the import
 
 - **Board snapshots** rebuild on their own. The 15-minute threshold scan in

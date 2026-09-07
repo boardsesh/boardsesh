@@ -37,6 +37,18 @@ export type CatalogProblemIndex = {
   withdrawnUuids: Set<string>;
   /** Canonical uuids only a problem missing from this capture resolves to. */
   vanishedUuids: Set<string>;
+  /**
+   * How many of this capture's problems have an alias row at all.
+   *
+   * This is the report's own trustworthiness signal. Every classification here
+   * resolves a problem id through `board_climb_aliases`, and the older
+   * MoonBoard importers never wrote id-based aliases — so on a database that
+   * has not had the catalog importer run over it, most problems resolve to
+   * nothing and their climbs pile into `no-catalog-alias` looking like mass
+   * deletion. Low coverage means "run the import first", not "the catalog lost
+   * half its climbs", and the report has to be able to say which.
+   */
+  aliasCoverage: { withAlias: number; total: number };
 };
 
 export type BuildCatalogProblemIndexArgs = {
@@ -70,11 +82,13 @@ export function buildCatalogProblemIndex(args: BuildCatalogProblemIndexArgs): Ca
   const withdrawnUuids = new Set<string>();
   const vanishedUuids = new Set<string>();
   const currentIds = new Set<number>();
+  let withAlias = 0;
 
   for (const problem of problems) {
     currentIds.add(problem.id);
     const canonicalUuid = resolve(problem.id);
     if (!canonicalUuid) continue;
+    withAlias++;
     if (problem.dateDeleted || problem.Active === false) withdrawnUuids.add(canonicalUuid);
     else liveUuids.add(canonicalUuid);
   }
@@ -93,7 +107,7 @@ export function buildCatalogProblemIndex(args: BuildCatalogProblemIndexArgs): Ca
   // An explicit dateDeleted outranks "absent from a paginated capture".
   for (const uuid of withdrawnUuids) vanishedUuids.delete(uuid);
 
-  return { liveUuids, withdrawnUuids, vanishedUuids };
+  return { liveUuids, withdrawnUuids, vanishedUuids, aliasCoverage: { withAlias, total: problems.length } };
 }
 
 /** Classify the listed climbs the catalog no longer backs, in a stable order. */

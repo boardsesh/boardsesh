@@ -41,6 +41,13 @@ const REASON_LABELS: Record<WithdrawnReason, string> = {
 };
 
 const SAMPLE_LIMIT = 20;
+// Three correlated subqueries per uuid, so keep each round trip bounded. The
+// unbacked set can run to six figures on a database carrying legacy imports.
+const USAGE_CHUNK = 5000;
+// Below this, the `no-catalog-alias` bucket is dominated by problems the
+// catalog importer has not aliased yet rather than by anything withdrawn, and
+// the report says so instead of presenting a scary number as fact.
+const MIN_TRUSTWORTHY_ALIAS_COVERAGE = 0.9;
 
 export type ReportCliArgs = { positional: string[]; previous?: string; out?: string };
 
@@ -76,8 +83,16 @@ function readCatalogProblems(catalogDir: string): CatalogProblemRow[] {
   const problems: CatalogProblemRow[] = [];
   for (const file of files) {
     const dump: MoonBoardCatalogFile = JSON.parse(fs.readFileSync(path.join(catalogDir, file), 'utf-8'));
+    // A capture directory can hold non-catalog JSON beside the seven board
+    // files (beta-video-links.json lives next to them). Skipping anything
+    // without a recognised holdsetup is what keeps this pointable at a whole
+    // capture directory rather than a hand-curated subset.
     if (!HOLDSETUP_TO_LAYOUT[dump.holdsetup]) {
-      console.warn(`⚠️  ${file}: unknown holdsetup ${dump.holdsetup}, skipping`);
+      console.warn(
+        dump.holdsetup === undefined
+          ? `   ${file}: not a board catalog file (no holdsetup), skipping`
+          : `⚠️  ${file}: unknown holdsetup ${dump.holdsetup}, skipping`,
+      );
       continue;
     }
     for (const problem of dump.problems) {
@@ -142,6 +157,21 @@ async function reportMoonBoardWithdrawn() {
     const canonicalByAlias = new Map(aliasRows.map((row) => [row.aliasUuid, row.canonicalUuid]));
 
     const index = buildCatalogProblemIndex({ problems, previousProblemIds, canonicalByAlias });
+
+    // Say this BEFORE the counts, so nobody reads a six-figure "not backed"
+    // number as deletion when it is really "the importer has not run here yet".
+    const { withAlias, total } = index.aliasCoverage;
+    const coverage = total === 0 ? 0 : withAlias / total;
+    console.info(`🔗 Alias coverage: ${withAlias}/${total} catalog problems resolve (${(coverage * 100).toFixed(1)}%)`);
+    if (coverage < MIN_TRUSTWORTHY_ALIAS_COVERAGE) {
+      console.warn(
+        `\n⚠️  Alias coverage is low, so this report is NOT yet meaningful.\n` +
+          `   Every classification resolves a problem id through board_climb_aliases, and the older\n` +
+          `   MoonBoard importers never wrote id-based aliases. ${total - withAlias} problems resolve to\n` +
+          `   nothing here, so their climbs land in 'no-catalog-alias' and look deleted when they are not.\n` +
+          `   Run the catalog import first (it writes an alias for every problem it processes), then re-run.\n`,
+      );
+    }
 
     const listedRows = await db
       .select({
@@ -209,25 +239,33 @@ async function attachUsage(
 ): Promise<(WithdrawnClimb & { ticks: number; betaLinks: number; ascents: number })[]> {
   if (climbs.length === 0) return [];
   const uuids = climbs.map((climb) => climb.uuid);
-  const rows = await executeRows<{ uuid: string; ticks: string; beta_links: string; ascents: string }>(
-    db,
-    sql`
-    SELECT u.uuid,
-           (SELECT COUNT(*) FROM boardsesh_ticks t
-             WHERE t.board_type = 'moonboard' AND t.climb_uuid = u.uuid)::text AS ticks,
-           (SELECT COUNT(*) FROM board_beta_links b
-             WHERE b.board_type = 'moonboard' AND b.climb_uuid = u.uuid)::text AS beta_links,
-           (SELECT COALESCE(MAX(s.ascensionist_count), 0) FROM board_climb_stats s
-             WHERE s.board_type = 'moonboard' AND s.climb_uuid = u.uuid)::text AS ascents
-    FROM unnest(${uuids}::text[]) AS u(uuid)
-  `,
-  );
-  const usageByUuid = new Map(
-    rows.map((row) => [
-      row.uuid,
-      { ticks: Number(row.ticks), betaLinks: Number(row.beta_links), ascents: Number(row.ascents) },
-    ]),
-  );
+  const usageByUuid = new Map<string, { ticks: number; betaLinks: number; ascents: number }>();
+
+  for (let i = 0; i < uuids.length; i += USAGE_CHUNK) {
+    const rows = await executeRows<{ uuid: string; ticks: string; beta_links: string; ascents: string }>(
+      db,
+      // sql.param, NOT a bare `${uuids}` interpolation: drizzle expands an array
+      // in a template into one SQL chunk per element, so a few hundred thousand
+      // uuids blow the stack in mergeQueries before a query is ever sent.
+      sql`
+        SELECT u.uuid,
+               (SELECT COUNT(*) FROM boardsesh_ticks t
+                 WHERE t.board_type = 'moonboard' AND t.climb_uuid = u.uuid)::text AS ticks,
+               (SELECT COUNT(*) FROM board_beta_links b
+                 WHERE b.board_type = 'moonboard' AND b.climb_uuid = u.uuid)::text AS beta_links,
+               (SELECT COALESCE(MAX(s.ascensionist_count), 0) FROM board_climb_stats s
+                 WHERE s.board_type = 'moonboard' AND s.climb_uuid = u.uuid)::text AS ascents
+        FROM unnest(${sql.param(uuids.slice(i, i + USAGE_CHUNK))}::text[]) AS u(uuid)
+      `,
+    );
+    for (const row of rows) {
+      usageByUuid.set(row.uuid, {
+        ticks: Number(row.ticks),
+        betaLinks: Number(row.beta_links),
+        ascents: Number(row.ascents),
+      });
+    }
+  }
   return (
     climbs
       .map((climb) => ({

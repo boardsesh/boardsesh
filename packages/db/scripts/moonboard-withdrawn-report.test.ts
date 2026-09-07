@@ -141,3 +141,28 @@ void test('Active=false counts as withdrawn, matching the importer', () => {
   const [reported] = classifyWithdrawnClimbs([climb(DELETED_UUID)], index);
   assert.equal(reported.reason, 'withdrawn-upstream');
 });
+
+void test('alias coverage reports how many problems could be resolved at all', () => {
+  // The report's trustworthiness signal: on a database the catalog importer
+  // has not run against, most problems resolve to nothing and every one of
+  // their climbs looks unbacked. Coverage is what tells those two states apart.
+  const index = buildCatalogProblemIndex({
+    problems: [
+      { id: LIVE_ID, dateDeleted: null, Active: true },
+      { id: DELETED_ID, dateDeleted: '2026-03-01T10:00:00', Active: true },
+      { id: NEVER_IMPORTED_ID, dateDeleted: null, Active: true },
+    ],
+    canonicalByAlias: selfAliases(LIVE_UUID, DELETED_UUID),
+  });
+
+  assert.deepEqual(index.aliasCoverage, { withAlias: 2, total: 3 });
+});
+
+void test('alias coverage is full when every problem resolves', () => {
+  const index = buildCatalogProblemIndex({
+    problems: [{ id: LIVE_ID, dateDeleted: null, Active: true }],
+    canonicalByAlias: selfAliases(LIVE_UUID),
+  });
+
+  assert.deepEqual(index.aliasCoverage, { withAlias: 1, total: 1 });
+});
