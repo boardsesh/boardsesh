@@ -4,7 +4,7 @@ import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { and, eq, or } from 'drizzle-orm';
 import { buildFeedItemMetadata } from './feed-metadata';
-import { isNoMatchClimb, usesAuroraNoMatchDescription } from '../graphql/resolvers/shared/helpers';
+import { resolveClimbNoMatch } from '../graphql/resolvers/shared/helpers';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 
 export { buildFeedItemMetadata } from './feed-metadata';
@@ -134,6 +134,7 @@ async function buildNewClimbMetadata(event: SocialEvent): Promise<Record<string,
       angle: resolvedClimbAngleSql,
       frames: dbSchema.boardClimbs.frames,
       description: dbSchema.boardClimbs.description,
+      characteristics: dbSchema.boardClimbs.characteristics,
       isDraft: dbSchema.boardClimbs.isDraft,
       isListed: dbSchema.boardClimbs.isListed,
       difficultyName: dbSchema.boardDifficultyGrades.boulderName,
@@ -168,8 +169,7 @@ async function buildNewClimbMetadata(event: SocialEvent): Promise<Record<string,
     angle: metadata.angle ?? climb.angle ?? null,
     frames: metadata.frames || climb.frames || null,
     difficultyName: metadata.difficultyName || climb.difficultyName || null,
-    isNoMatch:
-      metadata.isNoMatch || (usesAuroraNoMatchDescription(climb.boardType) && isNoMatchClimb(climb.description)),
+    isNoMatch: metadata.isNoMatch || resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
   };
 }
 
@@ -196,6 +196,7 @@ async function getCommentContextMetadata(
         frames: dbSchema.boardClimbs.frames,
         setterUsername: dbSchema.boardClimbs.setterUsername,
         climbDescription: dbSchema.boardClimbs.description,
+        climbCharacteristics: dbSchema.boardClimbs.characteristics,
         climbIsDraft: dbSchema.boardClimbs.isDraft,
         climbIsListed: dbSchema.boardClimbs.isListed,
         difficultyName: dbSchema.boardDifficultyGrades.boulderName,
@@ -239,7 +240,11 @@ async function getCommentContextMetadata(
       frames: tickContext.frames,
       setterUsername: tickContext.setterUsername,
       difficultyName: tickContext.difficultyName,
-      isNoMatch: usesAuroraNoMatchDescription(tickContext.boardType) && isNoMatchClimb(tickContext.climbDescription),
+      isNoMatch: resolveClimbNoMatch(
+        tickContext.boardType,
+        tickContext.climbCharacteristics,
+        tickContext.climbDescription,
+      ),
     };
   }
 
@@ -254,6 +259,7 @@ async function getCommentContextMetadata(
         setterUsername: dbSchema.boardClimbs.setterUsername,
         angle: dbSchema.boardClimbs.angle,
         description: dbSchema.boardClimbs.description,
+        characteristics: dbSchema.boardClimbs.characteristics,
         isDraft: dbSchema.boardClimbs.isDraft,
         isListed: dbSchema.boardClimbs.isListed,
       })
@@ -272,7 +278,7 @@ async function getCommentContextMetadata(
       frames: climbContext.frames,
       setterUsername: climbContext.setterUsername,
       angle: climbContext.angle,
-      isNoMatch: usesAuroraNoMatchDescription(climbContext.boardType) && isNoMatchClimb(climbContext.description),
+      isNoMatch: resolveClimbNoMatch(climbContext.boardType, climbContext.characteristics, climbContext.description),
     };
   }
 
@@ -325,6 +331,7 @@ async function getProposalContextMetadata(proposalUuid: string): Promise<Record<
       frames: dbSchema.boardClimbs.frames,
       setterUsername: dbSchema.boardClimbs.setterUsername,
       description: dbSchema.boardClimbs.description,
+      characteristics: dbSchema.boardClimbs.characteristics,
     })
     .from(dbSchema.climbProposals)
     .leftJoin(
@@ -348,7 +355,11 @@ async function getProposalContextMetadata(proposalUuid: string): Promise<Record<
     layoutId: proposalContext.layoutId,
     frames: proposalContext.frames,
     setterUsername: proposalContext.setterUsername,
-    isNoMatch: usesAuroraNoMatchDescription(proposalContext.boardType) && isNoMatchClimb(proposalContext.description),
+    isNoMatch: resolveClimbNoMatch(
+      proposalContext.boardType,
+      proposalContext.characteristics,
+      proposalContext.description,
+    ),
   };
 }
 

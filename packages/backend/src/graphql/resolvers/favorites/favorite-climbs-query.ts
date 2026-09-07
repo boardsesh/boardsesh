@@ -119,6 +119,10 @@ export const favoriteClimbsQuery = {
       framesPace: result.frames_pace ?? null,
       compatibleSizeIds: result.compatible_size_ids ?? null,
       characteristics: result.characteristics ?? null,
+      // Every row is scoped to this board by the join; carrying it keeps
+      // is_no_match from applying Aurora's description convention to a
+      // MoonBoard climb whose prose just happens to mention matching.
+      boardType: boardName,
       angle: input.angle,
       ascensionist_count: Number(result.ascensionist_count || 0),
       difficulty: getGradeLabel(result.difficulty_id),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getDisplayDescription, isNoMatchClimb, withNoMatch } from '../utils';
+import { getDisplayDescription, isNoMatchClimb, resolveClimbNoMatch, withNoMatch } from '../utils';
 
 describe('isNoMatchClimb', () => {
   it('detects a leading "no match" marker, case-insensitively', () => {
@@ -62,6 +62,42 @@ describe('isNoMatchClimb', () => {
     ]) {
       expect(isNoMatchClimb(description), description).toBe(true);
     }
+  });
+});
+
+describe('resolveClimbNoMatch', () => {
+  // The #5127 review gap: the editor stores `[]` as an explicit "matching IS
+  // allowed" while deliberately keeping the setter's prose, so a payload that
+  // reads the description alone contradicts the climb view.
+  it('lets a non-null characteristics array override the description', () => {
+    expect(resolveClimbNoMatch('kilter', [], 'Kick board is off. No matching.')).toBe(false);
+    expect(resolveClimbNoMatch('kilter', ['campus'], 'No match\nbeta')).toBe(false);
+    expect(resolveClimbNoMatch('kilter', ['no_match'], 'Crimpy start')).toBe(true);
+    expect(resolveClimbNoMatch('kilter', ['no_kickboard', 'no_match'], null)).toBe(true);
+  });
+
+  it('falls back to the description only when characteristics is null', () => {
+    expect(resolveClimbNoMatch('kilter', null, 'Kick board is off. No matching.')).toBe(true);
+    expect(resolveClimbNoMatch('kilter', undefined, 'No match\nbeta')).toBe(true);
+    expect(resolveClimbNoMatch('kilter', null, 'Crimpy start')).toBe(false);
+    expect(resolveClimbNoMatch('tension', null, null)).toBe(false);
+  });
+
+  // MoonBoard and Woods never had Aurora's description convention: there the
+  // same words are the setter's own prose.
+  it('never reads the description on the code-driven boards', () => {
+    expect(resolveClimbNoMatch('moonboard', null, 'No match\nbeta')).toBe(false);
+    expect(resolveClimbNoMatch('woods', null, 'Kick board is off. No matching.')).toBe(false);
+    // The array still wins on those boards.
+    expect(resolveClimbNoMatch('moonboard', ['no_match'], 'Crimpy start')).toBe(true);
+  });
+
+  // boardType is only populated in multi-board contexts, so an absent one keeps
+  // the pre-capability verdict rather than silently dropping the rule.
+  it('fails open when boardType is missing', () => {
+    expect(resolveClimbNoMatch(null, null, 'No match\nbeta')).toBe(true);
+    expect(resolveClimbNoMatch(undefined, null, 'Kick board is off. No matching.')).toBe(true);
+    expect(resolveClimbNoMatch(null, [], 'No match\nbeta')).toBe(false);
   });
 });
 

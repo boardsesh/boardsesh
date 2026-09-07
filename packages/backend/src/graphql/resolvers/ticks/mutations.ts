@@ -7,13 +7,7 @@ import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sessions } from '../../../db/schema';
-import {
-  applyRateLimit,
-  requireAuthenticated,
-  validateInput,
-  isNoMatchClimb,
-  usesAuroraNoMatchDescription,
-} from '../shared/helpers';
+import { applyRateLimit, requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { getConsensusDifficultyName } from '../shared/sql-expressions';
 import {
   SaveTickInputSchema,
@@ -1581,6 +1575,7 @@ async function publishAscentEvent(
         .select({
           name: dbSchema.boardClimbs.name,
           description: dbSchema.boardClimbs.description,
+          characteristics: dbSchema.boardClimbs.characteristics,
           setterUsername: dbSchema.boardClimbs.setterUsername,
           layoutId: dbSchema.boardClimbs.layoutId,
           frames: dbSchema.boardClimbs.frames,
@@ -1650,7 +1645,7 @@ async function publishAscentEvent(
           angle: String(tick.angle),
           isMirror: String(tick.isMirror ?? false),
           isBenchmark: String(tick.isBenchmark ?? false),
-          isNoMatch: String(usesAuroraNoMatchDescription(tick.boardType) && isNoMatchClimb(climbData?.description)),
+          isNoMatch: String(resolveClimbNoMatch(tick.boardType, climbData?.characteristics, climbData?.description)),
           quality: String(tick.quality ?? ''),
           attemptCount: String(tick.attemptCount),
           comment: tick.comment || '',
