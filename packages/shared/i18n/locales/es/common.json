@@ -37,7 +37,7 @@
     "statistics": "Estadísticas",
     "sessions": "Sesiones",
     "createdClimbs": "Bloques creados",
-    "auroraMigration": "Migración de Aurora",
+    "auroraMigration": "Trae tu historial",
     "startClimbing": "Empieza a escalar",
     "signIn": "Iniciar sesión",
     "nav": {
@@ -867,7 +867,7 @@
       "help": "Ayuda",
       "docs": "Documentación",
       "playlists": "Listas",
-      "auroraMigration": "Migración desde Aurora",
+      "auroraMigration": "Trae tu historial",
       "legal": "Aviso legal",
       "privacy": "Privacidad",
       "gymsKilter": "Rocódromos con un plafón Kilter",

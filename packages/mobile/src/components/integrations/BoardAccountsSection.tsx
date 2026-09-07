@@ -15,6 +15,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   AURORA_BOARDS,
@@ -36,7 +37,7 @@ import { useToast } from '../../providers/toast-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
+import { iosDarkColors } from '../../theme/ios-colors';
 import {
   BoardAccountError,
   deleteAuroraCredential,
@@ -101,8 +102,13 @@ const AURORA_UNSYNCED_QUERY_KEY = ['auroraCredentials', 'unsynced'] as const;
 // MoonBoard isn't an Aurora board, so it has no credential/sync flow.
 const MOONBOARD_SUPPORT_EMAIL = 'moonboardsupport@moonclimbing.com';
 
+// Brand names, not a capitalised slug: `charAt(0).toUpperCase()` renders `soill`
+// as "Soill", which shipped a mangled trademark on the So iLL card and into every
+// `{{boardName}}` interpolation on this screen. `boardTypeLabel` is the canonical
+// map (`@boardsesh/board-constants`), which its own header comment asks call sites
+// to migrate to as they're touched.
 function boardDisplayName(boardType: AuroraBoardName): string {
-  return boardType.charAt(0).toUpperCase() + boardType.slice(1);
+  return boardTypeLabel(boardType);
 }
 
 function getCredential(credentials: AuroraCredentialStatus[] | undefined, boardType: AuroraBoardName) {
@@ -490,9 +496,16 @@ export function BoardAccountsSection() {
     })();
   }, [importBoard, importData, queryClient, showToast, t]);
 
-  const inputBackground = colorScheme === 'dark' ? iosSystemColors.white : '#FFFFFF';
-  const inputBorder = colorScheme === 'dark' ? 'rgba(60, 60, 67, 0.36)' : 'rgba(60, 60, 67, 0.18)';
-  const inputStyle = [styles.input, { backgroundColor: inputBackground, borderColor: inputBorder, color: '#000000' }];
+  // Both branches used to resolve to white with hardcoded black text, so the link
+  // dialog punched two glaring white fields into an otherwise dark screen. The
+  // field sits on the modal card (`secondaryBackground`), so it takes the next
+  // surface up and the theme's own label colour in both schemes.
+  const inputBackground = systemColors.tertiaryBackground;
+  const inputBorder = colorScheme === 'dark' ? iosDarkColors.separator : 'rgba(60, 60, 67, 0.18)';
+  const inputStyle = [
+    styles.input,
+    { backgroundColor: inputBackground, borderColor: inputBorder, color: systemColors.label },
+  ];
 
   const credentials = credentialsQuery.data?.credentials;
   const hasKilterCredential = getCredential(credentials ?? [], 'kilter') !== null;
@@ -599,7 +612,7 @@ export function BoardAccountsSection() {
               value={username}
               onChangeText={setUsername}
               placeholder={t('aurora.linkDialog.usernamePlaceholder')}
-              placeholderTextColor="rgba(60, 60, 67, 0.6)"
+              placeholderTextColor={systemColors.tertiaryLabel}
               autoCapitalize="none"
               autoCorrect={false}
               style={inputStyle}
@@ -608,7 +621,7 @@ export function BoardAccountsSection() {
               value={password}
               onChangeText={setPassword}
               placeholder={t('aurora.linkDialog.passwordPlaceholder')}
-              placeholderTextColor="rgba(60, 60, 67, 0.6)"
+              placeholderTextColor={systemColors.tertiaryLabel}
               autoCapitalize="none"
               autoCorrect={false}
               secureTextEntry

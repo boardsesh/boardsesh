@@ -149,7 +149,7 @@
       "kilterNewCopy": "Sign in with your Kilter username and password to pull your sends, attempts, ratings and circuits into Boardsesh.",
       "kilterSignIn": "Sign in to Kilter",
       "reconnect": "Reconnect",
-      "notConnected": "Not connected. Link your {{boardName}} account to import your Aurora data, or import from a JSON export file.",
+      "notConnected": "Not connected. Link your {{boardName}} account to bring your sends across, or import from a JSON export file.",
       "link": "Link",
       "import": "Import",
       "requestData": "Request your data",
@@ -177,7 +177,7 @@
     },
     "linkDialog": {
       "title": "Link {{boardName}} Account",
-      "description": "Enter your {{boardName}} Board username and password to import your Aurora data. Your credentials are encrypted and securely stored. Data syncs every 12 hours.",
+      "description": "Sign in the way you'd sign in to {{boardName}} itself — your {{boardName}} username, not your email. Your credentials are encrypted before they're stored.",
       "usernameLabel": "Username",
       "usernamePlaceholder": "Enter your username",
       "passwordLabel": "Password",
@@ -185,12 +185,12 @@
       "submit": "Link Account",
       "submitting": "Linking...",
       "linkError": "Failed to link account",
-      "linkSuccess": "{{boardName}} account linked. Your data will show up within 12 hours.",
+      "linkSuccess": "{{boardName}} linked. Your sends are on their way — most land within a few minutes.",
       "accountAlreadyLinked": "Another Boardsesh member already has this account linked. If it's yours, unlink it from their account first, then try again."
     },
     "kilterLinkDialog": {
       "title": "Sign in to Kilter",
-      "description": "Enter your Kilter username and password. Your password is exchanged for a secure token and never stored. Your sends sync within a few hours.",
+      "description": "Enter your Kilter username and password. Your password is exchanged for a secure token and never stored. Your sends start arriving within minutes.",
       "passwordHelp": "Works with your existing Kilter login. Two-factor or social-login-only accounts can't sign in this way — use Import instead."
     },
     "unlinkError": "Failed to unlink account",
@@ -314,7 +314,7 @@
       "connected": "Connected",
       "notConnected": "Not connected",
       "kilterNotAllowed": "Kilter sync is not enabled for this account yet.",
-      "linkSuccess": "{{boardName}} linked",
+      "linkSuccess": "{{boardName}} linked — your sends are on their way.",
       "unlinkSuccess": "{{boardName}} unlinked",
       "unlinkPartial": "{{boardName}} was removed here, but the provider session may still be live.",
       "invalidCredentials": "That username or password didn't work.",

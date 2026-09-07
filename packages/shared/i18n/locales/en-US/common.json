@@ -605,7 +605,7 @@
     "statistics": "Statistics",
     "sessions": "Sessions",
     "createdClimbs": "Created Climbs",
-    "auroraMigration": "Aurora Migration",
+    "auroraMigration": "Bring your logbook",
     "startClimbing": "Start climbing",
     "signIn": "Sign in",
     "nav": {
@@ -867,7 +867,7 @@
       "help": "Help",
       "docs": "Developer docs",
       "playlists": "Playlists",
-      "auroraMigration": "Aurora migration",
+      "auroraMigration": "Bring your logbook",
       "legal": "Legal",
       "privacy": "Privacy",
       "gymsKilter": "Gyms with a Kilter board",
