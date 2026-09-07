@@ -140,6 +140,30 @@ export type CncConfiguratorState = {
   licenseeEmail: string;
   customerSiteName: string;
   licenceAccepted: boolean;
+  /**
+   * The free preview this configuration has already produced, if any.
+   *
+   * Three fields rather than one order object: the order itself is server
+   * state — status, sheets, timestamps — and it is fetched and polled, never
+   * stored here. What the configurator has to remember across a reload is which
+   * order to ask about (`previewLicenceId`), which one to finalise
+   * (`previewOrderId`), and what was on screen when it was made
+   * (`previewConfigKey`), so a restored draft comes back to its own gallery
+   * rather than to an empty preview step.
+   */
+  previewOrderId: string | null;
+  previewLicenceId: string | null;
+  /**
+   * `configKey` of the wall that was previewed.
+   *
+   * The local half of the server's `configHash`: comparing it against today's
+   * key is what turns "Get a free preview" into "Update preview" the moment
+   * anything changes. Deliberately not the server's sha256 — recomputing that
+   * in the browser would mean keeping a second copy of the backend's
+   * canonicalisation in step with it forever, and the only question being asked
+   * is "is what is on screen still what was previewed".
+   */
+  previewConfigKey: string | null;
 };
 
 export type CncConfiguratorAction =
@@ -154,6 +178,7 @@ export type CncConfiguratorAction =
   | { type: 'setLicenseeEmail'; value: string }
   | { type: 'setCustomerSiteName'; value: string }
   | { type: 'setLicenceAccepted'; accepted: boolean }
+  | { type: 'previewCreated'; orderId: string; licenceId: string; configKey: string }
   | { type: 'restoreDraft'; state: CncConfiguratorState };
 
 /** Default values for every option a catalogue entry publishes, as strings. */
@@ -184,6 +209,9 @@ export function initialConfiguratorState(entry: CncCatalogEntry): CncConfigurato
     licenseeEmail: '',
     customerSiteName: '',
     licenceAccepted: false,
+    previewOrderId: null,
+    previewLicenceId: null,
+    previewConfigKey: null,
   };
 }
 
@@ -250,6 +278,16 @@ export function configuratorReducer(state: CncConfiguratorState, action: CncConf
     case 'setLicenceAccepted':
       // Acceptance is never restored, only given: see `fromDraft`.
       return { ...state, licenceAccepted: action.accepted };
+    case 'previewCreated':
+      // The previous preview is not cleared first, it is replaced. A preview is
+      // an immutable snapshot of one configuration, so the order the buyer is
+      // looking at is always the last one they asked for.
+      return {
+        ...state,
+        previewOrderId: action.orderId,
+        previewLicenceId: action.licenceId,
+        previewConfigKey: action.configKey,
+      };
     case 'restoreDraft':
       return action.state;
   }
@@ -354,6 +392,33 @@ export function toBoardConfigInput(state: CncConfiguratorState, entry: CncCatalo
     // something" to every reader of the input.
     ...(artworkInputs.length > 0 ? { artwork: artworkInputs } : {}),
   };
+}
+
+/**
+ * One string that changes whenever the wall does.
+ *
+ * The local stand-in for the server's `configHash`: same input, same string, and
+ * a different wall is a different string. It is only ever compared with another
+ * key from this same function — never with the server's hash — so the exact
+ * serialisation does not matter, only that it is stable for one configuration.
+ *
+ * `JSON.stringify` over the config input is enough because that input is built
+ * key by key from the catalogue's own option order, so two renders of one wall
+ * produce byte-identical strings.
+ */
+export function configKey(config: CncBoardConfigInput): string {
+  return JSON.stringify(config);
+}
+
+/**
+ * Whether the wall on screen has moved on from the one that was previewed.
+ *
+ * False when there is no preview at all: nothing to be stale against, and the
+ * button that reads this says "Get a free preview" in that case anyway.
+ */
+export function isPreviewStale(state: CncConfiguratorState, currentConfigKey: string): boolean {
+  if (state.previewConfigKey === null) return false;
+  return state.previewConfigKey !== currentConfigKey;
 }
 
 /**
@@ -483,11 +548,18 @@ export function createArtworkId(): string {
   return `artwork-${String(artworkIdCounter)}`;
 }
 
-/** Why Buy is disabled, in the order the fields appear. Empty means buyable. */
-export type CncCheckoutBlocker = 'licenseeName' | 'licenseeEmail' | 'customerSiteName' | 'licenceAccepted';
+/**
+ * Why Finalise is disabled, in the order the fields appear. Empty means buyable.
+ *
+ * Only the licence questions. Whether a preview exists for what is on screen is
+ * a separate gate (`isPreviewStale` plus the order's own status), because that
+ * one is not something the buyer fills in — it is something the generator has
+ * to have finished.
+ */
+export type CncFinaliseBlocker = 'licenseeName' | 'licenseeEmail' | 'customerSiteName' | 'licenceAccepted';
 
-export function checkoutBlockers(state: CncConfiguratorState): CncCheckoutBlocker[] {
-  const blockers: CncCheckoutBlocker[] = [];
+export function finaliseBlockers(state: CncConfiguratorState): CncFinaliseBlocker[] {
+  const blockers: CncFinaliseBlocker[] = [];
   if (state.licenseeName.trim().length === 0) blockers.push('licenseeName');
   // Deliberately the loosest possible check — a local part, an @, a dot in the
   // domain. The address is confirmed by the pack landing in it, and a stricter
@@ -508,6 +580,11 @@ export function checkoutBlockers(state: CncConfiguratorState): CncCheckoutBlocke
  * restoring it would let a browser that once ticked the box arrive at checkout
  * pre-accepted without anyone having read anything. The email is kept: it is
  * the buyer's own, typed by them, in their own browser.
+ *
+ * The preview pointers ARE kept, and they are what makes a reload survivable: a
+ * licence id and an order id name a row the backend still owns and still checks
+ * the ownership of, so restoring them can only ever bring a buyer back to their
+ * own preview.
  */
 export type CncConfiguratorDraft = Omit<CncConfiguratorState, 'licenceAccepted'>;
 
@@ -629,6 +706,15 @@ export function fromDraft(raw: unknown, entries: readonly CncCatalogEntry[]): Cn
     options[option.key] = stored !== undefined && option.values.includes(stored) ? stored : option.defaultValue;
   }
 
+  // All three or none. A licence id with no config key behind it would restore
+  // a gallery the buyer cannot tell is stale, and an order id with no licence id
+  // names something that cannot be polled — so a half-written pointer is
+  // dropped rather than half-trusted.
+  const previewOrderId = readDraftString(draft.previewOrderId);
+  const previewLicenceId = readDraftString(draft.previewLicenceId);
+  const previewConfigKey = readDraftString(draft.previewConfigKey);
+  const hasPreviewPointer = previewOrderId !== null && previewLicenceId !== null && previewConfigKey !== null;
+
   return {
     boardName: entry.boardName,
     layoutId: entry.layoutId,
@@ -641,7 +727,15 @@ export function fromDraft(raw: unknown, entries: readonly CncCatalogEntry[]): Cn
     licenseeEmail: draft.licenseeEmail,
     customerSiteName: draft.tier === 'commercial_single' ? draft.customerSiteName : '',
     licenceAccepted: false,
+    previewOrderId: hasPreviewPointer ? previewOrderId : null,
+    previewLicenceId: hasPreviewPointer ? previewLicenceId : null,
+    previewConfigKey: hasPreviewPointer ? previewConfigKey : null,
   };
+}
+
+/** A stored non-empty string, or null. Drafts predating the preview flow have none of these. */
+function readDraftString(raw: unknown): string | null {
+  return typeof raw === 'string' && raw.length > 0 ? raw : null;
 }
 
 /** The price the chosen tier is on sale for, or null when the entry has no such tier. */
