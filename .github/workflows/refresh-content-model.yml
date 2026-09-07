@@ -19,6 +19,9 @@ on:
         required: false
         default: '30'
 
+permissions:
+  contents: read
+
 concurrency:
   group: refresh-content-model
   cancel-in-progress: false
@@ -50,7 +53,7 @@ jobs:
       - name: Install Python deps (offline training only)
         run: |
           python -m pip install --quiet -r ml/climb2vec/requirements.txt
-          python -m pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --quiet torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
 
       - name: Extract training + score matrices
         env:
@@ -64,15 +67,25 @@ jobs:
         run: |
           python train_export.py --train data/${BOARD}-train.jsonl --score data/${BOARD}-score.jsonl --out data/${BOARD}-content.jsonl --epochs "$EPOCHS"
 
+      - name: Preserve scored model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: climb2vec-${{ env.BOARD }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ml/climb2vec/data/${{ env.BOARD }}-content.jsonl
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Load into board_climb_embeddings
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          node --import tsx packages/db/scripts/load-content-model.ts --board="$BOARD" --in=ml/climb2vec/data/${BOARD}-content.jsonl
+          # load-content-model.ts is the CLI; *-records.ts is its parser helper.
+          node --import tsx packages/db/scripts/load-content-model.ts --board="$BOARD" --model=climb2vec-v1 --in=ml/climb2vec/data/${BOARD}-content.jsonl
 
       - name: Build + load similarity neighbours
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           (cd ml/climb2vec && python similarity_export.py --content data/${BOARD}-content.jsonl --out data/${BOARD}-similar.jsonl)
-          node --import tsx packages/db/scripts/load-similarity.ts --board="$BOARD" --in=ml/climb2vec/data/${BOARD}-similar.jsonl
+          # load-similarity.ts is the CLI; *-records.ts is its parser helper.
+          node --import tsx packages/db/scripts/load-similarity.ts --board="$BOARD" --model=climb2vec-v1 --in=ml/climb2vec/data/${BOARD}-similar.jsonl
