@@ -484,6 +484,7 @@ export const CNC_KICKER_SET_IDS: readonly number[] = KICKER_SET_IDS;
 export function describeBoard({ boardName, layoutId, sizeId }: CncBoardTuple): string {
   const entry = findCatalogEntry({ boardName, layoutId, sizeId });
   if (!entry) return `${boardName} ${String(sizeId)}`;
-  const layoutLabel = layoutId === KILTER_ORIGINAL_LAYOUT_ID ? 'Original' : 'Homewall';
-  return `Kilter ${layoutLabel} ${entry.label}`;
+  if (boardName === 'kilter' && layoutId === KILTER_ORIGINAL_LAYOUT_ID) return `Kilter Original ${entry.label}`;
+  if (boardName === 'kilter' && layoutId === KILTER_HOMEWALL_LAYOUT_ID) return `Kilter Homewall ${entry.label}`;
+  return `${boardName} ${entry.label}`;
 }

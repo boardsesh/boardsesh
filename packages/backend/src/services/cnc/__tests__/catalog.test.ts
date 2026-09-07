@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { describe, it, expect } from 'vite-plus/test';
+import { describe, it, expect, vi } from 'vite-plus/test';
 import { getSetsForLayoutAndSize } from '@boardsesh/board-constants';
 import {
   CNC_CATALOG,
@@ -318,4 +318,17 @@ describe('Kilter Original catalogue', () => {
     expect(describeBoard({ boardName: 'kilter', layoutId: 8, sizeId: 23 })).toBe('Kilter Homewall 8x12');
     expect(describeBoard({ boardName: 'kilter', layoutId: 1, sizeId: 999 })).toBe('kilter 999');
   });
+});
+
+it.each([
+  ['tension', 1],
+  ['kilter', 99],
+] as const)('uses a generic label for a future %s layout %i catalogue entry', (boardName, layoutId) => {
+  const futureEntry = { ...entryFor(23), boardName, layoutId };
+  const catalogLookup = vi.spyOn(CNC_CATALOG, 'find').mockReturnValue(futureEntry);
+  try {
+    expect(describeBoard({ boardName, layoutId, sizeId: futureEntry.sizeId })).toBe(`${boardName} 8x12`);
+  } finally {
+    catalogLookup.mockRestore();
+  }
 });
