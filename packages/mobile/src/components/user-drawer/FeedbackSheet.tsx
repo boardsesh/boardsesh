@@ -14,6 +14,7 @@ import { useAuth } from '../../providers/auth-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { reportHandledError } from '../../lib/error-reporting';
 import { useSubmitMobileAppFeedback } from '../../lib/feedback/use-submit-app-feedback';
 import { clearScreenshotUploadCache, uploadFeedbackScreenshots } from '../../lib/feedback/screenshot-upload';
 import { runBleAdvertisementRecon } from '../../lib/ble/advertisement-recon';
@@ -88,7 +89,9 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
       setIsUploading(true);
       try {
         screenshotKeys = await uploadFeedbackScreenshots(screenshotUris);
-      } catch {
+      } catch (error) {
+        // An upload failure the reporter can see must also be one we can see.
+        reportHandledError(error, { tags: { source: 'feedback', op: 'upload-screenshots' } });
         showToast(tCommon('screenshots.uploadFailed'), 'error');
         return;
       } finally {
@@ -124,7 +127,8 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
       // The report is filed, so the uploaded objects now belong to it. The next
       // one must upload its own rather than reuse these.
       clearScreenshotUploadCache();
-    } catch {
+    } catch (error) {
+      reportHandledError(error, { tags: { source: 'feedback', op: 'submit-report' } });
       showToast(t('feedbackDialog.errorRating'), 'error');
     }
   };
