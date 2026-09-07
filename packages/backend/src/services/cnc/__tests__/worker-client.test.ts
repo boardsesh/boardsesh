@@ -113,7 +113,7 @@ describe('toLayoutRequest', () => {
     expect(request).toEqual({
       board: { board_name: 'kilter', layout_id: 8, size_id: 25, set_ids: [26, 27, 28, 29] },
       manufacturing: {
-        sheet: { length_mm: 2440, width_mm: 1220, thickness_mm: 18 },
+        sheet: { length_mm: 2440, width_mm: 1220 },
         grid_pitch_mm: 100,
         tnut_hole_diameter_mm: 12.5,
         led_hole_diameter_mm: 12.5,
@@ -149,13 +149,16 @@ describe('toLayoutRequest', () => {
     expect(request.board.set_ids).toEqual([26, 27]);
   });
 
-  it('splits sheetStock into length and width, and follows the chosen thickness', () => {
+  it('splits sheetStock into length and width, and ignores a legacy panelThicknessMm', () => {
+    // panelThicknessMm was retired: the drawings are 2D and never depended on
+    // it. An order stored under an older catalogue version still carries the
+    // key, and validation must tolerate it rather than reject the order.
     const entry = entry10x12();
     const options = validateCatalogOptions(entry, { sheetStock: '3600x1220', panelThicknessMm: 21 });
     if (!options.ok) throw new Error('expected valid options');
 
     const request = toLayoutRequest({ entry, options: options.options, setIds: [26, 27] });
-    expect(request.manufacturing.sheet).toEqual({ length_mm: 3600, width_mm: 1220, thickness_mm: 21 });
+    expect(request.manufacturing.sheet).toEqual({ length_mm: 3600, width_mm: 1220 });
   });
 
   it('resolves an LED-kit size alias onto the canonical size', () => {
@@ -176,7 +179,7 @@ describe('toLayoutRequest', () => {
 
   it('throws CncConfigMappingError for a manufacturing option that is not a number', () => {
     const entry = entry10x12();
-    const options = { ...defaultOptions(entry), panelThicknessMm: 'thick' };
+    const options = { ...defaultOptions(entry), gridPitchMm: 'thick' };
 
     expect(() => toLayoutRequest({ entry, options, setIds: [26, 27] })).toThrow(CncConfigMappingError);
   });

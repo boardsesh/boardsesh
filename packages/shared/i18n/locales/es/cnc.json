@@ -83,15 +83,6 @@
           "3600x1220": "3600 × 1220 mm"
         }
       },
-      "panelThicknessMm": {
-        "label": "Grosor del panel",
-        "help": "18 mm es lo estándar. Más fino flexa, más grueso pesa más al colgarlo.",
-        "values": {
-          "15": "15 mm",
-          "18": "18 mm",
-          "21": "21 mm"
-        }
-      },
       "tnutHoleDiameterMm": {
         "label": "Agujero de tuerca en T",
         "help": "Ajústalo al cuerpo de las tuercas en T que compraste. 12,5 mm va bien con las M10 habituales.",

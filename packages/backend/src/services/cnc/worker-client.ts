@@ -176,7 +176,6 @@ export type CncWorkerBoardRef = {
 export type CncWorkerSheet = {
   length_mm: number;
   width_mm: number;
-  thickness_mm: number;
 };
 
 export type CncWorkerKicker = {
@@ -319,10 +318,12 @@ export function toLayoutRequest({ entry, options, setIds }: ToLayoutRequestInput
       set_ids: setIds,
     },
     manufacturing: {
+      // No thickness: the drawings are 2D and never depended on it, so the
+      // generator's pydantic default (18 mm) applies rather than an order's
+      // stored value.
       sheet: {
         length_mm: lengthMm,
         width_mm: widthMm,
-        thickness_mm: numericOption(options, 'panelThicknessMm'),
       },
       grid_pitch_mm: numericOption(options, 'gridPitchMm'),
       tnut_hole_diameter_mm: numericOption(options, 'tnutHoleDiameterMm'),

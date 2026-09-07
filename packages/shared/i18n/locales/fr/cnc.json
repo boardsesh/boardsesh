@@ -83,15 +83,6 @@
           "3600x1220": "3600 × 1220 mm"
         }
       },
-      "panelThicknessMm": {
-        "label": "Épaisseur des panneaux",
-        "help": "18 mm, c'est le standard. Plus fin, ça fléchit ; plus épais, c'est plus lourd à fixer.",
-        "values": {
-          "15": "15 mm",
-          "18": "18 mm",
-          "21": "21 mm"
-        }
-      },
       "tnutHoleDiameterMm": {
         "label": "Perçage écrou à griffes",
         "help": "À ajuster au fût des écrous à griffes que tu as achetés. 12,5 mm convient aux M10 courants.",

@@ -83,15 +83,6 @@
           "3600x1220": "3600 × 1220 mm"
         }
       },
-      "panelThicknessMm": {
-        "label": "Paneldicke",
-        "help": "18 mm ist Standard. Dünner federt, dicker ist schwerer aufzuhängen.",
-        "values": {
-          "15": "15 mm",
-          "18": "18 mm",
-          "21": "21 mm"
-        }
-      },
       "tnutHoleDiameterMm": {
         "label": "Einschlagmutter-Bohrung",
         "help": "Passend zum Schaft der Einschlagmuttern, die du gekauft hast. 12,5 mm passt zu den üblichen M10.",
