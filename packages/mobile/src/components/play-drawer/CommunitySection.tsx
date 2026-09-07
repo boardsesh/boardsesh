@@ -6,6 +6,7 @@ import { useEffectiveClimbStats } from '@boardsesh/board-react';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { DifficultyByAngleChart } from './DifficultyByAngleChart';
+import { ClimbModerationStatus } from './ClimbModerationStatus';
 import { buildAngleGradeBars } from './community-utils';
 import { useClimbStatsHistory } from '../../lib/graphql/hooks';
 import { useGradeFormat } from '../../hooks/use-grade-format';
@@ -20,6 +21,9 @@ type CommunitySectionProps = {
   angle: number;
   qualityAverage: string;
   ascensionistCount: number;
+  /** `climb.is_hidden` — drives the "Hidden by the community" banner above the
+   *  stats, before the proposal read lands. */
+  isHidden?: boolean;
 };
 
 export const CommunitySection = memo(function CommunitySection({
@@ -29,6 +33,7 @@ export const CommunitySection = memo(function CommunitySection({
   angle,
   qualityAverage,
   ascensionistCount,
+  isHidden = false,
 }: CommunitySectionProps) {
   const { t } = useTranslation('session');
   const { gradeFormat } = useGradeFormat();
@@ -59,19 +64,31 @@ export const CommunitySection = memo(function CommunitySection({
 
   const angleBars = useMemo(() => buildAngleGradeBars(history, gradeFormat), [history, gradeFormat]);
 
+  // A climb nobody has climbed yet can still carry a hide report, so the
+  // moderation block rides above the empty state rather than being swallowed by
+  // it. `ClimbModerationStatus` renders nothing when there is nothing to say.
+  const moderationStatus = (
+    <ClimbModerationStatus climbUuid={climbUuid} boardName={boardName} angle={angle} isHidden={isHidden} />
+  );
+
   if (!hasQuality && !hasAscensionists && angleBars.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <Icon name="people" size={20} color={iosSystemColors.systemGray} />
-        <Text variant="subheadline" color={iosSystemColors.systemGray}>
-          {t('mobile.community.empty')}
-        </Text>
+      <View style={styles.container}>
+        {moderationStatus}
+        <View style={styles.emptyContainer}>
+          <Icon name="people" size={20} color={iosSystemColors.systemGray} />
+          <Text variant="subheadline" color={iosSystemColors.systemGray}>
+            {t('mobile.community.empty')}
+          </Text>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
+      {moderationStatus}
+
       {hasQuality && (
         <View style={styles.statRow}>
           <View style={styles.starsRow}>{starIcons}</View>

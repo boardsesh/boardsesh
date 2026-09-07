@@ -213,6 +213,17 @@
       "retry": "Reintentar"
     },
     "community": {
+      "moderation": {
+        "hiddenTitle": "Oculto por la comunidad",
+        "decidedByCrew": "Decidido por los votos del equipo",
+        "decidedByModerator": "Decidido por un moderador",
+        "openReport_one": "Reportado por {{count}} escalador · {{current}} de {{required}} votos para ocultarlo",
+        "openReport_other": "Reportado por {{count}} escaladores · {{current}} de {{required}} votos para ocultarlo",
+        "openUnhide": "Se pide mostrarlo de nuevo · {{current}} de {{required}} votos",
+        "openGrade": "Cambio de grado propuesto: {{from}} → {{to}} · {{current}} de {{required}} votos",
+        "seeInModeration": "Ver en Moderación",
+        "voteInModeration": "Votar en Moderación"
+      },
       "title": "Comunidad",
       "empty": "Sin datos de la comunidad todavía",
       "ascensionists_one": "{{count}} ascensionista",

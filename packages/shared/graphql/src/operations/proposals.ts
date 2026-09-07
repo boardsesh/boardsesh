@@ -469,7 +469,11 @@ export type BrowseProposalsVariables = {
     boardType?: string | null;
     boardUuid?: string | null;
     type?: ProposalType | null;
-    /** Filter by several proposal types (the moderation feed passes `['hide']`). */
+    /**
+     * Narrow to several proposal types at once. The mobile moderation feed sends
+     * no `types` — it lists hide, grade, classic and benchmark together — so this
+     * is for callers that genuinely want a subset.
+     */
     types?: ProposalType[] | null;
     status?: ProposalStatus | null;
     limit?: number;
@@ -607,3 +611,56 @@ export type SetCommunitySettingVariables = {
 export type SetCommunitySettingResponse = {
   setCommunitySettings: CommunitySettingType;
 };
+
+// ============================================
+// Feed-shaped resolve (mobile moderation feed + play-drawer community section)
+// The moderation card renders a resolved proposal in place, so a verdict has to
+// come back with everything the card draws — the climb, the proposer, the type
+// line. `RESOLVE_PROPOSAL` above answers with the verdict fields only, which is
+// all the web climb page needed, so the feed gets its own wider selection.
+// The browse / per-climb / vote documents needed no such widening: the mobile
+// hooks use `BROWSE_PROPOSALS`, `GET_CLIMB_PROPOSALS` and `VOTE_ON_PROPOSAL`
+// unchanged.
+// ============================================
+
+export const RESOLVE_PROPOSAL_FEED = gql`
+  mutation ResolveProposalFeed($input: ResolveProposalInput!) {
+    resolveProposal(input: $input) {
+      uuid
+      climbUuid
+      boardType
+      angle
+      proposerId
+      proposerDisplayName
+      proposerAvatarUrl
+      type
+      proposedValue
+      currentValue
+      status
+      reason
+      resolvedAt
+      resolvedBy
+      createdAt
+      weightedUpvotes
+      weightedDownvotes
+      requiredUpvotes
+      userVote
+      climbName
+      frames
+      layoutId
+      climbSetterUsername
+      climbDifficulty
+      climbQualityAverage
+      climbAscensionistCount
+      climbDifficultyError
+      climbBenchmarkDifficulty
+      climbIsNoMatch
+      upvoterCount
+      commentCount
+      climbIsHidden
+    }
+  }
+`;
+
+export type ResolveProposalFeedVariables = ResolveProposalVariables;
+export type ResolveProposalFeedResponse = ResolveProposalResponse;

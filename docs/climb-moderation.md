@@ -225,16 +225,65 @@ the inline (no-Redis) path.
 
 ---
 
-## Mobile (PR B)
+## Mobile
 
-Not built yet. The planned entry points:
+Four entry points, all behind one flag.
 
-- **Report climb** in the climb menu — a sheet asking hide-or-grade plus a reason.
-- **More → Moderation** — the open-reports feed, `browseProposals(input: { types: [hide] })`.
-- **Community section** on a hidden climb — says it is hidden and why, with the report thread.
-- **Notification deep link** — a `proposal_on_your_climb` row opens the report on the setter's climb.
-- **Kill flag** `climb-moderation-kill` — a server flag that fails closed, hiding every moderation
-  entry point without a store release. See `docs/feature-flags.md`.
+- **Report climb** — long-press a climb row, or the ⋮ button, or the play drawer's climb menu. The
+  sheet asks hide-or-grade plus a reason (10–500 characters, the server's own bound) and calls
+  `reportClimb`. The three `status` values come back as three different toasts; see the table above.
+- **More → Moderation** — the feed (`app/moderation.tsx`, one root-stack modal), in its own
+  "Community" More-tab section so it is reachable signed-out too (voting prompts a sign-in). It
+  pages `browseProposals` twenty at a time, open
+  proposals first, over **every** type (hide, grade, classic, benchmark) with two filters: Open / All
+  and This board / All boards (default: the active board). Each card shows the climb (tap opens the
+  preview, long-press the climb menu), the type line, the proposer's quoted reason with the other
+  reporters' reasons loaded lazily from the proposal's comment thread, the weighted tally, and
+  Support / Oppose toggles (`voteOnProposal`, optimistic, same value again clears the vote).
+  Admins and community leaders for the proposal's board (`@boardsesh/community-roles`) also get
+  Approve / Reject behind a confirm. A `proposalUuid` route param highlights that card and scrolls
+  to it once; when it is not in the first page the screen pins it from `climbProposals` instead.
+  `packages/mobile/src/components/moderation/` plus the leaf hooks `use-browse-proposals.ts`,
+  `use-vote-on-proposal.ts`, `use-resolve-proposal.ts`, `use-my-roles.ts`. All those caches share
+  the `['proposals']` key prefix, so a vote or a decision anywhere refreshes the community section.
+- **Community section** in the play drawer — the moderation status sits above the stats, so a hidden
+  climb explains itself the moment you open it rather than after you go looking. Three blocks, in
+  order: the approved hide (its reason, the reporters' reasons from the proposal's comment thread,
+  and whether the crew's votes or a moderator settled it), an open hide report with its vote tally,
+  and any open grade proposal **for the angle being played**. Each block ends with a link into
+  Moderation. `packages/mobile/src/components/play-drawer/ClimbModerationStatus.tsx`; the reduction
+  from raw proposals to those three blocks is the pure `moderation-status.ts` beside it.
+- **Notification deep link** — every `proposal_*` row that carries a `proposalUuid` opens the
+  Moderation feed on that proposal, passing `proposalUuid` plus `climbUuid` / `boardType` when the
+  row has them. Same `/moderation` push from the Home bell and from the You tab — the feed is one
+  root route, so there is no tab to pick. A row with no `proposalUuid` still opens the plain climb,
+  and marking the group read happens first either way (`use-notification-navigation.ts`).
+- **Kill flag** `climb-moderation-kill` — a mobile PostHog flag read as a kill switch: an unresolved
+  read means enabled, and only `true` hides every moderation entry point, without a store release.
+  See `docs/feature-flags.md`. With the kill on, the notification row falls back to the climb, so a
+  closed feed is never a dead tap.
+
+### Three rules that bite
+
+**The moderation feed is ONE root-stack modal**, `app/moderation.tsx`, registered next to
+`share-beta` / `boards` with `presentation: 'modal'`. Every entry point pushes the same
+`/moderation` route: the More row, a proposal notification from either tab, and the play drawer's
+Community section. That last one is the reason for the shape — the drawer lives inside `/play`,
+itself a root `transparentModal`, so a push aimed at a tab stack lands *beneath* the player: a dead
+tap and a screen nobody can reach (`docs/mobile-sheets-vs-routes.md`, "Pushing a route from INSIDE
+a modal route"). A copy of the feed in each tab stack was the first shape and it had exactly that
+bug.
+
+**`proposedValue` on a grade proposal is a raw `Grade.name`** — `"6b/V4"`, the same string
+`board_climbs.difficulty` holds, never a formatted label and never a `difficulty_id`. Format it for
+display with `useGradeFormat().formatGrade`, which honours the reader's V / Font preference, and send
+it back unformatted. A `hide` proposal's `proposedValue` is the string `'true'` or `'false'`.
+
+**`is_hidden` is filtered on device too.** `packages/mobile/src/db/queries/search-climbs-local.ts`
+drops hidden climbs with `COALESCE(c.is_hidden, 0) = 0` — except on a name search, matching the
+server's rule exactly (see "Where a hidden climb disappears from"). Opening a climb by uuid never
+filters. That is why the list row shows a "Hidden" chip and the play-drawer header a caption: the
+surfaces that still show a hidden climb have to say why it stopped appearing everywhere else.
 
 ---
 

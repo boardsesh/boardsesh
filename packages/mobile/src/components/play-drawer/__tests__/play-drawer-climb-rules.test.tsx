@@ -19,6 +19,7 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
 }));
+vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, string>) =>

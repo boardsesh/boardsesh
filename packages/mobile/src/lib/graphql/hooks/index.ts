@@ -41,7 +41,13 @@ import {
 } from '@boardsesh/graphql/operations/favorites';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { useBoardAdapter } from '@boardsesh/board-react';
-import { myBoardsQueryKey } from '../query-keys';
+import {
+  myBoardsQueryKey,
+  CLIMB_QUERY_KEY,
+  SEARCH_CLIMBS_QUERY_KEY,
+  INFINITE_SEARCH_CLIMBS_QUERY_KEY,
+  SEARCH_CLIMBS_COUNT_QUERY_KEY,
+} from '../query-keys';
 import { getDatabaseHandle } from '../../../db';
 import { offlineAwareRequest } from '../offline-request';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
@@ -898,7 +904,7 @@ export function useSearchClimbs(
   // Keyed on input only — offlineAwareRequest is local-first and picks the source
   // live; a completed board sync invalidates ['searchClimbs'] to refresh it.
   return useQuery({
-    queryKey: ['searchClimbs', input],
+    queryKey: [...SEARCH_CLIMBS_QUERY_KEY, input],
     queryFn: () => offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input }),
     select: (data) => data.searchClimbs,
     enabled,
@@ -910,7 +916,7 @@ export function useSearchClimbs(
 
 export function useSearchClimbsCount(input: ClimbSearchInput, enabled = true) {
   return useQuery({
-    queryKey: ['searchClimbsCount', input],
+    queryKey: [...SEARCH_CLIMBS_COUNT_QUERY_KEY, input],
     queryFn: () => offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input }),
     select: (data) => data.searchClimbs.totalCount,
     enabled,
@@ -932,7 +938,7 @@ export function useSetterStats(input: SetterStatsInput, enabled = true) {
 
 export function useClimb(variables: GetClimbQueryVariables | null) {
   return useQuery({
-    queryKey: ['climb', variables],
+    queryKey: [...CLIMB_QUERY_KEY, variables],
     queryFn: () => offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, variables!),
     select: (data) => data.climb,
     enabled: !!variables,
@@ -956,9 +962,9 @@ export function useDeleteDraftClimb() {
       return response.deleteDraftClimb;
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
-      void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
-      void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
+      void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: INFINITE_SEARCH_CLIMBS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_COUNT_QUERY_KEY });
     },
   });
 }
@@ -1106,8 +1112,8 @@ export function useToggleFavorite() {
       if (context && ownsFavoriteWrite(variables.input.climbUuid, context)) {
         favoritesStore.setIsFavorited(variables.input.climbUuid, data.toggleFavorite.favorited);
       }
-      void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
-      void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: INFINITE_SEARCH_CLIMBS_QUERY_KEY });
       // Bust the per-climb favorite-status cache so a re-open reflects the new
       // state from the server, not a stale 5-min-cached value. Skipped on the
       // local-queue path, where the server does not know about the toggle yet —

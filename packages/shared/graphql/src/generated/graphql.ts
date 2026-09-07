@@ -10616,6 +10616,49 @@ export type SetCommunitySettingsMutation = {
   };
 };
 
+export type ResolveProposalFeedMutationVariables = Exact<{
+  input: ResolveProposalInput;
+}>;
+
+export type ResolveProposalFeedMutation = {
+  __typename?: 'Mutation';
+  resolveProposal: {
+    __typename?: 'Proposal';
+    uuid: string;
+    climbUuid: string;
+    boardType: string;
+    angle?: number | null;
+    proposerId: string;
+    proposerDisplayName?: string | null;
+    proposerAvatarUrl?: string | null;
+    type: ProposalType;
+    proposedValue: string;
+    currentValue: string;
+    status: ProposalStatus;
+    reason?: string | null;
+    resolvedAt?: string | null;
+    resolvedBy?: string | null;
+    createdAt: string;
+    weightedUpvotes: number;
+    weightedDownvotes: number;
+    requiredUpvotes: number;
+    userVote: number;
+    climbName?: string | null;
+    frames?: string | null;
+    layoutId?: number | null;
+    climbSetterUsername?: string | null;
+    climbDifficulty?: string | null;
+    climbQualityAverage?: string | null;
+    climbAscensionistCount?: number | null;
+    climbDifficultyError?: string | null;
+    climbBenchmarkDifficulty?: string | null;
+    climbIsNoMatch?: boolean | null;
+    upvoterCount: number;
+    commentCount: number;
+    climbIsHidden?: boolean | null;
+  };
+};
+
 export type QaPreviewsQueryVariables = Exact<{
   prNumbers: Array<Scalars['Int']['input']> | Scalars['Int']['input'];
   includeBuilding?: InputMaybe<Scalars['Boolean']['input']>;
@@ -16584,6 +16627,79 @@ export const SetCommunitySettingsDocument = {
     },
   ],
 } as unknown as DocumentNode<SetCommunitySettingsMutation, SetCommunitySettingsMutationVariables>;
+export const ResolveProposalFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ResolveProposalFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'ResolveProposalInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'resolveProposal' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerAvatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposedValue' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'currentValue' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'reason' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resolvedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'weightedUpvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'weightedDownvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'requiredUpvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbSetterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbQualityAverage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbAscensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvoterCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbIsHidden' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ResolveProposalFeedMutation, ResolveProposalFeedMutationVariables>;
 export const QaPreviewsDocument = {
   kind: 'Document',
   definitions: [

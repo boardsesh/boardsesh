@@ -2,6 +2,7 @@ import { useInfiniteQuery, type InfiniteData } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { offlineAwareRequest } from '../offline-request';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
+import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
 
 // Map the raw pages down to their `searchClimbs` payload so consumers keep
 // seeing `pages[i].climbs`. Module scope (stable identity) so React Query's
@@ -15,7 +16,7 @@ function getSearchClimbsQueryKey(input: ClimbSearchInput) {
   // Keyed on the input only. `offlineAwareRequest` picks the source (local-first)
   // live per call, so connectivity isn't part of the key; a completed board sync
   // invalidates ['searchClimbs']/['infiniteSearchClimbs'] to refresh local reads.
-  return ['infiniteSearchClimbs', queryInput] as const;
+  return [...INFINITE_SEARCH_CLIMBS_QUERY_KEY, queryInput] as const;
 }
 
 export function useInfiniteSearchClimbs(

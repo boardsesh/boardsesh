@@ -98,6 +98,12 @@ export const SHARED_EVENTS = {
   FavoriteToggle: 'Favorite Toggle',
   MirrorClimb: 'Mirror Climb',
   ClimbShared: 'Climb Shared',
+  // A climber sent a community report on a climb. Props: { kind: 'hide' |
+  // 'grade', boardType, status: 'created' | 'added' | 'already_reported' }.
+  // The status split is the signal: mostly `added` means one bad climb is
+  // gathering reports, mostly `already_reported` means the UI isn't telling
+  // people their report already landed.
+  ClimbReported: 'Climb Reported',
   OpenInAuroraApp: 'Open in Aurora App',
   CreatePlaylist: 'Create Playlist',
   AddToPlaylist: 'Add to Playlist',

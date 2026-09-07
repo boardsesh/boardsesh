@@ -262,6 +262,63 @@
     "unknown": "Unknown"
   },
   "mobile": {
+    "moderation": {
+      "title": "Moderation",
+      "moreSectionTitle": "Community",
+      "moreRowSubtitle": "Vote on reported climbs and grade changes",
+      "pinnedFromNotification": "From your notification",
+      "hiddenChip": "Hidden",
+      "supersededChip": "Replaced",
+      "unknownClimb": "Unnamed climb",
+      "unknownClimber": "Someone",
+      "openClimb": "Open {{climb}}",
+      "loadError": "Couldn't load the queue",
+      "voteError": "Couldn't save your vote",
+      "resolveError": "Couldn't resolve that",
+      "reasonsLoadError": "Couldn't load reasons",
+      "noReasons": "No one's added a reason yet",
+      "moreReasons_one": "{{count}} more reason",
+      "moreReasons_other": "{{count}} more reasons",
+      "reporters_one": "{{count}} reporter",
+      "reporters_other": "{{count}} reporters",
+      "empty": {
+        "title": "Nothing to moderate",
+        "subtitle": "Reports and grade proposals from the crew land here. Long-press a climb to report one."
+      },
+      "unavailable": {
+        "title": "Moderation is switched off right now",
+        "subtitle": "Come back after the next update."
+      },
+      "filter": {
+        "open": "Open",
+        "all": "All",
+        "thisBoard": "This board",
+        "allBoards": "All boards",
+        "statusLabel": "Status",
+        "boardLabel": "Board"
+      },
+      "type": {
+        "hide": "Hide climb",
+        "unhide": "Unhide climb",
+        "grade": "Grade {{from}} → {{to}}",
+        "classic": "Classic: {{value}}",
+        "benchmark": "Benchmark: {{value}}",
+        "unknown": "Community proposal"
+      },
+      "confirm": {
+        "approve": {
+          "title": "Approve this?",
+          "message": "This applies the change for everyone.",
+          "hideMessage": "The climb disappears from everyone's lists.",
+          "unhideMessage": "The climb comes back into everyone's lists."
+        },
+        "reject": {
+          "title": "Reject this?",
+          "message": "The report closes and nothing changes."
+        },
+        "confirm": "Confirm"
+      }
+    },
     "emptyState": {
       "noBoard": {
         "title": "Follow your wall",
@@ -498,6 +555,34 @@
       "feetUnknown": "Feet rule not recorded",
       "spoken": "Rules: {{matching}}, {{feet}}"
     },
+    "report": {
+      "title": "Report climb",
+      "close": "Close report",
+      "kind": {
+        "label": "What's wrong?",
+        "hide": "Hide this climb",
+        "grade": "Grade is wrong",
+        "hideHint": "Junk, duplicate, or unclimbable. Enough reports hide it for everyone.",
+        "gradeHint": "Pick the grade you think it deserves."
+      },
+      "sameGrade": "That's already the current grade",
+      "reasonPlaceholder": "Tell the crew why (10 characters minimum)",
+      "reasonAria": "Reason for the report",
+      "reasonRemaining": "{{count}} more characters",
+      "reasonCount": "{{count}}/500",
+      "submit": "Send report",
+      "submitError": "Couldn't send your report",
+      "toast": {
+        "reported": "Reported. {{current}} of {{required}} votes to hide it",
+        "reportedGrade": "Grade change proposed. The crew votes on it",
+        "alreadyReported": "You've already reported this climb"
+      }
+    },
+    "hidden": {
+      "short": "hidden",
+      "chip": "Hidden",
+      "banner": "Hidden by the community"
+    },
     "climbActions": {
       "preview": "Preview",
       "copyLink": "Copy link",
@@ -511,6 +596,7 @@
       "fork": "Remix this climb",
       "edit": "Edit climb",
       "editEntry": "Edit logbook entry",
+      "report": "Report climb",
       "closeOverlay": "Close climb actions"
     },
     "create": {

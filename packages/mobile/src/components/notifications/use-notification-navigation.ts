@@ -5,6 +5,7 @@ import type { GroupedNotification, SocialEntityType } from '@boardsesh/shared-sc
 import { useMarkGroupAsRead } from '../../lib/graphql/hooks/use-notifications';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { defaultAngle } from '../../lib/boards/default-angle';
 import { notificationClimbRender } from './notification-climb-render';
@@ -47,10 +48,14 @@ const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
  *   tab's `setters` screen is a filter picker, not a profile), so it falls
  *   through to the climb branch. That is safe: the resolver populates
  *   `climbUuid` + `boardType` for exactly this type.
- * - `proposalUuid` goes nowhere. Web appends it to the climb URL so the climb
- *   opens with that proposal surfaced; mobile has no proposal UI at all (no
- *   component, route, or drawer reads a proposal), so a `proposal_*` row opens
- *   the plain climb. Thread it through here the day a proposal surface lands.
+ * - A `proposal_*` row carrying a `proposalUuid` opens the Moderation feed on
+ *   that proposal rather than the climb — the report thread, its votes and the
+ *   climb preview are all there, which is what the row is actually about. Web
+ *   appends the uuid to the climb URL instead; mobile has a dedicated feed. The
+ *   feed is ONE root-stack modal (`app/moderation.tsx`), so the same push works
+ *   from the Home bell and from the You tab and there is no tab to pick. With
+ *   the `climb-moderation-kill` flag off there is no feed to open, so those rows
+ *   fall through to the plain climb, exactly as before.
  *
  * The climb page is reached by the flat `ref` route. It needs three coordinates
  * (layout, angle, size) and reads layout + angle from `board_climbs`; see the
@@ -61,6 +66,7 @@ const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
 export function useNotificationNavigation(openCommentThread: OpenCommentThread) {
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
+  const moderationEnabled = useClimbModerationEnabled();
   // The scalars this callback actually reads, rather than the board object, so
   // an unrelated field moving (name, followers, gym) can't churn the callback.
   const { data: activeBoard } = useActiveBoard();
@@ -114,6 +120,27 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
       }
 
       const { climbUuid, boardType, climbLayoutId, climbAngle } = notification;
+
+      // Every proposal row about a specific proposal lands in the feed, whatever
+      // the outcome it announces (created, voted, approved, rejected, or one on
+      // your own climb) — they all want the same screen.
+      if (moderationEnabled && notification.type.startsWith('proposal_') && notification.proposalUuid) {
+        router.push({
+          // One root modal, whichever tab the bell was tapped in — it presents
+          // above the tabs (and above the player) rather than inside a stack.
+          pathname: '/moderation',
+          // Omit the climb coordinates rather than passing empty strings: the
+          // feed treats a blank uuid as "no climb to scroll to", and a bare
+          // `proposal_vote` row genuinely carries none.
+          params: {
+            proposalUuid: notification.proposalUuid,
+            ...(climbUuid ? { climbUuid } : {}),
+            ...(boardType ? { boardType } : {}),
+          },
+        });
+        return;
+      }
+
       if (!climbUuid || !boardType) return;
 
       const boardName = toBoardName(boardType);
@@ -192,6 +219,7 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
       activeBoardLayoutId,
       activeBoardSizeId,
       activeBoardSetIds,
+      moderationEnabled,
       markGroupAsRead,
       openCommentThread,
       openPlayDrawer,
