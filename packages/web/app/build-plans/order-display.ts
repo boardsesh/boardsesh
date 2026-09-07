@@ -21,9 +21,31 @@ import type { CncCatalog, CncLicenceTier, CncOrderStatus } from '@boardsesh/shar
  * outlives the catalogue, and "25" is still enough for a buyer to recognise
  * their own wall.
  */
+/** Saved manufacturing choices, also used on previews before an order exists. */
+export function tb2ConfigurationLabel(
+  options: Record<string, string | number | boolean> | undefined,
+  translate: (key: string) => string,
+): string {
+  const mode = options?.tb2Engraving;
+  const engraving =
+    mode === 'none'
+      ? translate('configurator.options.tb2Engraving.values.none')
+      : mode === 'mirror'
+        ? translate('configurator.options.tb2Engraving.values.mirror')
+        : mode === 'spray'
+          ? translate('configurator.options.tb2Engraving.values.spray')
+          : translate('configurator.options.tb2Engraving.values.both');
+  const dimensions =
+    options?.tb2DimensionStandard === 'imperial'
+      ? translate('configurator.options.tb2DimensionStandard.values.imperial')
+      : translate('configurator.options.tb2DimensionStandard.values.metric');
+  return `${engraving} · ${dimensions}`;
+}
+
 export function wallLabel(
   catalog: CncCatalog | null,
-  order: { boardName: string; layoutId: number; sizeId: number },
+  order: { boardName: string; layoutId: number; sizeId: number; options?: Record<string, string | number | boolean> },
+  translate?: (key: string) => string,
 ): string {
   const entry = catalog?.entries.find(
     (candidate) =>
@@ -31,7 +53,10 @@ export function wallLabel(
       candidate.layoutId === order.layoutId &&
       candidate.sizeId === order.sizeId,
   );
-  return entry?.label ?? String(order.sizeId);
+  const size = entry?.label ?? String(order.sizeId);
+  return order.boardName === 'tension' && translate
+    ? `${size} · ${tb2ConfigurationLabel(order.options, translate)}`
+    : size;
 }
 
 /**
@@ -134,6 +159,7 @@ export function boardLayoutLabel(
   order: { boardName: string; layoutId: number },
   translate: (key: string, options?: Record<string, unknown>) => string,
 ): string {
+  if (order.boardName === 'tension') return translate('configurator.tb2.boardName');
   if (order.boardName === 'kilter' && order.layoutId === KILTER_ORIGINAL_LAYOUT_ID)
     return translate('configurator.board.original');
   if (order.boardName === 'kilter' && order.layoutId === KILTER_HOMEWALL_LAYOUT_ID)

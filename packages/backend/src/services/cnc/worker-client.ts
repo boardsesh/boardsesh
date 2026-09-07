@@ -185,10 +185,11 @@ export type CncWorkerKicker = {
 
 export type CncWorkerManufacturing = {
   sheet: CncWorkerSheet;
-  grid_pitch_mm: number;
-  tnut_hole_diameter_mm: number;
-  led_hole_diameter_mm: number;
-  stud_clearance_offset_mm: number;
+  dimension_standard?: 'metric' | 'imperial';
+  grid_pitch_mm?: number;
+  tnut_hole_diameter_mm?: number;
+  led_hole_diameter_mm?: number;
+  stud_clearance_offset_mm?: number;
   /** Cut the seam backing strips. Changes the sheet count, so it is geometry. */
   support_strips: boolean;
   /** Explicit for OG, whose main wall and kicker share the same sets. */
@@ -309,6 +310,20 @@ export type ToLayoutRequestInput = {
  */
 export function toLayoutRequest({ entry, options, setIds }: ToLayoutRequestInput): CncWorkerLayoutRequest {
   const { lengthMm, widthMm } = parseSheetStock(options.sheetStock);
+  if (entry.boardName === 'tension' && (entry.layoutId === 10 || entry.layoutId === 11)) {
+    const standard = options.tb2DimensionStandard;
+    if (standard !== 'metric' && standard !== 'imperial') {
+      throw new CncConfigMappingError('TB2 dimension standard must be metric or imperial');
+    }
+    return {
+      board: { board_name: entry.boardName, layout_id: entry.layoutId, size_id: entry.sizeId, set_ids: setIds },
+      manufacturing: {
+        sheet: { length_mm: lengthMm, width_mm: widthMm },
+        dimension_standard: standard,
+        support_strips: booleanOption(options, 'supportStrips', true),
+      },
+    };
+  }
   // OG sets cannot express kicker inclusion. Homewall retains its stored set
   // selection, including orders created before the explicit option existed.
   const isOriginal = entry.boardName === 'kilter' && entry.layoutId === KILTER_ORIGINAL_LAYOUT_ID;

@@ -272,7 +272,7 @@ export default function BuildPlansPanel({ catalog, locale }: { catalog: CncCatal
                       yet is a free preview, and the old ternary labelled every
                       one of them "Commercial, single build". */}
                     <TableCell>{tierLabel(entry.order.tier, tCnc)}</TableCell>
-                    <TableCell>{`${boardLayoutLabel(entry.order, tCnc)} ${wallLabel(catalog, entry.order)}`}</TableCell>
+                    <TableCell>{`${boardLayoutLabel(entry.order, tCnc)} ${wallLabel(catalog, entry.order, tCnc)}`}</TableCell>
                     <TableCell>
                       <StatusChip status={entry.order.status} label={statusLabel(tCnc, entry.order.status)} />
                     </TableCell>

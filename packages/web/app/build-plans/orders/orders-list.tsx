@@ -83,7 +83,7 @@ export default async function OrdersList({
                   {order.licenceId}
                 </Typography>
                 <Typography variant="body2" component="p" className={styles.rowMeta}>
-                  {`${boardLayoutLabel(order, t)} ${wallLabel(catalog, order)} · ${tierLabel(order.tier, t)}`}
+                  {`${boardLayoutLabel(order, t)} ${wallLabel(catalog, order, t)} · ${tierLabel(order.tier, t)}`}
                 </Typography>
                 <Typography variant="body2" component="p" className={styles.rowMeta}>
                   {dateLine}
