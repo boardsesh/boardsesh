@@ -4,24 +4,35 @@ Boardsesh sells generated CNC manufacturing packs for climbing-wall panels: DXFs
 per panel, printable PDFs, a bill of materials and build notes, licensed per
 wall. The app stays free and open source; the packs are the paid thing.
 
+**Buyers iterate for free and pay at the end.** Configuring a wall produces a
+watermarked, rasterised PREVIEW — pictures of the sheets, no DXF, no manifest,
+stamped NOT FOR MANUFACTURE — and only when the buyer likes what they see do
+they finalise it into a purchase. Nobody pays for a wall they have not looked
+at, and nobody has to pay to find out what the pack looks like.
+
 The generator itself lives in a private repo and runs as a separate worker
-service. This document covers the Boardsesh half: orders, payment, the job API
-the generator pulls work from, and the download route.
+service. This document covers the Boardsesh half: previews, orders, payment,
+the job API the generator pulls work from, and the download routes.
 
 ## The order row is the queue
 
-One row in `cnc_orders` per purchased licence. It carries the licence identity
-(`licence_id`, printed on every file in the pack), the configuration that was
-bought, the payment, and the generation lease — all in one place, so "who paid
+One row in `cnc_orders` per configuration a buyer previewed, and the same row
+becomes the licence if they buy it. It carries the licence identity
+(`licence_id`, printed on every file in the pack), the configuration, the
+preview, the payment, and the generation lease — all in one place, so "who paid
 for this" and "who is generating it right now" can never disagree.
 
 | From | Event | To |
 | --- | --- | --- |
-| — | `createCncCheckoutSession` | `pending_payment` |
+| — | `createCncPreview` | `preview_queued` |
+| `preview_queued` / `preview_generating` (stale lease) | worker claim | `preview_generating` |
+| `preview_generating` | complete | `preview_ready` |
+| `preview_generating` | fail | `preview_queued`, or `preview_failed` once the attempt budget is spent |
+| `preview_ready` | `finaliseCncOrder` | `pending_payment` |
+| `pending_payment` | Stripe would not open a session | `preview_ready` (the preview is still good) |
 | `pending_payment` | `checkout.session.completed` (paid), or `checkout.session.async_payment_succeeded` | `queued` |
 | `pending_payment` | `checkout.session.expired`, or `checkout.session.async_payment_failed` | `cancelled` |
-| `pending_payment` | Stripe would not open a session | `cancelled` |
-| `queued` | worker claim | `generating` |
+| `queued` / `generating` (stale lease) | worker claim | `generating` |
 | `generating` | complete | `ready` |
 | `generating` | fail | `queued`, or `failed` once the attempt budget is spent |
 | any paid state | `charge.refunded` | `refunded` (downloads stop) |
@@ -33,9 +44,51 @@ Every real transition is a conditional `UPDATE ... WHERE id = $id AND status IN
 caller no-ops. That is what makes a Stripe redelivery and a late worker report
 harmless.
 
-**`pending_payment -> queued` happens in exactly one place: the paid webhook.**
-Nothing else queues an order, which is what stops an unpaid one reaching the
-generator.
+Three invariants the table enforces on its own:
+
+- **The only way into `pending_payment` is `finalise`, and the only status it
+  opens from is `preview_ready`.** Nothing can be bought that was not previewed
+  first.
+- **`pending_payment -> queued` happens in exactly one place: the paid
+  webhook.** Nothing else queues a pack, which is what stops an unpaid order
+  reaching the generator — even though its own preview went through the same
+  worker minutes earlier.
+- **Nothing moves an existing row back into a preview queue.** Re-previewing
+  writes a NEW row (below), so the images already handed to a buyer never start
+  describing a different wall.
+
+### Re-previewing
+
+A preview is an immutable snapshot of one configuration, so "preview this
+again" is `createCncPreview` again, not a transition:
+
+- **Same configuration** — `config_hash` matches a `preview_queued`,
+  `preview_generating` or `preview_ready` row of this buyer's, and that order
+  comes straight back. This is also how a client polls a preview it is waiting
+  for, so it deliberately costs nothing against the hourly ceiling.
+- **Changed configuration** — a different hash, so a new order with a new
+  licence id. The old one stays where it is; the UI shows the latest.
+- **Failed preview** — `preview_failed` is not a dedupe match, so asking again
+  really does queue a new job.
+
+`config_hash` is sha256 over the NORMALISED configuration (the catalogue's
+canonical tuple, options with every default filled in, artwork placements), with
+object keys sorted, so two clients that reach the same wall by different routes
+dedupe against each other and a single moved millimetre does not.
+`services/cnc/config-hash.ts`.
+
+### What a preview costs
+
+**Four previews per hour per buyer**, counted in the database
+(`countOrdersCreatedSince`) rather than through `applyRateLimit`, whose window
+is one minute — four a minute is not the limit anyone meant, and an in-process
+limiter that resets on every deploy is not a limit on something that costs real
+generator seconds. `applyRateLimit` still runs on top of it as the cheap burst
+guard that never reaches Postgres.
+
+The attempt budget is per DELIVERABLE, not per row: `finalise` resets `attempts`
+and clears the lease, so a wall whose preview needed two goes still reaches the
+paid queue with all three attempts.
 
 ## Stripe
 
@@ -65,9 +118,25 @@ Set up before the first live sale, none of it in code:
 
 ### Checkout
 
-`Mutation.createCncCheckoutSession` writes the order in `pending_payment` and
-then opens the session. That order matters — the webhook finds the row by
-`metadata.orderId`, so the row has to exist before a payment can complete.
+`Mutation.finaliseCncOrder` takes a `preview_ready` order the caller owns, writes
+the tier, the licensee and the licence acceptance onto it, moves it to
+`pending_payment`, and then opens the session. That order matters — the webhook
+finds the row by `metadata.orderId`, so the row has to exist before a payment
+can complete, and here it has existed since the buyer asked for a preview.
+
+**The configuration is not re-submitted.** `FinaliseCncOrderInput` carries an
+`orderId` and the licence details, nothing else: the row already holds the wall
+the buyer approved in the preview they are looking at, and taking it again would
+be a way to pay for one wall and receive another. The price comes from the
+catalogue entry for the ORDER's own tuple, so a wall retired between preview and
+finalise is refused rather than sold at last week's number.
+
+If Stripe will not open a session the order goes back to `preview_ready`, not to
+`cancelled`: the preview is still perfectly good, and making a buyer regenerate
+one because of our outage would cost them a slot in the hourly budget as well as
+the wait. `sendCncOrderStuckAdminEmail` still pages an operator when that revert
+ALSO fails, because a row stranded in `pending_payment` has no
+`checkout.session.expired` coming to retire it.
 
 The session carries the order back three ways, deliberately redundantly:
 
@@ -189,6 +258,7 @@ the worker polls every few seconds. Otherwise:
   "job": {
     "orderId": 41,
     "licenceId": "BS-CNC-K7QM3T",
+    "deliverable": "full",
     "claimToken": "0f0a…",
     "generation": 1,
     "attempt": 1,
@@ -229,6 +299,7 @@ the worker polls every few seconds. Otherwise:
       "paper": "A3"
     },
     "outputKey": "cnc-packs/<user_id or \"anon\">/<licence_id>.zip",
+    "previewPrefix": "cnc-packs/<user_id or \"anon\">/<licence_id>/preview/",
     "bucket": "<private bucket name>",
     "issuedAt": "2026-09-06T02:14:11.402Z"
   }
@@ -237,6 +308,28 @@ the worker polls every few seconds. Otherwise:
 
 Notes the worker implementer needs:
 
+- **`deliverable` is the only thing to branch on.** `"full"` is the licensed
+  pack, unchanged. `"preview"` is the free one: render every sheet (panels,
+  kickers, supports, assembly) as a RASTER page — PNG at 110 dpi with a
+  repeating diagonal `PREVIEW · NOT FOR MANUFACTURE · <licenceId>` watermark at
+  35 % opacity — assemble them into one `preview_sheets.pdf` with no vector
+  content at all, upload each sheet PNG individually under `previewPrefix`
+  (`panel1.png`, …, `assembly.png`), and put a `README_PREVIEW.txt` and a
+  counts-only `BOM.md` in the zip. **No DXF, no assembly DXF, no manifest, no
+  fingerprint.** The INFO layer text says `PREVIEW`. Target under 15 s for a
+  10x12: reuse the existing render path at preview resolution.
+- **A preview job has no licensee and no tier.** `tier` is `null` and
+  `licensee.name` is `null`, because nothing has been licensed yet — the
+  watermark is what the sheets say instead of a name. A `full` job always has
+  both.
+- **`outputKey` is the preview's own key on a preview job**
+  (`<licence_id>_preview.zip`), so a preview and the pack it becomes can sit
+  beside each other for one licence.
+- **`previewPrefix` is where the sheet PNGs go, and it is enforced.** Every key
+  in a completion's `previewKeys` must start with it and end in `.png`, or the
+  completion is refused with a 409 and nothing is stored. Those strings become
+  reads of the private bucket, which also holds user data exports, so the rule
+  lives at the write.
 - **The envelope is camelCase; `layoutRequest` is snake_case.** The envelope is
   Boardsesh's; `layoutRequest` is the generator's own pydantic model, byte for
   byte what `POST /layout` takes, so it can go straight into `compute_layout`
@@ -259,6 +352,13 @@ plus stale leases, then the claim write in the same transaction. Two workers
 polling at once get different rows or nothing. The claim also runs the reaper
 first (see below), so **there is no scheduler job** — the worker's own poll is
 what fails abandoned work.
+
+**Paid packs are handed out before free previews**, then oldest first within
+each. A buyer who has paid is waiting; a buyer previewing is still deciding, and
+a burst of previews must never leave a purchase sitting behind them. It is a
+sort key on the one scan rather than two queries, because a second pass would
+need a second lock and could hand a worker nothing while a row sat free between
+them.
 
 ### `POST /api/cnc/worker/jobs/:orderId/heartbeat`
 
@@ -298,6 +398,22 @@ On success the order moves to `ready` and the buyer gets the pack-ready email.
 `bomSummary`, `previewKeys` and `generatorVersion` are folded into the stored
 manifest.
 
+**A preview completion** posts the same body against the same route and is told
+apart by the order's status, not by anything in the body. It adds one check —
+every `previewKeys` entry must be a `.png` under the job's `previewPrefix` — and
+then:
+
+| Full | Preview |
+| --- | --- |
+| `zip_key`, `zip_size_bytes`, `zip_sha256`, `generated_at` | `preview_zip_key`, `preview_zip_size_bytes`, `preview_keys`, `preview_generated_at`, `previews_generated + 1` |
+| status `ready` | status `preview_ready` |
+| pack-ready email to the buyer | no email — the buyer is watching the page |
+| `fingerprintManifest` stored verbatim | no fingerprint; the column holds `{deliverable: "preview", bomSummary, generatorVersion}` |
+| `Build Plans Pack Purchased` already fired at the webhook | fires `Build Plans Preview Generated` |
+
+`fingerprintManifest` is optional on the body for exactly this reason: there are
+no covert channels in a watermarked raster, so there is nothing to record.
+
 **Complete is idempotent by claim token.** The token is *not* cleared on the
 ready transition — it becomes the receipt for that completion. A worker whose
 200 was lost to a dropped connection can send the identical body again and gets
@@ -332,8 +448,18 @@ The worker reports what happened; the state machine decides what it means:
 - `retryable: true` → back to `queued` until the attempt budget (3) is spent,
   then `failed`.
 
-`failed` mails an operator with the real error. The buyer only ever sees a fixed
-public message. `last_error` is stored truncated to 2000 characters.
+A preview failure runs the same budget on its own pair of statuses
+(`preview_queued` / `preview_failed`).
+
+`failed` mails an operator with the real error. **`preview_failed` does not**:
+nobody paid for it, the buyer sees the failure on the page they are looking at
+and can ask again, and one email per misconfigured wall somebody is
+experimenting with would bury the emails that mean a purchase is stuck. It is
+still logged at `error`.
+
+The buyer only ever sees a fixed public message — a different one for each, since
+"we have been notified and will be in touch" is not true of a free preview.
+`last_error` is stored truncated to 2000 characters.
 
 ### Leases and the reaper
 
@@ -342,13 +468,14 @@ public message. `last_error` is stored truncated to 2000 characters.
 | Lease window | 10 min without a heartbeat | `CNC_LEASE_MS` |
 | Attempt budget | 3 | `CNC_MAX_ATTEMPTS` |
 
-A `generating` row whose heartbeat is older than the lease window is reclaimable
-while `attempts < 3`; the next claim takes it, increments `attempts` and issues a
-**fresh claim token**, which is what makes the dead worker's eventual report a
-409. Once the budget is spent, the first statement of the next claim
-(`failStaleExhaustedJobs`) moves the row to `failed` and mails an operator —
-without it, a worker that dies on its third attempt would sit in `generating`
-forever, because the claim's candidate filter excludes it.
+A `generating` (or `preview_generating`) row whose heartbeat is older than the
+lease window is reclaimable while `attempts < 3`; the next claim takes it,
+increments `attempts` and issues a **fresh claim token**, which is what makes the
+dead worker's eventual report a 409. Once the budget is spent, the first
+statement of the next claim (`failStaleExhaustedJobs`) moves the row to `failed`
+(or `preview_failed`) and mails an operator for the paid one — without it, a
+worker that dies on its third attempt would sit in `generating` forever, because
+the claim's candidate filter excludes it.
 
 A null heartbeat counts as stale: that is a worker that died between claiming and
 its first report.
@@ -392,8 +519,16 @@ stored mime outside it is a 500, logged, rather than a guess — with a
 A buyer may route up to four items into their pack: typed labels and uploaded
 SVGs. Both go through the same input (`CncArtworkInput`), the same generator
 validation, and the same limits — published on `CncCatalog.artworkRules` from
-the very constants that enforce them at checkout, so a configurator's slider
-bounds and a server rejection cannot disagree.
+the very constants that enforce them, so a configurator's slider bounds and a
+server rejection cannot disagree.
+
+Ownership is checked at `createCncPreview`, which is where the asset's key and
+mime are copied onto the order row and therefore the only place an order is ever
+written. `cnc_art_assets.order_id` is stamped at FINALISE instead, and stamping
+is now best-effort: one upload legitimately appears in several orders (every
+preview iteration is a row of its own, and a buyer may build two walls with the
+same logo), so `order_id` is a cleanup-sweep marker rather than an exclusive
+claim. A short attach costs traceability, never authorisation.
 
 `artworkRules.allowedKinds` is the menu, and `CncArtworkKind` is the vocabulary.
 Today the menu is `['text', 'svg']`. **PNG is deliberately in the vocabulary and
@@ -514,7 +649,7 @@ an hour) and the 5 MB cap.
 | `key` | `cnc-art/<user_id>/<uuid>.<ext>`, unique. Two rows on one object would let deleting one asset break the other's order. |
 | `mime`, `size_bytes`, `sha256` | Of the **stored** bytes; an SVG is sanitised and re-serialised before it is written. |
 | `width_px`, `height_px` | Raster only. Null for an SVG, which has no intrinsic pixel size. |
-| `order_id` | **Set null.** Stamped at checkout; answers "may this file be deleted". Losing an order must not delete the file it named. |
+| `order_id` | **Set null.** Stamped at finalise; answers "may this file be deleted". Losing an order must not delete the file it named. |
 
 ### Ownership
 
@@ -524,33 +659,34 @@ Every path that can reach an asset checks it:
   the generator. That call makes the generator *fetch* the asset, so an
   unchecked id would be a way to have Boardsesh read somebody else's upload on
   request — even if all that comes back is "it fits".
-- `createCncCheckoutSession` runs the same check before writing a row or opening
-  a Stripe session, then stamps the order onto the assets afterwards. Stamping
-  is best-effort: an unstamped file looks like a draft to a cleanup sweep, which
-  is a far better failure than a checkout that dies after the order exists.
+- `createCncPreview` runs the same check before writing the order row — the only
+  place an order is ever written — and copies the asset's key and mime onto it
+  there.
+- `finaliseCncOrder` stamps the order onto the assets. Best-effort, and
+  deliberately not a gate: ownership was already proven when the preview row was
+  written, and one upload legitimately appears in several orders now (every
+  preview iteration is a row of its own, and a buyer may build two walls with
+  the same logo). An unstamped file looks like a draft to a cleanup sweep, which
+  is a far better failure than refusing a sale over a marker.
 
 An unknown id and a foreign one produce the same `CNC_INVALID_CONFIG`, for the
 same reason `cncOrder` returns null for both.
 
 Only the **first** order to use an asset stamps it. `order_id` answers whether
 the file may be deleted, and the answer is no from the moment any licence
-depends on it — so a reuse leaves the first order's stamp in place.
+depends on it — so a reuse leaves the first order's stamp in place and sells
+anyway.
 
 A cancelled checkout hands the stamp back. `releaseArtAssetsForOrder` clears
 `order_id` for the order in both cancel paths: the resolver's own
-`checkoutFailed` (Stripe would not open a session, or the attach came back
-short) and the webhook's `checkout.session.expired` / `async_payment_failed`.
-The stamp goes on before Stripe is asked for a session, so without the release
-an upload would stay bound to an order nobody will ever pay for — and a stamped
-asset is exactly what `attachAssetsToOrder` skips, so the buyer's retry could
-never attach it again. The release is best-effort: a failure is logged and the
-cancellation goes through regardless, because a re-upload is a nuisance and a
-stuck `pending_payment` order is a support ticket.
+`finaliseFailed` (Stripe would not open a session) and the webhook's
+`checkout.session.expired` / `async_payment_failed`. The release is best-effort:
+a failure is logged and the cancellation goes through regardless.
 
 ### What the job carries
 
-Checkout copies each asset's key and mime **onto the order's `artwork` JSON**,
-alongside the placement:
+`createCncPreview` copies each asset's key and mime **onto the order's `artwork`
+JSON**, alongside the placement:
 
 ```json
 {
@@ -596,22 +732,54 @@ Two ways to authenticate, because there are two callers:
   route does CORS and answers `OPTIONS` the same way `/api/user-data-export` does.
 - **`?token=<grant>`** — a browser navigation, which cannot carry a header.
 
+`?kind=preview|full`, defaulting to `full` — the parameter is new and every
+existing caller omits it, so defaulting the other way would turn a download in
+flight into a watermarked picture of a DXF.
+
 | Case | Status |
 | --- | --- |
-| Streams the zip | 200, `Content-Type: application/zip`, `Content-Disposition: attachment; filename="boardsesh-build-plans-<licenceId>.zip"`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` |
+| Streams the zip | 200, `Content-Type: application/zip`, `Content-Disposition: attachment; filename="boardsesh-build-plans-<licenceId>.zip"` (preview: `boardsesh-build-plans-preview-<licenceId>.zip`), `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` |
 | No or bad credentials, expired grant | 401 |
 | Unknown licence, someone else's licence, grant for another order | 404 — **identical responses**, so the id space is not an oracle |
 | Order refunded | 403 |
-| Not `ready` yet, or ready with no object | 409 / 404 |
+| That deliverable is not available yet, or is with no object | 409 / 404 |
 
-A served download increments `download_count`, stamps `last_downloaded_at` and
-fires `Build Plans Pack Downloaded`. It is counted once the bytes are on their
-way rather than once they arrive — a client that aborts halfway still asked for
-the pack, and that is the behaviour worth noticing.
+The two kinds have different windows, and the route re-asks the same question
+the grant already answered:
+
+- **`full`** — `ready` only.
+- **`preview`** — `preview_ready` onward, including after the pack is bought and
+  built. Finalising does not take the preview away; it is the thing the buyer
+  approved, and they may well want it beside the real pack. It stops at a
+  refund, like everything else the order entitles them to.
+
+A served FULL download increments `download_count`, stamps `last_downloaded_at`
+and fires `Build Plans Pack Downloaded`. It is counted once the bytes are on
+their way rather than once they arrive — a client that aborts halfway still
+asked for the pack. **A preview fetch counts for neither**: the number exists to
+spot a licensed file being pulled twenty times, and pooling free watermarked
+fetches into it would make it mean nothing.
+
+### `GET /api/cnc/packs/:licenceId/preview/:name?token=`
+
+One watermarked sheet, as an image. Its own route rather than a `kind` on the
+download because it is the only thing in this system a browser fetches as an
+`<img src>`: it answers `image/png` with `Cache-Control: private, max-age=3600`,
+where every other route here is a `no-store` attachment. `private` because the
+grant in the URL makes it one buyer's image and a shared cache must never hold
+it; an hour because that is how long the grant lasts anyway.
+
+`:name` is a BASENAME, never a key. It is matched against the basenames of
+`preview_keys` — keys the worker's completion already proved sit under this
+order's prefix — and the key that answers is the stored one, re-checked against
+`cnc-packs/<user>/<licence>/preview/<name>.png` before it becomes a read. So no
+part of what a client holds is a path into the private bucket. A name this order
+does not have is a 404, not a 400: the client got the list from us.
 
 ### Download grants
 
-`Mutation.createCncDownloadGrant(licenceId)` returns `{url, expiresAt}`.
+`Mutation.createCncDownloadGrant(licenceId, kind)` returns `{url, expiresAt}`,
+with `kind` already on the URL it hands back.
 
 The grant exists only because a browser navigation cannot carry an
 Authorization header, and a session token in a URL lands in history, in a
@@ -624,6 +792,13 @@ is redeemed anyway. The token says who asked; it never says what they may have.
 Clients should ask for a fresh grant on every click rather than caching one.
 Rotating `CNC_DOWNLOAD_TOKEN_SECRET` invalidates every outstanding grant, which
 costs a buyer one extra click.
+
+**Preview-image grants last an hour** (`CNC_PREVIEW_IMAGE_GRANT_TTL_MS`), and
+`CncOrder.previewImages` mints one per sheet so the gallery renders from a
+single order read rather than a round trip per thumbnail. Five minutes would
+turn into broken images while a buyer sits looking at a wall, and what the
+longer window unlocks is a PNG stamped NOT FOR MANUFACTURE. The expiry rides
+inside the signed payload, so there is one token shape and one verifier.
 
 ## Regenerating a pack
 
@@ -839,9 +1014,16 @@ keeping a DRAFT licence out of Google.
 
 ### Follow-ups, not built
 
-Four things that are deliberately out of the v1 scope, in the order they are
+Five things that are deliberately out of the v1 scope, in the order they are
 likely to be wanted:
 
+- **Pruning old previews.** Every preview leaves a zip and a handful of PNGs in
+  the private bucket, and a buyer who never finalises leaves them forever. The
+  four-an-hour ceiling bounds the rate, not the total. The shape is a sweep over
+  `preview_generated_at` older than 30 days on orders that never reached
+  `pending_payment`: delete the objects, null the columns, leave the row (it is
+  the record that the licence id was issued). Nothing about the read paths needs
+  to change — `hasPreview` and `previewImages` already key off the columns.
 - **Art asset orphan sweep.** An upload that never reached checkout stays in the
   bucket forever. Bounded today by the 20-an-hour rate limit and the 5 MB cap;
   the design and the three things it has to get right are under "Orphan sweep
@@ -869,14 +1051,16 @@ and the two test price ids, and pay with card `4242 4242 4242 4242`.
 
 ### Local testing without Stripe
 
-`CNC_CHECKOUT_BYPASS=1` skips the payment leg entirely. `createCncCheckoutSession`
-writes the order row as usual, then queues it itself with the catalogue tier
-price and a `bypass-<licenceId>` session id, and returns the order page
-(`/build-plans/orders/<licenceId>?checkout=success`) instead of a Stripe URL.
-Everything after that — the worker claim, generation, the pack in the private
-bucket, the download grant — is the real path. The order-received email and the
-`Build Plans Pack Purchased` analytics event are **not** sent: a fake sale must
-not reach a real inbox or a real funnel.
+`CNC_CHECKOUT_BYPASS=1` skips the payment leg entirely. **The bypass applies at
+FINALISE, not at preview** — a preview never touches Stripe, so it needs nothing
+skipped and runs identically with the flag on or off. `finaliseCncOrder` moves
+the previewed order to `pending_payment` as usual, then queues it itself with
+the catalogue tier price and a `bypass-<licenceId>` session id, and returns the
+order page (`/build-plans/orders/<licenceId>?checkout=success`) instead of a
+Stripe URL. Everything after that — the worker claim, generation, the pack in
+the private bucket, the download grant — is the real path. The order-received
+email and the `Build Plans Pack Purchased` analytics event are **not** sent: a
+fake sale must not reach a real inbox or a real funnel.
 
 It refuses to be on unless all four hold, and they are checked on every call
 (`services/cnc/checkout-bypass.ts`):
@@ -893,3 +1077,14 @@ It refuses to be on unless all four hold, and they are checked on every call
 The backend logs one loud warning at boot when it is on. Use it for the
 generator, the worker loop and the download; use `stripe listen` above for
 anything about the payment itself.
+
+The whole local loop with the bypass on, no Stripe anywhere:
+
+1. `createCncPreview` → the order comes back `preview_queued`.
+2. The worker claims it as a `preview` job and completes it → `preview_ready`,
+   `previewImages` populated.
+3. `createCncDownloadGrant(licenceId, PREVIEW)` or the image URLs on the order
+   → the watermarked sheets.
+4. `finaliseCncOrder` → straight to `queued`, no payment.
+5. The worker claims it as a `full` job → `ready`, and
+   `createCncDownloadGrant(licenceId)` serves the real pack.
