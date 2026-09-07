@@ -232,6 +232,7 @@ function BluetoothAutoSender({
   sendFramesToBoard,
   onWallConfirmed,
   reassertNonce,
+  mirrorNonce,
   connectInitialSendRef,
   lastPhysicalFramesRef,
   mirrorIntentRef,
@@ -249,6 +250,9 @@ function BluetoothAutoSender({
    */
   onWallConfirmed: (item: ClimbQueueItem) => void;
   reassertNonce: number;
+  // Changes when the mirror intent slot changes. Only a dep, so the drain
+  // re-runs and its own signature dedup decides whether a write is due.
+  mirrorNonce: number;
   // One-shot seed: what connect() already wrote as initialFrames, so the
   // freshly mounted AutoSender doesn't repeat a byte-identical first send.
   connectInitialSendRef: React.MutableRefObject<BleConnectInitialSend | null>;
@@ -547,7 +551,7 @@ function BluetoothAutoSender({
     };
 
     void drain();
-  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, colorSignature, encodingSignature]);
+  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, mirrorNonce, colorSignature, encodingSignature]);
 
   return null;
 }
@@ -1521,6 +1525,10 @@ export function BluetoothProvider({
   // Bumped by `reassertWall()` to force the auto-sender to re-push the current
   // climb once, bypassing the byte-identical dedup.
   const [reassertNonce, setReassertNonce] = useState(0);
+  // Bumped whenever the mirror slot changes, to re-run the auto-sender's drain.
+  // Unlike `reassertNonce` it does NOT clear the dedup signature: it only gives
+  // the drain a chance to notice that `effectiveMirrored` moved.
+  const [mirrorNonce, setMirrorNonce] = useState(0);
   const reassertWall = useCallback(() => setReassertNonce((nonce) => nonce + 1), []);
 
   const invalidateWallState = useCallback(() => {
@@ -1536,28 +1544,24 @@ export function BluetoothProvider({
   // un-mirrored frames, silently un-flipping the wall under a button that still
   // reads active. Keyed by uuid so moving to another climb falls back to that
   // item's own flag, which is the drawer's reset-on-navigate behaviour.
-  const setMirrorIntent = useCallback(
-    (climbUuid: string, mirrored: boolean) => {
-      const previous = mirrorIntentRef.current;
-      mirrorIntentRef.current = { climbUuid, mirrored };
-      // A nonce bump punches through the auto-sender's dedup, so spend one only
-      // when the wall would otherwise be left showing the wrong orientation:
-      // a toggle on the climb already lit. The caller also re-states the
-      // orientation whenever the current climb changes — that is what stops a
-      // stale flip outliving a navigation — but those climbs are about to be
-      // written anyway, so forcing there would duplicate the write and
-      // double-fire the success haptic. A first statement asking for `true` is
-      // still forced: nothing has recorded that orientation yet.
-      const orientationChanged = previous?.climbUuid === climbUuid ? previous.mirrored !== mirrored : mirrored;
-      if (orientationChanged) {
-        // Route the flip through the auto-sender's normal write instead of a
-        // direct `sendFramesToBoard`, so dedup, wall-confirm and haptics all
-        // stay in step with what the wall is actually showing.
-        reassertWall();
-      }
-    },
-    [reassertWall],
-  );
+  const setMirrorIntent = useCallback((climbUuid: string, mirrored: boolean) => {
+    const previous = mirrorIntentRef.current;
+    const slotChanged = previous?.climbUuid !== climbUuid || previous.mirrored !== mirrored;
+    mirrorIntentRef.current = { climbUuid, mirrored };
+    if (!slotChanged) return;
+    // Wake the auto-sender so the flip rides its normal write — dedup,
+    // wall-confirm and haptics all stay in step with what the wall shows.
+    //
+    // A plain nonce, NOT `reassertWall()`: a reassert punches through the
+    // dedup, which forces a write even when none is due. Whether one IS due
+    // is a question the drain already answers, because `effectiveMirrored` is
+    // part of its send signature. Guessing it here got the interesting case
+    // backwards — with nothing recorded, "stating false needs no write"
+    // assumed the wall was un-mirrored, but a climb whose own `mirrored` is
+    // true (a mirrored tick, a crew member's item) is already lit mirrored,
+    // so turning the flip OFF never reached the wall.
+    setMirrorNonce((nonce) => nonce + 1);
+  }, []);
 
   // The orientation currently asked for on a climb, or false if none is.
   //
@@ -1736,6 +1740,7 @@ export function BluetoothProvider({
             sendFramesToBoard={sendFramesToBoardWithActivityReset}
             onWallConfirmed={handleWallConfirmed}
             reassertNonce={reassertNonce}
+            mirrorNonce={mirrorNonce}
             connectInitialSendRef={connectInitialSendRef}
             lastPhysicalFramesRef={lastPhysicalFramesRef}
             mirrorIntentRef={mirrorIntentRef}
