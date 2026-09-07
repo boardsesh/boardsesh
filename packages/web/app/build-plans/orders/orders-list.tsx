@@ -4,12 +4,18 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
-import { getBoardDisplayName } from '@boardsesh/climb-actions';
 import type { CncCatalog, CncOrder } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createOrderDateFormatter } from '../format-date';
-import { finaliseHref, isPreviewStatus, newestPreviewReadyLicenceId, tierLabel, wallLabel } from '../order-display';
+import {
+  boardDisplayLabel,
+  finaliseHref,
+  isPreviewStatus,
+  newestPreviewReadyLicenceId,
+  tierLabel,
+  wallLabel,
+} from '../order-display';
 import { EmptyPanel, SectionCard, StatusChip } from '../ui';
 import styles from './orders.module.css';
 
@@ -77,7 +83,7 @@ export default async function OrdersList({
                   {order.licenceId}
                 </Typography>
                 <Typography variant="body2" component="p" className={styles.rowMeta}>
-                  {`${getBoardDisplayName(order.boardName)} ${wallLabel(catalog, order)} · ${tierLabel(order.tier, t)}`}
+                  {`${boardDisplayLabel(order, t)} ${wallLabel(catalog, order, t)} · ${tierLabel(order.tier, t)}`}
                 </Typography>
                 <Typography variant="body2" component="p" className={styles.rowMeta}>
                   {dateLine}

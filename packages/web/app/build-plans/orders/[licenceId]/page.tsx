@@ -126,7 +126,7 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
           chip, so it cannot be rendered on the server half of this page. */}
       <OrderStatus
         initialOrder={order}
-        wallLabel={wallLabel(catalog, order)}
+        wallLabel={wallLabel(catalog, order, t)}
         checkoutOutcome={checkoutOutcome}
         locale={locale}
       />

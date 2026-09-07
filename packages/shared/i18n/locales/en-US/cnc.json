@@ -2,7 +2,7 @@
   "metadata": {
     "buildPlans": {
       "title": "Build plans for a home board",
-      "description": "Cut-ready CNC files for a home climbing wall: every panel, T-nut and LED hole placed, laid out on the sheets your shop stocks."
+      "description": "CNC files for a home climbing wall: panels and drilling positions laid out on the sheets your shop stocks."
     },
     "orders": {
       "title": "Your build plans",
@@ -15,8 +15,8 @@
   },
   "hero": {
     "title": "Build plans for your home board",
-    "subtitle": "DXF files a CNC shop cuts straight from. Every panel, the T-nut grid, the LED holes and the kicker, laid out on the sheets your shop already stocks.",
-    "firstBoard": "Kilter Homewall is the first supported board. More boards follow.",
+    "subtitle": "DXF files for your CNC shop. Panels and drilling positions laid out on the sheets your shop already stocks.",
+    "firstBoard": "Works with Kilter Homewall and Tension Board 2, including Mirror and Spray layouts.",
     "included": {
       "heading": "What you get",
       "dxf": "Assembly drawings included too, so panels line up without any guesswork.",
@@ -61,7 +61,8 @@
     },
     "board": {
       "label": "Board",
-      "help": "Kilter Homewall is the only board on sale today."
+      "help": "Choose the board you are building panels for.",
+      "kilterHomewall": "Kilter Homewall"
     },
     "size": {
       "label": "Wall size",
@@ -77,7 +78,7 @@
       "help": "Defaults are what we build to. Change them to match your shop.",
       "sheetStock": {
         "label": "Sheet size",
-        "help": "The plywood your shop cuts from. A 3.6 m sheet lets a wall row be cut without a seam.",
+        "help": "Choose the plywood sheet your shop uses. Panels are split to fit the stock.",
         "values": {
           "2440x1220": "2440 × 1220 mm",
           "3600x1220": "3600 × 1220 mm"
@@ -149,7 +150,7 @@
       },
       "supportStrips": {
         "label": "Seam backing strips",
-        "help": "150 mm plywood strips, slotted for the T-nuts, that sit behind each horizontal seam. Leave on unless your framing already supports the seams.",
+        "help": "150 mm plywood strips back the horizontal seams and keep access to the holes.",
         "values": {
           "false": "Off",
           "true": "On"
@@ -169,6 +170,24 @@
         "values": {
           "false": "Off",
           "true": "On"
+        }
+      },
+      "tb2DimensionStandard": {
+        "label": "TB2 dimensions",
+        "help": "Metric: 200 mm main grid and 12 mm LED holes. Imperial: 7⅞ in grid and ½ in holes. Changing dimensions clears placed artwork.",
+        "values": {
+          "metric": "Metric",
+          "imperial": "Imperial"
+        }
+      },
+      "tb2Engraving": {
+        "label": "TB2 engraving",
+        "help": "Hold IDs and direction marks from Tension’s installation drawings.",
+        "values": {
+          "none": "No engraving",
+          "mirror": "Mirror",
+          "spray": "Spray",
+          "both": "Mirror + Spray"
         }
       }
     },
@@ -320,6 +339,13 @@
       "heading": "Who the licence names",
       "help": "The licence goes on every file in the pack, so a leaked copy traces back to it.",
       "stale": "Update your preview first — the wall has changed since these sheets."
+    },
+    "tb2": {
+      "boardName": "Tension Board 2",
+      "savedConfigurationUnavailable": "Saved configuration unavailable",
+      "sizeHelp": "Height × width in feet. Tension names the height first.",
+      "engraveHelp": "Engrave Mirror, Spray, or both on the same panels. Both layouts are selected by default.",
+      "engraveNote": "Mirror labels sit left of each hole with one direction tick. Spray labels sit right with two ticks. Every engraved panel carries a legend."
     }
   },
   "cta": {

@@ -398,3 +398,90 @@ describe('option value keys', () => {
     expect(optionValueKey('true')).toBe('true');
   });
 });
+
+function tensionBoard2(layoutId = 10, sizeId = 9): CncCatalogEntry {
+  return {
+    ...tenByTwelve(),
+    boardName: 'tension',
+    layoutId,
+    sizeId,
+    setIds: '12,13',
+    kickerOptional: false,
+    label: '10 × 8',
+    manufacturingOptions: [
+      {
+        key: 'tb2Engraving',
+        values: ['none', 'mirror', 'spray', 'both'],
+        defaultValue: layoutId === 11 ? 'spray' : 'both',
+        valueType: 'string',
+        kickerOnly: false,
+      },
+      {
+        key: 'tb2DimensionStandard',
+        values: ['metric', 'imperial'],
+        defaultValue: 'metric',
+        valueType: 'string',
+        kickerOnly: false,
+      },
+    ],
+  };
+}
+
+describe('Tension Board 2 configuration', () => {
+  it('defaults to metric with both engravings and no kicker', () => {
+    expect(initialConfiguratorState(tensionBoard2())).toMatchObject({
+      layoutId: 10,
+      includeKicker: false,
+      options: { tb2Engraving: 'both', tb2DimensionStandard: 'metric' },
+    });
+  });
+
+  it.each(['none', 'mirror', 'spray', 'both'])('keeps %s synchronized with the board tuple and draft', (mode) => {
+    const entries = [tensionBoard2(), tensionBoard2(11)];
+    const initial = initialConfiguratorState(entries[0]!);
+    const state = configuratorReducer(initial, { type: 'setOption', key: 'tb2Engraving', value: mode });
+    expect(state.layoutId).toBe(mode === 'spray' ? 11 : 10);
+    const restored = fromDraft(toDraft(state), entries);
+    expect(restored).toMatchObject({ layoutId: state.layoutId, options: { tb2Engraving: mode } });
+    const selected = entries.find((entry) => entry.layoutId === state.layoutId)!;
+    expect(toBoardConfigInput(state, selected)).toMatchObject({
+      layoutId: state.layoutId,
+      options: { tb2Engraving: mode },
+    });
+    if (mode !== 'both')
+      expect(configKey(toBoardConfigInput(state, selected))).not.toBe(
+        configKey(toBoardConfigInput(initial, entries[0]!)),
+      );
+  });
+
+  it('clears artwork after changing dimensions but retains it when changing engraving', () => {
+    const initial = initialConfiguratorState(tensionBoard2());
+    const withArtwork = configuratorReducer(initial, {
+      type: 'addArtwork',
+      item: {
+        id: 'tb2-art',
+        assetId: null,
+        kind: 'text',
+        text: 'My wall',
+        font: 'liberation-sans',
+        mode: 'engrave',
+        panelIndex: 0,
+        xMm: 200,
+        yMm: 200,
+        widthMm: 100,
+        rotationDeg: 0,
+      },
+    });
+    expect(
+      configuratorReducer(withArtwork, { type: 'setOption', key: 'tb2Engraving', value: 'spray' }).artwork,
+    ).toEqual(withArtwork.artwork);
+    expect(
+      configuratorReducer(withArtwork, { type: 'setOption', key: 'tb2DimensionStandard', value: 'imperial' }).artwork,
+    ).toEqual([]);
+  });
+
+  it('rejects a draft whose tuple and engraving disagree', () => {
+    const draft = toDraft(initialConfiguratorState(tensionBoard2()));
+    expect(fromDraft({ ...draft, layoutId: 11 }, [tensionBoard2(), tensionBoard2(11)])).toBeNull();
+  });
+});

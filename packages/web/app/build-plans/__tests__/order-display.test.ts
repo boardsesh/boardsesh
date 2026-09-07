@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vite-plus/test';
 import type { CncCatalog, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
+  boardDisplayLabel,
   finaliseHref,
   isPreviewStatus,
   newestPreviewReadyLicenceId,
   previewImageLabel,
   tierLabel,
+  tb2ConfigurationLabel,
   wallLabel,
 } from '../order-display';
 
@@ -34,28 +36,66 @@ const ORDER_10X12 = { boardName: 'kilter', layoutId: 8, sizeId: 25 };
 /** Stands in for `t`: returns the key so the assertion names the catalog entry. */
 const translateToKey = (key: string) => key;
 
+it.each<Record<string, string | number | boolean> | undefined>([
+  undefined,
+  {},
+  { tb2Engraving: 'unknown', tb2DimensionStandard: 'metric' },
+  { tb2Engraving: 'both', tb2DimensionStandard: 'unknown' },
+])('does not invent saved TB2 choices for incomplete options: %j', (options) => {
+  expect(tb2ConfigurationLabel(options, translateToKey)).toBe('configurator.tb2.savedConfigurationUnavailable');
+});
+
+it('names supported board layouts without relabelling other layouts', () => {
+  expect(boardDisplayLabel({ boardName: 'tension', layoutId: 10 }, translateToKey)).toBe('configurator.tb2.boardName');
+  expect(boardDisplayLabel({ boardName: 'kilter', layoutId: 8 }, translateToKey)).toBe(
+    'configurator.board.kilterHomewall',
+  );
+  expect(boardDisplayLabel({ boardName: 'tension', layoutId: 9 }, translateToKey)).not.toBe(
+    'configurator.tb2.boardName',
+  );
+  expect(boardDisplayLabel({ boardName: 'kilter', layoutId: 1 }, translateToKey)).not.toBe(
+    'configurator.board.kilterHomewall',
+  );
+});
+
 describe('wallLabel', () => {
   it('uses the catalogue label when the entry is still on sale', () => {
-    expect(wallLabel(CATALOG, ORDER_10X12)).toBe('10x12');
+    expect(wallLabel(CATALOG, ORDER_10X12, translateToKey)).toBe('10x12');
   });
 
   it('falls back to the size id when the entry has been retired', () => {
     // A licence outlives the catalogue. Blanking the wall on an order somebody
     // paid for would be the worst possible answer to a retired entry, and "25"
     // is still enough for a buyer to recognise their own.
-    expect(wallLabel(CATALOG, { ...ORDER_10X12, sizeId: 17 })).toBe('17');
+    expect(wallLabel(CATALOG, { ...ORDER_10X12, sizeId: 17 }, translateToKey)).toBe('17');
   });
 
   it('falls back when the catalogue could not be fetched at all', () => {
-    expect(wallLabel(null, ORDER_10X12)).toBe('25');
+    expect(wallLabel(null, ORDER_10X12, translateToKey)).toBe('25');
   });
 
   it('matches on the whole tuple, not the size id alone', () => {
     // Size ids are per-board, so a Tension 25 is not a Kilter 25 and must not
     // borrow its label.
-    expect(wallLabel(CATALOG, { ...ORDER_10X12, boardName: 'tension' })).toBe('25');
-    expect(wallLabel(CATALOG, { ...ORDER_10X12, layoutId: 1 })).toBe('25');
+    expect(wallLabel(CATALOG, { ...ORDER_10X12, boardName: 'tension' }, translateToKey)).toBe('25');
+    expect(wallLabel(CATALOG, { ...ORDER_10X12, layoutId: 1 }, translateToKey)).toBe('25');
   });
+});
+
+it('always includes saved TB2 engraving and dimensions in an order label', () => {
+  const label = wallLabel(
+    null,
+    {
+      boardName: 'tension',
+      layoutId: 11,
+      sizeId: 9,
+      options: { tb2Engraving: 'spray', tb2DimensionStandard: 'imperial' },
+    },
+    translateToKey,
+  );
+  expect(label).toBe(
+    '9 · configurator.options.tb2Engraving.values.spray · configurator.options.tb2DimensionStandard.values.imperial',
+  );
 });
 
 describe('tierLabel', () => {

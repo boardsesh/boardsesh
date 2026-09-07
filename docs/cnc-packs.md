@@ -1088,3 +1088,29 @@ The whole local loop with the bypass on, no Stripe anywhere:
 4. `finaliseCncOrder` → straight to `queued`, no payment.
 5. The worker claims it as a `full` job → `ready`, and
    `createCncDownloadGrant(licenceId)` serves the real pack.
+
+## Tension Board 2
+
+The catalogue supports five TB2 sizes: 10 × 8, 12 × 8, 10 × 12, 12 × 12
+and 12 × 16. Tension names sizes **height × width**. The configurator groups
+Mirror (layout 10) and Spray (layout 11) into one board choice.
+
+`tb2DimensionStandard` defaults to `metric`; `imperial` selects Tension's inch
+specification. The worker owns the dimensions and bore diameters. Boardsesh
+sends the standard, sheet stock and support-strip choice without Kilter pitch,
+T-nut, kicker or stud-offset defaults. Changing the standard clears artwork
+placements, which were measured against the previous geometry.
+
+`tb2Engraving` accepts `none`, `mirror`, `spray`, or `both` (the default).
+Spray alone uses layout 11; the other choices use layout 10. The reducer updates
+the tuple with the option and checkout validates this pairing. Both layouts
+share the complete drilling grid. The generated panels identify Mirror with
+left-side labels and single direction ticks, Spray with right-side labels and
+double ticks, and include a physical legend for the selected engravings.
+
+The saved options drive preview hashes, order summaries and regenerated jobs.
+The job envelope carries `output.engrave.layoutMode`; the nested layout request
+carries `manufacturing.dimension_standard`. Deploy the TB2-capable generator
+before exposing this catalogue revision. Existing Kilter worker requests retain
+their previous shape. Build-plan routes keep their existing feature gate and
+`noindex` metadata.

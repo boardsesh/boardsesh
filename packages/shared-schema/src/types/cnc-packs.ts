@@ -11,6 +11,9 @@
 /** What the buyer is allowed to build: one own wall, or one named customer installation. */
 export type CncLicenceTier = 'personal' | 'commercial_single';
 
+export type CncTb2DimensionStandard = 'metric' | 'imperial';
+export type CncTb2Engraving = 'none' | 'mirror' | 'spray' | 'both';
+
 /**
  * Lifecycle of one order. It begins as a free preview and only becomes a sale
  * at `pending_payment`. `refunded` is terminal for downloads; `cancelled` only

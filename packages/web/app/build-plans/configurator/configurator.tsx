@@ -38,12 +38,12 @@ import {
   type CncConfigProps,
   type CncConfiguratorStep,
 } from '@boardsesh/analytics';
-import { getBoardDisplayName } from '@boardsesh/climb-actions';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { trackCncFunnelEvent } from '@/app/lib/cnc-funnel-analytics';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
+import { boardDisplayLabel, tb2ConfigurationLabel } from '../order-display';
 import {
   FieldGrid,
   KeyValueList,
@@ -63,6 +63,8 @@ import {
   configKey,
   configuratorReducer,
   engraveOptions,
+  boardFamilyKey,
+  catalogEntryKey,
   finaliseBlockers,
   findEntry,
   formatPrice,
@@ -193,7 +195,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   const { toggles: machiningToggles, choices: machiningChoices } = partitionByControl(
     visibleMachiningOptions(entry, state.includeKicker),
   );
-  const engraveToggles = engraveOptions(entry);
+  const { toggles: engraveToggles, choices: engraveChoices } = partitionByControl(engraveOptions(entry));
 
   // Which labels the placement editor can already see are in trouble. Reported
   // by id rather than counted, so removing an item takes its verdict with it.
@@ -322,16 +324,11 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   }, [session, isDraftRestored, isLicenseeEmailEmpty, isLicenseeNameEmpty]);
 
   // ------------------------------------------------------------------- actions
-  const handleSizeChange = (sizeId: number) => {
-    const next = entries.find((candidate) => candidate.sizeId === sizeId);
+  const handleEntryChange = (entryKey: string) => {
+    const next = entries.find((candidate) => catalogEntryKey(candidate) === entryKey);
     if (!next) return;
     dispatch({ type: 'selectSize', entry: next });
-    // Picking a size is also picking a board, because a catalogue entry names
-    // both. Today every entry is a Kilter Homewall so this branch never fires,
-    // and `board` would be the one step in the funnel contract that never
-    // appears — leaving a gap in the funnel the day a second board goes on
-    // sale and the size select starts spanning two of them.
-    if (next.boardName !== entry.boardName) reportStep('board');
+    if (boardFamilyKey(next) !== boardFamilyKey(entry)) reportStep('board');
     reportStep('size');
   };
 
@@ -450,6 +447,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
           rail={
             <SummaryRail
               summary={summary}
+              configurationLabel={entry.boardName === 'tension' ? tb2ConfigurationLabel(state.options, t) : null}
               isLoading={isLayoutLoading}
               hasError={layoutErrorKey !== null}
               price={price ? formatPrice(price.amountCents, price.currency, locale) : null}
@@ -483,7 +481,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                 description={t('configurator.wall.help')}
               />
               <Box className={styles.stepBody}>
-                <WallStep entries={entries} state={state} onSizeChange={handleSizeChange} />
+                <WallStep entries={entries} state={state} onEntryChange={handleEntryChange} />
                 {hasKickerSets(entry) && entry.kickerOptional && (
                   <Box className={styles.switchRow}>
                     <FormControlLabel
@@ -561,15 +559,40 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
               </Box>
             </SectionCard>
 
-            {engraveToggles.length > 0 && (
+            {(engraveToggles.length > 0 || engraveChoices.length > 0) && (
               <SectionCard>
                 <StepHeading
                   step={3}
                   done
                   title={t('configurator.engrave.heading')}
-                  description={t('configurator.engrave.help')}
+                  description={
+                    entry.boardName === 'tension' ? t('configurator.tb2.engraveHelp') : t('configurator.engrave.help')
+                  }
                 />
                 <Box className={styles.stepBody}>
+                  {engraveChoices.map((option) => (
+                    <FormControl key={option.key} fullWidth size="small">
+                      <InputLabel id={`cnc-engrave-${option.key}`}>
+                        {t(`configurator.options.${option.key}.label`)}
+                      </InputLabel>
+                      <Select
+                        labelId={`cnc-engrave-${option.key}`}
+                        label={t(`configurator.options.${option.key}.label`)}
+                        value={state.options[option.key] ?? option.defaultValue}
+                        onChange={(event) => {
+                          dispatch({ type: 'setOption', key: option.key, value: event.target.value });
+                          reportStep('engrave');
+                        }}
+                      >
+                        {option.values.map((optionValue) => (
+                          <MenuItem key={optionValue} value={optionValue}>
+                            {t(`configurator.options.${option.key}.values.${optionValueKey(optionValue)}`)}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                      <FormHelperText>{t(`configurator.options.${option.key}.help`)}</FormHelperText>
+                    </FormControl>
+                  ))}
                   {engraveToggles.map((option) => (
                     <Box key={option.key} className={styles.switchRow}>
                       <FormControlLabel
@@ -592,7 +615,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                     </Box>
                   ))}
                   <Typography variant="body2" component="p" className={styles.stepNote}>
-                    {t('configurator.engrave.note')}
+                    {entry.boardName === 'tension' ? t('configurator.tb2.engraveNote') : t('configurator.engrave.note')}
                   </Typography>
                 </Box>
               </SectionCard>
@@ -907,45 +930,58 @@ function PreviewStep({
 function WallStep({
   entries,
   state,
-  onSizeChange,
+  onEntryChange,
 }: {
   entries: readonly CncCatalogEntry[];
   state: CncConfiguratorState;
-  onSizeChange: (sizeId: number) => void;
+  onEntryChange: (entryKey: string) => void;
 }) {
   const { t } = useTranslation('cnc');
-  // Boards, not sizes: v1 sells one board, so the board control is a read-only
-  // statement of that rather than a select with a single option pretending to
-  // be a choice. It becomes a select the day a second board is on sale.
-  const boardNames = [...new Set(entries.map((candidate) => getBoardDisplayName(candidate.boardName)))];
+  const families = [...new Map(entries.map((candidate) => [boardFamilyKey(candidate), candidate])).values()];
+  const selectedFamily = boardFamilyKey(state);
+  const sizes = entries.filter(
+    (candidate) => boardFamilyKey(candidate) === selectedFamily && candidate.layoutId === state.layoutId,
+  );
 
   return (
     <FieldGrid>
-      <Box>
-        <Typography variant="body2" component="p" className={styles.readOnlyLabel}>
-          {t('configurator.board.label')}
-        </Typography>
-        <Typography variant="body1" component="p">
-          {boardNames.join(', ')}
-        </Typography>
+      <FormControl fullWidth size="small">
+        <InputLabel id="cnc-board">{t('configurator.board.label')}</InputLabel>
+        <Select
+          labelId="cnc-board"
+          label={t('configurator.board.label')}
+          value={selectedFamily}
+          onChange={(event) => {
+            const next = entries.find((candidate) => boardFamilyKey(candidate) === event.target.value);
+            if (next) onEntryChange(catalogEntryKey(next));
+          }}
+        >
+          {families.map((candidate) => (
+            <MenuItem key={boardFamilyKey(candidate)} value={boardFamilyKey(candidate)}>
+              {boardDisplayLabel(candidate, t)}
+            </MenuItem>
+          ))}
+        </Select>
         <FormHelperText>{t('configurator.board.help')}</FormHelperText>
-      </Box>
+      </FormControl>
 
       <FormControl fullWidth size="small">
         <InputLabel id="cnc-size">{t('configurator.size.label')}</InputLabel>
         <Select
           labelId="cnc-size"
           label={t('configurator.size.label')}
-          value={String(state.sizeId)}
-          onChange={(event) => onSizeChange(Number(event.target.value))}
+          value={catalogEntryKey(state)}
+          onChange={(event) => onEntryChange(event.target.value)}
         >
-          {entries.map((candidate) => (
-            <MenuItem key={candidate.sizeId} value={String(candidate.sizeId)}>
+          {sizes.map((candidate) => (
+            <MenuItem key={catalogEntryKey(candidate)} value={catalogEntryKey(candidate)}>
               {candidate.label}
             </MenuItem>
           ))}
         </Select>
-        <FormHelperText>{t('configurator.size.help')}</FormHelperText>
+        <FormHelperText>
+          {state.boardName === 'tension' ? t('configurator.tb2.sizeHelp') : t('configurator.size.help')}
+        </FormHelperText>
       </FormControl>
     </FieldGrid>
   );
@@ -962,6 +998,7 @@ function WallStep({
  */
 function SummaryRail({
   summary,
+  configurationLabel,
   isLoading,
   hasError,
   price,
@@ -979,6 +1016,7 @@ function SummaryRail({
   onFinalise,
 }: {
   summary: CncLayoutSummary | null;
+  configurationLabel: string | null;
   isLoading: boolean;
   hasError: boolean;
   /** Already formatted for the request's locale, or null when the tier has no price. */
@@ -1079,6 +1117,7 @@ function SummaryRail({
 
   return (
     <SectionCard tone="raised" title={t('configurator.summary.heading')}>
+      {configurationLabel && <Typography variant="body2">{configurationLabel}</Typography>}
       {hasError ? (
         // An outage does not blank the rail: the error above already says what
         // happened, and a card full of dashes says nothing.
