@@ -54,6 +54,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: 'Search box and filter sheet on the logbook (shipped: 100% rollout since 2026-07-03).',
   },
   {
+    key: 'board-link-onboarding-step',
+    label: 'Onboarding board-account link step',
+    description:
+      'Offer to link a Kilter/Tension board account during first-run, after the board pick. Off (and unresolved, which reads off) means onboarding is unchanged — the empty-logbook prompt still catches climbers whose sends are missing.',
+  },
+  {
     key: 'kilter-oauth-linking',
     label: 'Kilter account linking',
     description: 'Show the Kilter username/password sign-in card in Integrations.',

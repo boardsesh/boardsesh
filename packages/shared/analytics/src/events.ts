@@ -386,6 +386,19 @@ export const SHARED_EVENTS = {
   //   BoardAccountError codes ('invalid_credentials' | 'account_already_linked' |
   //   'rate_limited' | 'not_allowed' | 'unauthorized' | 'request_failed') or
   //   'cancelled'.
+  // The first-run "link your board account" card (the one skippable step in an
+  // otherwise mandatory onboarding). Shown fires when the card is presented;
+  // Resolved fires exactly once per Shown with what the climber chose, INCLUDING
+  // the nav-aways that no button produced — `onboarding-analytics.ts` records that
+  // ~a third of tour Starts once resolved to nothing at all, which deflated the
+  // completion metric until an unmount guard was added. Props:
+  //   Shown:    { boardType }
+  //   Resolved: { boardType, outcome: 'linked' | 'declined' | 'abandoned' }
+  // The link attempt itself reports through the Board Account Link* events above
+  // with `source: 'onboarding'`, so success rate is comparable across surfaces and
+  // is not re-counted here.
+  OnboardingLinkPromptShown: 'Onboarding Link Prompt Shown',
+  OnboardingLinkPromptResolved: 'Onboarding Link Prompt Resolved',
   BoardAccountLinkStarted: 'Board Account Link Started',
   BoardAccountLinked: 'Board Account Linked',
   BoardAccountLinkFailed: 'Board Account Link Failed',

@@ -731,6 +731,14 @@
         "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",
         "record": "Tus encadenes salen aquí en Progreso: reparto de grados y tu vía más dura. Importa tu logbook de Kilter y Tension desde Aurora para empezar con tu historial.",
         "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí."
+      },
+      "link": {
+        "title": "Trae contigo tus encadenamientos de {{boardName}}",
+        "body": "Tu cuenta de {{boardName}} es de quienes fabrican el plafón. Boardsesh va aparte: mismo correo, pero ninguna de las dos sabe de la otra. Vincúlalas y tus encadenamientos, intentos y valoraciones llegan aquí, así tu historial empieza lleno.",
+        "footnote": "Para vincular necesitas tu usuario de {{boardName}}, no tu correo.",
+        "continue": "Vincular mi cuenta de {{boardName}}",
+        "skip": "Ahora no",
+        "skipHint": "Puedes hacerlo cuando quieras en Ajustes › Apps conectadas."
       }
     },
     "nav": {

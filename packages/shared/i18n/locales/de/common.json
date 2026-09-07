@@ -466,6 +466,14 @@
         "crew": "Kletterst du mit anderen? Startet eine Session und teilt euch eine Warteschlange. Jede*r legt den nächsten Run auf, ohne das Handy weiterzureichen.",
         "record": "Deine Begehungen landen unter Fortschritt im Diagramm: Gradverteilung und schwerste Begehung. Importier dein Kilter- und Tension-Routenbuch aus Aurora und starte mit deiner Historie.",
         "accessory": "Die Leiste unten zeigt immer, was auf dem Board liegt. Von dort wechselst du Boulder."
+      },
+      "link": {
+        "title": "Nimm deine {{boardName}}-Begehungen mit",
+        "body": "Dein {{boardName}}-Konto gehört denen, die das Board bauen. Boardsesh ist davon getrennt — gleiche E-Mail, aber die beiden wissen nichts voneinander. Verknüpf sie und deine Begehungen, Versuche und Bewertungen landen hier, dein Routenbuch startet also voll.",
+        "footnote": "Zum Verknüpfen brauchst du deinen {{boardName}}-Benutzernamen, nicht deine E-Mail.",
+        "continue": "Mein {{boardName}}-Konto verknüpfen",
+        "skip": "Jetzt nicht",
+        "skipHint": "Du kannst das jederzeit unter Einstellungen › Verbundene Apps machen."
       }
     },
     "nav": {
