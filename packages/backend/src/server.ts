@@ -91,6 +91,7 @@ import { startClientUsageReporter, stopClientUsageReporter } from './services/cl
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
+import { warnIfCheckoutBypassEnabled } from './services/cnc/checkout-bypass';
 import type { QueueEvent } from '@boardsesh/shared-schema';
 
 /**
@@ -806,6 +807,9 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
   const intervals: NodeJS.Timeout[] = [pingInterval];
 
   logger.info(`Boardsesh Backend starting on port ${PORT}...`);
+  // Dev-only Stripe bypass. Loud, once, at boot: a stack that hands out
+  // licensed packs without a payment must never be a surprise.
+  warnIfCheckoutBypassEnabled();
   // Whether this process reports to the production Sentry/PostHog projects is
   // inferred, not configured (see @boardsesh/db/client/config), so say the answer
   // out loud at boot: a developer chasing a missing event shouldn't have to guess
