@@ -3,7 +3,7 @@
 // mobile's HTTP / WS clients. Mounted in `app/_layout.tsx` between
 // QueueProvider and BoardProvider.
 
-import { useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { randomUUID } from 'expo-crypto';
 import { BoardAdapterProvider, type BoardAdapter } from '@boardsesh/board-react';
@@ -16,11 +16,16 @@ import {
   type SaveTickMutationResponse,
   type SaveTickMutationVariables,
 } from '@boardsesh/graphql/operations';
+import { useQueryClient } from '@tanstack/react-query';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import { useAuth } from './auth-provider';
 import { useOfflineDownloadsEnabled } from './feature-flags-provider';
 import { useQueueSessionId } from './queue-provider';
 import { useToast } from './toast-provider';
 import { getDatabaseHandle } from '../db';
+import { isBoardDownloadedLocally } from '../db/queries/board-download-status';
+import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
+import { createClimbStatsLiveSync, type ClimbStatsLiveSync } from '../offline/climb-stats-live-sync';
 import { getConnectivitySnapshot, subscribeConnectivity } from '../lib/connectivity/connectivity-store';
 import { getHttpClient, getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
@@ -31,7 +36,14 @@ import { useSnapshotSource } from '../offline/use-snapshot-source';
 import { getSetting } from '../settings';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { enqueueTickOutboxOnly, writeTickLocal } from '../hooks/use-offline-mutations';
-import { isDatabaseLockedError, OFFLINE_LOCAL_WRITE_BUDGET_MS, type GraphQLFetch } from '@boardsesh/offline-sync';
+import {
+  isBackgrounded,
+  isDatabaseLockedError,
+  isSigningOut,
+  parseOfflineBoardKey,
+  OFFLINE_LOCAL_WRITE_BUDGET_MS,
+  type GraphQLFetch,
+} from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { track } from '../lib/analytics';
 
@@ -84,6 +96,47 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
     // here if/when reason-specific messages are needed.
     showToast(t('createClimbForm.alerts.saveFailedFallback'), 'error');
   };
+
+  // One live-stats consumer per wrapper mount, held outside the adapter memo so
+  // a pending list refresh survives the adapter identity churn a re-subscribe
+  // causes. The delegating function below reads the ref at call time, so it
+  // stays correct across that churn.
+  const queryClient = useQueryClient();
+  const climbStatsLiveSyncRef = useRef<ClimbStatsLiveSync | null>(null);
+
+  useEffect(() => {
+    const liveSync = createClimbStatsLiveSync({
+      getDb: getDatabaseHandle,
+      queryClient,
+      // The list, the count and the preview all browse the active board's
+      // angle, and it is written synchronously on a board switch — so reading
+      // it here is exactly what the user is looking at.
+      getActiveBoard: () => {
+        const board = queryClient.getQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY);
+        if (!board) return null;
+        return {
+          boardType: board.boardType,
+          layoutId: board.layoutId,
+          sizeId: board.sizeId,
+          angle: board.angle,
+        };
+      },
+      isScopeDownloaded: isBoardDownloadedLocally,
+      shouldSkipWrites: () => isBackgrounded() || isSigningOut(),
+      hasEnabledScopeForLayout: (boardType, layoutId) =>
+        getSetting('syncEnabledBoards').some((scopeKey) => {
+          const scope = parseOfflineBoardKey(scopeKey);
+          return scope?.boardType === boardType && scope.layoutId === layoutId;
+        }),
+      onError: (error) =>
+        reportHandledError(error, { tags: { source: 'offline-sync', kind: 'climb-stats-write-through' } }),
+    });
+    climbStatsLiveSyncRef.current = liveSync;
+    return () => {
+      liveSync.dispose();
+      climbStatsLiveSyncRef.current = null;
+    };
+  }, [queryClient]);
 
   const adapter = useMemo<BoardAdapter>(
     () => ({
@@ -181,6 +234,13 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
           unsubscribeConnectivity();
         };
       },
+      // Undefined when the offline flag is off: there is no local catalog to
+      // keep fresh, and the shared hook optional-chains it.
+      persistClimbStatsEvent: !offlineEnabled
+        ? undefined
+        : (event) => {
+            climbStatsLiveSyncRef.current?.handleEvent(event);
+          },
       subscribeOfflineMutationDelivery: subscribeMutationDelivery,
       scheduleTask: (callback, delayMs) => {
         const timer = setTimeout(callback, delayMs);
