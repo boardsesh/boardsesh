@@ -168,6 +168,18 @@
         "editTitle": "¿Qué registro quieres editar?",
         "deleteTitle": "¿Qué registro quieres eliminar?"
       }
+    },
+    "boardLink": {
+      "title": "¿Te faltan tus encadenamientos de {{boardName}}?",
+      "titleGeneric": "¿Ya has escalado en un plafón?",
+      "body": "Iniciar sesión no vinculó tu cuenta de {{boardName}}: son dos accesos distintos. Vincúlala y aparecerá aquí todo lo que ya has registrado.",
+      "bodyGeneric": "Tu cuenta de Kilter o Tension es un acceso distinto al de Boardsesh. Vincúlala y aparecerá aquí todo lo que ya has registrado.",
+      "cta": "Vincular mi cuenta de {{boardName}}",
+      "ctaGeneric": "Vincular una cuenta de plafón",
+      "moonboardTitle": "Trae tu historial de MoonBoard",
+      "moonboardBody": "MoonBoard no deja que otras apps inicien sesión por ti, así que no hay vínculo en vivo. Pídeles tus datos y luego importa el archivo aquí.",
+      "moonboardCta": "Importar mi historial de MoonBoard",
+      "dismiss": "Ahora no"
     }
   }
 }

@@ -30,6 +30,7 @@ import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { LogbookRow } from './LogbookRow';
 import { LogbookDayDivider, LogbookWallSubDivider } from './LogbookDayDivider';
 import { LogbookEditSheet } from './LogbookEditSheet';
+import { BoardLinkPrompt } from './BoardLinkPrompt';
 import { LogbookFilterSheet } from './LogbookFilterSheet';
 import { LogbookEntryChooserSheet } from './LogbookEntryChooserSheet';
 import { LogbookChipRow } from './LogbookChipRow';
@@ -709,6 +710,9 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
               <Text variant="headline" style={styles.emptyTitle}>
                 {activeFilterCount > 0 || name ? t('mobile.logbook.emptyFiltered') : t('mobile.logbook.empty')}
               </Text>
+              {/* Unfiltered only: a logbook emptied by a filter says nothing about
+                  whether a board account is linked. */}
+              <BoardLinkPrompt viewerIsOwner={viewerIsOwner} hasNoSends={activeFilterCount === 0 && !name} />
             </View>
           }
         />
