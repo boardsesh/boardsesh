@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vite-plus/test';
 import type { CncCatalog, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
+  boardDisplayLabel,
   finaliseHref,
   isPreviewStatus,
   newestPreviewReadyLicenceId,
   previewImageLabel,
   tierLabel,
+  tb2ConfigurationLabel,
   wallLabel,
 } from '../order-display';
 
@@ -33,6 +35,28 @@ const ORDER_10X12 = { boardName: 'kilter', layoutId: 8, sizeId: 25 };
 
 /** Stands in for `t`: returns the key so the assertion names the catalog entry. */
 const translateToKey = (key: string) => key;
+
+it.each<Record<string, string | number | boolean> | undefined>([
+  undefined,
+  {},
+  { tb2Engraving: 'unknown', tb2DimensionStandard: 'metric' },
+  { tb2Engraving: 'both', tb2DimensionStandard: 'unknown' },
+])('does not invent saved TB2 choices for incomplete options: %j', (options) => {
+  expect(tb2ConfigurationLabel(options, translateToKey)).toBe('configurator.tb2.savedConfigurationUnavailable');
+});
+
+it('names supported board layouts without relabelling other layouts', () => {
+  expect(boardDisplayLabel({ boardName: 'tension', layoutId: 10 }, translateToKey)).toBe('configurator.tb2.boardName');
+  expect(boardDisplayLabel({ boardName: 'kilter', layoutId: 8 }, translateToKey)).toBe(
+    'configurator.board.kilterHomewall',
+  );
+  expect(boardDisplayLabel({ boardName: 'tension', layoutId: 9 }, translateToKey)).not.toBe(
+    'configurator.tb2.boardName',
+  );
+  expect(boardDisplayLabel({ boardName: 'kilter', layoutId: 1 }, translateToKey)).not.toBe(
+    'configurator.board.kilterHomewall',
+  );
+});
 
 describe('wallLabel', () => {
   it('uses the catalogue label when the entry is still on sale', () => {

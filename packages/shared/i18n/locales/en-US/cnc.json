@@ -342,6 +342,7 @@
     },
     "tb2": {
       "boardName": "Tension Board 2",
+      "savedConfigurationUnavailable": "Saved configuration unavailable",
       "sizeHelp": "Height × width in feet. Tension names the height first.",
       "engraveHelp": "Engrave Mirror, Spray, or both on the same panels. Both layouts are selected by default.",
       "engraveNote": "Mirror labels sit left of each hole with one direction tick. Spray labels sit right with two ticks. Every engraved panel carries a legend."

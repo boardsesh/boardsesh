@@ -38,13 +38,12 @@ import {
   type CncConfigProps,
   type CncConfiguratorStep,
 } from '@boardsesh/analytics';
-import { getBoardDisplayName } from '@boardsesh/climb-actions';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { trackCncFunnelEvent } from '@/app/lib/cnc-funnel-analytics';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
-import { tb2ConfigurationLabel } from '../order-display';
+import { boardDisplayLabel, tb2ConfigurationLabel } from '../order-display';
 import {
   FieldGrid,
   KeyValueList,
@@ -959,11 +958,7 @@ function WallStep({
         >
           {families.map((candidate) => (
             <MenuItem key={boardFamilyKey(candidate)} value={boardFamilyKey(candidate)}>
-              {candidate.boardName === 'tension'
-                ? t('configurator.tb2.boardName')
-                : candidate.boardName === 'kilter' && candidate.layoutId === 8
-                  ? t('configurator.board.kilterHomewall')
-                  : getBoardDisplayName(candidate.boardName)}
+              {boardDisplayLabel(candidate, t)}
             </MenuItem>
           ))}
         </Select>

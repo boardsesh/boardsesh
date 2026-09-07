@@ -7,7 +7,6 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
-import { getBoardDisplayName } from '@boardsesh/climb-actions';
 import type { CncDownloadKind, CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
   CREATE_CNC_DOWNLOAD_GRANT,
@@ -20,7 +19,7 @@ import { createGraphQLHttpClient, getGraphQLHttpUrl } from '@/app/lib/graphql/cl
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { cncErrorKey, type CncErrorKey } from '../../cnc-error';
 import { createOrderDateFormatter } from '../../format-date';
-import { finaliseHref, previewImageLabel, tierLabel } from '../../order-display';
+import { boardDisplayLabel, finaliseHref, previewImageLabel, tierLabel } from '../../order-display';
 import { KeyValueList, PageFrame, PreviewGallery, SectionCard, StatusChip, type KeyValueItem } from '../../ui';
 import { orderRefetchInterval, useCncOrderPoll } from '../../use-cnc-order-poll';
 import styles from '../orders.module.css';
@@ -181,7 +180,7 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
     {
       key: 'board',
       label: t('order.board'),
-      value: `${order.boardName === 'tension' ? t('configurator.tb2.boardName') : getBoardDisplayName(order.boardName)} ${wallLabel}`,
+      value: `${boardDisplayLabel(order, t)} ${wallLabel}`,
     },
     { key: 'tier', label: t('order.tier'), value: tierLabel(order.tier, t) },
   ];

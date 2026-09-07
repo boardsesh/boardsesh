@@ -342,6 +342,7 @@
     },
     "tb2": {
       "boardName": "Tension Board 2",
+      "savedConfigurationUnavailable": "Configuration enregistrée indisponible",
       "sizeHelp": "Hauteur × largeur en pieds. Tension indique la hauteur en premier.",
       "engraveHelp": "Grave Mirror, Spray ou les deux sur les mêmes panneaux. Les deux dispositions sont sélectionnées par défaut.",
       "engraveNote": "Les repères Mirror sont à gauche de chaque trou avec un trait de direction. Les repères Spray sont à droite avec deux traits. Chaque panneau gravé comporte une légende."
