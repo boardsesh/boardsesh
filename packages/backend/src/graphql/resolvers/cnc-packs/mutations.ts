@@ -67,8 +67,15 @@ const RATE_LIMIT_FINALISE_OP = 'finaliseCncOrder';
  * limiter that resets on every deploy is not a limit on something that costs
  * generator seconds. `applyRateLimit` still runs on top of it as the cheap
  * burst guard that never reaches Postgres.
+ *
+ * `CNC_PREVIEW_HOURLY_LIMIT` raises the ceiling on a dev stack, where four
+ * previews is one afternoon of working on the configurator. Unset in
+ * production, and a value that is not a positive number falls back to four
+ * rather than to no limit at all.
  */
-const PREVIEWS_PER_HOUR = 4;
+const PREVIEW_LIMIT_OVERRIDE = Number(process.env.CNC_PREVIEW_HOURLY_LIMIT);
+const PREVIEWS_PER_HOUR =
+  Number.isFinite(PREVIEW_LIMIT_OVERRIDE) && PREVIEW_LIMIT_OVERRIDE > 0 ? PREVIEW_LIMIT_OVERRIDE : 4;
 const PREVIEW_WINDOW_MS = 60 * 60 * 1000;
 const RATE_LIMIT_CREATE_PREVIEW_OP = 'createCncPreview';
 
