@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- The no-matching symbol now shows on every Kilter and Tension climb that calls for it, not ([#5243](https://github.com/boardsesh/boardsesh/pull/5243))
+  just the ones whose notes lead with the rule — about 1,100 more on the Tension Board 2
+  Spray alone.
 - Fixed the Attempt and Send buttons in the tick sheet: they now fill the row evenly instead of floating at odd sizes ([#4226](https://github.com/boardsesh/boardsesh/pull/4226))
 
 ## 2026-09-06
