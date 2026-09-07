@@ -26,6 +26,7 @@ vi.mock('../checkpoints', () => ({
 
 import { pullSync, toSqliteValue, multiRowChunkSize, buildMultiRowInsertSql } from '../pull-client';
 import { TABLE_CONFIGS } from '../table-config';
+import { buildRevisionGuardTail } from '../revision-guard-sql';
 import { OFFLINE_DB_BUSY_TIMEOUT_MS } from '../../db/pragmas';
 
 // --- Pure helpers ------------------------------------------------------------
@@ -239,8 +240,6 @@ describe('upsertDocuments batching (via pullSync)', () => {
 // newer row — its apply transaction waits behind whatever else holds the lock.
 // So that one table upserts under a revision guard; nothing else changes shape.
 describe('buildMultiRowInsertSql — the revision guard', () => {
-  const guard = { revisionColumn: 'sync_seq', primaryKeyColumns: ['board_type', 'climb_uuid', 'angle'] };
-
   it('leaves an unguarded table byte for byte as it was', () => {
     expect(buildMultiRowInsertSql('boardsesh_ticks', ['uuid', 'quality'], 2)).toBe(
       'INSERT OR REPLACE INTO boardsesh_ticks (uuid, quality) VALUES (?, ?), (?, ?)',
@@ -252,7 +251,6 @@ describe('buildMultiRowInsertSql — the revision guard', () => {
       'board_climb_stats',
       ['board_type', 'climb_uuid', 'angle', 'ascensionist_count', 'updated_at', 'sync_seq'],
       1,
-      guard,
     );
 
     expect(sql).toContain('INSERT INTO board_climb_stats');
@@ -269,15 +267,12 @@ describe('buildMultiRowInsertSql — the revision guard', () => {
 
   it('falls back to the plain form when the page carries no revision column', () => {
     // Nothing to compare against, so the guard would be invalid SQL.
-    const sql = buildMultiRowInsertSql('board_climb_stats', ['board_type', 'climb_uuid', 'angle', 'updated_at'], 1, {
-      ...guard,
-      revisionColumn: 'sync_seq',
-    });
+    const sql = buildMultiRowInsertSql('board_climb_stats', ['board_type', 'climb_uuid', 'angle', 'updated_at'], 1);
     expect(sql).toContain('INSERT OR REPLACE INTO board_climb_stats');
   });
 
   it('falls back to the plain form when the page carries only key columns', () => {
-    const sql = buildMultiRowInsertSql('board_climb_stats', ['board_type', 'climb_uuid', 'angle'], 1, guard);
+    const sql = buildMultiRowInsertSql('board_climb_stats', ['board_type', 'climb_uuid', 'angle'], 1);
     expect(sql).toContain('INSERT OR REPLACE INTO board_climb_stats');
   });
 
@@ -301,10 +296,7 @@ describe('the revision guard against a real SQLite row', () => {
       'updated_at',
       'sync_seq',
     ];
-    const sql = buildMultiRowInsertSql('board_climb_stats', columns, rows.length, {
-      revisionColumn: 'sync_seq',
-      primaryKeyColumns: TABLE_CONFIGS.board_climb_stats.primaryKeyColumns,
-    });
+    const sql = buildMultiRowInsertSql('board_climb_stats', columns, rows.length);
     await database.runAsync(
       sql,
       rows.flatMap((row) => columns.map((column) => row[column] ?? null)),
@@ -388,5 +380,62 @@ describe('the revision guard against a real SQLite row', () => {
       ['climb-new'],
     );
     expect(row?.ascensionist_count).toBe(7);
+  });
+});
+
+describe('both guarded writers derive their tail from the same config', () => {
+  // The pull page insert and the snapshot import are the two writers that can
+  // lose the race with the live stream. A second copy of the primary key, the
+  // revision column or the `>=` in either one is exactly the drift this shares.
+  const statsColumns = ['board_type', 'climb_uuid', 'angle', 'ascensionist_count', 'updated_at', 'sync_seq'];
+
+  function snapshotTail(): string | null {
+    return buildRevisionGuardTail({
+      tableName: 'board_climb_stats',
+      conflictReference: 'board_climb_stats',
+      columns: statsColumns,
+    });
+  }
+
+  it('spells the same tail for the page insert and the import', () => {
+    const pageSql = buildMultiRowInsertSql('board_climb_stats', statsColumns, 1);
+    const tail = snapshotTail();
+    expect(tail).not.toBeNull();
+    expect(pageSql).toContain(tail as string);
+  });
+
+  it('moves both tails when the config’s revision column moves', () => {
+    const config = TABLE_CONFIGS.board_climb_stats;
+    const original = config.revisionColumn;
+    try {
+      config.revisionColumn = 'updated_at';
+
+      expect(buildMultiRowInsertSql('board_climb_stats', statsColumns, 1)).toContain(
+        'WHERE excluded.updated_at >= COALESCE(board_climb_stats.updated_at, -1)',
+      );
+      expect(snapshotTail()).toContain('WHERE excluded.updated_at >= COALESCE(board_climb_stats.updated_at, -1)');
+    } finally {
+      config.revisionColumn = original;
+    }
+  });
+
+  it('drops both guards when the config declares no revision column', () => {
+    const config = TABLE_CONFIGS.board_climb_stats;
+    const original = config.revisionColumn;
+    try {
+      config.revisionColumn = undefined;
+
+      expect(buildMultiRowInsertSql('board_climb_stats', statsColumns, 1)).toContain('INSERT OR REPLACE');
+      expect(snapshotTail()).toBeNull();
+    } finally {
+      config.revisionColumn = original;
+    }
+  });
+
+  it('names the conflict target unqualified even when the insert target is not', () => {
+    // SQLite resolves an upsert's target by its bare name, so the snapshot
+    // import writing to `main.board_climb_stats` still references the plain one.
+    expect(snapshotTail()).toContain('COALESCE(board_climb_stats.sync_seq');
+    expect(snapshotTail()).not.toContain('main.board_climb_stats.sync_seq');
   });
 });

@@ -1,5 +1,6 @@
 import type { OfflineDatabase, QueryInvalidator, SqlValue } from '../database';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types';
+import { buildRevisionGuardTail } from './revision-guard-sql';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
 import {
   getCheckpoint,
@@ -660,32 +661,20 @@ export function multiRowChunkSize(columnCount: number): number {
  * the stream leaves alone (`updated_at` — the pull cursor — plus
  * `benchmark_difficulty` and the `fa_*` pair).
  *
- * Falls back to the plain form when the page did not carry the revision column
- * (nothing to compare against) or carries only primary-key columns (nothing to
- * update), so the guard can never turn a valid page into invalid SQL.
+ * The guarded tail itself is built from `TABLE_CONFIGS` by
+ * `buildRevisionGuardTail`, shared with the snapshot import so the primary key,
+ * the revision column and the `>=` live in exactly one place. It returns null —
+ * and this falls back to the plain form — whenever the guard could not be
+ * applied safely, so it can never turn a valid page into invalid SQL.
  */
-export function buildMultiRowInsertSql(
-  tableName: string,
-  columns: readonly string[],
-  rowCount: number,
-  guard?: { revisionColumn: string; primaryKeyColumns: readonly string[] },
-): string {
+export function buildMultiRowInsertSql(tableName: string, columns: readonly string[], rowCount: number): string {
   const columnList = columns.join(', ');
   const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
   const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
 
-  const primaryKeyColumns = guard?.primaryKeyColumns ?? [];
-  const updatedColumns = columns.filter((column) => !primaryKeyColumns.includes(column));
-  if (!guard || !columns.includes(guard.revisionColumn) || updatedColumns.length === 0) {
-    return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
-  }
-
-  const assignments = updatedColumns.map((column) => `${column} = excluded.${column}`).join(', ');
-  return (
-    `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause} ` +
-    `ON CONFLICT(${primaryKeyColumns.join(', ')}) DO UPDATE SET ${assignments} ` +
-    `WHERE excluded.${guard.revisionColumn} >= COALESCE(${tableName}.${guard.revisionColumn}, -1)`
-  );
+  const guardTail = buildRevisionGuardTail({ tableName, conflictReference: tableName, columns });
+  if (!guardTail) return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+  return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause} ${guardTail}`;
 }
 
 async function upsertDocuments(
@@ -694,7 +683,6 @@ async function upsertDocuments(
   documents: Record<string, unknown>[],
   allowedColumns: readonly string[],
   onSchemaDrift?: SchemaDriftReporter,
-  guard?: { revisionColumn: string; primaryKeyColumns: readonly string[] },
 ): Promise<void> {
   if (documents.length === 0) return;
 
@@ -737,7 +725,7 @@ async function upsertDocuments(
   const sqlForRowCount = (rowCount: number): string => {
     let sql = sqlByRowCount.get(rowCount);
     if (!sql) {
-      sql = buildMultiRowInsertSql(tableName, columns, rowCount, guard);
+      sql = buildMultiRowInsertSql(tableName, columns, rowCount);
       sqlByRowCount.set(rowCount, sql);
     }
     return sql;
@@ -838,16 +826,7 @@ async function syncTable(
     // documents:[] with hasMore:true we'd spin forever. Stop here (I2).
     if (result.documents.length === 0) break;
 
-    await upsertDocuments(
-      db,
-      tableName,
-      result.documents,
-      config.localColumns,
-      onSchemaDrift,
-      config.revisionColumn
-        ? { revisionColumn: config.revisionColumn, primaryKeyColumns: config.primaryKeyColumns }
-        : undefined,
-    );
+    await upsertDocuments(db, tableName, result.documents, config.localColumns, onSchemaDrift);
     await setCheckpoint(db, checkpointKey, result.cursor);
 
     totalProcessed += result.documents.length;

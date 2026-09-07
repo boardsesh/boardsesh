@@ -23,6 +23,7 @@ import { purgeNamespaceKey, type OfflineBoardScope } from '../offline-board-key'
 import type { SnapshotGradesArtifact, SnapshotManifestEntry, SnapshotTableName } from './snapshot-manifest';
 import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from './snapshot-manifest';
 import { climbsScopeFilter, isSizeScopedBoard } from './board-scope-sql';
+import { buildRevisionGuardTail } from './revision-guard-sql';
 import { TABLE_CONFIGS } from './table-config';
 import {
   compareCheckpoints,
@@ -69,41 +70,35 @@ const GRADES_SNAPSHOT_TABLES = ['board_climb_grades'] as const;
 const SNAPSHOT_ALIAS = 'bs_snapshot';
 
 /**
- * The artifact -> `main.board_climb_stats` statement, guarded on `sync_seq`.
+ * The artifact -> `main.board_climb_stats` statement, guarded on the revision.
  *
  * The live `climbStatsUpdated` write-through is a second local writer of this
  * table (#5227), so an import must not be able to walk a newer local row
- * backwards. The comparison is `>=`, not `>`: an equal-revision artifact row
- * still has to land, because it carries the columns the stream deliberately
- * leaves alone (`updated_at` — the pull cursor — plus `benchmark_difficulty`
- * and the `fa_*` pair).
+ * backwards. The guarded tail is built from `TABLE_CONFIGS` by the same helper
+ * the pull page insert uses, so the primary key, the revision column and the
+ * `>=` cannot drift between the two writers that can lose that race.
  *
- * Returns the unguarded `INSERT OR REPLACE` when the artifact and the device do
- * not share `sync_seq`, or when nothing outside the primary key is shared:
- * there is then nothing to compare or nothing to update, and the guard could
- * only turn a working import into invalid SQL.
+ * The conflict reference is the BARE table name even though the insert target
+ * is `main.board_climb_stats`: SQLite resolves an upsert's target by its
+ * unqualified name. When the helper declines — no shared revision column, no
+ * whole primary key, or nothing outside it — this falls back to the
+ * unconditional `INSERT OR REPLACE`, which is the pre-guard behaviour.
  */
 function buildStatsUpsertSql(
   statsColumns: readonly string[],
   statsTargetList: string,
   statsSelectList: string,
 ): (whereSql: string) => string {
-  const primaryKeyColumns = ['board_type', 'climb_uuid', 'angle'];
-  const updatedColumns = statsColumns.filter((column) => !primaryKeyColumns.includes(column));
-  const unguarded = (whereSql: string) =>
-    `INSERT OR REPLACE INTO main.board_climb_stats (${statsTargetList})
-         SELECT ${statsSelectList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
-         WHERE ${whereSql}`;
-  if (!statsColumns.includes('sync_seq') || updatedColumns.length === 0) return unguarded;
-  if (!primaryKeyColumns.every((column) => statsColumns.includes(column))) return unguarded;
-
-  const assignments = updatedColumns.map((column) => `${column} = excluded.${column}`).join(', ');
+  const guardTail = buildRevisionGuardTail({
+    tableName: 'board_climb_stats',
+    conflictReference: 'board_climb_stats',
+    columns: statsColumns,
+  });
   return (whereSql: string) =>
-    `INSERT INTO main.board_climb_stats (${statsTargetList})
+    `${guardTail ? 'INSERT INTO' : 'INSERT OR REPLACE INTO'} main.board_climb_stats (${statsTargetList})
          SELECT ${statsSelectList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
-         WHERE ${whereSql}
-         ON CONFLICT(${primaryKeyColumns.join(', ')}) DO UPDATE SET ${assignments}
-         WHERE excluded.sync_seq >= COALESCE(board_climb_stats.sync_seq, -1)`;
+         WHERE ${whereSql}${guardTail ? `
+         ${guardTail}` : ''}`;
 }
 
 /**

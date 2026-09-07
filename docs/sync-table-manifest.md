@@ -300,6 +300,16 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
   SAME revision the stream did, and that row still has to land, because it is what fills `updated_at`,
   `benchmark_difficulty` and the `fa_*` pair. Every other table keeps its unconditional `INSERT OR REPLACE`;
   they have exactly one writer, so there is nothing to lose a race with.
+- **Restore hazard the guard introduces.** The guard trusts `sync_seq` to be monotonic on the server. A restore
+  that moves the sequence BACKWARDS — a `pg_restore` into a fresh database whose bigserial restarts below the
+  highest value devices already hold, or a rollback to an older snapshot — leaves every device frozen on the
+  rows it has: the server re-serves them at a lower `sync_seq`, `excluded.sync_seq >= COALESCE(local, -1)` is
+  false, and the pull silently applies nothing for that table until the sequence climbs back past the high-water
+  mark. Nothing surfaces: the pull reports success, the checkpoint advances, and the rows just do not change.
+  **On any restore, set the sequence forward, never back** — `SELECT setval('board_climb_stats_sync_seq_seq',
+  GREATEST((SELECT MAX(sync_seq) FROM board_climb_stats), nextval('board_climb_stats_sync_seq_seq')));` — and
+  verify `MAX(sync_seq)` is at least what it was before. If devices are already stuck, the only client-side
+  recovery is remove + re-download of the scope, which drops the local rows the guard was protecting.
 
 ### `board_climb_grades` — `syncClimbGrades(boardType, layoutId?, sizeId?)` (board data, per-board)
 
