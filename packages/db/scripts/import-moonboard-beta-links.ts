@@ -190,7 +190,11 @@ async function importMoonBoardBetaLinks() {
     );
     if (unresolvedProblemIds.length > 0) {
       console.warn(`   ⚠️  Unresolved problem ids (first few): ${unresolvedProblemIds.join(', ')}`);
-      console.warn('      Run the catalog import first — a problem gets its alias row there.');
+      console.warn(
+        '      A problem gets its alias row from the catalog import. Either that has not run against this\n' +
+          '      database yet, or the import skipped these problems (ambiguous / drifted / hijacked) and never\n' +
+          '      wrote one — check its log before assuming the first.',
+      );
     }
     for (const contested of contestedVideoIds) {
       console.info(
