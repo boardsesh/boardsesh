@@ -161,12 +161,13 @@ function setupGithub(url: string | null): void {
   });
   if (setVar.status !== 0) fail('gh variable set failed.');
 
-  // Repo-level publish key (also add it to the ota-preview environment for previews).
+  // Repo-level publish key. Deliberately NOT environment-scoped: the `main` production
+  // publish needs it, and the preview publish job declares no environment at all.
   if (ghListNames(['secret', 'list']).includes('EOO_TOKEN')) {
     log('✓ EOO_TOKEN repo secret present.');
   } else {
     log('⚠ EOO_TOKEN repo secret not found — add the app-scoped expo-open-ota key before publishing:');
-    log('    gh secret set EOO_TOKEN   (then also add it to the ota-preview environment)');
+    log('    gh secret set EOO_TOKEN');
   }
 
   // The dashboard admin creds used to delete preview branches live in the
@@ -242,10 +243,6 @@ function setupPreview(): void {
   log('');
   log('── 2. GitHub setup (best-effort, idempotent) ──');
   ghTry(
-    ['api', '-X', 'PUT', 'repos/{owner}/{repo}/environments/ota-preview', '--silent'],
-    'ensured the `ota-preview` environment exists (publish key; optional required reviewers)',
-  );
-  ghTry(
     ['api', '-X', 'PUT', 'repos/{owner}/{repo}/environments/ota-preview-unattended', '--silent'],
     'ensured the `ota-preview-unattended` environment exists (admin creds; NO reviewers)',
   );
@@ -254,33 +251,42 @@ function setupPreview(): void {
     'ensured the `pr-preview` environment exists (hosts the readiness Deployment; no protection needed)',
   );
   log('');
-  log('The preview jobs read from TWO environments so cleanup creds never share a job with');
-  log('PR-author code:');
-  log('  # ota-preview — the PUBLISH job (runs PR-author code); may carry required reviewers.');
-  log('  gh secret set EOO_TOKEN --env ota-preview                        (publish key)');
-  log('  # ota-preview-unattended — cleanup + sweep jobs (trusted base only); NO reviewers.');
+  log('ONE environment, holding only the branch-teardown creds — nothing PR-author code touches:');
+  log('  # ota-preview-unattended — reset + cleanup + sweep jobs; NO reviewers.');
   log('  gh secret set OTA_ADMIN_PASSWORD --env ota-preview-unattended    (delete via the management API)');
   log('  gh variable set OTA_ADMIN_EMAIL --env ota-preview-unattended --body admin@boardsesh.com');
   log('');
-  log('GOOGLE_MAPS_API_KEY must be readable by the (gated) preview job for Android fingerprint parity.');
-  if (ghListNames(['secret', 'list']).includes('GOOGLE_MAPS_API_KEY')) {
-    log('✓ GOOGLE_MAPS_API_KEY repo secret present.');
-  } else {
-    log('⚠ Add GOOGLE_MAPS_API_KEY as a REPO-level secret (it already ships inside the public APK, so');
-    log('  this is not a new exposure): gh secret set GOOGLE_MAPS_API_KEY  (same value as Production).');
+  log('The publish job reads two REPO-level secrets and declares no environment:');
+  log('  gh secret set EOO_TOKEN                                          (app-scoped publish key)');
+  log('  gh secret set GOOGLE_MAPS_API_KEY                                (Android fingerprint parity)');
+  const repoSecrets = ghListNames(['secret', 'list']);
+  for (const secret of ['EOO_TOKEN', 'GOOGLE_MAPS_API_KEY']) {
+    if (repoSecrets.includes(secret)) {
+      log(`✓ ${secret} repo secret present.`);
+    } else {
+      log(`⚠ Add ${secret} as a REPO-level secret before the next preview publish.`);
+    }
   }
+  log('GOOGLE_MAPS_API_KEY must be byte-identical to the copy in the Production environment: it');
+  log('perturbs the resolved Android config, so a different value shifts the published fingerprint and');
+  log('previews silently stop reaching store binaries. It already ships inside the public APK, so a');
+  log('repo-level copy is not a new exposure.');
   log('');
-  log('── 3. The two-environment security model (why previews stay fully automated) ──');
-  log('The publish job holds EOO_TOKEN and runs PR-author code, so `ota-preview` is where you may add');
-  log('the maintainers as REQUIRED REVIEWERS (Settings → Environments → ota-preview): each preview');
-  log('PUBLISH then pauses for approval before its secrets reach PR code. That gate is publish-only.');
+  log('── 3. Why previews stay fully automated (and ungated) ──');
+  log('The publish job checks out PR head and runs PR-author code (vp install, app.config execSync).');
+  log("For a same-repo pull_request GitHub runs the PR's OWN copy of the workflow, so anything in that");
+  log("job's secrets context is one PR diff away from a log. It therefore declares NO environment:");
+  log('EOO_TOKEN is scoped to its two publish steps and the admin creds are unreachable. Required');
+  log('reviewers there would not be a hard wall against an insider who already holds the repo secrets —');
+  log('it would just prompt on every PR, and add a second deployment row to every PR timeline.');
   log('');
-  log('The on-close cleanup and daily sweep run in a SEPARATE trusted-base');
-  log('job set that carries the dashboard admin creds (OTA_ADMIN_*) — and those jobs must never hang.');
-  log('So they declare `ota-preview-unattended`, which MUST stay WITHOUT required reviewers: reviewers');
-  log('there would pause a PR close or the scheduled sweep forever. It is safe unattended because every');
-  log('one of those jobs checks out the TRUSTED BASE (never PR head) and only mutates a ^pr-[1-9][0-9]*$');
-  log('branch — PR-author code never runs with the admin creds. Keep the two environments split.');
+  log('The pre-publish reset, the on-close cleanup and the daily sweep carry the dashboard admin creds');
+  log('(OTA_ADMIN_*) and must never hang, so they declare `ota-preview-unattended`, which MUST stay');
+  log('WITHOUT required reviewers: reviewers there would pause a PR close or the scheduled sweep');
+  log('forever. It is safe unattended because none of those jobs runs PR-author code (reset is pure');
+  log('github-script, cleanup checks out the trusted base) and each only mutates a ^pr-[1-9][0-9]*$');
+  log("branch. The workflow's `tidy` job deletes the deployment rows that environment materialises,");
+  log('so a PR carries exactly one: the pr-preview readiness marker.');
 }
 
 function printRunbook(): void {

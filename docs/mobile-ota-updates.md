@@ -215,7 +215,8 @@ unbounded `Promise.all`, and `fetchWithRetries` used a `retryOn` that inspected 
 `process.exit(1)` and killed the whole publish.
 
 **How many of them run at once.** `mobile-ota-preview.yml` scopes its publish job per PR
-(`mobile-ota-preview-publish-<number>`), unlike `mobile-ota-production.yml`, which is a single
+(`mobile-ota-preview-publish-<number>` at the time; the lane has since widened to
+`mobile-ota-preview-mutation-<number>`), unlike `mobile-ota-production.yml`, which is a single
 repo-wide group. On 2026-08-19 up to **11 preview publish jobs ran concurrently** (peak 13:15–13:23
 UTC), each firing its own burst at the one bucket. A single repo-wide group would be the wrong fix:
 GitHub keeps at most one pending run per group, so intermediate PRs' previews would be silently
@@ -943,12 +944,14 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    baked `xprem-branch` header have reached testers — a binary without that header cannot surf. The
    toggle is on the Channels page inside the selected channel's detail pane.
 7. **Publish credential** — mint an app-scoped `eoo_` API key in the dashboard (the control-plane
-   rejects Expo-token auth). Add it as the GitHub repo secret **`EOO_TOKEN`** and also to the
-   `ota-preview` environment.
+   rejects Expo-token auth). Add it as the GitHub repo secret **`EOO_TOKEN`**. It is repo-level, not
+   environment-scoped: the `main` production publish needs it too, and the preview publish job
+   deliberately declares no environment (see "Who can publish" below).
 8. **GitHub config** — set the repo **variable** `EXPO_UPDATES_URL` =
    `https://updates.boardsesh.com/manifest` (consumed by the two native build workflows + the OTA
-   publish workflow). `GOOGLE_MAPS_API_KEY` must also exist as a secret (already used by the Android
-   build).
+   publish workflow). `GOOGLE_MAPS_API_KEY` must also exist as a **repo-level** secret, byte-identical
+   to the copy in the `Production` environment — the preview publish reads the repo-level one, and a
+   different value silently shifts the Android fingerprint so previews never reach a store binary.
 9. **Verify** — a header-carrying `GET https://updates.boardsesh.com/manifest` (with `expo-app-id`,
    `expo-channel-name: production`, platform/runtime headers) returns 200 with signature `keyid
 main` after the first publish, and its assets load. `vp dlx eoas@3.1.2 doctor --channel=production`
@@ -1182,12 +1185,13 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   `vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>` (take `<hash>` from that
   build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE`; a locally resolved one is macOS-flavoured and will not
   match).
-- **Who can publish (security).** The publish uses the app-scoped **`EOO_TOKEN`**, which is scoped to
-  the **`ota-preview`** environment. Dashboard admin credentials (`OTA_ADMIN_EMAIL` +
-  `OTA_ADMIN_PASSWORD`) live in a SEPARATE **`ota-preview-unattended`** environment and are used only
-  by trusted-base cleanup jobs. The publish job runs
-  PR-author code (`app.config.ts` calls `execSync`; workspace postinstall) with `EOO_TOKEN` in scope
-  but never the admin creds. The boundary that protects `production`:
+- **Who can publish (security).** The publish uses the app-scoped **`EOO_TOKEN`**, a repo-level
+  secret (the `main` production publish needs it too). The publish job runs PR-author code
+  (`app.config.ts` calls `execSync`; workspace postinstall), so it declares **no GitHub environment
+  at all** and scopes the token to its two `eoas publish` steps. Dashboard admin credentials
+  (`OTA_ADMIN_EMAIL` + `OTA_ADMIN_PASSWORD`) live in the one environment this workflow uses,
+  **`ota-preview-unattended`**, declared only by `reset`, `cleanup` and the daily sweep — none of
+  which runs PR-author code. The boundary that protects `production`:
   - **Forks get NO secrets** in the publisher's `pull_request` job, so a fork cannot publish or
     exfiltrate the token regardless of what it edits. This is the hard boundary for external
     contributors. A separate `pull_request_target` workflow handles metadata and cleanup only: it
@@ -1207,22 +1211,23 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
     contributor-authored marker comments are never trusted as state. These trusted-base actions never
     run fork code; `/ota-preview` still performs the actual publish.
   - **Same-repo collaborators are trusted.** For `pull_request`, GitHub runs the PR's **own** copy of
-    the workflow with repo secrets. Any same-repo PR touching the relevant paths auto-publishes.
-    Environment reviewers can add defense-in-depth, but correctness does not assume they are
-    configured. A malicious insider already holds the repo's secrets through other workflows.
-    `^pr-[1-9][0-9]*$` guards every branch mutation (defense-in-depth).
-  - **Hardening (optional).** The admin-cred split is already done: `OTA_ADMIN_EMAIL` +
-    `OTA_ADMIN_PASSWORD` live only in **`ota-preview-unattended`**, whose jobs check out the trusted
-    base and carry no required reviewers, so PR-author code never runs with the admin creds. The only
-    residual hardening concerns **`EOO_TOKEN`**: it's currently also a plain repo secret (the
-    production publish on `main` needs it), which any same-repo PR workflow can read. For hard
-    same-repo enforcement, keep `EOO_TOKEN` only on `ota-preview` and the `main` production
-    environment, drop the repo-level copy, and configure required reviewers on `ota-preview`.
-    Production channel mapping stays a one-time dashboard action, so no admin creds ever touch
-    `main`.
+    the workflow with repo secrets. Any same-repo PR touching the relevant paths auto-publishes, and
+    that is deliberate — there is no approval gate on the publish. A reviewer checkpoint would not be
+    a hard wall against a malicious insider, who already holds the repo's secrets through other
+    workflows; it would just prompt on every PR. `^pr-[1-9][0-9]*$` guards every branch mutation
+    (defense-in-depth). Because the PR's own copy runs, anything reachable from the publish job's
+    secrets context is one PR diff away from a log — which is why that job carries no environment and
+    why the admin creds must never be added to one it declares.
 - **Readiness signal.** Each publish posts a sticky PR comment (branch name + picker steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
-  cleanup marks it inactive on close.
+  cleanup marks it inactive on close. That is the **only** deployment row a PR should carry. GitHub
+  materialises one per job-level `environment:`, so `reset` / `cleanup` would each add a second row
+  reading "requested a deployment to `ota-preview-unattended` — In progress", which looks like a
+  pending approval when nothing here is gated. The `tidy` job retires and deletes those records; it
+  depends on `reset` + `cleanup` but **not** on `publish`, so the row clears in seconds rather than
+  after a 150-minute publish, and it declares no environment of its own or it would recreate the row
+  it deletes. It refuses to touch default-branch records, which belong to the daily sweep and the
+  fork companion.
 - **Cleanup + storage.** The per-PR concurrency lane serializes reset/publish/close so a late upload
   cannot recreate a branch after cleanup. On PR close, or whenever the current diff no longer affects
   mobile, `pr-<number>` is deleted via `scripts/ota-preview-cleanup.ts delete --branch pr-<number>`.
@@ -1238,10 +1243,10 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   leak) or the rule could match production, so `scripts/mobile-ci-env-parity.test.ts` couples them.
 
 One-time infra: `vp run mobile:ota-setup preview` prints the lifecycle rule + the GitHub setup
-(the `ota-preview`, `ota-preview-unattended`, and `pr-preview` environments; `ota-preview` holds
-secret `EOO_TOKEN` for the publish job, `ota-preview-unattended` holds var `OTA_ADMIN_EMAIL` +
-secret `OTA_ADMIN_PASSWORD` for cleanup/sweep jobs, and `GOOGLE_MAPS_API_KEY` is a
-repo-level secret for the Android fingerprint).
+(the `ota-preview-unattended` and `pr-preview` environments; `ota-preview-unattended` holds var
+`OTA_ADMIN_EMAIL` + secret `OTA_ADMIN_PASSWORD` for the reset/cleanup/sweep jobs, `pr-preview`
+carries the readiness deployment and needs no protection, and `EOO_TOKEN` +
+`GOOGLE_MAPS_API_KEY` are repo-level secrets read by the publish job).
 
 ## Deferred
 
