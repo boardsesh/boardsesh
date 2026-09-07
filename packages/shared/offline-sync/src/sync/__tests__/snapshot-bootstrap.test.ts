@@ -810,7 +810,7 @@ describe('bootstrapScopeFromSnapshot', () => {
       source: string,
       ...rest: unknown[]
     ) {
-      if (!wiped && source.includes('INSERT OR REPLACE INTO main.board_climb_stats')) {
+      if (!wiped && source.includes('INTO main.board_climb_stats')) {
         wiped = true;
         setSigningOut(true);
         setSigningOut(false); // epoch stays bumped; isSigningOut back to false
@@ -5056,7 +5056,7 @@ describe('pullSync bootstrap teardown reporting', () => {
       source: string,
       ...rest: unknown[]
     ) {
-      if (!purged && source.includes('INSERT OR REPLACE INTO main.board_climb_stats')) {
+      if (!purged && source.includes('INTO main.board_climb_stats')) {
         purged = true;
         beginScopePurge('kilter:1')();
       }
@@ -5540,7 +5540,7 @@ describe('pullSync bootstrap purge scoping', () => {
       sql: string,
       ...rest: unknown[]
     ) {
-      if (!purged && sql.includes('INSERT OR REPLACE INTO main.board_climb_stats')) {
+      if (!purged && sql.includes('INTO main.board_climb_stats')) {
         purged = true;
         beginScopePurge('tension:2')();
       }
