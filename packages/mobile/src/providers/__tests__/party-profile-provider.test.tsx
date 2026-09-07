@@ -210,6 +210,7 @@ describe('PartyProfileProvider', () => {
     expect(setPersonPropertiesMock).toHaveBeenLastCalledWith(
       {
         role: 'tester',
+        email: 'climber@example.com',
         primary_board: 'kilter',
         favorite_count: 5,
         integrations_connected_count: 1,
@@ -244,6 +245,7 @@ describe('PartyProfileProvider', () => {
     await waitFor(() => expect(setPersonPropertiesMock).toHaveBeenCalledTimes(1));
     expect(setPersonPropertiesMock.mock.calls[0][0]).toEqual({
       role: 'user',
+      email: 'climber@example.com',
       primary_board: 'kilter',
       favorite_count: 2,
       integrations_connected_count: undefined,
@@ -256,6 +258,7 @@ describe('PartyProfileProvider', () => {
     await waitFor(() => expect(setPersonPropertiesMock).toHaveBeenCalledTimes(2));
     expect(setPersonPropertiesMock.mock.calls[1][0]).toEqual({
       role: 'user',
+      email: 'climber@example.com',
       primary_board: 'kilter',
       favorite_count: 2,
       integrations_connected_count: 1,

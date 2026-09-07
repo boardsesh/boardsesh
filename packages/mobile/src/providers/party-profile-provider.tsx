@@ -119,6 +119,7 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
     const { set, setOnce } = buildCohortPersonProperties({
       isTester,
       createdAt,
+      email: authEmail,
       primaryBoard,
       favoriteCount,
       integrationsConnectedCount,
@@ -133,6 +134,7 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
     favoriteCount,
     primaryBoard,
     integrationsConnectedCount,
+    authEmail,
   ]);
 
   const refreshProfile = useCallback(async () => {
