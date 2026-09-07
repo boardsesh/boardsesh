@@ -7,6 +7,7 @@ import {
   CNC_CATALOG_VERSION,
   findCatalogEntry,
   parseSetIds,
+  RETIRED_OPTION_KEYS,
   validateCatalogOptions,
   validateSetIds,
 } from '../catalog';
@@ -32,7 +33,7 @@ describe('CNC catalogue', () => {
   });
 
   it('has a version string orders can be pinned to', () => {
-    expect(CNC_CATALOG_VERSION).toBe('2026-09-07.2');
+    expect(CNC_CATALOG_VERSION).toBe('2026-09-07.3');
   });
 
   it('takes its default set ids from board-constants rather than a second hardcoded list', () => {
@@ -102,7 +103,6 @@ describe('validateCatalogOptions', () => {
     if (!result.ok) return;
     expect(result.options).toEqual({
       sheetStock: '2440x1220',
-      panelThicknessMm: 18,
       tnutHoleDiameterMm: 12.5,
       ledHoleDiameterMm: 12.5,
       kickerMatClearanceMm: 50,
@@ -135,20 +135,32 @@ describe('validateCatalogOptions', () => {
   });
 
   it('keeps chosen values and still returns the complete set', () => {
-    const result = validateCatalogOptions(entry, { panelThicknessMm: 21, dxfFlavour: 'R2010_polylines' });
+    const result = validateCatalogOptions(entry, { gridPitchMm: 101.6, dxfFlavour: 'R2010_polylines' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.options.panelThicknessMm).toBe(21);
+    expect(result.options.gridPitchMm).toBe(101.6);
     expect(result.options.dxfFlavour).toBe('R2010_polylines');
     expect(Object.keys(result.options)).toHaveLength(entry.manufacturingOptions.length);
   });
 
   it('normalises transport-flattened values onto the catalogue value', () => {
-    const result = validateCatalogOptions(entry, { panelThicknessMm: '15', engraveHoldIds: 'true' });
+    const result = validateCatalogOptions(entry, { gridPitchMm: '101.6', engraveHoldIds: 'true' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.options.panelThicknessMm).toBe(15);
+    expect(result.options.gridPitchMm).toBe(101.6);
     expect(result.options.engraveHoldIds).toBe(true);
+  });
+
+  it('tolerates a retired option key from an order stored under an older catalogue version', () => {
+    // panelThicknessMm was retired 2026-09-07: the drawings are 2D and never
+    // depended on it. A preview or paid order bought before the retirement
+    // still carries the key in its stored options, and a regenerate must not
+    // fail validation over a key that once was real.
+    expect(RETIRED_OPTION_KEYS).toContain('panelThicknessMm');
+    const result = validateCatalogOptions(entry, { panelThicknessMm: 21 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.options).not.toHaveProperty('panelThicknessMm');
   });
 
   it('rejects a value outside the allowed set instead of clamping it', () => {
