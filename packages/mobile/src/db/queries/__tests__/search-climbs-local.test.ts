@@ -5,12 +5,7 @@ import { ensureMutationQueueTable, stampLocalUserId } from '@boardsesh/offline-s
 import type { OfflineDatabase, SqlExecutor, SqlRunResult, SqlValue } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 import { canAddClimbToBoard, type BoardCompatibilityTarget } from '@boardsesh/board-config';
-import {
-  searchClimbsLocal,
-  countClimbsLocal,
-  isOfflineSearchSupported,
-  normalizeSortBy,
-} from '../search-climbs-local';
+import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported, normalizeSortBy } from '../search-climbs-local';
 // The decode lives with the scope SQL that reads the same column; mobile is a
 // consumer of it, not its owner.
 import { parseCompatibleSizeIds } from '@boardsesh/offline-sync';
