@@ -245,6 +245,9 @@ export function configuratorReducer(state: CncConfiguratorState, action: CncConf
         // entirely — most likely off the panel, which is a checkout the
         // generator refuses with a collision the buyer never caused.
         artwork: [],
+        previewOrderId: null,
+        previewLicenceId: null,
+        previewConfigKey: null,
       };
     }
     case 'setKicker':
@@ -306,7 +309,10 @@ export function visibleMachiningOptions(
   includeKicker: boolean,
 ): readonly CncManufacturingOption[] {
   return entry.manufacturingOptions.filter(
-    (option) => !CNC_ENGRAVE_OPTION_KEYS.includes(option.key) && (includeKicker || !option.kickerOnly),
+    (option) =>
+      option.key !== 'includeKicker' &&
+      !CNC_ENGRAVE_OPTION_KEYS.includes(option.key) &&
+      (includeKicker || !option.kickerOnly),
   );
 }
 
@@ -353,7 +359,7 @@ export function setIdsFor(entry: CncCatalogEntry, includeKicker: boolean): strin
     .split(',')
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
-  if (includeKicker) {
+  if (includeKicker || (entry.boardName === 'kilter' && entry.layoutId === 1)) {
     return setIds.join(',');
   }
   return setIds.filter((setId) => !CNC_KICKER_SET_IDS.includes(Number(setId))).join(',');
@@ -361,6 +367,7 @@ export function setIdsFor(entry: CncCatalogEntry, includeKicker: boolean): strin
 
 /** Whether this entry's set list actually contains kicker sets to drop. */
 export function hasKickerSets(entry: CncCatalogEntry): boolean {
+  if (entry.boardName === 'kilter' && entry.layoutId === 1) return entry.kickerOptional;
   return entry.setIds.split(',').some((segment) => CNC_KICKER_SET_IDS.includes(Number(segment.trim())));
 }
 
@@ -393,7 +400,10 @@ export function coerceOptionValue(raw: string, valueType: string): string | numb
 export function toBoardConfigInput(state: CncConfiguratorState, entry: CncCatalogEntry): CncBoardConfigInput {
   const options: Record<string, string | number | boolean> = {};
   for (const option of entry.manufacturingOptions) {
-    const raw = state.options[option.key] ?? option.defaultValue;
+    const raw =
+      option.key === 'includeKicker'
+        ? String(entry.kickerOptional && state.includeKicker)
+        : (state.options[option.key] ?? option.defaultValue);
     options[option.key] = coerceOptionValue(raw, option.valueType);
   }
 

@@ -92,9 +92,13 @@ function readHoles(raw: unknown): { holes: HoleMm[]; holePanelIndex: number[] } 
     const yMm = readNumber(hole, 'y_mm');
     const keepoutRadiusMm = readNumber(hole, 'keepout_radius_mm');
     const panelIndex = readNumber(hole, 'panel_index');
+    const diameterMm = readNumber(hole, 'diameter_mm');
+    const kind = readString(hole, 'kind');
     if (xMm === null || yMm === null || keepoutRadiusMm === null || panelIndex === null) return;
     holes.push({
       id: `${readString(hole, 'kind') ?? 'hole'}-${String(position)}`,
+      ...(diameterMm !== null && diameterMm > 0 ? { diameterMm } : {}),
+      ...(kind !== null ? { kind } : {}),
       xMm,
       yMm,
       keepoutRadiusMm,
