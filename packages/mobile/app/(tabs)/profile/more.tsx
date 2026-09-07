@@ -6,7 +6,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { ThemeOverride } from '@boardsesh/key-value-storage';
 import { SUPPORTED_LOCALES, LOCALE_LABELS } from '@boardsesh/i18n';
+import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { useOptionalBluetoothContext } from '../../../src/providers/bluetooth-provider';
 import { useLocalePreference } from '../../../src/providers/i18n-provider';
 import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/locale-preference';
 import { openExternalUrl } from '../../../src/lib/open-url';
@@ -118,6 +120,16 @@ export default function MoreScreen() {
   const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
   const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
   const autoDisconnectTimeoutLabels = useAutoDisconnectTimeoutLabels();
+  // MoonBoard "V2" additional-LED feature — same setting + toggle handler as the
+  // BLE control sheet (BleControlSheetHost), so it's reachable without opening a
+  // live connection. Only shown for a MoonBoard, same gate as that sheet.
+  const bluetooth = useOptionalBluetoothContext();
+  const showMoonboardLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
+  const handleToggleMoonboardLightAdjacentHolds = (next: boolean) => {
+    hapticSelection();
+    bluetooth?.setMoonboardLightAdjacentHolds(next);
+    bluetooth?.reassertWall();
+  };
   const { enableBoardsOffline } = useBoardDownloads();
   const { data: myBoardsConnection } = useMyBoards(undefined, { enabled: offlineEnabled && !!profile });
   // Memoized so the empty-while-loading fallback keeps a stable identity — the
@@ -660,6 +672,18 @@ export default function MoreScreen() {
           setLightOnClimbTap(next);
         },
       },
+      ...(showMoonboardLightAdjacentHolds
+        ? [
+            {
+              kind: 'toggle' as const,
+              key: 'moonboardLightAdjacentHolds',
+              label: t('lightControl.lightAdjacentHolds'),
+              subtitle: t('lightControl.lightAdjacentHoldsHelp'),
+              value: bluetooth?.moonboardLightAdjacentHolds ?? false,
+              onValueChange: handleToggleMoonboardLightAdjacentHolds,
+            },
+          ]
+        : []),
     ],
   });
 
