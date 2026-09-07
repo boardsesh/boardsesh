@@ -112,6 +112,7 @@ describe('createBluetoothAdapter', () => {
     // The probe is not even consulted on the proven default path.
     harness.nativeBleSupportsBoard.mockReturnValue(false);
     createBluetoothAdapter(noopPicker, 'moonboard', { preferWriteWithResponse: false });
+    expect(harness.nativeBleSupportsBoard).not.toHaveBeenCalled();
     expect(NativeIosBleAdapter).toHaveBeenCalledTimes(1);
     expect(NativeIosBleAdapter).toHaveBeenCalledWith(noopPicker, 'moonboard', { preferWriteWithResponse: false });
     expect(RNBleAdapter).not.toHaveBeenCalled();

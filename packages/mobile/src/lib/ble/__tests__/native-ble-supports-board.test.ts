@@ -33,6 +33,8 @@ describe('nativeBleSupportsBoard', () => {
     expect(nativeBleSupportsBoard('woods')).toBe(false);
     expect(nativeBleSupportsBoard('kilter')).toBe(true);
     expect(nativeBleSupportsBoard('moonboard')).toBe(true);
+    // An unknown board is never claimed as drivable, on any binary generation.
+    expect(nativeBleSupportsBoard(undefined)).toBe(false);
   });
 
   it('treats a null module (Android, Expo Go) the same as an absent constant', () => {

@@ -44,9 +44,13 @@ export function nativeBleSupportsConnectionAdoption(): boolean {
  * frames the old Swift encoder would misencode as Aurora.
  */
 export function nativeBleSupportsBoard(boardName: string | undefined): boolean {
+  // An unknown board is never claimed as natively drivable — a caller without
+  // a board name gets the safe ble-plx / hidden-controls answer on every
+  // binary generation.
+  if (boardName === undefined) return false;
   const supportedBoards = boardBleNative?.nativeBoardControlBoards;
   if (Array.isArray(supportedBoards)) {
-    return supportedBoards.includes(boardName ?? '');
+    return supportedBoards.includes(boardName);
   }
   return boardName !== 'woods';
 }

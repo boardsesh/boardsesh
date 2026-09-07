@@ -33,6 +33,10 @@ enum WoodsBoardData {
         guard let data = json.data(using: .utf8),
               let decoded = try? JSONDecoder().decode([String: [String: Int]].self, from: data)
         else {
+            // Unreachable for a committed artifact (the drift test pins the
+            // literal to the docs JSON) — but a decode failure must be loud in
+            // development, not just a downstream "No Woods LED table" log.
+            assertionFailure("WoodsBoardData.ledMapsJSON failed to decode — regenerate via generate-woods-led-maps.ts")
             return [:]
         }
         return decoded.mapValues { table in
