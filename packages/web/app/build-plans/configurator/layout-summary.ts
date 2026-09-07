@@ -125,7 +125,7 @@ export function readLayoutSummary(layout: unknown): CncLayoutSummary {
     warnings: Array.isArray(warnings)
       ? warnings.flatMap((entry) => {
           const message = typeof entry === 'string' ? entry : readString(readRecord(entry), 'message');
-          return message === null ? [] : [message];
+          return message === null || message.trim().length === 0 ? [] : [message];
         })
       : [],
   };
