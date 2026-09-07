@@ -944,13 +944,25 @@ export function PlayDrawer({
   // re-light the live climb (the Browsing chrome promises the wall stays put).
   //
   // Known gap: while a party peer's `climb.mirrored` and this local toggle
-  // disagree, the local one wins on this device's wall. Mobile's toggle is
-  // drawer-local by design and never publishes, so that is existing behaviour —
-  // now visible on the wall as well as the screen.
+  // disagree, the local one wins on this device's wall — for a toggle made on
+  // the climb already showing. On a peer-driven climb CHANGE the auto-sender
+  // runs first and falls back to `climb.mirrored`, and the restatement below
+  // deliberately doesn't reassert, so the peer's orientation would stand with
+  // the screen reading un-mirrored. Unreachable today: nothing in the app calls
+  // `mirrorCurrentClimb`, so that fallback is always false.
   useEffect(() => {
     if (isPreview || !displayedClimbUuid) return;
     bluetooth?.setMirrorIntent(displayedClimbUuid, isMirrored);
   }, [bluetooth, displayedClimbUuid, isMirrored, isPreview]);
+
+  // On iPhone the drawer is a route, and the current climb keeps moving after
+  // it closes (Live Activity next/prev, the session screen, playlist
+  // activation, a party peer). Leave the intent behind and coming back round to
+  // a climb you once flipped re-lights the mirror with no button showing it, so
+  // the toggle's owner takes the intent with it. Unmount only — the iPad's
+  // persistent pane never runs this.
+  const clearMirrorIntent = bluetooth?.clearMirrorIntent;
+  useEffect(() => () => clearMirrorIntent?.(), [clearMirrorIntent]);
 
   // Local state only — the effect above is what carries the flip to the wall,
   // through the AutoSender's normal write so the dedup record and the

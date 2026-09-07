@@ -1859,6 +1859,51 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
     });
 
+    it('leaves the undone wall alone when the current climb is still flipped', async () => {
+      // Undo relights the PREVIOUS climb; the current one is still flipped. The
+      // flip must stay recorded — dropping it makes the next drain compute an
+      // un-mirrored current climb, whose signature no longer matches what was
+      // written, so it writes over the wall and undoes the undo.
+      presence.enabled = true;
+      presence.boardId = 99;
+      presence.currentClimb = makePresenceClimb();
+      bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+        bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+      });
+
+      act(() => {
+        capturedBluetooth?.setMirrorIntent('climb-1', true);
+      });
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
+      });
+
+      await act(async () => {
+        await capturedBluetooth?.undoWallChange();
+      });
+      const sendsAfterUndo = bluetooth.state.sendFramesToBoard.mock.calls.length;
+
+      // Anything that re-drains the same climb must not write over the undo.
+      queue.currentClimbQueueItem = makeQueueItem('climb-1');
+      act(() => {
+        rerender(
+          createElement(BluetoothProvider, {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,20',
+            children: createElement(BluetoothProbe),
+          }),
+        );
+      });
+
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(sendsAfterUndo);
+    });
+
     it('undo resends the captured wall climb over BLE before re-reporting it', async () => {
       presence.enabled = true;
       presence.boardId = 99;

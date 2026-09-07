@@ -31,6 +31,7 @@ const recorded = vi.hoisted(() => ({
 const bluetooth = vi.hoisted(() => ({
   context: null as unknown,
   setMirrorIntent: vi.fn(),
+  clearMirrorIntent: vi.fn(),
 }));
 const queueState = vi.hoisted(() => ({
   queue: [] as unknown[],
@@ -272,9 +273,11 @@ beforeEach(() => {
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
   prefetchWalk.items = [];
   bluetooth.setMirrorIntent = vi.fn();
+  bluetooth.clearMirrorIntent = vi.fn();
   bluetooth.context = {
     isConnected: true,
     setMirrorIntent: bluetooth.setMirrorIntent,
+    clearMirrorIntent: bluetooth.clearMirrorIntent,
     sendFramesToBoard: vi.fn(),
   };
 });
@@ -322,6 +325,24 @@ describe('PlayDrawer mirror intent (#5217)', () => {
     expect(mirrorIntentCalls().at(-1)).toEqual([CLIMB_B.uuid, false]);
   });
 
+  it('forgets the flip when the drawer goes away', () => {
+    // On iPhone the drawer is a route. The current climb keeps moving after it
+    // closes (Live Activity next/prev, a party peer), so an intent left behind
+    // would re-light a remembered mirror with no button showing it.
+    queueState.currentClimbQueueItem = queueItem(CLIMB_A, 'queue-a');
+    const { unmount } = renderDrawer();
+
+    tapMirror();
+    expect(mirrorIntentCalls().at(-1)).toEqual([CLIMB_A.uuid, true]);
+    expect(bluetooth.clearMirrorIntent).not.toHaveBeenCalled();
+
+    act(() => {
+      unmount();
+    });
+
+    expect(bluetooth.clearMirrorIntent).toHaveBeenCalled();
+  });
+
   it('states the orientation even while disconnected, so a flip survives taking the wall', () => {
     // Recording the intent is free; the auto-sender only acts on it once a link
     // exists. Gating on isConnected lost the flip when the lightbulb re-took
@@ -329,6 +350,7 @@ describe('PlayDrawer mirror intent (#5217)', () => {
     bluetooth.context = {
       isConnected: false,
       setMirrorIntent: bluetooth.setMirrorIntent,
+      clearMirrorIntent: bluetooth.clearMirrorIntent,
       sendFramesToBoard: vi.fn(),
     };
     queueState.currentClimbQueueItem = queueItem(CLIMB_A, 'queue-a');

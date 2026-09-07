@@ -94,6 +94,12 @@ type BluetoothContextValue = {
    */
   setMirrorIntent: (climbUuid: string, mirrored: boolean) => void;
   /**
+   * Forget the flip without touching the wall. The surface owning the toggle
+   * calls this when it goes away, so a remembered mirror can't be re-lit with
+   * no button showing it.
+   */
+  clearMirrorIntent: () => void;
+  /**
    * Restore the climb captured before this device's latest accepted wall report.
    * The platform relights it over BLE first, then reports it to board presence.
    */
@@ -1330,11 +1336,6 @@ export function BluetoothProvider({
       return false;
     }
     lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
-    // This path just asserted an UN-mirrored wall. Drop any flip intent so a
-    // later drain for the same climb doesn't immediately re-mirror it and
-    // undo the undo. (Board presence carries no mirror field, so a relight
-    // can only ever restore the un-mirrored orientation — see #5238.)
-    mirrorIntentRef.current = null;
 
     const accepted = await reportClimbForBoardRef
       .current(boardId, presenceClimbToQueueInput(undoTarget), undoTarget.angle ?? null)
@@ -1381,11 +1382,6 @@ export function BluetoothProvider({
         return false;
       }
       lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
-      // This path just asserted an UN-mirrored wall. Drop any flip intent so a
-      // later drain for the same climb doesn't immediately re-mirror it and
-      // undo the relight. (Board presence carries no mirror field, so a relight
-      // can only ever restore the un-mirrored orientation — see #5238.)
-      mirrorIntentRef.current = null;
 
       const accepted = await reportClimbForBoardRef
         .current(boardId, presenceClimbToQueueInput(climb), climb.angle ?? null)
@@ -1524,6 +1520,19 @@ export function BluetoothProvider({
     [reassertWall],
   );
 
+  // Forget the flip, without touching the wall.
+  //
+  // For when the surface that owns the toggle goes away: on iPhone the play
+  // drawer is a route, and the current climb keeps moving without it (Live
+  // Activity next/prev, the session screen, playlist activation, a party peer).
+  // An intent left behind would re-light a remembered mirror with no button
+  // anywhere showing it. Deliberately lazy — no reassert — because there is no
+  // longer a drawer whose screen could disagree with the wall; whatever is lit
+  // stays lit until something else changes it.
+  const clearMirrorIntent = useCallback(() => {
+    mirrorIntentRef.current = null;
+  }, []);
+
   const disconnectInFlightRef = useRef<Promise<void> | null>(null);
 
   // Coalesce adapter disconnect calls. The hook consumes and reports the active
@@ -1622,6 +1631,7 @@ export function BluetoothProvider({
       reassertWall,
       invalidateWallState,
       setMirrorIntent,
+      clearMirrorIntent,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
@@ -1646,6 +1656,7 @@ export function BluetoothProvider({
       reassertWall,
       invalidateWallState,
       setMirrorIntent,
+      clearMirrorIntent,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
