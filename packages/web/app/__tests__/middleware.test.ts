@@ -12,6 +12,29 @@ function sp(params: Record<string, string> = {}): URLSearchParams {
   return new URLSearchParams(params);
 }
 
+describe('AI crawler origin rejection', () => {
+  it.each(['GPTBot/1.4', 'Claude-SearchBot/1.0', 'AMZN-SEARCHBOT/0.1'])('rejects %s before rendering', (userAgent) => {
+    const response = middleware(
+      new NextRequest('https://boardsesh-web-production.up.railway.app/fr/setter/test', {
+        headers: { 'user-agent': userAgent },
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.has('x-middleware-rewrite')).toBe(false);
+  });
+
+  it.each(['Googlebot/2.1', 'bingbot/2.0', 'YandexBot/3.0', 'facebookexternalhit/1.1', 'Mozilla/5.0'])(
+    'preserves %s',
+    (userAgent) => {
+      const response = middleware(
+        new NextRequest('https://www.boardsesh.com/', { headers: { 'user-agent': userAgent } }),
+      );
+      expect(response.status).not.toBe(403);
+    },
+  );
+});
+
 const TTL_24H = 86400;
 const LEGACY_LIST = '/kilter/original/12x12-square/screw_bolt/40/list';
 const SLUG_LIST = '/b/kilter-original-12x12/40/list';

@@ -1,5 +1,7 @@
 /// <reference types="node" />
 
+import { AI_CRAWLER_TOKENS } from '../../packages/web/app/lib/crawler-policy';
+
 // Declarative desired-state for the Cloudflare-managed boardsesh.com zone. This
 // is plain typed data — no side effects, no API calls. scripts/cloudflare-apply.ts
 // reads it, diffs it against the live zone, and (only with --apply) converges the
@@ -495,6 +497,7 @@ export const CRAWLER_ALLOW_TOKENS = [
   'brave-search',
   'bravebot',
   'applebot',
+  'yandexbot',
   // Share-card unfurlers. Blocking these breaks link previews, not crawling.
   'twitterbot',
   'facebookexternalhit',
@@ -514,15 +517,17 @@ export const CRAWLER_ALLOW_TOKENS = [
  * `dotbot/` keeps its slash because the bare token is short enough to collide with
  * an unrelated UA; the rest are distinctive on their own.
  *
+ * AI training/search crawlers are explicit too: September 7 origin logs showed
+ * Claude-SearchBot on www and GPTBot bypassing Cloudflare via the Railway domain,
+ * despite synthetic probes receiving 403. The shared list also drives robots.txt
+ * and the web origin's early rejection. Do not rely on the unmanaged AI rule.
+ *
  * NOT listed, on purpose:
- * - The AI crawlers (ClaudeBot, GPTBot, PerplexityBot, Bytespider, CCBot, ...) —
- *   the same probe got `HTTP/2 403` from `server: cloudflare` for every one, so a
- *   separate zone rule already stops them and duplicating it here would be dead
- *   config that drifts.
  * - `archive.org_bot` — it reaches us and it loops, but it is the Internet Archive,
  *   it is low volume, and excluding it is a values call rather than a cost one.
  */
 export const CRAWLER_BLOCK_TOKENS = [
+  ...AI_CRAWLER_TOKENS,
   'ahrefsbot',
   'ahrefssiteaudit',
   'semrushbot',

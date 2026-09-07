@@ -75,6 +75,7 @@ function isProductionDeployTestFile(filePath) {
 function isCloudflareAffecting(filePath) {
   return (
     filePath.startsWith('infra/cloudflare/') ||
+    filePath === 'packages/web/app/lib/crawler-policy.ts' ||
     filePath === 'scripts/cloudflare-apply.ts' ||
     filePath === 'scripts/cloudflare-apply.test.ts'
   );
@@ -125,7 +126,7 @@ function isWebAffecting(filePath) {
     filePath === 'scripts/production-backend-smoke.mjs' ||
     isProductionDeployTestFile(filePath) ||
     isProductionDeployWatchdogFile(filePath) ||
-    isCloudflareAffecting(filePath)
+    (isCloudflareAffecting(filePath) && filePath !== 'packages/web/app/lib/crawler-policy.ts')
   );
 }
 

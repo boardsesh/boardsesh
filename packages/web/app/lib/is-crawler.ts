@@ -24,14 +24,10 @@
  * while Googlebot (named by Next) correctly got a 200. Those thirteen are the
  * extension list.
  *
- * Deliberately NOT listed: the AI crawlers (ClaudeBot, Claude-User,
- * PerplexityBot, GPTBot, OAI-SearchBot, ChatGPT-User, Bytespider, Amazonbot,
- * CCBot, PetalBot, meta-externalagent). The same probe returned `HTTP/2 403`
- * from `server: cloudflare` with no `x-vercel-cache` header for every one of
- * them — Cloudflare's AI-bot block stops them before Vercel, so a middleware UA
- * regex can never see them and adding them would be dead code. Re-run the probe
- * and revisit this list if that Cloudflare rule is ever relaxed, and as part of
- * the Railway cutover (#4652), which moves the edge.
+ * Automated AI crawling is rejected before locale handling by crawler-policy.ts.
+ * Production logs on 2026-09-07 showed GPTBot bypassing Cloudflare through the
+ * Railway hostname and Claude-SearchBot reaching www. The locale classifier
+ * below remains separate from that access policy and includes share unfurlers.
  *
  * `Google-Extended` is also absent on purpose: it is a robots.txt-only opt-out
  * control token and never appears in a User-Agent header.
