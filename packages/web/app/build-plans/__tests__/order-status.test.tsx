@@ -461,3 +461,9 @@ describe('account isolation', () => {
     expect(screen.queryByText('BS-CNC-K7QM3T')).toBeNull();
   });
 });
+
+it('keeps the Original drilling and Homewall compatibility instructions with the order', async () => {
+  renderStatus(order({ layoutId: 1, sizeId: 28, setIds: '1,20', options: { includeKicker: true } }));
+  expect(await screen.findByText(/13 mm center for one LED/)).toBeDefined();
+  expect(screen.getByText(/centered 10×12/)).toBeDefined();
+});

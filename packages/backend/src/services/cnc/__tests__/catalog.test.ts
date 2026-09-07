@@ -6,6 +6,7 @@ import {
   CNC_CATALOG_CONTENT_HASH,
   CNC_CATALOG_VERSION,
   findCatalogEntry,
+  describeBoard,
   parseSetIds,
   RETIRED_OPTION_KEYS,
   validateCatalogOptions,
@@ -26,19 +27,24 @@ function entryFor(sizeId: number) {
 }
 
 describe('CNC catalogue', () => {
-  it('sells exactly the four canonical Kilter Homewall sizes', () => {
-    expect(CNC_CATALOG.map((entry) => entry.sizeId)).toEqual([17, 21, 23, 25]);
-    expect(CNC_CATALOG.map((entry) => entry.label)).toEqual(['7x10', '10x10', '8x12', '10x12']);
-    expect(CNC_CATALOG.every((entry) => entry.boardName === 'kilter' && entry.layoutId === 8)).toBe(true);
+  it('sells the four canonical Homewall sizes and four Original sizes', () => {
+    expect(CNC_CATALOG.filter((entry) => entry.layoutId === 8).map((entry) => entry.sizeId)).toEqual([17, 21, 23, 25]);
+    expect(CNC_CATALOG.filter((entry) => entry.layoutId === 1).map((entry) => [entry.sizeId, entry.label])).toEqual([
+      [14, '7x10'],
+      [8, '8x12'],
+      [10, '12x12'],
+      [28, '16x12'],
+    ]);
+    expect(CNC_CATALOG.every((entry) => entry.boardName === 'kilter')).toBe(true);
   });
 
   it('has a version string orders can be pinned to', () => {
-    expect(CNC_CATALOG_VERSION).toBe('2026-09-07.3');
+    expect(CNC_CATALOG_VERSION).toBe('2026-09-07.4');
   });
 
   it('takes its default set ids from board-constants rather than a second hardcoded list', () => {
     for (const entry of CNC_CATALOG) {
-      const expected = getSetsForLayoutAndSize('kilter', 8, entry.sizeId)
+      const expected = getSetsForLayoutAndSize('kilter', entry.layoutId, entry.sizeId)
         .map((set) => set.id)
         .join(',');
       expect(entry.setIds).toBe(expected);
@@ -283,5 +289,33 @@ describe('CNC_CATALOG_VERSION', () => {
 
   it('is a dated, sortable version string', () => {
     expect(CNC_CATALOG_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+  });
+});
+
+describe('Kilter Original catalogue', () => {
+  it.each([14, 8, 10, 28])(
+    'keeps both sets mandatory and publishes explicit kicker inclusion for size %i',
+    (sizeId) => {
+      const entry = findCatalogEntry({ boardName: 'kilter', layoutId: 1, sizeId });
+      if (!entry) throw new Error('Original entry missing');
+      expect(entry.setIds).toBe('1,20');
+      expect(validateSetIds(entry, [1, 20])).toEqual({ ok: true, setIds: [1, 20] });
+      expect(validateSetIds(entry, [1])).toMatchObject({ ok: false });
+      expect(validateSetIds(entry, [20])).toMatchObject({ ok: false });
+      expect(validateSetIds(entry, [1, 20, 28, 29])).toMatchObject({ ok: false });
+      expect(validateCatalogOptions(entry, {})).toMatchObject({
+        ok: true,
+        options: { includeKicker: sizeId !== 14, ledHoleDiameterMm: 12.7, tnutHoleDiameterMm: 12.5 },
+      });
+      expect(validateCatalogOptions(entry, { includeKicker: false })).toMatchObject({ ok: true });
+      expect(validateCatalogOptions(entry, { includeKicker: true })).toMatchObject({ ok: sizeId !== 14 });
+      expect(entry.tiers).toEqual(entryFor(25).tiers);
+    },
+  );
+
+  it('distinguishes Original and Homewall in order notifications', () => {
+    expect(describeBoard({ boardName: 'kilter', layoutId: 1, sizeId: 8 })).toBe('Kilter Original 8x12');
+    expect(describeBoard({ boardName: 'kilter', layoutId: 8, sizeId: 23 })).toBe('Kilter Homewall 8x12');
+    expect(describeBoard({ boardName: 'kilter', layoutId: 1, sizeId: 999 })).toBe('kilter 999');
   });
 });

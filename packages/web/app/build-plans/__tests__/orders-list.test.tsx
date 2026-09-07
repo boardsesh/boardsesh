@@ -105,7 +105,7 @@ describe('OrdersList', () => {
     // labelled every one of these "Commercial, single build".
     await renderList([preview('BS-CNC-NEWEST', '2026-09-05T10:00:00.000Z')]);
 
-    expect(screen.getByText('Kilter 25 · Preview')).toBeTruthy();
+    expect(screen.getByText('Kilter Homewall 25 · Preview')).toBeTruthy();
     expect(screen.queryByText(/Commercial/)).toBeNull();
   });
 

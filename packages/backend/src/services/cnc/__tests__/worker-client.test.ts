@@ -106,6 +106,21 @@ function toLayoutRequestForDefaults(): CncWorkerLayoutRequest {
 }
 
 describe('toLayoutRequest', () => {
+  it.each([14, 8, 10, 28])('maps explicit OG kicker inclusion independently of its sets for size %i', (sizeId) => {
+    const entry = findCatalogEntry({ boardName: 'kilter', layoutId: 1, sizeId });
+    if (!entry) throw new Error('Original entry missing');
+    const options = defaultOptions(entry);
+    const request = toLayoutRequest({ entry, options, setIds: [1, 20] });
+    expect(request.board).toEqual({ board_name: 'kilter', layout_id: 1, size_id: sizeId, set_ids: [1, 20] });
+    expect(request.manufacturing.include_kicker).toBe(sizeId !== 14);
+    expect(request.manufacturing.led_hole_diameter_mm).toBe(12.7);
+    expect(request.manufacturing.kicker).toEqual(sizeId !== 14 ? { mat_clearance_mm: 50 } : undefined);
+    const withoutKicker = toLayoutRequest({ entry, options: { ...options, includeKicker: false }, setIds: [1, 20] });
+    expect(withoutKicker.manufacturing.include_kicker).toBe(false);
+    expect(withoutKicker.manufacturing.kicker).toBeUndefined();
+    expect(withoutKicker.board.set_ids).toEqual([1, 20]);
+  });
+
   it('maps catalogue option keys onto the generator contract', () => {
     const entry = entry10x12();
     const request = toLayoutRequest({ entry, options: defaultOptions(entry), setIds: [26, 27, 28, 29] });

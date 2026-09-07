@@ -275,3 +275,9 @@ describe('BuildPlansPanel', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
   });
 });
+
+it('uses CNC translations for the Original layout in the admin queue', async () => {
+  mockRequest.mockResolvedValue(page([makeEntry({}, { layoutId: 1, sizeId: 28, setIds: '1,20' })]));
+  renderPanel();
+  expect(await screen.findByText('Kilter Original (OG) 28')).toBeDefined();
+});

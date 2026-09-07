@@ -1,3 +1,4 @@
+import { getBoardDisplayName } from '@boardsesh/climb-actions';
 import type { CncCatalog, CncLicenceTier, CncOrderStatus } from '@boardsesh/shared-schema';
 
 /**
@@ -122,4 +123,16 @@ export function newestPreviewReadyLicenceId(
  */
 export function finaliseHref(licenceId: string): string {
   return `/build-plans?order=${encodeURIComponent(licenceId)}`;
+}
+
+/** i18n-keep cnc:configurator.board.original
+ * i18n-keep cnc:configurator.board.homewall
+ */
+export function boardLayoutLabel(
+  order: { boardName: string; layoutId: number },
+  translate: (key: string) => string,
+): string {
+  if (order.boardName === 'kilter' && order.layoutId === 1) return translate('configurator.board.original');
+  if (order.boardName === 'kilter' && order.layoutId === 8) return translate('configurator.board.homewall');
+  return getBoardDisplayName(order.boardName);
 }
