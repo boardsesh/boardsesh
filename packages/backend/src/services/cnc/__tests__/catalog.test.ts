@@ -32,7 +32,7 @@ describe('CNC catalogue', () => {
   });
 
   it('has a version string orders can be pinned to', () => {
-    expect(CNC_CATALOG_VERSION).toBe('2026-09-06.1');
+    expect(CNC_CATALOG_VERSION).toBe('2026-09-07.1');
   });
 
   it('takes its default set ids from board-constants rather than a second hardcoded list', () => {
@@ -110,8 +110,8 @@ describe('validateCatalogOptions', () => {
       gridPitchMm: 100,
       dxfFlavour: 'R12_circles',
       paper: 'A3',
-      engraveHoldIds: false,
-      engraveAngleTicks: false,
+      engraveHoldIds: true,
+      engraveAngleTicks: true,
     });
   });
 
