@@ -1,3 +1,4 @@
+import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
@@ -97,6 +98,9 @@ export function sharedSyncCooldownAfterError(error: unknown, configuredCooldownM
 // Named once so the scheduler filter and the health snapshot can't drift.
 const KILTER_BOARD_TYPE = 'kilter';
 
+// Claim only supported Aurora providers; Moon and Kilter have separate runners.
+const AURORA_BOARD_TYPES = AURORA_BOARDS.filter((board) => board !== 'kilter');
+
 // Consecutive-failure count at which we emit a distinct FLAPPING log event.
 // The credential is already backing off and rotating out (the starvation fix);
 // this just makes "this one isn't a one-off blip" greppable for an operator.
@@ -158,7 +162,7 @@ type CredentialFailureUpdate = {
 
 /**
  * Which credentials this runner can sync: a live status, the secrets a login
- * needs, and any board but Kilter. Exported so a background job claiming one
+ * needs, and a supported Aurora provider. Exported so a background job claiming one
  * named credential applies exactly the daemon's eligibility.
  */
 export function syncableAuroraCredentialsFilter() {
@@ -171,7 +175,7 @@ export function syncableAuroraCredentialsFilter() {
     isNotNull(auroraCredentials.encryptedUsername),
     isNotNull(auroraCredentials.encryptedPassword),
     isNotNull(auroraCredentials.auroraUserId),
-    ne(auroraCredentials.boardType, KILTER_BOARD_TYPE),
+    inArray(auroraCredentials.boardType, [...AURORA_BOARD_TYPES]),
   );
 }
 
