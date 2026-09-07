@@ -301,7 +301,12 @@ describe('createClimbStatsLiveSync — refreshing the browsed list', () => {
     const downloaded = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
     const otherSize = seedInfiniteList({ ...BASE_SEARCH, sizeId: 9, minGrade: 17 }, []);
     const isScopeDownloaded = vi.fn(async (_db: OfflineDatabase, scope: { sizeId: number }) => scope.sizeId === 5);
-    const harness = createHarness({ isScopeDownloaded: isScopeDownloaded as never });
+    // The climb fits BOTH sizes, so the size gate cannot do this on its own —
+    // only the per-scope download probe separates the two lists.
+    const harness = createHarness({
+      isScopeDownloaded: isScopeDownloaded as never,
+      writeEvents: allApplied([5, 9]) as never,
+    });
 
     harness.sync.handleEvent(makeEvent());
     await settleWrites();
