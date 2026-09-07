@@ -37,6 +37,7 @@ import { isDatabaseLockedError } from '../../db/lock-errors';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import { SCHEMA_STATEMENTS } from '../../db/schema';
 import { climbsScopeFilter } from '../board-scope-sql';
+import { TABLE_CONFIGS } from '../table-config';
 import type { OfflineBoardScope } from '../../offline-board-key';
 import type { OfflineDatabase, QueryInvalidator } from '../../database';
 import {
@@ -268,6 +269,45 @@ describe('the import cannot revert a newer stream-written stats row', () => {
     });
 
     expect(await readK40(db)).toMatchObject({ display_difficulty: 21.5, updated_at: WATERMARK_AT });
+  });
+
+  it('reads its guard from TABLE_CONFIGS, not from a second copy of the rule', async () => {
+    // The import and the pull page insert must not be able to disagree about
+    // the primary key, the revision column or the `>=`. Dropping the config's
+    // revisionColumn has to disarm the import's tail too.
+    const { db } = await freshClientDb('guard-from-config');
+    const executedSql: string[] = [];
+    // The transaction runs on the adapter's prototype, so the spy goes there.
+    const adapterPrototype = Object.getPrototypeOf(db) as { runAsync: typeof db.runAsync };
+    const realRunAsync = adapterPrototype.runAsync;
+    vi.spyOn(adapterPrototype, 'runAsync').mockImplementation(async function (
+      this: unknown,
+      source: string,
+      ...rest: unknown[]
+    ) {
+      executedSql.push(source);
+      return realRunAsync.call(this, source, ...(rest as never[]));
+    } as typeof db.runAsync);
+
+    const config = TABLE_CONFIGS.board_climb_stats;
+    const original = config.revisionColumn;
+    try {
+      config.revisionColumn = undefined;
+      await bootstrapScopeFromSnapshot({
+        db,
+        scope: KILTER_SCOPE,
+        scopeKey: KILTER_SCOPE_KEY,
+        filePath: artifactPath,
+        batchRows: 3,
+      });
+    } finally {
+      config.revisionColumn = original;
+    }
+
+    const statsInsert = executedSql.find((source) => source.includes('INTO main.board_climb_stats'));
+    expect(statsInsert).toBeDefined();
+    expect(statsInsert).toContain('INSERT OR REPLACE INTO main.board_climb_stats');
+    expect(statsInsert).not.toContain('ON CONFLICT');
   });
 
   it('applies the artifact row when the local one is older', async () => {

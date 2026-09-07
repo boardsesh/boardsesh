@@ -416,21 +416,34 @@ describe('createClimbStatsLiveSync — the queue keeps the newer revision', () =
     expect(second.map((event) => event.syncSeq)).toEqual(['101']);
   });
 
-  it('keeps the newer of a requeued event and one that arrived while it was in flight', async () => {
-    // The lock is lost, so revision 100 comes back to the queue — but 101
-    // arrived meanwhile and must not be overwritten by the retry.
+  it('never lets a requeued event overwrite a newer one that arrived while it was in flight', async () => {
+    // The write of revision 100 is still in the writer when the stream's 101
+    // arrives and takes its queue slot. Losing the lock then puts 100 back —
+    // and it must NOT displace the 101 already sitting there.
+    let release: (() => void) | undefined;
     let locked = true;
-    const writeEvents = vi.fn(async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) =>
-      events.map(() =>
-        locked ? { status: 'lock_lost' as const, compatibleSizeIds: null, layoutId: null, settledBy: 'write' as const } : applied(),
-      ),
-    );
+    const writeEvents = vi.fn(async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) => {
+      if (!release) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return events.map(() =>
+        locked
+          ? { status: 'lock_lost' as const, compatibleSizeIds: null, layoutId: null, settledBy: 'write' as const }
+          : applied(),
+      );
+    });
     const harness = createHarness({ writeEvents: writeEvents as never });
 
     harness.sync.handleEvent(makeEvent({ syncSeq: '100' }));
     await settleWrites();
-    locked = false;
+    // 101 lands on the same key while 100 is still being written.
     harness.sync.handleEvent(makeEvent({ syncSeq: '101' }));
+    // The in-flight write loses the lock, so 100 is requeued on top of 101.
+    release?.();
+    await settleWrites();
+    locked = false;
     await vi.advanceTimersByTimeAsync(CLIMB_STATS_LOCK_BACKOFF_MS);
     await settleWrites();
 
