@@ -106,8 +106,12 @@ export function parseHeaderText(lines: string[]): OcrResult {
   // Try to find climb name (usually first meaningful line)
   // Collect candidate lines and pick the best one
   const nameCandidates: string[] = [];
+  const setterLineIndex = lines.findIndex((line) => /set\s+by\s+/i.test(line));
+  // Rating stars and repeat counts below the setter can resemble long uppercase
+  // names. Only the title area is eligible when the metadata boundary is known.
+  const titleLines = setterLineIndex >= 0 ? lines.slice(0, setterLineIndex) : lines;
 
-  for (const line of lines) {
+  for (const line of titleLines) {
     // Skip lines that look like metadata
     if (
       line.toLowerCase().includes('set by') ||
@@ -125,7 +129,7 @@ export function parseHeaderText(lines: string[]): OcrResult {
     // Remove heart emoji and OCR artifacts, trim
     const cleaned = line
       .replace(/♡|❤️|🤍|©|®/gu, '') // Remove heart, copyright symbols
-      .replace(/\s*[QO@()&]+\s*$/i, '') // Remove trailing Q/O/@/()/& (OCR error for heart/icons)
+      .replace(/\s+[QO@()&]+\s*$/i, '') // A separate icon token, never letters within a real name
       .replace(/^\d+[)\]]\s*/, '') // Remove leading numbers like "0)"
       .replace(/^[yl]\s+/i, '') // Remove leading y/l (OCR artifacts)
       .trim();
@@ -144,13 +148,14 @@ export function parseHeaderText(lines: string[]): OcrResult {
   // Pick the best candidate (prefer longer names, all-caps is common for climb names)
   if (nameCandidates.length > 0) {
     // Sort by: prefer all-caps, then by length
-    nameCandidates.sort((a, b) => {
-      const aAllCaps = a === a.toUpperCase();
-      const bAllCaps = b === b.toUpperCase();
-      if (aAllCaps && !bAllCaps) return -1;
-      if (!aAllCaps && bAllCaps) return 1;
-      return b.length - a.length; // Longer names first
-    });
+    if (setterLineIndex >= 0)
+      nameCandidates.sort((a, b) => {
+        const aAllCaps = a === a.toUpperCase();
+        const bAllCaps = b === b.toUpperCase();
+        if (aAllCaps && !bAllCaps) return -1;
+        if (!aAllCaps && bAllCaps) return 1;
+        return b.length - a.length; // Longer names first
+      });
     name = nameCandidates[0];
 
     // Clean up trailing "8" or "B" which may come from heart icon or benchmark indicator
@@ -174,16 +179,26 @@ export function parseHeaderText(lines: string[]): OcrResult {
     }
   }
 
-  // Find grades
-  for (const line of lines) {
-    // Format: "Grade: User 8A/V11/ Setter 8A/V11"
-    const gradeMatch = line.match(/grade[:\s]+user\s+([^\s/]+(?:\/[^\s/]+)?)\s*[/|]\s*setter\s+([^\s]+)/i);
-    if (gradeMatch) {
-      userGrade = gradeMatch[1].trim();
-      setterGrade = gradeMatch[2].trim();
-      break;
+  // Explicit labels take precedence. A setter-only grade is not a community
+  // grade, and a missing setter grade must not be filled from the community.
+  const gradeLines = setterLineIndex >= 0 ? lines.slice(setterLineIndex + 1) : lines;
+  const hasGradeLabels = gradeLines.some((line) => /\b(?:user|setter)\b/i.test(line));
+  for (const line of gradeLines) {
+    // Compressed Android plus signs can acquire a preceding dash. Only repair
+    // this observed Font/V-grade form; never silently accept a malformed prefix.
+    const normalized = line.replace(/([3-9][ABC])-\+(?=\/V\d+\b)/gi, '$1+');
+    if (normalized !== line) warnings.push('Normalized OCR dash before grade plus');
+    // A slash after the V grade can separate the legacy iOS Setter field.
+    for (const match of normalized.matchAll(
+      /\b(user|setter)\s+([3-9][ABC]?\+?(?:\/V\d+)?)(?![A-Z0-9+-]|\/(?!\s*(?:Setter\b|$)))/gi,
+    )) {
+      if (match[1].toLowerCase() === 'user' && !userGrade) userGrade = match[2];
+      if (match[1].toLowerCase() === 'setter' && !setterGrade) setterGrade = match[2];
     }
-    // Alternative: just look for grade patterns
+  }
+  // Preserve the legacy unlabelled grade-order fallback only when neither label
+  // survived OCR. Never let it overwrite or infer an explicitly labelled role.
+  for (const line of hasGradeLabels ? [] : gradeLines) {
     const simpleGradeMatch = line.match(/(\d[ABC]?\+?\/V\d+)/gi);
     if (simpleGradeMatch && simpleGradeMatch.length >= 1) {
       if (!userGrade) userGrade = simpleGradeMatch[0];
@@ -204,7 +219,7 @@ export function parseHeaderText(lines: string[]): OcrResult {
     setter: setter || 'Unknown',
     angle,
     userGrade: userGrade || 'Unknown',
-    setterGrade: setterGrade || userGrade || 'Unknown',
+    setterGrade: setterGrade || 'Unknown',
     isBenchmark,
     warnings,
   };

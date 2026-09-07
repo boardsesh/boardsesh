@@ -1,10 +1,24 @@
 #!/usr/bin/env node
 
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import fs from 'fs/promises';
 import path from 'path';
 import { parseScreenshot, parseMultipleScreenshots, deduplicateClimbs } from './parser';
 import type { MoonBoardClimb } from './types';
+import { boardRows, type HoldSetup } from './board-profiles';
+
+const setupOption = () =>
+  new Option('--holdsetup <id>', 'Upstream MoonBoard setup ID (not Boardsesh layout ID)')
+    .argParser((value) => {
+      const id = Number(value) as HoldSetup;
+      boardRows(id);
+      return id;
+    })
+    .default(21);
+const profileOption = () =>
+  new Option('--screenshot-profile <profile>', 'Validated screenshot layout')
+    .choices(['legacy-ios', 'android-pixel8pro-1.3.68'])
+    .default('legacy-ios');
 
 /**
  * Check if a file is an image based on extension
@@ -25,6 +39,8 @@ program
   .description('Parse MoonBoard screenshot(s) and extract climb data')
   .option('-o, --output <file>', 'Output JSON file', 'climbs.json')
   .option('--no-dedupe', 'Skip deduplication of climbs')
+  .addOption(setupOption())
+  .addOption(profileOption())
   .action(async (input: string, options) => {
     try {
       const inputPath = path.resolve(input);
@@ -56,9 +72,13 @@ program
 
       // Parse all images
       console.info('Parsing screenshots...');
-      const { climbs, errors } = await parseMultipleScreenshots(imagePaths, (current, total, file) => {
-        process.stdout.write(`\rProcessing: ${current}/${total} - ${file}`);
-      });
+      const { climbs, errors } = await parseMultipleScreenshots(
+        imagePaths,
+        (current, total, file) => {
+          process.stdout.write(`\rProcessing: ${current}/${total} - ${file}`);
+        },
+        { holdsetup: options.holdsetup, screenshotProfile: options.screenshotProfile },
+      );
       console.info(''); // New line after progress
 
       // Report errors
@@ -119,12 +139,17 @@ program
 program
   .command('test <image>')
   .description('Test parsing a single image and show detailed output')
-  .action(async (image: string) => {
+  .addOption(setupOption())
+  .addOption(profileOption())
+  .action(async (image: string, options) => {
     try {
       const imagePath = path.resolve(image);
       console.info(`Testing: ${imagePath}\n`);
 
-      const result = await parseScreenshot(imagePath);
+      const result = await parseScreenshot(imagePath, {
+        holdsetup: options.holdsetup,
+        screenshotProfile: options.screenshotProfile,
+      });
 
       if (result.success && result.climb) {
         console.info('=== Parsed Climb Data ===');

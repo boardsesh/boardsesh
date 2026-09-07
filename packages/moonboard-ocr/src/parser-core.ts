@@ -8,10 +8,16 @@
 import type { ImageProcessor } from './image-processor/types';
 import { runOCR, type OcrOptions } from './core/ocr';
 import { detectHoldsFromPixelData, detectBoardRegion, detectBenchmarkCircle } from './core/holds';
-import { calculateRegions, calculateRegionsFromDetectedBoard } from './core/regions';
+import { calculateRegions, calculateRegionsFromDetectedBoard, calculateAndroidRegions } from './core/regions';
+import { boardRows, type HoldSetup } from './board-profiles';
 import type { MoonBoardClimb, ParseResult, GridCoordinate } from './types';
 
-export type ParseOptions = OcrOptions;
+export type ParseOptions = OcrOptions & {
+  /** Upstream setup ID. Defaults to the original full-size 2024 parser. */
+  holdsetup?: HoldSetup;
+  /** Explicitly opt into calibrated Android geometry; legacy iOS remains default. */
+  screenshotProfile?: 'legacy-ios' | 'android-pixel8pro-1.3.68';
+};
 
 /**
  * Parse a MoonBoard screenshot using the provided ImageProcessor.
@@ -26,21 +32,32 @@ export async function parseWithProcessor(processor: ImageProcessor, options: Par
 
   try {
     const metadata = processor.getMetadata();
+    const rows = boardRows(options.holdsetup);
+    const android = options.screenshotProfile === 'android-pixel8pro-1.3.68';
+    if (options.screenshotProfile && !android && options.screenshotProfile !== 'legacy-ios') {
+      throw new Error('Unsupported screenshot profile');
+    }
+    if (rows === 12 && !android) throw new Error('Mini screenshots require a validated Android profile');
+    if (!android && options.holdsetup !== undefined && options.holdsetup !== 21) {
+      throw new Error('This setup requires a validated Android screenshot profile');
+    }
 
     // Try auto-detecting the board via yellow pixel analysis
     const fullPixelData = await processor.extractFullImage();
     const yellowRegion = detectBoardRegion(fullPixelData);
 
-    const regions = yellowRegion
-      ? calculateRegionsFromDetectedBoard(yellowRegion, metadata.width, metadata.height)
-      : (() => {
-          warnings.push('Could not auto-detect board region, using proportional fallback');
-          return calculateRegions(metadata.width, metadata.height);
-        })();
+    const regions = android
+      ? calculateAndroidRegions(metadata.width, metadata.height, rows)
+      : yellowRegion
+        ? calculateRegionsFromDetectedBoard(yellowRegion, metadata.width, metadata.height)
+        : (() => {
+            warnings.push('Could not auto-detect board region, using proportional fallback');
+            return calculateRegions(metadata.width, metadata.height);
+          })();
 
     // Extract header for OCR and benchmark detection
     const headerPixels = await processor.extractRegion(regions.header);
-    const isBenchmark = detectBenchmarkCircle(headerPixels);
+    const isBenchmark = detectBenchmarkCircle(headerPixels, android ? 'android' : 'legacy-ios');
 
     const ocrImageData = await processor.extractForOCR(regions.header);
     const ocrResult = await runOCR(ocrImageData, options);
@@ -48,7 +65,7 @@ export async function parseWithProcessor(processor: ImageProcessor, options: Par
 
     // Extract board region for hold detection
     const boardPixels = await processor.extractRegion(regions.board);
-    const detectedHolds = detectHoldsFromPixelData(boardPixels, regions.board);
+    const detectedHolds = detectHoldsFromPixelData(boardPixels, regions.board, rows, android ? 'android' : 'combined');
 
     // Group holds by type
     const startHolds: GridCoordinate[] = [];
