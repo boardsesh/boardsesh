@@ -866,3 +866,30 @@ stripe listen --forward-to localhost:8080/api/cnc/stripe/webhook
 
 Use the `whsec_` it prints as `STRIPE_WEBHOOK_SECRET`, set the test secret key
 and the two test price ids, and pay with card `4242 4242 4242 4242`.
+
+### Local testing without Stripe
+
+`CNC_CHECKOUT_BYPASS=1` skips the payment leg entirely. `createCncCheckoutSession`
+writes the order row as usual, then queues it itself with the catalogue tier
+price and a `bypass-<licenceId>` session id, and returns the order page
+(`/build-plans/orders/<licenceId>?checkout=success`) instead of a Stripe URL.
+Everything after that — the worker claim, generation, the pack in the private
+bucket, the download grant — is the real path. The order-received email and the
+`Build Plans Pack Purchased` analytics event are **not** sent: a fake sale must
+not reach a real inbox or a real funnel.
+
+It refuses to be on unless all four hold, and they are checked on every call
+(`services/cnc/checkout-bypass.ts`):
+
+- `CNC_CHECKOUT_BYPASS` is exactly `1`,
+- `NODE_ENV` is not `production`,
+- `RAILWAY_ENVIRONMENT` is unset — every deployed service has one, and Railway
+  prod leaves `NODE_ENV` unset, so the previous condition alone would not catch
+  it,
+- `STRIPE_SECRET_KEY` is unset. A stack that can charge a card never fakes a
+  payment, which is what keeps the bypass and real money mutually exclusive
+  rather than merely unlikely.
+
+The backend logs one loud warning at boot when it is on. Use it for the
+generator, the worker loop and the download; use `stripe listen` above for
+anything about the payment itself.
