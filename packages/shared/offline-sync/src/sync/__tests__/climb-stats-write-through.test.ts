@@ -618,7 +618,10 @@ describe('writeClimbStatsEvents — the batched pre-read', () => {
     await seedClimb();
     const { reads, countingDb } = countReads();
 
-    const results = await writeClimbStatsEvents(countingDb, [makeEvent({ syncSeq: 'nope' }), makeEvent({ syncSeq: '' })]);
+    const results = await writeClimbStatsEvents(countingDb, [
+      makeEvent({ syncSeq: 'nope' }),
+      makeEvent({ syncSeq: '' }),
+    ]);
 
     expect(reads).not.toHaveBeenCalled();
     expect(results.map((result) => result.status)).toEqual(['invalid_revision', 'invalid_revision']);
