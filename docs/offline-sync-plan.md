@@ -764,6 +764,8 @@ The rules that keep the two readers interchangeable:
 
 The index is partial because 4 in 10 stats rows are climbs nobody has sent, which the walk never needs: 12 MB on a 293 MB Kilter database, where indexing every row would be 19.5 MB. A statement must say `ascensionist_count > 0` in those words for SQLite to accept `INDEXED BY idx_stats_ascents`. Costs: the index is built once in migration v13 (0.4 s on an iPhone 13 Pro holding two Kilter boards), and it is one more b-tree to maintain while a download imports stats (1.6 to 1.9 s more on a laptop for a Kilter board's 372,524 rows; not measured on a phone). It is a device-only statement, so snapshot artifacts do not carry it.
 
+**Live climb stats (#5227).** The layout-wide `climbStatsUpdated` stream writes recomputed `board_climb_stats` rows directly into SQLite and refreshes affected local-first queries. This makes grade and send-count changes visible within seconds, without waiting for a pull-to-refresh. Pull sync skips server rows inside its 30-second stability window, so the stream is the prompt local writer for fresh stats, including the tick just logged on this device. See `docs/websocket-implementation.md` for write gates and invalidation rules.
+
 ```typescript
 const enabledBoards = getMMKVPreference<string[]>('sync_boards') ?? [];
 

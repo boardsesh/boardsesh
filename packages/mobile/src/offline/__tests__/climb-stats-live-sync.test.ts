@@ -9,7 +9,11 @@
 
 import { QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ClimbStatsWriteThroughInput, ClimbStatsWriteThroughResult, OfflineDatabase } from '@boardsesh/offline-sync';
+import type {
+  ClimbStatsWriteThroughInput,
+  ClimbStatsWriteThroughResult,
+  OfflineDatabase,
+} from '@boardsesh/offline-sync';
 
 import {
   canStreamChangeList,

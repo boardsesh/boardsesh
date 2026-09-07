@@ -12,8 +12,10 @@ import { TABLE_CONFIGS, TABLE_INVALIDATE_KEYS } from '@boardsesh/offline-sync';
  * nothing, and nothing failed.
  *
  * This test scans the real source tree for query keys and asserts every mapped
- * key is a prefix of one, plus that both consumers import the single map rather
- * than declaring a second copy.
+ * key is a prefix of one, plus that every consumer imports the single map rather
+ * than declaring a second copy. The third consumer is mobile's live climb-stat
+ * write-through (issue #5227), which refreshes the same board_climb_stats keys
+ * from the stream instead of from a completed pull.
  *
  * It lives in the mobile project because that is where most of the readers live,
  * and it anchors on `import.meta.url` (not `process.cwd()`) so a different
@@ -42,8 +44,15 @@ function collectSourceFiles(directory: string, collected: string[]): void {
     }
     if (!SOURCE_EXTENSIONS.some((extension) => entry.endsWith(extension))) continue;
     if (entry.endsWith('.test.ts') || entry.endsWith('.test.tsx')) continue;
-    // The two map consumers would otherwise vouch for their own keys.
-    if (entry === 'invalidate-keys.ts' || entry === 'table-config.ts' || entry === 'drainer.ts') continue;
+    // The three map consumers would otherwise vouch for their own keys.
+    if (
+      entry === 'invalidate-keys.ts' ||
+      entry === 'table-config.ts' ||
+      entry === 'drainer.ts' ||
+      entry === 'climb-stats-live-sync.ts'
+    ) {
+      continue;
+    }
     collected.push(fullPath);
   }
 }
@@ -98,7 +107,7 @@ describe('invalidation-key drift', () => {
     }
   });
 
-  it('keeps both consumers importing the shared map rather than declaring their own', () => {
+  it('keeps every consumer importing the shared map rather than declaring their own', () => {
     const tableConfigSource = readFileSync(
       fileURLToPath(new URL('../../../shared/offline-sync/src/sync/table-config.ts', import.meta.url)),
       'utf8',
@@ -107,11 +116,22 @@ describe('invalidation-key drift', () => {
       fileURLToPath(new URL('../../../shared/offline-sync/src/mutation-queue/drainer.ts', import.meta.url)),
       'utf8',
     );
+    const liveStatsSource = readFileSync(
+      fileURLToPath(new URL('../offline/climb-stats-live-sync.ts', import.meta.url)),
+      'utf8',
+    );
     expect(tableConfigSource).toContain("from './invalidate-keys'");
     expect(drainerSource).toContain("from '../sync/invalidate-keys'");
+    expect(liveStatsSource).toContain('invalidateKeysForTable');
+    expect(liveStatsSource).toContain("from '@boardsesh/offline-sync'");
     // A `keyMap`/`invalidateKeys:` literal reappearing in either file is exactly
     // the duplication this consolidation removed.
     expect(drainerSource).not.toMatch(/const keyMap: Record<string, string\[]\[]>/);
     expect(tableConfigSource).not.toMatch(/^\s+invalidateKeys: \[/m);
+    // The live consumer must not hand-roll the stats key list either. It names
+    // only the ['climb'] root, to narrow that one invalidation by climb uuid.
+    for (const rootKey of ['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount']) {
+      expect(liveStatsSource).not.toContain(`'${rootKey}'`);
+    }
   });
 });

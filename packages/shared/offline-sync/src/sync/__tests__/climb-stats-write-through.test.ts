@@ -76,7 +76,6 @@ function wrapDb(overrides: Partial<OfflineDatabase>): OfflineDatabase {
   return { ...base, ...overrides };
 }
 
-
 async function seedClimb(overrides: { boardType?: string; uuid?: string; compatibleSizeIds?: string | null } = {}) {
   await db.runAsync('INSERT INTO board_climbs (board_type, uuid, layout_id, compatible_size_ids) VALUES (?, ?, ?, ?)', [
     overrides.boardType ?? 'kilter',
@@ -235,10 +234,12 @@ describe('writeClimbStatsEvent — the revision gate', () => {
     // SQLite columns are loosely typed: a text '9' can land in an INTEGER column.
     // Lexically '10' < '9'; numerically 10 > 9, and numerically is what the
     // server's sequence means.
-    await db.runAsync(
-      'INSERT INTO board_climb_stats (board_type, climb_uuid, angle, sync_seq) VALUES (?, ?, ?, ?)',
-      ['kilter', CLIMB_UUID, 40, '9'],
-    );
+    await db.runAsync('INSERT INTO board_climb_stats (board_type, climb_uuid, angle, sync_seq) VALUES (?, ?, ?, ?)', [
+      'kilter',
+      CLIMB_UUID,
+      40,
+      '9',
+    ]);
 
     const result = await writeClimbStatsEvent(db, makeEvent({ syncSeq: '10' }));
 
