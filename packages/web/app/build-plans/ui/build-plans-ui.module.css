@@ -73,7 +73,7 @@
   border: 1px solid var(--neutral-200);
   border-radius: var(--border-radius-xl);
   background-color: var(--semantic-surface);
-  background-image: radial-gradient(circle at 1px 1px, var(--semantic-selected) 1.5px, transparent 1.6px);
+  background-image: radial-gradient(circle at 1px 1px, var(--semantic-selected-hover) 1.6px, transparent 1.7px);
   background-size: 24px 24px;
   background-position: -1px -1px;
   padding: 40px;
@@ -89,7 +89,7 @@
 /* h1/h2 are the only unpinned variants in the MUI theme, so they inherit the
    browser default ramp (6rem / 3.75rem). Pinned here — 96px of display type is
    what made this surface look like a template. */
-.pageTitle {
+.pageTitle.pageTitle {
   margin: 0;
   font-size: 36px;
   line-height: 1.14;
@@ -98,13 +98,13 @@
 }
 
 @media (max-width: 900px) {
-  .pageTitle {
+  .pageTitle.pageTitle {
     font-size: 28px;
     max-width: none;
   }
 }
 
-.pageIntro {
+.pageIntro.pageIntro {
   margin: 16px 0 0;
   font-size: var(--font-size-lg);
   line-height: 1.55;
@@ -113,7 +113,7 @@
 }
 
 @media (max-width: 900px) {
-  .pageIntro {
+  .pageIntro.pageIntro {
     font-size: var(--font-size-base);
   }
 }
@@ -126,14 +126,14 @@
   margin-top: 32px;
 }
 
-.headerNote {
+.headerNote.headerNote {
   margin-top: 24px;
   color: var(--neutral-500);
 }
 
 /* ------------------------------------------------------------ section titles */
 
-.sectionHeading {
+.sectionHeading.sectionHeading {
   margin: 0;
   font-size: var(--font-size-2xl);
   line-height: 1.25;
@@ -141,12 +141,12 @@
 }
 
 @media (max-width: 900px) {
-  .sectionHeading {
+  .sectionHeading.sectionHeading {
     font-size: var(--font-size-xl);
   }
 }
 
-.sectionIntro {
+.sectionIntro.sectionIntro {
   margin: 8px 0 0;
   max-width: 68ch;
   color: var(--neutral-500);
@@ -215,14 +215,14 @@
   gap: 8px 16px;
 }
 
-.cardTitle {
+.cardTitle.cardTitle {
   margin: 0;
   font-size: var(--font-size-lg);
   font-weight: 600;
   line-height: 1.35;
 }
 
-.cardDescription {
+.cardDescription.cardDescription {
   margin: 4px 0 0;
   max-width: 64ch;
   color: var(--neutral-500);
@@ -264,14 +264,14 @@
   color: var(--color-on-primary);
 }
 
-.stepTitle {
+.stepTitle.stepTitle {
   margin: 0;
   font-size: var(--font-size-lg);
   font-weight: 600;
   line-height: 32px;
 }
 
-.stepDescription {
+.stepDescription.stepDescription {
   margin: 4px 0 0;
   max-width: 64ch;
   color: var(--neutral-500);
@@ -313,23 +313,33 @@
   border-bottom: 0;
 }
 
+/* Two-up fills row by row, so the closing rule has to come off the last TWO
+   rows, not the last one — otherwise the left column ends with a rule and the
+   right column does not. Assumes an even number of items, which is what a
+   two-column list is for. */
+.kvTwoUp .kvRow:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
 .kvDense .kvRow {
   padding: 6px 0;
 }
 
-.kvLabel {
+.kvLabel.kvLabel {
   margin: 0;
   color: var(--neutral-500);
 }
 
-.kvValue {
+.kvValue.kvValue {
   margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
-.kvHint {
+.kvHint.kvHint {
   margin: 2px 0 0;
   color: var(--neutral-500);
 }
@@ -355,7 +365,7 @@
   gap: 2px;
 }
 
-.priceAmount {
+.priceAmount.priceAmount {
   margin: 0;
   font-size: var(--font-size-2xl);
   font-weight: 700;
@@ -368,7 +378,7 @@
   font-size: 30px;
 }
 
-.priceNote {
+.priceNote.priceNote {
   margin: 0;
   color: var(--neutral-500);
 }
@@ -494,13 +504,13 @@
   object-fit: contain;
 }
 
-.galleryCaption {
+.galleryCaption.galleryCaption {
   margin: 0;
   color: var(--neutral-500);
   font-variant-numeric: tabular-nums;
 }
 
-.galleryNote {
+.galleryNote.galleryNote {
   margin: 0 0 16px;
   color: var(--neutral-500);
   max-width: 64ch;
@@ -515,13 +525,13 @@
   padding: 32px 24px;
 }
 
-.emptyTitle {
+.emptyTitle.emptyTitle {
   margin: 0;
   font-size: var(--font-size-lg);
   font-weight: 600;
 }
 
-.emptyBody {
+.emptyBody.emptyBody {
   margin: 8px 0 0;
   max-width: 52ch;
   color: var(--neutral-500);

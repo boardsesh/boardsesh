@@ -58,10 +58,12 @@ export default function KeyValueList({
           <Typography variant="body2" component="dt" className={styles.kvLabel}>
             {item.label}
           </Typography>
+          {/* The value is plain text in the `dd`, not a nested `Typography`:
+              MUI's body2 variant sets `fontWeight: 400`, which would land
+              inside this element and undo the 600 that makes a figure read as
+              a figure. The `dd` carries the type itself. */}
           <Box component="dd" className={styles.kvValue}>
-            <Typography variant="body2" component="span">
-              {item.value}
-            </Typography>
+            {item.value}
             {item.hint ? (
               <Typography variant="caption" component="p" className={styles.kvHint}>
                 {item.hint}
