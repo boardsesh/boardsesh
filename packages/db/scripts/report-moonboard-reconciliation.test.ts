@@ -30,13 +30,14 @@ void test('reader ignores sidecars, validates counts and board ids, and refuses 
     const filename = path.join(directory, 'board.json');
     const problem = { id: 1, name: 'One', moves: 's~A1~|e~B2~', configurations: [] };
     const capture = { holdsetup: 1, count: 1, problems: [problem] };
-    fs.writeFileSync(path.join(directory, 'beta.json'), '{}');
+    fs.writeFileSync(path.join(directory, 'beta.json'), JSON.stringify({ schemaVersion: 1, problems: { 1: [] } }));
     fs.writeFileSync(filename, JSON.stringify(capture));
     assert.equal(readReconciliationCatalog(directory)[0].layoutId, 2);
     for (const invalid of [
       { ...capture, count: 2 },
       { ...capture, holdsetup: 99 },
       { ...capture, problems: null },
+      { count: 1, problems: [problem] },
       { ...capture, count: 2, problems: [problem, problem] },
     ]) {
       fs.writeFileSync(filename, JSON.stringify(invalid));

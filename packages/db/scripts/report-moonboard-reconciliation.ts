@@ -68,7 +68,11 @@ export function readReconciliationCatalog(directory: string): CatalogEntry[] {
     const payload: unknown = JSON.parse(fs.readFileSync(path.join(directory, filename), 'utf8'));
     if (!payload || typeof payload !== 'object') continue;
     if (!('holdsetup' in payload)) {
-      if ('problems' in payload) throw new Error(`${filename}: catalog has no holdsetup`);
+      // Beta sidecars also have `problems`, but keyed by ID rather than an
+      // array. Only a board-shaped payload is malformed without holdsetup.
+      if ('count' in payload || ('problems' in payload && Array.isArray(payload.problems))) {
+        throw new Error(`${filename}: catalog has no holdsetup`);
+      }
       continue;
     }
     if (typeof payload.holdsetup !== 'number' || !HOLDSETUP_TO_LAYOUT[payload.holdsetup])
