@@ -55,6 +55,10 @@
   "configurator": {
     "heading": "Configura tu muro",
     "intro": "Todo lo de abajo cambia lo que se corta. Elige los números con los que trabaja tu taller.",
+    "wall": {
+      "heading": "Tu muro",
+      "help": "El plafón y la medida que vas a construir. Todo lo demás sale de ahí."
+    },
     "board": {
       "label": "Plafón",
       "help": "El Kilter Homewall es el único plafón a la venta hoy."
@@ -64,7 +68,6 @@
       "help": "El tamaño de Kilter que vas a construir. Define la retícula de presas y las medidas del muro."
     },
     "kicker": {
-      "label": "Repisa",
       "help": "El panel inclinado de abajo. Solo la tienen los muros de 12 ft.",
       "include": "Incluir la repisa",
       "exclude": "Sin repisa"
@@ -170,8 +173,8 @@
     },
     "engrave": {
       "heading": "Grabado",
-      "help": "Los dos vienen desactivados. Solo tienen sentido en un muro Kilter, y el pack se corta perfectamente sin ellos.",
-      "note": "Los números de presa y los ángulos de los tornillos salen de la propia distribución de Kilter. Todavía estamos consultando con abogados si podemos incluirlos, así que déjalos desactivados si prefieres no esperar a esa respuesta."
+      "help": "Números de presa y ángulos de tornillo, fresados en el panel mientras se corta. Los dos vienen activados.",
+      "note": "Salen de la distribución de Kilter y se agradecen el día que montas las presas: el número junto a cada tuerca en T dice qué presa va ahí, y la marca indica hacia dónde apunta el tornillo."
     },
     "artwork": {
       "heading": "Texto y logos personalizados",
@@ -212,7 +215,6 @@
       "fits": "Cabe. Libre de agujeros y de juntas.",
       "doesNotFit": "Ahí no se puede cortar. Muévela y lo volvemos a comprobar.",
       "signInToCheck": "Inicia sesión y comprobamos tus etiquetas contra la retícula de agujeros.",
-      "blocksCheckout": "Mueve tus etiquetas a un sitio donde quepan antes de comprar.",
       "issues": {
         "text": "Escribe qué debe poner esta etiqueta.",
         "textTooLong": "Eso pasa de {{chars}} caracteres.",
@@ -262,11 +264,11 @@
         "holesInTheWay_other": "Cae encima de {{count}} agujeros. Muévela.",
         "crossesSeam": "Cruza una junta, así que quedaría partida.",
         "clear": "Libre de agujeros y de juntas en este panel."
-      }
+      },
+      "blocksPreview": "Mueve tus etiquetas a un sitio donde quepan antes de pedir la vista previa."
     },
     "summary": {
       "heading": "Qué se corta",
-      "loading": "Calculando los paneles…",
       "wall": "Muro",
       "wallValue": "{{width}} × {{height}} mm",
       "kickerHeight": "Altura de la repisa",
@@ -280,11 +282,10 @@
       "tnuts": "Agujeros de tuerca en T",
       "leds": "Agujeros de LED",
       "skippedLeds": "LEDs omitidos en una junta",
-      "warningsHeading": "Conviene saberlo"
+      "warningsHeading": "Conviene saberlo",
+      "unavailable": "La lista de corte no carga ahora mismo. Todo lo que has elegido sigue aquí."
     },
     "licensee": {
-      "heading": "A nombre de quién va la licencia",
-      "help": "Esto va en todos los archivos del pack, así que una copia filtrada se rastrea hasta la licencia.",
       "name": "Nombre en la licencia",
       "email": "Email",
       "emailHelp": "Adónde llega el pack cuando esté listo.",
@@ -295,20 +296,48 @@
     "licence": {
       "accept": "Acepto la licencia de fabricación",
       "link": "Léela antes"
+    },
+    "preview": {
+      "heading": "Tu vista previa",
+      "signedOut": "Inicia sesión y dibujamos tu muro. Las vistas previas son gratis y no hace falta tarjeta.",
+      "idle": "Repartimos todas las hojas y te devolvemos planos con marca de agua. Cambia algo y vuelve a pedirla.",
+      "working": "Dibujando tus hojas. Tarda unos quince segundos.",
+      "ready": "Con marca de agua, a 110 ppp. Cierra la compra para llevarte los DXF.",
+      "stale": "Has cambiado el muro desde estas hojas. Actualiza la vista previa para ver las nuevas.",
+      "failed": "Esa vista previa no se generó. No se ha cobrado nada: inténtalo otra vez.",
+      "rateLimited": "Ya has gastado las vistas previas gratis de esta hora. Las que tienes están en tus planos; la siguiente, a la hora en punto.",
+      "download": "Descargar la vista previa",
+      "downloading": "Buscando tu enlace…",
+      "galleryLabel": "Hojas de la vista previa",
+      "bomLabel": "Qué cortan estas hojas",
+      "panel": "Panel {{number}}",
+      "assembly": "Montaje",
+      "generated": "Vista previa del"
+    },
+    "finalise": {
+      "heading": "A nombre de quién va la licencia",
+      "help": "La licencia va en todos los archivos del pack, así que una copia filtrada se rastrea hasta ella.",
+      "stale": "Actualiza antes la vista previa: el muro ha cambiado desde estas hojas."
     }
   },
   "cta": {
-    "buy": "Compra los planos",
-    "buySignedOut": "Inicia sesión y compra",
-    "buying": "Abriendo el pago…",
-    "signInTitle": "Inicia sesión para comprar",
-    "signInBody": "Tu licencia necesita una cuenta donde vivir. Te devolvemos justo a tu configuración."
+    "preview": "Pide una vista previa gratis",
+    "previewSignedOut": "Inicia sesión para la vista previa gratis",
+    "previewUpdate": "Actualizar la vista previa",
+    "previewing": "Dibujando tu vista previa…",
+    "previewRetry": "Inténtalo otra vez",
+    "finalise": "Cierra la compra",
+    "finalising": "Abriendo el pago…",
+    "free": "Las vistas previas son gratis. Sin tarjeta.",
+    "signInTitle": "Inicia sesión para tu vista previa gratis",
+    "signInBody": "Tu vista previa necesita una cuenta donde vivir. Te devolvemos justo a tu configuración."
   },
   "errors": {
     "CNC_INVALID_CONFIG": "Esa combinación no se puede cortar. Cambia algo de arriba y lo volvemos a comprobar.",
     "CNC_WORKER_UNAVAILABLE": "El generador de planos no responde ahora mismo. No se ha cobrado nada. Inténtalo dentro de un minuto.",
     "CNC_CHECKOUT_UNAVAILABLE": "Los pagos no están disponibles ahora mismo. No se ha cobrado nada. Inténtalo en un rato.",
-    "generic": "Eso no ha salido. No se ha cobrado nada."
+    "generic": "Eso no ha salido. No se ha cobrado nada.",
+    "RATE_LIMITED": "Son muchas vistas previas para una hora. No se ha cobrado nada: la siguiente, a la hora en punto."
   },
   "status": {
     "pending_payment": "Esperando el pago",
@@ -325,38 +354,60 @@
   },
   "orders": {
     "heading": "Tus planos de construcción",
-    "intro": "Todos los packs que has comprado, del más nuevo al más antiguo. La licencia es tuya pase lo que pase con esta página.",
-    "empty": "Aquí no hay nada todavía.",
+    "intro": "Todos los muros que has previsualizado o comprado, del más nuevo al más antiguo. La licencia es tuya pase lo que pase con esta página.",
+    "configureAnother": "Configura otro muro",
+    "empty": "Aquí no hay ningún muro todavía.",
+    "emptyBody": "Configura un muro y te dibujamos gratis una vista previa de cada tablero. No se cobra nada hasta que lo cierres.",
     "emptyCta": "Configura un muro",
-    "board": "Muro",
-    "tier": "Tipo de licencia",
-    "created": "Pedido",
+    "previewTier": "Vista previa",
+    "orderedOn": "Pedido el {{date}}",
+    "previewedOn": "Vista previa del {{date}}",
     "view": "Abrir",
+    "viewOne": "Abrir el plano de construcción {{licenceId}}",
+    "finalise": "Cerrar la compra",
     "loadError": "No hemos podido cargar tus planos de construcción. Recarga la página."
   },
   "order": {
-    "heading": "Plano de construcción {{licenceId}}",
     "back": "Todos tus planos de construcción",
-    "licence": "Licencia",
     "board": "Muro",
-    "tier": "Tipo de licencia",
-    "placed": "Pedido",
+    "tier": "Licencia",
+    "placed": "Empezado",
+    "previewed": "Vista previa dibujada",
     "size": "Tamaño del pack",
     "sizeValue": "{{megabytes}} MB",
     "downloads": "Descargas",
+    "facts": {
+      "heading": "Qué es esto"
+    },
     "timeline": {
       "heading": "En qué punto está",
-      "paid": "Pagado",
-      "queued": "En cola para el generador",
-      "generating": "Cortando los archivos",
+      "preview": "Vista previa gratis dibujada",
+      "finalised": "Licencia a tu nombre y pagada",
+      "building": "Cortando los archivos",
       "ready": "Listo para descargar"
     },
     "waiting": "Los packs tardan un par de minutos. Esta página se actualiza sola.",
+    "previewWaiting": "Las vistas previas tardan unos quince segundos. Esta página se actualiza sola.",
+    "preview": {
+      "heading": "Tu vista previa gratis",
+      "note": "Con marca de agua, a 110 ppp. Cierra la compra para llevarte los DXF con los que corta tu taller.",
+      "drawing": "Estamos dibujando tus tableros. Aparecen aquí en cuanto estén.",
+      "panel": "Tablero {{number}}",
+      "assembly": "Montaje"
+    },
+    "finalise": "Cerrar la compra",
+    "downloadPreview": "Descargar la vista previa",
     "download": "Descargar el pack",
     "downloading": "Preparando tu enlace…",
     "downloadError": "Ese enlace no ha llegado. Inténtalo otra vez.",
     "checkoutSuccess": "El pago ha entrado. Tu pack se está cortando ahora mismo.",
     "checkoutCancelled": "Se canceló el pago. No se ha cobrado nada.",
+    "previewFailed": {
+      "heading": "Esta vista previa no se dibujó",
+      "body": "No se ha cobrado nada. Cambia algo del muro y vuelve a pedir la vista previa, o dínoslo y le echamos un ojo.",
+      "contact": "Escríbenos y lo arreglamos",
+      "subject": "La vista previa del plano de construcción {{licenceId}} no se dibujó"
+    },
     "failed": {
       "heading": "Este no se generó",
       "contact": "Escríbenos y lo arreglamos",
@@ -370,7 +421,11 @@
       "heading": "No existe ese plano de construcción",
       "body": "O esa licencia no existe o pertenece a otra cuenta."
     },
-    "loadError": "No hemos podido cargar este plano de construcción. Recarga la página."
+    "loadError": "No hemos podido cargar este plano de construcción. Recarga la página.",
+    "downloadCard": {
+      "heading": "Tu pack de construcción",
+      "note": "Un DXF por tablero, los planos de montaje, las hojas para imprimir y tu licencia, todo en un zip."
+    }
   },
   "flow": {
     "heading": "Cómo funciona",

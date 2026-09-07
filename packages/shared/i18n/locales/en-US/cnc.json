@@ -55,6 +55,10 @@
   "configurator": {
     "heading": "Configure your wall",
     "intro": "Everything below changes what gets cut. Pick the numbers your shop works to.",
+    "wall": {
+      "heading": "Your wall",
+      "help": "The board and the size you are building. Everything after this follows from it."
+    },
     "board": {
       "label": "Board",
       "help": "Kilter Homewall is the only board on sale today."
@@ -64,7 +68,6 @@
       "help": "The Kilter size you are building. It sets the hold grid and the wall dimensions."
     },
     "kicker": {
-      "label": "Kicker",
       "help": "The angled panel at the bottom. Only the 12 ft walls have one.",
       "include": "Include the kicker",
       "exclude": "No kicker"
@@ -170,8 +173,8 @@
     },
     "engrave": {
       "heading": "Engraving",
-      "help": "Both are off by default. They only make sense on a Kilter wall, and the pack cuts fine without them.",
-      "note": "Hold numbers and set-screw angles come from Kilter's own layout. We are still getting legal advice on shipping them, so leave them off if you would rather not wait for that answer."
+      "help": "Hold numbers and set-screw angles, routed into the panel while it is cut. Both are on by default.",
+      "note": "They come from the Kilter layout, and they earn their keep the day you fit the holds: the number beside every T-nut says which hold goes there, and the tick shows which way the set screw points."
     },
     "artwork": {
       "heading": "Custom text and logos",
@@ -212,7 +215,6 @@
       "fits": "Fits. Clear of every hole and seam.",
       "doesNotFit": "That will not cut where it is. Move it and we will re-check.",
       "signInToCheck": "Sign in and we will check your labels against the hole grid.",
-      "blocksCheckout": "Move your labels somewhere they fit before you buy.",
       "issues": {
         "text": "Type what this label should say.",
         "textTooLong": "That is longer than {{chars}} characters.",
@@ -262,11 +264,11 @@
         "holesInTheWay_other": "It lands on {{count}} holes. Move it clear.",
         "crossesSeam": "It runs across a seam, so it would be cut in half.",
         "clear": "Clear of every hole and seam on this panel."
-      }
+      },
+      "blocksPreview": "Move your labels somewhere they fit before you preview."
     },
     "summary": {
       "heading": "What gets cut",
-      "loading": "Working out the panels…",
       "wall": "Wall",
       "wallValue": "{{width}} × {{height}} mm",
       "kickerHeight": "Kicker height",
@@ -280,11 +282,10 @@
       "tnuts": "T-nut holes",
       "leds": "LED holes",
       "skippedLeds": "LEDs skipped at a seam",
-      "warningsHeading": "Worth knowing"
+      "warningsHeading": "Worth knowing",
+      "unavailable": "The cut list is not loading right now. Everything you picked is still here."
     },
     "licensee": {
-      "heading": "Who the licence names",
-      "help": "This goes on every file in the pack, so a leaked copy traces back to the licence.",
       "name": "Name on the licence",
       "email": "Email",
       "emailHelp": "Where the pack lands when it is ready.",
@@ -295,20 +296,48 @@
     "licence": {
       "accept": "I accept the manufacturing licence",
       "link": "Read it first"
+    },
+    "preview": {
+      "heading": "Your preview",
+      "signedOut": "Sign in and we will draw your wall. Previews are free, and there is no card to enter.",
+      "idle": "We lay out every sheet and send back watermarked drawings. Change anything and preview again.",
+      "working": "Drawing your sheets. This takes about fifteen seconds.",
+      "ready": "Watermarked, 110 dpi. Finalise to get the DXF files your shop cuts from.",
+      "stale": "You have changed the wall since these sheets. Update the preview to see the new ones.",
+      "failed": "That preview did not build. Nothing was charged — try again.",
+      "rateLimited": "That is every free preview for this hour. The ones you have are on your build plans page; the next one is on the hour.",
+      "download": "Download the preview",
+      "downloading": "Getting your link…",
+      "galleryLabel": "Preview sheets",
+      "bomLabel": "What these sheets cut",
+      "panel": "Panel {{number}}",
+      "assembly": "Assembly",
+      "generated": "Previewed"
+    },
+    "finalise": {
+      "heading": "Who the licence names",
+      "help": "The licence goes on every file in the pack, so a leaked copy traces back to it.",
+      "stale": "Update your preview first — the wall has changed since these sheets."
     }
   },
   "cta": {
-    "buy": "Buy the plans",
-    "buySignedOut": "Sign in and buy",
-    "buying": "Opening checkout…",
-    "signInTitle": "Sign in to buy",
-    "signInBody": "Your licence needs an account to live on. We will bring you straight back to your configuration."
+    "preview": "Get a free preview",
+    "previewSignedOut": "Sign in for a free preview",
+    "previewUpdate": "Update preview",
+    "previewing": "Drawing your preview…",
+    "previewRetry": "Try again",
+    "finalise": "Finalise and buy",
+    "finalising": "Opening checkout…",
+    "free": "Previews are free. No card needed.",
+    "signInTitle": "Sign in for your free preview",
+    "signInBody": "Your preview needs an account to live on. We will bring you straight back to your configuration."
   },
   "errors": {
     "CNC_INVALID_CONFIG": "That combination will not cut. Change something above and we will re-check it.",
     "CNC_WORKER_UNAVAILABLE": "The plan generator is not answering right now. Nothing was charged. Try again in a minute.",
     "CNC_CHECKOUT_UNAVAILABLE": "Payments are not available right now. Nothing was charged. Try again shortly.",
-    "generic": "That did not go through. Nothing was charged."
+    "generic": "That did not go through. Nothing was charged.",
+    "RATE_LIMITED": "That is a lot of previews for one hour. Nothing was charged — the next one is on the hour."
   },
   "status": {
     "pending_payment": "Waiting on payment",
@@ -325,38 +354,60 @@
   },
   "orders": {
     "heading": "Your build plans",
-    "intro": "Every pack you have bought, newest first. A licence stays yours whatever happens to this page.",
-    "empty": "Nothing here yet.",
+    "intro": "Every wall you have previewed or bought, newest first. A licence stays yours whatever happens to this page.",
+    "configureAnother": "Configure another wall",
+    "empty": "No walls here yet.",
+    "emptyBody": "Configure a wall and we will draw you a free preview of every sheet. Nothing is charged until you finalise.",
     "emptyCta": "Configure a wall",
-    "board": "Wall",
-    "tier": "Licence type",
-    "created": "Ordered",
+    "previewTier": "Preview",
+    "orderedOn": "Ordered {{date}}",
+    "previewedOn": "Previewed {{date}}",
     "view": "Open",
+    "viewOne": "Open build plan {{licenceId}}",
+    "finalise": "Finalise",
     "loadError": "We could not load your build plans. Reload the page."
   },
   "order": {
-    "heading": "Build plan {{licenceId}}",
     "back": "All your build plans",
-    "licence": "Licence",
     "board": "Wall",
-    "tier": "Licence type",
-    "placed": "Ordered",
+    "tier": "Licence",
+    "placed": "Started",
+    "previewed": "Preview drawn",
     "size": "Pack size",
     "sizeValue": "{{megabytes}} MB",
     "downloads": "Downloads",
+    "facts": {
+      "heading": "What this is"
+    },
     "timeline": {
       "heading": "Where it is up to",
-      "paid": "Paid",
-      "queued": "Queued for the generator",
-      "generating": "Cutting the files",
+      "preview": "Free preview drawn",
+      "finalised": "Licence named and paid",
+      "building": "Cutting the files",
       "ready": "Ready to download"
     },
     "waiting": "Packs take a couple of minutes. This page updates itself.",
+    "previewWaiting": "Previews take about fifteen seconds. This page updates itself.",
+    "preview": {
+      "heading": "Your free preview",
+      "note": "Watermarked, 110 dpi. Finalise to get the DXF files your shop cuts from.",
+      "drawing": "We are drawing your sheets. They land here as soon as they are done.",
+      "panel": "Panel {{number}}",
+      "assembly": "Assembly"
+    },
+    "finalise": "Finalise and buy",
+    "downloadPreview": "Download the preview",
     "download": "Download the pack",
     "downloading": "Getting your link…",
     "downloadError": "That link did not come through. Try again.",
     "checkoutSuccess": "Payment went through. Your pack is being cut now.",
     "checkoutCancelled": "Checkout was cancelled. Nothing was charged.",
+    "previewFailed": {
+      "heading": "This preview did not draw",
+      "body": "Nothing was charged. Change something on your wall and preview it again, or tell us and we will look at it.",
+      "contact": "Email us and we will sort it out",
+      "subject": "Build plan {{licenceId}} preview did not draw"
+    },
     "failed": {
       "heading": "This one did not build",
       "contact": "Email us and we will sort it out",
@@ -370,7 +421,11 @@
       "heading": "No such build plan",
       "body": "Either that licence does not exist or it belongs to another account."
     },
-    "loadError": "We could not load this build plan. Reload the page."
+    "loadError": "We could not load this build plan. Reload the page.",
+    "downloadCard": {
+      "heading": "Your build pack",
+      "note": "One DXF per panel, the assembly drawings, the print sheets and your licence, in one zip."
+    }
   },
   "flow": {
     "heading": "How it works",
