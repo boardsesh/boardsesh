@@ -147,7 +147,8 @@ vi.mock('../../offline/use-snapshot-source', () => ({
   useSnapshotSource: () => snapshotSourceMock,
 }));
 
-vi.mock('../../settings', () => ({ getSetting: vi.fn(() => ['kilter']) }));
+const enabledScopeKeys = vi.hoisted(() => ({ value: ['kilter:1:5'] as string[] }));
+vi.mock('../../settings', () => ({ getSetting: vi.fn(() => enabledScopeKeys.value) }));
 
 const syncCollaboratorMocks = vi.hoisted(() => ({
   setSyncProgress: vi.fn(),
@@ -163,11 +164,73 @@ vi.mock('../../hooks/use-offline-mutations', () => ({
   enqueueTickOutboxOnly: enqueueTickOutboxOnlyMock,
 }));
 
+// The live-stats consumer is exercised on its own (climb-stats-live-sync.test).
+// What the wrapper owes it is the seams, one instance per mount, and disposal —
+// so it is captured here rather than run.
+const isBoardDownloadedLocallyMock = vi.hoisted(() => vi.fn(async () => true));
+vi.mock('../../db/queries/board-download-status', () => ({
+  isBoardDownloadedLocally: isBoardDownloadedLocallyMock,
+}));
+
+const liveSyncMocks = vi.hoisted(() => {
+  const instances: Array<{
+    options: Record<string, unknown>;
+    handleEvent: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
+  }> = [];
+  return {
+    instances,
+    create: vi.fn((options: Record<string, unknown>) => {
+      const instance = { options, handleEvent: vi.fn(), dispose: vi.fn() };
+      instances.push(instance);
+      return instance;
+    }),
+  };
+});
+vi.mock('../../offline/climb-stats-live-sync', () => ({
+  createClimbStatsLiveSync: liveSyncMocks.create,
+}));
+
+type LiveSyncSeams = {
+  getDb: () => unknown;
+  getActiveBoard: () => { boardType: string; layoutId: number; sizeId: number; angle: number } | null;
+  isScopeDownloaded: unknown;
+  shouldSkipWrites: () => boolean;
+  hasEnabledScopeForLayout: (boardType: string, layoutId: number) => boolean;
+  onError: (error: unknown) => void;
+};
+
+function liveSyncSeams(index = 0): LiveSyncSeams {
+  return liveSyncMocks.instances[index].options as unknown as LiveSyncSeams;
+}
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { setBackgrounded, setSigningOut } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { ACTIVE_BOARD_QUERY_KEY } from '../../lib/graphql/use-active-board';
 import { BoardAdapterWrapper } from '../board-adapter';
+
+let queryClient: QueryClient;
+
+/**
+ * The wrapper reads a QueryClient (for the active board and the live-stats
+ * refresh), so every render needs a provider above it.
+ */
+function renderWrapper() {
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <BoardAdapterWrapper>{null}</BoardAdapterWrapper>
+    </QueryClientProvider>,
+  );
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  liveSyncMocks.instances.length = 0;
+  enabledScopeKeys.value = ['kilter:1:5'];
+  setBackgrounded(false);
+  setSigningOut(false);
   // vi.clearAllMocks() only clears the spy; the listener set and the offline
   // flag live outside it.
   connectivity.reset();
@@ -181,13 +244,13 @@ beforeEach(() => {
 describe('BoardAdapterWrapper offline gating', () => {
   it('provides saveTickOffline when the offline flag is on', () => {
     offlineEnabled = true;
-    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+    renderWrapper();
     expect(typeof capturedAdapter?.saveTickOffline).toBe('function');
   });
 
   it('omits saveTickOffline when the offline flag is off, so useSaveTick falls through to the network', () => {
     offlineEnabled = false;
-    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+    renderWrapper();
     expect(capturedAdapter).toBeDefined();
     expect(capturedAdapter?.saveTickOffline).toBeUndefined();
     // The rest of the adapter contract is unaffected by the gate.
@@ -197,7 +260,7 @@ describe('BoardAdapterWrapper offline gating', () => {
   });
 
   it('multiplexes live stats over the existing singleton WS client', () => {
-    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+    renderWrapper();
     const handlers = { next: vi.fn(), connected: vi.fn(), error: vi.fn() };
     const unsubscribe = capturedAdapter?.subscribeClimbStats?.('kilter', 1, handlers);
 
@@ -213,7 +276,7 @@ describe('BoardAdapterWrapper offline gating', () => {
   it('cancels a scheduled stats retry when disposed before the timer fires', () => {
     vi.useFakeTimers();
     try {
-      render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+      renderWrapper();
       const handlers = { next: vi.fn(), connected: vi.fn(), error: vi.fn() };
       const unsubscribe = capturedAdapter?.subscribeClimbStats?.('kilter', 1, handlers);
       const subscriptionHandlers = wsMocks.subscribe.mock.calls.at(-1)?.[1] as { complete: () => void } | undefined;
@@ -235,7 +298,7 @@ describe('BoardAdapterWrapper offline gating', () => {
   // instead and resumes on the edge back to reachable.
   it('defers the initial stats subscribe during an outage and resumes on the edge', () => {
     connectivity.setOffline(true);
-    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+    renderWrapper();
     const handlers = { next: vi.fn(), connected: vi.fn(), error: vi.fn() };
 
     const unsubscribe = capturedAdapter?.subscribeClimbStats?.('kilter', 1, handlers);
@@ -258,7 +321,7 @@ describe('BoardAdapterWrapper offline gating', () => {
   it('arms no stats retry timer while offline, and resubscribes exactly once when the backend returns', () => {
     vi.useFakeTimers();
     try {
-      render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+      renderWrapper();
       const handlers = { next: vi.fn(), connected: vi.fn(), error: vi.fn() };
       const unsubscribe = capturedAdapter?.subscribeClimbStats?.('kilter', 1, handlers);
       const subscriptionHandlers = wsMocks.subscribe.mock.calls.at(-1)?.[1] as { complete: () => void } | undefined;
@@ -299,7 +362,7 @@ describe('BoardAdapterWrapper tick degrade + telemetry', () => {
 
   async function saveTick(variables = makeVariables(), queryClient = { invalidateQueries: vi.fn() }) {
     offlineEnabled = true;
-    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+    renderWrapper();
     const executeHttp = vi.fn();
     const savedTick = await capturedAdapter?.saveTickOffline?.(variables, {
       queryClient,
@@ -504,5 +567,112 @@ describe('BoardAdapterWrapper tick degrade + telemetry', () => {
     expect(reportHandledErrorMock).not.toHaveBeenCalled();
     expect(trackMock).not.toHaveBeenCalled();
     expect(enqueueTickOutboxOnlyMock).not.toHaveBeenCalled();
+  });
+});
+
+// Issue #5227. The wrapper owns the live-stats consumer's lifetime and every
+// seam it resolves at call time; the consumer's own behaviour is covered in
+// climb-stats-live-sync.test.ts.
+describe('BoardAdapterWrapper live climb-stat write-through', () => {
+  it('creates exactly one consumer per mount, with the seams it resolves at call time', () => {
+    renderWrapper();
+
+    expect(liveSyncMocks.create).toHaveBeenCalledTimes(1);
+    const seams = liveSyncSeams();
+    expect(seams.getDb()).toEqual({ tag: 'db' });
+    expect(seams.isScopeDownloaded).toBe(isBoardDownloadedLocallyMock);
+  });
+
+  it('reads the browsed board from the active-board query, live', () => {
+    renderWrapper();
+    const seams = liveSyncSeams();
+
+    expect(seams.getActiveBoard()).toBeNull();
+
+    queryClient.setQueryData(ACTIVE_BOARD_QUERY_KEY, {
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 5,
+      angle: 40,
+      name: 'Home wall',
+    });
+
+    expect(seams.getActiveBoard()).toEqual({ boardType: 'kilter', layoutId: 1, sizeId: 5, angle: 40 });
+  });
+
+  it('only accepts layouts the user actually downloads', () => {
+    renderWrapper();
+    const seams = liveSyncSeams();
+
+    expect(seams.hasEnabledScopeForLayout('kilter', 1)).toBe(true);
+    expect(seams.hasEnabledScopeForLayout('kilter', 2)).toBe(false);
+    expect(seams.hasEnabledScopeForLayout('tension', 1)).toBe(false);
+  });
+
+  it('skips writes while backgrounded or signing out', () => {
+    renderWrapper();
+    const seams = liveSyncSeams();
+
+    expect(seams.shouldSkipWrites()).toBe(false);
+
+    setBackgrounded(true);
+    expect(seams.shouldSkipWrites()).toBe(true);
+    setBackgrounded(false);
+
+    setSigningOut(true);
+    expect(seams.shouldSkipWrites()).toBe(true);
+    setSigningOut(false);
+  });
+
+  it('reports a write failure under its own kind, not the tick kind', () => {
+    renderWrapper();
+    const brokenDatabase = new Error('database or disk is full');
+
+    liveSyncSeams().onError(brokenDatabase);
+
+    expect(reportHandledErrorMock).toHaveBeenCalledWith(brokenDatabase, {
+      tags: { source: 'offline-sync', kind: 'climb-stats-write-through' },
+    });
+  });
+
+  it('forwards stream events to the consumer when the offline flag is on', () => {
+    offlineEnabled = true;
+    renderWrapper();
+    const event = { boardType: 'kilter', layoutId: 1, climbUuid: 'climb-1', angle: 40 };
+
+    capturedAdapter?.persistClimbStatsEvent?.(event as never);
+
+    expect(liveSyncMocks.instances[0].handleEvent).toHaveBeenCalledWith(event);
+  });
+
+  it('omits the capability when the offline flag is off', () => {
+    offlineEnabled = false;
+    renderWrapper();
+
+    expect(capturedAdapter?.persistClimbStatsEvent).toBeUndefined();
+  });
+
+  it('keeps one consumer across re-renders and adapter identity changes', () => {
+    offlineEnabled = true;
+    const view = renderWrapper();
+
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <BoardAdapterWrapper>
+          <span>changed</span>
+        </BoardAdapterWrapper>
+      </QueryClientProvider>,
+    );
+
+    expect(liveSyncMocks.create).toHaveBeenCalledTimes(1);
+    expect(liveSyncMocks.instances[0].dispose).not.toHaveBeenCalled();
+  });
+
+  it('disposes the consumer on unmount', () => {
+    const view = renderWrapper();
+
+    view.unmount();
+
+    expect(liveSyncMocks.instances[0].dispose).toHaveBeenCalledTimes(1);
   });
 });
