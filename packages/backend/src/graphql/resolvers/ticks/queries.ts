@@ -10,7 +10,13 @@ import {
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
-import { requireAuthenticated, applyRateLimit, validateInput, isNoMatchClimb } from '../shared/helpers';
+import {
+  requireAuthenticated,
+  applyRateLimit,
+  validateInput,
+  isNoMatchClimb,
+  usesAuroraNoMatchDescription,
+} from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
 import { resolveRenderBoard } from '@boardsesh/board-config';
 import {
@@ -803,7 +809,7 @@ export const tickQueries = {
           boardseshDifficulty: boardseshDifficulty == null ? null : Number(boardseshDifficulty),
           boardseshConfidence: toConfidenceTier(boardseshConfidence),
           isBenchmark: Boolean(resolvedIsBenchmark),
-          isNoMatch: isNoMatchClimb(climbDescription),
+          isNoMatch: usesAuroraNoMatchDescription(tick.boardType) && isNoMatchClimb(climbDescription),
           qualityAverage: qualityAverage != null ? Number(qualityAverage) : null,
           comment: tick.comment || '',
           climbedAt: tick.climbedAt,
@@ -1165,7 +1171,7 @@ export const tickQueries = {
       // Skip ticks that fell inside the date window but belong to a different group.
       if (!pageKeySet.has(key)) continue;
 
-      const isNoMatch = isNoMatchClimb(climbDescription);
+      const isNoMatch = usesAuroraNoMatchDescription(tick.boardType) && isNoMatchClimb(climbDescription);
 
       const canShowBoard =
         tick.boardId != null && (ctx?.userId === userId || (boardIsPublic === true && boardIsUnlisted !== true));

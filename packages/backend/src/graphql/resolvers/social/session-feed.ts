@@ -3,7 +3,7 @@ import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
-import { requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/helpers';
+import { requireAuthenticated, validateInput, isNoMatchClimb, usesAuroraNoMatchDescription } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
 import { resolveRenderBoard, type RenderBoardCandidate } from '@boardsesh/board-config';
 import { boardseshDifficultyExpr, boardseshConfidenceExpr, boardseshGradeTickJoin } from '../shared/sql-expressions';
@@ -652,7 +652,7 @@ export const sessionFeedQueries = {
         quality: row.tick.quality,
         isMirror: row.tick.isMirror ?? false,
         isBenchmark: row.tick.isBenchmark ?? false,
-        isNoMatch: isNoMatchClimb(row.climbDescription),
+        isNoMatch: usesAuroraNoMatchDescription(row.tick.boardType) && isNoMatchClimb(row.climbDescription),
         comment: row.tick.comment || null,
         frames: row.frames || null,
         setterUsername: row.setterUsername || null,
@@ -1218,7 +1218,7 @@ function mapTickHighlightRow(row: TickHighlightRow, ownerBoards: RenderBoardCand
     quality: row.quality,
     isMirror: row.isMirror ?? false,
     isBenchmark: row.isBenchmark ?? false,
-    isNoMatch: isNoMatchClimb(row.climbDescription),
+    isNoMatch: usesAuroraNoMatchDescription(row.boardType) && isNoMatchClimb(row.climbDescription),
     comment: row.comment || null,
     frames: row.frames,
     setterUsername: row.setterUsername,

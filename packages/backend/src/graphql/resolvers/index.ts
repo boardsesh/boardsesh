@@ -70,7 +70,7 @@ import { integrationMutations } from './integrations/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
 import { syncQueries } from './sync/queries';
-import { isNoMatchClimb, isNoMatch } from './shared/helpers';
+import { isNoMatchClimb, isNoMatch, usesAuroraNoMatchDescription } from './shared/helpers';
 
 export const resolvers = {
   // Scalar types
@@ -180,8 +180,17 @@ export const resolvers = {
     // Prefer the structured characteristic; fall back to the Aurora description
     // convention for any parent that didn't select the characteristics array
     // (or for rows synced before the column was backfilled — the prefix persists).
-    is_no_match: (climb: { characteristics?: string[] | null; description?: string | null }) =>
-      climb.characteristics != null ? isNoMatch(climb.characteristics) : isNoMatchClimb(climb.description),
+    // `boardType` is only populated in multi-board contexts, so the description
+    // fallback fails open when it is absent — today's exact behaviour.
+    is_no_match: (climb: {
+      characteristics?: string[] | null;
+      description?: string | null;
+      boardType?: string | null;
+    }) =>
+      climb.characteristics != null
+        ? isNoMatch(climb.characteristics)
+        : (climb.boardType == null || usesAuroraNoMatchDescription(climb.boardType)) &&
+          isNoMatchClimb(climb.description),
   },
 
   // Union type resolvers

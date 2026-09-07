@@ -8,7 +8,13 @@ import type {
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { requireAuthenticated, applyRateLimit, validateInput, isNoMatchClimb } from '../shared/helpers';
+import {
+  requireAuthenticated,
+  applyRateLimit,
+  validateInput,
+  isNoMatchClimb,
+  usesAuroraNoMatchDescription,
+} from '../shared/helpers';
 import { NewClimbFeedInputSchema, NewClimbSubscriptionInputSchema } from '../../../validation/schemas';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../../../db/queries/util/climb-stats-join';
 
@@ -87,7 +93,7 @@ export const newClimbSubscriptionResolvers = {
         angle: c.angle ?? null,
         frames: c.frames ?? null,
         difficultyName: c.difficultyName ?? null,
-        isNoMatch: isNoMatchClimb(c.description),
+        isNoMatch: usesAuroraNoMatchDescription(c.boardType) && isNoMatchClimb(c.description),
         createdAt: c.createdAt ?? new Date().toISOString(),
       }));
 

@@ -84,7 +84,7 @@ describe('SearchCacheService', () => {
       // The one place the version literal is written down in a test. Bumping
       // CACHE_VERSION must land here too, which is the point: a content-changing
       // search fix should not silently keep serving stale keys.
-      expect(CACHE_VERSION).toBe('v6');
+      expect(CACHE_VERSION).toBe('v7');
       expect(CACHE_VERSION).toMatch(/^v\d+$/);
     });
 

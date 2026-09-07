@@ -27,7 +27,7 @@ import {
   fanoutNewClimbFeedItems,
   fanoutProposalApprovedFeedItems,
 } from './feed-fanout';
-import { isNoMatchClimb } from '../graphql/resolvers/shared/helpers';
+import { isNoMatchClimb, usesAuroraNoMatchDescription } from '../graphql/resolvers/shared/helpers';
 import crypto from 'crypto';
 
 /**
@@ -355,7 +355,7 @@ export class NotificationWorker {
         angle: climb.angle ?? null,
         frames: climb.frames ?? null,
         difficultyName: climb.difficultyName ?? event.metadata.difficultyName ?? null,
-        isNoMatch: isNoMatchClimb(climb.description),
+        isNoMatch: usesAuroraNoMatchDescription(boardType) && isNoMatchClimb(climb.description),
         createdAt: climb.createdAt ?? new Date().toISOString(),
       },
     });
