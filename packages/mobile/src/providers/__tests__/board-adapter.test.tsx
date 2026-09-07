@@ -151,7 +151,21 @@ vi.mock('../../offline/use-snapshot-source', () => ({
 }));
 
 const enabledScopeKeys = vi.hoisted(() => ({ value: ['kilter:1:5'] as string[] }));
-vi.mock('../../settings', () => ({ getSetting: vi.fn(() => enabledScopeKeys.value) }));
+const settingsMocks = vi.hoisted(() => ({
+  getSetting: vi.fn(),
+  listeners: new Set<() => void>(),
+  emitChange() {
+    for (const listener of settingsMocks.listeners) listener();
+  },
+}));
+settingsMocks.getSetting.mockImplementation(() => enabledScopeKeys.value);
+vi.mock('../../settings', () => ({
+  getSetting: settingsMocks.getSetting,
+  subscribeSettings: (listener: () => void) => {
+    settingsMocks.listeners.add(listener);
+    return () => settingsMocks.listeners.delete(listener);
+  },
+}));
 
 const syncCollaboratorMocks = vi.hoisted(() => ({
   setSyncProgress: vi.fn(),
@@ -594,13 +608,41 @@ describe('BoardAdapterWrapper live climb-stat write-through', () => {
     expect(seams.hasEnabledScopeForLayout('tension', 1)).toBe(false);
   });
 
-  it('answers false rather than throwing when the stored setting is not a list', () => {
-    // This runs inside the graphql-ws `next` handler, where a throw closes the
-    // shared singleton socket. A corrupt or legacy MMKV value must not do that.
+  it('reads storage once per settings change, not once per event', () => {
+    // getSetting re-reads MMKV and re-parses the JSON on every call. The
+    // layout-wide stream and the 120 s reconciliation read hit this gate
+    // hundreds of times in a burst.
     renderWrapper();
     const seams = liveSyncSeams();
+    settingsMocks.getSetting.mockClear();
+
+    for (let call = 0; call < 50; call += 1) seams.hasEnabledScopeForLayout('kilter', 1);
+
+    expect(settingsMocks.getSetting).not.toHaveBeenCalled();
+  });
+
+  it('picks up a newly downloaded layout from the settings change signal', () => {
+    renderWrapper();
+    const seams = liveSyncSeams();
+    expect(seams.hasEnabledScopeForLayout('tension', 4)).toBe(false);
+
+    const restore = enabledScopeKeys.value;
+    enabledScopeKeys.value = [...restore, 'tension:4:9'];
+    settingsMocks.emitChange();
+
+    expect(seams.hasEnabledScopeForLayout('tension', 4)).toBe(true);
+    enabledScopeKeys.value = restore;
+    settingsMocks.emitChange();
+  });
+
+  it('answers false rather than throwing when the stored setting is not a list', () => {
+    // This gate is called inside the graphql-ws `next` handler, where a throw
+    // closes the shared singleton socket. A corrupt or legacy MMKV value must
+    // not do that.
     const restore = enabledScopeKeys.value;
     enabledScopeKeys.value = { 'kilter:1:5': true } as unknown as string[];
+    renderWrapper();
+    const seams = liveSyncSeams();
 
     expect(() => seams.hasEnabledScopeForLayout('kilter', 1)).not.toThrow();
     expect(seams.hasEnabledScopeForLayout('kilter', 1)).toBe(false);

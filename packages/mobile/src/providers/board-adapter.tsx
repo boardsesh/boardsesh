@@ -32,7 +32,7 @@ import { getWsClient } from '../lib/graphql/ws-client';
 import { drainMutationQueue, isOnline, subscribeMutationDelivery, triggerSync } from '../offline/offline-sync-adapter';
 import { mirrorWrittenClimb } from '../offline/mirror-written-climb';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
-import { getSetting } from '../settings';
+import { getSetting, subscribeSettings } from '../settings';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { enqueueTickOutboxOnly, writeTickLocal } from '../hooks/use-offline-mutations';
 import {
@@ -92,6 +92,30 @@ async function readLocalTickRevisions(
   return readTickRevisionsLocal(db, boardType, climbUuids, await getLocalUserId(db));
 }
 
+/** The (board, layout) pair the live-stats pre-gate matches on. */
+function enabledLayoutKey(boardType: string, layoutId: number): string {
+  return `${boardType}:${layoutId}`;
+}
+
+/**
+ * The layouts with an opted-in offline scope, as a set the stream can probe in
+ * O(1). Reads MMKV once per settings change rather than once per event.
+ *
+ * The shape is checked rather than trusted: this feeds a gate called inside the
+ * graphql-ws `next` handler, where a throw closes the shared socket, and a
+ * corrupt or legacy stored value would be a plain object, not an array.
+ */
+function readEnabledLayoutKeys(): Set<string> {
+  const enabled = getSetting('syncEnabledBoards');
+  if (!Array.isArray(enabled)) return new Set();
+  const keys = new Set<string>();
+  for (const scopeKey of enabled) {
+    const scope = parseOfflineBoardKey(scopeKey);
+    if (scope) keys.add(enabledLayoutKey(scope.boardType, scope.layoutId));
+  }
+  return keys;
+}
+
 export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
   const offlineEnabled = useOfflineDownloadsEnabled();
@@ -131,27 +155,28 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
   const climbStatsLiveSyncRef = useRef<ClimbStatsLiveSync | null>(null);
 
   useEffect(() => {
+    // `getSetting` re-reads MMKV and re-parses the JSON on every call (it
+    // deliberately bypasses the snapshot cache the hooks use). The layout-wide
+    // stream and the 120 s reconciliation read call the gate below once per
+    // event — hundreds at a time — so the set is derived once and refreshed on
+    // the settings change signal instead.
+    let enabledLayouts = readEnabledLayoutKeys();
+    const unsubscribeSettings = subscribeSettings(() => {
+      enabledLayouts = readEnabledLayoutKeys();
+    });
+
     const liveSync = createClimbStatsLiveSync({
       getDb: getDatabaseHandle,
       queryClient,
       isScopeDownloaded: isBoardDownloadedLocally,
       shouldSkipWrites: () => isBackgrounded() || isSigningOut(),
-      hasEnabledScopeForLayout: (boardType, layoutId) => {
-        // This runs inside the graphql-ws `next` handler, where a throw closes
-        // the shared socket. A corrupt or legacy MMKV value would be a plain
-        // object, not an array, so the shape is checked rather than trusted.
-        const enabled = getSetting('syncEnabledBoards');
-        if (!Array.isArray(enabled)) return false;
-        return enabled.some((scopeKey) => {
-          const scope = parseOfflineBoardKey(scopeKey);
-          return scope?.boardType === boardType && scope.layoutId === layoutId;
-        });
-      },
+      hasEnabledScopeForLayout: (boardType, layoutId) => enabledLayouts.has(enabledLayoutKey(boardType, layoutId)),
       onError: (error) =>
         reportHandledError(error, { tags: { source: 'offline-sync', kind: 'climb-stats-write-through' } }),
     });
     climbStatsLiveSyncRef.current = liveSync;
     return () => {
+      unsubscribeSettings();
       liveSync.dispose();
       climbStatsLiveSyncRef.current = null;
     };
