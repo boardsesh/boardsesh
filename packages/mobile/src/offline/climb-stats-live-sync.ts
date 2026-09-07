@@ -45,6 +45,7 @@ import { isSizeScopedBoard } from '@boardsesh/board-config';
 import {
   invalidateKeysForTable,
   offlineBoardKey,
+  parseClimbStatsRevision,
   parseOfflineBoardKey,
   writeClimbStatsEvents,
   type ClimbStatsWriteThroughInput,
@@ -78,6 +79,26 @@ export const CLIMB_STATS_LOCK_BACKOFF_MS = 1_000;
  * is evicted, and a forgotten key just costs one autocommit read.
  */
 export const CLIMB_STATS_TRACKED_REVISIONS = 2_000;
+/**
+ * How long a remembered revision is trusted. Another writer can delete these
+ * rows underneath the memo — a scope teardown, a sign-out purge, a snapshot
+ * reconcile — and nothing tells this module. After a remove and re-download
+ * inside one session the re-imported row can sit at an OLDER revision than the
+ * memo, and a routine republish that would have healed it would be discarded.
+ *
+ * Matches the reconciliation read's interval in `@boardsesh/board-react`, which
+ * is the outer bound on how long any staleness here can last anyway.
+ */
+export const CLIMB_STATS_REVISION_MEMO_TTL_MS = 120_000;
+/**
+ * How many un-written events one instance holds. The queue only grows while
+ * SQLite is unreachable (no handle yet, or the write lock held), and every
+ * event on it is disposable — the next pull carries the same values — so the
+ * oldest is dropped rather than letting a session whose database never opens
+ * accumulate one entry per climb on the layout, and copy the whole map on
+ * every arrival.
+ */
+export const CLIMB_STATS_MAX_PENDING_EVENTS = 500;
 
 /** The `['climb', variables]` root, whose predicate matches on the climb uuid. */
 const CLIMB_DETAIL_KEY_ROOT = 'climb';
@@ -282,7 +303,13 @@ export type ClimbStatsLiveSyncOptions = {
   isScopeDownloaded: (db: OfflineDatabase, scope: OfflineBoardScope) => Promise<boolean>;
   /** Mobile: backgrounded or signing out. Both mean "do not touch SQLite". */
   shouldSkipWrites: () => boolean;
-  hasEnabledScopeForLayout: (boardType: string, layoutId: number) => boolean;
+  /**
+   * Board-level, not layout-level, and deliberately so: a reconciliation row's
+   * layout label comes from the selector's key rather than from the climb, so
+   * it cannot be trusted to gate anything. The batched pre-read's primary-key
+   * miss handles a wrong layout for the price of one row in an IN list.
+   */
+  hasEnabledScopeForBoard: (boardType: string) => boolean;
   /** Test seam. */
   writeEvents?: typeof writeClimbStatsEvents;
   /** Test seam; defaults to setTimeout. */
@@ -315,7 +342,11 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
   const pendingEvents = new Map<string, ClimbStatsWriteThroughInput>();
   const flushedStats = new Map<string, FlushedClimbStat>();
   // Insertion-ordered, so the oldest key is the one evicted at the cap.
-  const settledRevisions = new Map<string, number>();
+  const settledRevisions = new Map<string, { revision: number; at: number }>();
+  // The handle the memo was built against. A different one means a new database
+  // session — a sign-out wipe and re-open, or a hot reload — whose rows this
+  // module has never seen.
+  let memoDbHandle: OfflineDatabase | null = null;
 
   let draining = false;
   let disposed = false;
@@ -344,7 +375,7 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     if (!Number.isFinite(revision)) return;
     // Delete first so the re-insert moves the key to the young end.
     settledRevisions.delete(key);
-    settledRevisions.set(key, revision);
+    settledRevisions.set(key, { revision, at: Date.now() });
     while (settledRevisions.size > CLIMB_STATS_TRACKED_REVISIONS) {
       const oldest = settledRevisions.keys().next();
       if (oldest.done) break;
@@ -352,14 +383,68 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     }
   }
 
+  /**
+   * Forget everything remembered against a database this module is no longer
+   * talking to. A sign-out wipe and re-open, or a hot reload, publishes a new
+   * handle over rows the memo has never seen.
+   */
+  function resetMemoOnNewHandle(db: OfflineDatabase): void {
+    if (memoDbHandle === db) return;
+    memoDbHandle = db;
+    settledRevisions.clear();
+  }
+
   /** True when SQLite already holds this revision, so the write can only be a no-op. */
   function alreadySettled(event: ClimbStatsWriteThroughInput): boolean {
-    const known = settledRevisions.get(pendingKey(event));
+    const key = pendingKey(event);
+    const known = settledRevisions.get(key);
     if (known === undefined) return false;
+    // Another writer can delete these rows without telling us. Expiring the
+    // memo bounds how long a remove + re-download inside one session can keep
+    // discarding the republish that would heal it.
+    if (Date.now() - known.at >= CLIMB_STATS_REVISION_MEMO_TTL_MS) {
+      settledRevisions.delete(key);
+      return false;
+    }
     const revision = Number(event.syncSeq);
     // An unparseable revision falls through to the writer, which reports it as
     // `invalid_revision` rather than being silently swallowed here.
-    return Number.isFinite(revision) && revision <= known;
+    return Number.isFinite(revision) && revision <= known.revision;
+  }
+
+  /**
+   * The higher of two revisions for the same key, so a queue slot never moves
+   * backwards. A reconciliation row is a server snapshot taken BEFORE the
+   * recompute the stream already published, so latest-arrival-wins would let a
+   * revision 100 replace a queued 101 and lose it entirely.
+   */
+  function keepNewerEvent(
+    queued: ClimbStatsWriteThroughInput | undefined,
+    arriving: ClimbStatsWriteThroughInput,
+  ): ClimbStatsWriteThroughInput {
+    if (!queued) return arriving;
+    const queuedRevision = parseClimbStatsRevision(queued.syncSeq);
+    const arrivingRevision = parseClimbStatsRevision(arriving.syncSeq);
+    // An unparseable revision loses to a parseable one, and two unparseable
+    // ones keep the arrival — the writer reports it as `invalid_revision`.
+    if (queuedRevision === null) return arriving;
+    if (arrivingRevision === null) return queued;
+    return arrivingRevision >= queuedRevision ? arriving : queued;
+  }
+
+  /** Queue an event, keeping the newer of it and whatever already sat on its key. */
+  function enqueueEvent(event: ClimbStatsWriteThroughInput): void {
+    const key = pendingKey(event);
+    const kept = keepNewerEvent(pendingEvents.get(key), event);
+    // Delete first so a replaced key moves to the young end and the drop-oldest
+    // eviction below stays a real FIFO.
+    pendingEvents.delete(key);
+    pendingEvents.set(key, kept);
+    while (pendingEvents.size > CLIMB_STATS_MAX_PENDING_EVENTS) {
+      const oldest = pendingEvents.keys().next();
+      if (oldest.done) break;
+      pendingEvents.delete(oldest.value);
+    }
   }
 
   function armFlushTimers(): void {
@@ -541,9 +626,13 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
             lostLock = true;
             continue;
           }
-          // `applied` and `stale` both mean SQLite now holds at least this
-          // revision, so a republish of it can be dropped before the next read.
-          if (result.status === 'applied' || result.status === 'stale') {
+          // Only what the PRE-READ settled. `applied` means the row is now at
+          // this revision; a `stale` from the pre-read means it already was. A
+          // `stale` from the WRITE means the upsert matched nothing, which
+          // happens when the climb vanished — there may be no row at all, so
+          // remembering it would suppress the republish that heals a
+          // re-download.
+          if (result.status === 'applied' || (result.status === 'stale' && result.settledBy === 'pre_read')) {
             rememberSettledRevision(keys[index], event.syncSeq);
           }
           if (result.status !== 'applied') continue;
@@ -570,11 +659,19 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     }
   }
 
-  /** Put unwritten events back, unless a newer payload already replaced the key. */
+  /**
+   * Put unwritten events back. A newer payload can have arrived for the same key
+   * while the write was in flight, so the higher revision wins rather than the
+   * later arrival.
+   */
   function requeue(keys: readonly string[], events: readonly ClimbStatsWriteThroughInput[]): void {
     for (const [index, key] of keys.entries()) {
-      if (pendingEvents.has(key)) continue;
-      pendingEvents.set(key, events[index]);
+      const kept = keepNewerEvent(pendingEvents.get(key), events[index]);
+      // A requeued event goes back at the young end only when it wins; an
+      // already-queued newer one keeps its place.
+      if (kept === pendingEvents.get(key)) continue;
+      pendingEvents.delete(key);
+      pendingEvents.set(key, kept);
     }
   }
 
@@ -582,17 +679,27 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     handleEvent(event) {
       if (disposed) return;
       if (options.shouldSkipWrites()) return;
-      // The cheap pre-gate: a layout with no opted-in scope can never have a
-      // local row worth writing, and this is the common case on the global
-      // channel. It reads the event's own layout label, which is all the
-      // reconciliation read can offer before the climb is looked up.
-      if (!options.hasEnabledScopeForLayout(event.boardType, event.layoutId)) return;
+      // The cheap pre-gate: a board with no opted-in scope at all can never
+      // have a local row worth writing, and that is the common case on a global
+      // channel. Board-level only — the event's layout label is the browsed
+      // layout on a reconciliation row, not the climb's.
+      if (!options.hasEnabledScopeForBoard(event.boardType)) return;
       // A batch left pending by a transient flush gate has no timer of its own.
       // This is the first moment the app can be foregrounded again, so re-arm.
       if (flushedStats.size > 0 && !cancelTrailing && !cancelMaxWait) armFlushTimers();
+      // Checked where the memo is READ, not where it is written: a handle
+      // swapped between two events must not let the first one's memory decide
+      // the second.
+      const db = options.getDb();
+      if (db) resetMemoOnNewHandle(db);
       if (alreadySettled(event)) return;
-      pendingEvents.set(pendingKey(event), event);
-      void drain();
+      enqueueEvent(event);
+      // Deferred, not immediate: a synchronous burst (a reconciliation pass
+      // delivers its rows in one loop) would otherwise send its first event
+      // alone and batch only the remainder.
+      queueMicrotask(() => {
+        void drain();
+      });
     },
     dispose() {
       disposed = true;
@@ -602,6 +709,7 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
       pendingEvents.clear();
       flushedStats.clear();
       settledRevisions.clear();
+      memoDbHandle = null;
     },
   };
 }

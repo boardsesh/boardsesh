@@ -1,5 +1,6 @@
 import type { OfflineDatabase, QueryInvalidator, SqlExecutor, SqlValue } from '../database';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types';
+import { buildRevisionGuardTail } from './revision-guard-sql';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
 import {
   getCheckpoint,
@@ -745,28 +746,13 @@ function buildMultiRowInsertSql(
   tableName: string,
   columns: readonly string[],
   rowCount: number,
-  preserveNewerRows = false,
 ): string {
   const columnList = columns.join(', ');
   const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
   const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
-  if (!preserveNewerRows) return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
-  const { primaryKeyColumns, cursorColumn } = TABLE_CONFIGS[tableName];
-  const assignments = columns
-    .filter((column) => !primaryKeyColumns.includes(column))
-    .map((column) => `${column} = excluded.${column}`)
-    .join(', ');
-  // Sync/export timestamps are UTC ISO text, but PostgreSQL omits trailing
-  // fractional zeroes. Pad the fraction so TEXT ordering preserves microseconds.
-  const timestampKey = (column: string) =>
-    `(substr(${column}, 1, 19) || '.' || CASE WHEN substr(${column}, 20, 1) = '.'
-      THEN substr(substr(${column}, 21, length(${column}) - 21) || '000000', 1, 6)
-      ELSE '000000' END)`;
-  return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause}
-    ON CONFLICT (${primaryKeyColumns.join(', ')}) DO UPDATE SET ${assignments}
-    WHERE ${tableName}.${cursorColumn} IS NULL
-       OR (${timestampKey(`excluded.${cursorColumn}`)}, excluded.sync_seq)
-          >= (${timestampKey(`${tableName}.${cursorColumn}`)}, ${tableName}.sync_seq)`;
+  const guardTail = buildRevisionGuardTail({ tableName, conflictReference: tableName, columns });
+  if (!guardTail) return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+  return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause} ${guardTail}`;
 }
 
 /**
@@ -842,7 +828,6 @@ async function upsertDocuments(
   page?: {
     canWrite: () => boolean;
     afterUpsert: (transaction: SqlExecutor) => Promise<void>;
-    preserveNewerRows: boolean;
   },
 ): Promise<boolean> {
   if (documents.length === 0) return true;
@@ -886,7 +871,7 @@ async function upsertDocuments(
   const sqlForRowCount = (rowCount: number): string => {
     let sql = sqlByRowCount.get(rowCount);
     if (!sql) {
-      sql = buildMultiRowInsertSql(tableName, columns, rowCount, page?.preserveNewerRows);
+      sql = buildMultiRowInsertSql(tableName, columns, rowCount);
       sqlByRowCount.set(rowCount, sql);
     }
     return sql;
@@ -1042,7 +1027,6 @@ async function syncTable(
         onSchemaDrift,
         {
           canWrite,
-          preserveNewerRows: !!refresh,
           afterUpsert: async (transaction) => {
             if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
             if (clearDownloadCoverage && boardScope) {

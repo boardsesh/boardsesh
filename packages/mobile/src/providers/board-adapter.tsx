@@ -68,28 +68,30 @@ function toSavedTickShape(
   };
 }
 
-/** The (board, layout) pair the live-stats pre-gate matches on. */
-function enabledLayoutKey(boardType: string, layoutId: number): string {
-  return `${boardType}:${layoutId}`;
-}
-
 /**
- * The layouts with an opted-in offline scope, as a set the stream can probe in
- * O(1). Reads MMKV once per settings change rather than once per event.
+ * The board TYPES with an opted-in offline scope, as a set the stream can probe
+ * in O(1). Reads MMKV once per settings change rather than once per event.
  *
- * The shape is checked rather than trusted: this feeds a gate called inside the
- * graphql-ws `next` handler, where a throw closes the shared socket, and a
- * corrupt or legacy stored value would be a plain object, not an array.
+ * Board-level, not layout-level: an event's layout label is the browsed layout
+ * on a reconciliation row rather than the climb's, so it cannot gate anything.
+ * The write-through's batched pre-read costs one row in an IN list to answer
+ * the layout question properly.
+ *
+ * Keys are decoded with the shared `parseOfflineBoardKey`, never a local split:
+ * a key this build cannot parse must not be laundered into an enabled board.
+ * The array shape is checked rather than trusted, because this feeds a gate
+ * called inside the graphql-ws `next` handler, where a throw closes the shared
+ * socket, and a corrupt or legacy stored value would be a plain object.
  */
-function readEnabledLayoutKeys(): Set<string> {
+function readEnabledBoardTypes(): Set<string> {
   const enabled = getSetting('syncEnabledBoards');
   if (!Array.isArray(enabled)) return new Set();
-  const keys = new Set<string>();
+  const boardTypes = new Set<string>();
   for (const scopeKey of enabled) {
     const scope = parseOfflineBoardKey(scopeKey);
-    if (scope) keys.add(enabledLayoutKey(scope.boardType, scope.layoutId));
+    if (scope) boardTypes.add(scope.boardType);
   }
-  return keys;
+  return boardTypes;
 }
 
 export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
@@ -132,9 +134,9 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
     // stream and the 120 s reconciliation read call the gate below once per
     // event — hundreds at a time — so the set is derived once and refreshed on
     // the settings change signal instead.
-    let enabledLayouts = readEnabledLayoutKeys();
+    let enabledBoardTypes = readEnabledBoardTypes();
     const unsubscribeSettings = subscribeSettings(() => {
-      enabledLayouts = readEnabledLayoutKeys();
+      enabledBoardTypes = readEnabledBoardTypes();
     });
 
     const liveSync = createClimbStatsLiveSync({
@@ -142,7 +144,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
       queryClient,
       isScopeDownloaded: isBoardDownloadedLocally,
       shouldSkipWrites: () => isBackgrounded() || isSigningOut(),
-      hasEnabledScopeForLayout: (boardType, layoutId) => enabledLayouts.has(enabledLayoutKey(boardType, layoutId)),
+      hasEnabledScopeForBoard: (boardType) => enabledBoardTypes.has(boardType),
       onError: (error) =>
         reportHandledError(error, { tags: { source: 'offline-sync', kind: 'climb-stats-write-through' } }),
     });
