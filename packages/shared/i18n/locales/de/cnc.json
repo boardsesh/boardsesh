@@ -342,6 +342,7 @@
     },
     "tb2": {
       "boardName": "Tension Board 2",
+      "savedConfigurationUnavailable": "Gespeicherte Konfiguration nicht verfügbar",
       "sizeHelp": "Höhe × Breite in Fuß. Tension nennt die Höhe zuerst.",
       "engraveHelp": "Graviere Mirror, Spray oder beide Layouts auf dieselben Platten. Beide Layouts sind standardmäßig ausgewählt.",
       "engraveNote": "Mirror-Beschriftungen stehen links neben jedem Loch mit einem Richtungsstrich. Spray-Beschriftungen stehen rechts mit zwei Strichen. Jede gravierte Platte enthält eine Legende."
