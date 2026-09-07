@@ -287,7 +287,7 @@ MOBILE 390
   #configure
 ```
 
-### `/build-plans#configure` — the configurator (to build)
+### `/build-plans#configure` — the configurator
 
 A guided, sectioned flow inside `SplitLayout`. Each step is a `SectionCard` with a
 `StepHeading`; fields go in a `FieldGrid`. The rail carries what gets cut, the price, and the
@@ -328,7 +328,7 @@ DESKTOP ≥1000px                    minmax(0,1fr)  │  320px sticky
 │ │  │pnl1│ │pnl2│ │pnl3│ │asmb│         │ │  PreviewGallery, 4:3 tiles,
 │ │  └────┘ └────┘ └────┘ └────┘         │ │  watermark legible
 │ │  Watermarked. Finalise to get the DXF│ │
-│ │  [Download preview]  [Finalise and buy]│ │
+│ │  [ Download the preview ]            │ │
 │ └──────────────────────────────────────┘ │
 │ ┌──────────────────────────────────────┐ │
 │ │ (6) Who the licence names            │ │  only after preview_ready
@@ -351,6 +351,9 @@ Rules for whoever builds this:
    licensee fields, and its state lives in a `StatusChip` in its card head.
 4. **"Update preview" replaces "Get a free preview"** once the config changes after a
    preview — same button, same place, changed label. Never two preview buttons.
+   The rail owns that button through every state — preview, update, finalise — so the
+   preview card's own actions stop at the download; a second Finalise inside the gallery
+   would be the second filled button this surface does not allow.
 5. `PageSection` owns the heading for the configurator once it moves out of
    `Configurator`'s own `SectionCard`; do not render two headings.
 
@@ -366,7 +369,7 @@ Rules for whoever builds this:
 │ └────────┘ └────────┘ └────────┘ └────────┘          │
 │  Panel 1     Panel 2    Panel 3    Assembly          │  caption 12px, tabular
 │                                                      │
-│ [ Download the preview ]  Finalise and buy           │
+│ [ Download the preview ]                             │
 └──────────────────────────────────────────────────────┘
 ```
 
