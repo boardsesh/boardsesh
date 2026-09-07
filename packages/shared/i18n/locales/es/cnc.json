@@ -63,7 +63,8 @@
       "label": "Plafón",
       "help": "Elige el layout de presas que usará tu plafón.",
       "original": "Kilter Original (OG)",
-      "homewall": "Kilter Homewall"
+      "homewall": "Kilter Homewall",
+      "unknownLayout": "{{board}} · layout {{layoutId}}"
     },
     "size": {
       "label": "Tamaño del muro",

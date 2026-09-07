@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { logger } from '../../utils/logger';
-import { CNC_KICKER_SET_IDS, CNC_KILTER_ORIGINAL_LAYOUT_ID, type CncBoardTuple } from './catalog';
+import { KILTER_ORIGINAL_LAYOUT_ID } from '@boardsesh/board-constants';
+import { CNC_KICKER_SET_IDS, type CncBoardTuple } from './catalog';
 import type { CncOrderOptions } from '@boardsesh/db/schema';
 
 /**
@@ -310,7 +311,7 @@ export function toLayoutRequest({ entry, options, setIds }: ToLayoutRequestInput
   const { lengthMm, widthMm } = parseSheetStock(options.sheetStock);
   // OG sets cannot express kicker inclusion. Homewall retains its stored set
   // selection, including orders created before the explicit option existed.
-  const isOriginal = entry.boardName === 'kilter' && entry.layoutId === CNC_KILTER_ORIGINAL_LAYOUT_ID;
+  const isOriginal = entry.boardName === 'kilter' && entry.layoutId === KILTER_ORIGINAL_LAYOUT_ID;
   const hasKicker = isOriginal
     ? booleanOption(options, 'includeKicker', entry.sizeId !== 14)
     : setIds.some((setId) => CNC_KICKER_SET_IDS.includes(setId));

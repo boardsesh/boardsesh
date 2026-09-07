@@ -21,6 +21,7 @@ import Skeleton from '@mui/material/Skeleton';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import { KILTER_ORIGINAL_LAYOUT_ID } from '@boardsesh/board-constants';
 import type {
   CncArtworkKind,
   CncCatalog,
@@ -81,6 +82,7 @@ import {
   type CncArtworkDraft,
   type CncConfiguratorState,
 } from './configurator-state';
+import { boardLayoutLabel } from '../order-display';
 import type { CncErrorKey } from '../cnc-error';
 import type { CncLayoutPanel, CncLayoutSummary } from './layout-summary';
 import ArtworkStep from './artwork-step';
@@ -141,6 +143,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   const entries = catalog.entries;
   const [state, dispatch] = useReducer(configuratorReducer, entries[0], initialConfiguratorState);
   const entry = findEntry(entries, state) ?? entries[0];
+  const isOriginal = entry.boardName === 'kilter' && entry.layoutId === KILTER_ORIGINAL_LAYOUT_ID;
 
   const configInput = useMemo(() => toBoardConfigInput(state, entry), [state, entry]);
   const currentConfigKey = useMemo(() => configKey(configInput), [configInput]);
@@ -494,7 +497,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                   onSizeChange={handleSizeChange}
                   onLayoutChange={handleLayoutChange}
                 />
-                {entry.layoutId === 1 && (
+                {isOriginal && (
                   <Typography variant="body2" component="p" className={styles.stepNote}>
                     {t('configurator.original.drilling')} {t('configurator.original.compatibility')}
                   </Typography>
@@ -582,9 +585,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                   step={3}
                   done
                   title={t('configurator.engrave.heading')}
-                  description={
-                    entry.layoutId === 1 ? t('configurator.original.engraveHelp') : t('configurator.engrave.help')
-                  }
+                  description={isOriginal ? t('configurator.original.engraveHelp') : t('configurator.engrave.help')}
                 />
                 <Box className={styles.stepBody}>
                   {engraveToggles.map((option) => (
@@ -604,20 +605,20 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                           />
                         }
                         label={
-                          entry.layoutId === 1 && option.key === 'engraveAngleTicks'
+                          isOriginal && option.key === 'engraveAngleTicks'
                             ? t('configurator.original.angleLabel')
                             : t(`configurator.options.${option.key}.label`)
                         }
                       />
                       <FormHelperText>
-                        {entry.layoutId === 1 && option.key === 'engraveAngleTicks'
+                        {isOriginal && option.key === 'engraveAngleTicks'
                           ? t('configurator.original.angleHelp')
                           : t(`configurator.options.${option.key}.help`)}
                       </FormHelperText>
                     </Box>
                   ))}
                   <Typography variant="body2" component="p" className={styles.stepNote}>
-                    {entry.layoutId === 1 ? t('configurator.original.engraveNote') : t('configurator.engrave.note')}
+                    {isOriginal ? t('configurator.original.engraveNote') : t('configurator.engrave.note')}
                   </Typography>
                 </Box>
               </SectionCard>
@@ -962,7 +963,7 @@ function WallStep({
         >
           {layoutIds.map((layoutId) => (
             <MenuItem key={layoutId} value={String(layoutId)}>
-              {layoutId === 1 ? t('configurator.board.original') : t('configurator.board.homewall')}
+              {boardLayoutLabel({ boardName: state.boardName, layoutId }, t)}
             </MenuItem>
           ))}
         </Select>

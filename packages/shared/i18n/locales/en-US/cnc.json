@@ -63,7 +63,8 @@
       "label": "Board",
       "help": "Choose the hold layout your wall will use.",
       "original": "Kilter Original (OG)",
-      "homewall": "Kilter Homewall"
+      "homewall": "Kilter Homewall",
+      "unknownLayout": "{{board}} · layout {{layoutId}}"
     },
     "size": {
       "label": "Wall size",
