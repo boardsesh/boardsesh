@@ -123,7 +123,7 @@
       },
       "studClearanceOffsetMm": {
         "label": "Holgura de montantes",
-        "help": "Desplaza la retícula de presas de lado para que ningún agujero caiga sobre un montante.",
+        "help": "Desplaza la retícula de presas de lado para que ningún agujero caiga sobre un montante. Con 0 mm el patrón queda centrado en el muro.",
         "values": {
           "0": "Ninguna",
           "30": "30 mm",
