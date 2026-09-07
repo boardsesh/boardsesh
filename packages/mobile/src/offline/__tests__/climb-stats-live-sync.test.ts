@@ -41,8 +41,6 @@ function makeEvent(overrides: Partial<ClimbStatsWriteThroughInput> = {}): ClimbS
     qualityAverage: 3.5,
     difficultyAverage: 17.25,
     displayDifficulty: 17,
-    faUsername: null,
-    faAt: null,
     syncSeq: '500',
     ...overrides,
   };

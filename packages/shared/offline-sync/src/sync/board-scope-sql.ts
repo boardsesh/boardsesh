@@ -28,6 +28,30 @@ export function isSizeScopedBoard(boardType: string): boolean {
 }
 
 /**
+ * Decode the JSON-in-TEXT `board_climbs.compatible_size_ids` column into the
+ * number array callers reason about.
+ *
+ * Anything that is not an array of finite numbers reads as "no compatibility
+ * data" (null) rather than as an empty list: an empty list would be read as
+ * "fits nothing" by a stricter consumer, which would silently hide climbs.
+ *
+ * Lives beside the scope filter that queries this column so the decode and the
+ * SQL can never disagree; mobile's search rows and the live stats write-through
+ * both import it from here.
+ */
+export function parseCompatibleSizeIds(raw: string | null | undefined): number[] | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const sizeIds = parsed.filter((sizeId): sizeId is number => typeof sizeId === 'number' && Number.isFinite(sizeId));
+    return sizeIds.length > 0 ? sizeIds : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * `compatible_size_ids` containment against a SET of sizes. SQLite has no `@>`, so
  * containment is `json_each` membership; a NULL `compatible_size_ids` is excluded
  * exactly as Postgres `NULL @> ARRAY[x]` is (queries.ts:173-175).

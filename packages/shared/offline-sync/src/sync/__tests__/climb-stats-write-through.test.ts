@@ -12,6 +12,7 @@ import type { ClimbStatsEvent } from '@boardsesh/shared-schema';
 
 import {
   writeClimbStatsEvent,
+  writeClimbStatsEvents,
   parseClimbStatsRevision,
   CLIMB_STATS_WRITE_THROUGH_COLUMNS,
   CLIMB_STATS_WRITE_THROUGH_UNTOUCHED_COLUMNS,
@@ -51,8 +52,6 @@ function makeEvent(overrides: Partial<ClimbStatsWriteThroughInput> = {}): ClimbS
     qualityAverage: 3.5,
     difficultyAverage: 17.25,
     displayDifficulty: 17,
-    faUsername: 'stream-fa',
-    faAt: '2026-09-01 10:00:00+00',
     syncSeq: '500',
     ...overrides,
   };
@@ -386,6 +385,108 @@ describe('writeClimbStatsEvent — the write connection', () => {
     });
 
     await expect(writeClimbStatsEvent(brokenDb, makeEvent())).rejects.toBe(diskFull);
+  });
+});
+
+describe('writeClimbStatsEvents — the batch', () => {
+  it('opens no write transaction for an equal-revision republish', async () => {
+    await seedClimb();
+    await seedPulledStatsRow({ sync_seq: 500 });
+    const writes = vi.fn(db.withExclusiveTransactionAsync.bind(db));
+    const countingDb = wrapDb({ withExclusiveTransactionAsync: writes });
+
+    // The publisher republishes on every debounced pass, so this is the common
+    // case on a busy layout — it must cost one autocommit read, no lock.
+    const result = await writeClimbStatsEvent(countingDb, makeEvent({ syncSeq: '500' }));
+
+    expect(result.status).toBe('stale');
+    expect(result.compatibleSizeIds).toEqual([5, 6]);
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it('opens no write transaction for an older revision either', async () => {
+    await seedClimb();
+    await seedPulledStatsRow({ sync_seq: 900 });
+    const writes = vi.fn(db.withExclusiveTransactionAsync.bind(db));
+
+    const result = await writeClimbStatsEvent(wrapDb({ withExclusiveTransactionAsync: writes }), makeEvent());
+
+    expect(result.status).toBe('stale');
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it('writes an insert, an update and a stale row in ONE transaction', async () => {
+    await seedClimb();
+    await seedClimb({ uuid: 'climb-bbb', compatibleSizeIds: '[7]' });
+    // climb-aaa @40 is fresh (insert); climb-bbb @40 has an older row (update);
+    // climb-aaa @25 is already at the event's revision (stale, no write).
+    await seedPulledStatsRow({ climb_uuid: 'climb-bbb', sync_seq: 10 });
+    await seedPulledStatsRow({ angle: 25, sync_seq: 700 });
+    const writes = vi.fn(db.withExclusiveTransactionAsync.bind(db));
+
+    const results = await writeClimbStatsEvents(wrapDb({ withExclusiveTransactionAsync: writes }), [
+      makeEvent({ angle: 40, syncSeq: '500' }),
+      makeEvent({ climbUuid: 'climb-bbb', angle: 40, syncSeq: '500' }),
+      makeEvent({ angle: 25, syncSeq: '700' }),
+    ]);
+
+    expect(results.map((result) => result.status)).toEqual(['applied', 'applied', 'stale']);
+    expect(results[1].compatibleSizeIds).toEqual([7]);
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect((await readStatsRow(40))?.sync_seq).toBe(500);
+    expect((await readStatsRow(25))?.sync_seq).toBe(700);
+  });
+
+  it('settles the whole batch as lock_lost when the writer loses the lock', async () => {
+    await seedClimb();
+    await seedClimb({ uuid: 'climb-bbb' });
+    const lockedDb = wrapDb({
+      withExclusiveTransactionAsync: async () => {
+        throw new Error('Error code 5: database is locked');
+      },
+    });
+
+    const results = await writeClimbStatsEvents(lockedDb, [
+      makeEvent({ angle: 40 }),
+      makeEvent({ climbUuid: 'climb-bbb' }),
+      makeEvent({ angle: 25 }),
+    ]);
+
+    expect(results.map((result) => result.status)).toEqual(['lock_lost', 'lock_lost', 'lock_lost']);
+    expect(await readStatsRow()).toBeNull();
+  });
+
+  it('reports a closed database on the PRE-READ as lock_lost, not as a broken database', async () => {
+    await seedClimb();
+    const closedDb = wrapDb({
+      getFirstAsync: (async () => {
+        throw new Error('Access to closed resource: the database is closed');
+      }) as unknown as OfflineDatabase['getFirstAsync'],
+    });
+
+    const results = await writeClimbStatsEvents(closedDb, [makeEvent()]);
+
+    expect(results.map((result) => result.status)).toEqual(['lock_lost']);
+  });
+
+  it('keeps settled results when a later pre-read hits a closed handle', async () => {
+    await seedClimb();
+    let reads = 0;
+    const closingDb = wrapDb({
+      getFirstAsync: (async (source: string, ...params: never[]) => {
+        reads += 1;
+        if (reads >= 1) throw new Error('Access to closed resource: the database is closed');
+        return db.getFirstAsync(source, ...params);
+      }) as unknown as OfflineDatabase['getFirstAsync'],
+    });
+
+    const results = await writeClimbStatsEvents(closingDb, [
+      makeEvent({ syncSeq: 'nope' }),
+      makeEvent({ climbUuid: 'climb-bbb' }),
+    ]);
+
+    // The first settled without a read at all, so the wipe cannot rewrite it.
+    expect(results.map((result) => result.status)).toEqual(['invalid_revision', 'lock_lost']);
   });
 });
 
