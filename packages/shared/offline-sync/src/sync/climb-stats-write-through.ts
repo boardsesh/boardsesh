@@ -5,8 +5,23 @@
 // else on a downloaded board — a list re-read, pull-to-refresh, the grade and
 // ascent filters, sort-by-ascents, the count, the climb detail — reads SQLite,
 // and the pull deliberately skips server rows younger than
-// SYNC_STABILITY_WINDOW_SECONDS. That makes this the only prompt local writer
-// for a fresh recompute, including for the tick the device itself just logged.
+// SYNC_STABILITY_WINDOW_SECONDS. That makes this the prompt local writer for a
+// fresh recompute, including for the tick the device itself just logged.
+//
+// Two callers, not one. The stream is the fast path; the periodic
+// reconciliation read (`climbStatsForClimbs`) routes its rows through here too,
+// because Redis PUBLISH is fail-open and a missed publish is otherwise
+// undetectable — the store would show the new value while the local row stayed
+// stale. Almost every reconciliation row is unchanged, which is exactly what
+// the pre-read below is for.
+//
+// Nothing takes a lock until it has to. `writeClimbStatsEvents` runs every
+// event's pre-read on the MAIN connection in autocommit — one LEFT JOIN that
+// answers "is this climb local, and is the local row already at least this
+// revision?" — and only the events that can still change a row reach the write.
+// A global layout channel is mostly climbs this device never downloaded, and an
+// equal-revision republish is the documented common case, so the two cheap
+// outcomes never open a connection at all.
 //
 // Three properties the SQL carries, all of them load-bearing:
 //
@@ -29,10 +44,25 @@
 //      The epoch is older than every checkpoint, so both can.
 //
 // The write runs on its OWN connection (withExclusiveTransactionAsync) with a
-// 250 ms immediate lock. A lost lock drops the event; the next pull heals the
-// row. There is deliberately no retry ladder — a retry would only queue behind
-// the same holder — and never a 5 s wait, which on the main connection would
-// stall every local-first read behind it.
+// 250 ms immediate lock, ONE transaction per drain pass rather than one per
+// event: a burst of recomputes costs one native connection and one lock wait.
+// Each upsert's own `changes` decides its own applied/stale, so a row another
+// writer moved between the pre-read and the lock still reports `stale`.
+//
+// A lost lock settles the whole batch as `lock_lost` and never throws. It is not
+// a dropped event: the caller requeues the batch and stands down before
+// retrying (see `climb-stats-live-sync.ts`), because the holder is typically a
+// VACUUM or a snapshot import that keeps the file for seconds. There is
+// deliberately no retry ladder inside the lock wait — a retry would only queue
+// behind the same holder — and never a 5 s wait, which on the main connection
+// would stall every local-first read behind it.
+//
+// Because this is a SECOND writer of `board_climb_stats`, the PULL side is
+// revision-guarded for this table alone (`TABLE_CONFIGS.board_climb_stats`
+// `revisionColumn`, plus the matching clause in the snapshot import): a page
+// fetched before a recompute can commit after this write landed, and an
+// unguarded `INSERT OR REPLACE` would walk the row backwards until the next
+// cycle.
 
 import type { OfflineDatabase } from '../database';
 import { beginImmediateWrite } from '../db/pragmas';
