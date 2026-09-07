@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vite-plus/test';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import LicenceContent from '../licence-content';
 
@@ -32,6 +32,20 @@ function renderLicence() {
   return render(<LicenceContent />);
 }
 
+/**
+ * The licence's outbound links, in document order.
+ *
+ * Scoped to the `<article>` on purpose: the contents rail beside it is twelve
+ * same-page `#anchor` links, and counting those here would turn the assertion
+ * below into one about the table of contents rather than about who the licence
+ * sends people to.
+ */
+function outboundHrefs(container: HTMLElement): (string | null)[] {
+  const article = container.querySelector('article');
+  expect(article).toBeTruthy();
+  return Array.from(article?.querySelectorAll('a') ?? []).map((anchor) => anchor.getAttribute('href'));
+}
+
 describe('LicenceContent', () => {
   it('leads with the DRAFT banner', () => {
     // First thing in the document flow on purpose: someone arriving from a
@@ -42,9 +56,12 @@ describe('LicenceContent', () => {
   });
 
   it('renders both licence tiers with their prices', () => {
-    renderLicence();
-    expect(screen.getByText('3. Personal licence (A$149)')).toBeTruthy();
-    expect(screen.getByText('4. Commercial single-build licence (A$750)')).toBeTruthy();
+    // Scoped to the document: each clause title appears twice on the page now,
+    // once as a clause heading and once in the contents rail beside it.
+    const { container } = renderLicence();
+    const article = container.querySelector('article');
+    expect(within(article as HTMLElement).getByText('3. Personal licence (A$149)')).toBeTruthy();
+    expect(within(article as HTMLElement).getByText('4. Commercial single-build licence (A$750)')).toBeTruthy();
   });
 
   it('links the licence contact and the volume enquiry at different addresses', () => {
@@ -53,7 +70,7 @@ describe('LicenceContent', () => {
     // enquiries. A single address here would route contract questions into the
     // support queue.
     const { container } = renderLicence();
-    const hrefs = Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'));
+    const hrefs = outboundHrefs(container);
     expect(hrefs).toContain('mailto:legal@boardsesh.com');
     expect(hrefs).toContain('mailto:support@boardsesh.com');
   });
@@ -63,9 +80,21 @@ describe('LicenceContent', () => {
     // elsewhere, so these two hrefs are load-bearing: a broken one leaves the
     // licence making a claim it never substantiates.
     const { container } = renderLicence();
-    const hrefs = Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'));
+    const hrefs = outboundHrefs(container);
     expect(hrefs).toContain('/legal');
     expect(hrefs).toContain('/privacy');
+  });
+
+  it('lists every clause in the contents rail, in document order', () => {
+    // The rail and the clauses come off one array, so a clause that arrives
+    // without a contents entry is a bug this catches rather than a styling
+    // detail someone notices later.
+    const { container } = renderLicence();
+    const nav = container.querySelector('nav');
+    const targets = Array.from(nav?.querySelectorAll('a') ?? []).map((anchor) => anchor.getAttribute('href'));
+    const clauseIds = Array.from(container.querySelectorAll('article > ol > li')).map((item) => `#${item.id}`);
+    expect(targets).toEqual(clauseIds);
+    expect(targets).toHaveLength(12);
   });
 
   it('renders exactly those four link targets and no others', () => {
@@ -73,7 +102,7 @@ describe('LicenceContent', () => {
     // licence contact (12). Asserting the whole list catches a fifth link
     // arriving without a home for it in this file.
     const { container } = renderLicence();
-    const hrefs = Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'));
+    const hrefs = outboundHrefs(container);
     expect(hrefs).toEqual(['mailto:support@boardsesh.com', '/legal', '/privacy', 'mailto:legal@boardsesh.com']);
   });
 });

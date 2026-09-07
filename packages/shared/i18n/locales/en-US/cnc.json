@@ -22,9 +22,14 @@
       "dxf": "One DXF per panel, plus assembly drawings for the whole wall.",
       "pdf": "Printable A3 or Tabloid sheets, so you can check the layout before anyone cuts.",
       "bom": "A cut list: sheet count, panel sizes, and every hole counted.",
-      "licence": "A licence with your name on it, good for one wall."
+      "licence": "A licence with your name on it, good for one wall.",
+      "dxfLabel": "One DXF per panel",
+      "pdfLabel": "Check sheets",
+      "bomLabel": "A cut list",
+      "licenceLabel": "Your licence"
     },
-    "trademarkNote": "Boardsesh is not affiliated with Aurora Climbing, Kilter or any board maker. These are plans for building a wall that works with holds and LEDs you buy yourself."
+    "trademarkNote": "Boardsesh is not affiliated with Aurora Climbing, Kilter or any board maker. These are plans for building a wall that works with holds and LEDs you buy yourself.",
+    "cta": "Configure your wall"
   },
   "tiers": {
     "heading": "Pick a licence",
@@ -44,7 +49,8 @@
       "subject": "Build plans: multi-build licence"
     },
     "licenceLink": "Read the licence",
-    "ordersLink": "Your build plans"
+    "ordersLink": "Your build plans",
+    "perWall": "per wall"
   },
   "configurator": {
     "heading": "Configure your wall",
@@ -311,7 +317,11 @@
     "ready": "Ready to download",
     "failed": "Did not build",
     "cancelled": "Checkout expired",
-    "refunded": "Refunded"
+    "refunded": "Refunded",
+    "preview_queued": "Preview queued",
+    "preview_generating": "Drawing the preview",
+    "preview_ready": "Preview ready",
+    "preview_failed": "Preview did not build"
   },
   "orders": {
     "heading": "Your build plans",
@@ -361,5 +371,21 @@
       "body": "Either that licence does not exist or it belongs to another account."
     },
     "loadError": "We could not load this build plan. Reload the page."
+  },
+  "flow": {
+    "heading": "How it works",
+    "intro": "Previews are free. Nothing is charged until you finalise.",
+    "configure": {
+      "title": "Configure your wall",
+      "body": "Pick the size, the sheets your shop cuts from, the hole diameters, and anything you want routed into a panel."
+    },
+    "preview": {
+      "title": "Get a free preview",
+      "body": "We lay out every sheet and send back watermarked drawings. Change something and preview again, as often as you like."
+    },
+    "finalise": {
+      "title": "Finalise and build",
+      "body": "Name the licence, pay, and the cut-ready DXF files and print sheets land in your account."
+    }
   }
 }
