@@ -37,13 +37,13 @@ vi.mock('@/app/lib/graphql/client', () => ({
 
 const OrderStatusModule = await import('../orders/[licenceId]/order-status');
 const OrderStatus = OrderStatusModule.default;
-const {
-  orderRefetchInterval,
-  nextOrderPollInterval,
-  isBackendDownloadUrl,
-  ORDER_POLL_INTERVAL_MS,
-  MAX_CONSECUTIVE_NULL_POLLS,
-} = OrderStatusModule;
+const { isBackendDownloadUrl, timelineProgress } = OrderStatusModule;
+const { ORDER_POLL_INTERVAL_MS, MAX_CONSECUTIVE_NULL_POLLS } = await import('../use-cnc-order-poll');
+
+const PREVIEW_IMAGES = [
+  { name: 'panel1.png', url: 'https://backend.example/api/cnc/packs/BS-CNC-K7QM3T/preview/panel1.png?token=t' },
+  { name: 'assembly.png', url: 'https://backend.example/api/cnc/packs/BS-CNC-K7QM3T/preview/assembly.png?token=t' },
+];
 
 function order(overrides: Partial<CncOrder> = {}): CncOrder {
   return {
@@ -68,8 +68,25 @@ function order(overrides: Partial<CncOrder> = {}): CncOrder {
     downloadCount: 0,
     lastDownloadedAt: null,
     errorMessage: null,
+    hasPreview: true,
+    previewGeneratedAt: '2026-09-01T02:14:40.000Z',
+    previewImages: PREVIEW_IMAGES,
+    configHash: 'a1b2c3',
     ...overrides,
   };
+}
+
+/** An order that has been previewed but not bought: null tier, nothing paid. */
+function previewOrder(overrides: Partial<CncOrder> = {}): CncOrder {
+  return order({
+    status: 'preview_ready',
+    tier: null,
+    paidAt: null,
+    generatedAt: null,
+    amountCents: null,
+    zipSizeBytes: null,
+    ...overrides,
+  });
 }
 
 function renderStatus(initialOrder: CncOrder, checkoutOutcome: 'success' | 'cancelled' | null = null) {
@@ -99,82 +116,104 @@ beforeEach(() => {
   });
 });
 
-describe('polling', () => {
-  it('keeps polling while an order is still moving', () => {
-    for (const status of ['pending_payment', 'queued', 'generating'] satisfies CncOrderStatus[]) {
-      expect({ status, interval: orderRefetchInterval(status) }).toEqual({
-        status,
-        interval: ORDER_POLL_INTERVAL_MS,
-      });
+describe('the timeline', () => {
+  it('covers both halves of the lifecycle, free preview first', () => {
+    renderStatus(previewOrder());
+
+    for (const step of ['Free preview drawn', 'Licence named and paid', 'Cutting the files', 'Ready to download']) {
+      expect(screen.getAllByText(step).length).toBeGreaterThan(0);
     }
   });
 
-  it('stops the moment the pack is ready, and for every other terminal status', () => {
-    // The whole point: a buyer who leaves the tab open on a finished pack must
-    // not sit there asking the backend the same settled question forever.
-    for (const status of ['ready', 'failed', 'cancelled', 'refunded'] satisfies CncOrderStatus[]) {
-      expect({ status, interval: orderRefetchInterval(status) }).toEqual({ status, interval: false });
+  it('reads a preview being drawn as nothing done yet', () => {
+    for (const status of ['preview_queued', 'preview_generating', 'preview_failed'] satisfies CncOrderStatus[]) {
+      expect({ status, progress: timelineProgress(status) }).toEqual({ status, progress: -1 });
     }
   });
 
-  it('does not stop on a transient null — it polls the last known status', () => {
-    // `cncOrder` answers null for a blip as well as for a revoked licence.
-    // Reading `false` out of that would settle the page forever on a pack that
-    // is still being cut.
-    for (let nullPolls = 0; nullPolls < MAX_CONSECUTIVE_NULL_POLLS; nullPolls += 1) {
-      expect({ nullPolls, interval: nextOrderPollInterval('generating', nullPolls) }).toEqual({
-        nullPolls,
-        interval: ORDER_POLL_INTERVAL_MS,
-      });
+  it('reads a drawn preview as one step in, paid or not', () => {
+    for (const status of ['preview_ready', 'pending_payment', 'cancelled'] satisfies CncOrderStatus[]) {
+      expect({ status, progress: timelineProgress(status) }).toEqual({ status, progress: 0 });
     }
   });
 
-  it('gives up after enough nulls in a row', () => {
-    expect(nextOrderPollInterval('generating', MAX_CONSECUTIVE_NULL_POLLS)).toBe(false);
-    expect(nextOrderPollInterval('generating', MAX_CONSECUTIVE_NULL_POLLS + 3)).toBe(false);
+  it('walks the paid half through to the end', () => {
+    expect(timelineProgress('queued')).toBe(1);
+    expect(timelineProgress('generating')).toBe(2);
+    expect(timelineProgress('ready')).toBe(3);
+    // A refund switches the download off; it does not un-cut the files.
+    expect(timelineProgress('refunded')).toBe(3);
+    // A failed order was paid, queued and picked up — it just never finished,
+    // so it stalls at "cutting the files" rather than resetting to nothing.
+    expect(timelineProgress('failed')).toBe(2);
   });
 
-  it('still stops on a terminal status however many nulls came before it', () => {
-    for (const status of ['ready', 'failed', 'cancelled', 'refunded'] satisfies CncOrderStatus[]) {
-      expect({ status, interval: nextOrderPollInterval(status, 0) }).toEqual({ status, interval: false });
-    }
+  it('says the page updates itself only while something is still moving', () => {
+    renderStatus(previewOrder({ status: 'preview_generating' }));
+    expect(screen.getByText('Previews take about fifteen seconds. This page updates itself.')).toBeTruthy();
+
+    screen.getByText('Drawing the preview');
   });
 
-  it('keeps asking after a null answer, then stops at the cap', async () => {
-    vi.useFakeTimers();
-    try {
-      graphqlRequest.mockResolvedValue({ cncOrder: null });
-      renderStatus(order({ status: 'queued' }));
+  it('says nothing about waiting once the preview is drawn', () => {
+    renderStatus(previewOrder());
 
-      // One tick per interval while the nulls keep coming.
-      for (let poll = 1; poll <= MAX_CONSECUTIVE_NULL_POLLS; poll += 1) {
-        await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS + 50);
-        expect({ poll, calls: graphqlRequest.mock.calls.length }).toEqual({ poll, calls: poll });
-      }
-
-      // And nothing after the cap, however long the tab stays open.
-      await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS * 4);
-      expect(graphqlRequest).toHaveBeenCalledTimes(MAX_CONSECUTIVE_NULL_POLLS);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('does not re-fetch a ready order after the first render', async () => {
-    renderStatus(order({ status: 'ready' }));
-
-    // The button, not the status text: "Ready to download" is deliberately
-    // both the chip label and the last timeline step, so a text query matches
-    // twice and tells you nothing.
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Download the pack' })).toBeTruthy());
-    // `initialData` seeds the cache from the server render, and a settled
-    // status turns the interval off, so nothing should have gone out.
-    expect(graphqlRequest).not.toHaveBeenCalled();
+    expect(screen.queryByText(/This page updates itself/)).toBeNull();
   });
 });
 
-describe('download', () => {
-  it('asks for a fresh grant and sends the browser to it', async () => {
+describe('the preview', () => {
+  it('shows the watermarked sheets with a caption each', () => {
+    renderStatus(previewOrder());
+
+    expect(screen.getByRole('img', { name: 'Panel 1' }).getAttribute('src')).toBe(PREVIEW_IMAGES[0].url);
+    expect(screen.getByRole('img', { name: 'Assembly' })).toBeTruthy();
+    expect(screen.getByText(/Watermarked, 110 dpi/)).toBeTruthy();
+  });
+
+  it('keeps the preview on screen after the pack has been bought', () => {
+    // It is what the buyer checked before spending money. Hiding it the moment
+    // the invoice lands is how a support ticket starts.
+    renderStatus(order({ status: 'ready' }));
+
+    expect(screen.getByRole('img', { name: 'Panel 1' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Download the preview' })).toBeTruthy();
+  });
+
+  it('keeps the card and says what is happening while the sheets are drawn', () => {
+    // No spinner-only card: the head stays, the status chip carries the state.
+    renderStatus(previewOrder({ status: 'preview_generating', hasPreview: false, previewImages: [] }));
+
+    expect(screen.getByText('We are drawing your sheets. They land here as soon as they are done.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Download the preview' })).toBeNull();
+  });
+
+  it('offers Finalise on a drawn preview, pointing at the configurator', () => {
+    renderStatus(previewOrder());
+
+    expect(screen.getByRole('link', { name: 'Finalise and buy' }).getAttribute('href')).toBe(
+      '/build-plans?order=BS-CNC-K7QM3T',
+    );
+  });
+
+  it('offers no Finalise once the order has been bought', () => {
+    renderStatus(order({ status: 'ready' }));
+
+    expect(screen.queryByRole('link', { name: 'Finalise and buy' })).toBeNull();
+  });
+});
+
+describe('downloads', () => {
+  it('asks for a PREVIEW grant for the watermarked sheets', () => {
+    renderStatus(previewOrder());
+    fireEvent.click(screen.getByRole('button', { name: 'Download the preview' }));
+
+    const [document, variables] = graphqlRequest.mock.calls[0] as [string, Record<string, unknown>];
+    expect(document).toContain('CreateCncDownloadGrant');
+    expect(variables).toEqual({ licenceId: 'BS-CNC-K7QM3T', kind: 'PREVIEW' });
+  });
+
+  it('asks for a FULL grant for the pack, and sends the browser to it', async () => {
     graphqlRequest.mockResolvedValue({
       createCncDownloadGrant: {
         url: 'https://backend.example/api/cnc/packs/BS-CNC-K7QM3T/download?token=abc',
@@ -190,11 +229,25 @@ describe('download', () => {
       'https://backend.example/api/cnc/packs/BS-CNC-K7QM3T/download?token=abc',
     );
 
-    // The grant mutation, with the licence id — not a cached URL, because a
-    // grant lasts five minutes and a cached one is a dead link most of the time.
+    // A fresh grant on every click: it lasts five minutes, so a cached one is a
+    // dead link most of the time.
     const [document, variables] = graphqlRequest.mock.calls[0] as [string, Record<string, unknown>];
     expect(document).toContain('CreateCncDownloadGrant');
-    expect(variables).toEqual({ licenceId: 'BS-CNC-K7QM3T' });
+    expect(variables).toEqual({ licenceId: 'BS-CNC-K7QM3T', kind: 'FULL' });
+  });
+
+  it('offers the pack only once it is ready', () => {
+    for (const status of ['preview_ready', 'pending_payment', 'queued', 'generating'] satisfies CncOrderStatus[]) {
+      const view = renderStatus(order({ status, tier: status === 'preview_ready' ? null : 'personal' }));
+      expect({ status, offered: screen.queryByRole('button', { name: 'Download the pack' }) !== null }).toEqual({
+        status,
+        offered: false,
+      });
+      view.unmount();
+    }
+
+    renderStatus(order({ status: 'ready' }));
+    expect(screen.getByRole('button', { name: 'Download the pack' })).toBeTruthy();
   });
 
   it('refuses a grant URL on any other origin', async () => {
@@ -255,19 +308,49 @@ describe('download', () => {
     expect(screen.getByRole('button', { name: 'Download the pack' }).hasAttribute('disabled')).toBe(false);
   });
 
-  it('offers no download at all before the pack is ready', () => {
-    renderStatus(order({ status: 'generating' }));
-
-    expect(screen.queryByRole('button', { name: 'Download the pack' })).toBeNull();
-  });
-
   it('disables the download button while there is no auth token yet', () => {
     useWsAuthToken.mockReturnValue({ token: null, isAuthenticated: true });
     renderStatus(order({ status: 'ready' }));
 
-    // A click with no token would only fail inside handleDownload; disabling
-    // up front means there is nothing to click before the token arrives.
+    // A click with no token would only fail inside handleDownload; disabling up
+    // front means there is nothing to click before the token arrives.
     expect(screen.getByRole('button', { name: 'Download the pack' }).hasAttribute('disabled')).toBe(true);
+  });
+});
+
+describe('polling', () => {
+  it('does not re-fetch a ready order after the first render', async () => {
+    renderStatus(order({ status: 'ready' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Download the pack' })).toBeTruthy());
+    // `initialData` seeds the cache from the server render, and a settled status
+    // turns the interval off, so nothing should have gone out.
+    expect(graphqlRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not re-fetch a drawn preview either — it is waiting on the buyer', async () => {
+    renderStatus(previewOrder());
+
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Finalise and buy' })).toBeTruthy());
+    expect(graphqlRequest).not.toHaveBeenCalled();
+  });
+
+  it('keeps asking while a preview is being drawn, then stops at the cap', async () => {
+    vi.useFakeTimers();
+    try {
+      graphqlRequest.mockResolvedValue({ cncOrder: null });
+      renderStatus(previewOrder({ status: 'preview_generating', hasPreview: false, previewImages: [] }));
+
+      for (let poll = 1; poll <= MAX_CONSECUTIVE_NULL_POLLS; poll += 1) {
+        await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS + 50);
+        expect({ poll, calls: graphqlRequest.mock.calls.length }).toEqual({ poll, calls: poll });
+      }
+
+      await vi.advanceTimersByTimeAsync(ORDER_POLL_INTERVAL_MS * 4);
+      expect(graphqlRequest).toHaveBeenCalledTimes(MAX_CONSECUTIVE_NULL_POLLS);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -302,6 +385,15 @@ describe('terminal states', () => {
     renderStatus(order({ status: 'failed', errorMessage: publicMessage }));
 
     expect(screen.getByText(publicMessage)).toBeTruthy();
+    const contact = screen.getByText('Email us and we will sort it out');
+    expect(contact.closest('a')?.getAttribute('href')).toContain('mailto:support@boardsesh.com');
+  });
+
+  it('says nothing was charged when a preview did not draw, and offers support', () => {
+    renderStatus(previewOrder({ status: 'preview_failed', hasPreview: false, previewImages: [] }));
+
+    expect(screen.getByText('This preview did not draw')).toBeTruthy();
+    expect(screen.getByText(/Nothing was charged/)).toBeTruthy();
     const contact = screen.getByText('Email us and we will sort it out');
     expect(contact.closest('a')?.getAttribute('href')).toContain('mailto:support@boardsesh.com');
   });

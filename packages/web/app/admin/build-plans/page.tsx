@@ -1,20 +1,19 @@
 import React from 'react';
 import Alert from '@mui/material/Alert';
-import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import MuiLink from '@mui/material/Link';
-import Typography from '@mui/material/Typography';
 import BuildPlansPanel from '@/app/components/admin/build-plans-panel';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { fetchCncCatalog } from '@/app/build-plans/build-plans-page';
+import { PageFrame } from '@/app/build-plans/ui';
 import { checkAdmin } from '@/app/lib/admin/check-admin';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { themeTokens } from '@/app/theme/theme-config';
 
 /**
- * Every build-pack order, for support and for requeueing a failed pack.
+ * Every build-pack order — free previews included — for support and for
+ * requeueing a failed pack.
  *
  * Server-rendered so admin access is enforced before any markup ships, matching
  * the rest of `/admin`. `adminCncOrders` and `regenerateCncPack` are both
@@ -28,6 +27,11 @@ import { themeTokens } from '@/app/theme/theme-config';
  * by a rollout percentage is exactly the wrong failure. `/admin` is noindex
  * through the layout's `createNoIndexMetadata`, so nothing here is indexable
  * either way.
+ *
+ * It borrows the buyer's own page frame and card kit rather than a second admin
+ * one: an operator is usually on the phone to somebody looking at the buyer's
+ * screen, and two visual languages for one order is how "it says ready on mine"
+ * happens.
  *
  * The catalogue is fetched here rather than in the panel: it is the same cached,
  * public read the shop page makes, and it is only used to turn a size id into a
@@ -64,20 +68,17 @@ export default async function AdminBuildPlansPage() {
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'admin', 'cnc']}>
-      <Container maxWidth="lg" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-        <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, color: themeTokens.neutral[800] }}>
-          {t('buildPlans.title')}
-        </Typography>
-        <Typography variant="body2" sx={{ mb: 2, color: themeTokens.neutral[600] }}>
-          {t('buildPlans.subtitle')}
-        </Typography>
-        <Box sx={{ mb: 3 }}>
-          <MuiLink component={LocaleLink} href="/admin" underline="hover" sx={{ color: themeTokens.colors.primary }}>
+      <PageFrame
+        title={t('buildPlans.title')}
+        intro={t('buildPlans.subtitle')}
+        eyebrow={
+          <MuiLink component={LocaleLink} href="/admin" variant="body2">
             {t('buildPlans.backToAdmin')}
           </MuiLink>
-        </Box>
+        }
+      >
         <BuildPlansPanel catalog={catalog} locale={locale} />
-      </Container>
+      </PageFrame>
     </I18nProvider>
   );
 }

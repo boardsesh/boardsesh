@@ -13,7 +13,6 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
 import MuiLink from '@mui/material/Link';
-import Paper from '@mui/material/Paper';
 import Snackbar from '@mui/material/Snackbar';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -36,33 +35,48 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { createOrderDateFormatter } from '@/app/build-plans/format-date';
-import { orderStatusChipColor, wallLabel } from '@/app/build-plans/order-display';
+import { tierLabel, wallLabel } from '@/app/build-plans/order-display';
+import { SectionCard, StatusChip } from '@/app/build-plans/ui';
 
 /**
- * The operator's view of every build-pack order.
+ * The operator's view of every build-pack order, free previews included.
  *
  * It exists for the one job the buyer's own order page cannot do: when a pack
  * fails, somebody has to see whose it was, what the generator actually said,
  * and whether the retry budget is spent — then requeue it. Everything else on
  * this screen is context for that decision.
  *
- * Status colour and wall label are imported from the buyer-facing
- * `app/build-plans/order-display.ts` rather than restated, so a status cannot
- * read green here and grey on the page the buyer is looking at while support is
- * on the phone with them.
+ * `StatusChip`, the wall label and the tier label all come from the
+ * buyer-facing kit rather than being restated here, so a status cannot read
+ * green on this screen and grey on the page the buyer is looking at while
+ * support is on the phone with them.
+ *
+ * There is no "deliverable" column: a preview job and a pack job are told apart
+ * by their status, and the tier column already says "Preview" for an order
+ * nobody has bought yet.
  */
 
 const PAGE_SIZE = 50;
 const COLUMN_COUNT = 8;
 
+/** How far back "previews in the last hour" looks. */
+const PREVIEW_WINDOW_MS = 60 * 60 * 1000;
+
 /**
- * The statuses worth filtering to, in lifecycle order.
+ * The statuses worth filtering to, in lifecycle order — the free preview half
+ * first, then the sale.
  *
  * `pending_payment` and `cancelled` are on the list because "did this checkout
  * ever complete" is a real support question, even though neither ever reaches
- * the generator.
+ * the generator. The four `preview_*` ones are here because that is now where
+ * most of the queue lives: previews are free and repeatable, so a stuck
+ * `preview_generating` is the first thing an operator goes looking for.
  */
 const STATUS_ORDER: CncOrderStatus[] = [
+  'preview_queued',
+  'preview_generating',
+  'preview_ready',
+  'preview_failed',
   'pending_payment',
   'queued',
   'generating',
@@ -172,8 +186,26 @@ export default function BuildPlansPanel({ catalog, locale }: { catalog: CncCatal
 
   const filters: StatusFilter[] = ['all', ...STATUS_ORDER];
 
+  // How busy the free half has been in the last hour, from the rows already on
+  // screen — the one number that says whether the preview queue is moving
+  // without opening a dashboard. It is a count of what is loaded, not a global
+  // total, which is why the label says so.
+  const previewsLastHour = useMemo(() => {
+    const since = Date.now() - PREVIEW_WINDOW_MS;
+    return entries.filter((entry) => {
+      const generatedAt = entry.order.previewGeneratedAt;
+      if (!generatedAt) return false;
+      const at = new Date(generatedAt).getTime();
+      return !Number.isNaN(at) && at >= since;
+    }).length;
+  }, [entries]);
+
   return (
     <Box>
+      <Typography variant="body2" sx={{ color: 'var(--neutral-500)', mb: 2 }}>
+        {t('buildPlans.previewsLastHour', { count: previewsLastHour })}
+      </Typography>
+
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', mb: 2 }}>
         {filters.map((option) => (
           <Chip
@@ -202,107 +234,104 @@ export default function BuildPlansPanel({ catalog, locale }: { catalog: CncCatal
         </Alert>
       )}
 
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>{t('buildPlans.table.licence')}</TableCell>
-              <TableCell>{t('buildPlans.table.licensee')}</TableCell>
-              <TableCell>{t('buildPlans.table.tier')}</TableCell>
-              <TableCell>{t('buildPlans.table.wall')}</TableCell>
-              <TableCell>{t('buildPlans.table.status')}</TableCell>
-              <TableCell align="right">{t('buildPlans.table.attempts')}</TableCell>
-              <TableCell>{t('buildPlans.table.created')}</TableCell>
-              <TableCell>{t('buildPlans.table.actions')}</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {entries.map((entry) => (
-              <React.Fragment key={entry.order.licenceId}>
-                <TableRow hover>
-                  <TableCell>
-                    <MuiLink
-                      component={LocaleLink}
-                      href={`/build-plans/orders/${entry.order.licenceId}`}
-                      underline="hover"
-                      sx={{ color: 'var(--color-primary)', fontFamily: 'monospace' }}
-                    >
-                      {entry.order.licenceId}
-                    </MuiLink>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{entry.order.licenseeName ?? t('buildPlans.unknown')}</Typography>
-                    <Typography variant="caption" sx={{ color: 'var(--neutral-500)', wordBreak: 'break-all' }}>
-                      {entry.licenseeEmail ?? t('buildPlans.unknown')}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    {entry.order.tier === 'personal'
-                      ? tCnc('tiers.personal.name')
-                      : /* i18n-keep cnc:tiers.commercial.name */ tCnc('tiers.commercial.name')}
-                  </TableCell>
-                  <TableCell>
-                    {`${getBoardDisplayName(entry.order.boardName)} ${wallLabel(catalog, entry.order)}`}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      size="small"
-                      color={orderStatusChipColor(entry.order.status)}
-                      label={statusLabel(tCnc, entry.order.status)}
-                    />
-                  </TableCell>
-                  <TableCell align="right">{entry.attempts}</TableCell>
-                  <TableCell>{dateFormat.format(new Date(entry.order.createdAt))}</TableCell>
-                  <TableCell>
-                    {REGENERATABLE.has(entry.order.status) && (
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        disabled={pendingLicenceId === entry.order.licenceId}
-                        onClick={() => setConfirming(entry)}
-                        sx={{ textTransform: 'none' }}
+      <SectionCard padding="flush">
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('buildPlans.table.licence')}</TableCell>
+                <TableCell>{t('buildPlans.table.licensee')}</TableCell>
+                <TableCell>{t('buildPlans.table.tier')}</TableCell>
+                <TableCell>{t('buildPlans.table.wall')}</TableCell>
+                <TableCell>{t('buildPlans.table.status')}</TableCell>
+                <TableCell align="right">{t('buildPlans.table.attempts')}</TableCell>
+                <TableCell>{t('buildPlans.table.created')}</TableCell>
+                <TableCell>{t('buildPlans.table.actions')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {entries.map((entry) => (
+                <React.Fragment key={entry.order.licenceId}>
+                  <TableRow hover>
+                    <TableCell>
+                      <MuiLink
+                        component={LocaleLink}
+                        href={`/build-plans/orders/${entry.order.licenceId}`}
+                        underline="hover"
+                        sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}
                       >
-                        {t('buildPlans.actions.regenerate')}
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
+                        {entry.order.licenceId}
+                      </MuiLink>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{entry.order.licenseeName ?? t('buildPlans.unknown')}</Typography>
+                      <Typography variant="caption" sx={{ color: 'var(--neutral-500)', wordBreak: 'break-all' }}>
+                        {entry.licenseeEmail ?? t('buildPlans.unknown')}
+                      </Typography>
+                    </TableCell>
+                    {/* Null tier IS the deliverable: an order nobody has bought
+                      yet is a free preview, and the old ternary labelled every
+                      one of them "Commercial, single build". */}
+                    <TableCell>{tierLabel(entry.order.tier, tCnc)}</TableCell>
+                    <TableCell>
+                      {`${getBoardDisplayName(entry.order.boardName)} ${wallLabel(catalog, entry.order)}`}
+                    </TableCell>
+                    <TableCell>
+                      <StatusChip status={entry.order.status} label={statusLabel(tCnc, entry.order.status)} />
+                    </TableCell>
+                    <TableCell align="right">{entry.attempts}</TableCell>
+                    <TableCell>{dateFormat.format(new Date(entry.order.createdAt))}</TableCell>
+                    <TableCell>
+                      {REGENERATABLE.has(entry.order.status) && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={pendingLicenceId === entry.order.licenceId}
+                          onClick={() => setConfirming(entry)}
+                          sx={{ textTransform: 'none' }}
+                        >
+                          {t('buildPlans.actions.regenerate')}
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
 
-                {/*
+                  {/*
                   The generator's real error gets its own full-width row under
                   the order it belongs to. These messages carry module names and
                   config keys and run to a couple of hundred characters; folded
                   into an eight-column row they either truncate the only useful
                   part or wreck the table.
                 */}
-                {entry.lastError && (
-                  <TableRow>
-                    <TableCell colSpan={COLUMN_COUNT} sx={{ borderTop: 0, pt: 0 }}>
-                      <Typography
-                        variant="caption"
-                        component="pre"
-                        sx={{ m: 0, color: 'var(--color-error)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                      >
-                        {entry.lastError}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </React.Fragment>
-            ))}
+                  {entry.lastError && (
+                    <TableRow>
+                      <TableCell colSpan={COLUMN_COUNT} sx={{ borderTop: 0, pt: 0 }}>
+                        <Typography
+                          variant="caption"
+                          component="pre"
+                          sx={{ m: 0, color: 'var(--color-error)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                        >
+                          {entry.lastError}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
+              ))}
 
-            {entries.length === 0 && !loading && (
-              <TableRow>
-                <TableCell colSpan={COLUMN_COUNT}>
-                  <Typography variant="body2" sx={{ color: 'var(--neutral-500)', py: 2 }}>
-                    {t('buildPlans.empty')}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+              {entries.length === 0 && !loading && (
+                <TableRow>
+                  <TableCell colSpan={COLUMN_COUNT}>
+                    <Typography variant="body2" sx={{ color: 'var(--neutral-500)', py: 2 }}>
+                      {t('buildPlans.empty')}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </SectionCard>
 
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 2 }}>
         {loading && <CircularProgress size={20} />}
