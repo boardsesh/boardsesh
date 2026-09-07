@@ -242,22 +242,31 @@ things the recompute writes. The Boardsesh grade is a different table
 list), and the stream does not touch it: it still arrives on the next pull. The list re-read,
 pull-to-refresh, the grade and ascent filters, sort-by-ascents, the filter-sheet
 count and the climb detail all read local rows, and the pull skips server rows
-younger than the 30 s stability window — which makes the stream the only prompt
-local writer, including for the tick the device itself just logged.
+younger than the 30 s stability window — which makes the stream the prompt local
+writer, including for the tick the device itself just logged. Redis PUBLISH is
+fail-open, so the periodic reconciliation read (`climbStatsForClimbs`) writes
+through the same path: without it a missed publish would leave the store showing
+the new value while list order and a `minAscents` filter still answered from the
+stale local row.
 
-The write is one statement (`INSERT … SELECT … WHERE EXISTS (board_climbs)` with
-a gated `ON CONFLICT DO UPDATE`) on its own connection, taking the write lock
-immediately with a 250 ms timeout. A lost lock drops the event and the next pull
-heals the row; there is no retry, and the main connection never waits. The
-`EXISTS` clause keeps a global layout channel from writing rows for climbs this
-device does not hold, and from leaving an orphan behind a scope teardown.
+The write is one statement per event (`INSERT … SELECT … WHERE EXISTS
+(board_climbs)` with a gated `ON CONFLICT DO UPDATE`), but a drain pass sends
+every queued event through ONE exclusive transaction on its own connection,
+taking the write lock immediately with a 250 ms timeout. A lost lock puts the
+events back and stops the drain — the next event on the stream retries them —
+and the main connection never waits. The `EXISTS` clause keeps a global layout
+channel from writing rows for climbs this device does not hold, and from leaving
+an orphan behind a scope teardown.
 
 The gate on `sync_seq` is strictly greater. The publisher fires on every
 debounced pass while `sync_seq` only bumps when a client-visible column changes,
-so equal-revision republishes are normal and land as `stale` with the row
-untouched. The write converts the decimal text to a `Number` (the in-memory
-store's `BigInt` comparison is unchanged) and drops anything past
-`Number.MAX_SAFE_INTEGER` rather than rounding it into the wrong revision.
+so equal-revision republishes are normal. Those are settled by an autocommit
+pre-read that LEFT JOINs the local row and returns `stale` without opening the
+write connection at all; the write re-checks the revision under the lock, since
+another writer can land in between. The write converts the decimal text to a
+`Number` (the in-memory store's `BigInt` comparison is unchanged) and drops
+anything past `Number.MAX_SAFE_INTEGER` rather than rounding it into the wrong
+revision.
 
 Four columns are never written: `benchmark_difficulty` (the recompute does not
 produce it), `fa_username` and `fa_at` (the event carries raw Postgres text
@@ -266,17 +275,41 @@ insert stamps `updated_at` with the epoch watermark so a tombstone and snapshot
 reconcile can both still delete the row; an update leaves it alone. The next
 pull fills in everything the stream skipped.
 
-Rows are written at every angle, but only the browsed angle and size can refresh
-the list. Refreshes coalesce on a 2 s trailing timer with a 6 s ceiling, and
-only for a scope that is actually downloaded. Each cached query is invalidated
-only when the event could change it — the climb is already on a loaded page, or
-the query filters or sorts on stats — and `['climb']` is narrowed to the climbs
-actually written. A name-sorted, unfiltered list never re-reads because a
-stranger logged a send — though the default sort is `ascents`, which is
-stats-dependent, so the default list does re-read on a qualifying flush, at most
-once per 2 s of quiet and never less often than every 6 s. Network-served lists
-cost nothing extra: their rows already show live values through the in-memory
-store, and membership catches up on the next natural refetch.
+Rows are written at every angle, and every applied write joins the pending
+refresh batch. Refreshes coalesce on a 2 s trailing timer with a 6 s ceiling.
+What each cached query does with that batch is decided per query at flush time,
+against the query's own filters rather than against one board captured when the
+window opened — so an angle, size or board switch inside the window refreshes
+the list the user actually ended up on.
+
+A query is invalidated only when all of this holds: its scope is downloaded (one
+probe per distinct scope, typically one), its filters are expressible on-device
+(`isOfflineSearchSupported` — a zone, hold-state, beta-video or drafts filter
+falls back to HTTP even on a downloaded board, and must never be refetched by
+the stream), and some entry in the batch could change it. That last check is per
+entry: same board and layout, size-compatible, and then either the entry's angle
+matches the query's — where the query must either read stats or already show the
+climb — or the query sorts by `popular`, the one sort whose key
+(`SUM(ascensionist_count)`) spans angles. The count root ignores sort entirely,
+since no ORDER BY can move a total. `['climb']` is narrowed to the climbs and
+angles actually written.
+
+So a name-sorted list only re-reads for a climb it is already showing. The
+default sort is `ascents`, though, which is stats-dependent, so the default list
+does re-read on a qualifying flush — at most once per 2 s of quiet and never
+less often than every 6 s. Those re-reads are OFFSET-paginated under a sort key
+that is moving, so a row can momentarily appear twice or be skipped across a
+page boundary, exactly as it can right after a pull; the next refetch settles
+it. Network-served lists cost nothing extra: their rows already show live values
+through the in-memory store, and membership catches up on the next natural
+refetch.
+
+A flush that lands during a momentary background, or before migrations publish
+the database handle, keeps its batch and re-arms the ceiling rather than
+dropping it — nothing else would re-arm until a new event arrived. Contention is
+handled the same way on the write side: a lock lost to a VACUUM or a snapshot
+import puts the events back and stops the drain instead of re-paying the lock
+wait per event.
 
 The server-rendered base is bootstrap-only. Once a revision-gated canonical row
 exists, the visible send count is `max(canonical, outstanding optimistic floor)`
