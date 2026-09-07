@@ -14,19 +14,38 @@ import type { CncCatalog, CncLicenceTier, CncOrderStatus } from '@boardsesh/shar
  */
 
 /**
- * The wall's catalogue label ("10x12"), or the raw size id when the catalogue
- * no longer carries that entry.
- *
- * A retired entry must not blank out an order somebody paid for — the licence
- * outlives the catalogue, and "25" is still enough for a buyer to recognise
- * their own wall.
+ * Board names shared by configuration, order history and the admin queue.
+ * Layout guards keep other Tension and Kilter layouts from inheriting TB2 or
+ * Homewall names if the catalogue expands.
+ * i18n-keep cnc:configurator.tb2.boardName
+ * i18n-keep cnc:configurator.board.kilterHomewall
  */
-/** Saved manufacturing choices, also used on previews before an order exists. */
+export function boardDisplayLabel(
+  board: { boardName: string; layoutId: number },
+  translate: (key: string) => string,
+): string {
+  if (board.boardName === 'kilter' && board.layoutId === KILTER_HOMEWALL_LAYOUT_ID) {
+    return translate('configurator.board.kilterHomewall');
+  }
+  return boardLayoutLabel(board, translate);
+}
+
+/**
+ * Saved manufacturing choices, also used on previews before an order exists.
+ * i18n-keep cnc:configurator.tb2.savedConfigurationUnavailable
+ */
 export function tb2ConfigurationLabel(
   options: Record<string, string | number | boolean> | undefined,
   translate: (key: string) => string,
 ): string {
   const mode = options?.tb2Engraving;
+  const standard = options?.tb2DimensionStandard;
+  if (
+    (mode !== 'none' && mode !== 'mirror' && mode !== 'spray' && mode !== 'both') ||
+    (standard !== 'metric' && standard !== 'imperial')
+  ) {
+    return translate('configurator.tb2.savedConfigurationUnavailable');
+  }
   const engraving =
     mode === 'none'
       ? translate('configurator.options.tb2Engraving.values.none')
@@ -36,12 +55,20 @@ export function tb2ConfigurationLabel(
           ? translate('configurator.options.tb2Engraving.values.spray')
           : translate('configurator.options.tb2Engraving.values.both');
   const dimensions =
-    options?.tb2DimensionStandard === 'imperial'
+    standard === 'imperial'
       ? translate('configurator.options.tb2DimensionStandard.values.imperial')
       : translate('configurator.options.tb2DimensionStandard.values.metric');
   return `${engraving} · ${dimensions}`;
 }
 
+/**
+ * The wall's catalogue label ("10x12"), or the raw size id when the catalogue
+ * no longer carries that entry.
+ *
+ * A retired entry must not blank out an order somebody paid for — the licence
+ * outlives the catalogue, and "25" is still enough for a buyer to recognise
+ * their own wall.
+ */
 export function wallLabel(
   catalog: CncCatalog | null,
   order: { boardName: string; layoutId: number; sizeId: number; options?: Record<string, string | number | boolean> },
@@ -159,7 +186,7 @@ export function boardLayoutLabel(
   order: { boardName: string; layoutId: number },
   translate: (key: string, options?: Record<string, unknown>) => string,
 ): string {
-  if (order.boardName === 'tension') return translate('configurator.tb2.boardName');
+  if (order.boardName === 'tension' && (order.layoutId === 10 || order.layoutId === 11)) return translate('configurator.tb2.boardName');
   if (order.boardName === 'kilter' && order.layoutId === KILTER_ORIGINAL_LAYOUT_ID)
     return translate('configurator.board.original');
   if (order.boardName === 'kilter' && order.layoutId === KILTER_HOMEWALL_LAYOUT_ID)

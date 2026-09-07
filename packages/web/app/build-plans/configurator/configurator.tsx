@@ -44,7 +44,7 @@ import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { trackCncFunnelEvent } from '@/app/lib/cnc-funnel-analytics';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
-import { tb2ConfigurationLabel } from '../order-display';
+import { boardDisplayLabel, tb2ConfigurationLabel } from '../order-display';
 import {
   FieldGrid,
   KeyValueList,
@@ -85,7 +85,6 @@ import {
   type CncArtworkDraft,
   type CncConfiguratorState,
 } from './configurator-state';
-import { boardLayoutLabel } from '../order-display';
 import type { CncErrorKey } from '../cnc-error';
 import type { CncLayoutPanel, CncLayoutSummary } from './layout-summary';
 import ArtworkStep from './artwork-step';
@@ -1017,7 +1016,7 @@ function WallStep({
         >
           {families.map((candidate) => (
             <MenuItem key={boardFamilyKey(candidate)} value={boardFamilyKey(candidate)}>
-              {boardLayoutLabel(candidate, t)}
+              {boardDisplayLabel(candidate, t)}
             </MenuItem>
           ))}
         </Select>

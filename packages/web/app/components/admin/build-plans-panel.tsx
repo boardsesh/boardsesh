@@ -34,7 +34,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { createOrderDateFormatter } from '@/app/build-plans/format-date';
-import { boardLayoutLabel, tierLabel, wallLabel } from '@/app/build-plans/order-display';
+import { boardDisplayLabel, tierLabel, wallLabel } from '@/app/build-plans/order-display';
 import { SectionCard, StatusChip } from '@/app/build-plans/ui';
 
 /**
@@ -272,7 +272,9 @@ export default function BuildPlansPanel({ catalog, locale }: { catalog: CncCatal
                       yet is a free preview, and the old ternary labelled every
                       one of them "Commercial, single build". */}
                     <TableCell>{tierLabel(entry.order.tier, tCnc)}</TableCell>
-                    <TableCell>{`${boardLayoutLabel(entry.order, tCnc)} ${wallLabel(catalog, entry.order, tCnc)}`}</TableCell>
+                    <TableCell>
+                      {`${boardDisplayLabel(entry.order, tCnc)} ${wallLabel(catalog, entry.order, tCnc)}`}
+                    </TableCell>
                     <TableCell>
                       <StatusChip status={entry.order.status} label={statusLabel(tCnc, entry.order.status)} />
                     </TableCell>

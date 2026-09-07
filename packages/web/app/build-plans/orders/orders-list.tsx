@@ -9,7 +9,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createOrderDateFormatter } from '../format-date';
 import {
-  boardLayoutLabel,
+  boardDisplayLabel,
   finaliseHref,
   isPreviewStatus,
   newestPreviewReadyLicenceId,
@@ -83,7 +83,7 @@ export default async function OrdersList({
                   {order.licenceId}
                 </Typography>
                 <Typography variant="body2" component="p" className={styles.rowMeta}>
-                  {`${boardLayoutLabel(order, t)} ${wallLabel(catalog, order, t)} · ${tierLabel(order.tier, t)}`}
+                  {`${boardDisplayLabel(order, t)} ${wallLabel(catalog, order, t)} · ${tierLabel(order.tier, t)}`}
                 </Typography>
                 <Typography variant="body2" component="p" className={styles.rowMeta}>
                   {dateLine}
