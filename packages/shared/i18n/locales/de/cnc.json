@@ -19,10 +19,10 @@
     "firstBoard": "Das Kilter Homewall ist das erste unterstützte Board. Weitere folgen.",
     "included": {
       "heading": "Was du bekommst",
-      "dxf": "Eine DXF-Datei pro Panel, dazu Montagezeichnungen für die ganze Wand.",
-      "pdf": "Druckbare Bögen in A3 oder Tabloid, damit du das Layout prüfen kannst, bevor jemand zuschneidet.",
-      "bom": "Eine Zuschnittliste: Plattenzahl, Panelmaße und jede Bohrung gezählt.",
-      "licence": "Eine Lizenz mit deinem Namen, gültig für eine Wand.",
+      "dxf": "Montagezeichnungen für die ganze Wand sind dabei, damit die Panels ohne Rätselraten zusammenpassen.",
+      "pdf": "Druckbare Seiten in A3 oder Tabloid, das Layout steht fest, bevor die erste Platte geschnitten wird.",
+      "bom": "Plattenzahl, Panelmaße und jede Bohrung, gezählt bevor du Material bestellst.",
+      "licence": "Auf deinen Namen, gültig für eine Wand, dauerhaft deine.",
       "dxfLabel": "Eine DXF-Datei pro Panel",
       "pdfLabel": "Kontrollbögen",
       "bomLabel": "Eine Zuschnittliste",
@@ -304,7 +304,7 @@
       "signedOut": "Melde dich an, dann zeichnen wir deine Wand. Vorschauen sind kostenlos, ganz ohne Karte.",
       "idle": "Wir teilen alle Bögen auf und schicken dir Zeichnungen mit Wasserzeichen zurück. Ändere etwas und hol dir die nächste.",
       "working": "Wir zeichnen deine Bögen. Das dauert etwa fünfzehn Sekunden.",
-      "ready": "Mit Wasserzeichen, 110 dpi. Schließ ab, dann bekommst du die DXF-Dateien.",
+      "ready": "Kontrollzeichnungen mit Wasserzeichen. Schließ ab, dann bekommst du die DXF-Dateien, aus denen deine Werkstatt schneidet.",
       "stale": "Du hast die Wand seit diesen Bögen geändert. Hol dir die Vorschau neu.",
       "failed": "Diese Vorschau wurde nicht erstellt. Es wurde nichts abgebucht — probier es nochmal.",
       "rateLimited": "Das waren alle kostenlosen Vorschauen dieser Stunde. Die vorhandenen liegen bei deinen Bauplänen, die nächste gibt es zur vollen Stunde.",
@@ -392,7 +392,7 @@
     "previewWaiting": "Eine Vorschau braucht rund fünfzehn Sekunden. Diese Seite aktualisiert sich selbst.",
     "preview": {
       "heading": "Deine Gratis-Vorschau",
-      "note": "Mit Wasserzeichen, 110 dpi. Schließ ab, dann bekommst du die DXF-Dateien, aus denen deine Werkstatt schneidet.",
+      "note": "Kontrollzeichnungen mit Wasserzeichen. Schließ ab, dann bekommst du die DXF-Dateien, aus denen deine Werkstatt schneidet.",
       "drawing": "Wir zeichnen deine Platten. Sie landen hier, sobald sie fertig sind.",
       "panel": "Platte {{number}}",
       "assembly": "Montage"
