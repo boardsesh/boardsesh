@@ -925,14 +925,17 @@ export function PlayDrawer({
     const nextMirrored = !isMirrored;
     setIsMirrored(nextMirrored);
     // The wall doesn't follow the toggle by itself: the AutoSender keys off
-    // the queue item's own `climb.mirrored`, not this drawer-local state, so
-    // without an explicit re-push the LEDs would keep showing the previous
-    // orientation. isConnected means this device holds the BLE link (and
-    // therefore drives the wall). While a preview is pinned the toggle acts
-    // on-screen only — mirroring what you're merely looking at must not
-    // replace the live climb on the wall.
-    if (bluetooth?.isConnected && displayedClimb?.frames && !isPreview) {
-      void bluetooth.sendFramesToBoard(displayedClimb.frames, nextMirrored);
+    // the queue item's own `climb.mirrored`, not this drawer-local state. Hand
+    // it the intent rather than writing the wall here — a direct
+    // `sendFramesToBoard` leaves the AutoSender's dedup record describing the
+    // OLD orientation, so its next run would either skip (and confirm the wrong
+    // orientation to board presence) or re-push the un-mirrored frames and
+    // un-flip the wall under a button that still reads active. isConnected means
+    // this device holds the BLE link (and therefore drives the wall). While a
+    // preview is pinned the toggle acts on-screen only — mirroring what you're
+    // merely looking at must not replace the live climb on the wall.
+    if (bluetooth?.isConnected && displayedClimb?.uuid && displayedClimb?.frames && !isPreview) {
+      bluetooth.setMirrorIntent(displayedClimb.uuid, nextMirrored);
     }
   }, [isMirrored, bluetooth, displayedClimb, isPreview]);
 

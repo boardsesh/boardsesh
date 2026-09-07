@@ -86,6 +86,14 @@ type BluetoothContextValue = {
    */
   invalidateWallState: () => void;
   /**
+   * Ask the wall for a given orientation of the climb it is currently showing.
+   * The mirror toggle lives in the play drawer's own state, so this is how that
+   * intent reaches the auto-sender — which then re-pushes through its normal
+   * write path, keeping the dedup signature and the wall-confirm honest. Falls
+   * back to the queue item's own `mirrored` as soon as the climb changes.
+   */
+  setMirrorIntent: (climbUuid: string, mirrored: boolean) => void;
+  /**
    * Restore the climb captured before this device's latest accepted wall report.
    * The platform relights it over BLE first, then reports it to board presence.
    */
@@ -213,6 +221,7 @@ function BluetoothAutoSender({
   reassertNonce,
   connectInitialSendRef,
   lastPhysicalFramesRef,
+  mirrorIntentRef,
   colorSignature,
   encodingSignature,
   activeConfig,
@@ -236,6 +245,10 @@ function BluetoothAutoSender({
   // changed the wall out from under a byte-identical queue climb would make the
   // dedup path report the queue climb (a phantom, not on the wall).
   lastPhysicalFramesRef: React.MutableRefObject<string | null>;
+  // The orientation the play drawer's mirror toggle asked for, and the climb it
+  // asked for it on. Mobile's toggle never writes `climb.mirrored`, so this is
+  // the only way a flip reaches the send — see `setMirrorIntent`.
+  mirrorIntentRef: React.MutableRefObject<{ climbUuid: string; mirrored: boolean } | null>;
   colorSignature: string;
   // Semantic identity of packet-encoding preferences that affect the physical
   // MoonBoard output. Kept separate from colours so Aurora stays on `default`.
@@ -422,6 +435,16 @@ function BluetoothAutoSender({
           }
           lastUnresolvedReportedUuidRef.current = null;
 
+          // The orientation to put on the wall. The play drawer's mirror toggle
+          // is drawer-local and never reaches `climb.mirrored`, so a live intent
+          // for THIS climb wins; anything else (including after navigating away)
+          // falls back to the queue item's own flag. Everything below — the
+          // dedup signature, the physical-frames record and the write itself —
+          // reads this one value, so the wall and our record of it agree.
+          const intent = mirrorIntentRef.current;
+          const effectiveMirrored =
+            intent && intent.climbUuid === item.climb.uuid ? intent.mirrored : !!item.climb.mirrored;
+
           // connect() may have just written these exact frames as its
           // initialFrames (connect-and-light flows like the play drawer).
           // Seed the dedup signature so this freshly mounted AutoSender
@@ -434,15 +457,15 @@ function BluetoothAutoSender({
             if (
               lastSentSignatureRef.current === null &&
               connectSend.frames === item.climb.frames &&
-              connectSend.mirrored === !!item.climb.mirrored &&
+              connectSend.mirrored === effectiveMirrored &&
               connectSend.colorSignature === requestColorSignature &&
               connectSend.encodingSignature === requestEncodingSignature
             ) {
-              lastSentSignatureRef.current = `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}::${requestColorSignature}::${requestEncodingSignature}`;
+              lastSentSignatureRef.current = `${item.climb.uuid}::${item.climb.frames}::${effectiveMirrored ? 1 : 0}::${requestColorSignature}::${requestEncodingSignature}`;
               // connect() physically wrote these frames, so record them as what's on
               // the wall — else the dedup-confirm below (which now requires the wall
               // to actually show the climb) would suppress the confirm.
-              lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, !!item.climb.mirrored);
+              lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, effectiveMirrored);
             }
           }
 
@@ -459,13 +482,13 @@ function BluetoothAutoSender({
           // re-send is functionally fine, but we'd double-fire haptics. A mirror
           // toggle, hold edit, colour change, or MoonBoard adjacent-hold setting
           // change updates the signature and re-pushes.
-          const sendSignature = `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}::${requestColorSignature}::${requestEncodingSignature}`;
+          const sendSignature = `${item.climb.uuid}::${item.climb.frames}::${effectiveMirrored ? 1 : 0}::${requestColorSignature}::${requestEncodingSignature}`;
           if (sendSignature === lastSentSignatureRef.current) {
             // Re-broadcast of the byte-identical climb: skip the physical write —
             // but only CONFIRM it if the wall still physically shows these frames.
             // A relight/undo may have changed the wall out from under us, in which
             // case confirming here would report a climb that isn't lit (a phantom).
-            if (physicalFramesSignature(item.climb.frames, !!item.climb.mirrored) === lastPhysicalFramesRef.current) {
+            if (physicalFramesSignature(item.climb.frames, effectiveMirrored) === lastPhysicalFramesRef.current) {
               onWallConfirmedRef.current(item);
             }
             toSend = pendingSendRef.current;
@@ -474,7 +497,7 @@ function BluetoothAutoSender({
           }
 
           try {
-            const result = await requestSendFramesToBoard(item.climb.frames, !!item.climb.mirrored, signal, {
+            const result = await requestSendFramesToBoard(item.climb.frames, effectiveMirrored, signal, {
               sendSource: 'auto',
               targetQueueItemUuid: item.uuid,
               climbUuid: item.climb.uuid,
@@ -488,7 +511,7 @@ function BluetoothAutoSender({
 
             if (result === true) {
               lastSentSignatureRef.current = sendSignature;
-              lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, !!item.climb.mirrored);
+              lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, effectiveMirrored);
               onWallConfirmedRef.current(item);
               hapticSuccess();
             }
@@ -1458,6 +1481,27 @@ export function BluetoothProvider({
     lastPhysicalFramesRef.current = null;
   }, []);
 
+  // The orientation the user has asked for on the climb currently on the wall.
+  // Mobile's mirror toggle is drawer-local — it never writes `climb.mirrored`
+  // (mobile doesn't call `mirrorCurrentClimb`, which needs a party session and
+  // only lands via a server delta) — so without this the auto-sender cannot see
+  // a flip: it would re-derive `mirrored: false` from the queue item and either
+  // skip (confirming the wrong orientation to board presence) or re-push the
+  // un-mirrored frames, silently un-flipping the wall under a button that still
+  // reads active. Keyed by uuid so moving to another climb falls back to that
+  // item's own flag, which is the drawer's reset-on-navigate behaviour.
+  const mirrorIntentRef = useRef<{ climbUuid: string; mirrored: boolean } | null>(null);
+  const setMirrorIntent = useCallback(
+    (climbUuid: string, mirrored: boolean) => {
+      mirrorIntentRef.current = { climbUuid, mirrored };
+      // Route the flip through the auto-sender's normal write instead of a
+      // direct `sendFramesToBoard`, so dedup, wall-confirm and haptics all stay
+      // in step with what the wall is actually showing.
+      reassertWall();
+    },
+    [reassertWall],
+  );
+
   const disconnectInFlightRef = useRef<Promise<void> | null>(null);
 
   // Coalesce adapter disconnect calls. The hook consumes and reports the active
@@ -1555,6 +1599,7 @@ export function BluetoothProvider({
       clearBoard,
       reassertWall,
       invalidateWallState,
+      setMirrorIntent,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
@@ -1578,6 +1623,7 @@ export function BluetoothProvider({
       clearBoard,
       reassertWall,
       invalidateWallState,
+      setMirrorIntent,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
@@ -1620,6 +1666,7 @@ export function BluetoothProvider({
             reassertNonce={reassertNonce}
             connectInitialSendRef={connectInitialSendRef}
             lastPhysicalFramesRef={lastPhysicalFramesRef}
+            mirrorIntentRef={mirrorIntentRef}
             colorSignature={holdColorSignature}
             encodingSignature={encodingSignature}
             activeConfig={currentBoardConfig}

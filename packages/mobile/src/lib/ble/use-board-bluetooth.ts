@@ -317,7 +317,13 @@ let cachedGetLedPlacements: GetLedPlacementsFn | null = null;
 export const convertToMirroredFramesString = (frames: string, holdsData: HoldPlacement[]): string => {
   const holdIdToMirroredIdMap = new Map<number, number>();
   for (const hold of holdsData) {
-    if (hold.mirroredHoldId) {
+    // `!= null`, not truthiness: Woods hold ids are the 0-based
+    // `baseHoldLocation`, so hold 0 is real and exactly one hold per size
+    // mirrors ONTO it (8×10 hold 10, 12×12 hold 16 — row 0 is 11 and 17 wide).
+    // A truthy check dropped that pair from the map, and the lookup below then
+    // threw for 138 of the 5,392 catalogue climbs. No-op for Aurora, whose
+    // placement ids start at 1.
+    if (hold.mirroredHoldId != null) {
       holdIdToMirroredIdMap.set(hold.id, hold.mirroredHoldId);
     }
   }
@@ -943,9 +949,61 @@ export function useBoardBluetooth({
             return false;
           }
 
+          // Mirror BEFORE the per-board dispatch, not after it. Both code-driven
+          // boards return from their own branch below, so a mirror step placed
+          // after them was reachable only on Aurora — which is exactly how Woods
+          // shipped a working flip button that lit the un-mirrored climb (#5217).
+          // One `framesToSend` for every branch, so "which variable does this
+          // branch write?" can't drift apart again.
+          //
+          // `frames !== ''` keeps the clear-all paths out: empty frames mean
+          // "dark the wall", which needs no hold map, and without this gate a
+          // mirrored clear would refuse with `missing_mirror_data` instead of
+          // clearing. (After the collapse guard above, `framesToWrite === ''`
+          // iff `frames === ''`.)
+          let framesToSend = framesToWrite;
+
+          if (frames !== '' && mirrored && boardSupportsMirroring(boardName, layoutId)) {
+            // On a board that supports mirroring, a mirrored send REQUIRES the
+            // hold map to produce mirrored frames. If it's missing/empty we must
+            // refuse rather than send the original (un-mirrored) frames — that
+            // would light the wrong holds on the wall while the AutoSender buzzed
+            // success. Web parity (use-board-bluetooth.ts:397-403).
+            if (!holdsData || holdsData.length === 0) {
+              console.error(
+                `[BLE] Cannot mirror frames: holdsData is missing or empty for ${boardName} layout=${layoutId}`,
+              );
+              Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
+              track(SHARED_EVENTS.ClimbSentToBoardFailure, {
+                ...boardAnalyticsProperties,
+                failureReason: 'missing_mirror_data',
+              });
+              return false;
+            }
+            try {
+              // Mirroring runs on the collapsed string: `convertToMirroredFramesString`
+              // is a third `split('p')`/`split('r')` tokeniser, so a raw route made
+              // it emit `p<id>rNaN` or throw on a comma-mangled hold id (#4634).
+              framesToSend = convertToMirroredFramesString(framesToWrite, holdsData);
+            } catch (mirrorError) {
+              // A hold with no mirror partner. The conversion refuses the whole
+              // climb rather than dropping holds, which is right — but bare, the
+              // throw lands in the outer catch, which shows no alert and files a
+              // Sentry error, i.e. a silent dead tap. Give it the same visible
+              // refusal as the missing-holdsData branch above.
+              console.error('[BLE] Cannot mirror frames:', mirrorError);
+              Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
+              track(SHARED_EVENTS.ClimbSentToBoardFailure, {
+                ...boardAnalyticsProperties,
+                failureReason: 'missing_mirror_mapping',
+              });
+              return false;
+            }
+          }
+
           if (boardName === 'moonboard') {
             const sent = await dispatchMoonboardPacket(
-              framesToWrite,
+              framesToSend,
               adapterRef.current.write.bind(adapterRef.current),
               combinedSignal,
               moonNumRows,
@@ -992,8 +1050,12 @@ export function useBoardBluetooth({
           }
 
           if (boardName === 'woods') {
+            // `framesToSend`, never the raw `frames`: it carries the mirror above
+            // (Woods supports mirroring) and the multi-frame collapse. Woods has
+            // no route in the catalogue today, and `woods.ts` asks callers to
+            // flatten upstream rather than lean on its own multi-frame refusal.
             const woodsResult = await dispatchWoodsPacket(
-              frames,
+              framesToSend,
               sizeId,
               adapterRef.current.write.bind(adapterRef.current),
               combinedSignal,
@@ -1074,31 +1136,6 @@ export function useBoardBluetooth({
               track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
             }
             return true;
-          }
-
-          let framesToSend = framesToWrite;
-
-          if (mirrored && boardSupportsMirroring(boardName, layoutId)) {
-            // On a board that supports mirroring, a mirrored send REQUIRES the
-            // hold map to produce mirrored frames. If it's missing/empty we must
-            // refuse rather than send the original (un-mirrored) frames — that
-            // would light the wrong holds on the wall while the AutoSender buzzed
-            // success. Web parity (use-board-bluetooth.ts:397-403).
-            if (!holdsData || holdsData.length === 0) {
-              console.error(
-                `[BLE] Cannot mirror frames: holdsData is missing or empty for ${boardName} layout=${layoutId}`,
-              );
-              Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
-              track(SHARED_EVENTS.ClimbSentToBoardFailure, {
-                ...boardAnalyticsProperties,
-                failureReason: 'missing_mirror_data',
-              });
-              return false;
-            }
-            // Mirroring runs on the collapsed string: `convertToMirroredFramesString`
-            // is a third `split('p')`/`split('r')` tokeniser, so a raw route made
-            // it emit `p<id>rNaN` or throw on a comma-mangled hold id (#4634).
-            framesToSend = convertToMirroredFramesString(framesToWrite, holdsData);
           }
 
           if (!cachedGetLedPlacements) {
