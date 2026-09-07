@@ -1276,31 +1276,48 @@ describe('useClimbStatsLayoutSync — persisting events locally', () => {
     view.unmount();
   });
 
-  it('contains a throw from the primary-read persist too', async () => {
-    // applyBatchRows runs inside a `.then()`, so an escape here is an unhandled
-    // rejection — reported as a crash on a path designed to be silent.
-    const persist = vi.fn(() => {
-      throw new Error('database is closed');
+  it('keeps applying the rest of the batch when one row’s persist throws', async () => {
+    // The batch `.then()` has a `.catch`, so an escape here is never reported.
+    // What it actually costs is the REST of the batch: the
+    // `for (const read of batch.reads)` loop aborts, later reads are never
+    // applied or completed, and their acknowledged tokens are never retired —
+    // so a send count stays pinned to an outstanding optimistic floor.
+    const firstKey: ClimbStatsKey = { boardType: 'kilter', layoutId: 1, climbUuid: 'climb-first', angle: 40 };
+    const secondKey: ClimbStatsKey = { boardType: 'kilter', layoutId: 1, climbUuid: 'climb-second', angle: 40 };
+    const persist = vi.fn((event: ClimbStatsEvent) => {
+      if (event.climbUuid === 'climb-first') throw new Error('database is closed');
     });
-    const fetchClimbStatsForClimbs = vi.fn().mockResolvedValue([batchRow('climb-read', 41, '900')]);
+    const fetchClimbStatsForClimbs = vi
+      .fn()
+      .mockResolvedValue([batchRow('climb-first', 41, '900'), batchRow('climb-second', 55, '901')]);
     const { wrapper: Wrapper } = createWrapper({ fetchClimbStatsForClimbs, persistClimbStatsEvent: persist });
 
-    function StatsRow() {
-      useEffectiveClimbStats('kilter', 1, 'climb-read', 40, { ascensionistCount: 0 });
+    // An acknowledged mutation on the SECOND climb, so the read that follows
+    // has an obligation to retire.
+    beginOptimisticAscent(secondKey, 'batch-token', 0, 54);
+    acknowledgeOptimisticAscent('batch-token', 0);
+    expect(getClimbStatsSnapshot(secondKey).optimisticFloor).toBe(55);
+
+    function StatsRow({ climbUuid }: { climbUuid: string }) {
+      useEffectiveClimbStats('kilter', 1, climbUuid, 40, { ascensionistCount: 0 });
       return null;
     }
 
     const view = render(
       <Wrapper>
-        <StatsRow />
+        <StatsRow climbUuid="climb-first" />
+        <StatsRow climbUuid="climb-second" />
       </Wrapper>,
     );
-    await waitFor(() => expect(persist).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchClimbStatsForClimbs).toHaveBeenCalledTimes(1));
+    // One batch, both climbs — otherwise the throw could not reach the second.
+    expect(fetchClimbStatsForClimbs.mock.calls[0][1]).toEqual(['climb-first', 'climb-second']);
+    await waitFor(() => expect(persist).toHaveBeenCalledTimes(2));
 
-    expect(
-      getClimbStatsSnapshot({ boardType: 'kilter', layoutId: 1, climbUuid: 'climb-read', angle: 40 }).canonical
-        ?.ascensionistCount,
-    ).toBe(41);
+    expect(getClimbStatsSnapshot(firstKey).canonical?.ascensionistCount).toBe(41);
+    expect(getClimbStatsSnapshot(secondKey).canonical?.ascensionistCount).toBe(55);
+    await waitFor(() => expect(getClimbStatsSnapshot(secondKey).optimisticFloor).toBeNull());
+    expect(getAcknowledgedClimbStatsTokens('kilter', 'climb-second', 0)).toEqual([]);
     view.unmount();
   });
 });

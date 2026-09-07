@@ -27,6 +27,24 @@ export type TableSyncConfig = {
    * carried, and the strict `>` delta pull never revisits them.
    */
   cursorColumn: string;
+  /**
+   * When set, the pull upserts this table with a revision guard instead of an
+   * unconditional `INSERT OR REPLACE`: an incoming row is only allowed to
+   * overwrite a local one when `excluded.<revisionColumn> >= COALESCE(local, -1)`.
+   *
+   * Only for tables with a SECOND local writer. `board_climb_stats` has one
+   * (the live `climbStatsUpdated` write-through, #5227), and a pull page can
+   * commit up to 5 s after it was fetched — long enough for the stream to have
+   * landed a newer row that the page would otherwise revert until the next
+   * cycle. Every other table has exactly one writer, so a guard there would buy
+   * nothing and cost a wider statement.
+   *
+   * The comparison is `>=`, not `>`: the pull usually carries the SAME revision
+   * the stream did, and that row must still be applied because it fills the
+   * columns the stream deliberately leaves alone (`updated_at`, which is the
+   * pull cursor, plus `benchmark_difficulty` and the `fa_*` pair).
+   */
+  revisionColumn?: string;
 };
 
 type TableSyncDefinition = Omit<TableSyncConfig, 'invalidateKeys'>;
@@ -160,6 +178,9 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
   board_climb_stats: {
     queryName: 'syncClimbStats',
     cursorColumn: UPDATED_AT_CURSOR,
+    // The one table the live stream also writes, so the pull must not be able
+    // to walk a newer local row backwards. See `revisionColumn` above.
+    revisionColumn: 'sync_seq',
     operationKey: 'SYNC_CLIMB_STATS',
     isPerBoard: true,
     primaryKeyColumns: ['board_type', 'climb_uuid', 'angle'],

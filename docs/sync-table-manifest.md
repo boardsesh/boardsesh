@@ -275,16 +275,31 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
   the upstream/Boardsesh count and quality-blend splits. Devices read the materialized results
   (`ascensionist_count`, `quality_average`, `display_difficulty`); provenance only ever decides which server-side
   writer may touch a column, so shipping it would grow every stats row for nothing.
-- **Second local writer (#5227):** the layout-wide `climbStatsUpdated` stream, via `writeClimbStatsEvent`
-  (`@boardsesh/offline-sync`). One statement per event on its own connection, requiring the climb in
-  `board_climbs` and gated on `excluded.sync_seq > COALESCE(sync_seq, -1)` — strictly greater, because the
-  publisher republishes on every debounced pass while `sync_seq` only bumps on a client-visible change. It
-  writes `display_difficulty`, `ascensionist_count`, `difficulty_average`, `quality_average` and `sync_seq`,
-  and never `benchmark_difficulty`, `fa_username` or `fa_at` (the recompute produces no benchmark, and the
-  event's `fa_at` is raw Postgres text where the pull stores ISO). `updated_at` is stamped with the epoch
-  watermark on INSERT and left alone on UPDATE: it is the pull cursor, so a row stamped "now" could never be
-  deleted again by a tombstone or by snapshot reconcile. The next pull fills in every column the stream
-  skipped. The pull's own upsert stays an ungated `INSERT OR REPLACE`.
+- **Second local writer (#5227):** the layout-wide `climbStatsUpdated` stream, via `writeClimbStatsEvents`
+  (`@boardsesh/offline-sync`). Each event first takes an autocommit pre-read that LEFT JOINs the local row;
+  an equal-or-older revision settles there as `stale` and never opens a write connection at all (the
+  publisher republishes on every debounced pass while `sync_seq` only bumps on a client-visible change, so
+  that is the common case). Whatever is left goes through ONE exclusive transaction per drain pass on its own
+  connection — one statement per event, requiring the climb in `board_climbs` and gated on
+  `excluded.sync_seq > COALESCE(sync_seq, -1)`. A lost lock is not a dropped event: the batch is requeued and
+  the drain stands down for a second, then retries. The same writer also takes the rows of the periodic
+  reconciliation read (`climbStatsForClimbs`), because Redis PUBLISH is fail-open and a missed publish is
+  otherwise undetectable. It writes `display_difficulty`, `ascensionist_count`, `difficulty_average`,
+  `quality_average` and `sync_seq`, and never `benchmark_difficulty`, `fa_username` or `fa_at` (the recompute
+  produces no benchmark, and the event's `fa_at` is raw Postgres text where the pull stores ISO). `updated_at`
+  is stamped with the epoch watermark on INSERT and left alone on UPDATE: it is the pull cursor, so a row
+  stamped "now" could never be deleted again by a tombstone or by snapshot reconcile. The next pull fills in
+  every column the stream skipped.
+- **Because of that second writer, the pull's own upsert on this table is revision-guarded** — the only table
+  where it is. `TABLE_CONFIGS.board_climb_stats.revisionColumn = 'sync_seq'` turns the page insert into
+  `INSERT … ON CONFLICT(board_type, climb_uuid, angle) DO UPDATE SET … WHERE excluded.sync_seq >=
+  COALESCE(board_climb_stats.sync_seq, -1)`, and the snapshot import's `INSERT … SELECT FROM bs_snapshot`
+  carries the same clause. Without it a page fetched before a recompute could commit after the stream had
+  already written the newer row — its apply transaction waits behind whatever else holds the lock — and the
+  row would read stale until the next cycle. The comparison is `>=`, not `>`: the pull usually carries the
+  SAME revision the stream did, and that row still has to land, because it is what fills `updated_at`,
+  `benchmark_difficulty` and the `fa_*` pair. Every other table keeps its unconditional `INSERT OR REPLACE`;
+  they have exactly one writer, so there is nothing to lose a race with.
 
 ### `board_climb_grades` — `syncClimbGrades(boardType, layoutId?, sizeId?)` (board data, per-board)
 

@@ -643,11 +643,49 @@ export function multiRowChunkSize(columnCount: number): number {
   return Math.max(1, Math.floor(SQLITE_MAX_BIND_VARIABLES / columnCount));
 }
 
-function buildMultiRowInsertSql(tableName: string, columns: readonly string[], rowCount: number): string {
+/**
+ * The page upsert.
+ *
+ * Without a `revisionColumn` this is the unconditional `INSERT OR REPLACE` it
+ * has always been: one writer owns the table, so last-write-wins is the whole
+ * story.
+ *
+ * With one, the statement becomes a guarded upsert. `board_climb_stats` has a
+ * SECOND local writer — the live `climbStatsUpdated` write-through — and a page
+ * fetched before a recompute can commit after the stream already wrote the
+ * newer row (its apply transaction waits behind whatever else holds the lock).
+ * `INSERT OR REPLACE` would silently walk that row backwards until the next
+ * cycle. The guard is `>=`, not `>`: the pull usually carries the SAME revision
+ * the stream did, and that row still has to land, because it fills the columns
+ * the stream leaves alone (`updated_at` — the pull cursor — plus
+ * `benchmark_difficulty` and the `fa_*` pair).
+ *
+ * Falls back to the plain form when the page did not carry the revision column
+ * (nothing to compare against) or carries only primary-key columns (nothing to
+ * update), so the guard can never turn a valid page into invalid SQL.
+ */
+export function buildMultiRowInsertSql(
+  tableName: string,
+  columns: readonly string[],
+  rowCount: number,
+  guard?: { revisionColumn: string; primaryKeyColumns: readonly string[] },
+): string {
   const columnList = columns.join(', ');
   const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
   const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
-  return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+
+  const primaryKeyColumns = guard?.primaryKeyColumns ?? [];
+  const updatedColumns = columns.filter((column) => !primaryKeyColumns.includes(column));
+  if (!guard || !columns.includes(guard.revisionColumn) || updatedColumns.length === 0) {
+    return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+  }
+
+  const assignments = updatedColumns.map((column) => `${column} = excluded.${column}`).join(', ');
+  return (
+    `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause} ` +
+    `ON CONFLICT(${primaryKeyColumns.join(', ')}) DO UPDATE SET ${assignments} ` +
+    `WHERE excluded.${guard.revisionColumn} >= COALESCE(${tableName}.${guard.revisionColumn}, -1)`
+  );
 }
 
 async function upsertDocuments(
@@ -656,6 +694,7 @@ async function upsertDocuments(
   documents: Record<string, unknown>[],
   allowedColumns: readonly string[],
   onSchemaDrift?: SchemaDriftReporter,
+  guard?: { revisionColumn: string; primaryKeyColumns: readonly string[] },
 ): Promise<void> {
   if (documents.length === 0) return;
 
@@ -698,7 +737,7 @@ async function upsertDocuments(
   const sqlForRowCount = (rowCount: number): string => {
     let sql = sqlByRowCount.get(rowCount);
     if (!sql) {
-      sql = buildMultiRowInsertSql(tableName, columns, rowCount);
+      sql = buildMultiRowInsertSql(tableName, columns, rowCount, guard);
       sqlByRowCount.set(rowCount, sql);
     }
     return sql;
@@ -799,7 +838,16 @@ async function syncTable(
     // documents:[] with hasMore:true we'd spin forever. Stop here (I2).
     if (result.documents.length === 0) break;
 
-    await upsertDocuments(db, tableName, result.documents, config.localColumns, onSchemaDrift);
+    await upsertDocuments(
+      db,
+      tableName,
+      result.documents,
+      config.localColumns,
+      onSchemaDrift,
+      config.revisionColumn
+        ? { revisionColumn: config.revisionColumn, primaryKeyColumns: config.primaryKeyColumns }
+        : undefined,
+    );
     await setCheckpoint(db, checkpointKey, result.cursor);
 
     totalProcessed += result.documents.length;

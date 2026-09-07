@@ -350,7 +350,10 @@ describe('stats keyset query plan', () => {
     });
 
     // The statement the import ACTUALLY ran, not a copy of it.
-    const statsInsert = executedSql.find((source) => source.includes('INSERT OR REPLACE INTO main.board_climb_stats'));
+    // Matched on the target, not the conflict form: the stats import is a
+    // revision-guarded upsert (a second local writer owns this table), and this
+    // test is about the keyset seek, not the ON CONFLICT clause.
+    const statsInsert = executedSql.find((source) => source.includes('INTO main.board_climb_stats'));
     expect(statsInsert).toBeDefined();
 
     const planDb = new DatabaseSync(':memory:');
@@ -855,7 +858,7 @@ describe('a lost lock race is not a bad artifact', () => {
       source: string,
       ...rest: unknown[]
     ) {
-      if (source.includes('INSERT OR REPLACE INTO main.board_climb_stats')) {
+      if (source.includes('INTO main.board_climb_stats')) {
         statsBatches += 1;
         if (statsBatches === 1) throw new Error('Error code 5: database is locked');
       }
@@ -942,7 +945,7 @@ describe('a lost lock race is not a bad artifact', () => {
       source: string,
       ...rest: unknown[]
     ) {
-      if (source.includes('INSERT OR REPLACE INTO main.board_climb_stats')) {
+      if (source.includes('INTO main.board_climb_stats')) {
         throw new Error('Error code 5: database is locked');
       }
       return realRunAsync.call(this, source, ...(rest as never[]));

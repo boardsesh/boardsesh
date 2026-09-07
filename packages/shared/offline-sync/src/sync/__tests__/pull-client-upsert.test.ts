@@ -6,8 +6,10 @@
 // pull-client.test.ts covers pullSync's overall control flow; this file
 // isolates the batching behaviour itself.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { OfflineDatabase, QueryInvalidator } from '../../database';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { OfflineDatabase, QueryInvalidator, SqlValue } from '../../database';
+import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
+import { runMigrations } from '../../db/migrations';
 
 vi.mock('../checkpoints', () => ({
   getCheckpoint: vi.fn().mockResolvedValue(null),
@@ -22,7 +24,7 @@ vi.mock('../checkpoints', () => ({
   SCOPE_COMPLETE_PREFIX: 'scope-complete:',
 }));
 
-import { pullSync, toSqliteValue, multiRowChunkSize } from '../pull-client';
+import { pullSync, toSqliteValue, multiRowChunkSize, buildMultiRowInsertSql } from '../pull-client';
 import { TABLE_CONFIGS } from '../table-config';
 import { OFFLINE_DB_BUSY_TIMEOUT_MS } from '../../db/pragmas';
 
@@ -228,5 +230,148 @@ describe('upsertDocuments batching (via pullSync)', () => {
     const insertCalls = sqlCalls.filter((call) => call.sql.includes('INSERT OR REPLACE INTO boardsesh_ticks'));
     expect(insertCalls[0].sql).not.toContain('made_up_column_xyz');
     expect(insertCalls[0].params).not.toContain('a');
+  });
+});
+
+// The pull is the ONLY writer of every synced table but one. `board_climb_stats`
+// also takes the live `climbStatsUpdated` write-through (#5227), and a page
+// fetched before a recompute can commit after the stream already wrote the
+// newer row — its apply transaction waits behind whatever else holds the lock.
+// So that one table upserts under a revision guard; nothing else changes shape.
+describe('buildMultiRowInsertSql — the revision guard', () => {
+  const guard = { revisionColumn: 'sync_seq', primaryKeyColumns: ['board_type', 'climb_uuid', 'angle'] };
+
+  it('leaves an unguarded table byte for byte as it was', () => {
+    expect(buildMultiRowInsertSql('boardsesh_ticks', ['uuid', 'quality'], 2)).toBe(
+      'INSERT OR REPLACE INTO boardsesh_ticks (uuid, quality) VALUES (?, ?), (?, ?)',
+    );
+  });
+
+  it('emits a guarded upsert for the one table with a second writer', () => {
+    const sql = buildMultiRowInsertSql(
+      'board_climb_stats',
+      ['board_type', 'climb_uuid', 'angle', 'ascensionist_count', 'updated_at', 'sync_seq'],
+      1,
+      guard,
+    );
+
+    expect(sql).toContain('INSERT INTO board_climb_stats');
+    expect(sql).not.toContain('INSERT OR REPLACE');
+    expect(sql).toContain('ON CONFLICT(board_type, climb_uuid, angle) DO UPDATE SET');
+    // The primary key is the conflict target, so it is never assigned.
+    expect(sql).toContain(
+      'DO UPDATE SET ascensionist_count = excluded.ascensionist_count, updated_at = excluded.updated_at, ' +
+        'sync_seq = excluded.sync_seq',
+    );
+    // `>=`, not `>`: see the equal-revision test below.
+    expect(sql).toContain('WHERE excluded.sync_seq >= COALESCE(board_climb_stats.sync_seq, -1)');
+  });
+
+  it('falls back to the plain form when the page carries no revision column', () => {
+    // Nothing to compare against, so the guard would be invalid SQL.
+    const sql = buildMultiRowInsertSql('board_climb_stats', ['board_type', 'climb_uuid', 'angle', 'updated_at'], 1, {
+      ...guard,
+      revisionColumn: 'sync_seq',
+    });
+    expect(sql).toContain('INSERT OR REPLACE INTO board_climb_stats');
+  });
+
+  it('falls back to the plain form when the page carries only key columns', () => {
+    const sql = buildMultiRowInsertSql('board_climb_stats', ['board_type', 'climb_uuid', 'angle'], 1, guard);
+    expect(sql).toContain('INSERT OR REPLACE INTO board_climb_stats');
+  });
+
+  it('is configured for board_climb_stats and for nothing else', () => {
+    const guarded = Object.entries(TABLE_CONFIGS)
+      .filter(([, config]) => config.revisionColumn !== undefined)
+      .map(([tableName]) => tableName);
+    expect(guarded).toEqual(['board_climb_stats']);
+    expect(TABLE_CONFIGS.board_climb_stats.revisionColumn).toBe('sync_seq');
+  });
+});
+
+describe('the revision guard against a real SQLite row', () => {
+  async function applyPage(database: TestSqliteDb, rows: Record<string, SqlValue>[]) {
+    const columns = ['board_type', 'climb_uuid', 'angle', 'ascensionist_count', 'benchmark_difficulty', 'updated_at', 'sync_seq'];
+    const sql = buildMultiRowInsertSql('board_climb_stats', columns, rows.length, {
+      revisionColumn: 'sync_seq',
+      primaryKeyColumns: TABLE_CONFIGS.board_climb_stats.primaryKeyColumns,
+    });
+    await database.runAsync(
+      sql,
+      rows.flatMap((row) => columns.map((column) => row[column] ?? null)),
+    );
+  }
+
+  function statsRow(overrides: Record<string, SqlValue> = {}): Record<string, SqlValue> {
+    return {
+      board_type: 'kilter',
+      climb_uuid: 'climb-1',
+      angle: 40,
+      ascensionist_count: 41,
+      benchmark_difficulty: null,
+      updated_at: '2026-09-01T00:00:00.000Z',
+      sync_seq: 900,
+      ...overrides,
+    };
+  }
+
+  let database: TestSqliteDb;
+
+  beforeEach(async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    // The stream's row: newer than the page below, and with the epoch
+    // updated_at plus the NULL benchmark the write-through always leaves.
+    await applyPage(database, [statsRow({ ascensionist_count: 42, sync_seq: 1000, updated_at: '1970-01-01T00:00:00.000Z' })]);
+  });
+
+  afterEach(() => {
+    database.close();
+  });
+
+  it('cannot walk a newer local row backwards', async () => {
+    await applyPage(database, [statsRow({ ascensionist_count: 41, sync_seq: 900 })]);
+
+    const row = await database.getFirstAsync<{ ascensionist_count: number; sync_seq: number }>(
+      'SELECT ascensionist_count, sync_seq FROM board_climb_stats WHERE climb_uuid = ?',
+      ['climb-1'],
+    );
+    expect(row).toMatchObject({ ascensionist_count: 42, sync_seq: 1000 });
+  });
+
+  it('still applies an EQUAL revision, because it fills what the stream never writes', async () => {
+    // The stream leaves updated_at at the epoch (it is the pull cursor) and
+    // never writes benchmark_difficulty. A `>` guard would strand both.
+    await applyPage(database, [
+      statsRow({ ascensionist_count: 42, sync_seq: 1000, benchmark_difficulty: 19, updated_at: '2026-09-02T10:00:00.000Z' }),
+    ]);
+
+    const row = await database.getFirstAsync<{
+      benchmark_difficulty: number | null;
+      updated_at: string;
+      sync_seq: number;
+    }>('SELECT benchmark_difficulty, updated_at, sync_seq FROM board_climb_stats WHERE climb_uuid = ?', ['climb-1']);
+    expect(row).toMatchObject({ benchmark_difficulty: 19, updated_at: '2026-09-02T10:00:00.000Z', sync_seq: 1000 });
+  });
+
+  it('applies a newer page row normally', async () => {
+    await applyPage(database, [statsRow({ ascensionist_count: 43, sync_seq: 1100 })]);
+
+    const row = await database.getFirstAsync<{ ascensionist_count: number; sync_seq: number }>(
+      'SELECT ascensionist_count, sync_seq FROM board_climb_stats WHERE climb_uuid = ?',
+      ['climb-1'],
+    );
+    expect(row).toMatchObject({ ascensionist_count: 43, sync_seq: 1100 });
+  });
+
+  it('inserts a row that has no local counterpart at all', async () => {
+    await applyPage(database, [statsRow({ climb_uuid: 'climb-new', ascensionist_count: 7, sync_seq: 5 })]);
+
+    const row = await database.getFirstAsync<{ ascensionist_count: number }>(
+      'SELECT ascensionist_count FROM board_climb_stats WHERE climb_uuid = ?',
+      ['climb-new'],
+    );
+    expect(row?.ascensionist_count).toBe(7);
   });
 });

@@ -69,6 +69,44 @@ const GRADES_SNAPSHOT_TABLES = ['board_climb_grades'] as const;
 const SNAPSHOT_ALIAS = 'bs_snapshot';
 
 /**
+ * The artifact -> `main.board_climb_stats` statement, guarded on `sync_seq`.
+ *
+ * The live `climbStatsUpdated` write-through is a second local writer of this
+ * table (#5227), so an import must not be able to walk a newer local row
+ * backwards. The comparison is `>=`, not `>`: an equal-revision artifact row
+ * still has to land, because it carries the columns the stream deliberately
+ * leaves alone (`updated_at` — the pull cursor — plus `benchmark_difficulty`
+ * and the `fa_*` pair).
+ *
+ * Returns the unguarded `INSERT OR REPLACE` when the artifact and the device do
+ * not share `sync_seq`, or when nothing outside the primary key is shared:
+ * there is then nothing to compare or nothing to update, and the guard could
+ * only turn a working import into invalid SQL.
+ */
+function buildStatsUpsertSql(
+  statsColumns: readonly string[],
+  statsTargetList: string,
+  statsSelectList: string,
+): (whereSql: string) => string {
+  const primaryKeyColumns = ['board_type', 'climb_uuid', 'angle'];
+  const updatedColumns = statsColumns.filter((column) => !primaryKeyColumns.includes(column));
+  const unguarded = (whereSql: string) =>
+    `INSERT OR REPLACE INTO main.board_climb_stats (${statsTargetList})
+         SELECT ${statsSelectList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
+         WHERE ${whereSql}`;
+  if (!statsColumns.includes('sync_seq') || updatedColumns.length === 0) return unguarded;
+  if (!primaryKeyColumns.every((column) => statsColumns.includes(column))) return unguarded;
+
+  const assignments = updatedColumns.map((column) => `${column} = excluded.${column}`).join(', ');
+  return (whereSql: string) =>
+    `INSERT INTO main.board_climb_stats (${statsTargetList})
+         SELECT ${statsSelectList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
+         WHERE ${whereSql}
+         ON CONFLICT(${primaryKeyColumns.join(', ')}) DO UPDATE SET ${assignments}
+         WHERE excluded.sync_seq >= COALESCE(board_climb_stats.sync_seq, -1)`;
+}
+
+/**
  * Rows one import transaction moves before it COMMITs and lets go of the write
  * lock (issue #4310). The whole-layout import used to be a single
  * `BEGIN EXCLUSIVE` around ~710k rows; it is now ceil(rows / this) short ones.
@@ -1029,6 +1067,14 @@ async function importScopeBatched(
 
   const statsTargetList = statsColumns.join(', ');
   const statsSelectList = statsColumns.map((column) => `s.${column}`).join(', ');
+  // Same revision guard the pull uses (TABLE_CONFIGS.board_climb_stats
+  // `revisionColumn`): the live `climbStatsUpdated` write-through is a second
+  // local writer of this table, and an import must not walk a newer local row
+  // backwards. `>=` because an equal-revision artifact row still fills the
+  // columns the stream leaves alone (`updated_at`, `benchmark_difficulty`,
+  // `fa_*`). Falls back to the unguarded form if the artifact and the device
+  // share no `sync_seq` column, which is the pre-guard behaviour.
+  const statsUpsertSql = buildStatsUpsertSql(statsColumns, statsTargetList, statsSelectList);
   let statsCursor: StatsKey = STATS_KEYSET_START;
   for (;;) {
     // Two index seeks in autocommit, holding nothing: "is anything left?" and
@@ -1052,9 +1098,7 @@ async function importScopeBatched(
     const batchFrom = statsCursor;
     await options.runExclusive(async () => {
       const result = await txn.runAsync(
-        `INSERT OR REPLACE INTO main.board_climb_stats (${statsTargetList})
-         SELECT ${statsSelectList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
-         WHERE ${statsKeysetSql(boundary !== null)}`,
+        statsUpsertSql(statsKeysetSql(boundary !== null)),
         statsKeysetParams(scope.boardType, batchFrom, boundary ?? undefined),
       );
       statsImported += result.changes;
