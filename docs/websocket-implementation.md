@@ -235,7 +235,11 @@ reads from a newer auth generation wait for the old physical retry to settle,
 then start independently without inheriting its terminal backoff.
 
 On mobile the same event also lands in SQLite, so a downloaded board's
-local-first reads stop waiting for the next pull. The list re-read,
+local-first reads stop waiting for the next pull. What moves is the community
+grade (`display_difficulty`), the send count and the quality average — the three
+things the recompute writes. The Boardsesh grade is a different table
+(`board_climb_grades`, read through `['boardseshGrade']` and joined by the same
+list), and the stream does not touch it: it still arrives on the next pull. The list re-read,
 pull-to-refresh, the grade and ascent filters, sort-by-ascents, the filter-sheet
 count and the climb detail all read local rows, and the pull skips server rows
 younger than the 30 s stability window — which makes the stream the only prompt
@@ -268,9 +272,11 @@ only for a scope that is actually downloaded. Each cached query is invalidated
 only when the event could change it — the climb is already on a loaded page, or
 the query filters or sorts on stats — and `['climb']` is narrowed to the climbs
 actually written. A name-sorted, unfiltered list never re-reads because a
-stranger logged a send, and network-served lists cost nothing extra: their rows
-already show live values through the in-memory store, and membership catches up
-on the next natural refetch.
+stranger logged a send — though the default sort is `ascents`, which is
+stats-dependent, so the default list does re-read on a qualifying flush, at most
+once per 2 s of quiet and never less often than every 6 s. Network-served lists
+cost nothing extra: their rows already show live values through the in-memory
+store, and membership catches up on the next natural refetch.
 
 The server-rendered base is bootstrap-only. Once a revision-gated canonical row
 exists, the visible send count is `max(canonical, outstanding optimistic floor)`

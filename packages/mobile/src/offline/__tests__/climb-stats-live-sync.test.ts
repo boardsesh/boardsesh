@@ -500,6 +500,60 @@ describe('createClimbStatsLiveSync — teardown and failures', () => {
     expect(harness.onError).toHaveBeenCalledWith(brokenDatabase);
   });
 
+  it('never lets a failed downloaded probe escape as an unhandled rejection', async () => {
+    const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const closedHandle = new Error('Access to closed resource: the database is closed');
+    // The real isBoardDownloadedLocally throws exactly this when the handle
+    // closes underneath it — a hot reload, or a sign-out wipe landing after the
+    // shouldSkipWrites check. flush() runs from a timer, so an escape here is a
+    // reported crash, not a silent no-op.
+    const harness = createHarness({
+      isScopeDownloaded: async () => {
+        throw closedHandle;
+      },
+    });
+
+    harness.sync.handleEvent(makeEvent());
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+    await settleWrites();
+    process.off('unhandledRejection', unhandled);
+
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(harness.onError).toHaveBeenCalledTimes(1);
+    expect(harness.onError).toHaveBeenCalledWith(closedHandle);
+    expect(isInvalidated(gradeFiltered)).toBe(false);
+  });
+
+  it('stops draining a queued burst the moment the app backgrounds', async () => {
+    let backgrounded = false;
+    let releaseFirstWrite: (() => void) | undefined;
+    const writeEvent = vi.fn(async (_db: OfflineDatabase, _event: ClimbStatsWriteThroughInput) => {
+      if (!releaseFirstWrite) {
+        await new Promise<void>((resolve) => {
+          releaseFirstWrite = resolve;
+        });
+      }
+      return applied();
+    });
+    const harness = createHarness({
+      shouldSkipWrites: () => backgrounded,
+      writeEvent: writeEvent as unknown as ClimbStatsLiveSyncOptions['writeEvent'],
+    });
+
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'climb-1' }));
+    await settleWrites();
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'climb-2' }));
+    // The app backgrounds while write 1 is still in flight.
+    backgrounded = true;
+    releaseFirstWrite?.();
+    await settleWrites();
+
+    expect(writeEvent).toHaveBeenCalledTimes(1);
+  });
+
   it('never reports write-lock contention', async () => {
     const harness = createHarness({ writeEvent: async () => ({ status: 'lock_lost', compatibleSizeIds: [5, 6] }) });
 
