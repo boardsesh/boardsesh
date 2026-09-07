@@ -183,15 +183,29 @@ describe('findCollisions', () => {
   ];
   const seams: SeamLineMm[] = [{ kind: 'vertical', valueMm: 505, extent: [0, 500] }];
 
-  it('names the holes in the way and the seams it spans', () => {
+  it('names the holes in the way and the seams a cut-through spans', () => {
     const collisions = findCollisions(
       { xMm: 500, yMm: 250, widthMm: 100, heightMm: 50, rotationDeg: 0 },
       PANEL,
       holes,
       seams,
-      { panelEdgeMarginMm: 15, keepoutScale: 1 },
+      { panelEdgeMarginMm: 15, keepoutScale: 1, cutsThroughSheet: true },
     );
     expect(collisions).toEqual({ holes: ['tnut-0'], seams: [0], offPanel: false });
+  });
+
+  it('lets an engraved mark run over the same seam', () => {
+    // Engrave and pocket artwork is clipped into both panels and cut on each of
+    // them, so a word across a joint is a wall with a word across it — not a
+    // placement anybody has to move. Only a cut-through is stopped by a seam.
+    const collisions = findCollisions(
+      { xMm: 500, yMm: 250, widthMm: 100, heightMm: 50, rotationDeg: 0 },
+      PANEL,
+      [],
+      seams,
+      { panelEdgeMarginMm: 15, keepoutScale: 1, cutsThroughSheet: false },
+    );
+    expect(collisions.seams).toEqual([]);
   });
 
   it('finds nothing for a label parked in a clear corner', () => {
@@ -200,23 +214,27 @@ describe('findCollisions', () => {
       PANEL,
       holes,
       [],
-      { panelEdgeMarginMm: 15, keepoutScale: 1 },
+      { panelEdgeMarginMm: 15, keepoutScale: 1, cutsThroughSheet: false },
     );
     expect(collisions).toEqual({ holes: [], seams: [], offPanel: false });
   });
 
   it('holds a cut-through further off the same hole', () => {
     const rect = { xMm: 545, yMm: 250, widthMm: 40, heightMm: 20, rotationDeg: 0 };
-    expect(findCollisions(rect, PANEL, holes, [], { panelEdgeMarginMm: 15, keepoutScale: 1 }).holes).toEqual([]);
-    expect(findCollisions(rect, PANEL, holes, [], { panelEdgeMarginMm: 15, keepoutScale: 1.5 }).holes).toEqual([
-      'tnut-0',
-    ]);
+    expect(
+      findCollisions(rect, PANEL, holes, [], { panelEdgeMarginMm: 15, keepoutScale: 1, cutsThroughSheet: false }).holes,
+    ).toEqual([]);
+    expect(
+      findCollisions(rect, PANEL, holes, [], { panelEdgeMarginMm: 15, keepoutScale: 1.5, cutsThroughSheet: true })
+        .holes,
+    ).toEqual(['tnut-0']);
   });
 
   it('reports off-panel when a corner leaves the margin, and when there is no panel at all', () => {
     const rect = { xMm: 20, yMm: 250, widthMm: 100, heightMm: 50, rotationDeg: 0 };
-    expect(findCollisions(rect, PANEL, [], [], { panelEdgeMarginMm: 15, keepoutScale: 1 }).offPanel).toBe(true);
-    expect(findCollisions(rect, null, [], [], { panelEdgeMarginMm: 15, keepoutScale: 1 }).offPanel).toBe(true);
+    const keepout = { panelEdgeMarginMm: 15, keepoutScale: 1, cutsThroughSheet: false };
+    expect(findCollisions(rect, PANEL, [], [], keepout).offPanel).toBe(true);
+    expect(findCollisions(rect, null, [], [], keepout).offPanel).toBe(true);
   });
 });
 
