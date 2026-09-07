@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { NativeFormData, type NativeUploadFormData } from '../../../../test/native-upload-runtime';
 
 // Fixed backend origin so the endpoint URL is deterministic and independent of
 // EXPO_PUBLIC_BACKEND_URL.
@@ -17,6 +18,8 @@ vi.mock('../../auth-interceptor', () => ({
 // per-URI payload in Node (the payload identifies which file a part carries).
 vi.mock('expo-file-system', () => ({
   File: class {
+    exists = true;
+    size = 3;
     uri: string;
     constructor(uri: string) {
       this.uri = uri;
@@ -27,22 +30,7 @@ vi.mock('expo-file-system', () => ({
   },
 }));
 
-// A minimal FormData that records appended parts as-is (Node's undici FormData
-// stringifies non-Blob values, which would hide the part object we need to
-// inspect — the whole point of this regression test).
-class RecordingFormData {
-  parts: [string, unknown][] = [];
-  append(name: string, value: unknown) {
-    this.parts.push([name, value]);
-  }
-  get(name: string) {
-    return this.parts.find(([key]) => key === name)?.[1];
-  }
-  has(name: string) {
-    return this.parts.some(([key]) => key === name);
-  }
-}
-vi.stubGlobal('FormData', RecordingFormData);
+afterEach(() => vi.unstubAllGlobals());
 
 import { clearScreenshotUploadCache, uploadFeedbackScreenshot, uploadFeedbackScreenshots } from '../screenshot-upload';
 
@@ -53,6 +41,7 @@ function jsonResponse(body: unknown, ok = true): Response {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('FormData', NativeFormData);
   vi.clearAllMocks();
   // The uploaded-key cache is module state that outlives a single call — it is
   // what stops a retry re-uploading shots that already landed. Without a reset
@@ -62,7 +51,7 @@ beforeEach(() => {
 });
 
 describe('uploadFeedbackScreenshot', () => {
-  it('POSTs an Expo-fetch-compatible multipart part and returns the storage key', async () => {
+  it('POSTs an multipart file readable by RN and Expo fetch and returns the storage key', async () => {
     mockAuthenticatedFetch.mockResolvedValue(
       jsonResponse({ success: true, key: 'feedback-screenshots/abc.jpg', url: 'https://cdn/abc.jpg' }),
     );
@@ -76,11 +65,10 @@ describe('uploadFeedbackScreenshot', () => {
     // No explicit Content-Type — the fetch layer sets the multipart boundary.
     expect(options.headers).toBeUndefined();
 
-    const body = options.body as unknown as RecordingFormData;
-    // The regression: the part must expose `bytes()` + name/type, NOT the legacy
-    // `{ uri }` descriptor that Expo's fetch rejects.
+    const body = options.body as unknown as NativeUploadFormData;
+    // Release builds use RN fetch; its serializer must retain the file URI.
     const part = body.get('screenshot') as { name: string; type: string; bytes: () => Promise<Uint8Array> };
-    expect(part).not.toHaveProperty('uri');
+    expect(body.getParts()[0].uri).toBe('file:///tmp/shot.jpg');
     expect(part.name).toBe('screenshot.jpg');
     expect(part.type).toBe('image/jpeg');
     expect(typeof part.bytes).toBe('function');
@@ -109,7 +97,7 @@ describe('uploadFeedbackScreenshots', () => {
     };
     let call = 0;
     mockAuthenticatedFetch.mockImplementation(async (_url: string, options: RequestInit) => {
-      const body = options.body as unknown as RecordingFormData;
+      const body = options.body as unknown as NativeUploadFormData;
       const part = body.get('screenshot') as { bytes: () => Promise<Uint8Array> };
       const uri = new TextDecoder().decode(await part.bytes());
       // First request resolves last.
@@ -134,6 +122,21 @@ describe('uploadFeedbackScreenshots', () => {
     await expect(uploadFeedbackScreenshots(['file:///a.jpg', 'file:///b.gif'])).rejects.toThrow(
       'Unsupported file type',
     );
+  });
+
+  it('retries only missing screenshots and keeps the original order', async () => {
+    mockAuthenticatedFetch
+      .mockResolvedValueOnce(jsonResponse({ key: 'feedback-screenshots/a.jpg' }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'Upload interrupted' }, false));
+    await expect(uploadFeedbackScreenshots(['file:///a.jpg', 'file:///b.jpg'])).rejects.toThrow('Upload interrupted');
+    mockAuthenticatedFetch.mockClear().mockResolvedValue(jsonResponse({ key: 'feedback-screenshots/b.jpg' }));
+    await expect(uploadFeedbackScreenshots(['file:///a.jpg', 'file:///b.jpg'])).resolves.toEqual([
+      'feedback-screenshots/a.jpg',
+      'feedback-screenshots/b.jpg',
+    ]);
+    expect(mockAuthenticatedFetch).toHaveBeenCalledTimes(1);
+    const [, options] = mockAuthenticatedFetch.mock.calls[0] as [string, RequestInit];
+    expect((options.body as NativeUploadFormData).getParts()[0].uri).toBe('file:///b.jpg');
   });
 
   it('makes no request at all for an empty list', async () => {

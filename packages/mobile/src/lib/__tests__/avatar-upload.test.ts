@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { NativeFormData, type NativeUploadFormData } from '../../../test/native-upload-runtime';
 
 // Fixed backend origin so the relative→absolute logic is deterministic and
 // independent of EXPO_PUBLIC_BACKEND_URL.
@@ -18,6 +19,8 @@ vi.mock('../auth-interceptor', () => ({
 const fileBytes = new Uint8Array([1, 2, 3]);
 vi.mock('expo-file-system', () => ({
   File: class {
+    exists = true;
+    size = 3;
     uri: string;
     constructor(uri: string) {
       this.uri = uri;
@@ -28,22 +31,7 @@ vi.mock('expo-file-system', () => ({
   },
 }));
 
-// A minimal FormData that records appended parts as-is (Node's undici FormData
-// stringifies non-Blob values, which would hide the part object we need to
-// inspect — the whole point of this regression test).
-class RecordingFormData {
-  parts: [string, unknown][] = [];
-  append(name: string, value: unknown) {
-    this.parts.push([name, value]);
-  }
-  get(name: string) {
-    return this.parts.find(([key]) => key === name)?.[1];
-  }
-  has(name: string) {
-    return this.parts.some(([key]) => key === name);
-  }
-}
-vi.stubGlobal('FormData', RecordingFormData);
+afterEach(() => vi.unstubAllGlobals());
 
 import { absolutizeAvatarUrl, uploadAvatar } from '../avatar-upload';
 
@@ -56,6 +44,7 @@ function jsonResponse(body: unknown, ok = true): Response {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('FormData', NativeFormData);
   vi.clearAllMocks();
 });
 
@@ -71,7 +60,7 @@ describe('absolutizeAvatarUrl', () => {
 });
 
 describe('uploadAvatar', () => {
-  it('POSTs an Expo-fetch-compatible multipart part and returns a cache-busted absolute URL', async () => {
+  it('POSTs an multipart file readable by RN and Expo fetch and returns a cache-busted absolute URL', async () => {
     mockAuthenticatedFetch.mockResolvedValue(jsonResponse({ success: true, avatarUrl: '/static/avatars/me.jpg' }));
 
     const result = await uploadAvatar(file, userId);
@@ -86,13 +75,12 @@ describe('uploadAvatar', () => {
     // No explicit Content-Type — the fetch layer sets the multipart boundary.
     expect(options.headers).toBeUndefined();
 
-    const body = options.body as unknown as RecordingFormData;
+    const body = options.body as unknown as NativeUploadFormData;
     expect(body.get('userId')).toBe(userId);
 
-    // The regression: the avatar part must expose `bytes()` + name/type, NOT the
-    // legacy `{ uri }` descriptor that Expo's fetch rejects.
+    // Release builds use RN fetch; its serializer must retain the file URI.
     const avatarPart = body.get('avatar') as { name: string; type: string; bytes: () => Promise<Uint8Array> };
-    expect(avatarPart).not.toHaveProperty('uri');
+    expect(body.getParts()[0].uri).toBe(file.uri);
     expect(avatarPart.name).toBe('avatar.jpg');
     expect(avatarPart.type).toBe('image/jpeg');
     expect(typeof avatarPart.bytes).toBe('function');

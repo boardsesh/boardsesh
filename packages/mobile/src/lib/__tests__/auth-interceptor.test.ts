@@ -293,6 +293,32 @@ describe('recoverAuthRejection', () => {
 // ── authenticatedFetch ───────────────────────────────────────────────────
 
 describe('authenticatedFetch', () => {
+  it('replays the complete multipart body after refreshing a rejected token', async () => {
+    const imageBytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xdb, 0xff, 0xd9]);
+    const form = new FormData();
+    form.append('avatar', new Blob([imageBytes], { type: 'image/jpeg' }), 'avatar.jpg');
+    form.append('userId', 'climber-id');
+    const uploadHeaders: string[] = [];
+    mockGetAuthToken.mockResolvedValueOnce('old-jwt').mockResolvedValueOnce('new-jwt');
+    mockFetch.mockImplementation(async (url: string, options: RequestInit) => {
+      if (url.endsWith('/auth/native/refresh')) {
+        return Response.json({ jwt: 'new-jwt', refreshToken: 'new-refresh', expiresAt: '2099-01-01T00:00:00Z' });
+      }
+      const request = new Request(url, options);
+      uploadHeaders.push(request.headers.get('Authorization')!);
+      const decoded = await request.formData();
+      const image = decoded.getAll('avatar')[0] as unknown as File;
+      expect(image.name).toBe('avatar.jpg');
+      expect(image.type).toBe('image/jpeg');
+      expect(new Uint8Array(await image.arrayBuffer())).toEqual(imageBytes);
+      expect(decoded.getAll('userId')[0]).toBe('climber-id');
+      return Response.json({}, { status: uploadHeaders.length === 1 ? 401 : 200 });
+    });
+    const response = await authenticatedFetch('https://ws.example.com/api/avatars', { method: 'POST', body: form });
+    expect(response.status).toBe(200);
+    expect(uploadHeaders).toEqual(['Bearer old-jwt', 'Bearer new-jwt']);
+  });
+
   it('retries with new token on 401 even when token is not expiring', async () => {
     // Token is NOT expiring — the 401 path should bypass the expiry check
     mockIsTokenExpiringSoon.mockResolvedValue(false);

@@ -90,6 +90,24 @@ vp exec tsx packages/backend/src/scripts/backfill-image-variants.ts --prefix bet
 
 The backfill creates only missing variants and skips existing objects. It does not change beta links or refetch Instagram/TikTok posts. Re-run the dry run to confirm no variants remain, then check the affected public URLs; cached CDN 404s may need time to expire.
 
+### App multipart uploads
+
+Avatars, bug-report screenshots and PR QA screenshots use the mobile app's
+`appendUploadImage` adapter. Native release bundles pin React Native's fetch with
+`EXPO_PUBLIC_USE_RN_FETCH=1` because Expo fetch can crash Hermes (see
+`docs/mobile-ota-updates.md`). RN multipart parts must carry a readable `uri`,
+plus `name` and `type`. A `bytes()`-only descriptor sends an empty file part.
+
+The native adapter also exposes a non-enumerable `bytes()` reader for Expo fetch
+in development. RN's serializer spreads only the URI and metadata into the
+native bridge; Expo reads the original entry's method. Both paths can replay the
+form after authentication refresh. Keep the fetch pin in place.
+
+The browser adapter reads picker/manipulator `blob:` or `data:` URLs without
+backend credentials and appends a real Blob with an explicit filename. Both
+adapters reject missing or empty images, and leave the multipart boundary to
+fetch. The backend rejects empty avatar and screenshot parts before storage.
+
 ### Feedback screenshots
 
 `POST /api/feedback-screenshots` takes one authenticated image per request and returns `{ key }`. There is no `/static/` route for these: the only readers are a GitHub comment and the admin dashboard, and both get a `media.boardsesh.com` URL directly. The key it mints — `feedback-screenshots/<uuid>.<ext>` — rides on a QA verdict (`submitQaVerdict`) or a bug report (`submitAppFeedback`), and the backend turns it back into a `media.boardsesh.com` URL when it writes the PR comment or the GitHub issue. See `docs/crowdsourced-qa.md`.

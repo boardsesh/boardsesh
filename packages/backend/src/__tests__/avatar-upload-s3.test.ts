@@ -102,6 +102,28 @@ describe('avatar upload S3 path (write-first, clean-after)', () => {
     }
   });
 
+  it('rejects an empty upload before writing variants or deleting existing objects', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    isS3ConfiguredMock.mockReturnValue(true);
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      const form = new FormData();
+      form.append('userId', USER_ID);
+      form.append('avatar', new Blob([], { type: 'image/jpeg' }), 'avatar.jpg');
+      const response = await fetch(`${baseUrl}/api/avatars`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer avatar-token' },
+        body: form,
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Uploaded file is empty' });
+      expect(uploadToS3Mock).not.toHaveBeenCalled();
+      expect(deleteUserAvatarsFromS3Mock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it('never deletes the existing avatar when the S3 upload fails', async () => {
     validateTokenMock.mockResolvedValue({ userId: USER_ID });
     isS3ConfiguredMock.mockReturnValue(true);
