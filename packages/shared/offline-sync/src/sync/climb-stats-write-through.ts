@@ -240,7 +240,7 @@ export async function writeClimbStatsEvents(
   db: OfflineDatabase,
   events: readonly ClimbStatsWriteThroughInput[],
 ): Promise<ClimbStatsWriteThroughResult[]> {
-  const results = new Array<ClimbStatsWriteThroughResult | undefined>(events.length);
+  const results: (ClimbStatsWriteThroughResult | undefined)[] = Array.from({ length: events.length });
   const pendingWrites: { index: number; prepared: Extract<PreparedWrite, { kind: 'write' }> }[] = [];
 
   try {
