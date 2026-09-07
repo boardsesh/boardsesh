@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
   GET_CNC_ORDER,
@@ -9,6 +9,7 @@ import {
   type GetCncOrderQueryVariables,
 } from '@boardsesh/graphql/operations/cnc-packs';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { cncErrorKey, type CncErrorKey } from './cnc-error';
 
 /**
  * Watch one build-plans order until it stops moving.
@@ -17,6 +18,12 @@ import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
  * paid pack — and both are watched the same way, so the order page and the
  * configurator's preview step share this rather than each growing their own
  * polling loop that stops on a different set of statuses.
+ *
+ * The two callers start from different places: the order page always has a
+ * server-rendered `initialOrder` in hand, while the configurator starts from a
+ * licence id alone — the one restored from a draft after a reload, before
+ * anything else is known about it. `initialOrder` stays optional so the second
+ * case never has to invent a fake order just to satisfy the type.
  */
 
 /**
@@ -78,40 +85,65 @@ export const MAX_CONSECUTIVE_NULL_POLLS = 5;
  * Deliberately driven by the LAST KNOWN status rather than the current
  * response: a transient `null` carries no status at all, and reading `false`
  * out of it would stop polling permanently on an order that is still moving.
+ * A `null` last-known status — the configurator's case, before its first
+ * answer has ever landed — keeps polling until the null cap is hit, the same
+ * way a genuinely live status would.
  */
-export function nextOrderPollInterval(lastKnownStatus: CncOrderStatus, consecutiveNullPolls: number): number | false {
+export function nextOrderPollInterval(
+  lastKnownStatus: CncOrderStatus | null,
+  consecutiveNullPolls: number,
+): number | false {
   if (consecutiveNullPolls >= MAX_CONSECUTIVE_NULL_POLLS) return false;
+  if (lastKnownStatus === null) return ORDER_POLL_INTERVAL_MS;
   return orderRefetchInterval(lastKnownStatus);
 }
 
 export type CncOrderPollResult = {
-  /** Always an order: the last one the backend answered with, seeded by the server render. */
-  order: CncOrder;
-  /** True while the last poll failed outright, so the page can say so without losing the order. */
+  /**
+   * The last order the backend answered with. Null only when there is no
+   * `initialOrder` and no answer has landed yet — the configurator's case
+   * before a preview has ever been requested.
+   */
+  order: CncOrder | null;
+  /** True while the last poll failed outright, so a page can say so without losing the order. */
   isError: boolean;
+  /** The mapped reason the last poll failed, or null while nothing has gone wrong. */
+  errorKey: CncErrorKey | null;
+  /**
+   * Put an order a mutation just returned into the cache, so a page can paint
+   * from it immediately and the poll picks up from its status rather than
+   * spending a round trip re-fetching what the mutation already answered.
+   */
+  seedOrder: (order: CncOrder) => void;
 };
 
 export function useCncOrderPoll({
+  licenceId,
   initialOrder,
-  token,
+  authToken,
+  enabled,
 }: {
-  /** Server-fetched, so the first paint already shows the real status. */
-  initialOrder: CncOrder;
-  token: string | null;
+  /** The order being watched. Null before a licence exists — nothing to poll yet. */
+  licenceId: string | null;
+  /** Server-fetched, so the order page's first paint already shows the real status. */
+  initialOrder?: CncOrder;
+  authToken: string | null;
+  /** Lets a caller gate polling on more than "there is a licence id and a token" — e.g. being signed in. */
+  enabled: boolean;
 }): CncOrderPollResult {
-  const licenceId = initialOrder.licenceId;
+  const queryClient = useQueryClient();
 
   // Refs, not state: both only ever feed the next poll decision and the
   // fallback render, and bumping React state from inside `queryFn` would
   // re-render the component a second time for every tick.
-  const lastKnownOrderRef = useRef<CncOrder>(initialOrder);
+  const lastKnownOrderRef = useRef<CncOrder | null>(initialOrder ?? null);
   const consecutiveNullPollsRef = useRef(0);
 
   const query = useQuery({
     queryKey: ['cncOrder', licenceId] as const,
     queryFn: async () => {
-      if (!token) throw new Error('useCncOrderPoll: queryFn ran without a token');
-      const client = createGraphQLHttpClient(token);
+      if (!licenceId || !authToken) throw new Error('useCncOrderPoll: queryFn ran without a licence id and token');
+      const client = createGraphQLHttpClient(authToken);
       const response = await client.request<GetCncOrderQueryResponse, GetCncOrderQueryVariables>(GET_CNC_ORDER, {
         licenceId,
       });
@@ -124,21 +156,39 @@ export function useCncOrderPoll({
       }
       return polledOrder;
     },
-    initialData: initialOrder,
     // Without these two the server-rendered order is treated as infinitely old,
     // so React Query refetches it the instant the component mounts — one wasted
     // round trip per page load, on data that was fetched microseconds earlier
     // in the very same request. `staleTime` matches the poll interval because
     // that IS the freshness contract here; `refetchInterval` fires regardless
-    // of staleness, so a live order still polls on time.
-    initialDataUpdatedAt: () => Date.now(),
+    // of staleness, so a live order still polls on time. Skipped entirely when
+    // there is no `initialOrder` to seed from — the configurator's case.
+    ...(initialOrder ? { initialData: initialOrder, initialDataUpdatedAt: () => Date.now() } : {}),
     staleTime: ORDER_POLL_INTERVAL_MS,
-    enabled: !!token,
+    enabled: enabled && licenceId !== null && !!authToken,
     // Re-read from the last known order on every tick, so the moment the order
     // settles the next interval is `false` and the polling stops by itself —
     // while a transient `null` leaves the interval alone.
-    refetchInterval: () => nextOrderPollInterval(lastKnownOrderRef.current.status, consecutiveNullPollsRef.current),
+    refetchInterval: () =>
+      nextOrderPollInterval(lastKnownOrderRef.current?.status ?? null, consecutiveNullPollsRef.current),
+    // A failed poll is worth one more ask on the next tick, not three in a row
+    // inside one: the poll IS the retry here.
+    retry: false,
   });
 
-  return { order: query.data ?? lastKnownOrderRef.current, isError: query.isError };
+  const seedOrder = useCallback(
+    (order: CncOrder) => {
+      lastKnownOrderRef.current = order;
+      consecutiveNullPollsRef.current = 0;
+      queryClient.setQueryData(['cncOrder', order.licenceId], order);
+    },
+    [queryClient],
+  );
+
+  return {
+    order: query.data ?? lastKnownOrderRef.current,
+    isError: query.isError,
+    errorKey: query.error ? cncErrorKey(query.error) : null,
+    seedOrder,
+  };
 }

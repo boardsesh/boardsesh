@@ -89,7 +89,7 @@ import { useCncArtworkValidation } from './use-cnc-artwork-validation';
 import { useCncFinalise } from './use-cnc-finalise';
 import { useCncLayout } from './use-cnc-layout';
 import { useCncPreview } from './use-cnc-preview';
-import { useCncPreviewPoll } from './use-cnc-preview-poll';
+import { useCncOrderPoll } from '../use-cnc-order-poll';
 
 const TIERS: readonly CncLicenceTier[] = ['personal', 'commercial_single'];
 
@@ -169,7 +169,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     order: previewOrder,
     errorKey: pollErrorKey,
     seedOrder,
-  } = useCncPreviewPoll({ licenceId: state.previewLicenceId, token });
+  } = useCncOrderPoll({ licenceId: state.previewLicenceId, authToken: token, enabled: true });
   const { finalise, isFinalising, errorKey: finaliseErrorKey } = useCncFinalise(token);
 
   // Published from the same constants the backend enforces, so a slider's
