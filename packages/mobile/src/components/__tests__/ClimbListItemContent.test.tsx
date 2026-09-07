@@ -33,7 +33,17 @@ vi.mock('@boardsesh/board-react', () => ({
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  // Surfaces `testID` and the flattened `flexShrink` so a layout rule this file
+  // cares about is assertable here. Most style regressions still need a device —
+  // the mock has no layout engine — but "does this badge shrink before the climb
+  // name does" is a single declared property, and it is the rule a new badge is
+  // most likely to get wrong.
+  View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) => {
+    const flattened = (Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : (style ?? {})) as {
+      flexShrink?: number;
+    };
+    return createElement('div', { 'data-testid': testID, 'data-flex-shrink': flattened.flexShrink }, children);
+  },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -228,6 +238,27 @@ describe('ClimbListItemContent hidden chip', () => {
       <ClimbListItemContent climb={baseClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />,
     );
     expect(chipIcon(container)).toBeNull();
+  });
+
+  // The chip landed with `flexShrink: 0` against a `flexShrink: 1` name, which
+  // was right at the time. This change flips that rule so the badges shrink and
+  // the climb name — the row's identifier — keeps its width, and a rigid chip
+  // would quietly opt hidden climbs back out of it.
+  it('shrinks with the other badges rather than pushing the name into an ellipsis', () => {
+    const { container } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, is_hidden: true }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+
+    expect(container.querySelector('[data-testid="climb-row-hidden-chip"]')?.getAttribute('data-flex-shrink')).toBe(
+      '1',
+    );
   });
 
   it('leaves a queue row without the field unmarked rather than guessing', () => {

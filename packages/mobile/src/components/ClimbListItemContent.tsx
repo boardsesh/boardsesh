@@ -505,8 +505,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 4,
-    // Never absorbs the row's truncation — the name does (see `climbName`).
-    flexShrink: 0,
+    // Shrinks with the other attribute badges rather than ahead of the climb
+    // name. This read `flexShrink: 0` when it landed, against a `flexShrink: 1`
+    // name — correct then, but this change flips that rule (see the badge styles
+    // in ClimbAttributeIcons), so leaving it rigid would make the hidden chip the
+    // one badge that still pushes the row's identifier into an ellipsis.
+    flexShrink: 1,
   },
   subtitle: {
     opacity: 0.6,
