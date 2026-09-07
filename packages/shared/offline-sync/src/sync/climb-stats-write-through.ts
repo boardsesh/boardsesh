@@ -68,6 +68,7 @@ import type { OfflineDatabase } from '../database';
 import { beginImmediateWrite } from '../db/pragmas';
 import { isDatabaseLockedError } from '../db/lock-errors';
 import { parseCompatibleSizeIds } from './board-scope-sql';
+import { multiRowChunkSize } from './pull-client';
 
 /**
  * One `ClimbStatsEvent` as this module needs it. Declared structurally rather
@@ -116,6 +117,18 @@ export type ClimbStatsWriteThroughResult = {
    * when the climb is not local, or when the column is NULL.
    */
   layoutId: number | null;
+  /**
+   * Which half of the write decided this result.
+   *
+   * `pre_read` means the autocommit read answered it: the revision was
+   * unparseable, the climb is not local, or the local row is already at or
+   * ahead of this revision. `write` means the exclusive transaction did, and a
+   * `stale` from there is NOT the same statement: the upsert's `WHERE EXISTS`
+   * can have failed because the climb vanished between the two, leaving no row
+   * at all. A caller memoizing "SQLite already holds this revision" must only
+   * trust the `pre_read` kind.
+   */
+  settledBy: 'pre_read' | 'write';
 };
 
 /** Columns this write owns. Everything else on the row is the pull's business. */
@@ -216,46 +229,139 @@ type PreparedWrite =
     };
 
 /**
- * The autocommit half: decide, without taking any lock, whether this event can
- * possibly change a local row.
- *
- * Two of the three outcomes never reach a write connection, which is the point.
- * A global layout channel is mostly climbs this device never downloaded, and
- * the publisher republishes on every debounced pass while `sync_seq` only moves
- * on a client-visible change — so an equal-revision republish is the documented
- * common case and settles here as `stale`. The write still re-checks the
- * revision under the lock, since another writer can land between the two.
+ * How many climb uuids one pre-read statement binds. One parameter is spent on
+ * `board_type`, so the uuid list gets the rest of SQLite's bind budget —
+ * `multiRowChunkSize(1)` is that budget for a one-parameter row.
  */
-async function prepareWrite(db: OfflineDatabase, event: ClimbStatsWriteThroughInput): Promise<PreparedWrite> {
+export const CLIMB_STATS_PRE_READ_CHUNK_SIZE = Math.max(1, multiRowChunkSize(1) - 1);
+
+type PreReadRow = {
+  uuid: string;
+  layout_id: number | null;
+  compatible_size_ids: string | null;
+  angle: number | null;
+  sync_seq: number | null;
+};
+
+/** What one pre-read pass learned about the climbs a batch names. */
+type PreReadIndex = {
+  /** Present iff the climb has a local `board_climbs` row. */
+  climbs: Map<string, { layoutId: number | null; compatibleSizeIds: number[] | null }>;
+  /** `board_type|uuid|angle` -> the local `board_climb_stats.sync_seq`. */
+  revisions: Map<string, number>;
+};
+
+function climbKey(boardType: string, climbUuid: string): string {
+  return `${boardType}|${climbUuid}`;
+}
+
+function revisionKey(boardType: string, climbUuid: string, angle: number): string {
+  return `${boardType}|${climbUuid}|${angle}`;
+}
+
+/**
+ * The autocommit half, for the WHOLE batch: decide, without taking any lock,
+ * which of these events can possibly change a local row.
+ *
+ * One statement per board per chunk of climb uuids, on the main connection.
+ * That matters because the reconciliation read hands over every angle row of
+ * every retained climb at once — a 50-climb pass is ~700 events — and a
+ * sequential `getFirstAsync` each would be 700 round trips through the bridge
+ * for an answer that is almost always "unchanged".
+ *
+ * Uuids are deduplicated before chunking: those ~700 events name ~50 climbs.
+ * The join is on `(board_type, climb_uuid)` only, so one row comes back per
+ * stats angle the device holds (and one NULL-angle row for a climb with no
+ * stats yet), which is what the revision map is keyed on.
+ */
+async function preReadBatch(
+  db: OfflineDatabase,
+  events: readonly ClimbStatsWriteThroughInput[],
+): Promise<PreReadIndex> {
+  const index: PreReadIndex = { climbs: new Map(), revisions: new Map() };
+  const uuidsByBoard = new Map<string, Set<string>>();
+  for (const event of events) {
+    // An unparseable revision is decided without any SQL at all, so its uuid
+    // must not widen the IN list — and a batch of nothing but those reads
+    // nothing.
+    if (parseClimbStatsRevision(event.syncSeq) === null) continue;
+    const uuids = uuidsByBoard.get(event.boardType) ?? new Set<string>();
+    uuids.add(event.climbUuid);
+    uuidsByBoard.set(event.boardType, uuids);
+  }
+
+  for (const [boardType, uuidSet] of uuidsByBoard) {
+    const uuids = [...uuidSet];
+    for (let start = 0; start < uuids.length; start += CLIMB_STATS_PRE_READ_CHUNK_SIZE) {
+      const chunk = uuids.slice(start, start + CLIMB_STATS_PRE_READ_CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(', ');
+      const rows = await db.getAllAsync<PreReadRow>(
+        `SELECT c.uuid AS uuid, c.layout_id AS layout_id, c.compatible_size_ids AS compatible_size_ids,
+                s.angle AS angle, s.sync_seq AS sync_seq
+         FROM board_climbs c
+         LEFT JOIN board_climb_stats s
+           ON s.board_type = c.board_type AND s.climb_uuid = c.uuid
+         WHERE c.board_type = ? AND c.uuid IN (${placeholders})`,
+        [boardType, ...chunk],
+      );
+      for (const row of rows) {
+        if (!index.climbs.has(climbKey(boardType, row.uuid))) {
+          index.climbs.set(climbKey(boardType, row.uuid), {
+            layoutId: typeof row.layout_id === 'number' && Number.isFinite(row.layout_id) ? row.layout_id : null,
+            compatibleSizeIds: parseCompatibleSizeIds(row.compatible_size_ids),
+          });
+        }
+        if (row.angle === null || row.sync_seq === null) continue;
+        const localRevision = typeof row.sync_seq === 'number' ? row.sync_seq : Number(row.sync_seq);
+        if (!Number.isFinite(localRevision)) continue;
+        index.revisions.set(revisionKey(boardType, row.uuid, row.angle), localRevision);
+      }
+    }
+  }
+  return index;
+}
+
+/**
+ * Classify one event against the pre-read index. Pure — the same three outcomes
+ * the per-event read produced, in the same order of precedence.
+ */
+function classifyEvent(event: ClimbStatsWriteThroughInput, index: PreReadIndex): PreparedWrite {
   const revision = parseClimbStatsRevision(event.syncSeq);
   if (revision === null) {
-    return { kind: 'settled', result: { status: 'invalid_revision', compatibleSizeIds: null, layoutId: null } };
+    return {
+      kind: 'settled',
+      result: { status: 'invalid_revision', compatibleSizeIds: null, layoutId: null, settledBy: 'pre_read' },
+    };
   }
 
-  const row = await db.getFirstAsync<{
-    compatible_size_ids: string | null;
-    layout_id: number | null;
-    local_sync_seq: number | null;
-  }>(
-    `SELECT c.compatible_size_ids AS compatible_size_ids, c.layout_id AS layout_id, s.sync_seq AS local_sync_seq
-     FROM board_climbs c
-     LEFT JOIN board_climb_stats s
-       ON s.board_type = c.board_type AND s.climb_uuid = c.uuid AND s.angle = ?
-     WHERE c.board_type = ? AND c.uuid = ?`,
-    [event.angle, event.boardType, event.climbUuid],
-  );
-  if (!row) {
-    return { kind: 'settled', result: { status: 'climb_not_local', compatibleSizeIds: null, layoutId: null } };
+  const climb = index.climbs.get(climbKey(event.boardType, event.climbUuid));
+  if (!climb) {
+    return {
+      kind: 'settled',
+      result: { status: 'climb_not_local', compatibleSizeIds: null, layoutId: null, settledBy: 'pre_read' },
+    };
   }
 
-  const compatibleSizeIds = parseCompatibleSizeIds(row.compatible_size_ids);
-  const layoutId = typeof row.layout_id === 'number' && Number.isFinite(row.layout_id) ? row.layout_id : null;
-  const localRevision = typeof row.local_sync_seq === 'number' ? row.local_sync_seq : Number(row.local_sync_seq);
-  if (row.local_sync_seq !== null && Number.isFinite(localRevision) && localRevision >= revision) {
-    return { kind: 'settled', result: { status: 'stale', compatibleSizeIds, layoutId } };
+  const localRevision = index.revisions.get(revisionKey(event.boardType, event.climbUuid, event.angle));
+  if (localRevision !== undefined && localRevision >= revision) {
+    return {
+      kind: 'settled',
+      result: {
+        status: 'stale',
+        compatibleSizeIds: climb.compatibleSizeIds,
+        layoutId: climb.layoutId,
+        settledBy: 'pre_read',
+      },
+    };
   }
 
-  return { kind: 'write', revision, compatibleSizeIds, layoutId, event };
+  return {
+    kind: 'write',
+    revision,
+    compatibleSizeIds: climb.compatibleSizeIds,
+    layoutId: climb.layoutId,
+    event,
+  };
 }
 
 function upsertBinds(event: ClimbStatsWriteThroughInput, revision: number): (string | number | null)[] {
@@ -294,23 +400,48 @@ export async function writeClimbStatsEvents(
   const results: (ClimbStatsWriteThroughResult | undefined)[] = Array.from({ length: events.length });
   const pendingWrites: { index: number; prepared: Extract<PreparedWrite, { kind: 'write' }> }[] = [];
 
+  // Settled by parsing alone, before any SQL: an unparseable revision needs no
+  // database at all, and a result reached without a read must survive a
+  // batch-wide contention fill below.
+  const readable: { position: number; event: ClimbStatsWriteThroughInput }[] = [];
+  for (const [position, event] of events.entries()) {
+    if (parseClimbStatsRevision(event.syncSeq) === null) {
+      results[position] = {
+        status: 'invalid_revision',
+        compatibleSizeIds: null,
+        layoutId: null,
+        settledBy: 'pre_read',
+      };
+      continue;
+    }
+    readable.push({ position, event });
+  }
+
   try {
-    for (const [index, event] of events.entries()) {
-      const prepared = await prepareWrite(db, event);
+    const index = await preReadBatch(
+      db,
+      readable.map(({ event }) => event),
+    );
+    for (const { position, event } of readable) {
+      const prepared = classifyEvent(event, index);
       if (prepared.kind === 'settled') {
-        results[index] = prepared.result;
+        results[position] = prepared.result;
         continue;
       }
-      pendingWrites.push({ index, prepared });
+      pendingWrites.push({ index: position, prepared });
     }
   } catch (error) {
     // A read can hit a closed handle too (a sign-out wipe or a hot reload
     // landing mid-batch). That is contention, not a broken database, so it
     // must not be reported.
     if (isDroppableWriteFailure(error)) {
-      return events.map(
-        (_event, index) => results[index] ?? { status: 'lock_lost', compatibleSizeIds: null, layoutId: null },
-      );
+      return events.map((_event, position) => ({
+        status: 'lock_lost',
+        compatibleSizeIds: null,
+        layoutId: null,
+        settledBy: 'pre_read',
+        ...results[position],
+      }));
     }
     throw error;
   }
@@ -332,6 +463,7 @@ export async function writeClimbStatsEvents(
           status: 'lock_lost',
           compatibleSizeIds: prepared.compatibleSizeIds,
           layoutId: prepared.layoutId,
+          settledBy: 'write',
         };
       }
     }
@@ -341,11 +473,17 @@ export async function writeClimbStatsEvents(
         status: (changesByIndex.get(index) ?? 0) > 0 ? 'applied' : 'stale',
         compatibleSizeIds: prepared.compatibleSizeIds,
         layoutId: prepared.layoutId,
+        // A `stale` from HERE is not the pre-read's: the upsert's WHERE EXISTS
+        // can have failed because the climb vanished after the pre-read, so
+        // there may be no row at all.
+        settledBy: 'write',
       };
     }
   }
 
-  return results.map((result) => result ?? { status: 'stale', compatibleSizeIds: null, layoutId: null });
+  return results.map(
+    (result) => result ?? { status: 'stale', compatibleSizeIds: null, layoutId: null, settledBy: 'write' },
+  );
 }
 
 /** One event, through the batched writer. */

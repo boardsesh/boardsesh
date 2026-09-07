@@ -58,9 +58,10 @@ export type TableSyncConfig = {
    */
   cursorColumn: string;
   /**
-   * When set, the pull upserts this table with a revision guard instead of an
-   * unconditional `INSERT OR REPLACE`: an incoming row is only allowed to
-   * overwrite a local one when `excluded.<revisionColumn> >= COALESCE(local, -1)`.
+   * When set, the guarded upsert compares the `(cursorColumn, revisionColumn)`
+   * pair instead of issuing an unconditional `INSERT OR REPLACE`. Timestamps
+   * are normalized before the comparison so fractional-width differences do
+   * not reverse their text order.
    *
    * Only for tables with a SECOND local writer. `board_climb_stats` has one
    * (the live `climbStatsUpdated` write-through, #5227), and a pull page can

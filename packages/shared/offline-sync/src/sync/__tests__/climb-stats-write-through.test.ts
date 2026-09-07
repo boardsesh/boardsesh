@@ -13,6 +13,7 @@ import type { ClimbStatsEvent } from '@boardsesh/shared-schema';
 import {
   writeClimbStatsEvent,
   writeClimbStatsEvents,
+  CLIMB_STATS_PRE_READ_CHUNK_SIZE,
   parseClimbStatsRevision,
   CLIMB_STATS_WRITE_THROUGH_COLUMNS,
   CLIMB_STATS_WRITE_THROUGH_UNTOUCHED_COLUMNS,
@@ -145,7 +146,7 @@ describe('writeClimbStatsEvent — inserting a row the pull has not seen', () =>
 
     // layoutId is the climb's OWN board_climbs.layout_id, never the event's —
     // the caller gates list refreshes on it.
-    expect(result).toEqual({ status: 'applied', compatibleSizeIds: [5, 6], layoutId: 1 });
+    expect(result).toEqual({ status: 'applied', compatibleSizeIds: [5, 6], layoutId: 1, settledBy: 'write' });
     const row = await readStatsRow();
     expect(row).toMatchObject({
       display_difficulty: 17,
@@ -268,7 +269,12 @@ describe('writeClimbStatsEvent — the revision gate', () => {
 
     const result = await writeClimbStatsEvent(countingDb, makeEvent({ syncSeq }));
 
-    expect(result).toEqual({ status: 'invalid_revision', compatibleSizeIds: null, layoutId: null });
+    expect(result).toEqual({
+      status: 'invalid_revision',
+      compatibleSizeIds: null,
+      layoutId: null,
+      settledBy: 'pre_read',
+    });
     expect(reads).not.toHaveBeenCalled();
     expect(writes).not.toHaveBeenCalled();
   });
@@ -288,7 +294,12 @@ describe('writeClimbStatsEvent — climbs this device does not hold', () => {
 
     const result = await writeClimbStatsEvent(countingDb, makeEvent());
 
-    expect(result).toEqual({ status: 'climb_not_local', compatibleSizeIds: null, layoutId: null });
+    expect(result).toEqual({
+      status: 'climb_not_local',
+      compatibleSizeIds: null,
+      layoutId: null,
+      settledBy: 'pre_read',
+    });
     expect(writes).not.toHaveBeenCalled();
     expect(await readStatsRow()).toBeNull();
   });
@@ -307,16 +318,19 @@ describe('writeClimbStatsEvent — climbs this device does not hold', () => {
     // board_climbs and never sweeps orphans, so a row written here would be
     // permanent.
     const racingDb = wrapDb({
-      getFirstAsync: (async (source: string, ...params: never[]) => {
-        const row = await db.getFirstAsync(source, ...params);
+      getAllAsync: (async (source: string, ...params: never[]) => {
+        const rows = await db.getAllAsync(source, ...params);
         await db.runAsync('DELETE FROM board_climbs WHERE board_type = ? AND uuid = ?', ['kilter', CLIMB_UUID]);
-        return row;
-      }) as OfflineDatabase['getFirstAsync'],
+        return rows;
+      }) as OfflineDatabase['getAllAsync'],
     });
 
     const result = await writeClimbStatsEvent(racingDb, makeEvent());
 
     expect(result.status).toBe('stale');
+    // …and NOT the pre-read's stale: this one only knows the statement matched
+    // nothing, which is exactly why a caller must not memoize it.
+    expect(result.settledBy).toBe('write');
     expect(await readStatsRow()).toBeNull();
   });
 
@@ -365,7 +379,7 @@ describe('writeClimbStatsEvent — the write connection', () => {
 
     const result = await writeClimbStatsEvent(lockedDb, makeEvent());
 
-    expect(result).toEqual({ status: 'lock_lost', compatibleSizeIds: [5, 6], layoutId: 1 });
+    expect(result).toEqual({ status: 'lock_lost', compatibleSizeIds: [5, 6], layoutId: 1, settledBy: 'write' });
   });
 
   it('drops the event when the database was closed underneath it', async () => {
@@ -463,9 +477,9 @@ describe('writeClimbStatsEvents — the batch', () => {
   it('reports a closed database on the PRE-READ as lock_lost, not as a broken database', async () => {
     await seedClimb();
     const closedDb = wrapDb({
-      getFirstAsync: (async () => {
+      getAllAsync: (async () => {
         throw new Error('Access to closed resource: the database is closed');
-      }) as unknown as OfflineDatabase['getFirstAsync'],
+      }) as unknown as OfflineDatabase['getAllAsync'],
     });
 
     const results = await writeClimbStatsEvents(closedDb, [makeEvent()]);
@@ -479,9 +493,9 @@ describe('writeClimbStatsEvents — the batch', () => {
     // revision settles before the query — so its result must survive the
     // batch-wide lock_lost fill.
     const closingDb = wrapDb({
-      getFirstAsync: (async () => {
+      getAllAsync: (async () => {
         throw new Error('Access to closed resource: the database is closed');
-      }) as unknown as OfflineDatabase['getFirstAsync'],
+      }) as unknown as OfflineDatabase['getAllAsync'],
     });
 
     const results = await writeClimbStatsEvents(closingDb, [
@@ -545,6 +559,97 @@ describe('writeClimbStatsEvents — the batch', () => {
     );
     expect(orphan).toBeNull();
     expect((await readStatsRow(40))?.sync_seq).toBe(500);
+  });
+});
+
+describe('writeClimbStatsEvents — the batched pre-read', () => {
+  // The 120 s reconciliation read hands over every angle row of every retained
+  // climb at once: a 50-climb pass is ~700 events. One bridge round trip each
+  // is the cost this batching removes.
+  function countReads() {
+    const reads = vi.fn((source: string, ...params: never[]) => db.getAllAsync(source, ...params));
+    return { reads, countingDb: wrapDb({ getAllAsync: reads as unknown as OfflineDatabase['getAllAsync'] }) };
+  }
+
+  it('reads once for a 900-event batch instead of 900 times', async () => {
+    await seedClimb();
+    const { reads, countingDb } = countReads();
+    // 900 events over 90 climbs — the shape a reconciliation pass produces.
+    const events = Array.from({ length: 900 }, (_value, index) =>
+      makeEvent({ climbUuid: `climb-${index % 90}`, angle: 20 + (index % 10) }),
+    );
+
+    const results = await writeClimbStatsEvents(countingDb, events);
+
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(900);
+  });
+
+  it('chunks the uuid list rather than binding past SQLite’s parameter ceiling', async () => {
+    await seedClimb();
+    const { reads, countingDb } = countReads();
+    const uuidCount = CLIMB_STATS_PRE_READ_CHUNK_SIZE + 1;
+    const events = Array.from({ length: uuidCount }, (_value, index) => makeEvent({ climbUuid: `climb-${index}` }));
+
+    await writeClimbStatsEvents(countingDb, events);
+
+    expect(reads).toHaveBeenCalledTimes(Math.ceil(uuidCount / CLIMB_STATS_PRE_READ_CHUNK_SIZE));
+    // One parameter is spent on board_type, so a chunk never binds more than
+    // the ceiling.
+    for (const call of reads.mock.calls) {
+      expect((call[1] as unknown as unknown[]).length).toBeLessThanOrEqual(CLIMB_STATS_PRE_READ_CHUNK_SIZE + 1);
+    }
+  });
+
+  it('deduplicates uuids, so every angle of one climb costs one binding', async () => {
+    await seedClimb();
+    const { reads, countingDb } = countReads();
+
+    await writeClimbStatsEvents(
+      countingDb,
+      [20, 25, 30, 35, 40].map((angle) => makeEvent({ angle })),
+    );
+
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect((reads.mock.calls[0][1] as unknown as unknown[]).length).toBe(2);
+  });
+
+  it('reads nothing at all when every revision is unparseable', async () => {
+    await seedClimb();
+    const { reads, countingDb } = countReads();
+
+    const results = await writeClimbStatsEvents(countingDb, [makeEvent({ syncSeq: 'nope' }), makeEvent({ syncSeq: '' })]);
+
+    expect(reads).not.toHaveBeenCalled();
+    expect(results.map((result) => result.status)).toEqual(['invalid_revision', 'invalid_revision']);
+  });
+
+  it('classifies a mixed batch exactly as the per-event read did', async () => {
+    // One local climb with a fresher local row, one local climb with an older
+    // one, one climb this device never downloaded, and one bad revision.
+    await seedClimb({ uuid: 'climb-fresh' });
+    await seedClimb({ uuid: 'climb-old' });
+    await seedPulledStatsRow({ climb_uuid: 'climb-fresh', sync_seq: 900 });
+    await seedPulledStatsRow({ climb_uuid: 'climb-old', sync_seq: 10 });
+
+    const results = await writeClimbStatsEvents(db, [
+      makeEvent({ climbUuid: 'climb-fresh', syncSeq: '500' }),
+      makeEvent({ climbUuid: 'climb-old', syncSeq: '500' }),
+      makeEvent({ climbUuid: 'climb-absent', syncSeq: '500' }),
+      makeEvent({ climbUuid: 'climb-old', angle: 25, syncSeq: 'nope' }),
+    ]);
+
+    expect(results.map((result) => result.status)).toEqual(['stale', 'applied', 'climb_not_local', 'invalid_revision']);
+    expect(results.map((result) => result.settledBy)).toEqual(['pre_read', 'write', 'pre_read', 'pre_read']);
+  });
+
+  it('keys the revision by angle, so another angle’s fresher row cannot mask this one', async () => {
+    await seedClimb();
+    await seedPulledStatsRow({ angle: 25, sync_seq: 9_000 });
+
+    const [result] = await writeClimbStatsEvents(db, [makeEvent({ angle: 40, syncSeq: '500' })]);
+
+    expect(result.status).toBe('applied');
   });
 });
 
