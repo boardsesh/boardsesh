@@ -275,6 +275,16 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
   the upstream/Boardsesh count and quality-blend splits. Devices read the materialized results
   (`ascensionist_count`, `quality_average`, `display_difficulty`); provenance only ever decides which server-side
   writer may touch a column, so shipping it would grow every stats row for nothing.
+- **Second local writer (#5227):** the layout-wide `climbStatsUpdated` stream, via `writeClimbStatsEvent`
+  (`@boardsesh/offline-sync`). One statement per event on its own connection, requiring the climb in
+  `board_climbs` and gated on `excluded.sync_seq > COALESCE(sync_seq, -1)` — strictly greater, because the
+  publisher republishes on every debounced pass while `sync_seq` only bumps on a client-visible change. It
+  writes `display_difficulty`, `ascensionist_count`, `difficulty_average`, `quality_average` and `sync_seq`,
+  and never `benchmark_difficulty`, `fa_username` or `fa_at` (the recompute produces no benchmark, and the
+  event's `fa_at` is raw Postgres text where the pull stores ISO). `updated_at` is stamped with the epoch
+  watermark on INSERT and left alone on UPDATE: it is the pull cursor, so a row stamped "now" could never be
+  deleted again by a tombstone or by snapshot reconcile. The next pull fills in every column the stream
+  skipped. The pull's own upsert stays an ungated `INSERT OR REPLACE`.
 
 ### `board_climb_grades` — `syncClimbGrades(boardType, layoutId?, sizeId?)` (board data, per-board)
 
