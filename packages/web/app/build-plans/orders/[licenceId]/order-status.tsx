@@ -1,89 +1,38 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
 import MuiLink from '@mui/material/Link';
-import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { getBoardDisplayName } from '@boardsesh/climb-actions';
-import type { CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
+import type { CncDownloadKind, CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
   CREATE_CNC_DOWNLOAD_GRANT,
-  GET_CNC_ORDER,
   type CreateCncDownloadGrantMutationResponse,
   type CreateCncDownloadGrantMutationVariables,
-  type GetCncOrderQueryResponse,
-  type GetCncOrderQueryVariables,
 } from '@boardsesh/graphql/operations/cnc-packs';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient, getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
-import { themeTokens } from '@/app/theme/theme-config';
 import { cncErrorKey, type CncErrorKey } from '../../cnc-error';
 import { createOrderDateFormatter } from '../../format-date';
-import { orderStatusChipColor } from '../../order-display';
-import styles from '../../build-plans.module.css';
+import { finaliseHref, previewImageLabel, tierLabel } from '../../order-display';
+import { KeyValueList, PageFrame, PreviewGallery, SectionCard, StatusChip, type KeyValueItem } from '../../ui';
+import { orderRefetchInterval, useCncOrderPoll } from '../../use-cnc-order-poll';
+import styles from '../orders.module.css';
 
 /**
- * How often an unfinished pack is re-checked.
+ * One order, both halves of its life: the free watermarked preview and, once it
+ * has been finalised, the licensed pack.
  *
- * A pack takes a couple of minutes to cut, so five seconds is fast enough that
- * the page never feels stuck and slow enough that a buyer leaving the tab open
- * over lunch costs a few hundred requests, not a few hundred thousand.
+ * The preview never goes away. A buyer who has paid still sees the sheets they
+ * approved — that is what they checked before spending money, and hiding it the
+ * moment the invoice lands is how a support ticket starts.
  */
-export const ORDER_POLL_INTERVAL_MS = 5_000;
-
-/**
- * Statuses that are still moving on their own.
- *
- * `pending_payment` is NOT one of them, and that is the subtle case: it moves
- * only when Stripe's webhook lands, which happens within seconds of a
- * successful checkout — so it is polled too. What is deliberately excluded is
- * every TERMINAL status: `ready`, `failed`, `cancelled` and `refunded` never
- * change again without a human, so polling them is pure waste.
- */
-const LIVE_STATUSES: readonly CncOrderStatus[] = ['pending_payment', 'queued', 'generating'];
-
-/**
- * The React Query `refetchInterval` for one status: a number while the order is
- * still moving, `false` once it has settled.
- *
- * Exported because "does polling actually stop at `ready`" is the question
- * worth a test, and asserting it against a pure function beats waiting on
- * timers around a mounted component.
- */
-export function orderRefetchInterval(status: CncOrderStatus): number | false {
-  return LIVE_STATUSES.includes(status) ? ORDER_POLL_INTERVAL_MS : false;
-}
-
-/**
- * How many polls in a row may answer `null` before the page gives up.
- *
- * `cncOrder` answers null for a licence that has been revoked or handed to
- * somebody else, but also for a blip — a token that is mid-refresh, a backend
- * that dropped one request. One null must not settle the page forever on an
- * order that is still generating, and an endless retry on a genuinely gone
- * order is just as wrong, so a handful of consecutive misses ends it.
- */
-export const MAX_CONSECUTIVE_NULL_POLLS = 5;
-
-/**
- * The React Query `refetchInterval` for the next tick.
- *
- * Deliberately driven by the LAST KNOWN status rather than the current
- * response: a transient `null` carries no status at all, and reading `false`
- * out of it would stop polling permanently on an order that is still moving.
- */
-export function nextOrderPollInterval(lastKnownStatus: CncOrderStatus, consecutiveNullPolls: number): number | false {
-  if (consecutiveNullPolls >= MAX_CONSECUTIVE_NULL_POLLS) return false;
-  return orderRefetchInterval(lastKnownStatus);
-}
 
 /**
  * `true` only for a well-formed URL on the backend this client already talks
@@ -103,28 +52,41 @@ export function isBackendDownloadUrl(url: string): boolean {
   }
 }
 
-/** The four steps a paid order walks, in order. */
-const TIMELINE_STEPS = ['paid', 'queued', 'generating', 'ready'] as const;
+/**
+ * The four stages an order walks, free half first.
+ *
+ * Four, not eight: the buyer does not care whether a job is queued or being
+ * drawn, only whether the wait is the preview's or the pack's. The live status
+ * chip in the header carries the finer detail.
+ */
+const TIMELINE_STEPS = ['preview', 'finalised', 'building', 'ready'] as const;
 type TimelineStep = (typeof TIMELINE_STEPS)[number];
 
-/** How far along a status is. -1 means nothing has happened yet (unpaid). */
-function timelineProgress(status: CncOrderStatus): number {
+/**
+ * How many steps are behind us. -1 means the preview is still being drawn.
+ *
+ * A `failed` order was paid, queued and picked up — it just never finished, so
+ * it stops at "cutting the files" rather than resetting to nothing. A
+ * `preview_failed` one never got past the first stage.
+ */
+export function timelineProgress(status: CncOrderStatus): number {
   switch (status) {
+    case 'preview_queued':
+    case 'preview_generating':
+    case 'preview_failed':
+      return -1;
+    case 'preview_ready':
     case 'pending_payment':
     case 'cancelled':
-      return -1;
+      return 0;
     case 'queued':
       return 1;
     case 'generating':
+    case 'failed':
       return 2;
     case 'ready':
     case 'refunded':
       return 3;
-    // A failed order was paid, queued and picked up — it just never finished.
-    // Showing it stalled at "cutting the files" is more honest than resetting
-    // the timeline to nothing.
-    case 'failed':
-      return 2;
   }
 }
 
@@ -144,15 +106,10 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
   const router = useLocaleRouter();
   const pathnameWithoutLocale = usePathnameWithoutLocale();
   const [downloadErrorKey, setDownloadErrorKey] = useState<CncErrorKey | null>(null);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [pendingKind, setPendingKind] = useState<CncDownloadKind | null>(null);
 
   const licenceId = initialOrder.licenceId;
-
-  // Refs, not state: both only ever feed the next poll decision and the
-  // fallback render, and bumping React state from inside `queryFn` would
-  // re-render the component a second time for every tick.
-  const lastKnownOrderRef = useRef<CncOrder>(initialOrder);
-  const consecutiveNullPollsRef = useRef(0);
+  const { order, isError } = useCncOrderPoll({ initialOrder, token });
 
   // The alert above already told the buyer what happened; a refresh or a
   // bookmark of this URL must not say it again. Strip `?checkout=` once the
@@ -167,174 +124,234 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const query = useQuery({
-    queryKey: ['cncOrder', licenceId] as const,
-    queryFn: async () => {
-      if (!token) throw new Error('OrderStatus: queryFn ran without a token');
-      const client = createGraphQLHttpClient(token);
-      const response = await client.request<GetCncOrderQueryResponse, GetCncOrderQueryVariables>(GET_CNC_ORDER, {
-        licenceId,
-      });
-      const polledOrder = response.cncOrder;
-      if (polledOrder) {
-        lastKnownOrderRef.current = polledOrder;
-        consecutiveNullPollsRef.current = 0;
-      } else {
-        consecutiveNullPollsRef.current += 1;
+  const handleDownload = useCallback(
+    async (kind: CncDownloadKind) => {
+      setDownloadErrorKey(null);
+      setPendingKind(kind);
+      try {
+        const client = createGraphQLHttpClient(token);
+        const response = await client.request<
+          CreateCncDownloadGrantMutationResponse,
+          CreateCncDownloadGrantMutationVariables
+        >(CREATE_CNC_DOWNLOAD_GRANT, { licenceId, kind });
+        const grantUrl = response.createCncDownloadGrant.url;
+        if (!isBackendDownloadUrl(grantUrl)) {
+          setDownloadErrorKey('generic');
+          setPendingKind(null);
+          return;
+        }
+        // A fresh grant on every click: it lasts five minutes, so a cached one is
+        // a dead link most of the time. The navigation leaves the app, so the
+        // pending flag is deliberately not cleared on the success path.
+        window.location.assign(grantUrl);
+      } catch (error) {
+        setDownloadErrorKey(cncErrorKey(error));
+        setPendingKind(null);
       }
-      return polledOrder;
     },
-    initialData: initialOrder,
-    // Without these two the server-rendered order is treated as infinitely old,
-    // so React Query refetches it the instant the component mounts — one wasted
-    // round trip per page load, on data that was fetched microseconds earlier
-    // in the very same request. `staleTime` matches the poll interval because
-    // that IS the freshness contract here; `refetchInterval` fires regardless
-    // of staleness, so a live order still polls on time.
-    initialDataUpdatedAt: () => Date.now(),
-    staleTime: ORDER_POLL_INTERVAL_MS,
-    enabled: !!token,
-    // Re-read from the last known order on every tick, so the moment the pack
-    // turns `ready` the next interval is `false` and the polling stops by
-    // itself — while a transient `null` leaves the interval alone.
-    refetchInterval: () => nextOrderPollInterval(lastKnownOrderRef.current.status, consecutiveNullPollsRef.current),
-  });
-
-  const order = query.data ?? lastKnownOrderRef.current;
-
-  const handleDownload = useCallback(async () => {
-    setDownloadErrorKey(null);
-    setIsDownloading(true);
-    try {
-      const client = createGraphQLHttpClient(token);
-      const response = await client.request<
-        CreateCncDownloadGrantMutationResponse,
-        CreateCncDownloadGrantMutationVariables
-      >(CREATE_CNC_DOWNLOAD_GRANT, { licenceId });
-      const grantUrl = response.createCncDownloadGrant.url;
-      if (!isBackendDownloadUrl(grantUrl)) {
-        setDownloadErrorKey('generic');
-        setIsDownloading(false);
-        return;
-      }
-      // A fresh grant on every click: it lasts five minutes, so a cached one is
-      // a dead link most of the time. The navigation leaves the app, so the
-      // pending flag is deliberately not cleared on the success path.
-      window.location.assign(grantUrl);
-    } catch (error) {
-      setDownloadErrorKey(cncErrorKey(error));
-      setIsDownloading(false);
-    }
-  }, [token, licenceId]);
+    [token, licenceId],
+  );
 
   // Memoised on the locale alone: constructing an `Intl.DateTimeFormat` walks
   // the ICU locale data, and this component re-renders on every poll tick
-  // while a pack is generating. The options are a literal, so the formatter
-  // only ever needs rebuilding when the locale changes — which is to say
-  // never, within one page.
+  // while an order is moving. The options are a literal, so the formatter only
+  // ever needs rebuilding when the locale changes — which is to say never,
+  // within one page.
   const dateFormat = useMemo(
     () => createOrderDateFormatter(locale, { dateStyle: 'medium', timeStyle: 'short' }),
     [locale],
   );
+
   const progress = timelineProgress(order.status);
+  const isPreviewRunning = order.status === 'preview_queued' || order.status === 'preview_generating';
+  const showPreviewCard = order.hasPreview || isPreviewRunning;
   const failedSubject = encodeURIComponent(t('order.failed.subject', { licenceId }));
+  const previewFailedSubject = encodeURIComponent(t('order.previewFailed.subject', { licenceId }));
+
+  const facts: KeyValueItem[] = [
+    { key: 'board', label: t('order.board'), value: `${getBoardDisplayName(order.boardName)} ${wallLabel}` },
+    { key: 'tier', label: t('order.tier'), value: tierLabel(order.tier, t) },
+  ];
+  // Chronological, because these are two moments in one order's life and a
+  // "drawn at" above a "started at" reads as a mistake.
+  facts.push({ key: 'placed', label: t('order.placed'), value: dateFormat.format(new Date(order.createdAt)) });
+  if (order.previewGeneratedAt) {
+    facts.push({
+      key: 'previewed',
+      label: t('order.previewed'),
+      value: dateFormat.format(new Date(order.previewGeneratedAt)),
+    });
+  }
+  if (order.zipSizeBytes !== null) {
+    facts.push({
+      key: 'size',
+      label: t('order.size'),
+      value: t('order.sizeValue', { megabytes: Math.max(1, Math.round(order.zipSizeBytes / 1_000_000)) }),
+    });
+  }
+  // Preview downloads are not counted, so this figure only means anything once
+  // there is a licensed pack to download.
+  if (order.tier !== null) {
+    facts.push({ key: 'downloads', label: t('order.downloads'), value: String(order.downloadCount) });
+  }
 
   return (
-    <>
-      <MuiLink component={LocaleLink} href="/build-plans/orders" variant="body2">
-        {t('order.back')}
-      </MuiLink>
-
-      <Typography variant="h1" className={styles.heroTitle} sx={{ mt: 1 }}>
-        {t('order.heading', { licenceId })}
-      </Typography>
-
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-        <Chip size="small" color={orderStatusChipColor(order.status)} label={t(`status.${order.status}`)} />
-      </Stack>
-
-      {checkoutOutcome === 'success' && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          {t('order.checkoutSuccess')}
-        </Alert>
-      )}
-      {checkoutOutcome === 'cancelled' && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          {t('order.checkoutCancelled')}
-        </Alert>
-      )}
-      {query.isError && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {t('order.loadError')}
-        </Alert>
-      )}
-
-      <Box className={styles.orderMeta}>
-        <OrderField label={t('order.licence')} value={order.licenceId} />
-        <OrderField label={t('order.board')} value={`${getBoardDisplayName(order.boardName)} ${wallLabel}`} />
-        <OrderField
-          label={t('order.tier')}
-          value={order.tier === 'personal' ? t('tiers.personal.name') : t('tiers.commercial.name')}
-        />
-        <OrderField label={t('order.placed')} value={dateFormat.format(new Date(order.createdAt))} />
-        {order.zipSizeBytes !== null && (
-          <OrderField
-            label={t('order.size')}
-            value={t('order.sizeValue', { megabytes: Math.max(1, Math.round(order.zipSizeBytes / 1_000_000)) })}
-          />
-        )}
-        <OrderField label={t('order.downloads')} value={String(order.downloadCount)} />
-      </Box>
-
-      <Box sx={{ mt: 3 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-          {t('order.timeline.heading')}
-        </Typography>
-        <ol className={styles.timeline}>
-          {TIMELINE_STEPS.map((step, index) => (
-            <li key={step}>
-              <Typography variant="body2" color={index <= progress ? 'text.primary' : 'text.secondary'}>
-                {t(`order.timeline.${step satisfies TimelineStep}`)}
-              </Typography>
-            </li>
-          ))}
-        </ol>
-        {orderRefetchInterval(order.status) !== false && (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            {t('order.waiting')}
-          </Typography>
-        )}
-      </Box>
-
-      {order.status === 'ready' && (
-        <Box sx={{ mt: 3 }}>
-          <Button
-            variant="contained"
-            size="large"
-            onClick={() => void handleDownload()}
-            disabled={isDownloading || !token}
-            sx={{ textTransform: 'none' }}
-          >
-            {isDownloading ? t('order.downloading') : t('order.download')}
-          </Button>
-          {downloadErrorKey && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {t('order.downloadError')}
+    <PageFrame
+      eyebrow={
+        <Box className={styles.eyebrowRow}>
+          <MuiLink component={LocaleLink} href="/build-plans/orders" variant="body2">
+            {t('order.back')}
+          </MuiLink>
+          {/* i18n-keep cnc:status.preview_generating */}
+          <StatusChip status={order.status} label={t(`status.${order.status}`)} />
+        </Box>
+      }
+      title={<span className={styles.licenceTitle}>{order.licenceId}</span>}
+    >
+      {checkoutOutcome || isError ? (
+        <Box className={styles.alertStack}>
+          {checkoutOutcome === 'success' && (
+            <Alert severity="success" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+              {t('order.checkoutSuccess')}
+            </Alert>
+          )}
+          {checkoutOutcome === 'cancelled' && (
+            <Alert severity="info" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+              {t('order.checkoutCancelled')}
+            </Alert>
+          )}
+          {isError && (
+            <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+              {t('order.loadError')}
             </Alert>
           )}
         </Box>
+      ) : null}
+
+      <SectionCard title={t('order.facts.heading')} headingLevel="h2">
+        <KeyValueList items={facts} aria-label={t('order.facts.heading')} />
+      </SectionCard>
+
+      <SectionCard title={t('order.timeline.heading')} headingLevel="h2">
+        <Box component="ol" className={styles.timeline}>
+          {TIMELINE_STEPS.map((step, index) => {
+            const done = index <= progress;
+            return (
+              <Box component="li" key={step} className={styles.timelineStep}>
+                <Box aria-hidden className={`${styles.timelineDot} ${done ? styles.timelineDotDone : ''}`} />
+                <Typography
+                  variant="body2"
+                  component="p"
+                  className={`${styles.timelineLabel} ${done ? '' : styles.timelineLabelPending}`}
+                >
+                  {/* i18n-keep cnc:order.timeline.preview */}
+                  {t(`order.timeline.${step satisfies TimelineStep}`)}
+                </Typography>
+              </Box>
+            );
+          })}
+        </Box>
+        {orderRefetchInterval(order.status) !== false && (
+          <Typography variant="body2" component="p" className={styles.timelineNote}>
+            {isPreviewRunning ? t('order.previewWaiting') : t('order.waiting')}
+          </Typography>
+        )}
+      </SectionCard>
+
+      {showPreviewCard && (
+        <SectionCard
+          title={t('order.preview.heading')}
+          description={t('order.preview.note')}
+          headingLevel="h2"
+          tone={order.status === 'preview_ready' ? 'accent' : 'default'}
+        >
+          {order.previewImages.length > 0 ? (
+            <PreviewGallery
+              images={order.previewImages.map((image) => ({
+                name: image.name,
+                url: image.url,
+                label: previewImageLabel(image.name, t),
+              }))}
+              aria-label={t('order.preview.heading')}
+            />
+          ) : (
+            <Typography variant="body2" component="p" sx={{ color: 'var(--neutral-500)' }}>
+              {t('order.preview.drawing')}
+            </Typography>
+          )}
+
+          {(order.hasPreview || order.status === 'preview_ready') && (
+            <Box className={styles.cardActions} sx={{ mt: order.previewImages.length > 0 ? 3 : 2 }}>
+              {order.status === 'preview_ready' && (
+                <Button component={LocaleLink} href={finaliseHref(order.licenceId)} variant="contained" size="large">
+                  {t('order.finalise')}
+                </Button>
+              )}
+              {order.hasPreview && (
+                <Button
+                  variant="outlined"
+                  onClick={() => void handleDownload('PREVIEW')}
+                  disabled={pendingKind !== null || !token}
+                >
+                  {pendingKind === 'PREVIEW' ? t('order.downloading') : t('order.downloadPreview')}
+                </Button>
+              )}
+            </Box>
+          )}
+        </SectionCard>
+      )}
+
+      {order.status === 'ready' && (
+        <SectionCard
+          title={t('order.downloadCard.heading')}
+          description={t('order.downloadCard.note')}
+          headingLevel="h2"
+        >
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => void handleDownload('FULL')}
+            disabled={pendingKind !== null || !token}
+          >
+            {pendingKind === 'FULL' ? t('order.downloading') : t('order.download')}
+          </Button>
+        </SectionCard>
+      )}
+
+      {downloadErrorKey && (
+        <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+          {t('order.downloadError')}
+        </Alert>
+      )}
+
+      {order.status === 'preview_failed' && (
+        <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+          <Typography variant="subtitle2" component="p" sx={{ fontWeight: 600 }}>
+            {t('order.previewFailed.heading')}
+          </Typography>
+          <Typography variant="body2" component="p">
+            {t('order.previewFailed.body')}
+          </Typography>
+          <MuiLink href={`mailto:${SUPPORT_EMAIL}?subject=${previewFailedSubject}`} variant="body2">
+            {t('order.previewFailed.contact')}
+          </MuiLink>
+        </Alert>
       )}
 
       {order.status === 'failed' && (
-        <Alert severity="error" sx={{ mt: 3 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+        <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+          <Typography variant="subtitle2" component="p" sx={{ fontWeight: 600 }}>
             {t('order.failed.heading')}
           </Typography>
           {/* The backend replaces the generator's real error with one fixed
               public sentence — internal paths and module names never reach a
               buyer — so this renders `errorMessage` verbatim rather than
               mapping it. */}
-          {order.errorMessage && <Typography variant="body2">{order.errorMessage}</Typography>}
+          {order.errorMessage && (
+            <Typography variant="body2" component="p">
+              {order.errorMessage}
+            </Typography>
+          )}
           <MuiLink href={`mailto:${SUPPORT_EMAIL}?subject=${failedSubject}`} variant="body2">
             {t('order.failed.contact')}
           </MuiLink>
@@ -342,24 +359,15 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
       )}
 
       {order.status === 'refunded' && (
-        <Alert severity="warning" sx={{ mt: 3 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+        <Alert severity="warning" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+          <Typography variant="subtitle2" component="p" sx={{ fontWeight: 600 }}>
             {t('order.refunded.heading')}
           </Typography>
-          <Typography variant="body2">{t('order.refunded.body')}</Typography>
+          <Typography variant="body2" component="p">
+            {t('order.refunded.body')}
+          </Typography>
         </Alert>
       )}
-    </>
-  );
-}
-
-function OrderField({ label, value }: { label: string; value: string }) {
-  return (
-    <Box>
-      <Typography variant="caption" color="text.secondary" component="p">
-        {label}
-      </Typography>
-      <Typography variant="body2">{value}</Typography>
-    </Box>
+    </PageFrame>
   );
 }

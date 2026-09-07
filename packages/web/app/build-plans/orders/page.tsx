@@ -2,17 +2,17 @@ import React from 'react';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import Alert from '@mui/material/Alert';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
+import MuiLink from '@mui/material/Link';
 import { GET_MY_CNC_ORDERS, type GetMyCncOrdersQueryResponse } from '@boardsesh/graphql/operations/cnc-packs';
 import type { CncOrder } from '@boardsesh/shared-schema';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { CNC_FLAG_OFF_METADATA, fetchCncCatalog, isCncPacksEnabled, requireCncPacksFlag } from '../build-plans-page';
-import styles from '../build-plans.module.css';
+import { PageFrame } from '../ui';
 import OrdersList from './orders-list';
 
 /** Somebody's purchase history. Never cached, never shared, never static. */
@@ -67,22 +67,23 @@ export default async function BuildPlansOrdersPage() {
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'cnc']}>
-      <Box component="main" className={styles.page}>
-        <Typography variant="h1" className={styles.heroTitle}>
-          {t('orders.heading')}
-        </Typography>
-        <Typography variant="body1" className={styles.heroSubtitle}>
-          {t('orders.intro')}
-        </Typography>
-
+      <PageFrame
+        title={t('orders.heading')}
+        intro={t('orders.intro')}
+        actions={
+          <MuiLink component={LocaleLink} href="/build-plans" variant="body2">
+            {t('orders.configureAnother')}
+          </MuiLink>
+        }
+      >
         {ordersResult.ok ? (
           <OrdersList orders={ordersResult.orders} catalog={catalog} locale={locale} />
         ) : (
-          <Alert severity="error" sx={{ mt: 3 }}>
+          <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
             {t('orders.loadError')}
           </Alert>
         )}
-      </Box>
+      </PageFrame>
     </I18nProvider>
   );
 }

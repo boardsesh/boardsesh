@@ -1,0 +1,164 @@
+/* The two order surfaces: the list of rows, and one order's timeline.
+ *
+ * Structure only — every colour is a custom property from
+ * app/components/index.css, and every step is a multiple of 4. See
+ * docs/build-plans-design.md.
+ */
+
+/* ------------------------------------------------------------- orders list */
+
+/* Compact rows, not cards with pictures: a buyer scanning this is looking for
+   one licence id, and twelve tiles with thumbnails is the slowest possible way
+   to find it. */
+.rowList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 24px;
+}
+
+.rowMain {
+  min-width: 0;
+}
+
+/* The row's identity. Tabular because buyers read these off an invoice, and a
+   column of ids whose digits dance is a column nobody can compare. */
+.licenceId.licenceId {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.rowMeta.rowMeta {
+  margin: 2px 0 0;
+  color: var(--neutral-500);
+}
+
+.rowSide {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* On a phone the chip and the link share the last row rather than stacking:
+   four short lines down the right-hand edge is a lot of scrolling for two
+   pieces of information. */
+@media (max-width: 600px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rowSide {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+/* --------------------------------------------------------------- one order */
+
+/* The page title IS the licence id, so it lines up with the same id in the
+   list and on an invoice. */
+.licenceTitle {
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrowRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The lifecycle, both halves of it: the free preview and the paid pack. A
+   dotted rail rather than four numbered steps — numerals on this surface mean
+   "do these in order", and there is nothing here for the buyer to do. */
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.timelineStep {
+  position: relative;
+  padding: 0 0 16px 28px;
+}
+
+.timelineStep:last-child {
+  padding-bottom: 0;
+}
+
+.timelineStep::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 16px;
+  bottom: 0;
+  width: 1px;
+  background: var(--neutral-200);
+}
+
+.timelineStep:last-child::before {
+  display: none;
+}
+
+.timelineDot {
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--neutral-300);
+  border-radius: var(--border-radius-full);
+  background: var(--semantic-surface);
+}
+
+.timelineDotDone {
+  border-color: var(--color-primary-fill);
+  background: var(--color-primary-fill);
+}
+
+.timelineLabel.timelineLabel {
+  margin: 0;
+}
+
+.timelineLabelPending.timelineLabelPending {
+  color: var(--neutral-500);
+}
+
+.timelineNote.timelineNote {
+  margin: 16px 0 0;
+  color: var(--neutral-500);
+}
+
+/* Alerts sit inside the card they belong to, so the stack between them is the
+   card's business rather than the page frame's. */
+.cardAlert {
+  border-radius: var(--border-radius-lg);
+  margin-top: 16px;
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.alertStack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}

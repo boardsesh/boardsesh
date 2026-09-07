@@ -2,27 +2,29 @@ import 'server-only';
 import React from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Chip from '@mui/material/Chip';
-import Stack from '@mui/material/Stack';
+import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { getBoardDisplayName } from '@boardsesh/climb-actions';
 import type { CncCatalog, CncOrder } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { themeTokens } from '@/app/theme/theme-config';
 import { createOrderDateFormatter } from '../format-date';
-import { orderStatusChipColor, wallLabel } from '../order-display';
-import styles from '../build-plans.module.css';
+import { finaliseHref, isPreviewStatus, newestPreviewReadyLicenceId, tierLabel, wallLabel } from '../order-display';
+import { EmptyPanel, SectionCard, StatusChip } from '../ui';
+import styles from './orders.module.css';
 
 /**
- * The buyer's purchased packs, newest first.
+ * Every wall this buyer has previewed or bought, newest first.
  *
- * Server-rendered: this list never changes while it is on screen (a status
- * moves on the DETAIL page, which polls), so it needs no client bundle at all.
- * The link into each order is a real anchor via `LocaleLink`, not a click
- * handler, so it opens in a new tab and survives a keyboard.
+ * Server-rendered: the list never changes while it is on screen (a status moves
+ * on the DETAIL page, which polls), so it needs no client bundle at all. Each
+ * row's link is a real anchor via `LocaleLink`, not a click handler, so it
+ * middle-clicks and survives a keyboard.
+ *
+ * Exactly one row is allowed to shout: the newest `preview_ready` order, which
+ * is the only one with something for the buyer to do. It takes the accent rule
+ * and a "Finalise" link into the configurator; everything else is a quiet row
+ * with an "Open" link.
  */
 export default async function OrdersList({
   orders,
@@ -38,63 +40,72 @@ export default async function OrdersList({
 
   if (orders.length === 0) {
     return (
-      <Box sx={{ mt: 3 }}>
-        <Typography variant="body1" sx={{ mb: 1.5 }}>
-          {t('orders.empty')}
-        </Typography>
-        <Button component={LocaleLink} href="/build-plans" variant="contained" sx={{ textTransform: 'none' }}>
-          {t('orders.emptyCta')}
-        </Button>
-      </Box>
+      <EmptyPanel
+        title={t('orders.empty')}
+        body={t('orders.emptyBody')}
+        action={
+          <Button component={LocaleLink} href="/build-plans" variant="contained">
+            {t('orders.emptyCta')}
+          </Button>
+        }
+      />
     );
   }
 
-  return (
-    <Box className={styles.orderList}>
-      {orders.map((order) => (
-        <Card key={order.licenceId} className={styles.orderCard} variant="outlined">
-          <CardContent>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-              <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}>
-                {order.licenceId}
-              </Typography>
-              <Chip size="small" color={orderStatusChipColor(order.status)} label={t(`status.${order.status}`)} />
-            </Stack>
+  const finaliseLicenceId = newestPreviewReadyLicenceId(orders);
 
-            <Box className={styles.orderMeta}>
-              <OrderField
-                label={t('orders.board')}
-                value={`${getBoardDisplayName(order.boardName)} ${wallLabel(catalog, order)}`}
-              />
-              <OrderField
-                label={t('orders.tier')}
-                value={order.tier === 'personal' ? t('tiers.personal.name') : t('tiers.commercial.name')}
-              />
-              <OrderField label={t('orders.created')} value={dateFormat.format(new Date(order.createdAt))} />
+  return (
+    <Box className={styles.rowList}>
+      {orders.map((order) => {
+        const isFinalisable = order.licenceId === finaliseLicenceId;
+        // A free preview has no order date to speak of, so the row says when it
+        // was drawn instead of pretending somebody ordered something.
+        const dateLine = isPreviewStatus(order.status)
+          ? t('orders.previewedOn', { date: dateFormat.format(new Date(order.createdAt)) })
+          : t('orders.orderedOn', { date: dateFormat.format(new Date(order.createdAt)) });
+
+        return (
+          <SectionCard
+            key={order.licenceId}
+            component="article"
+            padding="tight"
+            tone={isFinalisable ? 'accent' : 'default'}
+          >
+            <Box className={styles.row}>
+              <Box className={styles.rowMain}>
+                <Typography component="p" className={styles.licenceId}>
+                  {order.licenceId}
+                </Typography>
+                <Typography variant="body2" component="p" className={styles.rowMeta}>
+                  {`${getBoardDisplayName(order.boardName)} ${wallLabel(catalog, order)} · ${tierLabel(order.tier, t)}`}
+                </Typography>
+                <Typography variant="body2" component="p" className={styles.rowMeta}>
+                  {dateLine}
+                </Typography>
+              </Box>
+
+              <Box className={styles.rowSide}>
+                {/* i18n-keep cnc:status.preview_queued */}
+                <StatusChip status={order.status} label={t(`status.${order.status}`)} />
+                {isFinalisable ? (
+                  <MuiLink component={LocaleLink} href={finaliseHref(order.licenceId)} variant="body2">
+                    {t('orders.finalise')}
+                  </MuiLink>
+                ) : (
+                  <MuiLink
+                    component={LocaleLink}
+                    href={`/build-plans/orders/${order.licenceId}`}
+                    variant="body2"
+                    aria-label={t('orders.viewOne', { licenceId: order.licenceId })}
+                  >
+                    {t('orders.view')}
+                  </MuiLink>
+                )}
+              </Box>
             </Box>
-
-            <Button
-              component={LocaleLink}
-              href={`/build-plans/orders/${order.licenceId}`}
-              size="small"
-              sx={{ mt: 1.5, textTransform: 'none' }}
-            >
-              {t('orders.view')}
-            </Button>
-          </CardContent>
-        </Card>
-      ))}
-    </Box>
-  );
-}
-
-function OrderField({ label, value }: { label: string; value: string }) {
-  return (
-    <Box>
-      <Typography variant="caption" color="text.secondary" component="p">
-        {label}
-      </Typography>
-      <Typography variant="body2">{value}</Typography>
+          </SectionCard>
+        );
+      })}
     </Box>
   );
 }

@@ -30,7 +30,9 @@
   },
   "buildPlans": {
     "title": "Baupaket-Bestellungen",
-    "subtitle": "Alle Bestellungen, die neueste zuerst. Lies den Fehler des Generators und stell das Paket wieder in die Warteschlange.",
+    "subtitle": "Alle Bestellungen, Gratis-Vorschauen inklusive, neueste zuerst. Lies den Fehler des Generators und stell das Pack wieder in die Warteschlange.",
+    "previewsLastHour_one": "{{count}} Vorschau in der letzten Stunde gezeichnet, von den hier geladenen Bestellungen.",
+    "previewsLastHour_other": "{{count}} Vorschauen in der letzten Stunde gezeichnet, von den hier geladenen Bestellungen.",
     "backToAdmin": "Zurück zum Admin-Panel",
     "statusFilter": {
       "all": "Alle"

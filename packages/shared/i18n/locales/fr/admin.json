@@ -30,7 +30,9 @@
   },
   "buildPlans": {
     "title": "Commandes de packs de construction",
-    "subtitle": "Toutes les commandes, la plus récente en premier. Lisez l’erreur du générateur, puis remettez le pack dans la file.",
+    "subtitle": "Toutes les commandes, aperçus gratuits compris, de la plus récente à la plus ancienne. Lis l'erreur du générateur, puis remets le pack en file.",
+    "previewsLastHour_one": "{{count}} aperçu tracé dans la dernière heure, sur les commandes chargées ici.",
+    "previewsLastHour_other": "{{count}} aperçus tracés dans la dernière heure, sur les commandes chargées ici.",
     "backToAdmin": "Retour à l’administration",
     "statusFilter": {
       "all": "Toutes"

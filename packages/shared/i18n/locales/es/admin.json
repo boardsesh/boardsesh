@@ -143,7 +143,9 @@
   },
   "buildPlans": {
     "title": "Pedidos de packs de construcción",
-    "subtitle": "Todos los pedidos, del más reciente al más antiguo. Lee el error del generador y vuelve a encolar el pack.",
+    "subtitle": "Todos los pedidos, vistas previas gratis incluidas, del más nuevo al más antiguo. Lee el error del generador y vuelve a poner el pack en cola.",
+    "previewsLastHour_one": "{{count}} vista previa dibujada en la última hora, de los pedidos cargados aquí.",
+    "previewsLastHour_other": "{{count}} vistas previas dibujadas en la última hora, de los pedidos cargados aquí.",
     "backToAdmin": "Volver al panel",
     "statusFilter": {
       "all": "Todos"
