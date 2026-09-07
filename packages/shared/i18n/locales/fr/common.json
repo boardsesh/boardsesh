@@ -466,6 +466,14 @@
         "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",
         "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
         "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là."
+      },
+      "link": {
+        "title": "Emportez vos croix {{boardName}} avec vous",
+        "body": "Votre compte {{boardName}} appartient à ceux qui fabriquent le board. Boardsesh est séparé : même e-mail, mais les deux s'ignorent. Liez-les et vos croix, essais et cotations arrivent ici, votre carnet démarre plein.",
+        "footnote": "Pour lier, il faut votre identifiant {{boardName}}, pas votre e-mail.",
+        "continue": "Lier mon compte {{boardName}}",
+        "skip": "Pas maintenant",
+        "skipHint": "Vous pourrez le faire à tout moment dans Réglages › Apps connectées."
       }
     },
     "nav": {

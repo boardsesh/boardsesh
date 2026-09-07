@@ -466,6 +466,14 @@
         "crew": "Climbing with people? Start a session and share one queue. Anyone sends the next burn, no passing the phone.",
         "record": "Your sends chart out here on Progress: grade spread and hardest send. Import your Kilter and Tension logbook from Aurora to start with your history.",
         "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there."
+      },
+      "link": {
+        "title": "Bring your {{boardName}} sends with you",
+        "body": "Your {{boardName}} account lives with the people who make the board. Boardsesh is separate — same email, but the two don't know about each other. Link them and your sends, attempts and ratings land here, so your logbook starts full.",
+        "footnote": "Linking asks for your {{boardName}} username, not your email.",
+        "continue": "Link my {{boardName}} account",
+        "skip": "Not now",
+        "skipHint": "You can do this any time in Settings › Connected apps."
       }
     },
     "nav": {
