@@ -1,0 +1,61 @@
+name: Railway Cost Monitor
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: railway-cost-monitor
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 5
+    steps:
+      - name: Install pinned Railway CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/railwayapp/cli/releases/download/v5.47.1/railway-v5.47.1-x86_64-unknown-linux-musl.tar.gz \
+            --output "$RUNNER_TEMP/railway.tar.gz"
+          echo "bf8e79049a8a51095006ee60a7f0697855fed3521a8bfedf5906a96b4e3a2f78  $RUNNER_TEMP/railway.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/railway-bin"
+          tar -xzf "$RUNNER_TEMP/railway.tar.gz" -C "$RUNNER_TEMP/railway-bin"
+          echo "$RUNNER_TEMP/railway-bin" >> "$GITHUB_PATH"
+
+      - name: Capture resource metrics
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p railway-cost-snapshot
+          railway metrics --project afceee45-0af1-46b3-abbe-8b9094c23bc6 \
+            --environment production --all --cpu --memory --network \
+            --since 1h --json > railway-cost-snapshot/resources.json
+
+      - name: Check database health
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p railway-cost-snapshot
+          curl --fail-with-body --silent --show-error --max-time 15 \
+            https://ws.boardsesh.com/health/db \
+            --output railway-cost-snapshot/database-health.json
+
+      - name: Retain observation snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: railway-cost-${{ github.run_id }}
+          path: railway-cost-snapshot/
+          retention-days: 14
+          if-no-files-found: error
