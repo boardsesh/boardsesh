@@ -1,3 +1,4 @@
+import { tb2LayoutIdForEngraving } from '@boardsesh/shared-schema';
 import type {
   CncArtworkInput,
   CncArtworkKind,
@@ -262,7 +263,7 @@ export function configuratorReducer(state: CncConfiguratorState, action: CncConf
       return {
         ...state,
         ...(action.key === 'tb2Engraving' && state.boardName === 'tension'
-          ? { layoutId: action.value === 'spray' ? 11 : 10 }
+          ? { layoutId: tb2LayoutIdForEngraving(action.value) }
           : {}),
         // A dimension standard changes every placement coordinate.
         ...(action.key === 'tb2DimensionStandard' && action.value !== state.options.tb2DimensionStandard
@@ -749,7 +750,7 @@ export function fromDraft(raw: unknown, entries: readonly CncCatalogEntry[]): Cn
     boardFamilyKey(entry) === 'tension:tb2' &&
     (options.tb2DimensionStandard !== draft.options.tb2DimensionStandard ||
       options.tb2Engraving !== draft.options.tb2Engraving ||
-      entry.layoutId !== (options.tb2Engraving === 'spray' ? 11 : 10))
+      entry.layoutId !== tb2LayoutIdForEngraving(options.tb2Engraving))
   )
     return null;
 
