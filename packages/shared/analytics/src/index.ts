@@ -162,6 +162,7 @@ export {
   cncBuildPlansPageViewed,
   cncConfiguratorChanged,
   cncArtworkPlaced,
+  cncPreviewRequested,
   cncCheckoutStarted,
   type CncFunnelEventKey,
   type CncFunnelEventName,
@@ -172,5 +173,6 @@ export {
   type CncPageViewedInput,
   type CncConfiguratorChangedInput,
   type CncArtworkPlacedInput,
+  type CncPreviewRequestedInput,
   type CncCheckoutStartedInput,
 } from './cnc-funnel';
