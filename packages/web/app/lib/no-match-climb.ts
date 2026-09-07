@@ -1,1 +1,1 @@
-export { isNoMatchClimb, isNoMatch, usesAuroraNoMatchDescription } from '@boardsesh/shared-schema';
+export { isNoMatchClimb, isNoMatch, usesAuroraNoMatchDescription, resolveClimbNoMatch } from '@boardsesh/shared-schema';

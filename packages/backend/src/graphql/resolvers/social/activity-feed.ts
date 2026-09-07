@@ -3,7 +3,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { withSerialPlan } from '@boardsesh/db/queries';
-import { requireAuthenticated, validateInput, isNoMatchClimb, usesAuroraNoMatchDescription } from '../shared/helpers';
+import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeCursor, decodeCursor } from '../../../utils/feed-cursor';
 
@@ -75,6 +75,7 @@ type TickJoinRow = {
   userAvatarUrl: string | null;
   climbName: string | null;
   climbDescription: string | null;
+  climbCharacteristics: string[] | null;
   setterUsername: string | null;
   layoutId: number | null;
   frames: string | null;
@@ -89,6 +90,7 @@ function mapTickRowToFeedItem({
   userAvatarUrl,
   climbName,
   climbDescription,
+  climbCharacteristics,
   setterUsername,
   layoutId,
   frames,
@@ -115,7 +117,7 @@ function mapTickRowToFeedItem({
     commentBody: null,
     isMirror: tick.isMirror ?? false,
     isBenchmark: tick.isBenchmark ?? false,
-    isNoMatch: usesAuroraNoMatchDescription(tick.boardType) && isNoMatchClimb(climbDescription),
+    isNoMatch: resolveClimbNoMatch(tick.boardType, climbCharacteristics, climbDescription),
     difficulty: tick.difficulty,
     difficultyName,
     quality: tick.quality,
@@ -261,6 +263,7 @@ export const activityFeedQueries = {
           userAvatarUrl: dbSchema.userProfiles.avatarUrl,
           climbName: dbSchema.boardClimbs.name,
           climbDescription: dbSchema.boardClimbs.description,
+          climbCharacteristics: dbSchema.boardClimbs.characteristics,
           setterUsername: dbSchema.boardClimbs.setterUsername,
           layoutId: dbSchema.boardClimbs.layoutId,
           frames: dbSchema.boardClimbs.frames,

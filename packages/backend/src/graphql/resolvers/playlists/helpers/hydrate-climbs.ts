@@ -105,6 +105,9 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       // the only field that stops an 8x10 climb reading as an exact fit on a
       // 12x12 wall whose hold ids happen to cover the same numbers.
       compatible_size_ids: tables.climbs.compatibleSizeIds,
+      // Authoritative for Climb.is_no_match — without it the field resolver
+      // falls back to reading the rule out of the setter's prose.
+      characteristics: tables.climbs.characteristics,
       statsAngle: tables.climbStats.angle,
       ascensionist_count: tables.climbStats.ascensionistCount,
       difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
@@ -187,6 +190,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       framesCount: row.frames_count ?? null,
       framesPace: row.frames_pace ?? null,
       compatibleSizeIds: row.compatible_size_ids ?? null,
+      characteristics: row.characteristics ?? null,
       angle,
       ascensionist_count: Number(row.ascensionist_count || 0),
       difficulty: getGradeLabel(row.difficulty_id),
