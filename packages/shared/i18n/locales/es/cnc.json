@@ -19,10 +19,10 @@
     "firstBoard": "El Kilter Homewall es el primer plafón compatible. Vendrán más.",
     "included": {
       "heading": "Qué te llevas",
-      "dxf": "Un DXF por panel, más los planos de montaje del muro entero.",
-      "pdf": "Hojas imprimibles en A3 o Tabloid, para revisar la distribución antes de que nadie corte.",
-      "bom": "Una lista de corte: cuántas planchas, las medidas de los paneles y todos los agujeros contados.",
-      "licence": "Una licencia a tu nombre, válida para un muro.",
+      "dxf": "Los planos de montaje del muro entero van incluidos, así los paneles encajan sin adivinar nada.",
+      "pdf": "Páginas imprimibles en A3 o Tabloid, con la distribución lista antes de cortar la primera plancha.",
+      "bom": "Cuántas planchas, las medidas de cada panel y todos los agujeros, contados antes de pedir material.",
+      "licence": "A tu nombre y válida para un muro, tuya para siempre.",
       "dxfLabel": "Un DXF por panel",
       "pdfLabel": "Hojas de comprobación",
       "bomLabel": "Una lista de corte",
@@ -304,7 +304,7 @@
       "signedOut": "Inicia sesión y dibujamos tu muro. Las vistas previas son gratis y no hace falta tarjeta.",
       "idle": "Repartimos todas las hojas y te devolvemos planos con marca de agua. Cambia algo y vuelve a pedirla.",
       "working": "Dibujando tus hojas. Tarda unos quince segundos.",
-      "ready": "Con marca de agua, a 110 ppp. Cierra la compra para llevarte los DXF.",
+      "ready": "Planos de revisión con marca de agua. Cierra la compra para conseguir los archivos DXF con los que corta tu taller.",
       "stale": "Has cambiado el muro desde estas hojas. Actualiza la vista previa para ver las nuevas.",
       "failed": "Esa vista previa no se generó. No se ha cobrado nada: inténtalo otra vez.",
       "rateLimited": "Ya has gastado las vistas previas gratis de esta hora. Las que tienes están en tus planos; la siguiente, a la hora en punto.",
@@ -392,7 +392,7 @@
     "previewWaiting": "Las vistas previas tardan unos quince segundos. Esta página se actualiza sola.",
     "preview": {
       "heading": "Tu vista previa gratis",
-      "note": "Con marca de agua, a 110 ppp. Cierra la compra para llevarte los DXF con los que corta tu taller.",
+      "note": "Planos de revisión con marca de agua. Cierra la compra para conseguir los archivos DXF con los que corta tu taller.",
       "drawing": "Estamos dibujando tus tableros. Aparecen aquí en cuanto estén.",
       "panel": "Tablero {{number}}",
       "assembly": "Montaje"

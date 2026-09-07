@@ -19,10 +19,10 @@
     "firstBoard": "Le Kilter Homewall est la première board prise en charge. D'autres suivront.",
     "included": {
       "heading": "Ce que tu reçois",
-      "dxf": "Un DXF par panneau, plus les plans de montage du mur complet.",
-      "pdf": "Des planches imprimables en A3 ou Tabloid, pour vérifier la disposition avant que quelqu'un découpe.",
-      "bom": "Une liste de débit : nombre de plaques, dimensions des panneaux et chaque perçage compté.",
-      "licence": "Une licence à ton nom, valable pour un mur.",
+      "dxf": "Les plans de montage du mur complet sont inclus, pour que les panneaux s'alignent sans deviner.",
+      "pdf": "Des pages imprimables en A3 ou Tabloid, avec la disposition prête avant la première découpe.",
+      "bom": "Nombre de plaques, dimensions de chaque panneau et chaque perçage, comptés avant de commander la matière.",
+      "licence": "À ton nom et valable pour un mur, à toi pour de bon.",
       "dxfLabel": "Un DXF par panneau",
       "pdfLabel": "Planches de contrôle",
       "bomLabel": "Une liste de débit",
@@ -304,7 +304,7 @@
       "signedOut": "Connecte-toi et on trace ton mur. Les aperçus sont gratuits, sans carte bancaire.",
       "idle": "On répartit toutes les planches et on te renvoie des plans filigranés. Change quelque chose et redemande.",
       "working": "On trace tes planches. Ça prend une quinzaine de secondes.",
-      "ready": "Filigranés, en 110 dpi. Valide pour récupérer les DXF.",
+      "ready": "Dessins de contrôle filigranés. Valide pour récupérer les fichiers DXF que ton atelier découpe.",
       "stale": "Tu as changé le mur depuis ces planches. Mets l'aperçu à jour pour voir les nouvelles.",
       "failed": "Cet aperçu n'a pas été généré. Rien n'a été débité : réessaie.",
       "rateLimited": "C'est tous les aperçus gratuits de cette heure. Ceux que tu as sont dans tes plans ; le prochain, à l'heure pile.",
@@ -392,7 +392,7 @@
     "previewWaiting": "Un aperçu prend une quinzaine de secondes. Cette page se met à jour toute seule.",
     "preview": {
       "heading": "Ton aperçu gratuit",
-      "note": "Filigrané, 110 ppp. Finalise pour avoir les DXF que ton atelier découpe.",
+      "note": "Dessins de contrôle filigranés. Finalise pour avoir les fichiers DXF que ton atelier découpe.",
       "drawing": "On trace tes panneaux. Ils arrivent ici dès qu'ils sont prêts.",
       "panel": "Panneau {{number}}",
       "assembly": "Montage"

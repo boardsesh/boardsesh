@@ -19,10 +19,10 @@
     "firstBoard": "Kilter Homewall is the first supported board. More boards follow.",
     "included": {
       "heading": "What you get",
-      "dxf": "One DXF per panel, plus assembly drawings for the whole wall.",
-      "pdf": "Printable A3 or Tabloid sheets, so you can check the layout before anyone cuts.",
-      "bom": "A cut list: sheet count, panel sizes, and every hole counted.",
-      "licence": "A licence with your name on it, good for one wall.",
+      "dxf": "Assembly drawings included too, so panels line up without any guesswork.",
+      "pdf": "Printable A3 or Tabloid pages, laid out before a single sheet gets cut.",
+      "bom": "Sheet count, panel sizes, and every hole, counted before you order material.",
+      "licence": "Named to you and good for one wall, yours to keep.",
       "dxfLabel": "One DXF per panel",
       "pdfLabel": "Check sheets",
       "bomLabel": "A cut list",
@@ -304,7 +304,7 @@
       "signedOut": "Sign in and we will draw your wall. Previews are free, and there is no card to enter.",
       "idle": "We lay out every sheet and send back watermarked drawings. Change anything and preview again.",
       "working": "Drawing your sheets. This takes about fifteen seconds.",
-      "ready": "Watermarked, 110 dpi. Finalise to get the DXF files your shop cuts from.",
+      "ready": "Watermarked check drawings. Finalise to get the DXF files your shop cuts from.",
       "stale": "You have changed the wall since these sheets. Update the preview to see the new ones.",
       "failed": "That preview did not build. Nothing was charged — try again.",
       "rateLimited": "That is every free preview for this hour. The ones you have are on your build plans page; the next one is on the hour.",
@@ -392,7 +392,7 @@
     "previewWaiting": "Previews take about fifteen seconds. This page updates itself.",
     "preview": {
       "heading": "Your free preview",
-      "note": "Watermarked, 110 dpi. Finalise to get the DXF files your shop cuts from.",
+      "note": "Watermarked check drawings. Finalise to get the DXF files your shop cuts from.",
       "drawing": "We are drawing your sheets. They land here as soon as they are done.",
       "panel": "Panel {{number}}",
       "assembly": "Assembly"

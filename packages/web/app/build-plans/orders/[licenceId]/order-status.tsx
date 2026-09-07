@@ -109,7 +109,16 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
   const [pendingKind, setPendingKind] = useState<CncDownloadKind | null>(null);
 
   const licenceId = initialOrder.licenceId;
-  const { order, isError } = useCncOrderPoll({ initialOrder, token });
+  const { order: polledOrder, isError } = useCncOrderPoll({
+    licenceId,
+    initialOrder,
+    authToken: token,
+    enabled: true,
+  });
+  // `initialOrder` is always in hand here, so the poll never actually settles
+  // on null — this just satisfies the type the configurator's licence-id-only
+  // start also needs.
+  const order = polledOrder ?? initialOrder;
 
   // The alert above already told the buyer what happened; a refresh or a
   // bookmark of this URL must not say it again. Strip `?checkout=` once the
