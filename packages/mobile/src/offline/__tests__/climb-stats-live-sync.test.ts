@@ -831,6 +831,32 @@ describe('createClimbStatsLiveSync — contention and transient gates', () => {
     expect(harness.isScopeDownloaded).toHaveBeenCalledTimes(1);
   });
 
+  it('re-arms a stranded batch even when the next event produces no write at all', async () => {
+    // The batch is only saved by handleEvent's re-arm. The event that follows a
+    // background is very often a republish of a revision already applied, which
+    // is dropped before the queue — so nothing else would ever arm a timer and
+    // the refresh would be stranded for the life of the process.
+    const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
+    let backgrounded = false;
+    const harness = createHarness({ shouldSkipWrites: () => backgrounded });
+
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    backgrounded = true;
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_MAX_WAIT_MS);
+    expect(isInvalidated(gradeFiltered)).toBe(false);
+
+    backgrounded = false;
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    // Dropped as already settled: no second write pass, so no armFlush.
+    expect(harness.writeEvents).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+
+    expect(isInvalidated(gradeFiltered)).toBe(true);
+  });
+
   it('keeps the flush batch when the handle is null at flush time', async () => {
     const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
     let db: OfflineDatabase | null = fakeDb;
