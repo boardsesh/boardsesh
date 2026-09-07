@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
@@ -44,6 +44,17 @@ export const PREVIEW_POLL_INTERVAL_MS = 5_000;
 const LIVE_PREVIEW_STATUSES: readonly CncOrderStatus[] = ['preview_queued', 'preview_generating'];
 
 /**
+ * How many polls in a row may answer `null` before this gives up.
+ *
+ * `cncOrder` answers null for a licence that has been revoked or now belongs to
+ * somebody else — which a restored draft can genuinely name — but also for a
+ * blip: a token mid-refresh, a dropped request. One null must not settle a
+ * preview that is still being drawn, and an endless retry on an order that is
+ * genuinely gone is a request every five seconds forever.
+ */
+export const MAX_CONSECUTIVE_NULL_POLLS = 5;
+
+/**
  * The React Query `refetchInterval` for one status: a number while the
  * generator has the job, `false` once the next move belongs to the buyer.
  *
@@ -51,8 +62,8 @@ const LIVE_PREVIEW_STATUSES: readonly CncOrderStatus[] = ['preview_queued', 'pre
  * question worth a test, and asserting it against a pure function beats waiting
  * on timers around a mounted component.
  */
-export function previewRefetchInterval(status: CncOrderStatus | null): number | false {
-  if (status === null) return PREVIEW_POLL_INTERVAL_MS;
+export function previewRefetchInterval(status: CncOrderStatus | null, consecutiveNullPolls = 0): number | false {
+  if (status === null) return consecutiveNullPolls >= MAX_CONSECUTIVE_NULL_POLLS ? false : PREVIEW_POLL_INTERVAL_MS;
   return LIVE_PREVIEW_STATUSES.includes(status) ? PREVIEW_POLL_INTERVAL_MS : false;
 }
 
@@ -78,6 +89,9 @@ export function useCncPreviewPoll({
   token: string | null;
 }): CncPreviewPollResult {
   const queryClient = useQueryClient();
+  // A ref, not state: it only ever feeds the next poll decision, and bumping
+  // React state from inside `queryFn` would re-render for every tick.
+  const consecutiveNullPollsRef = useRef(0);
 
   const query = useQuery({
     queryKey: ['cncOrder', licenceId] as const,
@@ -87,13 +101,19 @@ export function useCncPreviewPoll({
       const response = await client.request<GetCncOrderQueryResponse, GetCncOrderQueryVariables>(GET_CNC_ORDER, {
         licenceId,
       });
+      if (response.cncOrder) {
+        consecutiveNullPollsRef.current = 0;
+      } else {
+        consecutiveNullPollsRef.current += 1;
+      }
       return response.cncOrder;
     },
     enabled: licenceId !== null && token !== null,
     // Driven by the answer in hand rather than by a remembered status: this
     // query only ever watches ONE order, so a null answer (a licence that is
     // gone, or a token mid-refresh) is a reason to ask again, not to stop.
-    refetchInterval: (currentQuery) => previewRefetchInterval(currentQuery.state.data?.status ?? null),
+    refetchInterval: (currentQuery) =>
+      previewRefetchInterval(currentQuery.state.data?.status ?? null, consecutiveNullPollsRef.current),
     // A preview that failed to load is worth one more ask on the next tick, but
     // not three in a row inside one: the poll IS the retry here.
     retry: false,
