@@ -54,14 +54,20 @@ export function ScreenshotPicker({ uris, onChange, disabled = false }: Screensho
         quality: 1,
       });
       if (result.canceled) return;
-      const compressed = await Promise.all(
-        result.assets.slice(0, remaining).map((asset) =>
-          compressPickedImage(asset.uri, asset.width, asset.height, {
+      // One at a time. `ImageManipulator` renders and saves through Expo's
+      // shared serial queue, and each pass releases its native bitmap when it is
+      // done; overlapping passes let one release land while another is still
+      // writing, and the file it saved comes back empty. The backend then
+      // rejects the upload with "Uploaded file is empty".
+      const compressed: string[] = [];
+      for (const asset of result.assets.slice(0, remaining)) {
+        compressed.push(
+          await compressPickedImage(asset.uri, asset.width, asset.height, {
             maxDimension: MAX_DIMENSION,
             quality: COMPRESSION_QUALITY,
           }),
-        ),
-      );
+        );
+      }
       onChange([...uris, ...compressed]);
     } catch (error) {
       reportError(error);
