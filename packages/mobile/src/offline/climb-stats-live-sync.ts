@@ -21,6 +21,11 @@
 // values through the in-memory stats store, and membership catches up on the
 // next natural refetch — a global stream must never trigger multi-page network
 // refetches.
+//
+// Nothing here is load-bearing for correctness. A flush that fires during a
+// momentary background, with no database handle, or against a handle that
+// closed underneath it, drops its batch and refreshes nothing; the rows are
+// already written, and the next pull brings the same values down again.
 
 import type { QueryClient } from '@tanstack/react-query';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
@@ -52,6 +57,9 @@ const STATS_DEPENDENT_FILTERS = [
   'minAscents',
   'minRating',
   'gradeAccuracy',
+  // The stream never writes `benchmark_difficulty`, so a benchmarks filter
+  // cannot actually change on one of these events today. Kept as
+  // future-proofing; it costs one local re-read when the filter is on.
   'onlyBenchmarks',
   'projectsOnly',
 ] as const satisfies ReadonlyArray<keyof ClimbSearchInput>;
@@ -63,8 +71,10 @@ const STATS_DEPENDENT_SORTS: ReadonlySet<string> = new Set(['ascents', 'difficul
  * Does this search read climb stats?
  *
  * A field counts as set unless it is absent or an explicitly disabled toggle.
- * Numeric zero counts: `minGrade: 0` is a real bound, and over-invalidating a
- * local SQLite re-read is much cheaper than showing a climb the wrong grade.
+ * Zero counts too, though nothing reaches this with a zero today —
+ * `toClimbSearchInput` only sets these fields when they are non-null, and the
+ * local SQL truthy-gates them — so the rule costs at most one extra local
+ * re-read if that ever changes.
  */
 export function isStatsDependentSearch(input: Partial<ClimbSearchInput>): boolean {
   for (const field of STATS_DEPENDENT_FILTERS) {
@@ -245,16 +255,27 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
       return;
     }
 
-    // Only a downloaded scope reads from SQLite, so only a downloaded scope has
-    // anything to gain from a re-read.
-    const downloaded = await options.isScopeDownloaded(db, {
-      boardType: board.boardType,
-      layoutId: board.layoutId,
-      sizeId: board.sizeId,
-    });
-    if (!downloaded || disposed) return;
+    try {
+      // Only a downloaded scope reads from SQLite, so only a downloaded scope
+      // has anything to gain from a re-read.
+      //
+      // The catch is mandatory, not defensive dressing: this runs from a timer
+      // through `void flush()`, so a rejection here would surface as an
+      // unhandled rejection and be reported as a crash. `isBoardDownloadedLocally`
+      // really does throw when the handle closes underneath it — a hot reload,
+      // or a sign-out wipe landing after the `shouldSkipWrites()` check above.
+      // Dropping the batch is correct: the next pull refreshes the same rows.
+      const downloaded = await options.isScopeDownloaded(db, {
+        boardType: board.boardType,
+        layoutId: board.layoutId,
+        sizeId: board.sizeId,
+      });
+      if (!downloaded || disposed) return;
 
-    invalidateForClimbs(climbUuids);
+      invalidateForClimbs(climbUuids);
+    } catch (error) {
+      reportFirstError(error);
+    }
   }
 
   async function drain(): Promise<void> {
@@ -262,6 +283,13 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     draining = true;
     try {
       while (!disposed) {
+        // Re-checked every iteration, not just at handleEvent: a burst queued
+        // while foregrounded must stop the instant the app backgrounds or
+        // sign-out starts, which is what every other SQLite writer in the
+        // engine does. The unwritten events stay in `pendingEvents`; the next
+        // `handleEvent` re-drains them under this same gate.
+        if (options.shouldSkipWrites()) break;
+
         const next = pendingEvents.entries().next();
         if (next.done) break;
         const [key, event] = next.value;
