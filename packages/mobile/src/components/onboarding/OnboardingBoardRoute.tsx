@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { OnboardingBoardStep } from './OnboardingBoardStep';
@@ -14,6 +14,10 @@ import { useBoardOfflineState } from '../board-discovery/use-board-offline-state
 import { trackNudgeAccepted, trackNudgeDismissed, trackNudgeShown } from '../../lib/offline-nudges/nudge-analytics';
 import type { NudgeEventContext } from '../../lib/offline-nudges/nudge-analytics';
 import { offlineBoardKeyForBoard } from '../../settings';
+import { shouldOfferLink } from '../../lib/onboarding/should-offer-link';
+import { hasAnsweredLinkStep } from '../../lib/onboarding/link-step-answered';
+import { useBoardAccountCredentials } from '../../lib/integrations/use-board-account-credentials';
+import { useFeatureFlag } from '../../providers/feature-flags-provider';
 
 // Module-level so an absent board list keeps a stable identity — a fresh `[]`
 // per render would rebuild the carousel's items on every commit.
@@ -51,6 +55,23 @@ export function OnboardingBoardRoute({
   const { confirmAndDownload } = useConfirmBoardDownload();
   const { data: downloadedScopeKeys } = useDownloadedScopeKeys();
   const boardOfflineState = useBoardOfflineState();
+
+  // Inputs for the link offer, read while the picker is on screen so the decision
+  // is ready the moment a board is bound. A positive rollout flag: unresolved
+  // reads false, so the extra step simply does not appear.
+  const linkStepEnabled = useFeatureFlag('board-link-onboarding-step') === true;
+  const { data: credentials } = useBoardAccountCredentials(linkStepEnabled && isAuthenticated);
+  const [linkStepAnswered, setLinkStepAnswered] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    if (!linkStepEnabled) return;
+    let cancelled = false;
+    void hasAnsweredLinkStep().then((answered) => {
+      if (!cancelled) setLinkStepAnswered(answered);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [linkStepEnabled]);
 
   const nudgeContextFor = useCallback(
     (board: UserBoard, surface: NudgeEventContext['surface']): NudgeEventContext => ({
@@ -96,14 +117,63 @@ export function OnboardingBoardRoute({
     router.replace('/(tabs)/climbs');
   }, []);
 
+  // Where the board step hands off. Normally Climbs, as before; when the link
+  // offer applies to the board they just picked, the link card sits in between.
+  //
+  // It goes BEFORE the board-look step rather than after, and that ordering is
+  // forced rather than chosen: `app/onboarding.tsx` forbids chaining past
+  // `BoardLookStepGate` (the gate's refusal to run without a synced climb and a
+  // renderer probe is what makes a no-exit step safe), and board-look may never
+  // run at all. Sitting here also means the board type is warm — the card can name
+  // the wall they picked ninety seconds ago.
+  //
+  // The offline-download dialog is awaited inside `onBound`, so this fires after
+  // it resolves; the two interruptions never overlap.
+  //
+  // Anything other than `show` — including `wait`, if a read somehow hasn't landed
+  // by the time a board is bound — goes to Climbs. That is deliberate: this is a
+  // one-shot moment with no second chance to ask, and stalling first-run on a
+  // storage read would be a worse trade than skipping an optional card. The
+  // climber is not lost either way, because the empty-logbook prompt catches
+  // exactly this case. Both reads start when the picker mounts, well before any
+  // board is bound, so in practice they have resolved.
+  const boardRef = useRef<UserBoard | null>(null);
+  const leaveAfterBind = useCallback(() => {
+    const board = boardRef.current;
+    if (
+      board &&
+      shouldOfferLink({
+        enabled: linkStepEnabled,
+        boardType: board.boardType,
+        isOffline,
+        answered: linkStepAnswered,
+        // Tri-state: `undefined` while the read is in flight, never collapsed to
+        // false, or a climber who linked months ago gets a first-run card.
+        hasLinkedAccount: credentials === undefined ? undefined : credentials.length > 0,
+      }) === 'show'
+    ) {
+      router.replace({ pathname: '/onboarding', params: { step: 'link', boardType: board.boardType } });
+      return;
+    }
+    leaveToClimbs();
+  }, [credentials, isOffline, linkStepAnswered, linkStepEnabled, leaveToClimbs]);
+
   const activateBoard = useActivateBoard({
     source: 'onboarding',
     returnTo: '/(tabs)/climbs',
-    navigate: leaveToClimbs,
+    navigate: leaveAfterBind,
     onBound: offerDownload,
   });
 
-  const onSelect = useCallback((board: UserBoard) => void activateBoard(board), [activateBoard]);
+  // Captured before the bind so it is set by the time `navigate()` runs after
+  // `onBound`.
+  const onSelect = useCallback(
+    (board: UserBoard) => {
+      boardRef.current = board;
+      void activateBoard(board);
+    },
+    [activateBoard],
+  );
 
   /**
    * The card glyph: download a board WITHOUT binding it.

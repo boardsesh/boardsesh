@@ -730,6 +730,9 @@ export const SHARED_EVENTS = {
   // { boardId?, pageSize: number, returnedCount: number }. `returnedCount <
   // pageSize` means that page was the last one.
   BoardHistoryPageLoaded: 'Board History Page Loaded',
+  // First-run prompt outcomes: { boardType, outcome: 'linked' | 'declined' | 'abandoned' }.
+  OnboardingLinkPromptShown: 'Onboarding Link Prompt Shown',
+  OnboardingLinkPromptResolved: 'Onboarding Link Prompt Resolved',
   // Board credentials stay separate from external Integration* events/person counts.
   // Props: { boardType, source: 'integrations' | 'onboarding' | 'progress_empty' | 'logbook_empty' }.
   // Failed adds { reason: BoardAccountErrorCode }; settled submissions emit one terminal event.

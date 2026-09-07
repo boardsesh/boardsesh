@@ -14,6 +14,11 @@ const envCtrl = vi.hoisted(() => ({
   isOffline: false,
   offlineDownloadsEnabled: true,
   offlineState: 'off' as string,
+  // Link-step inputs. Default off, so every pre-existing test still asserts the
+  // unchanged hand-off straight to Climbs.
+  linkStepEnabled: false as boolean,
+  linkStepAnswered: false as boolean,
+  credentials: [] as { boardType: string }[] | undefined,
 }));
 
 const replaceMock = vi.hoisted(() => vi.fn());
@@ -49,6 +54,15 @@ vi.mock('../../../hooks/use-current-user-id', () => ({
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => envCtrl.offlineDownloadsEnabled,
+  useFeatureFlag: (key: string) => (key === 'board-link-onboarding-step' ? envCtrl.linkStepEnabled : undefined),
+}));
+// Both reach real native modules (AsyncStorage, expo-web-browser) through their
+// implementations, so they are mocked at the seam like every other IO here.
+vi.mock('../../../lib/onboarding/link-step-answered', () => ({
+  hasAnsweredLinkStep: () => Promise.resolve(envCtrl.linkStepAnswered),
+}));
+vi.mock('../../../lib/integrations/use-board-account-credentials', () => ({
+  useBoardAccountCredentials: () => ({ data: envCtrl.credentials }),
 }));
 vi.mock('../../../offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: confirmAndDownloadMock }),
@@ -108,6 +122,9 @@ describe('OnboardingBoardRoute', () => {
     envCtrl.isOffline = false;
     envCtrl.offlineDownloadsEnabled = true;
     envCtrl.offlineState = 'off';
+    envCtrl.linkStepEnabled = false;
+    envCtrl.linkStepAnswered = false;
+    envCtrl.credentials = [];
     stepCtrl.props = null;
     activateOptionsCtrl.last = null;
     cleanup();
@@ -119,6 +136,65 @@ describe('OnboardingBoardRoute', () => {
     expect(activateOptionsCtrl.last?.source).toBe('onboarding');
     (activateOptionsCtrl.last?.navigate as () => void)();
     expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
+  });
+
+  // The link card sits between the board pick and Climbs. It goes BEFORE the
+  // board-look step because `app/onboarding.tsx` forbids chaining past
+  // `BoardLookStepGate`, and because board-look may never run at all.
+  describe('the board-account link hand-off', () => {
+    /** Pick a board (which captures it) then run the post-bind navigation. */
+    const bindAndLeave = async (board: UserBoard = BOARD) => {
+      stepCtrl.props?.onSelect(board);
+      await waitFor(() => expect(activateOptionsCtrl.last?.navigate).toBeTypeOf('function'));
+      (activateOptionsCtrl.last?.navigate as () => void)();
+    };
+
+    it('goes straight to Climbs while the flag is off, exactly as before', async () => {
+      renderRoute();
+      await bindAndLeave();
+      expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
+    });
+
+    it('offers the link card for the board that was just bound', async () => {
+      envCtrl.linkStepEnabled = true;
+      renderRoute();
+      await waitFor(() => expect(stepCtrl.props).not.toBeNull());
+      await bindAndLeave();
+      await waitFor(() =>
+        expect(replaceMock).toHaveBeenCalledWith({
+          pathname: '/onboarding',
+          params: { step: 'link', boardType: 'kilter' },
+        }),
+      );
+    });
+
+    it('skips the card for a climber who already linked an account', async () => {
+      envCtrl.linkStepEnabled = true;
+      envCtrl.credentials = [{ boardType: 'kilter' }];
+      renderRoute();
+      await waitFor(() => expect(stepCtrl.props).not.toBeNull());
+      await bindAndLeave();
+      expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
+    });
+
+    // MoonBoard has no credential flow — its only route in is a CSV obtained by
+    // emailing Moon Climbing a GDPR request.
+    it('skips the card for MoonBoard, which cannot be linked', async () => {
+      envCtrl.linkStepEnabled = true;
+      renderRoute();
+      await waitFor(() => expect(stepCtrl.props).not.toBeNull());
+      await bindAndLeave({ ...BOARD, boardType: 'moonboard' } as unknown as UserBoard);
+      expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
+    });
+
+    it('skips the card offline, where the form could not submit anyway', async () => {
+      envCtrl.linkStepEnabled = true;
+      envCtrl.isOffline = true;
+      renderRoute();
+      await waitFor(() => expect(stepCtrl.props).not.toBeNull());
+      await bindAndLeave();
+      expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
+    });
   });
 
   describe('the download offer', () => {
