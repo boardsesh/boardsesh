@@ -249,7 +249,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   // can repeat a row across page boundaries (swipe-delete shifts offsets), and
   // duplicate FlashList keys throw. Memoised so the FlashList `data` identity
   // is stable between unrelated re-renders.
-  const { listRows, entryIndexByUuid } = useMemo(() => {
+  const { listRows } = useMemo(() => {
     // Wall label ("Alex's board") feeds the divider/subdivider context; board
     // identity only — the angle stays on every row. Derivation needs the app's
     // board metadata so it happens here, not in the shared builder.
@@ -310,34 +310,14 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
       const items = flatFeed.data?.pages.flatMap((page) => page.userAscentsFeed.items) ?? [];
       rows = dedupeLogbookItems(items).map((item) => ({ type: 'entry', key: item.uuid, item, wallCovered: false }));
     }
-    // Entry ordinal (dividers excluded) for the analytics `rowIndex` — the raw
-    // FlashList index counts divider rows, which would skew position funnels.
-    const ordinals = new Map<string, number>();
-    for (const row of rows) {
-      if (row.type === 'entry') ordinals.set(row.item.uuid, ordinals.size);
-    }
-    return { listRows: rows, entryIndexByUuid: ordinals };
+    return { listRows: rows };
   }, [groupedFeed.data, groupedFeed.hasNextPage, flatFeed.data, flatFeed.hasNextPage, groupedMode, showDividers]);
 
   // Tap → set the climb active and open the play drawer (own logbook and another
   // climber's read-only logbook alike). AscentFeedItem structurally satisfies the
   // `tick` kind, which builds the climb + board config from frames.
-  // Read the ordinal map through a ref so this callback (and renderItem above
-  // it) keeps its identity across page loads — the map is rebuilt with every
-  // fetched page, but a tap only needs whatever is current at fire time.
-  const entryIndexRef = useRef(entryIndexByUuid);
-  entryIndexRef.current = entryIndexByUuid;
   const handleActivate = useCallback(
     (ascent: AscentFeedItem) => {
-      const groupSize = (ascent as LogbookGroupUnit).groupItems?.length ?? 1;
-      track(SHARED_EVENTS.LogbookRowClicked, {
-        climbUuid: ascent.climbUuid,
-        rowIndex: entryIndexRef.current.get(ascent.uuid),
-        hasNote: logbookNoteIsVisible(ascent.comment),
-        status: ascent.status,
-        grouped: groupSize > 1,
-        groupSize,
-      });
       // Default open mode is now "set active", so no option is needed here.
       openClimbInPlayDrawer({ kind: 'tick', tick: ascent }, { openPlayDrawer, router });
     },

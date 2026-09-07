@@ -81,6 +81,10 @@ vi.mock('../../lib/analytics', () => ({
   alias: vi.fn(),
   reset: vi.fn(),
   setPersonProperties: setPersonPropertiesMock,
+  // Feeds reconcileAnalyticsIdentity's cold-start guard. Null here means "the SDK
+  // reports no persisted distinct_id", so these tests keep exercising the full
+  // anon → user switch rather than the skip path.
+  getAnalyticsClient: () => null,
 }));
 
 import { PartyProfileProvider, usePartyProfile } from '../party-profile-provider';

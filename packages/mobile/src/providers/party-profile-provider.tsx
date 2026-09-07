@@ -19,7 +19,7 @@ import { ensureProfile, type PartyProfile } from '@boardsesh/party-profile';
 import { reconcileAnalyticsIdentity, buildCohortPersonProperties } from '@boardsesh/analytics';
 import { toBoardName } from '@boardsesh/board-config';
 import { partyProfileStorage } from '../lib/party-profile-store';
-import { alias, identify, reset, setPersonProperties } from '../lib/analytics';
+import { alias, getAnalyticsClient, identify, reset, setPersonProperties } from '../lib/analytics';
 import { aliasDedupeStore } from '../lib/analytics-alias-store';
 import { useProfile } from '../lib/graphql/hooks';
 import { useHomeBoard } from '../lib/graphql/hooks/use-home-board';
@@ -94,7 +94,9 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
       authEmail,
       isAuthenticated,
       lastDistinctId: lastAnalyticsDistinctId.current,
-      client: { identify, alias, reset },
+      // getDistinctId lets a cold start skip the anon → user round-trip the SDK
+      // has already persisted from a previous launch.
+      client: { identify, alias, reset, getDistinctId: () => getAnalyticsClient()?.getDistinctId() ?? null },
       aliasStore: aliasDedupeStore,
     });
   }, [profileId, isAuthLoading, isAuthenticated, authUserId, authEmail]);
