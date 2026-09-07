@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { logger } from '../../utils/logger';
-import { CNC_KICKER_SET_IDS, type CncBoardTuple } from './catalog';
+import { CNC_KICKER_SET_IDS, isTensionBoard2, type CncBoardTuple } from './catalog';
 import type { CncOrderOptions } from '@boardsesh/db/schema';
 
 /**
@@ -307,7 +307,7 @@ export type ToLayoutRequestInput = {
  */
 export function toLayoutRequest({ entry, options, setIds }: ToLayoutRequestInput): CncWorkerLayoutRequest {
   const { lengthMm, widthMm } = parseSheetStock(options.sheetStock);
-  if (entry.boardName === 'tension' && (entry.layoutId === 10 || entry.layoutId === 11)) {
+  if (isTensionBoard2(entry)) {
     const standard = options.tb2DimensionStandard;
     if (standard !== 'metric' && standard !== 'imperial') {
       throw new CncConfigMappingError('TB2 dimension standard must be metric or imperial');

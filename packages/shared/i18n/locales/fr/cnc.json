@@ -2,7 +2,7 @@
   "metadata": {
     "buildPlans": {
       "title": "Plans de construction pour une board maison",
-      "description": "Fichiers CNC pour un mur d’escalade à domicile : panneaux et perçages répartis sur les plaques de votre atelier."
+      "description": "Fichiers CNC pour un mur d’escalade à domicile : panneaux et perçages répartis sur les plaques de ton atelier."
     },
     "orders": {
       "title": "Tes plans de construction",
@@ -15,7 +15,7 @@
   },
   "hero": {
     "title": "Plans de construction pour ta board maison",
-    "subtitle": "Des fichiers DXF pour votre atelier CNC. Panneaux et perçages répartis sur les plaques que votre atelier utilise déjà.",
+    "subtitle": "Des fichiers DXF pour ton atelier CNC. Panneaux et perçages répartis sur les plaques que ton atelier utilise déjà.",
     "firstBoard": "Compatible avec Kilter Homewall et Tension Board 2, avec les configurations Mirror et Spray.",
     "included": {
       "heading": "Ce que tu reçois",
