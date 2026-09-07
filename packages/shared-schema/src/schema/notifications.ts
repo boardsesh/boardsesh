@@ -134,6 +134,13 @@ export const notificationsTypeDefs = /* GraphQL */ `
     """
     climbCompatibleSizeIds: [Int!]
     """
+    Structured climb characteristics (e.g. 'no_match', 'method_footless').
+    Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod).
+    Drives the Woods matching/feet rules line and the no-match glyph elsewhere
+    when a notification opens the play drawer directly, without a climb refetch.
+    """
+    climbCharacteristics: [String!]
+    """
     The comment thread this notification belongs to, when it has one. For a
     comment or a vote on a comment that is the commented-on entity (a tick, a
     session, a playlist climb) rather than the comment itself, so a client can

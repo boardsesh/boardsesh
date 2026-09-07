@@ -206,6 +206,7 @@ export const GET_USER_ASCENTS_FEED = gql`
         qualityAverage
         isBenchmark
         isNoMatch
+        characteristics
         comment
         climbedAt
         frames
@@ -257,6 +258,9 @@ export type AscentFeedItem = {
   qualityAverage: number | null;
   isBenchmark: boolean;
   isNoMatch: boolean;
+  // Structured climb characteristics (e.g. 'no_match', 'method_footless').
+  // Decode with the CLIMB_CHARACTERISTICS helpers (isNoMatch / getMoonBoardMethod).
+  characteristics?: string[] | null;
   comment: string;
   climbedAt: string;
   frames: string | null;
@@ -342,6 +346,7 @@ export const GET_USER_ASCENT_CAPTION_MATCHES = gql`
       qualityAverage
       isBenchmark
       isNoMatch
+      characteristics
       comment
       climbedAt
       frames
@@ -384,6 +389,7 @@ export const GET_USER_GROUPED_ASCENTS_FEED = gql`
         difficultyName
         isBenchmark
         isNoMatch
+        characteristics
         date
         flashCount
         sendCount
@@ -419,6 +425,7 @@ export const GET_USER_GROUPED_ASCENTS_FEED = gql`
           qualityAverage
           isBenchmark
           isNoMatch
+          characteristics
           comment
           climbedAt
           frames
@@ -447,6 +454,9 @@ export type GroupedAscentFeedItem = {
   difficultyName: string | null;
   isBenchmark: boolean;
   isNoMatch: boolean;
+  // Structured climb characteristics (e.g. 'no_match', 'method_footless').
+  // Decode with the CLIMB_CHARACTERISTICS helpers (isNoMatch / getMoonBoardMethod).
+  characteristics?: string[] | null;
   date: string;
   flashCount: number;
   sendCount: number;

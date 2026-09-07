@@ -16,6 +16,7 @@ import {
   validateInput,
   isNoMatchClimb,
   usesAuroraNoMatchDescription,
+  isNoMatch,
 } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
 import { resolveRenderBoard } from '@boardsesh/board-config';
@@ -229,6 +230,7 @@ type AscentFeedRow = {
   qualityAverage: number | null;
   isBenchmark: boolean;
   isNoMatch: boolean;
+  characteristics: string[] | null;
   comment: string;
   climbedAt: string;
   frames: string | null;
@@ -566,6 +568,10 @@ export const tickQueries = {
         // Which sizes/sets the climb physically fits — drives renderBoard below.
         compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
         requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
+        // Structured matching/feet rules — see decodeClimbRules. Also lets
+        // isNoMatch below stop relying on the legacy description heuristic,
+        // which is a no-op on Woods and MoonBoard.
+        characteristics: dbSchema.boardClimbs.characteristics,
         boardName: dbSchema.userBoards.name,
         boardIsPublic: dbSchema.userBoards.isPublic,
         boardIsUnlisted: dbSchema.userBoards.isUnlisted,
@@ -751,6 +757,7 @@ export const tickQueries = {
         frames,
         compatibleSizeIds,
         requiredSetIds,
+        characteristics,
         boardName,
         boardIsPublic,
         boardIsUnlisted,
@@ -809,7 +816,11 @@ export const tickQueries = {
           boardseshDifficulty: boardseshDifficulty == null ? null : Number(boardseshDifficulty),
           boardseshConfidence: toConfidenceTier(boardseshConfidence),
           isBenchmark: Boolean(resolvedIsBenchmark),
-          isNoMatch: usesAuroraNoMatchDescription(tick.boardType) && isNoMatchClimb(climbDescription),
+          isNoMatch:
+            characteristics != null
+              ? isNoMatch(characteristics)
+              : usesAuroraNoMatchDescription(tick.boardType) && isNoMatchClimb(climbDescription),
+          characteristics: characteristics ?? null,
           qualityAverage: qualityAverage != null ? Number(qualityAverage) : null,
           comment: tick.comment || '',
           climbedAt: tick.climbedAt,
@@ -1004,6 +1015,10 @@ export const tickQueries = {
         // Which sizes/sets the climb physically fits — drives renderBoard below.
         compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
         requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
+        // Structured matching/feet rules — see decodeClimbRules. Also lets
+        // isNoMatch below stop relying on the legacy description heuristic,
+        // which is a no-op on Woods and MoonBoard.
+        characteristics: dbSchema.boardClimbs.characteristics,
         difficultyName: difficultyNameWithFallbackExpr,
         boardName: dbSchema.userBoards.name,
         boardIsPublic: dbSchema.userBoards.isPublic,
@@ -1098,6 +1113,7 @@ export const tickQueries = {
       qualityAverage: number | null;
       isBenchmark: boolean;
       isNoMatch: boolean;
+      characteristics: string[] | null;
       comment: string;
       climbedAt: string;
       frames: string | null;
@@ -1118,6 +1134,7 @@ export const tickQueries = {
       difficultyName: string | null;
       isBenchmark: boolean;
       isNoMatch: boolean;
+      characteristics: string[] | null;
       date: string;
       items: AscentItem[];
       flashCount: number;
@@ -1151,6 +1168,7 @@ export const tickQueries = {
       frames,
       compatibleSizeIds,
       requiredSetIds,
+      characteristics,
       difficultyName,
       boardName,
       boardIsPublic,
@@ -1171,7 +1189,10 @@ export const tickQueries = {
       // Skip ticks that fell inside the date window but belong to a different group.
       if (!pageKeySet.has(key)) continue;
 
-      const isNoMatch = usesAuroraNoMatchDescription(tick.boardType) && isNoMatchClimb(climbDescription);
+      const tickIsNoMatch =
+        characteristics != null
+          ? isNoMatch(characteristics)
+          : usesAuroraNoMatchDescription(tick.boardType) && isNoMatchClimb(climbDescription);
 
       const canShowBoard =
         tick.boardId != null && (ctx?.userId === userId || (boardIsPublic === true && boardIsUnlisted !== true));
@@ -1215,7 +1236,8 @@ export const tickQueries = {
         boardseshConfidence: toConfidenceTier(boardseshConfidence),
         qualityAverage: qualityAverage != null ? Number(qualityAverage) : null,
         isBenchmark: Boolean(resolvedIsBenchmark),
-        isNoMatch,
+        isNoMatch: tickIsNoMatch,
+        characteristics: characteristics ?? null,
         comment: tick.comment || '',
         climbedAt: tick.climbedAt,
         frames,
@@ -1243,7 +1265,8 @@ export const tickQueries = {
           frames,
           difficultyName,
           isBenchmark: Boolean(resolvedIsBenchmark),
-          isNoMatch,
+          isNoMatch: tickIsNoMatch,
+          characteristics: characteristics ?? null,
           date: day,
           items: [],
           flashCount: 0,

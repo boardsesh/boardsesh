@@ -43,6 +43,7 @@ const NOTIFICATION_CLIMB_COLUMNS = {
   angle: dbSchema.boardClimbs.angle,
   frames: dbSchema.boardClimbs.frames,
   compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
+  characteristics: dbSchema.boardClimbs.characteristics,
 } as const;
 
 type NotificationClimb = {
@@ -54,6 +55,7 @@ type NotificationClimb = {
   angle: number | null;
   frames: string | null;
   compatibleSizeIds: number[] | null;
+  characteristics: string[] | null;
 };
 
 type ClimbBoardFields = {
@@ -61,6 +63,7 @@ type ClimbBoardFields = {
   climbAngle?: number;
   climbFrames?: string;
   climbCompatibleSizeIds?: number[];
+  climbCharacteristics?: string[];
 };
 
 /**
@@ -79,6 +82,7 @@ function applyClimbBoardFields(group: ClimbBoardFields, climb: NotificationClimb
   group.climbAngle = climb.angle ?? undefined;
   group.climbFrames = climb.frames ?? undefined;
   group.climbCompatibleSizeIds = climb.compatibleSizeIds ?? undefined;
+  group.climbCharacteristics = climb.characteristics ?? undefined;
 }
 
 function truncateCommentBody(commentBody: string | null): string | undefined {
@@ -279,6 +283,7 @@ export const socialNotificationQueries = {
         climbAngle: undefined as number | undefined,
         climbFrames: undefined as string | undefined,
         climbCompatibleSizeIds: undefined as number[] | undefined,
+        climbCharacteristics: undefined as string[] | undefined,
         threadEntityType: undefined as string | undefined,
         threadEntityId: undefined as string | undefined,
         proposalUuid: undefined as string | undefined,

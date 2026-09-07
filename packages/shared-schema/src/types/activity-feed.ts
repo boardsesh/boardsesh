@@ -77,6 +77,9 @@ export type AscentFeedItem = {
   qualityAverage?: number | null;
   isBenchmark: boolean;
   isNoMatch: boolean;
+  // Structured climb characteristics (e.g. 'no_match', 'method_footless').
+  // Decode with the CLIMB_CHARACTERISTICS helpers (isNoMatch / getMoonBoardMethod).
+  characteristics?: string[] | null;
   comment: string;
   climbedAt: string;
   frames?: string | null;
@@ -222,6 +225,9 @@ export type SessionFeedTickHighlight = {
   isMirror: boolean;
   isBenchmark: boolean;
   isNoMatch: boolean;
+  // Structured climb characteristics (e.g. 'no_match', 'method_footless').
+  // Decode with the CLIMB_CHARACTERISTICS helpers (isNoMatch / getMoonBoardMethod).
+  characteristics?: string[] | null;
   comment?: string | null;
   frames?: string | null;
   setterUsername?: string | null;
@@ -288,6 +294,9 @@ export type SessionDetailTick = {
   isMirror: boolean;
   isBenchmark: boolean;
   isNoMatch: boolean;
+  // Structured climb characteristics (e.g. 'no_match', 'method_footless').
+  // Decode with the CLIMB_CHARACTERISTICS helpers (isNoMatch / getMoonBoardMethod).
+  characteristics?: string[] | null;
   comment?: string | null;
   frames?: string | null;
   setterUsername?: string | null;

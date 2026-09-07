@@ -3,7 +3,13 @@ import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
-import { requireAuthenticated, validateInput, isNoMatchClimb, usesAuroraNoMatchDescription } from '../shared/helpers';
+import {
+  requireAuthenticated,
+  validateInput,
+  isNoMatchClimb,
+  usesAuroraNoMatchDescription,
+  isNoMatch,
+} from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
 import { resolveRenderBoard, type RenderBoardCandidate } from '@boardsesh/board-config';
 import { boardseshDifficultyExpr, boardseshConfidenceExpr, boardseshGradeTickJoin } from '../shared/sql-expressions';
@@ -529,6 +535,10 @@ export const sessionFeedQueries = {
         // Which sizes/sets the climb physically fits — drives renderBoard below.
         compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
         requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
+        // Structured matching/feet rules — see decodeClimbRules. Also lets
+        // isNoMatch below stop relying on the legacy description heuristic,
+        // which is a no-op on Woods and MoonBoard.
+        characteristics: dbSchema.boardClimbs.characteristics,
         // The board each tick was logged against, for renderBoard's first rung.
         boardLayoutId: dbSchema.userBoards.layoutId,
         boardSizeId: dbSchema.userBoards.sizeId,
@@ -652,7 +662,11 @@ export const sessionFeedQueries = {
         quality: row.tick.quality,
         isMirror: row.tick.isMirror ?? false,
         isBenchmark: row.tick.isBenchmark ?? false,
-        isNoMatch: usesAuroraNoMatchDescription(row.tick.boardType) && isNoMatchClimb(row.climbDescription),
+        isNoMatch:
+          row.characteristics != null
+            ? isNoMatch(row.characteristics)
+            : usesAuroraNoMatchDescription(row.tick.boardType) && isNoMatchClimb(row.climbDescription),
+        characteristics: row.characteristics ?? null,
         comment: row.tick.comment || null,
         frames: row.frames || null,
         setterUsername: row.setterUsername || null,
@@ -1160,6 +1174,7 @@ type TickHighlightRow = {
   layoutId: number | null;
   compatibleSizeIds: number[] | null;
   requiredSetIds: number[] | null;
+  characteristics: string[] | null;
   boardLayoutId: number | null;
   boardSizeId: number | null;
   boardSetIds: string | null;
@@ -1218,7 +1233,11 @@ function mapTickHighlightRow(row: TickHighlightRow, ownerBoards: RenderBoardCand
     quality: row.quality,
     isMirror: row.isMirror ?? false,
     isBenchmark: row.isBenchmark ?? false,
-    isNoMatch: usesAuroraNoMatchDescription(row.boardType) && isNoMatchClimb(row.climbDescription),
+    isNoMatch:
+      row.characteristics != null
+        ? isNoMatch(row.characteristics)
+        : usesAuroraNoMatchDescription(row.boardType) && isNoMatchClimb(row.climbDescription),
+    characteristics: row.characteristics ?? null,
     comment: row.comment || null,
     frames: row.frames,
     setterUsername: row.setterUsername,
@@ -1240,6 +1259,7 @@ function tickHighlightSelectSql(groupIdExpression: SQL = sql`NULL::text`) {
     cf.layout_id AS "layoutId",
     cf.compatible_size_ids AS "compatibleSizeIds",
     cf.required_set_ids AS "requiredSetIds",
+    cf.characteristics,
     ub.layout_id AS "boardLayoutId",
     ub.size_id AS "boardSizeId",
     ub.set_ids AS "boardSetIds",

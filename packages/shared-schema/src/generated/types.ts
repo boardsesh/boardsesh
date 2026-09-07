@@ -334,6 +334,8 @@ export type AscentFeedItem = {
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
   /** Name of the climb */
   climbName: Scalars['String']['output'];
   /** UUID of the climb */
@@ -2365,6 +2367,8 @@ export type GroupedAscentFeedItem = {
   bestQuality?: Maybe<Scalars['Int']['output']>;
   /** Board type */
   boardType: Scalars['String']['output'];
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
   /** Name of the climb */
   climbName: Scalars['String']['output'];
   /** UUID of the climb */
@@ -2424,6 +2428,13 @@ export type GroupedNotification = {
    * climbs that carry no angle; clients fall back to the reader's own board.
    */
   climbAngle?: Maybe<Scalars['Int']['output']>;
+  /**
+   * Structured climb characteristics (e.g. 'no_match', 'method_footless').
+   * Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod).
+   * Drives the Woods matching/feet rules line and the no-match glyph elsewhere
+   * when a notification opens the play drawer directly, without a climb refetch.
+   */
+  climbCharacteristics?: Maybe<Array<Scalars['String']['output']>>;
   /**
    * Sizes the climb fits. Boards whose sizes number holds independently (Woods)
    * render a COMPLETELY different climb on the layout's default size, so a client
@@ -7096,6 +7107,8 @@ export type SessionDetailTick = {
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
   climbName?: Maybe<Scalars['String']['output']>;
   climbUuid: Scalars['String']['output'];
   climbedAt: Scalars['String']['output'];
@@ -7210,6 +7223,8 @@ export type SessionFeedTickHighlight = {
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
+  /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
   climbName?: Maybe<Scalars['String']['output']>;
   climbUuid: Scalars['String']['output'];
   climbedAt: Scalars['String']['output'];
@@ -9723,6 +9738,7 @@ export type AscentFeedItemResolvers<
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   boardseshConfidence?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardseshDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   climbName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   climbedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -10698,6 +10714,7 @@ export type GroupedAscentFeedItemResolvers<
   attemptCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   bestQuality?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   climbName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   date?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -10735,6 +10752,7 @@ export type GroupedNotificationResolvers<
   actors?: Resolver<Array<ResolversTypes['GroupedNotificationActor']>, ParentType, ContextType>;
   boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbAngle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  climbCharacteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   climbCompatibleSizeIds?: Resolver<Maybe<Array<ResolversTypes['Int']>>, ParentType, ContextType>;
   climbFrames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbLayoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
@@ -13347,6 +13365,7 @@ export type SessionDetailTickResolvers<
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   boardseshConfidence?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardseshDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   climbName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   climbedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -13476,6 +13495,7 @@ export type SessionFeedTickHighlightResolvers<
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   boardseshConfidence?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardseshDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   climbName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   climbedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;

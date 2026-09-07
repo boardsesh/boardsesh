@@ -1820,4 +1820,68 @@ describe('tickQueries — behavior fixes', () => {
       expect(group?.bestQuality).toBe(3);
     });
   });
+
+  // Regression guard for #5245: isNoMatch used to rely solely on the legacy
+  // Aurora description convention (isNoMatchClimb), which is a documented no-op
+  // on Woods and MoonBoard. A climb whose no-match state lives ONLY in
+  // characteristics (no legacy marker in the description) must still surface
+  // isNoMatch: true, and characteristics itself must reach the client so the
+  // mobile Logbook/session-feed play drawer can show Woods' explicit rules —
+  // see tickToClimb in packages/mobile/src/lib/tick-to-climb.ts.
+  describe('userAscentsFeed / userGroupedAscentsFeed — characteristics (#5245)', () => {
+    type CharacteristicsFeedItem = {
+      climbUuid: string;
+      isNoMatch: boolean;
+      characteristics: string[] | null;
+    };
+
+    const insertClimbCharacteristics = async (uuid: string, characteristics: string[]) => {
+      await db.execute(sql`
+        UPDATE board_climbs
+        SET characteristics = ${sql`ARRAY[${sql.join(
+          characteristics.map((token) => sql`${token}`),
+          sql`, `,
+        )}]::text[]`}
+        WHERE uuid = ${uuid}
+      `);
+    };
+
+    it('userAscentsFeed: isNoMatch reads characteristics, not the legacy description heuristic', async () => {
+      const climbUuid = `${CLIMB_PREFIX}chars-flat`;
+      await insertClimb(climbUuid, 'Characteristics Flat');
+      await insertClimbCharacteristics(climbUuid, ['no_match']);
+      await insertTick({ uuid: 'tick-chars-flat', climbUuid, climbedAt: '2026-05-09T10:00:00', status: 'send' });
+
+      const result = await callUserAscentsFeed(TEST_USER_ID, {});
+      const item = (result.items as unknown as CharacteristicsFeedItem[]).find((row) => row.climbUuid === climbUuid);
+      expect(item?.characteristics).toEqual(['no_match']);
+      expect(item?.isNoMatch).toBe(true);
+    });
+
+    it('userGroupedAscentsFeed: threads characteristics onto both the group and its items', async () => {
+      const climbUuid = `${CLIMB_PREFIX}chars-grouped`;
+      await insertClimb(climbUuid, 'Characteristics Grouped');
+      await insertClimbCharacteristics(climbUuid, ['no_match']);
+      await insertTick({ uuid: 'tick-chars-grouped', climbUuid, climbedAt: '2026-05-10T10:00:00', status: 'send' });
+
+      const result = await callUserGroupedAscentsFeed(TEST_USER_ID, { limit: 20, offset: 0 });
+      const group = result.groups.find((candidate) => candidate.climbUuid === climbUuid) as unknown as
+        | (CharacteristicsFeedItem & { items: CharacteristicsFeedItem[] })
+        | undefined;
+      expect(group?.characteristics).toEqual(['no_match']);
+      expect(group?.isNoMatch).toBe(true);
+      expect(group?.items[0]?.characteristics).toEqual(['no_match']);
+      expect(group?.items[0]?.isNoMatch).toBe(true);
+    });
+
+    it('a climb with no characteristics recorded carries null, not []', async () => {
+      const climbUuid = `${CLIMB_PREFIX}chars-null`;
+      await insertClimb(climbUuid, 'Characteristics Null');
+      await insertTick({ uuid: 'tick-chars-null', climbUuid, climbedAt: '2026-05-11T10:00:00', status: 'send' });
+
+      const result = await callUserAscentsFeed(TEST_USER_ID, {});
+      const item = (result.items as unknown as CharacteristicsFeedItem[]).find((row) => row.climbUuid === climbUuid);
+      expect(item?.characteristics).toBeNull();
+    });
+  });
 });
