@@ -55,7 +55,10 @@ function makeEvent(overrides: Partial<ClimbStatsWriteThroughInput> = {}): ClimbS
   };
 }
 
-function applied(compatibleSizeIds: number[] | null = [5, 6], layoutId: number | null = 1): ClimbStatsWriteThroughResult {
+function applied(
+  compatibleSizeIds: number[] | null = [5, 6],
+  layoutId: number | null = 1,
+): ClimbStatsWriteThroughResult {
   return { status: 'applied', compatibleSizeIds, layoutId };
 }
 
@@ -748,7 +751,9 @@ describe('createClimbStatsLiveSync — contention and transient gates', () => {
     // the batch would silently lose every recompute of that window.
     let locked = true;
     const writeEvents = vi.fn(async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) =>
-      events.map(() => (locked ? { status: 'lock_lost' as const, compatibleSizeIds: null, layoutId: null } : applied())),
+      events.map(() =>
+        locked ? { status: 'lock_lost' as const, compatibleSizeIds: null, layoutId: null } : applied(),
+      ),
     );
     const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
     const harness = createHarness({ writeEvents: writeEvents as never });
