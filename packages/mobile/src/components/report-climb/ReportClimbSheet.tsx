@@ -11,7 +11,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
@@ -24,13 +23,14 @@ import { PressableSurface } from '../PressableSurface';
 import { SegmentedControl } from '../SegmentedControl';
 import { ClimbPreviewCard } from '../ClimbPreviewCard';
 import { GradeSingleSelectRail } from '../grade';
+import { TickNoteField } from '../tick';
 import { useReportClimb } from '../../lib/graphql/hooks/use-report-climb';
 import { useGrades } from '../../lib/graphql/hooks';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { track } from '../../lib/analytics';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 import {
   REASON_MAX,
   buildReportInput,
@@ -72,6 +72,8 @@ export function ReportClimbSheet({
   const { showToast } = useToast();
   const [kind, setKind] = useState<ReportKind>('hide');
   const [reason, setReason] = useState('');
+  // `TickNoteField` has no maxLength prop; the server bound is 500, enforced here.
+  const handleChangeReason = useCallback((next: string) => setReason(next.slice(0, REASON_MAX)), []);
   // Null means "the climber hasn't touched the rail", which reads as the climb's
   // own grade — so the rail opens on the grade the report would argue against
   // rather than on nothing.
@@ -214,7 +216,6 @@ export function ReportClimbSheet({
       snapPoints={SNAP_POINTS}
       scrollable
       surface="solid"
-      footerSurface="flush"
       androidContentSized
       onClose={onClose}
       onFullyDismissed={handleFullyDismissed}
@@ -264,22 +265,16 @@ export function ReportClimbSheet({
           </View>
         ) : null}
 
-        <BottomSheetTextInput
+        {/* The shared tick note field, not a raw input: it caps itself at 160pt
+            because the iOS keyboard-up sheet body is only ~162pt — a field
+            taller than the visible body can never scroll fully into view, and
+            the pinned Send bar ends up over it (QA-declined on #5188). Its vertical
+            padding is load-bearing on Android (#4642); see the component. */}
+        <TickNoteField
           value={reason}
-          onChangeText={setReason}
+          onChangeText={handleChangeReason}
           placeholder={t('mobile.report.reasonPlaceholder')}
-          placeholderTextColor={systemColors.tertiaryLabel}
-          multiline
-          maxLength={REASON_MAX}
-          textAlignVertical="top"
-          style={[
-            styles.input,
-            {
-              backgroundColor: systemColors.fill,
-              borderColor: systemColors.separator,
-              color: systemColors.label,
-            },
-          ]}
+          accessibilityLabel={t('mobile.report.reasonAria')}
         />
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.counter}>
           {remainingCharacters > 0
@@ -318,15 +313,6 @@ const styles = StyleSheet.create({
   },
   gradeRail: {
     gap: spacing[2],
-  },
-  input: {
-    minHeight: 116,
-    maxHeight: 220,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    fontSize: 16,
   },
   counter: {
     marginTop: -spacing[2],

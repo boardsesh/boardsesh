@@ -567,6 +567,7 @@
       },
       "sameGrade": "That's already the current grade",
       "reasonPlaceholder": "Tell the crew why (10 characters minimum)",
+      "reasonAria": "Reason for the report",
       "reasonRemaining": "{{count}} more characters",
       "reasonCount": "{{count}}/500",
       "submit": "Send report",

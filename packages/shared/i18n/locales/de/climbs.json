@@ -567,6 +567,7 @@
       },
       "sameGrade": "Das ist schon der aktuelle Grad",
       "reasonPlaceholder": "Sag der Crew, warum (mindestens 10 Zeichen)",
+      "reasonAria": "Grund der Meldung",
       "reasonRemaining": "Noch {{count}} Zeichen",
       "reasonCount": "{{count}}/500",
       "submit": "Meldung senden",

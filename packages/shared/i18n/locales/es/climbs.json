@@ -567,6 +567,7 @@
       },
       "sameGrade": "Ese ya es el grado actual",
       "reasonPlaceholder": "Cuéntale al grupo por qué (mínimo 10 caracteres)",
+      "reasonAria": "Motivo del reporte",
       "reasonRemaining": "Faltan {{count}} caracteres",
       "reasonCount": "{{count}}/500",
       "submit": "Enviar reporte",

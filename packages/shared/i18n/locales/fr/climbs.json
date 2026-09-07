@@ -567,6 +567,7 @@
       },
       "sameGrade": "C'est déjà la cotation actuelle",
       "reasonPlaceholder": "Explique à la crew pourquoi (10 caractères minimum)",
+      "reasonAria": "Motif du signalement",
       "reasonRemaining": "Encore {{count}} caractères",
       "reasonCount": "{{count}}/500",
       "submit": "Envoyer le signalement",
