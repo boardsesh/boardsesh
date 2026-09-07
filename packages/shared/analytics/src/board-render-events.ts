@@ -52,8 +52,6 @@ export type GlowFalloff = 'soft' | 'plateau';
  * is not.
  */
 export type GlowFalloffSource = 'user' | 'default';
-/** The two things a climber can do first after a climb view opens. */
-export type ClimbActionType = 'queue' | 'ble';
 
 /**
  * The settings half of the common props — a structural subset of mobile's
@@ -133,69 +131,6 @@ export type BoardRenderPayload<TName extends string, TProperties extends Analyti
   name: TName;
   properties: TProperties;
 };
-
-export type ClimbViewOpenedInput = BoardRenderTelemetryProps & {
-  climb_uuid: string;
-  /** Whether this climb was already viewed once this app run (a Set per app run). */
-  reopened_in_session: boolean;
-};
-
-/**
- * `Climb View Opened` used to double as the glow-falloff experiment's exposure
- * event, carrying PostHog's two reserved `$feature_flag*` properties.
- *
- * That experiment is gone: `board-glow-falloff` was retired for 2.4 along with
- * `board-render-mode-default`, and the glow curve is now a plain user setting
- * under More > Board look rather than a randomised arm. The event keeps its own
- * properties and nothing else — `glow_falloff` and `glow_falloff_source` still
- * ship, so the two populations stay separable observationally, but there is no
- * randomisation left to attribute anything to.
- *
- * If an experiment is ever run here again, mint the exposure on this event
- * rather than turning `$feature_flag_called` back on: mobile reads every flag
- * with `sendEvent: false` (`READ_WITHOUT_EXPOSURE_EVENT` in
- * `packages/mobile/src/lib/analytics.ts`) because the provider re-reads the
- * whole catalog on every flags-changed tick, and leaving exposures on cost
- * ~173k events / 30 days — 13% of the project's volume.
- */
-export function climbViewOpened(
-  input: ClimbViewOpenedInput,
-): BoardRenderPayload<typeof SHARED_EVENTS.ClimbViewOpened, ClimbViewOpenedInput> {
-  return { name: SHARED_EVENTS.ClimbViewOpened, properties: input };
-}
-
-export type BoardPinchInput = BoardRenderTelemetryProps & {
-  /** Peak absolute board scale reached during the gesture (not the raw pinch ratio). */
-  scale_max: number;
-  /** Lowest absolute board scale reached during the gesture. */
-  scale_min: number;
-  /**
-   * SIGNED end-minus-start scale change: positive for a zoom in, negative for a
-   * zoom out. `scale_max` alone cannot tell those apart — a gesture that only
-   * zooms out never exceeds its own starting scale, so a max-minus-start delta
-   * is exactly 0 for every zoom-out and the whole gesture reads as jitter.
-   */
-  scale_delta: number;
-};
-
-export function boardPinch(
-  input: BoardPinchInput,
-): BoardRenderPayload<typeof SHARED_EVENTS.BoardPinch, BoardPinchInput> {
-  return { name: SHARED_EVENTS.BoardPinch, properties: input };
-}
-
-export type ClimbFirstActionInput = BoardRenderTelemetryProps & {
-  climb_uuid: string;
-  action_type: ClimbActionType;
-  /** Milliseconds between the climb view opening and this first action. */
-  ms_since_open: number;
-};
-
-export function climbFirstAction(
-  input: ClimbFirstActionInput,
-): BoardRenderPayload<typeof SHARED_EVENTS.ClimbFirstAction, ClimbFirstActionInput> {
-  return { name: SHARED_EVENTS.ClimbFirstAction, properties: input };
-}
 
 export type BoardRenderSettingsChangedInput = BoardRenderTelemetryProps & {
   /** Which setting changed, e.g. `'mode'`, `'glowFalloff'`, `'glowReach'`. */

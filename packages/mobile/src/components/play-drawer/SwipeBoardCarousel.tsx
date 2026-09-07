@@ -18,13 +18,11 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { computePeekOffset, type PeekDirection } from '@boardsesh/play-view';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { buildBoardRenderTelemetryProps } from '@boardsesh/analytics';
 import { BoardImageNative } from '../BoardImageNative';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
 import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
-import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-render';
 import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
 
 type BoardRenderData = {
@@ -138,22 +136,11 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   // Using screenWidth instead leaves a gap equal to the letterbox margins.
   const boardWidthForSwipe = boardBox?.width ?? screenWidth;
 
-  // Board-render A/B pinch telemetry (issue #2202). Memoized so the gesture
-  // hook — which reads this through a ref, not a dependency — doesn't have to
-  // reconcile a fresh object identity every render; identity only changes when
-  // the resolved drawing itself changes.
-  const { effectiveRenderSettings } = useEffectiveBoardRenderSettings();
-  const boardRenderTelemetryProps = useMemo(
-    () => buildBoardRenderTelemetryProps(effectiveRenderSettings, { boardName, layoutId, sizeId }),
-    [effectiveRenderSettings, boardName, layoutId, sizeId],
-  );
-
   const { pinchGesture, zoomPanGesture, isZoomed, isZoomedSV, resetZoom, animatedZoomStyle } = useZoomPanGesture({
     enabled,
     containerWidth: boardBox?.width ?? screenWidth,
     containerHeight: boardBox?.height ?? containerSize.height,
     scrollRef,
-    boardRenderTelemetryProps,
   });
 
   const onResetZoomReadyRef = useRef(onResetZoomReady);

@@ -172,7 +172,6 @@ vi.mock('../../../providers/queue-provider', () => ({
     nextClimb: vi.fn(),
     previousClimb: vi.fn(),
     addToQueue: vi.fn(async () => 'added'),
-    noteClimbViewed: vi.fn(),
   }),
   useQueueSessionId: () => ({ sessionId: null }),
   usePlaylistSuggestionSource: () => null,
