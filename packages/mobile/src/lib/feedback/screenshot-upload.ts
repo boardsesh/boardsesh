@@ -28,6 +28,14 @@ const UPLOAD_TIMEOUT_MS = 30_000;
  */
 export async function uploadFeedbackScreenshot(uri: string): Promise<string> {
   const localFile = new File(uri);
+  // Read ONCE, here, rather than handing the encoder a `bytes()` it calls later:
+  // it makes the read a step we can check. A compressed file that came back
+  // empty used to sail through and get rejected by the server as "Uploaded file
+  // is empty", which named the symptom on the wrong side of the network.
+  const fileBytes = await localFile.bytes();
+  if (fileBytes.byteLength === 0) {
+    throw new Error('That screenshot could not be read from your photo library');
+  }
 
   const formData = new FormData();
   // Expo's global `fetch` (WinterCG) rejects React Native's legacy
@@ -40,7 +48,7 @@ export async function uploadFeedbackScreenshot(uri: string): Promise<string> {
   const screenshotPart = {
     name: 'screenshot.jpg',
     type: 'image/jpeg',
-    bytes: () => localFile.bytes(),
+    bytes: () => Promise.resolve(fileBytes),
   };
   formData.append('screenshot', screenshotPart as unknown as Blob);
 

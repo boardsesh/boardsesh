@@ -15,6 +15,9 @@ vi.mock('../../auth-interceptor', () => ({
 
 // expo-file-system is native; stub the File class so `.bytes()` resolves to a
 // per-URI payload in Node (the payload identifies which file a part carries).
+// Spied so a case can make one read come back empty, which is the failure that
+// broke uploads in the field; by default it echoes the URI as its payload.
+const mockFileBytes = vi.hoisted(() => vi.fn());
 vi.mock('expo-file-system', () => ({
   File: class {
     uri: string;
@@ -22,7 +25,7 @@ vi.mock('expo-file-system', () => ({
       this.uri = uri;
     }
     bytes() {
-      return Promise.resolve(new TextEncoder().encode(this.uri));
+      return mockFileBytes(this.uri);
     }
   },
 }));
@@ -54,6 +57,7 @@ function jsonResponse(body: unknown, ok = true): Response {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockFileBytes.mockImplementation((uri: string) => Promise.resolve(new TextEncoder().encode(uri)));
   // The uploaded-key cache is module state that outlives a single call — it is
   // what stops a retry re-uploading shots that already landed. Without a reset
   // here, a later case reuses an earlier one's keys and never reaches its own
@@ -95,6 +99,18 @@ describe('uploadFeedbackScreenshot', () => {
   it('throws when the response carries no key', async () => {
     mockAuthenticatedFetch.mockResolvedValue(jsonResponse({ success: true }));
     await expect(uploadFeedbackScreenshot('file:///tmp/shot.jpg')).rejects.toThrow('Screenshot upload failed');
+  });
+
+  it('refuses to send a file that read back empty, naming the real problem', async () => {
+    // The compressed file coming back with no bytes is what actually broke
+    // screenshot uploads: the request went out with an empty part and the
+    // server answered "Uploaded file is empty", blaming the wrong side.
+    mockFileBytes.mockResolvedValueOnce(new Uint8Array());
+
+    await expect(uploadFeedbackScreenshot('file:///empty.jpg')).rejects.toThrow(
+      'could not be read from your photo library',
+    );
+    expect(mockAuthenticatedFetch).not.toHaveBeenCalled();
   });
 });
 
