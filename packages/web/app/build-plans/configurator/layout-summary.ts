@@ -42,7 +42,15 @@ export type CncLayoutSummary = {
   sheets: number | null;
   tnutCount: number | null;
   ledCount: number | null;
-  skippedSeamLeds: number | null;
+  /**
+   * LED holes that land on a panel seam.
+   *
+   * Not a count of anything lost: the generator cuts each of these as a
+   * notch in both neighbouring panels, and the LED drops into the notch once
+   * the wall is bolted together. It is on the card because a notch is a thing
+   * somebody will see on their sheets and wonder about.
+   */
+  seamNotches: number | null;
   /** Every panel, in the generator's own order. Empty when the response had none. */
   panels: CncLayoutPanel[];
   warnings: string[];
@@ -116,7 +124,7 @@ export function readLayoutSummary(layout: unknown): CncLayoutSummary {
     sheets: readNumber(bom, 'sheets'),
     tnutCount: readNumber(bom, 'tnut_count'),
     ledCount: readNumber(bom, 'led_count'),
-    skippedSeamLeds: readNumber(bom, 'skipped_seam_leds'),
+    seamNotches: readNumber(bom, 'seam_notches'),
     warnings: Array.isArray(warnings) ? warnings.filter((entry): entry is string => typeof entry === 'string') : [],
   };
 }

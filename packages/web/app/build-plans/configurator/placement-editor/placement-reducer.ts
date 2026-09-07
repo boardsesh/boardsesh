@@ -53,6 +53,11 @@ export type PlacementContext = {
   panelEdgeMarginMm: number;
   /** The cut-through multiplier, or 1 for a mode that only marks the surface. */
   keepoutScale: number;
+  /**
+   * True for `cut_through`, which is the only mode a seam can stop. An engraved
+   * or pocketed shape over a joint is clipped into both panels and cut on each.
+   */
+  cutsThroughSheet: boolean;
   /** Drawn width over drawn height, measured from the label itself. */
   aspect: number;
   minWidthMm: number;
@@ -112,7 +117,11 @@ export function collisionsFor(placement: PlacementValue, context: PlacementConte
     findPanel(context, placement.panelIndex),
     context.holes,
     context.seams,
-    { panelEdgeMarginMm: context.panelEdgeMarginMm, keepoutScale: context.keepoutScale },
+    {
+      panelEdgeMarginMm: context.panelEdgeMarginMm,
+      keepoutScale: context.keepoutScale,
+      cutsThroughSheet: context.cutsThroughSheet,
+    },
   );
 }
 
