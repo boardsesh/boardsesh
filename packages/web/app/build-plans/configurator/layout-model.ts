@@ -96,7 +96,7 @@ function readHoles(raw: unknown): { holes: HoleMm[]; holePanelIndex: number[] } 
     const kind = readString(hole, 'kind');
     if (xMm === null || yMm === null || keepoutRadiusMm === null || panelIndex === null) return;
     holes.push({
-      id: `${readString(hole, 'kind') ?? 'hole'}-${String(position)}`,
+      id: `${kind ?? 'hole'}-${String(position)}`,
       ...(diameterMm !== null && diameterMm > 0 ? { diameterMm } : {}),
       ...(kind !== null ? { kind } : {}),
       xMm,
