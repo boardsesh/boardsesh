@@ -28,6 +28,8 @@ import {
   CLIMB_STATS_INVALIDATE_MAX_WAIT_MS,
   CLIMB_STATS_INVALIDATE_TRAILING_MS,
   CLIMB_STATS_LOCK_BACKOFF_MS,
+  CLIMB_STATS_MAX_PENDING_EVENTS,
+  CLIMB_STATS_REVISION_MEMO_TTL_MS,
   CLIMB_STATS_TRACKED_REVISIONS,
   type ClimbStatsLiveSyncOptions,
   type FlushedClimbStat,
@@ -59,7 +61,7 @@ function applied(
   compatibleSizeIds: number[] | null = [5, 6],
   layoutId: number | null = 1,
 ): ClimbStatsWriteThroughResult {
-  return { status: 'applied', compatibleSizeIds, layoutId };
+  return { status: 'applied', compatibleSizeIds, layoutId, settledBy: 'write' };
 }
 
 function flushed(overrides: Partial<FlushedClimbStat> = {}): FlushedClimbStat {
@@ -73,9 +75,9 @@ function allApplied(compatibleSizeIds: number[] | null = [5, 6], layoutId: numbe
 }
 
 /** The batch writer settling every event with one status (contention, staleness…). */
-function allSettled(status: ClimbStatsWriteThroughStatus) {
+function allSettled(status: ClimbStatsWriteThroughStatus, settledBy: 'pre_read' | 'write' = 'pre_read') {
   return async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) =>
-    events.map(() => ({ status, compatibleSizeIds: [5, 6], layoutId: 1 }));
+    events.map(() => ({ status, compatibleSizeIds: [5, 6], layoutId: 1, settledBy }));
 }
 
 type Harness = {
@@ -104,7 +106,7 @@ function createHarness(overrides: Partial<ClimbStatsLiveSyncOptions> = {}): Harn
     queryClient,
     isScopeDownloaded: isScopeDownloaded as unknown as ClimbStatsLiveSyncOptions['isScopeDownloaded'],
     shouldSkipWrites: () => false,
-    hasEnabledScopeForLayout: () => true,
+    hasEnabledScopeForBoard: () => true,
     writeEvents: writeEvents as unknown as ClimbStatsLiveSyncOptions['writeEvents'],
     onError,
     ...rest,
@@ -203,15 +205,34 @@ describe('createClimbStatsLiveSync — the pre-write gates', () => {
     expect(isInvalidated(gradeFiltered)).toBe(false);
   });
 
-  it('writes nothing for a layout with no opted-in offline scope', async () => {
-    const hasEnabledScopeForLayout = vi.fn(() => false);
-    const harness = createHarness({ hasEnabledScopeForLayout });
+  it('writes nothing for a board with no opted-in offline scope', async () => {
+    const hasEnabledScopeForBoard = vi.fn(() => false);
+    const harness = createHarness({ hasEnabledScopeForBoard });
 
     harness.sync.handleEvent(makeEvent());
     await settleWrites();
 
-    expect(hasEnabledScopeForLayout).toHaveBeenCalledWith('kilter', 1);
+    // Board-level: the event's layout label is the browsed layout on a
+    // reconciliation row, so it cannot be part of this gate.
+    expect(hasEnabledScopeForBoard).toHaveBeenCalledWith('kilter');
     expect(harness.writeEvents).not.toHaveBeenCalled();
+  });
+
+  it('lets an event through on a downloaded board even when its layout label is wrong', async () => {
+    const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
+    const harness = createHarness({
+      hasEnabledScopeForBoard: (boardType: string) => boardType === 'kilter',
+      // The write resolves the climb's real layout, which is what the list gate
+      // then uses.
+      writeEvents: allApplied([5, 6], 1) as never,
+    });
+
+    harness.sync.handleEvent(makeEvent({ layoutId: 99 }));
+    await settleWrites();
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_TRAILING_MS);
+
+    expect(harness.writeEvents).toHaveBeenCalledTimes(1);
+    expect(isInvalidated(gradeFiltered)).toBe(true);
   });
 });
 
@@ -271,9 +292,13 @@ describe('createClimbStatsLiveSync — dropping revisions already settled', () =
 
     harness.sync.handleEvent(firstEvent);
     await settleWrites();
-    // Fill past the cap so the very first key is evicted.
+    // Fill past the cap so the very first key is evicted. Drained in chunks
+    // well under the pending-queue cap, so nothing is dropped before it is
+    // written and remembered.
+    const chunk = Math.floor(CLIMB_STATS_MAX_PENDING_EVENTS / 2);
     for (let index = 1; index <= CLIMB_STATS_TRACKED_REVISIONS; index += 1) {
       harness.sync.handleEvent(makeEvent({ climbUuid: `climb-${index}` }));
+      if (index % chunk === 0) await settleWrites();
     }
     await settleWrites();
 
@@ -282,6 +307,159 @@ describe('createClimbStatsLiveSync — dropping revisions already settled', () =
     await settleWrites();
 
     expect(harness.writtenEvents()).toHaveLength(before + 1);
+  });
+
+  it('forgets a remembered revision once it is older than the reconciliation interval', async () => {
+    // Another writer can delete these rows without telling us — a scope
+    // teardown, a sign-out purge, a snapshot reconcile. A remove and
+    // re-download inside one session can leave the re-imported row BEHIND the
+    // memo, and the republish that would heal it must not be discarded forever.
+    const harness = createHarness();
+
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    expect(harness.writeEvents).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_REVISION_MEMO_TTL_MS - 1);
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    expect(harness.writeEvents).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+
+    expect(harness.writeEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it('forgets everything when the database handle is replaced', async () => {
+    // A sign-out wipe and re-open, or a hot reload, publishes a new handle over
+    // rows this module has never seen.
+    let db: OfflineDatabase = fakeDb;
+    const harness = createHarness({ getDb: () => db });
+
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    expect(harness.writeEvents).toHaveBeenCalledTimes(1);
+
+    db = { name: 'reopened-db' } as unknown as OfflineDatabase;
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+
+    expect(harness.writeEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it('never remembers a stale the WRITE reported, only one the pre-read did', async () => {
+    // A `stale` from the transaction means the upsert matched nothing — the
+    // climb vanished between the pre-read and the lock, so there may be no row
+    // at all. Remembering it would suppress the republish that heals it.
+    const harness = createHarness({ writeEvents: allSettled('stale', 'write') as never });
+
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+    harness.sync.handleEvent(makeEvent({ syncSeq: '500' }));
+    await settleWrites();
+
+    expect(harness.writeEvents).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('createClimbStatsLiveSync — the queue keeps the newer revision', () => {
+  // The reconciliation read is a server snapshot taken BEFORE the recompute the
+  // stream already published, so the two arrive out of order for the same key.
+  // Latest-arrival-wins would let the older one replace the newer and lose it.
+  function heldWriter() {
+    let release: (() => void) | undefined;
+    const writeEvents = vi.fn(async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) => {
+      if (!release) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return events.map(() => applied());
+    });
+    return { writeEvents, release: () => release?.() };
+  }
+
+  it('never lets an older arrival displace a newer queued event', async () => {
+    const { writeEvents, release } = heldWriter();
+    const harness = createHarness({ writeEvents: writeEvents as never });
+
+    // Event one opens the drain and blocks in the writer.
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'other', syncSeq: '1' }));
+    await settleWrites();
+    // The stream's fresh revision queues behind it…
+    harness.sync.handleEvent(makeEvent({ syncSeq: '101' }));
+    // …and the reconciliation's stale snapshot of the same key arrives after.
+    harness.sync.handleEvent(makeEvent({ syncSeq: '100' }));
+    release();
+    await settleWrites();
+
+    const second = writeEvents.mock.calls[1][1] as ClimbStatsWriteThroughInput[];
+    expect(second.map((event) => event.syncSeq)).toEqual(['101']);
+  });
+
+  it('still takes a newer arrival for a queued key', async () => {
+    const { writeEvents, release } = heldWriter();
+    const harness = createHarness({ writeEvents: writeEvents as never });
+
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'other', syncSeq: '1' }));
+    await settleWrites();
+    harness.sync.handleEvent(makeEvent({ syncSeq: '100' }));
+    harness.sync.handleEvent(makeEvent({ syncSeq: '101' }));
+    release();
+    await settleWrites();
+
+    const second = writeEvents.mock.calls[1][1] as ClimbStatsWriteThroughInput[];
+    expect(second.map((event) => event.syncSeq)).toEqual(['101']);
+  });
+
+  it('keeps the newer of a requeued event and one that arrived while it was in flight', async () => {
+    // The lock is lost, so revision 100 comes back to the queue — but 101
+    // arrived meanwhile and must not be overwritten by the retry.
+    let locked = true;
+    const writeEvents = vi.fn(async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) =>
+      events.map(() =>
+        locked ? { status: 'lock_lost' as const, compatibleSizeIds: null, layoutId: null, settledBy: 'write' as const } : applied(),
+      ),
+    );
+    const harness = createHarness({ writeEvents: writeEvents as never });
+
+    harness.sync.handleEvent(makeEvent({ syncSeq: '100' }));
+    await settleWrites();
+    locked = false;
+    harness.sync.handleEvent(makeEvent({ syncSeq: '101' }));
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_LOCK_BACKOFF_MS);
+    await settleWrites();
+
+    const retried = writeEvents.mock.calls[1][1] as ClimbStatsWriteThroughInput[];
+    expect(retried.map((event) => event.syncSeq)).toEqual(['101']);
+  });
+
+  it('caps the pending queue and drops the oldest rather than growing unbounded', async () => {
+    // The queue only grows while SQLite is unreachable, and every event on it
+    // is disposable — the next pull carries the same values.
+    let db: OfflineDatabase | null = null;
+    const harness = createHarness({ getDb: () => db });
+
+    const overflow = CLIMB_STATS_MAX_PENDING_EVENTS + 50;
+    for (let index = 0; index < overflow; index += 1) {
+      harness.sync.handleEvent(makeEvent({ climbUuid: `climb-${index}` }));
+    }
+    await settleWrites();
+    expect(harness.writeEvents).not.toHaveBeenCalled();
+
+    db = fakeDb;
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'climb-last' }));
+    await settleWrites();
+
+    const written = harness.writtenEvents().map((event) => event.climbUuid);
+    expect(written).toHaveLength(CLIMB_STATS_MAX_PENDING_EVENTS);
+    // The oldest went, the newest stayed.
+    expect(written).not.toContain('climb-0');
+    expect(written).toContain('climb-last');
   });
 });
 
@@ -655,19 +833,20 @@ describe('createClimbStatsLiveSync — which writes may arm a refresh', () => {
 });
 
 describe('createClimbStatsLiveSync — coalescing and batching', () => {
-  it('collapses a burst of five events into one refresh and two write passes', async () => {
+  it('collapses a synchronous burst into ONE write pass and one refresh', async () => {
     seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
     const harness = createHarness();
 
+    // A reconciliation pass delivers its rows in one synchronous loop. Draining
+    // on arrival would write the first alone and batch only the remainder, so
+    // the drain is deferred to a microtask.
     for (let index = 0; index < 5; index += 1) {
       harness.sync.handleEvent(makeEvent({ climbUuid: `climb-${index}`, syncSeq: `${500 + index}` }));
     }
     await settleWrites();
     await vi.advanceTimersByTimeAsync(CLIMB_STATS_INVALIDATE_MAX_WAIT_MS);
 
-    // The first event opens the drain; the four queued behind it go in one
-    // batch — five events, two native write transactions rather than five.
-    expect(harness.writeEvents).toHaveBeenCalledTimes(2);
+    expect(harness.writeEvents).toHaveBeenCalledTimes(1);
     expect(harness.writtenEvents()).toHaveLength(5);
     expect(harness.isScopeDownloaded).toHaveBeenCalledTimes(1);
   });

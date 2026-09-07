@@ -14,7 +14,7 @@ import {
   OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS,
   OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS,
 } from '../db/write-retry';
-import { TABLE_CONFIGS } from './table-config';
+import { buildRevisionGuardTail } from './revision-guard-sql';
 
 // SQLite's default compile-time limit on bound parameters per statement
 // (SQLITE_MAX_VARIABLE_NUMBER's pre-3.32 default, still the safe floor across
@@ -41,23 +41,11 @@ export function buildMultiRowInsertSql(
   const columnList = columns.join(', ');
   const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
   const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
-  if (!preserveNewerRows) return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
-  const { primaryKeyColumns, cursorColumn } = TABLE_CONFIGS[tableName];
-  const assignments = columns
-    .filter((column) => !primaryKeyColumns.includes(column))
-    .map((column) => `${column} = excluded.${column}`)
-    .join(', ');
-  // Sync/export timestamps are UTC ISO text, but PostgreSQL omits trailing
-  // fractional zeroes. Pad the fraction so TEXT ordering preserves microseconds.
-  const timestampKey = (column: string) =>
-    `(substr(${column}, 1, 19) || '.' || CASE WHEN substr(${column}, 20, 1) = '.'
-      THEN substr(substr(${column}, 21, length(${column}) - 21) || '000000', 1, 6)
-      ELSE '000000' END)`;
-  return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause}
-    ON CONFLICT (${primaryKeyColumns.join(', ')}) DO UPDATE SET ${assignments}
-    WHERE ${tableName}.${cursorColumn} IS NULL
-       OR (${timestampKey(`excluded.${cursorColumn}`)}, excluded.sync_seq)
-          >= (${timestampKey(`${tableName}.${cursorColumn}`)}, ${tableName}.sync_seq)`;
+  const insert = `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+  if (!preserveNewerRows) return insert;
+  const guardTail = buildRevisionGuardTail({ tableName, conflictReference: tableName, columns });
+  if (!guardTail) return insert;
+  return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause} ${guardTail}`;
 }
 
 /**

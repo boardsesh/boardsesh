@@ -212,7 +212,7 @@ type LiveSyncSeams = {
   getDb: () => unknown;
   isScopeDownloaded: unknown;
   shouldSkipWrites: () => boolean;
-  hasEnabledScopeForLayout: (boardType: string, layoutId: number) => boolean;
+  hasEnabledScopeForBoard: (boardType: string) => boolean;
   onError: (error: unknown) => void;
 };
 
@@ -599,13 +599,15 @@ describe('BoardAdapterWrapper live climb-stat write-through', () => {
     expect(seams.isScopeDownloaded).toBe(isBoardDownloadedLocallyMock);
   });
 
-  it('only accepts layouts the user actually downloads', () => {
+  it('only accepts boards the user actually downloads', () => {
     renderWrapper();
     const seams = liveSyncSeams();
 
-    expect(seams.hasEnabledScopeForLayout('kilter', 1)).toBe(true);
-    expect(seams.hasEnabledScopeForLayout('kilter', 2)).toBe(false);
-    expect(seams.hasEnabledScopeForLayout('tension', 1)).toBe(false);
+    // Board-level, deliberately: a reconciliation row's layout label is the
+    // layout being browsed, not the climb's, so it cannot gate anything. Any
+    // downloaded layout of a board opens that board.
+    expect(seams.hasEnabledScopeForBoard('kilter')).toBe(true);
+    expect(seams.hasEnabledScopeForBoard('tension')).toBe(false);
   });
 
   it('reads storage once per settings change, not once per event', () => {
@@ -616,23 +618,34 @@ describe('BoardAdapterWrapper live climb-stat write-through', () => {
     const seams = liveSyncSeams();
     settingsMocks.getSetting.mockClear();
 
-    for (let call = 0; call < 50; call += 1) seams.hasEnabledScopeForLayout('kilter', 1);
+    for (let call = 0; call < 50; call += 1) seams.hasEnabledScopeForBoard('kilter');
 
     expect(settingsMocks.getSetting).not.toHaveBeenCalled();
   });
 
-  it('picks up a newly downloaded layout from the settings change signal', () => {
+  it('picks up a newly downloaded board from the settings change signal', () => {
     renderWrapper();
     const seams = liveSyncSeams();
-    expect(seams.hasEnabledScopeForLayout('tension', 4)).toBe(false);
+    expect(seams.hasEnabledScopeForBoard('tension')).toBe(false);
 
     const restore = enabledScopeKeys.value;
     enabledScopeKeys.value = [...restore, 'tension:4:9'];
     settingsMocks.emitChange();
 
-    expect(seams.hasEnabledScopeForLayout('tension', 4)).toBe(true);
+    expect(seams.hasEnabledScopeForBoard('tension')).toBe(true);
     enabledScopeKeys.value = restore;
     settingsMocks.emitChange();
+  });
+
+  it('never launders a scope key it cannot parse into an enabled board', () => {
+    // Decoding goes through the shared parseOfflineBoardKey, so a legacy bare
+    // entry stays out rather than being split by hand into a board type.
+    const restore = enabledScopeKeys.value;
+    enabledScopeKeys.value = ['moonboard'];
+    renderWrapper();
+
+    expect(liveSyncSeams().hasEnabledScopeForBoard('moonboard')).toBe(false);
+    enabledScopeKeys.value = restore;
   });
 
   it('answers false rather than throwing when the stored setting is not a list', () => {
@@ -644,8 +657,8 @@ describe('BoardAdapterWrapper live climb-stat write-through', () => {
     renderWrapper();
     const seams = liveSyncSeams();
 
-    expect(() => seams.hasEnabledScopeForLayout('kilter', 1)).not.toThrow();
-    expect(seams.hasEnabledScopeForLayout('kilter', 1)).toBe(false);
+    expect(() => seams.hasEnabledScopeForBoard('kilter')).not.toThrow();
+    expect(seams.hasEnabledScopeForBoard('kilter')).toBe(false);
 
     enabledScopeKeys.value = restore;
   });
