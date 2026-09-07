@@ -242,7 +242,12 @@ export function canStreamChangeList(
     // A climb belongs to exactly one board and layout, so an event from another
     // one cannot be in this list's result set at any angle.
     if (search.boardName !== entry.boardType || search.layoutId !== entry.layoutId) continue;
-    if (sizeScoped && !(entry.compatibleSizeIds?.includes(search.sizeId as number) ?? false)) continue;
+    if (sizeScoped) {
+      // No cast: a size-scoped key without a numeric sizeId is malformed, and a
+      // malformed key must fail closed rather than match by accident.
+      const { sizeId } = search;
+      if (typeof sizeId !== 'number' || !(entry.compatibleSizeIds?.includes(sizeId) ?? false)) continue;
+    }
     if (search.angle !== entry.angle) {
       if (crossAngleSort) onPageCandidates.add(entry.climbUuid);
       continue;
@@ -613,7 +618,10 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
         } catch (error) {
           // A broken database is worth one report per session, not one per
           // event on a chatty layout channel. Contention never lands here —
-          // writeClimbStatsEvents returns `lock_lost` for it.
+          // writeClimbStatsEvents returns `lock_lost` for it. The events of
+          // this pass are dropped, deliberately: they are disposable (the next
+          // pull carries the same rows) and requeuing against a database that
+          // just threw would only repeat the failure on every arrival.
           reportFirstError(error);
           continue;
         }
