@@ -17,7 +17,10 @@ import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
  */
 
 const RUN_ID = crypto.randomUUID().slice(0, 8);
-const LAYOUT_ID = 900127;
+// Per-run layout id, so `cleanup()` can wipe the whole layout — which is what
+// makes it leak-proof when a run dies before afterAll — without a concurrent
+// run on a shared DB ever deleting fixtures out from under this one.
+const LAYOUT_ID = 900000 + (parseInt(RUN_ID, 16) % 1000);
 const OWNER_ID = `nm5127-owner-${RUN_ID}`;
 const BOARD_UUID = `nm5127-board-${RUN_ID}`;
 // The description that made the two disagree: the rule is declared after prose.

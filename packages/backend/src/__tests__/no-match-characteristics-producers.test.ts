@@ -22,7 +22,10 @@ import { setterFollowQueries } from '../graphql/resolvers/social/setter-follows'
 const RUN_ID = crypto.randomUUID().slice(0, 8);
 // Deliberately not the layout the payload test uses — the two files clean up by
 // layout id and can run against the same database.
-const LAYOUT_ID = 900128;
+// Per-run layout id, so `cleanup()` can wipe the whole layout — which is what
+// makes it leak-proof when a run dies before afterAll — without a concurrent
+// run on a shared DB ever deleting fixtures out from under this one.
+const LAYOUT_ID = 901000 + (parseInt(RUN_ID, 16) % 1000);
 const OWNER_ID = `nm5127p-owner-${RUN_ID}`;
 const SETTER = `nm5127p-setter-${RUN_ID}`;
 const ANGLE = 40;

@@ -169,7 +169,11 @@ async function buildNewClimbMetadata(event: SocialEvent): Promise<Record<string,
     angle: metadata.angle ?? climb.angle ?? null,
     frames: metadata.frames || climb.frames || null,
     difficultyName: metadata.difficultyName || climb.difficultyName || null,
-    isNoMatch: metadata.isNoMatch || resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
+    // Recomputed, never taken from the event: the climb row is right here and its
+    // characteristics array outranks whatever the publisher derived. An `||` here
+    // would let a stale `true` — from an event queued by an older build — win over
+    // an author's explicit "matching is allowed".
+    isNoMatch: resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
   };
 }
 
