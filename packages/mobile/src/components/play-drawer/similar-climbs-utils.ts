@@ -1,7 +1,8 @@
 import type { Climb, SimilarClimb } from '@boardsesh/shared-schema';
 import { formatQuality, formatSends, type TranslateSends } from '../../lib/format-climb-stats';
 
-// Build a Climb stub from a SimilarClimb for queue activation (mirrors web's buildClimbStub).
+// Build a Climb stub from a SimilarClimb for queue activation. Mobile-only: web
+// links to the canonical climb view, which re-fetches the full climb.
 export function buildClimbStub(similar: SimilarClimb, boardType: string): Climb {
   return {
     uuid: similar.uuid,
@@ -23,6 +24,10 @@ export function buildClimbStub(similar: SimilarClimb, boardType: string): Climb 
     // null, and the difference matters: an empty list would otherwise read as
     // "fits nothing" instead of "imposes no constraint".
     compatibleSizeIds: similar.compatibleSizeIds.length > 0 ? similar.compatibleSizeIds : null,
+    // Passed through verbatim, including null — the opposite of the line above.
+    // `[]` is a climb set under all the default rules and null is a climb whose
+    // rules were never recorded, and the Woods drawer says those differently.
+    characteristics: similar.characteristics ?? null,
   };
 }
 

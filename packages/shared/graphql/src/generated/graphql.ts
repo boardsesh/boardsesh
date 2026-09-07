@@ -7643,6 +7643,14 @@ export type SimilarClimb = {
   /** Number of hold positions on the candidate climb. */
   candidateHoldCount: Scalars['Int']['output'];
   /**
+   * Structured climb rules ('no_match', 'any_feet', 'campus', 'no_kickboard',
+   * method_*). Nullable, unlike compatibleSizeIds above: null means the server
+   * did not record the rules, and an empty array means the climb is set under
+   * all the defaults. The Woods play drawer states both rules on every problem,
+   * so it has to be able to tell those two apart (issue #5214).
+   */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
+  /**
    * Product sizes this climb fits on (denormalised from edge bounds). Callers
    * on a smaller wall can use this to grey out climbs that extend beyond
    * their physical board — those climbs are still navigable in the actions
@@ -9236,6 +9244,8 @@ export type GetUserFavoriteClimbsQuery = {
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
       compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
     }>;
   };
 };
@@ -9536,6 +9546,7 @@ export type SimilarClimbsQuery = {
     qualityAverage?: number | null;
     ascensionistCount?: number | null;
     compatibleSizeIds: Array<number>;
+    characteristics?: Array<string> | null;
     similarity: number;
     sharedHoldCount: number;
     candidateHoldCount: number;
@@ -10012,6 +10023,8 @@ export type GetPlaylistClimbsQuery = {
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
       compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
     }>;
   };
 };
@@ -10146,6 +10159,8 @@ export type GetSmartPlaylistQuery = {
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
       compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
     }>;
   };
 };
@@ -11087,6 +11102,8 @@ export type GetSetterClimbsFullQuery = {
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
       compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
     }>;
   };
 };
@@ -11122,6 +11139,8 @@ export type GetUserClimbsQuery = {
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
       compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
       renderBoard?: {
         __typename?: 'RenderBoardConfig';
         layoutId: number;
@@ -13054,6 +13073,8 @@ export const GetUserFavoriteClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
                     ],
                   },
                 },
@@ -13837,6 +13858,7 @@ export const SimilarClimbsDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'similarity' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'sharedHoldCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'candidateHoldCount' } },
@@ -15139,6 +15161,8 @@ export const GetPlaylistClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
                     ],
                   },
                 },
@@ -15504,6 +15528,8 @@ export const GetSmartPlaylistDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
                     ],
                   },
                 },
@@ -17697,6 +17723,8 @@ export const GetSetterClimbsFullDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
                     ],
                   },
                 },
@@ -17765,6 +17793,8 @@ export const GetUserClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
                       {
                         kind: 'Field',
                         name: { kind: 'Name', value: 'renderBoard' },

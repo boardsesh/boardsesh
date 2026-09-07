@@ -221,6 +221,14 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     server has no compatibility data for this climb (legacy row).
     """
     compatibleSizeIds: [Int!]!
+    """
+    Structured climb rules ('no_match', 'any_feet', 'campus', 'no_kickboard',
+    method_*). Nullable, unlike compatibleSizeIds above: null means the server
+    did not record the rules, and an empty array means the climb is set under
+    all the defaults. The Woods play drawer states both rules on every problem,
+    so it has to be able to tell those two apart (issue #5214).
+    """
+    characteristics: [String!]
     "Jaccard similarity (0..1) over hold positions."
     similarity: Float!
     "Number of hold positions present in both climbs."

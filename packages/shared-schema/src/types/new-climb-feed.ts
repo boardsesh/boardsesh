@@ -97,6 +97,7 @@ export type SimilarClimb = {
   qualityAverage?: number | null;
   ascensionistCount?: number | null;
   compatibleSizeIds: number[];
+  characteristics?: string[] | null;
   similarity: number;
   sharedHoldCount: number;
   candidateHoldCount: number;
