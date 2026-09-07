@@ -254,6 +254,23 @@ export {
   queryKeyMatchesBoardScope,
   scopedInvalidateFilters,
 } from './sync/invalidate-keys';
+
+// --- Live climb-stat write-through (issue #5227) ----------------------------------
+// The second local writer of `board_climb_stats`: one gated statement per event
+// from the layout-wide `climbStatsUpdated` stream, so a downloaded board's
+// local-first reads see a recompute without waiting for the next pull.
+export {
+  writeClimbStatsEvent,
+  parseClimbStatsRevision,
+  CLIMB_STATS_WRITE_THROUGH_COLUMNS,
+  CLIMB_STATS_WRITE_THROUGH_UNTOUCHED_COLUMNS,
+  CLIMB_STATS_WRITE_THROUGH_LOCK_TIMEOUT_MS,
+} from './sync/climb-stats-write-through';
+export type {
+  ClimbStatsWriteThroughInput,
+  ClimbStatsWriteThroughResult,
+  ClimbStatsWriteThroughStatus,
+} from './sync/climb-stats-write-through';
 export {
   LOCAL_USER_ID_KEY,
   USER_DATA_COMPLETE_KEY,
