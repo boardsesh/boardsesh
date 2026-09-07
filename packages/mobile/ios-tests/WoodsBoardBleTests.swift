@@ -252,11 +252,11 @@ final class WoodsBoardBleManagerTests: XCTestCase {
     }
 
     func testDisplaysAWoodsClimbAsAcknowledged20ByteAsciiChunks() {
-        // 6 holds on 8x10 → 34 ASCII bytes → exactly 20 + 14.
+        // 6 holds on 8x10 → 35 ASCII bytes → exactly 20 + 15.
         let peripheral = displayWoods(frames: "p0r2p1r2p2r2p3r2p4r2p5r2", sizeId: 1)
 
         XCTAssertEqual(reassembled(peripheral), "24,2,25,2,116,2,117,2,208,2,209,2,!")
-        XCTAssertEqual(peripheral.writtenChunks.map(\.data.count), [20, 14])
+        XCTAssertEqual(peripheral.writtenChunks.map(\.data.count), [20, 15])
         for chunk in peripheral.writtenChunks {
             XCTAssertEqual(chunk.type, .withResponse)
             XCTAssertEqual(chunk.characteristicUuid, uartWriteCharacteristicUuid)
