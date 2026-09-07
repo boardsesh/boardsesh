@@ -57,9 +57,15 @@ vi.mock('@/app/lib/graphql/client', () => ({
   getGraphQLHttpUrl: () => 'https://api.boardsesh.test/graphql',
 }));
 
-vi.mock('../configurator/use-cnc-layout', () => ({
-  useCncLayout: () => ({ summary: null, model: null, isLoading: false, errorKey: null }),
-}));
+const useCncLayout = vi.hoisted(() =>
+  vi.fn((_config: unknown, _options: unknown) => ({
+    summary: null,
+    model: null,
+    isLoading: false,
+    errorKey: null,
+  })),
+);
+vi.mock('../configurator/use-cnc-layout', () => ({ useCncLayout }));
 
 vi.mock('../configurator/use-cnc-artwork-validation', () => ({
   useCncArtworkValidation: () => ({ ok: null, collisions: [], isChecking: false, errorKey: null }),
@@ -83,6 +89,13 @@ function catalog(): CncCatalog {
         label: '10x12',
         kickerOptional: false,
         manufacturingOptions: [
+          {
+            key: 'supportStrips',
+            values: ['true', 'false'],
+            defaultValue: 'true',
+            valueType: 'boolean',
+            kickerOnly: false,
+          },
           {
             key: 'engraveHoldIds',
             values: ['false', 'true'],
@@ -153,6 +166,19 @@ function renderConfigurator() {
   );
 }
 
+/**
+ * The board config the layout hook was last asked about.
+ *
+ * The hook is stubbed, but it is still the component's own `configInput` that
+ * reaches it - the same object checkout is built from - so this is where a
+ * control's effect on the order shows up without a network round trip.
+ */
+function lastLayoutConfig(): { options: Record<string, unknown> } {
+  const calls = useCncLayout.mock.calls;
+  if (calls.length === 0) throw new Error('the layout hook was never called');
+  return calls[calls.length - 1][0] as { options: Record<string, unknown> };
+}
+
 /** The variables one operation was sent with, or undefined if it never was. */
 function sentCall(operation: string): unknown {
   const call = graphqlRequest.mock.calls.find((args) => String(args[0]).includes(operation));
@@ -178,6 +204,7 @@ beforeEach(() => {
   graphqlRequest.mockReset().mockImplementation((document: string) => respond(document));
   locationAssign.mockReset();
   useWsAuthToken.mockReset().mockReturnValue({ token: 'ws-token', isAuthenticated: true });
+  useCncLayout.mockClear();
   Object.defineProperty(window, 'location', {
     configurable: true,
     writable: true,
@@ -224,6 +251,31 @@ describe('the preview step', () => {
     // Same button, same place, changed label — never a second preview button.
     await screen.findByRole('button', { name: 'Update preview' });
     expect(screen.queryByRole('button', { name: 'Finalise and buy' })).toBeNull();
+  });
+});
+
+describe('the manufacturing step', () => {
+  it('draws a boolean option as a switch rather than a two-item dropdown', async () => {
+    renderConfigurator();
+
+    const toggle = (await screen.findByRole('switch', { name: 'Seam backing strips' })) as HTMLInputElement;
+
+    expect(toggle.checked).toBe(true);
+    expect(screen.getByText(/150 mm plywood strips/)).toBeDefined();
+    // The same option must not also be offered as a select.
+    expect(screen.queryByLabelText('Seam backing strips')).toBe(toggle);
+  });
+
+  it('carries the flip into the config the layout and checkout are built from', async () => {
+    renderConfigurator();
+
+    const toggle = (await screen.findByRole('switch', { name: 'Seam backing strips' })) as HTMLInputElement;
+    expect(lastLayoutConfig().options.supportStrips).toBe(true);
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(lastLayoutConfig().options.supportStrips).toBe(false));
+    expect((screen.getByRole('switch', { name: 'Seam backing strips' }) as HTMLInputElement).checked).toBe(false);
   });
 });
 
