@@ -151,7 +151,17 @@
         "help": "Das Papierformat der Kontrollausdrucke.",
         "values": {
           "A3": "A3",
-          "TABLOID": "Tabloid"
+          "A4": "A4",
+          "TABLOID": "Tabloid (11 x 17 Zoll)",
+          "LETTER": "Letter (8,5 x 11 Zoll)"
+        }
+      },
+      "supportStrips": {
+        "label": "Stützleisten an den Stößen",
+        "help": "150 mm breite Sperrholzleisten mit Schlitzen für die Einschlagmuttern, die hinter jedem waagerechten Stoß sitzen. Lass sie an, außer dein Rahmen stützt die Stöße schon.",
+        "values": {
+          "false": "Aus",
+          "true": "An"
         }
       },
       "engraveHoldIds": {
@@ -281,7 +291,8 @@
       "sheetsValue_other": "{{count}} Platten",
       "tnuts": "Einschlagmutter-Bohrungen",
       "leds": "LED-Bohrungen",
-      "skippedLeds": "An einem Stoß ausgelassene LEDs",
+      "seamNotches": "LED-Bohrungen auf einem Stoß",
+      "seamNotchesHelp": "Diese LED-Bohrungen liegen auf einem Stoß zwischen zwei Panelen. Jede wird als Aussparung in beide Panele gefräst, und die LED sitzt in der Aussparung, sobald die Panele verbunden sind.",
       "warningsHeading": "Gut zu wissen",
       "unavailable": "Die Frästeileliste lädt gerade nicht. Alles, was du gewählt hast, ist noch da."
     },
