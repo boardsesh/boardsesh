@@ -83,15 +83,6 @@
           "3600x1220": "3600 × 1220 mm"
         }
       },
-      "panelThicknessMm": {
-        "label": "Panel thickness",
-        "help": "18 mm is standard. Thinner flexes, thicker is heavier to hang.",
-        "values": {
-          "15": "15 mm",
-          "18": "18 mm",
-          "21": "21 mm"
-        }
-      },
       "tnutHoleDiameterMm": {
         "label": "T-nut hole",
         "help": "Match the barrel on the T-nuts you bought. 12.5 mm suits the common M10.",
