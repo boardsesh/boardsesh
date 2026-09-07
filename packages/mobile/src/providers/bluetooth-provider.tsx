@@ -1330,6 +1330,11 @@ export function BluetoothProvider({
       return false;
     }
     lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
+    // This path just asserted an UN-mirrored wall. Drop any flip intent so a
+    // later drain for the same climb doesn't immediately re-mirror it and
+    // undo the undo. (Board presence carries no mirror field, so a relight
+    // can only ever restore the un-mirrored orientation — see #5238.)
+    mirrorIntentRef.current = null;
 
     const accepted = await reportClimbForBoardRef
       .current(boardId, presenceClimbToQueueInput(undoTarget), undoTarget.angle ?? null)
@@ -1376,6 +1381,11 @@ export function BluetoothProvider({
         return false;
       }
       lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
+      // This path just asserted an UN-mirrored wall. Drop any flip intent so a
+      // later drain for the same climb doesn't immediately re-mirror it and
+      // undo the relight. (Board presence carries no mirror field, so a relight
+      // can only ever restore the un-mirrored orientation — see #5238.)
+      mirrorIntentRef.current = null;
 
       const accepted = await reportClimbForBoardRef
         .current(boardId, presenceClimbToQueueInput(climb), climb.angle ?? null)
@@ -1493,11 +1503,23 @@ export function BluetoothProvider({
   const mirrorIntentRef = useRef<{ climbUuid: string; mirrored: boolean } | null>(null);
   const setMirrorIntent = useCallback(
     (climbUuid: string, mirrored: boolean) => {
+      const previous = mirrorIntentRef.current;
       mirrorIntentRef.current = { climbUuid, mirrored };
-      // Route the flip through the auto-sender's normal write instead of a
-      // direct `sendFramesToBoard`, so dedup, wall-confirm and haptics all stay
-      // in step with what the wall is actually showing.
-      reassertWall();
+      // A nonce bump punches through the auto-sender's dedup, so spend one only
+      // when the wall would otherwise be left showing the wrong orientation:
+      // a toggle on the climb already lit. The caller also re-states the
+      // orientation whenever the current climb changes — that is what stops a
+      // stale flip outliving a navigation — but those climbs are about to be
+      // written anyway, so forcing there would duplicate the write and
+      // double-fire the success haptic. A first statement asking for `true` is
+      // still forced: nothing has recorded that orientation yet.
+      const orientationChanged = previous?.climbUuid === climbUuid ? previous.mirrored !== mirrored : mirrored;
+      if (orientationChanged) {
+        // Route the flip through the auto-sender's normal write instead of a
+        // direct `sendFramesToBoard`, so dedup, wall-confirm and haptics all
+        // stay in step with what the wall is actually showing.
+        reassertWall();
+      }
     },
     [reassertWall],
   );
