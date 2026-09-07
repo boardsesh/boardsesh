@@ -336,7 +336,7 @@ describe('POST /api/cnc/worker/claim', () => {
     expect(job?.layoutRequest).toEqual({
       board: { board_name: 'kilter', layout_id: 8, size_id: 25, set_ids: [26, 27, 28, 29] },
       manufacturing: {
-        sheet: { length_mm: 2440, width_mm: 1220, thickness_mm: 18 },
+        sheet: { length_mm: 2440, width_mm: 1220 },
         grid_pitch_mm: 100,
         tnut_hole_diameter_mm: 12.5,
         led_hole_diameter_mm: 12.5,
