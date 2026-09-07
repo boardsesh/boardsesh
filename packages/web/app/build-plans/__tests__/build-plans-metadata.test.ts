@@ -53,8 +53,9 @@ const ROUTES = [
  * beats mounting the whole MUI + i18n stack to learn what one prop resolved to.
  */
 function orderStatusProps(tree: ReactElement): { checkoutOutcome: 'success' | 'cancelled' | null } {
-  const page = (tree.props as { children: ReactElement }).children;
-  const orderStatus = (page.props as { children: ReactElement }).children;
+  // `I18nProvider` wraps `OrderStatus` directly: the page frame moved into
+  // `OrderStatus` itself, because the header carries a live status chip.
+  const orderStatus = (tree.props as { children: ReactElement }).children;
   return orderStatus.props as { checkoutOutcome: 'success' | 'cancelled' | null };
 }
 
@@ -81,6 +82,10 @@ function cncOrder(overrides: Partial<CncOrder> = {}): CncOrder {
     downloadCount: 0,
     lastDownloadedAt: null,
     errorMessage: null,
+    hasPreview: true,
+    previewGeneratedAt: '2026-09-01T02:14:40.000Z',
+    previewImages: [],
+    configHash: 'a1b2c3',
     ...overrides,
   };
 }
