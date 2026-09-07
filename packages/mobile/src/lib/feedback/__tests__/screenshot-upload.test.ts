@@ -15,6 +15,9 @@ vi.mock('../../auth-interceptor', () => ({
 
 // expo-file-system is native; stub the File class so `.bytes()` resolves to a
 // per-URI payload in Node (the payload identifies which file a part carries).
+// Spied so a case can make one read come back empty, which is the failure that
+// broke uploads in the field; by default it echoes the URI as its payload.
+const mockFileBytes = vi.hoisted(() => vi.fn());
 vi.mock('expo-file-system', () => ({
   File: class {
     uri: string;
@@ -22,7 +25,7 @@ vi.mock('expo-file-system', () => ({
       this.uri = uri;
     }
     bytes() {
-      return Promise.resolve(new TextEncoder().encode(this.uri));
+      return mockFileBytes(this.uri);
     }
   },
 }));
@@ -54,6 +57,7 @@ function jsonResponse(body: unknown, ok = true): Response {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockFileBytes.mockImplementation((uri: string) => Promise.resolve(new TextEncoder().encode(uri)));
   // The uploaded-key cache is module state that outlives a single call — it is
   // what stops a retry re-uploading shots that already landed. Without a reset
   // here, a later case reuses an earlier one's keys and never reaches its own
@@ -96,6 +100,18 @@ describe('uploadFeedbackScreenshot', () => {
     mockAuthenticatedFetch.mockResolvedValue(jsonResponse({ success: true }));
     await expect(uploadFeedbackScreenshot('file:///tmp/shot.jpg')).rejects.toThrow('Screenshot upload failed');
   });
+
+  it('refuses to send a file that read back empty, naming the real problem', async () => {
+    // The compressed file coming back with no bytes is what actually broke
+    // screenshot uploads: the request went out with an empty part and the
+    // server answered "Uploaded file is empty", blaming the wrong side.
+    mockFileBytes.mockResolvedValueOnce(new Uint8Array());
+
+    await expect(uploadFeedbackScreenshot('file:///empty.jpg')).rejects.toThrow(
+      'could not be read from your photo library',
+    );
+    expect(mockAuthenticatedFetch).not.toHaveBeenCalled();
+  });
 });
 
 describe('uploadFeedbackScreenshots', () => {
@@ -124,6 +140,39 @@ describe('uploadFeedbackScreenshots', () => {
       'feedback-screenshots/c.jpg',
     ]);
     expect(mockAuthenticatedFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('sends one request at a time, never overlapping them', async () => {
+    // Not a style preference. Reading a picked file goes through an Expo
+    // AsyncFunction, and those share ONE serial dispatch queue; overlapping
+    // uploads put several file reads in that queue behind whatever else is
+    // using it (the board renderer) and the requests can stop settling —
+    // which leaves the sheet's submit button disabled with no error (#5197).
+    let inFlight = 0;
+    let maxInFlight = 0;
+    mockAuthenticatedFetch.mockImplementation(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return jsonResponse({ success: true, key: 'feedback-screenshots/a.jpg' });
+    });
+
+    await uploadFeedbackScreenshots(['file:///a.jpg', 'file:///b.jpg', 'file:///c.jpg', 'file:///d.jpg']);
+
+    expect(maxInFlight).toBe(1);
+    expect(mockAuthenticatedFetch).toHaveBeenCalledTimes(4);
+  });
+
+  it('gives every upload a deadline, so a stalled request cannot wedge the sheet', async () => {
+    // Without this the promise never settles, the sheet's `finally` never runs,
+    // and the submit button stays disabled forever with no toast.
+    mockAuthenticatedFetch.mockResolvedValue(jsonResponse({ success: true, key: 'feedback-screenshots/a.jpg' }));
+
+    await uploadFeedbackScreenshots(['file:///a.jpg']);
+
+    const [, options] = mockAuthenticatedFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('rejects when any single upload fails, so the caller can keep the typed report', async () => {
