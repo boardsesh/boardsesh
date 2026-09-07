@@ -24,7 +24,9 @@ export function isReconciliationBoundary(previousAt: number, nextAt: number): bo
 export function expandReconciliationWindow(allTicks: InferenceTick[], from: number, to: number): InferenceTick[] {
   let windowFrom = dayStart(from);
   let windowTo = dayStart(to) + 24 * 60 * 60 * 1000 - 1;
-  while (true) {
+  // Each expansion reaches another tick's UTC day; allow one final stable pass.
+  // Bound by the input size, so long histories do not hit an arbitrary day limit.
+  for (let expansion = 0; expansion <= allTicks.length; expansion++) {
     const ticks = expandWindow(allTicks, windowFrom, windowTo);
     if (ticks.length === 0) return ticks;
     const nextFrom = Math.min(windowFrom, dayStart(ticks[0].climbedAt));
@@ -33,6 +35,7 @@ export function expandReconciliationWindow(allTicks: InferenceTick[], from: numb
     windowFrom = nextFrom;
     windowTo = nextTo;
   }
+  throw new Error('Reconciliation window did not converge within its tick count');
 }
 
 /**
@@ -319,7 +322,7 @@ export function reconcileWindow({ ticks, existingInferred, existingExplicit }: R
   // sessions that the next reconciliation would immediately empty. Each iteration
   // must reach a new UTC day from this finite window; assignments already made to
   // explicit sessions stay fixed, just as they would after a committed pass.
-  while (true) {
+  for (let expansion = 0; expansion <= ordered.length; expansion++) {
     const expandedById = new Map(explicitSpans.map((session) => [session.id, { ...session }]));
     for (const run of resolved) {
       const session = run.sessionId === null ? undefined : expandedById.get(run.sessionId);
@@ -335,6 +338,10 @@ export function reconcileWindow({ ticks, existingInferred, existingExplicit }: R
       );
     });
     if (!expanded) break;
+    // Expanding a span must claim at least one previously unclaimed tick. Once
+    // assigned, that tick's explicit ownership is fixed in subsequent passes.
+    if (expansion === ordered.length)
+      throw new Error('Explicit session spans did not converge within their tick count');
 
     const explicitAssignments = new Map<number, string>();
     for (const run of resolved) {

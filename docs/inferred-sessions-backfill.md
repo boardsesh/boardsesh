@@ -186,8 +186,35 @@ nearest eligible explicit session. A repeated read-only simulation completed:
 
 The 56 groups can refer to 55 explicit sessions: multiple timing runs can belong
 to the same explicit session. This is not a count of new explicit sessions.
-No production writes were made. A canary apply and its repeat remain approval
-steps after merge and deployment.
+No production writes were made during this read-only preflight. The subsequent
+authorized execution is recorded below.
 
 PostgreSQL also emitted a pre-existing collation-version mismatch notice during
 this read. No collation, index, or database changes were made as part of this task.
+
+## Authorized execution, 2026-09-07
+
+The operator explicitly authorized running the reviewed local revision
+`87f7fbcc0e7359f9c5feaaa19572f2b6d7a4140a` before merge. A native Railway backup
+was created at `2026-09-06T23:16:54.101Z`, ID
+`10d445c1-73d7-45c6-ad9c-1a60cce894bd`.
+
+The canary created five sessions and assigned all 34 loose ticks, preserving its
+487 ticks. Repeating the apply created zero sessions and left the complete
+tick-to-session assignment checksum unchanged. A ten-climber batch then created
+82 sessions across 104 windows with zero failures.
+
+A read-only audit covered all 87 generated sessions and their 559 member ticks:
+zero empty sessions, incorrect owners, invalid anchors, timestamp mismatches, or
+lifecycle mismatches. Replanning all 1,250 ticks across these 11 climbers proposed
+zero creations, merges, removals, or reassignments, with no missing or duplicate
+planned ticks. Production-wide dangling-assignment and invalid-inferred-session
+counts remained zero. These were database checks; no visual app QA was performed.
+
+After explicit full-fleet approval, a single process started at
+`2026-09-06T23:49:14.875038Z` for the remaining 2,519 eligible climbers. It uses
+the public database connection with a 50 ms delay between windows and retains
+progress logs for recovery. Completion and final fleet integrity have not yet
+been confirmed. The process uses the already-loaded revision above; subsequent
+PR edits do not update that running process. Its timestamp centers already use
+`parseClimbedAt`; the later UTC fix concerns the live save/update/delete callers.

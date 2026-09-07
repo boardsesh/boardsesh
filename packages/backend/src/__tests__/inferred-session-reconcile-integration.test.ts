@@ -7,6 +7,16 @@ import { reconcileInferredSessions } from '../services/inferred-sessions/reconci
 import { runBackfill, parseArgs } from '../scripts/backfill-inferred-sessions';
 import { logger } from '../utils/logger';
 import { vi } from 'vite-plus/test';
+import { tickMutations } from '../graphql/resolvers/ticks/mutations';
+
+vi.mock('../events', () => ({ publishSocialEvent: vi.fn(async () => undefined) }));
+vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
+  queueClimbStatsRecompute: vi.fn(),
+}));
+vi.mock('../graphql/resolvers/sessions/debounced-stats-publisher', () => ({
+  publishDebouncedSessionStats: vi.fn(),
+}));
+vi.mock('../graphql/resolvers/board-presence/stats', () => ({ queueBoardStatsPublish: vi.fn() }));
 
 /**
  * Real-DB coverage for turning a reconciliation decision into rows.
@@ -118,6 +128,7 @@ describe('reconcileInferredSessions (real DB)', () => {
   // whatever ran next — and the tick-mutation suites would start writing sessions.
   afterEach(() => {
     delete process.env.INFERRED_SESSIONS_ENABLED;
+    vi.unstubAllEnvs();
   });
 
   afterAll(async () => {
@@ -135,6 +146,65 @@ describe('reconcileInferredSessions (real DB)', () => {
 
     expect(await sessionsForUser()).toHaveLength(0);
     expect((await ticksForUser())[0].sessionId).toBeNull();
+  });
+
+  // Force Brisbane time even on UTC CI hosts: parsing the returned zone-less DB
+  // string as local time selects the previous day's run instead of the modified tick.
+  it.each(['save', 'update', 'delete'] as const)('%sTick reconciles the stored UTC day', async (operation) => {
+    vi.stubEnv('TZ', 'Australia/Brisbane');
+    expect(new Date('2026-05-10 01:00:00').toISOString()).toBe('2026-05-09T15:00:00.000Z');
+    const previousDay = Date.UTC(2026, 4, 9, 15);
+    const touchedAt = Date.UTC(2026, 4, 10, 1);
+    const previousTick = await insertTick(previousDay);
+    await insertTick(previousDay + 20 * MINUTE);
+    await reconcileAt(previousDay);
+    const [previousSession] = await sessionsForUser();
+
+    const context = { connectionId: 'utc-reconciliation', isAuthenticated: true, userId: USER_ID };
+    let survivingTickId: number;
+    if (operation === 'save') {
+      await tickMutations.saveTick(
+        null,
+        {
+          input: {
+            boardType: 'kilter',
+            climbUuid: CLIMB_UUID,
+            angle: 40,
+            isMirror: false,
+            status: 'send',
+            attemptCount: 1,
+            isBenchmark: false,
+            comment: '',
+            climbedAt: new Date(touchedAt).toISOString(),
+          },
+        },
+        context,
+      );
+      survivingTickId = Number((await ticksForUser()).at(-1)!.id);
+    } else {
+      const targetId = await insertTick(touchedAt);
+      survivingTickId = await insertTick(touchedAt + 20 * MINUTE);
+      const [target] = await db
+        .select()
+        .from(dbSchema.boardseshTicks)
+        .where(eq(dbSchema.boardseshTicks.id, BigInt(targetId)));
+      if (operation === 'update') {
+        await tickMutations.updateTick(null, { uuid: target.uuid, input: { comment: 'Updated notes' } }, context);
+      } else {
+        await tickMutations.deleteTick(null, { uuid: target.uuid }, context);
+      }
+    }
+
+    const ticks = await ticksForUser();
+    const survivingTick = ticks.find((tick) => Number(tick.id) === survivingTickId)!;
+    expect(survivingTick.sessionId).not.toBeNull();
+    expect(survivingTick.sessionId).not.toBe(previousSession.id);
+    expect(ticks.find((tick) => Number(tick.id) === previousTick)?.sessionId).toBe(previousSession.id);
+    const sessions = await sessionsForUser();
+    expect(sessions).toHaveLength(2);
+    expect(sessions.find((session) => session.id === survivingTick.sessionId)?.startedAt?.getTime()).toBe(
+      operation === 'delete' ? touchedAt + 20 * MINUTE : touchedAt,
+    );
   });
 
   it('creates one session per run and assigns every tick', async () => {

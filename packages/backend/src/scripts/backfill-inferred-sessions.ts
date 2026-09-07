@@ -85,7 +85,7 @@ const sleep = (ms: number) => (ms > 0 ? new Promise((resolve) => setTimeout(reso
 async function usersNeedingBackfill(options: Options): Promise<string[]> {
   if (options.userId) return [options.userId];
 
-  const rows = await db
+  const query = db
     .selectDistinct({ userId: dbSchema.boardseshTicks.userId })
     .from(dbSchema.boardseshTicks)
     .where(
@@ -96,8 +96,8 @@ async function usersNeedingBackfill(options: Options): Promise<string[]> {
     )
     .orderBy(asc(dbSchema.boardseshTicks.userId));
 
-  const userIds = rows.map((row) => row.userId);
-  return options.limit === null ? userIds : userIds.slice(0, options.limit);
+  const rows = await (options.limit === null ? query : query.limit(options.limit));
+  return rows.map((row) => row.userId);
 }
 
 /**

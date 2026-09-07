@@ -408,6 +408,21 @@ describe('multiple explicit sessions in a timing run', () => {
 });
 
 describe('explicit sessions crossing midnight', () => {
+  it('converges through more than thirty connected UTC days', () => {
+    const firstDay = Date.UTC(2026, 0, 1);
+    const ticks = Array.from({ length: 40 }, (_, day) => [
+      tick(day * 2 + 1, firstDay + day * 24 * HOUR + HOUR, day === 0 ? 'party' : null),
+      tick(day * 2 + 2, firstDay + day * 24 * HOUR + 23 * HOUR),
+    ]).flat();
+    expect(expandReconciliationWindow(ticks, ticks[0].climbedAt, ticks[0].climbedAt)).toEqual(ticks);
+
+    const result = reconcile(ticks, [], [explicit('party', ticks[0].climbedAt, ticks[0].climbedAt)]);
+    expect(result.runs.every((run) => run.sessionId === 'party')).toBe(true);
+    expect(result.runs.flatMap((run) => run.tickIds).sort((first, second) => first - second)).toEqual(
+      ticks.map((tick) => tick.id),
+    );
+  });
+
   it('settles same-day absorption before creating a session that the next pass would empty', () => {
     const midnight = Date.UTC(2026, 8, 2);
     const ticks = [
