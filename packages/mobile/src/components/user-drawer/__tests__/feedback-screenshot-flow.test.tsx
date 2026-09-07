@@ -305,7 +305,7 @@ describe('an upload that never settles', () => {
     await vi.waitFor(() => expect(uploadFeedbackScreenshots).toHaveBeenCalledTimes(2));
   });
 
-  it('parks the submit button in a permanent loading state with no toast', async () => {
+  it('is still wedged by a stall the request deadline cannot reach — the known remaining hazard', async () => {
     // The 30s deadline on each request covers a stalled FETCH. It cannot cover a
     // stall EARLIER than the fetch — reading the picked file through Expo's
     // shared serial queue — which is the shape that caused #5197. Model that
