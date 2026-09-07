@@ -15,7 +15,7 @@ import type { CncOrderOptions } from '@boardsesh/db/schema';
  * stores the version it was priced and configured under, so a regenerate months
  * later rebuilds the pack the buyer paid for rather than today's defaults.
  */
-export const CNC_CATALOG_VERSION = '2026-09-06.1';
+export const CNC_CATALOG_VERSION = '2026-09-07.1';
 
 /**
  * sha256 of `JSON.stringify(CNC_CATALOG)`, pinned so the version above cannot
@@ -32,7 +32,7 @@ export const CNC_CATALOG_VERSION = '2026-09-06.1';
  * Never paste the new hash on its own — a hash change with an unchanged version
  * is exactly the bug this pair exists to catch.
  */
-export const CNC_CATALOG_CONTENT_HASH = 'cece2a85da63608c4aa1ecc8db319846f3be3c503b763d04ff851d4de93d39b3';
+export const CNC_CATALOG_CONTENT_HASH = 'a5d9174ee16a40ded5295906210eb48c806908ed3fdfcac0862965273fddce9b';
 
 export type CncLicenceTier = 'personal' | 'commercial_single';
 
@@ -110,8 +110,8 @@ const KILTER_HOMEWALL_MANUFACTURING_OPTIONS: readonly CncManufacturingOption[] =
   { key: 'paper', values: ['A3', 'TABLOID'], defaultValue: 'A3', kickerOnly: false },
   // Both engrave layers default off pending the IP review of the Kilter-derived
   // hold ids and set-screw angles.
-  { key: 'engraveHoldIds', values: [false, true], defaultValue: false, kickerOnly: false },
-  { key: 'engraveAngleTicks', values: [false, true], defaultValue: false, kickerOnly: false },
+  { key: 'engraveHoldIds', values: [false, true], defaultValue: true, kickerOnly: false },
+  { key: 'engraveAngleTicks', values: [false, true], defaultValue: true, kickerOnly: false },
 ];
 
 const KILTER_HOMEWALL_TIERS: readonly CncTierPrice[] = [
