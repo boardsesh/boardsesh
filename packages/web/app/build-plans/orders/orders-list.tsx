@@ -77,7 +77,7 @@ export default async function OrdersList({
                   {order.licenceId}
                 </Typography>
                 <Typography variant="body2" component="p" className={styles.rowMeta}>
-                  {`${getBoardDisplayName(order.boardName)} ${wallLabel(catalog, order)} · ${tierLabel(order.tier, t)}`}
+                  {`${order.boardName === 'tension' ? t('configurator.tb2.boardName') : getBoardDisplayName(order.boardName)} ${wallLabel(catalog, order, t)} · ${tierLabel(order.tier, t)}`}
                 </Typography>
                 <Typography variant="body2" component="p" className={styles.rowMeta}>
                   {dateLine}

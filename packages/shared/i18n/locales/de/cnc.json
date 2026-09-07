@@ -2,7 +2,7 @@
   "metadata": {
     "buildPlans": {
       "title": "Baupläne für ein Board zu Hause",
-      "description": "Schnittfertige CNC-Dateien für eine Kletterwand zu Hause: jedes Panel, jede Einschlagmutter und jede LED-Bohrung gesetzt, aufgeteilt auf die Platten, die deine Werkstatt vorrätig hat."
+      "description": "CNC-Dateien für deine Kletterwand zu Hause: Platten und Bohrpositionen, passend zum Plattenmaterial deiner Werkstatt."
     },
     "orders": {
       "title": "Deine Baupläne",
@@ -15,8 +15,8 @@
   },
   "hero": {
     "title": "Baupläne für dein Board zu Hause",
-    "subtitle": "DXF-Dateien, die eine CNC-Werkstatt direkt fräst. Jedes Panel, das Einschlagmutter-Raster, die LED-Bohrungen und die Fußleiste, aufgeteilt auf die Platten, die deine Werkstatt ohnehin hat.",
-    "firstBoard": "Das Kilter Homewall ist das erste unterstützte Board. Weitere folgen.",
+    "subtitle": "DXF-Dateien für deine CNC-Werkstatt. Platten und Bohrpositionen, passend zum vorhandenen Plattenmaterial.",
+    "firstBoard": "Kompatibel mit Kilter Homewall und Tension Board 2, einschließlich Mirror und Spray.",
     "included": {
       "heading": "Was du bekommst",
       "dxf": "Montagezeichnungen für die ganze Wand sind dabei, damit die Panels ohne Rätselraten zusammenpassen.",
@@ -61,7 +61,8 @@
     },
     "board": {
       "label": "Board",
-      "help": "Das Kilter Homewall ist heute das einzige Board im Verkauf."
+      "help": "Wähle das Board, für das du die Platten baust.",
+      "kilterHomewall": "Kilter Homewall"
     },
     "size": {
       "label": "Wandgröße",
@@ -77,7 +78,7 @@
       "help": "Die Standardwerte sind die, mit denen wir bauen. Pass sie an deine Werkstatt an.",
       "sheetStock": {
         "label": "Plattenformat",
-        "help": "Das Sperrholz, aus dem deine Werkstatt schneidet. Mit einer 3,6-m-Platte lässt sich eine Wandreihe ohne Stoß schneiden.",
+        "help": "Wähle die Sperrholzplatte deiner Werkstatt. Die Wandplatten werden passend aufgeteilt.",
         "values": {
           "2440x1220": "2440 × 1220 mm",
           "3600x1220": "3600 × 1220 mm"
@@ -149,7 +150,7 @@
       },
       "supportStrips": {
         "label": "Stützleisten an den Stößen",
-        "help": "150 mm breite Sperrholzleisten mit Schlitzen für die Einschlagmuttern, die hinter jedem waagerechten Stoß sitzen. Lass sie an, außer dein Rahmen stützt die Stöße schon.",
+        "help": "150 mm breite Sperrholzstreifen stützen die waagerechten Fugen und halten die Löcher zugänglich.",
         "values": {
           "false": "Aus",
           "true": "An"
@@ -169,6 +170,24 @@
         "values": {
           "false": "Aus",
           "true": "An"
+        }
+      },
+      "tb2DimensionStandard": {
+        "label": "TB2-Maße",
+        "help": "Metrisch: Hauptraster 200 mm, LED-Löcher 12 mm. Imperial: Raster 7⅞ Zoll, Löcher ½ Zoll. Ein Wechsel der Maße entfernt platzierte Motive.",
+        "values": {
+          "metric": "Metrisch",
+          "imperial": "Imperial"
+        }
+      },
+      "tb2Engraving": {
+        "label": "TB2-Gravur",
+        "help": "Griffkennungen und Richtungsmarkierungen aus Tensions Montagezeichnungen.",
+        "values": {
+          "none": "Keine Gravur",
+          "mirror": "Mirror",
+          "spray": "Spray",
+          "both": "Mirror + Spray"
         }
       }
     },
@@ -320,6 +339,12 @@
       "heading": "Auf wen die Lizenz läuft",
       "help": "Die Lizenz steht in jeder Datei im Pack, eine geleakte Kopie führt also zu ihr zurück.",
       "stale": "Hol dir zuerst die Vorschau neu — die Wand hat sich seit diesen Bögen geändert."
+    },
+    "tb2": {
+      "boardName": "Tension Board 2",
+      "sizeHelp": "Höhe × Breite in Fuß. Tension nennt die Höhe zuerst.",
+      "engraveHelp": "Graviere Mirror, Spray oder beide Layouts auf dieselben Platten. Beide Layouts sind standardmäßig ausgewählt.",
+      "engraveNote": "Mirror-Beschriftungen stehen links neben jedem Loch mit einem Richtungsstrich. Spray-Beschriftungen stehen rechts mit zwei Strichen. Jede gravierte Platte enthält eine Legende."
     }
   },
   "cta": {
