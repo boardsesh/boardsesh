@@ -149,7 +149,7 @@
       "kilterNewCopy": "Inicia sesión con tu usuario y contraseña de Kilter para traer tus encadenamientos, intentos, valoraciones y circuitos a Boardsesh.",
       "kilterSignIn": "Iniciar sesión en Kilter",
       "reconnect": "Volver a conectar",
-      "notConnected": "No vinculado. Vincula tu cuenta de {{boardName}} para importar tus datos de Aurora, o impórtalos desde un archivo JSON.",
+      "notConnected": "No vinculado. Vincula tu cuenta de {{boardName}} para traer tus encadenamientos, o impórtalos desde un archivo JSON.",
       "link": "Vincular",
       "import": "Importar",
       "requestData": "Pedir tus datos",
@@ -177,7 +177,7 @@
     },
     "linkDialog": {
       "title": "Vincular cuenta de {{boardName}}",
-      "description": "Introduce el usuario y la contraseña de tu cuenta de {{boardName}} para importar tus datos de Aurora. Tus credenciales se cifran y se guardan de forma segura. Los datos se sincronizan cada 12 horas.",
+      "description": "Inicia sesión igual que lo harías en {{boardName}}: con tu usuario de {{boardName}}, no con tu correo. Tus credenciales se cifran antes de guardarse.",
       "usernameLabel": "Usuario",
       "usernamePlaceholder": "Escribe tu usuario",
       "passwordLabel": "Contraseña",
@@ -185,12 +185,12 @@
       "submit": "Vincular cuenta",
       "submitting": "Vinculando...",
       "linkError": "No se pudo vincular la cuenta",
-      "linkSuccess": "Cuenta de {{boardName}} vinculada. Tus datos aparecerán en menos de 12 horas.",
+      "linkSuccess": "Cuenta de {{boardName}} vinculada. Tus encadenamientos vienen en camino: la mayoría llegan en unos minutos.",
       "accountAlreadyLinked": "Otro miembro de Boardsesh ya tiene esta cuenta vinculada. Si es tuya, desvincúlala primero de su cuenta y vuelve a intentarlo."
     },
     "kilterLinkDialog": {
       "title": "Iniciar sesión en Kilter",
-      "description": "Introduce tu usuario y contraseña de Kilter. Tu contraseña se canjea por un token seguro y nunca se guarda. Tus encadenamientos se sincronizan en unas horas.",
+      "description": "Introduce tu usuario y contraseña de Kilter. Tu contraseña se canjea por un token seguro y nunca se guarda. Tus encadenamientos empiezan a llegar en unos minutos.",
       "passwordHelp": "Funciona con tu acceso habitual de Kilter. Las cuentas con verificación en dos pasos o solo con inicio de sesión social no pueden entrar por aquí: usa Importar."
     },
     "unlinkError": "No se pudo desvincular la cuenta",
@@ -201,7 +201,7 @@
       "connected": "Conectado",
       "notConnected": "No conectado",
       "kilterNotAllowed": "La sincronización con Kilter aún no está habilitada para esta cuenta.",
-      "linkSuccess": "{{boardName}} vinculado",
+      "linkSuccess": "{{boardName}} vinculado: tus encadenamientos vienen en camino.",
       "unlinkSuccess": "{{boardName}} desvinculado",
       "unlinkPartial": "{{boardName}} se eliminó aquí, pero la sesión del proveedor puede seguir activa.",
       "invalidCredentials": "Ese usuario o contraseña no funcionó.",

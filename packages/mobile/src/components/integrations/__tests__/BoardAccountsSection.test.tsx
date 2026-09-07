@@ -37,7 +37,9 @@ vi.mock('../../../lib/aurora-credentials', () => ({
 }));
 
 vi.mock('@boardsesh/shared-schema', () => ({
-  AURORA_BOARDS: ['kilter', 'tension'],
+  // `soill` is here for the trademark regression below — it is the one board whose
+  // brand name a naive capitalise gets wrong.
+  AURORA_BOARDS: ['kilter', 'tension', 'soill'],
   parseAuroraExportJson: vi.fn(() => ({
     data: { user: { username: 'aurora' }, ascents: [], attempts: [], circuits: [], climbs: [] },
     preview: { username: 'aurora', ascents: 0, attempts: 0, circuits: 0, climbs: 0 },
@@ -179,6 +181,16 @@ describe('BoardAccountsSection — Kilter password card', () => {
     mocks.invalidate.mockClear();
     mocks.flags = {};
     mocks.credentials = [];
+  });
+
+  // Regression: the card title used to run `charAt(0).toUpperCase() + slice(1)` over
+  // the board type, which renders `soill` as "Soill" — a mangled trademark shipped on
+  // the card and into every `{{boardName}}` interpolation on this screen. It now goes
+  // through `boardTypeLabel`, the canonical brand map.
+  it('renders board brand names, not capitalised slugs', () => {
+    const { container } = render(<BoardAccountsSection />);
+    expect(container.textContent).toContain('So iLL');
+    expect(container.textContent).not.toContain('Soill');
   });
 
   it('shows the Kilter (new) sign-in card when the flag is on', () => {
