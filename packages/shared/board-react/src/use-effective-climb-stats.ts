@@ -388,13 +388,22 @@ function pauseRateLimitedLane(batch: ActiveBatch, retryAfterSeconds: number | nu
 
 /**
  * `persistClimbStatsEvent` is documented as "must never throw", and both call
- * sites are places where a throw does damage far outside this hook: the
- * subscription's `next` handler (graphql-ws catches, nulls `onmessage` and
- * closes the shared singleton socket, taking kiosk presence, comments and
- * notifications down with it) and a batch `.then()` (an unhandled rejection,
- * reported as a crash). Enforce the contract at the boundary instead of
- * trusting every host to honour it. Losing a local write is harmless — the
- * next pull writes the same rows.
+ * sites are places where a throw does damage far outside this hook.
+ *
+ * In the subscription's `next` handler, graphql-ws catches it, nulls
+ * `onmessage` and closes the shared singleton socket — taking kiosk presence,
+ * comments and notifications down with it.
+ *
+ * In `applyBatchRows` the damage is quieter. The batch `.then()` has a `.catch`
+ * below, so nothing is reported; what an escape actually does is abort the
+ * `for (const read of batch.reads)` loop partway. Every later read in the batch
+ * is left unapplied and never completed, and its acknowledged optimistic tokens
+ * are never retired — so a visible send count stays pinned to an outstanding
+ * floor until some later read repairs it.
+ *
+ * Enforce the contract at the boundary instead of trusting every host to
+ * honour it. Losing a local write is harmless — the next pull writes the same
+ * rows.
  */
 function persistClimbStatsSafely(adapter: BoardAdapter, event: ClimbStatsEvent): void {
   try {
