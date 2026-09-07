@@ -1,0 +1,159 @@
+name: OTA Server Image Bump
+
+# Opens a draft PR when upstream publishes an xprem release newer than the one
+# infra/railway/config.ts declares.
+#
+# Two candidates, two PRs. A prerelease outranks a stable release by semver
+# (3.2.0-beta3 > 3.1.3), so a single "newest version" search would quietly bury the
+# stable upgrade behind a beta. scripts/ota-image-bump.ts tracks them separately and
+# this workflow opens one branch for each, so both are visible and each is merged on
+# its own merits.
+#
+# Merging one of these PRs is what performs the upgrade: railway-drift.yml's
+# `apply` job runs on push to main, rolls the new image, waits for the deployment,
+# probes the server, and rolls back if it does not answer.
+#
+# Everything with any logic in it lives in the script — candidate selection, the
+# file rewrite, and the PR body. A body assembled in shell means a heredoc nested
+# inside YAML with every backtick hand-escaped, which is a quoting hazard that only
+# ever fails at 07:15 on a Monday.
+#
+# See scripts/ota-image-bump.ts and docs/railway.md.
+on:
+  schedule:
+    - cron: '15 7 * * 1' # Mondays 07:15 UTC, after the nightly drift check
+  workflow_dispatch:
+
+concurrency:
+  group: ota-image-bump
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Find newer releases
+        id: candidates
+        run: |
+          set -euo pipefail
+          # `vp exec` rather than `vp run`: the task runner prints a banner line to
+          # STDOUT before the command's own output, which would land in the value.
+          vp exec tsx scripts/ota-image-bump.ts -- --github-output | tee -a "$GITHUB_OUTPUT"
+
+      - name: Open or update the bump PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STABLE: ${{ steps.candidates.outputs.stable }}
+          STABLE_CLI: ${{ steps.candidates.outputs.stable_cli }}
+          PRERELEASE: ${{ steps.candidates.outputs.prerelease }}
+          PRERELEASE_CLI: ${{ steps.candidates.outputs.prerelease_cli }}
+        run: |
+          set -euo pipefail
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          open_bump() {
+            version="$1"
+            kind="$2"
+            cli_available="$3"
+
+            if [ -z "$version" ]; then
+              echo "::notice::No newer $kind release."
+              return 0
+            fi
+
+            if [ "$cli_available" != 'yes' ]; then
+              # Upstream publishes the CLI and the image from the same release, so
+              # this should not happen. If it ever does, say so rather than opening
+              # a PR that would move the server ahead of the CLI — which
+              # infra/railway/plan.ts blocks anyway, so it could never apply.
+              echo "::warning::xprem $version has no matching eoas release on npm; not opening a PR."
+              return 0
+            fi
+
+            branch="chore/xprem-$version"
+
+            # Only this workflow's own commits may be replaced. `--force-with-lease`
+            # alone does NOT give that: `actions/checkout --fetch-depth 0` refreshes
+            # refs/remotes/origin/* at the start of the run, so the lease is compared
+            # against a tracking ref that already contains any human commit pushed to
+            # the branch — it is always satisfied, and a reviewer's fixups would be
+            # silently destroyed.
+            remote_tip=$(git rev-parse --verify --quiet "origin/$branch" || true)
+            if [ -n "$remote_tip" ]; then
+              # EVERY commit the branch adds on top of main must be this workflow's,
+              # not just the tip: checking only the tip would let a human commit
+              # buried under a later bot commit be discarded by the reset below.
+              foreign=$(git log --format='%ae' "origin/main..$remote_tip" \
+                | grep -cv '^github-actions\[bot\]@users\.noreply\.github\.com$' || true)
+              if [ "${foreign:-0}" -ne 0 ]; then
+                echo "::notice::$branch carries $foreign commit(s) that are not this workflow's; leaving it alone."
+                return 0
+              fi
+            fi
+
+            # A CLOSED PR must not be resurrected. `gh pr view <branch>` resolves a
+            # branch to its most recent PR whatever its state, so without this a
+            # declined beta bump would be force-pushed and body-edited every week
+            # while no PR was open and the candidate never resurfaced.
+            pr_state=$(gh pr view "$branch" --json state --jq '.state' 2>/dev/null || echo 'NONE')
+            if [ "$pr_state" = 'CLOSED' ] || [ "$pr_state" = 'MERGED' ]; then
+              echo "::notice::The PR for $version is $pr_state; not reopening it."
+              return 0
+            fi
+
+            git checkout -B "$branch" origin/main
+
+            vp exec tsx scripts/ota-image-bump.ts -- --write "$version"
+            if git diff --quiet; then
+              echo "::notice::Nothing to rewrite for $version."
+              return 0
+            fi
+
+            # Generated before the commit so a body-generation failure does not
+            # leave a pushed branch with no pull request attached to it.
+            vp exec tsx scripts/ota-image-bump.ts -- --pr-body "$version" > "$RUNNER_TEMP/body-$version.md"
+
+            git commit -am "chore(ota): move the OTA server to xprem $version"
+
+            # Nothing to say if the branch already holds exactly this content — a
+            # no-op force-push would still move the SHA, re-run CI and dismiss
+            # reviews every week.
+            if [ -n "$remote_tip" ] && [ "$(git rev-parse "HEAD^{tree}")" = "$(git rev-parse "$remote_tip^{tree}")" ]; then
+              echo "::notice::$branch is already at this content; leaving it untouched."
+              return 0
+            fi
+
+            git push --force-with-lease="$branch:${remote_tip:-}" origin "$branch"
+
+            if [ "$pr_state" = 'OPEN' ]; then
+              gh pr edit "$branch" --body-file "$RUNNER_TEMP/body-$version.md"
+              echo "::notice::Updated the existing PR for $version."
+            else
+              gh pr create --draft --base main --head "$branch" \
+                --title "chore(ota): move the OTA server to xprem $version" \
+                --body-file "$RUNNER_TEMP/body-$version.md"
+            fi
+          }
+
+          open_bump "$STABLE" stable "$STABLE_CLI"
+          open_bump "$PRERELEASE" prerelease "$PRERELEASE_CLI"

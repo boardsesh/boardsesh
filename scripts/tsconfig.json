@@ -28,8 +28,14 @@
     "outline-overrides-merge.test.ts",
     "canonical-outlines.ts",
     "canonical-outlines.test.ts",
+    "ota-image-bump.ts",
+    "ota-image-bump.test.ts",
     "railway-apply.ts",
+    "railway-deployment-rollback.d.mts",
     "railway-apply.test.ts",
+    "__tests__/railway-config-inventory.test.ts",
+    "__tests__/eoas-version-parity.test.ts",
+    "lib/eoas.ts",
     "../infra/railway/config.ts",
     "../infra/railway/plan.ts"
   ]
