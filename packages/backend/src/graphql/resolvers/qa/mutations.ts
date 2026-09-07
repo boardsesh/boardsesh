@@ -83,28 +83,40 @@ export const qaMutations = {
       throw new Error('Pull request is not open');
     }
 
-    let pullRequest: QaPullRequest;
+    // Null when GitHub could not be read at all, which is a state to record a
+    // verdict in rather than one to refuse it in: the row is the record and
+    // GitHub is the mirror, so an uninstalled App or an exhausted anonymous
+    // rate limit must never leave a tester holding a finding they cannot file
+    // — the sheet they file it from is the one that surfs them back off the
+    // preview. `head_sha IS NULL` is what tells the runbook the revision behind
+    // such a verdict was never verified.
+    let pullRequest: QaPullRequest | null = null;
     if (fresh.status === 'open') {
       pullRequest = fresh.pullRequest;
     } else {
       // GitHub didn't answer the single-PR read. The cached list is a worse
       // answer than a fresh one but a much better one than losing the verdict,
-      // so fall back to it — and only give up when it has nothing either.
-      // `failed` is the reader's own flag, not a guess from an empty list: the
-      // first failure throws and the next 30 seconds are negative-cached as
-      // `[]`, and both must read the same way here.
+      // so fall back to it. `failed` is the reader's own flag, not a guess from
+      // an empty list: the first failure throws and the next 30 seconds are
+      // negative-cached as `[]`, and both must read the same way here.
       const { pullRequests: openPullRequests, failed } = await readOpenPullRequests();
-      if (failed) {
-        throw new Error('Could not reach GitHub to verify the pull request');
-      }
       const cached = openPullRequests.find((candidate) => candidate.number === validated.prNumber);
-      if (!cached) {
+      // Only a list GitHub actually answered is evidence about this PR. A
+      // healthy list without it means closed or gone, and a verdict there is
+      // one nobody can act on; a failed list means nothing at all, and reading
+      // it as a refusal is what turned a broken App installation into "you
+      // cannot leave the preview you are testing".
+      if (!cached && !failed) {
         throw new Error('Pull request is not open');
       }
-      pullRequest = cached;
+      // Not logged here. This is the same event the mirror reports below, and
+      // that line carries the row id an operator needs to find it — two entries
+      // per verdict would only double the volume during the outage that
+      // produced them.
+      pullRequest = cached ?? null;
     }
 
-    const headCommittedAt = toUtcTimestamp(await getHeadCommitDate(pullRequest.headSha));
+    const headCommittedAt = pullRequest === null ? null : toUtcTimestamp(await getHeadCommitDate(pullRequest.headSha));
     const bundleCreatedAt = toUtcTimestamp(validated.bundleCreatedAt);
 
     const [row] = await db
@@ -113,7 +125,7 @@ export const qaMutations = {
         userId: ctx.userId!,
         prNumber: validated.prNumber,
         branch: validated.branch,
-        headSha: pullRequest.headSha,
+        headSha: pullRequest?.headSha ?? null,
         headCommittedAt,
         verdict: validated.verdict,
         byTester,
@@ -134,18 +146,37 @@ export const qaMutations = {
 
     if (!row) throw new Error('Could not record the verdict');
 
+    // Captured as a const so the null check below narrows inside the closure,
+    // which a reassignable `let` would not.
+    const verifiedPullRequest = pullRequest;
+
     // Fire-and-forget mirror to GitHub. Failures are logged under `[qa]` and
     // never surface to the caller; the row stands either way, and a row with
     // github_comment_id IS NULL is the "not mirrored" signal for the runbook.
     void (async () => {
+      // Nothing GitHub told us backs this row: `prNumber` came from the client
+      // and both reads failed, so it need not be an open pull request, or a
+      // pull request at all. The row is harmless — it is ours, and `head_sha
+      // IS NULL` marks it unverified — but the mirror is not: the comment goes
+      // through the issues API, which answers for any number, and `qa-approved`
+      // gates a merge on a public repo. Recover it by hand from the runbook
+      // rather than write it blind if GitHub happens to be back by now.
+      if (verifiedPullRequest === null) {
+        logger.warn(
+          `[qa] verdict ${row.id} on #${row.prNumber} is recorded but not mirrored: ` +
+            'GitHub never confirmed the pull request is open',
+        );
+        return;
+      }
       try {
+        // What everyone else found on THIS revision.
         const tally = await db
           .select({ verdict: dbSchema.qaVerdicts.verdict, total: count() })
           .from(dbSchema.qaVerdicts)
           .where(
             and(
               eq(dbSchema.qaVerdicts.prNumber, row.prNumber),
-              eq(dbSchema.qaVerdicts.headSha, pullRequest.headSha),
+              eq(dbSchema.qaVerdicts.headSha, verifiedPullRequest.headSha),
               ne(dbSchema.qaVerdicts.id, row.id),
             ),
           )
