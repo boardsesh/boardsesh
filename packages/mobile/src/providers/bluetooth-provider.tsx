@@ -25,6 +25,7 @@ import {
   type SendFramesToBoard,
 } from '../lib/ble/use-board-bluetooth';
 import { getBleEncodingSignature } from '../lib/ble/encoding-signature';
+import { resolveMirroredOrientation } from '../lib/ble/mirror-orientation';
 import { hasRenderableFrames } from '../lib/ble/renderable-frames';
 import { useResolvedBleDeviceBoards } from '../lib/ble/resolve-serials';
 import { classifyBleDisconnect } from '../lib/ble/disconnect-category';
@@ -99,6 +100,12 @@ type BluetoothContextValue = {
    * toggle from here rather than assuming un-mirrored.
    */
   getMirrorIntent: (climbUuid: string | undefined) => boolean | undefined;
+  /**
+   * Forget a flip recorded against any climb but this one. The surface owning
+   * the toggle calls this as it settles on a climb, so navigating away drops a
+   * flip while reopening on the same climb still finds it.
+   */
+  retainMirrorIntentFor: (climbUuid: string | undefined) => void;
   /**
    * Restore the climb captured before this device's latest accepted wall report.
    * The platform relights it over BLE first, then reports it to board presence.
@@ -448,8 +455,10 @@ function BluetoothAutoSender({
           // dedup signature, the physical-frames record and the write itself —
           // reads this one value, so the wall and our record of it agree.
           const intent = mirrorIntentRef.current;
-          const effectiveMirrored =
-            intent && intent.climbUuid === item.climb.uuid ? intent.mirrored : !!item.climb.mirrored;
+          const effectiveMirrored = resolveMirroredOrientation({
+            statedIntent: intent != null && intent.climbUuid === item.climb.uuid ? intent.mirrored : undefined,
+            climbMirrored: item.climb.mirrored,
+          });
 
           // connect() may have just written these exact frames as its
           // initialFrames (connect-and-light flows like the play drawer).
@@ -667,6 +676,13 @@ export function BluetoothProvider({
   const mirrorIntentFor = useCallback((climbUuid: string | undefined): boolean | undefined => {
     const intent = mirrorIntentRef.current;
     return intent != null && intent.climbUuid === climbUuid ? intent.mirrored : undefined;
+  }, []);
+  // Drop a flip that belongs to some OTHER climb, keep one that belongs to this
+  // one. The slot holds explicit taps only, so this is how navigation forgets a
+  // flip while a dismiss-and-reopen still finds it.
+  const retainMirrorIntentFor = useCallback((climbUuid: string | undefined) => {
+    const intent = mirrorIntentRef.current;
+    if (intent != null && intent.climbUuid !== climbUuid) mirrorIntentRef.current = null;
   }, []);
   const pendingReportSignatureRef = useRef<string | null>(null);
   const pendingWallReportRef = useRef<PendingWallReport | null>(null);
@@ -1653,6 +1669,7 @@ export function BluetoothProvider({
       invalidateWallState,
       setMirrorIntent,
       getMirrorIntent,
+      retainMirrorIntentFor,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,
@@ -1678,6 +1695,7 @@ export function BluetoothProvider({
       invalidateWallState,
       setMirrorIntent,
       getMirrorIntent,
+      retainMirrorIntentFor,
       undoWallChange,
       relightPresenceClimb,
       armUndoWallChangeToast,

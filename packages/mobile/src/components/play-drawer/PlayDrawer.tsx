@@ -83,6 +83,7 @@ import { useShareClimb } from '../../hooks/use-share-climb';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
 import { hapticSuccess } from '../../lib/haptics';
+import { resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
 import { getSimilarClimbTapMode, getSwipeNavigationTarget, swipeStaysViewOnly } from './play-drawer-navigation';
@@ -466,11 +467,11 @@ export function PlayDrawer({
   // `false` is not the same as nothing stated, which is why the reader is
   // tri-state — otherwise turning a mirrored tick's flip off would be undone by
   // its own `climb.mirrored` on the next render.
-  const statedMirror = bluetooth?.getMirrorIntent(displayedClimbUuid);
-  const isMirrored =
-    mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid
-      ? mirrorFlip.mirrored
-      : (statedMirror ?? !!displayedClimb?.mirrored);
+  const isMirrored = resolveMirroredOrientation({
+    explicitFlip: mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid ? mirrorFlip.mirrored : undefined,
+    statedIntent: bluetooth?.getMirrorIntent(displayedClimbUuid),
+    climbMirrored: displayedClimb?.mirrored,
+  });
   const clearMirror = useCallback(() => setMirrorFlip(null), []);
 
   // #5099: the shown climb does not have to belong to the board the climber has
@@ -982,8 +983,19 @@ export function PlayDrawer({
   // `mirrorCurrentClimb`, so that fallback is always false.
   useEffect(() => {
     if (isPreview || !displayedClimbUuid) return;
-    bluetooth?.setMirrorIntent(displayedClimbUuid, isMirrored);
-  }, [bluetooth, displayedClimbUuid, isMirrored, isPreview]);
+    // Only an explicit TAP goes in the slot. Stating a derived default would
+    // make it sticky: a `false` computed from whatever `climb.mirrored` happened
+    // to be would then outrank a fresher one — a crew member activating their
+    // mirrored tick of this climb would have their orientation dropped.
+    if (mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid) {
+      bluetooth?.setMirrorIntent(displayedClimbUuid, mirrorFlip.mirrored);
+      return;
+    }
+    // No tap for the climb on screen: a flip parked on another climb is one we
+    // have navigated away from, so drop it. One on THIS climb is our own, from
+    // before the drawer remounted — that is what a reopen reads back.
+    bluetooth?.retainMirrorIntentFor(displayedClimbUuid);
+  }, [bluetooth, displayedClimbUuid, mirrorFlip, isPreview]);
 
   // Local state only — the effect above is what carries the flip to the wall,
   // through the AutoSender's normal write so the dedup record and the
