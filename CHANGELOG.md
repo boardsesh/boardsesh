@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-07
+
+### Fixed
+
+- Fixed the Attempt and Send buttons in the tick sheet: they now fill the row evenly instead of floating at odd sizes ([#4226](https://github.com/boardsesh/boardsesh/pull/4226))
+
 ## 2026-09-06
 
 ### New
