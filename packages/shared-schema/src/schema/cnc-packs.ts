@@ -15,12 +15,24 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   }
 
   """
-  Lifecycle of one order. Everything after \`pending_payment\` is driven by a
-  Stripe webhook or by the pack generator. \`refunded\` is terminal for
-  downloads and is deliberately distinct from \`cancelled\`, which only ever
-  means the checkout session expired before payment.
+  Lifecycle of one order.
+
+  An order starts as a FREE PREVIEW: \`preview_queued -> preview_generating ->
+  preview_ready\`, repeatable and never charged. Finalising it moves it to
+  \`pending_payment\`, and everything after that is driven by a Stripe webhook or
+  by the pack generator. \`refunded\` is terminal for downloads and is
+  deliberately distinct from \`cancelled\`, which only ever means the checkout
+  session expired before payment.
+
+  A \`preview_failed\` order can be previewed again; so can a \`preview_ready\` one
+  whose configuration changed — both write a NEW order, because a preview is an
+  immutable snapshot of one configuration.
   """
   enum CncOrderStatus {
+    preview_queued
+    preview_generating
+    preview_ready
+    preview_failed
     pending_payment
     queued
     generating
@@ -28,6 +40,18 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     failed
     cancelled
     refunded
+  }
+
+  """
+  Which artifact a download link is for.
+
+  \`PREVIEW\` is the free watermarked, rasterised pack — available from
+  \`preview_ready\` onward, including after the order is bought. \`FULL\` is the
+  licensed pack with the DXFs and is only ever available at \`ready\`.
+  """
+  enum CncDownloadKind {
+    PREVIEW
+    FULL
   }
 
   """
@@ -225,11 +249,23 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   error never appear here — a failed order reports a fixed public message
   instead.
   """
+  type CncPreviewImage {
+    "Filename of the watermarked sheet, e.g. \`panel1.png\` or \`assembly.png\`. Stable for one order."
+    name: String!
+    """
+    A ready-to-use \`<img src>\`: the backend preview route with a one-hour grant
+    token already on it. Re-read the order for fresh URLs rather than caching
+    these; nothing is lost by asking again.
+    """
+    url: String!
+  }
+
   type CncOrder {
     id: ID!
     "The licence printed on every file in the pack. The id support and leak investigations start from."
     licenceId: String!
-    tier: CncLicenceTier!
+    "Null until the order is finalised: a preview is not a sale, so nothing has been licensed yet."
+    tier: CncLicenceTier
     status: CncOrderStatus!
     boardName: String!
     layoutId: Int!
@@ -252,17 +288,41 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     lastDownloadedAt: String
     "A fixed public message when the order failed, null otherwise. Never generator internals."
     errorMessage: String
+    "True once the free preview has been generated. Stays true after the pack is bought."
+    hasPreview: Boolean!
+    previewGeneratedAt: String
+    """
+    The watermarked sheets, in sheet order. Empty until \`preview_ready\`.
+
+    Each URL carries its own one-hour grant, so they are usable straight from an
+    \`<img>\` and worthless to anyone the order does not belong to.
+    """
+    previewImages: [CncPreviewImage!]!
+    """
+    sha256 of the configuration this order previewed and will build.
+
+    Two uses: telling whether the configuration on screen still matches the
+    preview being shown (if it does not, the buyer needs a new preview), and
+    letting the server hand back an existing preview instead of generating the
+    same one twice.
+    """
+    configHash: String!
   }
 
   """
-  Everything checkout needs beyond the configuration itself: who the licence
-  names, how to reach them, and their acceptance of it.
+  Everything buying a previewed order needs: who the licence names, how to reach
+  them, and their acceptance of it.
+
+  No configuration. The order already carries the exact wall the buyer
+  previewed and approved — re-submitting it here would let a client buy
+  something other than what it was shown.
 
   \`acceptLicence\` must be \`true\`. The licence is the product, so there is no
   such thing as a checkout that proceeds without it.
   """
-  input CreateCncCheckoutSessionInput {
-    config: CncBoardConfigInput!
+  input FinaliseCncOrderInput {
+    "The preview order being bought. It must be the caller's own and it must be \`preview_ready\`."
+    orderId: ID!
     tier: CncLicenceTier!
     "The name printed on every file in the pack."
     licenseeName: String!
@@ -341,7 +401,7 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   }
 
   """
-  A short-lived link to one pack.
+  A short-lived link to one pack or preview.
 
   It exists because a browser navigation cannot carry an Authorization header,
   and a session token in a URL would land in history, in a referrer and in every

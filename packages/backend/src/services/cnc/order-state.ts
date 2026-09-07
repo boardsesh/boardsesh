@@ -11,6 +11,10 @@
  */
 
 export type CncOrderStatus =
+  | 'preview_queued'
+  | 'preview_generating'
+  | 'preview_ready'
+  | 'preview_failed'
   | 'pending_payment'
   | 'queued'
   | 'generating'
@@ -19,11 +23,31 @@ export type CncOrderStatus =
   | 'cancelled'
   | 'refunded';
 
+/**
+ * Which artifact a generation job produces.
+ *
+ * The order row is one queue carrying both, so almost everything downstream —
+ * the claim, the job payload, the completion report, the download route — takes
+ * this rather than re-deriving it from a status. `full` is the paid pack;
+ * `preview` is the free watermarked raster the buyer iterates on.
+ */
+export type CncDeliverable = 'full' | 'preview';
+
+/** Which deliverable a claimed row is generating, from its status. */
+export function deliverableForStatus(status: CncOrderStatus): CncDeliverable {
+  return status.startsWith('preview') ? 'preview' : 'full';
+}
+
 /** `'new'` is the pre-insert state: there is no row yet. */
 export type CncOrderFromStatus = CncOrderStatus | 'new';
 
 export type CncOrderEvent =
-  | 'createCheckoutSession'
+  | 'previewRequested'
+  | 'previewClaim'
+  | 'previewComplete'
+  | 'previewFail'
+  | 'finalise'
+  | 'finaliseFailed'
   | 'checkoutCompleted'
   | 'checkoutExpired'
   | 'checkoutFailed'
@@ -38,7 +62,7 @@ export type CncOrderTransition = {
   from: readonly CncOrderFromStatus[];
   /**
    * The status the event moves the order to, or null when the target depends on
-   * runtime state — only `fail`, which routes through
+   * runtime state — only `fail` and `previewFail`, which both route through
    * {@link nextStatusAfterFailure}.
    */
   to: CncOrderStatus | null;
@@ -47,10 +71,42 @@ export type CncOrderTransition = {
 
 export const CNC_ORDER_TRANSITIONS: readonly CncOrderTransition[] = [
   {
-    event: 'createCheckoutSession',
+    event: 'previewRequested',
     from: ['new'],
+    to: 'preview_queued',
+    why: 'A preview is free, so the row starts here rather than at a payment. Re-previewing a CHANGED configuration fires this again for a NEW row — a preview is an immutable snapshot of one configuration, never a row that moves backwards.',
+  },
+  {
+    event: 'previewClaim',
+    // 'preview_generating' is here for the reclaim, exactly as 'generating' is
+    // on `claim`: a worker that died leaves a stale lease for the next scan.
+    from: ['preview_queued', 'preview_generating'],
+    to: 'preview_generating',
+    why: 'A worker took the preview lease: attempts+1 and a fresh claim token.',
+  },
+  {
+    event: 'previewComplete',
+    from: ['preview_generating'],
+    to: 'preview_ready',
+    why: 'The watermarked preview zip and its PNGs are in the bucket. Nothing is charged and nobody is emailed — the buyer is still iterating.',
+  },
+  {
+    event: 'previewFail',
+    from: ['preview_generating'],
+    to: null,
+    why: 'Back to the preview queue for another attempt, or terminal once the same three-attempt budget is spent.',
+  },
+  {
+    event: 'finalise',
+    from: ['preview_ready'],
     to: 'pending_payment',
-    why: 'The row is written before Stripe Checkout opens so the webhook has something to find.',
+    why: 'The buyer approved the preview and picked a licence: the row takes its tier and licensee and goes on to Stripe. This is where a free preview becomes a sale.',
+  },
+  {
+    event: 'finaliseFailed',
+    from: ['pending_payment'],
+    to: 'preview_ready',
+    why: 'Stripe would not open a session for a finalise. The row goes back to the preview it came from rather than to `cancelled`: the preview is still valid, still paid for by nobody, and making a buyer regenerate one because of our outage would cost them a slot in the hourly preview budget.',
   },
   {
     event: 'checkoutCompleted',
@@ -147,9 +203,34 @@ export const CNC_MAX_ATTEMPTS = 3;
  * `attempts` is the count AFTER the failed attempt — the claim already
  * incremented it — so the third failure of a three-attempt budget is terminal
  * rather than being requeued for a fourth try no one is watching.
+ *
+ * A preview gets the same budget on its own pair of statuses. One function
+ * rather than two so the budget can only ever be read one way; the deliverable
+ * picks the pair.
  */
-export function nextStatusAfterFailure(attempts: number, maxAttempts = CNC_MAX_ATTEMPTS): CncOrderStatus {
-  return attempts >= maxAttempts ? 'failed' : 'queued';
+export function nextStatusAfterFailure(
+  attempts: number,
+  maxAttempts = CNC_MAX_ATTEMPTS,
+  deliverable: CncDeliverable = 'full',
+): CncOrderStatus {
+  const spent = attempts >= maxAttempts;
+  if (deliverable === 'preview') return spent ? 'preview_failed' : 'preview_queued';
+  return spent ? 'failed' : 'queued';
+}
+
+/**
+ * Statuses a fresh preview may be asked for from.
+ *
+ * Deliberately NOT a transition. Re-previewing writes a new row (see
+ * `previewRequested`), so there is no (from, event) pair for it to occupy — but
+ * the resolver still has to answer "may this buyer ask again?", and that answer
+ * belongs next to the table rather than inlined at the call site.
+ */
+export const CNC_RE_PREVIEWABLE_STATUSES: readonly CncOrderStatus[] = ['preview_ready', 'preview_failed'];
+
+/** True when an order in this status may be re-previewed (as a new row). */
+export function canRePreview(status: CncOrderStatus): boolean {
+  return CNC_RE_PREVIEWABLE_STATUSES.includes(status);
 }
 
 /** How long a worker may hold a job without a heartbeat before the lease is reclaimable. */
@@ -168,12 +249,38 @@ export function isLeaseStale(heartbeatAt: Date | null, now: Date, leaseMs = CNC_
 }
 
 /**
- * Whether the buyer may download the pack.
+ * Statuses a preview stays downloadable from.
  *
- * Both conditions are checked even though a refund moves the status away from
- * `ready`: a refund that raced an admin regenerate can leave a `ready` row with
- * `refunded_at` set, and access must fail closed in that case.
+ * `preview_ready` onward: finalising and paying does not take the preview away,
+ * because the preview is the thing the buyer approved and they may well want to
+ * look at it again next to the real pack. It stops at a refund, like everything
+ * else the order entitles them to.
  */
-export function isDownloadable(order: { status: CncOrderStatus; refundedAt: Date | null }): boolean {
-  return order.status === 'ready' && order.refundedAt === null;
+const PREVIEW_DOWNLOADABLE_STATUSES: readonly CncOrderStatus[] = [
+  'preview_ready',
+  'pending_payment',
+  'queued',
+  'generating',
+  'ready',
+  'failed',
+];
+
+/**
+ * Whether the buyer may download this deliverable.
+ *
+ * `refundedAt` is checked for both even though a refund moves the status away
+ * from `ready`: a refund that raced an admin regenerate can leave a `ready` row
+ * with `refunded_at` set, and access must fail closed in that case.
+ *
+ * The full pack is `ready` only. The preview is a much wider window on purpose
+ * — it is watermarked, rasterised and explicitly not for manufacture, so the
+ * thing it protects is the DXF, not the picture of it.
+ */
+export function isDownloadable(
+  order: { status: CncOrderStatus; refundedAt: Date | null },
+  kind: CncDeliverable = 'full',
+): boolean {
+  if (order.refundedAt !== null) return false;
+  if (kind === 'preview') return PREVIEW_DOWNLOADABLE_STATUSES.includes(order.status);
+  return order.status === 'ready';
 }

@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vite-plus/test';
 import {
   CNC_LEASE_MS,
   CNC_ORDER_TRANSITIONS,
+  canRePreview,
   canTransition,
+  deliverableForStatus,
   isDownloadable,
   isLeaseStale,
   nextStatusAfterFailure,
@@ -13,6 +15,10 @@ import {
 
 const ALL_STATUSES: readonly CncOrderFromStatus[] = [
   'new',
+  'preview_queued',
+  'preview_generating',
+  'preview_ready',
+  'preview_failed',
   'pending_payment',
   'queued',
   'generating',
@@ -26,7 +32,13 @@ const ALL_STATUSES: readonly CncOrderFromStatus[] = [
 // implementation. Anything not listed here must be rejected — that half is what
 // stops an unpaid order reaching the worker or a cancelled one being generated.
 const LEGAL_TRANSITIONS: ReadonlyArray<[CncOrderFromStatus, CncOrderEvent]> = [
-  ['new', 'createCheckoutSession'],
+  ['new', 'previewRequested'],
+  ['preview_queued', 'previewClaim'],
+  ['preview_generating', 'previewClaim'],
+  ['preview_generating', 'previewComplete'],
+  ['preview_generating', 'previewFail'],
+  ['preview_ready', 'finalise'],
+  ['pending_payment', 'finaliseFailed'],
   ['pending_payment', 'checkoutCompleted'],
   ['pending_payment', 'checkoutExpired'],
   ['pending_payment', 'checkoutFailed'],
@@ -43,7 +55,12 @@ const LEGAL_TRANSITIONS: ReadonlyArray<[CncOrderFromStatus, CncOrderEvent]> = [
 ];
 
 const ALL_EVENTS: readonly CncOrderEvent[] = [
-  'createCheckoutSession',
+  'previewRequested',
+  'previewClaim',
+  'previewComplete',
+  'previewFail',
+  'finalise',
+  'finaliseFailed',
   'checkoutCompleted',
   'checkoutExpired',
   'checkoutFailed',
@@ -59,9 +76,9 @@ describe('CNC_ORDER_TRANSITIONS', () => {
     expect(CNC_ORDER_TRANSITIONS.map((transition) => transition.event).sort()).toEqual([...ALL_EVENTS].sort());
   });
 
-  it('leaves only `fail` with a runtime-computed target', () => {
+  it('leaves only the two failure events with a runtime-computed target', () => {
     const computed = CNC_ORDER_TRANSITIONS.filter((transition) => transition.to === null);
-    expect(computed.map((transition) => transition.event)).toEqual(['fail']);
+    expect(computed.map((transition) => transition.event).sort()).toEqual(['fail', 'previewFail']);
   });
 
   it('never lands an order back in `new`', () => {
@@ -95,6 +112,54 @@ describe('canTransition', () => {
   it('never regenerates a refunded order', () => {
     expect(canTransition('refunded', 'regenerate')).toBe(false);
   });
+
+  it('never sells a wall nobody has previewed', () => {
+    // The one property the whole preview flow exists to guarantee: the only
+    // door into `pending_payment` is `finalise`, and the only status it opens
+    // from is `preview_ready`.
+    const intoPendingPayment = CNC_ORDER_TRANSITIONS.filter((transition) => transition.to === 'pending_payment');
+    expect(intoPendingPayment.map((transition) => transition.event)).toEqual(['finalise']);
+    expect(intoPendingPayment[0].from).toEqual(['preview_ready']);
+  });
+
+  it('never moves an existing row back into a preview queue', () => {
+    // Re-previewing writes a NEW row. A transition would make a preview a
+    // mutable thing, and the images already handed to the buyer would start
+    // describing a different wall.
+    for (const status of ALL_STATUSES) {
+      expect(canTransition(status, 'previewRequested')).toBe(status === 'new');
+    }
+  });
+});
+
+describe('canRePreview', () => {
+  it('lets a finished or failed preview be asked for again', () => {
+    expect(canRePreview('preview_ready')).toBe(true);
+    expect(canRePreview('preview_failed')).toBe(true);
+  });
+
+  it.each<CncOrderStatus>(['preview_queued', 'preview_generating', 'pending_payment', 'queued', 'ready', 'refunded'])(
+    'refuses to re-preview a %s order',
+    (status) => {
+      expect(canRePreview(status)).toBe(false);
+    },
+  );
+});
+
+describe('deliverableForStatus', () => {
+  it.each<CncOrderStatus>(['preview_queued', 'preview_generating', 'preview_ready', 'preview_failed'])(
+    'reads %s as a preview job',
+    (status) => {
+      expect(deliverableForStatus(status)).toBe('preview');
+    },
+  );
+
+  it.each<CncOrderStatus>(['pending_payment', 'queued', 'generating', 'ready', 'failed', 'cancelled', 'refunded'])(
+    'reads %s as a full job',
+    (status) => {
+      expect(deliverableForStatus(status)).toBe('full');
+    },
+  );
 });
 
 describe('nextStatusAfterFailure', () => {
@@ -111,6 +176,12 @@ describe('nextStatusAfterFailure', () => {
   it('honours a custom budget', () => {
     expect(nextStatusAfterFailure(1, 1)).toBe('failed');
     expect(nextStatusAfterFailure(1, 5)).toBe('queued');
+  });
+
+  it('runs the same budget on the preview statuses', () => {
+    expect(nextStatusAfterFailure(1, undefined, 'preview')).toBe('preview_queued');
+    expect(nextStatusAfterFailure(2, undefined, 'preview')).toBe('preview_queued');
+    expect(nextStatusAfterFailure(3, undefined, 'preview')).toBe('preview_failed');
   });
 });
 
@@ -143,10 +214,36 @@ describe('isDownloadable', () => {
     expect(isDownloadable({ status: 'ready', refundedAt: new Date() })).toBe(false);
   });
 
-  it.each<CncOrderStatus>(['pending_payment', 'queued', 'generating', 'failed', 'cancelled', 'refunded'])(
-    'blocks a %s order',
+  it.each<CncOrderStatus>([
+    'preview_queued',
+    'preview_generating',
+    'preview_ready',
+    'preview_failed',
+    'pending_payment',
+    'queued',
+    'generating',
+    'failed',
+    'cancelled',
+    'refunded',
+  ])('blocks the full pack of a %s order', (status) => {
+    expect(isDownloadable({ status, refundedAt: null })).toBe(false);
+  });
+
+  it.each<CncOrderStatus>(['preview_ready', 'pending_payment', 'queued', 'generating', 'ready', 'failed'])(
+    'serves the preview of a %s order',
     (status) => {
-      expect(isDownloadable({ status, refundedAt: null })).toBe(false);
+      expect(isDownloadable({ status, refundedAt: null }, 'preview')).toBe(true);
     },
   );
+
+  it.each<CncOrderStatus>(['preview_queued', 'preview_generating', 'preview_failed', 'cancelled', 'refunded'])(
+    'blocks the preview of a %s order',
+    (status) => {
+      expect(isDownloadable({ status, refundedAt: null }, 'preview')).toBe(false);
+    },
+  );
+
+  it('stops the preview at a refund, like everything else the order entitles them to', () => {
+    expect(isDownloadable({ status: 'ready', refundedAt: new Date() }, 'preview')).toBe(false);
+  });
 });

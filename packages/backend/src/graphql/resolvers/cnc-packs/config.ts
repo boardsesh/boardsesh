@@ -63,11 +63,15 @@ export type ResolvedCncConfig = {
  * Every asset id the configuration names, deduplicated, in submission order.
  *
  * Its own function because two callers need it for different reasons — one to
- * check ownership before charging, one to stamp the order onto the assets
- * afterwards — and a second inline `.filter().map()` is a second place for the
- * "exactly one of assetId or text" rule to be read wrong.
+ * check ownership before the preview row is written, one to stamp the order
+ * onto the assets at finalise — and a second inline `.filter().map()` is a
+ * second place for the "exactly one of assetId or text" rule to be read wrong.
+ *
+ * Typed on the one field it reads rather than on `CncArtworkInputValidated`, so
+ * the finalise caller can pass the artwork as it was STORED on the order (which
+ * carries the asset's key and mime as well) without a cast.
  */
-export function artworkAssetIds(artwork: readonly CncArtworkInputValidated[]): string[] {
+export function artworkAssetIds(artwork: readonly { assetId?: string | null }[]): string[] {
   return [...new Set(artwork.map((item) => item.assetId).filter((assetId): assetId is string => Boolean(assetId)))];
 }
 

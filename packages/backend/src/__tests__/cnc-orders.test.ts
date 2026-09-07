@@ -16,8 +16,10 @@ import { db } from '../db/client';
 import {
   CNC_MAX_ATTEMPTS,
   claimNextJob,
-  createPendingOrder,
+  countOrdersCreatedSince,
+  createPreviewOrder,
   failStaleExhaustedJobs,
+  findPreviewOrderByConfigHash,
   getOrderByLicenceId,
   listOrdersForUser,
   toPublicOrder,
@@ -48,22 +50,79 @@ async function clearFixtures(): Promise<void> {
   await db.execute(sql`DELETE FROM "users" WHERE "id" IN (${BUYER_ID}, ${OTHER_BUYER_ID})`);
 }
 
-async function createOrder(userId = BUYER_ID): Promise<CncOrder> {
-  return createPendingOrder({
+/** A fresh preview order: the first row of every purchase. */
+let configHashSeed = 0;
+async function createPreview(userId = BUYER_ID, configHash?: string): Promise<CncOrder> {
+  configHashSeed += 1;
+  return createPreviewOrder({
     userId,
-    tier: 'personal',
     boardName: 'kilter',
     layoutId: 8,
     sizeId: 25,
     setIds: '26,27,28,29',
     options: DEFAULT_OPTIONS,
     catalogVersion: CNC_CATALOG_VERSION,
+    // Unique per fixture unless a test cares: two fixtures sharing a hash would
+    // make every dedupe assertion depend on creation order.
+    configHash: configHash ?? `hash-${String(configHashSeed)}`,
+  });
+}
+
+/**
+ * Walk a preview to `preview_ready` without going through the queue.
+ *
+ * Driven by explicit transitions rather than by `claimNextJob`, because the
+ * claim prefers full jobs: a fixture that claimed would pick up whichever paid
+ * order an earlier line of the same test had already queued.
+ */
+async function readyPreview(userId = BUYER_ID, configHash?: string): Promise<CncOrder> {
+  const order = await createPreview(userId, configHash);
+  const claimToken = `fixture-token-${String(order.id)}`;
+  const claimedAt = new Date();
+  const claimed = await transitionOrder(order.id, 'previewClaim', {
+    claimToken,
+    attempts: 1,
+    workerId: 'fixture-worker',
+    claimedAt,
+    heartbeatAt: claimedAt,
+  });
+  if (!claimed) throw new Error('failed to claim fixture preview');
+  const ready = await transitionOrder(
+    order.id,
+    'previewComplete',
+    {
+      previewZipKey: `cnc-packs/${userId}/${order.licenceId}_preview.zip`,
+      previewZipSizeBytes: 1024,
+      previewGeneratedAt: new Date(),
+      previewKeys: [`cnc-packs/${userId}/${order.licenceId}/preview/panel1.png`],
+      previewsGenerated: 1,
+    },
+    { claimToken },
+  );
+  if (!ready) throw new Error('failed to ready fixture preview');
+  return ready;
+}
+
+/** A finalised, unpaid order: what the buyer sends to Stripe. */
+async function createOrder(userId = BUYER_ID): Promise<CncOrder> {
+  const ready = await readyPreview(userId);
+  const finalised = await transitionOrder(ready.id, 'finalise', {
+    tier: 'personal',
     licenseeName: 'Test Buyer',
     licenseeEmail: 'buyer@example.com',
     licenceAcceptedAt: new Date(),
     currency: 'AUD',
     amountCents: 14900,
+    // The same reset `finaliseCncOrder` writes: the pack gets its own three
+    // attempts rather than inheriting whatever the preview spent.
+    attempts: 0,
+    claimToken: null,
+    workerId: null,
+    claimedAt: null,
+    heartbeatAt: null,
   });
+  if (!finalised) throw new Error('failed to finalise fixture order');
+  return finalised;
 }
 
 /** Put an order straight into the queue, the way the paid webhook does. */
@@ -161,6 +220,13 @@ const BUYER_VISIBLE_COLUMNS = [
   // The pack's checksum: the buyer's own way to tell a truncated download from
   // a complete one, so it stays on their side of the line.
   'zipSha256',
+  // The preview's own metadata. The KEYS are internal (they are bucket paths,
+  // and the images reach the buyer as `previewImages` URLs built from their
+  // basenames), but "is there a preview, how big, when" is the buyer's.
+  'configHash',
+  'previewZipSizeBytes',
+  'previewGeneratedAt',
+  'previewsGenerated',
   'downloadCount',
   'lastDownloadedAt',
   'createdAt',
@@ -182,18 +248,38 @@ describe('CNC orders (real Postgres)', () => {
     await clearFixtures();
   });
 
-  describe('createPendingOrder', () => {
-    it('writes an unpaid order with a fresh licence id', async () => {
-      const order = await createOrder();
+  describe('createPreviewOrder', () => {
+    it('writes a free preview, already queued, with a fresh licence id and nothing licensed', async () => {
+      const order = await createPreview();
 
-      expect(order.status).toBe('pending_payment');
+      expect(order.status).toBe('preview_queued');
       expect(isLicenceId(order.licenceId)).toBe(true);
+      // Nothing has been sold: no tier, no licensee, no price.
+      expect(order.tier).toBeNull();
+      expect(order.licenseeName).toBeNull();
+      expect(order.amountCents).toBeNull();
+      expect(order.licenceAcceptedAt).toBeNull();
       expect(order.attempts).toBe(0);
       expect(order.generation).toBe(1);
       expect(order.downloadCount).toBe(0);
-      expect(order.queuedAt).toBeNull();
+      expect(order.previewsGenerated).toBe(0);
+      // Claimable the instant it exists — unlike the paid path, there is no
+      // payment to wait for.
+      expect(order.queuedAt).not.toBeNull();
       expect(order.options).toEqual(DEFAULT_OPTIONS);
       expect(order.catalogVersion).toBe(CNC_CATALOG_VERSION);
+    });
+
+    it('takes its tier and licensee only at finalise', async () => {
+      const order = await createOrder();
+
+      expect(order.status).toBe('pending_payment');
+      expect(order.tier).toBe('personal');
+      expect(order.licenseeName).toBe('Test Buyer');
+      expect(order.amountCents).toBe(14900);
+      expect(order.licenceAcceptedAt).not.toBeNull();
+      // The same licence id it previewed under.
+      expect(isLicenceId(order.licenceId)).toBe(true);
     });
 
     it('is findable by its licence id and listed newest-first for its buyer', async () => {
@@ -208,6 +294,52 @@ describe('CNC orders (real Postgres)', () => {
       expect(listed.map((order) => order.id).sort(byId)).toEqual([first.id, second.id].sort(byId));
       // Another buyer's order never appears in this list.
       expect(listed.every((order) => order.userId === BUYER_ID)).toBe(true);
+    });
+  });
+
+  describe('preview dedupe and the hourly count', () => {
+    it("finds this buyer's live preview of exactly this configuration", async () => {
+      const order = await createPreview(BUYER_ID, 'same-wall');
+
+      expect((await findPreviewOrderByConfigHash(BUYER_ID, 'same-wall'))?.id).toBe(order.id);
+      // Still a match while it generates, and once it is ready: both are "the
+      // preview you already asked for".
+      await transitionOrder(order.id, 'previewClaim', { claimToken: 'tok', attempts: 1 });
+      expect((await findPreviewOrderByConfigHash(BUYER_ID, 'same-wall'))?.id).toBe(order.id);
+      await transitionOrder(order.id, 'previewComplete', { previewGeneratedAt: new Date() }, { claimToken: 'tok' });
+      expect((await findPreviewOrderByConfigHash(BUYER_ID, 'same-wall'))?.id).toBe(order.id);
+    });
+
+    it("never hands one buyer another buyer's preview of the same wall", async () => {
+      await createPreview(OTHER_BUYER_ID, 'same-wall');
+      expect(await findPreviewOrderByConfigHash(BUYER_ID, 'same-wall')).toBeNull();
+    });
+
+    it('stops matching once the preview failed, so asking again really retries', async () => {
+      const order = await createPreview(BUYER_ID, 'same-wall');
+      await transitionOrder(order.id, 'previewClaim', { claimToken: 'tok', attempts: 3 });
+      await transitionOrder(order.id, 'previewFail', { status: 'preview_failed' }, { claimToken: 'tok' });
+
+      expect(await findPreviewOrderByConfigHash(BUYER_ID, 'same-wall')).toBeNull();
+    });
+
+    it('stops matching once the order is being bought, so a purchase is never returned as a free preview', async () => {
+      const ready = await readyPreview(BUYER_ID, 'same-wall');
+      await transitionOrder(ready.id, 'finalise', { tier: 'personal' });
+
+      expect(await findPreviewOrderByConfigHash(BUYER_ID, 'same-wall')).toBeNull();
+    });
+
+    it("counts this buyer's recent orders and nobody else's", async () => {
+      await createPreview();
+      await createPreview();
+      await createPreview(OTHER_BUYER_ID);
+
+      const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      expect(await countOrdersCreatedSince(BUYER_ID, hourAgo)).toBe(2);
+      expect(await countOrdersCreatedSince(OTHER_BUYER_ID, hourAgo)).toBe(1);
+      // Outside the window is outside the count.
+      expect(await countOrdersCreatedSince(BUYER_ID, new Date(Date.now() + 60_000))).toBe(0);
     });
   });
 
@@ -279,6 +411,80 @@ describe('CNC orders (real Postgres)', () => {
       expect(claimed?.workerId).toBe('worker-a');
       expect(claimed?.claimToken).toBeTruthy();
       expect(claimed?.heartbeatAt).not.toBeNull();
+    });
+
+    it('hands out a queued preview when there is no paid work', async () => {
+      const preview = await createPreview();
+
+      const claimed = await claimNextJob('worker-a', new Date());
+
+      expect(claimed?.id).toBe(preview.id);
+      expect(claimed?.status).toBe('preview_generating');
+      expect(claimed?.attempts).toBe(1);
+      expect(claimed?.claimToken).toBeTruthy();
+    });
+
+    it('serves every paid pack before any free preview, however long the preview has waited', async () => {
+      // The preview is older, so a plain oldest-first claim would take it. A
+      // buyer who has paid must never wait behind somebody still deciding.
+      const preview = await createPreview();
+      const paid = await queueOrder();
+
+      const first = await claimNextJob('worker-a', new Date());
+      expect(first?.id).toBe(paid.id);
+      expect(first?.status).toBe('generating');
+
+      const second = await claimNextJob('worker-b', new Date());
+      expect(second?.id).toBe(preview.id);
+      expect(second?.status).toBe('preview_generating');
+    });
+
+    it('reclaims a stale preview lease and gives up on it after the same three attempts', async () => {
+      const preview = await createPreview();
+
+      for (let attempt = 1; attempt <= CNC_MAX_ATTEMPTS; attempt += 1) {
+        const claimed = await claimNextJob(`worker-${String(attempt)}`, new Date());
+        expect(claimed?.id).toBe(preview.id);
+        expect(claimed?.attempts).toBe(attempt);
+        await expireLease(preview.id);
+      }
+
+      expect(await claimNextJob('worker-4', new Date())).toBeNull();
+
+      const stored = await readOrder(preview.id);
+      // Its own terminal status, not `failed`: nothing was paid for, and the
+      // buyer\'s page says "try again" rather than "we have been notified".
+      expect(stored?.status).toBe('preview_failed');
+      expect(stored?.claimToken).toBeNull();
+    });
+
+    it('gives the paid pack its own three attempts, whatever the preview spent', async () => {
+      const preview = await createPreview();
+      // The preview needed two goes.
+      await claimNextJob('worker-a', new Date());
+      await expireLease(preview.id);
+      await claimNextJob('worker-b', new Date());
+      expect((await readOrder(preview.id))?.attempts).toBe(2);
+
+      await transitionOrder(
+        preview.id,
+        'previewComplete',
+        { previewGeneratedAt: new Date() },
+        { claimToken: (await readOrder(preview.id))!.claimToken! },
+      );
+      await transitionOrder(preview.id, 'finalise', {
+        tier: 'personal',
+        attempts: 0,
+        claimToken: null,
+        workerId: null,
+        claimedAt: null,
+        heartbeatAt: null,
+      });
+      await transitionOrder(preview.id, 'checkoutCompleted', { queuedAt: new Date(), paidAt: new Date() });
+
+      const claimed = await claimNextJob('worker-c', new Date());
+      expect(claimed?.id).toBe(preview.id);
+      expect(claimed?.attempts).toBe(1);
     });
 
     it('returns null when nothing is queued', async () => {
@@ -414,6 +620,23 @@ describe('CNC orders (real Postgres)', () => {
       expect(JSON.stringify(publicOrder)).not.toContain('deadbeef');
       expect(JSON.stringify(publicOrder)).not.toContain('writer.py');
       expect(JSON.stringify(publicOrder)).not.toContain(order.licenceId + '.zip');
+    });
+
+    it('strips the preview object keys while keeping what the buyer is shown about it', async () => {
+      const ready = await readyPreview();
+
+      const publicOrder = toPublicOrder(ready);
+
+      // The keys are bucket paths; the images reach the buyer as
+      // `previewImages` URLs built from their basenames instead.
+      expect(publicOrder).not.toHaveProperty('previewZipKey');
+      expect(publicOrder).not.toHaveProperty('previewKeys');
+      expect(JSON.stringify(publicOrder)).not.toContain('_preview.zip');
+      expect(JSON.stringify(publicOrder)).not.toContain('panel1.png');
+      // What they are shown survives.
+      expect(publicOrder.previewGeneratedAt).not.toBeNull();
+      expect(publicOrder.previewZipSizeBytes).toBe(1024);
+      expect(publicOrder.previewsGenerated).toBe(1);
     });
 
     it('returns exactly the allow-listed columns, so a new column cannot leak in silently', async () => {
