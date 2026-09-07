@@ -4,9 +4,11 @@
 // A Compose `Row` (label/description Column + Switch) inside its own `Host`. The
 // whole row owns the toggle via the `toggleable` modifier (role 'switch'), so a
 // tap anywhere flips it and TalkBack reads the row as a switch labelled by its
-// text. The Switch's own `onCheckedChange` is left undefined so the tap fires
-// once, not twice. We bridge only the brand on-track colour; M3 surface/label
-// colours come from the Compose Material theme the Host sets up.
+// text. Expo UI always makes the nested Compose Switch interactive, even when
+// its JavaScript callback is omitted, so it uses the same handler for direct
+// thumb taps. Compose consumes that child gesture before it reaches the row.
+// We bridge only the brand on-track colour; M3 surface/label colours come from
+// the Compose Material theme the Host sets up.
 //
 // One Host per row is intentional for PR-1 (SwitchRow is used one-per-card
 // today). PR-2 consolidates whole settings screens into a single Compose list.
@@ -61,9 +63,9 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
         <Switch
           value={value}
           enabled={!disabled}
-          // The row's `toggleable` owns the tap — leave the Switch passive so a
-          // tap on it doesn't double-fire the toggle.
-          onCheckedChange={undefined}
+          // Direct taps land on the nested Compose control, not the row. Use the
+          // emitted value here; row taps still derive the next value above.
+          onCheckedChange={handleToggle}
           colors={switchColors}
         />
       </Row>

@@ -128,9 +128,10 @@ test/switch-row-stub.tsx              # passthrough stub (RN Pressable + Switch)
 - iOS: a single `Toggle` whose two `Text` children are title + subtitle (SwiftUI
   styles the second as secondary). Brand tint + disabled via modifiers; the native
   Toggle supplies the switch trait and on/off announcement.
-- Android: a `Row` that owns the toggle via the `toggleable` modifier
-  (`role: 'switch'`); the `Switch`'s own `onCheckedChange` is left undefined so a
-  tap fires once. Brand on-track colour via `switchBrandColors`.
+- Android: a `Row` that owns whole-row toggling via the `toggleable` modifier
+  (`role: 'switch'`), while its nested `Switch` calls the same handler for direct
+  thumb taps. Expo UI keeps that nested Compose control interactive even when its
+  JavaScript callback is omitted. Brand on-track colour via `switchBrandColors`.
 - Both call `makeToggleHandler(onValueChange, disabled)` so the haptic + disabled
   behaviour can't drift between platforms.
 
