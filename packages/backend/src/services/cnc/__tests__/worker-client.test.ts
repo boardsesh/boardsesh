@@ -118,9 +118,27 @@ describe('toLayoutRequest', () => {
         tnut_hole_diameter_mm: 12.5,
         led_hole_diameter_mm: 12.5,
         stud_clearance_offset_mm: 60,
+        support_strips: true,
         kicker: { mat_clearance_mm: 50 },
       },
     });
+  });
+
+  it('sends support_strips false when the buyer turned the seam strips off', () => {
+    const entry = entry10x12();
+    const options = validateCatalogOptions(entry, { supportStrips: false });
+    if (!options.ok) throw new Error('expected valid options');
+
+    const request = toLayoutRequest({ entry, options: options.options, setIds: [26, 27] });
+    expect(request.manufacturing.support_strips).toBe(false);
+  });
+
+  it('keeps the strips for an order stored before the option existed', () => {
+    const entry = entry10x12();
+    const { supportStrips: _dropped, ...legacy } = defaultOptions(entry);
+
+    const request = toLayoutRequest({ entry, options: legacy, setIds: [26, 27] });
+    expect(request.manufacturing.support_strips).toBe(true);
   });
 
   it('leaves the kicker block out when no kicker set was chosen', () => {

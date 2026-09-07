@@ -151,7 +151,17 @@
         "help": "Le format papier des tirages de contrôle.",
         "values": {
           "A3": "A3",
-          "TABLOID": "Tabloid"
+          "A4": "A4",
+          "TABLOID": "Tabloid (11 x 17 po)",
+          "LETTER": "Letter (8,5 x 11 po)"
+        }
+      },
+      "supportStrips": {
+        "label": "Lattes de renfort des joints",
+        "help": "Lattes de contreplaqué de 150 mm, rainurées pour les écrous à griffes, qui se placent derrière chaque joint horizontal. Laissez-les activées sauf si votre ossature soutient déjà les joints.",
+        "values": {
+          "false": "Désactivé",
+          "true": "Activé"
         }
       },
       "engraveHoldIds": {
@@ -281,7 +291,8 @@
       "sheetsValue_other": "{{count}} plaques",
       "tnuts": "Perçages d'écrous à griffes",
       "leds": "Perçages LED",
-      "skippedLeds": "LED sautées à un raccord",
+      "seamNotches": "Perçages LED sur un raccord",
+      "seamNotchesHelp": "Ces perçages LED tombent sur un raccord entre panneaux. Chacun est découpé en encoche dans les deux panneaux, et la LED se loge dans l’encoche une fois les panneaux assemblés.",
       "warningsHeading": "Bon à savoir",
       "unavailable": "La liste de découpe ne charge pas pour l’instant. Tout ce que tu as choisi est toujours là."
     },

@@ -12,6 +12,7 @@ import {
   hasKickerSets,
   initialConfiguratorState,
   optionValueKey,
+  partitionByControl,
   setIdsFor,
   toBoardConfigInput,
   toDraft,
@@ -22,7 +23,8 @@ import {
 /**
  * A trimmed stand-in for the real catalogue, carrying one option of every
  * shape the backend actually publishes: a string, a fractional number, a
- * kicker-only number, and the two booleans that are engrave toggles.
+ * kicker-only number, a boolean that stays in the machining step, and the two
+ * booleans that are engrave toggles.
  */
 function tenByTwelve(): CncCatalogEntry {
   return {
@@ -53,6 +55,13 @@ function tenByTwelve(): CncCatalogEntry {
         defaultValue: '50',
         valueType: 'number',
         kickerOnly: true,
+      },
+      {
+        key: 'supportStrips',
+        values: ['true', 'false'],
+        defaultValue: 'true',
+        valueType: 'boolean',
+        kickerOnly: false,
       },
       {
         key: 'engraveHoldIds',
@@ -87,6 +96,7 @@ describe('option defaults', () => {
       sheetStock: '2440x1220',
       tnutHoleDiameterMm: '12.5',
       kickerMatClearanceMm: '50',
+      supportStrips: 'true',
       engraveHoldIds: 'false',
       engraveAngleTicks: 'false',
     });
@@ -154,6 +164,36 @@ describe('kicker-only and engrave options', () => {
   });
 });
 
+describe('which control an option gets', () => {
+  it('sends every boolean to a switch and everything else to a select', () => {
+    const { toggles, choices } = partitionByControl(visibleMachiningOptions(tenByTwelve(), true));
+
+    expect(toggles.map((option) => option.key)).toEqual(['supportStrips']);
+    expect(choices.map((option) => option.key)).toEqual(['sheetStock', 'tnutHoleDiameterMm', 'kickerMatClearanceMm']);
+  });
+
+  it('splits on valueType rather than a list of keys, so a new boolean draws itself', () => {
+    const invented = {
+      key: 'someFutureFlag',
+      values: ['false', 'true'],
+      defaultValue: 'false',
+      valueType: 'boolean',
+      kickerOnly: false,
+    };
+
+    expect(partitionByControl([invented]).toggles).toEqual([invented]);
+    expect(partitionByControl([invented]).choices).toEqual([]);
+  });
+
+  it('keeps the two lists disjoint and complete', () => {
+    const options = visibleMachiningOptions(tenByTwelve(), true);
+    const { toggles, choices } = partitionByControl(options);
+
+    expect(toggles.length + choices.length).toBe(options.length);
+    expect(toggles.filter((option) => choices.includes(option))).toEqual([]);
+  });
+});
+
 describe('set ids', () => {
   it('drops both kicker sets together when the kicker is off', () => {
     expect(setIdsFor(tenByTwelve(), true)).toBe('26,27,28,29');
@@ -176,6 +216,7 @@ describe('config to mutation input', () => {
       sheetStock: '2440x1220',
       tnutHoleDiameterMm: 12.5,
       kickerMatClearanceMm: 50,
+      supportStrips: true,
       engraveHoldIds: false,
       engraveAngleTicks: false,
     });

@@ -33,6 +33,7 @@ const DEFAULT_OPTIONS: CncOrderOptions = {
   gridPitchMm: 100,
   dxfFlavour: 'R12_circles',
   paper: 'A3',
+  supportStrips: true,
   engraveHoldIds: false,
   engraveAngleTicks: false,
 };

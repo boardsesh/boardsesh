@@ -77,6 +77,7 @@ import {
   newArtworkItem,
   toBoardConfigInput,
   toDraft,
+  partitionByControl,
   visibleMachiningOptions,
   type CncArtworkDraft,
   type CncConfiguratorState,
@@ -189,7 +190,9 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
 
   const price = tierPrice(entry, state.tier);
   const blockers = finaliseBlockers(state);
-  const machiningOptions = visibleMachiningOptions(entry, state.includeKicker);
+  const { toggles: machiningToggles, choices: machiningChoices } = partitionByControl(
+    visibleMachiningOptions(entry, state.includeKicker),
+  );
   const engraveToggles = engraveOptions(entry);
 
   // Which labels the placement editor can already see are in trouble. Reported
@@ -510,7 +513,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
               />
               <Box className={styles.stepBody}>
                 <FieldGrid>
-                  {machiningOptions.map((option) => (
+                  {machiningChoices.map((option) => (
                     <FormControl key={option.key} fullWidth size="small">
                       <InputLabel id={`cnc-option-${option.key}`}>
                         {t(`configurator.options.${option.key}.label`)}
@@ -534,6 +537,27 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
                     </FormControl>
                   ))}
                 </FieldGrid>
+                {machiningToggles.map((option) => (
+                  <Box key={option.key} className={styles.switchRow}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={(state.options[option.key] ?? option.defaultValue) === 'true'}
+                          onChange={(event) => {
+                            dispatch({
+                              type: 'setOption',
+                              key: option.key,
+                              value: event.target.checked ? 'true' : 'false',
+                            });
+                            reportStep('options');
+                          }}
+                        />
+                      }
+                      label={t(`configurator.options.${option.key}.label`)}
+                    />
+                    <FormHelperText>{t(`configurator.options.${option.key}.help`)}</FormHelperText>
+                  </Box>
+                ))}
               </Box>
             </SectionCard>
 
@@ -1021,7 +1045,7 @@ function SummaryRail({
 
   // Two rows that only exist for some walls, so they are appended rather than
   // held open: a wall with no kicker has no kicker height to skeleton, and a
-  // seam that swallowed no LEDs is not a figure anyone needs.
+  // wall whose seams miss every LED has no notches to explain.
   const kickerHeightMm = summary?.kickerHeightMm ?? null;
   if (kickerHeightMm !== null) {
     items.push({
@@ -1030,12 +1054,16 @@ function SummaryRail({
       value: t('configurator.summary.kickerHeightValue', { height: kickerHeightMm }),
     });
   }
-  const skippedSeamLeds = summary?.skippedSeamLeds ?? null;
-  if (skippedSeamLeds !== null && skippedSeamLeds > 0) {
+  const seamNotches = summary?.seamNotches ?? null;
+  if (seamNotches !== null && seamNotches > 0) {
     items.push({
-      key: 'skippedLeds',
-      label: t('configurator.summary.skippedLeds'),
-      value: String(skippedSeamLeds),
+      key: 'seamNotches',
+      label: t('configurator.summary.seamNotches'),
+      value: String(seamNotches),
+      // A figure nobody can act on without knowing what it means: a notch on a
+      // seam looks like a mistake on the sheet until you are told the LED goes
+      // in it.
+      hint: t('configurator.summary.seamNotchesHelp'),
     });
   }
 

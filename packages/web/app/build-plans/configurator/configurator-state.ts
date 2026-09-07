@@ -316,6 +316,25 @@ export function engraveOptions(entry: CncCatalogEntry): readonly CncManufacturin
 }
 
 /**
+ * Split options by the control that fits them: a switch for a yes/no, a select
+ * for anything else.
+ *
+ * Driven off `valueType` rather than a list of keys, so the next boolean the
+ * catalogue publishes draws itself. A two-entry dropdown reading "On / Off" is
+ * a worse control than a switch at every width, and it hides which way the
+ * option currently sits behind a click.
+ */
+export function partitionByControl(options: readonly CncManufacturingOption[]): {
+  toggles: readonly CncManufacturingOption[];
+  choices: readonly CncManufacturingOption[];
+} {
+  return {
+    toggles: options.filter((option) => option.valueType === 'boolean'),
+    choices: options.filter((option) => option.valueType !== 'boolean'),
+  };
+}
+
+/**
  * An option value as an i18n key segment.
  *
  * Catalogue values carry characters i18next reads structurally: `12.5` would
