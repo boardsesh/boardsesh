@@ -175,7 +175,11 @@ There are exactly three production code paths that insert into `boardsesh_ticks`
   debounced pass (2 s window,
   `packages/backend/src/graphql/resolvers/ticks/debounced-climb-stats-publisher.ts`)
   that coalesces a burst of ticks on the same key. Both run the same SQL and are
-  idempotent.
+  idempotent. The debounced pass also publishes the recomputed row on
+  `climbStatsUpdated(boardType, layoutId)`; every phone browsing that layout
+  updates its list rows from it, and a phone with the board downloaded also
+  writes it into local SQLite so its filters, count and detail move too
+  (docs/websocket-implementation.md).
 - The recompute rewrites `board_climb_stats.boardsesh_ascensionist_count` and
   `quality_average` from the current ticks for that
   `(board_type, climb_uuid, angle)` triplet. It rewrites the grade columns —

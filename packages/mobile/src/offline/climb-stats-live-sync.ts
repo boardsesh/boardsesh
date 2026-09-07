@@ -98,11 +98,7 @@ function pageHoldsAnyClimb(page: unknown, climbUuids: ReadonlySet<string>): bool
  * caches `{ pages: [{ searchClimbs: { climbs } }] }`, the single-page list
  * `{ searchClimbs: { climbs } }`, and the count neither.
  */
-export function canStreamChangeList(
-  input: unknown,
-  cachedData: unknown,
-  climbUuids: ReadonlySet<string>,
-): boolean {
+export function canStreamChangeList(input: unknown, cachedData: unknown, climbUuids: ReadonlySet<string>): boolean {
   if (cachedData !== null && typeof cachedData === 'object') {
     const pages = (cachedData as { pages?: unknown }).pages;
     if (Array.isArray(pages)) {
