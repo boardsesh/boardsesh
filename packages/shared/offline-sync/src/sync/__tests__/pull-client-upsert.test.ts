@@ -292,7 +292,15 @@ describe('buildMultiRowInsertSql — the revision guard', () => {
 
 describe('the revision guard against a real SQLite row', () => {
   async function applyPage(database: TestSqliteDb, rows: Record<string, SqlValue>[]) {
-    const columns = ['board_type', 'climb_uuid', 'angle', 'ascensionist_count', 'benchmark_difficulty', 'updated_at', 'sync_seq'];
+    const columns = [
+      'board_type',
+      'climb_uuid',
+      'angle',
+      'ascensionist_count',
+      'benchmark_difficulty',
+      'updated_at',
+      'sync_seq',
+    ];
     const sql = buildMultiRowInsertSql('board_climb_stats', columns, rows.length, {
       revisionColumn: 'sync_seq',
       primaryKeyColumns: TABLE_CONFIGS.board_climb_stats.primaryKeyColumns,
@@ -323,7 +331,9 @@ describe('the revision guard against a real SQLite row', () => {
     await runMigrations(database);
     // The stream's row: newer than the page below, and with the epoch
     // updated_at plus the NULL benchmark the write-through always leaves.
-    await applyPage(database, [statsRow({ ascensionist_count: 42, sync_seq: 1000, updated_at: '1970-01-01T00:00:00.000Z' })]);
+    await applyPage(database, [
+      statsRow({ ascensionist_count: 42, sync_seq: 1000, updated_at: '1970-01-01T00:00:00.000Z' }),
+    ]);
   });
 
   afterEach(() => {
@@ -344,7 +354,12 @@ describe('the revision guard against a real SQLite row', () => {
     // The stream leaves updated_at at the epoch (it is the pull cursor) and
     // never writes benchmark_difficulty. A `>` guard would strand both.
     await applyPage(database, [
-      statsRow({ ascensionist_count: 42, sync_seq: 1000, benchmark_difficulty: 19, updated_at: '2026-09-02T10:00:00.000Z' }),
+      statsRow({
+        ascensionist_count: 42,
+        sync_seq: 1000,
+        benchmark_difficulty: 19,
+        updated_at: '2026-09-02T10:00:00.000Z',
+      }),
     ]);
 
     const row = await database.getFirstAsync<{
