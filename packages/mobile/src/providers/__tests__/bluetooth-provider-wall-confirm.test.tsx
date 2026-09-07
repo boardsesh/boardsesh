@@ -1859,6 +1859,40 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
     });
 
+    it('relights a climb in the orientation it is still flipped to', async () => {
+      // A flip belongs to the climb, so every write path honours it. Relighting
+      // it un-mirrored would leave the wall disagreeing with the toggle a drawer
+      // opening on that climb will show — reachable on iPhone, where the player
+      // is dismissed while the kiosk feed is up.
+      presence.enabled = true;
+      presence.boardId = 99;
+      presence.currentClimb = makePresenceClimb();
+      bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+        bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+      });
+
+      act(() => {
+        capturedBluetooth?.setMirrorIntent('relit-climb', true);
+      });
+
+      await act(async () => {
+        await capturedBluetooth?.relightPresenceClimb(
+          makePresenceClimb({ climbUuid: 'relit-climb', frames: 'relit-frames' }),
+        );
+      });
+
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'relit-frames',
+        true,
+        undefined,
+        expect.objectContaining({ sendSource: 'wall-relight' }),
+      );
+    });
+
     it('leaves the undone wall alone when the current climb is still flipped', async () => {
       // Undo relights the PREVIOUS climb; the current one is still flipped. The
       // flip must stay recorded — dropping it makes the next drain compute an

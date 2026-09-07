@@ -449,6 +449,16 @@ export function PlayDrawer({
   // climb on screen, fall back to the orientation the wall was last asked for:
   // the drawer is a route on iPhone, so reopening it must show the flip that is
   // actually lit rather than assuming none and lying about the wall.
+  //
+  // The fallback reads a ref through a context callback, which is safe on two
+  // invariants — break either and this silently shows the wrong orientation:
+  //  - Single writer. Only the effect below states an intent, and it writes back
+  //    exactly what this line computed, so the ref cannot drift from the toggle.
+  //  - Single instance. `/play` and the iPad pane are mutually exclusive
+  //    (`(tabs)/_layout.tsx`), so two drawers never state intents at once.
+  // The React Compiler memoises this on `mirrorFlip`/`displayedClimbUuid`/
+  // `bluetooth`, so a ref changed underneath is NOT re-read, and the read is
+  // invisible to `react-hooks/refs` — lint will not catch a second writer.
   const isMirrored =
     mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid
       ? mirrorFlip.mirrored
