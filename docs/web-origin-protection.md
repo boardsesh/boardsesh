@@ -16,7 +16,9 @@ The guard covers API routes, dotted paths, Next assets and image optimization,
 well-known files, and monitoring routes. Locale/session/CORS handling retains its
 previous narrower scope. The verification header is removed before forwarding,
 including Next external rewrites. Existing user authorization and POST bodies
-remain intact. A rejected request gets an empty, non-cacheable 403.
+remain intact. Server and edge Sentry hooks also strip the incoming header from
+errors, transactions, span attributes and structured-log attributes, because
+Sentry can capture headers before middleware runs. A rejected request gets an empty, non-cacheable 403.
 
 ## Deployment order
 
