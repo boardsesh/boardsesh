@@ -56,4 +56,20 @@ describe('tickToClimb', () => {
     expect(tickToClimb(makeTick({ isBenchmark: true, difficultyName: 'V5' }))?.benchmark_difficulty).toBe('V5');
     expect(tickToClimb(makeTick({ isBenchmark: false, difficultyName: 'V5' }))?.benchmark_difficulty).toBeNull();
   });
+
+  // #5245: Woods states both matching/feet rules on every climb, decoded from
+  // `characteristics`. A tick payload that never carried the field made every
+  // Woods climb opened from the Logbook/session feed print "not recorded".
+  it('carries characteristics through onto the Climb', () => {
+    const climb = tickToClimb(makeTick({ characteristics: ['no_match'] }));
+    expect(climb?.characteristics).toEqual(['no_match']);
+  });
+
+  it('defaults characteristics to null (not []) when the tick payload omits it', () => {
+    // decodeClimbRules treats null ("never recorded") and [] ("recorded under
+    // the defaults") as different answers — collapsing one into the other would
+    // put a rule on screen nobody authored.
+    const climb = tickToClimb(makeTick());
+    expect(climb?.characteristics).toBeNull();
+  });
 });
