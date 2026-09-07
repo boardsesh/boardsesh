@@ -29,7 +29,14 @@ skipped. The setter sitemap was temporarily degraded on the first two attempts
 and recovered on the third. The backend production smoke passed on its first
 attempt, including GraphQL schema and both board-render responses. These probes
 do not substitute for an authenticated climb/session check or peak-traffic
-observation. The existing URL-resolver tests verify public URLs remain public.
+observation. The existing URL-resolver tests verify public URLs remain public. A separate
+anonymous GraphQL WebSocket connection received `connection_ack` after scaling.
+
+At 07:39 UTC, PostGIS reported 9.59 GB total cgroup memory: 5.50 GB inactive file
+cache, 0.71 GB anonymous memory, 2.22 GB shared memory and 0.19 GB kernel memory.
+All `memory.events` counters, including OOM and limit events, were zero since the
+restart. There were 38 client connections (36 idle, two active). This is a point
+sample, not the seven-day evidence needed for another reduction.
 
 ## Observation gate
 
@@ -84,7 +91,7 @@ can mutate production. Direct metrics/log reads were used instead. Internal
 ClickHouse measurements remain pending access; no workaround or temporary public
 proxy has been created.
 
-Run `scripts/railway-clickhouse-audit.sql` through an already authorized internal
+Run `docs/railway-clickhouse-audit.sql` through an already authorized internal
 ClickHouse client with `--readonly 1 --max_threads 1 --max_execution_time 10
 --max_memory_usage 67108864`. The SELECT-only queries report aggregate metadata,
 not event contents or query text. Execute them individually if optional system
