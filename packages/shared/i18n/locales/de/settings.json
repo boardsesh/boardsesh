@@ -149,7 +149,7 @@
       "kilterNewCopy": "Melde dich mit deinem Kilter-Benutzernamen und -Passwort an und hol deine Begehungen, Versuche, Bewertungen und Circuits nach Boardsesh.",
       "kilterSignIn": "Bei Kilter anmelden",
       "reconnect": "Neu verbinden",
-      "notConnected": "Nicht verbunden. Verknüpf dein {{boardName}}-Konto, um deine Aurora-Daten zu holen, oder importier eine JSON-Exportdatei.",
+      "notConnected": "Nicht verbunden. Verknüpf dein {{boardName}}-Konto, um deine Begehungen zu holen, oder importier eine JSON-Exportdatei.",
       "link": "Verknüpfen",
       "import": "Importieren",
       "requestData": "Daten anfordern",
@@ -177,7 +177,7 @@
     },
     "linkDialog": {
       "title": "{{boardName}}-Konto verknüpfen",
-      "description": "Gib Benutzernamen und Passwort für dein {{boardName}} Board ein, um deine Aurora-Daten zu holen. Deine Zugangsdaten werden verschlüsselt und sicher gespeichert. Die Sync läuft alle 12 Stunden.",
+      "description": "Melde dich so an, wie du dich bei {{boardName}} anmeldest: mit deinem {{boardName}}-Benutzernamen, nicht deiner E-Mail. Deine Zugangsdaten werden vor dem Speichern verschlüsselt.",
       "usernameLabel": "Benutzername",
       "usernamePlaceholder": "Gib deinen Benutzernamen ein",
       "passwordLabel": "Passwort",
@@ -185,12 +185,12 @@
       "submit": "Konto verknüpfen",
       "submitting": "Wird verknüpft...",
       "linkError": "Konto konnte nicht verknüpft werden",
-      "linkSuccess": "{{boardName}}-Konto verknüpft. Deine Daten sind innerhalb von 12 Stunden da.",
+      "linkSuccess": "{{boardName}}-Konto verknüpft. Deine Begehungen sind unterwegs — die meisten sind in ein paar Minuten da.",
       "accountAlreadyLinked": "Ein anderes Boardsesh-Mitglied hat dieses Konto schon verknüpft. Wenn es deins ist, trenn es dort zuerst und versuch es dann nochmal."
     },
     "kilterLinkDialog": {
       "title": "Bei Kilter anmelden",
-      "description": "Gib deinen Kilter-Benutzernamen und dein Passwort ein. Dein Passwort wird gegen ein sicheres Token getauscht und nie gespeichert. Deine Begehungen sind in ein paar Stunden da.",
+      "description": "Gib deinen Kilter-Benutzernamen und dein Passwort ein. Dein Passwort wird gegen ein sicheres Token getauscht und nie gespeichert. Deine Begehungen sind in ein paar Minuten da.",
       "passwordHelp": "Funktioniert mit deinem bestehenden Kilter-Login. Konten mit Zwei-Faktor oder reinem Social-Login kommen hier nicht rein – nutz stattdessen den Import."
     },
     "unlinkError": "Konto konnte nicht getrennt werden",
@@ -314,7 +314,7 @@
       "connected": "Verbunden",
       "notConnected": "Nicht verbunden",
       "kilterNotAllowed": "Die Kilter-Sync ist für dieses Konto noch nicht freigeschaltet.",
-      "linkSuccess": "{{boardName}} verknüpft",
+      "linkSuccess": "{{boardName}} verknüpft — deine Begehungen sind unterwegs.",
       "unlinkSuccess": "{{boardName}} getrennt",
       "unlinkPartial": "{{boardName}} ist hier weg, beim Anbieter läuft die Sitzung aber vielleicht noch.",
       "invalidCredentials": "Benutzername oder Passwort hat nicht gepasst.",

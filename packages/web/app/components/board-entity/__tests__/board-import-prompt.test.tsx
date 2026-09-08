@@ -178,7 +178,7 @@ describe('BoardImportPrompt', () => {
 
       await waitFor(() => {
         expect(mockShowMessage).toHaveBeenCalledWith(
-          'Tension account linked. Your data will show up within 12 hours.',
+          'Tension linked. Your sends are on their way — most land within a few minutes.',
           'success',
         );
       });
