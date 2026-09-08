@@ -371,6 +371,20 @@ render is stuck in our queue or stuck in native.
 
 ## Profiling workflow
 
+For player swipe dismissal on ProMotion iPhones, target the 120 Hz presentation
+budget (8.33 ms) in a release build. Record the OS/build, active display cadence,
+power and accessibility settings, and compare slow releases around 80% openness,
+fast flicks and cancelled drags from the Climbs tab. Include 30 warm dismissals
+with a large logbook and a player whose below-fold sections have loaded. Report
+missed presentation deadlines and any repeatable plateau after finger-up; an
+average FPS counter or a screen recording alone cannot establish 120 fps.
+
+The release spring runs entirely on the UI thread. Navigation and host cleanup
+happen after the whole surface is offscreen; see the player swipe dismissal
+contract in `docs/mobile-sheets-vs-routes.md`. Unit tests cover ordering and races,
+but physical-device timing remains a separate acceptance check. Check the built
+app's `CADisableMinimumFrameDurationOnPhone` flag before measuring ProMotion.
+
 Required evidence for any list / provider / theme PR: a **before/after recording on the climbs list
 and the play drawer**, captured on a large-logbook account. A claim of "this is faster" without a
 recording does not clear review.

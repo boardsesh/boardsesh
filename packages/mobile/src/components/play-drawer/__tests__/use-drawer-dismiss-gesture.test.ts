@@ -3,6 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { SharedValue } from 'react-native-reanimated';
 
+const spring = vi.hoisted(() =>
+  vi.fn((target: number, _config?: unknown, _complete?: (finished: boolean) => void) => target),
+);
+
 // The hook composes a reanimated worklet Pan — stub the native layers so it runs
 // in node. These tests pin the axis-lock behaviour: while the carousel owns the
 // gesture as a horizontal swipe (offset non-zero) or is settling a fling, the
@@ -17,7 +21,8 @@ vi.mock('react-native-reanimated', async () => {
       if (ref.current === null) ref.current = { value: initial };
       return ref.current;
     },
-    withSpring: (toValue: unknown) => toValue,
+    withSpring: spring,
+    cancelAnimation: vi.fn(),
     runOnJS:
       (fn: (...args: unknown[]) => unknown) =>
       (...args: unknown[]) =>
@@ -159,5 +164,116 @@ describe('useDrawerDismissGesture', () => {
     handlers.onEnd({ velocityY: 0 });
 
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  function routeAnimation() {
+    return { translateY: sv(0), height: sv(900), isDismissing: sv(false), onComplete: vi.fn() };
+  }
+
+  it('continues the route transform with release velocity before calling any JS close', () => {
+    const swipeDismiss = routeAnimation();
+    const { result } = renderHook(() => useDrawerDismissGesture(makeOptions({ swipeDismiss })));
+    const handlers = latestHandlers();
+    handlers.onBegin();
+    handlers.onUpdate({ translationY: 180 });
+    expect(result.current.translateY).toBe(swipeDismiss.translateY);
+    expect(swipeDismiss.translateY.value).toBe(180);
+    handlers.onEnd({ velocityY: 800 });
+
+    expect(spring).toHaveBeenLastCalledWith(
+      900,
+      expect.objectContaining({ velocity: 800, overshootClamping: true }),
+      expect.any(Function),
+    );
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(swipeDismiss.onComplete).not.toHaveBeenCalled();
+    const complete = spring.mock.lastCall?.[2];
+    expect(complete).toBeDefined();
+    complete?.(true);
+    expect(swipeDismiss.onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the committed close locked through finger-up and repeated touches', () => {
+    const swipeDismiss = routeAnimation();
+    renderHook(() => useDrawerDismissGesture(makeOptions({ swipeDismiss })));
+    const handlers = latestHandlers();
+    handlers.onBegin();
+    handlers.onUpdate({ translationY: 180 });
+    handlers.onEnd({ velocityY: 800 });
+    handlers.onFinalize({}, true);
+    expect(swipeDismiss.isDismissing.value).toBe(true);
+    const closingOffset = swipeDismiss.translateY.value;
+
+    handlers.onBegin();
+    handlers.onUpdate({ translationY: 20 });
+    handlers.onEnd({ velocityY: 900 });
+    handlers.onFinalize({}, true);
+    expect(spring).toHaveBeenCalledTimes(1);
+    expect(swipeDismiss.translateY.value).toBe(closingOffset);
+    spring.mock.lastCall?.[2]?.(true);
+    expect(swipeDismiss.onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers an interrupted release spring without removing the route', () => {
+    const swipeDismiss = routeAnimation();
+    renderHook(() => useDrawerDismissGesture(makeOptions({ swipeDismiss })));
+    const handlers = latestHandlers();
+    handlers.onBegin();
+    handlers.onUpdate({ translationY: 180 });
+    handlers.onEnd({ velocityY: 0 });
+    spring.mock.lastCall?.[2]?.(false);
+    expect(swipeDismiss.isDismissing.value).toBe(false);
+    expect(swipeDismiss.translateY.value).toBe(0);
+    expect(swipeDismiss.onComplete).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('returns a cancelled gesture home even when onEnd does not fire', () => {
+    const swipeDismiss = routeAnimation();
+    renderHook(() => useDrawerDismissGesture(makeOptions({ swipeDismiss })));
+    const handlers = latestHandlers();
+    handlers.onBegin();
+    handlers.onUpdate({ translationY: 80 });
+    handlers.onFinalize({}, false);
+    expect(swipeDismiss.translateY.value).toBe(0);
+    expect(swipeDismiss.isDismissing.value).toBe(false);
+    expect(swipeDismiss.onComplete).not.toHaveBeenCalled();
+  });
+
+  it('springs a short drag home without dismissing', () => {
+    const swipeDismiss = routeAnimation();
+    renderHook(() => useDrawerDismissGesture(makeOptions({ swipeDismiss })));
+    const handlers = latestHandlers();
+    handlers.onBegin();
+    handlers.onUpdate({ translationY: 70 });
+    handlers.onEnd({ velocityY: 100 });
+    handlers.onFinalize({}, true);
+    expect(swipeDismiss.translateY.value).toBe(0);
+    expect(swipeDismiss.isDismissing.value).toBe(false);
+    expect(swipeDismiss.onComplete).not.toHaveBeenCalled();
+  });
+
+  it('does not dismiss a drag that began below the top, even if scrolling reaches the top', () => {
+    const swipeDismiss = routeAnimation();
+    const scrollYSV = sv(100);
+    renderHook(() => useDrawerDismissGesture(makeOptions({ swipeDismiss, scrollYSV })));
+    const handlers = latestHandlers();
+    handlers.onBegin();
+    scrollYSV.value = 0;
+    handlers.onUpdate({ translationY: 200 });
+    handlers.onEnd({ velocityY: 1200 });
+    expect(swipeDismiss.translateY.value).toBe(0);
+    expect(swipeDismiss.isDismissing.value).toBe(false);
+    expect(swipeDismiss.onComplete).not.toHaveBeenCalled();
+  });
+
+  it('does not reverse direction when a long drag is released with upward velocity', () => {
+    const swipeDismiss = routeAnimation();
+    renderHook(() => useDrawerDismissGesture(makeOptions({ swipeDismiss })));
+    const handlers = latestHandlers();
+    handlers.onBegin();
+    handlers.onUpdate({ translationY: 180 });
+    handlers.onEnd({ velocityY: -50 });
+    expect(spring).toHaveBeenLastCalledWith(900, expect.objectContaining({ velocity: 0 }), expect.any(Function));
   });
 });
