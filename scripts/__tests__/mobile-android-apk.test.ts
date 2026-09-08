@@ -108,6 +108,64 @@ describe('devApkFreshness', () => {
     expect(calls.map((call) => call.args[0])).toEqual(['cat-file', 'fetch', 'cat-file']);
   });
 
+  // A native deploy publishes a fresh rn-android-dev-* release on every push to
+  // main, so a workflow pinned to an older commit (e.g. a `workflow_run.head_sha`
+  // from 30-50 minutes earlier) often finds the newest release is a DESCENDANT
+  // of HEAD rather than an ancestor. These three cover that reversed direction.
+  // Distinct from `fakeGit`: the two merge-base calls ask opposite questions and
+  // must get opposite answers, which `fakeGit`'s single `isAncestor` knob can't
+  // express.
+  function directionalGit(
+    answers: { tagAncestorOfHead: number; headAncestorOfTag: number; diff?: number },
+    calls: GitCall[] = [],
+  ): GitRunner {
+    return (args: string[]) => {
+      calls.push({ args });
+      if (args[0] === 'cat-file') return { status: 0, stdout: '' };
+      if (args[0] === 'merge-base') {
+        const isTagFirst = args[2] === TAG_COMMIT && args[3] === HEAD;
+        return { status: isTagFirst ? answers.tagAncestorOfHead : answers.headAncestorOfTag, stdout: '' };
+      }
+      if (args[0] === 'diff') return { status: answers.diff ?? 0, stdout: '' };
+      return { status: 1, stdout: '' };
+    };
+  }
+
+  it('is fresh with newer-release-same-native-inputs when HEAD is an ancestor of a newer release with no native diff', () => {
+    const calls: GitCall[] = [];
+    const verdict = devApkFreshness(
+      HEAD,
+      TAG_COMMIT,
+      directionalGit({ tagAncestorOfHead: 1, headAncestorOfTag: 0, diff: 0 }, calls),
+    );
+
+    expect(verdict).toEqual({ fresh: true, reason: 'newer-release-same-native-inputs' });
+
+    const mergeBaseCalls = calls.filter((call) => call.args[0] === 'merge-base');
+    expect(mergeBaseCalls.map((call) => call.args)).toEqual([
+      ['merge-base', '--is-ancestor', TAG_COMMIT, HEAD],
+      ['merge-base', '--is-ancestor', HEAD, TAG_COMMIT],
+    ]);
+    const diffCall = calls.find((call) => call.args[0] === 'diff');
+    expect(diffCall?.args.slice(0, 4)).toEqual(['diff', '--quiet', HEAD, TAG_COMMIT]);
+  });
+
+  it('is stale (native-inputs-changed) when HEAD is an ancestor of a newer release but native inputs differ', () => {
+    const verdict = devApkFreshness(
+      HEAD,
+      TAG_COMMIT,
+      directionalGit({ tagAncestorOfHead: 1, headAncestorOfTag: 0, diff: 1 }),
+    );
+
+    expect(verdict).toEqual({ fresh: false, reason: 'native-inputs-changed' });
+  });
+
+  it('is stale (not-an-ancestor) when the release and HEAD have diverged', () => {
+    const verdict = devApkFreshness(HEAD, TAG_COMMIT, directionalGit({ tagAncestorOfHead: 1, headAncestorOfTag: 1 }));
+
+    expect(verdict).toEqual({ fresh: false, reason: 'not-an-ancestor' });
+  });
+
   it('diffs every freshness path (a dropped path would silently pass a stale APK)', () => {
     const calls: GitCall[] = [];
     devApkFreshness(HEAD, TAG_COMMIT, fakeGit({ catFile: [0], isAncestor: 0, diff: 0 }, calls));

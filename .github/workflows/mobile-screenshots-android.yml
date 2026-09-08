@@ -181,11 +181,15 @@ jobs:
 
       # Downloads the newest rn-android-dev-* universal dev-client APK
       # (android-apk-dev-client.yml) — no bundled JS, so no Gradle build on the
-      # common path. When that release predates a native-input change on this
-      # commit (or there's no release / download fails), the script warns and
-      # falls back to a local `assembleDebug` build — that's why Java + the SDK
-      # stay installed above. Writes `apk_path` / `apk_source` outputs. Checkout
-      # already uses fetch-depth: 0 above, which this freshness check needs.
+      # common path. It's used when the release's native tree provably matches
+      # this commit: either the release was built from an ancestor of it with no
+      # native-input change since, or the release is a newer commit (every
+      # native deploy to main publishes a fresh release) with no native-input
+      # change between the two — see devApkFreshness. Otherwise (or if there's
+      # no release / download fails), the script warns and falls back to a
+      # local `assembleDebug` build — that's why Java + the SDK stay installed
+      # above. Writes `apk_path` / `apk_source` outputs. Checkout already uses
+      # fetch-depth: 0 above, which this freshness check needs.
       - name: Resolve dev-client APK
         id: apk
         env:

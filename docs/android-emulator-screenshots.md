@@ -151,8 +151,12 @@ on a normal host/CI.
 
 CI now drives the same dev-client + Metro path as this local flow:
 `vp run mobile:screenshots -- --platform android --dev-client`. It downloads the latest
-`rn-android-dev-*` prerelease APK and falls back to a local `assembleDebug` build when
-that release predates a native-input change on the commit being captured.
+`rn-android-dev-*` prerelease APK and uses it when the release's native tree provably
+matches the commit being captured — either the release was built from an ancestor of that
+commit with no native-input change since, or the release is a newer commit (every native
+deploy to main publishes a fresh release, so a workflow pinned to an older commit often
+sees one) with no native-input change between the two. Otherwise it falls back to a local
+`assembleDebug` build.
 
 ## Gotchas
 

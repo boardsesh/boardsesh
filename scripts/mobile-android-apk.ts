@@ -21,9 +21,11 @@
  *   vp run mobile:android-apk -- --require-fresh  # build locally rather than use a stale release
  *
  * On GitHub Actions --require-fresh is the default: a downloaded release APK is
- * only used when its release commit is an ancestor of HEAD with no native-input
- * change since (see devApkFreshness), so a PR that moves the native tree
- * screenshots ITS native tree instead of main's.
+ * only used when its native tree provably matches HEAD's — either the release
+ * commit is an ancestor of HEAD with no native-input change since, or HEAD is an
+ * ancestor of a newer release with no native-input change since (see
+ * devApkFreshness) — so a PR that moves the native tree screenshots ITS native
+ * tree instead of main's.
  */
 
 import { createHash, type Hash } from 'node:crypto';
@@ -110,7 +112,7 @@ const defaultGitRunner: GitRunner = (args) => {
 };
 
 export type DevApkFreshness =
-  | { fresh: true }
+  | { fresh: true; reason?: 'newer-release-same-native-inputs' }
   | { fresh: false; reason: 'not-an-ancestor' | 'native-inputs-changed' | 'unknown' };
 
 /** Latest rn-android-dev-N tag by build number (not list order). Null if none/unreachable. */
@@ -273,30 +275,44 @@ export function resolveDevTagCommit(tag: string): string | null {
 /**
  * Does the release APK built at `tagCommit` still match `headSha`'s native tree?
  *
- * Pure over an injected git runner. `not-an-ancestor` means the release was cut
- * from a commit this checkout doesn't contain (a PR branched before it, or a
- * different line of history) — the diff would then be two-way and unreadable, so
- * it's reported rather than measured.
+ * Pure over an injected git runner. The common case is `tagCommit` an ancestor of
+ * `headSha` (this checkout is ahead of the release): fresh iff the native inputs
+ * are unchanged since. When `tagCommit` is instead a DESCENDANT of `headSha` —
+ * every native deploy to main publishes a fresh rn-android-dev-* release, so a
+ * workflow checked out at an older pinned commit (e.g. a `workflow_run.head_sha`
+ * from 30-50 minutes earlier) often sees a newer release by the time it runs —
+ * the check flips direction: fresh (`newer-release-same-native-inputs`) iff the
+ * native inputs are unchanged between the two commits, since the APK's native
+ * tree is identical either way. `not-an-ancestor` means neither commit contains
+ * the other (a PR branched off before the release, or a different line of
+ * history) — the diff would then be two-way and unreadable, so it's reported
+ * rather than measured.
  */
 export function devApkFreshness(
   headSha: string,
   tagCommit: string,
   runGit: GitRunner = defaultGitRunner,
 ): DevApkFreshness {
-  const haveTagCommit = (): boolean => runGit(['cat-file', '-e', `${tagCommit}^{commit}`]).status === 0;
-  if (!haveTagCommit()) {
+  const haveCommit = (commit: string): boolean => runGit(['cat-file', '-e', `${commit}^{commit}`]).status === 0;
+  if (!haveCommit(tagCommit)) {
     // A shallow CI checkout won't have the release commit; GitHub allows
     // fetching a reachable SHA directly.
     runGit(['fetch', '--quiet', 'origin', tagCommit]);
-    if (!haveTagCommit()) return { fresh: false, reason: 'unknown' };
+    if (!haveCommit(tagCommit)) return { fresh: false, reason: 'unknown' };
   }
-  if (runGit(['merge-base', '--is-ancestor', tagCommit, headSha]).status !== 0) {
-    return { fresh: false, reason: 'not-an-ancestor' };
+  if (runGit(['merge-base', '--is-ancestor', tagCommit, headSha]).status === 0) {
+    const diff = runGit(['diff', '--quiet', tagCommit, headSha, '--', ...DEV_APK_FRESHNESS_PATHS]);
+    if (diff.status === 0) return { fresh: true };
+    if (diff.status === 1) return { fresh: false, reason: 'native-inputs-changed' };
+    return { fresh: false, reason: 'unknown' };
   }
-  const diff = runGit(['diff', '--quiet', tagCommit, headSha, '--', ...DEV_APK_FRESHNESS_PATHS]);
-  if (diff.status === 0) return { fresh: true };
-  if (diff.status === 1) return { fresh: false, reason: 'native-inputs-changed' };
-  return { fresh: false, reason: 'unknown' };
+  if (runGit(['merge-base', '--is-ancestor', headSha, tagCommit]).status === 0) {
+    const diff = runGit(['diff', '--quiet', headSha, tagCommit, '--', ...DEV_APK_FRESHNESS_PATHS]);
+    if (diff.status === 0) return { fresh: true, reason: 'newer-release-same-native-inputs' };
+    if (diff.status === 1) return { fresh: false, reason: 'native-inputs-changed' };
+    return { fresh: false, reason: 'unknown' };
+  }
+  return { fresh: false, reason: 'not-an-ancestor' };
 }
 
 function resolveHeadSha(): string {
@@ -323,7 +339,12 @@ function downloadedApkIsUsable(tag: string, options: EnsureApkOptions, requireFr
     );
     verdict = { fresh: false, reason: 'unknown' };
   }
-  if (verdict.fresh) return true;
+  if (verdict.fresh) {
+    if (verdict.reason === 'newer-release-same-native-inputs') {
+      console.log(`${LOG} using ${tag} built from a newer commit with identical native inputs.`);
+    }
+    return true;
+  }
 
   const detail = `${tag} does not match this checkout (${verdict.reason}; head ${headSha || 'unknown'})`;
   if (requireFresh) {
