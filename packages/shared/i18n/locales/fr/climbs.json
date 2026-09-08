@@ -138,6 +138,11 @@
       "body": "Personne n'a encore grimpé cet angle — ce chiffre est projeté à partir des angles qui ont des croix.",
       "bodyRange": "Personne n'a encore grimpé cet angle — sans doute {{low}}–{{high}}, projeté à partir des angles qui ont des croix."
     },
+    "moonboardAngle": {
+      "label": "Estimée",
+      "body": "Personne ne l'a encore enchaîné à cet angle : la cotation vient de la façon dont il passe à l'autre angle.",
+      "bodyRange": "Personne ne l'a encore enchaîné à cet angle : sans doute {{low}}–{{high}}, d'après la façon dont il passe à l'autre angle."
+    },
     "dumbbell": {
       "legendBoardsesh": "Grade Boardsesh",
       "legendCrowd": "Ancien grade",

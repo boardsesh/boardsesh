@@ -79,6 +79,7 @@ import {
   GATE_NO_SHOCK_MAX_MOVE,
   GATE_NO_SHOCK_MIN_ASCENTS,
   GATE_ZERO_EVIDENCE_MIN_ROWS,
+  MOONBOARD_ANGLE_COEFFICIENT_KIND,
   STAGE2_BEHAVIOR_MAX_EFFECTIVE_N,
   STAGE2_BEHAVIOR_MAX_MOVE,
   STAGE2_DEECHO_MAX_MOVE,
@@ -190,12 +191,21 @@ async function persistCoefficients(db: DbWriter, coefficients: GradeCoefficients
   }
 }
 
+/**
+ * The newest frozen coefficient set this pipeline wrote, or null when it is
+ * older than a week (refit instead).
+ *
+ * `moonboard_angle_offset` is excluded alongside `gate_results`: the MoonBoard
+ * angle-estimate job shares this table but mints its own coeff_version on its
+ * own schedule, and picking that version up here would fold an empty
+ * GradeCoefficients out of rows this pipeline never wrote.
+ */
 async function loadFrozenCoefficients(db: Db): Promise<GradeCoefficients | null> {
   const latest = rowsOf<{ coeff_version: string; created_at: string }>(
     await db.execute(sql`
       SELECT coeff_version, MAX(created_at) AS created_at
       FROM board_grade_coefficients
-      WHERE kind <> 'gate_results'
+      WHERE kind NOT IN ('gate_results', ${MOONBOARD_ANGLE_COEFFICIENT_KIND})
       GROUP BY coeff_version
       ORDER BY MAX(created_at) DESC
       LIMIT 1

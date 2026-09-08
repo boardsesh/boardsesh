@@ -12,7 +12,7 @@
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { BoardseshGrade } from '@boardsesh/graphql/operations';
 import { getBoardCapabilities } from '@boardsesh/board-config';
-import { isCrossAngleEstimate } from '@boardsesh/logbook';
+import { isCrossAngleEstimate, isMoonboardAngleEstimate } from '@boardsesh/logbook';
 import {
   renderDifficulty,
   clampDifficultyId,
@@ -62,6 +62,24 @@ export type BoardseshGradeView =
        * and "V1–V9" tells a climber nothing — the caveat sentence carries the
        * uncertainty in that case.
        */
+      range: { low: string; high: string } | null;
+      computedAt: string;
+    }
+  | {
+      /**
+       * MoonBoard only. The problem is graded at one of the board's two fixed
+       * angles and nobody has climbed the other, so the setter's grade was
+       * transposed across by a per-grade-band delta. Rendered like `crossAngle`
+       * — muted, `≈`-marked, no seal — but with its own copy: this is a
+       * same-board label transform, not a community projection, and saying
+       * "projected from the angles people have climbed" would be untrue when
+       * the source angle is a setter's label too.
+       */
+      kind: 'moonboardAngleEstimate';
+      grade: RenderedGrade;
+      /** Raw primary grade float (drives the chart reference line). */
+      gradeValue: number;
+      /** Bounding grade labels, or null when the band is too wide/degenerate to print. */
       range: { low: string; high: string } | null;
       computedAt: string;
     }
@@ -143,6 +161,23 @@ export function buildBoardseshGradeView(
   grade: BoardseshGrade | null,
   gradeFormat: GradeDisplayFormat,
 ): BoardseshGradeView {
+  // Checked BEFORE the crowd-grade capability. MoonBoard's `crowdGrade` is
+  // false and stays false — the board genuinely has no crowd consensus — but it
+  // does get same-board angle estimates, and those must reach the reader
+  // instead of the blanket "not standardized yet" message.
+  if (isMoonboardAngleEstimate(grade?.confidence)) {
+    const moonPrimary = grade?.localGrade ?? null;
+    const moonRendered = moonPrimary != null ? renderDifficulty(moonPrimary, gradeFormat) : null;
+    if (grade && moonPrimary != null && moonRendered) {
+      return {
+        kind: 'moonboardAngleEstimate',
+        grade: moonRendered,
+        gradeValue: moonPrimary,
+        range: buildEstimateRange(grade.gradeLow, grade.gradeHigh, gradeFormat),
+        computedAt: grade.computedAt,
+      };
+    }
+  }
   if (!getBoardCapabilities(boardName).crowdGrade) return { kind: 'noCrowdGrade', boardName: boardName.toLowerCase() };
   if (!grade) return { kind: 'setterOnly', grade: null, count: 0 };
 
@@ -272,8 +307,8 @@ export function buildCorrection(
  * string leading with the correction. When a crowd label is supplied and it
  * differs from the confirmed cross-board grade, shows "{crowd} ▸ {bs} ✓"; a
  * confident cross-board grade alone reads "{bs} ✓"; provisional "{bs} ~";
- * a projected angle "≈{bs}"; local-only "{bs} · {localWord}". Null for
- * a no-crowd-grade board / setter-only.
+ * an estimated angle (projected or MoonBoard-transposed) "≈{bs}"; local-only
+ * "{bs} · {localWord}". Null for a no-crowd-grade board / setter-only.
  */
 export function buildBoardseshGradeSummary(
   view: BoardseshGradeView,
@@ -295,6 +330,7 @@ export function buildBoardseshGradeSummary(
       return `${bs} ${TEASER_PROVISIONAL}`;
     }
     case 'crossAngle':
+    case 'moonboardAngleEstimate':
       // No crowd number to compare against at an unclimbed angle, so the teaser
       // is just the marked estimate — never the ✓ seal or the correction arrow.
       return `${ESTIMATE_PREFIX}${view.grade.label}`;

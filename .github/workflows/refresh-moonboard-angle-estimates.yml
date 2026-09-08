@@ -1,0 +1,63 @@
+name: Refresh MoonBoard Angle Estimates
+
+# Weekly: fit the MoonBoard 25° ↔ 40° per-grade-band delta from the problems
+# graded at both angles, then fill the missing angle of every single-angle
+# problem with a `moonboard_angle_estimate` row in board_climb_grades. Rows the
+# run no longer stands behind (the problem has since been climbed at that angle,
+# delisted, or lost its grade) are reaped in the same transaction. Idempotent.
+#
+# Weekly rather than nightly: the training sample is ~6k problems and moves
+# slowly, and the output only changes when a setter label or the fitted band
+# delta does. This is NOT the Boardsesh grade — MoonBoard has no crowd mean and
+# is excluded from refresh-climb-grades on purpose. See docs/boardsesh-grade.md.
+on:
+  schedule:
+    - cron: '0 8 * * 1' # 08:00 UTC Monday, well clear of the nightly grade refresh
+  workflow_dispatch:
+    inputs:
+      validate_only:
+        description: 'Fit and report the coefficients only, write nothing'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Full plan including row shapes, write nothing'
+        type: boolean
+        default: false
+      publish:
+        description: 'Write coefficients and estimate rows (required to change anything)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: refresh-moonboard-angle-estimates
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # DATABASE_URL must be a WRITABLE connection.
+    environment: Production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      # A scheduled run has no `inputs`, so `--publish` has to be forced on for
+      # the cron path — the script writes nothing without it.
+      - name: Refresh MoonBoard angle estimates
+        working-directory: packages/db
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: >-
+          node --import tsx scripts/refresh-moonboard-angle-estimates.ts
+          ${{ inputs.validate_only && '--validate-only' || '' }}
+          ${{ inputs.dry_run && '--dry-run' || '' }}
+          ${{ (github.event_name != 'workflow_dispatch' || inputs.publish) && '--publish' || '' }}

@@ -17,6 +17,11 @@ import {
  * upstream community mean toward an angle/setter-informed prior, plus a
  * cross-board offset anchored on Tension benchmarks).
  *
+ * One other job writes here: `refresh-moonboard-angle-estimates` fills the
+ * angle a single-angle MoonBoard problem has never been climbed at, tiered
+ * `moonboard_angle_estimate`. MoonBoard has no crowd mean, so it is excluded
+ * from the nightly job entirely and those rows are the only ones it ever gets.
+ *
  * Model spec + rationale: docs/boardsesh-grade.md. Coefficients live in
  * `board_grade_coefficients`; every row records the model/coefficient versions
  * that produced it so a surfaced grade is reproducible.
@@ -40,7 +45,16 @@ export const boardClimbGrades = pgTable(
     /** 95% band on whichever grade is surfaced (universal when present, else local). */
     gradeLow: doublePrecision('grade_low'),
     gradeHigh: doublePrecision('grade_high'),
-    /** confirmed | provisional | setter_only (drives what the UI renders). */
+    /**
+     * confirmed | provisional | setter_only | cross_angle_estimate |
+     * moonboard_angle_estimate (drives what the UI renders). The two estimate
+     * tiers mark an angle nobody has climbed: `cross_angle_estimate` is
+     * projected from the climb's other angles by the nightly refresh,
+     * `moonboard_angle_estimate` is a MoonBoard setter label transposed to the
+     * board's other fixed angle by refresh-moonboard-angle-estimates.
+     * Source of truth for the tier set: CONFIDENCE in
+     * src/queries/grade-model/constants.ts.
+     */
     confidence: text('confidence').notNull(),
     /** Snapshot of the input ascent count that produced this row. */
     ascensionistCount: bigint('ascensionist_count', { mode: 'number' }).notNull().default(0),
@@ -74,6 +88,7 @@ export const boardClimbGrades = pgTable(
  *  - `angle_offset`       key = board:angle_bin:band → { offset, n }
  *  - `board_offset`       key = board_type          → { offset, sd, users, looMaxDelta }
  *  - `gate_results`       key = run identifier      → per-gate pass/fail + metrics
+ *  - `moonboard_angle_offset` key = from25|from40:band → { delta, n, sd, looMaxDelta }
  *
  * Coefficients are refit weekly (not nightly) and frozen in between, so the
  * nightly re-blend can't wander because a hyperparameter twitched. Plain table,

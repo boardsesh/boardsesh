@@ -262,6 +262,12 @@ export default defineConfig({
         // read-only validation/dry-runs before writing published grade rows.
         cache: false,
       },
+      'db:refresh-moonboard-angle-estimates': {
+        command: 'pnpm --filter @boardsesh/db run db:refresh-moonboard-angle-estimates',
+        // Same reasoning as db:refresh-climb-grades: often a remote DB_URL, and
+        // --validate-only / --dry-run write nothing.
+        cache: false,
+      },
       'db:dedupe-serial-boards': {
         command: 'pnpm --filter @boardsesh/db run db:dedupe-serial-boards',
         // No db:up dependency, same rationale as db:dedupe-gyms: a maintainer

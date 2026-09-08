@@ -138,6 +138,11 @@
       "body": "Todavía nadie ha encadenado este ángulo — este número se proyecta a partir de cómo se valora en los ángulos que sí tienen encadenes.",
       "bodyRange": "Todavía nadie ha encadenado este ángulo — probablemente {{low}}–{{high}}, proyectado a partir de los ángulos que sí tienen encadenes."
     },
+    "moonboardAngle": {
+      "label": "Estimado",
+      "body": "Nadie lo ha encadenado en este ángulo todavía: el grado sale de cómo va en el otro ángulo.",
+      "bodyRange": "Nadie lo ha encadenado en este ángulo todavía: probablemente {{low}}–{{high}}, según cómo va en el otro ángulo."
+    },
     "dumbbell": {
       "legendBoardsesh": "Grado Boardsesh",
       "legendCrowd": "Grado anterior",

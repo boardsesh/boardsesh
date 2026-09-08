@@ -16,11 +16,30 @@ export const BOARDSESH_TIER = {
    * shows it has to say so.
    */
   crossAngleEstimate: 'cross_angle_estimate',
+  /**
+   * MoonBoard only. The problem is graded at one of the board's two fixed
+   * angles (25° / 40°) and nobody has climbed the other, so the setter's grade
+   * was transposed across by a per-grade-band delta. Same "nobody has climbed
+   * this angle" caveat as `crossAngleEstimate`, but a different provenance —
+   * a same-board label transform, not a community projection — so it gets its
+   * own predicate and its own copy rather than being folded in.
+   */
+  moonboardAngleEstimate: 'moonboard_angle_estimate',
 } as const;
 
 /** True when a grade came from a projection rather than ascents at this angle. */
 export function isCrossAngleEstimate(confidence: string | null | undefined): boolean {
   return confidence === BOARDSESH_TIER.crossAngleEstimate;
+}
+
+/** True when a MoonBoard grade was transposed from the board's other fixed angle. */
+export function isMoonboardAngleEstimate(confidence: string | null | undefined): boolean {
+  return confidence === BOARDSESH_TIER.moonboardAngleEstimate;
+}
+
+/** True for either tier that stands in for an angle nobody has climbed. */
+export function isEstimatedGrade(confidence: string | null | undefined): boolean {
+  return isCrossAngleEstimate(confidence) || isMoonboardAngleEstimate(confidence);
 }
 
 /**
@@ -58,15 +77,15 @@ export function deriveLogbookGradeDisplay(
  *  - Boardsesh grade present AND trusted → the rounded Boardsesh grade (the
  *    shared scale aligns with integer difficulty ids, so rounding lands on a
  *    real grade bucket).
- *  - Boardsesh grade null, or confidence `setter_only` / `cross_angle_estimate`
- *    → the legacy consensus.
+ *  - Boardsesh grade null, or confidence `setter_only` /
+ *    `cross_angle_estimate` / `moonboard_angle_estimate` → the legacy consensus.
  *  - No consensus either → null (the row shows no crowd grade).
  *
- * `cross_angle_estimate` is excluded because this value is presented as the
- * CROWD's grade for an ascent, and a projected angle has no crowd — nobody has
- * climbed it. A logbook row has nowhere to put an "estimated" marker, so the
- * honest fallback is the legacy consensus. (The detail view, which does have
- * room to mark it, shows the projection.)
+ * Both estimate tiers are excluded because this value is presented as the
+ * CROWD's grade for an ascent, and an angle nobody has climbed has no crowd.
+ * A logbook row has nowhere to put an "estimated" marker, so the honest
+ * fallback is the legacy consensus. (The detail view, which does have room to
+ * mark it, shows the estimate.)
  */
 export function resolveCrowdDifficulty(
   fields: {
@@ -76,7 +95,7 @@ export function resolveCrowdDifficulty(
   },
   useBoardseshGrades: boolean,
 ): number | null {
-  // Keep these two untrusted tiers as a blocklist, not an allowlist of known
+  // Keep these untrusted tiers as a blocklist, not an allowlist of known
   // tiers. Intentional: the DB only ever
   // writes a `board_climb_grades` row with confidence set, so a present
   // `boardseshDifficulty` with an undefined/unknown confidence can't happen from
@@ -86,7 +105,7 @@ export function resolveCrowdDifficulty(
   // provisional-like rather than hiding the grade. Keep both in sync — do not
   // tighten this to an allowlist of specific tier strings.
   const blocked =
-    fields.boardseshConfidence === BOARDSESH_TIER.setterOnly || isCrossAngleEstimate(fields.boardseshConfidence);
+    fields.boardseshConfidence === BOARDSESH_TIER.setterOnly || isEstimatedGrade(fields.boardseshConfidence);
   if (useBoardseshGrades && fields.boardseshDifficulty != null && !blocked) {
     return Math.round(fields.boardseshDifficulty);
   }

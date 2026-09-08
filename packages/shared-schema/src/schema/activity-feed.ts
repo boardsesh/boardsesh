@@ -65,7 +65,7 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     consensusDifficultyName: String
     "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
     boardseshConfidence: String
     "Average quality rating from all users"
     qualityAverage: Float
@@ -468,7 +468,7 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     difficultyName: String
     "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
     boardseshConfidence: String
     quality: Int
     isMirror: Boolean!
@@ -547,7 +547,7 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     difficultyName: String
     "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
     boardseshConfidence: String
     quality: Int
     isMirror: Boolean!

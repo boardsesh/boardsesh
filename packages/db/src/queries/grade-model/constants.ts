@@ -38,12 +38,22 @@ export const UNIVERSAL_BOARDS = ['kilter', 'tension'] as const;
  * read them back like any other row. It carries a real grade and a real 95%
  * band, so it must not be conflated with `setter_only` ("no independent
  * evidence at all, here's the setter's number").
+ *
+ * `moonboardAngleEstimate` is a different animal and deliberately its own tier.
+ * MoonBoard has no crowd mean to project, so nothing above applies to it: the
+ * grade is a setter label transposed to the board's other fixed angle through a
+ * per-grade-band delta (moonboard-angle-model.ts, published by
+ * scripts/refresh-moonboard-angle-estimates.ts — NOT by the nightly refresh).
+ * It shares `cross_angle_estimate`'s "nobody has climbed this angle" caveat but
+ * none of its provenance, and the UI has to say so in its own words rather than
+ * borrowing the community-projection copy.
  */
 export const CONFIDENCE = {
   confirmed: 'confirmed',
   provisional: 'provisional',
   setterOnly: 'setter_only',
   crossAngleEstimate: 'cross_angle_estimate',
+  moonboardAngleEstimate: 'moonboard_angle_estimate',
 } as const;
 export type ConfidenceTier = (typeof CONFIDENCE)[keyof typeof CONFIDENCE];
 

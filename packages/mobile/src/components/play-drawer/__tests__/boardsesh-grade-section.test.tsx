@@ -92,6 +92,10 @@ function renderSection() {
   return render(<BoardseshGradeSection climbUuid="climb-1" boardName="kilter" angle={40} />);
 }
 
+function renderMoonSection() {
+  return render(<BoardseshGradeSection climbUuid="moon-1" boardName="moonboard" angle={40} />);
+}
+
 describe('BoardseshGradeSection', () => {
   beforeEach(() => {
     hookState.grade = undefined;
@@ -173,6 +177,37 @@ describe('BoardseshGradeSection', () => {
     // No correction: no arrow, no payoff sentence.
     expect(container.querySelector('[data-icon="arrow.right"]')).toBeNull();
     expect(text).not.toContain('boardseshGrade.payoff');
+  });
+
+  it('renders a MoonBoard angle estimate with its own copy, not the no-crowd-grade message', () => {
+    hookState.grade = grade({
+      confidence: 'moonboard_angle_estimate',
+      universalGrade: null,
+      localGrade: 21,
+      gradeLow: 19.5,
+      gradeHigh: 22.5,
+      ascensionistCount: 0,
+    });
+
+    const { container } = renderMoonSection();
+    const text = container.textContent ?? '';
+
+    expect(text).toContain('boardseshGrade.moonboardAngle.label');
+    expect(text).toContain('boardseshGrade.moonboardAngle.bodyRange');
+    expect(text).toContain('≈V5+');
+    // Not the "not standardized yet" message, and not the community-projection copy.
+    expect(text).not.toContain('boardseshGrade.moonboardBody');
+    expect(text).not.toContain('boardseshGrade.estimate.');
+    // No crowd series on MoonBoard, so no dumbbell and no confirmed seal.
+    expect(container.querySelector('[data-testid="dumbbell"]')).toBeNull();
+    expect(container.querySelector('[data-icon="checkmark.seal.fill"]')).toBeNull();
+  });
+
+  it('still tells MoonBoard readers there is no crowd grade when there is no estimate row', () => {
+    hookState.grade = undefined;
+
+    const { container } = renderMoonSection();
+    expect(container.textContent ?? '').toContain('boardseshGrade.moonboardBody');
   });
 
   it('drops the comparison and says it matches when the crowd rounds to the same grade', () => {
