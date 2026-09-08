@@ -505,7 +505,7 @@ export async function main(argv = process.argv.slice(2)) {
       limitations: [
         'Simulator only; device validation required.',
         'No native FPS claim.',
-        'Pending supplemental captures: allocation inspection, distinct render keys, and 20/100/200 shelf populations.',
+        'Pending supplemental captures: allocation inspection, exact distinct climb IDs, and 20/100/200 shelf populations.',
       ],
     });
     return 0;

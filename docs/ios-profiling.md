@@ -36,7 +36,11 @@ The run manifest records the source commit, tracked patch, untracked source hash
 
 Debug navigation runs two warm-up four-tab loops followed by five measured loops. JavaScript callback gaps and React render durations are attribution evidence, not native UI FPS. The capture checks `Tracing.start` in a fresh process and records whether a trace completes. React renderer profiles and native `sample` remain explicit fallbacks; unavailable tracing is recorded, never called a completed trace.
 
+Debug capture selects an exact app identifier from Metro's registered runtimes and refuses ambiguous targets or debugger URLs outside the selected localhost port. A transport timeout or an unfinished trace aborts the run: tracing overhead must not silently remain active during the measured loops. A Watchman binary can be installed while its operating-system watcher still fails; retain that startup as invalid, preserve unrelated watchers, and verify the source identity again after recovery.
+
 Release captures include ten process-cold, warm-cache launches and twenty browsing/background cycles in one process. Startup artifacts are written to the app's local Documents directory by `EXPO_PUBLIC_PROFILE_STARTUP=1`. Each launch must produce a new runtime ID. The host measures when the deferred artifact export becomes observable, which includes polling and export delay; it is not time to first displayed frame. The JS timestamps and native runtime markers retain separate clock labels.
+
+The selected source ref must include the mobile startup collector, introduced separately from the tooling in [the feedback/startup PR](https://github.com/boardsesh/boardsesh/pull/5328). The runner checks this prerequisite before a native build. The collector is opt-in, keeps one mark per phase, and replaces a fixed local export file rather than appending telemetry.
 
 Memory sampling uses physical footprint at settled Home after each browsing/background cycle. A missing footprint or changed process invalidates the memory sequence. Run retained-object/allocation inspection separately and record distinct climb/render keys before changing any cache limit or claiming a leak. A simulator result does not establish a phone performance budget.
 
