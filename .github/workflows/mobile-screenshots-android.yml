@@ -59,13 +59,13 @@ on:
         type: string
         default: ''
       fixtures:
-        description: 'Backend the capture talks to. "live" is PROD (today''s default). "record" proxies PROD and uploads the recorded fixtures as an artifact, to be merged with the iOS shards and committed. "replay" serves the committed set, which is what makes the screenshots deterministic; this default flips to replay once a set exists.'
+        description: '"replay" (the default) serves the committed fixture set, so captures are deterministic. "record" proxies PROD and uploads the recorded fixtures as an artifact, to be merged with the iOS shards and committed. "live" talks straight to PROD with no fixtures — the old direct-to-PROD path, kept for debugging.'
         type: choice
-        default: live
+        default: replay
         options:
-          - live
-          - record
           - replay
+          - record
+          - live
       frozen_now:
         description: 'Record only: ISO instant to freeze "now" at (e.g. 2026-09-08T12:00:00Z). Empty mints one from the current time. Optional even when recording alongside the iOS shards on the same run — the merge takes the max frozenNow across every shard regardless.'
         type: string
@@ -305,9 +305,11 @@ jobs:
           # retarget needs both sides to agree.
           SCREENSHOT_RENDER_MODE: ${{ inputs.render_mode || '' }}
           SCREENSHOT_BOARDS: ${{ inputs.boards || '' }}
-          # live | record | replay. `live` passes no --fixtures flag at all, so
-          # the capture behaves exactly as it did before fixtures existed.
-          SCREENSHOT_FIXTURES: ${{ inputs.fixtures || 'live' }}
+          # replay | record | live. `replay` (the default) and `record` are threaded
+          # through to --fixtures by ci-android-screenshot-capture.sh; `live` passes
+          # no --fixtures flag at all, so the capture talks straight to PROD exactly
+          # as it did before fixtures existed.
+          SCREENSHOT_FIXTURES: ${{ inputs.fixtures || 'replay' }}
           # Record only: threaded through to --frozen-now by
           # ci-android-screenshot-capture.sh. Empty = the orchestrator mints one.
           SCREENSHOT_FROZEN_NOW: ${{ inputs.frozen_now || '' }}

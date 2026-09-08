@@ -61,13 +61,13 @@ on:
         type: string
         default: ''
       fixtures:
-        description: 'Backend the capture talks to. "live" is PROD (today''s default). "record" proxies PROD and uploads the recorded fixtures as an artifact — dispatch it with locales=en-US, then merge the artifacts with `vp run mobile:screenshot-fixtures-merge` and commit the set. "replay" serves the committed set, which is what makes the screenshots deterministic; this default flips to replay once a set exists.'
+        description: '"replay" (the default) serves the committed fixture set, so captures are deterministic. "record" proxies PROD and uploads the recorded fixtures as an artifact — dispatch it with locales=en-US, then merge the artifacts with `vp run mobile:screenshot-fixtures-merge` and commit the set. "live" talks straight to PROD with no fixtures — the old direct-to-PROD path, kept for debugging.'
         type: choice
-        default: live
+        default: replay
         options:
-          - live
-          - record
           - replay
+          - record
+          - live
       frozen_now:
         description: 'Record only: ISO instant to freeze "now" at (e.g. 2026-09-08T12:00:00Z). Empty mints one from the current time. Optional even when recording alongside the Android shard on the same run — the merge takes the max frozenNow across every shard regardless.'
         type: string
@@ -300,7 +300,7 @@ jobs:
         env:
           RENDER_MODE_INPUT: ${{ inputs.render_mode || '' }}
           BOARDS_INPUT: ${{ inputs.boards || '' }}
-          FIXTURES_INPUT: ${{ inputs.fixtures || 'live' }}
+          FIXTURES_INPUT: ${{ inputs.fixtures || 'replay' }}
           FROZEN_NOW_INPUT: ${{ inputs.frozen_now || '' }}
         run: |
           set -euo pipefail
@@ -314,11 +314,12 @@ jobs:
           if [ -n "$BOARDS_INPUT" ]; then
             retarget+=(--boards "$BOARDS_INPUT")
           fi
-          # `live` is the no-fixtures path — the orchestrator's own default — so it
-          # passes no flag at all and this shard behaves exactly as it did before.
-          # A recording shard starts from an empty set (--fresh), so what it uploads
-          # is only what THIS locale/device asked for; the merge step downstream is
-          # what unions the shards.
+          # `live` is the old direct-to-PROD path — it passes no --fixtures flag at
+          # all, so the shard talks to PROD exactly as it did before fixtures
+          # existed. `replay` (the default) and `record` both pass --fixtures
+          # through. A recording shard starts from an empty set (--fresh), so what
+          # it uploads is only what THIS locale/device asked for; the merge step
+          # downstream is what unions the shards.
           if [ "$FIXTURES_INPUT" != "live" ]; then
             retarget+=(--fixtures "$FIXTURES_INPUT")
             if [ "$FIXTURES_INPUT" = "record" ]; then
