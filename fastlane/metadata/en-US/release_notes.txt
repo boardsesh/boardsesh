@@ -1,5 +1,9 @@
 New in 2.5:
 
+WORKS WITH WOODS, FRONT TO BACK
+
+Got a Woods Board? Add your 12x12 or 8x10, browse 5,000+ climbs with their matching and feet rules, and light any of them over Bluetooth. Set and remix your own problems on either size (the creator only offers holds that are really on your wall), mirror a climb and the wall flips with it, and run Previous, Next and Mirror from the Lock Screen and Dynamic Island. Holds draw in the Aura look with crisper outlines.
+
 TAKE THE WALL, NO LEDS NEEDED
 
 Climbing on a board with no light kit? Take the wall and everyone in the session follows the climb you put up, and so does the gym screen. Switch Lights off in the board's settings: turns keep rotating, your chosen angle stays put, and sessions on a named wall log from your watch too.
@@ -10,6 +14,7 @@ While your phone drives the board, the Live Activity and Dynamic Island get a Mi
 
 FIXED
 
+- Holds draw faster: the board renderer no longer waits behind the rest of the app.
 - Your board stays dark until you ask for it. A phone that drifts back into range hours or days later no longer relights your last climb. The lightbulb, the widget and mid-climb reconnects still light it instantly.
 - The Climbs tab and its search no longer go dead after a playlist closes over them mid-session. No more force-quitting to get search back.
 - Downloaded climbs stay up to date after an app update.

@@ -1,5 +1,9 @@
 Neu in 2.5:
 
+LÄUFT MIT WOODS, VON VORN BIS HINTEN
+
+Du hast ein Woods Board? Leg dein 12x12 oder 8x10 an, stöbere durch über 5.000 Boulder mit ihren Match- und Fußregeln und beleuchte jeden davon per Bluetooth. Bau und remixe eigene Boulder auf beiden Größen (der Editor bietet nur Griffe an, die wirklich an deinem Board sind), spiegle einen Boulder und das Board zieht mit, und steuere Zurück, Weiter und Spiegeln vom Sperrbildschirm und der Dynamic Island. Griffe erscheinen im Aura-Look mit schärferen Konturen.
+
 ÜBERNIMM DIE WAND, AUCH OHNE LEDS
 
 Du kletterst an einem Board ohne LED-Kit? Übernimm die Wand, und die ganze Session folgt dem Boulder, den du zeigst, der Hallen-Bildschirm auch. Schalt die Beleuchtung in den Einstellungen des Boards aus: Ihr wechselt euch weiter ab, dein Winkel bleibt stehen, und Sessions an einer benannten Wand loggst du auch von der Uhr.
@@ -10,6 +14,7 @@ Während dein Handy das Board steuert, bekommen Live-Aktivität und Dynamic Isla
 
 BEHOBEN
 
+- Griffe zeichnen schneller: das Board-Rendering wartet nicht mehr auf den Rest der App.
 - Dein Board bleibt dunkel, bis du es willst. Ein Handy, das Stunden oder Tage später wieder in Reichweite kommt, beleuchtet nicht mehr deinen letzten Boulder. Glühbirne, Widget und Reconnects mitten im Boulder beleuchten das Board weiterhin sofort.
 - Der Boulder-Tab und seine Suche bleiben nicht mehr hängen, nachdem sich mitten in der Session eine Playlist darüber geschlossen hat. Kein App-Neustart mehr, um die Suche zurückzubekommen.
 - Heruntergeladene Boulder bleiben nach einem App-Update aktuell.

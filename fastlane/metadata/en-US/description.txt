@@ -1,7 +1,7 @@
 Search a climb, watch your wall light up. Less time on your phone, more time on the wall.
 
 ONE APP FOR EVERY BOARD YOU CLIMB
-Kilter, Tension and MoonBoard each ship their own app for their own board. Boardsesh works across all of them, plus Decoy, Touchstone, Grasshopper and So iLL, in one place. Your whole climbing history across every board lives here.
+Kilter, Tension and MoonBoard each ship their own app for their own board. Boardsesh works across all of them, plus Woods, Decoy, Touchstone, Grasshopper and So iLL, in one place. Your whole climbing history across every board lives here.
 
 BOARD HISTORY, ALWAYS ON
 Share a board and you lose track of the last climb fast, and someone always wipes it by accident.
@@ -25,6 +25,6 @@ Save your session to Apple Health, and import your past Kilter and Tension logbo
 FIND MORE TO CLIMB
 Follow your crew and setters, search climbers, and pin playlists from Discover.
 
-Supported boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Decoy, Touchstone, Grasshopper and So iLL.
+Supported boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper and So iLL.
 
 Boardsesh is a community effort that works with these boards and is not affiliated with or endorsed by any board manufacturer.

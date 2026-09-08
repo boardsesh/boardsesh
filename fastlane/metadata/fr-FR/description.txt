@@ -1,7 +1,7 @@
 Cherche une voie, regarde ton mur s'allumer. Moins de temps sur ton téléphone, plus de temps sur le mur.
 
 UNE SEULE APPLI POUR TOUTES LES BOARDS QUE TU GRIMPES
-Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
+Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Woods, Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
 
 L'HISTORIQUE DE BOARD, TOUJOURS ACTIF
 Partage une board et tu perds vite le fil de la dernière voie, et quelqu'un finit toujours par l'effacer par accident.
@@ -25,6 +25,6 @@ Enregistre ta séance dans Apple Health, et importe ton ancien carnet Kilter et 
 TROUVE PLUS À GRIMPER
 Suis ta crew et les ouvreurs, cherche des grimpeurs, et épingle des playlists depuis Discover.
 
-Boards prises en charge : Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Decoy, Touchstone, Grasshopper et So iLL.
+Boards prises en charge : Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper et So iLL.
 
 Boardsesh est un projet communautaire qui fonctionne avec ces boards et n'est ni affilié à, ni soutenu par aucun fabricant de boards.

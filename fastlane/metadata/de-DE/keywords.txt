@@ -1,1 +1,1 @@
-MoonBoard,Kilter,Tension,kilterboard,Bouldern,Klettern,Kletterboard,Trainingsboard,Routenbuch,LED
+MoonBoard,Kilter,Tension,kilterboard,Bouldern,Klettern,Kletterboard,Trainingsboard,Routenbuch,Woods

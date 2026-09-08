@@ -1,7 +1,7 @@
 Suche dir einen Boulder, und dein Board leuchtet auf. Weniger Zeit am Handy, mehr Zeit an der Wand.
 
 EINE APP FÜR JEDES BOARD, AN DEM DU KLETTERST
-Kilter, Tension und MoonBoard bringen jeweils ihre eigene App für ihr eigenes Board mit. Boardsesh kann alle drei, dazu Decoy, Touchstone, Grasshopper und So iLL — alles an einem Ort. Deine komplette Kletterhistorie über alle Boards hinweg liegt hier.
+Kilter, Tension und MoonBoard bringen jeweils ihre eigene App für ihr eigenes Board mit. Boardsesh kann alle drei, dazu Woods, Decoy, Touchstone, Grasshopper und So iLL — alles an einem Ort. Deine komplette Kletterhistorie über alle Boards hinweg liegt hier.
 
 BOARD-VERLAUF, IMMER AN
 Teilt ihr euch ein Board, verlierst du den letzten Boulder schnell aus den Augen, und irgendwer löscht ihn immer aus Versehen.
@@ -25,6 +25,6 @@ Sichere deine Session in Apple Health, und importiere dein bisheriges Kilter- un
 FINDE MEHR ZUM KLETTERN
 Folge deiner Crew und Routenbauer*innen, suche nach Kletterer*innen, und pinne dir Playlists aus Entdecken.
 
-Unterstützte Boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Decoy, Touchstone, Grasshopper und So iLL.
+Unterstützte Boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper und So iLL.
 
 Boardsesh ist ein Community-Projekt, das mit diesen Boards funktioniert. Es steht in keiner Verbindung zu den Board-Herstellern und wird von ihnen weder unterstützt noch empfohlen.

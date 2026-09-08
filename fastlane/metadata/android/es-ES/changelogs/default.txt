@@ -1,5 +1,5 @@
 Novedades de 2.5:
-- Toma el muro en un plafón sin LED: tu gente y la pantalla del rocódromo siguen el bloque que pones. Desactiva Luces en los ajustes del plafón; los turnos siguen rotando y tu ángulo se mantiene.
-- Espejea tu bloque desde la notificación de Android mientras tu teléfono controla el plafón; la app, tu gente y los LED lo siguen.
-- Los bloques descargados se mantienen al día tras actualizar la app.
-- Cerrar la búsqueda de bloques ya no hace aparecer un panel de vista previa.
+- Compatible con Woods de principio a fin: añade tu 12x12 o 8x10, explora más de 5.000 bloques con sus reglas, enciéndelos por Bluetooth, crea y remezcla los tuyos, y espejea un bloque y el muro lo sigue.
+- Toma el muro en un plafón sin LED: tu gente y la pantalla del rocódromo siguen el bloque que pones.
+- Espejea tu bloque desde la notificación de Android; la app, tu gente y los LED lo siguen.
+- Las presas se dibujan más rápido y los bloques descargados siguen al día.

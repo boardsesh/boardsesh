@@ -1,5 +1,9 @@
 Nouveautés de la version 2.5 :
 
+COMPATIBLE WOODS, DE BOUT EN BOUT
+
+Tu as une Woods Board ? Ajoute ta 12x12 ou ta 8x10, parcours plus de 5 000 blocs avec leurs règles de mains et de pieds, et allume n'importe lequel en Bluetooth. Ouvre et remixe tes propres blocs sur l'une ou l'autre taille (l'éditeur ne propose que les prises vraiment présentes sur ton mur), mets un bloc en miroir et le mur suit, et pilote Précédent, Suivant et Miroir depuis l'écran verrouillé et la Dynamic Island. Les prises s'affichent avec le look Aura et des contours plus nets.
+
 PRENDS LE MUR, MÊME SANS LED
 
 Tu grimpes sur une board sans kit LED ? Prends le mur : toute la session suit le bloc que tu mets, et l'écran de la salle aussi. Désactive l'Éclairage dans les réglages de la board : le tour de rôle continue, ton angle reste en place, et les sessions sur un mur nommé se loguent aussi depuis la montre.
@@ -10,6 +14,7 @@ Quand ton téléphone pilote la board, l'activité en direct et la Dynamic Islan
 
 CORRIGÉ
 
+- Les prises s'affichent plus vite : le rendu de la board n'attend plus le reste de l'app.
 - Ta board reste éteinte tant que tu ne demandes rien. Un téléphone qui repasse à portée des heures ou des jours plus tard ne rallume plus ton dernier bloc. L'ampoule, le widget et les reconnexions en plein bloc l'allument toujours instantanément.
 - L'onglet Blocs et sa recherche ne restent plus figés après la fermeture d'une playlist par-dessus en pleine session. Plus besoin de forcer la fermeture de l'app pour retrouver la recherche.
 - Les blocs téléchargés restent à jour après une mise à jour de l'app.

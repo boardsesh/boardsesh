@@ -1,10 +1,10 @@
 Cherche une voie, regarde ton mur s'allumer. Moins de temps sur ton téléphone, plus de temps sur le mur.
 
 ALLUME LES PRISES
-Cherche n'importe quelle voie et Boardsesh allume les prises sur le mur en Bluetooth, sur Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper et So iLL. Contrôle complet des LED sur les sept, pas seulement la consultation.
+Cherche n'importe quelle voie et Boardsesh allume les prises sur le mur en Bluetooth, sur Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper et So iLL. Contrôle complet des LED sur les huit, pas seulement la consultation.
 
 UNE SEULE APPLI POUR TOUTES LES BOARDS QUE TU GRIMPES
-Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
+Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Woods, Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
 
 L'HISTORIQUE DE BOARD, TOUJOURS ACTIF
 Partage une board et tu perds vite le fil de la dernière voie, et quelqu'un finit toujours par l'effacer par accident.
