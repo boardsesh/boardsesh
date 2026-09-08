@@ -186,6 +186,10 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.BOARDSESH_ANDROID_DEV_TAG }}
+          # The screenshot job checks the release commit against the current
+          # native inputs, so the tag must point at the build commit even when
+          # main advanced while this build was running.
+          target_commitish: ${{ github.sha }}
           name: Boardsesh Dev (Android dev-client, build ${{ github.run_number }})
           body: |
             **Dev-client** Android build from commit ${{ github.sha }} — for testing, not the Play Store.

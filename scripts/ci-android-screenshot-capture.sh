@@ -11,26 +11,40 @@
 # Inputs come from the environment (set on the workflow step):
 #   SCREENSHOT_FLOW            app-store | onboarding   (default app-store)
 #   SCREENSHOT_ANDROID_DEVICE  output device label      (default "Pixel 2")
-#   SCREENSHOT_APK_PATH        prebuilt screenshot APK  (default /tmp/boardsesh-screenshot.apk)
+#   SCREENSHOT_APK_PATH        dev-client APK to install (required, no default)
+#   SCREENSHOT_DEV_CLIENT      '1' to pass --dev-client to the orchestrator
 #   SCREENSHOT_RENDER_MODE     board drawing            (empty = the app default, Aura)
 #   SCREENSHOT_BOARDS          "|"-separated walls      (empty = the app default)
 set -euo pipefail
 
 flow="${SCREENSHOT_FLOW:-app-store}"
 device="${SCREENSHOT_ANDROID_DEVICE:-Pixel 2}"
-apk_path="${SCREENSHOT_APK_PATH:-/tmp/boardsesh-screenshot.apk}"
+apk_path="${SCREENSHOT_APK_PATH:-}"
+if [ -z "$apk_path" ]; then
+  echo "::error::SCREENSHOT_APK_PATH is required (no default APK path any more)."
+  exit 1
+fi
+if [ ! -f "$apk_path" ]; then
+  echo "::error::SCREENSHOT_APK_PATH=$apk_path does not exist."
+  exit 1
+fi
 
-# The APK was built with these baked into its JS bundle, and the capture gate
-# checks the app drew what the run asked for — so the same values have to reach
-# the orchestrator too. Without them a `render_mode=classic` run fails itself:
-# the app reports "classic", the gate still expects the default, and a legitimate
-# comparison capture reds out. Empty means neither side overrides anything.
+# The dev-client APK has no bundled JS — it loads from the Metro dev server the
+# orchestrator starts, so these values have to reach the orchestrator (which
+# puts them in Metro's env) rather than a JS bundle baked at build time. The
+# capture gate checks the app drew what the run asked for, so without them a
+# `render_mode=classic` run fails itself: the app reports "classic", the gate
+# still expects the default, and a legitimate comparison capture reds out.
+# Empty means neither side overrides anything.
 retarget=()
 if [ -n "${SCREENSHOT_RENDER_MODE:-}" ]; then
   retarget+=(--render-mode "$SCREENSHOT_RENDER_MODE")
 fi
 if [ -n "${SCREENSHOT_BOARDS:-}" ]; then
   retarget+=(--boards "$SCREENSHOT_BOARDS")
+fi
+if [ "${SCREENSHOT_DEV_CLIENT:-}" = "1" ]; then
+  retarget+=(--dev-client)
 fi
 
 # Diagnostics land here; the workflow uploads it as an artifact (always()). The

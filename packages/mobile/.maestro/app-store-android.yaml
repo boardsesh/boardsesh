@@ -1,10 +1,13 @@
 appId: ${APP_ID}
 name: app-store screenshots android
 ---
-# Play Store screenshots from the standalone screenshot APK. Unlike iOS, this APK already
-# contains the screenshot-mode JS bundle (the workflow builds it with
-# EXPO_PUBLIC_SCREENSHOT_MODE=1), so launch the app directly instead of opening an
-# expo-development-client URL, and there's no "Open in Boardsesh?" deep-link dialog.
+# Play Store screenshots. In CI the app is the dev-client APK (no bundled JS) loading
+# Metro's screenshot-mode bundle (EXPO_PUBLIC_SCREENSHOT_MODE=1 set into Metro's env),
+# same as iOS. `launchApp` still cold-starts straight into Metro instead of opening an
+# expo-development-client URL: the dev-client's manifest carries
+# DEV_CLIENT_DEFAULT_LAUNCHER_URL (added by a plugin on the dev variant) and
+# expo-dev-launcher reopens the last bundle, so there's no "Open in Boardsesh?"
+# deep-link dialog to dismiss.
 #
 # Google Play caps phone screenshots at 8. This set leads with lit Tension and Kilter
 # walls, followed by the six core app surfaces. Party, playlist, logbook, and session

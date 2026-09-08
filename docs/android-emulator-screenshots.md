@@ -143,10 +143,16 @@ fallback wall.
 
 Requirements for a fast emulator: a host with `/dev/kvm` (KVM), and a working software
 GPU renderer. On a normal dev machine or a standard CI runner (e.g. GitHub Actions
-`ubuntu-latest`, which is what `.github/workflows/mobile-screenshots.yml` already uses for
-the Android job) `swiftshader_indirect` works out of the box. Some heavily-sandboxed or
-exotic-CPU VMs can't run the emulator's software GPU at all (it segfaults during
-rendering); there's no software-only fallback for that — run the flow on a normal host/CI.
+`ubuntu-latest`, which is what `.github/workflows/mobile-screenshots-android.yml` already
+uses for the Android job) `swiftshader_indirect` works out of the box. Some
+heavily-sandboxed or exotic-CPU VMs can't run the emulator's software GPU at all (it
+segfaults during rendering); there's no software-only fallback for that — run the flow
+on a normal host/CI.
+
+CI now drives the same dev-client + Metro path as this local flow:
+`vp run mobile:screenshots -- --platform android --dev-client`. It downloads the latest
+`rn-android-dev-*` prerelease APK and falls back to a local `assembleDebug` build when
+that release predates a native-input change on the commit being captured.
 
 ## Gotchas
 
