@@ -1,0 +1,31 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetUserTickCountsByBoard",
+  "documentHash": "79ca7c5b61939d69d2d5f79d53a7a364fece650d6d6d66ccd2299d103989cfda",
+  "variablesHash": "afeb1c8cdeb27e112eaa7faf4e2fa537b5cbb2df20ab0166773a9fd631f3a9ee",
+  "query": "\n  query GetUserTickCountsByBoard($userId: ID!) {\n    userTickCountsByBoard(userId: $userId) {\n      boardType\n      count\n    }\n  }\n",
+  "variables": {
+    "userId": "fbb773f8-5bec-473e-8216-e34ca55b073b"
+  },
+  "response": {
+    "data": {
+      "userTickCountsByBoard": [
+        {
+          "boardType": "kilter",
+          "count": 87
+        },
+        {
+          "boardType": "moonboard",
+          "count": 107
+        },
+        {
+          "boardType": "tension",
+          "count": 30
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:19:09.234Z",
+  "upstream": "https://ws.boardsesh.com"
+}

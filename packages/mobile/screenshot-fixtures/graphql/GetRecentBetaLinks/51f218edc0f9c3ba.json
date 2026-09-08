@@ -1,0 +1,340 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetRecentBetaLinks",
+  "documentHash": "550d8229c996079389968e4b1512d7cc9cb5fc0da4e1e896d5fe0788d907c27a",
+  "variablesHash": "51f218edc0f9c3ba72d4a99c3c3f0e6133282c71ab1d722de0a9289c85e69078",
+  "query": "\n  query GetRecentBetaLinks($limit: Int, $boardType: String) {\n    recentBetaLinks(limit: $limit, boardType: $boardType) {\n      climbName\n      boardType\n      layoutId\n      betaLink {\n        climbUuid\n        link\n        foreignUsername\n        angle\n        thumbnail\n        isListed\n        createdAt\n        tickUuid\n        boardId\n      }\n    }\n  }\n",
+  "variables": {
+    "limit": 20,
+    "boardType": null
+  },
+  "response": {
+    "data": {
+      "recentBetaLinks": [
+        {
+          "climbName": "Mister Rogers’ Hood",
+          "boardType": "kilter",
+          "layoutId": 8,
+          "betaLink": {
+            "climbUuid": "E573773960BF43C99D623616ADA7ADDA",
+            "link": "https://www.instagram.com/reel/DdA67n7Tcax/",
+            "foreignUsername": "sketchyslav",
+            "angle": 40,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/DdA67n7Tcax.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-08T05:21:34.899Z",
+            "tickUuid": "0d1786af-8737-4c30-8e74-22905bc86bad",
+            "boardId": 433417
+          }
+        },
+        {
+          "climbName": "What is Life?",
+          "boardType": "kilter",
+          "layoutId": 8,
+          "betaLink": {
+            "climbUuid": "F2A29E4EAD7943408B3E13454A157F94",
+            "link": "https://www.instagram.com/reel/Dc-_Ubbyhql/",
+            "foreignUsername": "mountains_kilterboardhomewall",
+            "angle": 35,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/Dc-_Ubbyhql.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T11:26:59.917Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "boulder and the beast",
+          "boardType": "kilter",
+          "layoutId": 8,
+          "betaLink": {
+            "climbUuid": "D1399E35EC164FBBA321A1B863BC6C79",
+            "link": "https://www.instagram.com/reel/Dc-j8uazzZF/",
+            "foreignUsername": "sketchyslav",
+            "angle": 40,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/Dc-j8uazzZF.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T08:12:31.828Z",
+            "tickUuid": "7c630a3b-628f-4f08-a307-14637019b99b",
+            "boardId": 433417
+          }
+        },
+        {
+          "climbName": "first things first",
+          "boardType": "kilter",
+          "layoutId": 8,
+          "betaLink": {
+            "climbUuid": "862CDFBF119F4B5EACC6851BD6A892BD",
+            "link": "https://www.instagram.com/reel/Dc8V5qwzPPR/",
+            "foreignUsername": "sketchyslav",
+            "angle": 40,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/Dc8V5qwzPPR.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T08:12:14.609Z",
+            "tickUuid": "eeb9c12a-c74f-4d7d-bf88-cf0f25902ff9",
+            "boardId": 433417
+          }
+        },
+        {
+          "climbName": "Ginger Beer",
+          "boardType": "moonboard",
+          "layoutId": 2,
+          "betaLink": {
+            "climbUuid": "c224a926-c8dd-5dde-8538-3df0c382d397",
+            "link": "https://www.instagram.com/p/BfB47a_Hxdj/",
+            "foreignUsername": "alextaylor5800",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/BfB47a_Hxdj.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "SOFT WOOD RH",
+          "boardType": "moonboard",
+          "layoutId": 4,
+          "betaLink": {
+            "climbUuid": "4be5f2e2-83e2-51e4-bba3-ca64b92081f1",
+            "link": "https://www.instagram.com/p/B_1Rg0kA0Nt/",
+            "foreignUsername": "alex_climbing_trainer",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/B_1Rg0kA0Nt.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "Footwerk",
+          "boardType": "moonboard",
+          "layoutId": 4,
+          "betaLink": {
+            "climbUuid": "e7e14d85-e135-5622-aee8-d53c3c3cb5a8",
+            "link": "https://www.instagram.com/p/C6oKc-oyOqr/",
+            "foreignUsername": "allezpz",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/C6oKc-oyOqr.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "PIVOTAL EMOTIONS",
+          "boardType": "moonboard",
+          "layoutId": 4,
+          "betaLink": {
+            "climbUuid": "ab97e617-ea57-5b8f-af51-e25ab2bf579f",
+            "link": "https://www.instagram.com/p/BpHJsTTDPTp/",
+            "foreignUsername": "allezdobong",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/BpHJsTTDPTp.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "MOON GIRL",
+          "boardType": "moonboard",
+          "layoutId": 3,
+          "betaLink": {
+            "climbUuid": "62f43f16-9ac8-59d7-8803-794268fec151",
+            "link": "https://www.instagram.com/p/C_g_idKy_n8/",
+            "foreignUsername": "allezyugene",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/C_g_idKy_n8.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "HMM MAYBE",
+          "boardType": "moonboard",
+          "layoutId": 2,
+          "betaLink": {
+            "climbUuid": "0da46ed0-725b-564a-a017-0dd7dd218ac2",
+            "link": "https://www.instagram.com/p/BwHUQCTByeh/",
+            "foreignUsername": "allezdobong",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/BwHUQCTByeh.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "Easter needs more crosses",
+          "boardType": "moonboard",
+          "layoutId": 7,
+          "betaLink": {
+            "climbUuid": "10288262-c9c5-58ec-bb55-bd130316cbc9",
+            "link": "https://www.instagram.com/p/DXOmpuRjQJS/",
+            "foreignUsername": "alexintime",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/DXOmpuRjQJS.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "PSYCHONAUT",
+          "boardType": "moonboard",
+          "layoutId": 5,
+          "betaLink": {
+            "climbUuid": "2af3b042-af32-52f5-9bb4-0815a19b5f13",
+            "link": "https://www.instagram.com/p/DVd4cVOCCf1/",
+            "foreignUsername": "actuallyyun",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/DVd4cVOCCf1.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "BIRD CRIMPS 1",
+          "boardType": "moonboard",
+          "layoutId": 2,
+          "betaLink": {
+            "climbUuid": "1cd17a04-861f-510d-92bd-c39583737773",
+            "link": "https://www.instagram.com/p/DH_FLRVxQS-/",
+            "foreignUsername": "alan_ataeimehr",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/DH_FLRVxQS-.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "SHOVEL_CAR MANIA",
+          "boardType": "moonboard",
+          "layoutId": 5,
+          "betaLink": {
+            "climbUuid": "a18cd2bc-b6cf-50e8-99d6-6cf74cab5d91",
+            "link": "https://www.instagram.com/p/C0ye7rpNxBI/",
+            "foreignUsername": "alex.board.sends",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/C0ye7rpNxBI.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "SUITABLY GRANDIOSE NAME",
+          "boardType": "moonboard",
+          "layoutId": 5,
+          "betaLink": {
+            "climbUuid": "c8c20327-f507-5518-aef6-96dbad33c8e9",
+            "link": "https://www.instagram.com/p/C5VMu3ON3Ok/",
+            "foreignUsername": "alex.board.sends",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/C5VMu3ON3Ok.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "NEW RULE",
+          "boardType": "moonboard",
+          "layoutId": 3,
+          "betaLink": {
+            "climbUuid": "e5a7713d-8a44-5440-a49a-cd60c284d3f7",
+            "link": "https://www.instagram.com/p/DH0rOlKtHxp/",
+            "foreignUsername": "alfievcali",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/DH0rOlKtHxp.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "Te gusta?",
+          "boardType": "moonboard",
+          "layoutId": 2,
+          "betaLink": {
+            "climbUuid": "91b4402d-4b7a-56de-95cd-ba61a7c06e9f",
+            "link": "https://www.instagram.com/p/C4G4Ei5NBS7/",
+            "foreignUsername": "agp10701",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/C4G4Ei5NBS7.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "GO WITH THE FLOW",
+          "boardType": "moonboard",
+          "layoutId": 5,
+          "betaLink": {
+            "climbUuid": "ba748807-76e1-54d0-8b77-2ea6e3870c86",
+            "link": "https://www.instagram.com/p/C1wNfZpNNq4/",
+            "foreignUsername": "alex.board.sends",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/C1wNfZpNNq4.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "THE CRANE DIRECT",
+          "boardType": "moonboard",
+          "layoutId": 2,
+          "betaLink": {
+            "climbUuid": "28d75554-e57b-574a-ab7b-cd5b1e52ddb2",
+            "link": "https://www.instagram.com/p/DZrqNC0TmUg/",
+            "foreignUsername": "aidansclimbingbeta2",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/DZrqNC0TmUg.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        },
+        {
+          "climbName": "POST-SURGERY WARM-UP",
+          "boardType": "moonboard",
+          "layoutId": 3,
+          "betaLink": {
+            "climbUuid": "fad438ec-2b2f-5858-8301-cd5c398edb56",
+            "link": "https://www.instagram.com/p/DawaV31saba/",
+            "foreignUsername": "alex_is_board_",
+            "angle": null,
+            "thumbnail": "/static/beta-link-thumbnails/instagram/DawaV31saba.jpg",
+            "isListed": true,
+            "createdAt": "2026-09-07T04:22:08.485Z",
+            "tickUuid": null,
+            "boardId": null
+          }
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:20:22.187Z",
+  "upstream": "https://ws.boardsesh.com"
+}

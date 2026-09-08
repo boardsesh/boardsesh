@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "operationName": "Favorites",
+  "documentHash": "98993d2c1b0635e1131c9a63ea2512578bc58a6bd5849c5ea7960f59a3e9e972",
+  "variablesHash": "d26b238ae646a1cee3f30e5dac4132c2322c9795c1d37fb6749bf5783f047d48",
+  "query": "\n  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n  }\n",
+  "variables": {
+    "boardName": "tension",
+    "climbUuids": [
+      "18E0834CBBB64952AE12BB7DD7F56E28"
+    ],
+    "angle": 40
+  },
+  "response": {
+    "data": {
+      "favorites": []
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:26:11.478Z",
+  "upstream": "https://ws.boardsesh.com"
+}

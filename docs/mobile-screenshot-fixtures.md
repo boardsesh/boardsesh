@@ -336,9 +336,21 @@ by the capture workflows and merged afterwards.
    vp run mobile:screenshot-fixtures-merge -- --out packages/mobile/screenshot-fixtures ./artifacts/screenshot-fixtures-*
    ```
 
-   The merge is a union. When two shards recorded the same key the bytes must be
-   identical — a difference is real nondeterminism behind that response and the
-   merge fails naming the key rather than picking a winner. It also refuses sets
+   The merge is a union. When two shards recorded the same key, their CONTENT
+   must be identical — a conflict is a CONTENT difference, never a
+   `recordedAt` difference. Every `graphql/<Op>/<hash>.json` fixture carries
+   its own top-level `recordedAt`, and shards recorded minutes apart from
+   live data will always disagree on that even when the response underneath
+   is identical, so it never counts. A genuine content difference IS real —
+   shards recorded minutes apart will legitimately disagree on a live feed
+   someone wrote to between recordings, or a counter that moved — and by
+   default (`--on-conflict fail`) the merge fails naming the key rather than
+   silently picking a winner, so that difference is always seen once.
+   `--on-conflict newest` is the documented resolution: it keeps whichever
+   shard recorded the key LATER (the newest data sits closest to the merged
+   set's frozen instant, itself the maximum `frozenNow` across every shard —
+   see below) and logs each resolution as a `CONFLICT` line naming the key,
+   which shard won, and both `recordedAt` instants. It also refuses sets
    recorded as different accounts (`accountEmail` or `accountUserId`), against
    different upstreams, or from different flows, and refuses any shard whose
    `accountUserId` is empty (it never signed in, so nothing in it is trustworthy).
@@ -365,9 +377,14 @@ they always have.
 `packages/mobile/src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts` runs
 on every PR and keeps the committed set honest. Its registry is every document
 the app can send: `packages/mobile/src/lib/graphql/operations.ts`, the operations
-mobile imports from `@boardsesh/graphql/operations*` (read out of mobile's own
-source, so a padded namespace import can't weaken the check), and
-`listSyncPullDocuments()`.
+mobile imports from `@boardsesh/graphql/operations*` (read out of source, so a
+padded namespace import can't weaken the check), and `listSyncPullDocuments()`.
+The source scan covers `packages/mobile/src` and `packages/mobile/app`, plus
+the `src` directory of every `@boardsesh/*-react` package mobile depends on
+(`packages/mobile/package.json`, resolved to `packages/shared/<name>/src`) —
+a shared hook package sends documents too (`@boardsesh/board-react`'s
+`use-logbook.ts` sends `GetTicks`, `@boardsesh/playlists-react` sends the
+playlist queries), so scanning only the two mobile roots would miss them.
 
 It asserts:
 
@@ -407,5 +424,10 @@ Everything past the first bullet skips itself while there is no `manifest.json`.
   (`import * as …`, a bare default import, or `export { … } from`). Rewrite it
   as a named `import { … } from '@boardsesh/graphql/operations...'`.
 
-Re-recording always means the whole loop above, not a partial run: a set merged
-from shards recorded at different times fails the merge's own byte-identity rule.
+Re-recording always means the whole loop above, not a partial run: merging a
+freshly re-recorded shard against shards left over from an earlier session
+folds each shared key by CONTENT, not by when it was recorded — but a key
+behind a live feed or a counter genuinely can move between two recording
+sessions, and that surfaces as a real conflict (the merge's default fails
+naming it; `--on-conflict newest` would keep the fresher copy, but the other
+un-re-recorded shards' overlapping keys are still frozen at a stale instant).

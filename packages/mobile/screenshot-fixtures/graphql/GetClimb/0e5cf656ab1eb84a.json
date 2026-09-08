@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetClimb",
+  "documentHash": "065ae67d46cb8550a9bffc46d7ce47b576587a91780c659e6182d501fa1d4a44",
+  "variablesHash": "0e5cf656ab1eb84af8f8aa800c36f7515f08e3338caef6ab06dc5a3f5f29b444",
+  "query": "\n  query GetClimb(\n    $boardName: String!\n    $layoutId: Int!\n    $sizeId: Int!\n    $setIds: String!\n    $angle: Int!\n    $climbUuid: ID!\n  ) {\n    climb(\n      boardName: $boardName\n      layoutId: $layoutId\n      sizeId: $sizeId\n      setIds: $setIds\n      angle: $angle\n      climbUuid: $climbUuid\n    ) {\n      \n  uuid\n  boardType\n  layoutId\n  setter_username\n  userId\n  name\n  description\n  frames\n  angle\n  ascensionist_count\n  difficulty\n  quality_average\n  stars\n  difficulty_error\n  mirrored\n  benchmark_difficulty\n  is_no_match\n  characteristics\n  userAscents\n  userAttempts\n  is_draft\n  is_hidden\n  created_at\n  published_at\n  framesCount\n  framesPace\n  boardseshDifficulty\n  boardseshConfidence\n  compatibleSizeIds\n\n    }\n  }\n",
+  "variables": {
+    "boardName": "kilter",
+    "layoutId": 8,
+    "sizeId": 25,
+    "setIds": "26,27,28,29",
+    "angle": 35,
+    "climbUuid": "BA608169C0114B8ABB0AD7E7BA0D27C1"
+  },
+  "response": {
+    "data": {
+      "climb": null
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:04:35.958Z",
+  "upstream": "https://ws.boardsesh.com"
+}

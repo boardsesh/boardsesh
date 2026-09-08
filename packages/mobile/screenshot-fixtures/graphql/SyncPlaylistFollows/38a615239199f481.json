@@ -1,0 +1,25 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncPlaylistFollows",
+  "documentHash": "c6c3d21e2c779d8cd9603a8fe9d49e6de1bb05356993a65e0f8ebe22000b821a",
+  "variablesHash": "38a615239199f48192aa8fea4c431c0e349aee8012a6533a15a67331e88b5a73",
+  "query": "\n    query SyncPlaylistFollows($cursor: SyncCursorInput, $limit: Int! = 500) {\n      syncPlaylistFollows(cursor: $cursor, limit: $limit) {\n        documents\n        cursor {\n          updatedAt\n          syncSeq\n        }\n        hasMore\n      }\n    }\n  ",
+  "variables": {
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncPlaylistFollows": {
+        "documents": [],
+        "cursor": {
+          "updatedAt": "1970-01-01T00:00:00.000Z",
+          "syncSeq": "0"
+        },
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:20:42.399Z",
+  "upstream": "https://ws.boardsesh.com"
+}

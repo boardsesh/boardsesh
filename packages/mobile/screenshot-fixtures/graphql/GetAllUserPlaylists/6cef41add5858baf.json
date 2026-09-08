@@ -1,0 +1,66 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetAllUserPlaylists",
+  "documentHash": "d11d28af3e6842c94e44355fc55f4de24155b365838b1a89f8909fddc9d33cf9",
+  "variablesHash": "6cef41add5858bafabb9653aa0cd1e0ca979a6e317fd44eb719e804d11f7a254",
+  "query": "\n  \n  fragment PlaylistFields on Playlist {\n    id\n    uuid\n    boardType\n    layoutId\n    name\n    description\n    isPublic\n    color\n    icon\n    createdAt\n    updatedAt\n    lastAccessedAt\n    climbCount\n    userRole\n    followerCount\n    isFollowedByMe\n    isPinnedByMe\n  }\n\n  query GetAllUserPlaylists($input: GetAllUserPlaylistsInput!) {\n    allUserPlaylists(input: $input) {\n      playlists {\n        ...PlaylistFields\n      }\n      totalCount\n      hasMore\n    }\n  }\n",
+  "variables": {
+    "input": {
+      "boardType": "kilter",
+      "layoutId": 8,
+      "page": 0,
+      "pageSize": 20
+    }
+  },
+  "response": {
+    "data": {
+      "allUserPlaylists": {
+        "playlists": [
+          {
+            "id": "14362",
+            "uuid": "c5163ceb-ea14-4bc7-8ae5-d695c8fba316",
+            "boardType": "kilter",
+            "layoutId": 8,
+            "name": "Proj",
+            "description": "My projects",
+            "isPublic": false,
+            "color": null,
+            "icon": null,
+            "createdAt": "2026-06-02T23:48:46.731Z",
+            "updatedAt": "2026-07-04T08:57:58.945Z",
+            "lastAccessedAt": "2026-07-04T08:57:58.945Z",
+            "climbCount": 1,
+            "userRole": "owner",
+            "followerCount": 0,
+            "isFollowedByMe": false,
+            "isPinnedByMe": false
+          },
+          {
+            "id": "14361",
+            "uuid": "17c0d933-174c-4499-a2cc-acc68c7b53a0",
+            "boardType": "kilter",
+            "layoutId": 8,
+            "name": "Test list",
+            "description": "",
+            "isPublic": false,
+            "color": "#FBBF24",
+            "icon": "🎯",
+            "createdAt": "2026-06-02T21:36:28.274Z",
+            "updatedAt": "2026-06-02T23:38:19.763Z",
+            "lastAccessedAt": null,
+            "climbCount": 0,
+            "userRole": "owner",
+            "followerCount": 0,
+            "isFollowedByMe": false,
+            "isPinnedByMe": false
+          }
+        ],
+        "totalCount": 2,
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:23:20.130Z",
+  "upstream": "https://ws.boardsesh.com"
+}

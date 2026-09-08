@@ -1,0 +1,19 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetUserTicks",
+  "documentHash": "cc44dba7867fe833858f968d878fbf6823939393b0148d79bf93f5cc0d19a4d9",
+  "variablesHash": "22578484fa4da120eae4a1b062d1bb43855acdfb723bc2a5ca9eca326d83a9fb",
+  "query": "\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n",
+  "variables": {
+    "userId": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+    "boardType": "soill"
+  },
+  "response": {
+    "data": {
+      "userTicks": []
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:20:26.623Z",
+  "upstream": "https://ws.boardsesh.com"
+}

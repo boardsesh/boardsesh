@@ -1,0 +1,29 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncUserFollows",
+  "documentHash": "30d58e9dae1190f99a58d588a66a6b46ccced97c3d7029728683293fcf0a5b27",
+  "variablesHash": "e94ae50f7c3c6b7ccb7aee9b651cc0656587f675203ed4633fda6e1724227449",
+  "query": "\n    query SyncUserFollows($cursor: SyncCursorInput, $limit: Int! = 500) {\n      syncUserFollows(cursor: $cursor, limit: $limit) {\n        documents\n        cursor {\n          updatedAt\n          syncSeq\n        }\n        hasMore\n      }\n    }\n  ",
+  "variables": {
+    "cursor": {
+      "updatedAt": "2026-08-31T06:27:50.085186Z",
+      "syncSeq": "10537"
+    },
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncUserFollows": {
+        "documents": [],
+        "cursor": {
+          "updatedAt": "2026-08-31T06:27:50.085186Z",
+          "syncSeq": "10537"
+        },
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:23:09.086Z",
+  "upstream": "https://ws.boardsesh.com"
+}

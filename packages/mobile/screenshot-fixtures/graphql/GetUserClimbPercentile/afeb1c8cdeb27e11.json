@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetUserClimbPercentile",
+  "documentHash": "d1c8a3b0c314ae27b3453f533ac4daf0767c8a17a923586809051c19dee44fcd",
+  "variablesHash": "afeb1c8cdeb27e112eaa7faf4e2fa537b5cbb2df20ab0166773a9fd631f3a9ee",
+  "query": "\n  query GetUserClimbPercentile($userId: ID!) {\n    userClimbPercentile(userId: $userId) {\n      totalDistinctClimbs\n      percentile\n      totalActiveUsers\n    }\n  }\n",
+  "variables": {
+    "userId": "fbb773f8-5bec-473e-8216-e34ca55b073b"
+  },
+  "response": {
+    "data": {
+      "userClimbPercentile": {
+        "totalDistinctClimbs": 182,
+        "percentile": 87.4,
+        "totalActiveUsers": 2641
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:20:26.640Z",
+  "upstream": "https://ws.boardsesh.com"
+}

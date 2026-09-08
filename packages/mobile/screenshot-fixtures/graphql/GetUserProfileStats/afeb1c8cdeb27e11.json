@@ -1,0 +1,266 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetUserProfileStats",
+  "documentHash": "ba81b6f9c01f75522a2a4b80d1a0dc8b13f8b01fbbeb18fa7c6dfa3cd4d8efff",
+  "variablesHash": "afeb1c8cdeb27e112eaa7faf4e2fa537b5cbb2df20ab0166773a9fd631f3a9ee",
+  "query": "\n  query GetUserProfileStats($userId: ID!) {\n    userProfileStats(userId: $userId) {\n      totalDistinctClimbs\n      layoutStats {\n        layoutKey\n        boardType\n        layoutId\n        distinctClimbCount\n        gradeCounts {\n          grade\n          count\n        }\n      }\n    }\n  }\n",
+  "variables": {
+    "userId": "fbb773f8-5bec-473e-8216-e34ca55b073b"
+  },
+  "response": {
+    "data": {
+      "userProfileStats": {
+        "totalDistinctClimbs": 182,
+        "layoutStats": [
+          {
+            "layoutKey": "kilter-1",
+            "boardType": "kilter",
+            "layoutId": 1,
+            "distinctClimbCount": 30,
+            "gradeCounts": [
+              {
+                "grade": "11",
+                "count": 1
+              },
+              {
+                "grade": "12",
+                "count": 1
+              },
+              {
+                "grade": "13",
+                "count": 1
+              },
+              {
+                "grade": "14",
+                "count": 1
+              },
+              {
+                "grade": "15",
+                "count": 3
+              },
+              {
+                "grade": "16",
+                "count": 2
+              },
+              {
+                "grade": "17",
+                "count": 1
+              },
+              {
+                "grade": "18",
+                "count": 2
+              },
+              {
+                "grade": "19",
+                "count": 3
+              },
+              {
+                "grade": "20",
+                "count": 3
+              },
+              {
+                "grade": "21",
+                "count": 2
+              },
+              {
+                "grade": "22",
+                "count": 8
+              },
+              {
+                "grade": "23",
+                "count": 1
+              },
+              {
+                "grade": "26",
+                "count": 1
+              }
+            ]
+          },
+          {
+            "layoutKey": "kilter-8",
+            "boardType": "kilter",
+            "layoutId": 8,
+            "distinctClimbCount": 33,
+            "gradeCounts": [
+              {
+                "grade": "11",
+                "count": 1
+              },
+              {
+                "grade": "13",
+                "count": 2
+              },
+              {
+                "grade": "14",
+                "count": 1
+              },
+              {
+                "grade": "15",
+                "count": 3
+              },
+              {
+                "grade": "16",
+                "count": 4
+              },
+              {
+                "grade": "17",
+                "count": 3
+              },
+              {
+                "grade": "18",
+                "count": 4
+              },
+              {
+                "grade": "19",
+                "count": 2
+              },
+              {
+                "grade": "20",
+                "count": 7
+              },
+              {
+                "grade": "21",
+                "count": 1
+              },
+              {
+                "grade": "22",
+                "count": 3
+              },
+              {
+                "grade": "23",
+                "count": 2
+              },
+              {
+                "grade": "24",
+                "count": 2
+              }
+            ]
+          },
+          {
+            "layoutKey": "tension-10",
+            "boardType": "tension",
+            "layoutId": 10,
+            "distinctClimbCount": 28,
+            "gradeCounts": [
+              {
+                "grade": "12",
+                "count": 2
+              },
+              {
+                "grade": "13",
+                "count": 2
+              },
+              {
+                "grade": "15",
+                "count": 1
+              },
+              {
+                "grade": "16",
+                "count": 2
+              },
+              {
+                "grade": "18",
+                "count": 3
+              },
+              {
+                "grade": "19",
+                "count": 3
+              },
+              {
+                "grade": "20",
+                "count": 4
+              },
+              {
+                "grade": "21",
+                "count": 3
+              },
+              {
+                "grade": "22",
+                "count": 3
+              },
+              {
+                "grade": "23",
+                "count": 1
+              },
+              {
+                "grade": "24",
+                "count": 1
+              },
+              {
+                "grade": "25",
+                "count": 1
+              },
+              {
+                "grade": "26",
+                "count": 1
+              },
+              {
+                "grade": "27",
+                "count": 1
+              }
+            ]
+          },
+          {
+            "layoutKey": "moonboard-2",
+            "boardType": "moonboard",
+            "layoutId": 2,
+            "distinctClimbCount": 23,
+            "gradeCounts": [
+              {
+                "grade": "19",
+                "count": 16
+              },
+              {
+                "grade": "20",
+                "count": 6
+              },
+              {
+                "grade": "22",
+                "count": 1
+              }
+            ]
+          },
+          {
+            "layoutKey": "moonboard-4",
+            "boardType": "moonboard",
+            "layoutId": 4,
+            "distinctClimbCount": 37,
+            "gradeCounts": [
+              {
+                "grade": "17",
+                "count": 34
+              },
+              {
+                "grade": "18",
+                "count": 3
+              }
+            ]
+          },
+          {
+            "layoutKey": "moonboard-5",
+            "boardType": "moonboard",
+            "layoutId": 5,
+            "distinctClimbCount": 31,
+            "gradeCounts": [
+              {
+                "grade": "17",
+                "count": 23
+              },
+              {
+                "grade": "18",
+                "count": 4
+              },
+              {
+                "grade": "19",
+                "count": 4
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:20:26.610Z",
+  "upstream": "https://ws.boardsesh.com"
+}

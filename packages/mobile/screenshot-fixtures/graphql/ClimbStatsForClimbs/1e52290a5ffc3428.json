@@ -1,0 +1,107 @@
+{
+  "formatVersion": 1,
+  "operationName": "ClimbStatsForClimbs",
+  "documentHash": "5c7177cb26524b06c9f79cc81bf74bda694a17768194756d49dd8de80143a764",
+  "variablesHash": "1e52290a5ffc34284d103cfc39ad5fd6d8934a105daef115c48296d03e28f7d5",
+  "query": "\n  query ClimbStatsForClimbs($boardName: String!, $climbUuids: [ID!]!) {\n    climbStatsForClimbs(boardName: $boardName, climbUuids: $climbUuids) {\n      climbUuid\n      angle\n      ascensionistCount\n      qualityAverage\n      difficultyAverage\n      displayDifficulty\n      difficulty\n      faUsername\n      faAt\n      syncSeq\n    }\n  }\n",
+  "variables": {
+    "boardName": "kilter",
+    "climbUuids": [
+      "8201d6770fd247be959b2c621202e8f2",
+      "7EFB375A367D48B5B6DA27415E951505"
+    ]
+  },
+  "response": {
+    "data": {
+      "climbStatsForClimbs": [
+        {
+          "climbUuid": "7EFB375A367D48B5B6DA27415E951505",
+          "angle": 25,
+          "ascensionistCount": 5,
+          "qualityAverage": 2.75,
+          "difficultyAverage": 14.5,
+          "displayDifficulty": 15,
+          "difficulty": "5c/V2",
+          "faUsername": "JulianoWi90",
+          "faAt": "2026-05-05 18:02:14.734194",
+          "syncSeq": "236288957"
+        },
+        {
+          "climbUuid": "7EFB375A367D48B5B6DA27415E951505",
+          "angle": 35,
+          "ascensionistCount": 12,
+          "qualityAverage": 4.5,
+          "difficultyAverage": 15,
+          "displayDifficulty": 15,
+          "difficulty": "5c/V2",
+          "faUsername": "prainbow",
+          "faAt": "2026-03-15 17:39:36",
+          "syncSeq": "236288327"
+        },
+        {
+          "climbUuid": "8201d6770fd247be959b2c621202e8f2",
+          "angle": 10,
+          "ascensionistCount": 5,
+          "qualityAverage": 2.33,
+          "difficultyAverage": 12.33,
+          "displayDifficulty": 12,
+          "difficulty": "4c/V0",
+          "faUsername": "frantikclimber213",
+          "faAt": "2025-10-17 03:48:35",
+          "syncSeq": "236320616"
+        },
+        {
+          "climbUuid": "8201d6770fd247be959b2c621202e8f2",
+          "angle": 25,
+          "ascensionistCount": 7,
+          "qualityAverage": 4.6,
+          "difficultyAverage": 15.6,
+          "displayDifficulty": 16,
+          "difficulty": "6a/V3",
+          "faUsername": "eleanorfwr",
+          "faAt": "2026-04-30 11:15:14.519119",
+          "syncSeq": "236320618"
+        },
+        {
+          "climbUuid": "8201d6770fd247be959b2c621202e8f2",
+          "angle": 30,
+          "ascensionistCount": 3,
+          "qualityAverage": 1.5,
+          "difficultyAverage": 12.5,
+          "displayDifficulty": 13,
+          "difficulty": "5a/V1",
+          "faUsername": "abespejo",
+          "faAt": "2026-04-01 10:42:04.164692",
+          "syncSeq": "236320620"
+        },
+        {
+          "climbUuid": "8201d6770fd247be959b2c621202e8f2",
+          "angle": 35,
+          "ascensionistCount": 14,
+          "qualityAverage": 4,
+          "difficultyAverage": 15,
+          "displayDifficulty": 15,
+          "difficulty": "5c/V2",
+          "faUsername": "klaraomara",
+          "faAt": "2026-04-03 08:55:36.400895",
+          "syncSeq": "236320622"
+        },
+        {
+          "climbUuid": "8201d6770fd247be959b2c621202e8f2",
+          "angle": 40,
+          "ascensionistCount": 28,
+          "qualityAverage": 3.8939285714285714,
+          "difficultyAverage": 15.63,
+          "displayDifficulty": 16,
+          "difficulty": "6a/V3",
+          "faUsername": "soqeln",
+          "faAt": "2025-10-14 04:04:25",
+          "syncSeq": "278559620"
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:20:05.955Z",
+  "upstream": "https://ws.boardsesh.com"
+}

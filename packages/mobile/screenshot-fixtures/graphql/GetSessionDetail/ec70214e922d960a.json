@@ -1,0 +1,96 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetSessionDetail",
+  "documentHash": "c338bd3db8cbb500d6f8320df3b71ee2b13b0a7bb865ce0f53085b31291f1abc",
+  "variablesHash": "ec70214e922d960a72217079acfa602d1a10b3cdbb7026f915dfc9a298c5f044",
+  "query": "\n  query GetSessionDetail($sessionId: ID!) {\n    sessionDetail(sessionId: $sessionId) {\n      \n  sessionId\n  sessionType\n  sessionName\n  ownerUserId\n  participants {\n    userId\n    displayName\n    avatarUrl\n    sends\n    flashes\n    attempts\n  }\n  totalSends\n  totalFlashes\n  totalAttempts\n  tickCount\n  gradeDistribution {\n    grade\n    flash\n    send\n    attempt\n  }\n  boardTypes\n  hardestGrade\n  firstTickAt\n  lastTickAt\n  durationMinutes\n  goal\n  notes\n  upvotes\n  downvotes\n  voteScore\n  commentCount\n\n      healthKitWorkoutId\n      ticks {\n        uuid\n        userId\n        climbUuid\n        climbName\n        boardType\n        layoutId\n        renderBoard {\n          layoutId\n          sizeId\n          setIds\n        }\n        angle\n        status\n        attemptCount\n        difficulty\n        difficultyName\n        boardseshDifficulty\n        boardseshConfidence\n        quality\n        isMirror\n        isBenchmark\n        isNoMatch\n        comment\n        frames\n        setterUsername\n        climbedAt\n        upvotes\n        totalAttempts\n        betaLinks {\n          climbUuid\n          link\n          foreignUsername\n          angle\n          thumbnail\n          isListed\n          createdAt\n          tickUuid\n          # boardId is kept for BetaLinksGqlRow type parity and flows through\n          # dedupeBetaLinks — it is not displayed by the session-detail carousel.\n          boardId\n        }\n      }\n    }\n  }\n",
+  "variables": {
+    "sessionId": "55a31da4-a6d4-4593-8f23-85f8cc14cfb6"
+  },
+  "response": {
+    "data": {
+      "sessionDetail": {
+        "sessionId": "55a31da4-a6d4-4593-8f23-85f8cc14cfb6",
+        "sessionType": "party",
+        "sessionName": null,
+        "ownerUserId": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+        "participants": [
+          {
+            "userId": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "displayName": "Test User",
+            "avatarUrl": "https://ws.boardsesh.com/static/avatars/fbb773f8-5bec-473e-8216-e34ca55b073b.jpg?v=c919f471-a05b-4607-bac9-edd08aa0a9c6&v=1781787108044",
+            "sends": 1,
+            "flashes": 0,
+            "attempts": 0
+          }
+        ],
+        "totalSends": 1,
+        "totalFlashes": 0,
+        "totalAttempts": 0,
+        "tickCount": 1,
+        "gradeDistribution": [
+          {
+            "grade": "6b+/V4",
+            "flash": 0,
+            "send": 1,
+            "attempt": 0
+          }
+        ],
+        "boardTypes": [
+          "moonboard"
+        ],
+        "hardestGrade": "6b+/V4",
+        "firstTickAt": "2026-08-25 14:12:05.334",
+        "lastTickAt": "2026-08-25 14:12:05.334",
+        "durationMinutes": null,
+        "goal": null,
+        "notes": null,
+        "upvotes": 0,
+        "downvotes": 0,
+        "voteScore": 0,
+        "commentCount": 0,
+        "healthKitWorkoutId": null,
+        "ticks": [
+          {
+            "uuid": "e1981968-540b-4cfc-a355-b937666ec8f9",
+            "userId": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "climbUuid": "597462c7-a684-5b65-a989-6b2f718d32c9",
+            "climbName": "An easy problem",
+            "boardType": "moonboard",
+            "layoutId": 2,
+            "renderBoard": {
+              "layoutId": 2,
+              "sizeId": 1,
+              "setIds": [
+                2,
+                3,
+                4
+              ]
+            },
+            "angle": 40,
+            "status": "send",
+            "attemptCount": 1,
+            "difficulty": 19,
+            "difficultyName": "6b+/V4",
+            "boardseshDifficulty": null,
+            "boardseshConfidence": null,
+            "quality": null,
+            "isMirror": false,
+            "isBenchmark": true,
+            "isNoMatch": false,
+            "comment": "Trststd\nHhvchj\nGhjcgj",
+            "frames": "p50r42p82r43p107r43p139r43p159r43p194r44",
+            "setterUsername": "Brett Duffield",
+            "climbedAt": "2026-08-25 14:12:05.334",
+            "upvotes": 0,
+            "totalAttempts": 1,
+            "betaLinks": []
+          }
+        ]
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:24:52.884Z",
+  "upstream": "https://ws.boardsesh.com"
+}

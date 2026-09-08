@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetClimb",
+  "documentHash": "065ae67d46cb8550a9bffc46d7ce47b576587a91780c659e6182d501fa1d4a44",
+  "variablesHash": "e1beb19fda18760cd89f87129cd4dfe2d394037c39c8a365409a54f0f94341fe",
+  "query": "\n  query GetClimb(\n    $boardName: String!\n    $layoutId: Int!\n    $sizeId: Int!\n    $setIds: String!\n    $angle: Int!\n    $climbUuid: ID!\n  ) {\n    climb(\n      boardName: $boardName\n      layoutId: $layoutId\n      sizeId: $sizeId\n      setIds: $setIds\n      angle: $angle\n      climbUuid: $climbUuid\n    ) {\n      \n  uuid\n  boardType\n  layoutId\n  setter_username\n  userId\n  name\n  description\n  frames\n  angle\n  ascensionist_count\n  difficulty\n  quality_average\n  stars\n  difficulty_error\n  mirrored\n  benchmark_difficulty\n  is_no_match\n  characteristics\n  userAscents\n  userAttempts\n  is_draft\n  is_hidden\n  created_at\n  published_at\n  framesCount\n  framesPace\n  boardseshDifficulty\n  boardseshConfidence\n  compatibleSizeIds\n\n    }\n  }\n",
+  "variables": {
+    "boardName": "tension",
+    "layoutId": 10,
+    "sizeId": 6,
+    "setIds": "12,13",
+    "angle": 40,
+    "climbUuid": "A6E04278AE294E03AD9DD2A8E0CDE31F"
+  },
+  "response": {
+    "data": {
+      "climb": null
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:26:06.920Z",
+  "upstream": "https://ws.boardsesh.com"
+}

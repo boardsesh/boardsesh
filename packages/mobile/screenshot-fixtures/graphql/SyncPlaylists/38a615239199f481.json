@@ -1,0 +1,52 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncPlaylists",
+  "documentHash": "522e6ee58b55949f1cdee8b5611ad701a3ac9857dbed869c04876f06d722e7f5",
+  "variablesHash": "38a615239199f48192aa8fea4c431c0e349aee8012a6533a15a67331e88b5a73",
+  "query": "\n    query SyncPlaylists($cursor: SyncCursorInput, $limit: Int! = 500) {\n      syncPlaylists(cursor: $cursor, limit: $limit) {\n        documents\n        cursor {\n          updatedAt\n          syncSeq\n        }\n        hasMore\n      }\n    }\n  ",
+  "variables": {
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncPlaylists": {
+        "documents": [
+          {
+            "uuid": "17c0d933-174c-4499-a2cc-acc68c7b53a0",
+            "board_type": "kilter",
+            "layout_id": 8,
+            "name": "Test list",
+            "description": "",
+            "is_public": false,
+            "color": "#FBBF24",
+            "icon": "🎯",
+            "created_at": "2026-06-02T21:36:28.274Z",
+            "updated_at": "2026-06-02T23:38:19.763Z",
+            "last_accessed_at": null
+          },
+          {
+            "uuid": "c5163ceb-ea14-4bc7-8ae5-d695c8fba316",
+            "board_type": "kilter",
+            "layout_id": 8,
+            "name": "Proj",
+            "description": "My projects",
+            "is_public": false,
+            "color": null,
+            "icon": null,
+            "created_at": "2026-06-02T23:48:46.731Z",
+            "updated_at": "2026-07-04T08:57:58.945Z",
+            "last_accessed_at": "2026-07-04T08:57:58.945Z"
+          }
+        ],
+        "cursor": {
+          "updatedAt": "2026-07-04T08:57:58.945Z",
+          "syncSeq": "14362"
+        },
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:20:41.617Z",
+  "upstream": "https://ws.boardsesh.com"
+}
