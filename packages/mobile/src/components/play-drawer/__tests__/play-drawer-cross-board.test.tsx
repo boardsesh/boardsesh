@@ -33,7 +33,9 @@ const recorded = vi.hoisted(() => ({
   favoriteStatus: [] as Props[],
   playback: [] as Props[],
   angleSheet: [] as Props[],
+  lightbulb: [] as { canRelay?: boolean; onRelayToHolder?: () => void }[],
 }));
+const setCurrentClimb = vi.hoisted(() => vi.fn());
 const queueState = vi.hoisted(() => ({
   queue: [] as unknown[],
   currentClimbQueueItem: null as unknown,
@@ -168,7 +170,7 @@ vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueData: () => queueState,
   useQueueActions: () => ({
-    setCurrentClimb: vi.fn(),
+    setCurrentClimb,
     nextClimb: vi.fn(),
     previousClimb: vi.fn(),
     addToQueue: vi.fn(async () => 'added'),
@@ -203,7 +205,10 @@ vi.mock('../use-drawer-dismiss-gesture', () => ({
 }));
 vi.mock('../use-play-drawer-wake-lock', () => ({ usePlayDrawerWakeLock: () => undefined }));
 vi.mock('../../ble/use-lightbulb-control', () => ({
-  useLightbulbControl: () => ({ lit: false, localConnected: false, pending: false, onPress: vi.fn() }),
+  useLightbulbControl: (options: { canRelay?: boolean; onRelayToHolder?: () => void }) => {
+    recorded.lightbulb.push(options);
+    return { lit: false, localConnected: false, pending: false, onPress: vi.fn() };
+  },
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn() }));
@@ -267,10 +272,35 @@ beforeEach(() => {
   recorded.favoriteStatus = [];
   recorded.playback = [];
   recorded.angleSheet = [];
+  recorded.lightbulb = [];
   queueState.queue = [];
   queueState.currentClimbQueueItem = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
   prefetchWalk.items = [];
+});
+
+describe('PlayDrawer relay board compatibility', () => {
+  it.each([
+    { climb: HOMEWALL_CLIMB, canRelay: false },
+    { climb: TWELVE_CLIMB, canRelay: true },
+  ])('allows relay=$canRelay for a preview on layout $climb.layoutId', ({ climb, canRelay }) => {
+    const previewQueueItem = queueItem(climb, 'preview-item');
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: { climb, options: { previewQueueItem }, nonce: 1 },
+        onOpenQueue: vi.fn(),
+        // No explicit mismatch flag or overlay callback: the climb determines fit.
+      }),
+    );
+
+    const control = recorded.lightbulb.at(-1);
+    expect(control?.canRelay).toBe(canRelay);
+    act(() => control?.onRelayToHolder?.());
+    if (canRelay) expect(setCurrentClimb).toHaveBeenCalledWith(previewQueueItem, expect.anything());
+    else expect(setCurrentClimb).not.toHaveBeenCalled();
+  });
 });
 
 describe('PlayDrawer draws the climb on its own board (#5099)', () => {

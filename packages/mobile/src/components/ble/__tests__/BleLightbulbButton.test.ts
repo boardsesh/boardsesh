@@ -119,3 +119,9 @@ describe('getBleLightbulbLabelKind', () => {
     expect(getBleLightbulbLabelKind('connect', false)).toBe('connect');
   });
 });
+
+describe('virtual wall accessibility labels', () => {
+  it.each(['takeWall', 'releaseWall'] as const)('labels %s independently of the peer holder', (pressAction) => {
+    expect(getBleLightbulbLabelKind(pressAction, true)).toBe(pressAction);
+  });
+});

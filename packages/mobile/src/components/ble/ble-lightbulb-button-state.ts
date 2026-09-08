@@ -1,5 +1,6 @@
 import type { OpaqueColorValue } from 'react-native';
 import type { IconName } from '../icon-map';
+import type { PlayDrawerLightbulbPressAction } from '../play-drawer/lightbulb-control';
 
 type BleLightbulbVisualStateInput = {
   isConnected: boolean;
@@ -68,7 +69,7 @@ export function getBleLightbulbAccessibilityHint(
 }
 
 /** Which sentence the bulb's accessibility label should carry. */
-export type BleLightbulbLabelKind = 'disconnect' | 'relay' | 'peerDriving' | 'connect';
+export type BleLightbulbLabelKind = 'disconnect' | 'relay' | 'peerDriving' | 'connect' | 'takeWall' | 'releaseWall';
 
 /**
  * The bulb's accessibility label, chosen from what a tap will ACTUALLY do.
@@ -86,9 +87,10 @@ export type BleLightbulbLabelKind = 'disconnect' | 'relay' | 'peerDriving' | 'co
  * keys have to stay literals at the call site.
  */
 export function getBleLightbulbLabelKind(
-  pressAction: 'noop' | 'connect' | 'disconnect' | 'relay',
+  pressAction: PlayDrawerLightbulbPressAction,
   holderIsAuthoritative: boolean,
 ): BleLightbulbLabelKind {
+  if (pressAction === 'takeWall' || pressAction === 'releaseWall') return pressAction;
   if (pressAction === 'disconnect') return 'disconnect';
   if (pressAction === 'relay') return 'relay';
   if (pressAction === 'noop' && holderIsAuthoritative) return 'peerDriving';

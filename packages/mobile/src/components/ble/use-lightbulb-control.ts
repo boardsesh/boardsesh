@@ -100,7 +100,8 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
   const { onOpenControls, onRelayToHolder, canRelay = onRelayToHolder != null } = options;
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
-  const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally, holderIsAuthoritative } = useBoardConnectionState();
+  const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally, holderIsAuthoritative } =
+    useBoardConnectionState();
 
   const pressAction = useMemo(
     () =>
@@ -176,5 +177,16 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
     onOpenControls?.();
   }, [localConnected, onOpenControls]);
 
-  return { bluetooth, lit, localConnected, pending, onPress, onLongPress, ledless, wallHeldLocally, pressAction, holderIsAuthoritative };
+  return {
+    bluetooth,
+    lit,
+    localConnected,
+    pending,
+    onPress,
+    onLongPress,
+    ledless,
+    wallHeldLocally,
+    pressAction,
+    holderIsAuthoritative,
+  };
 }

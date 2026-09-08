@@ -6,6 +6,7 @@ import { BoardPresenceCurrentContext, type BoardPresenceCurrentState } from '@bo
 
 type BluetoothCtx = {
   isConnected: boolean;
+  lastLocalHolderUserId: string | null;
   loading: boolean;
   connect: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
@@ -54,6 +55,7 @@ import { useLightbulbControl } from '../use-lightbulb-control';
 function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullable<BluetoothCtx> {
   return {
     isConnected: false,
+    lastLocalHolderUserId: null,
     loading: false,
     connect: vi.fn().mockResolvedValue(true),
     disconnect: vi.fn().mockResolvedValue(undefined),
@@ -370,7 +372,7 @@ describe('useLightbulbControl relay to an authoritative holder', () => {
     expect(result.current.pressAction).toBe('disconnect');
 
     // The link goes away; presence has not caught up.
-    ctrl.bluetooth = makeBluetooth({ isConnected: false });
+    ctrl.bluetooth = makeBluetooth({ isConnected: false, lastLocalHolderUserId: 'me' });
     rerender();
 
     expect(result.current.holderIsAuthoritative).toBe(false);
@@ -379,6 +381,21 @@ describe('useLightbulbControl relay to an authoritative holder', () => {
     result.current.onPress();
     expect(onRelayToHolder).not.toHaveBeenCalled();
     expect(ctrl.bluetooth?.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('connects when mounted after the provider already observed the local drop', () => {
+    ctrl.boardId = 42;
+    ctrl.sessionId = 'session-1';
+    ctrl.sessionMemberUserIds = new Set(['me']);
+    ctrl.presence = holderPresenceFor('me');
+    ctrl.bluetooth = makeBluetooth({ lastLocalHolderUserId: 'me' });
+    const onRelayToHolder = vi.fn();
+    const { result } = renderControl({ onRelayToHolder, canRelay: true });
+
+    expect(result.current.pressAction).toBe('connect');
+    result.current.onPress();
+    expect(ctrl.bluetooth.connect).toHaveBeenCalledOnce();
+    expect(onRelayToHolder).not.toHaveBeenCalled();
   });
 
   it('forgets the remembered self-hold when the board binding changes', () => {
@@ -397,12 +414,25 @@ describe('useLightbulbControl relay to an authoritative holder', () => {
     ctrl.bluetooth = makeBluetooth({ isConnected: false });
     ctrl.boardId = 99;
     rerender();
-    // The reset is an effect, so it commits after the render that changed the
-    // binding: the bulb reads 'connect' for exactly one frame, then settles.
-    rerender();
 
     expect(result.current.holderIsAuthoritative).toBe(true);
     expect(result.current.pressAction).toBe('relay');
+  });
+
+  it.each([
+    { virtualWallHeld: false, expected: 'takeWall' },
+    { virtualWallHeld: true, expected: 'releaseWall' },
+  ])('preserves $expected on a ledless board with a session holder', ({ virtualWallHeld, expected }) => {
+    arrangePeerHoldsBoard();
+    ctrl.bluetooth = makeBluetooth({ ledless: true, virtualWallHeld });
+    const onRelayToHolder = vi.fn();
+    const { result } = renderControl({ onRelayToHolder, canRelay: true });
+
+    expect(result.current.pressAction).toBe(expected);
+    result.current.onPress();
+    expect(virtualWallHeld ? ctrl.bluetooth.releaseVirtualWall : ctrl.bluetooth.takeVirtualWall).toHaveBeenCalledOnce();
+    expect(onRelayToHolder).not.toHaveBeenCalled();
+    expect(ctrl.bluetooth.connect).not.toHaveBeenCalled();
   });
 
   it('disconnects rather than relaying while this device holds the link', () => {
