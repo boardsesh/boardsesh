@@ -1,8 +1,8 @@
 import { createContext, useContext } from 'react';
 
 // Whether board art in this subtree is on a currently-visible surface. Default
-// `true`, so any board art rendered outside a provider — every iPhone, the
-// always-visible iPad sidebar cell + play pane, and unit tests — always paints.
+// `true`, so board art rendered outside a provider — the iPad sidebar cell +
+// play pane, root player, and unit tests — always paints while foregrounded.
 //
 // A per-tab `BoardArtVisibilityProvider` flips this to `false` for an INACTIVE
 // iPad tab. The iPad shell keeps every tab mounted (`detachInactiveScreens={false}`
