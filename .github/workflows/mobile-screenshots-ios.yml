@@ -305,10 +305,8 @@ jobs:
           # every step. Empty on replay; the real value on record/live, where
           # the flow does sign in against PROD. Override via repo secrets if a
           # different account is ever needed.
-          SCREENSHOT_USER_EMAIL:
-            ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com') || '' }}
-          SCREENSHOT_USER_PASSWORD:
-            ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_PASSWORD || 'test') || '' }}
+          SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com') || '' }}
+          SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_PASSWORD || 'test') || '' }}
         run: |
           set -euo pipefail
           # Empty inputs mean "whatever the app pins" — Aura, and the store walls

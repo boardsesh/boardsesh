@@ -318,10 +318,8 @@ jobs:
           # push to main. Empty on replay; the real value on record/live, where
           # the Maestro flow does sign in against PROD. The orchestrator falls
           # back to its own defaults when these are empty.
-          SCREENSHOT_USER_EMAIL:
-            ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com') || '' }}
-          SCREENSHOT_USER_PASSWORD:
-            ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_PASSWORD || 'test') || '' }}
+          SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com') || '' }}
+          SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_PASSWORD || 'test') || '' }}
 
       # Hard backstop against a blank capture (the play-drawer modal occasionally
       # didn't composite into adb screencap — a blank board-view hero even reached
