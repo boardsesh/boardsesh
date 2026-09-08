@@ -182,8 +182,7 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
 
   // Preserve retired /preview/pr-N links through the auth gate. The original
   // route no longer exists, so replay the safe What's New destination after
-  // login; xprem's official edge marker is globally available there when the
-  // server allows Branch Surfing.
+  // login. Preview selection is available from More and the user drawer.
   useEffect(() => {
     if (!isAuthenticated) return;
     let cancelled = false;

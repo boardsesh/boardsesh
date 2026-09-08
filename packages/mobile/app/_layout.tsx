@@ -31,7 +31,6 @@ import * as Updates from 'expo-updates';
 import { SystemBars } from 'react-native-edge-to-edge';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@expo/ui/community/bottom-sheet';
-import { ControlCenter } from '@xprem/control-center';
 import { ObserveRoot } from 'expo-observe';
 import Constants from 'expo-constants';
 import { QueryProvider } from '../src/providers/query-provider';
@@ -139,7 +138,7 @@ function buildStaticFeatureFlags(): FeatureFlags | undefined {
 
 const STATIC_FEATURE_FLAGS = buildStaticFeatureFlags();
 
-function OtaBranchControlCenter() {
+function OtaBranchSurfingInitializer() {
   // Fingerprint-bound required headers distinguish Branch Surfing-capable
   // binaries from EAS previews. Updates.channel cannot do that: a legacy
   // persisted override changes the value exposed for this launch.
@@ -169,7 +168,7 @@ function OtaBranchControlCenter() {
       .then((preparation) => {
         // A cleared native override requires a new JS runtime before xprem reads
         // Updates.channel. reloadAsync normally never returns to this tree; if it
-        // does, keep the picker disabled rather than mounting against stale data.
+        // does, keep readiness false rather than publishing stale state.
         if (!cancelled && preparation === 'ready') setMigrationComplete(true);
       })
       .catch((error: unknown) => {
@@ -189,7 +188,7 @@ function OtaBranchControlCenter() {
     setOtaBranchSurfingState({ surfingBuild: branchSurfingBuild, ready: migrationComplete });
   }, [branchSurfingBuild, migrationComplete]);
 
-  return branchSurfingBuild && migrationComplete ? <ControlCenter /> : null;
+  return null;
 }
 
 const errorStyles = StyleSheet.create({
@@ -882,12 +881,11 @@ function RootLayout() {
           </QueryProvider>
         </I18nProvider>
       </AnalyticsProvider>
-      {/* Final sibling by design, matching xprem's documented composition. RN
-          paints later siblings above earlier ones; placing the ControlCenter
-          here keeps its absolute edge marker above the full-screen app tree.
-          A one-time migration clears retired Boardsesh channel overrides and
-          reloads before this component becomes eligible to mount. */}
-      <OtaBranchControlCenter />
+      {/* Initialize preview eligibility without mounting xprem's floating picker:
+          its edge touch target can intercept climb-search interactions (#5287).
+          The QA screens use xprem's branch APIs directly and wait for this
+          initializer's one-time migration before prompting. */}
+      <OtaBranchSurfingInitializer />
     </GestureHandlerRootView>
   );
 }

@@ -298,7 +298,7 @@ export default function MoreScreen() {
   // "Force server unreachable" switch below is available to everyone who passes
   // this gate, in every build, so the old "…and at least one tool applies"
   // conjunct would only ever have hidden a section that has a row.
-  // Store-build previews now use xprem's everyone-facing blue edge marker, so
+  // Store-build previews have their own everyone-facing Previews section, so
   // the retired OTA channel switcher is no longer listed here.
   const showDevSection = __DEV__ || Boolean(profile?.isTester) || isAdmin;
 

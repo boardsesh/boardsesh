@@ -18,7 +18,7 @@ import { OTA_APP_ID } from './ota-app-id';
 // and reverts to the build-time headers.
 //
 // Used by the separate EAS preview-build branch switcher. Production self-hosted
-// previews use xprem's ControlCenter and override `xprem-branch` instead.
+// previews use xprem's branch API and override `xprem-branch` instead.
 export function applyChannelOverride(channel: string | null): void {
   Updates.setUpdateRequestHeadersOverride(
     channel === null ? null : { 'expo-app-id': OTA_APP_ID, 'expo-channel-name': channel },

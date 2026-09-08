@@ -24,7 +24,7 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   }
   // The retired custom OTA picker emitted /preview/pr-N links in PR comments.
   // New builds no longer have that route; land those durable links on What's
-  // New while xprem's official edge marker remains the picker entry point.
+  // New. Preview selection is available from More and the user drawer.
   if (isLegacyPreviewLink(path)) {
     return '/changelog';
   }
