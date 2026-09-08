@@ -20,6 +20,10 @@ A new version shipped to the App Store and Play Store.
   The Live Activity climb image now follows your board look — classic stays classic
 - Find "Light the hold above" for MoonBoard in Settings → Board lighting, not just the Bluetooth menu ([#5280](https://github.com/boardsesh/boardsesh/pull/5280))
 
+### Improved
+
+- Your feedback draft stays ready when you reopen it, without slowing browsing. ([#5328](https://github.com/boardsesh/boardsesh/pull/5328))
+
 ### Fixed
 
 - Swipe the player closed in one continuous motion, without the pause after lifting your finger. ([#5322](https://github.com/boardsesh/boardsesh/pull/5322))

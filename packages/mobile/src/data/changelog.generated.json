@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-08T09:08:50.089Z",
+  "generatedAt": "2026-09-08T20:53:18.517Z",
   "entries": [
+    {
+      "prNumber": 5328,
+      "category": "improved",
+      "title": "Your feedback draft stays ready when you reopen it, without slowing browsing.",
+      "mergedAt": "2026-09-08T20:52:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5328"
+    },
     {
       "prNumber": 5322,
       "category": "fixed",
