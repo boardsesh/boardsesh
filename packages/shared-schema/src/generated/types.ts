@@ -6176,6 +6176,7 @@ export type QueryQaPreviewsArgs = {
 /** Root query type for all read operations. */
 export type QueryRecentBetaLinksArgs = {
   boardType?: InputMaybe<Scalars['String']['input']>;
+  layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
 

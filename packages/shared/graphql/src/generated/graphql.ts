@@ -6173,6 +6173,7 @@ export type QueryQaPreviewsArgs = {
 /** Root query type for all read operations. */
 export type QueryRecentBetaLinksArgs = {
   boardType?: InputMaybe<Scalars['String']['input']>;
+  layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
@@ -8741,6 +8742,7 @@ export type AttachBetaLinkMutation = { __typename?: 'Mutation'; attachBetaLink: 
 export type GetRecentBetaLinksQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
   boardType?: InputMaybe<Scalars['String']['input']>;
+  layoutId?: InputMaybe<Scalars['Int']['input']>;
 }>;
 
 export type GetRecentBetaLinksQuery = {
@@ -11806,6 +11808,11 @@ export const GetRecentBetaLinksDocument = {
           variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
           type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } },
         },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'layoutId' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+        },
       ],
       selectionSet: {
         kind: 'SelectionSet',
@@ -11823,6 +11830,11 @@ export const GetRecentBetaLinksDocument = {
                 kind: 'Argument',
                 name: { kind: 'Name', value: 'boardType' },
                 value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'layoutId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'layoutId' } },
               },
             ],
             selectionSet: {

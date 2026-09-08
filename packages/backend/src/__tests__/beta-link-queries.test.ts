@@ -16,6 +16,7 @@ const {
   redisGetMock,
   redisSetMock,
   redisDelMock,
+  redisIncrMock,
 } = vi.hoisted(() => ({
   selectMock: vi.fn(),
   recentSelectMock: vi.fn(),
@@ -35,6 +36,7 @@ const {
   redisGetMock: vi.fn<(key: string) => Promise<string | null>>(),
   redisSetMock: vi.fn(),
   redisDelMock: vi.fn(),
+  redisIncrMock: vi.fn(),
 }));
 
 vi.mock('../db/client', () => ({
@@ -78,7 +80,7 @@ vi.mock('../db/client', () => ({
         `Unhandled db.select() projection in beta-link-queries test mock: ${JSON.stringify(Object.keys(selection))}`,
       );
     },
-    execute: (..._args: unknown[]) => Promise.resolve(executeMock()),
+    execute: (...args: unknown[]) => Promise.resolve(executeMock(...args)),
     update: () => ({
       set: () => ({
         where: (...args: unknown[]) => {
@@ -119,7 +121,7 @@ vi.mock('../redis/client', () => ({
   redisClientManager: {
     isRedisConnected: () => redisConnectedMock(),
     getClients: () => ({
-      publisher: { get: redisGetMock, set: redisSetMock, del: redisDelMock },
+      publisher: { get: redisGetMock, set: redisSetMock, del: redisDelMock, incr: redisIncrMock },
     }),
   },
 }));
@@ -336,6 +338,7 @@ describe('recentBetaLinks resolver', () => {
     redisGetMock.mockReset();
     redisSetMock.mockReset();
     redisDelMock.mockReset();
+    redisIncrMock.mockReset();
     // Default: Redis disconnected so the cache layer falls through to the
     // underlying CTE on every call. Individual tests opt-in to a connected
     // mock when they want to exercise cache hit/miss behaviour.
@@ -453,6 +456,44 @@ describe('recentBetaLinks resolver', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.boardType).toBe('kilter');
+  });
+
+  it('applies board and layout scope before ranking and the total limit', async () => {
+    executeMock.mockReturnValueOnce([cteRow({ board_type: 'kilter', layout_id: 12 })]);
+
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter', layoutId: 12 });
+
+    const sqlToText = (query: unknown): string => {
+      if (typeof query === 'string') return query;
+      if (!query || typeof query !== 'object') return '';
+      const queryChunks = (query as { queryChunks?: unknown[] }).queryChunks;
+      if (!Array.isArray(queryChunks)) return '';
+      return queryChunks
+        .map((chunk) => {
+          if (typeof chunk === 'string') return chunk;
+          if (!chunk || typeof chunk !== 'object') return '';
+          const typedChunk = chunk as { value?: string | string[]; queryChunks?: unknown[] };
+          if (typeof typedChunk.value === 'string') return typedChunk.value;
+          if (Array.isArray(typedChunk.value)) return typedChunk.value.join('');
+          if (Array.isArray(typedChunk.queryChunks)) return sqlToText(chunk);
+          return '';
+        })
+        .join('');
+    };
+    const queryText = sqlToText(executeMock.mock.calls[0]?.[0]);
+    const rankedIndex = queryText.indexOf('ROW_NUMBER()');
+    expect(queryText).toContain('bl.board_type =');
+    expect(queryText).toContain('bc.layout_id =');
+    expect(queryText.indexOf('bl.board_type =')).toBeLessThan(rankedIndex);
+    expect(queryText.indexOf('bc.layout_id =')).toBeLessThan(rankedIndex);
+  });
+
+  it('rejects layoutId without boardType', async () => {
+    await expect(betaLinkQueries.recentBetaLinks(undefined, { limit: 20, layoutId: 12 })).rejects.toMatchObject({
+      message: 'layoutId requires boardType',
+      extensions: { code: 'BAD_USER_INPUT' },
+    });
+    expect(executeMock).not.toHaveBeenCalled();
   });
 });
 
@@ -598,7 +639,11 @@ describe('recentBetaLinks Redis cache', () => {
     redisGetMock.mockReset();
     redisSetMock.mockReset();
     redisDelMock.mockReset();
+    redisIncrMock.mockReset();
     redisConnectedMock.mockReturnValue(true);
+    // The first Redis GET reads the invalidation generation; an absent key is
+    // the canonical initial generation, `0`.
+    redisGetMock.mockResolvedValue(null);
     // The Redis-less branch keeps a process-local copy for 10 minutes (#4463);
     // clear it so the one test here that disconnects Redis still reaches the CTE.
     dropRecentBetaLinksFallback();
@@ -608,7 +653,9 @@ describe('recentBetaLinks Redis cache', () => {
   });
 
   it('returns cached rows without running the CTE on hit', async () => {
-    redisGetMock.mockResolvedValueOnce(JSON.stringify([cachedRow({ link: 'https://www.instagram.com/p/CACHE/' })]));
+    redisGetMock
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(JSON.stringify([cachedRow({ link: 'https://www.instagram.com/p/CACHE/' })]));
 
     const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
 
@@ -619,7 +666,6 @@ describe('recentBetaLinks Redis cache', () => {
   });
 
   it('runs the CTE on miss and writes the result back to Redis', async () => {
-    redisGetMock.mockResolvedValueOnce(null);
     executeMock.mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/MISS/' })]);
 
     const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
@@ -629,25 +675,36 @@ describe('recentBetaLinks Redis cache', () => {
     expect(redisSetMock).toHaveBeenCalledTimes(1);
     // The cached value is JSON-stringified, with TTL set via 'EX' option.
     const [key, json, opt, ttl] = redisSetMock.mock.calls[0];
-    expect(key).toBe('boardsesh:recent-beta-links');
+    expect(key).toBe('boardsesh:recent-beta-links:global:v0');
     expect(typeof json).toBe('string');
     expect(opt).toBe('EX');
     expect(typeof ttl).toBe('number');
   });
 
-  it('filters cached rows by boardType in JavaScript so one cache key covers all callers', async () => {
-    redisGetMock.mockResolvedValueOnce(
-      JSON.stringify([
-        cachedRow({ board_type: 'kilter', link: 'https://www.instagram.com/p/K1/' }),
-        cachedRow({ board_type: 'tension', link: 'https://www.instagram.com/p/T1/' }),
-        cachedRow({ board_type: 'kilter', link: 'https://www.instagram.com/p/K2/' }),
-      ]),
-    );
+  it('uses distinct cache keys for global, board, and board-layout scopes', async () => {
+    executeMock.mockReturnValue([cachedRow({ board_type: 'kilter', layout_id: 12 })]);
 
-    const tensionOnly = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'tension' });
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter' });
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter', layoutId: 12 });
 
-    expect(tensionOnly).toHaveLength(1);
-    expect(tensionOnly[0]?.boardType).toBe('tension');
+    expect(redisSetMock.mock.calls.map(([key]) => key)).toEqual([
+      'boardsesh:recent-beta-links:global:v0',
+      'boardsesh:recent-beta-links:board:kilter:v0',
+      'boardsesh:recent-beta-links:board:kilter:layout:12:v0',
+    ]);
+    expect(executeMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses the scoped cache row without JavaScript board or layout filtering', async () => {
+    redisGetMock
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(JSON.stringify([cachedRow({ board_type: 'tension', layout_id: 3 })]));
+
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'tension', layoutId: 3 });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ boardType: 'tension', layoutId: 3 });
     expect(executeMock).not.toHaveBeenCalled();
   });
 
@@ -694,6 +751,31 @@ describe('recentBetaLinks Redis cache', () => {
     }
   });
 
+  it('does not join concurrent reads from different board-layout scopes', async () => {
+    redisConnectedMock.mockReturnValue(false);
+    let releaseKilter!: (rows: unknown) => void;
+    let releaseTension!: (rows: unknown) => void;
+    executeMock
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseKilter = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseTension = resolve;
+        }),
+      );
+
+    const kilterRead = betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter', layoutId: 12 });
+    const tensionRead = betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'tension', layoutId: 12 });
+
+    expect(executeMock).toHaveBeenCalledTimes(2);
+    releaseKilter([cachedRow({ board_type: 'kilter', layout_id: 12 })]);
+    releaseTension([cachedRow({ board_type: 'tension', layout_id: 12 })]);
+    await expect(Promise.all([kilterRead, tensionRead])).resolves.toHaveLength(2);
+  });
+
   it('still serves a result when the Redis read throws', async () => {
     redisGetMock.mockRejectedValueOnce(new Error('redis down mid-flight'));
     executeMock.mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/REDISFAIL/' })]);
@@ -710,9 +792,9 @@ describe('recentBetaLinks Redis cache', () => {
 
     await warmRecentBetaLinksCache();
 
-    // Lock first, then DEL the cache key, then run the CTE and SET the result.
+    // Lock first, then DEL the current global-scope key, then run the CTE and SET the result.
     expect(redisSetMock.mock.calls[0][0]).toBe('boardsesh:recent-beta-links:lock');
-    expect(redisDelMock).toHaveBeenCalledWith('boardsesh:recent-beta-links');
+    expect(redisDelMock).toHaveBeenCalledWith('boardsesh:recent-beta-links:global:v0');
     expect(executeMock).toHaveBeenCalledTimes(1);
   });
 
@@ -725,12 +807,12 @@ describe('recentBetaLinks Redis cache', () => {
     expect(executeMock).not.toHaveBeenCalled();
   });
 
-  it('invalidateRecentBetaLinksCache: DELs the key', async () => {
-    redisDelMock.mockResolvedValueOnce(1);
+  it('invalidateRecentBetaLinksCache: advances the shared generation', async () => {
+    redisIncrMock.mockResolvedValueOnce(1);
 
     await invalidateRecentBetaLinksCache();
 
-    expect(redisDelMock).toHaveBeenCalledWith('boardsesh:recent-beta-links');
+    expect(redisIncrMock).toHaveBeenCalledWith('boardsesh:recent-beta-links:generation');
   });
 
   it('invalidateRecentBetaLinksCache: silent on Redis unavailable', async () => {
@@ -738,30 +820,41 @@ describe('recentBetaLinks Redis cache', () => {
 
     await invalidateRecentBetaLinksCache();
 
-    expect(redisDelMock).not.toHaveBeenCalled();
+    expect(redisIncrMock).not.toHaveBeenCalled();
   });
 
   it('invalidateRecentBetaLinksCache: a read already in flight cannot restore the pre-write strip', async () => {
     redisConnectedMock.mockReturnValue(false);
     let releaseFirstRead!: (rows: unknown) => void;
-    executeMock.mockReturnValueOnce(
-      new Promise((resolve) => {
-        releaseFirstRead = resolve;
-      }),
-    );
+    executeMock
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseFirstRead = resolve;
+        }),
+      )
+      .mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/AFTER/' })]);
 
-    const readStartedFirst = betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    const readStartedFirst = betaLinkQueries.recentBetaLinks(undefined, {
+      limit: 20,
+      boardType: 'kilter',
+      layoutId: 12,
+    });
     // The climber saves their link while that CTE is still running, so its rows
     // are the pre-save strip.
     await invalidateRecentBetaLinksCache();
+    // The next scoped read must start a fresh CTE instead of joining the
+    // pre-write flight. It arrives before that first SQL call completes.
+    const readStartedAfter = betaLinkQueries.recentBetaLinks(undefined, {
+      limit: 20,
+      boardType: 'kilter',
+      layoutId: 12,
+    });
+    expect(executeMock).toHaveBeenCalledTimes(2);
     releaseFirstRead([cachedRow({ link: 'https://www.instagram.com/p/BEFORE/' })]);
     await readStartedFirst;
 
-    executeMock.mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/AFTER/' })]);
-    const readStartedAfter = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
-
-    expect(executeMock).toHaveBeenCalledTimes(2);
-    expect(readStartedAfter[0]?.betaLink.link).toBe('https://www.instagram.com/p/AFTER/');
+    const freshResult = await readStartedAfter;
+    expect(freshResult[0]?.betaLink.link).toBe('https://www.instagram.com/p/AFTER/');
   });
 
   it('invalidateRecentBetaLinksCache: drops the Redis-less copy so a new link shows up', async () => {

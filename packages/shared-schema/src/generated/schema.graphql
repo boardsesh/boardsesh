@@ -6230,7 +6230,7 @@ type Query {
   Most recent beta videos across all climbs. Returns only rows whose
   thumbnails are already cached in our S3; no live IG/TikTok enrichment.
   """
-  recentBetaLinks(limit: Int = 20, boardType: String): [RecentBetaLink!]!
+  recentBetaLinks(limit: Int = 20, boardType: String, layoutId: Int): [RecentBetaLink!]!
 
   """
   Beta videos contributed by a specific Boardsesh user, ordered

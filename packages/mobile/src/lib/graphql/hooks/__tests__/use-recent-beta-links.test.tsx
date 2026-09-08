@@ -5,12 +5,9 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GET_RECENT_BETA_LINKS, type RecentBetaLinkGqlRow } from '@boardsesh/graphql/operations/beta-links';
 
-// The recent-beta shelf over-fetches when a layout is set (the server only
-// narrows by board type) and then filters client-side to the selected layout,
-// drops non-video links, and dedupes by stable video identity. The select body
-// now lives in the exported `selectRecentBetaVideos` so we can pin that pure
-// logic directly, plus one renderHook test for the queryFn's over-fetch
-// multiplier (which lives in the request, not select).
+// The recent-beta shelf sends its board/layout scope to the backend, which
+// filters before applying its result limit. The client only drops non-video
+// links, dedupes by stable identity, and applies the visible-card limit.
 
 const requestMock = vi.fn();
 vi.mock('../../client', () => ({
@@ -77,7 +74,7 @@ function makeRow(climbUuid: string, link: string, layoutId: number | null): Rece
 }
 
 describe('selectRecentBetaVideos', () => {
-  it('scopes to the selected layout and respects the limit', () => {
+  it('preserves the backend-scoped rows and respects the limit', () => {
     const rows = [
       makeRow('c1', IG_REEL_1, 8),
       makeRow('c2', IG_REEL_2, 8),
@@ -86,15 +83,13 @@ describe('selectRecentBetaVideos', () => {
       makeRow('c5', 'https://www.instagram.com/tv/AbCdE12/', 8),
     ];
 
-    const result = selectRecentBetaVideos(rows, 8, 2);
+    const result = selectRecentBetaVideos(rows, 2);
 
     expect(result).toHaveLength(2);
-    expect(result.every((video) => video.layoutId === 8)).toBe(true);
-    // The layout-99 row must never appear regardless of the limit.
-    expect(result.some((video) => video.betaLink.climb_uuid === 'c3')).toBe(false);
+    expect(result.map((video) => video.betaLink.climb_uuid)).toEqual(['c1', 'c2']);
   });
 
-  it('keeps all rows in original order when layoutId is null', () => {
+  it('keeps all backend-scoped rows in original order', () => {
     const rows = [
       makeRow('c1', IG_REEL_1, 8),
       makeRow('c2', IG_REEL_2, 99),
@@ -102,7 +97,7 @@ describe('selectRecentBetaVideos', () => {
       makeRow('c4', 'https://instagram.com/p/Xyz123/', 7),
     ];
 
-    const result = selectRecentBetaVideos(rows, null, 4);
+    const result = selectRecentBetaVideos(rows, 4);
 
     expect(result).toHaveLength(4);
     expect(result.map((video) => video.betaLink.link)).toEqual([
@@ -116,7 +111,7 @@ describe('selectRecentBetaVideos', () => {
   it('returns every valid row when the limit exceeds the row count', () => {
     const rows = [makeRow('c1', IG_REEL_1, 8), makeRow('c2', TIKTOK_VIDEO, 8)];
 
-    expect(selectRecentBetaVideos(rows, 8, 10)).toHaveLength(2);
+    expect(selectRecentBetaVideos(rows, 10)).toHaveLength(2);
   });
 
   it('drops non-video links and dedupes repeated videos', () => {
@@ -127,7 +122,7 @@ describe('selectRecentBetaVideos', () => {
       makeRow('c4', TIKTOK_VIDEO, 8),
     ];
 
-    const result = selectRecentBetaVideos(rows, null, 10);
+    const result = selectRecentBetaVideos(rows, 10);
 
     expect(result).toHaveLength(2);
     expect(result.map((video) => video.betaLink.link)).toEqual([IG_REEL_1, TIKTOK_VIDEO]);
@@ -149,23 +144,23 @@ beforeEach(() => {
 });
 
 describe('useRecentBetaLinks', () => {
-  it('over-fetches 4x when a layout is set so the client filter can still fill the shelf', async () => {
+  it('sends the selected layout and requests exactly the visible-card limit', async () => {
     requestMock.mockResolvedValue({ recentBetaLinks: [] });
     const { Wrapper } = makeWrapper();
 
     const { result } = renderHook(() => useRecentBetaLinks(20, 'kilter', 8), { wrapper: Wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(requestMock).toHaveBeenCalledWith(GET_RECENT_BETA_LINKS, { limit: 80, boardType: 'kilter' });
+    expect(requestMock).toHaveBeenCalledWith(GET_RECENT_BETA_LINKS, { limit: 20, boardType: 'kilter', layoutId: 8 });
   });
 
-  it('requests exactly the limit when no layout filter is applied', async () => {
+  it('keeps a null layout as the board-wide query scope', async () => {
     requestMock.mockResolvedValue({ recentBetaLinks: [] });
     const { Wrapper } = makeWrapper();
 
     const { result } = renderHook(() => useRecentBetaLinks(20, 'kilter', null), { wrapper: Wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(requestMock).toHaveBeenCalledWith(GET_RECENT_BETA_LINKS, { limit: 20, boardType: 'kilter' });
+    expect(requestMock).toHaveBeenCalledWith(GET_RECENT_BETA_LINKS, { limit: 20, boardType: 'kilter', layoutId: null });
   });
 });

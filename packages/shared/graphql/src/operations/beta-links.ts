@@ -42,8 +42,8 @@ export type AttachBetaLinkMutationVariables = { input: AttachBetaLinkInput };
 export type AttachBetaLinkMutationResponse = { attachBetaLink: boolean };
 
 export const GET_RECENT_BETA_LINKS = gql`
-  query GetRecentBetaLinks($limit: Int, $boardType: String) {
-    recentBetaLinks(limit: $limit, boardType: $boardType) {
+  query GetRecentBetaLinks($limit: Int, $boardType: String, $layoutId: Int) {
+    recentBetaLinks(limit: $limit, boardType: $boardType, layoutId: $layoutId) {
       climbName
       boardType
       layoutId
@@ -65,6 +65,7 @@ export const GET_RECENT_BETA_LINKS = gql`
 export type GetRecentBetaLinksQueryVariables = {
   limit?: number;
   boardType?: string | null;
+  layoutId?: number | null;
 };
 
 export type GetRecentBetaLinksQueryResponse = {
