@@ -611,9 +611,25 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
    * recorded: the items for the ids it asked for, in request order, inside a
    * recorded response's own envelope.
    *
-   * Returns true when it answered (a composed hit, or a miss naming the ids
-   * nothing recorded), false when this request is not composable at all and
-   * belongs on the ordinary miss path.
+   * UNCOVERED IDS ARE TOLERATED, and that is the load-bearing decision here.
+   * The read coordinator eventually asks for stats for every row that mounts,
+   * so every row VISIBLE during the recording had its id in some recorded
+   * batch. A replay shows the same viewport over the same data, so an id the
+   * recorded set does not know can only come from a row the recording never
+   * mounted — one drawn past the fold, or picked by something the capture does
+   * not pin (the workout generator shuffles its grade pool, so run 34259455408
+   * asked for a different set on every attempt). Such a row is not in the
+   * frame, and even if it were, `useEffectiveClimbStats` falls back to the
+   * search payload's own counts when there is no canonical row, so it renders
+   * the same numbers the list already showed. Answering with items for the
+   * covered ids and nothing for the rest is a shape the real server produces
+   * too — a climb with no stats simply has no row.
+   *
+   * The one thing that still misses is a batch where NOT ONE id was covered:
+   * that is not draw distance, it is a screen the recording never reached.
+   *
+   * Returns true when it answered (composed, or a miss), false when this
+   * request is not composable at all and belongs on the ordinary miss path.
    */
   const replayComposedBatch = (
     response: ServerResponse,
@@ -635,14 +651,22 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     if (!scope) return false;
 
     const { items, unrecordedIds, answeredIds } = collectBatchItems(scope.itemsById, requestedIds);
-    if (unrecordedIds.length > 0) {
+    if (answeredIds.length === 0) {
       missGraphql(operationName, 'unrecorded-ids', cappedUnrecordedIds(unrecordedIds));
       return true;
     }
     const composed = composeBatchedResponse(spec, scope.templateResponse, items);
     if (!composed.ok) return false;
     hits += 1;
-    emit({ event: 'hit', kind: 'graphql', operationName, hash12, composed: answeredIds.length });
+    emit({
+      event: 'hit',
+      kind: 'graphql',
+      operationName,
+      hash12,
+      composed: answeredIds.length,
+      uncoveredCount: unrecordedIds.length,
+      uncoveredIds: cappedUnrecordedIds(unrecordedIds),
+    });
     sendJson(response, 200, composed.response);
     return true;
   };
@@ -724,7 +748,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       replayResponseCache.set(entry.file, serializedResponse);
     }
     hits += 1;
-    emit({ event: 'hit', kind: 'graphql', operationName, hash12, composed: null });
+    emit({ event: 'hit', kind: 'graphql', operationName, hash12, composed: null, uncoveredCount: 0, uncoveredIds: [] });
     sendRawJson(response, 200, serializedResponse);
   };
 

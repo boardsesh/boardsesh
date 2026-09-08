@@ -101,6 +101,7 @@ import { readScreenshotFixtureManifest } from './lib/screenshot-backend';
 import {
   DEFAULT_SCREENSHOT_FIXTURES_DIR,
   RE_RECORD_COMMAND,
+  findScreenshotBackendNotes,
   findScreenshotBackendProblems,
   parseScreenshotBackendLogLine,
   resolveScreenshotBackendPort,
@@ -1038,8 +1039,16 @@ function reportFrozenClockProblems(logText: string, frozenNow: string, source: s
   return false;
 }
 
-/** Print what `findScreenshotBackendProblems` found; true when the capture is clean. */
+/**
+ * Print what the backend log says about this capture; true when nothing in it
+ * fails the run.
+ *
+ * Notes are printed either way — they are the things worth knowing that must
+ * not flap the gate (today: batches answered with some ids the recorded set
+ * does not cover, which is draw distance, not a broken capture).
+ */
 function reportScreenshotBackendProblems(logText: string, mode: ScreenshotBackendMode): boolean {
+  for (const note of findScreenshotBackendNotes(logText)) console.log(`${LOG} NOTE: ${note}`);
   const problems = findScreenshotBackendProblems(logText, { mode });
   if (problems.length === 0) return true;
   for (const problem of problems) console.error(`${LOG} FAILED: ${problem}`);

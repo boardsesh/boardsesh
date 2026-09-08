@@ -782,7 +782,11 @@ export type GraphqlMissReason =
   | 'document-changed'
   | 'anonymous-operation'
   | 'unreadable-fixture'
-  /** A batched operation (see `BATCHED_OPERATIONS`) asked for ids no recorded batch covers. */
+  /**
+   * A batched operation (see `BATCHED_OPERATIONS`) asked for a scope that was
+   * recorded, but not ONE of its ids was covered. A partly-covered batch is
+   * answered instead — see `collectBatchItems` and the uncovered-ids note.
+   */
   | 'unrecorded-ids';
 
 const GRAPHQL_MISS_REASONS: readonly GraphqlMissReason[] = [
@@ -848,6 +852,10 @@ export type ScreenshotBackendLogLine =
        * exact-key hit, which is every non-batched operation.
        */
       composed: number | null;
+      /** How many requested ids no recorded batch covered. 0 on any other hit. */
+      uncoveredCount: number;
+      /** Up to `MISS_UNRECORDED_IDS_LOG_LIMIT` of those ids, for the note. */
+      uncoveredIds: readonly string[];
     }
   | { event: 'hit'; kind: 'static'; subject: string }
   | { event: 'hit'; kind: 'auth'; route: AuthRoute }
@@ -908,10 +916,12 @@ export function formatScreenshotBackendLine(line: ScreenshotBackendLogLine): str
         return `READY mode=${line.mode} port=${line.port} fixtures=${line.fixturesDir} frozenNow=${line.frozenNow} graphql=${line.graphqlCount} static=${line.staticCount}`;
       case 'hit':
         switch (line.kind) {
-          case 'graphql':
-            return line.composed === null
-              ? `HIT graphql ${line.operationName} ${line.hash12}`
-              : `HIT graphql ${line.operationName} ${line.hash12} composed=${line.composed}`;
+          case 'graphql': {
+            if (line.composed === null) return `HIT graphql ${line.operationName} ${line.hash12}`;
+            const uncovered =
+              line.uncoveredCount > 0 ? ` uncovered=${line.uncoveredCount} ids=${line.uncoveredIds.join(',')}` : '';
+            return `HIT graphql ${line.operationName} ${line.hash12} composed=${line.composed}${uncovered}`;
+          }
           case 'static':
             return `HIT static ${line.subject}`;
           case 'auth':
@@ -960,7 +970,7 @@ export function formatScreenshotBackendLine(line: ScreenshotBackendLogLine): str
 
 const READY_PATTERN =
   /^READY mode=(replay|record) port=(\d+) fixtures=(.+) frozenNow=(\S+) graphql=(\d+) static=(\d+)$/;
-const HIT_GRAPHQL_PATTERN = /^HIT graphql (\S+) (\S+)(?: composed=(\d+))?$/;
+const HIT_GRAPHQL_PATTERN = /^HIT graphql (\S+) (\S+)(?: composed=(\d+)(?: uncovered=(\d+) ids=(.*))?)?$/;
 const HIT_STATIC_PATTERN = /^HIT static (\S+)$/;
 const HIT_AUTH_PATTERN = /^HIT auth (\S+)$/;
 // `ids=` is non-greedy and `variables=` takes the rest of the line: the ids are
@@ -1012,12 +1022,15 @@ export function parseScreenshotBackendLogLine(line: string): ScreenshotBackendLo
 
   const hitGraphql = HIT_GRAPHQL_PATTERN.exec(body);
   if (hitGraphql) {
+    const uncoveredIds = hitGraphql[5];
     return {
       event: 'hit',
       kind: 'graphql',
       operationName: hitGraphql[1],
       hash12: hitGraphql[2],
       composed: hitGraphql[3] === undefined ? null : Number(hitGraphql[3]),
+      uncoveredCount: hitGraphql[4] === undefined ? 0 : Number(hitGraphql[4]),
+      uncoveredIds: uncoveredIds === undefined || uncoveredIds.length === 0 ? [] : uncoveredIds.split(','),
     };
   }
 
@@ -1140,8 +1153,8 @@ function describeProblem(line: ScreenshotBackendLogLine): ScreenshotBackendProbl
               };
             case 'unrecorded-ids':
               return {
-                description: `${line.operationName} asked for ids no recorded batch covers: ${line.unrecordedIds.join(', ')} (${variables})`,
-                remedy: `these rows were never on screen when the set was recorded — capture the screen they appear on and ${RE_RECORD_REMEDY}`,
+                description: `${line.operationName} asked for a batch where NO id was recorded: ${line.unrecordedIds.join(', ')} (${variables})`,
+                remedy: `the screen those rows are on was never captured — add it to the flow and ${RE_RECORD_REMEDY}`,
               };
           }
           break;
@@ -1221,4 +1234,35 @@ export function findScreenshotBackendProblems(logText: string, options: { mode: 
     );
   }
   return problems;
+}
+
+/**
+ * What a capture should MENTION but not fail on.
+ *
+ * Today that is one thing: a batched operation answered with some of its ids
+ * uncovered by the recorded set (see the tolerance rule on
+ * `collectBatchItems`'s caller in screenshot-backend.ts). Uncovered ids are
+ * routine and self-correcting — a list mounts rows past the fold, a shuffled
+ * pool picks differently — and the rows they belong to still render from the
+ * search payload's own bootstrap values, so they cannot blank a visible screen.
+ * Failing a capture on them would make the gate flap on draw distance; hiding
+ * them would lose the one signal that says a re-record is due.
+ *
+ * One line per operation, counting the batches and the ids.
+ */
+export function findScreenshotBackendNotes(logText: string): string[] {
+  const uncoveredByOperation = new Map<string, { batches: number; ids: number }>();
+  for (const rawLine of logText.split('\n')) {
+    const line = parseScreenshotBackendLogLine(rawLine);
+    if (!line || line.event !== 'hit' || line.kind !== 'graphql' || line.uncoveredCount === 0) continue;
+    const seen = uncoveredByOperation.get(line.operationName) ?? { batches: 0, ids: 0 };
+    seen.batches += 1;
+    seen.ids += line.uncoveredCount;
+    uncoveredByOperation.set(line.operationName, seen);
+  }
+  return [...uncoveredByOperation.entries()].map(
+    ([operationName, { batches, ids }]) =>
+      `${operationName} answered ${batches} batch(es) with ${ids} uncovered id(s) — rows mounted beyond the fold; ` +
+      `re-record if a visible row shows blank stats.`,
+  );
 }

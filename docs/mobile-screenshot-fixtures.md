@@ -158,10 +158,31 @@ Two rules keep it honest:
   so a Kilter recording can never answer a Tension request and a fixture
   recorded against an older selection set can never answer today's query.
 - **An id the recording asked for but the backend had nothing for is a recorded
-  fact, not a gap** — it composes to zero items. Only an id no recorded batch
-  ever *asked* for is unrecorded, and that answers the ordinary miss envelope
-  with `reason=unrecorded-ids ids=<up to 10>`; the failure names the ids and
-  asks for a re-record of the screen those rows appear on.
+  fact, not a gap** — it composes to zero items.
+- **An id no recorded batch covers is TOLERATED**, as long as at least one
+  requested id was covered. The batch is answered with the items for the covered
+  ids and nothing for the rest, and the hit line carries
+  `uncovered=<m> ids=<up to 10>`.
+
+  The reasoning: the read coordinator eventually asks for stats for every row
+  that mounts, so every row VISIBLE while recording had its id in some recorded
+  batch. A replay shows the same viewport over the same data, so an id the set
+  does not know can only come from a row the recording never mounted — drawn
+  past the fold, or picked by something the capture does not pin (the workout
+  generator shuffles its grade pool, which is why run 34259455408 asked for a
+  different set on each attempt). Such a row is not in the frame; and even if it
+  were, `useEffectiveClimbStats` falls back to the search payload's own counts
+  when there is no canonical row, so it renders the numbers the list already
+  showed. "No row for this climb" is also exactly what the real server answers
+  for a climb with no stats, so the shape is honest.
+
+  Reported, not ignored: `findScreenshotBackendNotes` turns those lines into one
+  `NOTE:` per operation — *"answered N batch(es) with M uncovered id(s) — rows
+  mounted beyond the fold; re-record if a visible row shows blank stats"* —
+  printed by the capture and failing nothing.
+- **A batch where NOT ONE requested id was covered still misses**
+  (`reason=unrecorded-ids ids=<up to 10>`). That is not draw distance, it is a
+  screen the recording never reached, and the failure says so.
 
 #### The composer is the safety net, not the fix
 
@@ -196,10 +217,14 @@ renderer-agnostic and knows nothing about screenshot mode. The mobile hook holds
 the inline `process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1'` gate and dead-strips
 from normal builds with the rest of screenshot mode.
 
-The composer stays either way. Per-row sub-batches still fire (a row that mounts
-before the prefetch resolves, the play drawer's single-climb read), and every one
-of them is a subset of what the prefetch recorded — which is precisely what
-composition answers.
+The composer stays either way, and it has to: the climbs screen is not the only
+surface that batches stats. Run 34259455408 missed on the workout generator's
+grade pool (`select-climbs-for-plan.ts`, `pageSize 50` / `sortBy quality`), which
+**shuffles** its candidates per fetch — so the recording and the replay pick
+different climbs however carefully the list is prefetched. Per-row sub-batches
+still fire too (a row that mounts before the prefetch resolves, the play drawer's
+single-climb read). Widening the batch shrinks the gap; the composer's tolerance
+for uncovered ids is what closes it.
 
 Adding one: read the operation document for the id list's path and the response
 list's own id field, add a row to `BATCHED_OPERATIONS` in
@@ -274,6 +299,7 @@ Every line is single-line and prefixed `[screenshot-backend]`.
 READY mode=replay port=8090 fixtures=<dir> frozenNow=<iso> graphql=<n> static=<n>
 HIT graphql <Op> <hash12>
 HIT graphql <Op> <hash12> composed=<n>
+HIT graphql <Op> <hash12> composed=<n> uncovered=<m> ids=<id,id,…>
 HIT static <path?query>
 HIT auth credentials|refresh
 MISS graphql <Op> <hash12> reason=no-fixture|document-changed|anonymous-operation|unreadable-fixture variables=<canonical json>
