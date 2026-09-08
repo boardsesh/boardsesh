@@ -347,9 +347,11 @@ The flip PR must not merge until every one of these is checked:
 1. Web-only secrets are pasted onto the `boardsesh-web` Railway service, with
    Vercel's exact values where continuity depends on it: `NEXTAUTH_SECRET` and
    `CRON_SECRET`, plus `GOOGLE_CLIENT_SECRET`, `APPLE_ID`, `APPLE_SECRET`,
-   `IRON_SESSION_PASSWORD`, `EMAIL_VERIFICATION_ENABLED`, and
-   `BOARDSESH_EXPO_WEB_ORIGIN`. Check by hitting `/api/auth/providers` on the
-   Railway origin and confirming it lists both `apple` and `google`.
+   `IRON_SESSION_PASSWORD`, `EMAIL_VERIFICATION_ENABLED`, `SMTP_USER`,
+   `SMTP_PASSWORD`, and `BOARDSESH_EXPO_WEB_ORIGIN`. `SMTP_HOST` defaults to
+   `smtp.fastmail.com`; `EMAIL_FROM` defaults to `SMTP_USER`. Check by hitting
+   `/api/auth/providers` on the Railway origin and confirming it lists both
+   `apple` and `google`.
 2. #5027, the apex → www redirect, is merged and applied. Verify with
    `curl -sI https://boardsesh.com/x?y=1`: it must answer 301 to
    `https://www.boardsesh.com/x?y=1` with a `cf-ray` header.

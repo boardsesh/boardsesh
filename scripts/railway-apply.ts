@@ -11,10 +11,10 @@
  *     service is missing. Services are NEVER created or deleted by this tool — see
  *     CREATION_IS_NOT_AUTOMATED in infra/railway/config.ts for why.
  *   - Variables: asserts the declared variables are set and are not still an
- *     unfilled `<placeholder>`. A variable is only WRITTEN when the caller supplies
- *     its value as `RAILWAY_VAR_<NAME>` in this process's own environment; without
- *     one, drift is reported and left alone. A value that is already set is never
- *     overwritten.
+ *     unfilled `<placeholder>`, plus any public value constraints. A variable is
+ *     only WRITTEN when the caller supplies its value as `RAILWAY_VAR_<NAME>` in
+ *     this process's own environment; without one, drift is reported and left
+ *     alone. A value that is already set is never overwritten.
  *   - ClickHouse retention: asserts the TTLs on xprem's Observe tables. Skipped
  *     (not failed) when no CLICKHOUSE_URL is available to this process, matching how
  *     scripts/mobile-ota-health-check.ts skips without a PostHog key.
@@ -265,8 +265,9 @@ async function fetchProject(token: string, projectId: string, environmentName: s
 /**
  * Read the variables for every service we declare.
  *
- * Only declared services are queried: this tool has no reason to pull the secrets
- * of the Postgres service or anything else sharing the project.
+ * Only declared services with variable assertions are queried: this tool has no
+ * reason to pull the secrets of the Postgres service or anything else sharing the
+ * project.
  */
 async function fetchVariables(
   token: string,
@@ -279,7 +280,11 @@ async function fetchVariables(
 
   for (const declared of desired.services) {
     const live = services.find((service) => service.name === declared.name);
-    if (!live || declared.requiredVars.length === 0) continue;
+    const hasVariableAssertions =
+      declared.requiredVars.length > 0 ||
+      (declared.optionalConstrainedVars?.length ?? 0) > 0 ||
+      (declared.requiredOneOfVars?.length ?? 0) > 0;
+    if (!live || !hasVariableAssertions) continue;
     const data = await railwayRequest<{ variables: Record<string, string> }>(token, VARIABLES_QUERY, {
       projectId,
       environmentId,

@@ -21,6 +21,11 @@ vi.mock('@boardsesh/email', () => ({
   sendVerificationEmail: (...args: unknown[]) => mockSendVerificationEmail(...args),
 }));
 
+const mockCaptureException = vi.fn();
+vi.mock('@sentry/nextjs', () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 vi.mock('bcryptjs', () => ({
   hash: async () => 'hashed-password',
 }));
@@ -109,5 +114,16 @@ describe('POST /api/auth/register', () => {
       if (savedBaseUrl === undefined) delete process.env.BASE_URL;
       else process.env.BASE_URL = savedBaseUrl;
     }
+  });
+
+  it('reports a verification-email failure to Sentry while returning the account response', async () => {
+    const smtpError = new Error('smtp failed');
+    mockSendVerificationEmail.mockRejectedValueOnce(smtpError);
+
+    const response = await POST(createRequest({ email: 'test@example.com', password: 'password123' }));
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ emailSent: false, requiresVerification: true });
+    expect(mockCaptureException).toHaveBeenCalledWith(smtpError, expect.objectContaining({ tags: expect.anything() }));
   });
 });

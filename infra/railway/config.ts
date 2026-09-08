@@ -38,6 +38,12 @@ export const OTA_SERVICE_NAME = 'boardsesh-ota-v3';
 /** The ClickHouse service backing xprem's Observe feature. */
 export const CLICKHOUSE_SERVICE_NAME = 'boardsesh-ota-clickhouse';
 
+/** The public www service. It is asserted here but never created by this tool. */
+export const WEB_SERVICE_NAME = 'boardsesh-web';
+
+/** The only public origin that can safely issue Boardsesh's cross-subdomain session cookies. */
+export const CANONICAL_WEB_ORIGIN = 'https://www.boardsesh.com';
+
 /**
  * Image for the ClickHouse service. Pinned to the version xprem itself tests
  * against — docker-compose.yml and .github/workflows/push.yml in the xprem repo
@@ -109,10 +115,27 @@ export interface RequiredEnvVar {
   reason: string;
 }
 
+/** A variable which may be absent, but must use one of these safe values when present. */
+export interface OptionalConstrainedEnvVar {
+  name: string;
+  /** Public, non-secret values that are valid when the variable is present. */
+  allowedValues: readonly string[];
+  reason: string;
+}
+
+/** At least one variable in the group must contain the public expected value. */
+export interface RequiredOneOfEnvVars {
+  names: readonly string[];
+  expectedValue: string;
+  reason: string;
+}
+
 export interface ServiceDesired {
   name: string;
   management: ServiceManagement;
   requiredVars: RequiredEnvVar[];
+  optionalConstrainedVars?: OptionalConstrainedEnvVar[];
+  requiredOneOfVars?: RequiredOneOfEnvVars[];
   /** Only meaningful for a report-only service we describe but do not create. */
   expected?: {
     image: string;
@@ -239,6 +262,35 @@ export const desiredRailwayState: RailwayDesiredState = {
         image: CLICKHOUSE_IMAGE,
         volumeMountPath: CLICKHOUSE_VOLUME_MOUNT_PATH,
       },
+    },
+    {
+      name: WEB_SERVICE_NAME,
+      management: 'assert-only',
+      requiredVars: [
+        {
+          name: 'SMTP_USER',
+          reason: 'Required to send password-reset and verification emails for credential accounts.',
+        },
+        {
+          name: 'SMTP_PASSWORD',
+          reason: 'Required to authenticate the SMTP transport for credential-account emails.',
+        },
+      ],
+      optionalConstrainedVars: [
+        {
+          name: 'BOARDSESH_WEB',
+          allowedValues: ['1'],
+          reason: 'The Docker image enables the www-to-app auth bridge; any other dashboard override disables it.',
+        },
+      ],
+      requiredOneOfVars: [
+        {
+          names: ['NEXTAUTH_URL', 'BASE_URL'],
+          expectedValue: CANONICAL_WEB_ORIGIN,
+          reason:
+            'At least one canonical origin is required for secure cross-subdomain session cookies and email links.',
+        },
+      ],
     },
   ],
   clickhouseRetention: CLICKHOUSE_RETENTION,

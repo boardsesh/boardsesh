@@ -7,8 +7,10 @@ import {
   CLICKHOUSE_VOLUME_NAME,
   CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT,
   CLICKHOUSE_SERVICE_NAME,
+  CANONICAL_WEB_ORIGIN,
   OTA_SERVICE_NAME,
   PLACEHOLDER_PATTERN,
+  WEB_SERVICE_NAME,
   desiredRailwayState,
 } from '../infra/railway/config';
 import {
@@ -35,13 +37,33 @@ import {
 
 const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 
+const WEB_SYNC_VARIABLES = {
+  SMTP_USER: 'mailer@boardsesh.com',
+  SMTP_PASSWORD: 'test-password',
+  BOARDSESH_WEB: '1',
+  BASE_URL: CANONICAL_WEB_ORIGIN,
+};
+
+function withWebSyncVariables(variables: Record<string, string>): Record<string, string> {
+  return { ...WEB_SYNC_VARIABLES, ...variables };
+}
+
 function liveState(overrides: Partial<LiveState> = {}): LiveState {
   return {
     services: [
       { id: 'svc-ota', name: OTA_SERVICE_NAME },
       { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME },
+      { id: 'svc-web', name: WEB_SERVICE_NAME },
     ],
-    variables: { [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe' } },
+    variables: {
+      [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe' },
+      [WEB_SERVICE_NAME]: {
+        SMTP_USER: 'mailer@boardsesh.com',
+        SMTP_PASSWORD: 'test-password',
+        BOARDSESH_WEB: '1',
+        BASE_URL: CANONICAL_WEB_ORIGIN,
+      },
+    },
     // 853 MiB of 50 GiB — the real reading when the volume was provisioned.
     clickhouseVolume: { usedMb: 853, capacityMb: 50000 },
     clickhouseTtl: Object.fromEntries(
@@ -99,6 +121,9 @@ describe('diffService', () => {
 
 describe('diffServiceVars', () => {
   const otaService = desiredRailwayState.services[0];
+  const webService = desiredRailwayState.services.find((service) => service.name === WEB_SERVICE_NAME);
+
+  if (!webService) throw new Error('Expected the web service assertion.');
 
   it('is silent when the variable is set', () => {
     expect(diffServiceVars(otaService, liveState(), NO_SUPPLIED)).toEqual([]);
@@ -137,6 +162,78 @@ describe('diffServiceVars', () => {
     const [change] = diffServiceVars(otaService, live, NO_SUPPLIED);
     expect(JSON.stringify(change)).not.toContain('hunter2');
   });
+
+  it('reports missing web SMTP credentials', () => {
+    const live = liveState({
+      variables: {
+        ...liveState().variables,
+        [WEB_SERVICE_NAME]: { BOARDSESH_WEB: '1', BASE_URL: CANONICAL_WEB_ORIGIN },
+      },
+    });
+
+    const changes = diffServiceVars(webService, live, NO_SUPPLIED);
+    expect(changes.map((change) => change.summary)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('SMTP_USER is absent'),
+        expect.stringContaining('SMTP_PASSWORD is absent'),
+      ]),
+    );
+  });
+
+  it('allows an absent BOARDSESH_WEB override', () => {
+    const live = liveState({
+      variables: {
+        ...liveState().variables,
+        [WEB_SERVICE_NAME]: {
+          SMTP_USER: 'mailer@boardsesh.com',
+          SMTP_PASSWORD: 'test-password',
+          BASE_URL: CANONICAL_WEB_ORIGIN,
+        },
+      },
+    });
+
+    expect(diffServiceVars(webService, live, NO_SUPPLIED)).toEqual([]);
+  });
+
+  it('reports a non-one BOARDSESH_WEB override without printing it', () => {
+    const wrongValue = 'turn-off-the-auth-bridge';
+    const live = liveState({
+      variables: {
+        ...liveState().variables,
+        [WEB_SERVICE_NAME]: { ...liveState().variables[WEB_SERVICE_NAME], BOARDSESH_WEB: wrongValue },
+      },
+    });
+
+    const changes = diffServiceVars(webService, live, NO_SUPPLIED);
+    expect(JSON.stringify(changes)).not.toContain(wrongValue);
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ summary: expect.stringContaining('BOARDSESH_WEB must be absent or "1"') }),
+      ]),
+    );
+  });
+
+  it('requires a canonical NEXTAUTH_URL or BASE_URL without printing the live URL', () => {
+    const wrongValue = 'https://attacker.example';
+    const live = liveState({
+      variables: {
+        ...liveState().variables,
+        [WEB_SERVICE_NAME]: {
+          ...liveState().variables[WEB_SERVICE_NAME],
+          NEXTAUTH_URL: wrongValue,
+          BASE_URL: wrongValue,
+        },
+      },
+    });
+
+    const changes = diffServiceVars(webService, live, NO_SUPPLIED);
+    expect(JSON.stringify(changes)).not.toContain(wrongValue);
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ summary: expect.stringContaining('NEXTAUTH_URL or BASE_URL') }),
+      ]),
+    );
+  });
 });
 
 describe('diffTableRetention', () => {
@@ -172,7 +269,7 @@ describe('buildPlan', () => {
     const live = liveState({ services: [], variables: {} });
     const plan = buildPlan(desiredRailwayState, live, NO_SUPPLIED);
     expect(plan.filter((change) => change.resource === 'env-var')).toEqual([]);
-    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(2);
+    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(3);
   });
 
   it('reports missing TTLs', () => {
@@ -276,7 +373,7 @@ describe('main', () => {
       }
 
       const data = body.query.includes('variables(')
-        ? { variables }
+        ? { variables: withWebSyncVariables(variables) }
         : {
             project: {
               name: 'boardsesh-ota',
@@ -285,6 +382,7 @@ describe('main', () => {
                 edges: [
                   { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
                   { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
+                  { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
                 ],
               },
             },
@@ -416,6 +514,7 @@ describe('Railway authentication', () => {
         edges: [
           { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
           { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
+          { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
         ],
       },
     },
@@ -472,7 +571,7 @@ describe('Railway authentication', () => {
       const data = query.includes('volumes {')
         ? VOLUMES_DATA
         : query.includes('variables(')
-          ? { variables: { CLICKHOUSE_URL: 'clickhouse://x/y' } }
+          ? { variables: withWebSyncVariables({ CLICKHOUSE_URL: 'clickhouse://x/y' }) }
           : PROJECT_DATA;
       return new Response(JSON.stringify({ data }), { status: 200 });
     }) as typeof globalThis.fetch;
@@ -716,7 +815,7 @@ describe('apply mode', () => {
         );
       }
       if (body.query.includes('variables(')) {
-        return new Response(JSON.stringify({ data: { variables } }), { status: 200 });
+        return new Response(JSON.stringify({ data: { variables: withWebSyncVariables(variables) } }), { status: 200 });
       }
       return new Response(
         JSON.stringify({
@@ -728,6 +827,7 @@ describe('apply mode', () => {
                 edges: [
                   { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
                   { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
+                  { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
                 ],
               },
             },

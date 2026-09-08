@@ -13,9 +13,9 @@
 //      left alone, the way the Cloudflare tool preserves foreign rules verbatim.
 //   2. Never overwrite a value that is already set and not a placeholder. Only
 //      `absent` and `placeholder` are drift this tool will fix.
-//   3. Never surface a secret value. Variables are reduced to a three-state
-//      classification before they reach a PlannedChange, so no code path can print
-//      a DSN or a token.
+//   3. Never surface a secret value. Variable values are inspected only to
+//      classify them or compare them to public configured values; no live value
+//      reaches a PlannedChange.
 
 import {
   PLACEHOLDER_PATTERN,
@@ -175,6 +175,43 @@ export function diffServiceVars(desired: ServiceDesired, live: LiveState, option
       // Convergeable only when the caller actually supplied a value. Without one
       // this is a report, not a fix — the tool never invents a secret.
       blocked: !supplied,
+    });
+  }
+
+  for (const constrained of desired.optionalConstrainedVars ?? []) {
+    const rawValue = serviceVars[constrained.name];
+    const state = classifyVar(rawValue);
+    if (state === 'absent') continue;
+
+    const normalizedValue = rawValue?.trim();
+    if (normalizedValue && constrained.allowedValues.includes(normalizedValue)) continue;
+
+    const allowedValues = constrained.allowedValues.map((allowedValue) => `"${allowedValue}"`).join(' or ');
+    changes.push({
+      resource: 'env-var',
+      summary: `${desired.name}: ${constrained.name} must be absent or ${allowedValues}`,
+      detail:
+        `${constrained.reason}\n` +
+        `The variable is ${state === 'placeholder' ? 'an unfilled placeholder' : 'set to an unsupported value'}. ` +
+        `Remove it or set it to ${allowedValues}.`,
+      target: { serviceName: desired.name, varName: constrained.name },
+      blocked: true,
+    });
+  }
+
+  for (const requirement of desired.requiredOneOfVars ?? []) {
+    const matchesExpectedValue = requirement.names.some(
+      (name) => serviceVars[name]?.trim() === requirement.expectedValue,
+    );
+    if (matchesExpectedValue) continue;
+
+    changes.push({
+      resource: 'env-var',
+      summary: `${desired.name}: one of ${requirement.names.join(' or ')} must equal ${requirement.expectedValue}`,
+      detail:
+        `${requirement.reason}\n` +
+        `Set at least one listed variable to ${requirement.expectedValue}; the live value is not printed.`,
+      blocked: true,
     });
   }
 

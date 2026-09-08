@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { hash } from 'bcryptjs';
@@ -122,6 +123,9 @@ export async function POST(request: NextRequest) {
         emailSent = true;
       } catch (emailError) {
         console.error('Failed to send verification email:', emailError);
+        Sentry.captureException(emailError, {
+          tags: { area: 'auth', flow: 'register', phase: 'send-email' },
+        });
         // User is created, they can use resend functionality
       }
 

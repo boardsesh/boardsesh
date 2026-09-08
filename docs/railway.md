@@ -1,7 +1,7 @@
-# Railway (OTA project config-as-code)
+# Railway config assertions
 
-Config-as-code for the Railway project that runs the self-hosted xprem OTA server
-(`updates.boardsesh.com`). It is the same three-file shape as
+Config assertions for the Railway project that runs the public web service and the
+self-hosted xprem OTA server (`updates.boardsesh.com`). It is the same three-file shape as
 [cloudflare.md](./cloudflare.md): typed desired state, a pure diff, and one script
 that does all the I/O.
 
@@ -22,11 +22,14 @@ it. A second `--apply` with nothing to do is a no-op.
 
 ## What it manages
 
-- **Services.** Asserts `boardsesh-ota-v3` exists; reports when the ClickHouse
-  service is missing. It never creates or deletes a service — see
+- **Services.** Asserts `boardsesh-ota-v3` and `boardsesh-web` exist; reports when
+  the ClickHouse service is missing. It never creates or deletes a service — see
   [Why services are not created](#why-services-are-not-created).
 - **Variables.** Asserts the declared variables are set and are not still an
-  unfilled `<placeholder>`.
+  unfilled `<placeholder>`. It also checks public safe-value rules without
+  printing live values: `boardsesh-web` needs SMTP credentials, `BOARDSESH_WEB`
+  must be absent or `1`, and `NEXTAUTH_URL` or `BASE_URL` must name the canonical
+  `https://www.boardsesh.com` origin.
 - **ClickHouse retention.** Asserts the TTLs on xprem's `observe_metrics` and
   `observe_logs` tables.
 

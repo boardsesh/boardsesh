@@ -15,6 +15,11 @@ vi.mock('@boardsesh/email', () => ({
   sendVerificationEmail: (...args: unknown[]) => mockSendVerificationEmail(...args),
 }));
 
+const mockCaptureException = vi.fn();
+vi.mock('@sentry/nextjs', () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockValues = vi.fn().mockResolvedValue(undefined);
 const mockUserSelect = vi.fn();
@@ -91,5 +96,15 @@ describe('POST /api/auth/resend-verification', () => {
     } finally {
       if (savedBaseUrl !== undefined) process.env.BASE_URL = savedBaseUrl;
     }
+  });
+
+  it('reports a verification-email failure to Sentry', async () => {
+    const smtpError = new Error('smtp failed');
+    mockSendVerificationEmail.mockRejectedValueOnce(smtpError);
+
+    const response = await POST(createRequest({ email: 'test@example.com' }));
+
+    expect(response.status).toBe(500);
+    expect(mockCaptureException).toHaveBeenCalledWith(smtpError, expect.objectContaining({ tags: expect.anything() }));
   });
 });
