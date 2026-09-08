@@ -791,12 +791,12 @@ describe('a lost lock race is not a bad artifact', () => {
     } as typeof db.execAsync);
 
     const WAIT_MS = 40;
-    // Real wall time, ignoring the requested rung: the ladder's 250ms would make
-    // the case slow for no extra signal. Yields rather than a timer so the SQLite
-    // double's microtask ordering is untouched.
+    // Advance only the injected lock wait. Real wall time also counts CPU
+    // contention from parallel suites, making the phase assertions flaky.
+    let clockMs = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => clockMs);
     const sleep = async (): Promise<void> => {
-      const until = Date.now() + WAIT_MS;
-      while (Date.now() < until) await Promise.resolve();
+      clockMs += WAIT_MS;
     };
 
     const result = await bootstrapScopeFromSnapshot({

@@ -261,7 +261,8 @@ replay. Partial fresh downloads persist their coverage with each page; reaching 
 does not count as backfilling its missing prefix. Scope removal clears the refresh keys with its other
 metadata, while forced sign-out that retains board catalogs retains refresh progress too.
 
-When adding a synced reference field, append its SQLite migration and bump that table's `refreshRevision`
+When adding a synced reference field, add it to the table's cumulative `refreshColumns` list,
+append its SQLite migration and bump that table's `refreshRevision`
 (or start at 1). Keep export/resolver columns and migration parity tests green. No schema-version bump is
 needed for refresh bookkeeping itself: it lives in the existing `sync_meta` table.
 

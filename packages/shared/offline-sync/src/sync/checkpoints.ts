@@ -25,7 +25,7 @@ export const DELETIONS_CHECKPOINT_KEY = 'checkpoint:deletions';
 /**
  * Order two checkpoints on the composite keyset `(updatedAt, syncSeq)`, the same
  * ordering the sync resolvers page on. `updatedAt` is compared as an instant
- * (Date.parse) rather than lexically — ISO strings with mixed sub-second
+ * rather than lexically, preserving PostgreSQL microseconds — mixed sub-second
  * precision (`…00Z` vs `…00.5Z`) misorder under a raw string compare. `syncSeq`
  * is a decimal string that can exceed Number's safe range, so it is compared via
  * BigInt (a raw string compare would rank `'9'` above `'10'`). Returns <0 when
@@ -39,6 +39,14 @@ export function compareCheckpoints(a: SyncCheckpoint, b: SyncCheckpoint): number
   const bTime = Date.parse(b.updatedAt);
   if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
     return aTime < bTime ? -1 : 1;
+  }
+  if (Number.isFinite(aTime) && Number.isFinite(bTime)) {
+    // Date.parse truncates below milliseconds. Compare the remaining digits
+    // before sync_seq, which need not increase across different timestamps.
+    const remainder = (timestamp: string) => (/\.(\d+)/.exec(timestamp)?.[1] ?? '').padEnd(6, '0').slice(3, 6);
+    const aRemainder = remainder(a.updatedAt);
+    const bRemainder = remainder(b.updatedAt);
+    if (aRemainder !== bRemainder) return aRemainder < bRemainder ? -1 : 1;
   }
   const aSeq = toSeqBigInt(a.syncSeq);
   const bSeq = toSeqBigInt(b.syncSeq);

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { OfflineDatabase, QueryInvalidator } from '../../database';
 
-vi.mock('../checkpoints', () => ({
+vi.mock('../checkpoints', async () => ({
+  ...(await vi.importActual<typeof import('../checkpoints')>('../checkpoints')),
   getCheckpoint: vi.fn().mockResolvedValue(null),
   setCheckpoint: vi.fn().mockResolvedValue(undefined),
   getCheckpointKey: vi.fn((tableName: string, boardType?: string) =>
@@ -15,7 +16,6 @@ vi.mock('../checkpoints', () => ({
   ensureScopeDownloadStartedAt: vi.fn(async (_db: unknown, _scopeKey: string, nowMs: number) => nowMs),
   SCOPE_DOWNLOAD_START_MAX_AGE_MS: 24 * 60 * 60 * 1000,
   rewindDeletionsCheckpoint: vi.fn().mockResolvedValue(undefined),
-  compareCheckpoints: vi.fn().mockReturnValue(0),
   DELETIONS_CHECKPOINT_KEY: 'checkpoint:deletions',
   SCOPE_COMPLETE_PREFIX: 'scope-complete:',
 }));

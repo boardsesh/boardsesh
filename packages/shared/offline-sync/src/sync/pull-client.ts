@@ -3,6 +3,7 @@ import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types'
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
 import {
   getCheckpoint,
+  compareCheckpoints,
   setCheckpoint,
   getCheckpointKey,
   markScopeDownloadComplete,
@@ -16,6 +17,7 @@ import {
 import { markUserDataComplete } from './local-user-owner';
 import {
   getSchemaRefreshState,
+  schemaRefreshKey,
   markSchemaRefreshComplete,
   writeSchemaRefreshState,
   REFRESH_START_CURSOR,
@@ -663,10 +665,17 @@ function buildMultiRowInsertSql(
     .filter((column) => !primaryKeyColumns.includes(column))
     .map((column) => `${column} = excluded.${column}`)
     .join(', ');
+  // Sync/export timestamps are UTC ISO text, but PostgreSQL omits trailing
+  // fractional zeroes. Pad the fraction so TEXT ordering preserves microseconds.
+  const timestampKey = (column: string) =>
+    `(substr(${column}, 1, 19) || '.' || CASE WHEN substr(${column}, 20, 1) = '.'
+      THEN substr(substr(${column}, 21, length(${column}) - 21) || '000000', 1, 6)
+      ELSE '000000' END)`;
   return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause}
     ON CONFLICT (${primaryKeyColumns.join(', ')}) DO UPDATE SET ${assignments}
     WHERE ${tableName}.${cursorColumn} IS NULL
-       OR (excluded.${cursorColumn}, excluded.sync_seq) >= (${tableName}.${cursorColumn}, ${tableName}.sync_seq)`;
+       OR (${timestampKey(`excluded.${cursorColumn}`)}, excluded.sync_seq)
+          >= (${timestampKey(`${tableName}.${cursorColumn}`)}, ${tableName}.sync_seq)`;
 }
 
 async function upsertDocuments(
@@ -761,11 +770,7 @@ function assertSyncPageProgress(result: SyncResult, cursor: SyncCursorInput | un
     throw new Error('Sync returned an invalid cursor');
   }
   if (cursor?.updatedAt && cursor.syncSeq) {
-    const previousTime = Date.parse(cursor.updatedAt);
-    if (
-      timestamp < previousTime ||
-      (timestamp === previousTime && BigInt(result.cursor.syncSeq) <= BigInt(cursor.syncSeq))
-    ) {
+    if (compareCheckpoints(result.cursor, { updatedAt: cursor.updatedAt, syncSeq: cursor.syncSeq }) <= 0) {
       throw new Error('Sync returned a nonadvancing cursor');
     }
   }
@@ -798,7 +803,7 @@ async function syncTable(
   const revision = boardScope ? config.refreshRevision : undefined;
   const previousRefresh =
     revision && boardScope ? await getSchemaRefreshState(db, tableName, boardScope.scopeKey) : null;
-  const fullDownload =
+  let fullDownload =
     !refresh &&
     (!checkpoint ||
       (previousRefresh?.revision === revision && previousRefresh?.mode === 'download' && !previousRefresh.complete));
@@ -818,9 +823,6 @@ async function syncTable(
   let totalProcessed = 0;
   let completedAtTail = false;
   const finish = (reachedTail: boolean) => {
-    if (totalProcessed > 0) {
-      for (const key of config.invalidateKeys) queryClient.invalidateQueries({ queryKey: key });
-    }
     return { reachedTail, rowsProcessed: totalProcessed, resumedFromCheckpoint };
   };
 
@@ -837,83 +839,106 @@ async function syncTable(
   // table happened to be mid-flight (see `cycleAborted` in pullSync).
 
   let hasMore = true;
-  while (hasMore) {
-    // Sign-out is wiping local data: stop before this page writes the old
-    // user's rows back (mirrors the drainer's guard).
-    if (!canWrite() || (refresh && !(await refresh.shouldContinue())) || !canWrite()) return finish(false);
-    const variables: Record<string, unknown> = { cursor, limit: PAGE_LIMIT };
-    if (config.isPerBoard && boardScope) {
-      variables.boardType = boardScope.boardType;
-      variables.layoutId = boardScope.layoutId;
-      variables.sizeId = boardScope.sizeId;
+  try {
+    while (hasMore) {
+      // Sign-out is wiping local data: stop before this page writes the old
+      // user's rows back (mirrors the drainer's guard).
+      if (!canWrite() || (refresh && !(await refresh.shouldContinue())) || !canWrite()) return finish(false);
+      const variables: Record<string, unknown> = { cursor, limit: PAGE_LIMIT };
+      if (config.isPerBoard && boardScope) {
+        variables.boardType = boardScope.boardType;
+        variables.layoutId = boardScope.layoutId;
+        variables.sizeId = boardScope.sizeId;
+      }
+
+      const response = await graphqlFetch<Record<string, SyncResult>>(query, variables);
+      const result = response[config.queryName];
+
+      // Re-check after the await: the wipe (or this scope's purge) may have
+      // started AND fully completed while this page was on the wire. This is the
+      // check that discards an in-flight page.
+      if (isSigningOut() || hasPurgeLanded(purgeToken, purgeKey) || isBackgrounded()) return finish(false);
+
+      assertSyncPageProgress(result, cursor);
+      if (result.documents.length === 0) break;
+      const missingRefreshColumns = (config.refreshColumns ?? []).filter((column) =>
+        result.documents.some((document) => !Object.prototype.hasOwnProperty.call(document, column)),
+      );
+      if (refresh && missingRefreshColumns.length > 0) {
+        throw new Error(`Sync refresh for ${tableName} is missing columns: ${missingRefreshColumns.join(', ')}`);
+      }
+      // A later ordinary delta can also erase a previously repaired field.
+      // Invalidate coverage even when this catalog already completed a refresh.
+      const clearDownloadCoverage = !refresh && missingRefreshColumns.length > 0;
+      if (clearDownloadCoverage) fullDownload = false;
+
+      const committed = await upsertDocuments(db, tableName, result.documents, config.localColumns, onSchemaDrift, {
+        canWrite,
+        preserveNewerRows: !!refresh,
+        afterUpsert: async (transaction) => {
+          if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
+          if (clearDownloadCoverage && boardScope) {
+            await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [
+              schemaRefreshKey(tableName, boardScope.scopeKey),
+            ]);
+          }
+          if (revision && boardScope && (refresh || fullDownload)) {
+            if (!result.hasMore) {
+              await markSchemaRefreshComplete(
+                transaction,
+                tableName,
+                boardScope.scopeKey,
+                result.cursor,
+                refresh ? 'refresh' : 'download',
+              );
+              completedAtTail = true;
+            } else {
+              await writeSchemaRefreshState(transaction, tableName, boardScope.scopeKey, {
+                ...result.cursor,
+                revision,
+                complete: false,
+                mode: refresh ? 'refresh' : 'download',
+              });
+            }
+          }
+        },
+      });
+      if (!committed) return finish(false);
+      lastCursor = result.cursor;
+
+      totalProcessed += result.documents.length;
+      onProgress?.(totalProcessed);
+
+      cursor = { updatedAt: result.cursor.updatedAt, syncSeq: result.cursor.syncSeq };
+      hasMore = result.hasMore;
     }
 
-    const response = await graphqlFetch<Record<string, SyncResult>>(query, variables);
-    const result = response[config.queryName];
+    if (revision && boardScope && (refresh || fullDownload) && !completedAtTail) {
+      let completed = false;
+      await db.withExclusiveTransactionAsync(async (transaction) => {
+        await applyBusyTimeout(transaction);
+        if (!canWrite()) return;
+        await markSchemaRefreshComplete(
+          transaction,
+          tableName,
+          boardScope.scopeKey,
+          lastCursor,
+          refresh ? 'refresh' : 'download',
+        );
+        completed = true;
+      });
+      if (!completed) return finish(false);
+    }
 
-    // Re-check after the await: the wipe (or this scope's purge) may have
-    // started AND fully completed while this page was on the wire. This is the
-    // check that discards an in-flight page.
-    if (isSigningOut() || hasPurgeLanded(purgeToken, purgeKey) || isBackgrounded()) return finish(false);
-
-    assertSyncPageProgress(result, cursor);
-    if (result.documents.length === 0) break;
-
-    const committed = await upsertDocuments(db, tableName, result.documents, config.localColumns, onSchemaDrift, {
-      canWrite,
-      preserveNewerRows: !!refresh,
-      afterUpsert: async (transaction) => {
-        if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
-        if (revision && boardScope && (refresh || fullDownload)) {
-          if (!result.hasMore) {
-            await markSchemaRefreshComplete(
-              transaction,
-              tableName,
-              boardScope.scopeKey,
-              result.cursor,
-              refresh ? 'refresh' : 'download',
-            );
-            completedAtTail = true;
-          } else {
-            await writeSchemaRefreshState(transaction, tableName, boardScope.scopeKey, {
-              ...result.cursor,
-              revision,
-              complete: false,
-              mode: refresh ? 'refresh' : 'download',
-            });
-          }
-        }
-      },
-    });
-    if (!committed) return finish(false);
-    lastCursor = result.cursor;
-
-    totalProcessed += result.documents.length;
-    onProgress?.(totalProcessed);
-
-    cursor = { updatedAt: result.cursor.updatedAt, syncSeq: result.cursor.syncSeq };
-    hasMore = result.hasMore;
+    // Completion requires a terminal page; malformed empty/nonadvancing pages throw.
+    return finish(true);
+  } finally {
+    // A later fetch/validation/write can fail after earlier pages committed.
+    // Those changes must become visible even if the next retry has no rows.
+    if (totalProcessed > 0) {
+      for (const key of config.invalidateKeys) queryClient.invalidateQueries({ queryKey: key });
+    }
   }
-
-  if (revision && boardScope && (refresh || fullDownload) && !completedAtTail) {
-    let completed = false;
-    await db.withExclusiveTransactionAsync(async (transaction) => {
-      await applyBusyTimeout(transaction);
-      if (!canWrite()) return;
-      await markSchemaRefreshComplete(
-        transaction,
-        tableName,
-        boardScope.scopeKey,
-        lastCursor,
-        refresh ? 'refresh' : 'download',
-      );
-      completed = true;
-    });
-    if (!completed) return finish(false);
-  }
-
-  // Completion requires a terminal page; malformed empty/nonadvancing pages throw.
-  return finish(true);
 }
 
 async function processDeletions(

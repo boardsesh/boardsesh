@@ -6,7 +6,13 @@ import { runMigrations } from '../../db/migrations';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import { pullSync } from '../pull-client';
 import { TABLE_CONFIGS } from '../table-config';
-import { getCheckpoint, setCheckpoint, markScopeDownloadComplete, isScopeDownloadComplete } from '../checkpoints';
+import {
+  compareCheckpoints,
+  getCheckpoint,
+  setCheckpoint,
+  markScopeDownloadComplete,
+  isScopeDownloadComplete,
+} from '../checkpoints';
 import {
   getSchemaRefreshState,
   schemaRefreshKey,
@@ -55,8 +61,7 @@ function source(documents = [climb('hidden')], onPage?: (cursor: SyncCheckpoint 
       const remaining = documents.filter(
         (document) =>
           !cursor ||
-          document.updated_at > cursor.updatedAt ||
-          (document.updated_at === cursor.updatedAt && document.sync_seq > Number(cursor.syncSeq)),
+          compareCheckpoints({ updatedAt: document.updated_at, syncSeq: String(document.sync_seq) }, cursor) > 0,
       );
       const page = remaining.slice(0, 1);
       const last = page[0];
@@ -114,6 +119,110 @@ afterEach(() => {
 });
 
 describe('reference schema refresh', () => {
+  it('accepts increasing microseconds even when the sequence decreases', async () => {
+    const first = { ...climb('hidden', 200), updated_at: '2026-09-06T00:00:00.000100Z' };
+    const second = { ...climb('second', 10), updated_at: '2026-09-06T00:00:00.000900Z' };
+    await sync(source([first, second]));
+    expect(await getCheckpoint(db, `checkpoint:board_climbs:${SCOPE}`)).toEqual({
+      updatedAt: second.updated_at,
+      syncSeq: '10',
+    });
+    expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toMatchObject({ complete: true });
+  });
+
+  it.each([
+    ['2026-09-06T00:00:00.5Z', '2026-09-06T00:00:00Z', 0],
+    ['2026-09-06T00:00:00Z', '2026-09-06T00:00:00.5Z', 1],
+    ['2026-09-06T00:00:00.500000Z', '2026-09-06T00:00:00.5Z', 1],
+    ['2026-09-06T00:00:00.000900Z', '2026-09-06T00:00:00.000100Z', 0],
+  ])('orders refresh timestamps %s versus %s precisely', async (localTimestamp, sourceTimestamp, expectedFlag) => {
+    await seedLegacy();
+    await db.runAsync("UPDATE board_climbs SET is_hidden = 0, updated_at = ? WHERE uuid = 'hidden'", [localTimestamp]);
+    await sync(source([{ ...climb('hidden'), updated_at: sourceTimestamp }]));
+    expect(await hiddenFlag()).toBe(expectedFlag);
+  });
+
+  it.each([false, true])('refuses missing refresh fields, including mixed pages (%s)', async (mixed) => {
+    await seedLegacy();
+    const normal = source();
+    const malformed = async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+      if (query.includes('syncClimbs(') && (variables?.cursor as SyncCheckpoint)?.syncSeq === '0') {
+        const incomplete: Record<string, unknown> = { ...climb('hidden') };
+        delete incomplete.is_hidden;
+        return {
+          syncClimbs: {
+            documents: mixed ? [climb('second', 11), incomplete] : [incomplete],
+            hasMore: false,
+            cursor: { ...OLD, syncSeq: mixed ? '11' : '10' },
+          },
+        } as T;
+      }
+      return normal(query, variables) as Promise<T>;
+    };
+    await expect(sync(malformed)).rejects.toThrow('missing columns: is_hidden');
+    expect(await hiddenFlag()).toBeNull();
+    expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toBeNull();
+    expect(await getCheckpoint(db, `checkpoint:board_climbs:${SCOPE}`)).toEqual(HEAD);
+    await sync();
+    expect(await hiddenFlag()).toBe(1);
+    expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toMatchObject({ complete: true });
+  });
+
+  it('does not stamp full-download coverage after a page omits a refresh field', async () => {
+    unmetered = false;
+    const normal = source([climb('hidden'), climb('second', 11)]);
+    const incomplete = async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+      const result = await normal<Record<string, { documents: Record<string, unknown>[] }>>(query, variables);
+      for (const document of result.syncClimbs?.documents ?? []) {
+        if (document.uuid === 'second') delete document.is_hidden;
+      }
+      return result as T;
+    };
+    await sync(incomplete);
+    expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toBeNull();
+    expect(await isScopeDownloadComplete(db, SCOPE)).toBe(true);
+    unmetered = true;
+    await sync(source([climb('hidden'), climb('second', 11)]));
+    expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toMatchObject({ complete: true });
+  });
+
+  it('invalidates committed pages when a later fetch fails, even with an empty-tail retry', async () => {
+    await seedLegacy();
+    const normal = source([climb('hidden'), climb('second', 11)]);
+    const fails = async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+      if (query.includes('syncClimbs(') && (variables?.cursor as SyncCheckpoint)?.syncSeq === '10') {
+        throw new Error('second page unavailable');
+      }
+      return normal(query, variables) as Promise<T>;
+    };
+    await expect(sync(fails)).rejects.toThrow('second page unavailable');
+    expect(await hiddenFlag()).toBe(1);
+    expect(queryClient.invalidateQueries).toHaveBeenCalled();
+    expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toMatchObject({ complete: false, syncSeq: '10' });
+    await sync(source());
+    expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toMatchObject({ complete: true });
+  });
+
+  it('reopens completed coverage when a later ordinary delta omits the field', async () => {
+    await seedLegacy();
+    await sync();
+    const newer = { ...climb('hidden', 201), updated_at: '2026-09-08T00:00:00Z' };
+    const normal = source([{ ...newer }]);
+    const incomplete = async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+      const result = await normal<Record<string, { documents: Record<string, unknown>[] }>>(query, variables);
+      for (const document of result.syncClimbs?.documents ?? []) delete document.is_hidden;
+      return result as T;
+    };
+    unmetered = false;
+    await sync(incomplete);
+    expect(await hiddenFlag()).toBeNull();
+    expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toBeNull();
+    unmetered = true;
+    await sync(source([newer]));
+    expect(await hiddenFlag()).toBe(1);
+    expect(await getSchemaRefreshState(db, 'board_climbs', SCOPE)).toMatchObject({ complete: true });
+  });
+
   it('fills skipped flags behind an existing checkpoint exactly once, without regressing ordinary sync', async () => {
     await seedLegacy();
     const fetch = source();
