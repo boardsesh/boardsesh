@@ -152,6 +152,7 @@ export function mergeFixtureSets(sets: readonly FixtureSetForMerge[]): MergedFix
       frozenNow: first.frozenNow,
       upstream: first.upstream,
       accountEmail: first.accountEmail,
+      accountUserId: first.accountUserId,
       flow: first.flow,
       graphql: [...graphqlEntries.values()].map(({ entry }) => entry),
       static: [...staticEntries.values()].map(({ entry }) => entry),
