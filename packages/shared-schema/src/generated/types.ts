@@ -137,10 +137,10 @@ export type AddCommentInput = {
 
 /** Input for adding a climb to favorites (idempotent, sync-safe). */
 export type AddFavoriteInput = {
-  /** Board angle */
-  angle: Scalars['Int']['input'];
-  /** Board type */
-  boardName: Scalars['String']['input'];
+  /** Legacy storage hint; ignored for favorite identity. Kept for shipped clients. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Legacy storage hint; ignored for favorite identity. Kept for shipped clients. */
+  boardName?: InputMaybe<Scalars['String']['input']>;
   /** Climb UUID to favorite */
   climbUuid: Scalars['String']['input'];
 };
@@ -5972,8 +5972,8 @@ export type QueryEventsReplayArgs = {
 
 /** Root query type for all read operations. */
 export type QueryFavoritesArgs = {
-  angle: Scalars['Int']['input'];
-  boardName: Scalars['String']['input'];
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  boardName?: InputMaybe<Scalars['String']['input']>;
   climbUuids: Array<Scalars['String']['input']>;
 };
 
@@ -6623,10 +6623,10 @@ export type RemoveClimbFromPlaylistInput = {
 
 /** Input for removing a climb from favorites (idempotent, sync-safe). */
 export type RemoveFavoriteInput = {
-  /** Board angle */
-  angle: Scalars['Int']['input'];
-  /** Board type */
-  boardName: Scalars['String']['input'];
+  /** Legacy storage hint; ignored for favorite identity. Kept for shipped clients. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Legacy storage hint; ignored for favorite identity. Kept for shipped clients. */
+  boardName?: InputMaybe<Scalars['String']['input']>;
   /** Climb UUID to unfavorite */
   climbUuid: Scalars['String']['input'];
 };
@@ -8158,12 +8158,15 @@ export type TickStatus =
 
 export type TimePeriod = 'all' | 'day' | 'hour' | 'month' | 'week' | 'year';
 
-/** Input for toggling a climb as favorite. */
+/**
+ * Input for toggling a climb as favorite. Favorites are keyed by climb UUID —
+ * a climb stays hearted whichever board config or angle you switch to.
+ */
 export type ToggleFavoriteInput = {
-  /** Board angle */
-  angle: Scalars['Int']['input'];
-  /** Board type */
-  boardName: Scalars['String']['input'];
+  /** Legacy storage hint; ignored for favorite identity. Kept for shipped clients. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Legacy storage hint; ignored for favorite identity. Kept for shipped clients. */
+  boardName?: InputMaybe<Scalars['String']['input']>;
   /** Climb UUID to favorite/unfavorite */
   climbUuid: Scalars['String']['input'];
 };
@@ -12577,7 +12580,7 @@ export type QueryResolvers<
     Array<ResolversTypes['String']>,
     ParentType,
     ContextType,
-    RequireFields<QueryFavoritesArgs, 'angle' | 'boardName' | 'climbUuids'>
+    RequireFields<QueryFavoritesArgs, 'climbUuids'>
   >;
   findSimilarGyms?: Resolver<
     Array<ResolversTypes['SimilarGym']>,

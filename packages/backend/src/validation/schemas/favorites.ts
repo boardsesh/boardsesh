@@ -2,24 +2,30 @@ import { z } from 'zod';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
 
 /**
- * Toggle favorite input validation schema
+ * Favorite input validation schemas.
+ *
+ * Favorites are keyed by (userId, climbUuid). `boardName` and `angle` are still
+ * accepted — binaries that shipped before the re-keying send them, and so do
+ * favorite mutations already sitting in a device's offline outbox. They are
+ * ignored for identity and retained as storage hints during rollout. Removal
+ * follows separately after shipped clients have been accounted for.
  */
 export const ToggleFavoriteInputSchema = z.object({
-  boardName: BoardNameSchema,
+  boardName: z.string().optional().nullable(),
   climbUuid: ExternalUUIDSchema,
-  angle: z.number().int(),
+  angle: z.number().int().optional().nullable(),
 });
 
 export const AddFavoriteInputSchema = z.object({
-  boardName: BoardNameSchema,
+  boardName: z.string().optional().nullable(),
   climbUuid: ExternalUUIDSchema,
-  angle: z.number().int(),
+  angle: z.number().int().optional().nullable(),
 });
 
 export const RemoveFavoriteInputSchema = z.object({
-  boardName: BoardNameSchema,
+  boardName: z.string().optional().nullable(),
   climbUuid: ExternalUUIDSchema,
-  angle: z.number().int(),
+  angle: z.number().int().optional().nullable(),
 });
 
 /**

@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import type {
   ConnectionContext,
   ToggleFavoriteInput,
@@ -15,14 +15,77 @@ import {
   RemoveFavoriteInputSchema,
 } from '../../../validation/schemas';
 
+// Separate advisory-lock namespace ("FAVS"). The transaction lock serializes
+// one user's writes to one climb across backend instances, even before the
+// database has a unique (user_id, climb_uuid) index. Hash collisions only
+// serialize unrelated favorites; they cannot mix their rows.
+const FAVORITE_LOCK_NAMESPACE = 0x46415653;
+
+async function writeFavorite(
+  userId: string,
+  input: AddFavoriteInput,
+  operation: 'add' | 'remove' | 'toggle',
+): Promise<boolean> {
+  return db.transaction(async (transaction) => {
+    const lockKey = JSON.stringify([userId, input.climbUuid]);
+    await transaction.execute(sql`SELECT pg_advisory_xact_lock(${FAVORITE_LOCK_NAMESPACE}, hashtext(${lockKey}))`);
+    const favoriteKey = and(
+      eq(dbSchema.userFavorites.userId, userId),
+      eq(dbSchema.userFavorites.climbUuid, input.climbUuid),
+    );
+
+    if (operation === 'remove') {
+      await transaction.delete(dbSchema.userFavorites).where(favoriteKey);
+      return false;
+    }
+
+    const [existingFavorite] = await transaction
+      .select({ id: dbSchema.userFavorites.id })
+      .from(dbSchema.userFavorites)
+      .where(favoriteKey)
+      .limit(1);
+    if (existingFavorite) {
+      if (operation === 'toggle') {
+        // Remove every old angle variant; a heart belongs to the climb.
+        await transaction.delete(dbSchema.userFavorites).where(favoriteKey);
+        return false;
+      }
+      return true;
+    }
+
+    const [climb] = await transaction
+      .select({ boardType: dbSchema.boardClimbs.boardType })
+      .from(dbSchema.boardClimbs)
+      .where(eq(dbSchema.boardClimbs.uuid, input.climbUuid))
+      .limit(1);
+    const inserted = await transaction
+      .insert(dbSchema.userFavorites)
+      .values({
+        userId,
+        climbUuid: input.climbUuid,
+        // Old Postgres and SQLite schemas require both fields. The catalog's
+        // board also keeps legacy list/export readers working through rollout.
+        // Unknown catalog climbs remain accepted, as they were before this change.
+        boardName: climb?.boardType ?? input.boardName ?? '',
+        angle: input.angle ?? 0,
+      })
+      // Do not name either unique key: this writer must work with the old
+      // four-column index, the new two-column index, or both during rollout.
+      .onConflictDoNothing()
+      .returning({ id: dbSchema.userFavorites.id });
+
+    if (operation === 'toggle' && inserted.length === 0) {
+      // An older backend that does not take the lock can still race us while
+      // this compatibility release rolls out. Reconcile an insert conflict
+      // as the second toggle instead of reporting a heart we did not add.
+      await transaction.delete(dbSchema.userFavorites).where(favoriteKey);
+      return false;
+    }
+    return true;
+  });
+}
+
 export const favoriteMutations = {
-  /**
-   * Toggle favorite status for a climb
-   * If favorited, removes the favorite; if not favorited, adds it.
-   * The insert-first upsert keeps concurrent toggles race-free: exactly one of
-   * two racing calls wins the INSERT (unique_user_favorite), the other falls
-   * through to the DELETE branch instead of hitting a unique violation.
-   */
   toggleFavorite: async (
     _: unknown,
     { input }: { input: ToggleFavoriteInput },
@@ -30,81 +93,17 @@ export const favoriteMutations = {
   ): Promise<ToggleFavoriteResult> => {
     requireAuthenticated(ctx);
     validateInput(ToggleFavoriteInputSchema, input, 'input');
-
-    const userId = ctx.userId!;
-
-    const inserted = await db
-      .insert(dbSchema.userFavorites)
-      .values({
-        userId,
-        boardName: input.boardName,
-        climbUuid: input.climbUuid,
-        angle: input.angle,
-      })
-      .onConflictDoNothing({
-        target: [
-          dbSchema.userFavorites.userId,
-          dbSchema.userFavorites.boardName,
-          dbSchema.userFavorites.climbUuid,
-          dbSchema.userFavorites.angle,
-        ],
-      })
-      .returning({ id: dbSchema.userFavorites.id });
-
-    if (inserted.length > 0) {
-      return { favorited: true };
-    }
-
-    await db
-      .delete(dbSchema.userFavorites)
-      .where(
-        and(
-          eq(dbSchema.userFavorites.userId, userId),
-          eq(dbSchema.userFavorites.boardName, input.boardName),
-          eq(dbSchema.userFavorites.climbUuid, input.climbUuid),
-          eq(dbSchema.userFavorites.angle, input.angle),
-        ),
-      );
-    return { favorited: false };
+    return { favorited: await writeFavorite(ctx.userId!, input, 'toggle') };
   },
 
-  /**
-   * Add a climb to favorites. Idempotent: ON CONFLICT (user_id, board_name,
-   * climb_uuid, angle) DO NOTHING. Safe for the mobile offline mutation queue to
-   * replay — a second add for the same (user, board, climb, angle) is a no-op,
-   * never a duplicate row. Always returns true.
-   */
+  // Idempotent across board/angle variants and safe for queued offline retries.
   addFavorite: async (_: unknown, { input }: { input: AddFavoriteInput }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
     validateInput(AddFavoriteInputSchema, input, 'input');
-
-    const userId = ctx.userId!;
-
-    await db
-      .insert(dbSchema.userFavorites)
-      .values({
-        userId,
-        boardName: input.boardName,
-        climbUuid: input.climbUuid,
-        angle: input.angle,
-      })
-      .onConflictDoNothing({
-        target: [
-          dbSchema.userFavorites.userId,
-          dbSchema.userFavorites.boardName,
-          dbSchema.userFavorites.climbUuid,
-          dbSchema.userFavorites.angle,
-        ],
-      });
-
+    await writeFavorite(ctx.userId!, input, 'add');
     return true;
   },
 
-  /**
-   * Remove a climb from favorites. Idempotent: deleting a row that doesn't exist
-   * is a no-op, so the offline mutation queue can replay an unfavorite safely
-   * without inverting state (unlike toggleFavorite). Always returns true.
-   */
   removeFavorite: async (
     _: unknown,
     { input }: { input: RemoveFavoriteInput },
@@ -112,20 +111,7 @@ export const favoriteMutations = {
   ): Promise<boolean> => {
     requireAuthenticated(ctx);
     validateInput(RemoveFavoriteInputSchema, input, 'input');
-
-    const userId = ctx.userId!;
-
-    await db
-      .delete(dbSchema.userFavorites)
-      .where(
-        and(
-          eq(dbSchema.userFavorites.userId, userId),
-          eq(dbSchema.userFavorites.boardName, input.boardName),
-          eq(dbSchema.userFavorites.climbUuid, input.climbUuid),
-          eq(dbSchema.userFavorites.angle, input.angle),
-        ),
-      );
-
+    await writeFavorite(ctx.userId!, input, 'remove');
     return true;
   },
 };
