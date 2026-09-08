@@ -44,6 +44,20 @@ async function writeSolidPng(file: string, width: number, height: number, grey: 
     .toFile(file);
 }
 
+/** Solid PNG with an arbitrary per-channel colour, unlike writeSolidPng's grey-only fill. */
+async function writeColorPng(
+  file: string,
+  width: number,
+  height: number,
+  color: { r: number; g: number; b: number },
+): Promise<void> {
+  await sharp({
+    create: { width, height, channels: 4, background: { ...color, alpha: 1 } },
+  })
+    .png()
+    .toFile(file);
+}
+
 /** PNG painted pixel by pixel, so a test can place an exact channel delta. */
 async function writePaintedPng(
   file: string,
@@ -172,6 +186,38 @@ describe('compareScreenshotSets', () => {
     expect(comparison.files[0].status).toBe('changed');
     // Two 5x20 slivers moved: 200 of 10,000 pixels.
     expect(comparison.files[0].differingRatio).toBe(0.02);
+  });
+
+  it('flags an R/B channel swap as changed even though every pixel keeps a colour', async () => {
+    // Each channel is compared against the SAME candidate channel index. A delta
+    // loop that instead paired baseline channel N with candidate channel 2-N
+    // would see this swap as a perfect match (200<->10 and 10<->200 cancel out)
+    // and report the file unchanged.
+    const baseline = directory('baseline');
+    const candidate = directory('candidate');
+    await writeColorPng(join(baseline, '01-discover.png'), 40, 40, { r: 200, g: 128, b: 10 });
+    await writeColorPng(join(candidate, '01-discover.png'), 40, 40, { r: 10, g: 128, b: 200 });
+
+    const comparison = await compareScreenshotSets({ baselineDir: baseline, candidateDir: candidate });
+
+    expect(comparison.changed).toBe(true);
+    expect(comparison.files[0].status).toBe('changed');
+  });
+
+  it('flags a change when only the G channel moves beyond tolerance', async () => {
+    const baseline = directory('baseline');
+    const candidate = directory('candidate');
+    await writeColorPng(join(baseline, '01-discover.png'), 40, 40, { r: 128, g: 128, b: 128 });
+    await writeColorPng(join(candidate, '01-discover.png'), 40, 40, {
+      r: 128,
+      g: 128 + DEFAULT_CHANNEL_TOLERANCE + 1,
+      b: 128,
+    });
+
+    const comparison = await compareScreenshotSets({ baselineDir: baseline, candidateDir: candidate });
+
+    expect(comparison.changed).toBe(true);
+    expect(comparison.files[0].status).toBe('changed');
   });
 
   it('writes a diff PNG for every changed file', async () => {
