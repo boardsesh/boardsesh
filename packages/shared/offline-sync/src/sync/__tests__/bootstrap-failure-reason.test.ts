@@ -6,6 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { classifySnapshotBootstrapFailure } from '../bootstrap-failure-reason';
+import { SnapshotSchemaCompatibilityError } from '../schema-compatibility';
 import {
   SnapshotWipedError,
   SnapshotSchemaStaleError,
@@ -17,6 +18,11 @@ import {
 
 describe('classifySnapshotBootstrapFailure', () => {
   it('names the engine error classes', () => {
+    expect(
+      classifySnapshotBootstrapFailure(
+        new SnapshotSchemaCompatibilityError('board_climbs', 'missing-source-column', ['is_hidden'], 5),
+      ),
+    ).toBe('artifact-invalid');
     expect(classifySnapshotBootstrapFailure(new SnapshotWipedError())).toBe('aborted-wipe');
     expect(classifySnapshotBootstrapFailure(new SnapshotSchemaStaleError(3))).toBe('schema-stale');
     expect(classifySnapshotBootstrapFailure(new SnapshotPermanentMissError('still gzipped'))).toBe('permanent-miss');

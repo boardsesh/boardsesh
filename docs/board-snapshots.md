@@ -230,6 +230,42 @@ layout artifact but intentionally outside the enabled size.
   artifact hits exactly that stale path: it rejects the artifact and crawls the scope page by page until the
   next export rebuilds it at v5.
 
+### Compatible additions and missing columns
+
+Extra incoming columns are expected while server exports and installed apps run different versions.
+Both snapshot and paged imports skip them using the client column allowlist. The mobile adapter records
+an informational breadcrumb once per origin/table/column per launch, including client and artifact
+versions when available; these additions do not create Sentry issues. Reporter failures cannot stop sync.
+
+Before reconciliation or any imported row writes, climbs, stats, and grades artifacts must contain every
+configured client column, and those columns must exist locally too. Missing columns raise
+`SnapshotSchemaCompatibilityError`, classified as `artifact-invalid` by the existing retry/fallback flow.
+This prevents NULL-filled fields from being stranded behind an advanced checkpoint. Schema metadata must
+contain positive integer versions consistent across the tables in each artifact.
+
+### Refreshing fields skipped by older apps
+
+`TABLE_CONFIGS.board_climbs.refreshRevision = 1` schedules a one-time replay for existing enabled catalogs.
+It covers `is_hidden` values an older app skipped even when the server row never changes again. Existing
+catalogs replay conservatively; there is no data wipe and their downloaded-state markers remain valid.
+
+Refreshes run after ordinary sync on a confirmed unmetered connection. They reuse 500-row pages with a
+separate cursor in `schema-refresh:<table>:<scope>` (`revision`, `mode`, `complete`, `updatedAt`, `syncSeq`).
+Normal deltas retain their own cursor and keep running on metered links. Refresh rows and progress commit
+together; older refresh rows cannot overwrite newer cached rows. A disconnect, backgrounding, or metered
+connection pauses the replay until the next eligible sync. Completion advances the ordinary cursor only
+if the replay is newer. Malformed or nonadvancing pages cannot mark the replay complete.
+
+Current snapshots and full fresh paged downloads stamp the revision as covered, so they do not immediately
+replay. Partial fresh downloads persist their coverage with each page; reaching the end of a legacy delta
+does not count as backfilling its missing prefix. Scope removal clears the refresh keys with its other
+metadata, while forced sign-out that retains board catalogs retains refresh progress too.
+
+When adding a synced reference field, add it to the table's cumulative `refreshColumns` list,
+append its SQLite migration and bump that table's `refreshRevision`
+(or start at 1). Keep export/resolver columns and migration parity tests green. No schema-version bump is
+needed for refresh bookkeeping itself: it lives in the existing `sync_meta` table.
+
 ### The two artifact sizes in a manifest entry
 
 A manifest entry carries the artifact's size twice, and the two diverge once `--gzip` ships:

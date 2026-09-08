@@ -61,6 +61,13 @@ function ctx(): ConnectionContext {
 type EmptyPage = { documents: never[]; cursor: SyncCursorInput; hasMore: false };
 type ResolverResponse = Record<string, unknown>;
 
+function assertDocumentColumns(document: unknown, columns: readonly string[]): void {
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) {
+    throw new Error('Sync resolver must emit an object document');
+  }
+  expect(Object.keys(document).sort()).toEqual([...columns].sort());
+}
+
 // A graphqlFetch that routes the two board queries to the REAL resolvers (against
 // the seeded Postgres) and serves an empty page for every other sync query and
 // deletions — exactly the shape pullSync expects, so the full client upsert path
@@ -75,13 +82,19 @@ async function graphqlFetch<T>(query: string, variables?: Record<string, unknown
   // Check stats before climbs: 'syncClimbStats' does not contain the substring
   // 'syncClimbs' (capital S after 'syncClimb'), so ordering is unambiguous.
   if (query.includes('syncClimbStats')) {
-    return { syncClimbStats: await syncQueries.syncClimbStats(undefined, resolverArgs, ctx()) } as T;
+    const result = await syncQueries.syncClimbStats(undefined, resolverArgs, ctx());
+    for (const document of result.documents) assertDocumentColumns(document, STATS_COLUMNS);
+    return { syncClimbStats: result } as T;
   }
   if (query.includes('syncClimbGrades')) {
-    return { syncClimbGrades: await syncQueries.syncClimbGrades(undefined, resolverArgs, ctx()) } as T;
+    const result = await syncQueries.syncClimbGrades(undefined, resolverArgs, ctx());
+    for (const document of result.documents) assertDocumentColumns(document, GRADES_COLUMNS);
+    return { syncClimbGrades: result } as T;
   }
   if (query.includes('syncClimbs')) {
-    return { syncClimbs: await syncQueries.syncClimbs(undefined, resolverArgs, ctx()) } as T;
+    const result = await syncQueries.syncClimbs(undefined, resolverArgs, ctx());
+    for (const document of result.documents) assertDocumentColumns(document, CLIMB_COLUMNS);
+    return { syncClimbs: result } as T;
   }
   const fieldMatch = query.match(/\{\s*\n?\s*(sync[A-Za-z]+)\(/);
   const fieldName = fieldMatch ? fieldMatch[1] : 'unknown';
@@ -99,6 +112,7 @@ async function insertClimb(values: {
   description?: string | null;
   isDraft?: boolean;
   isListed?: boolean | null;
+  isHidden?: boolean;
   compatibleSizeIds: number[];
   requiredSetIds?: number[] | null;
   characteristics?: string[] | null;
@@ -111,12 +125,12 @@ async function insertClimb(values: {
   const characteristics = values.characteristics == null ? null : `{${values.characteristics.join(',')}}`;
   await db.execute(sql`
     INSERT INTO board_climbs
-      (uuid, board_type, layout_id, setter_id, name, description, is_draft, is_listed,
+      (uuid, board_type, layout_id, setter_id, name, description, is_draft, is_listed, is_hidden,
        compatible_size_ids, required_set_ids, characteristics, frames, updated_at)
     VALUES
       (${values.uuid}, ${BOARD_TYPE}, ${LAYOUT_ID}, ${values.setterId ?? null},
        ${values.name ?? null}, ${values.description ?? null}, ${values.isDraft ?? false},
-       ${values.isListed ?? true}, ${compatible}::int[], ${requiredSetIds}::int[],
+       ${values.isListed ?? true}, ${values.isHidden ?? false}, ${compatible}::int[], ${requiredSetIds}::int[],
        ${characteristics}::text[], ${values.frames ?? null}, ${values.updatedAt}::timestamp)
   `);
 }
@@ -336,6 +350,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
     await insertClimb({
       uuid: 'c1',
       name: 'Crimp Master',
+      isHidden: true,
       description: 'a real description',
       isDraft: false,
       isListed: true,
@@ -432,6 +447,8 @@ describe('board-snapshot export ↔ live pull parity', () => {
     const c1 = artifactClimbs.find((row) => row.uuid === 'c1')!;
     expect(c1.is_draft).toBe(0);
     expect(c1.is_listed).toBe(1);
+    expect(c1.is_hidden).toBe(1);
+    expect(artifactClimbs.find((row) => row.uuid === 'c2')?.is_hidden).toBe(0);
     expect(c1.compatible_size_ids).toBe(JSON.stringify([5, 6]));
     expect(c1.characteristics).toBe(JSON.stringify(['crimpy', 'powerful']));
     expect(c1.updated_at).toBe('2026-05-01T00:00:00Z');

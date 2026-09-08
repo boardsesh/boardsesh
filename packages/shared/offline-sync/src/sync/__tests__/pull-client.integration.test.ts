@@ -512,7 +512,15 @@ describe('sync layer — real-DDL integration', () => {
         comment: 'second',
         updated_at: '2024-05-02T00:00:00Z',
       };
-      await pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncTicks', documents: [secondVersion] }));
+      await pullSync(
+        db,
+        queryClient,
+        makeSingleTableFetch({
+          queryName: 'syncTicks',
+          documents: [secondVersion],
+          cursor: { updatedAt: DEFAULT_CURSOR.updatedAt, syncSeq: '2' },
+        }),
+      );
 
       const rows = await db.getAllAsync<Record<string, unknown>>('SELECT * FROM boardsesh_ticks WHERE uuid = ?', [
         'tick-dup',
@@ -1063,7 +1071,7 @@ describe('sync layer — real-DDL integration', () => {
       await pullSync(db, queryClient, makeCoverageFetch([{ uuid: 'fresh-tick', status: 'send' }]).fetch);
 
       const onCoverageReset = vi.fn();
-      const second = makeCoverageFetch([{ uuid: 'fresh-tick', status: 'send' }]);
+      const second = makeCoverageFetch([]);
       await pullSync(db, queryClient, second.fetch, { onCoverageReset });
 
       expect(onCoverageReset).not.toHaveBeenCalled();

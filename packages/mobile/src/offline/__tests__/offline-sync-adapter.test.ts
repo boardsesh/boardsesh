@@ -119,8 +119,10 @@ vi.mock('../../lib/connectivity/connectivity-store', () => ({
 }));
 
 const reportHandledError = vi.fn();
+const addErrorBreadcrumb = vi.fn();
 vi.mock('../../lib/error-reporting', () => ({
   reportHandledError: (...args: unknown[]) => reportHandledError(...args),
+  addErrorBreadcrumb: (...args: unknown[]) => addErrorBreadcrumb(...args),
 }));
 
 const trackMock = vi.fn();
@@ -502,17 +504,24 @@ describe('scheduler trigger bindings', () => {
     expect(onlineManagerSetOnline).not.toHaveBeenCalled();
   });
 
-  it('binds schema-drift telemetry to Sentry with the offline-sync tags', () => {
+  it('records compatible columns as breadcrumbs without creating an issue', () => {
     const { options } = startAndGetTriggers();
-    options.onSchemaDrift?.({ tableName: 'boardsesh_ticks', column: 'shiny_new_column' });
-
-    expect(reportHandledError).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.stringContaining('shiny_new_column') }),
+    const drift = {
+      tableName: 'boardsesh_ticks',
+      column: 'shiny_new_column',
+      origin: 'pull' as const,
+      direction: 'extra-source-column' as const,
+      clientSchemaVersion: 5,
+    };
+    options.onSchemaDrift?.(drift);
+    expect(addErrorBreadcrumb).toHaveBeenCalledWith(
       expect.objectContaining({
-        tags: { source: 'offline-sync', kind: 'schema-drift' },
-        extra: { tableName: 'boardsesh_ticks', column: 'shiny_new_column' },
+        category: 'offline-sync.schema-compatibility',
+        level: 'info',
+        data: drift,
       }),
     );
+    expect(reportHandledError).not.toHaveBeenCalled();
   });
 });
 
@@ -1540,8 +1549,15 @@ describe('triggerSync / pullSync bindings', () => {
     await pullSync(db, queryClient, graphqlFetch, { onSchemaDrift: customDrift });
 
     const options = pullSyncCore.mock.calls[0][3] as SyncOptions;
-    options.onSchemaDrift?.({ tableName: 't', column: 'c' });
-    expect(customDrift).toHaveBeenCalledWith({ tableName: 't', column: 'c' });
+    const drift = {
+      tableName: 't',
+      column: 'c',
+      origin: 'pull' as const,
+      direction: 'extra-source-column' as const,
+      clientSchemaVersion: 5,
+    };
+    options.onSchemaDrift?.(drift);
+    expect(customDrift).toHaveBeenCalledWith(drift);
     expect(reportHandledError).not.toHaveBeenCalled();
   });
 });

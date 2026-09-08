@@ -85,8 +85,8 @@ export type SchedulerOptions = {
   /** Threaded through to pullSync's SyncOptions — see BootstrapPathRecoveredInfo. */
   onBootstrapPathRecovered?: BootstrapPathRecoveredReporter;
   /**
-   * Threaded through to pullSync's SyncOptions. Only the automatic heal of a
-   * partly-crawled scope consults it (issue #4313).
+   * Threaded through to pullSync's SyncOptions for automatic catalog refreshes
+   * and healing partly-crawled scopes.
    */
   isOnUnmeteredNetwork?: () => boolean | Promise<boolean>;
 };

@@ -61,6 +61,7 @@ import {
   BOOTSTRAP_RETRY_PREFIX,
 } from './bootstrap-retry';
 import { BOARD_DATA_TABLES } from './table-config';
+import { schemaRefreshKey } from './schema-refresh';
 
 /** One scope's measured footprint. `estimatedBytes` is an apportionment — see getScopeUsage. */
 export type ScopeUsage = {
@@ -95,6 +96,7 @@ export type ScopeTeardownResult = {
 export function scopeSyncMetaKeys(scopeKey: string): string[] {
   return [
     ...BOARD_DATA_TABLES.map((tableName) => getCheckpointKey(tableName, scopeKey)),
+    ...BOARD_DATA_TABLES.map((tableName) => schemaRefreshKey(tableName, scopeKey)),
     `${SCOPE_COMPLETE_PREFIX}${scopeKey}`,
     // Its Started twin (issue #4316). Both must die with the rows: leaving the
     // Started marker behind would silently drop a re-added board out of the

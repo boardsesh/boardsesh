@@ -142,8 +142,10 @@ enum, `proposal_on_your_climb` to `notification_type`, and `is_hidden` / `hidden
 `board_climbs.is_hidden` ships to the on-device SQLite mirror as schema **v5**
 (`packages/shared/offline-sync/src/db/migrations.ts`), stored as a nullable INTEGER because it arrives
 by `ALTER TABLE` on existing databases rather than in the v1 `CREATE`. Local queries therefore read it
-as `COALESCE(c.is_hidden, 0) = 0`, so rows pulled before the column existed behave as visible until the
-next delta refreshes them.
+as `COALESCE(c.is_hidden, 0) = 0`, so rows pulled before the column existed behave as visible until
+refreshed. Ordinary deltas only revisit changed rows: a resumable, unmetered catalog refresh now fills
+flags skipped by older clients even when those rows never change again. Cached climbs remain usable
+during that refresh; see [catalog refresh](board-snapshots.md#refreshing-fields-skipped-by-older-apps).
 
 A v5 client meeting a v4 board snapshot rejects the artifact (`SnapshotSchemaStaleError`) and crawls
 the scope page by page instead — one night of slower first downloads until the nightly export rebuilds

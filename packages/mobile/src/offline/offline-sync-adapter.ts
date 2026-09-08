@@ -59,7 +59,7 @@ import {
   refreshDeviceState,
   subscribeConnectivity as subscribeConnectivityStore,
 } from '../lib/connectivity/connectivity-store';
-import { reportHandledError } from '../lib/error-reporting';
+import { reportHandledError, addErrorBreadcrumb } from '../lib/error-reporting';
 import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { takeDownloadTrigger } from '../settings';
 import { track } from '../lib/analytics';
@@ -165,10 +165,12 @@ const reportMutationDeadLettered: MutationDeadLetterReporter = ({
   });
 };
 
-const reportSchemaDrift: SchemaDriftReporter = ({ tableName, column }) => {
-  reportHandledError(new Error(`Sync document for ${tableName} contains unknown column: ${column}`), {
-    tags: { source: 'offline-sync', kind: 'schema-drift' },
-    extra: { tableName, column },
+const reportSchemaDrift: SchemaDriftReporter = (drift) => {
+  addErrorBreadcrumb({
+    category: 'offline-sync.schema-compatibility',
+    message: 'Ignored compatible extra sync column',
+    level: 'info',
+    data: drift,
   });
 };
 

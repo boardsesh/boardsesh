@@ -221,6 +221,10 @@ describe('removeBoardScopeData — markers', () => {
   async function seedMarkers(scopeKey: string): Promise<void> {
     for (const table of BOARD_DATA_TABLES) {
       await setCheckpoint(db, `checkpoint:${table}:${scopeKey}`, { updatedAt: '2026-06-01T00:00:00Z', syncSeq: '9' });
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+        `schema-refresh:${table}:${scopeKey}`,
+        JSON.stringify({ revision: 1, complete: true }),
+      ]);
     }
     await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
       `scope-complete:${scopeKey}`,
@@ -314,7 +318,7 @@ describe('removeBoardScopeData — markers', () => {
   // what "a scope's downloaded state" consists of. Adding a marker here should mean
   // deliberately updating this list (and `seedMarkers` above, which proves the
   // teardown actually clears each one), not nudging a magic number.
-  it('is exactly the scope’s checkpoints plus its nine markers', async () => {
+  it('includes exactly the scope checkpoints, refresh state, and lifecycle markers', async () => {
     const keys = scopeSyncMetaKeys('kilter:1:5');
 
     expect(new Set(keys)).toEqual(
@@ -322,6 +326,9 @@ describe('removeBoardScopeData — markers', () => {
         'checkpoint:board_climbs:kilter:1:5',
         'checkpoint:board_climb_stats:kilter:1:5',
         'checkpoint:board_climb_grades:kilter:1:5',
+        'schema-refresh:board_climbs:kilter:1:5',
+        'schema-refresh:board_climb_stats:kilter:1:5',
+        'schema-refresh:board_climb_grades:kilter:1:5',
         'scope-complete:kilter:1:5',
         // Its Started twin: leaving this behind would drop a re-added board out
         // of the download funnel forever (issue #4316).

@@ -25,6 +25,13 @@ into `primaryKeyColumns`-many parts. So resolver output, local DDL, and table-co
 
 ## Casing & types
 
+Schema changes must cover already-downloaded rows as well as DDL: when adding a reference-data field,
+bump the table's `refreshRevision` and add the field to its cumulative `refreshColumns` list in
+`table-config.ts` so old checkpoints cannot skip its backfill or certify an incomplete response.
+See [snapshot compatibility and catalog refresh](board-snapshots.md#refreshing-fields-skipped-by-older-apps).
+The client tolerates additive columns from newer producers; tests enforce exact column/PK parity for the
+current migration, configuration, resolver, and export contracts.
+
 - **All JSON keys and SQLite columns are `snake_case`** (identical to Postgres column names). Resolvers must
   emit snake_case (raw SQL select or explicit mapping) — NOT drizzle's camelCase JS fields.
 - SQLite types: `TEXT`, `INTEGER`, `REAL`. Booleans → `INTEGER` 0/1 (the upsert maps JS booleans). Timestamps → `TEXT`

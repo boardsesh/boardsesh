@@ -222,7 +222,12 @@ describe('upsertDocuments batching (via pullSync)', () => {
 
     const driftCalls = onSchemaDrift.mock.calls.filter(([drift]) => drift.column === 'made_up_column_xyz');
     expect(driftCalls).toHaveLength(1);
-    expect(driftCalls[0][0]).toEqual({ tableName: 'boardsesh_ticks', column: 'made_up_column_xyz' });
+    expect(driftCalls[0][0]).toMatchObject({
+      tableName: 'boardsesh_ticks',
+      column: 'made_up_column_xyz',
+      origin: 'pull',
+      direction: 'extra-source-column',
+    });
 
     // The unknown column never reaches the SQL — only allowlisted columns do.
     const insertCalls = sqlCalls.filter((call) => call.sql.includes('INSERT OR REPLACE INTO boardsesh_ticks'));

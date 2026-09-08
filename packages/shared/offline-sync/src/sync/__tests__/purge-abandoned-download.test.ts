@@ -38,7 +38,7 @@ import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { beginScopePurge, __resetDrainerStateForTests } from '../../mutation-queue/drainer';
 import { __resetDownloadTerminalRegistryForTests } from '../download-terminal-registry';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
-import { SCHEMA_STATEMENTS } from '../../db/schema';
+import { MIGRATIONS } from '../../db/migrations';
 import type { OfflineBoardScope } from '../../offline-board-key';
 import type { SnapshotManifest, SnapshotManifestEntry } from '../snapshot-manifest';
 
@@ -63,7 +63,7 @@ const WATERMARK = { updatedAt: '2026-05-02T00:00:00Z', syncSeq: '20' };
 function buildArtifact(filePath: string): void {
   const artifact = new DatabaseSync(filePath);
   try {
-    for (const statement of SCHEMA_STATEMENTS) artifact.exec(statement);
+    for (const migration of MIGRATIONS) for (const statement of migration.statements) artifact.exec(statement);
     artifact.exec(SNAPSHOT_META_DDL);
     artifact
       .prepare(
