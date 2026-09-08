@@ -109,16 +109,24 @@ export function hasGraphqlErrorCode(error: unknown, code: string, depth = 0): bo
 
 // Locale-independent markers that identify a transport/offline failure regardless
 // of device language. These are stable IDENTIFIERS, not localized prose:
-//   - the fetch/polyfill wrapper strings ("Network request failed", "Failed to
-//     fetch", "fetch failed") are hardcoded English by the runtime, never localized
-//     (RN whatwg-fetch, browser/undici, and the WinterCG "fetch failed: <cause>"
-//     wrapper respectively);
+//   - the fetch/polyfill wrapper strings ("Network request failed", "Network
+//     request timed out", "Failed to fetch", "fetch failed") are hardcoded
+//     English by the runtime, never localized (RN whatwg-fetch, browser/undici,
+//     and the WinterCG "fetch failed: <cause>" wrapper respectively). The first
+//     two are siblings from the same whatwg-fetch XHR pair: `xhr.onerror`
+//     rejects with "Network request failed" (fetch.umd.js:567) and
+//     `xhr.ontimeout` with "Network request timed out" (:573). Only the first
+//     was listed here, so a timed-out send resolved no status, matched nothing,
+//     and was dead-lettered on attempt 0 of 10 (#5295);
 //   - Java networking exception class names surface verbatim in Android messages
 //     (e.g. `java.net.UnknownHostException`), independent of locale.
-// Kept narrow (never bare "network"/"fetch") so a programmer bug like
-// `TypeError: Cannot read property 'fetch' of undefined` is NOT swallowed.
+// Kept narrow (never bare "network"/"fetch"/"timed out") so a programmer bug like
+// `TypeError: Cannot read property 'fetch' of undefined` is NOT swallowed. The
+// timeout marker is the FULL phrase for the same reason: `BLE write timed out
+// waiting for the board to accept data` is a board failure, not a network one
+// (#3869).
 const TRANSPORT_NETWORK_MARKERS =
-  /network request failed|failed to fetch|fetch failed|unknownhostexception|sockettimeoutexception|socketexception|connectexception|sslexception|sslhandshakeexception|sslpeerunverifiedexception|unknownserviceexception/i;
+  /network request failed|network request timed out|failed to fetch|fetch failed|unknownhostexception|sockettimeoutexception|socketexception|connectexception|sslexception|sslhandshakeexception|sslpeerunverifiedexception|unknownserviceexception/i;
 
 // errno-style transport codes carried on the error or its `.cause` (undici / Node
 // networking). Locale-independent.
@@ -327,14 +335,29 @@ export function isNetworkError(error: unknown): boolean {
 const INTERNAL_SERVER_ERROR_CODE = 'INTERNAL_SERVER_ERROR';
 
 /**
- * A 502 / 503 / 504: an edge or upstream verdict — a gateway, a proxy, or a
- * backend that is not accepting work right now — rather than a verdict on the
- * request that happened to hit it. The drainer treats this like a dropped
- * connection: end the cycle, charge the mutation nothing.
+ * A 404 / 502 / 503 / 504: an edge/proxy verdict, not a verdict on this request
+ * — a gateway, a router, or a backend that is not accepting work right now. The
+ * drainer treats all four like a dropped connection: end the cycle, charge the
+ * mutation nothing.
+ *
+ * 404 belongs here rather than with the permanent rejections because of what
+ * this client is. The drainer speaks GraphQL-over-POST to ONE endpoint, and a
+ * GraphQL server answers "no such thing" as HTTP 200 with an `errors` array —
+ * it has no way to say not-found in the status line. So a 404 arriving here can
+ * only mean something in front of the server failed to route the request, and
+ * the write is as replayable as if the connection had dropped. Railway's edge
+ * served exactly that for 6m30s on 2026-09-02 and three climbers lost a logged
+ * send (#5295).
+ *
+ * The decision is on STATUS only. That outage also set an `x-railway-fallback`
+ * response header, which would identify the case precisely — and is exactly the
+ * kind of single-host detail this code must not learn (docs/railway.md: nothing
+ * Railway-specific in code, `pg_dump` and a `docker run` must be enough to move
+ * hosts). The header is recorded in the test comment as evidence instead.
  */
 export function isServerUnavailableError(error: unknown): boolean {
   const status = getErrorStatus(error);
-  return status === 502 || status === 503 || status === 504;
+  return status === 404 || status === 502 || status === 503 || status === 504;
 }
 
 /**
@@ -348,6 +371,31 @@ export function isServerFailureSignal(error: unknown): boolean {
   const status = getErrorStatus(error);
   if (status !== null && status >= 500) return true;
   return hasGraphqlErrorCode(error, INTERNAL_SERVER_ERROR_CODE);
+}
+
+/**
+ * The HTTP statuses that are a server's PERMANENT verdict on this exact request:
+ * replaying the identical bytes cannot change the answer. A malformed body
+ * (400), a forbidden action (403), the wrong method (405), a conflict the
+ * payload itself causes (409), a resource that is gone (410), a body too large
+ * (413), an unsupported media type (415), and a semantically invalid payload
+ * (422).
+ *
+ * 404 is deliberately NOT here — see `isServerUnavailableError` for why a 404
+ * reaching a single-endpoint GraphQL client is a routing failure rather than a
+ * rejection. 401 and 429 are absent for the reasons given in `isRetryable`.
+ */
+export const PERMANENT_REJECTION_STATUSES: ReadonlySet<number> = new Set([400, 403, 405, 409, 410, 413, 415, 422]);
+
+/**
+ * Did a server positively reject THIS request in a way a replay cannot fix?
+ * This is now the only thing that stops a queued write from being retried, so
+ * an error shape nobody has seen yet costs `max_retries` attempts instead of
+ * costing the climber the write (#5295).
+ */
+export function isPermanentRejection(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  return status !== null && PERMANENT_REJECTION_STATUSES.has(status);
 }
 
 export function isRetryable(error: unknown): boolean {
@@ -377,22 +425,27 @@ export function isRetryable(error: unknown): boolean {
     return true;
   }
 
-  const status = getErrorStatus(error);
-
-  // No resolvable HTTP/GraphQL status and not a recognized network error: most
-  // likely a programmer / validation / parse bug. Dead-letter it (I5) so it's
-  // surfaced to the user instead of silently burning the retry budget.
-  if (status === null) {
-    return false;
-  }
-
-  // 401 is retryable because the drainer's fetch is authenticatedFetch
-  // (lib/auth-interceptor): it refreshes the token and retries once BEFORE the
-  // error reaches classification, and a failed refresh forces sign-out — which
-  // wipes the pending queue — so a retried 401 can't loop against a dead session.
-  if (status === 401) return true;
-  if (status === 429) return true;
-  if (status >= 500) return true;
-
-  return false;
+  // Everything else RETRIES: only a positively identified permanent server
+  // verdict blocks a replay. The old default was the opposite — "no resolvable
+  // status and not a recognized network error, so this is a programmer bug,
+  // dead-letter it" — and it was wrong four times running, each time losing a
+  // climber's logged send on attempt 0 of 10: a truncated 2xx body (#4099),
+  // bare NSURL prose (#4027), a string `RATE_LIMITED` code (#4711), and
+  // `TypeError: Network request timed out` (#5295). Each fix taught the
+  // classifier one more shape and left the default in place for the fifth.
+  //
+  // The cost of being wrong in this direction is bounded and already paid for
+  // elsewhere: `recordFailure` (queue.ts) flips the row to `dead_letter` in the
+  // same atomic UPDATE that bumps past `max_retries` (10), so a genuine
+  // programmer bug still surfaces to the user — as `retries_exhausted` after
+  // ten attempts rather than `non_retryable` after one. That is the same trade
+  // the INTERNAL_SERVER_ERROR branch above already makes.
+  //
+  // 401 and 429 stay out of PERMANENT_REJECTION_STATUSES on purpose. 401
+  // because the drainer's fetch is authenticatedFetch (lib/auth-interceptor):
+  // it refreshes the token and retries once BEFORE the error reaches
+  // classification, and a failed refresh forces sign-out — which wipes the
+  // pending queue — so a retried 401 can't loop against a dead session. 429 is
+  // a "later", not a "never", and the drainer's backoff is the wait.
+  return !isPermanentRejection(error);
 }

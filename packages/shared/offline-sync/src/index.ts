@@ -76,6 +76,8 @@ export {
   hasGraphqlErrorCode,
   isServerUnavailableError,
   isServerFailureSignal,
+  isPermanentRejection,
+  PERMANENT_REJECTION_STATUSES,
 } from './mutation-queue/error-classification';
 
 // --- Pull sync -----------------------------------------------------------------
