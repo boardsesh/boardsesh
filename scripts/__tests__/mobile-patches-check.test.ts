@@ -502,10 +502,16 @@ const TABS_RULES: PatchRule[] = [
     package: PKG,
     file: TABS_FILE,
     sentinels: [
-      'rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance',
+      'rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange',
       'rnscreens_layoutBottomAccessoryOutsideTransition',
       '_rnscreens_bottomAccessoryRelayoutScheduled',
+      '_rnscreens_bottomAccessoryRelayoutNeedsRepeat',
+      '[_controller.tabBar setNeedsLayout];',
       'animateAlongsideTransition',
+    ],
+    orderedSentinels: [
+      '[_controller setBottomAccessory:nil animated:YES];',
+      '[self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];',
     ],
     patchedKey: TABS_KEY,
     forbiddenInMethod: [
@@ -514,22 +520,91 @@ const TABS_RULES: PatchRule[] = [
         substrings: ['layoutIfNeeded', 'layoutBelowIfNeeded'],
         why: 'synchronous layout inside the RN mounting transaction — BOARDSESH-9K',
       },
+      {
+        method: 'applyBottomAccessoryVisibility',
+        substrings: ['rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance'],
+        why: 'the ATTACH-ONLY nudge left the docked search item shoved on detach — #5055',
+      },
+      {
+        method: 'rnscreens_layoutBottomAccessoryOutsideTransition',
+        substrings: ['_rnscreens_bottomAccessoryRelayoutNeedsRepeat = YES'],
+        why: 'the layout pass must never arm its own repeat — BOARDSESH-9K loop shape',
+      },
     ],
   },
 ];
 
-/** The shipped (2.3.1) shape: attach-only nudge, layout deferred off-transaction. */
+/** The shipped shape: schedule on both edges, layout deferred off-transaction,
+ *  tab bar invalidated so the docked search item is re-framed (#5055). */
 const TABS_FIXED_SOURCE = `
 - (void)applyBottomAccessoryVisibility API_AVAILABLE(ios(26.0))
 {
-  if (_bottomAccessoryWrapperView != nil) {
+  if (accessoryView != nil) {
     [_controller setBottomAccessory:accessory animated:YES];
-    [self rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance];
+  } else {
+    [_controller setBottomAccessory:nil animated:YES];
+  }
+
+  if (accessoryView != _rnscreens_lastAppliedBottomAccessoryView) {
+    _rnscreens_lastAppliedBottomAccessoryView = accessoryView;
+    [self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];
   }
 }
 
 // The original version of this method called -layoutIfNeeded right there, and
 // that synchronous layout got pulled into a UIKit feedback loop.
+- (void)rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange
+{
+  if (_rnscreens_bottomAccessoryRelayoutScheduled) {
+    _rnscreens_bottomAccessoryRelayoutNeedsRepeat = YES;
+    return;
+  }
+  _rnscreens_bottomAccessoryRelayoutScheduled = YES;
+  _rnscreens_bottomAccessoryRelayoutNeedsRepeat = NO;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [weakSelf rnscreens_layoutBottomAccessoryOutsideTransition];
+  });
+}
+
+- (void)rnscreens_layoutBottomAccessoryOutsideTransition
+{
+  if (transitionCoordinator != nil) {
+    BOOL registered = [transitionCoordinator animateAlongsideTransition:nil completion:^(id context) {
+      [weakSelf rnscreens_layoutBottomAccessoryOutsideTransition];
+    }];
+    if (registered) {
+      return;
+    }
+  }
+  _rnscreens_bottomAccessoryRelayoutScheduled = NO;
+  [_controller.tabBar setNeedsLayout];
+  [controllerView setNeedsLayout];
+  [controllerView layoutIfNeeded];
+  if (_rnscreens_bottomAccessoryRelayoutNeedsRepeat) {
+    _rnscreens_bottomAccessoryRelayoutNeedsRepeat = NO;
+    [self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];
+  }
+}
+`;
+
+/** A re-keyed patch that kept the symbols but restored the crashing layout. */
+const TABS_REGRESSED_SOURCE = TABS_FIXED_SOURCE.replace(
+  '[self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];\n  }',
+  '[self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];\n    [_controller.view layoutIfNeeded];\n  }',
+);
+
+/** The pre-#5055 shape: nudge nested inside the attach branch, nothing on detach. */
+const TABS_ATTACH_ONLY_SOURCE = `
+- (void)applyBottomAccessoryVisibility API_AVAILABLE(ios(26.0))
+{
+  if (_bottomAccessoryWrapperView != nil) {
+    [_controller setBottomAccessory:accessory animated:YES];
+    [self rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance];
+  } else {
+    [_controller setBottomAccessory:nil animated:YES];
+  }
+}
+
 - (void)rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance
 {
   if (_rnscreens_bottomAccessoryRelayoutScheduled) {
@@ -557,10 +632,10 @@ const TABS_FIXED_SOURCE = `
 }
 `;
 
-/** A re-keyed patch that kept the symbols but restored the crashing layout. */
-const TABS_REGRESSED_SOURCE = TABS_FIXED_SOURCE.replace(
-  '[self rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance];',
-  '[self rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance];\n    [_controller.view layoutIfNeeded];',
+/** The layout pass arming its own repeat — the self-sustaining loop shape. */
+const TABS_SELF_ARMING_SOURCE = TABS_FIXED_SOURCE.replace(
+  '  _rnscreens_bottomAccessoryRelayoutScheduled = NO;\n  [_controller.tabBar setNeedsLayout];',
+  '  _rnscreens_bottomAccessoryRelayoutScheduled = NO;\n  _rnscreens_bottomAccessoryRelayoutNeedsRepeat = YES;\n  [_controller.tabBar setNeedsLayout];',
 );
 
 const tabsEnv = (source: string) =>
@@ -574,7 +649,7 @@ describe('extractObjCMethodBody', () => {
   it('extracts a body and stops at the closing brace, not the next declaration', () => {
     const body = extractObjCMethodBody(TABS_FIXED_SOURCE, 'applyBottomAccessoryVisibility');
 
-    expect(body).toContain('rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance');
+    expect(body).toContain('rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange');
     expect(body).not.toContain('dispatch_async');
     expect(body).not.toContain('layoutIfNeeded');
   });
@@ -671,9 +746,12 @@ describe('checkPatchesApplied forbiddenInMethod', () => {
 
     const result = checkPatchesApplied(TABS_RULES, tabsEnv(renamed));
 
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain('cannot locate');
-    expect(result.errors[0]).toContain('re-verify');
+    // One per rule anchored on that method — both must say so, loudly.
+    expect(result.errors).toHaveLength(2);
+    for (const error of result.errors) {
+      expect(error).toContain('cannot locate');
+      expect(error).toContain('re-verify');
+    }
   });
 
   it.each([
@@ -686,6 +764,73 @@ describe('checkPatchesApplied forbiddenInMethod', () => {
     const result = checkPatchesApplied(TABS_RULES, tabsEnv(withoutSentinel));
 
     expect(result.errors.join('\n')).toContain(sentinel);
+  });
+
+  it('fails on the pre-#5055 attach-only shape', () => {
+    // A re-applied older patch keeps the deferral machinery and would sail past a
+    // sentinel-only check, while leaving the docked search item shoved on detach.
+    const result = checkPatchesApplied(TABS_RULES, tabsEnv(TABS_ATTACH_ONLY_SOURCE));
+
+    expect(result.errors.join('\n')).toContain('rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange');
+  });
+
+  it('fails when the tab-bar invalidation is dropped (the one line that fixes #5055)', () => {
+    const withoutTabBarDirty = TABS_FIXED_SOURCE.replace('  [_controller.tabBar setNeedsLayout];\n', '');
+
+    const result = checkPatchesApplied(TABS_RULES, tabsEnv(withoutTabBarDirty));
+
+    expect(result.errors.join('\n')).toContain('[_controller.tabBar setNeedsLayout];');
+  });
+
+  it('fails when the schedule call is nested back inside the attach branch', () => {
+    // Ordered sentinels are what catch this: every symbol is still present, but the
+    // call now sits BEFORE the detach branch, so a detach schedules nothing.
+    const nested = `
+- (void)applyBottomAccessoryVisibility API_AVAILABLE(ios(26.0))
+{
+  if (accessoryView != nil) {
+    [_controller setBottomAccessory:accessory animated:YES];
+    [self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];
+  } else {
+    [_controller setBottomAccessory:nil animated:YES];
+  }
+}
+${TABS_FIXED_SOURCE.slice(TABS_FIXED_SOURCE.indexOf('// The original version'))}`;
+
+    const result = checkPatchesApplied(TABS_RULES, tabsEnv(nested));
+
+    expect(result.errors.join('\n')).toContain('must appear before');
+  });
+
+  it('fails when the layout pass arms its own repeat (the loop shape)', () => {
+    const result = checkPatchesApplied(TABS_RULES, tabsEnv(TABS_SELF_ARMING_SOURCE));
+
+    expect(result.errors.join('\n')).toContain('rnscreens_layoutBottomAccessoryOutsideTransition');
+  });
+});
+
+describe('the shipped react-native-screens tab-host rule', () => {
+  // Runs the REAL rule, not a fixture copy of it — the fixture above can drift from
+  // what ships, and this is the assertion that would notice.
+  const shippedRule = REAL_RULES.find(
+    (rule) => rule.package === PKG && rule.file === 'ios/tabs/host/RNSTabsHostComponentView.mm',
+  );
+
+  it('is present', () => {
+    expect(shippedRule).toBeDefined();
+  });
+
+  it('rejects the pre-#5055 attach-only shape', () => {
+    const result = checkPatchesApplied(
+      [shippedRule as PatchRule],
+      makeEnv({
+        patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
+        versions: { [PKG]: '4.26.2' },
+        files: { [`${PKG}::ios/tabs/host/RNSTabsHostComponentView.mm`]: TABS_ATTACH_ONLY_SOURCE },
+      }),
+    );
+
+    expect(result.errors.length).toBeGreaterThan(0);
   });
 });
 
@@ -773,7 +918,7 @@ describe('the shipped RULES', () => {
   it('asserts the deferral machinery, not just the entry-point symbol', () => {
     expect(tabsHostRule?.sentinels).toEqual(
       expect.arrayContaining([
-        'rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance',
+        'rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange',
         'rnscreens_layoutBottomAccessoryOutsideTransition',
         '_rnscreens_bottomAccessoryRelayoutScheduled',
         'animateAlongsideTransition',
@@ -781,10 +926,48 @@ describe('the shipped RULES', () => {
     );
   });
 
-  it('forbids a synchronous layout inside applyBottomAccessoryVisibility', () => {
-    const forbidden = tabsHostRule?.forbiddenInMethod?.find(
-      (entry) => entry.method === 'applyBottomAccessoryVisibility',
+  it('asserts the #5055 detach machinery too', () => {
+    // The tab-bar invalidation is the line that actually re-frames the docked
+    // role="search" item; the repeat slot is what stops an in-flight pass from
+    // swallowing the detach edge behind it.
+    expect(tabsHostRule?.sentinels).toEqual(
+      expect.arrayContaining([
+        '[_controller.tabBar setNeedsLayout];',
+        '_rnscreens_bottomAccessoryRelayoutNeedsRepeat',
+        '_rnscreens_lastAppliedBottomAccessoryView',
+      ]),
     );
+    // Ordered: the schedule call must come after BOTH branches, not inside attach.
+    expect(tabsHostRule?.orderedSentinels).toEqual(
+      expect.arrayContaining([
+        '[_controller setBottomAccessory:nil animated:YES];',
+        '[self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];',
+      ]),
+    );
+  });
+
+  it('forbids the attach-only nudge coming back', () => {
+    const forbidden = tabsHostRule?.forbiddenInMethod?.find((entry) =>
+      entry.substrings.includes('rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance'),
+    );
+
+    expect(forbidden?.method).toBe('applyBottomAccessoryVisibility');
+    expect(forbidden?.why).toContain('#5055');
+  });
+
+  it('forbids the layout pass arming its own repeat', () => {
+    const forbidden = tabsHostRule?.forbiddenInMethod?.find(
+      (entry) => entry.method === 'rnscreens_layoutBottomAccessoryOutsideTransition',
+    );
+
+    expect(forbidden?.substrings).toEqual(
+      expect.arrayContaining(['_rnscreens_bottomAccessoryRelayoutNeedsRepeat = YES']),
+    );
+    expect(forbidden?.why).toContain('BOARDSESH-9K');
+  });
+
+  it('forbids a synchronous layout inside applyBottomAccessoryVisibility', () => {
+    const forbidden = tabsHostRule?.forbiddenInMethod?.find((entry) => entry.substrings.includes('layoutIfNeeded'));
 
     expect(forbidden?.substrings).toEqual(expect.arrayContaining(['layoutIfNeeded']));
     expect(forbidden?.why).toContain('BOARDSESH-9K');
