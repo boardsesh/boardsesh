@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vite-plus/test';
+
+vi.mock('server-only', () => ({}));
 import { NextRequest } from 'next/server';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';
@@ -7,6 +9,7 @@ import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 const { getClimbViewPageCacheTTL, getListPageCacheTTL, hasUserSpecificFilters } =
   await import('@/app/lib/list-page-cache');
 const { middleware, config } = await import('@/middleware');
+const { needsPageMiddleware } = await import('@/app/lib/web-origin');
 
 function sp(params: Record<string, string> = {}): URLSearchParams {
   return new URLSearchParams(params);
@@ -314,35 +317,18 @@ function makeRequest(url: string): NextRequest {
 }
 
 describe('middleware matcher config', () => {
-  it('pins the exact matcher entries', () => {
-    // Vercel bills/logs per invocation — this literal is the whole point of
-    // the fix, so a drift here (an accidental widening back to /api/:path*,
-    // or a narrowing that drops an auth path) must fail the suite outright.
-    expect(config.matcher).toEqual([
-      '/api/v1/:path*',
-      '/api/auth/:path*',
-      '/api/internal/ws-auth',
-      '/((?!api/|_next/static|_next/image|favicon.ico|monitoring|\\.well-known/|.*\\..*).*)',
-    ]);
+  it('runs the origin guard on every route', () => {
+    expect(config.matcher).toEqual(['/:path*']);
   });
 
-  // Coverage helper mirroring how Next compiles each matcher shape: entries
-  // 1-2 are `:path*` prefixes, entry 3 is an exact path, entry 4 is the full
-  // page-routes regex tested anchored end-to-end.
-  function isMatchedByConfig(pathname: string): boolean {
-    const [v1Prefix, authPrefix, wsAuthExact, pageRoutesRegex] = config.matcher;
-    if (pathname.startsWith(v1Prefix.replace(':path*', ''))) return true;
-    if (pathname.startsWith(authPrefix.replace(':path*', ''))) return true;
-    if (pathname === wsAuthExact) return true;
-    return new RegExp(`^${pageRoutesRegex}$`).test(pathname);
-  }
+  const isMatchedByConfig = needsPageMiddleware;
 
   it.each([
     '/api/internal/board-render',
     '/api/og/setter',
     '/api/internal/prewarm-heatmap/kilter',
     '/api/internal/revalidate-climb',
-  ])('does not run middleware on %s (no CORS/locale/board-validation work needed there)', (pathname) => {
+  ])('skips page middleware on %s after origin verification', (pathname) => {
     expect(isMatchedByConfig(pathname)).toBe(false);
   });
 
@@ -358,9 +344,12 @@ describe('middleware matcher config', () => {
     expect(isMatchedByConfig(pathname)).toBe(true);
   });
 
-  it.each(['/_next/static/chunk.js', '/logo.png'])('does not run middleware on static asset %s', (pathname) => {
-    expect(isMatchedByConfig(pathname)).toBe(false);
-  });
+  it.each(['/_next/static/chunk.js', '/logo.png'])(
+    'skips page middleware on static asset %s after origin verification',
+    (pathname) => {
+      expect(isMatchedByConfig(pathname)).toBe(false);
+    },
+  );
 });
 
 describe('middleware /api/v1 board validation', () => {

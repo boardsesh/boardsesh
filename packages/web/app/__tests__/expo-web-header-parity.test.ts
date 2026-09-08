@@ -1,5 +1,7 @@
+vi.mock('server-only', () => ({}));
+
 import { createRequire } from 'node:module';
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 
 // The /app response-header set lives in two places that can each serve a

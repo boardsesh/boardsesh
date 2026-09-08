@@ -692,6 +692,7 @@ jobs:
         if: steps.railway-redeploy.outcome == 'success'
         continue-on-error: true
         env:
+          WEB_ORIGIN_VERIFY_SECRET: ${{ secrets.WEB_ORIGIN_VERIFY_SECRET }}
           RAILWAY_WEB_ORIGIN: ${{ needs.resolve-web-targets.outputs.web_railway_origin }}
           SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-redeploy.outputs.deployment_id }}
           SMOKE_EXPECTED_RELEASE: ${{ github.sha }}
@@ -722,6 +723,7 @@ jobs:
           && steps.railway-smoke.outcome == 'failure'
           && steps.railway-rollback.outcome == 'success'
         env:
+          WEB_ORIGIN_VERIFY_SECRET: ${{ secrets.WEB_ORIGIN_VERIFY_SECRET }}
           RAILWAY_WEB_ORIGIN: ${{ needs.resolve-web-targets.outputs.web_railway_origin }}
           SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
           SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}

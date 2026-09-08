@@ -1,5 +1,5 @@
 // middleware.ts
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getClimbViewPageCacheTTL, getListPageCacheTTL } from './app/lib/list-page-cache';
 import { isCrawlerUserAgent } from './app/lib/is-crawler';
@@ -15,6 +15,8 @@ import {
   isSupportedLocale,
 } from './app/lib/i18n/config';
 import { detectLocale } from './app/lib/i18n/detect-locale';
+
+import { acceptsWebOrigin, needsPageMiddleware, WEB_ORIGIN_HEADER } from './app/lib/web-origin';
 
 const SPECIAL_ROUTES = ['angles', 'grades']; // routes that don't need board validation
 
@@ -42,7 +44,28 @@ function isExpoWebProxyEnabled(): boolean {
   return isExpoWebEnabled() && Boolean(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
 }
 
-export function middleware(request: NextRequest) {
+export function middleware(incomingRequest: NextRequest) {
+  if (!acceptsWebOrigin(incomingRequest, incomingRequest.nextUrl.pathname)) {
+    return new NextResponse(null, {
+      status: 403,
+      headers: { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' },
+    });
+  }
+  const sanitizedHeaders = new Headers(incomingRequest.headers);
+  sanitizedHeaders.delete(WEB_ORIGIN_HEADER);
+  // Routing only reads URL, method and headers. Do not transfer or read the
+  // incoming body: Next must still forward it to the eventual POST handler.
+  const request = new NextRequest(incomingRequest.url, {
+    method: incomingRequest.method,
+    headers: sanitizedHeaders,
+  });
+  if (!needsPageMiddleware(request.nextUrl.pathname)) {
+    return NextResponse.next({ request: { headers: sanitizedHeaders } });
+  }
+  return pageMiddleware(request);
+}
+
+function pageMiddleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Block PHP requests
@@ -279,29 +302,6 @@ export function middleware(request: NextRequest) {
   return response;
 }
 
-// Vercel bills and logs per middleware invocation. The previous catch-all
-// matcher (`/api/:path*`-shaped, via the page-routes negative-lookahead not
-// excluding /api/) ran this middleware on every /api/** request, including
-// ~50k+/day board-render image fetches that take nothing from it — the
-// function does no locale/session/CORS work for those paths and every
-// invocation was pure cost. Only three /api families actually need it:
-//   - /api/v1/:path* — board-name validation (404s an unsupported board).
-//   - /api/auth/:path* — all 9 CORS_AUTH_PATHS auth endpoints live here
-//     (see cross-subdomain-cors.ts) and need the credentialed-CORS handling.
-//   - /api/internal/ws-auth — the one /api/internal path in CORS_AUTH_PATHS;
-//     its OPTIONS preflight is answered by middleware itself, so it must stay
-//     matched even though the rest of /api/internal/** is now excluded.
-// Pre-verified safe: no route under packages/web/app/api reads the
-// locale/pathname headers middleware sets, and nothing excluded here accepts
-// a `?session=` query param that middleware needs to intercept.
-export const config = {
-  matcher: [
-    '/api/v1/:path*',
-    '/api/auth/:path*',
-    '/api/internal/ws-auth',
-    // Match all page routes but skip static files, Next.js internals, and
-    // /.well-known/ (apple-app-site-association, assetlinks.json — files the
-    // OS fetches, which must never take a locale redirect or a rewrite).
-    '/((?!api/|_next/static|_next/image|favicon.ico|monitoring|\\.well-known/|.*\\..*).*)',
-  ],
-};
+// Origin verification must cover API routes, static assets and Next internals.
+// The cheap guard runs everywhere; locale/session work retains its old scope.
+export const config = { matcher: ['/:path*'] };
