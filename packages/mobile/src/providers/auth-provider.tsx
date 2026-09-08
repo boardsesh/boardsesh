@@ -1,3 +1,4 @@
+import { markStartup } from '../lib/profiling/startup-profile';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useSegments, Redirect } from 'expo-router';
@@ -696,6 +697,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   }, [checkAuth]);
 
   useEffect(() => {
+    markStartup('auth.initial.start');
     // Belt-and-braces: checkAuth already resolves its own rejections, but keep
     // the invocation from producing an unhandled rejection if that ever changes.
     void checkAuth();
@@ -1017,6 +1019,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
   useEffect(() => {
     if (!isLoading) {
+      markStartup('auth.initial.ready', authStateRef.current.isAuthenticated ? 'authenticated' : 'anonymous');
       onReadyRef.current?.();
     }
   }, [isLoading]);
