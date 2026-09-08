@@ -217,18 +217,15 @@ describe('acquireBuildLock', () => {
     expect(existsSync(paths.lockPath)).toBe(false);
   });
 
-  it('replaces stale lock directories', () => {
+  it('does not steal an old lock from a potentially live build', () => {
     const tempDir = makeTempDir();
     const paths = makePaths(tempDir);
     mkdirSync(paths.lockPath, { recursive: true });
     const staleTime = new Date(clock.now() - 13 * 60 * 60 * 1000);
     utimesSync(paths.lockPath, staleTime, staleTime);
 
-    const lock = acquireBuildLock(paths, nodeFileSystem, clock);
-
-    expect(lock.path).toBe(paths.lockPath);
-    expect(readFileSync(join(paths.lockPath, 'owner.txt'), 'utf8')).toContain('sharedBuildPath=');
-    lock.release();
+    expect(() => acquireBuildLock(paths, nodeFileSystem, clock)).toThrow(/another Boardsesh iOS build/);
+    expect(existsSync(paths.lockPath)).toBe(true);
   });
 });
 

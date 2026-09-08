@@ -4,6 +4,7 @@
 // unchanged.
 const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 const path = require('path');
+const { configureWatchman } = require('./metro-watchman.cjs');
 const { applyExpoWebResponseHeaders } = require('./expo-web-response-headers.cjs');
 const { resolveWebRuntimeModulePath } = require('./metro-web-runtime-resolution.cjs');
 
@@ -13,6 +14,8 @@ const monorepoRoot = path.resolve(projectRoot, '../..');
 const config = getSentryExpoConfig(projectRoot);
 
 config.watchFolders = [monorepoRoot];
+
+configureWatchman(config);
 
 function escapedPathPattern(filePath) {
   return path

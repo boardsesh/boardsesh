@@ -10,6 +10,13 @@ if ! command -v xcrun &>/dev/null || ! xcrun simctl list devices &>/dev/null 2>&
   exit 0
 fi
 
+# Resolve once and hold ownership across the entire command, including launch/logs.
+if [ -z "${BOARDSESH_SIMULATOR_LEASE_TOKEN:-}" ]; then
+  cd "$ROOT_DIR"
+  exec vp exec tsx scripts/mobile-simulator-lease.ts bash "$SCRIPT_DIR/mobile-simulator-check.sh" "$@"
+fi
+vp exec tsx "$SCRIPT_DIR/mobile-simulator-lease.ts" --assert-only
+
 if [ ! -d "$MOBILE_DIR" ]; then
   echo "[mobile-sim] FAILED: packages/mobile/ not found at $MOBILE_DIR"
   exit 1
@@ -17,11 +24,18 @@ fi
 
 cd "$ROOT_DIR"
 
-echo "[mobile-sim] Building and launching on iOS simulator (shared-cache expo run:ios)..."
-
-if ! tsx scripts/mobile-ios-run.ts 2>&1; then
-  echo "[mobile-sim] FAILED: mobile iOS build exited with an error"
-  exit 1
+if [ -n "${BOARDSESH_IOS_SMOKE_APP_PATH:-}" ]; then
+  echo "[mobile-sim] Installing and launching the selected existing simulator app..."
+  if ! vp exec tsx scripts/mobile-simulator-smoke.ts "$BOARDSESH_IOS_SMOKE_APP_PATH" 2>&1; then
+    echo "[mobile-sim] FAILED: existing simulator app validation or launch failed"
+    exit 1
+  fi
+else
+  echo "[mobile-sim] Building and launching on iOS simulator (shared-cache expo run:ios)..."
+  if ! tsx scripts/mobile-ios-run.ts 2>&1; then
+    echo "[mobile-sim] FAILED: mobile iOS build exited with an error"
+    exit 1
+  fi
 fi
 
 mkdir -p "$ROOT_DIR/.boardsesh"
@@ -30,7 +44,7 @@ LOG_FILE="$ROOT_DIR/.boardsesh/mobile-device.log"
 
 echo "[mobile-sim] Capturing 30s of device logs..."
 
-xcrun simctl spawn booted log stream \
+xcrun simctl spawn "$BOARDSESH_IOS_SIMULATOR_UDID" log stream \
   --predicate 'subsystem == "com.boardsesh.app"' \
   --timeout 30 \
   > "$LOG_FILE" 2>&1 || true

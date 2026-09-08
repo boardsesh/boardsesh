@@ -1,3 +1,4 @@
+import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 /// <reference types="node" />
 
 /**
@@ -219,6 +220,7 @@ function parseShotsArgs(argv: readonly string[]): ShotsOptions {
 }
 
 function simctl(args: string[], env: NodeJS.ProcessEnv = process.env): { status: number; stdout: string } {
+  guardSimulatorCommand('xcrun', ['simctl', ...args], ROOT_DIR);
   const result = runCapture('xcrun', ['simctl', ...args], { env });
   return { status: result.status, stdout: result.stdout };
 }
@@ -311,6 +313,7 @@ function runMaestroFlowFile(udid: string, flowYaml: string, env: NodeJS.ProcessE
   const dir = mkdtempSync(join(tmpdir(), 'boardsesh-ios-nav-'));
   const flowFile = join(dir, 'flow.yaml');
   try {
+    guardSimulatorCommand('maestro', ['--device', udid], ROOT_DIR);
     writeFileSync(flowFile, flowYaml, 'utf8');
     return runInherit('maestro', ['--device', udid, 'test', flowFile], { env, cwd: dir });
   } finally {
@@ -350,6 +353,7 @@ function runFlow(udid: string, options: ShotsOptions, env: NodeJS.ProcessEnv): v
   const password = process.env.SCREENSHOT_USER_PASSWORD ?? DEFAULT_USER_PASSWORD;
   const captureDir = mkdtempSync(join(tmpdir(), 'boardsesh-ios-flow-'));
   try {
+    guardSimulatorCommand('maestro', ['--device', udid], ROOT_DIR);
     console.log(`${LOG} Running Maestro flow ${options.flow} on ${udid}...`);
     const status = runInherit(
       'maestro',
@@ -419,7 +423,7 @@ function assertDarwinWithSimctl(): void {
 
 function attachToSimulator(device: string): DeviceInfo {
   assertDarwinWithSimctl();
-  const booted = resolveBootedIosDevice(device);
+  const booted = resolveBootedIosDevice(process.env.BOARDSESH_IOS_SIMULATOR_UDID ?? device);
   if (!booted) {
     throw new Error('No booted simulator — start one with `vp run mobile:ios-shots` (in the background) first.');
   }
@@ -449,10 +453,9 @@ function runNavigateSubcommand(options: ShotsOptions): number {
 }
 
 function killMetro(): void {
-  const result = runCapture('lsof', ['-nP', `-iTCP:${METRO_PORT}`, '-sTCP:LISTEN', '-t']);
-  const pids = result.stdout.split(/\s+/).filter(Boolean);
-  for (const pid of pids) runCapture('kill', [pid]);
-  if (pids.length > 0) console.log(`${LOG} Stopped Metro on port ${METRO_PORT}.`);
+  // Only the process that spawned Metro owns its ChildProcess handle. Never kill
+  // arbitrary listeners discovered by port: they may belong to another checkout.
+  console.log(`${LOG} Stop Metro through the process that started it (Ctrl-C).`);
 }
 
 function runShutdownSubcommand(options: ShotsOptions): number {
@@ -525,16 +528,8 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   applyCleanStatusBar(device.udid);
 
   console.log(`${LOG} Installing ${appPath} on ${device.name}...`);
-  simctl(['uninstall', device.udid, APP_ID]); // ignore failure (not installed yet)
   const install = simctl(['install', device.udid, appPath]);
   if (install.status !== 0) throw new Error(`simctl install exited ${install.status}`);
-  if (!options.keepKeychain) {
-    // The shared keychain group (group.com.boardsesh.app) survives uninstall, so a
-    // stale token from a prior --backend local run would auth against the wrong
-    // backend. A clean keychain forces a fresh sign-in with the baked creds.
-    console.log(`${LOG} Resetting simulator keychain (clears any stale auth token)...`);
-    simctl(['keychain', device.udid, 'reset']);
-  }
 
   if (portInUse(METRO_PORT)) {
     throw new Error(`port ${METRO_PORT} is already in use; stop it (another Metro would serve the wrong bundle).`);

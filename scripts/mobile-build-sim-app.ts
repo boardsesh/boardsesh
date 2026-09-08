@@ -26,12 +26,22 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { exportBuiltApp } from './lib/ios-build-export';
+import {
+  acquireBuildLock,
+  createMobileIosCachePaths,
+  ensureSharedBuildCache,
+  nodeFileSystem,
+  systemClock,
+} from './mobile-ios-run';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT_DIR = process.env.BOARDSESH_PROFILE_SOURCE_DIR
+  ? resolve(process.env.BOARDSESH_PROFILE_SOURCE_DIR)
+  : resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
 const IOS_DIR = resolve(MOBILE_DIR, 'ios');
 const DERIVED_DATA_DIR = resolve(IOS_DIR, 'build');
@@ -178,7 +188,7 @@ function ensureNativeProject(clean: boolean): void {
     return;
   }
   if (existsSync(WORKSPACE_PATH)) {
-    if (screenshotNativeProjectNeedsRefresh()) {
+    if (process.env.BOARDSESH_PROFILE_BUILD !== '1' && screenshotNativeProjectNeedsRefresh()) {
       expoPrebuild(true);
       return;
     }
@@ -254,37 +264,52 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   // Tells app.config.ts to register ./plugins/with-screenshot-dev-menu, which
   // bakes dev-menu suppression into Info.plist so the dev-client chrome can't
   // cover the captured screens on a cold relaunch. Read at prebuild time.
-  process.env.BOARDSESH_SCREENSHOT_BUILD = '1';
+  if (process.env.BOARDSESH_PROFILE_BUILD !== '1') process.env.BOARDSESH_SCREENSHOT_BUILD = '1';
 
   try {
-    ensureNativeProject(options.clean);
-    podInstall();
+    const paths = createMobileIosCachePaths(process.env, MOBILE_DIR);
+    const lock = acquireBuildLock(paths, nodeFileSystem, systemClock);
+    try {
+      ensureNativeProject(options.clean);
+      if (process.env.BOARDSESH_PROFILE_BUILD === '1' && options.configuration === 'Debug') {
+        const port = Number(process.env.BOARDSESH_METRO_PORT ?? '8081');
+        if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid profiling Metro port.');
+        const delegatePath = join(IOS_DIR, 'Boardsesh', 'AppDelegate.swift');
+        const delegate = readFileSync(delegatePath, 'utf8').replace(
+          /^\s*RCTBundleURLProvider\.sharedSettings\(\)\.jsLocation = "localhost:\d+"\n/gm,
+          '',
+        );
+        const marker = 'return RCTBundleURLProvider.sharedSettings().jsBundleURL';
+        if (!delegate.includes(marker)) throw new Error('Could not configure profiling AppDelegate bundle URL.');
+        writeFileSync(
+          delegatePath,
+          delegate.replace(
+            marker,
+            `RCTBundleURLProvider.sharedSettings().jsLocation = "localhost:${port}"\n    ${marker}`,
+          ),
+        );
+      }
+      ensureSharedBuildCache(paths, nodeFileSystem, systemClock);
+      podInstall();
 
-    let status = xcodebuild(options.configuration);
-    const appPath = builtAppPath(options.configuration);
-    if (status !== 0 && !existsSync(appPath)) {
-      // RN New Architecture codegen ("Generate Specs") can race the compile on a
-      // cold/clean build ("Build input file cannot be found: …/ReactCodegen/
-      // *-generated.mm"). The specs land during that first attempt, so a second
-      // build finds them — the well-known "build twice on a clean checkout"
-      // quirk that bites every fresh CI runner. Retry once.
-      console.log(
-        `${LOG} First build failed without producing the .app (likely the cold-build codegen race); retrying once...`,
-      );
-      status = xcodebuild(options.configuration);
+      let status = xcodebuild(options.configuration);
+      const appPath = builtAppPath(options.configuration);
+      if (status !== 0) {
+        // RN New Architecture codegen ("Generate Specs") can race the compile on a
+        // cold/clean build ("Build input file cannot be found: …/ReactCodegen/
+        // *-generated.mm"). The specs land during that first attempt, so a second
+        // build finds them — the well-known "build twice on a clean checkout"
+        // quirk that bites every fresh CI runner. Retry once.
+        console.log(`${LOG} First build failed; retrying once for the cold-build codegen race...`);
+        status = xcodebuild(options.configuration);
+      }
+
+      const destination = exportBuiltApp(status, appPath, options.appOut);
+      console.log(`${LOG} Built ${options.configuration} simulator app -> ${destination}`);
+      return 0;
+    } finally {
+      lock.release();
     }
-
-    if (!existsSync(appPath)) {
-      console.error(`${LOG} FAILED: ${appPath} not found after build (exit ${status}).`);
-      return status === 0 ? 1 : status;
-    }
-
-    mkdirSync(options.appOut, { recursive: true });
-    const destination = join(options.appOut, APP_NAME);
-    rmSync(destination, { force: true, recursive: true });
-    cpSync(appPath, destination, { recursive: true });
-    console.log(`${LOG} Built ${options.configuration} simulator app -> ${destination}`);
-    return 0;
   } catch (error) {
     console.error(`${LOG} FAILED: ${error instanceof Error ? error.message : String(error)}`);
     return 1;

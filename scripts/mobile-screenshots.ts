@@ -1,3 +1,4 @@
+import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 /// <reference types="node" />
 
 /**
@@ -434,11 +435,13 @@ export interface DeviceInfo {
 }
 
 function runInherit(command: string, args: string[], env: NodeJS.ProcessEnv, cwd: string = ROOT_DIR): number {
+  guardSimulatorCommand(command, args, ROOT_DIR);
   const result = spawnSync(command, args, { cwd, env, stdio: 'inherit' });
   return result.status ?? 1;
 }
 
 function runCapture(command: string, args: string[]): { status: number; stdout: string } {
+  guardSimulatorCommand(command, args, ROOT_DIR);
   const result = spawnSync(command, args, { encoding: 'utf8' });
   return { status: result.status ?? 1, stdout: result.stdout ?? '' };
 }
@@ -544,6 +547,20 @@ export function resolveAppStoreLocaleTargets(appLocales: readonly Locale[]): App
 
 export function findOrCreateIosDevice(screenshotDevice: IosScreenshotDevice): DeviceInfo {
   const devices = listSimulatorDevices();
+  const selectedUdid = process.env.BOARDSESH_IOS_SIMULATOR_UDID;
+  if (selectedUdid) {
+    const selectedDevice = devices.find((device) => device.udid.toUpperCase() === selectedUdid.toUpperCase());
+    if (!selectedDevice) throw new Error(`Selected simulator ${selectedUdid} is unavailable.`);
+    if (
+      screenshotDevice.name !== selectedDevice.name &&
+      screenshotDevice.name.toUpperCase() !== selectedUdid.toUpperCase()
+    ) {
+      throw new Error(
+        `Screenshot device ${screenshotDevice.name} differs from leased simulator ${selectedDevice.name}. Pass the leased device explicitly.`,
+      );
+    }
+    return selectedDevice;
+  }
   const booted = devices.find((device) => device.name === screenshotDevice.name && device.state === 'Booted');
   if (booted) return booted;
   const existing = devices.find((device) => device.name === screenshotDevice.name);
@@ -577,13 +594,15 @@ export function findOrCreateIosDevice(screenshotDevice: IosScreenshotDevice): De
  * still isn't unique. Returns null when nothing is booted.
  */
 export function resolveBootedIosDevice(name?: string): DeviceInfo | null {
+  name = process.env.BOARDSESH_IOS_SIMULATOR_UDID ?? name;
   const booted = listSimulatorDevices().filter((device) => device.state === 'Booted');
   if (booted.length === 0) return null;
-  if (booted.length === 1) return booted[0];
   if (name) {
-    const named = booted.filter((device) => device.name === name);
+    const named = booted.filter((device) => device.name === name || device.udid === name);
     if (named.length === 1) return named[0];
+    throw new Error(`Requested simulator ${name} is not uniquely booted.`);
   }
+  if (booted.length === 1) return booted[0];
   throw new Error(
     `Multiple booted simulators (${booted.map((device) => device.name).join(', ')}); pass --device "<name>" to pick one.`,
   );
@@ -905,25 +924,12 @@ function captureIosDevice(
   applyCleanStatusBar(device.udid);
 
   console.log(`${LOG} Installing ${appPath} on ${device.name} for ${localeTarget.appLocale}...`);
-  // Uninstall first so the run starts from a clean container (fresh AsyncStorage,
-  // so no stale active board). The dev-client + Metro path drops Maestro's
-  // `clearState`, which can't run before the bundle has loaded — the uninstall +
-  // install gives the same fresh-data guarantee.
-  runCapture('xcrun', ['simctl', 'uninstall', device.udid, APP_ID]);
+  // Install in place to preserve app data and the simulator keychain.
   const install = runCapture('xcrun', ['simctl', 'install', device.udid, appPath]);
   if (install.status !== 0) {
     console.error(`${LOG} FAILED: simctl install exited ${install.status}.`);
     return install.status;
   }
-
-  // Reset the simulator keychain so the app's auto-sign-in re-authenticates
-  // against the target backend. The auth token lives in a shared keychain access
-  // group (group.com.boardsesh.app) that survives both an app uninstall and the
-  // fresh install above — so without this a stale token (e.g. from a previous
-  // --backend local run) is reused and the app talks to the wrong backend with an
-  // invalid session. A clean keychain forces a fresh sign-in with the baked creds.
-  console.log(`${LOG} Resetting simulator keychain (clears any stale auth token)...`);
-  runCapture('xcrun', ['simctl', 'keychain', device.udid, 'reset']);
 
   const captureDir = mkdtempSync(join(tmpdir(), 'boardsesh-shots-'));
   try {

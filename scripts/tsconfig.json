@@ -1,5 +1,5 @@
 {
-  "//": "Typechecks the repo-root scripts, which were previously never validated by CI — `vp run typecheck` only covered packages/*. Wired in via the `typecheck:scripts` task. Scoped to the Discord feedback pipeline, the dev-db discovery watchdog and the board-art geometry generator for now; widen `include` as other scripts are made type-clean.",
+  "//": "Typechecks the repo-root scripts wired into typecheck:scripts, including the Discord feedback pipeline, development tooling, board-art generation, Railway configuration, and iOS profiling/build/simulator ownership tools with their regression tests.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -31,6 +31,23 @@
     "railway-apply.ts",
     "railway-apply.test.ts",
     "../infra/railway/config.ts",
-    "../infra/railway/plan.ts"
+    "../infra/railway/plan.ts",
+    "mobile-profile-capture.ts",
+    "mobile-profile-ios.ts",
+    "mobile-simulator-lease.ts",
+    "mobile-simulator-smoke.ts",
+    "lib/ios-profile-identity.ts",
+    "lib/ios-simulator-lease.ts",
+    "lib/ios-build-export.ts",
+    "lib/metro-host.ts",
+    "mobile-ios-run.ts",
+    "mobile-build-sim-app.ts",
+    "mobile-dev-start.ts",
+    "mobile-screenshots.ts",
+    "mobile-ios-shots.ts",
+    "__tests__/ios-profiling-tools.test.ts",
+    "__tests__/mobile-ios-run.test.ts",
+    "__tests__/mobile-screenshots.test.ts",
+    "__tests__/mobile-profile-capture.test.ts"
   ]
 }
