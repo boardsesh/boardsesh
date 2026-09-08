@@ -26,6 +26,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
 import { setSchemaReady } from './schema-ready';
+import { markStartup } from '../lib/profiling/startup-profile';
 import { measureDatabaseBytes } from './storage-usage';
 
 export const DATABASE_NAME = 'boardsesh.db';
@@ -227,6 +228,7 @@ async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
  * handle degrades exactly like the old permanent failure did, then recovers.
  */
 function beginInitialization(db: SQLiteDatabase): Promise<void> {
+  markStartup('sqlite.initial.start');
   let releaseLaunch: () => void = () => {};
   const launchGate = new Promise<void>((resolve) => {
     releaseLaunch = resolve;
@@ -257,10 +259,12 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
 
       // Unblock the provider once, whatever the first attempt did.
       if (attempts === 1) {
+        markStartup('sqlite.initial.gate', outcome.status === 'ready' ? 'ready' : 'degraded');
         releaseLaunch();
       }
 
       if (outcome.status === 'ready') {
+        if (attempts > 1) markStartup('sqlite.recovery.end', 'ready');
         // Only a chain that survived a GENUINE lock failure recovered from
         // contention. A chain whose only failure was against a superseded (closed)
         // handle worked around a remount, not a lock — firing the event for it
@@ -301,6 +305,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       // already been handed the resolved launch promise, so schema readiness stayed
       // false for the rest of the session.
       if (superseded && !outcome.retryable && supersededRestarts < MAX_SUPERSEDED_RESTARTS) {
+        markStartup('sqlite.recovery.start');
         supersededRestarts += 1;
         continue;
       }
@@ -314,6 +319,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
         Date.now() + retryDelayMs >= deadline;
 
       if (outOfRoad) {
+        if (attempts > 1) markStartup('sqlite.recovery.end', 'error');
         if (__DEV__) {
           console.warn(
             `[SQLite] initializeDatabase failed in phase "${outcome.phase}" after ${attempts} attempt(s); ` +
@@ -345,6 +351,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
         return;
       }
 
+      markStartup('sqlite.recovery.start');
       await delay(retryDelayMs);
     }
   })();

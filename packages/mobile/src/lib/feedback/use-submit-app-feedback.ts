@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as Application from 'expo-application';
-import { usePathname } from 'expo-router';
+import type { RefObject } from 'react';
+import type { FeedbackMetadataReader } from './FeedbackMetadataCollector';
 import { useMutation } from '@tanstack/react-query';
 import {
   SUBMIT_APP_FEEDBACK,
@@ -9,8 +10,6 @@ import {
 } from '@boardsesh/graphql/operations';
 import type { SubmitAppFeedbackInput } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
-import { useActiveBoard } from '../graphql/use-active-board';
-import { useQueue, useQueueSessionId } from '../../providers/queue-provider';
 import { buildMobileFeedbackEnrichment } from './feedback-enrichment';
 
 export type MobileSubmitAppFeedbackPayload = Omit<
@@ -41,20 +40,14 @@ async function submitMobileAppFeedback(payload: SubmitAppFeedbackInput): Promise
   return response.submitAppFeedback;
 }
 
-export function useSubmitMobileAppFeedback() {
-  const activeBoardQuery = useActiveBoard();
-  const queueContext = useQueue();
-  const { sessionId } = useQueueSessionId();
-  const pathname = usePathname();
-
+export function useSubmitMobileAppFeedback(readerRef: RefObject<FeedbackMetadataReader | null>) {
   return useMutation({
     mutationFn: (payload: MobileSubmitAppFeedbackPayload): Promise<boolean> => {
-      const enrichment = buildMobileFeedbackEnrichment({
-        activeBoard: activeBoardQuery.data,
-        currentClimbQueueItem: queueContext.state.currentClimbQueueItem,
-        sessionId,
-        pathname,
-      });
+      const readMetadata = readerRef.current;
+      if (!readMetadata) return Promise.reject(new Error('Feedback metadata is not ready'));
+      // Read at mutation time, after screenshot upload. The bridge stays mounted
+      // throughout submission, even if the reporter dismisses the native sheet.
+      const enrichment = buildMobileFeedbackEnrichment(readMetadata());
       return submitMobileAppFeedback({
         ...payload,
         ...enrichment,

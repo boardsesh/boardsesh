@@ -14,7 +14,8 @@ import '../src/lib/analytics-bootstrap';
 // isInitialized() when a screen mounts and throws if it changes afterwards — so
 // this cannot become a hook or an effect. See observe-bootstrap.ts.
 import '../src/lib/observe-bootstrap';
-import { useCallback, useEffect, useRef, useMemo, useState, type ReactNode } from 'react';
+import { markStartup } from '../src/lib/profiling/startup-profile';
+import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
 import { LogBox, Pressable, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 57's expo-router is not compatible with a separately-installed
@@ -108,6 +109,7 @@ import { getPreference, removePreference, setPreference } from '../src/lib/prefe
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
 import '../modules/memory-trim/src/index';
 
+markStartup('root.module.ready');
 void SplashScreen.preventAutoHideAsync();
 
 // The screenshots build is a Debug dev-client (__DEV__ true) so it can load its
@@ -517,14 +519,24 @@ function RootLayout() {
   // the cold launch the native pruner runs on (#3647).
   useDiskCacheSweep();
 
+  useLayoutEffect(() => {
+    markStartup('root.commit');
+  }, []);
+
   useEffect(() => {
+    markStartup('fonts.start');
     let cancelled = false;
+    let fontOutcome: 'ready' | 'error' = 'ready';
     void loadRequiredFonts()
       .catch((error: unknown) => {
+        fontOutcome = 'error';
         reportError(error);
       })
       .finally(() => {
-        if (!cancelled) setFontsReady(true);
+        if (!cancelled) {
+          markStartup('fonts.ready', fontOutcome);
+          setFontsReady(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -554,7 +566,11 @@ function RootLayout() {
       console.warn(`[root-ready] authReady=${String(authReady)} fontsReady=${String(fontsReady)}`);
     }
     if (!authReady || !fontsReady) return;
-    void SplashScreen.hideAsync();
+    markStartup('splash.hide.request');
+    void SplashScreen.hideAsync().then(
+      () => markStartup('splash.hide.resolved', 'ready'),
+      () => markStartup('splash.hide.resolved', 'error'),
+    );
   }, [authReady, fontsReady]);
 
   return (

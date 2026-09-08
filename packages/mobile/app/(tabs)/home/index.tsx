@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
-import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -43,6 +43,10 @@ import { navigateToSessionFeedItem } from '../../../src/lib/session-feed-navigat
 import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { borderRadius, spacing } from '../../../src/theme/tokens';
 import { BETA_CARD_HEIGHT, BETA_CARD_WIDTH } from '../../../src/components/play-drawer/BetaVideoCard';
+
+import { HomeStartupCommit } from '../../../src/lib/profiling/HomeStartupCommit';
+import { STARTUP_PROFILING_ENABLED } from '../../../src/lib/profiling/startup-profile';
+import { homeEmptyStartupOutcome } from '../../../src/lib/profiling/startup-collector';
 
 const RECENT_BETA_LIMIT = 20;
 const SHELF_GAP = spacing[3];
@@ -243,14 +247,17 @@ export default function HomeTab() {
   // the single signal that re-invokes it. A churning `renderItem` would force
   // FlashList to re-render regardless of `extraData` (perf playbook rule 3).
   const renderItem = useCallback(
-    ({ item }: { item: SessionFeedItem }) => (
-      <SessionFeedCard
-        session={item}
-        voteSummary={summaryMapRef.current.get(voteSummaryKey(item.socialEntityType, item.socialEntityId))}
-        onOpenComments={handleOpenComments}
-        onPress={handleSessionPress}
-        onOpenClimb={handleOpenClimb}
-      />
+    ({ item, target }: ListRenderItemInfo<SessionFeedItem>) => (
+      <>
+        {STARTUP_PROFILING_ENABLED && target === 'Cell' ? <HomeStartupCommit outcome="content" /> : null}
+        <SessionFeedCard
+          session={item}
+          voteSummary={summaryMapRef.current.get(voteSummaryKey(item.socialEntityType, item.socialEntityId))}
+          onOpenComments={handleOpenComments}
+          onPress={handleSessionPress}
+          onOpenClimb={handleOpenClimb}
+        />
+      </>
     ),
     [handleOpenComments, handleSessionPress, handleOpenClimb],
   );
@@ -379,6 +386,7 @@ export default function HomeTab() {
   if (!isAuthenticated) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+        {STARTUP_PROFILING_ENABLED ? <HomeStartupCommit outcome="empty" /> : null}
         <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
         <Text variant="headline" style={styles.emptyTitle}>
           {t('mobile.home.signInTitle')}
@@ -420,51 +428,64 @@ export default function HomeTab() {
           />
         }
         ListEmptyComponent={
-          feedOffline.isBlocked && feedOffline.reason ? (
-            <OfflineState reason={feedOffline.reason} onRetry={handleRefresh} />
-          ) : feed.isLoading || !scopeReady ? (
-            <ActivitySkeletonList skeletonKeys={INITIAL_FEED_SKELETON_KEYS} />
-          ) : feed.isError ? (
-            <View style={styles.feedState}>
-              <Icon name="error" size={32} color={iosSystemColors.systemRed} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {t('errors.loadActivity')}
-              </Text>
-              <View style={styles.emptyCta}>
-                <Button title={tCommon('actions.retry')} onPress={() => void feed.refetch()} />
+          <>
+            {STARTUP_PROFILING_ENABLED ? (
+              <HomeStartupCommit
+                outcome={homeEmptyStartupOutcome({
+                  authenticated: isAuthenticated,
+                  blockedReason: feedOffline.isBlocked ? feedOffline.reason : null,
+                  loading: feed.isLoading,
+                  scopeReady,
+                  error: feed.isError,
+                })}
+              />
+            ) : null}
+            {feedOffline.isBlocked && feedOffline.reason ? (
+              <OfflineState reason={feedOffline.reason} onRetry={handleRefresh} />
+            ) : feed.isLoading || !scopeReady ? (
+              <ActivitySkeletonList skeletonKeys={INITIAL_FEED_SKELETON_KEYS} />
+            ) : feed.isError ? (
+              <View style={styles.feedState}>
+                <Icon name="error" size={32} color={iosSystemColors.systemRed} />
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {t('errors.loadActivity')}
+                </Text>
+                <View style={styles.emptyCta}>
+                  <Button title={tCommon('actions.retry')} onPress={() => void feed.refetch()} />
+                </View>
               </View>
-            </View>
-          ) : mode === 'gym' && selectedBoard != null ? (
-            <View style={styles.feedState}>
-              <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {t('mobile.home.boardEmptyTitle', { board: selectedBoard.gymName ?? selectedBoard.name })}
-              </Text>
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-                {t('mobile.home.boardEmptyBody')}
-              </Text>
-              <View style={styles.emptyCta}>
-                <Button title={t('mobile.home.boardEmptyCta')} onPress={handleBrowseEveryone} />
+            ) : mode === 'gym' && selectedBoard != null ? (
+              <View style={styles.feedState}>
+                <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {t('mobile.home.boardEmptyTitle', { board: selectedBoard.gymName ?? selectedBoard.name })}
+                </Text>
+                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
+                  {t('mobile.home.boardEmptyBody')}
+                </Text>
+                <View style={styles.emptyCta}>
+                  <Button title={t('mobile.home.boardEmptyCta')} onPress={handleBrowseEveryone} />
+                </View>
               </View>
-            </View>
-          ) : mode === 'crew' ? (
-            <View style={styles.feedState}>
-              <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {t('mobile.home.emptyTitle')}
-              </Text>
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-                {t('mobile.home.emptyBody')}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.feedState}>
-              <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {t('emptyStates.noRecentActivity')}
-              </Text>
-            </View>
-          )
+            ) : mode === 'crew' ? (
+              <View style={styles.feedState}>
+                <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {t('mobile.home.emptyTitle')}
+                </Text>
+                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
+                  {t('mobile.home.emptyBody')}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.feedState}>
+                <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {t('emptyStates.noRecentActivity')}
+                </Text>
+              </View>
+            )}
+          </>
         }
         ListFooterComponent={
           feed.isFetchingNextPage ? <ActivitySkeletonList skeletonKeys={NEXT_PAGE_FEED_SKELETON_KEYS} /> : null

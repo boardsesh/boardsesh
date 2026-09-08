@@ -14,6 +14,9 @@ import { fileURLToPath } from 'node:url';
 const reportErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
 
+const markStartupMock = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/profiling/startup-profile', () => ({ markStartup: markStartupMock }));
+
 const trackMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/analytics', () => ({ track: trackMock }));
 // Only vacuumDatabase is stubbed; everything else in the engine stays real, since
@@ -365,6 +368,7 @@ describe('initializeDatabase connection PRAGMAs', () => {
     setDatabaseHandle(null);
     reportErrorMock.mockClear();
     trackMock.mockClear();
+    markStartupMock.mockClear();
     dbDir = mkdtempSync(join(tmpdir(), 'bs-conn-'));
     dbPath = join(dbDir, 'boardsesh.db');
     fileDb = createTestDatabase(dbPath) as unknown as TestSqliteDb & SQLiteDatabase;
@@ -469,6 +473,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
     setDatabaseHandle(null);
     reportErrorMock.mockClear();
     trackMock.mockClear();
+    markStartupMock.mockClear();
     dbDir = mkdtempSync(join(tmpdir(), 'bs-lock-'));
     realDb = createTestDatabase(join(dbDir, 'boardsesh.db'));
   });
@@ -489,6 +494,9 @@ describe('initializeDatabase lock contention (#4104)', () => {
     // until onInit resolves, so waiting for retries here would be a black screen.
     await expect(initializeDatabase(contended.db)).resolves.toBeUndefined();
 
+    expect(markStartupMock).toHaveBeenCalledWith('sqlite.initial.gate', 'degraded');
+    expect(markStartupMock).toHaveBeenCalledWith('sqlite.recovery.start');
+    expect(markStartupMock).not.toHaveBeenCalledWith('sqlite.recovery.end', 'ready');
     expect(contended.failures()).toBe(1);
     expect(getDatabaseHandle()).toBeNull();
     // A launch that is still retrying is not yet newsworthy.
@@ -508,6 +516,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
     contended.unlock();
     await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
 
+    expect(markStartupMock).toHaveBeenCalledWith('sqlite.recovery.end', 'ready');
     expect(getDatabaseHandle()).toBe(contended.db);
     expect(reportErrorMock).not.toHaveBeenCalled();
   });

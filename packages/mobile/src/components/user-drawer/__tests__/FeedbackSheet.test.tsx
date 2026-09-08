@@ -100,6 +100,8 @@ const feedbackMutation = vi.hoisted(() => ({
   isPending: false,
   reset: vi.fn(),
 }));
+vi.mock('../../../lib/feedback/FeedbackMetadataCollector', () => ({ FeedbackMetadataCollector: () => null }));
+
 vi.mock('../../../lib/feedback/use-submit-app-feedback', () => ({
   useSubmitMobileAppFeedback: () => feedbackMutation,
 }));
@@ -142,20 +144,22 @@ describe('FeedbackSheet bug report contact consent', () => {
 
   it('defaults contact consent to on (opt-out) for an authenticated bug report', () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
     expect(switchRow(container)?.getAttribute('data-value')).toBe('true');
   });
 
   it('does not render the consent switch when unauthenticated', () => {
     auth.isAuthenticated = false;
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
     expect(switchRow(container)).toBeNull();
   });
 
   it('submits contactConsent true by default without the user touching the switch', async () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container, getByPlaceholderText } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container, getByPlaceholderText } = render(
+      <FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />,
+    );
     fireEvent.change(getByPlaceholderText('feedbackForm.bugPlaceholder'), {
       target: { value: 'the board disconnects on start' },
     });
@@ -166,7 +170,9 @@ describe('FeedbackSheet bug report contact consent', () => {
 
   it('respects an explicit opt-out when the reporter flips the switch off', async () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container, getByPlaceholderText } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container, getByPlaceholderText } = render(
+      <FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />,
+    );
     fireEvent.click(switchRow(container)!);
     expect(switchRow(container)?.getAttribute('data-value')).toBe('false');
 
@@ -180,7 +186,9 @@ describe('FeedbackSheet bug report contact consent', () => {
 
   it('resets the switch back to on after a successful submit, even from an opt-out', async () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container, getByPlaceholderText } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container, getByPlaceholderText } = render(
+      <FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />,
+    );
     fireEvent.click(switchRow(container)!);
     expect(switchRow(container)?.getAttribute('data-value')).toBe('false');
 
@@ -194,12 +202,12 @@ describe('FeedbackSheet bug report contact consent', () => {
 
   it('resets the switch back to on when the sheet mode changes away and back', () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container, rerender } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container, rerender } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
     fireEvent.click(switchRow(container)!);
     expect(switchRow(container)?.getAttribute('data-value')).toBe('false');
 
-    rerender(<FeedbackSheet sheetRef={sheetRef} mode="rating" />);
-    rerender(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    rerender(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="rating" />);
+    rerender(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
     expect(switchRow(container)?.getAttribute('data-value')).toBe('true');
   });
 });
@@ -221,26 +229,28 @@ describe('FeedbackSheet screenshots', () => {
 
   it('offers the picker on an authenticated bug report', () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
     expect(picker(container)).not.toBeNull();
   });
 
   it('hides it when signed out — the upload endpoint needs a bearer token', () => {
     auth.isAuthenticated = false;
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
     expect(picker(container)).toBeNull();
   });
 
   it('hides it on the star-rating form, which files no issue to illustrate', () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="rating" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="rating" />);
     expect(picker(container)).toBeNull();
   });
 
   it('uploads the picked shots and sends their keys with the report', async () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container, getByPlaceholderText } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container, getByPlaceholderText } = render(
+      <FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />,
+    );
     fireEvent.click(picker(container)!);
     typeReport(getByPlaceholderText);
     fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
@@ -254,7 +264,9 @@ describe('FeedbackSheet screenshots', () => {
 
   it('sends no keys at all when nothing was attached', async () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container, getByPlaceholderText } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container, getByPlaceholderText } = render(
+      <FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />,
+    );
     typeReport(getByPlaceholderText);
     fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
 
@@ -265,7 +277,9 @@ describe('FeedbackSheet screenshots', () => {
 
   it('clears the strip after a successful submit', async () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container, getByPlaceholderText } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container, getByPlaceholderText } = render(
+      <FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />,
+    );
     fireEvent.click(picker(container)!);
     typeReport(getByPlaceholderText);
     fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
@@ -275,19 +289,21 @@ describe('FeedbackSheet screenshots', () => {
 
   it('clears the strip when the sheet mode changes away and back', () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container, rerender } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container, rerender } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
     fireEvent.click(picker(container)!);
     expect(picker(container)?.getAttribute('data-screenshot-picker')).toBe('file:///shot-0.jpg');
 
-    rerender(<FeedbackSheet sheetRef={sheetRef} mode="rating" />);
-    rerender(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    rerender(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="rating" />);
+    rerender(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
     expect(picker(container)?.getAttribute('data-screenshot-picker')).toBe('');
   });
 
   it('keeps the typed report and the shots when the upload fails', async () => {
     uploadFeedbackScreenshots.mockRejectedValue(new Error('offline'));
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container, getByPlaceholderText } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container, getByPlaceholderText } = render(
+      <FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />,
+    );
     fireEvent.click(picker(container)!);
     typeReport(getByPlaceholderText);
     fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);

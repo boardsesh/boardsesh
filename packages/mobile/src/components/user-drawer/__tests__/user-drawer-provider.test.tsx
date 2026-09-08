@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useEffect, type ReactNode } from 'react';
 
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn() }));
@@ -204,8 +204,10 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../FeedbackSheet', () => ({
-  FeedbackSheet: ({ sheetRef }: { sheetRef?: { current: { present: () => void } | null } }) => {
-    if (sheetRef) sheetRef.current = { present: feedbackPresent };
+  FeedbackSheet: ({ visible }: { visible: boolean }) => {
+    useEffect(() => {
+      if (visible) feedbackPresent();
+    }, [visible]);
     return null;
   },
 }));

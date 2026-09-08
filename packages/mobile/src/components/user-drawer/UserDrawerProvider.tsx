@@ -55,6 +55,7 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   const feedbackSheetRef = useRef<ManagedSheetHandle>(null);
   const qaVerdictSheetRef = useRef<ManagedSheetHandle>(null);
   const [feedbackMode, setFeedbackMode] = useState<FeedbackSheetMode>('rating');
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   // Mirror the latest focused-route segments into a ref so the callbacks below
   // stay referentially stable (no `segments` in their deps). Assigning during
@@ -117,7 +118,11 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   }, [confirmSignOut]);
 
   const presentFeedback = useCallback(() => {
-    feedbackSheetRef.current?.present();
+    setFeedbackVisible(true);
+  }, []);
+
+  const closeFeedback = useCallback(() => {
+    setFeedbackVisible(false);
   }, []);
 
   const navigateToQaPick = useCallback(() => {
@@ -179,7 +184,12 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
           and presenting it only after the route has fully unmounted (the route's
           close(after) sequencing) keeps it on top with no concurrent-presentation
           deadlock. */}
-      <FeedbackSheet sheetRef={feedbackSheetRef} mode={feedbackMode} />
+      <FeedbackSheet
+        sheetRef={feedbackSheetRef}
+        mode={feedbackMode}
+        visible={feedbackVisible}
+        onClose={closeFeedback}
+      />
       {/* Same root-hosting rule as FeedbackSheet above: a native sheet rendered
           inside the transparentModal drawer route would present behind it. */}
       <QaVerdictSheet sheetRef={qaVerdictSheetRef} />
