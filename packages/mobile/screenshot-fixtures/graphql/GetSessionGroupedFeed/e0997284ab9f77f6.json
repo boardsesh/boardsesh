@@ -18,300 +18,39 @@
       "sessionGroupedFeed": {
         "sessions": [
           {
-            "sessionId": "4bbe54a9-9a59-431a-a72f-665f4989453c",
+            "sessionId": "e1aa7e92-19b9-4aaa-9ceb-899bbf8527ab",
             "sessionType": "party",
             "sessionName": null,
-            "ownerUserId": "0df1d963-59b3-4ec4-8cfd-5a64b2c8c08a",
+            "ownerUserId": "fb3e23f2-1f77-4580-9fc2-140a3a9cabfa",
             "participants": [
               {
-                "userId": "0df1d963-59b3-4ec4-8cfd-5a64b2c8c08a",
-                "displayName": "Cvanwier",
-                "avatarUrl": "https://lh3.googleusercontent.com/a/ACg8ocIKFz2D_Hm7Z9SzWDiHRE3-Tw5HT9hKVrBGwkjdZ6r-NdBh3Sim=s96-c",
-                "sends": 3,
-                "flashes": 1,
-                "attempts": 1
-              }
-            ],
-            "totalSends": 3,
-            "totalFlashes": 1,
-            "totalAttempts": 1,
-            "tickCount": 4,
-            "gradeDistribution": [
-              {
-                "grade": "6b+/V4",
-                "flash": 1,
-                "send": 2,
-                "attempt": 1
-              }
-            ],
-            "boardTypes": [
-              "decoy",
-              "kilter"
-            ],
-            "hardestGrade": "6b+/V4",
-            "firstTickAt": "2026-09-08 13:13:18.802",
-            "lastTickAt": "2026-09-08 13:18:41.696",
-            "durationMinutes": 5,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "eada36d2-c8e6-41c3-92bd-968d4759c0af",
-              "userId": "0df1d963-59b3-4ec4-8cfd-5a64b2c8c08a",
-              "climbUuid": "8f58bae3acf94ecdb2d97d87cb0f2fde",
-              "climbName": "The Squash Factory",
-              "boardType": "decoy",
-              "layoutId": 2,
-              "renderBoard": {
-                "layoutId": 2,
-                "sizeId": 1,
-                "setIds": [
-                  2,
-                  3,
-                  4,
-                  5,
-                  6,
-                  7,
-                  8,
-                  9,
-                  10,
-                  11,
-                  12,
-                  13,
-                  14,
-                  15,
-                  16,
-                  17,
-                  18,
-                  19,
-                  20
-                ]
-              },
-              "angle": 40,
-              "status": "send",
-              "attemptCount": 1,
-              "difficulty": 19,
-              "difficultyName": "6b+/V4",
-              "boardseshDifficulty": 18.995459369775002,
-              "boardseshConfidence": "confirmed",
-              "quality": 3,
-              "isMirror": false,
-              "isBenchmark": true,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p583r3p660r4p678r4p682r4p688r4p733r2p734r1p736r1p737r2p869r2p872r2p877r2",
-              "setterUsername": "carbonbot",
-              "climbedAt": "2026-09-08 13:18:41.696"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "4bbe54a9-9a59-431a-a72f-665f4989453c"
-          },
-          {
-            "sessionId": "d7adbd74-8178-4648-972f-9523882f5bad",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "158e28c2-72af-4d5a-97f2-865a568321f6",
-            "participants": [
-              {
-                "userId": "158e28c2-72af-4d5a-97f2-865a568321f6",
-                "displayName": "Jasmine De Jong",
-                "avatarUrl": null,
-                "sends": 4,
-                "flashes": 2,
-                "attempts": 2
-              }
-            ],
-            "totalSends": 4,
-            "totalFlashes": 2,
-            "totalAttempts": 2,
-            "tickCount": 4,
-            "gradeDistribution": [
-              {
-                "grade": "5a/V1",
-                "flash": 2,
-                "send": 2,
-                "attempt": 2
-              }
-            ],
-            "boardTypes": [
-              "kilter",
-              "moonboard"
-            ],
-            "hardestGrade": "5a/V1",
-            "firstTickAt": "2026-09-08 12:57:06.926",
-            "lastTickAt": "2026-09-08 13:17:55.616",
-            "durationMinutes": 21,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "48f6cda9-7c65-4428-96b5-e991309b2c94",
-              "userId": "158e28c2-72af-4d5a-97f2-865a568321f6",
-              "climbUuid": "0550dc83-2c0b-5d39-a95d-92704085493d",
-              "climbName": "BRUNE KARTOFLER",
-              "boardType": "moonboard",
-              "layoutId": 5,
-              "renderBoard": {
-                "layoutId": 5,
-                "sizeId": 1,
-                "setIds": [
-                  17,
-                  18,
-                  19,
-                  20,
-                  21,
-                  22,
-                  23
-                ]
-              },
-              "angle": 25,
-              "status": "send",
-              "attemptCount": 2,
-              "difficulty": 13,
-              "difficultyName": "5a/V1",
-              "boardseshDifficulty": null,
-              "boardseshConfidence": null,
-              "quality": null,
-              "isMirror": false,
-              "isBenchmark": true,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p45r42p26r42p79r43p89r43p115r43p146r43p158r43p191r44",
-              "setterUsername": "kasperg ",
-              "climbedAt": "2026-09-08 13:17:55.616"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "d7adbd74-8178-4648-972f-9523882f5bad"
-          },
-          {
-            "sessionId": "f7b7c4e7-e342-445c-b895-04e2875ca8ea",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "1cd148c1-20c8-4c2b-8d08-88daddffb74d",
-            "participants": [
-              {
-                "userId": "1cd148c1-20c8-4c2b-8d08-88daddffb74d",
-                "displayName": "Alejandro Verea Montero",
-                "avatarUrl": null,
-                "sends": 2,
-                "flashes": 0,
-                "attempts": 3
-              }
-            ],
-            "totalSends": 2,
-            "totalFlashes": 0,
-            "totalAttempts": 3,
-            "tickCount": 2,
-            "gradeDistribution": [
-              {
-                "grade": "6c/V5",
-                "flash": 0,
-                "send": 2,
-                "attempt": 3
-              }
-            ],
-            "boardTypes": [
-              "kilter"
-            ],
-            "hardestGrade": "6c/V5",
-            "firstTickAt": "2026-09-08 13:11:12.804",
-            "lastTickAt": "2026-09-08 13:17:42.749",
-            "durationMinutes": 6,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "acb84729-b116-4fab-ba46-9220ee490b4b",
-              "userId": "1cd148c1-20c8-4c2b-8d08-88daddffb74d",
-              "climbUuid": "007F1049661347ACA383E208F5518348",
-              "climbName": "b2",
-              "boardType": "kilter",
-              "layoutId": 1,
-              "renderBoard": {
-                "layoutId": 1,
-                "sizeId": 10,
-                "setIds": [
-                  1,
-                  20
-                ]
-              },
-              "angle": 40,
-              "status": "send",
-              "attemptCount": 2,
-              "difficulty": 20,
-              "difficultyName": "6c/V5",
-              "boardseshDifficulty": 19.00660195037216,
-              "boardseshConfidence": "confirmed",
-              "quality": null,
-              "isMirror": false,
-              "isBenchmark": false,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p1108r15p1161r12p1163r12p1169r15p1229r13p1256r13p1259r15p1267r13p1270r13p1324r13p1356r13p1393r14p1484r15p1501r15",
-              "setterUsername": "jwebxl",
-              "climbedAt": "2026-09-08 13:17:42.749"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "f7b7c4e7-e342-445c-b895-04e2875ca8ea"
-          },
-          {
-            "sessionId": "f5226763-47cf-40f8-9881-45bcbd23e95c",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "4f0ffd69-57c1-4e8a-a76c-73443050024e",
-            "participants": [
-              {
-                "userId": "4f0ffd69-57c1-4e8a-a76c-73443050024e",
-                "displayName": "Xyz",
+                "userId": "fb3e23f2-1f77-4580-9fc2-140a3a9cabfa",
+                "displayName": "j_olsen1994",
                 "avatarUrl": null,
                 "sends": 5,
                 "flashes": 4,
-                "attempts": 0
+                "attempts": 3
               }
             ],
             "totalSends": 5,
             "totalFlashes": 4,
-            "totalAttempts": 0,
-            "tickCount": 5,
+            "totalAttempts": 3,
+            "tickCount": 6,
             "gradeDistribution": [
               {
                 "grade": "6b+/V4",
-                "flash": 1,
+                "flash": 4,
                 "send": 1,
-                "attempt": 0
-              },
-              {
-                "grade": "6a/V3",
-                "flash": 2,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "5a/V1",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
+                "attempt": 3
               }
             ],
             "boardTypes": [
               "moonboard"
             ],
             "hardestGrade": "6b+/V4",
-            "firstTickAt": "2026-09-08 13:11:27.671",
-            "lastTickAt": "2026-09-08 13:16:29.564",
-            "durationMinutes": 5,
+            "firstTickAt": "2026-09-08 16:51:57.223",
+            "lastTickAt": "2026-09-08 17:33:03.596",
+            "durationMinutes": 41,
             "goal": null,
             "notes": null,
             "upvotes": 0,
@@ -319,10 +58,10 @@
             "voteScore": 0,
             "commentCount": 0,
             "hardestSend": {
-              "uuid": "4065aa0f-4ac8-4b84-a807-6a72245cd6cc",
-              "userId": "4f0ffd69-57c1-4e8a-a76c-73443050024e",
-              "climbUuid": "9b509e98-01b5-5aec-b4b5-6322fa7297e2",
-              "climbName": "PEEK A BLUE",
+              "uuid": "10168f24-5094-4954-b4e9-ee6fb96f6be9",
+              "userId": "fb3e23f2-1f77-4580-9fc2-140a3a9cabfa",
+              "climbUuid": "477d6d1f-85f4-5f6f-a431-46ee53f34b1c",
+              "climbName": "EASY RIDER",
               "boardType": "moonboard",
               "layoutId": 3,
               "renderBoard": {
@@ -337,8 +76,8 @@
                   10
                 ]
               },
-              "angle": 25,
-              "status": "send",
+              "angle": 40,
+              "status": "flash",
               "attemptCount": 1,
               "difficulty": 19,
               "difficultyName": "6b+/V4",
@@ -346,50 +85,280 @@
               "boardseshConfidence": null,
               "quality": null,
               "isMirror": false,
-              "isBenchmark": false,
+              "isBenchmark": true,
               "isNoMatch": false,
               "comment": null,
-              "frames": "p41r42p66r42p120r43p128r43p150r43p169r43p97r43p193r44",
-              "setterUsername": "RTAGG",
-              "climbedAt": "2026-09-08 13:11:54.442"
+              "frames": "p84r42p97r42p128r43p150r43p169r43p49r43p193r44",
+              "setterUsername": "Kyle Knapp",
+              "climbedAt": "2026-09-08 17:33:03.596"
             },
             "featuredBeta": null,
             "socialEntityType": "session",
-            "socialEntityId": "f5226763-47cf-40f8-9881-45bcbd23e95c"
+            "socialEntityId": "e1aa7e92-19b9-4aaa-9ceb-899bbf8527ab"
           },
           {
-            "sessionId": "fc94e943-9656-4512-b562-03b44e735b2d",
+            "sessionId": "3e9b0b04-2ac9-4b06-9bd7-1082143e1228",
             "sessionType": "party",
             "sessionName": null,
-            "ownerUserId": "eca35552-5038-44c4-96be-fe7aeb98e27b",
+            "ownerUserId": "85f9c78b-91f6-44ec-a886-2ddef3e96811",
             "participants": [
               {
-                "userId": "eca35552-5038-44c4-96be-fe7aeb98e27b",
-                "displayName": "Jonas-Buehler",
+                "userId": "85f9c78b-91f6-44ec-a886-2ddef3e96811",
+                "displayName": "Joel Navarro",
+                "avatarUrl": null,
+                "sends": 2,
+                "flashes": 2,
+                "attempts": 0
+              }
+            ],
+            "totalSends": 2,
+            "totalFlashes": 2,
+            "totalAttempts": 0,
+            "tickCount": 2,
+            "gradeDistribution": [
+              {
+                "grade": "5c/V2",
+                "flash": 1,
+                "send": 0,
+                "attempt": 0
+              },
+              {
+                "grade": "4b/V0",
+                "flash": 1,
+                "send": 0,
+                "attempt": 0
+              }
+            ],
+            "boardTypes": [
+              "touchstone"
+            ],
+            "hardestGrade": "5c/V2",
+            "firstTickAt": "2026-09-08 17:26:29.738",
+            "lastTickAt": "2026-09-08 17:28:57.047",
+            "durationMinutes": 2,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": {
+              "uuid": "830b7a49-affd-484c-8d51-bb009cbd686a",
+              "userId": "85f9c78b-91f6-44ec-a886-2ddef3e96811",
+              "climbUuid": "9E86439E3B484B059EAE4FA9726CC377",
+              "climbName": "tenderness",
+              "boardType": "touchstone",
+              "layoutId": 1,
+              "renderBoard": {
+                "layoutId": 1,
+                "sizeId": 1,
+                "setIds": [
+                  1
+                ]
+              },
+              "angle": 40,
+              "status": "flash",
+              "attemptCount": 1,
+              "difficulty": 15,
+              "difficultyName": "5c/V2",
+              "boardseshDifficulty": 13.613796078081824,
+              "boardseshConfidence": "setter_only",
+              "quality": null,
+              "isMirror": false,
+              "isBenchmark": false,
+              "isNoMatch": false,
+              "comment": null,
+              "frames": "p409r2p438r3p448r2p461r1p471r2p491r4p504r2p508r3p536r2p554r1p596r4p599r4",
+              "setterUsername": "Roos",
+              "climbedAt": "2026-09-08 17:28:57.047"
+            },
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "3e9b0b04-2ac9-4b06-9bd7-1082143e1228"
+          },
+          {
+            "sessionId": "e6f82235-2fc1-4190-ae3b-32a55d34041f",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "eafb96fe-f7d2-4c77-b9e7-657782f2a58a",
+            "participants": [
+              {
+                "userId": "eafb96fe-f7d2-4c77-b9e7-657782f2a58a",
+                "displayName": "Michele Pisu",
+                "avatarUrl": "https://lh3.googleusercontent.com/a/ACg8ocLYrn1t6c5jdrLDh6f4Od3GqWd4zZ-JodyqdgzYsXFWbIbqpw=s96-c",
+                "sends": 8,
+                "flashes": 6,
+                "attempts": 1
+              }
+            ],
+            "totalSends": 8,
+            "totalFlashes": 6,
+            "totalAttempts": 1,
+            "tickCount": 9,
+            "gradeDistribution": [
+              {
+                "grade": "6b/V4",
+                "flash": 6,
+                "send": 2,
+                "attempt": 1
+              }
+            ],
+            "boardTypes": [
+              "kilter"
+            ],
+            "hardestGrade": "6b/V4",
+            "firstTickAt": "2026-09-08 16:48:12.52",
+            "lastTickAt": "2026-09-08 17:22:46.822",
+            "durationMinutes": 35,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": {
+              "uuid": "fa203f43-8012-4f5b-947e-53779715c9ff",
+              "userId": "eafb96fe-f7d2-4c77-b9e7-657782f2a58a",
+              "climbUuid": "BFC677B18C2B48DEB6A13C3ABFF20F05",
+              "climbName": "Rob Bob",
+              "boardType": "kilter",
+              "layoutId": 1,
+              "renderBoard": {
+                "layoutId": 1,
+                "sizeId": 10,
+                "setIds": [
+                  1,
+                  20
+                ]
+              },
+              "angle": 40,
+              "status": "flash",
+              "attemptCount": 1,
+              "difficulty": 18,
+              "difficultyName": "6b/V4",
+              "boardseshDifficulty": 17.07939054837291,
+              "boardseshConfidence": "confirmed",
+              "quality": null,
+              "isMirror": false,
+              "isBenchmark": false,
+              "isNoMatch": false,
+              "comment": null,
+              "frames": "p1086r15p1110r15p1144r12p1163r12p1198r13p1236r13p1266r13p1274r15p1304r13p1356r13p1392r14p1523r15p1525r15",
+              "setterUsername": "jwebxl",
+              "climbedAt": "2026-09-08 17:22:46.822"
+            },
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "e6f82235-2fc1-4190-ae3b-32a55d34041f"
+          },
+          {
+            "sessionId": "5a820d83-11cf-48f2-af5d-b473915a1e8b",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "a32a49fb-b190-49b3-9c14-c7f7d07615bc",
+            "participants": [
+              {
+                "userId": "a32a49fb-b190-49b3-9c14-c7f7d07615bc",
+                "displayName": "Rob",
+                "avatarUrl": null,
+                "sends": 1,
+                "flashes": 1,
+                "attempts": 0
+              }
+            ],
+            "totalSends": 1,
+            "totalFlashes": 1,
+            "totalAttempts": 0,
+            "tickCount": 1,
+            "gradeDistribution": [
+              {
+                "grade": "7b/V8",
+                "flash": 1,
+                "send": 0,
+                "attempt": 0
+              }
+            ],
+            "boardTypes": [
+              "kilter"
+            ],
+            "hardestGrade": "7b/V8",
+            "firstTickAt": "2026-09-08 17:17:03.923",
+            "lastTickAt": "2026-09-08 17:17:03.923",
+            "durationMinutes": null,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": {
+              "uuid": "9f431c4e-f8e0-4921-a0bd-e9f3271377a2",
+              "userId": "a32a49fb-b190-49b3-9c14-c7f7d07615bc",
+              "climbUuid": "47445EFF6A1F4F00943938566C410529",
+              "climbName": "close to none",
+              "boardType": "kilter",
+              "layoutId": 1,
+              "renderBoard": {
+                "layoutId": 1,
+                "sizeId": 28,
+                "setIds": [
+                  1,
+                  20
+                ]
+              },
+              "angle": 45,
+              "status": "flash",
+              "attemptCount": 1,
+              "difficulty": 24,
+              "difficultyName": "7b/V8",
+              "boardseshDifficulty": 22.937631495863332,
+              "boardseshConfidence": "confirmed",
+              "quality": null,
+              "isMirror": false,
+              "isBenchmark": false,
+              "isNoMatch": false,
+              "comment": null,
+              "frames": "p1091r15p1129r12p1181r13p1220r13p1286r13p1324r13p1371r13p1386r14p1455r15p1469r15p1471r15p1508r15",
+              "setterUsername": "mondragon",
+              "climbedAt": "2026-09-08 17:17:03.923"
+            },
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "5a820d83-11cf-48f2-af5d-b473915a1e8b"
+          },
+          {
+            "sessionId": "0095f0c5-e711-4a83-a06e-f1fec6e3bf4d",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "a5300bf3-df49-46d5-8ace-939b25662609",
+            "participants": [
+              {
+                "userId": "a5300bf3-df49-46d5-8ace-939b25662609",
+                "displayName": "makinarias",
                 "avatarUrl": null,
                 "sends": 0,
                 "flashes": 0,
-                "attempts": 1
+                "attempts": 10
               }
             ],
             "totalSends": 0,
             "totalFlashes": 0,
-            "totalAttempts": 1,
-            "tickCount": 1,
+            "totalAttempts": 10,
+            "tickCount": 3,
             "gradeDistribution": [
               {
                 "grade": "6b+/V4",
                 "flash": 0,
                 "send": 0,
-                "attempt": 1
+                "attempt": 10
               }
             ],
             "boardTypes": [
               "moonboard"
             ],
             "hardestGrade": "6b+/V4",
-            "firstTickAt": "2026-09-08 13:16:15.916",
-            "lastTickAt": "2026-09-08 13:16:15.916",
+            "firstTickAt": "2026-09-08 17:10:27.607",
+            "lastTickAt": "2026-09-08 17:10:54.573",
             "durationMinutes": null,
             "goal": null,
             "notes": null,
@@ -400,48 +369,48 @@
             "hardestSend": null,
             "featuredBeta": null,
             "socialEntityType": "session",
-            "socialEntityId": "fc94e943-9656-4512-b562-03b44e735b2d"
+            "socialEntityId": "0095f0c5-e711-4a83-a06e-f1fec6e3bf4d"
           },
           {
-            "sessionId": "1cb36463-157e-48b2-9c63-8182f90f3e29",
+            "sessionId": "03db0239-9a10-4f0b-b183-8de7485a291c",
             "sessionType": "party",
             "sessionName": null,
-            "ownerUserId": "fcccc158-972b-472b-b148-f916891fecfd",
+            "ownerUserId": "1a969581-7718-4f7b-9e9c-f814406c8913",
             "participants": [
               {
-                "userId": "fcccc158-972b-472b-b148-f916891fecfd",
-                "displayName": "slopyslappy",
-                "avatarUrl": "https://lh3.googleusercontent.com/a/ACg8ocKrKJKrB0VZHFFTIFk0x0ujpr-7SLKstxmYAowb7Ca1CZtqpg=s96-c",
-                "sends": 7,
+                "userId": "1a969581-7718-4f7b-9e9c-f814406c8913",
+                "displayName": "Olve Berg",
+                "avatarUrl": null,
+                "sends": 4,
                 "flashes": 4,
-                "attempts": 7
+                "attempts": 0
               }
             ],
-            "totalSends": 7,
+            "totalSends": 4,
             "totalFlashes": 4,
-            "totalAttempts": 7,
-            "tickCount": 7,
+            "totalAttempts": 0,
+            "tickCount": 4,
             "gradeDistribution": [
               {
-                "grade": "6c/V5",
+                "grade": "6a+/V3",
                 "flash": 1,
-                "send": 1,
-                "attempt": 3
+                "send": 0,
+                "attempt": 0
               },
               {
-                "grade": "6b/V4",
+                "grade": "6a/V3",
                 "flash": 3,
-                "send": 2,
-                "attempt": 4
+                "send": 0,
+                "attempt": 0
               }
             ],
             "boardTypes": [
               "kilter"
             ],
-            "hardestGrade": "6c/V5",
-            "firstTickAt": "2026-09-08 12:18:53.066",
-            "lastTickAt": "2026-09-08 13:10:13.508",
-            "durationMinutes": 51,
+            "hardestGrade": "6a+/V3",
+            "firstTickAt": "2026-09-08 16:50:11.189",
+            "lastTickAt": "2026-09-08 17:03:09.998",
+            "durationMinutes": 13,
             "goal": null,
             "notes": null,
             "upvotes": 0,
@@ -449,10 +418,10 @@
             "voteScore": 0,
             "commentCount": 0,
             "hardestSend": {
-              "uuid": "60693676-aff5-4730-81e2-b528a2e178bb",
-              "userId": "fcccc158-972b-472b-b148-f916891fecfd",
-              "climbUuid": "6CE35477FCCD4624B63C75AA0106262A",
-              "climbName": "swingy",
+              "uuid": "020024ef-59c7-4275-ad17-79523acf8356",
+              "userId": "1a969581-7718-4f7b-9e9c-f814406c8913",
+              "climbUuid": "A58DB7F97A3844FEA8CA81EADA7D9598",
+              "climbName": "Tap Tap Tap",
               "boardType": "kilter",
               "layoutId": 1,
               "renderBoard": {
@@ -466,381 +435,42 @@
               "angle": 40,
               "status": "flash",
               "attemptCount": 1,
-              "difficulty": 20,
-              "difficultyName": "6c/V5",
-              "boardseshDifficulty": 18.960054149152704,
+              "difficulty": 17,
+              "difficultyName": "6a+/V3",
+              "boardseshDifficulty": 15.790735853120587,
               "boardseshConfidence": "confirmed",
               "quality": null,
               "isMirror": false,
               "isBenchmark": true,
               "isNoMatch": false,
               "comment": null,
-              "frames": "p1085r15p1089r15p1135r15p1145r12p1146r12p1186r15p1198r13p1226r15p1236r13p1284r13p1300r13p1331r13p1364r13p1379r14",
-              "setterUsername": "BKBChicago",
-              "climbedAt": "2026-09-08 13:10:13.508"
+              "frames": "p1149r12p1198r13p1234r13p1247r13p1280r13p1300r13p1331r13p1384r14p1454r15p1455r15p1457r15p1467r15p1469r15p1477r15p1485r15p1493r15p1511r15p1521r15p1532r15p1547r15p1549r15",
+              "setterUsername": "will_avelar",
+              "climbedAt": "2026-09-08 16:50:11.189"
             },
             "featuredBeta": null,
             "socialEntityType": "session",
-            "socialEntityId": "1cb36463-157e-48b2-9c63-8182f90f3e29"
+            "socialEntityId": "03db0239-9a10-4f0b-b183-8de7485a291c"
           },
           {
-            "sessionId": "1f9d931e-278b-4569-bac0-c6ec76526150",
+            "sessionId": "47a2d3ca-1583-401e-978f-bd0c8e6430c7",
             "sessionType": "party",
             "sessionName": null,
-            "ownerUserId": "9d707fdf-5442-4b85-bd4f-f4333283088d",
+            "ownerUserId": "df6f9523-de71-430f-8bae-dc91887ce270",
             "participants": [
               {
-                "userId": "9d707fdf-5442-4b85-bd4f-f4333283088d",
-                "displayName": "Andre",
+                "userId": "df6f9523-de71-430f-8bae-dc91887ce270",
+                "displayName": "jolip",
                 "avatarUrl": null,
-                "sends": 3,
-                "flashes": 0,
+                "sends": 15,
+                "flashes": 15,
                 "attempts": 0
               }
             ],
-            "totalSends": 3,
-            "totalFlashes": 0,
+            "totalSends": 15,
+            "totalFlashes": 15,
             "totalAttempts": 0,
-            "tickCount": 3,
-            "gradeDistribution": [
-              {
-                "grade": "6a/V3",
-                "flash": 0,
-                "send": 1,
-                "attempt": 0
-              },
-              {
-                "grade": "5c/V2",
-                "flash": 0,
-                "send": 1,
-                "attempt": 0
-              },
-              {
-                "grade": "5b/V1",
-                "flash": 0,
-                "send": 1,
-                "attempt": 0
-              }
-            ],
-            "boardTypes": [
-              "kilter"
-            ],
-            "hardestGrade": "6a/V3",
-            "firstTickAt": "2026-09-08 12:59:12.959",
-            "lastTickAt": "2026-09-08 13:09:29.125",
-            "durationMinutes": 10,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "37d7c6a3-0745-46fd-b1f1-8e753dd1d122",
-              "userId": "9d707fdf-5442-4b85-bd4f-f4333283088d",
-              "climbUuid": "C4A9FC1159244F9B898D7B1EF63926CB",
-              "climbName": "Worlds Bicker",
-              "boardType": "kilter",
-              "layoutId": 1,
-              "renderBoard": {
-                "layoutId": 1,
-                "sizeId": 10,
-                "setIds": [
-                  1,
-                  20
-                ]
-              },
-              "angle": 30,
-              "status": "send",
-              "attemptCount": 1,
-              "difficulty": 16,
-              "difficultyName": "6a/V3",
-              "boardseshDifficulty": 16.007985288773643,
-              "boardseshConfidence": "confirmed",
-              "quality": null,
-              "isMirror": false,
-              "isBenchmark": false,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p1098r15p1100r15p1146r15p1149r12p1166r12p1234r13p1246r13p1300r13p1334r13p1354r13p1389r13p1391r14",
-              "setterUsername": "KilterStudio",
-              "climbedAt": "2026-09-08 13:09:29.125"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "1f9d931e-278b-4569-bac0-c6ec76526150"
-          },
-          {
-            "sessionId": "ba8dd72d-1e99-48e7-b6c8-5c42a5e611a0",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "d4c9045c-9145-4e73-a366-613b99e4a6aa",
-            "participants": [
-              {
-                "userId": "d4c9045c-9145-4e73-a366-613b99e4a6aa",
-                "displayName": "Samuel Tio",
-                "avatarUrl": null,
-                "sends": 1,
-                "flashes": 0,
-                "attempts": 1
-              }
-            ],
-            "totalSends": 1,
-            "totalFlashes": 0,
-            "totalAttempts": 1,
-            "tickCount": 1,
-            "gradeDistribution": [
-              {
-                "grade": "6b+/V4",
-                "flash": 0,
-                "send": 1,
-                "attempt": 1
-              }
-            ],
-            "boardTypes": [
-              "moonboard"
-            ],
-            "hardestGrade": "6b+/V4",
-            "firstTickAt": "2026-09-08 13:05:34.917",
-            "lastTickAt": "2026-09-08 13:05:34.917",
-            "durationMinutes": null,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "0aed519c-bd34-4ecd-8c50-45b98f649957",
-              "userId": "d4c9045c-9145-4e73-a366-613b99e4a6aa",
-              "climbUuid": "483c1234-b9c4-5570-b871-7ddc37ed534d",
-              "climbName": "FUNNY THING",
-              "boardType": "moonboard",
-              "layoutId": 3,
-              "renderBoard": {
-                "layoutId": 3,
-                "sizeId": 1,
-                "setIds": [
-                  5,
-                  6,
-                  7,
-                  8,
-                  9,
-                  10
-                ]
-              },
-              "angle": 40,
-              "status": "send",
-              "attemptCount": 2,
-              "difficulty": 19,
-              "difficultyName": "6b+/V4",
-              "boardseshDifficulty": null,
-              "boardseshConfidence": null,
-              "quality": null,
-              "isMirror": false,
-              "isBenchmark": true,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p35r42p57r42p121r43p128r43p138r43p152r43p161r43p61r43p93r43p196r44",
-              "setterUsername": "Nick Wedge",
-              "climbedAt": "2026-09-08 13:05:34.917"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "ba8dd72d-1e99-48e7-b6c8-5c42a5e611a0"
-          },
-          {
-            "sessionId": "8da19c09-6362-4808-833d-84e94da915c8",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "06497f2e-8ea9-4733-bc3a-e8055e42a565",
-            "participants": [
-              {
-                "userId": "06497f2e-8ea9-4733-bc3a-e8055e42a565",
-                "displayName": "Ivan Buryak",
-                "avatarUrl": null,
-                "sends": 1,
-                "flashes": 0,
-                "attempts": 1
-              }
-            ],
-            "totalSends": 1,
-            "totalFlashes": 0,
-            "totalAttempts": 1,
-            "tickCount": 2,
-            "gradeDistribution": [
-              {
-                "grade": "6c/V5",
-                "flash": 0,
-                "send": 1,
-                "attempt": 1
-              }
-            ],
-            "boardTypes": [
-              "moonboard"
-            ],
-            "hardestGrade": "6c/V5",
-            "firstTickAt": "2026-09-08 12:51:59.162",
-            "lastTickAt": "2026-09-08 12:52:02.888",
-            "durationMinutes": null,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "bfbd5200-f506-48bb-b832-19d205a065f4",
-              "userId": "06497f2e-8ea9-4733-bc3a-e8055e42a565",
-              "climbUuid": "a3f71256-d8f7-5b7a-abae-b2e21717179c",
-              "climbName": "超絶技巧",
-              "boardType": "moonboard",
-              "layoutId": 2,
-              "renderBoard": {
-                "layoutId": 2,
-                "sizeId": 1,
-                "setIds": [
-                  2,
-                  3,
-                  4
-                ]
-              },
-              "angle": 40,
-              "status": "send",
-              "attemptCount": 1,
-              "difficulty": 20,
-              "difficultyName": "6c/V5",
-              "boardseshDifficulty": null,
-              "boardseshConfidence": null,
-              "quality": null,
-              "isMirror": false,
-              "isBenchmark": true,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p192r44p149r43p50r42p107r43p152r43",
-              "setterUsername": "Takuto Koshiba",
-              "climbedAt": "2026-09-08 12:52:02.888"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "8da19c09-6362-4808-833d-84e94da915c8"
-          },
-          {
-            "sessionId": "4d6123c4-f0ff-4d35-bfae-5abacf9af9ba",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "d43ccbbf-70ba-415f-9ebd-5bfdd3631978",
-            "participants": [
-              {
-                "userId": "d43ccbbf-70ba-415f-9ebd-5bfdd3631978",
-                "displayName": "Will He",
-                "avatarUrl": null,
-                "sends": 10,
-                "flashes": 5,
-                "attempts": 15
-              }
-            ],
-            "totalSends": 10,
-            "totalFlashes": 5,
-            "totalAttempts": 15,
-            "tickCount": 13,
-            "gradeDistribution": [
-              {
-                "grade": "7a/V6",
-                "flash": 0,
-                "send": 0,
-                "attempt": 8
-              },
-              {
-                "grade": "6c+/V5",
-                "flash": 0,
-                "send": 1,
-                "attempt": 2
-              },
-              {
-                "grade": "6c/V5",
-                "flash": 1,
-                "send": 4,
-                "attempt": 5
-              },
-              {
-                "grade": "6b+/V4",
-                "flash": 4,
-                "send": 0,
-                "attempt": 0
-              }
-            ],
-            "boardTypes": [
-              "moonboard"
-            ],
-            "hardestGrade": "6c+/V5",
-            "firstTickAt": "2026-09-08 10:32:19.163",
-            "lastTickAt": "2026-09-08 12:44:37.726",
-            "durationMinutes": 132,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "277f66c9-8c6e-4b1a-a97c-eab6b9a0ba7a",
-              "userId": "d43ccbbf-70ba-415f-9ebd-5bfdd3631978",
-              "climbUuid": "3eb5af16-1771-5125-bcf4-4c7f43e48218",
-              "climbName": "SKIBIDI TOILET SET",
-              "boardType": "moonboard",
-              "layoutId": 3,
-              "renderBoard": {
-                "layoutId": 3,
-                "sizeId": 1,
-                "setIds": [
-                  5,
-                  6,
-                  7,
-                  8,
-                  9,
-                  10
-                ]
-              },
-              "angle": 40,
-              "status": "send",
-              "attemptCount": 3,
-              "difficulty": 21,
-              "difficultyName": "6c+/V5",
-              "boardseshDifficulty": null,
-              "boardseshConfidence": null,
-              "quality": null,
-              "isMirror": false,
-              "isBenchmark": true,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p48r42p114r43p138r43p169r43p78r43p96r43p196r44",
-              "setterUsername": "Krzysztof Lewko",
-              "climbedAt": "2026-09-08 12:44:37.726"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "4d6123c4-f0ff-4d35-bfae-5abacf9af9ba"
-          },
-          {
-            "sessionId": "76940fc7-dad8-431c-af5f-6e469b332478",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "e591c736-ea89-4411-a467-375cad58ce0e",
-            "participants": [
-              {
-                "userId": "e591c736-ea89-4411-a467-375cad58ce0e",
-                "displayName": "djaplat",
-                "avatarUrl": null,
-                "sends": 11,
-                "flashes": 11,
-                "attempts": 0
-              }
-            ],
-            "totalSends": 11,
-            "totalFlashes": 11,
-            "totalAttempts": 0,
-            "tickCount": 11,
+            "tickCount": 15,
             "gradeDistribution": [
               {
                 "grade": "7a/V6",
@@ -850,48 +480,25 @@
               },
               {
                 "grade": "6c/V5",
-                "flash": 2,
+                "flash": 7,
                 "send": 0,
                 "attempt": 0
               },
               {
                 "grade": "6b+/V4",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "6b/V4",
-                "flash": 2,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "5c/V2",
-                "flash": 2,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "5b/V1",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "5a/V1",
-                "flash": 1,
+                "flash": 6,
                 "send": 0,
                 "attempt": 0
               }
             ],
             "boardTypes": [
-              "kilter"
+              "kilter",
+              "moonboard"
             ],
             "hardestGrade": "7a/V6",
-            "firstTickAt": "2026-09-08 12:37:54.333",
-            "lastTickAt": "2026-09-08 12:40:15.336",
-            "durationMinutes": 2,
+            "firstTickAt": "2026-09-08 15:42:20.406",
+            "lastTickAt": "2026-09-08 16:58:38.136",
+            "durationMinutes": 76,
             "goal": null,
             "notes": null,
             "upvotes": 0,
@@ -899,49 +506,124 @@
             "voteScore": 0,
             "commentCount": 0,
             "hardestSend": {
-              "uuid": "e79e532c-156f-423f-8162-1dbc17a85b53",
-              "userId": "e591c736-ea89-4411-a467-375cad58ce0e",
-              "climbUuid": "E4B1EDB02B7A4D16A990E7D1D9777414",
-              "climbName": "Star Camp 2019",
+              "uuid": "2d50c8a3-2ea7-4322-819c-1d0c715cf88a",
+              "userId": "df6f9523-de71-430f-8bae-dc91887ce270",
+              "climbUuid": "F2BBDE5118E64152BCE7C927E17E4802",
+              "climbName": "1001 Steil",
               "boardType": "kilter",
               "layoutId": 1,
               "renderBoard": {
                 "layoutId": 1,
-                "sizeId": 10,
+                "sizeId": 28,
                 "setIds": [
                   1,
                   20
                 ]
               },
-              "angle": 40,
+              "angle": 50,
               "status": "flash",
               "attemptCount": 1,
               "difficulty": 22,
               "difficultyName": "7a/V6",
-              "boardseshDifficulty": 20.831508052018005,
+              "boardseshDifficulty": 20.943498088049296,
               "boardseshConfidence": "confirmed",
               "quality": null,
               "isMirror": false,
               "isBenchmark": false,
               "isNoMatch": false,
               "comment": null,
-              "frames": "p1086r15p1161r12p1197r13p1229r13p1249r13p1283r13p1286r13p1353r13p1387r14p1483r15p1514r15",
-              "setterUsername": "kilterjackie",
-              "climbedAt": "2026-09-08 12:40:15.336"
+              "frames": "p1173r12p1203r13p1214r15p1237r13p1268r13p1317r13p1331r13p1382r14p1450r15p1480r15p1496r15p1549r15p1556r15",
+              "setterUsername": "JonasMygiakis",
+              "climbedAt": "2026-09-08 16:58:38.136"
             },
             "featuredBeta": null,
             "socialEntityType": "session",
-            "socialEntityId": "76940fc7-dad8-431c-af5f-6e469b332478"
+            "socialEntityId": "47a2d3ca-1583-401e-978f-bd0c8e6430c7"
           },
           {
-            "sessionId": "19a8e4c5-39eb-40d8-9bf3-aec3b4098c3c",
+            "sessionId": "ff273fcc-ed83-442a-9e0d-39916a483ab0",
             "sessionType": "party",
             "sessionName": null,
-            "ownerUserId": "8a8b1470-61df-4a71-992d-01383cac891d",
+            "ownerUserId": "c44275e1-85c0-43c3-9a61-f165dc89a746",
             "participants": [
               {
-                "userId": "8a8b1470-61df-4a71-992d-01383cac891d",
-                "displayName": null,
+                "userId": "c44275e1-85c0-43c3-9a61-f165dc89a746",
+                "displayName": "Connor Emmons",
+                "avatarUrl": null,
+                "sends": 4,
+                "flashes": 3,
+                "attempts": 1
+              }
+            ],
+            "totalSends": 4,
+            "totalFlashes": 3,
+            "totalAttempts": 1,
+            "tickCount": 5,
+            "gradeDistribution": [
+              {
+                "grade": "7a/V6",
+                "flash": 3,
+                "send": 1,
+                "attempt": 1
+              }
+            ],
+            "boardTypes": [
+              "tension"
+            ],
+            "hardestGrade": "7a/V6",
+            "firstTickAt": "2026-09-08 16:34:22.621",
+            "lastTickAt": "2026-09-08 16:55:16.639",
+            "durationMinutes": 21,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": {
+              "uuid": "4f1782ba-b88e-46c3-a95b-d580c868b618",
+              "userId": "c44275e1-85c0-43c3-9a61-f165dc89a746",
+              "climbUuid": "17B6A3B34A9D4163AC86C90B5C78F3E9",
+              "climbName": "Flapjack and Knuckles",
+              "boardType": "tension",
+              "layoutId": 11,
+              "renderBoard": {
+                "layoutId": 11,
+                "sizeId": 6,
+                "setIds": [
+                  12,
+                  13
+                ]
+              },
+              "angle": 40,
+              "status": "send",
+              "attemptCount": 1,
+              "difficulty": 22,
+              "difficultyName": "7a/V6",
+              "boardseshDifficulty": 21.99449972098498,
+              "boardseshConfidence": "confirmed",
+              "quality": null,
+              "isMirror": false,
+              "isBenchmark": true,
+              "isNoMatch": true,
+              "comment": null,
+              "frames": "p908r6p943r6p990r6p1149r8p1150r8p1172r6p1179r5p1181r8p1202r8p1208r8p1228r7",
+              "setterUsername": "tensionclimbing",
+              "climbedAt": "2026-09-08 16:53:27.245"
+            },
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "ff273fcc-ed83-442a-9e0d-39916a483ab0"
+          },
+          {
+            "sessionId": "75a6dc84-5610-443a-87b4-71281f533305",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "7a9516ac-9677-4519-ba2e-4028b94fa031",
+            "participants": [
+              {
+                "userId": "7a9516ac-9677-4519-ba2e-4028b94fa031",
+                "displayName": "Justin Hodson",
                 "avatarUrl": null,
                 "sends": 2,
                 "flashes": 1,
@@ -954,110 +636,25 @@
             "tickCount": 2,
             "gradeDistribution": [
               {
-                "grade": "6b+/V4",
+                "grade": "6b/V4",
                 "flash": 1,
-                "send": 1,
-                "attempt": 1
-              }
-            ],
-            "boardTypes": [
-              "moonboard"
-            ],
-            "hardestGrade": "6b+/V4",
-            "firstTickAt": "2026-09-08 12:33:48.042",
-            "lastTickAt": "2026-09-08 12:36:55.724",
-            "durationMinutes": 3,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "e1b4fab8-e09e-47f9-a681-7edd759b29d0",
-              "userId": "8a8b1470-61df-4a71-992d-01383cac891d",
-              "climbUuid": "7fc49fa0-dcad-5977-b339-190127cb9be7",
-              "climbName": "BIRTHDAY CAKE TRAIL MIX",
-              "boardType": "moonboard",
-              "layoutId": 3,
-              "renderBoard": {
-                "layoutId": 3,
-                "sizeId": 1,
-                "setIds": [
-                  5,
-                  6,
-                  7,
-                  8,
-                  9,
-                  10
-                ]
+                "send": 0,
+                "attempt": 0
               },
-              "angle": 40,
-              "status": "flash",
-              "attemptCount": 1,
-              "difficulty": 19,
-              "difficultyName": "6b+/V4",
-              "boardseshDifficulty": null,
-              "boardseshConfidence": null,
-              "quality": null,
-              "isMirror": false,
-              "isBenchmark": true,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p48r42p52r42p124r43p128r43p147r43p166r43p93r43p190r44",
-              "setterUsername": "Dana Rader",
-              "climbedAt": "2026-09-08 12:36:55.724"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "19a8e4c5-39eb-40d8-9bf3-aec3b4098c3c"
-          },
-          {
-            "sessionId": "f54333f7-6c4e-429a-9602-8deba1148bff",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "7e8c48e6-f436-4776-91ae-d013ffbf78c6",
-            "participants": [
-              {
-                "userId": "7e8c48e6-f436-4776-91ae-d013ffbf78c6",
-                "displayName": "Andy Cheung",
-                "avatarUrl": "https://ws.boardsesh.com/static/avatars/7e8c48e6-f436-4776-91ae-d013ffbf78c6.jpg?v=1e8c9eaa-fe06-4682-8ee1-bb4537049d0a&v=1786894732368",
-                "sends": 4,
-                "flashes": 4,
-                "attempts": 5
-              }
-            ],
-            "totalSends": 4,
-            "totalFlashes": 4,
-            "totalAttempts": 5,
-            "tickCount": 9,
-            "gradeDistribution": [
               {
                 "grade": "6a/V3",
-                "flash": 2,
-                "send": 0,
-                "attempt": 2
-              },
-              {
-                "grade": "5c/V2",
-                "flash": 1,
-                "send": 0,
-                "attempt": 2
-              },
-              {
-                "grade": "5b/V1",
-                "flash": 1,
-                "send": 0,
+                "flash": 0,
+                "send": 1,
                 "attempt": 1
               }
             ],
             "boardTypes": [
               "kilter"
             ],
-            "hardestGrade": "6a/V3",
-            "firstTickAt": "2026-09-08 11:15:07.716",
-            "lastTickAt": "2026-09-08 12:20:50.993",
-            "durationMinutes": 66,
+            "hardestGrade": "6b/V4",
+            "firstTickAt": "2026-09-08 16:47:17.083",
+            "lastTickAt": "2026-09-08 16:49:29.995",
+            "durationMinutes": 2,
             "goal": null,
             "notes": null,
             "upvotes": 0,
@@ -1065,15 +662,177 @@
             "voteScore": 0,
             "commentCount": 0,
             "hardestSend": {
-              "uuid": "30251b04-344a-4816-a985-7e10f6d4ea90",
-              "userId": "7e8c48e6-f436-4776-91ae-d013ffbf78c6",
-              "climbUuid": "FEAD8601DC214916BF5F11FB3C6D71B3",
-              "climbName": "Platypus",
+              "uuid": "35a1148d-657d-4f70-a030-24ca7e56fb1a",
+              "userId": "7a9516ac-9677-4519-ba2e-4028b94fa031",
+              "climbUuid": "36E949A6395D4290AF08FDFBCC6010C1",
+              "climbName": "Bell of the Wall",
               "boardType": "kilter",
               "layoutId": 1,
               "renderBoard": {
                 "layoutId": 1,
-                "sizeId": 8,
+                "sizeId": 10,
+                "setIds": [
+                  1,
+                  20
+                ]
+              },
+              "angle": 40,
+              "status": "flash",
+              "attemptCount": 1,
+              "difficulty": 18,
+              "difficultyName": "6b/V4",
+              "boardseshDifficulty": 16.36792862703711,
+              "boardseshConfidence": "confirmed",
+              "quality": 5,
+              "isMirror": false,
+              "isBenchmark": true,
+              "isNoMatch": false,
+              "comment": null,
+              "frames": "p1169r15p1183r15p1198r15p1234r12p1236r12p1268r13p1284r13p1317r13p1353r13p1387r14",
+              "setterUsername": "KilterStudio",
+              "climbedAt": "2026-09-08 16:49:29.995"
+            },
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "75a6dc84-5610-443a-87b4-71281f533305"
+          },
+          {
+            "sessionId": "682600cf-bcc8-4bd2-bc84-2e37cf699c5c",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "c66b361b-da91-4999-9aa8-8c0ab717d950",
+            "participants": [
+              {
+                "userId": "c66b361b-da91-4999-9aa8-8c0ab717d950",
+                "displayName": "Noah",
+                "avatarUrl": null,
+                "sends": 3,
+                "flashes": 2,
+                "attempts": 1
+              }
+            ],
+            "totalSends": 3,
+            "totalFlashes": 2,
+            "totalAttempts": 1,
+            "tickCount": 3,
+            "gradeDistribution": [
+              {
+                "grade": "6c/V5",
+                "flash": 0,
+                "send": 1,
+                "attempt": 1
+              },
+              {
+                "grade": "6a+/V3",
+                "flash": 1,
+                "send": 0,
+                "attempt": 0
+              },
+              {
+                "grade": "6a/V3",
+                "flash": 1,
+                "send": 0,
+                "attempt": 0
+              }
+            ],
+            "boardTypes": [
+              "kilter"
+            ],
+            "hardestGrade": "6c/V5",
+            "firstTickAt": "2026-09-08 16:36:41.73",
+            "lastTickAt": "2026-09-08 16:42:57.963",
+            "durationMinutes": 6,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": {
+              "uuid": "3d998ecb-edc5-465a-b6e5-62795d9d7189",
+              "userId": "c66b361b-da91-4999-9aa8-8c0ab717d950",
+              "climbUuid": "55F50313CB8D438E81B28FB0F935B507",
+              "climbName": "Rosy Tips-a-fiction",
+              "boardType": "kilter",
+              "layoutId": 1,
+              "renderBoard": {
+                "layoutId": 1,
+                "sizeId": 10,
+                "setIds": [
+                  1,
+                  20
+                ]
+              },
+              "angle": 40,
+              "status": "send",
+              "attemptCount": 2,
+              "difficulty": 20,
+              "difficultyName": "6c/V5",
+              "boardseshDifficulty": 18.928824032235063,
+              "boardseshConfidence": "confirmed",
+              "quality": null,
+              "isMirror": false,
+              "isBenchmark": true,
+              "isNoMatch": false,
+              "comment": null,
+              "frames": "p1089r15p1128r12p1144r12p1180r13p1214r13p1234r13p1267r13p1305r13p1321r13p1355r13p1373r13p1388r14p1459r15p1486r15p1515r15",
+              "setterUsername": "KilterStudio",
+              "climbedAt": "2026-09-08 16:42:57.963"
+            },
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "682600cf-bcc8-4bd2-bc84-2e37cf699c5c"
+          },
+          {
+            "sessionId": "36e796a5-c7c2-4659-90bd-b22494b137be",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "93956a01-2977-4834-ae0b-f809e067b798",
+            "participants": [
+              {
+                "userId": "93956a01-2977-4834-ae0b-f809e067b798",
+                "displayName": "Nina Barth",
+                "avatarUrl": null,
+                "sends": 4,
+                "flashes": 4,
+                "attempts": 0
+              }
+            ],
+            "totalSends": 4,
+            "totalFlashes": 4,
+            "totalAttempts": 0,
+            "tickCount": 4,
+            "gradeDistribution": [
+              {
+                "grade": "6a/V3",
+                "flash": 4,
+                "send": 0,
+                "attempt": 0
+              }
+            ],
+            "boardTypes": [
+              "kilter"
+            ],
+            "hardestGrade": "6a/V3",
+            "firstTickAt": "2026-09-08 16:14:44.801",
+            "lastTickAt": "2026-09-08 16:41:38.351",
+            "durationMinutes": 27,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": {
+              "uuid": "21e4bc38-72a2-4717-886a-76f044822608",
+              "userId": "93956a01-2977-4834-ae0b-f809e067b798",
+              "climbUuid": "33E6724AD5524E7FB6C71655CA2D5F8D",
+              "climbName": "Juliette",
+              "boardType": "kilter",
+              "layoutId": 1,
+              "renderBoard": {
+                "layoutId": 1,
+                "sizeId": 10,
                 "setIds": [
                   1,
                   20
@@ -1084,172 +843,73 @@
               "attemptCount": 1,
               "difficulty": 16,
               "difficultyName": "6a/V3",
-              "boardseshDifficulty": 15.944403709378214,
+              "boardseshDifficulty": 15.001447052203932,
               "boardseshConfidence": "confirmed",
               "quality": null,
               "isMirror": false,
               "isBenchmark": false,
               "isNoMatch": false,
               "comment": null,
-              "frames": "p1097r15p1128r12p1150r15p1161r12p1182r13p1220r15p1231r13p1251r13p1268r13p1287r13p1336r13p1390r14p1458r15p1461r15p1478r15p1504r15p1506r15p1551r15",
-              "setterUsername": "Byrons",
-              "climbedAt": "2026-09-08 11:42:19.91"
+              "frames": "p1204r15p1233r12p1235r12p1283r13p1287r13p1304r13p1337r13p1357r13p1390r14",
+              "setterUsername": "KilterStudio",
+              "climbedAt": "2026-09-08 16:41:38.351"
             },
             "featuredBeta": null,
             "socialEntityType": "session",
-            "socialEntityId": "f54333f7-6c4e-429a-9602-8deba1148bff"
+            "socialEntityId": "36e796a5-c7c2-4659-90bd-b22494b137be"
           },
           {
-            "sessionId": "e6811873-743d-4c4f-bd2a-66866edaa0c6",
+            "sessionId": "6d2e43d7-7e10-4815-a2da-c3955e372c04",
             "sessionType": "party",
             "sessionName": null,
-            "ownerUserId": "9b121111-bf05-4564-9212-1a253ecc6dc8",
+            "ownerUserId": "fb379c15-a3ac-4dc4-b0e9-ae256973b2b8",
             "participants": [
               {
-                "userId": "9b121111-bf05-4564-9212-1a253ecc6dc8",
-                "displayName": "Ryan Hutton",
+                "userId": "fb379c15-a3ac-4dc4-b0e9-ae256973b2b8",
+                "displayName": "Filip Maslanek",
                 "avatarUrl": null,
-                "sends": 6,
-                "flashes": 4,
-                "attempts": 4
+                "sends": 3,
+                "flashes": 2,
+                "attempts": 23
               }
             ],
-            "totalSends": 6,
-            "totalFlashes": 4,
-            "totalAttempts": 4,
-            "tickCount": 8,
+            "totalSends": 3,
+            "totalFlashes": 2,
+            "totalAttempts": 23,
+            "tickCount": 9,
             "gradeDistribution": [
               {
-                "grade": "6b/V4",
-                "flash": 1,
-                "send": 1,
-                "attempt": 3
-              },
-              {
-                "grade": "6a/V3",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "5c/V2",
+                "grade": "7a+/V7",
                 "flash": 0,
                 "send": 0,
+                "attempt": 22
+              },
+              {
+                "grade": "6b/V4",
+                "flash": 0,
+                "send": 1,
                 "attempt": 1
-              },
-              {
-                "grade": "5a/V1",
-                "flash": 2,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "4b/V0",
-                "flash": 0,
-                "send": 1,
-                "attempt": 0
-              }
-            ],
-            "boardTypes": [
-              "kilter"
-            ],
-            "hardestGrade": "6b/V4",
-            "firstTickAt": "2026-09-08 11:26:49.756",
-            "lastTickAt": "2026-09-08 12:08:29.105",
-            "durationMinutes": 42,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "ad7006e3-aee0-47f2-bd48-15c503c101c5",
-              "userId": "9b121111-bf05-4564-9212-1a253ecc6dc8",
-              "climbUuid": "A8F7FE77B3334304B13D736E068AD4D5",
-              "climbName": "Lament of the Steep",
-              "boardType": "kilter",
-              "layoutId": 1,
-              "renderBoard": {
-                "layoutId": 1,
-                "sizeId": 10,
-                "setIds": [
-                  1,
-                  20
-                ]
-              },
-              "angle": 50,
-              "status": "flash",
-              "attemptCount": 1,
-              "difficulty": 18,
-              "difficultyName": "6b/V4",
-              "boardseshDifficulty": 16.93741990958417,
-              "boardseshConfidence": "confirmed",
-              "quality": null,
-              "isMirror": false,
-              "isBenchmark": true,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p1183r15p1204r15p1234r12p1236r12p1268r13p1302r13p1315r13p1347r13p1379r14p1539r15p1546r15p1551r15",
-              "setterUsername": "Cuckovich",
-              "climbedAt": "2026-09-08 11:50:55.307"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "e6811873-743d-4c4f-bd2a-66866edaa0c6"
-          },
-          {
-            "sessionId": "cfd8e480-bbdd-4d48-899f-fbe723a57f6b",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "4485f3d0-bba1-4535-bf5a-1a4920620b3b",
-            "participants": [
-              {
-                "userId": "4485f3d0-bba1-4535-bf5a-1a4920620b3b",
-                "displayName": "Alex Foster",
-                "avatarUrl": null,
-                "sends": 6,
-                "flashes": 3,
-                "attempts": 7
-              }
-            ],
-            "totalSends": 6,
-            "totalFlashes": 3,
-            "totalAttempts": 7,
-            "tickCount": 13,
-            "gradeDistribution": [
-              {
-                "grade": "6b/V4",
-                "flash": 1,
-                "send": 1,
-                "attempt": 4
               },
               {
                 "grade": "6a+/V3",
-                "flash": 0,
-                "send": 1,
-                "attempt": 1
+                "flash": 1,
+                "send": 0,
+                "attempt": 0
               },
               {
                 "grade": "6a/V3",
                 "flash": 1,
-                "send": 1,
-                "attempt": 1
-              },
-              {
-                "grade": "5c/V2",
-                "flash": 1,
                 "send": 0,
-                "attempt": 1
+                "attempt": 0
               }
             ],
             "boardTypes": [
               "kilter"
             ],
             "hardestGrade": "6b/V4",
-            "firstTickAt": "2026-09-08 11:31:07.139",
-            "lastTickAt": "2026-09-08 11:58:48.305",
-            "durationMinutes": 28,
+            "firstTickAt": "2026-09-08 15:18:59.267",
+            "lastTickAt": "2026-09-08 16:23:57.349",
+            "durationMinutes": 65,
             "goal": null,
             "notes": null,
             "upvotes": 0,
@@ -1257,10 +917,10 @@
             "voteScore": 0,
             "commentCount": 0,
             "hardestSend": {
-              "uuid": "954e9430-7a33-4019-9f3c-dbf6c37b1749",
-              "userId": "4485f3d0-bba1-4535-bf5a-1a4920620b3b",
-              "climbUuid": "42542E9E47024F15AFF450123BCD3068",
-              "climbName": "Earwax",
+              "uuid": "210ed764-e189-418c-a520-5cd22dd9fdff",
+              "userId": "fb379c15-a3ac-4dc4-b0e9-ae256973b2b8",
+              "climbUuid": "F33E09B4856D48818C227E202C40BFBF",
+              "climbName": "Cranky pants",
               "boardType": "kilter",
               "layoutId": 1,
               "renderBoard": {
@@ -1271,225 +931,133 @@
                   20
                 ]
               },
-              "angle": 40,
-              "status": "flash",
-              "attemptCount": 1,
+              "angle": 35,
+              "status": "send",
+              "attemptCount": 2,
               "difficulty": 18,
               "difficultyName": "6b/V4",
-              "boardseshDifficulty": 18.24903659751417,
+              "boardseshDifficulty": 16.958589377167325,
               "boardseshConfidence": "confirmed",
-              "quality": null,
+              "quality": 5,
               "isMirror": false,
-              "isBenchmark": true,
+              "isBenchmark": false,
               "isNoMatch": false,
               "comment": null,
-              "frames": "p1140r15p1152r15p1206r12p1208r12p1240r13p1255r13p1289r13p1303r13p1317r13p1321r13p1351r13p1366r13p1380r14p1382r14p1508r15p1525r15p1531r15p1540r15p1551r15p1557r15p1564r15",
-              "setterUsername": "kilterjackie",
-              "climbedAt": "2026-09-08 11:52:56.12"
+              "frames": "p1137r15p1186r12p1188r15p1203r12p1254r13p1272r13p1286r13p1356r13p1392r14",
+              "setterUsername": "jwilder",
+              "climbedAt": "2026-09-08 15:22:42.165"
             },
             "featuredBeta": null,
             "socialEntityType": "session",
-            "socialEntityId": "cfd8e480-bbdd-4d48-899f-fbe723a57f6b"
+            "socialEntityId": "6d2e43d7-7e10-4815-a2da-c3955e372c04"
           },
           {
-            "sessionId": "beb37011-97e2-44e5-8537-e4a6957c659e",
+            "sessionId": "389a348a-2312-467b-916f-69c06452344e",
             "sessionType": "party",
             "sessionName": null,
-            "ownerUserId": "741a81f5-f6db-45f7-b44a-079baf91698a",
+            "ownerUserId": "bcbd7236-a833-4457-950d-e07c55e9ebfc",
             "participants": [
               {
-                "userId": "741a81f5-f6db-45f7-b44a-079baf91698a",
-                "displayName": "Paco Albors",
+                "userId": "bcbd7236-a833-4457-950d-e07c55e9ebfc",
+                "displayName": "Pedro Manuel Miguel Pires",
                 "avatarUrl": null,
-                "sends": 7,
-                "flashes": 7,
+                "sends": 5,
+                "flashes": 5,
                 "attempts": 0
               }
             ],
-            "totalSends": 7,
-            "totalFlashes": 7,
+            "totalSends": 5,
+            "totalFlashes": 5,
             "totalAttempts": 0,
-            "tickCount": 7,
+            "tickCount": 5,
             "gradeDistribution": [
               {
-                "grade": "7a/V6",
+                "grade": "6b+/V4",
                 "flash": 2,
                 "send": 0,
                 "attempt": 0
               },
               {
-                "grade": "6c+/V5",
-                "flash": 3,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "6c/V5",
-                "flash": 2,
-                "send": 0,
-                "attempt": 0
-              }
-            ],
-            "boardTypes": [
-              "moonboard"
-            ],
-            "hardestGrade": "7a/V6",
-            "firstTickAt": "2026-09-08 10:42:47.565",
-            "lastTickAt": "2026-09-08 11:33:05.432",
-            "durationMinutes": 50,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "de2391d7-39ce-4293-a9a1-8aefb95ece4b",
-              "userId": "741a81f5-f6db-45f7-b44a-079baf91698a",
-              "climbUuid": "75f69152-fda2-5a14-8aed-c8bd6ca3d6de",
-              "climbName": "BAF",
-              "boardType": "moonboard",
-              "layoutId": 2,
-              "renderBoard": {
-                "layoutId": 2,
-                "sizeId": 1,
-                "setIds": [
-                  2,
-                  3,
-                  4
-                ]
-              },
-              "angle": 40,
-              "status": "flash",
-              "attemptCount": 1,
-              "difficulty": 22,
-              "difficultyName": "7a/V6",
-              "boardseshDifficulty": null,
-              "boardseshConfidence": null,
-              "quality": null,
-              "isMirror": false,
-              "isBenchmark": true,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p188r44p103r43p159r43p170r43p85r43p52r42p130r43",
-              "setterUsername": "Alex Arroyo",
-              "climbedAt": "2026-09-08 11:33:05.432"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "beb37011-97e2-44e5-8537-e4a6957c659e"
-          },
-          {
-            "sessionId": "75ec76ad-767e-4e5a-8597-ddbe106c869d",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "ebf831d7-42b0-45b0-845e-2f139f11c932",
-            "participants": [
-              {
-                "userId": "ebf831d7-42b0-45b0-845e-2f139f11c932",
-                "displayName": "chanchunkit01",
-                "avatarUrl": null,
-                "sends": 1,
-                "flashes": 0,
-                "attempts": 1
-              }
-            ],
-            "totalSends": 1,
-            "totalFlashes": 0,
-            "totalAttempts": 1,
-            "tickCount": 1,
-            "gradeDistribution": [
-              {
-                "grade": "7b/V8",
-                "flash": 0,
-                "send": 1,
-                "attempt": 1
-              }
-            ],
-            "boardTypes": [
-              "moonboard"
-            ],
-            "hardestGrade": "7b/V8",
-            "firstTickAt": "2026-09-08 11:32:24.285",
-            "lastTickAt": "2026-09-08 11:32:24.285",
-            "durationMinutes": null,
-            "goal": null,
-            "notes": null,
-            "upvotes": 0,
-            "downvotes": 0,
-            "voteScore": 0,
-            "commentCount": 0,
-            "hardestSend": {
-              "uuid": "cab6a5ac-005a-46a7-b25b-4def89304a14",
-              "userId": "ebf831d7-42b0-45b0-845e-2f139f11c932",
-              "climbUuid": "4144cfeb-d515-528a-aa76-6546db79e564",
-              "climbName": "BOLDA",
-              "boardType": "moonboard",
-              "layoutId": 3,
-              "renderBoard": {
-                "layoutId": 3,
-                "sizeId": 1,
-                "setIds": [
-                  5,
-                  6,
-                  7,
-                  8,
-                  9,
-                  10
-                ]
-              },
-              "angle": 40,
-              "status": "send",
-              "attemptCount": 2,
-              "difficulty": 24,
-              "difficultyName": "7b/V8",
-              "boardseshDifficulty": null,
-              "boardseshConfidence": null,
-              "quality": 5,
-              "isMirror": false,
-              "isBenchmark": true,
-              "isNoMatch": false,
-              "comment": null,
-              "frames": "p54r42p55r42p115r43p146r43p183r43p57r43p82r43p87r43p194r44",
-              "setterUsername": "FAYLOGA",
-              "climbedAt": "2026-09-08 11:32:24.285"
-            },
-            "featuredBeta": null,
-            "socialEntityType": "session",
-            "socialEntityId": "75ec76ad-767e-4e5a-8597-ddbe106c869d"
-          },
-          {
-            "sessionId": "02373d73-dab6-4aa2-b55a-8e1ce7ee6ea7",
-            "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "c29285e4-162a-4ed5-bf88-5eb8a65bf431",
-            "participants": [
-              {
-                "userId": "c29285e4-162a-4ed5-bf88-5eb8a65bf431",
-                "displayName": "eduard",
-                "avatarUrl": "https://lh3.googleusercontent.com/a/ACg8ocIv98BN-WsNb3QBQJbqT_un8MbBy0vy7Zx3VRfet-8aWwXMgiTV0Q=s96-c",
-                "sends": 13,
-                "flashes": 12,
-                "attempts": 10
-              }
-            ],
-            "totalSends": 13,
-            "totalFlashes": 12,
-            "totalAttempts": 10,
-            "tickCount": 16,
-            "gradeDistribution": [
-              {
-                "grade": "7a/V6",
-                "flash": 0,
-                "send": 1,
-                "attempt": 7
-              },
-              {
-                "grade": "6c+/V5",
+                "grade": "6b/V4",
                 "flash": 1,
                 "send": 0,
-                "attempt": 3
+                "attempt": 0
               },
+              {
+                "grade": "6a+/V3",
+                "flash": 2,
+                "send": 0,
+                "attempt": 0
+              }
+            ],
+            "boardTypes": [
+              "kilter"
+            ],
+            "hardestGrade": "6b+/V4",
+            "firstTickAt": "2026-09-08 15:55:05.549",
+            "lastTickAt": "2026-09-08 16:17:09.48",
+            "durationMinutes": 22,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": {
+              "uuid": "0a95a8fa-1fa6-46c7-839a-3e73ad1f2c57",
+              "userId": "bcbd7236-a833-4457-950d-e07c55e9ebfc",
+              "climbUuid": "3A734EBBBD534F5BB736C7040CE74566",
+              "climbName": "Dump truck warm up",
+              "boardType": "kilter",
+              "layoutId": 1,
+              "renderBoard": {
+                "layoutId": 1,
+                "sizeId": 10,
+                "setIds": [
+                  1,
+                  20
+                ]
+              },
+              "angle": 45,
+              "status": "flash",
+              "attemptCount": 1,
+              "difficulty": 19,
+              "difficultyName": "6b+/V4",
+              "boardseshDifficulty": 18.017032341411443,
+              "boardseshConfidence": "confirmed",
+              "quality": 5,
+              "isMirror": false,
+              "isBenchmark": false,
+              "isNoMatch": false,
+              "comment": null,
+              "frames": "p1137r15p1147r12p1165r12p1218r13p1220r13p1240r13p1304r13p1305r13p1317r13p1387r14p1459r15p1500r15",
+              "setterUsername": "jwebxl",
+              "climbedAt": "2026-09-08 16:02:28.474"
+            },
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "389a348a-2312-467b-916f-69c06452344e"
+          },
+          {
+            "sessionId": "7ab317dd-839f-430f-a321-328ced03ed9c",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "5a910a3b-c703-4f05-9107-0865144fafc0",
+            "participants": [
+              {
+                "userId": "5a910a3b-c703-4f05-9107-0865144fafc0",
+                "displayName": "Raigc89",
+                "avatarUrl": null,
+                "sends": 5,
+                "flashes": 5,
+                "attempts": 0
+              }
+            ],
+            "totalSends": 5,
+            "totalFlashes": 5,
+            "totalAttempts": 0,
+            "tickCount": 5,
+            "gradeDistribution": [
               {
                 "grade": "6c/V5",
                 "flash": 1,
@@ -1498,7 +1066,7 @@
               },
               {
                 "grade": "6b+/V4",
-                "flash": 1,
+                "flash": 2,
                 "send": 0,
                 "attempt": 0
               },
@@ -1513,57 +1081,15 @@
                 "flash": 1,
                 "send": 0,
                 "attempt": 0
-              },
-              {
-                "grade": "6a/V3",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "5c/V2",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "5b/V1",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "5a/V1",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "4c/V0",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "4b/V0",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
-              },
-              {
-                "grade": "4a/V0",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
               }
             ],
             "boardTypes": [
               "kilter"
             ],
-            "hardestGrade": "7a/V6",
-            "firstTickAt": "2026-09-08 10:34:33.69",
-            "lastTickAt": "2026-09-08 11:27:49.633",
-            "durationMinutes": 53,
+            "hardestGrade": "6c/V5",
+            "firstTickAt": "2026-09-08 15:59:16.07",
+            "lastTickAt": "2026-09-08 16:16:38.979",
+            "durationMinutes": 17,
             "goal": null,
             "notes": null,
             "upvotes": 0,
@@ -1571,76 +1097,74 @@
             "voteScore": 0,
             "commentCount": 0,
             "hardestSend": {
-              "uuid": "ed75b3fb-ec5c-445d-8d87-d6b6a6154f9c",
-              "userId": "c29285e4-162a-4ed5-bf88-5eb8a65bf431",
-              "climbUuid": "2a63ec1fd6244a2fb2b3e8d1a8f7e1a2",
-              "climbName": "Shipwreck",
+              "uuid": "865554c3-881d-47f8-9aa6-11473494320d",
+              "userId": "5a910a3b-c703-4f05-9107-0865144fafc0",
+              "climbUuid": "E972318E65F0473D8D8E493B83F13F6B",
+              "climbName": "size",
               "boardType": "kilter",
-              "layoutId": 8,
+              "layoutId": 1,
               "renderBoard": {
-                "layoutId": 8,
-                "sizeId": 25,
+                "layoutId": 1,
+                "sizeId": 10,
                 "setIds": [
-                  26,
-                  27,
-                  28,
-                  29
+                  1,
+                  20
                 ]
               },
-              "angle": 30,
-              "status": "send",
-              "attemptCount": 3,
-              "difficulty": 22,
-              "difficultyName": "7a/V6",
-              "boardseshDifficulty": 20.9915822377204,
+              "angle": 45,
+              "status": "flash",
+              "attemptCount": 1,
+              "difficulty": 20,
+              "difficultyName": "6c/V5",
+              "boardseshDifficulty": 19.059568137191498,
               "boardseshConfidence": "confirmed",
-              "quality": null,
+              "quality": 5,
               "isMirror": false,
               "isBenchmark": false,
               "isNoMatch": false,
               "comment": null,
-              "frames": "p4125r42p4154r42p4242r43p4243r43p4298r45p4303r43p4304r43p4356r45p4385r45p4392r44",
-              "setterUsername": "mayanswall",
-              "climbedAt": "2026-09-08 11:11:35.308"
+              "frames": "p1082r15p1146r12p1149r12p1166r15p1214r15p1235r13p1271r13p1285r13p1353r13p1387r14",
+              "setterUsername": "jwebxl",
+              "climbedAt": "2026-09-08 16:06:34.327"
             },
             "featuredBeta": null,
             "socialEntityType": "session",
-            "socialEntityId": "02373d73-dab6-4aa2-b55a-8e1ce7ee6ea7"
+            "socialEntityId": "7ab317dd-839f-430f-a321-328ced03ed9c"
           },
           {
-            "sessionId": "37008d8f-38f6-4675-a40a-f4785554975e",
+            "sessionId": "e64533a7-c0f4-402f-ba84-f7f0f63aca6a",
             "sessionType": "party",
             "sessionName": null,
-            "ownerUserId": "d91a2c58-b37e-4080-870e-0670b87e44c5",
+            "ownerUserId": "437f8d04-33b0-4aa8-9660-07b354440fa5",
             "participants": [
               {
-                "userId": "d91a2c58-b37e-4080-870e-0670b87e44c5",
-                "displayName": "anny yin",
+                "userId": "437f8d04-33b0-4aa8-9660-07b354440fa5",
+                "displayName": "Tom Gabler",
                 "avatarUrl": null,
-                "sends": 1,
-                "flashes": 1,
-                "attempts": 0
+                "sends": 3,
+                "flashes": 0,
+                "attempts": 5
               }
             ],
-            "totalSends": 1,
-            "totalFlashes": 1,
-            "totalAttempts": 0,
-            "tickCount": 1,
+            "totalSends": 3,
+            "totalFlashes": 0,
+            "totalAttempts": 5,
+            "tickCount": 3,
             "gradeDistribution": [
               {
-                "grade": "6c+/V5",
-                "flash": 1,
-                "send": 0,
-                "attempt": 0
+                "grade": "7a+/V7",
+                "flash": 0,
+                "send": 3,
+                "attempt": 5
               }
             ],
             "boardTypes": [
-              "moonboard"
+              "kilter"
             ],
-            "hardestGrade": "6c+/V5",
-            "firstTickAt": "2026-09-08 11:22:12.711",
-            "lastTickAt": "2026-09-08 11:22:12.711",
-            "durationMinutes": null,
+            "hardestGrade": "7a+/V7",
+            "firstTickAt": "2026-09-08 16:02:01.631",
+            "lastTickAt": "2026-09-08 16:13:32.635",
+            "durationMinutes": 12,
             "goal": null,
             "notes": null,
             "upvotes": 0,
@@ -1648,66 +1172,157 @@
             "voteScore": 0,
             "commentCount": 0,
             "hardestSend": {
-              "uuid": "e78cbefd-1a71-49d1-8514-984e5068d830",
-              "userId": "d91a2c58-b37e-4080-870e-0670b87e44c5",
-              "climbUuid": "628533cd-b852-5384-bc27-154f08d3922d",
-              "climbName": "PEZ DISPENSER",
-              "boardType": "moonboard",
-              "layoutId": 3,
+              "uuid": "53a26bbe-c94b-41a4-8b71-228769291357",
+              "userId": "437f8d04-33b0-4aa8-9660-07b354440fa5",
+              "climbUuid": "52d551045ec84c89996af520ae581731",
+              "climbName": "stuck in the johnny with you",
+              "boardType": "kilter",
+              "layoutId": 1,
               "renderBoard": {
-                "layoutId": 3,
-                "sizeId": 1,
+                "layoutId": 1,
+                "sizeId": 10,
                 "setIds": [
-                  5,
-                  6,
-                  7,
-                  8,
-                  9,
-                  10
+                  1,
+                  20
                 ]
               },
               "angle": 40,
-              "status": "flash",
-              "attemptCount": 1,
-              "difficulty": 21,
-              "difficultyName": "6c+/V5",
-              "boardseshDifficulty": null,
-              "boardseshConfidence": null,
-              "quality": null,
+              "status": "send",
+              "attemptCount": 3,
+              "difficulty": 23,
+              "difficultyName": "7a+/V7",
+              "boardseshDifficulty": 22.02007756131252,
+              "boardseshConfidence": "confirmed",
+              "quality": 5,
               "isMirror": false,
-              "isBenchmark": true,
+              "isBenchmark": false,
               "isNoMatch": false,
               "comment": null,
-              "frames": "p35r42p58r42p103r43p124r43p150r43p169r43p90r43p196r44",
-              "setterUsername": "Ah Hen",
-              "climbedAt": "2026-09-08 11:22:12.711"
+              "frames": "p1082r15p1153r12p1184r12p1254r13p1263r15p1284r13p1320r13p1369r13p1391r14p1472r15p1479r15p1584r15",
+              "setterUsername": "juju",
+              "climbedAt": "2026-09-08 16:13:32.635"
             },
             "featuredBeta": null,
             "socialEntityType": "session",
-            "socialEntityId": "37008d8f-38f6-4675-a40a-f4785554975e"
+            "socialEntityId": "e64533a7-c0f4-402f-ba84-f7f0f63aca6a"
           },
           {
-            "sessionId": "51734042-53e6-4c18-8479-87f68208ab56",
+            "sessionId": "6a37f2e0-9209-4c0e-ac0f-5ef9ba101a9c",
             "sessionType": "party",
-            "sessionName": null,
-            "ownerUserId": "b644b2c0-c13a-4ffc-a12b-120df6a1e322",
+            "sessionName": "Tuesday projecting",
+            "ownerUserId": "8b1bc16b-0ca2-4e7a-a840-d6ff6f087ef0",
             "participants": [
               {
-                "userId": "b644b2c0-c13a-4ffc-a12b-120df6a1e322",
-                "displayName": "Wayren Loke",
-                "avatarUrl": null,
-                "sends": 1,
-                "flashes": 1,
+                "userId": "8b1bc16b-0ca2-4e7a-a840-d6ff6f087ef0",
+                "displayName": "peanut_butter_biceps",
+                "avatarUrl": "https://lh3.googleusercontent.com/a/ACg8ocKP6bft1WvIxV7xt6kEm0vZLPYOmupnL4gjljDZMueE7j9p0LxW=s96-c",
+                "sends": 4,
+                "flashes": 4,
                 "attempts": 0
+              },
+              {
+                "userId": "11cc145d-3d52-4684-aec1-d0c8f4f95b1a",
+                "displayName": "Charles",
+                "avatarUrl": null,
+                "sends": 4,
+                "flashes": 2,
+                "attempts": 2
               }
             ],
-            "totalSends": 1,
-            "totalFlashes": 1,
-            "totalAttempts": 0,
-            "tickCount": 1,
+            "totalSends": 8,
+            "totalFlashes": 6,
+            "totalAttempts": 2,
+            "tickCount": 8,
             "gradeDistribution": [
               {
-                "grade": "6a/V3",
+                "grade": "7a/V6",
+                "flash": 3,
+                "send": 2,
+                "attempt": 2
+              },
+              {
+                "grade": "6c/V5",
+                "flash": 3,
+                "send": 0,
+                "attempt": 0
+              }
+            ],
+            "boardTypes": [
+              "tension"
+            ],
+            "hardestGrade": "7a/V6",
+            "firstTickAt": "2026-09-08 15:32:41.406",
+            "lastTickAt": "2026-09-08 15:51:06.644",
+            "durationMinutes": 18,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": {
+              "uuid": "1d73f9be-ae98-463a-9da7-4fc8d7dd0bc8",
+              "userId": "11cc145d-3d52-4684-aec1-d0c8f4f95b1a",
+              "climbUuid": "E856DDB0140440599E7D3AF18F2F5CF2",
+              "climbName": "Thunderhead",
+              "boardType": "tension",
+              "layoutId": 10,
+              "renderBoard": {
+                "layoutId": 10,
+                "sizeId": 6,
+                "setIds": [
+                  12,
+                  13
+                ]
+              },
+              "angle": 40,
+              "status": "send",
+              "attemptCount": 2,
+              "difficulty": 22,
+              "difficultyName": "7a/V6",
+              "boardseshDifficulty": 21.993614636008168,
+              "boardseshConfidence": "confirmed",
+              "quality": null,
+              "isMirror": false,
+              "isBenchmark": true,
+              "isNoMatch": true,
+              "comment": null,
+              "frames": "p317r8p323r6p366r8p379r8p550r8p588r6p594r6p612r8p613r5p631r6p680r8p693r6p725r7p737r8",
+              "setterUsername": "tensionclimbing",
+              "climbedAt": "2026-09-08 15:51:06.644"
+            },
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "6a37f2e0-9209-4c0e-ac0f-5ef9ba101a9c"
+          },
+          {
+            "sessionId": "53d7089b-50a8-4bae-8b6f-d5219c541493",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "99ed153e-ff72-40ff-ab82-e848c378775d",
+            "participants": [
+              {
+                "userId": "99ed153e-ff72-40ff-ab82-e848c378775d",
+                "displayName": "Topsi_maj",
+                "avatarUrl": "https://ws.boardsesh.com/static/avatars/99ed153e-ff72-40ff-ab82-e848c378775d.jpg?v=24ada223-b2a3-45a2-a28b-09d3440bc05d&v=1784225494068",
+                "sends": 2,
+                "flashes": 1,
+                "attempts": 4
+              }
+            ],
+            "totalSends": 2,
+            "totalFlashes": 1,
+            "totalAttempts": 4,
+            "tickCount": 2,
+            "gradeDistribution": [
+              {
+                "grade": "7b/V8",
+                "flash": 0,
+                "send": 1,
+                "attempt": 4
+              },
+              {
+                "grade": "7a/V6",
                 "flash": 1,
                 "send": 0,
                 "attempt": 0
@@ -1716,10 +1331,10 @@
             "boardTypes": [
               "moonboard"
             ],
-            "hardestGrade": "6a/V3",
-            "firstTickAt": "2026-09-08 11:18:41.845",
-            "lastTickAt": "2026-09-08 11:18:41.845",
-            "durationMinutes": null,
+            "hardestGrade": "7b/V8",
+            "firstTickAt": "2026-09-08 15:45:21.827",
+            "lastTickAt": "2026-09-08 15:46:28.382",
+            "durationMinutes": 1,
             "goal": null,
             "notes": null,
             "upvotes": 0,
@@ -1727,10 +1342,10 @@
             "voteScore": 0,
             "commentCount": 0,
             "hardestSend": {
-              "uuid": "3b0780c6-1972-48c0-8bc6-639aa9649765",
-              "userId": "b644b2c0-c13a-4ffc-a12b-120df6a1e322",
-              "climbUuid": "2d528d98-5376-54a2-8807-276b2c6d88ed",
-              "climbName": "FOR BIG",
+              "uuid": "bca66032-f54b-40ff-9c52-c2ffd6944de8",
+              "userId": "99ed153e-ff72-40ff-ab82-e848c378775d",
+              "climbUuid": "a06e5640-3e1e-5b21-84df-6254b65e31b9",
+              "climbName": "GEBROCHENER KNIEBOOGIE",
               "boardType": "moonboard",
               "layoutId": 5,
               "renderBoard": {
@@ -1747,24 +1362,225 @@
                 ]
               },
               "angle": 40,
-              "status": "flash",
-              "attemptCount": 1,
-              "difficulty": 16,
-              "difficultyName": "6a/V3",
+              "status": "send",
+              "attemptCount": 5,
+              "difficulty": 24,
+              "difficultyName": "7b/V8",
               "boardseshDifficulty": null,
               "boardseshConfidence": null,
+              "quality": 3,
+              "isMirror": false,
+              "isBenchmark": true,
+              "isNoMatch": false,
+              "comment": null,
+              "frames": "p41r42p69r43p81r43p118r43p136r43p159r43p185r43p197r44",
+              "setterUsername": "KimDeWolff",
+              "climbedAt": "2026-09-08 15:46:28.382"
+            },
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "53d7089b-50a8-4bae-8b6f-d5219c541493"
+          },
+          {
+            "sessionId": "7434f7e7-72eb-4174-b7e8-1cfae900ee7f",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "d266c3c9-50ba-4d0c-bb54-d9b4a0913a79",
+            "participants": [
+              {
+                "userId": "d266c3c9-50ba-4d0c-bb54-d9b4a0913a79",
+                "displayName": "Christoph Gaßner",
+                "avatarUrl": null,
+                "sends": 2,
+                "flashes": 1,
+                "attempts": 5
+              }
+            ],
+            "totalSends": 2,
+            "totalFlashes": 1,
+            "totalAttempts": 5,
+            "tickCount": 2,
+            "gradeDistribution": [
+              {
+                "grade": "7b/V8",
+                "flash": 0,
+                "send": 1,
+                "attempt": 5
+              },
+              {
+                "grade": "7a+/V7",
+                "flash": 1,
+                "send": 0,
+                "attempt": 0
+              }
+            ],
+            "boardTypes": [
+              "kilter"
+            ],
+            "hardestGrade": "7b/V8",
+            "firstTickAt": "2026-09-08 15:15:30.338",
+            "lastTickAt": "2026-09-08 15:40:08.104",
+            "durationMinutes": 25,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": {
+              "uuid": "334fad9e-7a61-4592-a400-62af79cd7503",
+              "userId": "d266c3c9-50ba-4d0c-bb54-d9b4a0913a79",
+              "climbUuid": "FD7A7D152EE3400DAC36497F177726FD",
+              "climbName": "hammer drop",
+              "boardType": "kilter",
+              "layoutId": 1,
+              "renderBoard": {
+                "layoutId": 1,
+                "sizeId": 10,
+                "setIds": [
+                  1,
+                  20
+                ]
+              },
+              "angle": 40,
+              "status": "send",
+              "attemptCount": 6,
+              "difficulty": 24,
+              "difficultyName": "7b/V8",
+              "boardseshDifficulty": 23.28279282356357,
+              "boardseshConfidence": "confirmed",
               "quality": null,
               "isMirror": false,
               "isBenchmark": true,
               "isNoMatch": false,
               "comment": null,
-              "frames": "p46r42p41r42p94r43p107r43p146r43p127r43p191r44",
-              "setterUsername": "KoalaClimbing",
-              "climbedAt": "2026-09-08 11:18:41.845"
+              "frames": "p1166r12p1214r15p1253r13p1283r13p1355r13p1384r14p1470r15p1540r15",
+              "setterUsername": "KilterStudio",
+              "climbedAt": "2026-09-08 15:40:08.104"
             },
             "featuredBeta": null,
             "socialEntityType": "session",
-            "socialEntityId": "51734042-53e6-4c18-8479-87f68208ab56"
+            "socialEntityId": "7434f7e7-72eb-4174-b7e8-1cfae900ee7f"
+          },
+          {
+            "sessionId": "6f7298b7-6354-4077-aff6-8ba61b69d471",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "c9d70d4e-2a3d-4da6-b5ef-72f02f1f7db6",
+            "participants": [
+              {
+                "userId": "c9d70d4e-2a3d-4da6-b5ef-72f02f1f7db6",
+                "displayName": "Hermann wigers",
+                "avatarUrl": null,
+                "sends": 1,
+                "flashes": 1,
+                "attempts": 0
+              }
+            ],
+            "totalSends": 1,
+            "totalFlashes": 1,
+            "totalAttempts": 0,
+            "tickCount": 1,
+            "gradeDistribution": [
+              {
+                "grade": "7a/V6",
+                "flash": 1,
+                "send": 0,
+                "attempt": 0
+              }
+            ],
+            "boardTypes": [
+              "kilter"
+            ],
+            "hardestGrade": "7a/V6",
+            "firstTickAt": "2026-09-08 15:22:14.478",
+            "lastTickAt": "2026-09-08 15:22:14.478",
+            "durationMinutes": null,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": {
+              "uuid": "71fe7e7a-7487-4469-b00f-6a7fbb5eee9e",
+              "userId": "c9d70d4e-2a3d-4da6-b5ef-72f02f1f7db6",
+              "climbUuid": "615B1E12A74144C3BCC3AD987E5D7EC4",
+              "climbName": "chicken wing soul",
+              "boardType": "kilter",
+              "layoutId": 1,
+              "renderBoard": {
+                "layoutId": 1,
+                "sizeId": 10,
+                "setIds": [
+                  1,
+                  20
+                ]
+              },
+              "angle": 40,
+              "status": "flash",
+              "attemptCount": 1,
+              "difficulty": 22,
+              "difficultyName": "7a/V6",
+              "boardseshDifficulty": 20.957544914382403,
+              "boardseshConfidence": "confirmed",
+              "quality": null,
+              "isMirror": false,
+              "isBenchmark": true,
+              "isNoMatch": false,
+              "comment": null,
+              "frames": "p1139r12p1172r12p1173r15p1195r15p1203r13p1256r13p1282r13p1286r13p1303r13p1316r13p1329r13p1383r14p1449r15p1482r15p1555r15",
+              "setterUsername": "bencarn",
+              "climbedAt": "2026-09-08 15:22:14.478"
+            },
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "6f7298b7-6354-4077-aff6-8ba61b69d471"
+          },
+          {
+            "sessionId": "d48d8b39-0f32-4645-9381-3aa66109b40e",
+            "sessionType": "party",
+            "sessionName": null,
+            "ownerUserId": "663840c6-9587-4e32-bdc7-b86efe0609c3",
+            "participants": [
+              {
+                "userId": "663840c6-9587-4e32-bdc7-b86efe0609c3",
+                "displayName": "Leo Tuhkanen",
+                "avatarUrl": null,
+                "sends": 0,
+                "flashes": 0,
+                "attempts": 26
+              }
+            ],
+            "totalSends": 0,
+            "totalFlashes": 0,
+            "totalAttempts": 26,
+            "tickCount": 3,
+            "gradeDistribution": [
+              {
+                "grade": "7a/V6",
+                "flash": 0,
+                "send": 0,
+                "attempt": 26
+              }
+            ],
+            "boardTypes": [
+              "moonboard"
+            ],
+            "hardestGrade": "7a/V6",
+            "firstTickAt": "2026-09-08 14:29:38.512",
+            "lastTickAt": "2026-09-08 15:05:44.48",
+            "durationMinutes": 36,
+            "goal": null,
+            "notes": null,
+            "upvotes": 0,
+            "downvotes": 0,
+            "voteScore": 0,
+            "commentCount": 0,
+            "hardestSend": null,
+            "featuredBeta": null,
+            "socialEntityType": "session",
+            "socialEntityId": "d48d8b39-0f32-4645-9381-3aa66109b40e"
           }
         ],
         "cursor": "eyJvIjoyMH0",
@@ -1773,6 +1589,6 @@
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T13:20:23.108Z",
+  "recordedAt": "2026-09-08T17:33:16.182Z",
   "upstream": "https://ws.boardsesh.com"
 }

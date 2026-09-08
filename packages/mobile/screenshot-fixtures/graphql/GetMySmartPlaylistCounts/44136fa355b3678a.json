@@ -38,12 +38,12 @@
         },
         {
           "type": "RECOMMENDED_FRESH",
-          "count": 40788
+          "count": 40767
         }
       ]
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T13:20:24.498Z",
+  "recordedAt": "2026-09-08T17:36:14.324Z",
   "upstream": "https://ws.boardsesh.com"
 }
