@@ -81,4 +81,4 @@ BEGIN
   VALUES (TG_TABLE_NAME, OLD.climb_uuid, OLD.user_id);
   RETURN OLD;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = public, pg_catalog;
