@@ -94,6 +94,7 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
     gradeFormat,
     fromDate,
     toDate,
+    now,
   );
 
   const weeklyBars = buildWeeklyBars(filteredLogbook, undefined, undefined, gradeFormat);
@@ -104,11 +105,12 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
     gradeFormat,
     fromDate,
     toDate,
+    now,
   );
 
   const statisticsSummary = buildStatisticsSummary(profileStats, gradeFormat);
 
-  const vPointsTimeline = buildVPointsTimeline(filteredBoardsTicks, timeframe, fromDate, toDate);
+  const vPointsTimeline = buildVPointsTimeline(filteredBoardsTicks, timeframe, fromDate, toDate, now);
 
   const activityHeatmap = buildActivityHeatmap(filteredLogbook, HEATMAP_WEEKS, now);
 
