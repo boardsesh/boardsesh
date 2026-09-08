@@ -588,7 +588,10 @@ function NowOnTheWallPanelComponent(
           />
         )}
         {stats ? (
-          <View style={styles.statsBlock}>
+          // testID anchors the store-screenshot flow: the stats only exist once the
+          // wall history has landed, and this block is on screen at the top of the
+          // sheet (the history rows below are virtualized and off-screen).
+          <View testID="board-sheet-stats" style={styles.statsBlock}>
             <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
               {t('mobile.boardPresence.statsHeader')}
             </Text>

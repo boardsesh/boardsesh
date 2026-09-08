@@ -139,10 +139,13 @@ name: app-store screenshots android
       id: 'home-screen'
     timeout: 90000
 - openLink: com.boardsesh.app://climbs?screenshotOpenBoardSheet=1
-# skeleton/spinner is static on swiftshader, so settle-waits return early — anchor on real content
+# The sheet opens before the wall seed lands on a cold launch, so anchor on the stats
+# block: it renders only once the seeded history is in, and it sits on screen at the
+# top of the sheet (the history rows are virtualized below the fold, so Maestro never
+# sees them as visible).
 - extendedWaitUntil:
     visible:
-      id: 'board-sheet-climb-row'
+      id: 'board-sheet-stats'
     timeout: 90000
 - waitForAnimationToEnd:
     timeout: 30000
