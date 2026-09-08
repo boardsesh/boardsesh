@@ -12,7 +12,7 @@
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { BoardseshGrade } from '@boardsesh/graphql/operations';
 import { getBoardCapabilities } from '@boardsesh/board-config';
-import { isCrossAngleEstimate } from '@boardsesh/logbook';
+import { isCrossAngleEstimate, surfacedBoardseshGrade } from '@boardsesh/logbook';
 import {
   renderDifficulty,
   clampDifficultyId,
@@ -147,9 +147,10 @@ export function buildBoardseshGradeView(
   if (!grade) return { kind: 'setterOnly', grade: null, count: 0 };
 
   // Prefer the cross-board universal grade; fall back to the board-local grade
-  // (small boards that never earn a universal number).
+  // (small boards that never earn a universal number). Shared with web via
+  // @boardsesh/logbook so this rule can't diverge again — see #4414.
   const universal = grade.universalGrade != null;
-  const primary = grade.universalGrade ?? grade.localGrade;
+  const primary = surfacedBoardseshGrade(grade);
   const rendered = primary != null ? renderDifficulty(primary, gradeFormat) : null;
 
   if (grade.confidence === 'setter_only' || primary == null || !rendered) {

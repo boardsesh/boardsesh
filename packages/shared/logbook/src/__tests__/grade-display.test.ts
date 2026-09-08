@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveLogbookGradeDisplay, resolveCrowdDifficulty } from '../grade-display';
+import { deriveLogbookGradeDisplay, resolveCrowdDifficulty, surfacedBoardseshGrade } from '../grade-display';
 
 describe('deriveLogbookGradeDisplay', () => {
   it('shows no consensus secondary when the logged grade matches the consensus', () => {
@@ -90,5 +90,37 @@ describe('resolveCrowdDifficulty', () => {
     // surfaces the grade instead of being silently dropped. See the comment
     // on the guard in grade-display.ts.
     expect(resolveCrowdDifficulty({ boardseshDifficulty: 18, boardseshConfidence: undefined }, true)).toBe(18);
+  });
+});
+
+describe('surfacedBoardseshGrade', () => {
+  it('prefers the cross-board universal grade when both are present', () => {
+    expect(surfacedBoardseshGrade({ universalGrade: 22, localGrade: 20 })).toBe(22);
+  });
+
+  it('falls back to the board-local grade when there is no universal grade (small boards)', () => {
+    // Decoy, Grasshopper, So iLL, and Touchstone never earn a cross-board
+    // anchor (docs/boardsesh-grade.md §3), so universalGrade stays null and
+    // localGrade is the only number a client can surface.
+    expect(surfacedBoardseshGrade({ universalGrade: null, localGrade: 20 })).toBe(20);
+    expect(surfacedBoardseshGrade({ universalGrade: undefined, localGrade: 20 })).toBe(20);
+  });
+
+  it('returns null when neither grade is available', () => {
+    expect(surfacedBoardseshGrade({ universalGrade: null, localGrade: null })).toBeNull();
+    expect(surfacedBoardseshGrade({})).toBeNull();
+  });
+
+  it('treats a zero grade as present (not falsy-skipped)', () => {
+    expect(surfacedBoardseshGrade({ universalGrade: 0, localGrade: 20 })).toBe(0);
+    expect(surfacedBoardseshGrade({ universalGrade: null, localGrade: 0 })).toBe(0);
+  });
+
+  it('pins the #4414 fixture: universal wins even though it is the softer/lower id', () => {
+    // The exact row that used to render differently on web (local-first: 22,
+    // rounds to 7a/V6) vs mobile (universal-first: 21, rounds to 6c+/V5). The
+    // correct, single-source-of-truth answer is the universal one — see
+    // "Which grade a client surfaces" in docs/boardsesh-grade.md.
+    expect(surfacedBoardseshGrade({ localGrade: 22.03, universalGrade: 21.03 })).toBeCloseTo(21.03);
   });
 });

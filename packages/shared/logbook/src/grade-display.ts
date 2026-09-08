@@ -94,6 +94,34 @@ export function resolveCrowdDifficulty(
 }
 
 /**
+ * Which number a client renders as THE Boardsesh grade: the cross-board
+ * standardized `universalGrade` when the model could anchor one, falling back
+ * to the within-board `localGrade` only for the small boards that never earn
+ * an anchor (Decoy, Grasshopper, So iLL, Touchstone — see
+ * docs/boardsesh-grade.md §3 "Cross-board offset"). Mirrors the model's own
+ * definition of the surfaced grade (`packages/db/src/queries/grade-model/blend.ts`,
+ * the `surfaced` value returned by `computePosteriorGrade`) and every
+ * server-side expression, which flattens the same pair into
+ * `boardseshDifficulty` via `COALESCE(universal_grade, local_grade)`
+ * (`packages/backend/src/graphql/resolvers/shared/sql-expressions.ts`,
+ * `packages/db/src/queries/climbs/search-climbs.ts`).
+ *
+ * `localGrade` must never be picked first: on Kilter the cross-board offset
+ * is about −1.2 grade points, so a local-first client reads Kilter climbs
+ * roughly a half-to-full V-grade softer than every universal-first client —
+ * exactly the bug in issue #4414, where web's now-deleted climb-detail
+ * renderer computed `localGrade ?? universalGrade` while mobile (and every
+ * server path) computed the reverse. Tension is the offset origin (offset 0),
+ * which is why that divergence showed up on Kilter and not on Tension.
+ */
+export function surfacedBoardseshGrade(grade: {
+  universalGrade?: number | null;
+  localGrade?: number | null;
+}): number | null {
+  return grade.universalGrade ?? grade.localGrade ?? null;
+}
+
+/**
  * Direction of the climber's grade relative to the consensus, for the arrow on
  * the row's consensus sub-line: 'up' = you graded it harder than the crowd,
  * 'down' = softer. Only meaningful when `showConsensusSecondary` is true —

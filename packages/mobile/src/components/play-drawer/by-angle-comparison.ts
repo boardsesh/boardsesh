@@ -10,6 +10,7 @@
 // React so the join + axis math unit-test without a renderer.
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { BoardseshGradeAtAngle } from '@boardsesh/graphql/operations';
+import { surfacedBoardseshGrade } from '@boardsesh/logbook';
 import {
   renderDifficulty,
   clampDifficultyId,
@@ -132,8 +133,9 @@ export function buildDumbbellByAngleModel(
 
     const tier = toTier(boardsesh?.confidence);
     // No Boardsesh-branded number for setter-only rows — they carry no diamond.
-    const boardseshRaw =
-      boardsesh && tier !== 'setter_only' ? (boardsesh.universalGrade ?? boardsesh.localGrade) : null;
+    // Shared with web via @boardsesh/logbook so this rule can't diverge again
+    // — see #4414.
+    const boardseshRaw = boardsesh && tier !== 'setter_only' ? surfacedBoardseshGrade(boardsesh) : null;
     const rendered = boardseshRaw != null ? renderDifficulty(boardseshRaw, gradeFormat) : null;
     const boardseshGrade = rendered ? boardseshRaw : null;
     const boardseshLabel = rendered?.label ?? null;

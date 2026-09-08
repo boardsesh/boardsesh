@@ -41,8 +41,11 @@ different backbone (see §6) because our per-user data is far sparser than their
 
 The model is deliberately small: `GROUP BY` aggregates, frozen coefficient
 rows, capped per-user evidence, and one closed-form empirical-Bayes blend, all
-in TypeScript. No MCMC, no IRT, no neural net. It ships behind the
-`boardsesh-grade` feature flag.
+in TypeScript. No MCMC, no IRT, no neural net. On the client, it ships behind
+the mobile/Expo-web app's `boardsesh-grade` feature flag
+(`packages/mobile/src/providers/feature-flags-provider.tsx`) — the only
+client that renders a Boardsesh grade today; see "Which grade a client
+surfaces" under §3 for the rule every renderer follows.
 
 ## 2. Data sources and their verified quirks
 
@@ -356,6 +359,32 @@ guarding against a single power user setting the whole board's offset. Small
 boards (Decoy, Grasshopper, So iLL, Touchstone) have nothing to anchor against,
 so they publish a within-board `local_grade` only and `universal_grade` is NULL.
 Estimator: `estimateBoardOffsets`.
+
+### Which grade a client surfaces
+
+Every client that renders a Boardsesh grade must surface
+`universal_grade ?? local_grade` — the cross-board, standardized number when
+one exists, falling back to the within-board number only for the small boards
+that never earn an anchor (Decoy, Grasshopper, So iLL, Touchstone, per the
+offset section above). This is not a client-side style choice: it is the same
+value `blend.ts` itself calls `surfaced` (`computePosteriorGrade`'s return),
+and the one every server expression flattens into `boardseshDifficulty`
+(`COALESCE(universal_grade, local_grade)` in
+`packages/backend/src/graphql/resolvers/shared/sql-expressions.ts` and
+`packages/db/src/queries/climbs/search-climbs.ts`). `local_grade` is never
+the headline number on its own — it is what the model still has when it
+can't stand up a cross-board estimate.
+
+The shared implementation is `surfacedBoardseshGrade` in
+`packages/shared/logbook/src/grade-display.ts`, so every client-side
+renderer resolves the same way by construction. Getting this backwards is
+exactly what happened in
+[#4414](https://github.com/boardsesh/boardsesh/issues/4414): web's
+now-deleted climb-detail renderer computed `local_grade ?? universal_grade`
+(local-first), which agreed with the correct universal-first clients on
+Tension (offset 0) but read climbs ~1 V-grade softer on Kilter (offset
+≈ −1.2, see above) — invisible on the board where reports usually start,
+systematic everywhere else.
 
 ### Confidence tiers
 
