@@ -1,3 +1,4 @@
+import { mulberry32, type RandomSource } from './seeded-random';
 import {
   isThemeOverride,
   isUiVariantPreference,
@@ -252,3 +253,36 @@ export function screenshotModeLoadMore(loadMore: () => void): () => void {
  * takes `loadMore` as a prop.
  */
 const NO_MORE_PAGES = (): void => {};
+
+/**
+ * The seed screenshot mode draws its "random" numbers from.
+ *
+ * Arbitrary — the only property that matters is that it NEVER CHANGES. A
+ * recording and every later replay both run on this value, so they walk the
+ * same sequence and pick the same climbs; move it and the committed fixture set
+ * stops matching what the app asks for.
+ */
+export const SCREENSHOT_RANDOM_SEED = 0x600d5eed;
+
+/**
+ * The randomness source for anything whose output reaches the pixels.
+ *
+ * The workout generator shuffles its candidate pool per grade and re-rolls a
+ * row from it, so on `Math.random` the preview shows different climbs every
+ * run — the shot is not byte-stable, and (worse) the app asks the replay
+ * backend for stats on climbs the recording never fetched, which is how
+ * Android run 34259455408 came to miss a different id set on each attempt.
+ *
+ * In screenshot mode this hands back a FRESH generator seeded from
+ * `SCREENSHOT_RANDOM_SEED`; everywhere else it is `Math.random` itself, so a
+ * shipped build keeps real randomness and the branch dead-strips with the rest
+ * of screenshot mode (see the note at the top of this module).
+ *
+ * Fresh per call, deliberately: a shared generator would make each draw depend
+ * on how many draws happened before it, and replay reorders work relative to a
+ * live recording. Independent sequences are what stay equal across runs.
+ */
+export function screenshotModeRandom(): RandomSource {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return mulberry32(SCREENSHOT_RANDOM_SEED);
+  return Math.random;
+}
