@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-08T21:48:21.968Z",
+  "generatedAt": "2026-09-08T22:53:06.746Z",
   "entries": [
+    {
+      "prNumber": 5123,
+      "category": "fixed",
+      "title": "Put a previewed climb on the wall through your session mate's connection, without a “Connection failed” error.",
+      "mergedAt": "2026-09-08T22:51:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5123"
+    },
     {
       "prNumber": 5336,
       "category": "fixed",
