@@ -168,4 +168,27 @@ describe('screenshot-mode', () => {
     // One shared no-op, so wrapping twice does not hand a list a fresh closure.
     expect(screenshotModeLoadMore(vi.fn())).toBe(wrapped);
   });
+
+  it('keeps a Reanimated entering animation outside screenshot mode', async () => {
+    const { screenshotModeEntering } = await import('../screenshot-mode');
+    const fadeIn = { duration: 180 };
+    expect(screenshotModeEntering(fadeIn)).toBe(fadeIn);
+  });
+
+  it('drops the entering animation in screenshot mode so the first frame is the resting state', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    const { screenshotModeEntering } = await import('../screenshot-mode');
+    expect(screenshotModeEntering({ duration: 180 })).toBeUndefined();
+  });
+
+  it('keeps the dynamic color outside screenshot mode', async () => {
+    const { screenshotModeStaticColor } = await import('../screenshot-mode');
+    expect(screenshotModeStaticColor('platform-separator', '#38383A')).toBe('platform-separator');
+  });
+
+  it('swaps in the static color in screenshot mode so a translucent native tone cannot still be settling', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    const { screenshotModeStaticColor } = await import('../screenshot-mode');
+    expect(screenshotModeStaticColor('platform-separator', '#38383A')).toBe('#38383A');
+  });
 });
