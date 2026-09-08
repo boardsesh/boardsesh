@@ -24,8 +24,10 @@
 -- `ON CONFLICT (user_id, board_name, climb_uuid, angle)` fails with 42P10 the
 -- moment no index carries that column set, turning EVERY favorite tap into a
 -- 500. Keeping a unique index on the four old columns keeps that inference
--- resolving. It is deliberately NOT in the Drizzle schema (nothing generates
--- against it); Release 2 drops it alongside the columns.
+-- resolving. It is also tracked in the Drizzle schema so subsequent migrations
+-- retain it; Release 2 drops it alongside the columns.
+-- This does not protect against the new UUID unique constraint: compatible
+-- backend writers must be deployed before this migration.
 DROP INDEX "unique_user_favorite";--> statement-breakpoint
 DROP INDEX "user_favorites_climb_idx";--> statement-breakpoint
 ALTER TABLE "user_favorites" ALTER COLUMN "board_name" SET DEFAULT '';--> statement-breakpoint

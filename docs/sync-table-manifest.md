@@ -229,7 +229,9 @@ composite-keyed sync table must keep this true (or version the encoding).
 - Columns: `board_name`, `climb_uuid`, `angle`, `user_id`, `created_at`, `updated_at`. `board_name` and `angle` are
   **vestigial**: nothing reads them, but the resolver keeps emitting them for one release because a device on
   pre-re-keying JS declares both NOT NULL locally and would fail its whole pull cycle without them. The local table
-  keeps them as nullable columns (migration v5) so they land instead of firing `onSchemaDrift` every launch.
+  keeps them as nullable columns (migration v6) so they land instead of firing `onSchemaDrift` every launch.
+  The deletion reader accepts both bare UUIDs and historical `board:uuid:angle` tombstones,
+  with the same timestamp guard against deleting a newer re-add.
 - Offline hook: insert `(climb_uuid, created_at, updated_at)` — **no synthetic `id` column** (B8). `user_id` may be
   NULL offline (filled on next sync).
 

@@ -262,7 +262,7 @@ vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthent
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useToggleFavorite: () => ({ mutate: vi.fn() }),
-  useFavoriteStatus: (_boardName: string, _uuid: string | null, _angle: number, options?: Props) => {
+  useFavoriteStatus: (_uuid: string | null, options?: Props) => {
     recorded.favoriteStatus.push(options ?? {});
     return { data: undefined };
   },

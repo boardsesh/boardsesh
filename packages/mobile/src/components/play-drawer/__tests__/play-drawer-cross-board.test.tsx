@@ -212,8 +212,8 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   // here pins a preview at another angle, so it never resolves.
   useClimb: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: vi.fn() }),
-  useFavoriteStatus: (boardName: string, uuid: string | null, angle: number) => {
-    recorded.favoriteStatus.push({ boardName, uuid, angle });
+  useFavoriteStatus: (uuid: string | null) => {
+    recorded.favoriteStatus.push({ uuid });
     return { data: undefined };
   },
 }));
@@ -518,9 +518,8 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
 
     // Logbook / beta / similar climbs are all per-board reads.
     expect(recorded.deferredSections.at(-1)?.layoutId).toBe(8);
-    // The favourite heart is keyed on (board, climb, angle); keyed on the wrong
-    // board it reads and writes another board's favourite.
-    expect(recorded.favoriteStatus.at(-1)?.angle).toBe(30);
+    // The favorite heart follows the displayed climb UUID across boards.
+    expect(recorded.favoriteStatus.at(-1)?.uuid).toBe(HOMEWALL_CLIMB.uuid);
 
     act(() => {
       (recorded.actionBar.at(-1)?.onTickPress as () => void)();

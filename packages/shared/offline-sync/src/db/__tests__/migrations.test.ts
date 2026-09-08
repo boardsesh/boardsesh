@@ -225,8 +225,8 @@ describe('runMigrations', () => {
     expect(await pkQuery(upgradedDb)).toEqual(['board_type', 'climb_uuid', 'angle']);
   });
 
-  it('v5 re-keys user_favorites to climb_uuid, collapsing a climb favorited at two angles', async () => {
-    // Simulate a v4 device holding the same climb favorited at 40 and 50 (two
+  it('v6 re-keys user_favorites to climb_uuid, collapsing a climb favorited at two angles', async () => {
+    // Simulate a v5 device holding the same climb favorited at 40 and 50 (two
     // rows under the old (board_name, climb_uuid, angle) key) plus a live
     // favorites checkpoint.
     const db = createTestDatabase();
@@ -250,7 +250,7 @@ describe('runMigrations', () => {
     );
     await db.runAsync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('checkpoint:user_favorites', '{}')", []);
     await db.runAsync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('checkpoint:boardsesh_ticks', '{}')", []);
-    await db.runAsync('UPDATE schema_version SET version = 4 WHERE id = 1');
+    await db.runAsync('UPDATE schema_version SET version = 5 WHERE id = 1');
 
     await runMigrations(db);
 

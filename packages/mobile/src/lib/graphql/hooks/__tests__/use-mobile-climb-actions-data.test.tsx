@@ -291,7 +291,7 @@ describe('useMobileClimbActionsData', () => {
       const pending = result.current.favoritesProviderProps.toggleFavorite('climb-x');
       await waitFor(() => expect(requestMock).toHaveBeenCalledWith(TOGGLE_FAVORITE, expect.anything()));
 
-      favoritesStore.applyContext('kilter:25:1');
+      favoritesStore.applyContext('another-user:1');
       resolveToggle({ toggleFavorite: { favorited: true } });
       await pending;
 

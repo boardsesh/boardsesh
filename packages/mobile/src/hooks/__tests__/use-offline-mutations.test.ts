@@ -285,7 +285,7 @@ describe('enqueueTickOutboxOnly', () => {
 // the same way and reported nothing at all. They keep today's reject-and-revert
 // behaviour on a hard failure — only the retry (and the new event) are new.
 describe('retry ladder across every local write', () => {
-  const favorite = { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 };
+  const favorite = { climbUuid: 'climb-9' };
 
   it('addFavoriteLocal recovers and lands the same state as an uncontended run', async () => {
     await addFavoriteLocal(withFailingTransactions(db, 1, LOCK_MESSAGE), favorite);
@@ -370,7 +370,7 @@ describe('addFavoriteLocal', () => {
   });
 
   it('announces the queued write so the banner count can move', async () => {
-    await addFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
+    await addFavoriteLocal(db, { climbUuid: 'climb-9' });
 
     expect(notifyOutboxChangedMock).toHaveBeenCalledTimes(1);
   });
@@ -489,7 +489,7 @@ describe('useOfflineUnfollowUser', () => {
 // swallow countable is the point; reviving the row is a separate behaviour
 // change with its own issue.
 describe('enqueue suppressed by a dead-lettered key', () => {
-  const favorite = { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 };
+  const favorite = { climbUuid: 'climb-9' };
 
   async function deadLetterExistingRow(idempotencyKey: string) {
     await db.runAsync("UPDATE pending_mutations SET status = 'dead_letter' WHERE idempotency_key = ?", [

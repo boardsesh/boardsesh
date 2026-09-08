@@ -109,7 +109,6 @@ export const MIGRATIONS: Migration[] = [
       'ALTER TABLE user_favorites_new RENAME TO user_favorites;',
       `DELETE FROM sync_meta WHERE key = 'checkpoint:user_favorites';`,
     ],
-
   },
 ];
 

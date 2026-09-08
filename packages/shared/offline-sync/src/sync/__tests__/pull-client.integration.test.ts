@@ -725,7 +725,7 @@ describe('sync layer — real-DDL integration', () => {
       warnSpy.mockRestore();
     });
 
-    it('a stale tombstone must NOT delete a local row newer than the deletion (resurrection guard)', async () => {
+    it.each(['uuid', 'legacy'])('preserves re-added favorites for %s tombstones', async (format) => {
       // Delete-then-re-add on another device: the tombstone (t2) and the
       // re-added row (t3 > t2) can arrive in the same pull. Without the
       // updated_at <= deletedAt guard, the tombstone would delete the newer
@@ -742,8 +742,16 @@ describe('sync layer — real-DDL integration', () => {
       );
 
       const deletions: DeletionRecord[] = [
-        { tableName: 'user_favorites', recordId: 'refav-climb', deletedAt: '2024-06-01T00:00:00Z' },
-        { tableName: 'user_favorites', recordId: 'oldfav-climb', deletedAt: '2024-06-01T00:00:00Z' },
+        {
+          tableName: 'user_favorites',
+          recordId: format === 'legacy' ? 'kilter:refav-climb:40' : 'refav-climb',
+          deletedAt: '2024-06-01T00:00:00Z',
+        },
+        {
+          tableName: 'user_favorites',
+          recordId: format === 'legacy' ? 'kilter:oldfav-climb:40' : 'oldfav-climb',
+          deletedAt: '2024-06-01T00:00:00Z',
+        },
       ];
 
       await pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncTicks', documents: [], deletions }));
