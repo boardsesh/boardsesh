@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vite-plus/test';
+import { afterAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { and, eq, sql } from 'drizzle-orm';
 import { buildSchema, graphql } from 'graphql';
 import { typeDefs, type ConnectionContext } from '@boardsesh/shared-schema';
@@ -45,6 +45,10 @@ async function resetIndex(shape: IndexShape): Promise<void> {
 async function favorites(userId = USER_ID) {
   return db.select().from(dbSchema.userFavorites).where(eq(dbSchema.userFavorites.userId, userId));
 }
+
+// The worker database can be reused by another test file. Leave its indexes
+// matching the migrated schema after exercising older deployment shapes.
+afterAll(() => resetIndex('dual'));
 
 beforeEach(async () => {
   for (const userId of [USER_ID, OTHER_USER_ID]) {
@@ -202,7 +206,7 @@ describe('pre-migration duplicate favorites', () => {
     expect(await favorites()).toHaveLength(0);
   });
 
-  it('preserves historical deletion IDs until the separate migration', async () => {
+  it('keeps legacy deletion IDs readable by old composite-key clients', async () => {
     await favoriteMutations.removeFavorite(undefined, { input: { climbUuid: CLIMB_UUID } }, context());
     const deletions = await db
       .select({ recordId: dbSchema.syncDeletions.recordId })
