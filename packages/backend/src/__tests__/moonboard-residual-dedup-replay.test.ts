@@ -8,7 +8,7 @@ import {
 } from '@boardsesh/db/testing/moonboard-residual-dedup-replay';
 
 /**
- * CI replay of migration 0222_moonboard_residual_dedup.
+ * CI replay of migration 0223_moonboard_residual_dedup.
  *
  * Runs as a regular backend-project test so it executes on every CI backend
  * job against the auto-started docker postgres (docker-compose.test.yml; CI=1

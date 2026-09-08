@@ -10,7 +10,7 @@ import {
   type MoonboardDedupReplayCheck,
 } from './moonboard-angle-dedup-replay.js';
 
-export const RESIDUAL_MIGRATION_TAG = '0222_moonboard_residual_dedup';
+export const RESIDUAL_MIGRATION_TAG = '0223_moonboard_residual_dedup';
 export function residualMigrationSql() {
   return readFileSync(path.resolve(import.meta.dirname, '../../drizzle', `${RESIDUAL_MIGRATION_TAG}.sql`), 'utf8');
 }

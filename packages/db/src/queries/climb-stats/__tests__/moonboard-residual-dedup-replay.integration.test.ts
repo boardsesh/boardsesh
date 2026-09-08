@@ -8,7 +8,7 @@ import {
 } from '../../../testing/moonboard-residual-dedup-replay';
 
 /**
- * Scratch-Postgres replay of migration 0222_moonboard_residual_dedup —
+ * Scratch-Postgres replay of migration 0223_moonboard_residual_dedup —
  * Local opt-in and db-migrations CI mode. Set MIGRATION_REPLAY_DB_URL to a throwaway superuser
  * Postgres (a plain `docker run postgres`), e.g.
  *
