@@ -50,7 +50,8 @@ const USAGE = [
   `  --port <n>              default BOARDSESH_SCREENSHOT_BACKEND_PORT or ${DEFAULT_PORT}`,
   `  --fixtures <dir>        default ${DEFAULT_FIXTURES_DIR} (relative to the repo root)`,
   `  --upstream <url>        record only, default ${DEFAULT_UPSTREAM}`,
-  '  --frozen-now <iso>      record: defaults to now; replay: defaults to the manifest',
+  '  --frozen-now <iso>      record: the start floor, defaults to now (the persisted manifest value',
+  '                          then trails the newest recorded response); replay: defaults to the manifest',
   '  --flow <name>           record only, the capture flow being recorded',
   '  --fresh                 record only, discard the existing fixture set first',
 ].join('\n');

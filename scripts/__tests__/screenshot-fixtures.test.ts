@@ -17,6 +17,7 @@ import {
   SCREENSHOT_BACKEND_LOG_PREFIX,
   canonicalJson,
   emptyManifest,
+  finalizeRecordingFrozenNow,
   findScreenshotBackendProblems,
   findSensitiveVariableKeys,
   fixtureSizeNote,
@@ -66,6 +67,41 @@ function validManifest(): ScreenshotFixtureManifest {
     ],
   };
 }
+
+describe('finalizeRecordingFrozenNow', () => {
+  it('bumps the floor past the newest response, by at least a second', () => {
+    // A 20-minute-long shard: the floor was minted at the start, but the last
+    // response lands well after it.
+    const result = finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', [
+      '2026-09-08T13:10:00.000Z',
+      '2026-09-08T13:18:23.456Z',
+      '2026-09-08T13:12:00.000Z',
+    ]);
+    expect(Date.parse(result)).toBeGreaterThan(Date.parse('2026-09-08T13:18:24.456Z'));
+    // Whole seconds only, like every other frozenNow.
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+  });
+
+  it('keeps the floor unchanged when every response predates it', () => {
+    const result = finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', ['2026-09-08T13:00:00Z', '2026-09-08T13:07:49Z']);
+    expect(result).toBe('2026-09-08T13:07:50Z');
+  });
+
+  it('keeps the floor unchanged with no responses at all (record mode, nothing hit yet)', () => {
+    expect(finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', [])).toBe('2026-09-08T13:07:50Z');
+  });
+
+  it('keeps the floor unchanged when a response lands exactly on it', () => {
+    expect(finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', ['2026-09-08T13:07:50.000Z'])).toBe(
+      '2026-09-08T13:07:50Z',
+    );
+  });
+
+  it('guarantees at least a full second of margin even off a whole-second response', () => {
+    const result = finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', ['2026-09-08T13:09:00.000Z']);
+    expect(Date.parse(result) - Date.parse('2026-09-08T13:09:00.000Z')).toBeGreaterThanOrEqual(1000);
+  });
+});
 
 describe('normalizeDocument', () => {
   it('collapses every whitespace run to a single space and trims', () => {
@@ -612,12 +648,19 @@ describe('findScreenshotBackendProblems', () => {
     expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
   });
 
-  it('counts an auth hit toward the no-HIT-lines check, and does not treat a WS error as a problem', () => {
+  it('does not credit an auth-only hit toward the no-HIT-graphql check, and does not treat a WS error as a problem', () => {
     const log = [
       line('HIT auth credentials'),
       line('WS error RSV1 must be clear'),
       line('WS error RSV1 must be clear'),
     ].join('\n');
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([
+      'no HIT graphql lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
+    ]);
+  });
+
+  it('clears the no-HIT-graphql check once a single graphql hit lands, auth hit or not', () => {
+    const log = [line('HIT auth credentials'), line('HIT graphql Me 0000aaaa1111')].join('\n');
     expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
   });
 
@@ -650,7 +693,7 @@ describe('findScreenshotBackendProblems', () => {
     const log = line('READY mode=replay port=8090 fixtures=/tmp/fx frozenNow=2026-09-08T09:00:00Z graphql=12 static=3');
     const problems = findScreenshotBackendProblems(log, { mode: 'replay' });
     expect(problems).toEqual([
-      'no HIT lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
+      'no HIT graphql lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
     ]);
   });
 

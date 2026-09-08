@@ -229,7 +229,16 @@ describe('screenshot backend', () => {
       expect(manifest?.accountEmail).toBe(ACCOUNT_EMAIL);
       // The id out of the live jwt, never the jwt itself.
       expect(manifest?.accountUserId).toBe(ACCOUNT_USER_ID);
-      expect(manifest?.frozenNow).toBe(FROZEN_NOW);
+      // frozenNow is a FLOOR: rewriteManifest bumps it past any response
+      // recorded after it. This fixture's own recordedAt is the real wall
+      // clock (new Date().toISOString()), always later than the fixed
+      // FROZEN_NOW test constant above — so assert the invariant the feature
+      // actually guarantees, not an exact value that would race the clock.
+      const recordedFixture = JSON.parse(readFileSync(join(fixturesDir, manifest?.graphql[0].file ?? ''), 'utf8')) as {
+        recordedAt: string;
+      };
+      expect(Date.parse(manifest?.frozenNow ?? '')).toBeGreaterThanOrEqual(Date.parse(FROZEN_NOW));
+      expect(Date.parse(manifest?.frozenNow ?? '')).toBeGreaterThan(Date.parse(recordedFixture.recordedAt));
       expect(manifest?.graphql).toHaveLength(1);
       expect(manifest?.graphql[0].operationName).toBe('SyncTicks');
       // Keyed by the ORIGINAL path + sorted query, not the CDN URL it followed.

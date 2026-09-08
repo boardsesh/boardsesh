@@ -68,6 +68,10 @@ on:
           - live
           - record
           - replay
+      frozen_now:
+        description: 'Record only: ISO instant to freeze "now" at (e.g. 2026-09-08T12:00:00Z). Empty mints one from the current time. Optional even when recording alongside the Android shard on the same run — the merge takes the max frozenNow across every shard regardless.'
+        type: string
+        default: ''
       upload:
         description: 'Upload captured screenshots to App Store Connect. Requires the full App Store set (app-store flow, empty locales).'
         type: boolean
@@ -297,6 +301,7 @@ jobs:
           RENDER_MODE_INPUT: ${{ inputs.render_mode || '' }}
           BOARDS_INPUT: ${{ inputs.boards || '' }}
           FIXTURES_INPUT: ${{ inputs.fixtures || 'live' }}
+          FROZEN_NOW_INPUT: ${{ inputs.frozen_now || '' }}
         run: |
           set -euo pipefail
           # Empty inputs mean "whatever the app pins" — Aura, and the store walls
@@ -318,6 +323,9 @@ jobs:
             retarget+=(--fixtures "$FIXTURES_INPUT")
             if [ "$FIXTURES_INPUT" = "record" ]; then
               retarget+=(--fresh)
+              if [ -n "$FROZEN_NOW_INPUT" ]; then
+                retarget+=(--frozen-now "$FROZEN_NOW_INPUT")
+              fi
             fi
           fi
           attempts=2

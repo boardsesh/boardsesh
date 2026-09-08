@@ -58,7 +58,7 @@ vp run mobile:screenshot-backend -- --mode record --upstream https://ws.boardses
 | `--port <n>` | `BOARDSESH_SCREENSHOT_BACKEND_PORT`, else `8090` |
 | `--fixtures <dir>` | `packages/mobile/screenshot-fixtures` (relative to the repo root) |
 | `--upstream <url>` | `https://ws.boardsesh.com` — record only |
-| `--frozen-now <iso>` | record: now, to the second · replay: the manifest's `frozenNow` |
+| `--frozen-now <iso>` | record: the START instant (a FLOOR, not the final value — see "The frozen clock" below), defaults to now, to the second · replay: the manifest's `frozenNow` |
 | `--flow <name>` | `app-store` — record only |
 | `--fresh` | off — record only; discards the existing fixture set first |
 
@@ -204,18 +204,19 @@ WS subscribe <Op>
 WS error <message>
 ```
 
-`HIT auth` counts toward the "the app never reached the replay backend" check
-the same as any other hit. `WS error` is never a problem line — it logs a
-malformed frame the `ws` server rejected (bad RSV bits, an unmasked client
-frame, …) so it is visible in the log, but one bad client frame must not fail
-the capture or take the process down.
+Only a `HIT graphql` line counts toward the "the app never reached the replay
+backend" check — an app that only ever authenticated (`HIT auth`) never actually
+exercised a screen's data, so that alone must still fail the check. `WS error`
+is never a problem line — it logs a malformed frame the `ws` server rejected
+(bad RSV bits, an unmasked client frame, …) so it is visible in the log, but one
+bad client frame must not fail the capture or take the process down.
 
 `findScreenshotBackendProblems(logText, { mode })` turns that log into the list a
 capture run should fail on — one line per distinct problem, repeats collapsed
 into `×N`, each line ending in the fix. Replay fails on any `MISS`, and on a log
-with no `HIT` at all (the app never reached the backend). Record is *allowed* to
-miss — that is what recording is — so it fails only on `UPSTREAM-ERROR`,
-`MISS route` and `MISS auth`.
+with no `HIT graphql` at all (the app never reached the backend, even if it did
+authenticate). Record is *allowed* to miss — that is what recording is — so it
+fails only on `UPSTREAM-ERROR`, `MISS route` and `MISS auth`.
 
 ## Running a capture against fixtures
 
@@ -234,7 +235,8 @@ vp run mobile:screenshots -- --fixtures record --backend prod --platform ios --d
 | `--fixtures record` | proxy `--backend` and write down every answer |
 | `--fixtures replay` | serve the recorded set; no outbound request is made |
 | `--fixtures-dir <path>` | where the set lives (default `packages/mobile/screenshot-fixtures`, relative to the repo root) |
-| `--fresh` | record only; discard the existing set first |
+| `--fresh` | record only; discard the existing set first (consumed once per PROCESS — a `--platform all` run starts a backend per platform, and only the first one gets `--fresh`, so the second platform doesn't wipe the first's recording) |
+| `--frozen-now <iso>` | record only; override the minted instant instead of using now-to-the-second. Validated as a parseable ISO instant. Optional even for a multi-shard recording — the merge takes the max regardless (see "Recording a set" above). |
 
 `--backend` keeps its old meaning throughout: it names the UPSTREAM. A recording
 proxies it, a replay ignores it.
@@ -244,30 +246,49 @@ With `--fixtures` on, Metro is started with
 ```
 EXPO_PUBLIC_BACKEND_URL=http://localhost:8090
 EXPO_PUBLIC_WS_URL=ws://localhost:8090/graphql
-EXPO_PUBLIC_WEB_URL=http://localhost:8090
 EXPO_PUBLIC_SCREENSHOT_NOW=<the set's frozenNow>
 ```
 
 overriding whatever `--backend` would have set (`BOARDSESH_SCREENSHOT_BACKEND_PORT`
-moves the port). On Android the backend port is reversed onto the emulator
-alongside Metro's, and `--fixtures` requires `--dev-client` — a standalone APK
-bakes its backend URL in at build time and cannot be redirected.
+moves the port). `EXPO_PUBLIC_WEB_URL` is deliberately left alone: the app's
+`/static/*` reads go through `EXPO_PUBLIC_BACKEND_URL`, not the web URL, which
+instead serves dev-only thumbnail routes and share links — redirecting it would
+make a `--backend local` fixtures capture fail on `MISS route` for every one of
+those, and would bake `localhost` share URLs into the bundle. On Android the
+backend port is reversed onto the emulator alongside Metro's, and `--fixtures`
+requires `--dev-client` — a standalone APK bakes its backend URL in at build
+time and cannot be redirected.
 
 ### The frozen clock
 
-`frozenNow` is read from the manifest on a replay and minted (now, to the second)
-on a recording, and it reaches the app as `EXPO_PUBLIC_SCREENSHOT_NOW`. The app
-logs which clock it ended up on at boot:
+`frozenNow` is read from the manifest on a replay and minted (now, to the second,
+or overridden with `--frozen-now`) on a recording, and it reaches the app as
+`EXPO_PUBLIC_SCREENSHOT_NOW`. The app logs which clock it ended up on at boot:
 
 ```
 [screenshot] clock: frozen at 2026-09-08T12:00:00.000Z
 [screenshot] clock: live
 ```
 
-A replay capture fails if that line says `live`, names a different instant, or
-never appears — a bundle on the wall clock reading frozen bodies produces a
-complete, plausible store set whose relative timestamps drift a little further
-from the fixtures every day.
+A capture fails, in EITHER mode, if that line says `live`, names an instant
+other than this run's frozen instant, or never appears — a bundle on the wall
+clock reading frozen bodies produces a complete, plausible store set whose
+relative timestamps drift a little further from the fixtures every day. Record
+mode carries a `frozenNow` too (minted, or overridden with `--frozen-now`), so
+there is always something for the app's boot line to be checked against.
+
+**The minted/overridden instant is a FLOOR, not the value the set ships with.**
+A recording is a long unattended run — one shard alone can take 20+ minutes —
+so an instant fixed at the START can end up earlier than a response recorded
+near the end; replaying that response would then render its own wall-clock
+content (a tick's `firstTickAt`, a session's timestamp) as being in the future.
+The app keeps running on the start instant for the whole recording (that run's
+own screenshots are not the product, so this never matters to what's on
+screen), but every time the backend writes the manifest it bumps the PERSISTED
+`frozenNow` past the newest response recorded so far — so nothing recorded ever
+renders in the future. `vp run mobile:screenshot-fixtures-merge` re-derives this
+per shard too before taking the max across every input (see "Recording a set"
+below), so a pre-fix or hand-edited input set can't slip through either.
 
 Timezone is pinned to UTC on both platforms, so a local capture and a CI capture
 derive the same calendar day from the same instant: iOS launches the app with
@@ -298,7 +319,13 @@ by the capture workflows and merged afterwards.
 
 1. Dispatch **Mobile Screenshots (iOS)** with `fixtures = record` and
    `locales = en-US`. Each shard records only its own traffic and uploads it as
-   `screenshot-fixtures-<locale>-<device-slug>` (7-day retention).
+   `screenshot-fixtures-<locale>-<device-slug>` (7-day retention). Both capture
+   workflows expose an optional `frozen_now` dispatch input (an ISO instant;
+   empty mints one) that threads through to the backend's `--frozen-now` — this
+   is the START instant each shard runs on, not the final manifest value (see
+   "The frozen clock" above); set it the same on both dispatches if you want
+   every shard to start from the same instant, though it is optional: the merge
+   below takes the max of each shard's own FINALIZED `frozenNow` regardless.
 2. Dispatch **Mobile Screenshots (Android)** with `fixtures = record`. It uploads
    `screenshot-fixtures-android`.
 3. Download every `screenshot-fixtures-*` artifact and unpack each into its own
@@ -312,9 +339,20 @@ by the capture workflows and merged afterwards.
    The merge is a union. When two shards recorded the same key the bytes must be
    identical — a difference is real nondeterminism behind that response and the
    merge fails naming the key rather than picking a winner. It also refuses sets
-   recorded as different accounts or against different upstreams, and takes
-   `frozenNow` / `recordedAt` / `upstream` / `accountEmail` / `flow` from the
-   first input.
+   recorded as different accounts (`accountEmail` or `accountUserId`), against
+   different upstreams, or from different flows, and refuses any shard whose
+   `accountUserId` is empty (it never signed in, so nothing in it is trustworthy).
+   `upstream`, `accountEmail`, `accountUserId` and `flow` come from the first
+   input — the checks above already required every shard to agree on them.
+   `frozenNow` and `recordedAt`, instead, take the MAXIMUM across every input —
+   and before that max, each input's `frozenNow` is independently re-derived
+   against its own recorded responses (belt and braces on top of what the
+   backend already did while recording), so an input whose manifest carries a
+   `frozenNow` earlier than one of its own entries still can't win the max.
+   Recording several shards on the same instant (via `--frozen-now` /
+   `frozen_now`, above) is optional, since the merge takes care of this
+   regardless — this is what keeps a shard's own recorded data from rendering
+   as being from the future relative to the merged set's frozen "now".
 5. Commit `packages/mobile/screenshot-fixtures/`.
 6. Flip both workflows' `fixtures` input default from `live` to `replay`, so an
    ordinary dispatch captures against the committed set.
@@ -364,6 +402,10 @@ Everything past the first bullet skips itself while there is no `manifest.json`.
 - **"Mobile imports from …, which this test does not read"** — someone imported
   from a new `@boardsesh/graphql/operations/*` module. Add it to
   `SHARED_OPERATION_MODULES` in the test.
+- **"imports a namespace import / a default import / a re-export"** — someone
+  imported `@boardsesh/graphql/operations*` in a form the registry can't scan
+  (`import * as …`, a bare default import, or `export { … } from`). Rewrite it
+  as a named `import { … } from '@boardsesh/graphql/operations...'`.
 
 Re-recording always means the whole loop above, not a partial run: a set merged
 from shards recorded at different times fails the merge's own byte-identity rule.

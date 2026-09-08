@@ -295,6 +295,19 @@ export interface ScreenshotOptions {
   fixturesDir: string;
   /** Record only: discard the existing fixture set instead of extending it. */
   fresh: boolean;
+  /**
+   * Record only: override the minted `frozenNow` FLOOR with this one. `null`
+   * mints one (now, to the second). This is the START instant the app runs on
+   * during the recording, not the value the finished set ships with: the
+   * backend bumps the PERSISTED manifest's `frozenNow` past the newest
+   * response actually recorded (see docs/mobile-screenshot-fixtures.md, "The
+   * frozen clock"), so a run that takes 20 minutes never ships a fixture that
+   * would replay as being in the future. Optional even for a multi-shard
+   * recording — `mergeFixtureSets` takes the MAXIMUM finalized `frozenNow`
+   * across every shard, so shards frozen at different instants still merge
+   * into one coherent set.
+   */
+  frozenNow: string | null;
   shutdown: boolean;
 }
 
@@ -324,6 +337,7 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     fixtures: 'off',
     fixturesDir: DEFAULT_SCREENSHOT_FIXTURES_DIR,
     fresh: false,
+    frozenNow: null,
     shutdown: false,
   };
 
@@ -404,6 +418,10 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
       case '--fresh':
         options.fresh = true;
         break;
+      case '--frozen-now':
+        options.frozenNow = expectValue(flag, value);
+        index++;
+        break;
       case '--shutdown':
         options.shutdown = true;
         break;
@@ -417,6 +435,17 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
   // leave the caller believing the set was rebuilt.
   if (options.fresh && options.fixtures !== 'record') {
     throw new Error('--fresh only applies to --fixtures record');
+  }
+
+  // Same reasoning as --fresh: replay reads its frozen instant from the
+  // manifest, so overriding it there is a no-op that would silently be ignored.
+  if (options.frozenNow !== null) {
+    if (options.fixtures !== 'record') {
+      throw new Error('--frozen-now only applies to --fixtures record');
+    }
+    if (Number.isNaN(Date.parse(options.frozenNow))) {
+      throw new Error(`--frozen-now must be a parseable ISO instant (got "${options.frozenNow}")`);
+    }
   }
 
   return options;
@@ -491,12 +520,18 @@ export function deviceSlug(deviceName: string): string {
  * Always sets screenshot mode; for --backend local it points the app at the
  * local dev backend unless the caller already exported an override. --backend
  * prod leaves the URLs unset so the app's production defaults apply.
+ *
+ * `backendPort` is the fixtures backend's own BOUND port — passed in by the
+ * caller (which owns the `ScreenshotBackendSession` that bound it) rather than
+ * re-derived from `BOARDSESH_SCREENSHOT_BACKEND_PORT` here, so this function
+ * can never bake in a different port than the one actually listening.
  */
 export function buildScreenshotEnv(
   options: ScreenshotOptions,
   baseEnv: NodeJS.ProcessEnv = process.env,
   appLocale: Locale | null = null,
   frozenNow: string | null = null,
+  backendPort: number | null = null,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...baseEnv,
@@ -539,15 +574,20 @@ export function buildScreenshotEnv(
       // the capture would drift from the fixture set it is reading.
       throw new Error('buildScreenshotEnv needs the frozen instant when --fixtures is record or replay');
     }
+    if (backendPort === null) {
+      throw new Error('buildScreenshotEnv needs the bound backend port when --fixtures is record or replay');
+    }
     // Overwrite, not `??`: the fixtures backend IS the backend for this run, so
     // it must win over both the `--backend local` defaults above and any
     // EXPO_PUBLIC_BACKEND_URL the caller exported.
-    const backendUrl = `http://localhost:${resolveScreenshotBackendPort(baseEnv.BOARDSESH_SCREENSHOT_BACKEND_PORT)}`;
+    const backendUrl = `http://localhost:${backendPort}`;
     env.EXPO_PUBLIC_BACKEND_URL = backendUrl;
     env.EXPO_PUBLIC_WS_URL = `${backendUrl.replace(/^http/, 'ws')}/graphql`;
-    // The app's `/static/*` reads go through the web URL, and the backend serves
-    // the recorded asset bytes on the same port.
-    env.EXPO_PUBLIC_WEB_URL = backendUrl;
+    // EXPO_PUBLIC_WEB_URL is deliberately left alone: the app's `/static/*`
+    // reads go through EXPO_PUBLIC_BACKEND_URL, not the web URL, which instead
+    // serves dev-only thumbnail routes and share links — redirecting it would
+    // make a `--backend local` fixtures capture fail on `MISS route` for every
+    // one of those, and would bake `localhost` share URLs into the bundle.
     env.EXPO_PUBLIC_SCREENSHOT_NOW = frozenNow;
   }
   return env;
@@ -1076,6 +1116,59 @@ function dumpScreenshotBackendLogTail(lines = 40): void {
   console.error(`${LOG} --- last ${lines} lines of the screenshot backend log ---\n${tail}\n${LOG} --- end ---`);
 }
 
+/** The mode/port/fixturesDir/frozenNow a spawned backend needs, resolved once by the caller. */
+interface ScreenshotBackendSpawnContext {
+  mode: ScreenshotBackendMode;
+  port: number;
+  fixturesDir: string;
+  frozenNow: string;
+}
+
+/**
+ * The CLI args `startScreenshotBackend` spawns `scripts/screenshot-backend.ts`
+ * with. Pure and exported so the once-per-process `--fresh` rule below is
+ * testable without spawning anything.
+ *
+ * `alreadyStartedThisRun` is true once this process has already started a
+ * backend with `--fresh` this run — a `--platform all` capture starts and stops
+ * one backend PER PLATFORM, and passing `--fresh` to the second platform's
+ * backend would wipe the first platform's recording before it's ever merged.
+ */
+export function buildBackendArgs(
+  options: ScreenshotOptions,
+  context: ScreenshotBackendSpawnContext,
+  alreadyStartedThisRun: boolean,
+): string[] {
+  const args = [
+    SCREENSHOT_BACKEND_SCRIPT,
+    '--mode',
+    context.mode,
+    '--port',
+    String(context.port),
+    '--fixtures',
+    context.fixturesDir,
+    '--frozen-now',
+    context.frozenNow,
+    '--flow',
+    options.flow,
+  ];
+  if (context.mode === 'record') {
+    // `--backend prod` leaves the upstream unset so the CLI's own PROD default
+    // applies — one place owns that URL.
+    if (options.backend === 'local') args.push('--upstream', LOCAL_BACKEND_URL);
+    if (options.fresh && !alreadyStartedThisRun) args.push('--fresh');
+  }
+  return args;
+}
+
+/**
+ * Whether this process has already started a backend with `--fresh` (see
+ * `buildBackendArgs`). Module-level, on purpose: it tracks "has THIS `vp run
+ * mobile:screenshots` invocation already discarded the fixture set", which is a
+ * property of the process, not of any one platform's run.
+ */
+let freshConsumedThisRun = false;
+
 /**
  * Start the record/replay backend as a SEPARATE detached process, and refuse to
  * continue until it has actually bound.
@@ -1095,6 +1188,16 @@ export function startScreenshotBackend(options: ScreenshotOptions): ScreenshotBa
   const mode: ScreenshotBackendMode = options.fixtures === 'record' ? 'record' : 'replay';
   const fixturesDir = resolveFixturesDir(options);
   const port = resolveScreenshotBackendPort(process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT);
+  if (port === 0) {
+    // A real port number is baked into the JS bundle's backend URLs (see
+    // buildScreenshotEnv) before this process binds anything, so an
+    // OS-assigned ephemeral port (what 0 means to `.listen()`) would leave the
+    // bundle pointed at a port nothing is actually listening on.
+    throw new Error(
+      'BOARDSESH_SCREENSHOT_BACKEND_PORT must not be 0 — the orchestrator has to know the exact port before the ' +
+        'backend binds it. Pick a fixed port instead.',
+    );
+  }
 
   // Replay reproduces the recorded run, so its frozen instant is whatever the
   // recording froze — read from the manifest here (not left to the CLI) because
@@ -1107,37 +1210,22 @@ export function startScreenshotBackend(options: ScreenshotOptions): ScreenshotBa
     }
     frozenNow = manifest.frozenNow;
   } else {
-    frozenNow = startOfSecondIso(new Date());
+    frozenNow = options.frozenNow ?? startOfSecondIso(new Date());
   }
 
-  const args = [
-    SCREENSHOT_BACKEND_SCRIPT,
-    '--mode',
-    mode,
-    '--port',
-    String(port),
-    '--fixtures',
-    fixturesDir,
-    '--frozen-now',
-    frozenNow,
-    '--flow',
-    options.flow,
-  ];
-  if (mode === 'record') {
-    // `--backend prod` leaves the upstream unset so the CLI's own PROD default
-    // applies — one place owns that URL.
-    if (options.backend === 'local') args.push('--upstream', LOCAL_BACKEND_URL);
-    if (options.fresh) args.push('--fresh');
-  }
+  const args = buildBackendArgs(options, { mode, port, fixturesDir, frozenNow }, freshConsumedThisRun);
+  if (mode === 'record' && options.fresh) freshConsumedThisRun = true;
 
-  // Fail before spawning rather than after: a squatter on this port answers
-  // /health just as convincingly as our own backend would, and a capture that
-  // silently read a stale fixture set is a complete set of wrong screenshots.
-  // Same guard runIos puts in front of Metro, for the same reason.
-  if (portInUse(port)) {
+  // A `--platform all` run stops one platform's backend and starts a fresh one
+  // for the next; SIGTERM does not guarantee the OS frees the port the instant
+  // the child exits, so wait for it the same way the Metro path does between
+  // locales — this also covers the ordinary case (nothing was ever using the
+  // port), where it returns immediately.
+  if (!waitForPortToClose(port)) {
     throw new Error(
-      `port ${port} is already in use, so the capture would talk to whatever is on it instead of this run's fixtures. ` +
-        `Stop it, or set BOARDSESH_SCREENSHOT_BACKEND_PORT to a free port.`,
+      `port ${port} did not close in time for the screenshot backend to bind — so the capture would talk to ` +
+        `whatever is on it instead of this run's fixtures. Stop it, or set BOARDSESH_SCREENSHOT_BACKEND_PORT to a ` +
+        `free port.`,
     );
   }
 
@@ -1186,37 +1274,64 @@ export function stopScreenshotBackend(session: ScreenshotBackendSession | null):
 }
 
 /**
+ * The message logged (and returned as the failure) when the backend's own
+ * status endpoint can't be read at the end of a recording — the backend died
+ * mid-capture, so nothing after that point was recorded reliably.
+ */
+export const RECORDING_STATUS_UNREACHABLE_MESSAGE =
+  'the screenshot backend did not answer /__screenshot-backend/status — it died during the capture; nothing was recorded reliably';
+
+export interface RecordingStatus {
+  hits?: number;
+  misses?: number;
+  recorded?: number;
+  redacted?: number;
+  fixtures?: { graphql?: number; static?: number };
+}
+
+/**
+ * Parse the backend's `/__screenshot-backend/status` response from the raw
+ * curl result, or `null` when it can't be trusted: a non-zero exit (curl
+ * couldn't even reach it) or a 200 whose body isn't JSON. Pure — no process or
+ * network I/O — so this decision (what counts as "the backend died
+ * mid-capture") is testable without a live server, unlike the curl call
+ * itself.
+ */
+export function parseRecordingStatus(curlResult: { status: number; stdout: string }): RecordingStatus | null {
+  if (curlResult.status !== 0) return null;
+  try {
+    return JSON.parse(curlResult.stdout) as RecordingStatus;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * What the recording actually captured. Printed at the end of a record run so
  * the operator can see the fixture set grew before committing it.
  *
- * A non-zero `redacted` fails the run: those fixtures carried a live auth token
- * and were dropped, so the set on disk has holes the NEXT capture would only
- * discover as replay misses. (The backend CLI exits 1 on the same condition,
- * but this orchestrator is synchronous and never sees that exit code.)
+ * Fails the run (rather than warning) when the status endpoint can't be read at
+ * all: a curl failure or unparseable body means the backend process is gone or
+ * wedged, and a recording that ends that way can't be trusted just because the
+ * capture's own exit code was 0.
+ *
+ * A non-zero `redacted` also fails the run: those fixtures carried a live auth
+ * token and were dropped, so the set on disk has holes the NEXT capture would
+ * only discover as replay misses. (The backend CLI exits 1 on the same
+ * condition, but this orchestrator is synchronous and never sees that exit
+ * code.)
  */
-function reportRecordingSummary(session: ScreenshotBackendSession): boolean {
-  const status = runCapture('curl', [
+export function reportRecordingSummary(session: ScreenshotBackendSession): boolean {
+  const curlResult = runCapture('curl', [
     '-fsS',
     '--max-time',
     '5',
     `http://127.0.0.1:${session.port}/__screenshot-backend/status`,
   ]);
-  if (status.status !== 0) {
-    console.warn(`${LOG} WARNING: could not read the screenshot backend status; recorded counts unavailable.`);
-    return true;
-  }
-  let stats: {
-    hits?: number;
-    misses?: number;
-    recorded?: number;
-    redacted?: number;
-    fixtures?: { graphql?: number; static?: number };
-  };
-  try {
-    stats = JSON.parse(status.stdout) as typeof stats;
-  } catch {
-    console.warn(`${LOG} WARNING: the screenshot backend status was not JSON; recorded counts unavailable.`);
-    return true;
+  const stats = parseRecordingStatus(curlResult);
+  if (!stats) {
+    console.error(`${LOG} FAILED: ${RECORDING_STATUS_UNREACHABLE_MESSAGE}`);
+    return false;
   }
   console.log(
     `${LOG} Recorded ${stats.recorded ?? 0} new response(s); the set now holds ` +
@@ -1496,14 +1611,10 @@ function captureIosDevice(
     if (backendSession) {
       const backendLog = readScreenshotBackendLogSince(backendLogBaseline);
       if (!reportScreenshotBackendProblems(backendLog, backendSession.mode)) return 1;
-      // Replay only: a recording run defines the frozen instant, so there is
-      // nothing yet for the bundle to disagree with.
-      if (
-        backendSession.mode === 'replay' &&
-        !reportFrozenClockProblems(metroLog, backendSession.frozenNow, METRO_LOG_PATH)
-      ) {
-        return 1;
-      }
+      // Both modes carry a frozenNow — replay reads it from the manifest, record
+      // mints one (or takes --frozen-now) — so the bundle's clock is checked
+      // against it either way.
+      if (!reportFrozenClockProblems(metroLog, backendSession.frozenNow, METRO_LOG_PATH)) return 1;
     }
 
     const duplicateGroups = findDuplicateScreenshotGroups(captureDir);
@@ -1719,7 +1830,13 @@ function runAndroid(options: ScreenshotOptions): number {
     if (options.devClient) {
       // Android captures the single en-US tree (the locale matrix is iOS-only),
       // so no locale is baked into the bundle here.
-      const metroEnv = buildScreenshotEnv(options, process.env, null, backendSession?.frozenNow ?? null);
+      const metroEnv = buildScreenshotEnv(
+        options,
+        process.env,
+        null,
+        backendSession?.frozenNow ?? null,
+        backendSession?.port ?? null,
+      );
       console.log(
         `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,
       );
@@ -1773,12 +1890,10 @@ function runAndroid(options: ScreenshotOptions): number {
     if (backendSession) {
       const backendLog = readScreenshotBackendLogSince(backendLogBaseline);
       if (!reportScreenshotBackendProblems(backendLog, backendSession.mode)) return 1;
-      if (
-        backendSession.mode === 'replay' &&
-        !reportFrozenClockProblems(logcat, backendSession.frozenNow, LOGCAT_LOG_PATH)
-      ) {
-        return 1;
-      }
+      // Both modes carry a frozenNow — replay reads it from the manifest, record
+      // mints one (or takes --frozen-now) — so the bundle's clock is checked
+      // against it either way.
+      if (!reportFrozenClockProblems(logcat, backendSession.frozenNow, LOGCAT_LOG_PATH)) return 1;
       if (backendSession.mode === 'record' && !reportRecordingSummary(backendSession)) return 1;
     }
 
@@ -2025,6 +2140,7 @@ function runIosLocales(
       process.env,
       localeTarget.appLocale,
       backendSession?.frozenNow ?? null,
+      backendSession?.port ?? null,
     );
     console.log(
       `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}, locale=${localeTarget.appLocale}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,

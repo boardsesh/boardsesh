@@ -61,6 +61,51 @@ export function startOfSecondIso(now: Date): string {
   return `${now.toISOString().slice(0, 19)}Z`;
 }
 
+/**
+ * `startOfSecondIso`'s complement: the same epoch millisecond ceiled UP to the
+ * start of its second, instead of truncated down. An instant already sitting
+ * exactly on a whole second is returned unchanged.
+ */
+function ceilToSecondIso(epochMs: number): string {
+  return startOfSecondIso(new Date(Math.ceil(epochMs / 1000) * 1000));
+}
+
+/**
+ * The `frozenNow` a completed recording (or a merge of several) should use: a
+ * capture is a long unattended run — one shard alone can take 20+ minutes — so
+ * a `frozenNow` minted at the START and never revisited can end up EARLIER than
+ * a response recorded near the end. Replaying that response would then render
+ * its own wall-clock content (a tick's `firstTickAt`, a session's timestamp) as
+ * being in the future relative to the frame the capture calls "now".
+ *
+ * The fix: `floorInstant` (the minted start instant, or an already-merged
+ * `frozenNow`) is kept as-is UNLESS some response in `recordedAtInstants` was
+ * recorded strictly after it — in which case the result moves to at least one
+ * full second past the LATEST such response, ceiled to a whole second. A
+ * response recorded before or at the floor needs no adjustment at all, so a
+ * capture that didn't run long keeps the exact instant it minted.
+ *
+ * Applied at record time by `screenshot-backend.ts` (per fixture, against that
+ * run's own start instant) and again at merge time by
+ * `screenshot-fixtures-merge.ts` (per input, against that shard's own
+ * `frozenNow`) — belt and braces, since a pre-fix or hand-edited input set
+ * could still carry a `frozenNow` earlier than one of its own entries.
+ */
+export function finalizeRecordingFrozenNow(floorInstant: string, recordedAtInstants: readonly string[]): string {
+  const floorMs = Date.parse(floorInstant);
+  let latestResponseMs = -Infinity;
+  for (const recordedAt of recordedAtInstants) {
+    const parsedMs = Date.parse(recordedAt);
+    if (parsedMs > latestResponseMs) latestResponseMs = parsedMs;
+  }
+  if (latestResponseMs <= floorMs) return floorInstant;
+  // +1000ms before ceiling guarantees the result lands at least one full
+  // second past latestResponseMs, however its own sub-second remainder falls —
+  // ceiling alone (without the +1s) can land under a second away when
+  // latestResponseMs already sits near the top of its second.
+  return ceilToSecondIso(latestResponseMs + 1000);
+}
+
 // ---------------------------------------------------------------------------
 // Keying
 // ---------------------------------------------------------------------------
@@ -841,13 +886,16 @@ function isProblemLine(line: ScreenshotBackendLogLine, mode: ScreenshotBackendMo
  */
 export function findScreenshotBackendProblems(logText: string, options: { mode: ScreenshotBackendMode }): string[] {
   const problemCounts = new Map<string, { problem: ScreenshotBackendProblem; count: number }>();
-  let hitCount = 0;
+  // Only a GraphQL hit counts as "the app actually exercised a screen's data" —
+  // an app that only ever authenticated (HIT auth) never reached a screen at
+  // all, and must still fail the check below rather than being credited for it.
+  let graphqlHitCount = 0;
 
   for (const rawLine of logText.split('\n')) {
     const line = parseScreenshotBackendLogLine(rawLine);
     if (!line) continue;
     if (line.event === 'hit') {
-      hitCount += 1;
+      if (line.kind === 'graphql') graphqlHitCount += 1;
       continue;
     }
     if (!isProblemLine(line, options.mode)) continue;
@@ -862,9 +910,9 @@ export function findScreenshotBackendProblems(logText: string, options: { mode: 
     ({ problem, count }) => `${problem.description}${count > 1 ? ` ×${count}` : ''} — ${problem.remedy}`,
   );
 
-  if (options.mode === 'replay' && hitCount === 0) {
+  if (options.mode === 'replay' && graphqlHitCount === 0) {
     problems.push(
-      'no HIT lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
+      'no HIT graphql lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
     );
   }
   return problems;
