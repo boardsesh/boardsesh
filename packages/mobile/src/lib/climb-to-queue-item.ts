@@ -175,12 +175,9 @@ export type CommittableQueueItem = {
  * uuid on the wire that no peer can reconcile against their queue. Every path
  * that turns a DISPLAYED item into a COMMITTED one has to launder it first.
  *
- * There are two such paths — the queue provider's `nextClimb()` and the play
- * drawer's "Put on the wall" — and until the drawer could pin a peek (which the
- * shared-session browse latch makes routine, since browsing walks the suggestion
- * track item by item) only the first one did. Extracted here so a third commit
- * path can't be written without it, and so the rule has one test instead of two
- * hand-agreeing copies.
+ * Used by both queue navigation directions and the drawer's "Put on the wall"
+ * action. Shared-session browsing can pin a peek before committing it, so all
+ * three paths use the same conversion.
  *
  * `suggested: true` is preserved on the minted item so suggestion pruning still
  * treats it as suggestion-origin. The peek carries the queue package's wide

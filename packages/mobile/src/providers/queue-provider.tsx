@@ -48,7 +48,11 @@ import {
 } from '../lib/graphql/operations';
 import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
-import { findPreviousQueueItemWithSuggestions, findNextQueueItemWithSuggestions, shouldDefaultToBrowse } from '@boardsesh/play-view';
+import {
+  findPreviousQueueItemWithSuggestions,
+  findNextQueueItemWithSuggestions,
+  shouldDefaultToBrowse,
+} from '@boardsesh/play-view';
 import { useSharedSessionBrowseEnabled } from './feature-flags-provider';
 import { toClimbQueueItem } from '../lib/queue-conversion';
 import { resolveCommittableQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
@@ -1476,18 +1480,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       playlistSuggestionSourceRef.current,
     );
     if (!prevItem) return;
-    if (isPlaylistPeekQueueItemUuid(prevItem.uuid)) {
-      const realItem = climbToQueueItem(prevItem.climb as unknown as Parameters<typeof climbToQueueItem>[0], {
-        suggested: true,
-      });
-      // Insert after current, like the server does — see nextClimb. It's why
-      // swiping back then forward lands on the item we just committed
-      // (findNextQueueItemWithSuggestions dedupes against BOTH neighbours)
-      // instead of appending the same climb twice.
-      dispatchSetCurrent(realItem, true, undefined, true);
-    } else {
-      dispatchSetCurrent(prevItem, false);
-    }
+    const { item, converted } = resolveCommittableQueueItem(prevItem);
+    // Match nextClimb and the server: suggestions insert immediately after current.
+    dispatchSetCurrent(item, converted, undefined, converted);
   }, [dispatchSetCurrent]);
 
   // Optimistic dispatch for widget Next/Previous taps. The native widget intent

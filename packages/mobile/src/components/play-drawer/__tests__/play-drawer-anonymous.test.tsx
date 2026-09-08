@@ -41,6 +41,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
+import type { PlaylistSuggestionSource } from '@boardsesh/queue';
 
 type Props = Record<string, unknown>;
 
@@ -65,6 +66,8 @@ const queueActions = vi.hoisted(() => ({
 // ending" is exercised at all.
 const session = vi.hoisted(() => ({
   isShared: false,
+  useRealNavigation: false,
+  suggestionSource: null as PlaylistSuggestionSource | null,
   sessionId: null as string | null,
   nextItem: null as { uuid: string; climb: unknown } | null,
   // The committed queue head. Null in the preview-only cases (the drawer renders
@@ -87,7 +90,13 @@ const wall = vi.hoisted(() => ({
 // The BLE link. Null (no transport) unless a case needs to watch what does and
 // doesn't reach the board.
 const ble = vi.hoisted(() => ({
-  current: null as { isConnected: boolean; sendFramesToBoard: ReturnType<typeof vi.fn> } | null,
+  current: null as {
+    isConnected: boolean;
+    sendFramesToBoard: ReturnType<typeof vi.fn>;
+    getMirrorIntent: ReturnType<typeof vi.fn>;
+    setMirrorIntent: ReturnType<typeof vi.fn>;
+    retainMirrorIntentFor: ReturnType<typeof vi.fn>;
+  } | null,
 }));
 
 // --- Host platform -----------------------------------------------------------
@@ -131,18 +140,26 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 
 // --- Shared packages ---------------------------------------------------------
-vi.mock('@boardsesh/play-view', () => ({
-  // The prefetch walk: these suites assert on the displayed board, not on
-  // what is warmed ahead, so nothing is ahead.
-  findUpcomingQueueItemsWithSuggestions: () => [],
-  computeNavigationStateWithSuggestions: () => ({
-    nextItem: session.nextItem,
-    prevItem: null,
-    canNext: session.nextItem != null,
-    canPrevious: false,
-  }),
-  boardSupportsMirroring: () => true,
-}));
+vi.mock('@boardsesh/play-view', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/play-view')>();
+  return {
+    // The prefetch walk: these suites assert on the displayed board, not on
+    // what is warmed ahead, so nothing is ahead.
+    findUpcomingQueueItemsWithSuggestions: () => [],
+    computeNavigationStateWithSuggestions: (
+      ...args: Parameters<typeof actual.computeNavigationStateWithSuggestions>
+    ) =>
+      session.useRealNavigation
+        ? actual.computeNavigationStateWithSuggestions(...args)
+        : {
+            nextItem: session.nextItem,
+            prevItem: null,
+            canNext: session.nextItem != null,
+            canPrevious: false,
+          },
+    boardSupportsMirroring: () => true,
+  };
+});
 vi.mock('@boardsesh/analytics', () => ({
   SHARED_EVENTS: {
     ClimbShared: 'Climb Shared',
@@ -218,7 +235,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => queueActions,
   useQueueSessionId: () => ({ sessionId: session.sessionId }),
   useIsSharedSession: () => session.isShared,
-  usePlaylistSuggestionSource: () => null,
+  usePlaylistSuggestionSource: () => session.suggestionSource,
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => ble.current }));
 // Board presence, read continuously so the pill can say "On the wall" after any
@@ -353,6 +370,8 @@ beforeEach(() => {
   recorded.panePlaceholder = 0;
   queueActions.addToQueue.mockResolvedValue('added');
   session.isShared = false;
+  session.useRealNavigation = false;
+  session.suggestionSource = null;
   session.sessionId = null;
   session.nextItem = null;
   session.currentItem = null;
@@ -403,6 +422,90 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     expect(queueActions.nextClimb).not.toHaveBeenCalled();
     expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
   });
+
+  it.each(['next', 'previous'] as const)(
+    'keeps the playlist after browsing %s and a peer leaves its track',
+    (direction) => {
+      CREW();
+      session.useRealNavigation = true;
+      const thirdClimb = { ...CLIMB, uuid: 'third-climb', name: 'Third climb' };
+      const climbs = direction === 'next' ? [CLIMB, SIMILAR_CLIMB, thirdClimb] : [thirdClimb, SIMILAR_CLIMB, CLIMB];
+      session.suggestionSource = {
+        playlistUuid: 'list-1',
+        activatedClimbUuid: CLIMB.uuid,
+        boardKey: 'kilter:1:10:1,20',
+        climbs,
+      } as unknown as PlaylistSuggestionSource;
+      session.currentItem = { uuid: 'queue-current', climb: CLIMB };
+      const target = committedTargetFor(CLIMB);
+      const view = render(drawerElement('member', target));
+      const swipe = () => {
+        const props = lastActionBarProps();
+        (props[direction === 'next' ? 'onNextClick' : 'onPrevClick'] as () => void)();
+      };
+      act(swipe);
+      expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
+
+      // The provider clears its shared track when a peer commits outside it.
+      session.currentItem = { uuid: 'peer-current', climb: { ...CLIMB, uuid: 'outside-list' } };
+      session.suggestionSource = null;
+      view.rerender(drawerElement('member', target));
+      act(swipe);
+
+      expect(lastDisplayedClimbUuid()).toBe(thirdClimb.uuid);
+      expect(queueActions.nextClimb).not.toHaveBeenCalled();
+      expect(queueActions.previousClimb).not.toHaveBeenCalled();
+      expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+      expect(queueActions.addToQueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    'releases only a crew-captured track after departure (explicit preview: %s)',
+    (explicitPreview) => {
+      vi.useFakeTimers();
+      try {
+        CREW();
+        session.useRealNavigation = true;
+        const thirdClimb = { ...CLIMB, uuid: 'third-climb' };
+        const source = {
+          playlistUuid: 'list-1',
+          activatedClimbUuid: CLIMB.uuid,
+          boardKey: 'kilter:1:10:1,20',
+          climbs: [CLIMB, SIMILAR_CLIMB, thirdClimb],
+        } as unknown as PlaylistSuggestionSource;
+        session.suggestionSource = source;
+        session.currentItem = { uuid: 'queue-current', climb: CLIMB };
+        const target = explicitPreview
+          ? { ...openTargetFor(CLIMB), options: { ...openTargetFor(CLIMB).options, playlistSuggestionSource: source } }
+          : committedTargetFor(CLIMB);
+        const view = render(drawerElement('member', target));
+        act(() => {
+          (lastActionBarProps().onNextClick as () => void)();
+        });
+        expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
+
+        session.isShared = false;
+        session.sessionId = null;
+        view.rerender(drawerElement('member', target));
+        act(() => {
+          vi.advanceTimersByTime(SHARED_BROWSE_LATCH_RELEASE_MS);
+        });
+        act(() => {
+          (lastActionBarProps().onNextClick as () => void)();
+        });
+
+        if (explicitPreview) {
+          expect(lastDisplayedClimbUuid()).toBe(thirdClimb.uuid);
+          expect(queueActions.nextClimb).not.toHaveBeenCalled();
+        } else {
+          expect(queueActions.nextClimb).toHaveBeenCalledOnce();
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('previews a similar climb instead of double-writing it', () => {
     CREW();
@@ -995,7 +1098,13 @@ describe('PlayDrawer — reading the wall', () => {
 // would put a climb nobody committed on a board that is lit with the live one.
 describe('PlayDrawer — the mirror toggle and the wall', () => {
   const connectBle = () => {
-    ble.current = { isConnected: true, sendFramesToBoard: vi.fn(async () => true) };
+    ble.current = {
+      isConnected: true,
+      sendFramesToBoard: vi.fn(async () => true),
+      getMirrorIntent: vi.fn(),
+      setMirrorIntent: vi.fn(),
+      retainMirrorIntentFor: vi.fn(),
+    };
     return ble.current;
   };
 
@@ -1043,7 +1152,7 @@ describe('PlayDrawer — the mirror toggle and the wall', () => {
     expect(lastActionBarProps().isMirrored).toBe(false);
   });
 
-  it('still re-pushes the live climb when nothing is pinned', () => {
+  it('still states the live mirror intent when nothing is pinned', () => {
     const bluetooth = connectBle();
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     render(drawerElement('member', committedTargetFor(CLIMB)));
@@ -1052,9 +1161,8 @@ describe('PlayDrawer — the mirror toggle and the wall', () => {
       (lastActionBarProps().onMirror as () => void)();
     });
 
-    // The auto-sender keys off the queue item's own `climb.mirrored`, so without
-    // this the LEDs would keep the old orientation.
-    expect(bluetooth.sendFramesToBoard).toHaveBeenCalledWith(CLIMB.frames, true);
+    // The provider owns the write and reads the explicit solo mirror intent.
+    expect(bluetooth.setMirrorIntent).toHaveBeenCalledWith(CLIMB.uuid, true);
   });
 });
 

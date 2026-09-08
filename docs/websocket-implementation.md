@@ -847,6 +847,12 @@ contains you. It splits peers by `connectionState`:
   reading as a crew. Release is immediate once the last peer is evicted (`UserLeft`)
   or the session ends.
 
+While browsing, the drawer keeps its own playlist suggestion source. A peer can
+commit a climb outside that playlist, which clears the provider's source for live
+queue navigation; the browsing drawer still walks its original list in both
+directions. The first crew swipe snapshots that source, and committing or returning
+to live clears the snapshot.
+
 ### Event Types
 
 | Event                 | Description             | Fields                                                       |

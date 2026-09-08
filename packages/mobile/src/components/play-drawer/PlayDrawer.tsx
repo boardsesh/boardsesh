@@ -320,6 +320,8 @@ export function PlayDrawer({
   const [drawerPreviewSuggestionSource, setDrawerPreviewSuggestionSource] = useState<PlaylistSuggestionSource | null>(
     null,
   );
+  // Only crew-captured tracks expire with the latch; explicit previews stay private.
+  const crewCapturedSuggestionSourceRef = useRef(false);
   // True when the preview is the live wall climb (accessory bar) — the displayed
   // climb IS the one physically lit, which is what the "On the wall" pill states.
   const [drawerPreviewIsWallClimb, setDrawerPreviewIsWallClimb] = useState(false);
@@ -764,7 +766,13 @@ export function PlayDrawer({
   }, [isSharedSession, isPreview]);
   useEffect(() => {
     if (isSharedSession) return;
-    const timer = setTimeout(() => setSharedBrowseLatched(false), SHARED_BROWSE_LATCH_RELEASE_MS);
+    const timer = setTimeout(() => {
+      setSharedBrowseLatched(false);
+      if (crewCapturedSuggestionSourceRef.current) {
+        setDrawerPreviewSuggestionSource(null);
+        crewCapturedSuggestionSourceRef.current = false;
+      }
+    }, SHARED_BROWSE_LATCH_RELEASE_MS);
     return () => clearTimeout(timer);
   }, [isSharedSession]);
   // What the gestures and the chrome both read. Live crew OR a latch that armed
@@ -980,6 +988,7 @@ export function PlayDrawer({
     setSharedBrowseLatched(false);
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
+    crewCapturedSuggestionSourceRef.current = false;
     setDrawerPreviewIsWallClimb(false);
     // Mirroring is drawer-local per displayed climb: every other navigation
     // resets it, and carrying a preview's mirror onto the committed head would
@@ -1034,6 +1043,7 @@ export function PlayDrawer({
     if (browseByDefaultRef.current) return;
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
+    crewCapturedSuggestionSourceRef.current = false;
   }, [activeAngle]);
 
   // Re-anchor the pinned preview at the live angle. Only fetches while the
@@ -1129,6 +1139,7 @@ export function PlayDrawer({
       const pinnedItem = previewItem ?? (opensAsBrowse ? climbToQueueItem(selectedClimb) : null);
       setDrawerPreviewItem(pinnedItem);
       setDrawerPreviewSuggestionSource(pinnedItem ? playlistSuggestionSource : null);
+      crewCapturedSuggestionSourceRef.current = false;
       setDrawerPreviewIsWallClimb(pinnedItem ? (options?.previewIsWallClimb ?? false) : false);
       // Opening a COMMITTED climb is the third latch exit: the queue-sheet tap,
       // a playlist activation and the accessory-of-current open all deliberately
@@ -1174,6 +1185,11 @@ export function PlayDrawer({
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
       setDrawerPreviewItem(previewTarget.targetItem);
+      // Keep this browse track if a peer moves the shared queue off the list.
+      if (browseByDefault && !drawerPreviewSuggestionSource && navigationSuggestionSource) {
+        setDrawerPreviewSuggestionSource(navigationSuggestionSource);
+        crewCapturedSuggestionSourceRef.current = true;
+      }
       // Swiping off the lit climb makes "this is the wall climb" false — the
       // flag means displayed-equals-wall, and the wall didn't move.
       setDrawerPreviewIsWallClimb(false);
@@ -1191,6 +1207,7 @@ export function PlayDrawer({
     drawerPreviewSuggestionSource,
     drawerPreviewItem,
     navigationState.prevItem,
+    navigationSuggestionSource,
     previousClimb,
     lightOnSwipe,
     browseByDefault,
@@ -1207,6 +1224,11 @@ export function PlayDrawer({
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
       setDrawerPreviewItem(previewTarget.targetItem);
+      // Keep this browse track if a peer moves the shared queue off the list.
+      if (browseByDefault && !drawerPreviewSuggestionSource && navigationSuggestionSource) {
+        setDrawerPreviewSuggestionSource(navigationSuggestionSource);
+        crewCapturedSuggestionSourceRef.current = true;
+      }
       // See handlePrev: displayed-equals-wall stops being true the moment the
       // swipe lands somewhere else.
       setDrawerPreviewIsWallClimb(false);
@@ -1224,6 +1246,7 @@ export function PlayDrawer({
     drawerPreviewSuggestionSource,
     drawerPreviewItem,
     navigationState.nextItem,
+    navigationSuggestionSource,
     nextClimb,
     lightOnSwipe,
     browseByDefault,
@@ -1283,13 +1306,14 @@ export function PlayDrawer({
     setSharedBrowseLatched(false);
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
+    crewCapturedSuggestionSourceRef.current = false;
     setDrawerPreviewIsWallClimb(false);
     // Mirroring is drawer-local per displayed climb and every other navigation
     // resets it (see `handleBackToLive`). The commit has to as well: the
     // auto-sender lights the committed item's own `climb.mirrored`, so a mirror
     // toggled while previewing would leave the drawer showing the climb flipped
     // and the wall showing it straight.
-    setIsMirrored(false);
+    clearMirror();
   }, [
     drawerPreviewItem,
     drawerPreviewSuggestionSource,
@@ -1522,6 +1546,7 @@ export function PlayDrawer({
       if (getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault }) === 'preview') {
         setDrawerPreviewItem(queueItem);
         setDrawerPreviewSuggestionSource(null);
+        crewCapturedSuggestionSourceRef.current = false;
         // A different climb is on screen now, so it is not the lit one.
         setDrawerPreviewIsWallClimb(false);
         clearMirror();
@@ -1537,6 +1562,7 @@ export function PlayDrawer({
       // clear any preview that was showing.
       setDrawerPreviewItem(null);
       setDrawerPreviewSuggestionSource(null);
+      crewCapturedSuggestionSourceRef.current = false;
       clearMirror();
       // The favorite override is cleared by the climb-change effect.
       setIsTickBarActive(false);

@@ -177,7 +177,8 @@ export function useMobilePlayback({
   // the wall through exactly the same latest-wins drain (#4634).
   const { currentFrameString, isAnimatable } = playback;
   const bluetoothConnected = bluetooth?.isConnected ?? false;
-  const wallFrame = viewOnly || !isOpen || suppressWallWrites || !isAnimatable || !bluetoothConnected ? null : currentFrameString;
+  const wallFrame =
+    viewOnly || !isOpen || suppressWallWrites || !isAnimatable || !bluetoothConnected ? null : currentFrameString;
   useBleFrameWriter({
     frame: wallFrame,
     send: bluetooth?.sendFramesToBoard,

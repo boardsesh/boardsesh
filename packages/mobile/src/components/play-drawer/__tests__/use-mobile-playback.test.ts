@@ -245,6 +245,23 @@ describe('useMobilePlayback — BLE drain', () => {
     expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
   });
 
+  it('drops pending live frames when the drawer switches into preview', async () => {
+    const climb = climbWith('c1');
+    const { rerender } = renderPlayback(climb);
+    await setFrame(rerender, climb, 'F0');
+    await setFrame(rerender, climb, 'F1');
+    expect(mocks.sendCalls).toHaveLength(1);
+
+    await act(async () => {
+      rerender({ climb, viewOnly: true });
+    });
+    await act(async () => {
+      mocks.sendCalls[0].resolve(true);
+    });
+
+    expect(mocks.sendCalls.map(({ frame }) => frame)).toEqual(['F0']);
+  });
+
   it('collapses overlapping frame writes to the latest (GATT-safe)', async () => {
     const climb = climbWith('c1');
     const { rerender } = renderPlayback(climb);

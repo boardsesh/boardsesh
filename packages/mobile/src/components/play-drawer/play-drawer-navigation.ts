@@ -35,9 +35,7 @@ export function getViewOnlyPreviewNavigationTarget({
  * setting and the shared-session browse latch into `forceViewOnly` and delegates
  * to {@link getViewOnlyPreviewNavigationTarget}. Split out as its own function
  * (rather than inlining the translation at each call site) so it is directly
- * unit-testable — the component itself has no render test (PlayDrawer's
- * dependency graph makes one impractical; see IpadPlayPane.test.tsx, which mocks
- * it out entirely).
+ * unit-testable alongside the PlayDrawer render tests.
  *
  * The two reasons to stay view-only are independent and either one is enough:
  * the climber turned board lighting off for swipes, or someone else is in the
@@ -57,7 +55,7 @@ export function getSwipeNavigationTarget({
   /**
    * A browse latch is up because there is an audience: a party session with at
    * least one other climber in it, OR a latch that armed while there was one and
-   * has not been exited yet (the latch is one-way — see PlayDrawer). Defaults to
+   * has not been exited or released after the solo dwell. Defaults to
    * false so the solo call sites read unchanged.
    */
   inSharedSession?: boolean;
