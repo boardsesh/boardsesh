@@ -29,8 +29,12 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// NotificationRow calls the mobile wrapper (`lib/format-relative-time.ts`),
+// which itself imports these two from @boardsesh/profile-stats — tickTimeMs
+// only gates the empty-string guard, so any finite return keeps it a no-op.
 vi.mock('@boardsesh/profile-stats', () => ({
   formatTickRelativeTime: () => '2h ago',
+  tickTimeMs: () => 0,
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Text } from '../../Text';
+import { nowMs } from '../../../lib/clock';
 
 type SessionTimerProps = {
   startedAt: string | null | undefined;
@@ -23,11 +24,15 @@ function format(elapsedMs: number): string {
  * minimized and reopened the overlay.
  */
 export function SessionTimer({ startedAt, color }: SessionTimerProps) {
-  const [now, setNow] = useState<number>(() => Date.now());
+  // In screenshot mode `nowMs()` returns the frozen EXPO_PUBLIC_SCREENSHOT_NOW
+  // instant, so this shows that instant minus the session start, clamped at
+  // 00:00 below — a recorded session must start before that frozen instant
+  // for the timer to read as a nonzero elapsed time.
+  const [now, setNow] = useState<number>(() => nowMs());
 
   useEffect(() => {
     if (!startedAt) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => setNow(nowMs()), 1000);
     return () => clearInterval(id);
   }, [startedAt]);
 

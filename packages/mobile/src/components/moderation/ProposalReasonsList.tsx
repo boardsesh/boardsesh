@@ -16,12 +16,12 @@ import { memo, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Comment } from '@boardsesh/shared-schema';
-import { formatTickRelativeTime } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useComments } from '../../lib/graphql/hooks/use-social';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
+import { formatRelativeTime } from '../../lib/format-relative-time';
 
 type ProposalReasonsListProps = {
   proposalUuid: string;
@@ -102,7 +102,7 @@ const ReasonRow = memo(function ReasonRow({ comment }: { comment: Comment }) {
   return (
     <View style={[styles.row, { borderLeftColor: systemColors.separator }]}>
       <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1}>
-        {comment.userDisplayName ?? t('mobile.moderation.unknownClimber')} · {formatTickRelativeTime(comment.createdAt)}
+        {comment.userDisplayName ?? t('mobile.moderation.unknownClimber')} · {formatRelativeTime(comment.createdAt)}
       </Text>
       <Text variant="footnote" color={systemColors.secondaryLabel}>
         {comment.body ?? ''}

@@ -130,3 +130,147 @@ describe('deriveProfileViewModel periodComparison', () => {
     expect(vm.periodComparison?.current.sends).toBe(2);
   });
 });
+
+describe('deriveProfileViewModel with an injected `now`', () => {
+  // Mirrors mobile's screenshot-mode frozen clock: passing `now` must make
+  // timeframe filtering, the activity heatmap window, and the period
+  // comparison card all agree on the same pinned instant, and produce the same
+  // result no matter when the test actually runs.
+  const pinnedNow = dayjs('2026-01-15T12:00:00.000Z');
+  const pinnedTicks: Record<string, LogbookEntry[]> = {
+    kilter: [
+      entry({
+        difficulty: 22,
+        status: 'send',
+        climbUuid: 'pinned-1',
+        layoutId: 1,
+        boardType: 'kilter',
+        climbed_at: pinnedNow.subtract(2, 'day').toISOString(),
+      }),
+      entry({
+        difficulty: 16,
+        status: 'flash',
+        climbUuid: 'pinned-2',
+        layoutId: 1,
+        boardType: 'kilter',
+        climbed_at: pinnedNow.subtract(20, 'day').toISOString(),
+      }),
+    ],
+  };
+
+  it('filters the logbook against the pinned instant, not the real wall clock', () => {
+    const vm = deriveProfileViewModel({
+      ...base,
+      allBoardsTicks: pinnedTicks,
+      selectedBoard: 'all',
+      timeframe: 'lastWeek',
+      now: pinnedNow,
+    });
+    expect(vm.filteredLogbook).toHaveLength(1);
+    expect(vm.filteredLogbook[0].climbUuid).toBe('pinned-1');
+  });
+
+  it('produces byte-identical output across repeated calls with the same pinned `now`', () => {
+    const build = () =>
+      deriveProfileViewModel({
+        ...base,
+        allBoardsTicks: pinnedTicks,
+        selectedBoard: 'all',
+        timeframe: 'lastMonth',
+        now: pinnedNow,
+      });
+    expect(build()).toEqual(build());
+  });
+
+  it('threads the pinned `now` into the activity heatmap window', () => {
+    const vm = deriveProfileViewModel({
+      ...base,
+      allBoardsTicks: pinnedTicks,
+      selectedBoard: 'all',
+      timeframe: 'all',
+      now: pinnedNow,
+    });
+    // The heatmap's grid ends on pinnedNow's ISO week, not the real wall
+    // clock's — this is the assertion the mutation below is meant to break.
+    expect(vm.activityHeatmap).not.toBeNull();
+    expect(vm.activityHeatmap?.endDate).toBe(pinnedNow.endOf('isoWeek').format('YYYY-MM-DD'));
+  });
+
+  it('threads the pinned `now` into the period comparison window', () => {
+    const vm = deriveProfileViewModel({
+      ...base,
+      allBoardsTicks: pinnedTicks,
+      selectedBoard: 'all',
+      timeframe: 'lastWeek',
+      comparisonMode: 'trailing',
+      now: pinnedNow,
+    });
+    // Current window is (pinnedNow - 1 week, pinnedNow]: only the 2-day-old tick.
+    expect(vm.periodComparison?.current.sends).toBe(1);
+    expect(vm.periodComparison?.current.endDate).toBe(pinnedNow.format('YYYY-MM-DD'));
+  });
+});
+
+describe('deriveProfileViewModel aggregated-card `now` threading (screenshot-mode regression)', () => {
+  // Regression for the stale-card bug: buildAggregatedStackedBars,
+  // buildAggregatedFlashRedpointBars and buildVPointsTimeline used to re-filter
+  // their raw ticks with `filterLogbookByTimeframe`'s *default* `now = dayjs()`
+  // (the live wall clock) instead of the injected instant, so they could go
+  // empty — or disagree with `filteredLogbook` — whenever the frozen clock
+  // (mobile screenshot mode) diverged from real time. Pin `now` far from the
+  // real wall clock so a builder that falls back to `dayjs()` sees ticks that
+  // are over a year stale for its 'lastMonth' window and returns null/empty,
+  // while a builder that honours the injected `now` sees them as fresh.
+  const pinnedNow = dayjs('2023-06-15T12:00:00.000Z');
+  const pinnedTicks: Record<string, LogbookEntry[]> = {
+    kilter: [
+      entry({
+        difficulty: 16, // V3
+        status: 'flash',
+        climbUuid: 'agg-flash',
+        layoutId: 1,
+        boardType: 'kilter',
+        climbed_at: pinnedNow.subtract(5, 'day').toISOString(),
+      }),
+      entry({
+        difficulty: 22, // V6
+        status: 'send',
+        tries: 2,
+        climbUuid: 'agg-send',
+        layoutId: 1,
+        boardType: 'kilter',
+        climbed_at: pinnedNow.subtract(25, 'day').toISOString(),
+      }),
+    ],
+  };
+
+  it('produces non-empty, filteredLogbook-consistent aggregated cards for a pinned `now` far from the wall clock', () => {
+    const vm = deriveProfileViewModel({
+      ...base,
+      allBoardsTicks: pinnedTicks,
+      selectedBoard: 'all',
+      timeframe: 'lastMonth',
+      now: pinnedNow,
+    });
+
+    // Both ticks are within 30 days of the pinned `now` → both must survive
+    // filtering, and every aggregated card must agree with that count.
+    expect(vm.filteredLogbook).toHaveLength(2);
+
+    expect(vm.aggregatedStackedBars).not.toBeNull();
+    const stackedBarTotal = vm.aggregatedStackedBars!.bars.reduce(
+      (sum, bar) => sum + bar.segments.reduce((segSum, seg) => segSum + seg.value, 0),
+      0,
+    );
+    expect(stackedBarTotal).toBe(vm.filteredLogbook.length);
+
+    expect(vm.aggregatedFlashRedpointBars).not.toBeNull();
+    const flashBar = vm.aggregatedFlashRedpointBars!.find((bar) => bar.key === 'V3');
+    const redpointBar = vm.aggregatedFlashRedpointBars!.find((bar) => bar.key === 'V6');
+    expect(flashBar?.values.find((v) => v.key === 'flash')?.value).toBe(1);
+    expect(redpointBar?.values.find((v) => v.key === 'redpoint')?.value).toBe(2); // tries
+
+    expect(vm.vPointsTimeline).not.toBeNull();
+    expect(vm.vPointsTimeline!.totalPoints).toBe(3 + 6); // V3 + V6
+  });
+});

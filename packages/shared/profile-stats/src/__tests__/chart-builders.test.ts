@@ -74,6 +74,22 @@ describe('filterLogbookByTimeframe', () => {
   it('returns the full logbook for an unrecognised timeframe (default branch)', () => {
     expect(filterLogbookByTimeframe([makeEntry()], 'unknown' as never, '', '')).toHaveLength(1);
   });
+
+  it('windows against an injected `now` instead of the real wall clock', () => {
+    // Mirrors the mobile screenshot-mode frozen clock: `now` is fixed, so an
+    // entry just inside/outside the pinned window gives a deterministic result
+    // no matter when this test actually runs.
+    const pinnedNow = dayjs('2026-01-15T12:00:00.000Z');
+    const logbook = [
+      makeEntry({ climbed_at: pinnedNow.subtract(3, 'day').toISOString() }),
+      makeEntry({ climbed_at: pinnedNow.subtract(10, 'day').toISOString() }),
+    ];
+    expect(filterLogbookByTimeframe(logbook, 'lastWeek', '', '', pinnedNow)).toHaveLength(1);
+    // Same logbook, real wall clock (`now` omitted) — the two calls must not
+    // agree by coincidence, they must both be internally consistent with their
+    // own `now`.
+    expect(filterLogbookByTimeframe(logbook, 'all', '', '', pinnedNow)).toHaveLength(2);
+  });
 });
 
 describe('buildAggregatedStackedBars', () => {

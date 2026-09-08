@@ -9,7 +9,7 @@ import { Icon } from '../Icon';
 import { Sheet } from '../Sheet';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useComments, useAddComment } from '../../lib/graphql/hooks';
-import { formatTickRelativeTime } from '@boardsesh/profile-stats';
+import { formatRelativeTime } from '../../lib/format-relative-time';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
@@ -125,7 +125,7 @@ export function CommentSheet({
                   {comment.userDisplayName ?? t('mobile.unknownName')}
                 </Text>
                 <Text variant="caption2" color={systemColors.tertiaryLabel}>
-                  {formatTickRelativeTime(comment.createdAt)}
+                  {formatRelativeTime(comment.createdAt)}
                 </Text>
               </View>
               <Text variant="subheadline">{comment.body}</Text>

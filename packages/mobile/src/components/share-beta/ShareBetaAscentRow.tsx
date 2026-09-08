@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { deriveLogbookGradeDisplay, displayedAttemptCount, logbookAttemptsKind } from '@boardsesh/logbook';
-import { formatTickRelativeTime, getLayoutDisplayName } from '@boardsesh/profile-stats';
+import { getLayoutDisplayName } from '@boardsesh/profile-stats';
 import { ClimbListThumbnail } from '../ClimbListThumbnail';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { Icon } from '../Icon';
@@ -16,6 +16,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { GRADE_BY_ID, clampDifficultyId, resolveCrowdDifficultyId } from '../../lib/boardsesh-grade-display';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { hapticSelection } from '../../lib/haptics';
+import { formatRelativeTime } from '../../lib/format-relative-time';
 import type { ShareBetaAscentSource } from '../../lib/share-beta-list';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { borderRadius, spacing } from '../../theme/tokens';
@@ -101,7 +102,7 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
 
   const wallLabel = ascent.boardDisplayName ?? getLayoutDisplayName(ascent.boardType, ascent.layoutId);
   const wallAngleLabel = `${wallLabel} ${ascent.angle}°`;
-  const relativeTime = formatTickRelativeTime(ascent.climbedAt);
+  const relativeTime = formatRelativeTime(ascent.climbedAt);
   const hasBetaVideo = ascent.hasBetaVideo === true;
 
   // Draw the climb on the board it was actually logged on. `renderBoard` is what

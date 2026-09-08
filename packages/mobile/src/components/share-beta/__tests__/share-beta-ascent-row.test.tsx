@@ -64,8 +64,12 @@ vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   DEFAULT_GRADE_COLOR: 'color:default',
 }));
 
+// ShareBetaAscentRow calls the mobile wrapper (`lib/format-relative-time.ts`),
+// which itself imports these from @boardsesh/profile-stats — tickTimeMs only
+// gates the empty-string guard, so any finite return keeps it a no-op.
 vi.mock('@boardsesh/profile-stats', () => ({
   formatTickRelativeTime: () => '2 hours ago',
+  tickTimeMs: () => 0,
   getLayoutDisplayName: (boardType: string, layoutId: number | null) => `${boardType} layout ${String(layoutId)}`,
 }));
 

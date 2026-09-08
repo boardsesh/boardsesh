@@ -11,7 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
 import { getGradeTextColor } from '@boardsesh/play-view';
-import { formatTickRelativeTime, tickTimeMs } from '@boardsesh/profile-stats';
+import { tickTimeMs } from '@boardsesh/profile-stats';
 import { countDistinctSessionUsers } from '@boardsesh/queue-runtime';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Card } from '../../Card';
@@ -33,6 +33,7 @@ import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
 import { setDraftComment, clearDraftComment } from '../../../lib/session-comment-draft-store';
 import { renderBoardToPlaylistConfig } from '../../../lib/playlists/board-details-for-playlist';
 import { tickToClimb } from '../../../lib/tick-to-climb';
+import { formatRelativeTime } from '../../../lib/format-relative-time';
 import { openClimbInPlayDrawer } from '../../../lib/open-climb-in-play-drawer';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
@@ -166,7 +167,7 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
   const subtitleParts = [
     participant?.displayName ?? null,
     status === 'flash' ? null : t('detail.attemptCount', { count: tick.attemptCount }),
-    formatTickRelativeTime(tick.climbedAt),
+    formatRelativeTime(tick.climbedAt),
   ].filter((part): part is string => !!part);
   const subtitle = subtitleParts.join(' · ');
   const rawGradeLabel = tick.difficultyName ?? null;
