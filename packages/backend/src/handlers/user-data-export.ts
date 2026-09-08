@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { applyCorsHeaders } from './cors';
+import { pipeStreamToResponse } from './http-utils';
 import { validateToken } from '../middleware/auth';
 import { isAuroraBoardType } from '../services/user-data-export-format';
 import {
@@ -108,5 +109,8 @@ export async function handleUserDataExportDownload(req: IncomingMessage, res: Se
     ...(file.contentLength != null ? { 'Content-Length': String(file.contentLength) } : {}),
   });
 
-  file.stream.pipe(res);
+  await pipeStreamToResponse(file.stream, res, {
+    route: '/api/user-data-export/download',
+    source: file.key,
+  });
 }
