@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-08
+
+### Fixed
+
+- Attach screenshots to bug reports and PR feedback, and update your profile photo again. ([#5281](https://github.com/boardsesh/boardsesh/pull/5281))
+
 ## 2026-09-07
 
 ### New

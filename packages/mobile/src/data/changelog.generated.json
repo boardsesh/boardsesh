@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-07T11:38:49.427Z",
+  "generatedAt": "2026-09-08T00:56:13.365Z",
   "entries": [
+    {
+      "prNumber": 5281,
+      "category": "fixed",
+      "title": "Attach screenshots to bug reports and PR feedback, and update your profile photo again.",
+      "mergedAt": "2026-09-08T00:54:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5281"
+    },
     {
       "prNumber": 5194,
       "category": "new",
