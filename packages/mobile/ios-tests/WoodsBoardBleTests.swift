@@ -5,16 +5,23 @@ import XCTest
 // dispatch (#3314). The byte-exact fixtures mirror
 // packages/shared/ble-protocol/src/__tests__/woods.test.ts — keep the two in
 // lockstep, and docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md is the wire authority.
+/// File-scoped so BOTH suites in this file can reach it: the encoder tests below
+/// build expected packets from the table, and `WoodsBoardBleManagerTests`'
+/// mirroring cases assert against the reflected one. It was a `private` method of
+/// the first class, which put it out of scope for the second (#5313).
+@available(iOS 17.0, *)
+private func woodsLedMap(_ sizeId: Int) -> [Int: Int] {
+    guard let map = WoodsBoardData.ledMap(forSizeId: sizeId) else {
+        XCTFail("expected a Woods LED table for size_id \(sizeId)")
+        return [:]
+    }
+    return map
+}
+
 @available(iOS 17.0, *)
 final class WoodsBoardBleTests: XCTestCase {
 
-    private func ledMap(_ sizeId: Int) -> [Int: Int] {
-        guard let map = WoodsBoardData.ledMap(forSizeId: sizeId) else {
-            XCTFail("expected a Woods LED table for size_id \(sizeId)")
-            return [:]
-        }
-        return map
-    }
+    private func ledMap(_ sizeId: Int) -> [Int: Int] { woodsLedMap(sizeId) }
 
     private func ascii(_ result: BoardBlePacketResult) -> String {
         String(decoding: result.packet, as: UTF8.self)
@@ -159,6 +166,8 @@ final class WoodsBoardBleTests: XCTestCase {
 /// through `testHooks.sync {}`, acks fire inline, no sleeps.
 @available(iOS 17.0, *)
 final class WoodsBoardBleManagerTests: XCTestCase {
+    private func ledMap(_ sizeId: Int) -> [Int: Int] { woodsLedMap(sizeId) }
+
     private var scheduler: FakeBleTimerScheduler!
     private var manager: BoardBleManager!
     private var suiteName: String!
