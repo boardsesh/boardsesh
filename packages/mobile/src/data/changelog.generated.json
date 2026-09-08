@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-08T21:39:24.011Z",
+  "generatedAt": "2026-09-08T21:48:21.968Z",
   "entries": [
+    {
+      "prNumber": 5336,
+      "category": "fixed",
+      "title": "Offline search and your logbook stop coming up empty after the app reloads itself",
+      "mergedAt": "2026-09-08T21:42:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5336"
+    },
     {
       "prNumber": 4127,
       "category": "fixed",

@@ -27,6 +27,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Offline search and your logbook stop coming up empty after the app reloads itself ([#5336](https://github.com/boardsesh/boardsesh/pull/5336))
 - Staying signed in now survives a locked phone. If the app woke up in the background — refreshing your session, reconnecting to a party, updating a Live Activity — it could quietly fail to read your login and bounce you to the sign-in screen. Anyone who installed before mid-July was stuck in that loop for good; now iOS can reach your credentials once the phone has been unlocked since its last restart, and if the app happens to wake while the phone is still locked it tries again the moment you open it. ([#4127](https://github.com/boardsesh/boardsesh/pull/4127))
 - See fresh beta that matches the board and layout you chose. ([#5283](https://github.com/boardsesh/boardsesh/pull/5283))
 - Return from a climb to your list without thumbnails flashing. ([#5334](https://github.com/boardsesh/boardsesh/pull/5334))
