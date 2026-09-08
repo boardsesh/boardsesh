@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-08T01:16:46.615Z",
+  "generatedAt": "2026-09-08T01:53:43.866Z",
   "entries": [
+    {
+      "prNumber": 5237,
+      "category": "fixed",
+      "title": "Flip a climb on a Woods board and the wall now flips with it",
+      "mergedAt": "2026-09-08T01:52:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5237",
+      "body": "Flipping a climb no longer un-flips itself when the board re-lights"
+    },
     {
       "prNumber": 5280,
       "category": "new",
