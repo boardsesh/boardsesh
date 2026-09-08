@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-08T06:35:11.065Z",
+  "generatedAt": "2026-09-08T09:01:47.474Z",
   "entries": [
+    {
+      "prNumber": 5321,
+      "category": "fixed",
+      "title": "Your Android board sheet now keeps its dark surface, and the Play Store gallery opens with a lit Tension board.",
+      "mergedAt": "2026-09-08T09:00:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5321"
+    },
     {
       "prNumber": 4551,
       "category": "fixed",
@@ -4734,9 +4741,11 @@
       "date": "2026-09-08T16:00:49+10:00",
       "sha": "e0e18684fc0664eef894dbeccadb08d232469a1f",
       "platforms": [
+        "android",
         "ios"
       ],
       "fingerprints": {
+        "android": "154bc941c504727afc914057aed2edff2c096576",
         "ios": "b71bdb600c5a3e954d75c9ca673f056c62247ea9"
       }
     },
