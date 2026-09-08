@@ -201,7 +201,10 @@ jobs:
     needs: gate
     if: needs.gate.outputs.should_build == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 60, not 45: R8 now runs inside both assembleRelease and bundleRelease.
+    # A timeout that cancels mid-bundleRelease wastes the whole run after the APK
+    # was already built and verified; the headroom costs nothing when unused.
+    timeout-minutes: 60
     environment: Production
     outputs:
       candidate_ready: ${{ steps.candidate_metadata.outputs.ready }}
@@ -324,6 +327,14 @@ jobs:
             echo "::warning::Gate produced no usable fingerprint; the binary self-resolves and no fingerprint-android tag is pushed (next push rebuilds)."
           fi
 
+      # Minted here, before prebuild, so the exact value baked into the manifest
+      # (io.sentry.proguard-uuid, via plugins/with-android-sentry-proguard-uuid.js)
+      # is the exact value the mapping is later uploaded under. Env only: it never
+      # enters the resolved Expo config, so it cannot move the fingerprint the
+      # gate pinned above.
+      - name: Mint the Sentry ProGuard mapping UUID
+        run: echo "BOARDSESH_SENTRY_PROGUARD_UUID=$(uuidgen)" >> "$GITHUB_ENV"
+
       - name: Expo prebuild (generate android/)
         working-directory: packages/mobile
         # GOOGLE_MAPS_API_KEY is inherited from the workflow env (baked into the
@@ -416,6 +427,17 @@ jobs:
       - name: Check embedded commitTime
         run: vp run check:mobile-embedded-commit-time -- --search-root packages/mobile/android/app/build
 
+      # Postcondition for the minified build, in the same spirit as the commitTime
+      # check above: assert R8's own mapping rather than the gradle property that
+      # asked for it. Runs well before the Play upload — past that the binary is
+      # in the store and the fingerprint tag makes the next push skip the build.
+      - name: Check Android obfuscation (R8 mapping)
+        run: |
+          vp run check:mobile-android-obfuscation -- \
+            --mapping packages/mobile/android/app/build/outputs/mapping/release/mapping.txt \
+            --min-renamed-fraction 0.40 \
+            --summary
+
       # Guard against shipping an unsigned / debug-signed APK as if it were the
       # release build: assert the artifact verifies and log its signer cert so
       # the signing key is auditable in the run log.
@@ -489,6 +511,49 @@ jobs:
             --release "com.boardsesh.app@${BOARDSESH_MOBILE_VERSION}+${VERSION_CODE}" \
             --dist "${VERSION_CODE}"
 
+      # Same decoupled, continue-on-error contract as the source-map upload above,
+      # and for the same reason: a Sentry-side failure must never take down a
+      # release that already built and verified. The Gradle-embedded upload stays
+      # off (SENTRY_DISABLE_AUTO_UPLOAD) — this is not it. The Sentry Android
+      # Gradle Plugin, which would normally inject the proguard-uuid and upload
+      # the mapping, has never been applied here; instead the UUID is minted
+      # before prebuild, baked into the manifest by
+      # plugins/with-android-sentry-proguard-uuid.js, and forced onto the upload
+      # with --uuid. Play is unaffected either way: AGP embeds the mapping in the
+      # AAB, so a failure here costs Sentry deobfuscation only, never Play's.
+      - name: Upload Sentry ProGuard mapping
+        id: sentry_mapping
+        if: env.SENTRY_UPLOAD_ENABLED == 'true'
+        continue-on-error: true
+        working-directory: packages/mobile
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # org/project come from this file, not CLI flags — same as the
+          # source-map step above.
+          SENTRY_PROPERTIES: android/sentry.properties
+        run: |
+          set -euo pipefail
+          mapping=android/app/build/outputs/mapping/release/mapping.txt
+          if [ ! -f "$mapping" ]; then
+            echo "::error::No R8 mapping at $mapping — nothing to symbolicate against."
+            exit 1
+          fi
+          if [ -z "${BOARDSESH_SENTRY_PROGUARD_UUID:-}" ]; then
+            echo "::error::BOARDSESH_SENTRY_PROGUARD_UUID is unset, so the binary carries no proguard-uuid and an uploaded mapping could never be matched to it."
+            exit 1
+          fi
+          # --require-one: without it a moved output path exits 0 having uploaded
+          # nothing, which is the failure this whole step exists to prevent.
+          ./node_modules/.bin/sentry-cli upload-proguard \
+            --uuid "$BOARDSESH_SENTRY_PROGUARD_UUID" \
+            --require-one \
+            "$mapping"
+
+      - name: Warn when the Sentry ProGuard mapping upload fails
+        if: steps.sentry_mapping.outcome == 'failure'
+        run: |
+          echo "::warning::Sentry ProGuard mapping upload failed after the signed APK was built and verified. The release is unaffected, and Google Play still deobfuscates (the mapping ships inside the AAB). Android Java/Kotlin frames in Sentry will read as obfuscated symbols for this build until the mapping is uploaded by hand under UUID ${BOARDSESH_SENTRY_PROGUARD_UUID}."
+
       - name: Warn when Sentry source map upload fails
         if: steps.sentry_sourcemaps.outcome == 'failure'
         run: |
@@ -544,6 +609,17 @@ jobs:
             exit 1
           fi
           ./scripts/check-16kb-alignment.sh "${archives[@]}"
+
+      # Play deobfuscates from the mapping AGP embeds in the AAB, while Sentry
+      # deobfuscates from the mapping.txt uploaded above. Assert they are the same
+      # bytes: if they diverge, the two systems are symbolicating different builds
+      # and neither failure is visible until someone reads a stack trace.
+      - name: Verify the AAB carries the same R8 mapping
+        run: |
+          vp run check:mobile-android-obfuscation -- \
+            --mapping packages/mobile/android/app/build/outputs/mapping/release/mapping.txt \
+            --min-renamed-fraction 0.40 \
+            --aab packages/mobile/android/app/build/outputs/bundle/release
 
       - name: Upload AAB as artifact
         uses: actions/upload-artifact@v4

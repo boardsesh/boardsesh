@@ -361,6 +361,60 @@ describe('native release workflow contracts', () => {
     }
   });
 
+  // Google Play scored the app at Obfuscation 1% because minifyEnabled had never
+  // been true. The fix is a gradle property, but a property the generated
+  // build.gradle does not read leaves the build green and the APK readable — so
+  // the release lane asserts R8's own mapping, and it has to do so while failing
+  // is still free.
+  it('proves R8 obfuscated the release before it can reach Play', () => {
+    const steps = stepsOfJob(android, 'build-and-release');
+
+    // Both obfuscation steps run the same command, so anchoring on the command
+    // alone would let the APK-side check be deleted while the AAB one kept the
+    // assertion green. Distinguish them by the flag only one of them passes.
+    const isObfuscationCheck = (step: WorkflowStep) =>
+      typeof step.run === 'string' && step.run.includes('vp run check:mobile-android-obfuscation');
+    const check = steps.findIndex((step) => isObfuscationCheck(step) && !String(step.run).includes('--aab'));
+    expect(check, 'the release job must check the R8 mapping after the APK build').toBeGreaterThanOrEqual(0);
+
+    // After R8 has run: earlier and there is no mapping.txt, which the check
+    // reports as a failure rather than a pass.
+    const build = indexOfStepRunning(steps, './gradlew assembleRelease');
+    expect(build).toBeGreaterThanOrEqual(0);
+    expect(build).toBeLessThan(check);
+
+    // Before the bundle leaves the runner. Past this the binary is in the store
+    // and the fingerprint tag makes the next push skip the native build.
+    const upload = steps.findIndex((step) => step.uses?.startsWith('r0adkll/upload-google-play') ?? false);
+    expect(upload).toBeGreaterThanOrEqual(0);
+    expect(check).toBeLessThan(upload);
+
+    // The AAB is what Play actually receives, and it carries its own copy of the
+    // mapping. Assert that copy matches the one Sentry gets, after the bundle is
+    // built and still before the upload.
+    const aabCheck = steps.findIndex(
+      (step) => isObfuscationCheck(step) && String(step.run).includes('--aab packages/mobile/android'),
+    );
+    expect(aabCheck, 'the release job must verify the AAB carries the same mapping').toBeGreaterThanOrEqual(0);
+    const bundle = indexOfStepRunning(steps, './gradlew bundleRelease');
+    expect(bundle).toBeGreaterThanOrEqual(0);
+    expect(bundle).toBeLessThan(aabCheck);
+    expect(aabCheck).toBeLessThan(upload);
+  });
+
+  // The PR lane builds the same minified release APK, which is where a keep-rule
+  // regression is cheap to find — on main it has already cost a native build.
+  it('checks obfuscation on the PR lane too', () => {
+    const steps = stepsOfJob(workflow('android-pr-rn.yml'), 'build-apk');
+
+    const check = indexOfStepRunning(steps, 'vp run check:mobile-android-obfuscation');
+    expect(check, 'the PR build must check the R8 mapping').toBeGreaterThanOrEqual(0);
+
+    const build = indexOfStepRunning(steps, './gradlew assembleRelease');
+    expect(build).toBeGreaterThanOrEqual(0);
+    expect(build).toBeLessThan(check);
+  });
+
   it('checks the embedded framework ABI before anything leaves the runner', () => {
     const ci = workflow('ios-rn-ci.yml');
     for (const [source, job] of [
