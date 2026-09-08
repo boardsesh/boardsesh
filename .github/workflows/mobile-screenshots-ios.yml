@@ -1,8 +1,9 @@
 name: Mobile Screenshots (iOS)
 
 # Captures native App Store / onboarding screenshots from the RN app via Maestro
-# (scripts/mobile-screenshots.ts) and uploads them as a build artifact. Manual +
-# nightly only — never gates PRs.
+# (scripts/mobile-screenshots.ts) and uploads them as a build artifact. Manual
+# dispatch only for now — never gates PRs. (An automatic trigger after each
+# native build lands in a later PR.)
 #
 # Split out from the old combined mobile-screenshots.yml so iOS and Android run
 # independently. The Android half lives in mobile-screenshots-android.yml.
@@ -31,7 +32,7 @@ name: Mobile Screenshots (iOS)
 #
 # On a manual dispatch with `upload = true`, ios-finalize also uploads the freshly
 # captured screenshots via fastlane (screenshots ONLY — no binary or text
-# metadata). The nightly cron never uploads.
+# metadata). A plain capture-only dispatch never uploads.
 
 on:
   workflow_dispatch:
@@ -60,12 +61,9 @@ on:
         type: string
         default: ''
       upload:
-        description: 'Upload captured screenshots to App Store Connect. Never runs on the nightly cron. Requires the full App Store set (app-store flow, empty locales).'
+        description: 'Upload captured screenshots to App Store Connect. Requires the full App Store set (app-store flow, empty locales).'
         type: boolean
         default: false
-  schedule:
-    # 06:00 UTC nightly — regenerate the artifact off the latest main.
-    - cron: '0 6 * * *'
 
 concurrency:
   group: mobile-screenshots-ios-${{ github.ref }}
@@ -76,8 +74,8 @@ permissions:
 
 jobs:
   # Resolve the locale list once so the capture matrix can fan out on it. Empty
-  # `locales` = the full en-US,es,fr,de store set (the nightly cron and a no-arg
-  # dispatch); a value narrows it (e.g. a single locale).
+  # `locales` = the full en-US,es,fr,de store set (a no-arg dispatch); a value
+  # narrows it (e.g. a single locale).
   setup:
     runs-on: ubuntu-latest
     outputs:
@@ -277,7 +275,7 @@ jobs:
         #
         # Bounded shard-level retry: the simulator/Maestro capture is flaky — a leg
         # intermittently never reaches the home screen ("app did not reach the home
-        # screen") and one failed leg reds the whole nightly (it leaves a locale
+        # screen") and one failed leg reds the whole run (it leaves a locale
         # short, failing ios-finalize's dimension gate). The script already relaunches
         # the app 3× within one boot; when that isn't enough the fix is a *fresh* boot.
         # Each `vp run mobile:screenshots` invocation boots its own sim + Metro, so we
@@ -374,16 +372,16 @@ jobs:
     # Gate the App Store Connect secrets behind the Production environment — its
     # main-only branch policy fences them off from anyone who can push a branch and
     # workflow_dispatch it. The APP_STORE_CONNECT_* secrets are only referenced in
-    # the `UPLOAD_RUN == 'true'` steps, so cron and capture-only runs resolve to ''
-    # (no environment) and never wait on a future required reviewer — see the
+    # the `UPLOAD_RUN == 'true'` steps, so a capture-only dispatch resolves to ''
+    # (no environment) and never waits on a future required reviewer — see the
     # conditional-vs-bare note at android-apk-rn.yml (gate job).
     environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.upload) && 'Production' || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     env:
-      # Marks an upload dispatch — gates the App Store Connect upload steps so the
-      # nightly cron and capture-only runs never touch ASC.
+      # Marks an upload dispatch — gates the App Store Connect upload steps so a
+      # capture-only dispatch never touches ASC.
       UPLOAD_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.upload && inputs.flow == 'app-store' }}
 
     steps:
@@ -420,9 +418,9 @@ jobs:
         if: ${{ inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
         run: vp run check:screenshot-dimensions -- --platform ios
 
-      # --- Upload to App Store Connect (manual dispatch only; never on cron) ---
+      # --- Upload to App Store Connect (opt-in on a manual dispatch) ---
       # Screenshots ONLY — no binary, no metadata, no review submission. Gated
-      # behind the `upload` input, which is unset on the schedule cron. The
+      # behind the `upload` input, which defaults to false. The
       # `success() &&` prefix is required: a custom `if:` overrides the default
       # success() status check, so without it these would run even if a prior step
       # failed. fastlane's screenshots lane is a pure network upload (no Xcode), so

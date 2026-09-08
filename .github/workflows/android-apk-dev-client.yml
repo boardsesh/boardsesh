@@ -4,13 +4,20 @@ name: Android Dev-Client APK (React Native)
 # (packages/mobile/) and attaches it to a prerelease GitHub Release. Unlike the
 # production sideload build (.github/workflows/android-apk-rn.yml, which runs
 # `./gradlew assembleRelease`), the debug variant embeds expo-dev-client's
-# launcher, so the APK shows the "Development servers" screen and lets a tester
-# point it at any Metro dev server (and switch between worktrees from the dev
-# menu) instead of bundling JS.
+# launcher, so the APK loads JS from a Metro dev server instead of bundling it.
+#
+# On a plain launch it auto-connects to http://localhost:8081 — which is what
+# the screenshot capture wants (`adb reverse tcp:8081 tcp:8081` puts the host's
+# Metro on the emulator's loopback). On a physical device with no reverse set up
+# there is nothing on that port, so expo-dev-launcher falls back to its
+# "Development servers" screen and a tester enters a URL as before. The dev menu
+# has no floating button in this build; open it by shaking the device or with
+# `adb shell input keyevent 82`. See plugins/with-android-dev-menu-defaults.js.
 #
 # It installs SIDE-BY-SIDE with production: app.config.ts switches to the
-# "Boardsesh Dev" name, the com.boardsesh.app.dev package, and the reddish
-# hue-shifted icons (packages/mobile/dev-assets/) when BOARDSESH_APP_VARIANT=dev.
+# "Boardsesh Dev" name, the com.boardsesh.app.dev package, the reddish
+# hue-shifted icons (packages/mobile/dev-assets/), and the dev-menu manifest
+# defaults above when BOARDSESH_APP_VARIANT=dev.
 # Debug builds self-sign with the deterministic Expo template debug.keystore, so
 # no signing secrets are needed and the dev app upgrades in place run-to-run.
 # See docs/android-sideload-build.md.
@@ -186,6 +193,10 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.BOARDSESH_ANDROID_DEV_TAG }}
+          # The screenshot job checks the release commit against the current
+          # native inputs, so the tag must point at the build commit even when
+          # main advanced while this build was running.
+          target_commitish: ${{ github.sha }}
           name: Boardsesh Dev (Android dev-client, build ${{ github.run_number }})
           body: |
             **Dev-client** Android build from commit ${{ github.sha }} — for testing, not the Play Store.
@@ -193,9 +204,16 @@ jobs:
             **Package:** `com.boardsesh.app.dev` — installs **side-by-side** with the production app (shows as "Boardsesh Dev" with a red icon).
             **APK architecture:** universal (`arm64-v8a` + `x86_64`) — runs on physical arm64 devices, Apple-Silicon emulators, and x86_64 emulators (Linux/Intel + KVM).
 
-            This APK has no bundled JS: it opens expo-dev-client's launcher and loads
-            JavaScript from a Metro dev server. Start Metro (`vp run dev:mobile`),
-            then enter its URL in the launcher (or switch servers from the dev menu).
+            This APK has no bundled JS: it loads JavaScript from a Metro dev server.
+            On launch it connects to `http://localhost:8081` by itself, so with
+            `adb reverse tcp:8081 tcp:8081` set against a running Metro
+            (`vp run dev:mobile`) it goes straight into the app. Without that reverse
+            — a phone on Wi-Fi, say — there's nothing on that port and it falls back
+            to the launcher, where you enter your Metro URL as usual.
+
+            **Dev menu:** no floating button in this build. Shake the device, or run
+            `adb shell input keyevent 82`.
+
             Debug-signed, so it upgrades a previous `com.boardsesh.app.dev` install in place.
           files: |
             packages/mobile/android/app/build/outputs/apk/debug/boardsesh-dev-android.apk

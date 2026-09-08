@@ -40,14 +40,20 @@
     "lib/ios-simulator-lease.ts",
     "lib/ios-build-export.ts",
     "lib/metro-host.ts",
+    "lib/metro-dev-server.ts",
+    "lib/android-dev-client.ts",
     "mobile-ios-run.ts",
     "mobile-build-sim-app.ts",
     "mobile-dev-start.ts",
     "mobile-screenshots.ts",
     "mobile-ios-shots.ts",
+    "mobile-android-apk.ts",
+    "mobile-android-shots.ts",
     "__tests__/ios-profiling-tools.test.ts",
     "__tests__/mobile-ios-run.test.ts",
     "__tests__/mobile-screenshots.test.ts",
-    "__tests__/mobile-profile-capture.test.ts"
+    "__tests__/mobile-profile-capture.test.ts",
+    "__tests__/mobile-android-apk.test.ts",
+    "__tests__/with-android-dev-menu-defaults.test.ts"
   ]
 }

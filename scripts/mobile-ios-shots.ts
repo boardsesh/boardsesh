@@ -42,10 +42,20 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { commandExists, runCapture, runInherit, sleepSeconds } from './lib/exec';
 import {
+  METRO_PORT,
+  homeReadyMarkerCount,
+  metroDevClientUrl,
+  portInUse,
+  prewarmMetroBundle,
+  startMetro,
+  stopMetro,
+  waitForHomeReady,
+  waitForMetro,
+} from './lib/metro-dev-server';
+import {
   DEFAULT_USER_EMAIL,
   DEFAULT_USER_PASSWORD,
   type DeviceInfo,
-  METRO_PORT,
   type ScreenshotOptions,
   applyCleanStatusBar,
   bootDevice,
@@ -53,17 +63,9 @@ import {
   clearStatusBar,
   deviceSlug,
   findOrCreateIosDevice,
-  homeReadyMarkerCount,
-  metroDevClientUrl,
-  portInUse,
-  prewarmMetroBundle,
   resolveAppPath,
   resolveBootedIosDevice,
   resolveIosScreenshotDevices,
-  startMetro,
-  stopMetro,
-  waitForHomeReady,
-  waitForMetro,
 } from './mobile-screenshots';
 
 const LOG = '[mobile:ios-shots]';
@@ -399,6 +401,8 @@ function screenshotEnvOptions(options: ShotsOptions): ScreenshotOptions {
     renderMode: null,
     boards: null,
     appPath: options.appPath,
+    // iOS is always a dev-client; the flag is Android-only (see mobile-screenshots.ts).
+    devClient: false,
     shutdown: false,
     orientation: null,
   };

@@ -18,18 +18,16 @@ import {
   summariseScreenshotRender,
   writeCapturedScreenshots,
   isIpadScreenshotDevice,
-  metroDevClientUrl,
   parseArgs,
   renderMaestroFlowForIosDevice,
   resolveAppStoreLocaleTargets,
   resolveIosScreenshotDevices,
   rotationDegreesForIosOrientation,
-  SCREENSHOT_READY_PORT,
-  screenshotReadinessCount,
   validateIosAppLauncherUrl,
   type IosScreenshotDevice,
   type ScreenshotOptions,
 } from '../mobile-screenshots';
+import { metroDevClientUrl, SCREENSHOT_READY_PORT, screenshotReadinessCount } from '../lib/metro-dev-server';
 
 const phoneDevices = ['iPhone 16 Pro Max'];
 const ipadDevices = ['iPad Pro 13-inch (M5)', 'iPad Pro 11-inch (M5)'];
@@ -51,6 +49,7 @@ function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOpti
     boards: null,
     appPath: null,
     orientation: null,
+    devClient: false,
     shutdown: false,
     ...overrides,
   };
@@ -110,6 +109,7 @@ describe('parseArgs', () => {
         'The Cellar|Kilter Board Homewall',
         '--app-path',
         '/tmp/Boardsesh.app',
+        '--dev-client',
         '--shutdown',
       ]),
     ).toEqual({
@@ -126,8 +126,17 @@ describe('parseArgs', () => {
       boards: 'The Cellar|Kilter Board Homewall',
       appPath: '/tmp/Boardsesh.app',
       orientation: null,
+      devClient: true,
       shutdown: true,
     });
+  });
+
+  it('defaults --dev-client off and parses it as a bare boolean flag', () => {
+    expect(parseArgs([]).devClient).toBe(false);
+    expect(parseArgs(['--platform', 'android', '--dev-client']).devClient).toBe(true);
+    // iOS captures are always dev-clients, so the flag is accepted and ignored
+    // there rather than rejected — `--platform all` passes one argv to both.
+    expect(parseArgs(['--dev-client']).platform).toBe('ios');
   });
 
   it('maps --orientation landscape/portrait to the iOS orientation override', () => {

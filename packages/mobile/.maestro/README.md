@@ -16,9 +16,11 @@ The screenshot behaviour lives in the **Metro JS bundle**, not the native binary
 so the `.app` is reusable and CI caches it (keyed on native inputs) — a JS-only
 run skips the ~30-min native build. See `scripts/mobile-build-sim-app.ts`.
 
-On Android, the artifact is a standalone screenshot APK built with the same
-`EXPO_PUBLIC_SCREENSHOT_*` values present during Gradle's JS bundle step. The
-Android flows use `launchApp`, not the iOS dev-client deep link.
+On Android, in CI the artifact is a dev-client APK (no bundled JS) loading the same
+Metro screenshot-mode bundle iOS uses. The Android flows use `launchApp`, not the
+iOS dev-client deep link: `launchApp` still cold-starts straight into Metro because
+the dev-client's manifest carries `DEV_CLIENT_DEFAULT_LAUNCHER_URL` (added by a
+plugin on the dev variant) and expo-dev-launcher reopens the last bundle.
 
 ## Backend
 
@@ -96,9 +98,9 @@ on boot. They live only in screenshot-only builds; the separate prod-stripping o
   to reload the JS runtime mid-run; the iOS app-store flow no longer does (the board view
   is a deep link shot last, and the board-sheet shot is Android-only), while Android
   relaunches before its board-sheet shot.
-- The Android app is a standalone screenshot APK, so Android flows use
-  `launchApp`. The orchestrator uninstalls + reinstalls the APK and clears app
-  data before capture.
+- In CI the Android app is a dev-client APK loading Metro's screenshot-mode bundle
+  (same as iOS), so Android flows use `launchApp`. The orchestrator uninstalls +
+  reinstalls the APK and clears app data before capture.
 - Navigation uses custom-scheme deep links (`com.boardsesh.app://<route>`); Expo
   Router maps tab routes with the `(tabs)` group stripped (`://climbs`, `://home`,
   `://boards`, …). Each iOS `openLink` is followed by an optional `tapOn "Open"` to

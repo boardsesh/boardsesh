@@ -11,20 +11,31 @@
 # Inputs come from the environment (set on the workflow step):
 #   SCREENSHOT_FLOW            app-store | onboarding   (default app-store)
 #   SCREENSHOT_ANDROID_DEVICE  output device label      (default "Pixel 2")
-#   SCREENSHOT_APK_PATH        prebuilt screenshot APK  (default /tmp/boardsesh-screenshot.apk)
+#   SCREENSHOT_APK_PATH        dev-client APK to install (required, no default)
+#   SCREENSHOT_DEV_CLIENT      '1' to pass --dev-client to the orchestrator
 #   SCREENSHOT_RENDER_MODE     board drawing            (empty = the app default, Aura)
 #   SCREENSHOT_BOARDS          "|"-separated walls      (empty = the app default)
 set -euo pipefail
 
 flow="${SCREENSHOT_FLOW:-app-store}"
 device="${SCREENSHOT_ANDROID_DEVICE:-Pixel 2}"
-apk_path="${SCREENSHOT_APK_PATH:-/tmp/boardsesh-screenshot.apk}"
+apk_path="${SCREENSHOT_APK_PATH:-}"
+if [ -z "$apk_path" ]; then
+  echo "::error::SCREENSHOT_APK_PATH is required (no default APK path any more)."
+  exit 1
+fi
+if [ ! -f "$apk_path" ]; then
+  echo "::error::SCREENSHOT_APK_PATH=$apk_path does not exist."
+  exit 1
+fi
 
-# The APK was built with these baked into its JS bundle, and the capture gate
-# checks the app drew what the run asked for — so the same values have to reach
-# the orchestrator too. Without them a `render_mode=classic` run fails itself:
-# the app reports "classic", the gate still expects the default, and a legitimate
-# comparison capture reds out. Empty means neither side overrides anything.
+# The dev-client APK has no bundled JS — it loads from the Metro dev server the
+# orchestrator starts, so these values have to reach the orchestrator (which
+# puts them in Metro's env) rather than a JS bundle baked at build time. The
+# capture gate checks the app drew what the run asked for, so without them a
+# `render_mode=classic` run fails itself: the app reports "classic", the gate
+# still expects the default, and a legitimate comparison capture reds out.
+# Empty means neither side overrides anything.
 retarget=()
 if [ -n "${SCREENSHOT_RENDER_MODE:-}" ]; then
   retarget+=(--render-mode "$SCREENSHOT_RENDER_MODE")
@@ -32,12 +43,18 @@ fi
 if [ -n "${SCREENSHOT_BOARDS:-}" ]; then
   retarget+=(--boards "$SCREENSHOT_BOARDS")
 fi
+if [ "${SCREENSHOT_DEV_CLIENT:-}" = "1" ]; then
+  retarget+=(--dev-client)
+fi
 
 # Diagnostics land here; the workflow uploads it as an artifact (always()). The
 # device-side app logs (network errors, screen markers) are the only window into
 # why a screen captured empty, since the emulator is killed when this step ends.
 debug_dir="${GITHUB_WORKSPACE:-$PWD}/android-capture-debug"
 mkdir -p "$debug_dir"
+# The orchestrator copies the PNGs Maestro shot before a failure here (see
+# preserveFailedCaptures in scripts/mobile-screenshots.ts).
+export SCREENSHOT_DEBUG_DIR="$debug_dir"
 
 logcat_pid=""
 cleanup() {
@@ -81,10 +98,30 @@ done
   exit 1
 }
 
-vp run mobile:screenshots -- \
-  --platform android \
-  --flow "$flow" \
-  --backend prod \
-  --device "$device" \
-  ${retarget[@]+"${retarget[@]}"} \
-  --app-path "$apk_path"
+# Bounded retry, mirroring the iOS job's two-attempt shard loop: the dev-client
+# cold start intermittently dies with a native SIGSEGV inside React Native's
+# Fabric mounting (MountingCoordinator::pullTransaction, seen on CI run
+# 34214269041 on the third of four cold launches). A fresh orchestrator run
+# reinstalls the APK, restarts Metro and reruns the whole flow; the emulator
+# stays up. The blank/size gates in the workflow still judge the final set.
+attempts=2
+for attempt in $(seq 1 "$attempts"); do
+  if vp run mobile:screenshots -- \
+    --platform android \
+    --flow "$flow" \
+    --backend prod \
+    --device "$device" \
+    ${retarget[@]+"${retarget[@]}"} \
+    --app-path "$apk_path"; then
+    echo "capture succeeded on attempt ${attempt}/${attempts}"
+    exit 0
+  fi
+  if [ "$attempt" -lt "$attempts" ]; then
+    echo "::warning::capture attempt ${attempt}/${attempts} failed; retrying with a fresh install + Metro"
+    # Let the previous orchestrator's Metro / readiness process group exit and
+    # release their ports before the next attempt binds them.
+    sleep 15
+  fi
+done
+echo "::error::capture failed after ${attempts} attempts"
+exit 1
