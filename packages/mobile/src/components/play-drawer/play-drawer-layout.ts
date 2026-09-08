@@ -12,7 +12,7 @@ export type BoardBox = { width: number; height: number };
  * Contain a board of the given aspect ratio within a box, preserving aspect
  * ratio and centering. Letterboxes horizontally on tall (portrait) boards and
  * vertically on wide ones. Returns null when the box or aspect ratio isn't
- * measurable yet (pre-layout), so callers fall back to a full-bleed default.
+ * measurable yet (pre-layout), so callers can wait before mounting board art.
  *
  * `aspectRatio` is width / height.
  */

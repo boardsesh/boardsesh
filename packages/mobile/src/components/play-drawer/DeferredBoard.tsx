@@ -12,11 +12,11 @@ type BoardRenderData = {
 };
 
 type DeferredBoardProps = {
-  /** Drives the single-frame defer gate. While the route commits its first frame
-   *  this is false and a sized placeholder stands in for the board; one
-   *  requestAnimationFrame later it flips true and the interactive carousel
-   *  mounts, so the present animation runs natively over the placeholder. */
+  /** Closing resets the defer gate; reopening starts with a sized placeholder. */
   open: boolean;
+  /** The viewport and headers have measured, so the board's flex allocation
+   *  no longer depends on the first-screen fallback dimensions. */
+  layoutReady: boolean;
   boardName: BoardName;
   boardRenderData: BoardRenderData;
   layoutId: number;
@@ -42,19 +42,19 @@ type DeferredBoardProps = {
 
 /**
  * Defers mounting the interactive {@link SwipeBoardCarousel} until one frame
- * after the play drawer opens. The carousel mounts 2× `BoardImageNative` plus a
- * pinch/swipe/zoom gesture composition; rendering all of that synchronously the
- * moment the route commits blocks the present animation for ~0.5–1s (the
+ * after the open drawer's viewport and headers have measured. The carousel mounts
+ * 2× `BoardImageNative` plus a pinch/swipe/zoom gesture composition; rendering all
+ * of that synchronously when the route commits blocks the present animation for ~0.5–1s (the
  * user-reported stall). A single `requestAnimationFrame` gate lets the sheet
  * animate open immediately over a board-sized placeholder, then mounts the board
  * a frame later — and unlike `runAfterInteractions` a rAF can't be starved by the
  * sub-sheet hosts churning the interaction queue (the old 350ms-fallback stall,
  * which `docs/mobile-sheets-vs-routes.md` explicitly forbids for this).
  *
- * The gate is keyed on the OPEN TRANSITION (`open`), not on the displayed
- * climb's uuid, so once the drawer is open, swiping to next/prev climbs renders
- * the board immediately with no placeholder flash — the carousel stays mounted
- * across in-drawer swipes.
+ * The gate depends on opening and initial layout readiness, not the displayed
+ * climb's uuid or subsequent positive dimensions. Swiping to next/prev climbs
+ * renders the board immediately with no placeholder flash — the carousel stays
+ * mounted across in-drawer swipes.
  *
  * The placeholder fills the board's flex box (`flex: 1`, the same box the
  * contained carousel lays out into) so the first-screen layout is identical
@@ -62,16 +62,16 @@ type DeferredBoardProps = {
  */
 export const DeferredBoard = memo(function DeferredBoard({
   open,
+  layoutReady,
   boardRenderData,
   ...carouselProps
 }: DeferredBoardProps) {
-  // Gate on the open transition only so the board stays mounted across in-drawer
-  // swipes once the drawer is open. A single rAF fires after the route commits
-  // its first frame; it can't be starved the way the interaction queue can, so
-  // there's no "blank board until you reopen" fallback to wait out.
-  const ready = useDeferredUntilFrame(open);
+  // Let the viewport and header measurements reach layout before mounting the
+  // carousel. Otherwise a cached image can paint at the fallback size and visibly
+  // grow mid-presentation. Readiness stays true across swipes and positive resizes.
+  const ready = useDeferredUntilFrame(open && layoutReady);
 
-  if (!ready) {
+  if (!open || !layoutReady || !ready) {
     return (
       <View
         style={styles.placeholder}

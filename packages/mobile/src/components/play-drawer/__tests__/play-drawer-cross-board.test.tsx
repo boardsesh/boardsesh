@@ -20,6 +20,7 @@ import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { LayoutChangeEvent } from 'react-native';
 
 type Props = Record<string, unknown>;
 
@@ -34,6 +35,8 @@ const recorded = vi.hoisted(() => ({
   playback: [] as Props[],
   angleSheet: [] as Props[],
   lightbulb: [] as { canRelay?: boolean; onRelayToHolder?: () => void }[],
+  scroll: [] as Props[],
+  headerLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
 }));
 const setCurrentClimb = vi.hoisted(() => vi.fn());
 const queueState = vi.hoisted(() => ({
@@ -54,7 +57,10 @@ const navigation = vi.hoisted(() => ({
 
 // --- Host platform -----------------------------------------------------------
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, onLayout }: { children?: ReactNode; onLayout?: (event: LayoutChangeEvent) => void }) => {
+    if (onLayout) recorded.headerLayout = onLayout;
+    return createElement('div', null, children);
+  },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFillObject: {} },
@@ -74,7 +80,10 @@ vi.mock('react-native-mmkv', () => {
   };
 });
 vi.mock('react-native-gesture-handler', () => ({
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  ScrollView: ({ children, ...props }: { children?: ReactNode } & Props) => {
+    recorded.scroll.push(props);
+    return createElement('div', null, children);
+  },
   GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('react-native-reanimated', () => ({
@@ -273,6 +282,8 @@ beforeEach(() => {
   recorded.playback = [];
   recorded.angleSheet = [];
   recorded.lightbulb = [];
+  recorded.scroll = [];
+  recorded.headerLayout = undefined;
   queueState.queue = [];
   queueState.currentClimbQueueItem = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
@@ -300,6 +311,39 @@ describe('PlayDrawer relay board compatibility', () => {
     act(() => control?.onRelayToHolder?.());
     if (canRelay) expect(setCurrentClimb).toHaveBeenCalledWith(previewQueueItem, expect.anything());
     else expect(setCurrentClimb).not.toHaveBeenCalled();
+  });
+});
+
+describe('PlayDrawer opening layout', () => {
+  it.each(['viewport-first', 'headers-first'])('waits for every layout measurement (%s)', (order) => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer(vi.fn());
+    expect(lastBoardProps().layoutReady).toBe(false);
+    const viewportLayout = recorded.scroll.at(-1)?.onLayout as (event: LayoutChangeEvent) => void;
+    const headerLayout = recorded.headerLayout;
+    const logbookLayout = recorded.deferredSections.at(-1)?.onLogbookHeaderLayout as (height: number) => void;
+    if (!headerLayout) throw new Error('Title header is not measured');
+    const event = (height: number) =>
+      ({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height } } }) as LayoutChangeEvent;
+    const firstMeasurement =
+      order === 'viewport-first' ? () => viewportLayout(event(844)) : () => headerLayout(event(70));
+    const secondMeasurement =
+      order === 'viewport-first' ? () => headerLayout(event(70)) : () => viewportLayout(event(844));
+
+    act(firstMeasurement);
+    expect(lastBoardProps().layoutReady).toBe(false);
+    act(() => logbookLayout(44));
+    expect(lastBoardProps().layoutReady).toBe(false);
+    act(secondMeasurement);
+    expect(lastBoardProps().layoutReady).toBe(true);
+
+    act(() => viewportLayout(event(600)));
+    expect(lastBoardProps().layoutReady).toBe(true);
+    expect(recorded.scroll.at(-1)).toMatchObject({
+      showsVerticalScrollIndicator: false,
+      showsHorizontalScrollIndicator: false,
+      nestedScrollEnabled: true,
+    });
   });
 });
 

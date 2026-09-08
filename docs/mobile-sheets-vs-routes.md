@@ -393,6 +393,14 @@ defer the heavy content one `requestAnimationFrame` — the present runs nativel
 content fills in mid-slide. See `app/play.tsx`. Don't use `InteractionManager` for this: it
 waits out the whole transition and is disabled in screenshot mode.
 
+The player board also waits for the scroll viewport, title header, and Logbook header
+measurements before its one-frame defer starts. The carousel keeps its flex container
+mounted for measurement, but mounts images and prefetch only after it can contain-fit the
+board. Give both the image and zoom wrapper explicit dimensions: a cached image painted
+at an implicit size can visibly grow when layout corrects it during the native slide.
+Keep this measurement gate in screenshot mode too. Once mounted, ordinary resizing and
+climb changes reuse the carousel without restarting the opening placeholder.
+
 ## Worked examples
 
 - **Queue / Board / LogAscent / Angle / ClimbActions / AddBetaVideo** — secondary, opened on
