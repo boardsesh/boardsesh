@@ -8,19 +8,25 @@
 // shoot the wrong data with no error at all.
 
 import { createServer, type Server } from 'node:http';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import type { Socket } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 
 import {
   createScreenshotBackend,
+  isFixtureFileWithinDirectory,
   listFixtureFiles,
   readScreenshotFixtureManifest,
-  type ScreenshotBackend,
+  type ScreenshotBackendServer,
 } from '../lib/screenshot-backend';
-import { validateScreenshotFixtureManifest } from '../lib/screenshot-fixtures';
+import {
+  FIXTURE_SIZE_NOTE_BYTES,
+  fixtureSizeNote,
+  validateScreenshotFixtureManifest,
+} from '../lib/screenshot-fixtures';
 
 const FROZEN_NOW = '2026-09-08T09:00:00Z';
 const ACCOUNT_EMAIL = 'shots@boardsesh.com';
@@ -117,7 +123,7 @@ function stopUpstream(harness: UpstreamHarness): Promise<void> {
 describe('screenshot backend', () => {
   let fixturesDir: string;
   let upstream: UpstreamHarness;
-  let backend: ScreenshotBackend | null = null;
+  let backend: ScreenshotBackendServer | null = null;
   let backendOrigin = '';
   let logLines: string[] = [];
 
@@ -208,6 +214,10 @@ describe('screenshot backend', () => {
       expect(files).toContain('manifest.json');
       expect(files.some((file) => file.startsWith('graphql/SyncTicks/'))).toBe(true);
       expect(files.some((file) => file.startsWith('static/') && file.endsWith('.jpg'))).toBe(true);
+      // 16 hex chars of the variables hash — matching the static key length,
+      // not the shorter 12-char hash the log lines display.
+      const graphqlFixtureBasename = (manifest?.graphql[0].file ?? '').split('/').pop();
+      expect(graphqlFixtureBasename).toMatch(/^[0-9a-f]{16}\.json$/);
 
       // The disk grep: nothing under the fixtures dir may carry a live token or
       // a forwarded credential header.
@@ -287,6 +297,63 @@ describe('screenshot backend', () => {
         expect(readFileSync(join(fixturesDir, file), 'utf8')).not.toContain(UPSTREAM_JWT);
       }
     });
+
+    it('refuses to write a fixture whose variables carry a sensitive key, at any depth', async () => {
+      await start({ mode: 'record', fresh: true });
+      await postGraphql({
+        operationName: 'LinkBoardAccount',
+        query: 'mutation LinkBoardAccount($input: LinkBoardAccountInput!) { linkBoardAccount(input: $input) { ok } }',
+        variables: { input: { username: 'marco', password: 'hunter2' } },
+      });
+      const stats = backend?.stats();
+      await stop();
+
+      expect(hasLine('REDACTED graphql LinkBoardAccount')).toBe(true);
+      expect(stats?.redacted).toBe(1);
+      expect(readScreenshotFixtureManifest(fixturesDir)?.graphql).toHaveLength(0);
+      expect(listFixtureFiles(fixturesDir).some((file) => file.startsWith('graphql/'))).toBe(false);
+    });
+
+    it('treats a malicious operationName as anonymous rather than writing outside the fixtures dir', async () => {
+      await start({ mode: 'record', fresh: true });
+      // An anonymous query text, so a rejected operationName has nothing to
+      // fall back to and the request is reported as nameless — not written
+      // under a directory named `../../escape`.
+      const response = await postGraphql({
+        operationName: '../../escape',
+        query: '{ climbs { uuid } }',
+        variables: {},
+      });
+      expect(response.status).toBe(200);
+      await stop();
+
+      expect(hasLine('UPSTREAM-ERROR graphql anonymous status=200')).toBe(true);
+      expect(readScreenshotFixtureManifest(fixturesDir)?.graphql).toHaveLength(0);
+      expect(listFixtureFiles(fixturesDir)).toEqual(['manifest.json']);
+      // Nothing escaped the temp fixtures dir: no sibling `escape` directory.
+      expect(existsSync(resolve(fixturesDir, '..', 'escape'))).toBe(false);
+    });
+
+    it('notes a fixture size using the bytes actually written to disk, not the compact string length', async () => {
+      await start({ mode: 'record', fresh: true });
+      const bigValue = 'x'.repeat(FIXTURE_SIZE_NOTE_BYTES + 1024);
+      await postGraphql({
+        operationName: 'BigPayload',
+        query: 'query BigPayload { ok }',
+        variables: { note: bigValue },
+      });
+      await stop();
+
+      const manifest = readScreenshotFixtureManifest(fixturesDir);
+      const fixtureFile = manifest?.graphql.find((entry) => entry.operationName === 'BigPayload')?.file ?? '';
+      const diskFixture: unknown = JSON.parse(readFileSync(join(fixturesDir, fixtureFile), 'utf8'));
+      const writtenBytes = Buffer.byteLength(JSON.stringify(diskFixture, null, 2));
+      const compactLength = JSON.stringify(diskFixture).length;
+      // The pretty-printed bytes actually on disk, not the compact length —
+      // the two differ once indentation is counted.
+      expect(writtenBytes).not.toBe(compactLength);
+      expect(hasLine(fixtureSizeNote(writtenBytes))).toBe(true);
+    });
   });
 
   describe('replay mode', () => {
@@ -315,6 +382,32 @@ describe('screenshot backend', () => {
       expect(upstream.graphqlRequests).toHaveLength(requestsBefore);
       expect(hasLine('HIT graphql SyncTicks')).toBe(true);
       expect(backend?.stats().hits).toBeGreaterThan(0);
+    });
+
+    it('caches a hot fixture body on first replay hit and does not re-read the file afterward', async () => {
+      const first = await postGraphql({
+        operationName: 'SyncTicks',
+        query: SYNC_TICKS_QUERY,
+        variables: { cursor: null },
+      });
+      expect(await first.json()).toEqual(SYNC_TICKS_RESPONSE);
+
+      const entry = readScreenshotFixtureManifest(fixturesDir)?.graphql.find(
+        (graphqlEntry) => graphqlEntry.operationName === 'SyncTicks',
+      );
+      const fixturePath = join(fixturesDir, entry?.file ?? '');
+      const onDiskFixture: Record<string, unknown> = JSON.parse(readFileSync(fixturePath, 'utf8'));
+      const mutatedResponse = { data: { syncTicks: { documents: [{ uuid: 'mutated-after-cache' }] } } };
+      // Mutate the file on disk directly, bypassing the server. If the second
+      // request re-read it, it would see this; the cache means it can't.
+      writeFileSync(fixturePath, JSON.stringify({ ...onDiskFixture, response: mutatedResponse }), 'utf8');
+
+      const second = await postGraphql({
+        operationName: 'SyncTicks',
+        query: SYNC_TICKS_QUERY,
+        variables: { cursor: null },
+      });
+      expect(await second.json()).toEqual(SYNC_TICKS_RESPONSE);
     });
 
     it('hits the same fixture when only the document whitespace changed', async () => {
@@ -383,6 +476,12 @@ describe('screenshot backend', () => {
       expect(session.refreshToken).toBe('screenshot-replay-refresh');
       expect(Date.parse(session.expiresAt)).toBeGreaterThan(Date.now());
       expect(session.jwt).not.toContain(UPSTREAM_JWT);
+      // Well clear of the app's own 24h isTokenExpiringSoon threshold
+      // (packages/mobile/src/lib/auth-store.ts) — a 24h expiry here would read
+      // as "expiring soon" on the very first check and loop the capture into
+      // a refresh on every request.
+      expect(Date.parse(session.expiresAt)).toBeGreaterThan(Date.now() + 48 * 60 * 60 * 1000);
+      expect(hasLine('HIT auth credentials')).toBe(true);
 
       const refreshed = await fetch(`${backendOrigin}/auth/native/refresh`, {
         method: 'POST',
@@ -391,6 +490,7 @@ describe('screenshot backend', () => {
       });
       expect(refreshed.status).toBe(200);
       expect((await refreshed.json()) as { jwt: string }).toMatchObject({ refreshToken: 'screenshot-replay-refresh' });
+      expect(hasLine('HIT auth refresh')).toBe(true);
 
       const rejected = await fetch(`${backendOrigin}/auth/native/credentials`, {
         method: 'POST',
@@ -483,6 +583,30 @@ describe('screenshot backend', () => {
       socket.close();
     });
 
+    it('does not crash on a malformed frame and keeps serving HTTP afterward', async () => {
+      const socket = new WebSocket(`${backendOrigin.replace('http://', 'ws://')}/graphql`, 'graphql-transport-ws');
+      await new Promise<void>((resolve, reject) => {
+        socket.on('open', () => resolve());
+        socket.on('error', reject);
+      });
+      socket.on('error', () => {
+        // Expected: the malformed frame below is itself the protocol error
+        // under test, not a test failure.
+      });
+      socket.send(JSON.stringify({ type: 'connection_init' }));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // FIN=1, RSV1=1 (reserved bit set, no extension negotiated), opcode=text,
+      // unmasked len=2, payload "{}" — `ws` rejects this as a protocol error.
+      const rawSocket = (socket as unknown as { _socket: Socket })._socket;
+      rawSocket.write(Buffer.from([0xc1, 0x02, 0x7b, 0x7d]));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const health = await fetch(`${backendOrigin}/health`);
+      expect(health.status).toBe(200);
+      socket.close();
+    });
+
     it('destroys a websocket upgrade on any other path', async () => {
       const socket = new WebSocket(`${backendOrigin.replace('http://', 'ws://')}/realtime`, 'graphql-transport-ws');
       await expect(
@@ -545,5 +669,24 @@ describe('screenshot backend', () => {
         }),
       ).toThrow(/replay mode makes no outbound requests/);
     });
+  });
+});
+
+describe('isFixtureFileWithinDirectory', () => {
+  it('accepts a fixture file that resolves under the fixtures directory', () => {
+    expect(isFixtureFileWithinDirectory('/tmp/screenshot-fixtures', 'graphql/SyncTicks/abcdef0123456789.json')).toBe(
+      true,
+    );
+    expect(isFixtureFileWithinDirectory('/tmp/screenshot-fixtures', 'static/deadbeefdeadbeef.jpg')).toBe(true);
+  });
+
+  it('rejects a doctored entry.file that would resolve outside the fixtures directory', () => {
+    // `validateScreenshotFixtureManifest` already refuses to load a manifest
+    // whose `file` looks like this — this is the belt to that validator's
+    // braces, exercised directly since a manifest shaped like this can never
+    // reach a running replay server to trigger it end to end.
+    expect(isFixtureFileWithinDirectory('/tmp/screenshot-fixtures', '../../etc/passwd')).toBe(false);
+    expect(isFixtureFileWithinDirectory('/tmp/screenshot-fixtures', '/etc/passwd')).toBe(false);
+    expect(isFixtureFileWithinDirectory('/tmp/screenshot-fixtures', 'graphql/../../escape.json')).toBe(false);
   });
 });

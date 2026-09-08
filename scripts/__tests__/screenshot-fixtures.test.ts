@@ -17,6 +17,7 @@ import {
   canonicalJson,
   emptyManifest,
   findScreenshotBackendProblems,
+  findSensitiveVariableKeys,
   fixtureSizeNote,
   formatScreenshotBackendLine,
   graphqlFixtureKey,
@@ -177,6 +178,41 @@ describe('graphqlFixtureKey', () => {
   });
 });
 
+describe('findSensitiveVariableKeys', () => {
+  it('finds a top-level key, case-insensitively', () => {
+    expect(findSensitiveVariableKeys({ Password: 'hunter2' })).toEqual(['Password']);
+    expect(findSensitiveVariableKeys({ SECRET: 'x' })).toEqual(['SECRET']);
+  });
+
+  it('walks nested objects and arrays to any depth', () => {
+    expect(findSensitiveVariableKeys({ input: { auth: { token: 'abc' } } })).toEqual(['token']);
+    expect(findSensitiveVariableKeys({ accounts: [{ password: 'a' }, { password: 'b' }] })).toEqual(['password']);
+  });
+
+  it('matches a snake_case-prefixed and a plural form', () => {
+    expect(findSensitiveVariableKeys({ auth_token: 'abc' })).toEqual(['auth_token']);
+    expect(findSensitiveVariableKeys({ credentials: {} })).toEqual(['credentials']);
+  });
+
+  it('does not false-positive on a key that merely mentions one, like tokenCount', () => {
+    expect(findSensitiveVariableKeys({ tokenCount: 3, credentialsExpiry: '2026-01-01', secretary: 'x' })).toEqual([]);
+  });
+
+  it('returns every distinct sensitive key, sorted, with no duplicates', () => {
+    expect(findSensitiveVariableKeys({ password: 'a', nested: { password: 'b', token: 'c' } })).toEqual([
+      'password',
+      'token',
+    ]);
+  });
+
+  it('is empty for variables with nothing sensitive, including null and primitives', () => {
+    expect(findSensitiveVariableKeys({ limit: 10, cursor: null })).toEqual([]);
+    expect(findSensitiveVariableKeys(null)).toEqual([]);
+    expect(findSensitiveVariableKeys('just a string')).toEqual([]);
+    expect(findSensitiveVariableKeys(undefined)).toEqual([]);
+  });
+});
+
 describe('resolveOperationName', () => {
   it('prefers the explicit operationName field', () => {
     expect(resolveOperationName({ operationName: 'SyncTicks', query: 'query Other { ok }' })).toBe('SyncTicks');
@@ -191,6 +227,16 @@ describe('resolveOperationName', () => {
     expect(resolveOperationName({ query: '{ climbs { uuid } }' })).toBeNull();
     expect(resolveOperationName({ operationName: '', query: '{ ok }' })).toBeNull();
     expect(resolveOperationName({})).toBeNull();
+  });
+
+  it('rejects an operationName that is not a real GraphQL name, and falls back to the query', () => {
+    // `graphqlFixturePath` builds a directory from this value, so a name like
+    // this must never reach the return value — treated exactly like a missing
+    // operationName, including falling back to a name the query itself declares.
+    expect(resolveOperationName({ operationName: '../../escape', query: 'query Foo { ok }' })).toBe('Foo');
+    expect(resolveOperationName({ operationName: '../../escape', query: '{ climbs { uuid } }' })).toBeNull();
+    expect(resolveOperationName({ operationName: 'has space', query: '{ ok }' })).toBeNull();
+    expect(resolveOperationName({ operationName: 'a/b', query: '{ ok }' })).toBeNull();
   });
 });
 
@@ -247,6 +293,29 @@ describe('validateScreenshotFixtureManifest', () => {
       () => ({ ...validManifest(), graphql: [{ ...validManifest().graphql[0], file: '' }] }),
       'graphql[0].file',
     ],
+    [
+      'a graphql entry whose file contains a ".." segment',
+      () => ({
+        ...validManifest(),
+        graphql: [{ ...validManifest().graphql[0], file: 'graphql/../../escape.json' }],
+      }),
+      'graphql[0].file must not contain a ".." segment',
+    ],
+    [
+      'a graphql entry whose file is an absolute path',
+      () => ({ ...validManifest(), graphql: [{ ...validManifest().graphql[0], file: '/etc/passwd' }] }),
+      'graphql[0].file must not be an absolute path',
+    ],
+    [
+      'a graphql entry whose file contains a backslash',
+      () => ({ ...validManifest(), graphql: [{ ...validManifest().graphql[0], file: 'graphql\\x.json' }] }),
+      'graphql[0].file must not contain a backslash',
+    ],
+    [
+      'a graphql entry whose file does not start with graphql/',
+      () => ({ ...validManifest(), graphql: [{ ...validManifest().graphql[0], file: 'static/x.json' }] }),
+      'graphql[0].file must start with "graphql/"',
+    ],
     ['a static entry that is not an object', () => ({ ...validManifest(), static: [7] }), 'static[0]'],
     [
       'a static entry with no path',
@@ -262,6 +331,16 @@ describe('validateScreenshotFixtureManifest', () => {
       'a static entry with no file',
       () => ({ ...validManifest(), static: [{ ...validManifest().static[0], file: undefined }] }),
       'static[0].file',
+    ],
+    [
+      'a static entry whose file contains a ".." segment',
+      () => ({ ...validManifest(), static: [{ ...validManifest().static[0], file: 'static/../../escape.jpg' }] }),
+      'static[0].file must not contain a ".." segment',
+    ],
+    [
+      'a static entry whose file does not start with static/',
+      () => ({ ...validManifest(), static: [{ ...validManifest().static[0], file: 'graphql/x.jpg' }] }),
+      'static[0].file must start with "static/"',
     ],
     [
       'a static entry with no contentType',
@@ -356,6 +435,8 @@ describe('log grammar', () => {
       'HIT static /static/avatars/a.jpg?size=64',
       { event: 'hit', kind: 'static', subject: '/static/avatars/a.jpg?size=64' },
     ],
+    ['HIT auth credentials', { event: 'hit', kind: 'auth', route: 'credentials' }],
+    ['HIT auth refresh', { event: 'hit', kind: 'auth', route: 'refresh' }],
     [
       'MISS graphql SyncTicks 0123456789ab reason=no-fixture',
       { event: 'miss', kind: 'graphql', operationName: 'SyncTicks', hash12: '0123456789ab', reason: 'no-fixture' },
@@ -421,6 +502,7 @@ describe('log grammar', () => {
     ],
     ['WS connection_init ack', { event: 'ws-ack' }],
     ['WS subscribe ClimbStatsUpdated', { event: 'ws-subscribe', operationName: 'ClimbStatsUpdated' }],
+    ['WS error RSV1 must be clear', { event: 'ws-error', message: 'RSV1 must be clear' }],
   ];
 
   it.each(grammarLines)('round-trips %s', (body, parsed) => {
@@ -463,6 +545,15 @@ describe('findScreenshotBackendProblems', () => {
       line('HIT static /static/avatars/a.jpg?size=64'),
       line('WS connection_init ack'),
       line('WS subscribe ClimbStatsUpdated'),
+    ].join('\n');
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
+  });
+
+  it('counts an auth hit toward the no-HIT-lines check, and does not treat a WS error as a problem', () => {
+    const log = [
+      line('HIT auth credentials'),
+      line('WS error RSV1 must be clear'),
+      line('WS error RSV1 must be clear'),
     ].join('\n');
     expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
   });

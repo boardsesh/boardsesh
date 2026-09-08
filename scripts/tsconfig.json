@@ -34,6 +34,7 @@
     "lib/screenshot-backend.ts",
     "lib/screenshot-fixtures.ts",
     "__tests__/screenshot-backend.test.ts",
+    "__tests__/screenshot-backend-cli.test.ts",
     "__tests__/screenshot-fixtures.test.ts",
     "../infra/railway/config.ts",
     "../infra/railway/plan.ts"

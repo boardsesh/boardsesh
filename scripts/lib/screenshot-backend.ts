@@ -24,7 +24,7 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
-import { extname, join } from 'node:path';
+import { extname, join, resolve as resolvePath, sep } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 
@@ -32,8 +32,10 @@ import {
   FIXTURE_HASH_DISPLAY_LENGTH,
   FIXTURE_SIZE_NOTE_BYTES,
   SCREENSHOT_FIXTURE_FORMAT_VERSION,
+  STATIC_KEY_LENGTH,
   VARIANT_COUNT_NOTE_THRESHOLD,
   emptyManifest,
+  findSensitiveVariableKeys,
   fixtureSizeNote,
   formatScreenshotBackendLine,
   graphqlFixtureKey,
@@ -51,7 +53,7 @@ import {
   type StaticManifestEntry,
 } from './screenshot-fixtures';
 
-export type ScreenshotBackendOptions = {
+export type ScreenshotBackendServerOptions = {
   mode: ScreenshotBackendMode;
   fixturesDir: string;
   /** The backend to record from. Always null in replay mode — replay makes no outbound request. */
@@ -75,7 +77,7 @@ export type ScreenshotBackendStats = {
   fixtures: { graphql: number; static: number };
 };
 
-export type ScreenshotBackend = {
+export type ScreenshotBackendServer = {
   /** Binds 0.0.0.0 and resolves with the actual port (pass 0 for an ephemeral one). */
   listen(port: number): Promise<number>;
   close(): Promise<void>;
@@ -89,7 +91,15 @@ export const DEFAULT_SCREENSHOT_FLOW = 'app-store';
 export const REPLAY_REFRESH_TOKEN = 'screenshot-replay-refresh';
 
 const REPLAY_JWT_PREFIX = 'screenshot-replay.';
-const REPLAY_SESSION_LIFETIME_MS = 24 * 60 * 60 * 1000;
+/**
+ * Comfortably longer than the app's own 24h `isTokenExpiringSoon` threshold
+ * (`packages/mobile/src/lib/auth-store.ts`). A replay session used to be
+ * stamped with exactly that threshold, which meant every request computed an
+ * `expiresAt` that read as "expiring soon" the instant it was checked and put
+ * the capture into a refresh loop — the opposite of what the comment here
+ * used to claim.
+ */
+const REPLAY_SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Hop-by-hop and body-framing headers: forwarding them to `fetch` either throws
 // or makes the upstream frame a body we already buffered.
@@ -169,10 +179,15 @@ function forwardableHeaders(headers: IncomingHttpHeaders): Record<string, string
   return forwarded;
 }
 
-function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  const encoded = Buffer.from(JSON.stringify(body), 'utf8');
+/** Writes an already-serialized JSON string, so a cached body is sent without re-stringifying it. */
+function sendRawJson(response: ServerResponse, status: number, jsonText: string): void {
+  const encoded = Buffer.from(jsonText, 'utf8');
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': encoded.length });
   response.end(encoded);
+}
+
+function sendJson(response: ServerResponse, status: number, body: unknown): void {
+  sendRawJson(response, status, JSON.stringify(body));
 }
 
 function parseJsonBody(body: Buffer): unknown {
@@ -202,11 +217,30 @@ function assetExtension(contentType: string, pathname: string): string {
   return fromPath.length > 0 ? fromPath.toLowerCase() : 'bin';
 }
 
+/**
+ * On disk a graphql fixture is keyed on `STATIC_KEY_LENGTH` (16) hex
+ * characters of the variables hash, matching the static asset key length. Log
+ * lines stay at the shorter `FIXTURE_HASH_DISPLAY_LENGTH` (12) — this is the
+ * only thing that reads the longer prefix.
+ */
 function graphqlFixturePath(operationName: string, variablesHash: string): string {
-  return `graphql/${operationName}/${shortHash(variablesHash)}.json`;
+  return `graphql/${operationName}/${variablesHash.slice(0, STATIC_KEY_LENGTH)}.json`;
 }
 
-export function createScreenshotBackend(options: ScreenshotBackendOptions): ScreenshotBackend {
+/**
+ * True when a fixture's recorded `file`, resolved against the fixtures
+ * directory, cannot escape it. `validateScreenshotFixtureManifest` already
+ * rejects a `file` shaped like an escape at manifest-load time; this is the
+ * belt to that validator's braces, checked again immediately before the bytes
+ * are read off disk.
+ */
+export function isFixtureFileWithinDirectory(fixturesDir: string, file: string): boolean {
+  const resolvedFixturesDir = resolvePath(fixturesDir);
+  const resolvedFile = resolvePath(fixturesDir, file);
+  return resolvedFile === resolvedFixturesDir || resolvedFile.startsWith(`${resolvedFixturesDir}${sep}`);
+}
+
+export function createScreenshotBackend(options: ScreenshotBackendServerOptions): ScreenshotBackendServer {
   const { mode, fixturesDir, frozenNow, log } = options;
   const isRecording = mode === 'record';
   const upstreamUrl = isRecording ? (options.upstreamUrl ?? '').replace(/\/+$/, '') : null;
@@ -270,6 +304,15 @@ export function createScreenshotBackend(options: ScreenshotBackendOptions): Scre
   let misses = 0;
   let recorded = 0;
   let redacted = 0;
+
+  /**
+   * Replay only: `entry.file` -> its response, already serialized. A hot
+   * fixture (e.g. SearchClimbs, requested on every keystroke) is read and
+   * JSON.parsed once per process, not once per request. Nothing ever
+   * invalidates it — replay makes no writes, so the file behind an entry
+   * cannot change out from under the cache during a run.
+   */
+  const replayResponseCache = new Map<string, string>();
 
   const rewriteManifest = (): void => {
     writeJsonFile(join(fixturesDir, MANIFEST_FILENAME), sortManifestEntries(manifest));
@@ -368,14 +411,29 @@ export function createScreenshotBackend(options: ScreenshotBackendOptions): Scre
       recordedAt: new Date().toISOString(),
       upstream: upstreamUrl ?? '',
     };
+    // A board-login mutation carries the climber's Aurora password as an
+    // ordinary GraphQL variable, not a header — `carriesSensitiveToken` below
+    // only ever sees a header-derived jwt/refresh token, so this is the check
+    // that actually catches it before the fixture reaches disk.
+    const sensitiveVariableKeys = findSensitiveVariableKeys(fixture.variables);
+    if (sensitiveVariableKeys.length > 0) {
+      redacted += 1;
+      emit({ event: 'redacted', operationName: key.operationName });
+      return;
+    }
+
     const serialized = JSON.stringify(fixture);
     if (carriesSensitiveToken(serialized)) {
       redacted += 1;
       emit({ event: 'redacted', operationName: key.operationName });
       return;
     }
-    if (serialized.length > FIXTURE_SIZE_NOTE_BYTES) {
-      emit({ event: 'note', operationName: key.operationName, note: fixtureSizeNote(serialized.length) });
+    // The bytes actually written (writeJsonFile pretty-prints with a 2-space
+    // indent), not the compact string above — a fixture can clear the compact
+    // length and still land over budget once it hits disk.
+    const writtenBytes = Buffer.byteLength(JSON.stringify(fixture, null, 2));
+    if (writtenBytes > FIXTURE_SIZE_NOTE_BYTES) {
+      emit({ event: 'note', operationName: key.operationName, note: fixtureSizeNote(writtenBytes) });
     }
 
     const relativeFile = graphqlFixturePath(key.operationName, key.variablesHash);
@@ -434,13 +492,28 @@ export function createScreenshotBackend(options: ScreenshotBackendOptions): Scre
       sendJson(response, 200, fixtureMissBody(operationName, hash12));
       return;
     }
+    if (!isFixtureFileWithinDirectory(fixturesDir, entry.file)) {
+      // Defense in depth: the manifest validator already refuses to load an
+      // entry shaped like this, so reaching here means something wrote past
+      // that check. Answer exactly like a fixture that was never recorded —
+      // never follow the path.
+      misses += 1;
+      emit({ event: 'miss', kind: 'graphql', operationName, hash12, reason: 'no-fixture' });
+      sendJson(response, 200, fixtureMissBody(operationName, hash12));
+      return;
+    }
 
-    const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
+    let serializedResponse = replayResponseCache.get(entry.file);
+    if (serializedResponse === undefined) {
+      const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
+      // The recorded body verbatim, `errors` included: a screen that was
+      // recorded showing a partial error must screenshot the same way.
+      serializedResponse = JSON.stringify(fixture.response);
+      replayResponseCache.set(entry.file, serializedResponse);
+    }
     hits += 1;
     emit({ event: 'hit', kind: 'graphql', operationName, hash12 });
-    // The recorded body verbatim, `errors` included: a screen that was recorded
-    // showing a partial error must screenshot the same way.
-    sendJson(response, 200, fixture.response);
+    sendRawJson(response, 200, serializedResponse);
   };
 
   const handleGraphql = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -460,11 +533,17 @@ export function createScreenshotBackend(options: ScreenshotBackendOptions): Scre
       sendJson(response, 400, { errors: [{ message: 'screenshot backend could not parse the GraphQL body' }] });
       return;
     }
-    // NOTE: every miss below answers 200 with a GraphQL `errors` array. The app
-    // flips its connectivity store into "backend unreachable" on a 5xx or an
-    // INTERNAL_SERVER_ERROR extension (packages/mobile/src/lib/graphql/client.ts),
-    // which would replace the screen under capture with an offline banner and
-    // hide the very miss we are trying to report.
+    // NOTE: every miss below answers 200 with a GraphQL `errors` array, never a
+    // 5xx or an INTERNAL_SERVER_ERROR extension — those are what flip the
+    // app's connectivity store into "backend unreachable"
+    // (packages/mobile/src/lib/graphql/client.ts) and swap every screen for
+    // the connectivity banner. A 200 miss instead makes graphql-request throw
+    // a ClientError, which React Query reports as an errored query;
+    // deriveOfflineQueryState (packages/mobile/src/hooks/use-offline-query-state.ts)
+    // then renders that screen's own OfflineState placard with reason `error`
+    // — not an empty list. The placard stays visible in the capture, which is
+    // exactly what makes a miss noticeable at a glance, and the connectivity
+    // store itself is never tripped.
     if (isRecording) await recordGraphql(request, response, rawBody, parsedBody as Record<string, unknown>);
     else replayGraphql(response, parsedBody as Record<string, unknown>);
   };
@@ -478,7 +557,8 @@ export function createScreenshotBackend(options: ScreenshotBackendOptions): Scre
     refreshToken: REPLAY_REFRESH_TOKEN,
     // Deliberately real wall-clock, not frozenNow: the app refreshes on an
     // expiry it computes itself, and a frozen (long past) expiry would send it
-    // into a refresh loop for the whole capture.
+    // into a refresh loop for the whole capture. See REPLAY_SESSION_LIFETIME_MS
+    // for why the lifetime itself also has to clear the app's own threshold.
     expiresAt: new Date(Date.now() + REPLAY_SESSION_LIFETIME_MS).toISOString(),
   });
 
@@ -531,6 +611,7 @@ export function createScreenshotBackend(options: ScreenshotBackendOptions): Scre
       return;
     }
     hits += 1;
+    emit({ event: 'hit', kind: 'auth', route: 'credentials' });
     sendJson(response, 200, syntheticSession(manifest.accountEmail));
   };
 
@@ -571,6 +652,15 @@ export function createScreenshotBackend(options: ScreenshotBackendOptions): Scre
       sendJson(response, 404, { error: `no recorded asset for ${subject}` });
       return;
     }
+    if (!isFixtureFileWithinDirectory(fixturesDir, entry.file)) {
+      // Same belt-and-braces as the graphql path: answer like nothing was
+      // ever recorded rather than trust an entry.file the validator should
+      // already have refused to load.
+      misses += 1;
+      emit({ event: 'miss', kind: 'static', subject });
+      sendJson(response, 404, { error: `no recorded asset for ${subject}` });
+      return;
+    }
     const bytes = readFileSync(join(fixturesDir, entry.file));
     hits += 1;
     emit({ event: 'hit', kind: 'static', subject });
@@ -606,6 +696,7 @@ export function createScreenshotBackend(options: ScreenshotBackendOptions): Scre
       else if (pathname === '/auth/native/credentials') replayCredentials(response, rawBody);
       else {
         hits += 1;
+        emit({ event: 'hit', kind: 'auth', route: 'refresh' });
         sendJson(response, 200, syntheticSession(manifest.accountEmail));
       }
       return;
@@ -655,7 +746,18 @@ export function createScreenshotBackend(options: ScreenshotBackendOptions): Scre
     handleProtocols: (protocols) => (protocols.has('graphql-transport-ws') ? 'graphql-transport-ws' : false),
   });
 
+  // A malformed frame (bad RSV bits, an unmasked client frame, …) emits
+  // `error` on the socket; without a listener Node treats that as unhandled
+  // and crashes the whole process over one bad client.
+  webSocketServer.on('error', (error: Error) => {
+    emit({ event: 'ws-error', message: error.message });
+  });
+
   webSocketServer.on('connection', (socket: WebSocket) => {
+    socket.on('error', () => {
+      // A malformed frame from one client must not take the server down —
+      // `ws` already terminated this socket; nothing else to do here.
+    });
     socket.on('message', (rawMessage) => {
       const message: unknown = ((): unknown => {
         try {

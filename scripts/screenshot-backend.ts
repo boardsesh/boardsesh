@@ -12,12 +12,12 @@
  */
 
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   createScreenshotBackend,
   readScreenshotFixtureManifest,
-  type ScreenshotBackend,
+  type ScreenshotBackendServer,
 } from './lib/screenshot-backend';
 import type { ScreenshotBackendMode } from './lib/screenshot-fixtures';
 
@@ -71,6 +71,13 @@ export function parseCliArguments(argv: string[]): CliOptions {
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     switch (flag) {
+      // `vp run mobile:screenshot-backend -- --mode replay` puts a literal
+      // `--` ahead of every flag — vp's own argument separator, not one of
+      // ours. Skip it rather than fail on it (mobile-android-apk.ts and
+      // cloudflare-apply.ts do the same, filtering it out ahead of their loop
+      // instead of inline).
+      case '--':
+        break;
       case '--mode': {
         const requested = nextArgument(argv, index, flag);
         if (requested !== 'replay' && requested !== 'record') fail(`--mode must be replay or record\n\n${USAGE}`);
@@ -156,7 +163,7 @@ async function main(): Promise<void> {
     }
   }
 
-  let backend: ScreenshotBackend;
+  let backend: ScreenshotBackendServer;
   try {
     backend = createScreenshotBackend({
       mode: options.mode,
@@ -202,4 +209,10 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 }
 
-void main();
+// Guarded so importing this module (e.g. from Vitest, to reach
+// parseCliArguments) never starts the server or triggers SIGINT/SIGTERM
+// handlers — the same pattern mobile-android-apk.ts and cloudflare-apply.ts
+// use for the same reason.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void main();
+}

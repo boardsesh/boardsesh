@@ -18,9 +18,15 @@ export const FIXTURE_HASH_DISPLAY_LENGTH = 12;
 /** How much of a sha256 hex digest names a recorded static asset on disk. */
 export const STATIC_KEY_LENGTH = 16;
 
-/** The exact command that rebuilds the fixture set from PROD. Quoted in every remedy. */
+/**
+ * The exact command that rebuilds the fixture set from PROD. Quoted in every
+ * remedy. `--fixtures record|replay` picks the fixture mode; `--backend
+ * local|prod` picks the upstream the app talks to — a recording always targets
+ * `prod`. `--fixtures` lands with the orchestrator integration in a follow-up
+ * PR; until then this is the target shape, not yet a runnable command.
+ */
 export const RE_RECORD_COMMAND =
-  'vp run mobile:screenshots -- --backend record --record-upstream prod --platform ios --devices common --locales en-US --fresh';
+  'vp run mobile:screenshots -- --fixtures record --backend prod --platform ios --devices common --locales en-US --fresh';
 
 export type ScreenshotBackendMode = 'replay' | 'record';
 
@@ -129,6 +135,42 @@ export function stripIgnoredVariablePaths(operationName: string, variables: unkn
   return stripped;
 }
 
+/**
+ * A variable key that is itself a login secret's name, not merely a name that
+ * mentions one. Anchored so it matches `password`, `secret`, `token`,
+ * `credential` (and their plurals) exactly, or a `snake_case`-prefixed form
+ * like `auth_token` — never a bare substring, so a legitimate counter like
+ * `tokenCount` or a metadata field like `credentialsExpiry` does not sink an
+ * otherwise-clean fixture.
+ */
+const SENSITIVE_VARIABLE_KEY_PATTERN = /(^|_)(password|secret|token|credential)s?$/i;
+
+/**
+ * Every variable key, at any depth (through nested objects and arrays), that
+ * looks like it carries a login secret. `recordGraphql` calls this on every
+ * response before writing a fixture: GraphQL is how this app forwards a
+ * climber's Aurora board credentials (board login mutations take a
+ * `password`), so — unlike header-derived tokens, which are caught by
+ * `carriesSensitiveToken` — a secret can arrive as an ordinary request
+ * variable and would otherwise be committed to the repo verbatim.
+ */
+export function findSensitiveVariableKeys(variables: unknown): string[] {
+  const sensitiveKeys = new Set<string>();
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const element of value) walk(element);
+      return;
+    }
+    if (typeof value !== 'object' || value === null) return;
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (SENSITIVE_VARIABLE_KEY_PATTERN.test(key)) sensitiveKeys.add(key);
+      walk(entry);
+    }
+  };
+  walk(variables);
+  return [...sensitiveKeys].sort();
+}
+
 export type GraphqlFixtureKey = {
   operationName: string;
   /** sha256 of the whitespace-normalised document. */
@@ -156,12 +198,24 @@ export function graphqlFixtureKey(
 }
 
 /**
+ * A GraphQL name, by spec, starts with a letter or underscore and continues
+ * with letters, digits and underscores — nothing else. So this is not a taste
+ * choice: an `operationName` outside that shape did not come from a real
+ * GraphQL client and is never a value this module may use to build a
+ * filesystem path (`graphqlFixturePath` keys a fixture's directory on it).
+ */
+const OPERATION_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
  * The operation this POST body is for: the explicit `operationName` field when
- * graphql-request sent one, else the name declared in the document itself.
- * `null` means an anonymous operation, which the app should never send.
+ * graphql-request sent one and it looks like a real GraphQL name, else the
+ * name declared in the document itself. `null` means an anonymous operation,
+ * which the app should never send.
  */
 export function resolveOperationName(body: { operationName?: unknown; query?: unknown }): string | null {
-  if (typeof body.operationName === 'string' && body.operationName.length > 0) return body.operationName;
+  if (typeof body.operationName === 'string' && OPERATION_NAME_PATTERN.test(body.operationName)) {
+    return body.operationName;
+  }
   if (typeof body.query !== 'string') return null;
   const declared = body.query.match(/\b(query|mutation|subscription)\s+([A-Za-z_]\w*)/);
   return declared ? declared[2] : null;
@@ -289,12 +343,30 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
+/**
+ * A manifest `file` is joined onto `fixturesDir` and read straight off disk, so
+ * it must be a plain relative path that cannot leave the tree it was recorded
+ * into: no absolute path, no backslash (a Windows separator `path.join` would
+ * not normalise away on POSIX), no `..` segment, and it must actually sit
+ * under the subtree it claims to (`graphql/` or `static/`). Returns the rule
+ * that failed, or `null` when the path is safe.
+ */
+function unsafeFixtureFileRule(file: string, requiredPrefix: 'graphql/' | 'static/'): string | null {
+  if (file.startsWith('/')) return 'must not be an absolute path';
+  if (file.includes('\\')) return 'must not contain a backslash';
+  if (file.split('/').includes('..')) return 'must not contain a ".." segment';
+  if (!file.startsWith(requiredPrefix)) return `must start with "${requiredPrefix}"`;
+  return null;
+}
+
 function graphqlEntryProblem(entry: unknown, index: number): string | null {
   if (!isRecord(entry)) return `graphql[${index}] is not an object`;
   if (!isNonEmptyString(entry.operationName)) return `graphql[${index}].operationName must be a non-empty string`;
   if (!isNonEmptyString(entry.documentHash)) return `graphql[${index}].documentHash must be a non-empty string`;
   if (!isNonEmptyString(entry.variablesHash)) return `graphql[${index}].variablesHash must be a non-empty string`;
   if (!isNonEmptyString(entry.file)) return `graphql[${index}].file must be a non-empty string`;
+  const fileRule = unsafeFixtureFileRule(entry.file, 'graphql/');
+  if (fileRule) return `graphql[${index}].file ${fileRule}`;
   return null;
 }
 
@@ -303,6 +375,8 @@ function staticEntryProblem(entry: unknown, index: number): string | null {
   if (!isNonEmptyString(entry.path)) return `static[${index}].path must be a non-empty string`;
   if (typeof entry.query !== 'string') return `static[${index}].query must be a string`;
   if (!isNonEmptyString(entry.file)) return `static[${index}].file must be a non-empty string`;
+  const fileRule = unsafeFixtureFileRule(entry.file, 'static/');
+  if (fileRule) return `static[${index}].file ${fileRule}`;
   if (!isNonEmptyString(entry.contentType)) return `static[${index}].contentType must be a non-empty string`;
   if (typeof entry.bytes !== 'number' || !Number.isInteger(entry.bytes) || entry.bytes < 0) {
     return `static[${index}].bytes must be a non-negative integer`;
@@ -371,6 +445,7 @@ export type ScreenshotBackendLogLine =
     }
   | { event: 'hit'; kind: 'graphql'; operationName: string; hash12: string }
   | { event: 'hit'; kind: 'static'; subject: string }
+  | { event: 'hit'; kind: 'auth'; route: AuthRoute }
   | { event: 'miss'; kind: 'graphql'; operationName: string; hash12: string; reason: GraphqlMissReason }
   | { event: 'miss'; kind: 'static'; subject: string }
   | { event: 'miss'; kind: 'route'; method: string; path: string }
@@ -384,7 +459,12 @@ export type ScreenshotBackendLogLine =
   /** `note` is the free-text tail, e.g. `seen with 21 distinct variable sets`. */
   | { event: 'note'; operationName: string; note: string }
   | { event: 'ws-ack' }
-  | { event: 'ws-subscribe'; operationName: string };
+  | { event: 'ws-subscribe'; operationName: string }
+  /** A frame the `ws` server rejected (bad RSV bits, an unmasked client frame, …). Never a problem line: one bad client did not take the server down. */
+  | { event: 'ws-error'; message: string };
+
+/** The two replay auth routes a hit can be logged against. */
+export type AuthRoute = 'credentials' | 'refresh';
 
 /** How many recorded variants of one operation is enough to be worth a second look. */
 export const VARIANT_COUNT_NOTE_THRESHOLD = 20;
@@ -406,9 +486,15 @@ export function formatScreenshotBackendLine(line: ScreenshotBackendLogLine): str
       case 'ready':
         return `READY mode=${line.mode} port=${line.port} fixtures=${line.fixturesDir} frozenNow=${line.frozenNow} graphql=${line.graphqlCount} static=${line.staticCount}`;
       case 'hit':
-        return line.kind === 'graphql'
-          ? `HIT graphql ${line.operationName} ${line.hash12}`
-          : `HIT static ${line.subject}`;
+        switch (line.kind) {
+          case 'graphql':
+            return `HIT graphql ${line.operationName} ${line.hash12}`;
+          case 'static':
+            return `HIT static ${line.subject}`;
+          case 'auth':
+            return `HIT auth ${line.route}`;
+        }
+        break;
       case 'miss':
         switch (line.kind) {
           case 'graphql':
@@ -437,6 +523,8 @@ export function formatScreenshotBackendLine(line: ScreenshotBackendLogLine): str
         return 'WS connection_init ack';
       case 'ws-subscribe':
         return `WS subscribe ${line.operationName}`;
+      case 'ws-error':
+        return `WS error ${line.message}`;
     }
     // Unreachable while the union above is exhaustive; kept so a future variant
     // fails loudly here rather than logging `undefined`.
@@ -449,6 +537,7 @@ const READY_PATTERN =
   /^READY mode=(replay|record) port=(\d+) fixtures=(.+) frozenNow=(\S+) graphql=(\d+) static=(\d+)$/;
 const HIT_GRAPHQL_PATTERN = /^HIT graphql (\S+) (\S+)$/;
 const HIT_STATIC_PATTERN = /^HIT static (\S+)$/;
+const HIT_AUTH_PATTERN = /^HIT auth (\S+)$/;
 const MISS_GRAPHQL_PATTERN = /^MISS graphql (\S+) (\S+) reason=(\S+)$/;
 const MISS_STATIC_PATTERN = /^MISS static (\S+)$/;
 const MISS_ROUTE_PATTERN = /^MISS route (\S+) (\S+)$/;
@@ -460,9 +549,14 @@ const UPSTREAM_ERROR_PATTERN = /^UPSTREAM-ERROR graphql (\S+) (\S+)$/;
 const REDACTED_PATTERN = /^REDACTED graphql (\S+)$/;
 const NOTE_PATTERN = /^NOTE graphql (\S+) (.+)$/;
 const WS_SUBSCRIBE_PATTERN = /^WS subscribe (\S+)$/;
+const WS_ERROR_PATTERN = /^WS error (.+)$/;
 
 function isGraphqlMissReason(value: string): value is GraphqlMissReason {
   return (GRAPHQL_MISS_REASONS as readonly string[]).includes(value);
+}
+
+function isAuthRoute(value: string): value is AuthRoute {
+  return value === 'credentials' || value === 'refresh';
 }
 
 /** Parse one log line, or `null` when it is not one of ours. */
@@ -491,6 +585,9 @@ export function parseScreenshotBackendLogLine(line: string): ScreenshotBackendLo
 
   const hitStatic = HIT_STATIC_PATTERN.exec(body);
   if (hitStatic) return { event: 'hit', kind: 'static', subject: hitStatic[1] };
+
+  const hitAuth = HIT_AUTH_PATTERN.exec(body);
+  if (hitAuth && isAuthRoute(hitAuth[1])) return { event: 'hit', kind: 'auth', route: hitAuth[1] };
 
   const missGraphql = MISS_GRAPHQL_PATTERN.exec(body);
   if (missGraphql && isGraphqlMissReason(missGraphql[3])) {
@@ -544,6 +641,9 @@ export function parseScreenshotBackendLogLine(line: string): ScreenshotBackendLo
 
   const wsSubscribe = WS_SUBSCRIBE_PATTERN.exec(body);
   if (wsSubscribe) return { event: 'ws-subscribe', operationName: wsSubscribe[1] };
+
+  const wsError = WS_ERROR_PATTERN.exec(body);
+  if (wsError) return { event: 'ws-error', message: wsError[1] };
 
   return null;
 }
