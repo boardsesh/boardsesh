@@ -1060,6 +1060,14 @@ export default defineConfig({
         command: 'tsx scripts/screenshot-baseline.ts',
         cache: false,
       },
+      // Decides whether the probe's single pixel-compared shard should be
+      // overridden and the full 12-shard capture forced anyway, based on
+      // changed-file paths the probe shard itself can't see (locale-only or
+      // iPad-only changes). See scripts/screenshot-probe-scope.ts.
+      'screenshot:probe-scope': {
+        command: 'tsx scripts/screenshot-probe-scope.ts',
+        cache: false,
+      },
       'mobile:publish': {
         command: 'tsx scripts/mobile-publish.ts',
         cache: false,

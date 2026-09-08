@@ -235,10 +235,12 @@ export interface ShardVerification {
 
 /**
  * Pure: compare a shard's actually-extracted file hashes against what the
- * manifest recorded for `<locale>/<deviceSlug>/<name>`. No I/O here — `shardDir`
- * is only used to build a readable path in each problem message. A file the
- * manifest never listed and a file whose bytes changed are both reported the
- * same way: fetchBaseline treats either as a baseline it cannot trust.
+ * manifest recorded for `<locale>/<deviceSlug>/<name>`, in BOTH directions. No
+ * I/O here — `shardDir` is only used to build a readable path in each problem
+ * message. A file the manifest never listed, a file whose bytes changed, and a
+ * file the manifest promised but that never landed (a truncated zip, or one
+ * that silently lost a PNG) are all reported the same way: fetchBaseline
+ * treats any of them as a baseline it cannot trust.
  */
 export function verifyShardAgainstManifest(
   manifest: BaselineManifest,
@@ -248,8 +250,15 @@ export function verifyShardAgainstManifest(
   sha256ByFile: Readonly<Record<string, string>>,
 ): ShardVerification {
   const problems: string[] = [];
+  const prefix = `${locale}/${deviceSlug}/`;
+  const expectedNames = new Set(
+    Object.keys(manifest.files)
+      .filter((relativePath) => relativePath.startsWith(prefix))
+      .map((relativePath) => relativePath.slice(prefix.length)),
+  );
+
   for (const [name, actualSha256] of Object.entries(sha256ByFile)) {
-    const relativePath = `${locale}/${deviceSlug}/${name}`;
+    const relativePath = `${prefix}${name}`;
     const expectedSha256 = manifest.files[relativePath];
     const filePath = join(shardDir, name);
     if (expectedSha256 === undefined) {
@@ -258,6 +267,15 @@ export function verifyShardAgainstManifest(
       problems.push(`${filePath} does not match the manifest (expected ${expectedSha256}, got ${actualSha256})`);
     }
   }
+
+  // Reverse direction: something the manifest promised for this shard that
+  // was never actually extracted.
+  for (const name of expectedNames) {
+    if (!(name in sha256ByFile)) {
+      problems.push(`${join(shardDir, name)} is listed in the manifest (${prefix}${name}) but missing from the shard`);
+    }
+  }
+
   return { ok: problems.length === 0, problems };
 }
 
@@ -415,18 +433,51 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
   }
 
   // Read the manifest BEFORE unzipping so each shard can be checked against it
-  // as it lands, rather than trusting the zip contents on faith.
+  // as it lands, rather than trusting the zip contents on faith. The manifest
+  // is mandatory from here on: a fetch that cannot prove what it downloaded is
+  // correct is exactly as untrustworthy as no baseline at all.
   let commit = '';
   let manifest: BaselineManifest | null = null;
   const manifestFile = join(downloadDir, manifestName);
   if (existsSync(manifestFile)) {
-    const parsed: unknown = JSON.parse(readFileSync(manifestFile, 'utf8'));
-    if (parsed && typeof parsed === 'object' && 'commit' in parsed) {
-      const parsedCommit = (parsed as { commit: unknown }).commit;
-      if (typeof parsedCommit === 'string') commit = parsedCommit;
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(manifestFile, 'utf8'));
+      if (parsed && typeof parsed === 'object' && 'commit' in parsed) {
+        const parsedCommit = (parsed as { commit: unknown }).commit;
+        if (typeof parsedCommit === 'string') commit = parsedCommit;
+      }
+      if (parsed && typeof parsed === 'object' && 'files' in parsed) {
+        manifest = parsed as BaselineManifest;
+      }
+    } catch (error) {
+      console.warn(
+        `::warning::${LOG} baseline manifest ${manifestName} is not valid JSON (${error instanceof Error ? error.message : String(error)}); treating as no baseline.`,
+      );
     }
-    if (parsed && typeof parsed === 'object' && 'files' in parsed) {
-      manifest = parsed as BaselineManifest;
+  }
+
+  if (!manifest) {
+    console.warn(`::warning::${LOG} baseline manifest ${manifestName} is missing or unreadable; treating as no baseline.`);
+    return { found: false, commit: '', unzipped: [] };
+  }
+
+  // `--all` must restore every shard the manifest describes — a shard that
+  // silently failed to upload (or was pruned) leaves the fetched tree short
+  // without ever failing a per-file check below, since there is no downloaded
+  // zip to check in the first place.
+  if (options.all) {
+    const missingAssets = new Set<string>();
+    for (const relativePath of Object.keys(manifest.files)) {
+      const [locale, deviceSlug] = relativePath.split('/');
+      if (!locale || !deviceSlug) continue;
+      const assetName = assetNameFor(options.platform, locale, deviceSlug);
+      if (!downloaded.includes(assetName)) missingAssets.add(assetName);
+    }
+    if (missingAssets.size > 0) {
+      console.warn(
+        `::warning::${LOG} baseline is missing shard asset(s) listed in the manifest: ${[...missingAssets].sort().join(', ')}; treating as no baseline.`,
+      );
+      return { found: false, commit: '', unzipped: [] };
     }
   }
 
@@ -441,7 +492,7 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
     runUnzip(runner, ['-o', '-q', join(downloadDir, zipName), '-d', target]);
     unzipped.push(target);
 
-    if (manifest && shard) {
+    if (shard) {
       const sha256ByFile: Record<string, string> = {};
       for (const name of readdirSync(target).filter((entry) => entry.toLowerCase().endsWith('.png'))) {
         sha256ByFile[name] = sha256Of(join(target, name));
@@ -449,7 +500,7 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
       const verification = verifyShardAgainstManifest(manifest, target, shard.locale, shard.deviceSlug, sha256ByFile);
       if (!verification.ok) {
         for (const problem of verification.problems) {
-          console.warn(`${LOG} baseline verification failed: ${problem}`);
+          console.warn(`::warning::${LOG} baseline verification failed: ${problem}`);
         }
         rmSync(target, { recursive: true, force: true });
         verified = false;

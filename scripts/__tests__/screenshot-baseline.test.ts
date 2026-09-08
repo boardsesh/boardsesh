@@ -187,12 +187,23 @@ describe('verifyShardAgainstManifest', () => {
   it('flags a file the manifest never listed', () => {
     const result = verifyShardAgainstManifest(manifest, '/shard', 'en-US', 'iphone-16-pro-max', {
       '01-discover.png': 'aa'.repeat(32),
+      '02-board.png': 'bb'.repeat(32),
       '03-extra.png': 'cc'.repeat(32),
     });
     expect(result.ok).toBe(false);
     expect(result.problems).toHaveLength(1);
     expect(result.problems[0]).toContain(join('/shard', '03-extra.png'));
     expect(result.problems[0]).toContain('is not listed in the manifest');
+  });
+
+  it('flags a file the manifest listed that never landed', () => {
+    const result = verifyShardAgainstManifest(manifest, '/shard', 'en-US', 'iphone-16-pro-max', {
+      '01-discover.png': 'aa'.repeat(32),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.problems).toHaveLength(1);
+    expect(result.problems[0]).toContain(join('/shard', '02-board.png'));
+    expect(result.problems[0]).toContain('missing from the shard');
   });
 });
 
@@ -444,8 +455,12 @@ describe('fetchBaseline', () => {
     const downloadDir = join(workDir, 'download');
     mkdirSync(downloadDir, { recursive: true });
     writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
-    // No manifest.json here, so verification is skipped — this test isolates
-    // the unzip exit-code handling from the manifest-verification behaviour.
+    // An empty-files manifest still counts as present — this test isolates the
+    // unzip exit-code handling from the manifest-verification behaviour.
+    writeFileSync(
+      join(downloadDir, 'ios-manifest.json'),
+      JSON.stringify({ platform: 'ios', commit: 'cafebabe', runId: '3', capturedAt: 'now', files: {} }),
+    );
     const runner = new FakeRunner((invocation) =>
       invocation.command === 'unzip'
         ? { status: 1, stdout: '', stderr: '1 warning; stripped leading "../" from an entry' }
@@ -468,6 +483,10 @@ describe('fetchBaseline', () => {
     const downloadDir = join(workDir, 'download');
     mkdirSync(downloadDir, { recursive: true });
     writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    writeFileSync(
+      join(downloadDir, 'ios-manifest.json'),
+      JSON.stringify({ platform: 'ios', commit: 'cafebabe', runId: '3', capturedAt: 'now', files: {} }),
+    );
     const runner = new FakeRunner((invocation) =>
       invocation.command === 'unzip' ? { status: 2, stdout: '', stderr: 'cannot find zipfile directory' } : ok(),
     );
@@ -489,6 +508,10 @@ describe('fetchBaseline', () => {
     mkdirSync(downloadDir, { recursive: true });
     writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
     writeFileSync(join(downloadDir, 'ios-de-DE-ipad-pro-11-inch-m5.zip'), 'zip-bytes');
+    writeFileSync(
+      join(downloadDir, 'ios-manifest.json'),
+      JSON.stringify({ platform: 'ios', commit: 'cafebabe', runId: '3', capturedAt: 'now', files: {} }),
+    );
     const runner = new FakeRunner(() => ok());
     const outDir = join(workDir, 'baseline');
 
@@ -502,6 +525,100 @@ describe('fetchBaseline', () => {
     ]);
     const download = runner.calls.find((call) => call.args[1] === 'download');
     expect(download?.args).toContain('ios-*.zip');
+  });
+
+  it('reports found=false when the manifest is missing entirely', () => {
+    const downloadDir = join(workDir, 'download');
+    mkdirSync(downloadDir, { recursive: true });
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    // No ios-manifest.json written at all — the release carries the zip but not
+    // (or no longer) the manifest that proves what is inside it.
+    const runner = new FakeRunner(() => ok());
+
+    const result = fetchBaseline({
+      platform: 'ios',
+      outDir: join(workDir, 'baseline'),
+      asset: 'ios-en-US-iphone-16-pro-max.zip',
+      all: false,
+      runner,
+      downloadDir,
+    });
+
+    expect(result).toEqual({ found: false, commit: '', unzipped: [] });
+    // Nothing should have been unzipped — the manifest check runs first.
+    expect(runner.calls.some((call) => call.command === 'unzip')).toBe(false);
+  });
+
+  it('reports found=false under --all when the manifest lists a shard whose zip never arrived', () => {
+    const downloadDir = join(workDir, 'download');
+    mkdirSync(downloadDir, { recursive: true });
+    // Only en-US/iphone-16-pro-max downloaded; the manifest also promises
+    // de-DE/ipad-pro-11-inch-m5, which is missing from the release entirely.
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    const manifest: BaselineManifest = {
+      platform: 'ios',
+      commit: 'cafebabe',
+      runId: '3',
+      capturedAt: 'now',
+      files: {
+        'en-US/iphone-16-pro-max/01-discover.png': 'aa'.repeat(32),
+        'de-DE/ipad-pro-11-inch-m5/01-discover.png': 'bb'.repeat(32),
+      },
+    };
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    const runner = new FakeRunner(() => ok());
+
+    const result = fetchBaseline({
+      platform: 'ios',
+      outDir: join(workDir, 'baseline'),
+      asset: null,
+      all: true,
+      runner,
+      downloadDir,
+    });
+
+    expect(result).toEqual({ found: false, commit: '', unzipped: [] });
+    expect(runner.calls.some((call) => call.command === 'unzip')).toBe(false);
+  });
+
+  it('discards a fetched shard and reports found=false when it carries a file the manifest never listed', () => {
+    const downloadDir = join(workDir, 'download');
+    mkdirSync(downloadDir, { recursive: true });
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    const knownBytes = 'real screenshot bytes';
+    const knownSha256 = createHash('sha256').update(knownBytes).digest('hex');
+    const manifest: BaselineManifest = {
+      platform: 'ios',
+      commit: 'cafebabe',
+      runId: '3',
+      capturedAt: 'now',
+      files: { 'en-US/iphone-16-pro-max/01-discover.png': knownSha256 },
+    };
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    const outDir = join(workDir, 'baseline');
+    // The fake unzip extracts the manifest-known file plus one the manifest
+    // never listed — an extra file must fail the fetch just like a hash
+    // mismatch or a missing one does.
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'unzip') {
+        mkdirSync(outDir, { recursive: true });
+        writeFileSync(join(outDir, '01-discover.png'), knownBytes);
+        writeFileSync(join(outDir, '02-unexpected.png'), 'not in the manifest');
+      }
+      return ok();
+    });
+
+    const result = fetchBaseline({
+      platform: 'ios',
+      outDir,
+      asset: 'ios-en-US-iphone-16-pro-max.zip',
+      all: false,
+      runner,
+      downloadDir,
+    });
+
+    expect(result).toEqual({ found: false, commit: '', unzipped: [] });
+    expect(existsSync(outDir)).toBe(false);
   });
 });
 

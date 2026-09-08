@@ -99,6 +99,22 @@ probe uploads an `ios-probe-compare` artifact with the summary JSON and a
 red-mask diff PNG per changed shot, so you can see what moved before trusting
 the fan-out.
 
+The single probe shard is blind to a change confined to a scope it never
+shoots: a non-en-US locale string, or an iPad-only layout, would always compare
+as "unchanged" and never trigger the fan-out that would have caught it.
+`scripts/screenshot-probe-scope.ts` (`vp run screenshot:probe-scope`) closes
+that gap with changed-file knowledge instead of pixels: the probe job diffs
+`git diff --name-only <baseline_commit> <source_sha>` (fetching the baseline
+commit explicitly, since it may sit outside a shallow clone's default reach)
+and sets `force_full=true` when any changed path matches a documented scope —
+`packages/shared/i18n/locales/**` except `en-US/**`, `packages/mobile/locales/**`,
+an `ipad`/`tablet`-matching path under `packages/mobile/`,
+`packages/mobile/app.config.ts`, or `app-stores/apple/**` — or when the baseline
+commit itself can't be fetched or diffed at all (no baseline yet, or one that
+fell out of history). `ios-capture` and `ios-finalize` then treat `force_full`
+exactly like a pixel-wise `changed`, fanning out even though the one shard the
+probe actually captured matched byte for byte.
+
 The baseline lives on a rolling GitHub prerelease tagged `screenshots-baseline`:
 `pack` writes 15 `ios-<store-locale>-<device>.zip` files — 5 store locales × 3
 devices, since the captured `es` app locale fans out into both `es-ES` and
@@ -108,6 +124,17 @@ and the prerelease keeps them out of git history while staying writable by the
 plain `GITHUB_TOKEN` — the tag ruleset covers only `build-*`, `fingerprint-*`
 and `release/*`. `vp run screenshot:baseline` packs, publishes and fetches it,
 and refuses to publish a tree that is short a locale or a device.
+
+A `fetch` only ever reports `found=true` when the manifest itself is present
+**and** verified complete: for `--all` every shard asset the manifest lists
+must actually have downloaded, and for either `--all` or a single `--asset`
+every file the manifest names for that shard must be present with a matching
+sha256, with no extra files beyond what the manifest lists. A missing manifest,
+a missing shard zip, a hash mismatch or an untracked extra file inside a zip
+all fail the same way — `found=false` with a `::warning::` naming what was
+wrong — so a caller (the probe, or the store-draft attach step) that gets
+`found=false` always falls back to a full capture instead of trusting or
+shipping a corrupted baseline.
 
 Publishing is manual today: dispatch with `publish_baseline: true`
 (`gate: full`, or `gate: probe` when no baseline exists yet) after a green

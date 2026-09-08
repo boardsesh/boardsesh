@@ -23,6 +23,13 @@ name: Mobile Screenshots (iOS)
 #                  matching shard from the `screenshots-baseline` prerelease and
 #                  compares them pixel-wise (scripts/compare-screenshots.ts).
 #                  Unchanged → ios-capture is skipped and the run ends in ~15 min.
+#                  This one shard is blind to a change confined to another locale
+#                  (es/fr/de strings) or to an iPad-only layout — it would always
+#                  read as "unchanged". scripts/screenshot-probe-scope.ts closes
+#                  that gap: it diffs the changed paths between the baseline's
+#                  commit and this run's commit and forces the fan-out (`force_full`)
+#                  whenever one falls in a documented blind spot, regardless of what
+#                  the pixel comparison found. See docs/mobile-store-release.md.
 #   ios-capture  — matrix of locale (en-US, es, fr, de) × device (the 6.9" iPhone 16
 #                  Pro Max — Apple scales it down to all other iPhones — plus the
 #                  iPad Pro 13-inch and 11-inch, a separate slot that doesn't
@@ -276,6 +283,11 @@ jobs:
       changed: ${{ steps.compare.outputs.changed }}
       changed_files: ${{ steps.compare.outputs.changed_files }}
       baseline_commit: ${{ steps.baseline.outputs.commit }}
+      # See scripts/screenshot-probe-scope.ts: true when a changed path falls
+      # outside what this one shard can see (a non-en-US locale, an iPad-only
+      # layout, ...) or the baseline commit could not be diffed at all.
+      force_full: ${{ steps.scope.outputs.force_full }}
+      force_full_reason: ${{ steps.scope.outputs.reason }}
 
     env:
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
@@ -297,8 +309,13 @@ jobs:
       MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
 
     steps:
+      # fetch-depth: 0 — the scope step below needs to diff against the
+      # baseline's commit, which may sit further back than a shallow clone
+      # would reach.
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Capture the probe shard
         uses: ./.github/actions/ios-screenshot-shard
@@ -323,6 +340,35 @@ jobs:
             --platform ios \
             --asset ios-en-US-iphone-16-pro-max.zip \
             --out "$RUNNER_TEMP/baseline"
+
+      # Closes the probe's blind spot (see scripts/screenshot-probe-scope.ts):
+      # this shard only ever shoots en-US x iPhone 16 Pro Max, so a change
+      # confined to another locale or an iPad-only layout would otherwise
+      # always compare as "unchanged". Diff the paths that changed between the
+      # baseline's own commit and this run's source commit and force the
+      # fan-out when one falls in a documented blind spot. A baseline commit
+      # that can't be fetched or isn't a real commit (no baseline published
+      # yet, or one that fell out of history) is treated the same way — force
+      # a full capture rather than guess.
+      - name: Decide whether the probe can see this change
+        id: scope
+        env:
+          BASELINE_COMMIT: ${{ steps.baseline.outputs.commit }}
+          SOURCE_SHA: ${{ needs.setup.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASELINE_COMMIT" ]; then
+            vp run screenshot:probe-scope -- --unreachable-baseline "no baseline commit recorded (first run, or none published yet)"
+          elif ! git fetch origin "$BASELINE_COMMIT"; then
+            echo "::warning::baseline commit $BASELINE_COMMIT could not be fetched from origin."
+            vp run screenshot:probe-scope -- --unreachable-baseline "could not fetch $BASELINE_COMMIT from origin"
+          elif ! git cat-file -e "${BASELINE_COMMIT}^{commit}" 2>/dev/null; then
+            echo "::warning::baseline commit $BASELINE_COMMIT is not a reachable commit after fetching."
+            vp run screenshot:probe-scope -- --unreachable-baseline "$BASELINE_COMMIT is not a reachable commit"
+          else
+            git diff --name-only "$BASELINE_COMMIT" "$SOURCE_SHA" > "$RUNNER_TEMP/probe-diff.txt"
+            vp run screenshot:probe-scope -- --changed-files-file "$RUNNER_TEMP/probe-diff.txt"
+          fi
 
       - name: Compare against baseline
         id: compare
@@ -349,10 +395,14 @@ jobs:
     # `probe` is skipped on a full run and must not skip the fan-out with it, so
     # this is written on `result` rather than the default all-needs-succeeded
     # gate. `!cancelled()` keeps a cancelled run from starting 11 macOS shards.
+    # `force_full` (scripts/screenshot-probe-scope.ts) fans out exactly like a
+    # pixel-wise `changed` would — it covers a locale-only or iPad-only change
+    # the single probe shard never captures pixels for.
     if: >-
       !cancelled() && needs.setup.result == 'success' && needs.ios-build.result == 'success' &&
       (needs.probe.result == 'skipped' ||
-       (needs.probe.result == 'success' && needs.probe.outputs.changed == 'true'))
+       (needs.probe.result == 'success' &&
+        (needs.probe.outputs.changed == 'true' || needs.probe.outputs.force_full == 'true')))
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
@@ -436,8 +486,12 @@ jobs:
       # capture-only dispatch never touches ASC.
       UPLOAD_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.upload && inputs.flow == 'app-store' }}
       # The probe ran and found nothing moved: there is one shard artifact, no
-      # full tree, and nothing to gate, upload or republish.
-      UNCHANGED: ${{ needs.probe.result == 'success' && needs.probe.outputs.changed == 'false' }}
+      # full tree, and nothing to gate, upload or republish. force_full overrides
+      # this — a locale-only or iPad-only change the probe's own pixels can't see
+      # still needs the full tree, even though the probe shard itself matched.
+      UNCHANGED: >-
+        ${{ needs.probe.result == 'success' && needs.probe.outputs.changed == 'false' &&
+            needs.probe.outputs.force_full != 'true' }}
       # A complete, trustworthy App Store tree landed in this run: the fan-out
       # succeeded, the probe (if any) succeeded, and neither the flow nor the
       # locale list was narrowed. Only such a run may refresh the baseline or push
@@ -572,10 +626,14 @@ jobs:
           PROBE_CHANGED: ${{ needs.probe.outputs.changed }}
           PROBE_CHANGED_FILES: ${{ needs.probe.outputs.changed_files }}
           BASELINE_COMMIT: ${{ needs.probe.outputs.baseline_commit }}
+          PROBE_FORCE_FULL: ${{ needs.probe.outputs.force_full }}
+          PROBE_FORCE_FULL_REASON: ${{ needs.probe.outputs.force_full_reason }}
         run: |
           set -euo pipefail
           if [ "$PROBE_RESULT" = "skipped" ]; then
             echo "**Full capture** — every requested shard was shot; the probe gate was not used." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$PROBE_CHANGED" = "false" ] && [ "$PROBE_FORCE_FULL" = "true" ]; then
+            echo "**Forced full capture vs baseline ${BASELINE_COMMIT:-(none)}** — the probe shard matched pixel-for-pixel, but ${PROBE_FORCE_FULL_REASON:-a change outside the probe shard} forced the fan-out anyway (see scripts/screenshot-probe-scope.ts)." >> "$GITHUB_STEP_SUMMARY"
           elif [ "$PROBE_CHANGED" = "false" ]; then
             echo "**Unchanged vs baseline ${BASELINE_COMMIT:-(none)}** — the probe shard matched, so the other 11 shards were skipped." >> "$GITHUB_STEP_SUMMARY"
           else

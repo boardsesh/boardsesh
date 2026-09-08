@@ -95,10 +95,19 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     const probe = workflow.jobs.probe;
     expect(probe.needs).toEqual(['setup', 'ios-build']);
     expect(flatten(probe.if)).toBe("needs.setup.outputs.gate == 'probe'");
-    expect(Object.keys(probe.outputs ?? {})).toEqual(['changed', 'changed_files', 'baseline_commit']);
+    expect(Object.keys(probe.outputs ?? {})).toEqual([
+      'changed',
+      'changed_files',
+      'baseline_commit',
+      'force_full',
+      'force_full_reason',
+    ]);
 
     const steps = probe.steps ?? [];
     expect(steps[0].uses).toBe('actions/checkout@v4');
+    // Full history: the scope step below diffs against the baseline's own
+    // commit, which a shallow clone might not reach.
+    expect(steps[0].with?.['fetch-depth']).toBe(0);
     expect(steps[1].uses).toBe('./.github/actions/ios-screenshot-shard');
     expect(steps[1].with?.locale).toBe('en-US');
     expect(steps[1].with?.['device-slug']).toBe('iphone-16-pro-max');
@@ -111,12 +120,35 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(steps.some((step) => step.with?.name === 'ios-probe-compare')).toBe(true);
   });
 
-  it('fans out only when the probe was skipped or reported a change', () => {
+  it('closes the probe blind spot with the scope script before comparing pixels', () => {
+    // Pins the fix for #5326 review thread on line 357: the probe only ever
+    // shoots en-US x iPhone 16 Pro Max, so a locale-only or iPad-only change
+    // needs a changed-file signal, not a pixel one.
+    const probe = workflow.jobs.probe;
+    const steps = probe.steps ?? [];
+    const baselineIndex = steps.findIndex((step) => step.id === 'baseline');
+    const scopeIndex = steps.findIndex((step) => step.id === 'scope');
+    const compareIndex = steps.findIndex((step) => step.id === 'compare');
+
+    expect(baselineIndex).toBeGreaterThanOrEqual(0);
+    expect(scopeIndex).toBeGreaterThan(baselineIndex);
+    expect(compareIndex).toBeGreaterThan(scopeIndex);
+
+    const scopeStep = steps[scopeIndex];
+    expect(scopeStep.run).toContain('vp run screenshot:probe-scope -- --changed-files-file');
+    expect(scopeStep.run).toContain('vp run screenshot:probe-scope -- --unreachable-baseline');
+    expect(scopeStep.run).toContain('git fetch origin "$BASELINE_COMMIT"');
+    expect(scopeStep.run).toContain('git diff --name-only "$BASELINE_COMMIT" "$SOURCE_SHA"');
+    expect(scopeStep.run).toContain('git cat-file -e');
+  });
+
+  it('fans out only when the probe was skipped, reported a change, or forced a full capture', () => {
     const capture = workflow.jobs['ios-capture'];
     expect(capture.needs).toEqual(['setup', 'ios-build', 'probe']);
     expect(flatten(capture.if)).toBe(
       "!cancelled() && needs.setup.result == 'success' && needs.ios-build.result == 'success' && " +
-        "(needs.probe.result == 'skipped' || (needs.probe.result == 'success' && needs.probe.outputs.changed == 'true'))",
+        "(needs.probe.result == 'skipped' || (needs.probe.result == 'success' && " +
+        "(needs.probe.outputs.changed == 'true' || needs.probe.outputs.force_full == 'true')))",
     );
     expect(capture.strategy?.['max-parallel']).toBe(4);
     expect(capture.strategy?.['fail-fast']).toBe(false);
@@ -143,7 +175,8 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
         "(github.event_name == 'workflow_run' && needs.ios-capture.result == 'success')) && 'Production' || '' }}",
     );
     expect(flatten(finalize.env?.UNCHANGED)).toBe(
-      "${{ needs.probe.result == 'success' && needs.probe.outputs.changed == 'false' }}",
+      "${{ needs.probe.result == 'success' && needs.probe.outputs.changed == 'false' && " +
+        "needs.probe.outputs.force_full != 'true' }}",
     );
     // FULL_SET_CAPTURED also folds across lines (`>-`); same flatten() treatment.
     expect(flatten(finalize.env?.FULL_SET_CAPTURED)).toBe(
