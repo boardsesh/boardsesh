@@ -45,23 +45,23 @@ import { adbPath, androidEnv, ensureAndroidSdk, resolveAndroidHome } from './lib
 import { bootEmulator, resolveRunningEmulator, shutdownEmulator } from './lib/android-emulator';
 import { ANDROID_DEV_PACKAGE, ANDROID_SCHEME } from './lib/android-app';
 import { ensureAndroidApk } from './mobile-android-apk';
+import { METRO_PORT, stopMetro } from './lib/metro-dev-server';
+import {
+  connectDevClient,
+  installDevClient,
+  launchDevClient,
+  launchDevClientToHome,
+  startMetroForDevClient,
+  stopDevClientSession,
+} from './lib/android-dev-client';
 import {
   DEFAULT_USER_EMAIL,
   DEFAULT_USER_PASSWORD,
-  METRO_PORT,
   type ScreenshotOptions,
   applyCleanAndroidStatusBar,
   buildScreenshotEnv,
   clearAndroidStatusBar,
   deviceSlug,
-  homeReadyMarkerCount,
-  metroDevClientUrl,
-  portInUse,
-  prewarmMetroBundle,
-  startMetro,
-  stopMetro,
-  waitForHomeReady,
-  waitForMetro,
 } from './mobile-screenshots';
 
 const LOG = '[mobile:android-shots]';
@@ -430,6 +430,7 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   const toolchain = ensureAndroidSdk();
   applyAndroidPath(toolchain.env);
   const env = process.env;
+  const adbBinary = adbPath(resolveAndroidHome());
 
   const serial = bootEmulator(env, { headless: options.headless });
 
@@ -440,35 +441,23 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   });
 
   console.log(`${LOG} Installing ${apk} as ${ANDROID_DEV_PACKAGE}...`);
-  adb(serial, ['uninstall', ANDROID_DEV_PACKAGE], env); // ignore failure (not installed yet)
-  const install = runInherit(adbPath(resolveAndroidHome()), ['-s', serial, 'install', '-r', apk], { env });
-  if (install !== 0) throw new Error(`adb install failed (exit ${install})`);
-  adb(serial, ['shell', 'pm', 'clear', ANDROID_DEV_PACKAGE], env); // fresh: signed out, no stale board
+  installDevClient(adbBinary, serial, apk);
   applyCleanAndroidStatusBar(serial);
 
-  if (portInUse(METRO_PORT)) {
-    throw new Error(`port ${METRO_PORT} is already in use; stop it or set BOARDSESH_METRO_PORT to a free port.`);
-  }
   const metroEnv = options.screenshotMode
     ? buildScreenshotEnv(screenshotEnvOptions(options), process.env, null)
     : { ...process.env };
   console.log(
     `${LOG} Starting Metro on ${METRO_PORT} (screenshotMode=${options.screenshotMode}, backend=${options.backend})...`,
   );
-  const metro = startMetro(metroEnv);
+  const session = startMetroForDevClient(metroEnv);
 
   let succeeded = false;
   try {
-    if (!waitForMetro()) throw new Error(`Metro did not become ready on port ${METRO_PORT}`);
-    prewarmMetroBundle('android');
-    adb(serial, ['reverse', `tcp:${METRO_PORT}`, `tcp:${METRO_PORT}`], env);
-
-    const baseline = homeReadyMarkerCount();
-    console.log(`${LOG} Launching dev-client against Metro...`);
-    adb(serial, ['shell', `am start -a android.intent.action.VIEW -d '${metroDevClientUrl()}'`], env);
+    connectDevClient(adbBinary, serial);
 
     if (options.screenshotMode) {
-      if (waitForHomeReady(baseline, 0, 240)) {
+      if (launchDevClientToHome(adbBinary, serial, { logPrefix: LOG })) {
         console.log(`${LOG} App reached home.`);
       } else {
         console.warn(
@@ -477,6 +466,8 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
         );
       }
     } else {
+      console.log(`${LOG} Launching dev-client against Metro...`);
+      launchDevClient(adbBinary, serial);
       const settle = Math.max(options.settleSeconds, 20);
       console.log(`${LOG} Waiting ${settle}s for the JS bundle to load...`);
       sleepSeconds(settle);
@@ -495,18 +486,18 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
       console.log(`${LOG} --shutdown requested; tearing down.`);
     } else {
       printReadyBanner(serial);
-      await blockUntilExit(metro);
+      await blockUntilExit(session.metro);
     }
     succeeded = true;
   } finally {
     if (options.shutdown) {
-      stopMetro(metro);
+      stopDevClientSession(session);
       clearAndroidStatusBar(serial);
       shutdownEmulator(serial, env);
     } else if (!succeeded) {
       // A mid-pipeline failure: free the Metro port, but leave the emulator up for
       // debugging and tell the user how to stop it.
-      stopMetro(metro);
+      stopDevClientSession(session);
       console.error(
         `${LOG} Left emulator ${serial} running for debugging; stop it with: vp run mobile:android-shots -- shutdown`,
       );
