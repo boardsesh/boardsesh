@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "operationName": "ClimbStatsForClimbs",
+  "documentHash": "5c7177cb26524b06c9f79cc81bf74bda694a17768194756d49dd8de80143a764",
+  "variablesHash": "a91f661766f5d5e1287d24ed3aa6047760decaa619924fbf015a85284b586311",
+  "query": "\n  query ClimbStatsForClimbs($boardName: String!, $climbUuids: [ID!]!) {\n    climbStatsForClimbs(boardName: $boardName, climbUuids: $climbUuids) {\n      climbUuid\n      angle\n      ascensionistCount\n      qualityAverage\n      difficultyAverage\n      displayDifficulty\n      difficulty\n      faUsername\n      faAt\n      syncSeq\n    }\n  }\n",
+  "variables": {
+    "boardName": "tension",
+    "climbUuids": [
+      "a25f2e89-e19e-4b04-899a-2452655df5a1",
+      "b049a7936013412cb9d760eee05786cb",
+      "A9E2DB581EF844D4BCC2272D18462BD2",
+      "6523151CE5B04CC093A0CBD80724F6EF",
+      "6D26D913C9AB417E9BA5C49642868AE7",
+      "9AB25FB12DD84981BA36CD2EF67CE5C2",
+      "e0f24878-0410-45c8-8c7e-995363894677",
+      "B3FCC117F2D843DEA0708326DDA68F89",
+      "53C8F642B523447EB31210EF0DBE5431",
+      "0DEE63E93D7F4EE89923F0DE6EE0E28C",
+      "5E9FC26AA3C7444196948D2086C0E3F1",
+      "6cdd918ebba942e2a6dc84828e1dd2c8",
+      "3C8012989BD54A1BB59B78AE89829235"
+    ]
+  },
+  "response": {
+    "data": {
+      "climbStatsForClimbs": []
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T17:32:45.615Z",
+  "upstream": "https://ws.boardsesh.com"
+}
