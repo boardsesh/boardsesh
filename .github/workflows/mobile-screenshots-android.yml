@@ -2,9 +2,40 @@ name: Mobile Screenshots (Android)
 
 # Captures native Play Store / onboarding screenshots from the RN app via Maestro
 # (scripts/mobile-screenshots.ts), uploads them as a build artifact, and posts the
-# set to the Discord deploy channel as a preview. Manual dispatch only for now —
-# never gates PRs. (An automatic trigger after each native build lands in a
-# later PR.)
+# set to the Discord deploy channel as a preview. Never gates PRs. There is no
+# cron.
+#
+# WHEN IT RUNS — two ways, and only these two:
+#   * automatically, after an Android Play internal deploy on main that actually
+#     SHIPPED a binary (the `workflow_run` trigger plus the `gate` job below);
+#   * on a manual `workflow_dispatch`, from any branch, with the inputs below.
+#
+# THE SHIPPED GATE. `conclusion == 'success'` is NOT proof a binary shipped: a
+# JS-only push finishes the deploy workflow with its build job SKIPPED (the
+# fingerprint gate saw that fingerprint already shipped) and the run still
+# concludes `success`. What proves it is the `fingerprint-android-<hash>` tag
+# android-apk-rn.yml forces onto its own $GITHUB_SHA right after a successful
+# Play upload. The `gate` job asks the API whether such a tag points at the
+# triggering commit; `android` needs it. A dispatch bypasses the gate — asking
+# for a capture by hand IS the request. Known gap: a forced rebuild of an
+# already-shipped fingerprint preserves the existing tag (it keeps pointing at
+# the first commit that shipped it), so that run reads as not-shipped. Dispatch
+# by hand when you want those pixels.
+#
+# SKIP PROPAGATION, traced by hand and pinned in
+# scripts/__tests__/mobile-screenshots-workflows.test.ts:
+#   * deploy failed/cancelled → `gate` is skipped by its conclusion guard →
+#     `android` is skipped with it (a skipped need skips a dependent job whose
+#     `if` carries no status function — and `android`'s carries none).
+#   * shipped=false → `gate` SUCCEEDS with shipped=false → `android` fails
+#     `needs.gate.outputs.shipped == 'true'` and is skipped; `gate` writes the
+#     reason to the step summary.
+#   * shipped=true, or any dispatch → `android` runs the whole capture.
+# The gate is a separate two-line job rather than a condition threaded through
+# `android`'s steps: `android` is ~15 steps, a custom step-level `if:` silently
+# replaces that step's implicit success() check, and repeating the gate fifteen
+# times would have been fifteen chances to write `if: shipped == 'true'` where
+# `success() && shipped == 'true'` was meant. One `needs:` says it once.
 #
 # Split out from the old combined mobile-screenshots.yml so iOS and Android run
 # independently: an Android-only change reruns here in ~15-20 min without waiting
@@ -26,13 +57,23 @@ name: Mobile Screenshots (Android)
 # On a manual dispatch with `commit_to_main = true` it commits the captured set
 # back to main (app-stores/google/screenshots/pixel-2/) using the OTA push app
 # token; that commit re-triggers mobile-store-metadata.yml, the single uploader
-# (text + icon + screenshots together). A capture-only dispatch just captures +
-# uploads the artifact — it never commits, because the capture isn't
-# byte-deterministic (e.g. relative timestamps), so auto-committing would churn
-# the live listing on every run. Refresh the store by dispatching with
-# commit_to_main once the captured artifact looks right.
+# (text + icon + screenshots together). Everything else — a capture-only
+# dispatch AND every automatic run — just captures, posts the Discord preview and
+# uploads the artifact. Committing stays opt-in and dispatch-only because the
+# Android capture isn't byte-deterministic yet (e.g. relative timestamps), so an
+# automatic commit would churn the live listing on every native release; the
+# pixel compare that will make it safe lands with the Android compare gate.
+# Refresh the store by dispatching with commit_to_main once the captured
+# artifact looks right.
 
 on:
+  workflow_run:
+    # The name must match the deploy workflow's `name:` exactly;
+    # scripts/native-release-workflows.test.ts pins both sides.
+    workflows:
+      - Android Play Internal Deploy (React Native)
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       flow:
@@ -63,20 +104,79 @@ on:
         type: boolean
         default: false
 
+# Automatic runs share ONE group and never cancel each other: a capture in
+# flight always finishes (it may be mid-emulator, or mid-push to main), and
+# GitHub coalesces whatever queues behind it down to the newest. Every dispatch
+# gets its own group keyed on the run id, so a `commit_to_main` run by hand is
+# never cancelled by a native deploy landing mid-capture — or by another dispatch.
 concurrency:
-  group: mobile-screenshots-android-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'workflow_run' && 'mobile-screenshots-android' || format('mobile-screenshots-android-dispatch-{0}', github.run_id) }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  # One API call on a cheap ubuntu runner, deciding whether the emulator job
+  # below is worth booting at all. See the SHIPPED GATE note in the header for
+  # why the deploy run's `conclusion` is not enough, and why this is its own job.
+  gate:
+    # workflow_run fires on every completion; a failed or cancelled deploy has
+    # nothing to capture. Dispatch runs are always allowed. Same guard, same
+    # reasoning, as mobile-store-draft.yml's main-candidate job.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      shipped: ${{ steps.shipped.outputs.shipped }}
+    env:
+      # The commit the captured pixels belong to: the deploy run's head commit on
+      # an automatic run, this run's own SHA on a dispatch. The capture job's
+      # checkout pins the same expression.
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - name: Check that a binary shipped at this commit
+        id: shipped
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "workflow_run" ]; then
+            echo "shipped=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Manual dispatch of $SOURCE_SHA — capturing without the shipped-binary gate."
+            exit 0
+          fi
+          # android-apk-rn.yml tags with `git tag --force <tag> $GITHUB_SHA`,
+          # i.e. a LIGHTWEIGHT tag, so each ref's object.sha IS the commit and
+          # needs no peeling. Read it over the API: this job has no checkout.
+          tagged_shas="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/fingerprint-android-" \
+            --jq '.[].object.sha')"
+          # Assign first, grep second. Piping gh straight into `grep -q` lets grep
+          # close the pipe on its first match, and the SIGPIPE that then kills gh
+          # would read as "not shipped" under `pipefail` — inverting the gate on
+          # exactly the runs that should capture.
+          if printf '%s\n' "$tagged_shas" | grep -qx "$SOURCE_SHA"; then
+            echo "shipped=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Android binary shipped at $SOURCE_SHA — capturing."
+          else
+            echo "shipped=false" >> "$GITHUB_OUTPUT"
+            echo "No Android binary shipped at $SOURCE_SHA (no fingerprint-android-* tag) — nothing to capture." >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::No Android binary shipped at $SOURCE_SHA (no fingerprint-android-* tag) — nothing to capture."
+          fi
+
   android:
+    needs: gate
+    # No status function here on purpose: a skipped or failed `gate` must skip
+    # this job too, which the implicit needs check already does.
+    if: needs.gate.outputs.shipped == 'true'
     # Gate the crown-jewel secret (OTA_PUSH_APP_PRIVATE_KEY — a GitHub App key on
     # main's PR-bypass allowlist) behind the Production environment, whose main-only
     # branch policy fences it off from a pushed branch. Only a commit_to_main
-    # dispatch mints/uses the token, so a capture-only dispatch resolves to '' (no
-    # environment) and never waits on a future required reviewer — see the
+    # dispatch mints/uses the token, so an automatic run and a capture-only
+    # dispatch both resolve to '' (no environment) and never wait on a future
+    # required reviewer — see the
     # conditional-vs-bare note at android-apk-rn.yml (gate job).
     environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.commit_to_main) && 'Production' || '' }}
     runs-on: ubuntu-latest
@@ -135,6 +235,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # Capture the commit that shipped the binary, not whatever main has
+          # moved on to since the deploy finished.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           # Full history so the screenshot push-back can reset onto the latest main.
           fetch-depth: 0
           # Persist the app token (when configured) so the push-back authenticates
@@ -337,7 +440,8 @@ jobs:
         run: vp run check:screenshot-dimensions -- --platform android
 
       # Post the captured set to the Discord deploy channel — a visual preview of
-      # what a manual app-store dispatch captured before commit_to_main. Reuses the
+      # what this native release actually looks like, and of what a dispatch
+      # captured before commit_to_main. Reuses the
       # DISCORD_DEPLOY_WEBHOOK that the build/deploy jobs already post to. Discord
       # caps a webhook message at 10 files / 8MB; the 8-shot set is ~3.6MB, so it
       # fits one multipart POST. success() so we only ever post a validated capture

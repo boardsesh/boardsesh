@@ -1,9 +1,46 @@
 name: Mobile Screenshots (iOS)
 
 # Captures native App Store / onboarding screenshots from the RN app via Maestro
-# (scripts/mobile-screenshots.ts) and uploads them as a build artifact. Manual
-# dispatch only for now — never gates PRs. (An automatic trigger after each
-# native build lands in a later PR.)
+# (scripts/mobile-screenshots.ts) and uploads them as a build artifact. Never
+# gates PRs. There is no cron.
+#
+# WHEN IT RUNS — two ways, and only these two:
+#   * automatically, after an iOS TestFlight deploy on main that actually SHIPPED
+#     a binary (the `workflow_run` trigger plus the shipped gate below);
+#   * on a manual `workflow_dispatch`, from any branch, with the inputs below.
+#
+# THE SHIPPED GATE. `conclusion == 'success'` is NOT proof a binary shipped: a
+# JS-only push finishes the deploy workflow with its build job SKIPPED (the
+# fingerprint gate saw that fingerprint already shipped) and the run still
+# concludes `success`. What proves it is the `fingerprint-ios-<hash>` tag
+# ios-testflight-rn.yml forces onto its own $GITHUB_SHA right after a successful
+# TestFlight upload. So `setup` asks the API whether such a tag points at the
+# triggering commit and publishes `shipped`; every job below requires it. A
+# dispatch bypasses the gate — asking for a capture by hand IS the request.
+# Known gap: a forced rebuild of an already-shipped fingerprint preserves the
+# existing tag (it keeps pointing at the first commit that shipped it), so that
+# run reads as not-shipped. Dispatch by hand when you want those pixels.
+#
+# SKIP PROPAGATION, traced by hand and pinned in
+# scripts/__tests__/mobile-screenshots-workflows.test.ts:
+#   * deploy failed/cancelled → `setup` is skipped by its conclusion guard →
+#     ios-build and probe are skipped with it (a skipped need skips a dependent
+#     job whose `if` carries no status function). ios-capture and ios-finalize DO
+#     evaluate, because their `if` starts with `!cancelled()`, and both fail
+#     `needs.setup.result == 'success'`. Nothing runs.
+#   * shipped=false → `setup` SUCCEEDS with shipped=false → ios-build's
+#     `shipped == 'true'` is false → skipped → probe skipped with it →
+#     ios-capture fails `needs.ios-build.result == 'success'` → ios-finalize
+#     fails its own `shipped == 'true'`. Nothing runs, and setup writes the
+#     reason to the step summary. That last clause is load-bearing: ios-finalize
+#     only checks `needs.setup.result`, so without it it would run on an empty
+#     artifact set and red the dimension gate on every JS-only push.
+#   * shipped=true, probe unchanged → setup + ios-build + probe run, ios-capture
+#     is skipped (probe succeeded, changed=false), ios-finalize runs with
+#     UNCHANGED=true: no dimension gate, no upload, no baseline refresh.
+#   * shipped=true, probe changed (or a gate=full dispatch) → ios-capture fans
+#     out, ios-finalize runs with FULL_SET_CAPTURED=true: dimension gate, then
+#     the App Store Connect upload and the baseline refresh.
 #
 # Split out from the old combined mobile-screenshots.yml so iOS and Android run
 # independently. The Android half lives in mobile-screenshots-android.yml.
@@ -39,10 +76,8 @@ name: Mobile Screenshots (iOS)
 #                  changed probe fans out to the remaining 11.
 #   ios-finalize — merge the per-shard artifacts into one tree, run the dimension
 #                  gate (it needs all five App Store locales at once), and upload.
-#                  Publishing the baseline needs `publish_baseline: true` on this
-#                  dispatch (gate=full, or gate=probe when no baseline exists yet)
-#                  until the `workflow_run` trigger (next PR in this series) does
-#                  it automatically after each green full capture.
+#                  An automatic run refreshes the baseline itself after a green
+#                  full capture; a dispatch has to ask with `publish_baseline`.
 #
 # The shard body itself lives in .github/actions/ios-screenshot-shard so probe and
 # ios-capture capture BYTE-IDENTICALLY — a probe that captured differently from
@@ -51,17 +86,28 @@ name: Mobile Screenshots (iOS)
 # All runs capture against PROD signed in as the test user (the canonical store
 # recipe), so there's no local backend.
 #
-# On a manual dispatch with `upload = true`, ios-finalize also uploads the freshly
-# captured screenshots via fastlane (screenshots ONLY — no binary or text
-# metadata). A plain capture-only dispatch never uploads.
+# ios-finalize uploads the captured set to App Store Connect (screenshots ONLY —
+# no binary, no text metadata) on an automatic run that captured the full set,
+# and on a dispatch with `upload = true`. A plain capture-only dispatch never
+# uploads. The fastlane lane skips cleanly when App Store Connect has no editable
+# version yet, and mobile-store-draft.yml re-attaches the published baseline once
+# it creates one — so an automatic upload that lands early is not lost.
 #
-# NOTE ON `inputs`: this workflow runs on `workflow_dispatch` only for now (a
-# later PR in this series adds a `workflow_run` trigger, where the whole
-# `inputs` context is null). Every reference below is still written
-# `inputs.x || 'default'` or guarded with an explicit `== null`, so that future
-# non-dispatch trigger won't resolve an input to the empty string by accident.
+# NOTE ON `inputs`: on the `workflow_run` trigger the whole `inputs` context is
+# null. Every reference below is written `inputs.x || 'default'`, compared with
+# `==` / `!=` (null compares predictably), or fenced behind an explicit
+# `github.event_name == 'workflow_dispatch' &&`, so a non-dispatch trigger never
+# resolves an input to the empty string by accident. The contract test enforces
+# exactly those three shapes.
 
 on:
+  workflow_run:
+    # The name must match the deploy workflow's `name:` exactly;
+    # scripts/native-release-workflows.test.ts pins both sides.
+    workflows:
+      - iOS TestFlight Deploy (React Native)
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       flow:
@@ -72,7 +118,7 @@ on:
           - app-store
           - onboarding
       gate:
-        description: 'full = capture all 12 shards. probe = shoot en-US × iPhone 16 Pro Max first, compare it with the stored baseline, and fan out to the other 11 shards only when it changed.'
+        description: 'full = capture all 12 shards. probe = shoot en-US × iPhone 16 Pro Max first, compare it with the stored baseline, and fan out to the other 11 shards only when it changed. Automatic runs after a native deploy always probe.'
         type: choice
         default: full
         options:
@@ -99,42 +145,99 @@ on:
         type: boolean
         default: false
       publish_baseline:
-        description: 'After a green FULL capture, publish the set as the `screenshots-baseline` prerelease that the probe gate compares against. The `workflow_run` trigger (next PR in this series) will do this automatically after each green full capture; until then, dispatch with this flag set (gate=full, or gate=probe when no baseline exists yet).'
+        description: 'After a green FULL capture, publish the set as the `screenshots-baseline` prerelease that the probe gate compares against. Automatic runs after a native deploy do this themselves; set it on a dispatch (gate=full, or gate=probe when no baseline exists yet) to refresh the baseline by hand.'
         type: boolean
         default: false
 
+# Automatic runs share ONE group and never cancel each other: a capture in
+# flight always finishes (its shards hold macOS runners and its upload may
+# already be talking to App Store Connect), and GitHub coalesces whatever queues
+# behind it down to the newest. Every dispatch gets its own group keyed on the
+# run id, so an `upload: true` run by hand is never cancelled by a native deploy
+# landing mid-capture — or by another dispatch.
 concurrency:
-  group: mobile-screenshots-ios-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'workflow_run' && 'mobile-screenshots-ios' || format('mobile-screenshots-ios-dispatch-{0}', github.run_id) }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  # Resolve the locale list, the capture matrix and the gate once, on a cheap
-  # ubuntu runner, so every macOS job downstream just reads an output. Empty
-  # `locales` = the full en-US,es,fr,de store set (a no-arg dispatch); a value
+  # Decide whether this run has anything to capture, then resolve the locale
+  # list, the capture matrix and the gate — once, on a cheap ubuntu runner, so
+  # every macOS job downstream just reads an output. Empty `locales` = the full
+  # en-US,es,fr,de store set (an automatic run and a no-arg dispatch); a value
   # narrows it (e.g. a single locale).
   setup:
+    # workflow_run fires on every completion; a failed or cancelled deploy has
+    # nothing to capture. Dispatch runs are always allowed. Same guard, same
+    # reasoning, as mobile-store-draft.yml's main-candidate job.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    env:
+      # The commit the captured pixels belong to: the deploy run's head commit on
+      # an automatic run, this run's own SHA on a dispatch. Every checkout below
+      # pins the same expression, so the capture is of the shipped commit rather
+      # than of whatever main happens to be by the time the shards start.
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      EVENT_NAME: ${{ github.event_name }}
     outputs:
       ios_locales: ${{ steps.compute.outputs.ios_locales }}
       ios_matrix: ${{ steps.compute.outputs.ios_matrix }}
       gate: ${{ steps.compute.outputs.gate }}
       source_sha: ${{ steps.compute.outputs.source_sha }}
+      shipped: ${{ steps.shipped.outputs.shipped }}
     steps:
+      # The conclusion guard above only proves the deploy run finished green — a
+      # JS-only push does that with its build job skipped. The proof that a
+      # binary shipped is the fingerprint tag, so look for it before spending a
+      # macOS runner. See the SHIPPED GATE note in the header.
+      - name: Check that a binary shipped at this commit
+        id: shipped
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "workflow_run" ]; then
+            echo "shipped=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Manual dispatch of $SOURCE_SHA — capturing without the shipped-binary gate."
+            exit 0
+          fi
+          # ios-testflight-rn.yml tags with `git tag --force <tag> $GITHUB_SHA`,
+          # i.e. a LIGHTWEIGHT tag, so each ref's object.sha IS the commit and
+          # needs no peeling. Read it over the API: setup has no checkout.
+          tagged_shas="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/fingerprint-ios-" \
+            --jq '.[].object.sha')"
+          # Assign first, grep second. Piping gh straight into `grep -q` lets grep
+          # close the pipe on its first match, and the SIGPIPE that then kills gh
+          # would read as "not shipped" under `pipefail` — inverting the gate on
+          # exactly the runs that should capture.
+          if printf '%s\n' "$tagged_shas" | grep -qx "$SOURCE_SHA"; then
+            echo "shipped=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::iOS binary shipped at $SOURCE_SHA — capturing."
+          else
+            echo "shipped=false" >> "$GITHUB_OUTPUT"
+            echo "No iOS binary shipped at $SOURCE_SHA (no fingerprint-ios-* tag) — nothing to capture." >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::No iOS binary shipped at $SOURCE_SHA (no fingerprint-ios-* tag) — nothing to capture."
+          fi
+
       - name: Compute locales, matrix and gate
         id: compute
-        env:
-          # The commit the captured pixels belong to. Today that is always this
-          # run's own SHA; PR6 switches it to the commit that triggered the run.
-          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           locales="${{ inputs.locales || '' }}"
           flow="${{ inputs.flow || 'app-store' }}"
           upload="${{ inputs.upload || 'false' }}"
           gate="${{ inputs.gate || 'full' }}"
+          # An automatic run after a native deploy always probes first: it is the
+          # unattended path, most native releases move no store pixels, and the
+          # probe is one macOS runner instead of twelve. A dispatch keeps the
+          # `gate` input (default full) — a human asking for a capture usually
+          # wants the whole set.
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            gate=probe
+          fi
           # Empty locales = the full store set; otherwise split "en-US,es" into a
           # JSON array for the capture matrix. `|| true` keeps a no-match grep
           # (all-blank input) from aborting the step under pipefail; the empty
@@ -212,6 +315,9 @@ jobs:
   # runner.arch is in the key because a simulator .app is arch-specific.
   ios-build:
     needs: setup
+    # Nothing shipped, nothing to photograph — and this is the expensive one to
+    # skip: a cache miss here is a ~30-min native build.
+    if: needs.setup.outputs.shipped == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     outputs:
@@ -226,6 +332,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Capture the commit that shipped the binary, not whatever main has
+          # moved on to since the deploy finished.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -276,7 +386,10 @@ jobs:
   # artifact, so ios-finalize gets it either way.
   probe:
     needs: [setup, ios-build]
-    if: needs.setup.outputs.gate == 'probe'
+    # `shipped` is redundant here (a skipped ios-build already skips this job)
+    # but stated anyway: this `if` has no status function, so the day someone
+    # adds one the gate must not quietly disappear with the implicit needs check.
+    if: needs.setup.outputs.gate == 'probe' && needs.setup.outputs.shipped == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     outputs:
@@ -315,6 +428,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # Capture the commit that shipped the binary, not whatever main has
+          # moved on to since the deploy finished.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - name: Capture the probe shard
@@ -394,12 +510,15 @@ jobs:
     needs: [setup, ios-build, probe]
     # `probe` is skipped on a full run and must not skip the fan-out with it, so
     # this is written on `result` rather than the default all-needs-succeeded
-    # gate. `!cancelled()` keeps a cancelled run from starting 11 macOS shards.
-    # `force_full` (scripts/screenshot-probe-scope.ts) fans out exactly like a
-    # pixel-wise `changed` would — it covers a locale-only or iPad-only change
-    # the single probe shard never captures pixels for.
+    # gate. `!cancelled()` keeps a cancelled run from starting 11 macOS shards —
+    # and, because it is a status function, it also switches off the implicit
+    # needs check, which is why `shipped` is spelled out here. `force_full`
+    # (scripts/screenshot-probe-scope.ts) fans out exactly like a pixel-wise
+    # `changed` would — it covers a locale-only or iPad-only change the single
+    # probe shard never captures pixels for.
     if: >-
-      !cancelled() && needs.setup.result == 'success' && needs.ios-build.result == 'success' &&
+      !cancelled() && needs.setup.result == 'success' && needs.setup.outputs.shipped == 'true' &&
+      needs.ios-build.result == 'success' &&
       (needs.probe.result == 'skipped' ||
        (needs.probe.result == 'success' &&
         (needs.probe.outputs.changed == 'true' || needs.probe.outputs.force_full == 'true')))
@@ -443,6 +562,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Capture the commit that shipped the binary, not whatever main has
+          # moved on to since the deploy finished.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Capture shard
         uses: ./.github/actions/ios-screenshot-shard
@@ -460,16 +583,19 @@ jobs:
     # Run even if a capture shard failed, so the dimension gate still reports the
     # gap (a missing locale fails it loudly rather than uploading a partial set),
     # and run on the unchanged path where ios-capture never started at all. A
-    # failed `setup` has nothing to finalize.
-    if: ${{ !cancelled() && needs.setup.result == 'success' }}
+    # failed `setup` has nothing to finalize — and neither has a run where no
+    # binary shipped: `!cancelled()` switches off the implicit needs check, so
+    # without the `shipped` clause this job would run on an empty artifact set
+    # and red the dimension gate after every JS-only push.
+    if: ${{ !cancelled() && needs.setup.result == 'success' && needs.setup.outputs.shipped == 'true' }}
     # Gate the App Store Connect secrets behind the Production environment — its
     # main-only branch policy fences them off from anyone who can push a branch and
     # workflow_dispatch it. The APP_STORE_CONNECT_* secrets are only referenced in
     # the upload steps below, so every other run resolves to '' (no environment)
     # and never waits on a future required reviewer — see the conditional-vs-bare
-    # note at android-apk-rn.yml (gate job). The workflow_run arm matches the
-    # automatic trigger a later PR in this series adds; it is deliberately narrowed
-    # to a run that actually captured, so an unchanged probe needs no environment.
+    # note at android-apk-rn.yml (gate job). The workflow_run arm covers the
+    # automatic trigger; it is deliberately narrowed to a run that actually
+    # captured, so an unchanged probe needs no environment.
     environment: >-
       ${{ ((github.event_name == 'workflow_dispatch' && inputs.upload) ||
            (github.event_name == 'workflow_run' && needs.ios-capture.result == 'success'))
@@ -505,6 +631,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Capture the commit that shipped the binary, not whatever main has
+          # moved on to since the deploy finished.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -554,11 +684,14 @@ jobs:
       # --- Upload to App Store Connect ---
       # Screenshots ONLY — no binary, no metadata, no review submission. Gated
       # behind the `upload` input on a dispatch, and behind a complete capture on
-      # the automatic workflow_run trigger (added by a later PR in this series).
-      # The `success() &&` prefix is required: a custom `if:` overrides the
-      # default success() status check, so without it these would run even if a
-      # prior step failed. fastlane's screenshots lane is a pure network upload
-      # (no Xcode), so it runs fine on ubuntu.
+      # the automatic workflow_run trigger. Apple only accepts screenshot changes
+      # on a version in "Prepare for Submission", and the lane pre-flights that:
+      # with no editable version it skips with a summary instead of failing, and
+      # mobile-store-draft.yml attaches the published baseline once it creates
+      # one. The `success() &&` prefix is required: a custom `if:` overrides the default
+      # success() status check, so without it these would run even if a prior step
+      # failed. fastlane's screenshots lane is a pure network upload (no Xcode), so
+      # it runs fine on ubuntu.
       - name: Set up Ruby + fastlane
         if: ${{ success() && (env.UPLOAD_RUN == 'true' || (github.event_name == 'workflow_run' && env.FULL_SET_CAPTURED == 'true')) }}
         uses: ruby/setup-ruby@v1

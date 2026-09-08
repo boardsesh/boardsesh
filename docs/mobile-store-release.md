@@ -73,9 +73,32 @@ that run skips iOS; `mobile-store-draft.yml` dispatches it again with
 New land without anyone running it by hand. Dispatch it manually only to re-push
 unchanged copy.
 
-Screenshots stay on demand: **Mobile Screenshots** (`mobile-screenshots-ios.yml`
-and `mobile-screenshots-android.yml`, `upload: true`) captures and uploads each
-platform independently.
+Screenshots are automatic too. **Mobile Screenshots** (`mobile-screenshots-ios.yml`
+and `mobile-screenshots-android.yml`) runs after each native deploy on `main`
+**that actually shipped a binary**, one workflow per platform. There is no cron;
+a manual `workflow_dispatch` is the only other way to start a capture.
+
+"Shipped" is not the same as "the deploy run went green". A JS-only push finishes
+the deploy workflow with its build job skipped, and that run still concludes
+`success`. What proves a binary shipped is the `fingerprint-<platform>-<hash>`
+tag the deploy forces onto its own commit right after a successful store upload
+(§2), so each screenshot run looks for that tag on the triggering commit before
+spending a runner, and writes "no binary shipped … nothing to capture" to its
+step summary when it finds none. Every checkout in both workflows pins that same
+commit, so the pixels belong to the binary rather than to whatever `main` moved
+on to meanwhile. Automatic runs share one concurrency group per platform and
+never cancel each other; each dispatch gets its own, so a hand-run capture is
+never cancelled by a deploy landing mid-run.
+
+A forced rebuild of an already-shipped fingerprint keeps the existing tag (it
+still points at the first commit that shipped it), so that run reads as
+not-shipped. Dispatch by hand when you want those pixels.
+
+An automatic iOS run always uses the probe gate below, and only a run that
+captured the complete set uploads to App Store Connect and refreshes the
+baseline. An automatic Android run captures, posts the Discord preview and
+uploads the artifact; committing the set back to `main` stays opt-in on a
+dispatch (`commit_to_main`).
 
 ### The iOS probe gate
 
@@ -85,10 +108,10 @@ public repo gets 5 concurrent macOS runners, so the run sizes itself. With
 matching shard out of the stored baseline and compares them pixel by pixel
 (`vp run screenshot:compare`, `scripts/compare-screenshots.ts`). Unchanged and
 the run stops there in roughly 15 minutes; changed, or no baseline yet, and it
-fans out to the remaining 11 shards. `gate: full`, the default, always captures
-everything, and a narrowed `locales` list, the `onboarding` flow or
-`upload: true` force it back to `full` — none of those has a full-set baseline to
-compare against.
+fans out to the remaining 11 shards. Automatic runs always probe. On a dispatch
+`gate: full` is the default, and a narrowed `locales` list, the `onboarding` flow
+or `upload: true` force it back to `full` — none of those has a full-set baseline
+to compare against.
 
 Two thresholds decide "changed": a per-channel tolerance of 8 (simulator text
 and shadow rasterization wobbles by a step or two between runs) and a max
@@ -136,14 +159,12 @@ wrong — so a caller (the probe, or the store-draft attach step) that gets
 `found=false` always falls back to a full capture instead of trusting or
 shipping a corrupted baseline.
 
-Publishing is manual today: dispatch with `publish_baseline: true`
-(`gate: full`, or `gate: probe` when no baseline exists yet) after a green
-capture, so a run that deliberately retargets `render_mode` or `boards` cannot
-silently redefine "unchanged" for everyone else. The `workflow_run` trigger (a
-later PR in this series) will publish automatically after each green full
-capture; the nightly `schedule` cron stays capture-only and never publishes (it
-is being removed in #5320). `upload: true` is unchanged and still pushes the
-freshly captured set to App Store Connect.
+An automatic run refreshes the baseline itself after a green full capture. A
+dispatch has to ask, with `publish_baseline: true` (`gate: full`, or
+`gate: probe` when no baseline exists yet), so a run that deliberately retargets
+`render_mode` or `boards` cannot silently redefine "unchanged" for everyone
+else. `upload: true` is unchanged and still pushes the freshly captured set to
+App Store Connect.
 
 The iOS `release_notes.txt` is pushed by Mobile Store Metadata. Android release
 notes ship with the AAB from each
@@ -166,9 +187,10 @@ The iOS lane waits up to 45 minutes for App Store Connect to finish processing
 the tagged build, then attaches it to the editable version (creating the version
 first if needed) and dispatches Mobile Store Metadata for iOS so the listing
 text and What's New land on that version (§3). Screenshots have the same
-ordering problem one step further out — the capture workflow finishes long
-before ASC has processed the build, so its own upload finds no editable version
-and skips — so the lane then pulls the published `screenshots-baseline` set
+ordering problem one step further out — the capture workflow starts as soon as
+the deploy finishes and gets there long before ASC has processed the build, so
+its own upload finds no editable version and skips — so the lane then pulls the
+published `screenshots-baseline` set
 (§3) and attaches it to the version it just created. That step is best-effort:
 a failure warns rather than reds the job, and deliver's `sync_screenshots`
 makes a repeat run replace rather than append. The Android lane promotes the
@@ -192,7 +214,7 @@ future fingerprint.
 1. Set the release version and translate both stores' release notes on `main`.
 2. Land the focused native change; wait for TestFlight and Play internal builds.
 3. Complete native QA against the exact uploaded candidates.
-4. Re-capture screenshots when the UI moved (`gate: probe` decides for you); listing text pushes itself.
+4. Screenshots re-capture themselves after the native build (the probe decides whether to fan out); listing text pushes itself.
 5. Verify the store drafts select the tagged builds, then submit both manually.
 6. After approval, confirm both immutable release anchors were created.
 
