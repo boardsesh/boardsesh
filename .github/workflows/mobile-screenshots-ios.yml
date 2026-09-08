@@ -223,10 +223,6 @@ jobs:
       # Metro bundle inlines this, so screenshots exercise the same fetch as production.
       EXPO_PUBLIC_USE_RN_FETCH: '1'
       SENTRY_DISABLE_AUTO_UPLOAD: 'true'
-      # The prod test/demo account the Maestro flow signs in with. Override via
-      # repo secrets if a different account is ever needed.
-      SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com' }}
-      SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD || 'test' }}
       # Belt-and-suspenders ceiling for Maestro's XCTest driver startup. With
       # --shutdown there's only one booted sim per shard so the default should
       # pass; this is free on the happy path (a timeout cap, not a fixed wait) and
@@ -302,6 +298,17 @@ jobs:
           BOARDS_INPUT: ${{ inputs.boards || '' }}
           FIXTURES_INPUT: ${{ inputs.fixtures || 'replay' }}
           FROZEN_NOW_INPUT: ${{ inputs.frozen_now || '' }}
+          # The prod test/demo account the Maestro flow signs in with. Scoped to
+          # THIS step, not the job: a replay run never signs in (the backend
+          # hands out a synthetic session for the recorded account), so it has
+          # no business seeing the credential, and a job-level secret reaches
+          # every step. Empty on replay; the real value on record/live, where
+          # the flow does sign in against PROD. Override via repo secrets if a
+          # different account is ever needed.
+          SCREENSHOT_USER_EMAIL:
+            ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com') || '' }}
+          SCREENSHOT_USER_PASSWORD:
+            ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_PASSWORD || 'test') || '' }}
         run: |
           set -euo pipefail
           # Empty inputs mean "whatever the app pins" — Aura, and the store walls

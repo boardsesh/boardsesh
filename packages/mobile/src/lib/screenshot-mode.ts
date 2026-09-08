@@ -205,9 +205,13 @@ export const SCREENSHOT_BOARDS: string[] =
  * stopped at page 4.
  *
  * A store screenshot never shows page two, so the cap costs nothing and makes
- * the paging depth a property of the flow instead of the machine's timing.
- * `hasNextPage` goes false with the param, so every `onEndReached` handler
- * downstream stops firing too.
+ * the paging depth a property of the flow instead of the machine's timing. For
+ * a query this feeds, `hasNextPage` goes false with the param, so its own
+ * `onEndReached` handlers stop firing too — but ONLY for those queries. A list
+ * whose pager this helper does not reach (the two `@boardsesh/playlists-react`
+ * hooks behind `PlaylistDetailView`, the hand-rolled `loadMore` pagers) still
+ * reports more pages; those are capped at the consumer, with
+ * `screenshotModeLoadMore` or an early return in the handler.
  *
  * Pass the param the query would otherwise use and the number of pages already
  * loaded (React Query hands `getNextPageParam` `allPages`, so that is
@@ -221,3 +225,30 @@ export function screenshotModeNextPageParam<TPageParam>(
   if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && pagesLoaded >= 1) return undefined;
   return nextParam;
 }
+
+/**
+ * A hand-rolled pager's `loadMore`, turned into a no-op in screenshot mode.
+ *
+ * `screenshotModeNextPageParam` only reaches a `useInfiniteQuery`. Several
+ * lists page themselves instead — `useDiscoverPlaylists`, `useUserPlaylists`
+ * and `useUserBetaLinks` each expose a `loadMore` a list's `onEndReached`
+ * calls — and they drift for exactly the same reason: a replay backend answers
+ * instantly, the list reaches its end sooner, and the capture asks for a page
+ * the recording never took. All six recorded `DiscoverPlaylists` fixtures are
+ * `page: 0` with `hasMore: true`, and Discover is a store shot.
+ *
+ * Wrap the pager at the call site, not inside the shared hook: those hooks live
+ * in `@boardsesh/playlists-react`, which web consumes and which must not read a
+ * mobile build flag.
+ */
+export function screenshotModeLoadMore(loadMore: () => void): () => void {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return NO_MORE_PAGES;
+  return loadMore;
+}
+
+/**
+ * One shared no-op, so a wrapped pager keeps a stable identity across renders —
+ * a fresh closure per render would defeat the `React.memo` on every list that
+ * takes `loadMore` as a prop.
+ */
+const NO_MORE_PAGES = (): void => {};

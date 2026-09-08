@@ -26,7 +26,7 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -518,19 +518,88 @@ describe('BATCHED_OPERATIONS', () => {
     // Not a precondition to skip on: an empty list would make this vacuous, and
     // both operations are recorded many times over by the store flow.
     expect(entries.length).toBeGreaterThan(0);
+    let fixturesThatDecomposedSomething = 0;
     for (const entry of entries) {
       const fixture = readFixture(entry.file);
       const recordedIds = batchRequestIds(spec, fixture.variables);
       expect(recordedIds, `${entry.file}: no id list at variables.${spec.idsVariablePath}`).not.toBeNull();
       const itemsById = indexBatchItemsById(spec, recordedIds ?? [], fixture.response);
       expect(itemsById, `${entry.file}: no item list at response.${spec.responseListPath}`).not.toBeNull();
-      // Every recorded item carries the id field, so nothing is dropped on the
-      // floor when a batch is decomposed: the map holds exactly the ids the
-      // recording asked for, never an extra one invented by a missing field.
+
+      // THE LOAD-BEARING ASSERTION. `indexBatchItemsById` seeds every requested
+      // id with an empty list, so a wrong `responseIdField` still produces a map
+      // whose keys are exactly the requested ids — the composer would answer an
+      // empty list, log a HIT, and the capture would shoot blank stats with the
+      // gate green. Counting the items back out is what catches it: every
+      // recorded row has to land under some id.
+      const recordedItemCount = (
+        (fixture.response as { data?: Record<string, unknown[]> } | undefined)?.data?.[
+          spec.responseListPath.split('.').at(-1) ?? ''
+        ] ?? []
+      ).length;
+      const decomposedItemCount = [...(itemsById?.values() ?? [])].reduce((total, rows) => total + rows.length, 0);
+      expect(
+        decomposedItemCount,
+        `${entry.file}: ${recordedItemCount} recorded item(s) but ${decomposedItemCount} landed under an id — ` +
+          `responseIdField "${spec.responseIdField}" does not name the id on these items`,
+      ).toBe(recordedItemCount);
+      if (decomposedItemCount > 0) fixturesThatDecomposedSomething += 1;
+
+      // Nothing is invented either: the map holds only ids the recording asked
+      // for, never one conjured by a missing field.
       for (const id of itemsById?.keys() ?? []) {
         expect(recordedIds, `${entry.file}: response item id "${id}" was never requested`).toContain(id);
       }
     }
+    // A set where EVERY fixture decomposed to nothing would satisfy the count
+    // check above vacuously (0 === 0), which is exactly what a wrong id field
+    // looks like when the recorded responses are also empty.
+    expect(
+      fixturesThatDecomposedSomething,
+      `no committed ${operationName} fixture decomposed to a non-empty list — ` +
+        `responseListPath "${spec.responseListPath}" / responseIdField "${spec.responseIdField}" cannot be right`,
+    ).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (e) Every infinite list is capped to one page in screenshot mode
+// ---------------------------------------------------------------------------
+
+/**
+ * Hooks whose `useInfiniteQuery` is deliberately NOT wrapped, because their
+ * pager is capped at the consumer instead.
+ *
+ * Both live in `@boardsesh/playlists-react`, which web also consumes and which
+ * must not read a mobile build flag; `PlaylistDetailView` short-circuits its
+ * own `onEndReached` in screenshot mode for both.
+ */
+const UNCAPPED_INFINITE_QUERY_ALLOWLIST = ['use-playlist-climbs.ts', 'use-smart-playlist.ts'];
+
+describe('infinite lists in screenshot mode', () => {
+  it('caps every useInfiniteQuery with screenshotModeNextPageParam', () => {
+    const offenders: string[] = [];
+    let scanned = 0;
+    for (const root of SCAN_ROOTS) {
+      for (const file of listSourceFiles(root)) {
+        // A test's own mock of the hook is not a list that pages.
+        if (file.includes(`${sep}__tests__${sep}`)) continue;
+        const source = readFileSync(file, 'utf8');
+        if (!source.includes('useInfiniteQuery(')) continue;
+        scanned += 1;
+        if (source.includes('screenshotModeNextPageParam')) continue;
+        if (UNCAPPED_INFINITE_QUERY_ALLOWLIST.some((allowed) => file.endsWith(allowed))) continue;
+        offenders.push(file);
+      }
+    }
+    // A resolution change that emptied SCAN_ROOTS would turn this into a no-op.
+    expect(scanned).toBeGreaterThan(0);
+    expect(
+      offenders,
+      `these call useInfiniteQuery( without screenshotModeNextPageParam, so a replay capture pages further than ` +
+        `the recording did: ${offenders.join(', ')}. Wrap getNextPageParam, or cap the pager at the consumer and ` +
+        `add the file to UNCAPPED_INFINITE_QUERY_ALLOWLIST.`,
+    ).toEqual([]);
   });
 });
 

@@ -117,13 +117,23 @@ done
   exit 1
 }
 
-# Bounded retry, mirroring the iOS job's two-attempt shard loop: the dev-client
-# cold start intermittently dies with a native SIGSEGV inside React Native's
-# Fabric mounting (MountingCoordinator::pullTransaction, seen on CI run
-# 34214269041 on the third of four cold launches). A fresh orchestrator run
-# reinstalls the APK, restarts Metro and reruns the whole flow; the emulator
-# stays up. The blank/size gates in the workflow still judge the final set.
-attempts=2
+# Bounded retry. The dev-client cold start dies natively often enough that two
+# attempts is not enough — TWO DISTINCT crashes are on record, and the store flow
+# cold-launches the app four times per run:
+#
+#   * SIGSEGV inside React Native's Fabric mounting
+#     (MountingCoordinator::pullTransaction) — CI run 34214269041, on the third
+#     of four cold launches.
+#   * SIGABRT from a JNI "field operation on NULL object" in
+#     libexpo-modules-core.so on the mqt_v_js thread — CI run 34248313427, again
+#     on a relaunch, with the app never reaching home-screen.
+#
+# A fresh orchestrator run reinstalls the APK, restarts Metro and reruns the
+# whole flow; the emulator stays up. The blank/size gates in the workflow still
+# judge the final set, so a retry cannot launder a bad capture — it only covers
+# a crash. Three attempts fit the job's 75-minute ceiling: APK resolve <= 19 min
+# plus 3 x ~10 min of capture plus setup.
+attempts=3
 for attempt in $(seq 1 "$attempts"); do
   if vp run mobile:screenshots -- \
     --platform android \

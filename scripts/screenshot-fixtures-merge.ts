@@ -33,7 +33,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -331,6 +331,10 @@ export function mergeFixtureSets(
     const finalizedFrozenNow = finalizeRecordingFrozenNow(fixtureSet.manifest.frozenNow, recordedAtInThisSet);
     frozenNow = maxIsoInstant(frozenNow, finalizedFrozenNow);
     recordedAt = maxIsoInstant(recordedAt, fixtureSet.manifest.recordedAt);
+    // …and past every fixture the set actually holds. An input recorded before
+    // the backend started stamping `recordedAt` from its newest entry carries a
+    // START instant, which reads as older than most of what it names.
+    for (const entryRecordedAt of recordedAtInThisSet) recordedAt = maxIsoInstant(recordedAt, entryRecordedAt);
   }
 
   const sources = new Map<string, string>();
@@ -362,10 +366,34 @@ const USAGE = [
   '',
   `  --out <dir>           where the merged set is written (default ${DEFAULT_SCREENSHOT_FIXTURES_DIR})`,
   '  --on-conflict <mode>  fail (default) or newest — how to resolve two shards',
-  '                        holding the same key with different content',
+  '                        holding the same key with different content. `newest`',
+  "                        compares each graphql fixture's own recordedAt; a",
+  '                        static asset has no recordedAt to compare, so a',
+  '                        conflicting one keeps the copy seen first.',
   '',
   'Every input must be a recorded fixture set (a directory holding manifest.json).',
+  'The two fixture subtrees and manifest.json under --out are cleared first, so a',
+  'key a re-record stopped producing does not linger.',
 ].join('\n');
+
+/**
+ * Remove what a previous merge left under `--out`.
+ *
+ * The merged set REPLACES what was there. Writing into the directory without
+ * clearing it first leaves an orphan behind whenever a re-record stops
+ * producing a key: the file is not in the new manifest, so nothing replays it,
+ * but it is still committed, still read by the drift test, and still stat'd by
+ * the backend's startup check.
+ *
+ * Bounded to the two subtrees this tool owns plus the manifest — exactly what
+ * the backend's `--fresh` removes — so pointing `--out` at a directory holding
+ * anything else can never delete it.
+ */
+export function clearMergedFixtureOutput(outDir: string): void {
+  rmSync(join(outDir, 'graphql'), { recursive: true, force: true });
+  rmSync(join(outDir, 'static'), { recursive: true, force: true });
+  rmSync(join(outDir, MANIFEST_FILENAME), { force: true });
+}
 
 export interface MergeCliOptions {
   outDir: string;
@@ -501,6 +529,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   console.log(`${LOG} ${merged.conflicts.length} conflict(s) resolved with --on-conflict ${options.onConflict}.`);
 
   const setsByLabel = new Map(sets.map((fixtureSet) => [fixtureSet.label, fixtureSet]));
+  clearMergedFixtureOutput(options.outDir);
   mkdirSync(options.outDir, { recursive: true });
   for (const [file, label] of merged.sources) {
     const source = setsByLabel.get(label);

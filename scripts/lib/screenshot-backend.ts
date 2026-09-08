@@ -39,6 +39,7 @@ import {
   batchScopeKey,
   batchedOperationSpec,
   cappedUnrecordedIds,
+  collectBatchItems,
   composeBatchedResponse,
   emptyManifest,
   findSensitiveVariableKeys,
@@ -387,7 +388,15 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     // see finalizeRecordingFrozenNow. The app itself keeps running on the
     // start instant for the rest of this recording; only the FILE (which
     // replay reads) carries the finalized value.
-    if (isRecording) manifest.frozenNow = finalizeRecordingFrozenNow(frozenNow, recordedAtInstants);
+    if (isRecording) {
+      manifest.frozenNow = finalizeRecordingFrozenNow(frozenNow, recordedAtInstants);
+      // `recordedAt` describes the SET, so it tracks the newest fixture in it
+      // rather than the instant the recorder booted — a capture runs long
+      // enough that a start stamp reads as older than most of what it names.
+      for (const instant of recordedAtInstants) {
+        if (Date.parse(instant) > Date.parse(manifest.recordedAt)) manifest.recordedAt = instant;
+      }
+    }
     writeJsonFile(join(fixturesDir, MANIFEST_FILENAME), sortManifestEntries(manifest));
   };
 
@@ -625,24 +634,15 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     // batch — composing across scopes would answer with the wrong board's rows.
     if (!scope) return false;
 
-    const composedItems: unknown[] = [];
-    const unrecordedIds: string[] = [];
-    for (const id of requestedIds) {
-      const items = scope.itemsById.get(id);
-      if (!items) {
-        unrecordedIds.push(id);
-        continue;
-      }
-      composedItems.push(...items);
-    }
+    const { items, unrecordedIds, answeredIds } = collectBatchItems(scope.itemsById, requestedIds);
     if (unrecordedIds.length > 0) {
       missGraphql(operationName, 'unrecorded-ids', cappedUnrecordedIds(unrecordedIds));
       return true;
     }
-    const composed = composeBatchedResponse(spec, scope.templateResponse, composedItems);
+    const composed = composeBatchedResponse(spec, scope.templateResponse, items);
     if (!composed.ok) return false;
     hits += 1;
-    emit({ event: 'hit', kind: 'graphql', operationName, hash12, composed: requestedIds.length });
+    emit({ event: 'hit', kind: 'graphql', operationName, hash12, composed: answeredIds.length });
     sendJson(response, 200, composed.response);
     return true;
   };

@@ -130,4 +130,26 @@ describe('screenshot-mode', () => {
     expect(screenshotModeNextPageParam(20, 1)).toBeUndefined();
     expect(screenshotModeNextPageParam('eyJvIjo4MH0', 4)).toBeUndefined();
   });
+
+  it('leaves a hand-rolled pager alone outside screenshot mode', async () => {
+    const { screenshotModeLoadMore } = await import('../screenshot-mode');
+    const loadMore = vi.fn();
+    const wrapped = screenshotModeLoadMore(loadMore);
+    // The same function back, so a memoized list prop keeps its identity.
+    expect(wrapped).toBe(loadMore);
+    wrapped();
+    expect(loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('turns a hand-rolled pager into a no-op in screenshot mode', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    const { screenshotModeLoadMore } = await import('../screenshot-mode');
+    const loadMore = vi.fn();
+    const wrapped = screenshotModeLoadMore(loadMore);
+    wrapped();
+    wrapped();
+    expect(loadMore).not.toHaveBeenCalled();
+    // One shared no-op, so wrapping twice does not hand a list a fresh closure.
+    expect(screenshotModeLoadMore(vi.fn())).toBe(wrapped);
+  });
 });
