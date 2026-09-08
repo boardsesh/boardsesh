@@ -41,6 +41,21 @@ describe('toClimbQueueItemInput', () => {
     expect(input.climb).toEqual({ uuid: 'climb-1' });
   });
 
+  // #4828: `myDifficulty` is the signed-in climber's OWN grade. A queue item's
+  // climb is broadcast verbatim to every peer, so a mapper that ever spreads a
+  // climb instead of enumerating its fields would publish one climber's private
+  // opinion onto everyone else's row. This seam strips it regardless.
+  it('strips the private per-climber grade even when the platform mapper spreads', () => {
+    const spreadingClimbInput = (climb: StubClimb): ClimbInput => ({ ...climb }) as unknown as ClimbInput;
+    const input = toClimbQueueItemInput(
+      makeItem({ climb: { uuid: 'climb-1', myDifficulty: 27 } as StubClimb }),
+      spreadingClimbInput,
+    );
+
+    expect('myDifficulty' in input.climb).toBe(false);
+    expect(input.climb).toEqual({ uuid: 'climb-1' });
+  });
+
   // The wire type is `[String!]` — a null entry would be rejected outright.
   it('drops null entries from tickedBy', () => {
     const input = toClimbQueueItemInput(makeItem({ tickedBy: ['u1', null] }), identityClimbInput);

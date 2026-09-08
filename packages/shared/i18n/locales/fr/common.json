@@ -331,7 +331,9 @@
         "quickActionsButton": "Afficher le bouton d'actions rapides",
         "quickActionsButtonDescription": "Ajoute un bouton ⋮ à chaque bloc qui ouvre file, croix, listes et plus. Tu peux toujours appuyer longuement à la place.",
         "boardseshGrades": "Afficher les grades Boardsesh",
-        "boardseshGradesDescription": "Des grades calculés à partir de vraies croix sur plusieurs boards. Le grade de l'ouvreur reste affiché tant qu'il n'y a pas assez de croix."
+        "boardseshGradesDescription": "Des grades calculés à partir de vraies croix sur plusieurs boards. Le grade de l'ouvreur reste affiché tant qu'il n'y a pas assez de croix.",
+        "personalGrades": "Utiliser mes cotations",
+        "personalGradesDescription": "Affiche la cotation que tu as donnée à un bloc plutôt que celle de la communauté, et trie et filtre avec."
       },
       "offline": {
         "title": "Hors ligne",

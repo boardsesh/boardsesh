@@ -331,7 +331,9 @@
         "quickActionsButton": "Schnellaktionen-Button anzeigen",
         "quickActionsButtonDescription": "Gibt jedem Boulder einen ⋮-Button für Warteschlange, Eintrag, Playlists und mehr. Langes Drücken geht weiterhin.",
         "boardseshGrades": "Boardsesh-Grade anzeigen",
-        "boardseshGradesDescription": "Grade aus echten Begehungen über alle Boards hinweg. Bis genug Begehungen da sind, bleibt der Grad der Routenbauer*in."
+        "boardseshGradesDescription": "Grade aus echten Begehungen über alle Boards hinweg. Bis genug Begehungen da sind, bleibt der Grad der Routenbauer*in.",
+        "personalGrades": "Meine Grade verwenden",
+        "personalGradesDescription": "Zeigt den Grad, den du einem Boulder gegeben hast, statt den der Community, und sortiert und filtert danach."
       },
       "offline": {
         "title": "Offline",

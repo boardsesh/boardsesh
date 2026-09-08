@@ -104,9 +104,9 @@ if (!EXPLAIN_DB_URL) {
     return collectNodes(planWrapper[0].Plan);
   }
 
-  async function runSearch(searchParams: ClimbSearchParams): Promise<Captured[]> {
+  async function runSearch(searchParams: ClimbSearchParams, userId?: string): Promise<Captured[]> {
     captured.length = 0;
-    await searchClimbs(db, PARAMS, searchParams);
+    await searchClimbs(db, PARAMS, searchParams, userId);
     return [...captured];
   }
 
@@ -115,18 +115,21 @@ if (!EXPLAIN_DB_URL) {
   function buildCountSql(
     searchParams: ClimbSearchParams,
     params: BoardRouteParams = PARAMS,
+    userId?: string,
   ): { text: string; params: unknown[] } {
-    const filters = createClimbFilters(params, searchParams, undefined);
+    const filters = createClimbFilters(params, searchParams, userId);
     const isDraftsQuery = filters.isOnlyDrafts;
     const whereConditions = [
       ...filters.getClimbWhereConditions(),
       ...(isDraftsQuery ? [] : filters.getSizeConditions()),
       ...(isDraftsQuery ? [] : filters.getClimbStatsConditions()),
     ];
-    const built = db
+    const base = db
       .select({ count: sql<number>`count(*)` })
       .from(boardClimbs)
-      .leftJoin(boardClimbStats, and(...filters.getClimbStatsJoinConditions()))
+      .leftJoin(boardClimbStats, and(...filters.getClimbStatsJoinConditions()));
+    const personalGradeJoin = filters.getPersonalGradeJoin();
+    const built = (personalGradeJoin ? base.leftJoin(personalGradeJoin.subquery, personalGradeJoin.on) : base)
       .where(and(...whereConditions))
       .toSQL();
     return { text: built.sql, params: built.params };
@@ -387,6 +390,91 @@ if (!EXPLAIN_DB_URL) {
         false,
         'the countClimbs SET LOCAL guard must eliminate the parallel Gather that exhausted /dev/shm in #2378',
       );
+    });
+
+    // ---------------------------------------------------------------------
+    // Personal grades (#4796 / #4828). The regression these guard is measured,
+    // not hypothetical: the first implementation put the rule in the WHERE as
+    // `NOT EXISTS(...) AND crowd-in-range OR EXISTS(...)`. Postgres only pulls
+    // up sublinks AND-ed at the top of the qual, so neither half unnested, and
+    // the OR trapped the crowd grade-range where it could no longer be pushed
+    // into the board_climb_stats scan. Measured on the dev DB (kilter/40,
+    // 84,243 candidates, a climber with 595 graded ticks), V1-V11 band:
+    //
+    //   list   crowd-only baseline    735 ms /  38,441 shared buffers
+    //   list   OR-sublink shape      1225 ms / 288,502 shared buffers
+    //   list   DISTINCT ON join       823 ms /  38,458 shared buffers
+    //   count  OR-sublink shape      1030 ms / 288,500 shared buffers
+    //   count  DISTINCT ON join       642 ms /  38,456 shared buffers
+    //
+    // Both shapes return the identical row set (82,141 rows, EXCEPT empty in
+    // both directions), so the only thing separating them is the plan. What the
+    // assertions below pin is the plan shape that made the difference: ONE pass
+    // over the climber's ticks, not one probe per candidate climb.
+    const PERSONAL_GRADE_USER = process.env.EXPLAIN_PERSONAL_GRADE_USER_ID ?? '00000000-0000-0000-0000-000000000001';
+    const PERSONAL_GRADE_SEARCH: ClimbSearchParams = {
+      page: 0,
+      pageSize: 20,
+      sortBy: 'difficulty',
+      sortOrder: 'asc',
+      minGrade: 26,
+      maxGrade: 28,
+      useMyGrades: true,
+    };
+
+    void it('personal-grade list: one pass over the climber ticks, never a per-climb probe', async () => {
+      const selects = tableSelects(await runSearch(PERSONAL_GRADE_SEARCH, PERSONAL_GRADE_USER));
+      assert.ok(selects.length >= 1, 'expected a standard-search SELECT');
+      assert.ok(/my_grade/i.test(selects[0].query), 'the personal-grade search must join the my_grade subquery');
+
+      const nodes = await explainNodes(selects[0].query, selects[0].params, GUARD);
+
+      // The climber's grade book is built ONCE. A Memoize/Nested Loop over
+      // boardsesh_ticks would mean the old per-row shape came back.
+      assert.equal(
+        nodes.filter((n) => /boardsesh_ticks/.test(n.rel ?? '') || /boardsesh_ticks/.test(n.index ?? '')).length,
+        1,
+        `the climber grade book must be read exactly once; saw: ${nodes
+          .map((n) => `${n.type}(${n.index ?? n.rel ?? ''})`)
+          .join(', ')}`,
+      );
+      // And that one read is served by the covering index, index-only.
+      assert.ok(
+        indexNames(nodes).some((n) => /boardsesh_ticks_user_grade_latest_idx/.test(n)),
+        `the grade book must come from the covering index; saw: ${indexNames(nodes).join(', ')}`,
+      );
+      assert.equal(hasSeqScanOnBoardTable(nodes), false, 'a personal-grade search must not seq-scan a board table');
+      if (RUN_ANALYZE) await logTiming('personal-grade list (difficulty sort, V9-V11)', selects[0]);
+    });
+
+    void it('the personal-grade subquery needs no Sort — the index pathkeys match (#4828)', async () => {
+      // boardsesh_ticks_user_grade_latest_idx declares climbed_at/uuid
+      // DESC NULLS FIRST because a bare `ORDER BY … DESC` means NULLS FIRST.
+      // Declared DESC NULLS LAST (drizzle's default for `.desc()`), the pathkeys
+      // do not match and Postgres stacks an Incremental Sort on the scan.
+      const selects = tableSelects(await runSearch(PERSONAL_GRADE_SEARCH, PERSONAL_GRADE_USER));
+      const nodes = await explainNodes(selects[0].query, selects[0].params, GUARD);
+      const gradeBookNodes = nodes.slice(nodes.findIndex((n) => /Unique/.test(n.type)));
+      assert.ok(gradeBookNodes.length > 0, 'expected a Unique node for the DISTINCT ON grade book');
+      assert.equal(
+        gradeBookNodes.some((n) => /Sort/.test(n.type)),
+        false,
+        `the DISTINCT ON must read the index in order; saw: ${gradeBookNodes.map((n) => n.type).join(', ')}`,
+      );
+    });
+
+    void it('personal-grade count joins the same subquery and stays serial', async () => {
+      const { text, params } = buildCountSql(PERSONAL_GRADE_SEARCH, PARAMS, PERSONAL_GRADE_USER);
+      assert.ok(/my_grade/i.test(text), 'countClimbs must join the my_grade subquery, or the WHERE cannot resolve');
+
+      const nodes = await explainNodes(text, params, GUARD);
+      assert.equal(
+        nodes.filter((n) => /boardsesh_ticks/.test(n.rel ?? '') || /boardsesh_ticks/.test(n.index ?? '')).length,
+        1,
+        'the count must read the climber grade book once, like the list does',
+      );
+      assert.equal(hasGatherNode(nodes), false, 'the countClimbs SET LOCAL guard must still eliminate the Gather');
+      if (RUN_ANALYZE) await logTiming('personal-grade count', { query: text, params });
     });
 
     void it('closes the pool', async () => {

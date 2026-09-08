@@ -26,7 +26,15 @@ export const getHoldHeatmapData = async (
   const { climbs, climbStats, climbHolds } = UNIFIED_TABLES;
 
   // Use the shared filter creator
-  const filters = createClimbFilters(params, searchParams, userId);
+  // Personal grades (#4828) are deliberately dropped here rather than honoured.
+  // The grade filter they produce reads a `my_grade` alias that only the search
+  // paths left-join (`filters.getPersonalGradeJoin()`); this aggregate spreads
+  // `getClimbWhereConditions()` without that join, so an inbound `useMyGrades`
+  // would raise 42P01 — a 500 rather than wrong rows. Unreachable today (web
+  // never parses the param, see `urlParamsToSearchParams`), so this is a guard
+  // against a future caller, not a live bug. Honouring it properly means adding
+  // the join here too; see the search paths for the shape.
+  const filters = createClimbFilters(params, { ...searchParams, useMyGrades: false }, userId);
 
   try {
     // Check if personal progress filters are active - if so, use user-specific counts

@@ -171,7 +171,7 @@ export function toClimbSearchInput(
   state: ClimbFilterState,
   board: BoardSearchConfig,
   pagination: SearchPagination,
-  options?: { name?: string },
+  options?: { name?: string; personalGrades?: boolean },
 ): ClimbSearchInput {
   const input: ClimbSearchInput = {
     boardName: board.boardName,
@@ -201,6 +201,19 @@ export function toClimbSearchInput(
   if (state.showOnlyCompleted) input.showOnlyCompleted = true;
   if (state.minUserRating != null) input.minUserRating = state.minUserRating;
   if (state.onlyRatedByMe) input.onlyRatedByMe = true;
+
+  // Personal grades (#4796, #4828): the climber's own grade drives the grade
+  // range and the difficulty sort, so a climb they re-graded lands in the band
+  // the row already shows them.
+  //
+  // Sent ONLY when it can change the answer. Everywhere else the param would buy
+  // nothing and cost the Redis cache: `useMyGrades` is user-specific, so a search
+  // carrying it resolves a userId and leaves the cacheable set. Plain browse —
+  // the app's busiest query — therefore stays byte-identical and stays cached.
+  const gradeBoundSet = state.minGrade != null || state.maxGrade != null;
+  if (options?.personalGrades && (gradeBoundSet || state.sortBy === 'difficulty')) {
+    input.useMyGrades = true;
+  }
 
   // Climb-type filter. Both-on ("All") and both-off mean "no preference" for
   // the frames_count constraint, but they must NOT be handled the same way:

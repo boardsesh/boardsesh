@@ -64,6 +64,17 @@ export type Climb = {
   // 'setter_only'). Null when no grade row exists. The UI keeps the Aurora
   // grade when this is null or 'setter_only'.
   boardseshConfidence?: string | null;
+  // The signed-in climber's OWN grade for this climb at this angle — the
+  // difficulty of their latest graded tick, clamped to the boulder scale.
+  // Present only on rows from a `useMyGrades` search, which filtered and
+  // ordered by exactly this value (COALESCEd over the crowd's grade), so the
+  // row cannot disagree with where it sits in the list. Undefined/absent means
+  // "not asked for"; null means "asked for, and they never graded it".
+  //
+  // Private by construction: never round-tripped through the party queue, since
+  // it is one climber's opinion, not a property of the climb. See
+  // PRIVATE_CLIMB_FIELDS in @boardsesh/queue.
+  myDifficulty?: number | null;
   // Board configuration to draw this climb on, resolved against its setter's
   // boards. Populated by `userClimbs` (the profile Climbs tab, where no board is
   // in the route); null everywhere the board comes from the URL.
@@ -174,6 +185,19 @@ export type ClimbSearchInput = {
   // `onlyRatedByMe` drops them.
   minUserRating?: number;
   onlyRatedByMe?: boolean;
+  /**
+   * When true, the grade filter and the difficulty sort key off the climber's
+   * own grade instead of the crowd's: the difficulty of their LATEST tick for
+   * (user, board_type, climb_uuid, angle) that carries a difficulty, ordered by
+   * (climbed_at DESC, uuid DESC), clamped to the boulder scale — falling back to
+   * ROUND(display_difficulty) where they have never graded the climb. That
+   * keeps a re-graded climb in the same band the row already displays (#4828).
+   *
+   * Requires an authenticated caller: `USER_SPECIFIC_SEARCH_PARAMS` lists it, so
+   * the resolver resolves a userId for it and keeps the result out of the
+   * shared cache. Anonymous searches fall back to the crowd's grade.
+   */
+  useMyGrades?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
   // Climb-type toggles. Both undefined / both true → no frames_count filter.
@@ -200,6 +224,12 @@ export const USER_SPECIFIC_SEARCH_PARAMS = [
   'showOnlyCompleted',
   'minUserRating',
   'onlyRatedByMe',
+  // Personal grades re-key the grade filter, the difficulty sort AND the
+  // projected myDifficulty off one climber's ticks, so such a search can no
+  // longer be shared from the Redis/SSR cache — and, more importantly, the
+  // resolver only resolves a userId when a param on this list is set, without
+  // which the whole feature silently no-ops.
+  'useMyGrades',
   'onlyDrafts',
 ] as const satisfies ReadonlyArray<keyof ClimbSearchInput>;
 

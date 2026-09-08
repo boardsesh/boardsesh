@@ -17,6 +17,7 @@
 // the nine mobile provider suites that whole-module-mock `@boardsesh/queue-react`
 // still get the real mapper.
 import type { ClimbInput, ClimbQueueItemInput } from '@boardsesh/shared-schema';
+import { stripPrivateClimbFields } from '@boardsesh/queue';
 import type { QueueItemUser } from '@boardsesh/queue';
 
 /**
@@ -74,7 +75,12 @@ export function toClimbQueueItemInput<TClimb>(
 ): ClimbQueueItemInput {
   return {
     uuid: item.uuid,
-    climb: toClimbInput(item.climb),
+    // Strip the private per-climber fields on the way out (`myDifficulty`, the
+    // climber's own grade). Each platform's `toClimbInput` enumerates its
+    // fields, so today nothing gets through anyway — this is the guard that
+    // holds the day one of them starts spreading a climb. See
+    // PRIVATE_CLIMB_FIELDS in @boardsesh/queue.
+    climb: stripPrivateClimbFields(toClimbInput(item.climb)),
     // Left undefined (not coerced to null) when absent, matching what web has
     // always written — a null would overwrite a peer's value on the server.
     addedBy: item.addedBy,
