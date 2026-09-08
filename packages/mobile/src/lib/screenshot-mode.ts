@@ -255,6 +255,53 @@ export function screenshotModeLoadMore(loadMore: () => void): () => void {
 const NO_MORE_PAGES = (): void => {};
 
 /**
+ * Drops a Reanimated `entering` (or `exiting`) animation in screenshot mode so
+ * the element is already in its resting state on the very first frame.
+ * Maestro snaps a shot the instant a testID becomes visible, so any element
+ * still mid-`entering` at that moment renders whatever the animation's
+ * in-progress frame happens to be — a real pixel race, not a data problem.
+ *
+ * Pass the animation builder straight through at the call site:
+ * `entering={screenshotModeEntering(FadeIn.duration(180))}`. Outside
+ * screenshot mode this hands back the same animation untouched.
+ */
+export function screenshotModeEntering<TAnimation>(animation: TAnimation): TAnimation | undefined {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return undefined;
+  return animation;
+}
+
+/**
+ * Swaps a value that only settles to its final rendered form after the first
+ * frame for one that is already there — the color analogue of
+ * `screenshotModeEntering` for a case that isn't a Reanimated animation at
+ * all.
+ *
+ * The concrete case this exists for: iOS's `PlatformColor('separator')` is
+ * Apple's translucent hairline tone (see `theme/colors.ts`) — it composites
+ * against whatever is painted behind it rather than being a fixed RGB value,
+ * and it resolves against the app window's NATIVE trait collection, which
+ * `ThemeProvider` only pushes to match the pinned screenshot scheme from a
+ * post-mount effect (`Appearance.setColorScheme`, one commit later than the
+ * JS `colorScheme` it is meant to track). Two replay captures of the same
+ * frozen, seeded home feed differed only along the 1px hairline border of the
+ * visible `SessionFeedCard`s — (56, 56, 59) in one capture, (32, 32, 34) in
+ * the other, everything else byte-identical — a translucent hairline still
+ * settling, not a light/dark flip (that would have changed everything, not
+ * just a 1px line). Screenshot mode swaps the translucent native tone for its
+ * opaque static equivalent (`theme/ios-colors.ts`) so every consumer paints a
+ * byte-stable hairline from the first frame: `Card`'s border, the divider
+ * inside `SessionFeedCard`, `HomeTopChrome`'s bottom rule, and anywhere else
+ * that reads `systemColors.separator`.
+ *
+ * Generic (not separator-specific) since the same first-frame-determinism
+ * need applies to any dynamic-vs-static color pair, not just this one.
+ */
+export function screenshotModeStaticColor<TColor>(dynamicColor: TColor, staticColor: TColor): TColor {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return staticColor;
+  return dynamicColor;
+}
+
+/**
  * The seed screenshot mode draws its "random" numbers from.
  *
  * Arbitrary — the only property that matters is that it NEVER CHANGES. A
