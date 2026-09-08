@@ -27,6 +27,13 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  *                                 [--variant material|liquidGlass] [--shutdown]
  *                                 [--app-path <path/to/Boardsesh.app|app.apk>]
  *                                 [--orientation portrait|landscape] [--dev-client]
+ *                                 [--fixtures off|record|replay] [--fixtures-dir <path>] [--fresh]
+ *
+ * --fixtures points the app at the local record/replay backend
+ * (scripts/screenshot-backend.ts) instead of a live one, so the screenshots stop
+ * moving whenever PROD's data does. `record` proxies `--backend` and writes down
+ * every answer; `replay` serves those bytes and never leaves the machine. See
+ * docs/mobile-screenshot-fixtures.md.
  *
  * --dev-client makes the Android capture work the way iOS always has: install the
  * dev-client APK (com.boardsesh.app.dev) and load its JS from a Metro this script
@@ -59,7 +66,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SUPPORTED_LOCALES, isSupportedLocale, type Locale } from '../packages/shared/i18n/src/config';
 import {
@@ -90,6 +97,16 @@ import {
   type DevClientSession,
 } from './lib/android-dev-client';
 import { ANDROID_DEV_PACKAGE } from './lib/android-app';
+import { readScreenshotFixtureManifest } from './lib/screenshot-backend';
+import {
+  DEFAULT_SCREENSHOT_FIXTURES_DIR,
+  RE_RECORD_COMMAND,
+  findScreenshotBackendProblems,
+  parseScreenshotBackendLogLine,
+  resolveScreenshotBackendPort,
+  startOfSecondIso,
+  type ScreenshotBackendMode,
+} from './lib/screenshot-fixtures';
 // Orchestrator-to-orchestrator import (mobile-android-shots.ts already does the
 // same): resolving a dev-client APK is one behaviour with one cache, and the lib
 // layer can't own it because it shells out to gh/gradle.
@@ -112,6 +129,18 @@ const OUTPUT_ROOT = resolve(ROOT_DIR, 'app-stores');
  * every line regardless of how much follows it.
  */
 export const LOGCAT_LOG_PATH = join(tmpdir(), 'boardsesh-screenshot-logcat.log');
+/**
+ * The screenshot backend's own stdout+stderr, for the whole capture.
+ *
+ * Truncated when the backend starts, so the miss gate reads only this run. The
+ * gate additionally slices from a per-capture baseline line count, because one
+ * backend serves every device (and, on iOS, every locale) in a run — without
+ * the slice, device 2 would fail on device 1's misses.
+ */
+export const SCREENSHOT_BACKEND_LOG_PATH = join(tmpdir(), 'boardsesh-screenshot-backend.log');
+const SCREENSHOT_BACKEND_SCRIPT = resolve(ROOT_DIR, 'scripts', 'screenshot-backend.ts');
+/** How long `startScreenshotBackend` waits for `/health` to answer before failing the run. */
+const SCREENSHOT_BACKEND_READY_TIMEOUT_SECONDS = 10;
 // Output is grouped by store (the directory name), not by platform id.
 const STORE_BY_PLATFORM: Record<'ios' | 'android', string> = { ios: 'apple', android: 'google' };
 const LOG = '[mobile:screenshots]';
@@ -147,6 +176,13 @@ const MAESTRO_INSTALL_HINT = 'Install Maestro: curl -Ls "https://get.maestro.mob
 export type ScreenshotPlatform = 'ios' | 'android' | 'all';
 export type ScreenshotFlow = 'app-store' | 'onboarding';
 export type ScreenshotBackend = 'local' | 'prod';
+/**
+ * Whether this capture talks to a real backend (`off`), proxies one while
+ * writing down what it answered (`record`), or serves those recordings back
+ * (`replay`). Orthogonal to `--backend`, which only ever names the UPSTREAM: a
+ * recording proxies it, a replay never makes an outbound request at all.
+ */
+export type ScreenshotFixturesMode = 'off' | 'record' | 'replay';
 
 export type ScreenshotTheme = 'light' | 'dark';
 export type IosDeviceOrientation = 'PORTRAIT' | 'LANDSCAPE_LEFT';
@@ -249,6 +285,16 @@ export interface ScreenshotOptions {
    * always a dev-client, so the flag does nothing there.
    */
   devClient: boolean;
+  /**
+   * Record the app's backend traffic, replay a recorded set, or neither. `off`
+   * keeps the capture pointed at the live `--backend` and behaves exactly as it
+   * did before fixtures existed.
+   */
+  fixtures: ScreenshotFixturesMode;
+  /** Where the fixture set lives. A relative path resolves against the repo root. */
+  fixturesDir: string;
+  /** Record only: discard the existing fixture set instead of extending it. */
+  fresh: boolean;
   shutdown: boolean;
 }
 
@@ -275,6 +321,9 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     appPath: null,
     orientation: null,
     devClient: false,
+    fixtures: 'off',
+    fixturesDir: DEFAULT_SCREENSHOT_FIXTURES_DIR,
+    fresh: false,
     shutdown: false,
   };
 
@@ -344,12 +393,30 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
       case '--dev-client':
         options.devClient = true;
         break;
+      case '--fixtures':
+        options.fixtures = expectEnum(flag, value, ['off', 'record', 'replay']) as ScreenshotFixturesMode;
+        index++;
+        break;
+      case '--fixtures-dir':
+        options.fixturesDir = expectValue(flag, value);
+        index++;
+        break;
+      case '--fresh':
+        options.fresh = true;
+        break;
       case '--shutdown':
         options.shutdown = true;
         break;
       default:
         throw new Error(`Unknown argument: ${flag}`);
     }
+  }
+
+  // Replay has nothing to discard and record is the only mode that writes, so a
+  // `--fresh` anywhere else is a typo that would otherwise pass silently and
+  // leave the caller believing the set was rebuilt.
+  if (options.fresh && options.fixtures !== 'record') {
+    throw new Error('--fresh only applies to --fixtures record');
   }
 
   return options;
@@ -429,6 +496,7 @@ export function buildScreenshotEnv(
   options: ScreenshotOptions,
   baseEnv: NodeJS.ProcessEnv = process.env,
   appLocale: Locale | null = null,
+  frozenNow: string | null = null,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...baseEnv,
@@ -464,6 +532,24 @@ export function buildScreenshotEnv(
     env.EXPO_PUBLIC_BACKEND_URL = env.EXPO_PUBLIC_BACKEND_URL ?? LOCAL_BACKEND_URL;
     env.EXPO_PUBLIC_WEB_URL = env.EXPO_PUBLIC_WEB_URL ?? LOCAL_WEB_URL;
   }
+  if (options.fixtures !== 'off') {
+    if (!frozenNow) {
+      // Not a defensive nicety: without the frozen instant the bundle would run
+      // on the wall clock against frozen data, and every relative timestamp in
+      // the capture would drift from the fixture set it is reading.
+      throw new Error('buildScreenshotEnv needs the frozen instant when --fixtures is record or replay');
+    }
+    // Overwrite, not `??`: the fixtures backend IS the backend for this run, so
+    // it must win over both the `--backend local` defaults above and any
+    // EXPO_PUBLIC_BACKEND_URL the caller exported.
+    const backendUrl = `http://localhost:${resolveScreenshotBackendPort(baseEnv.BOARDSESH_SCREENSHOT_BACKEND_PORT)}`;
+    env.EXPO_PUBLIC_BACKEND_URL = backendUrl;
+    env.EXPO_PUBLIC_WS_URL = `${backendUrl.replace(/^http/, 'ws')}/graphql`;
+    // The app's `/static/*` reads go through the web URL, and the backend serves
+    // the recorded asset bytes on the same port.
+    env.EXPO_PUBLIC_WEB_URL = backendUrl;
+    env.EXPO_PUBLIC_SCREENSHOT_NOW = frozenNow;
+  }
   return env;
 }
 
@@ -479,10 +565,28 @@ function runInherit(command: string, args: string[], env: NodeJS.ProcessEnv, cwd
   return result.status ?? 1;
 }
 
-function runCapture(command: string, args: string[]): { status: number; stdout: string } {
+function runCapture(command: string, args: string[], env?: NodeJS.ProcessEnv): { status: number; stdout: string } {
   guardSimulatorCommand(command, args, ROOT_DIR);
-  const result = spawnSync(command, args, { encoding: 'utf8' });
+  // No `env` key at all when the caller passed none: spawnSync inherits
+  // process.env only when the option is absent, and `env: undefined` would be a
+  // silent, empty environment.
+  const result = spawnSync(command, args, env ? { encoding: 'utf8', env } : { encoding: 'utf8' });
   return { status: result.status ?? 1, stdout: result.stdout ?? '' };
+}
+
+/**
+ * The env an app launched on a simulator runs with. `SIMCTL_CHILD_*` variables
+ * are handed to the launched process (with the prefix stripped), so this pins
+ * the app's timezone to UTC.
+ *
+ * Without it the capture inherits the host's zone, and every local-date
+ * derivation in the app — day dividers, the activity heatmap's today cell, "3h
+ * ago" crossing midnight — lands on a different calendar day on a developer's
+ * machine than on a UTC CI runner, from the same frozen instant. The Android
+ * side pins the same thing with the emulator's `-timezone UTC`.
+ */
+function simulatorLaunchEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, SIMCTL_CHILD_TZ: 'UTC' };
 }
 
 function readPlistString(plistPath: string, key: string): string | null {
@@ -828,6 +932,307 @@ function reportScreenshotRenderProblems(logText: string, options: ScreenshotOpti
 }
 
 /**
+ * The frozen-clock line the app logs once at boot
+ * (`screenshot-board-auto-activator.tsx`), as it reaches the capture log —
+ * Metro's tee on iOS, logcat on Android.
+ */
+const FROZEN_CLOCK_LINE = /\[screenshot\] clock: frozen at (\S+)/;
+const LIVE_CLOCK_LINE = /\[screenshot\] clock: live/;
+
+/**
+ * Whether the JS bundle actually froze "now" at the instant the fixture set was
+ * recorded at.
+ *
+ * This is the silent half of a replay capture: the bodies come back frozen from
+ * disk regardless, so a bundle still on the wall clock produces a complete,
+ * plausible store set whose "3h ago" strings and heatmap window drift a little
+ * further from the fixtures every day. Nothing else notices.
+ *
+ * Compared as instants, not strings: the manifest carries a whole-second
+ * `2026-09-08T12:00:00Z` while the app logs `Date#toISOString`, which always
+ * prints milliseconds.
+ */
+export function findFrozenClockProblems(logText: string, frozenNow: string): string[] {
+  const lines = logText.split('\n');
+  const expectedMs = Date.parse(frozenNow);
+  let sawClockLine = false;
+  const problems: string[] = [];
+
+  for (const line of lines) {
+    if (LIVE_CLOCK_LINE.test(line)) {
+      sawClockLine = true;
+      problems.push(
+        `the app ran on the live clock while replaying fixtures frozen at ${frozenNow} — EXPO_PUBLIC_SCREENSHOT_NOW did not reach the JS bundle.`,
+      );
+      continue;
+    }
+    const frozen = line.match(FROZEN_CLOCK_LINE);
+    if (!frozen) continue;
+    sawClockLine = true;
+    if (Date.parse(frozen[1]) !== expectedMs) {
+      problems.push(
+        `the app froze its clock at ${frozen[1]}, but the fixture set was recorded at ${frozenNow} — the two must be the same instant.`,
+      );
+    }
+  }
+
+  if (!sawClockLine) {
+    problems.push(
+      'no "[screenshot] clock:" line in the capture log — the app never reported which clock it was on, so the frozen instant could not be confirmed.',
+    );
+  }
+  return [...new Set(problems)];
+}
+
+/** Print what `findFrozenClockProblems` found; true when the clock is pinned correctly. */
+function reportFrozenClockProblems(logText: string, frozenNow: string, source: string): boolean {
+  const problems = findFrozenClockProblems(logText, frozenNow);
+  if (problems.length === 0) return true;
+  for (const problem of problems) console.error(`${LOG} FAILED: ${problem}`);
+  console.error(`${LOG} (read from ${source})`);
+  return false;
+}
+
+/** Print what `findScreenshotBackendProblems` found; true when the capture is clean. */
+function reportScreenshotBackendProblems(logText: string, mode: ScreenshotBackendMode): boolean {
+  const problems = findScreenshotBackendProblems(logText, { mode });
+  if (problems.length === 0) return true;
+  for (const problem of problems) console.error(`${LOG} FAILED: ${problem}`);
+  console.error(`${LOG} (read from ${SCREENSHOT_BACKEND_LOG_PATH})`);
+  return false;
+}
+
+/**
+ * How many lines the backend log holds right now.
+ *
+ * Snapshotted before each capture so the gate below judges only the traffic that
+ * capture produced. One backend serves every device and locale in a run, so
+ * without the slice the second device inherits the first's misses and every
+ * later shard fails on a problem that was already reported.
+ */
+export function screenshotBackendLogLineCount(logPath: string = SCREENSHOT_BACKEND_LOG_PATH): number {
+  if (!existsSync(logPath)) return 0;
+  // Newlines, not `split().length` — the log is being appended to while this
+  // reads it, and counting the trailing empty element as a line would make the
+  // slice below drop the first line the capture actually produced.
+  return readFileSync(logPath, 'utf8').split('\n').length - 1;
+}
+
+/** The backend log from `baselineLines` onward. */
+export function readScreenshotBackendLogSince(
+  baselineLines: number,
+  logPath: string = SCREENSHOT_BACKEND_LOG_PATH,
+): string {
+  if (!existsSync(logPath)) return '';
+  return readFileSync(logPath, 'utf8').split('\n').slice(baselineLines).join('\n');
+}
+
+/** A running screenshot backend, and the two facts the capture needs from it. */
+export interface ScreenshotBackendSession {
+  process: ChildProcess;
+  mode: ScreenshotBackendMode;
+  /** The instant this capture pretends it is — from the manifest on replay, from now on record. */
+  frozenNow: string;
+  port: number;
+  /** Absolute path of the fixture set this session reads or writes. */
+  fixturesDir: string;
+}
+
+/** Where the fixture set lives for this run, absolute. */
+export function resolveFixturesDir(options: ScreenshotOptions): string {
+  return isAbsolute(options.fixturesDir) ? options.fixturesDir : resolve(ROOT_DIR, options.fixturesDir);
+}
+
+/**
+ * Has the backend WE started come up on this port?
+ *
+ * A healthy `/health` on its own is not the answer, and getting that wrong is
+ * how a capture ends up reading somebody else's fixture set: when the port is
+ * already held, our child exits 1 with EADDRINUSE while the squatter keeps
+ * answering `/health` perfectly. So the READY line — which only our child can
+ * have written, into a log this function's caller truncated moments ago — is the
+ * half that proves whose backend this is.
+ */
+function screenshotBackendReady(port: number): boolean {
+  const healthy =
+    runCapture('curl', ['-fsS', '-o', '/dev/null', '--max-time', '2', `http://127.0.0.1:${port}/health`]).status === 0;
+  if (!healthy) return false;
+  if (!existsSync(SCREENSHOT_BACKEND_LOG_PATH)) return false;
+  return readFileSync(SCREENSHOT_BACKEND_LOG_PATH, 'utf8')
+    .split('\n')
+    .some((line) => {
+      const parsed = parseScreenshotBackendLogLine(line);
+      return parsed?.event === 'ready' && parsed.port === port;
+    });
+}
+
+/** Dump the tail of the backend log, the way dumpMetroLogTail does for Metro. */
+function dumpScreenshotBackendLogTail(lines = 40): void {
+  if (!existsSync(SCREENSHOT_BACKEND_LOG_PATH)) {
+    console.error(`${LOG} (no screenshot backend log at ${SCREENSHOT_BACKEND_LOG_PATH} to dump)`);
+    return;
+  }
+  const tail = readFileSync(SCREENSHOT_BACKEND_LOG_PATH, 'utf8').split('\n').slice(-lines).join('\n');
+  console.error(`${LOG} --- last ${lines} lines of the screenshot backend log ---\n${tail}\n${LOG} --- end ---`);
+}
+
+/**
+ * Start the record/replay backend as a SEPARATE detached process, and refuse to
+ * continue until it has actually bound.
+ *
+ * A child process for the same reason startReadinessServer uses one: this
+ * orchestrator is fully synchronous (spawnSync for sleep/simctl/maestro), so an
+ * in-process server's event loop would never get to accept a connection. Its
+ * stdout+stderr go straight to a file descriptor — not through a pipe this
+ * process would have to drain, and not through a `>` redirect a shell would
+ * block-buffer.
+ *
+ * Failing here rather than warning is deliberate: a capture that runs on with no
+ * backend renders the connectivity placard on every screen, which is a complete
+ * set of wrong screenshots.
+ */
+export function startScreenshotBackend(options: ScreenshotOptions): ScreenshotBackendSession {
+  const mode: ScreenshotBackendMode = options.fixtures === 'record' ? 'record' : 'replay';
+  const fixturesDir = resolveFixturesDir(options);
+  const port = resolveScreenshotBackendPort(process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT);
+
+  // Replay reproduces the recorded run, so its frozen instant is whatever the
+  // recording froze — read from the manifest here (not left to the CLI) because
+  // the same instant has to be baked into the JS bundle by buildScreenshotEnv.
+  let frozenNow: string;
+  if (mode === 'replay') {
+    const manifest = readScreenshotFixtureManifest(fixturesDir);
+    if (!manifest) {
+      throw new Error(`no recorded fixture set under ${fixturesDir} — record one first with \`${RE_RECORD_COMMAND}\`.`);
+    }
+    frozenNow = manifest.frozenNow;
+  } else {
+    frozenNow = startOfSecondIso(new Date());
+  }
+
+  const args = [
+    SCREENSHOT_BACKEND_SCRIPT,
+    '--mode',
+    mode,
+    '--port',
+    String(port),
+    '--fixtures',
+    fixturesDir,
+    '--frozen-now',
+    frozenNow,
+    '--flow',
+    options.flow,
+  ];
+  if (mode === 'record') {
+    // `--backend prod` leaves the upstream unset so the CLI's own PROD default
+    // applies — one place owns that URL.
+    if (options.backend === 'local') args.push('--upstream', LOCAL_BACKEND_URL);
+    if (options.fresh) args.push('--fresh');
+  }
+
+  // Fail before spawning rather than after: a squatter on this port answers
+  // /health just as convincingly as our own backend would, and a capture that
+  // silently read a stale fixture set is a complete set of wrong screenshots.
+  // Same guard runIos puts in front of Metro, for the same reason.
+  if (portInUse(port)) {
+    throw new Error(
+      `port ${port} is already in use, so the capture would talk to whatever is on it instead of this run's fixtures. ` +
+        `Stop it, or set BOARDSESH_SCREENSHOT_BACKEND_PORT to a free port.`,
+    );
+  }
+
+  // Truncate, so the miss gate below reads this run and no other.
+  const logFd = openSync(SCREENSHOT_BACKEND_LOG_PATH, 'w');
+  console.log(`${LOG} Starting the screenshot backend (mode=${mode}, port=${port}, frozenNow=${frozenNow})...`);
+  const backend = spawn('tsx', args, {
+    cwd: ROOT_DIR,
+    env: process.env,
+    stdio: ['ignore', logFd, logFd],
+    detached: true,
+  });
+  closeSync(logFd);
+  backend.unref();
+
+  const attempts = SCREENSHOT_BACKEND_READY_TIMEOUT_SECONDS * 2;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (screenshotBackendReady(port)) {
+      console.log(`${LOG} Screenshot backend ready on port ${port} (log: ${SCREENSHOT_BACKEND_LOG_PATH}).`);
+      return { process: backend, mode, frozenNow, port, fixturesDir };
+    }
+    spawnSync('sleep', ['0.5']);
+  }
+
+  dumpScreenshotBackendLogTail();
+  stopScreenshotBackend({ process: backend, mode, frozenNow, port, fixturesDir });
+  throw new Error(
+    `the screenshot backend never answered /health on port ${port} within ${SCREENSHOT_BACKEND_READY_TIMEOUT_SECONDS}s — ` +
+      `is the port already taken? See ${SCREENSHOT_BACKEND_LOG_PATH}.`,
+  );
+}
+
+/** SIGTERM the backend's process group, so its final manifest rewrite runs. */
+export function stopScreenshotBackend(session: ScreenshotBackendSession | null): void {
+  if (!session || session.process.pid === undefined) return;
+  console.log(`${LOG} Stopping the screenshot backend...`);
+  try {
+    process.kill(-session.process.pid, 'SIGTERM');
+  } catch {
+    try {
+      session.process.kill('SIGTERM');
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
+/**
+ * What the recording actually captured. Printed at the end of a record run so
+ * the operator can see the fixture set grew before committing it.
+ *
+ * A non-zero `redacted` fails the run: those fixtures carried a live auth token
+ * and were dropped, so the set on disk has holes the NEXT capture would only
+ * discover as replay misses. (The backend CLI exits 1 on the same condition,
+ * but this orchestrator is synchronous and never sees that exit code.)
+ */
+function reportRecordingSummary(session: ScreenshotBackendSession): boolean {
+  const status = runCapture('curl', [
+    '-fsS',
+    '--max-time',
+    '5',
+    `http://127.0.0.1:${session.port}/__screenshot-backend/status`,
+  ]);
+  if (status.status !== 0) {
+    console.warn(`${LOG} WARNING: could not read the screenshot backend status; recorded counts unavailable.`);
+    return true;
+  }
+  let stats: {
+    hits?: number;
+    misses?: number;
+    recorded?: number;
+    redacted?: number;
+    fixtures?: { graphql?: number; static?: number };
+  };
+  try {
+    stats = JSON.parse(status.stdout) as typeof stats;
+  } catch {
+    console.warn(`${LOG} WARNING: the screenshot backend status was not JSON; recorded counts unavailable.`);
+    return true;
+  }
+  console.log(
+    `${LOG} Recorded ${stats.recorded ?? 0} new response(s); the set now holds ` +
+      `${stats.fixtures?.graphql ?? 0} graphql + ${stats.fixtures?.static ?? 0} static fixtures ` +
+      `(${stats.hits ?? 0} hit, ${stats.misses ?? 0} missed) in ${session.fixturesDir}.`,
+  );
+  if ((stats.redacted ?? 0) > 0) {
+    console.error(
+      `${LOG} FAILED: ${stats.redacted} fixture(s) carried a live auth token and were NOT written — the recording is incomplete.`,
+    );
+    return false;
+  }
+  return true;
+}
+
+/**
  * Replace a store folder's PNGs with the ones this capture produced.
  *
  * Replace, not merge: the numeric prefix is display order, so renumbering a slot
@@ -957,6 +1362,7 @@ function captureIosDevice(
   screenshotDevice: IosScreenshotDevice,
   appPath: string,
   localeTarget: AppStoreLocaleTarget,
+  backendSession: ScreenshotBackendSession | null,
 ): number {
   const device = findOrCreateIosDevice(screenshotDevice);
   bootDevice(device);
@@ -982,6 +1388,9 @@ function captureIosDevice(
     // on a stale marker and capture a blank/loading frame.
     const homeReadyBaseline = homeReadyMarkerCount();
     const readinessBaseline = screenshotReadinessCount();
+    // Snapshot before the app can talk to the backend, so the gate below judges
+    // only this device's traffic (one backend serves the whole run).
+    const backendLogBaseline = screenshotBackendLogLineCount();
 
     // First try a plain launch — no `simctl openurl`. The screenshots build bakes
     // DEV_CLIENT_DEFAULT_LAUNCHER_URL=http://localhost:${METRO_PORT} into
@@ -993,7 +1402,7 @@ function captureIosDevice(
     // scheme, and Maestro can't dismiss it reliably. Dev-menu chrome is suppressed
     // via the same plugin.
     console.log(`${LOG} Launching the app (auto-loads Metro via DEV_CLIENT_DEFAULT_LAUNCHER_URL)...`);
-    runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID]);
+    runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv());
 
     // The app auto-signs-in and boots straight to home, so wait for it to get
     // there before Maestro runs — this is what login.yaml's readiness wait used to
@@ -1020,7 +1429,7 @@ function captureIosDevice(
     for (let attempt = 1; attempt <= 3 && !reachedHome; attempt += 1) {
       console.log(`${LOG} Not home yet; terminating and re-launching (attempt ${attempt}/3)...`);
       runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
-      runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID]);
+      runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv());
       reachedHome = waitForHomeReady(homeReadyBaseline, readinessBaseline, 120);
     }
     if (!reachedHome) {
@@ -1083,6 +1492,19 @@ function captureIosDevice(
     // tees here (truncated per locale, so this is only ever the current run's).
     const metroLog = existsSync(METRO_LOG_PATH) ? readFileSync(METRO_LOG_PATH, 'utf8') : '';
     if (!reportScreenshotRenderProblems(metroLog, options, METRO_LOG_PATH)) return 1;
+
+    if (backendSession) {
+      const backendLog = readScreenshotBackendLogSince(backendLogBaseline);
+      if (!reportScreenshotBackendProblems(backendLog, backendSession.mode)) return 1;
+      // Replay only: a recording run defines the frozen instant, so there is
+      // nothing yet for the bundle to disagree with.
+      if (
+        backendSession.mode === 'replay' &&
+        !reportFrozenClockProblems(metroLog, backendSession.frozenNow, METRO_LOG_PATH)
+      ) {
+        return 1;
+      }
+    }
 
     const duplicateGroups = findDuplicateScreenshotGroups(captureDir);
     if (duplicateGroups.length > 0) {
@@ -1240,6 +1662,17 @@ function runAndroid(options: ScreenshotOptions): number {
     return 1;
   }
 
+  // A standalone APK carries its JS — and therefore its backend URL — from build
+  // time, so pointing it at a local fixtures backend is impossible. Say so
+  // instead of capturing a full set against the live backend under a flag that
+  // claims otherwise.
+  if (options.fixtures !== 'off' && !options.devClient) {
+    console.error(
+      `${LOG} FAILED: --fixtures needs --dev-client on Android; a standalone APK bakes its backend URL in.`,
+    );
+    return 1;
+  }
+
   // The dev-client APK carries no JS, so it resolves through the shared APK
   // cache (download the latest rn-android-dev-* release, or build one) and runs
   // under the side-by-side .dev package.
@@ -1279,16 +1712,26 @@ function runAndroid(options: ScreenshotOptions): number {
 
   const captureDir = mkdtempSync(join(tmpdir(), 'boardsesh-android-shots-'));
   let devClientSession: DevClientSession | null = null;
+  let backendSession: ScreenshotBackendSession | null = null;
+  let backendLogBaseline = 0;
   try {
+    if (options.fixtures !== 'off') backendSession = startScreenshotBackend(options);
     if (options.devClient) {
       // Android captures the single en-US tree (the locale matrix is iOS-only),
       // so no locale is baked into the bundle here.
-      const metroEnv = buildScreenshotEnv(options, process.env, null);
+      const metroEnv = buildScreenshotEnv(options, process.env, null, backendSession?.frozenNow ?? null);
       console.log(
-        `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}${options.variant ? `, variant=${options.variant}` : ''})...`,
+        `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,
       );
       devClientSession = startMetroForDevClient(metroEnv);
-      connectDevClient('adb', deviceId, options.backend === 'local' ? LOCAL_BACKEND_REVERSE_PORTS : []);
+      // The emulator's localhost is its own loopback, so the fixtures backend
+      // needs reversing onto the host exactly like the local dev backend does.
+      const reversePorts = [
+        ...(options.backend === 'local' ? LOCAL_BACKEND_REVERSE_PORTS : []),
+        ...(backendSession ? [backendSession.port] : []),
+      ];
+      connectDevClient('adb', deviceId, reversePorts);
+      backendLogBaseline = screenshotBackendLogLineCount();
       if (!launchDevClientToHome('adb', deviceId, { logPrefix: LOG })) {
         console.error(`${LOG} FAILED: dev-client never reached home`);
         return 1;
@@ -1327,6 +1770,18 @@ function runAndroid(options: ScreenshotOptions): number {
     if (logcat === null) return 1;
     if (!reportScreenshotRenderProblems(logcat, options, LOGCAT_LOG_PATH)) return 1;
 
+    if (backendSession) {
+      const backendLog = readScreenshotBackendLogSince(backendLogBaseline);
+      if (!reportScreenshotBackendProblems(backendLog, backendSession.mode)) return 1;
+      if (
+        backendSession.mode === 'replay' &&
+        !reportFrozenClockProblems(logcat, backendSession.frozenNow, LOGCAT_LOG_PATH)
+      ) {
+        return 1;
+      }
+      if (backendSession.mode === 'record' && !reportRecordingSummary(backendSession)) return 1;
+    }
+
     const duplicateGroups = findDuplicateScreenshotGroups(captureDir);
     if (duplicateGroups.length > 0) {
       for (const group of duplicateGroups) {
@@ -1350,6 +1805,7 @@ function runAndroid(options: ScreenshotOptions): number {
     // First, so a Maestro failure (or any early return above) still takes Metro
     // and the readiness server down with it.
     if (devClientSession) stopDevClientSession(devClientSession);
+    stopScreenshotBackend(backendSession);
     logcatStream.kill();
     clearAndroidStatusBar(deviceId);
     rmSync(captureDir, { force: true, recursive: true });
@@ -1536,9 +1992,17 @@ function runIos(options: ScreenshotOptions): number {
   const localeTargets = resolveAppStoreLocaleTargets(options.appLocales);
 
   const readinessServer = startReadinessServer();
+  let backendSession: ScreenshotBackendSession | null = null;
   try {
-    return runIosLocales(options, appPath, screenshotDevices, localeTargets);
+    // Started once for the whole run (every locale, every device), so the
+    // per-capture gate slices the log from a baseline rather than reading it whole.
+    if (options.fixtures !== 'off') backendSession = startScreenshotBackend(options);
+    const status = runIosLocales(options, appPath, screenshotDevices, localeTargets, backendSession);
+    if (status !== 0) return status;
+    if (backendSession?.mode === 'record' && !reportRecordingSummary(backendSession)) return 1;
+    return 0;
   } finally {
+    stopScreenshotBackend(backendSession);
     stopReadinessServer(readinessServer);
   }
 }
@@ -1548,6 +2012,7 @@ function runIosLocales(
   appPath: string,
   screenshotDevices: readonly IosScreenshotDevice[],
   localeTargets: readonly AppStoreLocaleTarget[],
+  backendSession: ScreenshotBackendSession | null,
 ): number {
   for (let localeIndex = 0; localeIndex < localeTargets.length; localeIndex++) {
     if (localeIndex > 0 && !waitForPortToClose(METRO_PORT)) {
@@ -1555,9 +2020,14 @@ function runIosLocales(
       return 1;
     }
     const localeTarget = localeTargets[localeIndex];
-    const metroEnv = buildScreenshotEnv(options, process.env, localeTarget.appLocale);
+    const metroEnv = buildScreenshotEnv(
+      options,
+      process.env,
+      localeTarget.appLocale,
+      backendSession?.frozenNow ?? null,
+    );
     console.log(
-      `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}, locale=${localeTarget.appLocale}${options.variant ? `, variant=${options.variant}` : ''})...`,
+      `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}, locale=${localeTarget.appLocale}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,
     );
     const metro = startMetro(metroEnv);
     try {
@@ -1567,7 +2037,7 @@ function runIosLocales(
       }
       prewarmMetroBundle();
       for (const screenshotDevice of screenshotDevices) {
-        const status = captureIosDevice(options, screenshotDevice, appPath, localeTarget);
+        const status = captureIosDevice(options, screenshotDevice, appPath, localeTarget, backendSession);
         if (status !== 0) return status;
       }
     } finally {

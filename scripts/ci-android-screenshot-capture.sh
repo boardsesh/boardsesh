@@ -15,6 +15,7 @@
 #   SCREENSHOT_DEV_CLIENT      '1' to pass --dev-client to the orchestrator
 #   SCREENSHOT_RENDER_MODE     board drawing            (empty = the app default, Aura)
 #   SCREENSHOT_BOARDS          "|"-separated walls      (empty = the app default)
+#   SCREENSHOT_FIXTURES        live | record | replay   (default live = no --fixtures flag)
 set -euo pipefail
 
 flow="${SCREENSHOT_FLOW:-app-store}"
@@ -45,6 +46,18 @@ if [ -n "${SCREENSHOT_BOARDS:-}" ]; then
 fi
 if [ "${SCREENSHOT_DEV_CLIENT:-}" = "1" ]; then
   retarget+=(--dev-client)
+fi
+
+# The record/replay backend. `live` (the default) passes nothing, so the capture
+# talks to PROD exactly as it did before fixtures existed. A recording run starts
+# from an empty set so what it uploads is only what THIS capture asked for; the
+# merge step unions it with the iOS shards.
+fixtures="${SCREENSHOT_FIXTURES:-live}"
+if [ "$fixtures" != "live" ]; then
+  retarget+=(--fixtures "$fixtures")
+  if [ "$fixtures" = "record" ]; then
+    retarget+=(--fresh)
+  fi
 fi
 
 # Diagnostics land here; the workflow uploads it as an artifact (always()). The

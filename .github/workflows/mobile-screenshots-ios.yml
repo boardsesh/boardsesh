@@ -60,6 +60,14 @@ on:
         description: 'Which walls the board-backed shots sit on, "|"-separated, in slot order (slot 0 = every board-backed shot, slot 1 = the second board-view). Empty = the app default. Each entry matches a board name or a layout name.'
         type: string
         default: ''
+      fixtures:
+        description: 'Backend the capture talks to. "live" is PROD (today''s default). "record" proxies PROD and uploads the recorded fixtures as an artifact — dispatch it with locales=en-US, then merge the artifacts with `vp run mobile:screenshot-fixtures-merge` and commit the set. "replay" serves the committed set, which is what makes the screenshots deterministic; this default flips to replay once a set exists.'
+        type: choice
+        default: live
+        options:
+          - live
+          - record
+          - replay
       upload:
         description: 'Upload captured screenshots to App Store Connect. Requires the full App Store set (app-store flow, empty locales).'
         type: boolean
@@ -288,6 +296,7 @@ jobs:
         env:
           RENDER_MODE_INPUT: ${{ inputs.render_mode || '' }}
           BOARDS_INPUT: ${{ inputs.boards || '' }}
+          FIXTURES_INPUT: ${{ inputs.fixtures || 'live' }}
         run: |
           set -euo pipefail
           # Empty inputs mean "whatever the app pins" — Aura, and the store walls
@@ -299,6 +308,17 @@ jobs:
           fi
           if [ -n "$BOARDS_INPUT" ]; then
             retarget+=(--boards "$BOARDS_INPUT")
+          fi
+          # `live` is the no-fixtures path — the orchestrator's own default — so it
+          # passes no flag at all and this shard behaves exactly as it did before.
+          # A recording shard starts from an empty set (--fresh), so what it uploads
+          # is only what THIS locale/device asked for; the merge step downstream is
+          # what unions the shards.
+          if [ "$FIXTURES_INPUT" != "live" ]; then
+            retarget+=(--fixtures "$FIXTURES_INPUT")
+            if [ "$FIXTURES_INPUT" = "record" ]; then
+              retarget+=(--fresh)
+            fi
           fi
           attempts=2
           for attempt in $(seq 1 "$attempts"); do
@@ -349,6 +369,19 @@ jobs:
           path: capture-debug/**
           if-no-files-found: warn
           retention-days: 14
+
+      # A recording shard's whole output. Downloaded alongside the Android set and
+      # folded into one committed set with
+      # `vp run mobile:screenshot-fixtures-merge` — see
+      # docs/mobile-screenshot-fixtures.md.
+      - name: Upload recorded fixtures
+        if: ${{ always() && inputs.fixtures == 'record' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-fixtures-${{ matrix.locale }}-${{ matrix.device.slug }}
+          path: packages/mobile/screenshot-fixtures/**
+          if-no-files-found: warn
+          retention-days: 7
 
       # Hand this shard's PNGs to ios-finalize. The artifact's internal layout is
       # <app-store-locale>/<device>/NN-name.png (upper paths stripped to the

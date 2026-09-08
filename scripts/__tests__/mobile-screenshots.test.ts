@@ -10,6 +10,9 @@ import { join } from 'node:path';
 import {
   buildScreenshotEnv,
   deviceSlug,
+  findFrozenClockProblems,
+  readScreenshotBackendLogSince,
+  screenshotBackendLogLineCount,
   DEFAULT_SCREENSHOT_RENDER_MODE,
   findDuplicateScreenshotGroups,
   findScreenshotRenderProblems,
@@ -50,6 +53,9 @@ function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOpti
     appPath: null,
     orientation: null,
     devClient: false,
+    fixtures: 'off',
+    fixturesDir: 'packages/mobile/screenshot-fixtures',
+    fresh: false,
     shutdown: false,
     ...overrides,
   };
@@ -110,6 +116,10 @@ describe('parseArgs', () => {
         '--app-path',
         '/tmp/Boardsesh.app',
         '--dev-client',
+        '--fixtures',
+        'replay',
+        '--fixtures-dir',
+        '/tmp/fixtures',
         '--shutdown',
       ]),
     ).toEqual({
@@ -127,6 +137,9 @@ describe('parseArgs', () => {
       appPath: '/tmp/Boardsesh.app',
       orientation: null,
       devClient: true,
+      fixtures: 'replay',
+      fixturesDir: '/tmp/fixtures',
+      fresh: false,
       shutdown: true,
     });
   });
@@ -720,5 +733,123 @@ describe('resolveAppStoreLocaleTargets', () => {
     for (const appLocale of parseArgs(['--locales', 'all']).appLocales) {
       expect({ appLocale, supported: supported.includes(appLocale) }).toEqual({ appLocale, supported: true });
     }
+  });
+});
+
+describe('--fixtures', () => {
+  it('defaults to off and leaves the fixture env unset', () => {
+    const options = parseArgs([]);
+    expect(options.fixtures).toBe('off');
+    expect(options.fixturesDir).toBe('packages/mobile/screenshot-fixtures');
+    expect(options.fresh).toBe(false);
+    const env = buildScreenshotEnv(options, baseEnv());
+    expect(env.EXPO_PUBLIC_SCREENSHOT_NOW).toBeUndefined();
+    expect(env.EXPO_PUBLIC_WS_URL).toBeUndefined();
+  });
+
+  it('parses the mode, the directory and --fresh', () => {
+    const options = parseArgs(['--fixtures', 'record', '--fixtures-dir', '/tmp/rec', '--fresh']);
+    expect(options.fixtures).toBe('record');
+    expect(options.fixturesDir).toBe('/tmp/rec');
+    expect(options.fresh).toBe(true);
+  });
+
+  it('rejects an unknown mode and a --fresh outside record', () => {
+    expect(() => parseArgs(['--fixtures', 'maybe'])).toThrow(/--fixtures must be one of/);
+    expect(() => parseArgs(['--fresh'])).toThrow(/--fresh only applies to --fixtures record/);
+    expect(() => parseArgs(['--fixtures', 'replay', '--fresh'])).toThrow(/--fresh only applies/);
+  });
+
+  it('points the bundle at the local backend port and bakes the frozen instant', () => {
+    const env = buildScreenshotEnv(
+      makeOptions({ fixtures: 'replay', backend: 'prod' }),
+      baseEnv(),
+      'en-US',
+      '2026-09-08T12:00:00Z',
+    );
+    expect(env.EXPO_PUBLIC_BACKEND_URL).toBe('http://localhost:8090');
+    expect(env.EXPO_PUBLIC_WS_URL).toBe('ws://localhost:8090/graphql');
+    expect(env.EXPO_PUBLIC_WEB_URL).toBe('http://localhost:8090');
+    expect(env.EXPO_PUBLIC_SCREENSHOT_NOW).toBe('2026-09-08T12:00:00Z');
+  });
+
+  it('honours BOARDSESH_SCREENSHOT_BACKEND_PORT', () => {
+    const env = buildScreenshotEnv(
+      makeOptions({ fixtures: 'replay' }),
+      baseEnv({ BOARDSESH_SCREENSHOT_BACKEND_PORT: '9123' }),
+      null,
+      '2026-09-08T12:00:00Z',
+    );
+    expect(env.EXPO_PUBLIC_BACKEND_URL).toBe('http://localhost:9123');
+    expect(env.EXPO_PUBLIC_WS_URL).toBe('ws://localhost:9123/graphql');
+  });
+
+  it('overrides the --backend local URLs and any caller-exported override', () => {
+    const env = buildScreenshotEnv(
+      makeOptions({ fixtures: 'replay', backend: 'local' }),
+      baseEnv({ EXPO_PUBLIC_BACKEND_URL: 'http://10.0.0.5:8080' }),
+      null,
+      '2026-09-08T12:00:00Z',
+    );
+    expect(env.EXPO_PUBLIC_BACKEND_URL).toBe('http://localhost:8090');
+    expect(env.EXPO_PUBLIC_WEB_URL).toBe('http://localhost:8090');
+  });
+
+  it('refuses to build the env without a frozen instant', () => {
+    expect(() => buildScreenshotEnv(makeOptions({ fixtures: 'record' }), baseEnv())).toThrow(/frozen instant/);
+  });
+});
+
+describe('findFrozenClockProblems', () => {
+  const frozenNow = '2026-09-08T12:00:00Z';
+
+  it('accepts a frozen line even though the app prints milliseconds', () => {
+    const log = 'blah\n12:00:01 [screenshot] clock: frozen at 2026-09-08T12:00:00.000Z\nmore';
+    expect(findFrozenClockProblems(log, frozenNow)).toEqual([]);
+  });
+
+  it('fails a bundle still on the wall clock', () => {
+    const problems = findFrozenClockProblems('[screenshot] clock: live', frozenNow);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/live clock/);
+    expect(problems[0]).toContain(frozenNow);
+  });
+
+  it('fails a bundle frozen at a different instant', () => {
+    const problems = findFrozenClockProblems('[screenshot] clock: frozen at 2026-01-02T12:00:00.000Z', frozenNow);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/2026-01-02T12:00:00\.000Z/);
+  });
+
+  it('fails when the app never reported a clock at all', () => {
+    expect(findFrozenClockProblems('nothing to see here', frozenNow)).toEqual([
+      'no "[screenshot] clock:" line in the capture log — the app never reported which clock it was on, so the frozen instant could not be confirmed.',
+    ]);
+  });
+});
+
+describe('the screenshot backend log slice', () => {
+  it('reads only the lines written after the baseline', () => {
+    const logDir = mkdtempSync(join(tmpdir(), 'boardsesh-backend-log-'));
+    const logPath = join(logDir, 'backend.log');
+    try {
+      writeFileSync(logPath, '[screenshot-backend] HIT graphql GetProfile aaaaaaaaaaaa\n');
+      const baseline = screenshotBackendLogLineCount(logPath);
+      writeFileSync(
+        logPath,
+        '[screenshot-backend] HIT graphql GetProfile aaaaaaaaaaaa\n' +
+          '[screenshot-backend] MISS graphql GetClimb bbbbbbbbbbbb reason=no-fixture\n',
+      );
+      const since = readScreenshotBackendLogSince(baseline, logPath);
+      expect(since).toContain('MISS graphql GetClimb');
+      expect(since).not.toContain('HIT graphql GetProfile');
+    } finally {
+      rmSync(logDir, { force: true, recursive: true });
+    }
+  });
+
+  it('counts nothing for a log that does not exist yet', () => {
+    expect(screenshotBackendLogLineCount(join(tmpdir(), 'boardsesh-no-such-backend.log'))).toBe(0);
+    expect(readScreenshotBackendLogSince(0, join(tmpdir(), 'boardsesh-no-such-backend.log'))).toBe('');
   });
 });

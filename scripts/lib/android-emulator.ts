@@ -120,7 +120,22 @@ export function bootEmulator(env: NodeJS.ProcessEnv, options: BootOptions = {}):
   // GPU renderer is the most host-sensitive knob: swiftshader_indirect is the CI
   // default, but a quirky headless host can override it (e.g. `guest` → lavapipe).
   const gpu = process.env.BOARDSESH_EMULATOR_GPU || 'swiftshader_indirect';
-  const args = ['-avd', avdName, '-port', String(EMULATOR_PORT), '-no-snapshot', '-no-audio', '-no-boot-anim'];
+  // -timezone UTC pins the guest's zone, so a screenshot capture's local-date
+  // derivations (day dividers, the activity heatmap's today cell) land on the
+  // same calendar day here as on a UTC CI runner from the same frozen instant.
+  // The iOS side pins the same thing with SIMCTL_CHILD_TZ (see
+  // simulatorLaunchEnv in scripts/mobile-screenshots.ts).
+  const args = [
+    '-avd',
+    avdName,
+    '-port',
+    String(EMULATOR_PORT),
+    '-no-snapshot',
+    '-no-audio',
+    '-no-boot-anim',
+    '-timezone',
+    'UTC',
+  ];
   args.push('-gpu', gpu, '-accel', 'auto');
   if (headless) args.push('-no-window');
   const extra = (process.env.BOARDSESH_EMULATOR_EXTRA_ARGS ?? '').trim();

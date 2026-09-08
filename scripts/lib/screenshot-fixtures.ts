@@ -22,13 +22,44 @@ export const STATIC_KEY_LENGTH = 16;
  * The exact command that rebuilds the fixture set from PROD. Quoted in every
  * remedy. `--fixtures record|replay` picks the fixture mode; `--backend
  * local|prod` picks the upstream the app talks to — a recording always targets
- * `prod`. `--fixtures` lands with the orchestrator integration in a follow-up
- * PR; until then this is the target shape, not yet a runnable command.
+ * `prod`.
  */
 export const RE_RECORD_COMMAND =
   'vp run mobile:screenshots -- --fixtures record --backend prod --platform ios --devices common --locales en-US --fresh';
 
 export type ScreenshotBackendMode = 'replay' | 'record';
+
+/**
+ * Port the screenshot backend binds, and the port the orchestrator bakes into
+ * the JS bundle's backend URLs. Defined here rather than in either caller so the
+ * CLI default and the bundled URL cannot drift: a mismatch leaves the app
+ * talking to nothing while the backend logs a clean, empty run.
+ */
+export const SCREENSHOT_BACKEND_DEFAULT_PORT = 8090;
+
+/** Where a recorded fixture set lives, relative to the repo root. */
+export const DEFAULT_SCREENSHOT_FIXTURES_DIR = 'packages/mobile/screenshot-fixtures';
+
+/**
+ * The backend port for this run: `BOARDSESH_SCREENSHOT_BACKEND_PORT` when it is
+ * a usable port number, else the default. An unparseable or out-of-range
+ * override falls back instead of throwing; the one caller that must reject a
+ * bad value (the CLI's own `--port`) validates that flag itself.
+ */
+export function resolveScreenshotBackendPort(rawPort: string | undefined): number {
+  const parsed = Number.parseInt(rawPort ?? '', 10);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) return SCREENSHOT_BACKEND_DEFAULT_PORT;
+  return parsed;
+}
+
+/**
+ * Now, to the second. Milliseconds are dropped so a recorded manifest reads
+ * cleanly, and so the instant the orchestrator bakes into the JS bundle is the
+ * exact string the manifest carries.
+ */
+export function startOfSecondIso(now: Date): string {
+  return `${now.toISOString().slice(0, 19)}Z`;
+}
 
 // ---------------------------------------------------------------------------
 // Keying

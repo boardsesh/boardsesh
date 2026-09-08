@@ -50,10 +50,10 @@ import { isSupportedLocale, type Locale } from '@boardsesh/i18n';
  * `Date.now()`/`new Date()` directly. `SCREENSHOT_NOW_MS` is read by
  * `lib/clock.ts` and the boot log in `screenshot-board-auto-activator.tsx`.
  *
- * `EXPO_PUBLIC_SCREENSHOT_NOW` isn't wired up yet: it will be set by the
- * orchestrator (`scripts/mobile-screenshots.ts`) once the replay backend
- * lands, from the recorded fixture set's `frozenNow`. Unset today, so
- * captures still run on the live clock.
+ * The orchestrator (`scripts/mobile-screenshots.ts`) sets
+ * `EXPO_PUBLIC_SCREENSHOT_NOW` whenever `--fixtures` is on, from the fixture
+ * set's `frozenNow`. A capture without fixtures leaves it unset and runs on the
+ * live clock.
  */
 
 /**
@@ -77,14 +77,17 @@ export const SCREENSHOT_LOCALE_OVERRIDE: Locale | null =
  * clock — see `lib/clock.ts` and the boot log in
  * `screenshot-board-auto-activator.tsx`, its two readers.
  *
- * Not wired up yet: this will be set by the orchestrator
- * (`scripts/mobile-screenshots.ts`, into Metro's env on both platforms) once
- * the replay backend lands, from the recorded fixture set's `frozenNow`.
- * Unset today, so captures still run on the live clock.
+ * Set by the orchestrator (`scripts/mobile-screenshots.ts`, into Metro's env on
+ * both platforms) from the recorded fixture set's `frozenNow` whenever
+ * `--fixtures` is on; unset for a capture that talks to a live backend, which
+ * then runs on the real clock.
  *
- * When it is wired up, the value must be mid-day UTC (e.g. `…T12:00:00Z`) —
- * local-date derivations (day dividers, the heatmap's today cell) need to
- * land on the same calendar day in every simulator timezone.
+ * What makes local-date derivations (day dividers, the heatmap's today cell)
+ * agree between a developer's machine and CI is the timezone pin, not the value
+ * itself: every capture runs the app in UTC (`SIMCTL_CHILD_TZ` on iOS,
+ * `-timezone UTC` on the emulator). The recorded instant is the true recording
+ * time to the second, so nothing in the recorded data can read as being in the
+ * future.
  */
 const screenshotNowEnv = process.env.EXPO_PUBLIC_SCREENSHOT_NOW;
 const screenshotNowParsedMs = Date.parse(screenshotNowEnv ?? '');

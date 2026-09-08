@@ -217,12 +217,153 @@ with no `HIT` at all (the app never reached the backend). Record is *allowed* to
 miss — that is what recording is — so it fails only on `UPSTREAM-ERROR`,
 `MISS route` and `MISS auth`.
 
-## Not here yet
+## Running a capture against fixtures
 
-The capture orchestrator (`scripts/mobile-screenshots.ts`) does not start this
-server or set `EXPO_PUBLIC_BACKEND_URL` / `EXPO_PUBLIC_WS_URL` yet, and there is
-no drift test asserting the recorded operation set still covers what the app
-sends. Both land in follow-up PRs, along with the orchestrator's own
-`--fixtures record|replay` flag — the remedy every problem message quotes
-(`RE_RECORD_COMMAND`) already names it, but running that command does nothing
-until the integration lands.
+The orchestrator owns the backend's lifecycle: `--fixtures replay|record` starts
+it once per platform run, points the JS bundle at it, and stops it in the same
+`finally` that stops Metro.
+
+```
+vp run mobile:screenshots -- --fixtures replay --platform ios --devices common --locales all
+vp run mobile:screenshots -- --fixtures record --backend prod --platform ios --devices common --locales en-US --fresh
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--fixtures off` | the default; the app talks to `--backend` and nothing changes |
+| `--fixtures record` | proxy `--backend` and write down every answer |
+| `--fixtures replay` | serve the recorded set; no outbound request is made |
+| `--fixtures-dir <path>` | where the set lives (default `packages/mobile/screenshot-fixtures`, relative to the repo root) |
+| `--fresh` | record only; discard the existing set first |
+
+`--backend` keeps its old meaning throughout: it names the UPSTREAM. A recording
+proxies it, a replay ignores it.
+
+With `--fixtures` on, Metro is started with
+
+```
+EXPO_PUBLIC_BACKEND_URL=http://localhost:8090
+EXPO_PUBLIC_WS_URL=ws://localhost:8090/graphql
+EXPO_PUBLIC_WEB_URL=http://localhost:8090
+EXPO_PUBLIC_SCREENSHOT_NOW=<the set's frozenNow>
+```
+
+overriding whatever `--backend` would have set (`BOARDSESH_SCREENSHOT_BACKEND_PORT`
+moves the port). On Android the backend port is reversed onto the emulator
+alongside Metro's, and `--fixtures` requires `--dev-client` — a standalone APK
+bakes its backend URL in at build time and cannot be redirected.
+
+### The frozen clock
+
+`frozenNow` is read from the manifest on a replay and minted (now, to the second)
+on a recording, and it reaches the app as `EXPO_PUBLIC_SCREENSHOT_NOW`. The app
+logs which clock it ended up on at boot:
+
+```
+[screenshot] clock: frozen at 2026-09-08T12:00:00.000Z
+[screenshot] clock: live
+```
+
+A replay capture fails if that line says `live`, names a different instant, or
+never appears — a bundle on the wall clock reading frozen bodies produces a
+complete, plausible store set whose relative timestamps drift a little further
+from the fixtures every day.
+
+Timezone is pinned to UTC on both platforms, so a local capture and a CI capture
+derive the same calendar day from the same instant: iOS launches the app with
+`SIMCTL_CHILD_TZ=UTC`, and the emulator boots with `-timezone UTC` (in
+`mobile-screenshots-android.yml` for CI, `scripts/lib/android-emulator.ts`
+locally).
+
+### The miss gate
+
+After Maestro, the run reads the backend log from a per-capture baseline (one
+backend serves every device and locale, so the slice keeps device 2 from failing
+on device 1's misses) and prints each problem `findScreenshotBackendProblems`
+returns as
+
+```
+[mobile:screenshots] FAILED: no recorded response for GetClimb (variables 3f2a1b9c0d11) — re-record with `…`
+```
+
+Any problem fails the run. A record run instead prints what it captured — new
+responses, the set's totals, hits and misses — and fails if any fixture was
+refused for carrying a live auth token, since that leaves a hole the NEXT
+capture would only discover as a replay miss.
+
+## Recording a set
+
+There is no macOS or Android hardware in the loop locally, so a set is recorded
+by the capture workflows and merged afterwards.
+
+1. Dispatch **Mobile Screenshots (iOS)** with `fixtures = record` and
+   `locales = en-US`. Each shard records only its own traffic and uploads it as
+   `screenshot-fixtures-<locale>-<device-slug>` (7-day retention).
+2. Dispatch **Mobile Screenshots (Android)** with `fixtures = record`. It uploads
+   `screenshot-fixtures-android`.
+3. Download every `screenshot-fixtures-*` artifact and unpack each into its own
+   directory.
+4. Fold them into one set:
+
+   ```
+   vp run mobile:screenshot-fixtures-merge -- --out packages/mobile/screenshot-fixtures ./artifacts/screenshot-fixtures-*
+   ```
+
+   The merge is a union. When two shards recorded the same key the bytes must be
+   identical — a difference is real nondeterminism behind that response and the
+   merge fails naming the key rather than picking a winner. It also refuses sets
+   recorded as different accounts or against different upstreams, and takes
+   `frozenNow` / `recordedAt` / `upstream` / `accountEmail` / `flow` from the
+   first input.
+5. Commit `packages/mobile/screenshot-fixtures/`.
+6. Flip both workflows' `fixtures` input default from `live` to `replay`, so an
+   ordinary dispatch captures against the committed set.
+
+Until step 6 the default stays `live` and captures run against PROD exactly as
+they always have.
+
+## The drift test
+
+`packages/mobile/src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts` runs
+on every PR and keeps the committed set honest. Its registry is every document
+the app can send: `packages/mobile/src/lib/graphql/operations.ts`, the operations
+mobile imports from `@boardsesh/graphql/operations*` (read out of mobile's own
+source, so a padded namespace import can't weaken the check), and
+`listSyncPullDocuments()`.
+
+It asserts:
+
+- every one of those documents parses and validates against the shared schema —
+  a check nothing else did for mobile's own operations;
+- every manifest entry names an operation the app still sends, at the document
+  hash it was recorded with;
+- every fixture's `documentHash` / `variablesHash` recompute from its own `query`
+  and `variables`, so a hand-edited file is caught;
+- every field the current document selects is present in the recorded response
+  (`checkSelectionCoverage` beside the test walks the selection set — aliases are
+  response keys, lists recurse per element, a null parent is a complete answer,
+  `@skip`/`@include` are read off the fixture's variables, and an inline fragment
+  applies only when `__typename` says it does);
+- the store flow's spine — `GetProfile`, `GetMyBoards`, `SearchClimbs`,
+  `GetClimb`, `GetSessionGroupedFeed` — has a fixture.
+
+Everything past the first bullet skips itself while there is no `manifest.json`.
+
+### When it fails
+
+- **"was recorded from a … document the app no longer sends"** — the query text
+  moved. Re-record.
+- **"is missing …, which the current … document selects"** — either the backend
+  stopped returning that field (fix the backend, then re-record) or the document
+  grew one after the set was recorded (re-record).
+- **"the file was edited by hand"** — a fixture's bytes and its hashes disagree.
+  Revert the edit or re-record; never patch a fixture by hand, the replay lookup
+  is keyed on those hashes.
+- **"which the app no longer sends"** — a stale fixture for a deleted operation.
+  Delete it, or re-record with `--fresh`.
+- **"Mobile imports from …, which this test does not read"** — someone imported
+  from a new `@boardsesh/graphql/operations/*` module. Add it to
+  `SHARED_OPERATION_MODULES` in the test.
+
+Re-recording always means the whole loop above, not a partial run: a set merged
+from shards recorded at different times fails the merge's own byte-identity rule.
