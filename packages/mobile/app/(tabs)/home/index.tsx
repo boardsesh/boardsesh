@@ -668,7 +668,7 @@ function RecentBetaCard({
   }, [showToast, t, video.betaLink.link]);
 
   return (
-    <View style={styles.betaCard}>
+    <View testID="beta-shelf-card" style={styles.betaCard}>
       <Pressable
         onPress={handleOpenVideo}
         accessibilityRole="link"

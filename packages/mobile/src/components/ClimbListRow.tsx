@@ -211,6 +211,13 @@ type ClimbListRowProps = {
    * long-press only. No-op without `onOpenActions`.
    */
   showMoreButton?: boolean;
+  /**
+   * Override the interactive content row's testID. Defaults to 'climb-row' (what
+   * the main climbs list anchors on); the board sheet's wall-history rows pass
+   * 'board-sheet-climb-row' so a Maestro flow can anchor there without matching
+   * an unrelated climb list on the same screen.
+   */
+  testID?: string;
 };
 
 const ClimbListRow = React.memo(function ClimbListRow({
@@ -234,6 +241,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   showPlaylistChips = false,
   showFavorite = false,
   showMoreButton = false,
+  testID = 'climb-row',
 }: ClimbListRowProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors: brand } = useTheme();
@@ -504,7 +512,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
             browser/list scroll; only horizontal ones reach this tap/long-press. */}
         <GestureDetector gesture={tapGesture} touchAction="pan-y">
           <View
-            testID="climb-row"
+            testID={testID}
             style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
             accessible
             accessibilityRole="button"

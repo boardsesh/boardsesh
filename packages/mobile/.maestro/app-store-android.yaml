@@ -88,6 +88,11 @@ name: app-store screenshots android
     visible:
       id: 'home-screen'
     timeout: 90000
+# skeleton/spinner is static on swiftshader, so settle-waits return early — anchor on real content
+- extendedWaitUntil:
+    visible:
+      id: 'session-feed-card'
+    timeout: 90000
 - waitForAnimationToEnd:
     timeout: 30000
 - takeScreenshot: 02-home
@@ -117,6 +122,11 @@ name: app-store screenshots android
 
 # Profile — progress tab. A plain link clears any screenshot-specific route params.
 - openLink: com.boardsesh.app://profile
+# skeleton/spinner is static on swiftshader, so settle-waits return early — anchor on real content
+- extendedWaitUntil:
+    visible:
+      id: 'progress-tab-loaded'
+    timeout: 90000
 - waitForAnimationToEnd:
     timeout: 30000
 - takeScreenshot: 06-profile
@@ -129,6 +139,11 @@ name: app-store screenshots android
       id: 'home-screen'
     timeout: 90000
 - openLink: com.boardsesh.app://climbs?screenshotOpenBoardSheet=1
+# skeleton/spinner is static on swiftshader, so settle-waits return early — anchor on real content
+- extendedWaitUntil:
+    visible:
+      id: 'board-sheet-climb-row'
+    timeout: 90000
 - waitForAnimationToEnd:
     timeout: 30000
 - waitForAnimationToEnd:

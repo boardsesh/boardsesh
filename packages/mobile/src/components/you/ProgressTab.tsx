@@ -104,6 +104,7 @@ export const ProgressTab = memo(function ProgressTab({ data, topInset, userId }:
 
   return (
     <ScrollView
+      testID="progress-tab-loaded"
       style={styles.flex}
       contentInsetAdjustmentBehavior="never"
       contentContainerStyle={{ paddingTop: topInset, paddingBottom }}

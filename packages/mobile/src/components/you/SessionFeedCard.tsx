@@ -169,7 +169,7 @@ export const SessionFeedCard = memo(function SessionFeedCard({
   ]);
 
   return (
-    <View style={styles.wrapper}>
+    <View testID="session-feed-card" style={styles.wrapper}>
       <Card>
         {/* Header opens the SESSION; the hero opens the beta video (when present)
             or the hardest-send CLIMB. Two tap targets so session detail stays

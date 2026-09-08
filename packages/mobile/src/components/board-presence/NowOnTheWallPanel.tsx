@@ -1169,6 +1169,7 @@ const InteractiveHistoryRow = memo(function InteractiveHistoryRowInner({
       contentRowStyle={styles.historyInteractiveRow}
       showSeparator={false}
       renderContent={renderContent}
+      testID="board-sheet-climb-row"
     />
   );
 });
@@ -1188,7 +1189,7 @@ const HistoryRow = memo(function HistoryRowInner({
   );
 
   return (
-    <View style={styles.historyRow}>
+    <View testID="board-sheet-climb-row" style={styles.historyRow}>
       <HistoryRowContent
         climb={climb}
         renderClimb={thumbnailClimb}

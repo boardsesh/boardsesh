@@ -290,6 +290,15 @@ jobs:
       # ~16KB; every real screen here is >140KB. Fail the run if any shot is
       # suspiciously small, so the commit-back below (gated on success()) can't
       # push a blank. Bump min_bytes if a legitimately sparse screen is ever added.
+      #
+      # The absolute floor alone missed a real incident (CI run 34210850605): three
+      # shots were captured mid-load — 02-home (78KB vs the committed 925KB),
+      # 06-profile (76KB vs 191KB) and 07-board-sheet (105KB vs 245KB) — because
+      # `waitForAnimationToEnd` is pixel-diff based and a static skeleton/spinner
+      # counts as "settled" on the slow CI emulator. All three cleared 61440 bytes,
+      # so the floor passed while the shots were wrong. The relative check below
+      # catches that: a shot under 40% of the committed size for the same filename
+      # fails the run even when it clears the absolute floor.
       - name: Assert screenshots are not blank
         if: ${{ inputs.flow != 'onboarding' }}
         run: |
@@ -304,6 +313,15 @@ jobs:
               fail=1
             else
               echo "ok: $shot (${size} bytes)"
+            fi
+
+            committed=$(git ls-tree -l HEAD -- "$shot" | awk '{print $4}')
+            if [ -n "$committed" ]; then
+              min_relative=$((committed * 40 / 100))
+              if [ "$size" -lt "$min_relative" ]; then
+                echo "::error::Mid-load capture: $shot is ${size} bytes, under 40% of the committed ${committed} bytes"
+                fail=1
+              fi
             fi
           done < <(find "$shots_dir" -type f -name '*.png' -print0)
           [ "$fail" -eq 0 ] || exit 1
