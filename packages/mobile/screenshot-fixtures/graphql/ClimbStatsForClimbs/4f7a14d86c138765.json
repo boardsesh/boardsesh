@@ -28,19 +28,19 @@
         {
           "climbUuid": "597462c7-a684-5b65-a989-6b2f718d32c9",
           "angle": 40,
-          "ascensionistCount": 107816,
-          "qualityAverage": 4.000250749928026,
+          "ascensionistCount": 107817,
+          "qualityAverage": 4.000260034547447,
           "difficultyAverage": 19,
           "displayDifficulty": 19,
           "difficulty": "6b+/V4",
           "faUsername": null,
           "faAt": null,
-          "syncSeq": "309271616"
+          "syncSeq": "309272018"
         }
       ]
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T17:31:36.881Z",
+  "recordedAt": "2026-09-08T18:52:04.824Z",
   "upstream": "https://ws.boardsesh.com"
 }

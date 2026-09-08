@@ -2,32 +2,32 @@
   "formatVersion": 1,
   "operationName": "GetBulkVoteSummaries",
   "documentHash": "05588e2743fdf1f49b71058ddfebdecb233cb20a7fe32e75887cdabe078f369e",
-  "variablesHash": "a0ebb077ebff9c07c74d532f18ca274160dd39d5529e05429284dc2aa702beda",
+  "variablesHash": "75acb16c6a9f759ca79fbf58bee6cbaa78a81b46494524bf250af29bcc1f4258",
   "query": "\n  query GetBulkVoteSummaries($input: BulkVoteSummaryInput!) {\n    bulkVoteSummaries(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n",
   "variables": {
     "input": {
       "entityType": "session",
       "entityIds": [
-        "e1aa7e92-19b9-4aaa-9ceb-899bbf8527ab",
-        "3e9b0b04-2ac9-4b06-9bd7-1082143e1228",
-        "e6f82235-2fc1-4190-ae3b-32a55d34041f",
-        "5a820d83-11cf-48f2-af5d-b473915a1e8b",
-        "0095f0c5-e711-4a83-a06e-f1fec6e3bf4d",
+        "f48c1d54-841b-46f8-b429-bed1451f0d3e",
+        "d79a110f-e7d5-4982-9e82-860b0df394b5",
+        "fcd95d93-2d58-47d4-9f4a-d0557d8c410f",
+        "64a457f8-3048-42d9-a4c5-87d308259fad",
+        "2ba3f895-b83e-4529-b7d7-b26dadfbde5e",
+        "645a283e-ab95-407a-9462-20364000c6c4",
+        "8da9f1a9-a6b4-4a22-a44e-15bc140afe9d",
+        "1a4e51bb-670d-43dc-b8c9-114e8009c8c5",
+        "9ea11b5a-cbb9-47d8-a0ac-297edae36fc9",
         "03db0239-9a10-4f0b-b183-8de7485a291c",
-        "47a2d3ca-1583-401e-978f-bd0c8e6430c7",
-        "ff273fcc-ed83-442a-9e0d-39916a483ab0",
-        "75a6dc84-5610-443a-87b4-71281f533305",
-        "682600cf-bcc8-4bd2-bc84-2e37cf699c5c",
-        "36e796a5-c7c2-4659-90bd-b22494b137be",
-        "6d2e43d7-7e10-4815-a2da-c3955e372c04",
-        "389a348a-2312-467b-916f-69c06452344e",
-        "7ab317dd-839f-430f-a321-328ced03ed9c",
-        "e64533a7-c0f4-402f-ba84-f7f0f63aca6a",
-        "6a37f2e0-9209-4c0e-ac0f-5ef9ba101a9c",
-        "53d7089b-50a8-4bae-8b6f-d5219c541493",
-        "7434f7e7-72eb-4174-b7e8-1cfae900ee7f",
-        "6f7298b7-6354-4077-aff6-8ba61b69d471",
-        "d48d8b39-0f32-4645-9381-3aa66109b40e"
+        "bc8c769d-ff91-415a-8e17-a24f79995f80",
+        "573cab91-3e4e-4680-8c01-e7b769ffd16c",
+        "2acc025b-2a34-4a14-9f29-232dbbb53307",
+        "ee0c3ef2-5a4e-46b1-b490-14c9af0ab145",
+        "be9fe7c2-57a8-467e-9436-099f314fde4a",
+        "4369390c-82ac-4612-b349-3c3b179b817b",
+        "8fe8f26b-43c2-4941-9b79-83c76070c6a1",
+        "38f6c9f8-69f5-459f-9391-951a534a74b5",
+        "e36893e8-3f69-4308-8f15-154d789ea749",
+        "36e796a5-c7c2-4659-90bd-b22494b137be"
       ]
     }
   },
@@ -36,7 +36,7 @@
       "bulkVoteSummaries": [
         {
           "entityType": "session",
-          "entityId": "e1aa7e92-19b9-4aaa-9ceb-899bbf8527ab",
+          "entityId": "f48c1d54-841b-46f8-b429-bed1451f0d3e",
           "upvotes": 0,
           "downvotes": 0,
           "voteScore": 0,
@@ -44,7 +44,7 @@
         },
         {
           "entityType": "session",
-          "entityId": "3e9b0b04-2ac9-4b06-9bd7-1082143e1228",
+          "entityId": "d79a110f-e7d5-4982-9e82-860b0df394b5",
           "upvotes": 0,
           "downvotes": 0,
           "voteScore": 0,
@@ -52,7 +52,7 @@
         },
         {
           "entityType": "session",
-          "entityId": "e6f82235-2fc1-4190-ae3b-32a55d34041f",
+          "entityId": "fcd95d93-2d58-47d4-9f4a-d0557d8c410f",
           "upvotes": 0,
           "downvotes": 0,
           "voteScore": 0,
@@ -60,7 +60,7 @@
         },
         {
           "entityType": "session",
-          "entityId": "5a820d83-11cf-48f2-af5d-b473915a1e8b",
+          "entityId": "64a457f8-3048-42d9-a4c5-87d308259fad",
           "upvotes": 0,
           "downvotes": 0,
           "voteScore": 0,
@@ -68,7 +68,39 @@
         },
         {
           "entityType": "session",
-          "entityId": "0095f0c5-e711-4a83-a06e-f1fec6e3bf4d",
+          "entityId": "2ba3f895-b83e-4529-b7d7-b26dadfbde5e",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "645a283e-ab95-407a-9462-20364000c6c4",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "8da9f1a9-a6b4-4a22-a44e-15bc140afe9d",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "1a4e51bb-670d-43dc-b8c9-114e8009c8c5",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "9ea11b5a-cbb9-47d8-a0ac-297edae36fc9",
           "upvotes": 0,
           "downvotes": 0,
           "voteScore": 0,
@@ -84,7 +116,7 @@
         },
         {
           "entityType": "session",
-          "entityId": "47a2d3ca-1583-401e-978f-bd0c8e6430c7",
+          "entityId": "bc8c769d-ff91-415a-8e17-a24f79995f80",
           "upvotes": 0,
           "downvotes": 0,
           "voteScore": 0,
@@ -92,7 +124,7 @@
         },
         {
           "entityType": "session",
-          "entityId": "ff273fcc-ed83-442a-9e0d-39916a483ab0",
+          "entityId": "573cab91-3e4e-4680-8c01-e7b769ffd16c",
           "upvotes": 0,
           "downvotes": 0,
           "voteScore": 0,
@@ -100,7 +132,7 @@
         },
         {
           "entityType": "session",
-          "entityId": "75a6dc84-5610-443a-87b4-71281f533305",
+          "entityId": "2acc025b-2a34-4a14-9f29-232dbbb53307",
           "upvotes": 0,
           "downvotes": 0,
           "voteScore": 0,
@@ -108,7 +140,47 @@
         },
         {
           "entityType": "session",
-          "entityId": "682600cf-bcc8-4bd2-bc84-2e37cf699c5c",
+          "entityId": "ee0c3ef2-5a4e-46b1-b490-14c9af0ab145",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "be9fe7c2-57a8-467e-9436-099f314fde4a",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "4369390c-82ac-4612-b349-3c3b179b817b",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "8fe8f26b-43c2-4941-9b79-83c76070c6a1",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "38f6c9f8-69f5-459f-9391-951a534a74b5",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "e36893e8-3f69-4308-8f15-154d789ea749",
           "upvotes": 0,
           "downvotes": 0,
           "voteScore": 0,
@@ -121,83 +193,11 @@
           "downvotes": 0,
           "voteScore": 0,
           "userVote": 0
-        },
-        {
-          "entityType": "session",
-          "entityId": "6d2e43d7-7e10-4815-a2da-c3955e372c04",
-          "upvotes": 0,
-          "downvotes": 0,
-          "voteScore": 0,
-          "userVote": 0
-        },
-        {
-          "entityType": "session",
-          "entityId": "389a348a-2312-467b-916f-69c06452344e",
-          "upvotes": 0,
-          "downvotes": 0,
-          "voteScore": 0,
-          "userVote": 0
-        },
-        {
-          "entityType": "session",
-          "entityId": "7ab317dd-839f-430f-a321-328ced03ed9c",
-          "upvotes": 0,
-          "downvotes": 0,
-          "voteScore": 0,
-          "userVote": 0
-        },
-        {
-          "entityType": "session",
-          "entityId": "e64533a7-c0f4-402f-ba84-f7f0f63aca6a",
-          "upvotes": 0,
-          "downvotes": 0,
-          "voteScore": 0,
-          "userVote": 0
-        },
-        {
-          "entityType": "session",
-          "entityId": "6a37f2e0-9209-4c0e-ac0f-5ef9ba101a9c",
-          "upvotes": 0,
-          "downvotes": 0,
-          "voteScore": 0,
-          "userVote": 0
-        },
-        {
-          "entityType": "session",
-          "entityId": "53d7089b-50a8-4bae-8b6f-d5219c541493",
-          "upvotes": 0,
-          "downvotes": 0,
-          "voteScore": 0,
-          "userVote": 0
-        },
-        {
-          "entityType": "session",
-          "entityId": "7434f7e7-72eb-4174-b7e8-1cfae900ee7f",
-          "upvotes": 0,
-          "downvotes": 0,
-          "voteScore": 0,
-          "userVote": 0
-        },
-        {
-          "entityType": "session",
-          "entityId": "6f7298b7-6354-4077-aff6-8ba61b69d471",
-          "upvotes": 0,
-          "downvotes": 0,
-          "voteScore": 0,
-          "userVote": 0
-        },
-        {
-          "entityType": "session",
-          "entityId": "d48d8b39-0f32-4645-9381-3aa66109b40e",
-          "upvotes": 0,
-          "downvotes": 0,
-          "voteScore": 0,
-          "userVote": 0
         }
       ]
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T17:33:18.769Z",
+  "recordedAt": "2026-09-08T18:52:20.145Z",
   "upstream": "https://ws.boardsesh.com"
 }

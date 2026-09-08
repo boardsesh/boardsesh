@@ -1557,14 +1557,14 @@
         {
           "climbUuid": "403828250F6A459F9316527080375CEB",
           "angle": 35,
-          "ascensionistCount": 1492,
-          "qualityAverage": 3.192853297442799,
+          "ascensionistCount": 1493,
+          "qualityAverage": 3.1927236045729654,
           "difficultyAverage": 19.96,
           "displayDifficulty": 20,
           "difficulty": "6c/V5",
           "faUsername": "griffinwhiteside",
           "faAt": "2021-03-26 03:02:29",
-          "syncSeq": "306446670"
+          "syncSeq": "309272101"
         },
         {
           "climbUuid": "403828250F6A459F9316527080375CEB",
@@ -1965,14 +1965,14 @@
         {
           "climbUuid": "6448D03D8BDE4F6496B1BC9260AE7503",
           "angle": 35,
-          "ascensionistCount": 1008,
-          "qualityAverage": 3.24,
+          "ascensionistCount": 1009,
+          "qualityAverage": 3.2407562189054726,
           "difficultyAverage": 21.96,
           "displayDifficulty": 22,
           "difficulty": "7a/V6",
           "faUsername": "biscuit",
           "faAt": "2020-12-03 19:23:55",
-          "syncSeq": "306026088"
+          "syncSeq": "309272112"
         },
         {
           "climbUuid": "6448D03D8BDE4F6496B1BC9260AE7503",
@@ -2253,14 +2253,14 @@
         {
           "climbUuid": "86DDB41829E4445EA5E80BC300C47D17",
           "angle": 35,
-          "ascensionistCount": 932,
-          "qualityAverage": 3.2219098712446352,
+          "ascensionistCount": 933,
+          "qualityAverage": 3.2227438370846735,
           "difficultyAverage": 21.99,
           "displayDifficulty": 22,
           "difficulty": "7a/V6",
           "faUsername": "kiel",
           "faAt": "2021-04-21 23:17:31",
-          "syncSeq": "296685936"
+          "syncSeq": "309272121"
         },
         {
           "climbUuid": "86DDB41829E4445EA5E80BC300C47D17",
@@ -2661,14 +2661,14 @@
         {
           "climbUuid": "97D0A8FC30A44BA4ADB2494D09FC0632",
           "angle": 10,
-          "ascensionistCount": 19,
+          "ascensionistCount": 20,
           "qualityAverage": 3.24,
           "difficultyAverage": 13,
           "displayDifficulty": 13,
           "difficulty": "5a/V1",
           "faUsername": "jgurganus",
           "faAt": "2022-01-30 20:40:31",
-          "syncSeq": "236246081"
+          "syncSeq": "309272115"
         },
         {
           "climbUuid": "97D0A8FC30A44BA4ADB2494D09FC0632",
@@ -4510,6 +4510,6 @@
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T17:27:56.740Z",
+  "recordedAt": "2026-09-08T18:48:44.057Z",
   "upstream": "https://ws.boardsesh.com"
 }
