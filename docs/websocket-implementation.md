@@ -777,6 +777,13 @@ The "lightbulb" is no longer a driver claim. It is a **send / re-assert** afford
 
 ### Session boardPath sync (angle sharing)
 
+The Expo client uses `/b/{slug}/{angle}` for gym-linked boards and boards explicitly
+marked `hasLeds: false`, including personal walls without a light kit. A joining
+climber resolves that named board directly, preserving its UUID and capabilities.
+Personal LED boards and older snapshots without the flag keep the positional
+configuration path. Session creation, board switches, reconnects, and angle changes
+all use `buildSessionBoardPath` so a later update preserves the wall identity.
+
 The session's `boardPath` is the route string the host first joined / created on (`/{board}/{layout}/{size}/{sets}/{angle}/...`). Today the **angle** segment is the only piece that changes after creation — group-session feedback (tester quote: "the app seems to return to 40° as I navigate around") drove the move from "device-local angle" to "session-shared angle." The flow:
 
 - **Mutation:** `setSessionBoardPath(boardPath: String!): Session!` accepts a full path, validates via `BoardPathSchema`, persists via `roomManager.updateSessionBoardPathIfChanged` (read-then-write, non-atomic — see the JSDoc in `session-discovery.ts` for the accepted contract), and publishes `SessionBoardPathChanged` only when the stored value actually moved (idempotent on no-op writes). Any participant may call — and in the always-live model any participant may change the climb too.
@@ -2159,6 +2166,13 @@ POST /api/watch/pair             { "code" }   (no auth)                         
 All except `/api/watch/pair` take `Authorization: Bearer <mobile JWT>`. `navigate` / `take-control` reuse the widget's server-authoritative `navigateToQueueItem` / `setCurrentClimbAndPublish` core and the same durable-participant guard (`verifyWidgetSession`); the only difference is auth — `authenticateSessionRequest` (`session-auth.ts`) validates the JWT via `validateToken` (accepting both the web NextAuth JWE and the mobile JWS). Because a JWT authenticates _any_ user for _any_ sessionId (unlike the widget's session-bound APNs token), the participant guard runs **before** the shared write rate-limit bucket, so a non-participant who learns a sessionId can't drain a real member's bucket.
 
 **Polling contract** (`GET /api/session/state`): the watch cannot subscribe, so it **polls** this endpoint (~3s while foregrounded). The payload is deliberately slim — no `queue` array, no per-climb `frames` string — carrying only the current climb (name, grade, angle, mirrored, isBenchmark), the queue position, board resolution parsed server-side from `boardPath` (so the watch can build a `saveTick` without a second call), and `sequence` / `stateHash` so the client can skip a re-render when nothing changed between polls. It has its own generous **per-user** read rate-limit bucket (capacity 4, refill 1/s in `session-read-rate-limit.ts`) — kept separate from the write bucket so read polling can't throttle navigation. Ascent logging reuses the existing `saveTick` GraphQL mutation over HTTP; pairing codes are minted by the phone/web app and exchanged at `/api/watch/pair`.
+
+Named session paths resolve through the same raw slug lookup as `boardBySlug`, after
+JWT authentication and the durable session-participant guard. An active board wins
+over older merged boards using its slug; otherwise the lookup follows the latest
+merge tombstone. The response uses the path's angle when present, or the canonical
+board's default angle. Missing or plainly deleted boards return null board metadata.
+This lookup skips profile and statistics enrichment on every watch poll.
 
 ## Related Files
 

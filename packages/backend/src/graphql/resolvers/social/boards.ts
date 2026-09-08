@@ -7,6 +7,7 @@ import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
+import { resolveBoardBySlug } from '../shared/board-lookup';
 import { consensusDifficultyExpr } from '../shared/sql-expressions';
 import {
   CreateBoardInputSchema,
@@ -1074,53 +1075,8 @@ export const socialBoardQueries = {
    * requests cannot disclose a private board through the shared web cache.
    */
   boardBySlug: async (_: unknown, { slug }: { slug: string }, ctx: ConnectionContext) => {
-    // Validate slug format: lowercase alphanumeric with hyphens, max 120 chars
-    if (!slug || slug.length > 120 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) {
-      return null;
-    }
-
     const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
-
-    // The slug unique index is partial on active rows, so at most one active
-    // board holds a given slug — keep that as the indexed fast path (this
-    // resolver backs every board page view).
-    const [active] = await db
-      .select()
-      .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.slug, slug), isNull(dbSchema.userBoards.deletedAt)))
-      .limit(1);
-    if (active) {
-      // Gate before enrichment so a masked anonymous read never runs the
-      // owner/count/follow lookups for a board it isn't allowed to see.
-      if (!viewerId && !isRowAnonReadable(active)) return null;
-      return enrichBoard(active, viewerId);
-    }
-
-    // No active board holds the slug. A merged-away loser keeps its old slug,
-    // so follow its tombstone to the survivor (the canonical board carries its
-    // own real slug/uuid, so clients detect the change and redirect). A reused
-    // slug can leave several merged losers behind — prefer the most recently
-    // deleted one so the pick is deterministic and tracks the latest holder.
-    // deletedAt IS NOT NULL is redundant with the active-row fast path above
-    // (which already claims any row with this slug that has deletedAt IS NULL,
-    // merged or not) — stated explicitly anyway so this query's own invariant
-    // doesn't rely on that ordering, and a corrupted row (mergedIntoBoardUuid
-    // set, deletedAt NULL) can't be mistaken for a tombstone here.
-    const [merged] = await db
-      .select()
-      .from(dbSchema.userBoards)
-      .where(
-        and(
-          eq(dbSchema.userBoards.slug, slug),
-          isNotNull(dbSchema.userBoards.mergedIntoBoardUuid),
-          isNotNull(dbSchema.userBoards.deletedAt),
-        ),
-      )
-      .orderBy(desc(dbSchema.userBoards.deletedAt))
-      .limit(1);
-    if (!merged) return null;
-
-    const canonical = await resolveBoardFollowingMerges(merged);
+    const canonical = await resolveBoardBySlug(slug);
     if (!canonical) return null;
     // Same anonymous mask as the active path and `board(boardUuid)`: following a
     // tombstone must not disclose a private survivor to an anonymous caller.

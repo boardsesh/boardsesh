@@ -18,6 +18,8 @@ import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleConnectionEnded, BleConnectionHandle, PickerState } from '../../lib/ble/use-board-bluetooth';
 import { setHoldColorOverridesPreference } from '../../lib/hold-color-overrides';
+import { useBlePickerHost } from '../ble-picker-host';
+import { SHEET_SETTLE_MS } from '../sheet-presentation-provider';
 
 type BluetoothHookOptions = {
   onConnectSuccess?: (serial: string | null, connection: BleConnectionHandle) => void;
@@ -73,6 +75,7 @@ const presence = vi.hoisted(() => ({
   boardId: 42 as number | null,
   currentClimb: null as BoardPresenceClimb | null,
   holder: null as { userId?: string | null; displayName?: string | null } | null,
+  lastConnectionSeq: 0,
   resolveAndBindBoard: vi.fn(async () => null),
   resolveAndBindBoardByConfig: vi.fn(async () => null),
   resolveAndBindBoardByUuid: vi.fn(async () => null),
@@ -124,6 +127,7 @@ vi.mock('@boardsesh/board-presence-react', () => ({
     previousClimb: null,
     undoTarget: null,
     holder: presence.holder,
+    lastConnectionSeq: presence.lastConnectionSeq,
     isLive: true,
   }),
 }));
@@ -208,25 +212,39 @@ function makeQueueItem(uuid: string, frames = `p1r12-${uuid}`): ClimbQueueItem {
 }
 
 let capturedBluetooth: ReturnType<typeof useBluetoothContext> | null = null;
+let capturedPickerHost: ReturnType<typeof useBlePickerHost> | null = null;
 
 function BluetoothProbe() {
   capturedBluetooth = useBluetoothContext();
+  capturedPickerHost = useBlePickerHost();
   return null;
 }
 
-function renderProvider({ hasLeds = false }: { hasLeds?: boolean } = {}) {
-  return render(
-    createElement(BluetoothProvider, {
-      boardName: 'kilter',
-      layoutId: 1,
-      sizeId: 10,
-      setIds: '1,20',
-      boardUuid: 'board-uuid-1',
-      hasLeds,
-      children: createElement(BluetoothProbe, null) as ReactNode,
-    }),
-  );
+function providerElement({
+  hasLeds = false,
+  boardUuid = 'board-uuid-1',
+}: { hasLeds?: boolean; boardUuid?: string } = {}) {
+  return createElement(BluetoothProvider, {
+    boardName: 'kilter',
+    layoutId: 1,
+    sizeId: 10,
+    setIds: '1,20',
+    boardUuid,
+    hasLeds,
+    children: createElement(BluetoothProbe, null) as ReactNode,
+  });
 }
+
+function renderProvider(options?: Parameters<typeof providerElement>[0]) {
+  return render(providerElement(options));
+}
+
+beforeEach(() => {
+  presence.lastConnectionSeq = 0;
+  presence.currentClimb = null;
+  bluetooth.state.pickerState = null;
+  capturedPickerHost = null;
+});
 
 async function takeTheWall() {
   await act(async () => {
@@ -509,6 +527,7 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
     expect(capturedBluetooth?.virtualWallHeld).toBe(true);
 
     presence.holder = { userId: 'someone-else' };
+    presence.lastConnectionSeq = 1;
     await rerenderWith(rerender);
 
     expect(capturedBluetooth?.virtualWallHeld).toBe(false);
@@ -535,6 +554,7 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
     await takeTheWall();
 
     presence.holder = { userId: 'someone-else' };
+    presence.lastConnectionSeq = 1;
     await rerenderWith(rerender);
 
     expect(capturedBluetooth?.virtualWallHeld).toBe(false);
@@ -555,6 +575,180 @@ describe('BluetoothProvider — a real link always wins over a virtual hold', ()
     await rerenderWith(rerender);
     expect(capturedBluetooth?.virtualWallHeld).toBe(true);
   });
+
+  it.each(['settled', 'settling'])(
+    'writes the unchanged climb when Bluetooth replaces a %s virtual send',
+    async (phase) => {
+      const { rerender } = renderProvider();
+      await takeTheWall();
+      if (phase === 'settled') await settle();
+      wallConfirm.emitWallConfirm.mockClear();
+
+      const confirmCountsAtWrite: number[] = [];
+      bluetooth.state.sendFramesToBoard.mockImplementation(async () => {
+        confirmCountsAtWrite.push(wallConfirm.emitWallConfirm.mock.calls.length);
+        return true;
+      });
+      bluetooth.state.isConnected = true;
+      await rerenderWith(rerender);
+      await settle();
+
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
+        'p1r12-climb-1',
+        false,
+        expect.any(AbortSignal),
+        expect.objectContaining({ sendSource: 'auto' }),
+      );
+      expect(confirmCountsAtWrite).toEqual([0]);
+      expect(wallConfirm.emitWallConfirm).toHaveBeenCalledTimes(1);
+      expect(presence.reportDisconnectForBoard).not.toHaveBeenCalled();
+    },
+  );
+
+  it('takes over an existing peer when the no-lights picker first mounts the watch', async () => {
+    presence.holder = { userId: 'someone-else' };
+    presence.lastConnectionSeq = 8;
+    const { rerender } = renderProvider({ hasLeds: true });
+
+    await takeTheWall();
+    await settle();
+    expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+    expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+
+    // Even the same peer identity taking over again is a new handoff.
+    presence.lastConnectionSeq = 10;
+    await act(async () => rerender(providerElement({ hasLeds: true })));
+    expect(capturedBluetooth?.virtualWallHeld).toBe(false);
+  });
+
+  it.each(['holder seed', 'profile'])(
+    'ignores a delayed initial %s observation after taking the wall',
+    async (delayed) => {
+      if (delayed === 'profile') {
+        viewer.profile = null;
+        presence.holder = { userId: 'someone-else' };
+        presence.lastConnectionSeq = 8;
+      }
+      const { rerender } = renderProvider();
+      await takeTheWall();
+
+      if (delayed === 'profile') viewer.profile = { id: 'me' };
+      else presence.holder = { userId: 'someone-else' };
+      await rerenderWith(rerender);
+      await settle();
+
+      expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+      expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['undo', 'relight'] as const)('cancels a pending %s for every virtual hold release', async (operation) => {
+    const previousClimb: BoardPresenceClimb = {
+      climbUuid: 'previous',
+      frames: 'p1r12',
+      seq: 1,
+      sentAt: '2026-09-08T00:00:00Z',
+      angle: 40,
+    };
+
+    for (const release of ['user', 'peer', 'board', 'unmount'] as const) {
+      presence.currentClimb = previousClimb;
+      presence.holder = null;
+      presence.lastConnectionSeq = 0;
+      const view = renderProvider();
+      await takeTheWall();
+      await settle();
+      presence.reportClimbForBoard.mockClear();
+
+      let pendingWrite = Promise.resolve(false);
+      act(() => {
+        pendingWrite =
+          operation === 'undo'
+            ? capturedBluetooth!.undoWallChange()
+            : capturedBluetooth!.relightPresenceClimb(previousClimb);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SETTLE_MS / 2);
+      });
+      await act(async () => {
+        if (release === 'user') capturedBluetooth?.releaseVirtualWall();
+        if (release === 'peer') {
+          presence.holder = { userId: 'someone-else' };
+          presence.lastConnectionSeq = 2;
+          view.rerender(providerElement());
+        }
+        if (release === 'board') {
+          presence.boardId = 99;
+          view.rerender(providerElement({ boardUuid: 'another-board' }));
+        }
+        if (release === 'unmount') view.unmount();
+      });
+      await settle();
+
+      expect(await pendingWrite, `${operation} after ${release}`).toBe(false);
+      expect(presence.reportClimbForBoard, `${operation} after ${release}`).not.toHaveBeenCalled();
+      view.unmount();
+      presence.boardId = 42;
+    }
+  });
+
+  it('releases the board captured at take when the rendered binding already changed', async () => {
+    const view = renderProvider();
+    await takeTheWall();
+    await settle();
+    presence.boardId = 99;
+    await act(async () => view.rerender(providerElement({ boardUuid: 'another-board' })));
+    expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(42);
+    expect(presence.reportDisconnectForBoard).not.toHaveBeenCalledWith(99);
+  });
+
+  it('runs the deferred picker take once after the dismissed picker unmounts', async () => {
+    bluetooth.state.pickerState = {
+      devices: [],
+      isScanning: false,
+      handleSelect: vi.fn(),
+      handleCancel: vi.fn(),
+    };
+    const view = renderProvider({ hasLeds: true });
+    expect(view.getByTestId('device-picker')).toBeTruthy();
+
+    act(() => capturedPickerHost?.onNoLeds());
+    bluetooth.state.pickerState = null;
+    await act(async () => view.rerender(providerElement({ hasLeds: true })));
+    expect(view.queryByTestId('device-picker')).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHEET_SETTLE_MS - 1);
+    });
+    expect(capturedBluetooth?.virtualWallHeld).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(capturedBluetooth?.virtualWallHeld).toBe(true);
+    await settle();
+    expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['board switch', 'unmount', 'Bluetooth connect'])(
+    'cancels the deferred picker take on %s',
+    async (change) => {
+      const view = renderProvider({ hasLeds: true });
+      act(() => capturedPickerHost?.onNoLeds());
+      await act(async () => {
+        if (change === 'board switch') view.rerender(providerElement({ boardUuid: 'another-board', hasLeds: true }));
+        if (change === 'unmount') view.unmount();
+        if (change === 'Bluetooth connect') {
+          bluetooth.state.isConnected = true;
+          view.rerender(providerElement({ hasLeds: true }));
+        }
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SHEET_SETTLE_MS + SETTLE_MS);
+      });
+      expect(capturedBluetooth?.virtualWallHeld).toBe(false);
+      if (change !== 'Bluetooth connect') expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('BluetoothProvider — a rejected report re-stamps membership once', () => {
@@ -623,6 +817,52 @@ describe('BluetoothProvider — a rejected report re-stamps membership once', ()
     await settle(2);
 
     expect(presence.restampBoardMembershipByUuid).toHaveBeenCalledTimes(1);
+    expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['release', 'board switch'])('does not retry a membership refresh that finishes after %s', async (change) => {
+    let finishRestamp: ((sameBoard: boolean) => void) | undefined;
+    presence.restampBoardMembershipByUuid.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishRestamp = resolve;
+        }),
+    );
+    presence.reportClimbForBoard.mockResolvedValue(false);
+    const view = renderProvider();
+    await takeTheWall();
+    await settle();
+    expect(presence.restampBoardMembershipByUuid).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      if (change === 'release') capturedBluetooth?.releaseVirtualWall();
+      else view.rerender(providerElement({ boardUuid: 'another-board' }));
+    });
+    await act(async () => {
+      finishRestamp?.(true);
+    });
+    expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a report rejection received after releasing its hold', async () => {
+    let finishReport: ((accepted: boolean) => void) | undefined;
+    presence.reportClimbForBoard.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishReport = resolve;
+        }),
+    );
+    renderProvider();
+    await takeTheWall();
+    await settle();
+    await act(async () => {
+      capturedBluetooth?.releaseVirtualWall();
+    });
+    await act(async () => {
+      finishReport?.(false);
+    });
+
+    expect(presence.restampBoardMembershipByUuid).not.toHaveBeenCalled();
     expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
   });
 });

@@ -112,6 +112,38 @@ describe('useActiveBoardSelfHeal', () => {
     expect(mocks.clearActiveBoard).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [undefined, true],
+    [true, false],
+  ])('preserves the selected angle when hasLeds refreshes from %s to %s', async (storedHasLeds, resolvedHasLeds) => {
+    mocks.activeBoard = { ...board('same-wall'), angle: 30, hasLeds: storedHasLeds };
+    mocks.fetchBoardByUuid.mockResolvedValue({ ...board('same-wall'), angle: 40, hasLeds: resolvedHasLeds });
+
+    renderHook(() => useActiveBoardSelfHeal());
+
+    await waitFor(() => expect(mocks.setActiveBoard).toHaveBeenCalledTimes(1));
+    expect(mocks.setActiveBoard).toHaveBeenCalledWith({ ...mocks.activeBoard, hasLeds: resolvedHasLeds });
+  });
+
+  it('does not overwrite an angle selection made while a capability refresh is in flight', async () => {
+    let resolveBoard: ((resolved: UserBoard) => void) | undefined;
+    mocks.activeBoard = { ...board('same-wall'), angle: 30, hasLeds: true };
+    mocks.fetchBoardByUuid.mockImplementationOnce(() => new Promise<UserBoard>((resolve) => (resolveBoard = resolve)));
+    const hook = renderHook(() => useActiveBoardSelfHeal());
+    await waitFor(() => expect(mocks.fetchBoardByUuid).toHaveBeenCalledTimes(1));
+
+    mocks.activeBoard = { ...mocks.activeBoard, angle: 25 };
+    mocks.writeGeneration += 1;
+    hook.rerender();
+    await act(async () => {
+      resolveBoard?.({ ...board('same-wall'), angle: 40, hasLeds: false });
+      await Promise.resolve();
+    });
+
+    expect(mocks.setActiveBoard).not.toHaveBeenCalled();
+    expect(mocks.activeBoard.angle).toBe(25);
+  });
+
   // `activeBoard` is not a dep of the `validate` callback, so comparing against
   // the closed-over board would measure the render that STARTED the fetch. Here
   // the board is edited elsewhere while the request is in flight and already

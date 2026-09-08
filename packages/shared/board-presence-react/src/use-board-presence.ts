@@ -59,6 +59,7 @@ export type UseBoardPresenceResult = {
   previousClimb: BoardPresenceCurrentState['previousClimb'];
   undoTarget: BoardPresenceCurrentState['undoTarget'];
   holder: BoardPresenceCurrentState['holder'];
+  lastConnectionSeq: BoardPresenceCurrentState['lastConnectionSeq'];
   history: BoardPresenceFeedState['history'];
   stats: BoardPresenceFeedState['stats'];
   isLive: BoardPresenceCurrentState['isLive'];
@@ -89,6 +90,8 @@ export type BoardPresenceCurrentState = {
    * connection owner, the climb is whatever LEDs are lit.
    */
   holder: BoardConnectionHolder | null;
+  /** Sequence of the latest holder event; initial backfill keeps this at zero. */
+  lastConnectionSeq: number;
   /** True while a live subscription is attached for the active board. */
   isLive: boolean;
 };
@@ -428,6 +431,7 @@ export function useBoardPresence(
       previousClimb: state.previousClimb,
       undoTarget,
       holder: state.holder,
+      lastConnectionSeq: state.lastConnectionSeq,
       history: state.history,
       stats: state.stats,
       isLive,
@@ -442,6 +446,7 @@ export function useBoardPresence(
       state.previousClimb,
       undoTarget,
       state.holder,
+      state.lastConnectionSeq,
       state.history,
       state.stats,
       isLive,

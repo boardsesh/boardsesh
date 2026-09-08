@@ -44,6 +44,7 @@ vi.mock('@boardsesh/graphql-client', () => ({ execute: () => Promise.resolve({})
 vi.mock('@boardsesh/graphql/operations/queue-session', () => ({ LEAVE_SESSION: 'LeaveSession' }));
 
 import { useSessionCommands } from '../use-session-commands';
+import { resolveBoardForSession } from '../../../lib/board-path-to-user-board';
 
 type SessionCommandsParams = Parameters<typeof useSessionCommands>[0];
 
@@ -95,7 +96,7 @@ function renderSessionCommands() {
     locallyEndingSessionIdRef: { current: null },
     suppressedRemoteEndSessionIdRef: { current: null },
   };
-  return renderHook(() => useSessionCommands(params as unknown as SessionCommandsParams));
+  return { ...renderHook(() => useSessionCommands(params as unknown as SessionCommandsParams)), params };
 }
 
 /** The boardPath the last CreateSession mutation was sent with. */
@@ -130,5 +131,39 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     });
 
     expect(lastCreatedBoardPath()).toBe('kilter/8/17/27,28/40');
+  });
+
+  it('keeps a personal ledless wall and its capability when another climber joins', async () => {
+    const hostBoard = { ...homeBoard(), hasLeds: false };
+    mocks.storedActiveBoard = hostBoard;
+    const host = renderSessionCommands();
+    let createdSessionId: string | null = null;
+    await act(async () => {
+      createdSessionId = await host.result.current.createSessionWithConfig();
+    });
+    const boardPath = lastCreatedBoardPath();
+    expect(boardPath).toBe('/b/marcos-kilter-1f2e3d4c/40');
+    if (!boardPath || !createdSessionId) throw new Error('Session was not created');
+    const sessionToJoin = createdSessionId;
+
+    const createBoard = vi.fn();
+    const fetchBoardBySlug = vi.fn(async () => hostBoard);
+    const joinedBoard = await resolveBoardForSession(boardPath, {
+      // A matching owned LED board must not replace the host's physical wall.
+      ownedBoards: [{ ...homeBoard(), uuid: 'joiners-own-board', hasLeds: true }],
+      createBoard,
+      fetchBoardBySlug,
+    });
+    const joiner = renderSessionCommands();
+    await act(async () => {
+      await joiner.result.current.joinSession(sessionToJoin, { boardPath, userBoard: joinedBoard });
+    });
+
+    expect(fetchBoardBySlug).toHaveBeenCalledWith(hostBoard.slug);
+    expect(createBoard).not.toHaveBeenCalled();
+    expect(joiner.params.setActiveBoard).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: hostBoard.uuid, hasLeds: false }),
+    );
+    expect(joiner.params.setSessionId).toHaveBeenCalledWith(sessionToJoin);
   });
 });

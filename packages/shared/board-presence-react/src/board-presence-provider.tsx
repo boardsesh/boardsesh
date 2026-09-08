@@ -80,9 +80,10 @@ export function BoardPresenceProvider({
       previousClimb: value.previousClimb,
       undoTarget: value.undoTarget,
       holder: value.holder,
+      lastConnectionSeq: value.lastConnectionSeq,
       isLive: value.isLive,
     }),
-    [value.currentClimb, value.previousClimb, value.undoTarget, value.holder, value.isLive],
+    [value.currentClimb, value.previousClimb, value.undoTarget, value.holder, value.lastConnectionSeq, value.isLive],
   );
   const feed = useMemo<BoardPresenceFeedState>(
     () => ({

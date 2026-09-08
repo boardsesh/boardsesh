@@ -996,16 +996,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           // The queue followed them onto the new board, so peers must too — a
           // local-only switch would leave the session's board path (and every
           // peer's wall) pointing at the board we just left.
-          const { boardType, layoutId, sizeId, setIds, angle, slug, gymId } = result.board;
           // The shared mutation swallows its own transport errors into
           // `onBestEffortError` (which reports them), so what lands here is the
           // rarer pre-send failure — ensureJoined rejecting. Report that too
           // rather than dropping it, or a party that silently never followed
           // the switch leaves no trace at all.
-          // A gym wall keeps its named path so joiners land on the shared row.
-          void setSessionBoardPath(
-            buildSessionBoardPath({ boardType, layoutId, sizeId, setIds, angle, slug, gymId }),
-          ).catch((error) => {
+          // Gym and ledless walls keep their identity when the queue switches.
+          void setSessionBoardPath(buildSessionBoardPath(result.board)).catch((error) => {
             if (__DEV__) console.warn('[queue] setSessionBoardPath after board switch failed', error);
             reportHandledError(error, { tags: { source: 'queue-sync', op: 'set-board-path-switch' } });
           });

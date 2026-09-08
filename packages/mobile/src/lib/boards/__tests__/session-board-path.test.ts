@@ -29,8 +29,13 @@ describe('buildSessionBoardPath', () => {
     expect(buildSessionBoardPath(gymWall)).toBe('/b/rocodromo-norte-moonboard/40');
   });
 
-  it('keeps a personal board on the positional tuple', () => {
+  it('keeps a personal LED board on the positional tuple, including older snapshots', () => {
     expect(buildSessionBoardPath(homeWall)).toBe('kilter/1/10/1,20/30');
+    expect(buildSessionBoardPath({ ...homeWall, hasLeds: true })).toBe('kilter/1/10/1,20/30');
+  });
+
+  it('names a personal ledless board so friends adopt its identity and capability', () => {
+    expect(buildSessionBoardPath({ ...homeWall, hasLeds: false })).toBe('/b/marcos-garage/30');
   });
 
   it('carries an angle override, so an angle change keeps a gym wall named', () => {
@@ -39,12 +44,15 @@ describe('buildSessionBoardPath', () => {
     // everyone who joins afterwards.
     expect(buildSessionBoardPath(gymWall, 25)).toBe('/b/rocodromo-norte-moonboard/25');
     expect(buildSessionBoardPath(homeWall, 25)).toBe('kilter/1/10/1,20/25');
+    expect(buildSessionBoardPath({ ...homeWall, hasLeds: false }, 25)).toBe('/b/marcos-garage/25');
+    expect(buildSessionBoardPath({ ...homeWall, hasLeds: false }, 0)).toBe('/b/marcos-garage/0');
   });
 
   it('falls back to the tuple when a gym board has no usable slug', () => {
     // `/b//40` parses as the slug "40" — a silently broken join.
     expect(buildSessionBoardPath({ ...gymWall, slug: '' })).toBe('moonboard/3/1/5,6/40');
     expect(buildSessionBoardPath({ ...gymWall, slug: null })).toBe('moonboard/3/1/5,6/40');
+    expect(buildSessionBoardPath({ ...homeWall, hasLeds: false, slug: '' })).toBe('kilter/1/10/1,20/30');
   });
 
   it('uses gymId, not isPublic, to decide — private joiner rows default to public', () => {

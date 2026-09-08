@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetView, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
 import type { DiscoveredDevice } from '../../lib/ble/types';
-import { SHEET_SETTLE_MS, useManagedSheet } from '../../providers/sheet-presentation-provider';
+import { useManagedSheet } from '../../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from '../sheet-snap-points';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
@@ -49,15 +49,6 @@ export function DevicePickerSheet({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
-  // The take fires after the dismissal has settled (below), by which point this
-  // component is gone — so the timer has to be cancellable from a cleanup.
-  const takeWallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (takeWallTimeoutRef.current !== null) clearTimeout(takeWallTimeoutRef.current);
-    },
-    [],
-  );
 
   const snapPoints = useMemo(() => androidSafeSnapPoints(['72%']), []);
 
@@ -147,13 +138,9 @@ export function DevicePickerSheet({
     // affordance from every climber on this board. The server flag is set only
     // from the board edit form.
     //
-    // Deferred past the sheet's dismissal because the picker is a NATIVE modal
-    // and the "You've got the wall" toast is a root-level JS view, so it would
-    // render behind it. Same ceiling the sheet coordinator itself waits.
-    takeWallTimeoutRef.current = setTimeout(() => {
-      takeWallTimeoutRef.current = null;
-      onNoLeds?.();
-    }, SHEET_SETTLE_MS);
+    // The surviving provider owns the dismissal delay and cancellation. This
+    // sheet unmounts on dismissal, so it cannot own the deferred action.
+    onNoLeds?.();
   }, [onDismiss, onNoLeds]);
 
   return (

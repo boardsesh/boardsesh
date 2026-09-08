@@ -35,6 +35,18 @@ type MockQueueState = {
   stateHash: string;
 };
 const getQueueStateMock = vi.fn<() => Promise<MockQueueState>>(async () => makeQueueState());
+type ResolvedNamedBoard = {
+  boardType: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+};
+const resolveBoardBySlugMock = vi.fn<(slug: string) => Promise<ResolvedNamedBoard | null>>(async () => null);
+
+vi.mock('../graphql/resolvers/shared/board-lookup', () => ({
+  resolveBoardBySlug: resolveBoardBySlugMock,
+}));
 
 vi.mock('../handlers/cors', () => ({
   applyCorsHeaders: vi.fn(() => true),
@@ -139,6 +151,7 @@ describe('handleSessionState', () => {
     validateTokenMock.mockResolvedValue({ userId: USER_ID, isAuthenticated: true });
     verifyWidgetSessionMock.mockResolvedValue({ ok: true, session: SESSION_ROW });
     getQueueStateMock.mockResolvedValue(makeQueueState());
+    resolveBoardBySlugMock.mockReset().mockResolvedValue(null);
   });
 
   it('returns 405 for non-GET methods', async () => {
@@ -149,12 +162,14 @@ describe('handleSessionState', () => {
   it('returns 401 when the Authorization header is missing', async () => {
     const res = await run({ method: 'GET', sessionId: SESSION_ID });
     expect(res.statusCode).toBe(401);
+    expect(resolveBoardBySlugMock).not.toHaveBeenCalled();
   });
 
   it('returns 401 when the token is invalid', async () => {
     validateTokenMock.mockResolvedValue(null);
     const res = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
     expect(res.statusCode).toBe(401);
+    expect(resolveBoardBySlugMock).not.toHaveBeenCalled();
   });
 
   it('returns 400 when sessionId is missing', async () => {
@@ -166,6 +181,7 @@ describe('handleSessionState', () => {
     verifyWidgetSessionMock.mockResolvedValue({ ok: false, status: 403, error: 'Not a participant in this session' });
     const res = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
     expect(res.statusCode).toBe(403);
+    expect(resolveBoardBySlugMock).not.toHaveBeenCalled();
   });
 
   it('returns the slim current-climb payload with board resolution from boardPath', async () => {
@@ -195,6 +211,70 @@ describe('handleSessionState', () => {
     // The heavy queue array / frames must never be serialized to the watch.
     expect(res.body).not.toContain('frames');
     expect(res.body).not.toContain('"queue"');
+    expect(resolveBoardBySlugMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['/b/marcos-garage/25', 25, 'marcos-garage'],
+    ['/b/marcos-garage/0', 0, 'marcos-garage'],
+    ['/b/marcos-garage', 40, 'marcos-garage'],
+    ['/es/b/marcos-garage/30/list', 30, 'marcos-garage'],
+    ['/b/123/30/list', 30, '123'],
+  ] as const)('resolves named path %s for watch tick logging at %s degrees', async (boardPath, angle, slug) => {
+    verifyWidgetSessionMock.mockResolvedValue({
+      ok: true,
+      session: { boardPath, status: 'active', endedAt: null },
+    });
+    resolveBoardBySlugMock.mockResolvedValue({
+      boardType: 'kilter',
+      layoutId: 8,
+      sizeId: 17,
+      setIds: '20,21',
+      angle: 40,
+    });
+
+    const res = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
+
+    expect(res.statusCode).toBe(200);
+    expect(resolveBoardBySlugMock).toHaveBeenCalledWith(slug);
+    expect(JSON.parse(res.body)).toMatchObject({
+      boardType: 'kilter',
+      layoutId: 8,
+      sizeId: 17,
+      setIds: '20,21',
+      angle,
+    });
+  });
+
+  it('returns null board metadata when a named board no longer resolves', async () => {
+    verifyWidgetSessionMock.mockResolvedValue({
+      ok: true,
+      session: { boardPath: '/b/deleted-board/25', status: 'active', endedAt: null },
+    });
+
+    const res = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({
+      boardType: null,
+      layoutId: null,
+      sizeId: null,
+      setIds: null,
+      angle: null,
+    });
+  });
+
+  it('returns 500 without exposing a named-board lookup error', async () => {
+    verifyWidgetSessionMock.mockResolvedValue({
+      ok: true,
+      session: { boardPath: '/b/marcos-garage/25', status: 'active', endedAt: null },
+    });
+    resolveBoardBySlugMock.mockRejectedValue(new Error('database connection failed'));
+
+    const res = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
+
+    expect(res.statusCode).toBe(500);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Internal server error' });
   });
 
   it('reports climb: null and currentIndex -1 when there is no current climb', async () => {
@@ -263,6 +343,7 @@ describe('handleSessionState', () => {
     verifyWidgetSessionMock.mockResolvedValue({ ok: false, status: 410, error: 'Session has ended; re-register' });
     const res = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
     expect(res.statusCode).toBe(410);
+    expect(resolveBoardBySlugMock).not.toHaveBeenCalled();
   });
 
   it('returns 500 without leaking details when the queue read throws', async () => {

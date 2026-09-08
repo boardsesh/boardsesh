@@ -98,6 +98,7 @@ const blePermissions = vi.hoisted(() => ({
 
 vi.mock('react-native', () => ({
   Alert: { alert: alert.alert },
+  Platform: { OS: 'ios' },
   AppState: { addEventListener: () => ({ remove: vi.fn() }) },
 }));
 

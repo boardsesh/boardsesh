@@ -9,12 +9,13 @@ export type SessionBoardPathSource = {
   angle: number;
   slug?: string | null;
   gymId?: number | null;
+  hasLeds?: boolean;
 };
 
 /**
  * The board path a party session broadcasts to its members.
  *
- * A **gym-linked** board is a shared wall, so the session has to name it:
+ * A gym-linked board or a board without LEDs has to keep its shared identity:
  * `/b/{slug}/{angle}`. Handed the positional tuple instead, a joiner goes down
  * `resolveBoardForSession`'s tuple branch, which mints that climber their own
  * private board row bound to a different board-presence id — so the second
@@ -25,18 +26,17 @@ export type SessionBoardPathSource = {
  * wall with no light kit there is no such event, so the path is the only thing
  * holding the two climbers on one feed.
  *
- * `gymId != null` is the predicate because it is the only field that reliably
- * marks a shared gym wall — `isPublic` defaults to `true` even on the private
- * rows joiners mint for themselves. The `slug` guard is belt-and-braces: an
- * empty slug would emit `/b//40`, which `parseNamedBoardPath` reads as the slug
- * `"40"`.
+ * `gymId != null` marks a shared gym wall; `hasLeds === false` also preserves a
+ * personal wall's capability when friends join it. `isPublic` defaults to true
+ * even on the private rows joiners mint for themselves. An empty slug would
+ * emit `/b//40`, which `parseNamedBoardPath` reads as the slug `"40"`.
  *
  * Every site that sets a session's board path must go through here, or the first
- * angle change (which rebuilds the path) silently reverts a gym session to the
- * tuple and un-converges everyone who joins after it.
+ * angle change (which rebuilds the path) silently reverts a named session to the
+ * tuple and separates everyone who joins after it.
  */
 export function buildSessionBoardPath(board: SessionBoardPathSource, angleOverride?: number): string {
   const angle = angleOverride ?? board.angle;
-  if (board.gymId != null && board.slug) return `/b/${board.slug}/${angle}`;
+  if ((board.gymId != null || board.hasLeds === false) && board.slug) return `/b/${board.slug}/${angle}`;
   return buildBoardPath(board.boardType, board.layoutId, board.sizeId, board.setIds, angle);
 }

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
-import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
+import { createElement, forwardRef, useState, type ReactNode, type Ref } from 'react';
 import type { DiscoveredDevice } from '../../../lib/ble/types';
 
 // Controllable return for the shared "no listed board matches the selected
@@ -80,8 +80,6 @@ vi.mock('@boardsesh/board-config', () => ({
 
 vi.mock('../../../providers/sheet-presentation-provider', () => ({
   useManagedSheet: () => ({ onChange: () => {}, onFullyDismissed: () => {} }),
-  // The real value is Platform-derived; the sheet only needs a number to defer by.
-  SHEET_SETTLE_MS: 550,
 }));
 
 vi.mock('../../sheet-snap-points', () => ({
@@ -345,19 +343,33 @@ describe('DevicePickerSheet', () => {
       expect(container.querySelector('[data-button="ble.noLedsCta"]')).toBeNull();
     });
 
-    it('dismisses the sheet FIRST, then takes the wall once the dismissal has settled', () => {
-      // The picker is a native modal sheet and the "You've got the wall" toast is
-      // a root-level JS view, so it renders behind it. Taking the wall before the
-      // sheet is gone means the user never sees the confirmation.
+    it('hands the action to its surviving host after dismissal even when the picker unmounts', () => {
       vi.useFakeTimers();
       try {
-        const props = makeProps({ isScanning: false, devices: [] });
-        const { container } = render(<DevicePickerSheet {...props} />);
+        const calls: string[] = [];
+        function PickerHost() {
+          const [visible, setVisible] = useState(true);
+          return visible ? (
+            <DevicePickerSheet
+              {...makeProps()}
+              onDismiss={() => {
+                calls.push('dismiss');
+                setVisible(false);
+              }}
+              onNoLeds={() => {
+                calls.push('schedule');
+                setTimeout(bluetooth.takeVirtualWall, 550);
+              }}
+            />
+          ) : null;
+        }
+        const { container } = render(<PickerHost />);
         const cta = container.querySelector('[data-button="ble.noLedsCta"]') as HTMLButtonElement;
 
         act(() => cta.click());
         expect(haptics.hapticSelection).toHaveBeenCalledTimes(1);
-        expect(props.onDismiss).toHaveBeenCalledTimes(1);
+        expect(calls).toEqual(['dismiss', 'schedule']);
+        expect(container.querySelector('[data-sheet]')).toBeNull();
         expect(bluetooth.takeVirtualWall).not.toHaveBeenCalled();
 
         act(() => void vi.runAllTimers());

@@ -120,7 +120,15 @@ export function useActiveBoardSelfHeal(): void {
             // off since this phone stored its copy. Compared with `!==` on the
             // optional values, so `undefined` on both sides (a query that omitted
             // the field) is not a difference and writes nothing.
-            definitive = await setActiveBoardIfCurrent(requestWriteGeneration, resolved);
+            const currentBoard = activeBoardRef.current;
+            if (currentBoard?.uuid === storedUuid) {
+              // The active angle is a local/session override, not the entity's
+              // saved default. Refresh only the capability on the same board.
+              definitive = await setActiveBoardIfCurrent(requestWriteGeneration, {
+                ...currentBoard,
+                hasLeds: resolved.hasLeds,
+              });
+            }
           } else {
             definitive = true;
           }
