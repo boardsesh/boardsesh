@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-08T20:53:18.517Z",
+  "generatedAt": "2026-09-08T21:01:26.647Z",
   "entries": [
+    {
+      "prNumber": 5262,
+      "category": "fixed",
+      "title": "Fewer duplicate MoonBoard search results, with your ticks and favourites kept.",
+      "mergedAt": "2026-09-08T20:59:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5262"
+    },
+    {
+      "prNumber": 5286,
+      "category": "new",
+      "title": "MoonBoard problems now show a rough \"≈\" grade estimate at the angle nobody's climbed yet, worked out from the same problem's grade at its other angle",
+      "mergedAt": "2026-09-08T20:58:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5286"
+    },
     {
       "prNumber": 5328,
       "category": "improved",

@@ -12,6 +12,7 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- MoonBoard problems now show a rough "≈" grade estimate at the angle nobody's climbed yet, worked out from the same problem's grade at its other angle ([#5286](https://github.com/boardsesh/boardsesh/pull/5286))
 - Mirror your climb from the Lock Screen or Android notification, then pick up the same mirrored climb in the app. ([#5313](https://github.com/boardsesh/boardsesh/pull/5313))
 - Take turns on walls without LEDs. Your crew and gym screen follow the climb you put up. ([#4762](https://github.com/boardsesh/boardsesh/pull/4762))
   Share a personal wall without lights, keep your chosen angle, and log named-wall sessions from your watch.
@@ -26,6 +27,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Fewer duplicate MoonBoard search results, with your ticks and favourites kept. ([#5262](https://github.com/boardsesh/boardsesh/pull/5262))
 - Swipe the player closed in one continuous motion, without the pause after lifting your finger. ([#5322](https://github.com/boardsesh/boardsesh/pull/5322))
 - Your Android board sheet now keeps its dark surface, and the Play Store gallery opens with a lit Tension board. ([#5321](https://github.com/boardsesh/boardsesh/pull/5321))
 - Your board stays dark until you ask for it. If you walked off without disconnecting, the app no longer lights up your last climb when you wander back into range days later. The lightbulb, the widget, and mid-climb reconnects still light it instantly. ([#4551](https://github.com/boardsesh/boardsesh/pull/4551))
