@@ -46,6 +46,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   closeSync,
+  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -1318,6 +1319,7 @@ function runAndroid(options: ScreenshotOptions): number {
     );
     if (maestroStatus !== 0) {
       console.error(`${LOG} FAILED: Maestro exited with ${maestroStatus}.`);
+      preserveFailedCaptures(captureDir);
       return maestroStatus;
     }
 
@@ -1357,6 +1359,23 @@ function runAndroid(options: ScreenshotOptions): number {
   }
 
   return 0;
+}
+
+/**
+ * Keep whatever Maestro shot before it failed. captureDir is a temp dir that the
+ * finally block removes, so on a failed run the partial set (the evidence of which
+ * step went wrong) would vanish; CI's capture script exports SCREENSHOT_DEBUG_DIR
+ * (uploaded as an artifact) for exactly this.
+ */
+function preserveFailedCaptures(captureDir: string): void {
+  const debugDir = process.env.SCREENSHOT_DEBUG_DIR;
+  if (!debugDir) return;
+  const pngs = readdirSync(captureDir).filter((file) => file.endsWith('.png'));
+  if (pngs.length === 0) return;
+  const target = join(debugDir, 'captures');
+  mkdirSync(target, { recursive: true });
+  for (const png of pngs) copyFileSync(join(captureDir, png), join(target, png));
+  console.error(`${LOG} kept ${pngs.length} capture(s) from the failed run in ${target}`);
 }
 
 function resolveAndroidDeviceId(): string | null {

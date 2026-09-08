@@ -152,7 +152,10 @@ export default function SessionDetailScreen() {
   );
 
   return (
-    <View style={[styles.flex, { backgroundColor: systemColors.groupedBackground }]}>
+    // testID anchors the store-screenshot flows: it only exists once the session
+    // has loaded and the detail is on screen (the loading / not-found states
+    // above render without it), so Maestro can wait for the real recap.
+    <View testID="session-detail-screen" style={[styles.flex, { backgroundColor: systemColors.groupedBackground }]}>
       <FlashList
         data={session.ticks}
         renderItem={renderItem}
