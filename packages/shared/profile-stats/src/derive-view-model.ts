@@ -1,4 +1,5 @@
 import { type GradeDisplayFormat } from '@boardsesh/play-view';
+import type { Dayjs } from 'dayjs';
 import {
   filterLogbookByTimeframe,
   buildAggregatedStackedBars,
@@ -8,6 +9,7 @@ import {
   buildVPointsTimeline,
   buildActivityHeatmap,
   buildPeriodComparison,
+  HEATMAP_WEEKS,
 } from './chart-builders';
 import { getDifficultyMapping } from './grade-mapping';
 import type {
@@ -42,6 +44,11 @@ export type DeriveProfileViewModelInput = {
    *  owns the default ('trailing') — this function is a pure pass-through, like
    *  every other filter field. */
   comparisonMode: PeriodComparisonMode;
+  /** `now` defaults to the real wall clock (each downstream builder's own
+   *  default). Mobile threads its screenshot-mode frozen clock through here
+   *  (`dayjs(nowMs())`) so timeframe filtering, the activity heatmap window,
+   *  and the period comparison card all agree on one "now" per render. */
+  now?: Dayjs;
 };
 
 export type ProfileViewModel = {
@@ -67,7 +74,7 @@ export type ProfileViewModel = {
  * function — see the web/mobile split noted on each raw builder.
  */
 export function deriveProfileViewModel(input: DeriveProfileViewModelInput): ProfileViewModel {
-  const { allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStats, comparisonMode } =
+  const { allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStats, comparisonMode, now } =
     input;
 
   const filteredBoardsTicks: Record<string, LogbookEntry[]> =
@@ -78,6 +85,7 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
     timeframe,
     fromDate,
     toDate,
+    now,
   );
 
   const aggregatedStackedBars = buildAggregatedStackedBars(
@@ -102,9 +110,9 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
 
   const vPointsTimeline = buildVPointsTimeline(filteredBoardsTicks, timeframe, fromDate, toDate);
 
-  const activityHeatmap = buildActivityHeatmap(filteredLogbook);
+  const activityHeatmap = buildActivityHeatmap(filteredLogbook, HEATMAP_WEEKS, now);
 
-  const periodComparison = buildPeriodComparison(filteredBoardsTicks, timeframe, comparisonMode);
+  const periodComparison = buildPeriodComparison(filteredBoardsTicks, timeframe, comparisonMode, now);
 
   const { hardestSend, hardestFlash } = computeHardest(filteredBoardsTicks, gradeFormat);
 

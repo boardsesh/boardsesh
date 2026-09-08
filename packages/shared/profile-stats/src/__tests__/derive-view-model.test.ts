@@ -130,3 +130,69 @@ describe('deriveProfileViewModel periodComparison', () => {
     expect(vm.periodComparison?.current.sends).toBe(2);
   });
 });
+
+describe('deriveProfileViewModel with an injected `now`', () => {
+  // Mirrors mobile's screenshot-mode frozen clock: passing `now` must make
+  // timeframe filtering, the activity heatmap window, and the period
+  // comparison card all agree on the same pinned instant, and produce the same
+  // result no matter when the test actually runs.
+  const pinnedNow = dayjs('2026-01-15T12:00:00.000Z');
+  const pinnedTicks: Record<string, LogbookEntry[]> = {
+    kilter: [
+      entry({
+        difficulty: 22,
+        status: 'send',
+        climbUuid: 'pinned-1',
+        layoutId: 1,
+        boardType: 'kilter',
+        climbed_at: pinnedNow.subtract(2, 'day').toISOString(),
+      }),
+      entry({
+        difficulty: 16,
+        status: 'flash',
+        climbUuid: 'pinned-2',
+        layoutId: 1,
+        boardType: 'kilter',
+        climbed_at: pinnedNow.subtract(20, 'day').toISOString(),
+      }),
+    ],
+  };
+
+  it('filters the logbook against the pinned instant, not the real wall clock', () => {
+    const vm = deriveProfileViewModel({
+      ...base,
+      allBoardsTicks: pinnedTicks,
+      selectedBoard: 'all',
+      timeframe: 'lastWeek',
+      now: pinnedNow,
+    });
+    expect(vm.filteredLogbook).toHaveLength(1);
+    expect(vm.filteredLogbook[0].climbUuid).toBe('pinned-1');
+  });
+
+  it('produces byte-identical output across repeated calls with the same pinned `now`', () => {
+    const build = () =>
+      deriveProfileViewModel({
+        ...base,
+        allBoardsTicks: pinnedTicks,
+        selectedBoard: 'all',
+        timeframe: 'lastMonth',
+        now: pinnedNow,
+      });
+    expect(build()).toEqual(build());
+  });
+
+  it('threads the pinned `now` into the period comparison window', () => {
+    const vm = deriveProfileViewModel({
+      ...base,
+      allBoardsTicks: pinnedTicks,
+      selectedBoard: 'all',
+      timeframe: 'lastWeek',
+      comparisonMode: 'trailing',
+      now: pinnedNow,
+    });
+    // Current window is (pinnedNow - 1 week, pinnedNow]: only the 2-day-old tick.
+    expect(vm.periodComparison?.current.sends).toBe(1);
+    expect(vm.periodComparison?.current.endDate).toBe(pinnedNow.format('YYYY-MM-DD'));
+  });
+});

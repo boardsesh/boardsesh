@@ -37,13 +37,18 @@ function gradeIdForEntry(entry: LogbookEntry): number | null {
 
 // ── Timeframe filtering ─────────────────────────────────────────────
 
+/**
+ * `now` defaults to the real wall clock; pass a fixed instant for deterministic
+ * tests or the mobile screenshot-mode frozen clock (see `derive-view-model.ts`'s
+ * `now` field, threaded down from `lib/clock.ts` on mobile).
+ */
 export function filterLogbookByTimeframe(
   logbook: LogbookEntry[],
   timeframe: UnifiedTimeframeType,
   fromDate: string,
   toDate: string,
+  now: dayjs.Dayjs = dayjs(),
 ): LogbookEntry[] {
-  const now = dayjs();
   switch (timeframe) {
     case 'today':
       return logbook.filter((entry) => parseTickTime(entry.climbed_at).isSame(now, 'day'));
@@ -453,7 +458,7 @@ export function buildStatisticsSummary(
 
 // ── Activity heatmap (GitHub-style calendar) ────────────────────────
 
-const HEATMAP_WEEKS = 53;
+export const HEATMAP_WEEKS = 53;
 
 /**
  * Per-day ascent counts over a trailing, week-aligned window ending this week —

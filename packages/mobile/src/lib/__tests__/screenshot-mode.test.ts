@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 const SCREENSHOT_ENV_KEYS = [
   'EXPO_PUBLIC_SCREENSHOT_MODE',
   'EXPO_PUBLIC_SCREENSHOT_LOCALE',
+  'EXPO_PUBLIC_SCREENSHOT_NOW',
   'EXPO_PUBLIC_SCREENSHOT_THEME',
   'EXPO_PUBLIC_SCREENSHOT_VARIANT',
   'EXPO_PUBLIC_SCREENSHOT_WORKOUT',
@@ -90,5 +91,25 @@ describe('screenshot-mode', () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_LOCALE = 'zz-not-a-locale';
     const screenshotMode = await import('../screenshot-mode');
     expect(screenshotMode.SCREENSHOT_LOCALE_OVERRIDE).toBeNull();
+  });
+
+  it('keeps the frozen clock null when screenshot mode is off, even with NOW set', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_NOW = '2026-01-15T12:00:00.000Z';
+    const screenshotMode = await import('../screenshot-mode');
+    expect(screenshotMode.SCREENSHOT_NOW_MS).toBeNull();
+  });
+
+  it('freezes the clock to the parsed instant only when screenshot mode is on', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    process.env.EXPO_PUBLIC_SCREENSHOT_NOW = '2026-01-15T12:00:00.000Z';
+    const screenshotMode = await import('../screenshot-mode');
+    expect(screenshotMode.SCREENSHOT_NOW_MS).toBe(Date.parse('2026-01-15T12:00:00.000Z'));
+  });
+
+  it('ignores an unparseable NOW even in screenshot mode', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    process.env.EXPO_PUBLIC_SCREENSHOT_NOW = 'not-a-date';
+    const screenshotMode = await import('../screenshot-mode');
+    expect(screenshotMode.SCREENSHOT_NOW_MS).toBeNull();
   });
 });

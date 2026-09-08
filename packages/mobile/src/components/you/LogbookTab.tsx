@@ -12,7 +12,6 @@ import {
   buildLogbookListRows,
   dedupeLogbookItems,
   shouldShowLogbookDividers,
-  logbookNoteIsVisible,
   pickBestGroupEntry,
   sumGroupTries,
   logbookDayKey,
@@ -44,6 +43,7 @@ import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { tickToClimb } from '../../lib/tick-to-climb';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { getLayoutDisplayName } from '@boardsesh/profile-stats';
+import { nowDate } from '../../lib/clock';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
@@ -136,7 +136,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   // identity across renders (mirrors the filter sheet's `today`). Frozen at mount;
   // if the app sits open past midnight it's a day stale, which is harmless here and
   // matches the sheet.
-  const today = useMemo(() => new Date(), []);
+  const today = useMemo(() => nowDate(), []);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchHeaderRef = useRef<SearchHeaderHandle>(null);
 

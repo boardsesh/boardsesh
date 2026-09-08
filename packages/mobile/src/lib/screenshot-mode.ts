@@ -39,6 +39,15 @@ import { isSupportedLocale, type Locale } from '@boardsesh/i18n';
  *
  * The typed override helpers below stay shared: they're only read inside the
  * now-DCE-able branches, so they strip along with them.
+ *
+ * ## Frozen clock
+ *
+ * Relative timestamps ("3h ago", day dividers, the activity-heatmap window)
+ * read the wall clock, so two captures of the same seeded backend data would
+ * otherwise render different text. `SCREENSHOT_NOW_MS` below pins "now" to
+ * `EXPO_PUBLIC_SCREENSHOT_NOW` (an ISO timestamp); every "now" read in the app
+ * goes through `nowMs()`/`nowDate()` in `lib/clock.ts` instead of
+ * `Date.now()`/`new Date()` directly, so it's the only reader of this const.
  */
 
 /**
@@ -51,6 +60,22 @@ const screenshotLocaleEnv = process.env.EXPO_PUBLIC_SCREENSHOT_LOCALE;
 export const SCREENSHOT_LOCALE_OVERRIDE: Locale | null =
   process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && isSupportedLocale(screenshotLocaleEnv)
     ? screenshotLocaleEnv
+    : null;
+
+/**
+ * Instant the screenshots build freezes "now" to, so relative timestamps ("3h
+ * ago", day dividers, the activity heatmap window) render identically across
+ * repeated captures of the same seeded backend data. Set by the orchestrator
+ * (`scripts/mobile-screenshots.ts`, into Metro's env on both platforms) as an
+ * ISO timestamp in `EXPO_PUBLIC_SCREENSHOT_NOW`. `null` in normal builds (and
+ * for an unset/unparseable value in screenshot mode), which keeps the real
+ * wall clock — see `lib/clock.ts`, the only intended reader.
+ */
+const screenshotNowEnv = process.env.EXPO_PUBLIC_SCREENSHOT_NOW;
+const screenshotNowParsedMs = Date.parse(screenshotNowEnv ?? '');
+export const SCREENSHOT_NOW_MS: number | null =
+  process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && Number.isFinite(screenshotNowParsedMs)
+    ? screenshotNowParsedMs
     : null;
 
 /**

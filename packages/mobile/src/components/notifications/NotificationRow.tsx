@@ -2,7 +2,6 @@ import { memo, useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { GroupedNotification } from '@boardsesh/shared-schema';
-import { formatTickRelativeTime } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Avatar } from '../Avatar';
@@ -11,6 +10,7 @@ import { AvatarGroup } from '../you/AvatarGroup';
 import { NotificationClimbThumbnail, useNotificationClimbRender } from './NotificationClimbThumbnail';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
+import { formatRelativeTime } from '../../lib/format-relative-time';
 import { actorSummary, notificationCopy, notificationIconName } from './notification-copy';
 
 const AVATAR_SIZE = 40;
@@ -106,7 +106,7 @@ export const NotificationRow = memo(function NotificationRow({ notification, onP
           {body}
         </Text>
         <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {formatTickRelativeTime(notification.createdAt)}
+          {formatRelativeTime(notification.createdAt)}
         </Text>
       </View>
 

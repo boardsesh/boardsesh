@@ -10,6 +10,7 @@ import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-boa
 import { resolveScreenshotBoard } from '../lib/screenshot-board-selection';
 import { useScreenshotBoards } from '../hooks/use-screenshot-boards';
 import { useAuth } from '../providers/auth-provider';
+import { SCREENSHOT_NOW_MS } from '../lib/screenshot-mode';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 
 // Query-key placeholder for the frames before the active board resolves. The
@@ -57,6 +58,17 @@ export function ScreenshotBoardAutoActivator(): null {
   // keeps the roster warm in the React Query cache for the re-activation path.
   const screenshotBoards = useScreenshotBoards(isAuthenticated);
   const setActiveBoard = useSetActiveBoard();
+
+  // Logged once at boot so a screenshot run's Metro-teed output says whether
+  // relative timestamps are pinned (EXPO_PUBLIC_SCREENSHOT_NOW parsed) or
+  // still reading the real wall clock — see lib/clock.ts.
+  useEffect(() => {
+    console.log(
+      SCREENSHOT_NOW_MS !== null
+        ? `[screenshot] clock: frozen at ${new Date(SCREENSHOT_NOW_MS).toISOString()}`
+        : '[screenshot] clock: live',
+    );
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated || activeBoard) return;

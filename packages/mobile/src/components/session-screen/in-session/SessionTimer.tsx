@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Text } from '../../Text';
+import { nowMs } from '../../../lib/clock';
 
 type SessionTimerProps = {
   startedAt: string | null | undefined;
@@ -23,11 +24,11 @@ function format(elapsedMs: number): string {
  * minimized and reopened the overlay.
  */
 export function SessionTimer({ startedAt, color }: SessionTimerProps) {
-  const [now, setNow] = useState<number>(() => Date.now());
+  const [now, setNow] = useState<number>(() => nowMs());
 
   useEffect(() => {
     if (!startedAt) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => setNow(nowMs()), 1000);
     return () => clearInterval(id);
   }, [startedAt]);
 

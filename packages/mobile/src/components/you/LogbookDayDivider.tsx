@@ -9,6 +9,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { selectByVariant } from '../../theme/variants';
+import { nowMs } from '../../lib/clock';
 
 // Off-grid on purpose: 8pt (spacing[2]) reads too tall around caption1 text in
 // the compact chip, 4pt too tight against the wash edge.
@@ -51,10 +52,10 @@ export const LogbookDayDivider = memo(function LogbookDayDivider({
   // midnight while re-rendering ONLY dividers — a tab-level `now` in
   // renderItem's deps would re-render every climb row on each focus for a
   // value none of them read.
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => nowMs());
   useFocusEffect(
     useCallback(() => {
-      setNow(Date.now());
+      setNow(nowMs());
     }, []),
   );
 

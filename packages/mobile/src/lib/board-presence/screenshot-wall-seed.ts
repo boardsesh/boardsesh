@@ -27,6 +27,7 @@ import type {
   Climb,
 } from '@boardsesh/shared-schema';
 import type { MobileBoardPresenceClient } from './board-presence-client';
+import { nowMs as currentNowMs } from '../clock';
 
 /** How many of the active board's climbs the wall kiosk history is seeded with. */
 export const SCREENSHOT_WALL_SEED_COUNT = 6;
@@ -40,7 +41,7 @@ export const SCREENSHOT_WALL_SEED_COUNT = 6;
  * "WALL IS DARK" hero shot).
  */
 export function buildScreenshotWallSeed(climbs: Climb[], boardAngle: number | null): BoardPresenceClimb[] {
-  const nowMs = Date.now();
+  const nowMs = currentNowMs();
   return climbs.slice(0, SCREENSHOT_WALL_SEED_COUNT).map((climb, index) => ({
     climbUuid: climb.uuid,
     name: climb.name,
