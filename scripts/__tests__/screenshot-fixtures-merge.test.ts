@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  clearMergedFixtureOutput,
   graphqlFixtureContentHash,
   mergeFixtureSets,
   parseMergeArguments,
@@ -352,5 +356,46 @@ describe('parseMergeArguments', () => {
     expect(() => parseMergeArguments(['--on-conflict', 'bogus', 'artifacts/shard-a'])).toThrow(
       /--on-conflict must be "fail" or "newest"/,
     );
+  });
+});
+
+describe('clearMergedFixtureOutput', () => {
+  let outDir: string;
+
+  beforeEach(() => {
+    outDir = mkdtempSync(join(tmpdir(), 'screenshot-merge-out-'));
+  });
+
+  afterEach(() => {
+    rmSync(outDir, { recursive: true, force: true });
+  });
+
+  it('removes a previous merge, so a key a re-record stopped producing cannot linger', () => {
+    mkdirSync(join(outDir, 'graphql', 'SyncTicks'), { recursive: true });
+    mkdirSync(join(outDir, 'static'), { recursive: true });
+    writeFileSync(join(outDir, 'graphql', 'SyncTicks', 'deadbeefdeadbeef.json'), '{}', 'utf8');
+    writeFileSync(join(outDir, 'static', 'deadbeefdeadbeef.jpg'), 'bytes', 'utf8');
+    writeFileSync(join(outDir, 'manifest.json'), '{}', 'utf8');
+
+    clearMergedFixtureOutput(outDir);
+
+    expect(existsSync(join(outDir, 'graphql'))).toBe(false);
+    expect(existsSync(join(outDir, 'static'))).toBe(false);
+    expect(existsSync(join(outDir, 'manifest.json'))).toBe(false);
+  });
+
+  it('touches nothing else under --out, so a mistyped path cannot wipe a directory', () => {
+    writeFileSync(join(outDir, 'README.md'), 'not ours', 'utf8');
+    mkdirSync(join(outDir, 'app-stores'), { recursive: true });
+    writeFileSync(join(outDir, 'app-stores', '00-home.png'), 'png', 'utf8');
+
+    clearMergedFixtureOutput(outDir);
+
+    expect(existsSync(join(outDir, 'README.md'))).toBe(true);
+    expect(existsSync(join(outDir, 'app-stores', '00-home.png'))).toBe(true);
+  });
+
+  it('is happy with an output directory that does not exist yet', () => {
+    expect(() => clearMergedFixtureOutput(join(outDir, 'never-created'))).not.toThrow();
   });
 });

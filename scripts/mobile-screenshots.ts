@@ -541,8 +541,13 @@ export function buildScreenshotEnv(
     // The app auto-signs-in with these on boot (see screenshot-mode.ts), so the
     // Maestro flow never types into the login form — which pops iOS's
     // "Save Password?" dialog over every shot and blocks the board picker.
-    EXPO_PUBLIC_SCREENSHOT_USER_EMAIL: baseEnv.SCREENSHOT_USER_EMAIL ?? DEFAULT_USER_EMAIL,
-    EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD: baseEnv.SCREENSHOT_USER_PASSWORD ?? DEFAULT_USER_PASSWORD,
+    // `||`, not `??`: CI passes these through as EMPTY on a replay run (the
+    // capture account is a secret a replay never needs — it signs in against
+    // the backend's synthetic session). An empty string has to fall back to the
+    // default, or the bundle bakes an empty email and replay's auth route
+    // answers `MISS auth email= expected=test@boardsesh.com`.
+    EXPO_PUBLIC_SCREENSHOT_USER_EMAIL: baseEnv.SCREENSHOT_USER_EMAIL || DEFAULT_USER_EMAIL,
+    EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD: baseEnv.SCREENSHOT_USER_PASSWORD || DEFAULT_USER_PASSWORD,
     // The app GETs this once it reaches home (AnalyticsScreenTracker), so the
     // orchestrator's readiness server sees it directly — a reach-home signal that
     // survives Metro's log-forwarding dying mid-run.
@@ -1214,7 +1219,6 @@ export function startScreenshotBackend(options: ScreenshotOptions): ScreenshotBa
   }
 
   const args = buildBackendArgs(options, { mode, port, fixturesDir, frozenNow }, freshConsumedThisRun);
-  if (mode === 'record' && options.fresh) freshConsumedThisRun = true;
 
   // A `--platform all` run stops one platform's backend and starts a fresh one
   // for the next; SIGTERM does not guarantee the OS frees the port the instant
@@ -1245,6 +1249,12 @@ export function startScreenshotBackend(options: ScreenshotOptions): ScreenshotBa
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (screenshotBackendReady(port)) {
       console.log(`${LOG} Screenshot backend ready on port ${port} (log: ${SCREENSHOT_BACKEND_LOG_PATH}).`);
+      // Burn the once-per-run `--fresh` only now that a backend actually came
+      // up holding it. Marking it consumed before the readiness check meant a
+      // child that died on startup (port taken, bad fixture set) took the wipe
+      // with it, and the NEXT platform's backend then extended whatever set was
+      // already on disk instead of recording a clean one.
+      if (mode === 'record' && options.fresh) freshConsumedThisRun = true;
       return { process: backend, mode, frozenNow, port, fixturesDir };
     }
     spawnSync('sleep', ['0.5']);
@@ -1570,8 +1580,9 @@ function captureIosDevice(
       return 1;
     }
     const flowFile = renderedFlowFileForIosDevice(options, screenshotDevice, captureDir);
-    const email = process.env.SCREENSHOT_USER_EMAIL ?? DEFAULT_USER_EMAIL;
-    const password = process.env.SCREENSHOT_USER_PASSWORD ?? DEFAULT_USER_PASSWORD;
+    // `||` — see buildScreenshotEnv: CI passes these empty on a replay run.
+    const email = process.env.SCREENSHOT_USER_EMAIL || DEFAULT_USER_EMAIL;
+    const password = process.env.SCREENSHOT_USER_PASSWORD || DEFAULT_USER_PASSWORD;
     console.log(`${LOG} Running Maestro flow ${options.flow} on ${device.udid} (${screenshotDevice.orientation})...`);
     // Credentials are passed via `-e`, which is the ONLY mechanism Maestro 2.6.1
     // offers: `maestro test` has no `--env-file` and does not read `${VAR}` from
@@ -1863,8 +1874,9 @@ function runAndroid(options: ScreenshotOptions): number {
       }
     }
 
-    const email = process.env.SCREENSHOT_USER_EMAIL ?? DEFAULT_USER_EMAIL;
-    const password = process.env.SCREENSHOT_USER_PASSWORD ?? DEFAULT_USER_PASSWORD;
+    // `||` — see buildScreenshotEnv: CI passes these empty on a replay run.
+    const email = process.env.SCREENSHOT_USER_EMAIL || DEFAULT_USER_EMAIL;
+    const password = process.env.SCREENSHOT_USER_PASSWORD || DEFAULT_USER_PASSWORD;
     console.log(`${LOG} Running Maestro flow ${options.flow} on ${deviceId}...`);
     const maestroStatus = runInherit(
       'maestro',

@@ -532,6 +532,37 @@ export function indexBatchItemsById(
 }
 
 /**
+ * The recorded items for `requestedIds`, in request order, and the ids no
+ * recorded batch covers.
+ *
+ * A REPEATED id contributes its rows once. `useQueries` chunks are built from a
+ * list the app assembled itself, and nothing upstream promises that list holds
+ * each id only once — a duplicate would otherwise return the same climb's rows
+ * twice, which no real backend would ever answer.
+ */
+export function collectBatchItems(
+  itemsById: ReadonlyMap<string, readonly unknown[]>,
+  requestedIds: readonly string[],
+): { items: unknown[]; unrecordedIds: string[]; answeredIds: string[] } {
+  const items: unknown[] = [];
+  const unrecordedIds: string[] = [];
+  const answeredIds: string[] = [];
+  const seenIds = new Set<string>();
+  for (const requestedId of requestedIds) {
+    if (seenIds.has(requestedId)) continue;
+    seenIds.add(requestedId);
+    const recordedItems = itemsById.get(requestedId);
+    if (!recordedItems) {
+      unrecordedIds.push(requestedId);
+      continue;
+    }
+    answeredIds.push(requestedId);
+    items.push(...recordedItems);
+  }
+  return { items, unrecordedIds, answeredIds };
+}
+
+/**
  * A recorded response's envelope with `items` in place of its item list, so a
  * composed answer is shaped exactly like a recorded one. `ok: false` when the
  * template does not carry that path — nothing composable, answer a miss.
@@ -576,6 +607,11 @@ export type StaticManifestEntry = {
 
 export type ScreenshotFixtureManifest = {
   formatVersion: 1;
+  /**
+   * The instant the NEWEST fixture in this set was recorded — not when the
+   * recorder started. A capture runs 20+ minutes, so a start-stamped value
+   * reads as older than most of the set it describes.
+   */
   recordedAt: string;
   /** The instant the capture pretends it is, so relative dates in the UI freeze. */
   frozenNow: string;

@@ -13,6 +13,7 @@ import {
   FIXTURE_SIZE_NOTE_BYTES,
   IGNORED_VARIABLE_PATHS,
   MISS_VARIABLES_LOG_LIMIT,
+  collectBatchItems,
   REDACTED_PER_RUN_VALUE,
   RE_RECORD_COMMAND,
   SCREENSHOT_BACKEND_LOG_PREFIX,
@@ -853,5 +854,55 @@ describe('findScreenshotBackendProblems', () => {
   it('does not demand HIT lines from a recording run', () => {
     const log = line('READY mode=record port=8090 fixtures=/tmp/fx frozenNow=2026-09-08T09:00:00Z graphql=0 static=0');
     expect(findScreenshotBackendProblems(log, { mode: 'record' })).toEqual([]);
+  });
+});
+
+describe('collectBatchItems', () => {
+  const itemsById = new Map<string, unknown[]>([
+    [
+      'climb-a',
+      [
+        { climbUuid: 'climb-a', angle: 0 },
+        { climbUuid: 'climb-a', angle: 20 },
+      ],
+    ],
+    ['climb-b', [{ climbUuid: 'climb-b', angle: 40 }]],
+    // Requested while recording, and the backend had nothing for it.
+    ['climb-c', []],
+  ]);
+
+  it("returns every id's rows in request order", () => {
+    const { items, unrecordedIds, answeredIds } = collectBatchItems(itemsById, ['climb-b', 'climb-a']);
+    expect(items).toEqual([
+      { climbUuid: 'climb-b', angle: 40 },
+      { climbUuid: 'climb-a', angle: 0 },
+      { climbUuid: 'climb-a', angle: 20 },
+    ]);
+    expect(unrecordedIds).toEqual([]);
+    expect(answeredIds).toEqual(['climb-b', 'climb-a']);
+  });
+
+  it('answers a repeated id once, so a duplicate cannot duplicate rows', () => {
+    // Nothing upstream promises the app's own chunk holds each id once, and no
+    // real backend would answer the same climb twice.
+    const { items, answeredIds } = collectBatchItems(itemsById, ['climb-a', 'climb-b', 'climb-a']);
+    expect(items).toEqual([
+      { climbUuid: 'climb-a', angle: 0 },
+      { climbUuid: 'climb-a', angle: 20 },
+      { climbUuid: 'climb-b', angle: 40 },
+    ]);
+    expect(answeredIds).toEqual(['climb-a', 'climb-b']);
+  });
+
+  it('reports an id nothing recorded once, however often it was asked for', () => {
+    const { unrecordedIds } = collectBatchItems(itemsById, ['climb-z', 'climb-a', 'climb-z']);
+    expect(unrecordedIds).toEqual(['climb-z']);
+  });
+
+  it('treats an id recorded with no rows as answered, not unrecorded', () => {
+    const { items, unrecordedIds, answeredIds } = collectBatchItems(itemsById, ['climb-c']);
+    expect(items).toEqual([]);
+    expect(unrecordedIds).toEqual([]);
+    expect(answeredIds).toEqual(['climb-c']);
   });
 });

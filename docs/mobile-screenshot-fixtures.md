@@ -421,7 +421,7 @@ capture would only discover as a replay miss.
 
 ## Recording a set
 
-**Infinite lists stop after their first page in screenshot mode.** How far a
+**Every list stops after its first page in screenshot mode.** How far a
 list pages is timing-dependent — against a live backend the flow moves on before
 much has prefetched, against an instant replay backend it scrolls further — so
 `screenshotModeNextPageParam` (`packages/mobile/src/lib/screenshot-mode.ts`)
@@ -432,6 +432,15 @@ stops firing too. The two lists behind `PlaylistDetailView` are capped at that
 component instead, because their hooks live in the renderer-agnostic
 `@boardsesh/playlists-react`, which web also consumes and which must not read a
 mobile build flag.
+
+A list that pages itself rather than through React Query —
+`useDiscoverPlaylists`, `useUserPlaylists`, `useUserBetaLinks`, each exposing a
+`loadMore` an `onEndReached` calls — is wrapped at the call site with
+`screenshotModeLoadMore`, which returns a shared no-op in screenshot mode. The
+drift test scans the source for a `useInfiniteQuery(` with no
+`screenshotModeNextPageParam` beside it, so a new list cannot quietly skip the
+cap; the two `@boardsesh/playlists-react` hooks are on its allowlist because
+`PlaylistDetailView` caps them instead.
 
 A set recorded after this change therefore holds only first pages. The extra
 pages in the committed set (`GetSessionGroupedFeed` up to cursor `{"o":60}`,
@@ -462,6 +471,10 @@ by the capture workflows and merged afterwards.
    ```
    vp run mobile:screenshot-fixtures-merge -- --out packages/mobile/screenshot-fixtures ./artifacts/screenshot-fixtures-*
    ```
+
+   The merge clears `graphql/`, `static/` and `manifest.json` under `--out`
+   first (bounded exactly like the backend's `--fresh`), so a key a re-record
+   stopped producing cannot linger as an orphan nothing replays.
 
    The merge is a union. When two shards recorded the same key, their CONTENT
    must be identical — a conflict is a CONTENT difference, never a

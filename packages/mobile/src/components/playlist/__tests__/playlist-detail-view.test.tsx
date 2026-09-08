@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
@@ -370,6 +370,40 @@ describe('PlaylistDetailView', () => {
     const { container } = render(<PlaylistDetailView {...makeProps()} />);
     fireEvent.click(container.querySelector('[data-icon="back"]') as HTMLElement);
     expect(ctrl.back).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Screenshot-mode page cap ────────────────────────────────────────────────
+  //
+  // Both lists behind this view page through @boardsesh/playlists-react, which
+  // web consumes and which must not read a mobile build flag — so unlike the
+  // app's own infinite queries, `hasNextPage` stays TRUE here and the cap lives
+  // in this component's own end-reach handler.
+
+  describe('screenshot-mode page cap', () => {
+    const originalScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+
+    afterEach(() => {
+      if (originalScreenshotMode === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+      else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = originalScreenshotMode;
+    });
+
+    it('pages on end-reach in a normal build', () => {
+      delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+      const fetchNextPage = vi.fn();
+      const { container } = render(<PlaylistDetailView {...makeProps({ hasNextPage: true, fetchNextPage })} />);
+      fireEvent.click(container.querySelector('[data-list="true"]') as HTMLElement);
+      expect(fetchNextPage).toHaveBeenCalledTimes(1);
+    });
+
+    it('never pages past the first page in screenshot mode', () => {
+      process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+      const fetchNextPage = vi.fn();
+      // hasNextPage is deliberately true: the shared hook still reports more,
+      // which is exactly why the handler has to be the thing that stops.
+      const { container } = render(<PlaylistDetailView {...makeProps({ hasNextPage: true, fetchNextPage })} />);
+      fireEvent.click(container.querySelector('[data-list="true"]') as HTMLElement);
+      expect(fetchNextPage).not.toHaveBeenCalled();
+    });
   });
 
   // ── Action threading ────────────────────────────────────────────────────────
