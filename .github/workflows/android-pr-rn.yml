@@ -100,19 +100,20 @@ jobs:
 
       - uses: ./.github/actions/android-rn-setup
 
-      - name: Run local-module unit tests (Robolectric/JUnit)
+      - name: Run native-module unit tests (Robolectric/JUnit)
         working-directory: packages/mobile/android
         # Robolectric/JUnit tests for local Expo modules that ship them:
         # live-activity (session-presence lifecycle + foreground-service retry),
         # memory-trim (Glide trim-level policy) and board-renderer (overlay
-        # cache-dir recovery). The gradle project path for an Expo local module
+        # cache-dir recovery), plus patched ble-plx disconnect diagnostics.
+        # The gradle project path for an Expo local module
         # is autolinking-derived, so discover it rather than hardcode.
         run: |
           set -euo pipefail
-          # One entry per local module that ships Kotlin unit tests. Adding a
+          # One entry per module that ships native unit tests. Adding a
           # module here is the only change needed — each name is discovered
           # and must resolve to exactly one Gradle project.
-          TESTED_MODULES=(live-activity memory-trim board-renderer)
+          TESTED_MODULES=(live-activity memory-trim board-renderer react-native-ble-plx)
           ALL_PROJECTS=$(./gradlew --no-daemon -q projects)
           for MODULE in "${TESTED_MODULES[@]}"; do
             mapfile -t PROJECTS < <(printf '%s\n' "$ALL_PROJECTS" | sed -n "s/.*Project '\(:[^']*${MODULE}[^']*\)'.*/\1/p")

@@ -102,6 +102,29 @@ export interface PatchRule {
  */
 export const RULES: readonly PatchRule[] = [
   {
+    package: 'react-native-ble-plx',
+    file: 'android/src/main/java/com/bleplx/adapter/BleModule.java',
+    sentinels: ['AtomicReference<BleError> disconnectError', 'ConnectionState.DISCONNECTED, disconnectError.get()'],
+    orderedSentinels: ['disconnectError.set(errorConverter.toError(error))', '.doFinally(() -> {'],
+    patchedKey: 'react-native-ble-plx@3.5.1',
+  },
+  {
+    package: 'react-native-ble-plx',
+    file: 'android/src/main/java/com/bleplx/BlePlxModule.java',
+    sentinels: ['OnConnectionStateChangeCallback', 'event.pushString(errorConverter.toJs(disconnectError))'],
+    patchedKey: 'react-native-ble-plx@3.5.1',
+  },
+  {
+    package: 'react-native-ble-plx',
+    file: 'android/src/main/java/com/bleplx/converter/BleErrorToJsObjectConverter.java',
+    sentinels: [
+      'error.errorCode == BleErrorCode.DeviceDisconnected',
+      '!isDisconnect && error.androidCode < 0x80',
+      'JSONObject.quote(value)',
+    ],
+    patchedKey: 'react-native-ble-plx@3.5.1',
+  },
+  {
     package: '@expo/fingerprint',
     file: 'build/utils/Path.js',
     sentinels: ['normalizeIsolatedStoreModulePath', 'ISOLATED_STORE_MODULE_ROOT_REGEX'],

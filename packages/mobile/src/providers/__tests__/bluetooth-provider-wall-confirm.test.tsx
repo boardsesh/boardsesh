@@ -1351,6 +1351,42 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
     });
 
+    it.each([
+      [8, 'link_timeout'],
+      [19, 'peer_terminated'],
+      [133, 'unknown'],
+    ] as const)('reports Android status %s to PostHog as %s', (androidErrorCode, category) => {
+      renderProvider(createElement(BluetoothProbe));
+      analytics.track.mockClear();
+      bluetooth.options?.onConnectionEnded?.({
+        reason: 'unexpected',
+        disconnectTrigger: 'link_drop',
+        connectionDurationSec: 30,
+        boardName: 'moonboard',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1',
+        inSession: false,
+        disconnectInfo: {
+          source: 'ble-plx',
+          androidErrorCode,
+          bleErrorCode: 201,
+          description: 'Link dropped',
+        },
+      });
+      expect(analytics.track).toHaveBeenCalledWith(
+        'Bluetooth Disconnected',
+        expect.objectContaining({
+          disconnectSource: 'ble-plx',
+          disconnectAndroidCode: androidErrorCode,
+          disconnectBleCode: 201,
+          disconnectCategory: category,
+          disconnectReason: 'Link dropped',
+          connectionDurationSec: 30,
+        }),
+      );
+    });
+
     it('uses old-board attribution for a deliberate config switch and omits transport fields', () => {
       presence.boardId = 222;
       renderProvider(createElement(BluetoothProbe));
