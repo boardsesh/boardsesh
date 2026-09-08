@@ -19,6 +19,22 @@
       "discoverPlaylists": {
         "playlists": [
           {
+            "id": "29272",
+            "uuid": "8dd3984bc2584b15b3e852207a287d2f",
+            "boardType": "tension",
+            "layoutId": null,
+            "name": "kilter like",
+            "description": null,
+            "color": "#FF8000",
+            "icon": null,
+            "createdAt": "2026-09-01T19:06:19.600Z",
+            "updatedAt": "2026-09-08T17:21:01.427Z",
+            "climbCount": 3,
+            "creatorId": "8b1bc16b-0ca2-4e7a-a840-d6ff6f087ef0",
+            "creatorName": "Rémi Boyer",
+            "isGeneratedRecommendation": false
+          },
+          {
             "id": "27607",
             "uuid": "b6986bca3b3a4f7ea77003f0fb010385",
             "boardType": "tension",
@@ -161,30 +177,14 @@
             "creatorId": "0e07b2e1-cdd0-4663-a717-e63cc982b3ff",
             "creatorName": "michael alberghini",
             "isGeneratedRecommendation": false
-          },
-          {
-            "id": "24529",
-            "uuid": "42dfc8a4e60f48649ed1e5846c31fbb2",
-            "boardType": "tension",
-            "layoutId": null,
-            "name": "Drills",
-            "description": null,
-            "color": "#00CC00",
-            "icon": null,
-            "createdAt": "2026-08-19T11:27:52.234Z",
-            "updatedAt": "2026-09-02T11:39:15.041Z",
-            "climbCount": 9,
-            "creatorId": "0e07b2e1-cdd0-4663-a717-e63cc982b3ff",
-            "creatorName": "michael alberghini",
-            "isGeneratedRecommendation": false
           }
         ],
-        "totalCount": 453,
+        "totalCount": 456,
         "hasMore": true
       }
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T18:53:05.999Z",
+  "recordedAt": "2026-09-08T23:06:19.080Z",
   "upstream": "https://ws.boardsesh.com"
 }

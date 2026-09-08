@@ -20,7 +20,7 @@
           "userId": "fbb773f8-5bec-473e-8216-e34ca55b073b",
           "userName": "Test User",
           "userAvatar": "https://ws.boardsesh.com/static/avatars/fbb773f8-5bec-473e-8216-e34ca55b073b.jpg?v=c919f471-a05b-4607-bac9-edd08aa0a9c6&v=1781787108044",
-          "climbCount": 259
+          "climbCount": 262
         },
         "climbs": [
           {
@@ -34,7 +34,7 @@
             "framesCount": 1,
             "framesPace": 0,
             "angle": 40,
-            "ascensionist_count": 4340,
+            "ascensionist_count": 4356,
             "difficulty": "7a/V6",
             "quality_average": "4.15",
             "stars": 4,
@@ -62,7 +62,7 @@
             "framesCount": 1,
             "framesPace": 0,
             "angle": 40,
-            "ascensionist_count": 1702,
+            "ascensionist_count": 1703,
             "difficulty": "5c/V2",
             "quality_average": "5.00",
             "stars": 5,
@@ -91,9 +91,9 @@
             "framesCount": 1,
             "framesPace": 0,
             "angle": 40,
-            "ascensionist_count": 388,
+            "ascensionist_count": 389,
             "difficulty": "6c/V5",
-            "quality_average": "4.04",
+            "quality_average": "4.03",
             "stars": 4,
             "difficulty_error": "0.11",
             "benchmark_difficulty": null,
@@ -119,9 +119,9 @@
             "framesCount": 1,
             "framesPace": 0,
             "angle": 40,
-            "ascensionist_count": 648,
+            "ascensionist_count": 650,
             "difficulty": "6b/V4",
-            "quality_average": "4.02",
+            "quality_average": "4.03",
             "stars": 4,
             "difficulty_error": "-0.22",
             "benchmark_difficulty": null,
@@ -167,6 +167,36 @@
             "is_no_match": false
           },
           {
+            "uuid": "0CDD54779E294C73850CA73D8A436986",
+            "layoutId": 1,
+            "boardType": "kilter",
+            "setter_username": "45er",
+            "name": "Fornøjelsen",
+            "description": "No matching.",
+            "frames": "p1157r12p1241r13p1249r15p1254r13p1320r13p1326r13p1357r13p1371r13p1384r14p1447r15p1506r15",
+            "framesCount": 1,
+            "framesPace": 0,
+            "angle": 40,
+            "ascensionist_count": 391,
+            "difficulty": "7b/V8",
+            "quality_average": "4.08",
+            "stars": 4,
+            "difficulty_error": "-0.14",
+            "benchmark_difficulty": null,
+            "boardseshDifficulty": 22.596027571011856,
+            "boardseshConfidence": "confirmed",
+            "compatibleSizeIds": [
+              7,
+              10,
+              16,
+              28
+            ],
+            "characteristics": [
+              "no_match"
+            ],
+            "is_no_match": true
+          },
+          {
             "uuid": "83E869AC404848F8B20CC338514D7311",
             "layoutId": 1,
             "boardType": "kilter",
@@ -197,36 +227,6 @@
             "is_no_match": true
           },
           {
-            "uuid": "0CDD54779E294C73850CA73D8A436986",
-            "layoutId": 1,
-            "boardType": "kilter",
-            "setter_username": "45er",
-            "name": "Fornøjelsen",
-            "description": "No matching.",
-            "frames": "p1157r12p1241r13p1249r15p1254r13p1320r13p1326r13p1357r13p1371r13p1384r14p1447r15p1506r15",
-            "framesCount": 1,
-            "framesPace": 0,
-            "angle": 40,
-            "ascensionist_count": 387,
-            "difficulty": "7b/V8",
-            "quality_average": "4.08",
-            "stars": 4,
-            "difficulty_error": "-0.13",
-            "benchmark_difficulty": null,
-            "boardseshDifficulty": 22.596027571011856,
-            "boardseshConfidence": "confirmed",
-            "compatibleSizeIds": [
-              7,
-              10,
-              16,
-              28
-            ],
-            "characteristics": [
-              "no_match"
-            ],
-            "is_no_match": true
-          },
-          {
             "uuid": "93afa80de680434d8631b2f5267a80e8",
             "layoutId": 1,
             "boardType": "kilter",
@@ -237,7 +237,7 @@
             "framesCount": 1,
             "framesPace": 0,
             "angle": 40,
-            "ascensionist_count": 6641,
+            "ascensionist_count": 6651,
             "difficulty": "7a/V6",
             "quality_average": "4.00",
             "stars": 4,
@@ -296,9 +296,9 @@
             "framesCount": 1,
             "framesPace": 0,
             "angle": 40,
-            "ascensionist_count": 276,
+            "ascensionist_count": 277,
             "difficulty": "7b+/V8",
-            "quality_average": "4.13",
+            "quality_average": "4.14",
             "stars": 4,
             "difficulty_error": "-0.41",
             "benchmark_difficulty": null,
@@ -551,6 +551,34 @@
             "is_no_match": false
           },
           {
+            "uuid": "3f24b8dd-ec9d-4eac-add4-c3f102b64a97",
+            "layoutId": 1,
+            "boardType": "kilter",
+            "setter_username": "thp_sauce",
+            "name": "Black Rock Desert",
+            "description": "",
+            "frames": "p1119r12p1452r15p1190r12p1189r13p1201r13p1252r13p1290r13p1322r13p1352r13p1389r14p1480r15p1543r15",
+            "framesCount": 1,
+            "framesPace": 0,
+            "angle": 40,
+            "ascensionist_count": 48,
+            "difficulty": "7b/V8",
+            "quality_average": "4.41",
+            "stars": 4,
+            "difficulty_error": "-0.11",
+            "benchmark_difficulty": null,
+            "boardseshDifficulty": 21.311858434323785,
+            "boardseshConfidence": "provisional",
+            "compatibleSizeIds": [
+              7,
+              10,
+              16,
+              28
+            ],
+            "characteristics": null,
+            "is_no_match": false
+          },
+          {
             "uuid": "4212B91FE63842399415CFBF9011C75E",
             "layoutId": 1,
             "boardType": "kilter",
@@ -577,43 +605,14 @@
             ],
             "characteristics": null,
             "is_no_match": false
-          },
-          {
-            "uuid": "4aceece9002d4c4ba036d33c7bf1cc8f",
-            "layoutId": 1,
-            "boardType": "kilter",
-            "setter_username": "Rosko",
-            "name": "Mr. Wang's House",
-            "description": "Dyno your shoulder out",
-            "frames": "p1084r15p1111r15p1131r15p1142r12p1175r12p1204r15p1246r13p1247r13p1302r13p1390r14p1464r15p1513r15",
-            "framesCount": 1,
-            "framesPace": 0,
-            "angle": 40,
-            "ascensionist_count": 62,
-            "difficulty": "7a+/V7",
-            "quality_average": "4.14",
-            "stars": 4,
-            "difficulty_error": "-0.29",
-            "benchmark_difficulty": null,
-            "boardseshDifficulty": 21.400560172504637,
-            "boardseshConfidence": "confirmed",
-            "compatibleSizeIds": [
-              7,
-              10,
-              15,
-              16,
-              28
-            ],
-            "characteristics": null,
-            "is_no_match": false
           }
         ],
-        "totalCount": 259,
+        "totalCount": 262,
         "hasMore": true
       }
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T18:52:38.606Z",
+  "recordedAt": "2026-09-08T23:05:37.954Z",
   "upstream": "https://ws.boardsesh.com"
 }

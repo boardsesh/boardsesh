@@ -17,6 +17,38 @@
       "discoverPlaylists": {
         "playlists": [
           {
+            "id": "29266",
+            "uuid": "43e26f18-7819-4103-8c62-c7a352bffe4a",
+            "boardType": "kilter",
+            "layoutId": null,
+            "name": "Enya",
+            "description": "",
+            "color": null,
+            "icon": null,
+            "createdAt": "2026-09-08T21:01:15.611Z",
+            "updatedAt": "2026-09-08T21:01:28.079Z",
+            "climbCount": 13,
+            "creatorId": "c450f61e-885e-40e4-989c-c6ca3d68bc37",
+            "creatorName": "Luca Planert",
+            "isGeneratedRecommendation": false
+          },
+          {
+            "id": "29262",
+            "uuid": "b8a0161a-88cc-4c9d-bad4-366d380a236c",
+            "boardType": "kilter",
+            "layoutId": null,
+            "name": "Laura’s 7",
+            "description": "",
+            "color": null,
+            "icon": null,
+            "createdAt": "2026-09-08T21:01:15.611Z",
+            "updatedAt": "2026-09-08T21:01:21.895Z",
+            "climbCount": 13,
+            "creatorId": "c450f61e-885e-40e4-989c-c6ca3d68bc37",
+            "creatorName": "Luca Planert",
+            "isGeneratedRecommendation": false
+          },
+          {
             "id": "29177",
             "uuid": "e3792675-887c-4b2b-9528-d796d27078c0",
             "boardType": "kilter",
@@ -143,46 +175,14 @@
             "creatorId": "d8389079-f543-4208-8cd1-e954e3125d87",
             "creatorName": "Bonsai",
             "isGeneratedRecommendation": false
-          },
-          {
-            "id": "28989",
-            "uuid": "c304d2dd-0f07-4772-aaac-763635c98b91",
-            "boardType": "kilter",
-            "layoutId": null,
-            "name": "Projects 50",
-            "description": null,
-            "color": "#FF0000",
-            "icon": null,
-            "createdAt": "2026-09-07T21:59:43.919Z",
-            "updatedAt": "2026-09-07T21:59:58.415Z",
-            "climbCount": 19,
-            "creatorId": "d8389079-f543-4208-8cd1-e954e3125d87",
-            "creatorName": "Bonsai",
-            "isGeneratedRecommendation": false
-          },
-          {
-            "id": "28988",
-            "uuid": "24dd38ce-9c41-4f1c-8643-2b86ff3e83a5",
-            "boardType": "kilter",
-            "layoutId": null,
-            "name": "Done 45",
-            "description": null,
-            "color": "#00CC00",
-            "icon": null,
-            "createdAt": "2026-09-07T21:59:43.919Z",
-            "updatedAt": "2026-09-07T21:59:56.841Z",
-            "climbCount": 9,
-            "creatorId": "d8389079-f543-4208-8cd1-e954e3125d87",
-            "creatorName": "Bonsai",
-            "isGeneratedRecommendation": false
           }
         ],
-        "totalCount": 767,
+        "totalCount": 772,
         "hasMore": true
       }
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T18:48:28.089Z",
+  "recordedAt": "2026-09-08T22:58:32.353Z",
   "upstream": "https://ws.boardsesh.com"
 }
