@@ -38,6 +38,7 @@
     "@graphql-codegen/typescript-resolvers": "^4.5.2",
     "@types/node": "^25.9.5",
     "@types/semver": "^7.7.1",
+    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.10",
     "license-checker-rseidelsohn": "^5.0.1",
     "oxlint-tsgolint": "~7.0.2001",
@@ -49,6 +50,7 @@
     "vite": "^8.2.0",
     "vite-plus": "^0.3.0",
     "vitest": "^4.1.10",
+    "ws": "^8.21.1",
     "xcode": "^3.0.1",
     "xml2js": "^0.6.2",
     "yaml": "^2.9.0"

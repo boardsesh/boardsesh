@@ -79,8 +79,15 @@ export {
 } from './mutation-queue/error-classification';
 
 // --- Pull sync -----------------------------------------------------------------
-export { pullSync, toSqliteValue, multiRowChunkSize, emptyScopeDownloadPhases } from './sync/pull-client';
+export {
+  pullSync,
+  toSqliteValue,
+  multiRowChunkSize,
+  emptyScopeDownloadPhases,
+  listSyncPullDocuments,
+} from './sync/pull-client';
 export type {
+  SyncPullDocument,
   SyncProgress,
   SyncOptions,
   SchemaDriftReporter,
