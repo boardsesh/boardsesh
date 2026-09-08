@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { eq } from 'drizzle-orm';
@@ -88,12 +89,24 @@ export async function POST(request: NextRequest) {
     // without the build arg. `??` keeps an empty string and every link in this
     // email would lose its origin; falling back to the request origin is right.
     const baseUrl = process.env.BASE_URL?.trim() || request.nextUrl.origin;
-    await sendVerificationEmail(email, token, baseUrl);
+    try {
+      await sendVerificationEmail(email, token, baseUrl);
+    } catch (emailError) {
+      console.error('Failed to resend verification email:', emailError);
+      Sentry.captureException(emailError, {
+        tags: { area: 'auth', flow: 'resend-verification', phase: 'send-email' },
+      });
+      await consistentDelay(startTime);
+      return NextResponse.json({ error: 'Failed to send verification email' }, { status: 500 });
+    }
 
     await consistentDelay(startTime);
     return NextResponse.json({ message: genericMessage }, { status: 200 });
   } catch (error) {
     console.error('Resend verification error:', error);
+    Sentry.captureException(error, {
+      tags: { area: 'auth', flow: 'resend-verification', phase: 'request' },
+    });
     await consistentDelay(startTime);
     return NextResponse.json({ error: 'Failed to send verification email' }, { status: 500 });
   }
