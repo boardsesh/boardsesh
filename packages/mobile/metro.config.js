@@ -44,6 +44,11 @@ function ignoredRootPattern(filePath) {
 const ignoredRoots = ['.agents', '.claude', '.codex', '.local-work', '.boardsesh'].map((name) =>
   ignoredRootPattern(path.join(monorepoRoot, name)),
 );
+// The recorded screenshot fixture set (docs/mobile-screenshot-fixtures.md) lives
+// inside this package but is data, never imported: hundreds of JSON bodies and
+// static assets that a record run rewrites while Metro is watching. Crawling it
+// costs startup time and hands the file watcher churn for nothing.
+ignoredRoots.push(ignoredRootPattern(path.join(projectRoot, 'screenshot-fixtures')));
 config.resolver.blockList = config.resolver.blockList
   ? [].concat(config.resolver.blockList, ignoredRoots)
   : ignoredRoots;

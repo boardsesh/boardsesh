@@ -58,6 +58,14 @@ on:
         description: 'Which walls the board-backed shots sit on, "|"-separated, in slot order (slot 0 = every board-backed shot). Empty = the app default. Each entry matches a board name or a layout name.'
         type: string
         default: ''
+      fixtures:
+        description: 'Backend the capture talks to. "live" is PROD (today''s default). "record" proxies PROD and uploads the recorded fixtures as an artifact, to be merged with the iOS shards and committed. "replay" serves the committed set, which is what makes the screenshots deterministic; this default flips to replay once a set exists.'
+        type: choice
+        default: live
+        options:
+          - live
+          - record
+          - replay
       commit_to_main:
         description: 'Commit the captured screenshots back to main (mobile-store-metadata.yml then uploads them to Google Play). Requires the app-store flow.'
         type: boolean
@@ -272,7 +280,13 @@ jobs:
           # give the emulator room and a bigger app heap.
           ram-size: 4096M
           heap-size: 1024M
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          # -timezone UTC pins the guest clock's zone, so the app's local-date
+          # derivations (day dividers, the activity heatmap's today cell) land on
+          # the same calendar day here as they do from the same frozen instant on
+          # a developer's machine. The iOS side pins the same thing per launch
+          # with SIMCTL_CHILD_TZ; the local emulator gets it in
+          # scripts/lib/android-emulator.ts.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -timezone UTC
           disable-animations: true
           script: bash "$GITHUB_WORKSPACE/scripts/ci-android-screenshot-capture.sh"
         env:
@@ -287,6 +301,9 @@ jobs:
           # retarget needs both sides to agree.
           SCREENSHOT_RENDER_MODE: ${{ inputs.render_mode || '' }}
           SCREENSHOT_BOARDS: ${{ inputs.boards || '' }}
+          # live | record | replay. `live` passes no --fixtures flag at all, so
+          # the capture behaves exactly as it did before fixtures existed.
+          SCREENSHOT_FIXTURES: ${{ inputs.fixtures || 'live' }}
 
       # Hard backstop against a blank capture (the play-drawer modal occasionally
       # didn't composite into adb screencap — a blank board-view hero even reached
@@ -417,6 +434,18 @@ jobs:
           done
           echo "::error::Could not push screenshots to main after 3 attempts."
           exit 1
+
+      # The Android half of a recording run. Merged with the iOS shard artifacts
+      # via `vp run mobile:screenshot-fixtures-merge` and committed — see
+      # docs/mobile-screenshot-fixtures.md.
+      - name: Upload recorded fixtures
+        if: ${{ always() && inputs.fixtures == 'record' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-fixtures-android
+          path: packages/mobile/screenshot-fixtures/**
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload screenshots artifact
         if: always()

@@ -6,9 +6,10 @@
  *   vp run mobile:screenshot-backend -- --mode replay
  *   vp run mobile:screenshot-backend -- --mode record --upstream https://ws.boardsesh.com
  *
- * The capture orchestrator will start this and point the app at it with
- * EXPO_PUBLIC_BACKEND_URL / EXPO_PUBLIC_WS_URL in a follow-up PR; until then it
- * is a standalone tool. See docs/mobile-screenshot-fixtures.md.
+ * The capture orchestrator starts this itself for
+ * `vp run mobile:screenshots -- --fixtures record|replay` and points the app at
+ * it with EXPO_PUBLIC_BACKEND_URL / EXPO_PUBLIC_WS_URL; run it by hand to serve
+ * a set to a dev build. See docs/mobile-screenshot-fixtures.md.
  */
 
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -19,12 +20,18 @@ import {
   readScreenshotFixtureManifest,
   type ScreenshotBackendServer,
 } from './lib/screenshot-backend';
-import type { ScreenshotBackendMode } from './lib/screenshot-fixtures';
+import {
+  DEFAULT_SCREENSHOT_FIXTURES_DIR,
+  SCREENSHOT_BACKEND_DEFAULT_PORT,
+  resolveScreenshotBackendPort,
+  startOfSecondIso,
+  type ScreenshotBackendMode,
+} from './lib/screenshot-fixtures';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_FIXTURES_DIR = 'packages/mobile/screenshot-fixtures';
+const DEFAULT_FIXTURES_DIR = DEFAULT_SCREENSHOT_FIXTURES_DIR;
 const DEFAULT_UPSTREAM = 'https://ws.boardsesh.com';
-const DEFAULT_PORT = 8090;
+const DEFAULT_PORT = SCREENSHOT_BACKEND_DEFAULT_PORT;
 
 type CliOptions = {
   mode: ScreenshotBackendMode;
@@ -119,7 +126,7 @@ export function parseCliArguments(argv: string[]): CliOptions {
   }
 
   if (!mode) fail(`--mode is required\n\n${USAGE}`);
-  const resolvedPort = port ?? Number(process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT ?? DEFAULT_PORT);
+  const resolvedPort = port ?? resolveScreenshotBackendPort(process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT);
   if (!Number.isInteger(resolvedPort) || resolvedPort < 0 || resolvedPort > 65535) {
     fail(`--port must be a port number, got ${resolvedPort}`);
   }
@@ -136,11 +143,6 @@ export function parseCliArguments(argv: string[]): CliOptions {
     fresh,
     flow,
   };
-}
-
-/** Now, to the second. Milliseconds are dropped so a recorded manifest reads cleanly. */
-export function startOfSecondIso(now: Date): string {
-  return `${now.toISOString().slice(0, 19)}Z`;
 }
 
 async function main(): Promise<void> {

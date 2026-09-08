@@ -1024,6 +1024,12 @@ export default defineConfig({
         command: 'tsx scripts/screenshot-backend.ts',
         cache: false,
       },
+      // Fold the per-shard fixture sets a recording fan-out produced into the
+      // single set the repo commits. See docs/mobile-screenshot-fixtures.md.
+      'mobile:screenshot-fixtures-merge': {
+        command: 'tsx scripts/screenshot-fixtures-merge.ts',
+        cache: false,
+      },
       'mobile:build-sim-app': {
         command: 'tsx scripts/mobile-build-sim-app.ts',
         cache: false,
