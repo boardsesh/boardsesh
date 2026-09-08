@@ -127,6 +127,12 @@ name: app-store screenshots android
     visible:
       id: 'progress-tab-loaded'
     timeout: 90000
+# The beta-videos shelf loads separately and disappears when the account has none;
+# wait until no shelf on the screen is still showing its first-page spinner.
+- extendedWaitUntil:
+    notVisible:
+      id: 'horizontal-scroll-section-loading'
+    timeout: 60000
 - waitForAnimationToEnd:
     timeout: 30000
 - takeScreenshot: 06-profile

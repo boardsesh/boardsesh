@@ -54,7 +54,9 @@ export function HorizontalScrollSection({
     <View style={styles.section}>
       <SectionHeader title={title} actionLabel={actionLabel} onActionPress={onActionPress} disclosure={disclosure} />
       {collapsed ? null : loading ? (
-        <View style={[styles.loadingRow, { height: minHeight }]}>
+        // testID lets the store-screenshot flows wait until every shelf on a screen
+        // has settled (visible while the first page loads, gone once it lands).
+        <View testID="horizontal-scroll-section-loading" style={[styles.loadingRow, { height: minHeight }]}>
           <ActivityIndicator size="small" />
         </View>
       ) : (
