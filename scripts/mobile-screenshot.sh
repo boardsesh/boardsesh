@@ -9,6 +9,13 @@ if ! command -v xcrun &>/dev/null || ! xcrun simctl list devices &>/dev/null 2>&
   exit 0
 fi
 
+# Resolve once and hold ownership across the entire command, including launch/logs.
+if [ -z "${BOARDSESH_SIMULATOR_LEASE_TOKEN:-}" ]; then
+  cd "$ROOT_DIR"
+  exec vp exec tsx scripts/mobile-simulator-lease.ts bash "$SCRIPT_DIR/mobile-screenshot.sh" "$@"
+fi
+vp exec tsx "$SCRIPT_DIR/mobile-simulator-lease.ts" --assert-only
+
 DELAY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -40,7 +47,7 @@ mkdir -p "$SCREENSHOT_DIR"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 SCREENSHOT_PATH="$SCREENSHOT_DIR/mobile-${TIMESTAMP}.png"
 
-xcrun simctl io booted screenshot "$SCREENSHOT_PATH"
+xcrun simctl io "$BOARDSESH_IOS_SIMULATOR_UDID" screenshot "$SCREENSHOT_PATH"
 
 echo "[mobile-screenshot] Saved: .boardsesh/screenshots/mobile-${TIMESTAMP}.png"
 exit 0

@@ -6,9 +6,11 @@ import { createServer } from 'node:net';
 import { resolve, dirname, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { resolveTailscaleHostname } from './lib/tailscale-hostname';
+import { resolveMetroHostname } from './lib/metro-host';
 
-const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT_DIR = process.env.BOARDSESH_PROFILE_SOURCE_DIR
+  ? resolve(process.env.BOARDSESH_PROFILE_SOURCE_DIR)
+  : resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const METRO_DEFAULT_PORT = 8081;
 const METRO_MAX_PORT = 8099;
 const BOARDSESH_DIR = join(ROOT_DIR, '.boardsesh');
@@ -158,7 +160,7 @@ async function main() {
   const branchName = resolveCurrentBranchName();
   const commitSha = runGitCommand(['rev-parse', '--short', 'HEAD']);
   const qaNotes = resolveQaNotes(cliQaNotesPath);
-  const tailscale = resolveTailscaleHostname();
+  const tailscale = resolveMetroHostname(passthroughArgs);
   const metroPort = await resolveMetroPort(passthroughArgs);
   const metroPassthroughArgs = withMetroPort(passthroughArgs, metroPort);
   const startedAt = new Date().toISOString();
@@ -199,7 +201,9 @@ async function main() {
 
   // Bind Metro on 0.0.0.0 (Expo's --host lan) so devices on the same Tailnet can
   // reach the bundler. Respect a user-supplied --host so manual overrides win.
-  const userPassedHost = metroPassthroughArgs.some((arg) => arg === '--host' || arg.startsWith('--host='));
+  const userPassedHost = metroPassthroughArgs.some(
+    (arg) => arg === '--host' || arg.startsWith('--host=') || ['--localhost', '--lan', '--tunnel'].includes(arg),
+  );
   // We ship a custom dev client (EAS preview-build flow); Metro must serve the
   // dev-client bundle, not the Expo Go one. Opt out by passing --go.
   const userPickedClient = passthroughArgs.some(

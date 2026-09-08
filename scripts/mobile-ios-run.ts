@@ -1,12 +1,15 @@
 /// <reference types="node" />
 
-import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { leaseEnvironment, resolveSimulatorUdid } from './lib/ios-simulator-lease';
 import {
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readlinkSync,
+  readFileSync,
   renameSync,
   rmSync,
   rmdirSync,
@@ -20,7 +23,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
 const DEFAULT_CACHE_DIR = join(homedir(), 'Library', 'Caches', 'boardsesh', 'xcode', 'packages-mobile-ios', 'build');
-const LOCK_STALE_MS = 12 * 60 * 60 * 1000;
 
 export interface MobileIosCachePaths {
   mobileDir: string;
@@ -42,6 +44,7 @@ export interface FileSystemOps {
   rmdir(path: string): void;
   symlink(target: string, path: string): void;
   writeFile(path: string, contents: string): void;
+  readFile(path: string): string;
 }
 
 export interface Runner {
@@ -83,6 +86,7 @@ export const nodeFileSystem: FileSystemOps = {
   rmdir: rmdirSync,
   symlink: symlinkSync,
   writeFile: writeFileSync,
+  readFile: (path) => readFileSync(path, 'utf8'),
 };
 
 export const nodeRunner: Runner = {
@@ -194,28 +198,52 @@ export function acquireBuildLock(paths: MobileIosCachePaths, fs: FileSystemOps, 
   try {
     fs.mkdirExclusive(paths.lockPath);
   } catch {
-    if (isStaleLock(paths.lockPath, fs, clock)) {
-      fs.rm(paths.lockPath);
-      fs.mkdirExclusive(paths.lockPath);
-    } else {
-      throw new Error(
-        `another Boardsesh iOS build is using the shared cache at ${paths.sharedBuildPath}. ` +
-          `Wait for it to finish, then rerun this command.`,
-      );
-    }
+    throw new Error(
+      `another Boardsesh iOS build is using the shared cache at ${paths.sharedBuildPath}. ` +
+        `Wait for it to finish. A stopped owner's lock must be inspected and removed explicitly: ${paths.lockPath}`,
+    );
   }
 
-  fs.writeFile(
-    join(paths.lockPath, 'owner.txt'),
-    [`pid=${process.pid}`, `startedAt=${clock.isoNow()}`, `sharedBuildPath=${paths.sharedBuildPath}`, ''].join('\n'),
-  );
+  const ownerToken = randomUUID();
+  const ownerPath = join(paths.lockPath, 'owner.txt');
+  const ownerContents = [
+    `token=${ownerToken}`,
+    `pid=${process.pid}`,
+    `startedAt=${clock.isoNow()}`,
+    `sharedBuildPath=${paths.sharedBuildPath}`,
+    '',
+  ].join('\n');
+  fs.writeFile(ownerPath, ownerContents);
 
   return {
     path: paths.lockPath,
     release() {
-      fs.rm(paths.lockPath);
+      if (fs.exists(ownerPath) && fs.readFile(ownerPath) === ownerContents) fs.rm(paths.lockPath);
     },
   };
+}
+
+export function extractIosDeviceArgs(args: readonly string[]): { requested: string | undefined; remaining: string[] } {
+  let requested: string | undefined;
+  const remaining: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === '--device' || argument === '-d') {
+      const candidate = args[++index];
+      if (!candidate || candidate.startsWith('-')) throw new Error('Pass an explicit device name or UDID.');
+      requested = candidate;
+    } else if (argument.startsWith('--device=')) requested = argument.slice('--device='.length);
+    else remaining.push(argument);
+  }
+  return { requested, remaining };
+}
+
+function isPhysicalDevice(requested: string): boolean {
+  const listing = execFileSync('xcrun', ['xctrace', 'list', 'devices'], { encoding: 'utf8', timeout: 15000 });
+  const physicalSection = listing.split('== Simulators ==')[0];
+  return physicalSection
+    .split('\n')
+    .some((line) => line.includes(`(${requested})`) || line.startsWith(`${requested} (`));
 }
 
 export function main(): number {
@@ -223,27 +251,44 @@ export function main(): number {
 
   try {
     validateExpoRunIosArgs(passthroughArgs);
-    const paths = createMobileIosCachePaths();
-    ensureIosProject(paths, nodeFileSystem, nodeRunner);
-    const cacheResult = ensureSharedBuildCache(paths, nodeFileSystem, systemClock);
-
-    console.log(`[mobile:ios] Shared Xcode build cache: ${cacheResult.sharedBuildPath}`);
-    if (cacheResult.importedExistingBuild) {
-      console.log('[mobile:ios] Imported existing packages/mobile/ios/build into the shared cache.');
-    }
-    if (cacheResult.movedAsidePath) {
-      console.log(`[mobile:ios] Preserved existing worktree build output at ${cacheResult.movedAsidePath}`);
-    }
-
-    const lock = acquireBuildLock(paths, nodeFileSystem, systemClock);
+    const { requested, remaining } = extractIosDeviceArgs(passthroughArgs);
+    let simulator: ReturnType<typeof leaseEnvironment>;
     try {
-      const status = nodeRunner.run('vp', ['exec', 'expo', 'run:ios', ...passthroughArgs], {
-        cwd: paths.mobileDir,
-        env: { ...process.env },
-      });
-      return status ?? 1;
+      const udid = resolveSimulatorUdid(requested);
+      simulator = leaseEnvironment(udid, ROOT_DIR);
+      remaining.push('--device', udid);
+    } catch (error) {
+      if (!requested || !isPhysicalDevice(requested)) throw error;
+      // Physical iPhone builds cannot interfere with a simulator lease.
+      simulator = { env: { ...process.env }, release() {} };
+      remaining.push('--device', requested);
+    }
+
+    try {
+      const paths = createMobileIosCachePaths();
+      const lock = acquireBuildLock(paths, nodeFileSystem, systemClock);
+      try {
+        ensureIosProject(paths, nodeFileSystem, nodeRunner);
+        const cacheResult = ensureSharedBuildCache(paths, nodeFileSystem, systemClock);
+
+        console.log(`[mobile:ios] Shared Xcode build cache: ${cacheResult.sharedBuildPath}`);
+        if (cacheResult.importedExistingBuild) {
+          console.log('[mobile:ios] Imported existing packages/mobile/ios/build into the shared cache.');
+        }
+        if (cacheResult.movedAsidePath) {
+          console.log(`[mobile:ios] Preserved existing worktree build output at ${cacheResult.movedAsidePath}`);
+        }
+
+        const status = nodeRunner.run('vp', ['exec', 'expo', 'run:ios', ...remaining], {
+          cwd: paths.mobileDir,
+          env: simulator.env,
+        });
+        return status ?? 1;
+      } finally {
+        lock.release();
+      }
     } finally {
-      lock.release();
+      simulator.release();
     }
   } catch (error) {
     console.error(`[mobile:ios] FAILED: ${error instanceof Error ? error.message : String(error)}`);
@@ -256,16 +301,6 @@ function isEmptyDirectory(path: string, fs: FileSystemOps): boolean {
     const stats = fs.lstat(path);
     if (!stats.isDirectory() || stats.isSymbolicLink()) return false;
     return fs.readdir(path).length === 0;
-  } catch {
-    return false;
-  }
-}
-
-function isStaleLock(path: string, fs: FileSystemOps, clock: Clock): boolean {
-  try {
-    const stats = fs.lstat(path);
-    if (!stats.isDirectory()) return false;
-    return typeof stats.mtimeMs === 'number' && clock.now() - stats.mtimeMs > LOCK_STALE_MS;
   } catch {
     return false;
   }
