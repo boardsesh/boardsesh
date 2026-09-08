@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
-import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
+import { SQLiteProvider, useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
 import { DATABASE_NAME, initializeDatabase, releaseDatabaseHandle } from '../db';
+import { retainDatabaseConnection } from '../db/connection-retention';
 
 function handleDatabaseError(error: Error): void {
   if (__DEV__) {
@@ -30,9 +31,35 @@ function DatabaseHandleLifecycle() {
   return null;
 }
 
+/**
+ * The provider's `onInit`: take the process-lifetime reference on the connection
+ * first, then run the usual setup sequence.
+ *
+ * Ordering matters. `SQLiteProvider` opens the connection, awaits `onInit`, and only
+ * then stores it in the ref its teardown closes — so `onInit` is the earliest point at
+ * which the connection exists in expo-sqlite's native cache, and it is strictly before
+ * any teardown that could free it. Taking the reference here means the provider's
+ * close is never the last one out (#5300): it decrements, the connection survives, and
+ * whatever query was mid-flight on another module-queue thread keeps reading live
+ * memory instead of a freed `sqlite3*`.
+ *
+ * Started, never awaited: the provider renders nothing until `onInit` resolves, so
+ * launch must not wait on a second open, and nothing in the setup sequence depends on
+ * it. `retainDatabaseConnection` never rejects.
+ *
+ * Declared at module scope rather than as a `useCallback`, because `onInit` sits in
+ * `SQLiteProviderNonSuspense`'s effect deps AND in its `memo` comparator — a fresh
+ * identity per render would close and reopen the database on every parent re-render,
+ * which is the exact churn this file exists to survive.
+ */
+function initializeAndRetainDatabase(db: SQLiteDatabase): Promise<void> {
+  void retainDatabaseConnection();
+  return initializeDatabase(db);
+}
+
 export function DatabaseProvider({ children }: { children: ReactNode }) {
   return (
-    <SQLiteProvider databaseName={DATABASE_NAME} onInit={initializeDatabase} onError={handleDatabaseError}>
+    <SQLiteProvider databaseName={DATABASE_NAME} onInit={initializeAndRetainDatabase} onError={handleDatabaseError}>
       <DatabaseHandleLifecycle />
       {children}
     </SQLiteProvider>

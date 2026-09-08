@@ -5,3 +5,4 @@
 // state lives; this barrel exists so the sanctioned import path for it is visibly a
 // test path, and so the production barrel (./index.ts) can stay free of it.
 export { resetDatabaseInitializationForTests } from './connection';
+export { resetConnectionRetentionForTests } from './connection-retention';
