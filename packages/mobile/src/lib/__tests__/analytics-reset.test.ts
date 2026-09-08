@@ -91,6 +91,37 @@ describe('analytics reset', () => {
     );
   });
 
+  // #5187: `low_power_mode` only moves on a power-state transition, so a
+  // sign-out that dropped it would leave every later event of the launch
+  // unattributable to Low Power Mode until the climber plugged in.
+  it('re-registers low power mode after resetting the client', async () => {
+    const fakeClient = { register: vi.fn() };
+    posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);
+    const { registerLowPowerMode, _resetLowPowerModeForTests } = await import('../analytics-low-power-mode');
+    _resetLowPowerModeForTests();
+    registerLowPowerMode(true);
+    fakeClient.register.mockClear();
+    const { reset } = await import('../analytics');
+
+    expect(reset()).toBe(true);
+
+    expect(fakeClient.register).toHaveBeenCalledWith({ low_power_mode: true });
+  });
+
+  it('registers no low power mode when the tracker has not read one yet', async () => {
+    const fakeClient = { register: vi.fn() };
+    posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);
+    const { _resetLowPowerModeForTests } = await import('../analytics-low-power-mode');
+    _resetLowPowerModeForTests();
+    const { reset } = await import('../analytics');
+
+    expect(reset()).toBe(true);
+
+    expect(fakeClient.register).not.toHaveBeenCalledWith(
+      expect.objectContaining({ low_power_mode: expect.anything() }),
+    );
+  });
+
   // The active board does not change on sign-out, so AnalyticsGymProperties'
   // effect will not re-run — without this restore, every event for the rest of
   // the launch loses its venue and the gym leaderboard under-counts whoever

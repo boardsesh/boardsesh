@@ -2,13 +2,39 @@ import ExpoModulesCore
 import UIKit
 
 public class BoardRendererModule: Module {
+  /// Renders run here, not on expo-modules-core's default `AsyncFunction` queue.
+  ///
+  /// That default is ONE serial queue shared by every Expo module in the app
+  /// (`expo.modules.AsyncFunctionQueue`), so before this a play-board render
+  /// waited behind every list thumbnail already in line AND behind any other
+  /// module's pending call — and Low Power Mode's lower CPU clock stretched that
+  /// line to seconds (issue #5187). A concurrent queue of our own keeps renders
+  /// off that shared line and lets two run at once on multi-core phones. The JS
+  /// render scheduler bounds how many it sends (`renderConcurrency` below), so
+  /// "concurrent" never means "every mounted row at once".
+  private static let renderQueue = DispatchQueue(
+    label: "com.boardsesh.board-renderer.render",
+    qos: .userInitiated,
+    attributes: .concurrent
+  )
+
+  /// How many renders the JS scheduler may keep inside this module at once.
+  /// Two: the current play board plus one neighbour or thumbnail. A third rarely
+  /// finishes sooner on a phone core budget and would only compete with the UI
+  /// thread for the same cores the PNG encode needs.
+  private static let renderConcurrency = 2
+
   // Cap the on-disk PNG cache so heavy users don't accumulate hundreds of
   // MB of stale renders. The cache lives in Library/Caches, which iOS may
   // also reclaim on its own under storage pressure — this is just our
   // explicit upper bound.
   private static let cacheCapBytes: Int = 200 * 1024 * 1024
 
-  private lazy var cacheDir: URL = {
+  // `static let`, not `lazy var`: renders now run two at a time on
+  // `renderQueue`, and a Swift `lazy var` is not thread-safe — two first calls
+  // racing its initializer is a data race. A static stored property is
+  // initialized exactly once, under a lock, by the runtime.
+  private static let cacheDir: URL = {
     let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("board-thumbnails", isDirectory: true)
     do {
@@ -19,10 +45,16 @@ public class BoardRendererModule: Module {
     return dir
   }()
 
-  // Lazy-initialized once per module lifetime (i.e. once per app launch).
-  // Accessing it from renderHoldsOverlay triggers the prune on first call.
-  private lazy var pruneOnce: Void = {
-    pruneCacheIfNeeded(maxBytes: BoardRendererModule.cacheCapBytes)
+  private var cacheDir: URL { BoardRendererModule.cacheDir }
+
+  // Initialized once per process (i.e. once per app launch), thread-safe for
+  // the same reason as `cacheDir`. Accessing it from renderHoldsOverlay
+  // triggers the prune on the first call. It reads `cacheDir` inside its own
+  // initializer; Swift initializes each static lazily and under its own lock,
+  // so that nested first access is fine — keep it that way (never touch
+  // `pruneOnce` from `cacheDir`'s initializer, which would deadlock).
+  private static let pruneOnce: Void = {
+    pruneCacheIfNeeded(at: cacheDir, maxBytes: cacheCapBytes)
   }()
 
   /// `Library/Caches` is reclaimable: iOS can delete our cache directory at any
@@ -56,7 +88,7 @@ public class BoardRendererModule: Module {
     }
   }
 
-  private func pruneCacheIfNeeded(maxBytes: Int) {
+  private static func pruneCacheIfNeeded(at cacheDir: URL, maxBytes: Int) {
     // Sort by modificationDate (not contentAccessDate) because that's what
     // we can reliably bump on a cache hit via setAttributes(.modificationDate:).
     // contentAccessDate is read-only via URLResourceKey on most volumes, so
@@ -127,7 +159,7 @@ public class BoardRendererModule: Module {
   }
 
   private func renderOverlayOnce(configJson: String, cacheKey: String) throws -> String {
-    _ = self.pruneOnce
+    _ = BoardRendererModule.pruneOnce
     let outputUrl = self.cacheDir.appendingPathComponent("\(cacheKey).png")
 
     if let attributes = try? FileManager.default.attributesOfItem(atPath: outputUrl.path),
@@ -221,6 +253,13 @@ public class BoardRendererModule: Module {
   public func definition() -> ModuleDefinition {
     Name("BoardRenderer")
 
+    // Read by the JS render scheduler (`getNativeRenderConcurrency`) to size its
+    // dispatch window. Absent on binaries that still render on the shared
+    // serial queue, where the scheduler keeps its one-at-a-time default.
+    Constants([
+      "renderConcurrency": BoardRendererModule.renderConcurrency
+    ])
+
     // Renders just the climb's hold overlay — a transparent-background PNG
     // containing only the hold markers. The RN component stacks bundled
     // board background images underneath this overlay, mirroring the web
@@ -231,6 +270,7 @@ public class BoardRendererModule: Module {
       (configJson: String, cacheKey: String) throws -> String in
       try self.renderOverlay(configJson: configJson, cacheKey: cacheKey)
     }
+    .runOnQueue(BoardRendererModule.renderQueue)
 
     // Same renderer as renderHoldsOverlay, but the method's presence is a
     // native capability signal for marker shape, brush, and size overrides.
@@ -238,5 +278,6 @@ public class BoardRendererModule: Module {
       (configJson: String, cacheKey: String) throws -> String in
       try self.renderOverlay(configJson: configJson, cacheKey: cacheKey)
     }
+    .runOnQueue(BoardRendererModule.renderQueue)
   }
 }

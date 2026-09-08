@@ -5,8 +5,26 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
 import java.nio.ByteBuffer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 class BoardRendererModule : Module() {
+    /**
+     * Renders run on this scope, not on expo-modules-core's default
+     * `AsyncFunction` queue. That default is ONE `HandlerThread` shared by every
+     * Expo module (`expo.modules.AsyncFunctionQueue`), so a play-board render
+     * used to wait behind every list thumbnail already in line and behind any
+     * other module's pending call; a throttled CPU stretched that line to
+     * seconds (issue #5187). `Dispatchers.Default` is the CPU-bound pool, which
+     * is what a raster + PNG encode is. The JS render scheduler bounds how many
+     * renders it sends at once (`renderConcurrency`), so this never means "every
+     * mounted row at once". Cancelled with the module so a torn-down React
+     * context does not keep rendering into a dead cache dir.
+     */
+    private val renderScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     private val cacheDir: File by lazy {
         val reactCacheDir = appContext.reactContext?.cacheDir
             ?: throw IllegalStateException("BoardRenderer: reactContext.cacheDir unavailable")
@@ -152,22 +170,40 @@ class BoardRendererModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("BoardRenderer")
 
+        // Read by the JS render scheduler (`getNativeRenderConcurrency`) to size
+        // its dispatch window. Absent on binaries that still render on the shared
+        // serial queue, where the scheduler keeps its one-at-a-time default.
+        Constants(
+            "renderConcurrency" to RENDER_CONCURRENCY,
+        )
+
+        OnDestroy {
+            renderScope.cancel()
+        }
+
         // Renders just the climb's hold overlay — a transparent-background
         // PNG containing only the hold markers. The RN component stacks
         // bundled board backgrounds underneath this overlay, so backgrounds
         // aren't passed in here anymore.
         AsyncFunction("renderHoldsOverlay") { configJson: String, cacheKey: String ->
             renderOverlay(configJson, cacheKey)
-        }
+        }.runOnQueue(renderScope)
 
         // Same renderer as renderHoldsOverlay, but the method's presence is a
         // native capability signal for marker shape, brush, and size overrides.
         AsyncFunction("renderHoldsOverlayWithMarkers") { configJson: String, cacheKey: String ->
             renderOverlay(configJson, cacheKey)
-        }
+        }.runOnQueue(renderScope)
     }
 
     private companion object {
+        /**
+         * How many renders the JS scheduler may keep inside this module at once.
+         * Two: the current play board plus one neighbour or thumbnail. Matches
+         * the iOS module.
+         */
+        const val RENDER_CONCURRENCY = 2
+
         // Cap the on-disk PNG cache so heavy users don't accumulate hundreds
         // of MB of stale renders. The cache lives in context.cacheDir, which
         // Android may also reclaim on its own under storage pressure — this
