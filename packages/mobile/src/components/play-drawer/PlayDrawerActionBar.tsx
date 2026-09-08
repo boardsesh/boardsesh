@@ -154,13 +154,17 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   // to the old connected/not-connected split.
   const resolvedLabelKind = lightbulbLabelKind ?? (lightbulbConnected ? 'disconnect' : 'connect');
   const lightbulbLabel =
-    resolvedLabelKind === 'relay'
-      ? tSettings('ble.relayToWall')
-      : resolvedLabelKind === 'peerDriving'
-        ? tSettings('ble.peerDrivingBoard')
-        : resolvedLabelKind === 'disconnect'
-          ? tSettings('ble.turnOff')
-          : tSettings('ble.connectBoard');
+    resolvedLabelKind === 'releaseWall'
+      ? tSettings('ble.releaseWall')
+      : resolvedLabelKind === 'takeWall'
+        ? tSettings('ble.takeWall')
+        : resolvedLabelKind === 'relay'
+          ? tSettings('ble.relayToWall')
+          : resolvedLabelKind === 'peerDriving'
+            ? tSettings('ble.peerDrivingBoard')
+            : resolvedLabelKind === 'disconnect'
+              ? tSettings('ble.turnOff')
+              : tSettings('ble.connectBoard');
   const isAnonymous = viewer === 'anonymous';
   // A signed-out reader has no queue to commit into and no wall to take, so the
   // suppression lives here with the rest of the `viewer` rules rather than only

@@ -58,10 +58,13 @@ import { useSetting } from '../settings';
 import { AutoDisconnectController } from '../lib/ble/auto-disconnect-controller';
 import { createBleWriteActivityStore } from '../lib/ble/write-activity-store';
 import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
+import { useLocalBluetoothHolder } from './use-local-bluetooth-holder';
 import { SHEET_SETTLE_MS } from './sheet-presentation-provider';
 
 type BluetoothContextValue = {
   isConnected: boolean;
+  /** Account observed holding this board during our BLE connection, scoped to the session. */
+  lastLocalHolderUserId: string | null;
   loading: boolean;
   connect: (
     initialFrames?: string,
@@ -783,7 +786,7 @@ export function BluetoothProvider({
     reportDisconnectForBoard,
     restampBoardMembershipByUuid,
   } = useBoardPresenceControls();
-  const { currentClimb: wallCurrentClimb, lastConnectionSeq } = useBoardPresenceCurrent();
+  const { currentClimb: wallCurrentClimb, holder, lastConnectionSeq } = useBoardPresenceCurrent();
   const lastConnectionSeqRef = useRef(lastConnectionSeq);
   lastConnectionSeqRef.current = lastConnectionSeq;
   // Set by VirtualWallHolderWatch, which mounts only on a wall with no light kit
@@ -1315,6 +1318,12 @@ export function BluetoothProvider({
     writeActivityStore,
   });
   bleConnectedRef.current = isConnected;
+  const lastLocalHolderUserId = useLocalBluetoothHolder({
+    boardId: presenceBoardId,
+    sessionId,
+    holderUserId: holder?.userId ?? null,
+    isConnected,
+  });
 
   // Every successful board write is activity for the auto-disconnect deadline,
   // no matter which surface wrote (queue auto-sender, mirror toggle, playback
@@ -2134,6 +2143,7 @@ export function BluetoothProvider({
   const value = useMemo<BluetoothContextValue>(
     () => ({
       isConnected,
+      lastLocalHolderUserId,
       loading,
       connect,
       disconnect: wrappedDisconnect,
@@ -2166,6 +2176,7 @@ export function BluetoothProvider({
     }),
     [
       isConnected,
+      lastLocalHolderUserId,
       loading,
       connect,
       wrappedDisconnect,

@@ -328,6 +328,8 @@ describe('a wall with no LED light kit', () => {
     // Nothing to connect to — the tap takes the wall.
     expect(
       derivePlayDrawerLightbulbPressAction({
+        holderIsAuthoritative: false,
+        canRelay: false,
         hasBluetooth: true,
         isBluetoothConnected: false,
         isBluetoothLoading: false,
@@ -339,6 +341,8 @@ describe('a wall with no LED light kit', () => {
     // Already holding it — the tap hands it back.
     expect(
       derivePlayDrawerLightbulbPressAction({
+        holderIsAuthoritative: false,
+        canRelay: false,
         hasBluetooth: true,
         isBluetoothConnected: false,
         isBluetoothLoading: false,
@@ -353,6 +357,8 @@ describe('a wall with no LED light kit', () => {
       for (const isBluetoothLoading of [false, true]) {
         expect(
           derivePlayDrawerLightbulbPressAction({
+            holderIsAuthoritative: false,
+            canRelay: false,
             hasBluetooth: true,
             isBluetoothConnected: false,
             isBluetoothLoading,
@@ -372,6 +378,8 @@ describe('a wall with no LED light kit', () => {
       for (const wallHeld of [false, true]) {
         expect(
           derivePlayDrawerLightbulbPressAction({
+            holderIsAuthoritative: false,
+            canRelay: false,
             hasBluetooth: true,
             isBluetoothConnected: true,
             isBluetoothLoading: false,
@@ -386,6 +394,8 @@ describe('a wall with no LED light kit', () => {
   it('keeps the pre-existing behaviour when the ledless inputs are omitted', () => {
     expect(
       derivePlayDrawerLightbulbPressAction({
+        holderIsAuthoritative: false,
+        canRelay: false,
         hasBluetooth: true,
         isBluetoothConnected: false,
         isBluetoothLoading: false,

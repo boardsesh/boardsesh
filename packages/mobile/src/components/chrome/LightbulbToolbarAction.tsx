@@ -24,7 +24,7 @@ export function LightbulbToolbarAction() {
   const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { open: openControls } = useBleControlSheet();
-  const { bluetooth, lit, localConnected, ledless, wallHeldLocally, onPress, onLongPress, pressAction, holderIsAuthoritative } =
+  const { bluetooth, lit, localConnected, onPress, onLongPress, pressAction, holderIsAuthoritative } =
     useLightbulbControl({ onOpenControls: openControls });
   const labelKind = getBleLightbulbLabelKind(pressAction, holderIsAuthoritative);
 
@@ -38,12 +38,17 @@ export function LightbulbToolbarAction() {
   // On a wall with no light kit there is no Bluetooth link to describe, so the
   // label names the two states that DO exist there: holding the wall or not.
   let accessibilityLabel: string;
-  if (ledless) {
-    accessibilityLabel = wallHeldLocally ? tSettings('ble.releaseWall') : tSettings('ble.takeWall');
+  if (labelKind === 'releaseWall') {
+    accessibilityLabel = tSettings('ble.releaseWall');
+  } else if (labelKind === 'takeWall') {
+    accessibilityLabel = tSettings('ble.takeWall');
+  } else if (labelKind === 'relay') {
+    accessibilityLabel = tSettings('ble.relayToWall');
   } else if (labelKind === 'peerDriving') {
     accessibilityLabel = tSettings('ble.peerDrivingBoard');
   } else {
-    accessibilityLabel = localConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard');
+    accessibilityLabel =
+      labelKind === 'disconnect' ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard');
   }
 
   return (

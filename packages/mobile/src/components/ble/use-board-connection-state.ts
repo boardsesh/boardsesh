@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useRef } from 'react';
+import { useContext, useMemo } from 'react';
 import { BoardPresenceCurrentContext } from '@boardsesh/board-presence-react';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
@@ -111,39 +111,11 @@ export function useBoardConnectionState(): BoardConnectionState {
 
   // Only heldByPeer has a named "other" driver worth surfacing.
   const holderDisplayName = inAppBoardConnection === 'heldByPeer' ? (holder?.displayName ?? null) : null;
-  // While THIS device holds the link, board presence names US the holder.
-  // Remember which userId that was.
-  const selfHeldUserIdRef = useRef<string | null>(null);
-  // Forget the remembered self-hold when the board binding or the session changes. Without this the
-  // memory outlives what it describes: after an account switch that doesn't
-  // remount the tree, the previous account rejoining as a genuine PEER would
-  // match its own remembered id and be read as our stale self — falling back to
-  // the failed connect this PR removes (claude-review, #5123).
-  useEffect(() => {
-    selfHeldUserIdRef.current = null;
-  }, [boardId, sessionId]);
-
-  // Declared AFTER the reset on purpose: effects run in declaration order, so on
-  // mount the reset lands first and this recorder gets the last word.
-  useEffect(() => {
-    if (localConnected && holderUserId != null) selfHeldUserIdRef.current = holderUserId;
-  }, [localConnected, holderUserId]);
-
-  // `sessionHolderPresent` is the authoritative half of heldByPeer; `&&
-  // !localConnected` because my own hold outranks it (connectedByMe wins the
-  // ladder, and the holder can be me).
-  //
-  // ...but a CLEARED local link does not clear the holder synchronously: the
-  // release is a round-trip behind, and when the link DROPPED rather than being
-  // handed over it may never land at all. Reading our own stale hold as "a peer
-  // is driving" suppresses the very connect that would clear it, so the bulb
-  // could stop reconnecting entirely (Fable + claude-review, PR #5123).
-  //
-  // A second device on the SAME ACCOUNT is indistinguishable from that stale
-  // self by userId, so it lands here too and falls back to the plain connect.
-  // Deliberate, and the safe way round: failing to relay costs one "Connection
-  // failed", while failing to connect strands the climber off the board.
-  const holderIsStaleSelf = !localConnected && holderUserId != null && holderUserId === selfHeldUserIdRef.current;
+  // The provider remembers local ownership even when no lightbulb is mounted.
+  // A delayed release must not turn a reconnect into a relay to our own dead link.
+  // Presence identifies accounts, not devices, so a second device on the same
+  // account can conservatively fall back to connecting after a local hold.
+  const holderIsStaleSelf = holderUserId !== null && holderUserId === bluetooth?.lastLocalHolderUserId;
   const holderIsAuthoritative = sessionHolderPresent && !localConnected && !holderIsStaleSelf;
 
   return useMemo(

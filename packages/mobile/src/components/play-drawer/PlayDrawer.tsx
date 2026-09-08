@@ -548,8 +548,8 @@ export function PlayDrawer({
   // Lit visual, pending pulse, and the connect/disconnect tap — shared with the
   // toolbar bulb via `useLightbulbControl`, so both light identically (this
   // device, or a session peer driving the wall) and run one connect path. The
-  // press action keys on THIS device's BLE; `lightbulbConnected` (below) carries
-  // that to the action bar for the accessibility label.
+  // press action also accounts for a session peer holding the wall; the label
+  // follows that action rather than the local BLE connection alone.
   //
   // While a session peer holds the board, the tap RELAYS instead: an Aurora /
   // MoonBoard box takes one central at a time, so a connect from here could only
@@ -566,11 +566,11 @@ export function PlayDrawer({
   // Only a PINNED PREVIEW is relayable. With none, the displayed climb is
   // already the queue's current one, so there is nothing to put up and the tap
   // resolves to 'noop' — reported honestly rather than claiming a 'relay' that
-  // could only early-return. `boardMismatch` is excluded for the same reason the
+  // could only early-return. `showBoardMismatch` is excluded for the same reason the
   // commit bar excludes it (resolveCommitBarModel): committing a climb from a
   // board the climber isn't on must not reach the wall. That was previously safe
   // only because the SwitchBoardOverlay scrim happens to cover the bulb.
-  const canRelayToHolder = isPreview && !boardMismatch;
+  const canRelayToHolder = isPreview && !showBoardMismatch;
   const {
     lit: lightbulbActive,
     localConnected: bluetoothConnected,
@@ -578,18 +578,8 @@ export function PlayDrawer({
     onPress: handleLightbulb,
     pressAction: lightbulbPressAction,
     holderIsAuthoritative: lightbulbHolderIsAuthoritative,
-    ledless: boardIsLedless,
     wallHeldLocally,
   } = useLightbulbControl({ onRelayToHolder: handleRelayToHolder, canRelay: canRelayToHolder });
-  const { t: tSettings } = useTranslation('settings');
-  // On a wall with no light kit the bulb takes and releases the wall, so the
-  // screen-reader label must say that rather than "Connect board" / "Turn off",
-  // and "selected" has to follow the virtual hold — there is no BLE link to read.
-  const lightbulbAccessibilityLabel = boardIsLedless
-    ? wallHeldLocally
-      ? tSettings('ble.releaseWall')
-      : tSettings('ble.takeWall')
-    : undefined;
   const lightbulbLabelKind = getBleLightbulbLabelKind(lightbulbPressAction, lightbulbHolderIsAuthoritative);
   const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
   const navigationState = useMemo(
@@ -990,13 +980,12 @@ export function PlayDrawer({
   // it makes the climb the session's current one, and the holder's auto-sender
   // writes whatever is current, so the climb lights on their link.
   //
-  // With no preview pinned the displayed climb is already the current one, so
-  // the holder is already showing it — there is nothing to send, and the tap
-  // settles rather than firing a connect the board would refuse.
+  // With no preview pinned, leave the session current climb alone. This is not
+  // a remote re-light: recovering a failed holder write needs a reassert path.
   const commitDisplayedToWall = useCallback(() => {
-    if (!drawerPreviewItem || boardMismatch) return;
+    if (!drawerPreviewItem || showBoardMismatch) return;
     handleSetActive();
-  }, [drawerPreviewItem, boardMismatch, handleSetActive]);
+  }, [drawerPreviewItem, showBoardMismatch, handleSetActive]);
 
   useEffect(() => {
     relayToHolderRef.current = commitDisplayedToWall;
@@ -1460,7 +1449,6 @@ export function PlayDrawer({
                             lightbulbActive={lightbulbActive}
                             lightbulbConnected={bluetoothConnected || wallHeldLocally}
                             lightbulbPending={lightbulbPending}
-                            lightbulbAccessibilityLabel={lightbulbAccessibilityLabel}
                             autoDisconnectWarning={bluetooth?.autoDisconnectWarning ?? false}
                             lightbulbLongPressEnabled={bluetoothConnected}
                             // Whether a Bluetooth transport exists at all, and only
