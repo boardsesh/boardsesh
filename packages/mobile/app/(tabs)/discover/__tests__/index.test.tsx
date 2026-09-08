@@ -103,7 +103,9 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({ router: { push: vi.fn() }, useFocusEffect: () => undefined }));
-vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
+}));
 
 // Reanimated primitives the hub touches → inert stubs. Animated.ScrollView just
 // renders its children so the in-body sections (and our error block) are in DOM.
@@ -128,7 +130,11 @@ vi.mock('react-native', () => ({
     onPress?: () => void;
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
+  StyleSheet: {
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+    absoluteFill: {},
+  },
   Platform: { OS: 'ios' },
 }));
 
@@ -147,8 +153,12 @@ vi.mock('../../../../src/providers/auth-provider', () => ({
 vi.mock('../../../../src/providers/toast-provider', () => ({
   useToast: () => toast,
 }));
-vi.mock('../../../../src/lib/graphql/use-auth-token', () => ({ useAuthToken: () => ({ data: 'token' }) }));
-vi.mock('../../../../src/lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: 'me' } }) }));
+vi.mock('../../../../src/lib/graphql/use-auth-token', () => ({
+  useAuthToken: () => ({ data: 'token' }),
+}));
+vi.mock('../../../../src/lib/graphql/hooks', () => ({
+  useProfile: () => ({ data: { id: 'me' } }),
+}));
 vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: { boardType: 'kilter', layoutId: 1, sizeId: 10, angle: 40 } }),
 }));
@@ -232,8 +242,14 @@ vi.mock('../../../../src/components/SectionHeader', () => ({
 }));
 // The form sheet exposes a submit button driving onSubmit with fixed form
 // values, so the test can trigger the create flow without the real sheet UI.
-const FORM_VALUES = { name: 'Crimps', description: '', color: undefined, icon: undefined, isPublic: false };
-vi.mock('../../../../src/components/playlist', () => ({
+const FORM_VALUES = {
+  name: 'Crimps',
+  description: '',
+  color: undefined,
+  icon: undefined,
+  isPublic: false,
+};
+vi.mock('../../../../src/components/playlist/PlaylistCard', () => ({
   PlaylistCard: ({
     name,
     metaLabel,
@@ -251,6 +267,8 @@ vi.mock('../../../../src/components/playlist', () => ({
       createElement('span', null, metaLabel ? `${name} ${metaLabel}` : name),
       onTogglePin ? createElement('button', { 'aria-label': `pin-${name}`, onClick: onTogglePin }, 'pin') : null,
     ),
+}));
+vi.mock('../../../../src/components/playlist', () => ({
   PlaylistFormSheet: ({
     visible,
     submitError,
@@ -275,6 +293,23 @@ vi.mock('../../../../src/components/playlist', () => ({
 vi.mock('../../../../src/components/HorizontalScrollSection', () => ({
   HorizontalScrollSection: ({ children, title }: { children?: ReactNode; title: string }) =>
     createElement('section', { 'data-scroll-section': title }, createElement('h2', null, title), children),
+}));
+vi.mock('../../../../src/components/playlist/PlaylistShelf', () => ({
+  PlaylistShelf: ({
+    items,
+    renderItem,
+    title,
+  }: {
+    items: PlaylistItem[];
+    renderItem: (entry: { item: PlaylistItem; index: number }) => ReactNode;
+    title: string;
+  }) =>
+    createElement(
+      'section',
+      { 'data-scroll-section': title },
+      createElement('h2', null, title),
+      items.map((item, index) => createElement('div', { key: item.uuid }, renderItem({ item, index }))),
+    ),
 }));
 // The chrome exposes the create button so the test can open + submit the flow.
 vi.mock('../../../../src/components/chrome', () => ({
@@ -382,7 +417,13 @@ describe('DiscoverLibrary error handling', () => {
 
   it('renders for-you smart cards and community playlists', () => {
     communityHook.popular = [
-      { uuid: 'community', name: 'Setter picks', climbCount: 7, creatorId: 'creator-2', creatorName: 'Jess' },
+      {
+        uuid: 'community',
+        name: 'Setter picks',
+        climbCount: 7,
+        creatorId: 'creator-2',
+        creatorName: 'Jess',
+      },
     ];
 
     const { getByText } = renderHub();
@@ -434,7 +475,13 @@ describe('DiscoverLibrary error handling', () => {
       { uuid: 'owned', name: 'Project drawer', climbCount: 5, isPinnedByMe: false },
     ];
     communityHook.popular = [
-      { uuid: 'community', name: 'Setter picks', climbCount: 7, creatorId: 'creator-2', creatorName: 'Jess' },
+      {
+        uuid: 'community',
+        name: 'Setter picks',
+        climbCount: 7,
+        creatorId: 'creator-2',
+        creatorName: 'Jess',
+      },
     ];
 
     const { container, getByText } = renderHub();
@@ -457,7 +504,13 @@ describe('DiscoverLibrary error handling', () => {
   it('renders for-you smart cards when generated discover playlists are empty', () => {
     userHook.playlists = [{ uuid: 'owned', name: 'Project drawer', climbCount: 5, isPinnedByMe: false }];
     communityHook.popular = [
-      { uuid: 'community', name: 'Setter picks', climbCount: 7, creatorId: 'creator-2', creatorName: 'Jess' },
+      {
+        uuid: 'community',
+        name: 'Setter picks',
+        climbCount: 7,
+        creatorId: 'creator-2',
+        creatorName: 'Jess',
+      },
     ];
 
     const { getByText } = renderHub();
@@ -481,7 +534,13 @@ describe('DiscoverLibrary error handling', () => {
 
   it('shows pin controls on community playlist cards', async () => {
     communityHook.popular = [
-      { uuid: 'community', name: 'Setter picks', climbCount: 7, creatorId: 'creator-2', creatorName: 'Jess' },
+      {
+        uuid: 'community',
+        name: 'Setter picks',
+        climbCount: 7,
+        creatorId: 'creator-2',
+        creatorName: 'Jess',
+      },
     ];
     pinPlaylist.mockResolvedValue(true);
 
@@ -560,6 +619,20 @@ describe('DiscoverLibrary error handling', () => {
     expect(queryByText('Pinned 5')).toBeNull();
   });
 
+  it('deduplicates appended owned pages while excluding pinned playlists from the shelf', () => {
+    pinnedHook.pinned = [{ uuid: 'pinned', name: 'Pinned list', climbCount: 2, isPinnedByMe: true }];
+    userHook.playlists = [
+      { uuid: 'pinned', name: 'Pinned list', climbCount: 2, isPinnedByMe: true },
+      { uuid: 'owned', name: 'Owned list', climbCount: 5 },
+      { uuid: 'owned', name: 'Owned list', climbCount: 5 },
+      { uuid: 'later', name: 'Later page', climbCount: 1 },
+    ];
+    const { container } = renderHub();
+    const shelf = container.querySelector('[data-scroll-section="library.allPlaylists.title"]');
+    expect(shelf?.querySelectorAll('[data-card="Owned list"]')).toHaveLength(1);
+    expect(shelf?.querySelector('[data-card="Pinned list"]')).toBeNull();
+    expect(shelf?.querySelector('[data-card="Later page"]')).not.toBeNull();
+  });
   it('caps the pinned grid at eight playlists', () => {
     pinnedHook.pinned = Array.from({ length: 9 }, (_, index) => ({
       uuid: `pinned-${index}`,
