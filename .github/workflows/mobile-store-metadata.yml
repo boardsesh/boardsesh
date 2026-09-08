@@ -26,6 +26,10 @@ name: Mobile Store Metadata
 # ios metadata lane also skips cleanly when there's no editable version (see the
 # Fastfile), so the iOS job no longer burns the budget either.
 #
+# Also dispatched with platform: ios by mobile-store-draft.yml right after it
+# creates the App Store version for a release, because the automatic run below
+# skips iOS whenever no version is editable yet (see the ios metadata lane).
+#
 # Runs automatically when the committed listing assets change on main
 # (fastlane/metadata/**, fastlane/Fastfile, or app-stores/google/screenshots/**),
 # pushing to both stores. The Android screenshot set is refreshed by
