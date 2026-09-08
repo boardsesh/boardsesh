@@ -64,6 +64,7 @@ import { useGradeFormat } from '../../../src/hooks/use-grade-format';
 import { useLastUsedGrade } from '../../../src/hooks/use-last-used-grade';
 import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-list-playlist-memberships';
 import { useClimbListFavorites } from '../../../src/hooks/use-climb-list-favorites';
+import { useScreenshotClimbStatsPrefetch } from '../../../src/hooks/use-screenshot-climb-stats-prefetch';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { isOfflineSearchSupported } from '../../../src/db/queries/search-climbs-local';
@@ -755,6 +756,11 @@ function ClimbListInner() {
   // once per board+angle and write it into `favoritesStore`, which each row's
   // heart subscribes to per-uuid.
   useClimbListFavorites({ boardName, angle, climbUuids: visibleClimbUuids });
+
+  // Screenshot mode only (dead-stripped otherwise): ask for the whole loaded
+  // page's canonical stats in one batch, so a recorded capture covers every
+  // climb the replay can mount rather than only the rows FlashList had drawn.
+  useScreenshotClimbStatsPrefetch({ boardName, layoutId, angle, climbUuids: visibleClimbUuids });
 
   const handleRefresh = useCallback(() => {
     isLoadingMoreRef.current = false;
