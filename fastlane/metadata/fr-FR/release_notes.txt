@@ -1,19 +1,18 @@
-Nouveautés de la version 2.4 :
+Nouveautés de la version 2.5 :
 
-AURA : UN NOUVEAU LOOK POUR TA BOARD
+PRENDS LE MUR, MÊME SANS LED
 
-Les prises allumées brillent maintenant dans leur propre silhouette, décalquée sur le visuel de la board, pendant que le reste du mur s'assombrit. Fini les cercles de couleur posés sur la photo : le bloc se lit depuis l'autre bout de la salle. Il s'appelle Aura. C'est le nouveau look par défaut sur toutes les boards, Woods compris, et sur les Kilter Homewall la lumière sort de la plaque LED qui entoure chaque prise.
+Tu grimpes sur une board sans kit LED ? Prends le mur : toute la session suit le bloc que tu mets, et l'écran de la salle aussi. Désactive l'Éclairage dans les réglages de la board : le tour de rôle continue, ton angle reste en place, et les sessions sur un mur nommé se loguent aussi depuis la montre.
 
-À toi de le régler dans Profil > Plus > Look de la board. Pars d'un préréglage (Aura, Aura discrète, Aura intense, Contraste max) ou reprends la main sur tout : lueur, voile, marques, vignettes de liste, glyphes de rôle et palettes daltonisme, qui allument aussi ta board dans ces couleurs, pas seulement l'écran. Tu préfères les cercles d'avant ? Mets Rendu sur Classique.
+MIROIR DEPUIS L'ÉCRAN VERROUILLÉ
 
-MOONBOARD
-
-- Tu utilises le contrôleur LED open source à base d'Arduino pour MoonBoard ? Active « Allumer la prise du dessus » pour ajouter une LED plus tamisée au-dessus de chaque prise de départ ou de main allumée.
+Quand ton téléphone pilote la board, l'activité en direct et la Dynamic Island ont un bouton Miroir à côté de Précédent, Suivant et l'ampoule. L'app, ton crew, les vignettes et les LED suivent le bloc en miroir, et il l'est encore quand tu ouvres l'app.
 
 CORRIGÉ
 
-- Se connecter à une board ne l'éteint plus : ce qui est allumé sur le mur le reste jusqu'à ce que tu choisisses un bloc.
-- Les photos de board et les superpositions de prises s'affichent sans pause supplémentaire.
-- Un bloc Woods que l'app ne peut pas allumer exactement le dit maintenant, au lieu d'allumer les mauvaises prises.
+- Ta board reste éteinte tant que tu ne demandes rien. Un téléphone qui repasse à portée des heures ou des jours plus tard ne rallume plus ton dernier bloc. L'ampoule, le widget et les reconnexions en plein bloc l'allument toujours instantanément.
+- L'onglet Blocs et sa recherche ne restent plus figés après la fermeture d'une playlist par-dessus en pleine session. Plus besoin de forcer la fermeture de l'app pour retrouver la recherche.
+- Les blocs téléchargés restent à jour après une mise à jour de l'app.
+- Fermer la recherche de blocs ne fait plus surgir une feuille d'aperçu.
 
 Gratuit, sans pub, open source.

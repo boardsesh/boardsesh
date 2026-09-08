@@ -1,5 +1,5 @@
-Neu in 2.4:
-- Aura, der neue Look für dein Board: beleuchtete Griffe leuchten in ihrer eigenen Silhouette, die Wand tritt zurück. Neuer Standard auf jedem Board, Woods inklusive.
-- Stell ihn dir ein unter Profil > Mehr > Board-Look: Vorgaben, Leuchten, Schleier, Markierungen, Farbsehschwäche-Paletten. Lieber Kreise? Darstellung auf Klassisch.
-- MoonBoard: mit dem quelloffenen Arduino-LED-Controller „Griff darüber beleuchten“ aktivieren.
-- Panels schließen zuverlässig.
+Neu in 2.5:
+- Übernimm die Wand an einem Board ohne LEDs: Crew und Hallen-Bildschirm folgen dem Boulder, den du zeigst. Schalt die Beleuchtung in den Board-Einstellungen aus; ihr wechselt euch weiter ab, dein Winkel bleibt.
+- Spiegle deinen Boulder direkt aus der Android-Benachrichtigung, während dein Handy das Board steuert; App, Crew und LEDs folgen.
+- Heruntergeladene Boulder bleiben nach einem App-Update aktuell.
+- Die Boulder-Suche schließt sich, ohne dass ein Vorschau-Sheet aufspringt.
