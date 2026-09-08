@@ -307,6 +307,10 @@ jobs:
     # tagged build before attaching it; keep this above that bound.
     timeout-minutes: 60
     environment: Production
+    # actions: write lets the last step dispatch mobile-store-metadata.yml.
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - name: Checkout repository
@@ -377,6 +381,21 @@ jobs:
 
       # Surface a best-effort failure loudly (continue-on-error keeps the job
       # green otherwise, which would hide a broken draft submission).
+      # deliver can only write listing text onto an EDITABLE App Store version,
+      # so the Mobile Store Metadata run that fired when the copy landed on main
+      # was a no-op whenever no version existed yet — the normal case, since the
+      # notes are written before the native change (runbook §1). The draft step
+      # above just created (or confirmed) that version, so push the text and
+      # What's New onto it now. A workflow_dispatch made with GITHUB_TOKEN does
+      # start a run; only push/pull_request events from the token are suppressed.
+      # Android needs nothing here: its What's New rides the AAB and its listing
+      # text is not version-bound.
+      - name: Push listing text and What's New onto the drafted version
+        if: steps.draft.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run mobile-store-metadata.yml --ref main -f platform=ios
+
       - name: Warn if the App Store draft step failed
         if: steps.draft.outcome == 'failure'
         run: echo "::warning::App Store draft submission failed (see the step above). Best-effort — re-run after resolving, or prepare the draft manually in App Store Connect."

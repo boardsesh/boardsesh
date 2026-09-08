@@ -61,15 +61,21 @@ fingerprint in an immutable
 `fingerprint-<platform>-<hash>` tag prevents duplicate native builds when a later
 `main` push is JS-only.
 
-## 3. Update listing material when needed
+## 3. Listing material
 
-Run these from the Actions tab only when the corresponding material changed:
+Listing text is automatic. **Mobile Store Metadata** (`mobile-store-metadata.yml`)
+runs on every `main` push that touches `fastlane/metadata/**`, the Fastfile, or
+the committed Play screenshots, and pushes listing text plus the Play icon and
+feature graphic. The iOS half can only write onto an *editable* App Store
+version, so when the copy lands before a version exists (the normal order, §1)
+that run skips iOS; `mobile-store-draft.yml` dispatches it again with
+`platform: ios` right after it creates the version (§4), so the text and What's
+New land without anyone running it by hand. Dispatch it manually only to re-push
+unchanged copy.
 
-- **Mobile Store Metadata** (`mobile-store-metadata.yml`, `platform: all`) pushes
-  listing text plus the Play icon and feature graphic.
-- **Mobile Screenshots** (`mobile-screenshots-ios.yml` and
-  `mobile-screenshots-android.yml`, `upload: true`) captures and uploads each
-  platform independently.
+Screenshots stay on demand: **Mobile Screenshots** (`mobile-screenshots-ios.yml`
+and `mobile-screenshots-android.yml`, `upload: true`) captures and uploads each
+platform independently.
 
 The iOS `release_notes.txt` is pushed by Mobile Store Metadata. Android release
 notes ship with the AAB from each
@@ -90,8 +96,10 @@ wrong build.
 
 The iOS lane waits up to 45 minutes for App Store Connect to finish processing
 the tagged build, then attaches it to the editable version (creating the version
-first if needed). The Android lane promotes the internal-track release carrying
-the tagged versionCode to a production release in draft status.
+first if needed) and dispatches Mobile Store Metadata for iOS so the listing
+text and What's New land on that version (§3). The Android lane promotes the
+internal-track release carrying the tagged versionCode to a production release
+in draft status.
 
 Review submission and rollout remain manual:
 
@@ -110,7 +118,7 @@ future fingerprint.
 1. Set the release version and translate both stores' release notes on `main`.
 2. Land the focused native change; wait for TestFlight and Play internal builds.
 3. Complete native QA against the exact uploaded candidates.
-4. Update metadata or screenshots only when they changed.
+4. Re-capture screenshots if they changed; listing text pushes itself.
 5. Verify the store drafts select the tagged builds, then submit both manually.
 6. After approval, confirm both immutable release anchors were created.
 

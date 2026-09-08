@@ -184,6 +184,21 @@ describe('native release workflow contracts', () => {
     expect(draft).toMatch(/^  ios:\n(?:.*\n){1,12}?\s+timeout-minutes: 60$/m);
   });
 
+  it('pushes listing text automatically, and again once the draft has a version to write onto', () => {
+    const metadata = workflow('mobile-store-metadata.yml');
+    const metadataTriggers = parse(metadata)['on'] as { push?: { branches: string[]; paths: string[] } };
+    expect(metadataTriggers.push?.branches).toEqual(['main']);
+    expect(metadataTriggers.push?.paths).toContain('fastlane/metadata/**');
+    // deliver skips iOS when no version is editable, so the draft workflow re-runs it for iOS
+    // right after creating the version — and only when that draft step actually succeeded.
+    expect(draft).toContain('gh workflow run mobile-store-metadata.yml --ref main -f platform=ios');
+    expect(draft).toMatch(
+      /if: steps\.draft\.outcome == 'success'\n\s+env:\n\s+GH_TOKEN: \$\{\{ github\.token \}\}\n\s+run: gh workflow run mobile-store-metadata\.yml/,
+    );
+    // GITHUB_TOKEN can only dispatch a workflow with actions: write on the job.
+    expect(draft).toMatch(/^  ios:\n(?:.*\n){1,20}?\s+permissions:\n\s+contents: read\n\s+actions: write$/m);
+  });
+
   it('keeps the established main anchor on Production', () => {
     const anchor = workflow('mobile-auto-version-bump.yml');
     expect(anchor).toContain('environment: Production');
