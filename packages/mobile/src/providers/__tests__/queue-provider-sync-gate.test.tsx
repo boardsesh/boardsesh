@@ -221,6 +221,7 @@ type Snapshot = {
   subscribeToPlaybackEvents: ReturnType<typeof useQueue>['subscribeToPlaybackEvents'];
   removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
+  dispatchWidgetMirror: ReturnType<typeof useQueue>['dispatchWidgetMirror'];
 };
 
 const user = (overrides: Partial<SessionUser> = {}): SessionUser => ({
@@ -387,6 +388,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       subscribeToPlaybackEvents: queue.subscribeToPlaybackEvents,
       removeFromQueue: queue.removeFromQueue,
       addToQueue: queue.addToQueue,
+      dispatchWidgetMirror: queue.dispatchWidgetMirror,
     });
   }, [
     queue.state,
@@ -394,6 +396,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.subscribeToPlaybackEvents,
     queue.removeFromQueue,
     queue.addToQueue,
+    queue.dispatchWidgetMirror,
     onSnapshot,
   ]);
   return null;
@@ -441,6 +444,56 @@ describe('QueueProvider queue sync gate', () => {
     graph.execute.mockResolvedValue(createJoinSessionResponse());
     http.request.mockReset();
     routeHttpRequest(queueStateResponse([]));
+  });
+
+  it('restores the full queue before acknowledging a receipt received before FullSync', async () => {
+    const snapshots: Snapshot[] = [];
+    const mirroredItem = makeQueueItem('native-current');
+    mirroredItem.climb.mirrored = true;
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([mirroredItem], mirroredItem, 100), {
+      onQueueStateCall: () => queueStateCalls++,
+    });
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(ws.getQueueUpdatesSink()).not.toBeNull());
+    let acknowledged = false;
+    await act(async () => {
+      acknowledged = await snapshots.at(-1)!.dispatchWidgetMirror({
+        kind: 'confirmed',
+        sessionId: 'session-1',
+        queueItemUuid: 'native-current',
+        mirrored: true,
+        sequence: 100,
+        stateHash: 'mirror-hash',
+      });
+    });
+    expect(acknowledged).toBe(true);
+    expect(queueStateCalls).toBe(1);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('native-current');
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).toBe(true);
+    expect(snapshots.at(-1)?.state.serverSequence).toBe(100);
+  });
+
+  it.each(['unavailable', 'older'] as const)('retains a receipt when reconciliation is %s', async (responseKind) => {
+    const snapshots: Snapshot[] = [];
+    routeHttpRequest(
+      responseKind === 'unavailable' ? { session: { queueState: null } } : queueStateResponse([], null, 98),
+    );
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(ws.getQueueUpdatesSink()).not.toBeNull());
+    let acknowledged = true;
+    await act(async () => {
+      acknowledged = await snapshots.at(-1)!.dispatchWidgetMirror({
+        kind: 'confirmed',
+        sessionId: 'session-1',
+        queueItemUuid: 'native-current',
+        mirrored: true,
+        sequence: 100,
+        stateHash: 'mirror-hash',
+      });
+    });
+    expect(acknowledged).toBe(false);
+    expect(snapshots.at(-1)?.state.serverSequence).not.toBe(100);
   });
 
   it('ignores an out-of-order stale event (no dispatch, no state change)', async () => {

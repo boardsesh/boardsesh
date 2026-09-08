@@ -18,15 +18,34 @@ enum WoodsBoardData {
 
     private static let ledMaps: [String: [Int: Int]] = decode(ledMapsJSON)
 
+    // Generated from the same row geometry used by JS's hold mirroring.
+    private static let rowLengths: [String: [Int]] = [
+        "8x10": [11, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 11, 11, 11],
+        "12x12": [17, 17, 17, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 17, 17, 17, 17, 16]
+    ]
+
     /// Woods size_id → dimension per WOODS_SIZES in
     /// packages/shared/board-config/src/woods-config.ts. Unknown sizes return
     /// nil so the caller can refuse the write instead of darkening the wall.
-    static func ledMap(forSizeId sizeId: Int) -> [Int: Int]? {
+    static func ledMap(forSizeId sizeId: Int, mirrored: Bool = false) -> [Int: Int]? {
+        let dimension: String
         switch sizeId {
-        case 1: return ledMaps["8x10"]
-        case 2: return ledMaps["12x12"]
+        case 1: dimension = "8x10"
+        case 2: dimension = "12x12"
         default: return nil
         }
+        guard let ledMap = ledMaps[dimension] else { return nil }
+        guard mirrored else { return ledMap }
+        guard let rows = rowLengths[dimension] else { return nil }
+        var reflected: [Int: Int] = [:]
+        var start = 0
+        for length in rows {
+            for column in 0..<length {
+                reflected[start + column] = ledMap[start + length - 1 - column]
+            }
+            start += length
+        }
+        return reflected
     }
 
     private static func decode(_ json: String) -> [String: [Int: Int]] {

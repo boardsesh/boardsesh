@@ -268,13 +268,26 @@ final class WoodsBoardBleManagerTests: XCTestCase {
         XCTAssertEqual(reassembled(peripheral), "28,4,237,2,341,3,!")
     }
 
-    func testMirroredItemSendsRawFrames() {
-        // Woods mirroring is JS-side geometry; the manager must not route a
-        // mirrored item through BoardBleEncoding.mirroredFrames (no Woods rows
-        // in BoardPlacementData — it would refuse every climb).
+    func testMirroredItemReflectsThePerSizeLedMap() {
+        // 12x12 row 0 has 17 holds: location 0 reflects to location 16.
         let peripheral = displayWoods(frames: "p0r4", mirrored: true)
-        XCTAssertEqual(reassembled(peripheral), "28,4,!")
+        XCTAssertEqual(reassembled(peripheral), "\(ledMap(2)[16]!),4,!")
         XCTAssertEqual(peripheral.writtenChunks.first?.type, .withResponse)
+    }
+
+    func testMirrored8x10ItemUsesItsOwnRowGeometry() {
+        // 8x10 row 0 has 11 holds; the next row has 21.
+        let peripheral = displayWoods(frames: "p0r4p11r2", sizeId: 1, mirrored: true)
+        XCTAssertEqual(reassembled(peripheral), "\(ledMap(1)[10]!),4,\(ledMap(1)[31]!),2,!")
+    }
+
+    func testReflectedLedMapsPreserveEveryLed() {
+        for sizeId in [1, 2] {
+            let original = ledMap(sizeId)
+            let reflected = WoodsBoardData.ledMap(forSizeId: sizeId, mirrored: true)!
+            XCTAssertEqual(Set(original.keys), Set(reflected.keys))
+            XCTAssertEqual(Set(original.values), Set(reflected.values))
+        }
     }
 
     func testEmptyFramesItemClearsWithTheWoodsTerminatorNotAnAuroraPacket() {

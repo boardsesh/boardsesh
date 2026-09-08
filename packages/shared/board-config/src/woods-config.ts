@@ -8,12 +8,13 @@
 // The on-screen hold geometry and board art come from the decompiled Woods app.
 import {
   WOODS_BOARD_SIZES,
+  WOODS_ROW_LENGTHS,
   WOODS_WIRE_ROLE,
   WOODS_HOLD_POSITIONS,
   type WoodsBoardSize,
 } from '@boardsesh/board-constants/woods';
 
-export { WOODS_BOARD_SIZES };
+export { WOODS_BOARD_SIZES, WOODS_ROW_LENGTHS };
 export type { WoodsBoardSize };
 
 // Woods supports 20–70° in 5° steps (Woods app API: angle 20–70 step 5).
@@ -81,13 +82,6 @@ export function encodeWoodsHoldsToFrames(holds: Array<{ type: string; baseHoldLo
 // `getHoldPositionFromRowColumn`). Totals: 8x10 = 485, 12x12 = 894 — matching the
 // LED maps. Narrower rows align with every-other column of the widest row, which
 // falls out of the edge-to-edge spread (e.g. an 11-hold row over a 21-hold row).
-
-const repeat = (count: number, value: number): number[] => Array.from({ length: count }, () => value);
-
-export const WOODS_ROW_LENGTHS: Record<WoodsBoardSize, number[]> = {
-  '8x10': [...repeat(1, 11), ...repeat(21, 21), ...repeat(3, 11)],
-  '12x12': [...repeat(3, 17), ...repeat(23, 33), ...repeat(3, 17), ...repeat(1, 17), ...repeat(1, 16)],
-};
 
 export type WoodsRowColumn = { row: number; column: number };
 

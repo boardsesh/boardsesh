@@ -1193,11 +1193,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // the plain-ASCII `led,role,…,!` format — BoardPlacementData has no
         // woods rows, so falling through to the Aurora path would refuse every
         // climb (and would let an empty-frames item write an *Aurora* clear
-        // packet to a Woods wall). Woods mirroring is JS-side geometry with no
-        // placement table here, and the JS send path dispatches raw frames for
-        // Woods too, so frames go out as-is.
+        // packet to a Woods wall). Reflect the per-size LED map for mirrored
+        // climbs using the same generated row geometry as the JS send path.
         if configuration.boardName == "woods" {
-            guard let ledMap = WoodsBoardData.ledMap(forSizeId: configuration.sizeId) else {
+            guard let ledMap = WoodsBoardData.ledMap(forSizeId: configuration.sizeId, mirrored: item.mirrored) else {
                 logger.error("No Woods LED table for size=\(configuration.sizeId, privacy: .public)")
                 completion?(false)
                 return

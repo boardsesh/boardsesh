@@ -276,6 +276,29 @@ describe('MIRROR_CLIMB', () => {
 });
 
 describe('DELTA_MIRROR_CURRENT_CLIMB', () => {
+  it('preserves a historical flip across optimistic navigation and its echo', () => {
+    const first = makeClimbQueueItem({ uuid: 'first' });
+    const next = makeClimbQueueItem({ uuid: 'next' });
+    let state = makeState({ queue: [first, next], currentClimbQueueItem: first });
+    state = queueReducer(state, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item: next, correlationId: 'nav-next' },
+    });
+    state = queueReducer(state, {
+      type: 'DELTA_MIRROR_CURRENT_CLIMB',
+      payload: { mirroredUuid: first.uuid, mirrored: true },
+    });
+    expect(state.currentClimbQueueItem?.uuid).toBe(next.uuid);
+    expect(state.currentClimbQueueItem?.climb.mirrored).not.toBe(true);
+    state = queueReducer(state, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item: next, isServerEvent: true, serverCorrelationId: 'nav-next' },
+    });
+    expect(state.queue[0].climb.mirrored).toBe(true);
+    state = queueReducer(state, { type: 'SET_CURRENT_CLIMB_QUEUE_ITEM', payload: state.queue[0] });
+    expect(state.currentClimbQueueItem?.climb.mirrored).toBe(true);
+  });
+
   it('applies mirrored state when mirroredUuid matches current climb', () => {
     const item = makeClimbQueueItem({ uuid: 'climb-1' });
     item.climb.mirrored = false;

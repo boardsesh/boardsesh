@@ -1510,10 +1510,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     if (event.sessionId !== sessionIdRef.current) return false;
     const gate = queueSyncGateRef.current;
     if (!gate) return false;
+    const reconcileReceipt = async () => {
+      const reconciled = await resyncQueueFromServerRef.current();
+      return reconciled && event.sessionId === sessionIdRef.current && (gate.getLastSequence() ?? -1) >= event.sequence;
+    };
+    // A receipt is a delta, not a full queue snapshot. On resume the gate can
+    // be empty while native navigation is several events ahead of JS.
+    if (gate.getLastSequence() === null) return reconcileReceipt();
     const envelope = { ...event, __typename: 'ClimbMirrored' as const };
     const decision = gate.evaluateIncoming(envelope);
     if (decision === 'ignore-stale') return true;
-    if (decision === 'resync-gap') return resyncQueueFromServerRef.current();
+    if (decision === 'resync-gap') return reconcileReceipt();
     gate.noteApplied(envelope);
     dispatch({
       type: 'DELTA_MIRROR_CURRENT_CLIMB',

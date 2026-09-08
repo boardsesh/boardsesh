@@ -47,11 +47,15 @@ Solo climbs and previews retain their local mirror controls.
 The backend publishes `ClimbMirrored` and includes orientation and queue-item UUID
 in APNs content. iOS persists a confirmation receipt until JS applies that sequence
 or a newer authoritative snapshot. Reopening the app replays the receipt through
-the queue sync gate. Native queue snapshots reject older sequences; a fresh socket
+the queue sync gate. If JS has no sequence baseline yet, it fetches the complete
+queue before acknowledging the receipt. Mirror deltas update their exact queue
+slot even when optimistic navigation already selected another climb. Native queue
+snapshots reject older sequences; a fresh socket
 subscription can rebaseline after a server sequence reset. Queue sequence metadata
 travels with the rendered JS state so older renders cannot overwrite native mirror
 confirmations. ActivityKit updates read the latest committed snapshot before publishing,
 and BLE rechecks ownership and receipt freshness immediately before writing.
+Woods reflects its per-size native LED map using the same row geometry as JS.
 
 Deploy the additive backend schema/endpoint before shipping new native iOS and
 Android builds. Old binaries omit the new optional fields and keep existing controls.

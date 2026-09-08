@@ -185,7 +185,7 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
 
   beforeEach(() => {
     queue.sessionId = 'session-1';
-    queue.state = { queue: threeItemQueue, currentClimbQueueItem: threeItemQueue[0] };
+    queue.state = { serverSequence: 4, queue: threeItemQueue, currentClimbQueueItem: threeItemQueue[0] };
     queue.dispatchWidgetNavigation.mockClear();
     widget.listener = null;
     widget.boardControlListener = null;
@@ -349,7 +349,7 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
 describe('LiveActivityBridge lightbulb (boardControl)', () => {
   beforeEach(() => {
     queue.sessionId = 'session-1';
-    queue.state = { queue: [climbItem], currentClimbQueueItem: climbItem };
+    queue.state = { serverSequence: 4, queue: [climbItem], currentClimbQueueItem: climbItem };
     widget.boardControlListener = null;
     widget.useLiveActivity.mockClear();
     boardState.boardConnection = 'connectedByMe';
@@ -463,7 +463,7 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
 describe('LiveActivityBridge session-presence gating', () => {
   beforeEach(() => {
     queue.sessionId = 'session-1';
-    queue.state = { queue: [], currentClimbQueueItem: null };
+    queue.state = { serverSequence: 4, queue: [], currentClimbQueueItem: null };
     widget.useLiveActivity.mockClear();
     boardState.boardConnection = 'connectedByMe';
     boardState.holderDisplayName = null;
@@ -471,7 +471,7 @@ describe('LiveActivityBridge session-presence gating', () => {
 
   it('keeps a solo queue (no session) out of session presence', () => {
     queue.sessionId = null;
-    queue.state = { queue: [climbItem], currentClimbQueueItem: climbItem };
+    queue.state = { serverSequence: 4, queue: [climbItem], currentClimbQueueItem: climbItem };
     renderBridge();
 
     expect(widget.useLiveActivity).toHaveBeenCalledWith(
@@ -511,7 +511,7 @@ describe('LiveActivityBridge notification thumbnail board', () => {
 
   it('renders a Homewall queue head on the Homewall, not on the selected 12x12', () => {
     const item = boardClimbItem('kilter', 8);
-    queue.state = { queue: [item], currentClimbQueueItem: item };
+    queue.state = { serverSequence: 4, queue: [item], currentClimbQueueItem: item };
     renderBridge();
 
     expect(climbRender.useNativeClimbRender).toHaveBeenCalledWith(
@@ -521,7 +521,7 @@ describe('LiveActivityBridge notification thumbnail board', () => {
 
   it('keeps the selected board for a climb that carries no board of its own', () => {
     const item = makeItem(0);
-    queue.state = { queue: [item], currentClimbQueueItem: item };
+    queue.state = { serverSequence: 4, queue: [item], currentClimbQueueItem: item };
     renderBridge();
 
     expect(climbRender.useNativeClimbRender).toHaveBeenCalledWith(
