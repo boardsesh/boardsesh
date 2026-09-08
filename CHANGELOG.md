@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Holds draw faster: the board renderer no longer shares a line with the rest of the app ([#5210](https://github.com/boardsesh/boardsesh/pull/5210))
+- Drive your Woods Board from the lock screen: Previous and Next now light the wall straight from the Live Activity and Dynamic Island ([#5247](https://github.com/boardsesh/boardsesh/pull/5247))
+  The Live Activity climb image now follows your board look — classic stays classic
 - Find "Light the hold above" for MoonBoard in Settings → Board lighting, not just the Bluetooth menu ([#5280](https://github.com/boardsesh/boardsesh/pull/5280))
 
 ### Fixed

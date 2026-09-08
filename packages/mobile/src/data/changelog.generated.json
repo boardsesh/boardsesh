@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-08T01:53:43.866Z",
+  "generatedAt": "2026-09-08T02:44:06.645Z",
   "entries": [
+    {
+      "prNumber": 5210,
+      "category": "new",
+      "title": "Holds draw faster: the board renderer no longer shares a line with the rest of the app",
+      "mergedAt": "2026-09-08T02:42:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5210"
+    },
+    {
+      "prNumber": 5247,
+      "category": "new",
+      "title": "Drive your Woods Board from the lock screen: Previous and Next now light the wall straight from the Live Activity and Dynamic Island",
+      "mergedAt": "2026-09-08T02:41:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5247",
+      "body": "The Live Activity climb image now follows your board look — classic stays classic"
+    },
     {
       "prNumber": 5237,
       "category": "fixed",
