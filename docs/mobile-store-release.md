@@ -79,17 +79,25 @@ at 500 characters.
 ## 4. Prepare and submit the exact store builds
 
 `mobile-store-draft.yml` is best-effort and disabled unless
-`ENABLE_STORE_DRAFT_SUBMISSION` is `true`. It pins the current `main` SHA,
-selects the exact highest iOS and Android build tags for that version, and checks
-that both tagged binaries match `main`'s platform fingerprints. Immediately
-before changing either store draft it rechecks that `main` and both selected tags
-have not moved. A mismatch waits for a later run instead of drafting the wrong
-build.
+`ENABLE_STORE_DRAFT_SUBMISSION` is `true`. It runs whenever **iOS TestFlight
+Deploy** or **Android Play Internal Deploy** completes on `main`, and on demand;
+there is no schedule. It pins the current `main` SHA, selects the exact highest
+iOS and Android build tags for that version, and checks that both tagged
+binaries match `main`'s platform fingerprints. Immediately before changing
+either store draft it rechecks that `main` and both selected tags have not
+moved. A mismatch, or only one platform's build existing yet, waits for a later
+run (the other platform's completion re-triggers it) instead of drafting the
+wrong build.
+
+The iOS lane waits up to 45 minutes for App Store Connect to finish processing
+the tagged build, then attaches it to the editable version (creating the version
+first if needed). The Android lane promotes the internal-track release carrying
+the tagged versionCode to a production release in draft status.
 
 Review submission and rollout remain manual:
 
-- **App Store Connect:** attach the verified TestFlight build, confirm metadata
-  and screenshots, then submit it for review.
+- **App Store Connect:** confirm the attached TestFlight build, metadata and
+  screenshots, then submit it for review.
 - **Play Console:** promote the verified internal release to production.
 
 The scheduled **Mobile Release Anchor** workflow queries each store for the exact

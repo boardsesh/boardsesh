@@ -352,10 +352,16 @@ platform :ios do
     UI.user_error!("Invalid RELEASE_VERSION: #{version}") unless version.match?(/^\d+\.\d+\.\d+$/)
     UI.user_error!("Invalid IOS_BUILD_NUMBER: #{build_number}") unless build_number.match?(/^\d+$/) && build_number.to_i.positive?
 
-    # Create the App Store version if it doesn't exist and attach the build,
-    # leaving it in 'Prepare for Submission' (a DRAFT). No screenshots/metadata
-    # here (owned by the screenshots/metadata lanes); crucially submit_for_review:
-    # false, so a human reviews and hits Submit — we never auto-submit.
+    # Create the App Store version if it doesn't exist, leaving it in 'Prepare
+    # for Submission' (a DRAFT). No screenshots/metadata here (owned by the
+    # screenshots/metadata lanes); crucially submit_for_review: false, so a human
+    # reviews and hits Submit — we never auto-submit.
+    #
+    # deliver only selects a build from inside submit_for_review
+    # (deliver/runner.rb → submit_for_review → select_build), which we never
+    # call, so `build_number` is inert here: this call ensures the version and
+    # nothing else. The build is attached below with the same Spaceship calls
+    # deliver's select_build makes.
     upload_to_app_store(
       api_key: api_key,
       app_identifier: APP_IDENTIFIER,
@@ -371,7 +377,42 @@ platform :ios do
       # force: true — no interactive HTML preview in CI (same as the other lanes).
       force: true
     )
-    UI.success("Prepared a draft App Store version #{version} with build #{build_number}.")
+
+    # The workflow_run trigger fires the moment the TestFlight upload returns,
+    # usually 10–40 minutes before App Store Connect finishes processing the
+    # build, and an unprocessed build cannot be attached. Wait for THIS build
+    # (app_version + build_version, select_latest: false), bounded so a build
+    # Apple never processes fails the job instead of hanging it. The ios job's
+    # timeout-minutes in mobile-store-draft.yml must stay above this bound.
+    require "spaceship"
+    app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+    UI.user_error!("App #{APP_IDENTIFIER} not found on App Store Connect") if app.nil?
+    build = FastlaneCore::BuildWatcher.wait_for_build_processing_to_be_complete(
+      app_id: app.id,
+      platform: Spaceship::ConnectAPI::Platform::IOS,
+      app_version: version,
+      build_version: build_number,
+      poll_interval: 30,
+      timeout_duration: 45 * 60,
+      return_when_build_appears: false,
+      return_spaceship_testflight_build: false,
+      select_latest: false
+    )
+    unless build && build.app_version == version && build.version == build_number
+      UI.user_error!("App Store Connect returned build #{build&.app_version} (#{build&.version}) while waiting for #{version} (#{build_number}); refusing to attach the wrong build.")
+    end
+
+    # Attach the processed build to the editable version — until this happens
+    # the draft is a draft of nothing. Mirrors deliver's select_build:
+    # App#get_edit_app_store_version + AppStoreVersion#select_build. If the
+    # editable version is not the one just ensured (a stale draft of another
+    # version still open), refuse rather than attach to it.
+    edit_version = app.get_edit_app_store_version(platform: Spaceship::ConnectAPI::Platform::IOS)
+    if edit_version.nil? || edit_version.version_string != version
+      UI.user_error!("Editable App Store version is #{edit_version&.version_string || 'none'}, expected #{version}; not attaching build #{build_number}.")
+    end
+    edit_version.select_build(build_id: build.id)
+    UI.success("Prepared a draft App Store version #{version} with build #{build_number} attached.")
   end
 end
 
@@ -562,17 +603,22 @@ platform :android do
     UI.user_error!("Invalid RELEASE_VERSION: #{version}") unless version.match?(/^\d+\.\d+\.\d+$/)
     UI.user_error!("Invalid ANDROID_VERSION_CODE: #{version_code}") unless version_code.match?(/^\d+$/) && version_code.to_i.positive?
 
-    # Create a production release in DRAFT status referencing the build already
-    # uploaded (to the internal track by android-apk-rn.yml). release_status:
-    # 'draft' means it is never sent for review — a human promotes/rolls it out.
-    # No text/images/screenshots here (owned by the metadata/images/screenshots
-    # lanes); no AAB upload (the binary already exists).
+    # Promote the exact internal-track release (uploaded by android-apk-rn.yml)
+    # to a production release in DRAFT status — never sent for review; a human
+    # rolls it out. A plain `track: production` with every upload skipped is a
+    # no-op in supply (no version codes → update_track is never called, and the
+    # metadata skip flags short-circuit perform_upload_meta), so this goes
+    # through supply's promote_track: select the internal release carrying this
+    # versionCode and copy it to production with track_promote_release_status.
+    # No AAB upload (the binary already exists on internal); no text/images/
+    # screenshots (owned by the metadata/images/screenshots lanes).
     upload_to_play_store(
       package_name: APP_IDENTIFIER,
       json_key_data: json_key_data,
-      track: "production",
+      track: "internal",
+      track_promote_to: "production",
+      track_promote_release_status: "draft",
       version_code: version_code.to_i,
-      release_status: "draft",
       skip_upload_apk: true,
       skip_upload_aab: true,
       skip_upload_metadata: true,
@@ -581,6 +627,6 @@ platform :android do
       skip_upload_screenshots: true,
       timeout: 300
     )
-    UI.success("Prepared a draft production release for versionCode #{version_code}.")
+    UI.success("Prepared a draft production release for versionCode #{version_code}, promoted from internal.")
   end
 end
