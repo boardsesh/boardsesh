@@ -187,7 +187,8 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
 
         // Fresh, and exactly on the bound — both still ours to finish. The bound
         // is inclusive, matching shouldPerformImplicitRelight.
-        for age in [TimeInterval(0), 1, 24, maxAge] {
+        let freshAges: [TimeInterval] = [0, 1, 24, maxAge]
+        for age in freshAges {
             XCTAssertTrue(
                 BoardBleManager.writeStallRecoveryIsFresh(
                     requestedAt: now.addingTimeInterval(-age),
@@ -199,7 +200,8 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         }
 
         // Past the bound: the suspension case this guard exists for.
-        for age in [maxAge + 0.001, 3600, 86_400 * 3] {
+        let staleAges: [TimeInterval] = [maxAge + 0.001, 3600, 86_400 * 3]
+        for age in staleAges {
             XCTAssertFalse(
                 BoardBleManager.writeStallRecoveryIsFresh(
                     requestedAt: now.addingTimeInterval(-age),
@@ -337,7 +339,8 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         }
         // Loose bound: the assertion is "the stall's clock, not this callback's",
         // and anything above ~0 can only have come from the carried stamp.
-        XCTAssertGreaterThan(Date().timeIntervalSince(requestedAt), 30)
+        let carriedAge: TimeInterval = Date().timeIntervalSince(requestedAt)
+        XCTAssertGreaterThan(carriedAge, TimeInterval(30))
     }
 
     /// The hole the connect-window test above cannot reach: the phone suspends

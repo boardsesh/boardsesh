@@ -1174,7 +1174,8 @@ final class BoardBleDisconnectTests: XCTestCase {
             manager.write(data: Data([0x01])) { _, _ in }
         }
         fireLatestOneShot(label: "writeAckWatchdog")
-        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.rewindWriteStallRecovery(by: 3 * 86_400) })
+        let threeDays: TimeInterval = 3 * 86_400
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.rewindWriteStallRecovery(by: threeDays) })
 
         // The user taps the board in the picker while the stall is still parked.
         manager.testHooks.sync {
