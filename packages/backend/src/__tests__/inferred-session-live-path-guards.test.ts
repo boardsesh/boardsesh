@@ -5,6 +5,7 @@ import { sessions } from '../db/schema';
 import { users } from '@boardsesh/db/schema/auth';
 import { eq } from 'drizzle-orm';
 import { endStaleInactiveSessions, getSessionById, getUserSessions } from '../services/room-manager/session-discovery';
+import { getPostgresConstraintName, getPostgresErrorCode } from '../utils/postgres-errors';
 
 /**
  * `board_sessions` holds two kinds of row: explicit sessions (someone pressed Start,
@@ -118,9 +119,18 @@ describe('live-session paths exclude inferred sessions', () => {
 // create a session against the same anchor tick. Without this constraint both inserts
 // land and their tick updates race, leaving a duplicate or empty session. The unique
 // index is what turns that into a retryable error instead of silent corruption.
+// Random rather than sequential so two parallel test runs never pick the same
+// anchor tick id and collide on the unique partial index. A 10^15 range (safely
+// under Number.MAX_SAFE_INTEGER, since anchor_tick_id is a bigint in number mode)
+// keeps the collision odds negligible even if the integration test DB accumulates
+// rows across many CI runs without cleanup.
+function randomAnchorTickId(): number {
+  return Math.floor(Math.random() * 1_000_000_000_000_000);
+}
+
 describe('anchor tick uniqueness', () => {
   it('refuses a second inferred session on the same anchor tick', async () => {
-    const anchorTickId = Date.now();
+    const anchorTickId = randomAnchorTickId();
     await insertInferredSession({ anchorTickId });
 
     await expect(insertInferredSession({ anchorTickId })).rejects.toThrow();
@@ -128,7 +138,7 @@ describe('anchor tick uniqueness', () => {
 
   it('lets an explicit session coexist with an inferred one on the same anchor', async () => {
     // The index is partial on origin='inferred', so explicit rows are unconstrained.
-    const anchorTickId = Date.now() + 1;
+    const anchorTickId = randomAnchorTickId();
     await insertInferredSession({ anchorTickId });
 
     const explicitId = uuidv4();
@@ -154,5 +164,30 @@ describe('board_sessions defaults', () => {
     expect(row?.origin).toBe('explicit');
     expect(row?.userEdited).toBe(false);
     expect(row?.anchorTickId).toBeNull();
+  });
+});
+
+// Backs up the origin guard at the DB level: even if a bug slipped a null path onto
+// an explicit row, toLiveSession would silently return null for what should be a
+// live session. Mirrors board_sessions_explicit_board_path_check (packages/db).
+describe('explicit sessions require a board path', () => {
+  it('rejects an explicit session with a null board path', async () => {
+    let caughtError: unknown;
+    try {
+      await db.insert(sessions).values({ id: uuidv4(), boardPath: null, status: 'active', origin: 'explicit' });
+    } catch (error) {
+      caughtError = error;
+    }
+    // Assert on the structured Postgres fields rather than error message text
+    // (see climb-stats-quality-range-check.test.ts) — that way the rejection
+    // can't pass for the wrong reason, e.g. a future required column with no
+    // DB default failing the insert before this CHECK constraint even runs.
+    expect(caughtError).toBeDefined();
+    expect(getPostgresErrorCode(caughtError)).toBe('23514'); // check_violation
+    expect(getPostgresConstraintName(caughtError)).toBe('board_sessions_explicit_board_path_check');
+  });
+
+  it('still allows an inferred session with a null board path', async () => {
+    await expect(insertInferredSession()).resolves.toBeTruthy();
   });
 });
