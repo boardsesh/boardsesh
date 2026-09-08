@@ -125,7 +125,7 @@ describe('useFavoriteStatus', () => {
     requestMock.mockResolvedValue({ favorites: ['climb-1'] });
     const { Wrapper } = makeWrapper();
 
-    renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40, { enabled: true }), { wrapper: Wrapper });
+    renderHook(() => useFavoriteStatus('climb-1', { enabled: true }), { wrapper: Wrapper });
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requestMock).not.toHaveBeenCalled();
@@ -137,7 +137,7 @@ describe('useFavoriteStatus', () => {
     requestMock.mockResolvedValue({ favorites: ['climb-1'] });
     const { Wrapper } = makeWrapper();
 
-    const { result } = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40, { enabled: true }), {
+    const { result } = renderHook(() => useFavoriteStatus('climb-1', { enabled: true }), {
       wrapper: Wrapper,
     });
 
@@ -203,7 +203,7 @@ describe('useToggleFavorite', () => {
 
     const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
     await result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
       currentlyFavorited: false,
     });
 
@@ -218,7 +218,7 @@ describe('useToggleFavorite', () => {
 
     const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
     await result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
       currentlyFavorited: false,
     });
 
@@ -232,7 +232,7 @@ describe('useToggleFavorite', () => {
     const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
     await expect(
       result.current.mutateAsync({
-        input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+        input: { climbUuid: 'climb-1' },
         currentlyFavorited: false,
       }),
     ).rejects.toThrow('offline');
@@ -240,9 +240,8 @@ describe('useToggleFavorite', () => {
     expect(favoritesStore.getIsFavorited('climb-1')).toBe(false);
   });
 
-  // The store is a singleton scoped to one board+angle+user. A toggle that
-  // resolves after the user switched angles must not paint its result onto the
-  // list now showing a different angle.
+  // The store belongs to one user. A toggle resolving after an account switch
+  // must not write the previous user's heart into the new account.
   it('drops its store write when the favourite context changed while in flight', async () => {
     let resolveToggle: (value: { toggleFavorite: { favorited: boolean } }) => void = () => {};
     requestMock.mockImplementationOnce(
@@ -255,7 +254,7 @@ describe('useToggleFavorite', () => {
     const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
 
     const pending = result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
       currentlyFavorited: false,
     });
     // Let onMutate run (React Query awaits it) so the request is actually in
@@ -263,8 +262,8 @@ describe('useToggleFavorite', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(favoritesStore.getIsFavorited('climb-1')).toBe(true);
 
-    // The list re-scopes to another angle, clearing the store.
-    favoritesStore.applyContext('kilter:25:1');
+    // The list re-scopes to another user, clearing the store.
+    favoritesStore.applyContext('another-user:1');
     resolveToggle({ toggleFavorite: { favorited: true } });
     await pending;
 
@@ -290,7 +289,7 @@ describe('useToggleFavorite', () => {
     requestMock.mockRejectedValueOnce(new Error('second failed'));
 
     const first = result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
       currentlyFavorited: false,
     });
     first.catch(() => {});
@@ -298,7 +297,7 @@ describe('useToggleFavorite', () => {
 
     await expect(
       result.current.mutateAsync({
-        input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+        input: { climbUuid: 'climb-1' },
         currentlyFavorited: true,
       }),
     ).rejects.toThrow('second failed');

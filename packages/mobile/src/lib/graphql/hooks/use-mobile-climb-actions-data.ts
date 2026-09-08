@@ -15,7 +15,6 @@
 // toggle. Both write into `favoritesStore` directly, and FavoritesProvider
 // leaves the set alone while the prop is omitted.
 
-
 import { useCallback, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { favoritesStore } from '@boardsesh/climb-actions';
