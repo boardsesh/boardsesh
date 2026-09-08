@@ -50,7 +50,9 @@ export function useClimbListFavorites({ climbUuids }: UseClimbListFavoritesArgs)
   // store owns the "which context is this data for" check, so it still fires
   // for an account change that happened while the list was unmounted.
   useEffect(() => {
-    if (!favoritesStore.applyContext(contextKey)) return;
+    favoritesStore.applyContext(contextKey);
+    // Each mounted list owns its fetched set. Another list may have already
+    // switched the shared store, but this list must also forget the old user.
     fetchedRef.current = new Set();
   }, [contextKey]);
 

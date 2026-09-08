@@ -124,6 +124,25 @@ describe('useClimbListFavorites', () => {
     expect(favoritesStore.getIsFavorited('a')).toBe(false);
   });
 
+  it('refreshes every mounted list when the signed-in user changes', async () => {
+    const firstClimbs = ['first'];
+    const secondClimbs = ['second'];
+    request.mockResolvedValue({ favorites: [] });
+    const { rerender } = renderHook(() => {
+      useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids: firstClimbs });
+      useClimbListFavorites({ boardName: 'tension', angle: 25, climbUuids: secondClimbs });
+    });
+    await flush();
+    request.mockResolvedValue({ favorites: ['first', 'second'] });
+    storedUser.userId = 'user-b';
+    rerender();
+    await flush();
+
+    expect(request).toHaveBeenCalledTimes(4);
+    expect(favoritesStore.getIsFavorited('first')).toBe(true);
+    expect(favoritesStore.getIsFavorited('second')).toBe(true);
+  });
+
   it('waits for the user id to resolve before fetching', async () => {
     storedUser.userId = undefined;
     storedUser.isLoading = true;
