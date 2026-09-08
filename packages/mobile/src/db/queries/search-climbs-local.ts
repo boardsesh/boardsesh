@@ -1,4 +1,4 @@
-import { getLocalUserId, type OfflineDatabase } from '@boardsesh/offline-sync';
+import { getLocalUserId, parseCompatibleSizeIds, type OfflineDatabase } from '@boardsesh/offline-sync';
 import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
@@ -79,7 +79,14 @@ const RANDOM_ORDER_EXPR = `(
    + ?) * 2654435761
 ) % 2147483647`;
 
-function normalizeSortBy(sortBy: string | null | undefined): string {
+/**
+ * The sort this search actually runs, after aliases and the default. Exported
+ * because the live-stats consumer has to answer "does this query sort on a
+ * stats column?" for the same input, and an absent `sortBy` means `ascents`
+ * here — a second copy of that rule would silently under-invalidate the
+ * default list.
+ */
+export function normalizeSortBy(sortBy: string | null | undefined): string {
   if (!sortBy) return 'ascents';
   return SORT_ALIASES[sortBy] ?? 'creation';
 }
@@ -446,24 +453,6 @@ export function parseCharacteristics(raw: string | null): string[] | null {
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as string[]) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Decode the JSON-in-TEXT `compatible_size_ids` column into the number array the
- * shared `Climb` carries. Anything that isn't an array of finite numbers reads
- * as "no compatibility data" (null) rather than as an empty list, because an
- * empty list would otherwise be read as "fits nothing" by a stricter consumer.
- */
-export function parseCompatibleSizeIds(raw: string | null): number[] | null {
-  if (!raw) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    const sizeIds = parsed.filter((sizeId): sizeId is number => typeof sizeId === 'number' && Number.isFinite(sizeId));
-    return sizeIds.length > 0 ? sizeIds : null;
   } catch {
     return null;
   }

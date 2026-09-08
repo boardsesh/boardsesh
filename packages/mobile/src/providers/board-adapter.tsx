@@ -3,7 +3,7 @@
 // mobile's HTTP / WS clients. Mounted in `app/_layout.tsx` between
 // QueueProvider and BoardProvider.
 
-import { useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { randomUUID } from 'expo-crypto';
 import { BoardAdapterProvider, type BoardAdapter } from '@boardsesh/board-react';
@@ -16,11 +16,14 @@ import {
   type SaveTickMutationResponse,
   type SaveTickMutationVariables,
 } from '@boardsesh/graphql/operations';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from './auth-provider';
 import { useOfflineDownloadsEnabled } from './feature-flags-provider';
 import { useQueueSessionId } from './queue-provider';
 import { useToast } from './toast-provider';
 import { getDatabaseHandle } from '../db';
+import { isBoardDownloadedLocally } from '../db/queries/board-download-status';
+import { createClimbStatsLiveSync, type ClimbStatsLiveSync } from '../offline/climb-stats-live-sync';
 import { getConnectivitySnapshot, subscribeConnectivity } from '../lib/connectivity/connectivity-store';
 import { getHttpClient, getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
@@ -28,10 +31,17 @@ import { reportHandledError } from '../lib/error-reporting';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { drainMutationQueue, isOnline, subscribeMutationDelivery, triggerSync } from '../offline/offline-sync-adapter';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
-import { getSetting } from '../settings';
+import { getSetting, subscribeSettings } from '../settings';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { enqueueTickOutboxOnly, writeTickLocal } from '../hooks/use-offline-mutations';
-import { isDatabaseLockedError, OFFLINE_LOCAL_WRITE_BUDGET_MS, type GraphQLFetch } from '@boardsesh/offline-sync';
+import {
+  isBackgrounded,
+  isDatabaseLockedError,
+  isSigningOut,
+  parseOfflineBoardKey,
+  OFFLINE_LOCAL_WRITE_BUDGET_MS,
+  type GraphQLFetch,
+} from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { track } from '../lib/analytics';
 
@@ -56,6 +66,32 @@ function toSavedTickShape(
     comment: input.comment,
     climbedAt: input.climbedAt,
   };
+}
+
+/**
+ * The board TYPES with an opted-in offline scope, as a set the stream can probe
+ * in O(1). Reads MMKV once per settings change rather than once per event.
+ *
+ * Board-level, not layout-level: an event's layout label is the browsed layout
+ * on a reconciliation row rather than the climb's, so it cannot gate anything.
+ * The write-through's batched pre-read costs one row in an IN list to answer
+ * the layout question properly.
+ *
+ * Keys are decoded with the shared `parseOfflineBoardKey`, never a local split:
+ * a key this build cannot parse must not be laundered into an enabled board.
+ * The array shape is checked rather than trusted, because this feeds a gate
+ * called inside the graphql-ws `next` handler, where a throw closes the shared
+ * socket, and a corrupt or legacy stored value would be a plain object.
+ */
+function readEnabledBoardTypes(): Set<string> {
+  const enabled = getSetting('syncEnabledBoards');
+  if (!Array.isArray(enabled)) return new Set();
+  const boardTypes = new Set<string>();
+  for (const scopeKey of enabled) {
+    const scope = parseOfflineBoardKey(scopeKey);
+    if (scope) boardTypes.add(scope.boardType);
+  }
+  return boardTypes;
 }
 
 export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
@@ -84,6 +120,41 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
     // here if/when reason-specific messages are needed.
     showToast(t('createClimbForm.alerts.saveFailedFallback'), 'error');
   };
+
+  // One live-stats consumer per wrapper mount, held outside the adapter memo so
+  // a pending list refresh survives the adapter identity churn a re-subscribe
+  // causes. The delegating function below reads the ref at call time, so it
+  // stays correct across that churn.
+  const queryClient = useQueryClient();
+  const climbStatsLiveSyncRef = useRef<ClimbStatsLiveSync | null>(null);
+
+  useEffect(() => {
+    // `getSetting` re-reads MMKV and re-parses the JSON on every call (it
+    // deliberately bypasses the snapshot cache the hooks use). The layout-wide
+    // stream and the 120 s reconciliation read call the gate below once per
+    // event — hundreds at a time — so the set is derived once and refreshed on
+    // the settings change signal instead.
+    let enabledBoardTypes = readEnabledBoardTypes();
+    const unsubscribeSettings = subscribeSettings(() => {
+      enabledBoardTypes = readEnabledBoardTypes();
+    });
+
+    const liveSync = createClimbStatsLiveSync({
+      getDb: getDatabaseHandle,
+      queryClient,
+      isScopeDownloaded: isBoardDownloadedLocally,
+      shouldSkipWrites: () => isBackgrounded() || isSigningOut(),
+      hasEnabledScopeForBoard: (boardType) => enabledBoardTypes.has(boardType),
+      onError: (error) =>
+        reportHandledError(error, { tags: { source: 'offline-sync', kind: 'climb-stats-write-through' } }),
+    });
+    climbStatsLiveSyncRef.current = liveSync;
+    return () => {
+      unsubscribeSettings();
+      liveSync.dispose();
+      climbStatsLiveSyncRef.current = null;
+    };
+  }, [queryClient]);
 
   const adapter = useMemo<BoardAdapter>(
     () => ({
@@ -181,6 +252,13 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
           unsubscribeConnectivity();
         };
       },
+      // Undefined when the offline flag is off: there is no local catalog to
+      // keep fresh, and the shared hook optional-chains it.
+      persistClimbStatsEvent: !offlineEnabled
+        ? undefined
+        : (event) => {
+            climbStatsLiveSyncRef.current?.handleEvent(event);
+          },
       subscribeOfflineMutationDelivery: subscribeMutationDelivery,
       scheduleTask: (callback, delayMs) => {
         const timer = setTimeout(callback, delayMs);

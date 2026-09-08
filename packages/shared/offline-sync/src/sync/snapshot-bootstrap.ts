@@ -23,6 +23,7 @@ import { purgeNamespaceKey, type OfflineBoardScope } from '../offline-board-key'
 import type { SnapshotGradesArtifact, SnapshotManifestEntry, SnapshotTableName } from './snapshot-manifest';
 import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from './snapshot-manifest';
 import { climbsScopeFilter, isSizeScopedBoard } from './board-scope-sql';
+import { buildRevisionGuardTail } from './revision-guard-sql';
 import { TABLE_CONFIGS } from './table-config';
 import {
   compareCheckpoints,
@@ -67,6 +68,42 @@ const GRADES_SNAPSHOT_TABLES = ['board_climb_grades'] as const;
 
 /** The ATTACH alias for the artifact; the only ATTACH the DB lifecycle performs. */
 const SNAPSHOT_ALIAS = 'bs_snapshot';
+
+/**
+ * The artifact -> `main.board_climb_stats` statement, guarded on the revision.
+ *
+ * The live `climbStatsUpdated` write-through is a second local writer of this
+ * table (#5227), so an import must not be able to walk a newer local row
+ * backwards. The guarded tail is built from `TABLE_CONFIGS` by the same helper
+ * the pull page insert uses, so the primary key, the revision column and the
+ * `>=` cannot drift between the two writers that can lose that race.
+ *
+ * The conflict reference is the BARE table name even though the insert target
+ * is `main.board_climb_stats`: SQLite resolves an upsert's target by its
+ * unqualified name. When the helper declines — no shared revision column, no
+ * whole primary key, or nothing outside it — this falls back to the
+ * unconditional `INSERT OR REPLACE`, which is the pre-guard behaviour.
+ */
+function buildStatsUpsertSql(
+  statsColumns: readonly string[],
+  statsTargetList: string,
+  statsSelectList: string,
+): (whereSql: string) => string {
+  const guardTail = buildRevisionGuardTail({
+    tableName: 'board_climb_stats',
+    conflictReference: 'board_climb_stats',
+    columns: statsColumns,
+  });
+  return (whereSql: string) =>
+    `${guardTail ? 'INSERT INTO' : 'INSERT OR REPLACE INTO'} main.board_climb_stats (${statsTargetList})
+         SELECT ${statsSelectList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
+         WHERE ${whereSql}${
+           guardTail
+             ? `
+         ${guardTail}`
+             : ''
+         }`;
+}
 
 /**
  * Rows one import transaction moves before it COMMITs and lets go of the write
@@ -1029,6 +1066,14 @@ async function importScopeBatched(
 
   const statsTargetList = statsColumns.join(', ');
   const statsSelectList = statsColumns.map((column) => `s.${column}`).join(', ');
+  // Same revision guard the pull uses (TABLE_CONFIGS.board_climb_stats
+  // `revisionColumn`): the live `climbStatsUpdated` write-through is a second
+  // local writer of this table, and an import must not walk a newer local row
+  // backwards. `>=` because an equal-revision artifact row still fills the
+  // columns the stream leaves alone (`updated_at`, `benchmark_difficulty`,
+  // `fa_*`). Falls back to the unguarded form if the artifact and the device
+  // share no `sync_seq` column, which is the pre-guard behaviour.
+  const statsUpsertSql = buildStatsUpsertSql(statsColumns, statsTargetList, statsSelectList);
   let statsCursor: StatsKey = STATS_KEYSET_START;
   for (;;) {
     // Two index seeks in autocommit, holding nothing: "is anything left?" and
@@ -1052,9 +1097,7 @@ async function importScopeBatched(
     const batchFrom = statsCursor;
     await options.runExclusive(async () => {
       const result = await txn.runAsync(
-        `INSERT OR REPLACE INTO main.board_climb_stats (${statsTargetList})
-         SELECT ${statsSelectList} FROM ${SNAPSHOT_ALIAS}.board_climb_stats s
-         WHERE ${statsKeysetSql(boundary !== null)}`,
+        statsUpsertSql(statsKeysetSql(boundary !== null)),
         statsKeysetParams(scope.boardType, batchFrom, boundary ?? undefined),
       );
       statsImported += result.changes;

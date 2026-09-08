@@ -1,5 +1,6 @@
 import type { OfflineDatabase, QueryInvalidator, SqlValue } from '../database';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types';
+import { buildRevisionGuardTail } from './revision-guard-sql';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
 import {
   getCheckpoint,
@@ -643,11 +644,37 @@ export function multiRowChunkSize(columnCount: number): number {
   return Math.max(1, Math.floor(SQLITE_MAX_BIND_VARIABLES / columnCount));
 }
 
-function buildMultiRowInsertSql(tableName: string, columns: readonly string[], rowCount: number): string {
+/**
+ * The page upsert.
+ *
+ * Without a `revisionColumn` this is the unconditional `INSERT OR REPLACE` it
+ * has always been: one writer owns the table, so last-write-wins is the whole
+ * story.
+ *
+ * With one, the statement becomes a guarded upsert. `board_climb_stats` has a
+ * SECOND local writer — the live `climbStatsUpdated` write-through — and a page
+ * fetched before a recompute can commit after the stream already wrote the
+ * newer row (its apply transaction waits behind whatever else holds the lock).
+ * `INSERT OR REPLACE` would silently walk that row backwards until the next
+ * cycle. The guard is `>=`, not `>`: the pull usually carries the SAME revision
+ * the stream did, and that row still has to land, because it fills the columns
+ * the stream leaves alone (`updated_at` — the pull cursor — plus
+ * `benchmark_difficulty` and the `fa_*` pair).
+ *
+ * The guarded tail itself is built from `TABLE_CONFIGS` by
+ * `buildRevisionGuardTail`, shared with the snapshot import so the primary key,
+ * the revision column and the `>=` live in exactly one place. It returns null —
+ * and this falls back to the plain form — whenever the guard could not be
+ * applied safely, so it can never turn a valid page into invalid SQL.
+ */
+export function buildMultiRowInsertSql(tableName: string, columns: readonly string[], rowCount: number): string {
   const columnList = columns.join(', ');
   const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
   const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
-  return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+
+  const guardTail = buildRevisionGuardTail({ tableName, conflictReference: tableName, columns });
+  if (!guardTail) return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+  return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause} ${guardTail}`;
 }
 
 async function upsertDocuments(
