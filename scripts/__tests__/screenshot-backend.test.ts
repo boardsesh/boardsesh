@@ -1,0 +1,549 @@
+/// <reference types="node" />
+
+// End-to-end over a real socket: record against an in-test upstream, then
+// replay the fixture set that produced. Everything here is a capture failure
+// that is invisible in the PNGs — a miss answered as a 5xx would replace the
+// screen under capture with an offline banner, a token written into a fixture
+// would be a credential in git, and a fixture keyed on the wrong bytes would
+// shoot the wrong data with no error at all.
+
+import { createServer, type Server } from 'node:http';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import WebSocket from 'ws';
+
+import {
+  createScreenshotBackend,
+  listFixtureFiles,
+  readScreenshotFixtureManifest,
+  type ScreenshotBackend,
+} from '../lib/screenshot-backend';
+import { validateScreenshotFixtureManifest } from '../lib/screenshot-fixtures';
+
+const FROZEN_NOW = '2026-09-08T09:00:00Z';
+const ACCOUNT_EMAIL = 'shots@boardsesh.com';
+const UPSTREAM_JWT = 'upstream.jwt.value.that.must.never.reach.disk';
+const UPSTREAM_REFRESH_TOKEN = 'upstream-refresh-token-that-must-never-reach-disk';
+const AVATAR_BYTES = Buffer.from('fake-jpeg-bytes-for-the-avatar', 'utf8');
+
+const SYNC_TICKS_QUERY =
+  'query SyncTicks($cursor: SyncCursorInput) {\n  syncTicks(cursor: $cursor) {\n    documents\n  }\n}';
+const SYNC_TICKS_RESPONSE = { data: { syncTicks: { documents: [{ uuid: 'tick-1' }] } } };
+
+type UpstreamHarness = {
+  server: Server;
+  origin: string;
+  /** Set to make the next /graphql POST answer with this instead of the canned body. */
+  nextGraphqlResponse: { status: number; body: unknown } | null;
+  graphqlRequests: Array<{ operationName?: string; authorization?: string }>;
+  staticRequestPaths: string[];
+};
+
+async function startUpstream(): Promise<UpstreamHarness> {
+  const harness: Partial<UpstreamHarness> & Pick<UpstreamHarness, 'graphqlRequests' | 'staticRequestPaths'> = {
+    nextGraphqlResponse: null,
+    graphqlRequests: [],
+    staticRequestPaths: [],
+  };
+
+  const server = createServer((request, response) => {
+    const requestUrl = new URL(request.url ?? '/', 'http://upstream.local');
+    if (request.method === 'POST' && requestUrl.pathname === '/graphql') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { operationName?: string };
+        harness.graphqlRequests.push({
+          operationName: body.operationName,
+          authorization: request.headers.authorization,
+        });
+        const canned = harness.nextGraphqlResponse;
+        harness.nextGraphqlResponse = null;
+        const status = canned?.status ?? 200;
+        const payload = JSON.stringify(canned?.body ?? SYNC_TICKS_RESPONSE);
+        response.writeHead(status, { 'content-type': 'application/json' });
+        response.end(payload);
+      });
+      return;
+    }
+    if (request.method === 'POST' && requestUrl.pathname.startsWith('/auth/native/')) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          jwt: UPSTREAM_JWT,
+          refreshToken: UPSTREAM_REFRESH_TOKEN,
+          expiresAt: '2026-09-09T09:00:00.000Z',
+        }),
+      );
+      return;
+    }
+    // PROD answers /static/* with a 302 to a CDN; the recorder must follow it
+    // and still key by the ORIGINAL path.
+    if (request.method === 'GET' && requestUrl.pathname === '/static/avatars/marco.jpg') {
+      harness.staticRequestPaths.push(requestUrl.pathname + requestUrl.search);
+      response.writeHead(302, { location: '/cdn/redirected-avatar.jpg' });
+      response.end();
+      return;
+    }
+    if (request.method === 'GET' && requestUrl.pathname === '/cdn/redirected-avatar.jpg') {
+      harness.staticRequestPaths.push(requestUrl.pathname);
+      response.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': AVATAR_BYTES.length });
+      response.end(AVATAR_BYTES);
+      return;
+    }
+    response.writeHead(404, { 'content-type': 'application/json' });
+    response.end('{"error":"not found"}');
+  });
+
+  const port = await new Promise<number>((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      resolve(typeof address === 'object' && address !== null ? address.port : 0);
+    });
+  });
+
+  return Object.assign(harness as UpstreamHarness, { server, origin: `http://127.0.0.1:${port}` });
+}
+
+function stopUpstream(harness: UpstreamHarness): Promise<void> {
+  return new Promise<void>((resolve) => {
+    harness.server.closeAllConnections();
+    harness.server.close(() => resolve());
+  });
+}
+
+describe('screenshot backend', () => {
+  let fixturesDir: string;
+  let upstream: UpstreamHarness;
+  let backend: ScreenshotBackend | null = null;
+  let backendOrigin = '';
+  let logLines: string[] = [];
+
+  const start = async (options: { mode: 'replay' | 'record'; fresh?: boolean }): Promise<void> => {
+    logLines = [];
+    backend = createScreenshotBackend({
+      mode: options.mode,
+      fixturesDir,
+      upstreamUrl: options.mode === 'record' ? upstream.origin : null,
+      frozenNow: FROZEN_NOW,
+      log: (line) => logLines.push(line),
+      fresh: options.fresh,
+      flow: 'app-store',
+    });
+    const port = await backend.listen(0);
+    backendOrigin = `http://127.0.0.1:${port}`;
+  };
+
+  const stop = async (): Promise<void> => {
+    if (!backend) return;
+    await backend.close();
+    backend = null;
+  };
+
+  const postGraphql = (body: unknown): Promise<Response> =>
+    fetch(`${backendOrigin}/graphql`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${UPSTREAM_JWT}` },
+      body: JSON.stringify(body),
+    });
+
+  const hasLine = (fragment: string): boolean => logLines.some((line) => line.includes(fragment));
+
+  beforeEach(async () => {
+    fixturesDir = mkdtempSync(join(tmpdir(), 'screenshot-fixtures-'));
+    upstream = await startUpstream();
+  });
+
+  afterEach(async () => {
+    await stop();
+    await stopUpstream(upstream);
+    rmSync(fixturesDir, { recursive: true, force: true });
+  });
+
+  describe('record mode', () => {
+    it('records a graphql response, an auth proxy and a redirected asset without persisting a token', async () => {
+      await start({ mode: 'record', fresh: true });
+
+      const credentials = await fetch(`${backendOrigin}/auth/native/credentials`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: ACCOUNT_EMAIL, password: 'hunter2' }),
+      });
+      expect(credentials.status).toBe(200);
+      expect(await credentials.json()).toMatchObject({ jwt: UPSTREAM_JWT });
+
+      const graphql = await postGraphql({
+        operationName: 'SyncTicks',
+        query: SYNC_TICKS_QUERY,
+        variables: { cursor: null },
+      });
+      expect(graphql.status).toBe(200);
+      expect(await graphql.json()).toEqual(SYNC_TICKS_RESPONSE);
+      // The app's own headers reach the upstream, so a recording runs as the
+      // signed-in account rather than anonymously.
+      expect(upstream.graphqlRequests[0].authorization).toBe(`Bearer ${UPSTREAM_JWT}`);
+
+      const avatar = await fetch(`${backendOrigin}/static/avatars/marco.jpg?v=3&size=128`);
+      expect(avatar.status).toBe(200);
+      expect(Buffer.from(await avatar.arrayBuffer())).toEqual(AVATAR_BYTES);
+      expect(upstream.staticRequestPaths).toContain('/cdn/redirected-avatar.jpg');
+
+      await stop();
+
+      const manifest = readScreenshotFixtureManifest(fixturesDir);
+      expect(manifest).not.toBeNull();
+      expect(validateScreenshotFixtureManifest(manifest).ok).toBe(true);
+      expect(manifest?.accountEmail).toBe(ACCOUNT_EMAIL);
+      expect(manifest?.frozenNow).toBe(FROZEN_NOW);
+      expect(manifest?.graphql).toHaveLength(1);
+      expect(manifest?.graphql[0].operationName).toBe('SyncTicks');
+      // Keyed by the ORIGINAL path + sorted query, not the CDN URL it followed.
+      expect(manifest?.static[0].path).toBe('/static/avatars/marco.jpg');
+      expect(manifest?.static[0].query).toBe('size=128&v=3');
+      expect(manifest?.static[0].contentType).toContain('image/jpeg');
+
+      const files = listFixtureFiles(fixturesDir);
+      expect(files).toContain('manifest.json');
+      expect(files.some((file) => file.startsWith('graphql/SyncTicks/'))).toBe(true);
+      expect(files.some((file) => file.startsWith('static/') && file.endsWith('.jpg'))).toBe(true);
+
+      // The disk grep: nothing under the fixtures dir may carry a live token or
+      // a forwarded credential header.
+      for (const file of files) {
+        const contents = readFileSync(join(fixturesDir, file), 'utf8');
+        expect(contents, `${file} leaked the jwt`).not.toContain(UPSTREAM_JWT);
+        expect(contents, `${file} leaked the refresh token`).not.toContain(UPSTREAM_REFRESH_TOKEN);
+        expect(contents.toLowerCase(), `${file} persisted an authorization header`).not.toContain('authorization');
+        expect(contents.toLowerCase(), `${file} persisted a cookie header`).not.toContain('cookie');
+      }
+
+      expect(hasLine('RECORDED graphql SyncTicks')).toBe(true);
+      expect(hasLine('RECORDED static /static/avatars/marco.jpg?size=128&v=3')).toBe(true);
+    });
+
+    it('keeps the first recording and logs a DUP for a repeat', async () => {
+      await start({ mode: 'record', fresh: true });
+      const request = { operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } };
+      await postGraphql(request);
+      upstream.nextGraphqlResponse = { status: 200, body: { data: { syncTicks: { documents: [{ uuid: 'later' }] } } } };
+      await postGraphql(request);
+      await stop();
+
+      expect(hasLine('DUP graphql SyncTicks')).toBe(true);
+      const manifest = readScreenshotFixtureManifest(fixturesDir);
+      expect(manifest?.graphql).toHaveLength(1);
+      const fixture = JSON.parse(readFileSync(join(fixturesDir, manifest?.graphql[0].file ?? ''), 'utf8')) as {
+        response: unknown;
+      };
+      expect(fixture.response).toEqual(SYNC_TICKS_RESPONSE);
+    });
+
+    it('records nothing when the upstream answers a 500', async () => {
+      await start({ mode: 'record', fresh: true });
+      upstream.nextGraphqlResponse = { status: 500, body: { errors: [{ message: 'boom' }] } };
+      const response = await postGraphql({
+        operationName: 'Feed',
+        query: 'query Feed { feed { uuid } }',
+        variables: {},
+      });
+      expect(response.status).toBe(500);
+      await stop();
+
+      expect(hasLine('UPSTREAM-ERROR graphql Feed status=500')).toBe(true);
+      expect(readScreenshotFixtureManifest(fixturesDir)?.graphql).toHaveLength(0);
+    });
+
+    it('records nothing when the upstream answers 200 with INTERNAL_SERVER_ERROR', async () => {
+      await start({ mode: 'record', fresh: true });
+      upstream.nextGraphqlResponse = {
+        status: 200,
+        body: { data: null, errors: [{ message: 'boom', extensions: { code: 'INTERNAL_SERVER_ERROR' } }] },
+      };
+      await postGraphql({ operationName: 'Feed', query: 'query Feed { feed { uuid } }', variables: {} });
+      await stop();
+
+      expect(hasLine('UPSTREAM-ERROR graphql Feed code=INTERNAL_SERVER_ERROR')).toBe(true);
+      expect(readScreenshotFixtureManifest(fixturesDir)?.graphql).toHaveLength(0);
+    });
+
+    it('refuses to write a fixture whose body carries the live jwt', async () => {
+      await start({ mode: 'record', fresh: true });
+      await fetch(`${backendOrigin}/auth/native/credentials`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: ACCOUNT_EMAIL, password: 'hunter2' }),
+      });
+      upstream.nextGraphqlResponse = { status: 200, body: { data: { me: { sessionToken: UPSTREAM_JWT } } } };
+      await postGraphql({ operationName: 'Me', query: 'query Me { me { sessionToken } }', variables: {} });
+      const stats = backend?.stats();
+      await stop();
+
+      expect(hasLine('REDACTED graphql Me')).toBe(true);
+      expect(stats?.redacted).toBe(1);
+      expect(readScreenshotFixtureManifest(fixturesDir)?.graphql).toHaveLength(0);
+      for (const file of listFixtureFiles(fixturesDir)) {
+        expect(readFileSync(join(fixturesDir, file), 'utf8')).not.toContain(UPSTREAM_JWT);
+      }
+    });
+  });
+
+  describe('replay mode', () => {
+    beforeEach(async () => {
+      await start({ mode: 'record', fresh: true });
+      await fetch(`${backendOrigin}/auth/native/credentials`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: ACCOUNT_EMAIL, password: 'hunter2' }),
+      });
+      await postGraphql({ operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } });
+      await fetch(`${backendOrigin}/static/avatars/marco.jpg?v=3&size=128`);
+      await stop();
+      await start({ mode: 'replay' });
+    });
+
+    it('answers a recorded operation from disk and makes no outbound request', async () => {
+      const requestsBefore = upstream.graphqlRequests.length;
+      const response = await postGraphql({
+        operationName: 'SyncTicks',
+        query: SYNC_TICKS_QUERY,
+        variables: { cursor: null },
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(SYNC_TICKS_RESPONSE);
+      expect(upstream.graphqlRequests).toHaveLength(requestsBefore);
+      expect(hasLine('HIT graphql SyncTicks')).toBe(true);
+      expect(backend?.stats().hits).toBeGreaterThan(0);
+    });
+
+    it('hits the same fixture when only the document whitespace changed', async () => {
+      const response = await postGraphql({
+        operationName: 'SyncTicks',
+        query: SYNC_TICKS_QUERY.replace(/\s+/g, ' '),
+        variables: { cursor: null },
+      });
+      expect(await response.json()).toEqual(SYNC_TICKS_RESPONSE);
+      expect(hasLine('HIT graphql SyncTicks')).toBe(true);
+    });
+
+    it('reports document-changed, not no-fixture, when the selection set moved', async () => {
+      const response = await postGraphql({
+        operationName: 'SyncTicks',
+        query: SYNC_TICKS_QUERY.replace('documents', 'documents hasMore'),
+        variables: { cursor: null },
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }],
+      });
+      expect(hasLine('reason=document-changed')).toBe(true);
+    });
+
+    it('answers a miss with 200 and a GraphQL error, never a 5xx', async () => {
+      const response = await postGraphql({
+        operationName: 'NeverRecorded',
+        query: 'query NeverRecorded { ok }',
+        variables: {},
+      });
+      // A 5xx here would flip the app's connectivity store into "backend
+      // unreachable" and put an offline banner over the screen being captured.
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { errors: Array<{ message: string; extensions: { code: string } }> };
+      expect(body.errors[0].extensions.code).toBe('SCREENSHOT_FIXTURE_MISS');
+      expect(body.errors[0].message).toContain('NeverRecorded');
+      expect(hasLine('reason=no-fixture')).toBe(true);
+    });
+
+    it('names an anonymous operation as its own miss reason', async () => {
+      const response = await postGraphql({ query: '{ climbs { uuid } }', variables: {} });
+      expect(response.status).toBe(200);
+      expect(hasLine('reason=anonymous-operation')).toBe(true);
+    });
+
+    it('refuses a batched request rather than guessing', async () => {
+      const response = await fetch(`${backendOrigin}/graphql`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify([{ operationName: 'SyncTicks', query: SYNC_TICKS_QUERY }]),
+      });
+      expect(response.status).toBe(400);
+      expect(hasLine('MISS route POST /graphql (batched)')).toBe(true);
+    });
+
+    it('signs in the recorded account with synthetic tokens and rejects any other', async () => {
+      const accepted = await fetch(`${backendOrigin}/auth/native/credentials`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: ACCOUNT_EMAIL, password: 'anything' }),
+      });
+      expect(accepted.status).toBe(200);
+      const session = (await accepted.json()) as { jwt: string; refreshToken: string; expiresAt: string };
+      expect(session.jwt.startsWith('screenshot-replay.')).toBe(true);
+      expect(session.refreshToken).toBe('screenshot-replay-refresh');
+      expect(Date.parse(session.expiresAt)).toBeGreaterThan(Date.now());
+      expect(session.jwt).not.toContain(UPSTREAM_JWT);
+
+      const refreshed = await fetch(`${backendOrigin}/auth/native/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: 'screenshot-replay-refresh' }),
+      });
+      expect(refreshed.status).toBe(200);
+      expect((await refreshed.json()) as { jwt: string }).toMatchObject({ refreshToken: 'screenshot-replay-refresh' });
+
+      const rejected = await fetch(`${backendOrigin}/auth/native/credentials`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'someone@else.com', password: 'anything' }),
+      });
+      expect(rejected.status).toBe(401);
+      expect(hasLine('MISS auth email=someone@else.com expected=shots@boardsesh.com')).toBe(true);
+    });
+
+    it('serves a recorded asset with its recorded content type, in any parameter order', async () => {
+      const response = await fetch(`${backendOrigin}/static/avatars/marco.jpg?size=128&v=3`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain('image/jpeg');
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(AVATAR_BYTES);
+      expect(hasLine('HIT static /static/avatars/marco.jpg?size=128&v=3')).toBe(true);
+    });
+
+    it('404s an asset nobody recorded', async () => {
+      const response = await fetch(`${backendOrigin}/static/avatars/nobody.jpg`);
+      expect(response.status).toBe(404);
+      expect(hasLine('MISS static /static/avatars/nobody.jpg')).toBe(true);
+    });
+
+    it('answers the health probe in the shape backend-reachability classifies as healthy', async () => {
+      for (const path of ['/health', '/health/db']) {
+        const response = await fetch(`${backendOrigin}${path}`);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({
+          status: 'healthy',
+          database: { reachable: true },
+          screenshotBackend: true,
+        });
+      }
+    });
+
+    it('404s an unknown route instead of quietly proxying it', async () => {
+      const response = await fetch(`${backendOrigin}/api/v1/climbs`);
+      expect(response.status).toBe(404);
+      expect(hasLine('MISS route GET /api/v1/climbs')).toBe(true);
+    });
+
+    it('reports its counters over the status route', async () => {
+      await postGraphql({ operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } });
+      await postGraphql({ operationName: 'NeverRecorded', query: 'query NeverRecorded { ok }', variables: {} });
+      const response = await fetch(`${backendOrigin}/__screenshot-backend/status`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        mode: 'replay',
+        hits: 1,
+        misses: 1,
+        recorded: 0,
+        fixtures: { graphql: 1, static: 1 },
+      });
+    });
+
+    it('acks a graphql-ws handshake, pongs a ping, and stays silent on a subscribe', async () => {
+      const socket = new WebSocket(`${backendOrigin.replace('http://', 'ws://')}/graphql`, 'graphql-transport-ws');
+      const received: Array<Record<string, unknown>> = [];
+      await new Promise<void>((resolve, reject) => {
+        socket.on('open', () => resolve());
+        socket.on('error', reject);
+      });
+      socket.on('message', (frame) =>
+        received.push(JSON.parse(Buffer.from(frame as Buffer).toString('utf8')) as Record<string, unknown>),
+      );
+
+      socket.send(JSON.stringify({ type: 'connection_init' }));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(received).toEqual([{ type: 'connection_ack' }]);
+
+      socket.send(JSON.stringify({ type: 'ping' }));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(received[1]).toEqual({ type: 'pong' });
+
+      socket.send(
+        JSON.stringify({
+          id: '1',
+          type: 'subscribe',
+          payload: { operationName: 'ClimbStatsUpdated', query: 'subscription ClimbStatsUpdated { ok }' },
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      // Silence is the contract: the store screens render fine when the
+      // subscription never emits, so an inert socket is the right fixture.
+      expect(received).toHaveLength(2);
+      expect(socket.readyState).toBe(WebSocket.OPEN);
+      expect(hasLine('WS connection_init ack')).toBe(true);
+      expect(hasLine('WS subscribe ClimbStatsUpdated')).toBe(true);
+      socket.close();
+    });
+
+    it('destroys a websocket upgrade on any other path', async () => {
+      const socket = new WebSocket(`${backendOrigin.replace('http://', 'ws://')}/realtime`, 'graphql-transport-ws');
+      await expect(
+        new Promise<void>((resolve, reject) => {
+          socket.on('open', () => reject(new Error('the upgrade should not have been accepted')));
+          socket.on('error', () => resolve());
+          socket.on('close', () => resolve());
+        }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('startup guards', () => {
+    it('refuses to replay a fixture set that does not exist', async () => {
+      expect(() =>
+        createScreenshotBackend({
+          mode: 'replay',
+          fixturesDir,
+          upstreamUrl: null,
+          frozenNow: FROZEN_NOW,
+          log: () => {},
+        }),
+      ).toThrow(/no manifest.json/);
+    });
+
+    it('refuses a corrupt manifest and names the field', async () => {
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(
+        join(fixturesDir, 'manifest.json'),
+        JSON.stringify({
+          formatVersion: 1,
+          recordedAt: '',
+          frozenNow: 'x',
+          upstream: 'x',
+          accountEmail: '',
+          flow: '',
+          graphql: [],
+          static: [],
+        }),
+      );
+      expect(() =>
+        createScreenshotBackend({
+          mode: 'replay',
+          fixturesDir,
+          upstreamUrl: null,
+          frozenNow: FROZEN_NOW,
+          log: () => {},
+        }),
+      ).toThrow(/recordedAt/);
+    });
+
+    it('refuses an upstream in replay mode', () => {
+      expect(() =>
+        createScreenshotBackend({
+          mode: 'replay',
+          fixturesDir,
+          upstreamUrl: 'https://ws.boardsesh.com',
+          frozenNow: FROZEN_NOW,
+          log: () => {},
+        }),
+      ).toThrow(/replay mode makes no outbound requests/);
+    });
+  });
+});

@@ -1007,6 +1007,13 @@ export default defineConfig({
         command: 'tsx scripts/mobile-screenshots.ts',
         cache: false,
       },
+      // The record/replay backend the store capture points the app at, so the
+      // screenshots are a pure function of the JS bundle rather than of what
+      // PROD happened to answer. See docs/mobile-screenshot-fixtures.md.
+      'mobile:screenshot-backend': {
+        command: 'tsx scripts/screenshot-backend.ts',
+        cache: false,
+      },
       'mobile:build-sim-app': {
         command: 'tsx scripts/mobile-build-sim-app.ts',
         cache: false,

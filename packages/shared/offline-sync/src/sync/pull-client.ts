@@ -617,6 +617,30 @@ const SYNC_DELETIONS_QUERY = `
   }
 `;
 
+/** A sync pull document, paired with the operation name it declares. */
+export type SyncPullDocument = { operationName: string; document: string };
+
+/**
+ * Every GraphQL document the pull engine can send, built exactly the way
+ * `pullTable` and `pullDeletions` build them at runtime.
+ *
+ * Sync documents are assembled from `TABLE_CONFIGS` rather than written out, so
+ * nothing outside this file can enumerate them by reading source. The App Store
+ * screenshot recorder needs that list to tell "this operation was never
+ * recorded" apart from "this operation no longer exists", and a drift test
+ * needs it to notice when a table config adds an operation the recorded fixture
+ * set has never seen.
+ *
+ * Pure: builds strings, sends nothing.
+ */
+export function listSyncPullDocuments(): SyncPullDocument[] {
+  const tableDocuments = Object.values(TABLE_CONFIGS).map((config) => ({
+    operationName: `${config.queryName[0].toUpperCase()}${config.queryName.slice(1)}`,
+    document: buildSyncQuery(config.queryName, config.isPerBoard),
+  }));
+  return [...tableDocuments, { operationName: 'SyncDeletions', document: SYNC_DELETIONS_QUERY }];
+}
+
 // SQLite's default compile-time limit on bound parameters per statement
 // (SQLITE_MAX_VARIABLE_NUMBER's pre-3.32 default, still the safe floor across
 // the SQLite builds we run on — bundled iOS/Android sqlite3, node:sqlite).
