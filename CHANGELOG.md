@@ -6,8 +6,14 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-09-08
 
+### App update
+
+A new version shipped to the Play Store.
+
 ### New
 
+- Take turns on walls without LEDs. Your crew and gym screen follow the climb you put up. ([#4762](https://github.com/boardsesh/boardsesh/pull/4762))
+  Share a personal wall without lights, keep your chosen angle, and log named-wall sessions from your watch.
 - Holds draw faster: the board renderer no longer shares a line with the rest of the app ([#5210](https://github.com/boardsesh/boardsesh/pull/5210))
 - Drive your Woods Board from the lock screen: Previous and Next now light the wall straight from the Live Activity and Dynamic Island ([#5247](https://github.com/boardsesh/boardsesh/pull/5247))
   The Live Activity climb image now follows your board look — classic stays classic
@@ -15,6 +21,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Keep downloaded climbs up to date after app updates. ([#5284](https://github.com/boardsesh/boardsesh/pull/5284))
 - Get password-reset and verification emails when you need them. ([#5311](https://github.com/boardsesh/boardsesh/pull/5311))
 - Flip a climb on a Woods board and the wall now flips with it ([#5237](https://github.com/boardsesh/boardsesh/pull/5237))
   Flipping a climb no longer un-flips itself when the board re-lights

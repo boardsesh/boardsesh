@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-08T03:14:56.593Z",
+  "generatedAt": "2026-09-08T03:59:57.375Z",
   "entries": [
+    {
+      "prNumber": 5284,
+      "category": "fixed",
+      "title": "Keep downloaded climbs up to date after app updates.",
+      "mergedAt": "2026-09-08T03:59:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5284"
+    },
+    {
+      "prNumber": 4762,
+      "category": "new",
+      "title": "Take turns on walls without LEDs. Your crew and gym screen follow the climb you put up.",
+      "mergedAt": "2026-09-08T03:58:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4762",
+      "body": "Share a personal wall without lights, keep your chosen angle, and log named-wall sessions from your watch."
+    },
     {
       "prNumber": 5311,
       "category": "fixed",
@@ -4692,6 +4707,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-08T12:42:58+10:00",
+      "sha": "24af90d3add8e594c57594b0166ce132adf08515",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "333020de42ca2195cee2c3c9ad37a1715928dc62"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-01T21:04:28+10:00",
