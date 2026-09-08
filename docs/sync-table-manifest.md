@@ -158,7 +158,8 @@ via `SET LOCAL boardsesh.suppress_sync_tombstones = 'on'` (see `clearBoardData`)
   `INSERT ... ON CONFLICT (uuid) DO NOTHING`; if no row returned, `SELECT` the existing row by `uuid` and return it.
   (Preserves the original on replay.) When absent (existing web callers): generate `uuidv4()` as today. `uuid` is
   already a UNIQUE column on both `boardsesh_ticks` and `playlists`.
-- `addFavorite`: `INSERT INTO user_favorites (...) ON CONFLICT (user_id, climb_uuid) DO NOTHING`.
+- `addFavorite`: serialize by user/climb, check existing UUIDs, then `INSERT ... ON CONFLICT DO NOTHING`.
+  The untargeted conflict handler works before and after the unique-key migration; see [favorites rollout](favorites-rollout.md).
 - `removeFavorite`: `DELETE FROM user_favorites WHERE user_id=$u AND climb_uuid=$c`
   (deleting a nonexistent row is a no-op — idempotent). Both return `Boolean!` (`true`). Reuse `ToggleFavoriteInputSchema`'s
   field validation for the Zod schemas.
@@ -225,12 +226,15 @@ composite-keyed sync table must keep this true (or version the encoding).
 
 - Scope: `user_id = $userId`. Seq: `id`. updated_at: **added by Phase 2**. Hook: **yes** (`addFavorite`/`removeFavorite`).
 - Local PK: **`(climb_uuid)`** — a favorite is keyed by the climb alone; the server key is `(user_id, climb_uuid)`.
-- Del: trigger emits `record_id = <climb_uuid>` (1 seg). **Overrides** the doc's `OLD.id::text`.
+- Del: trigger retains `record_id = <board_name>:<climb_uuid>:<angle>` for older apps.
+  New apps extract the UUID. Removing a favorite also emits IDs for its archived angle variants,
+  so deduplication does not strand hearts in older devices' composite-key tables.
 - Columns: `board_name`, `climb_uuid`, `angle`, `user_id`, `created_at`, `updated_at`. `board_name` and `angle` are
-  **vestigial**: nothing reads them, but the resolver keeps emitting them for one release because a device on
+  **legacy storage metadata**: they do not determine favorite identity. Writers still populate them for older
+  backend readers, and the resolver keeps emitting them because a device on
   pre-re-keying JS declares both NOT NULL locally and would fail its whole pull cycle without them. The local table
   keeps them as nullable columns (migration v6) so they land instead of firing `onSchemaDrift` every launch.
-  The deletion reader accepts both bare UUIDs and historical `board:uuid:angle` tombstones,
+  The deletion reader accepts both bare UUIDs and legacy `board:uuid:angle` tombstones,
   with the same timestamp guard against deleting a newer re-add.
 - Offline hook: insert `(climb_uuid, created_at, updated_at)` — **no synthetic `id` column** (B8). `user_id` may be
   NULL offline (filled on next sync).

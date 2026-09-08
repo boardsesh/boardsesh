@@ -125,7 +125,7 @@ describe('syncFavorites — document shape + composite-cursor pagination', () =>
 });
 
 describe('syncDeletions — record_id encoding', () => {
-  it('encodes user_favorites deletions as a bare climb_uuid with the user id', async () => {
+  it('keeps composite favorite deletion IDs readable by older clients', async () => {
     await db.execute(sql`
       INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle, created_at, updated_at)
       VALUES (${USER_ID}, 'tension', 'del-fav-climb', 25, now(), now())
@@ -138,10 +138,8 @@ describe('syncDeletions — record_id encoding', () => {
 
     const favDeletion = result.deletions.find((d) => d.tableName === 'user_favorites');
     expect(favDeletion).toBeDefined();
-    // 1 part, matching primaryKeyColumns: ['climb_uuid'] on the client. This is
-    // the regression test for the log_deletion_favorites() trigger body — plpgsql
-    // resolves OLD.* at runtime, so a stale body has no compile-time signal.
-    expect(favDeletion?.recordId).toBe('del-fav-climb');
+    // Old clients require three parts; the new UUID-keyed reader extracts UUID.
+    expect(favDeletion?.recordId).toBe('tension:del-fav-climb:25');
     expect(typeof favDeletion?.deletedAt).toBe('string');
   });
 
@@ -170,7 +168,7 @@ describe('syncDeletions — record_id encoding', () => {
     await db.execute(sql`DELETE FROM user_favorites WHERE user_id = ${USER_ID} AND climb_uuid = 'scoped-del'`);
 
     const otherResult = await callSyncDeletions(null, 500, OTHER_USER_ID);
-    const leaked = otherResult.deletions.find((d) => d.recordId === 'scoped-del');
+    const leaked = otherResult.deletions.find((d) => d.recordId === 'kilter:scoped-del:40');
     expect(leaked).toBeUndefined();
   });
 });

@@ -11,23 +11,17 @@
 --   3. archive the losing rows into user_favorites_dedup_backup_0194, then
 --      delete them (reversible, in-database — no pg_dump-and-pray),
 --   4. re-enable the trigger, create the new indexes,
---   5. replace log_deletion_favorites() so tombstones carry a 1-part record_id.
+--   5. retain composite tombstones for old apps, including archived variants
+--      when the surviving favorite is eventually removed.
 --
 -- board_name / angle are kept as vestigial defaulted columns for one release:
 -- syncFavorites still emits them, and a pre-OTA device's local SQLite declares
 -- them NOT NULL. They get dropped in the follow-up release.
 --
--- unique_user_favorite_legacy exists for the deploy window only. Migrations run
--- in their own gated job BEFORE the new backend image goes live
--- (.github/workflows/production-deploy.yml), so for the minutes it takes Railway
--- to roll, the old backend is still serving against this schema — and its
--- `ON CONFLICT (user_id, board_name, climb_uuid, angle)` fails with 42P10 the
--- moment no index carries that column set, turning EVERY favorite tap into a
--- 500. Keeping a unique index on the four old columns keeps that inference
--- resolving. It is also tracked in the Drizzle schema so subsequent migrations
--- retain it; Release 2 drops it alongside the columns.
--- This does not protect against the new UUID unique constraint: compatible
--- backend writers must be deployed before this migration.
+-- Keep the legacy index for the transition, tracked in the Drizzle schema.
+-- It does not protect old targeted writers against the new UUID constraint.
+-- Deploy the compatibility backend from docs/favorites-rollout.md completely
+-- BEFORE applying this migration; it uses untargeted conflict handling.
 DROP INDEX "unique_user_favorite";--> statement-breakpoint
 DROP INDEX "user_favorites_climb_idx";--> statement-breakpoint
 ALTER TABLE "user_favorites" ALTER COLUMN "board_name" SET DEFAULT '';--> statement-breakpoint
@@ -41,6 +35,7 @@ CREATE TABLE IF NOT EXISTS "user_favorites_dedup_backup_0194" (
 	"created_at" timestamp NOT NULL,
 	"updated_at" timestamp NOT NULL
 );--> statement-breakpoint
+CREATE INDEX "user_favorites_dedup_backup_0194_user_climb_idx" ON "user_favorites_dedup_backup_0194" ("user_id", "climb_uuid");--> statement-breakpoint
 DO $$
 BEGIN
   IF EXISTS (
@@ -78,7 +73,14 @@ CREATE INDEX "user_favorites_climb_idx" ON "user_favorites" USING btree ("climb_
 CREATE OR REPLACE FUNCTION log_deletion_favorites() RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO sync_deletions (table_name, record_id, user_id)
-  VALUES (TG_TABLE_NAME, OLD.climb_uuid, OLD.user_id);
+  SELECT TG_TABLE_NAME, variants.board_name || ':' || OLD.climb_uuid || ':' || variants.angle::text, OLD.user_id
+  FROM (
+    SELECT OLD.board_name AS board_name, OLD.angle AS angle
+    UNION
+    SELECT backup.board_name, backup.angle
+    FROM user_favorites_dedup_backup_0194 backup
+    WHERE backup.user_id = OLD.user_id AND backup.climb_uuid = OLD.climb_uuid
+  ) variants;
   RETURN OLD;
 END;
 $$ LANGUAGE plpgsql SET search_path = public, pg_catalog;

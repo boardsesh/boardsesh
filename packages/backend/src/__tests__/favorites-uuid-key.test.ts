@@ -58,7 +58,9 @@ async function favoriteRowCount(climbUuid: string, userId = USER_ID): Promise<nu
 }
 
 beforeEach(async () => {
-  await db.execute(sql`TRUNCATE TABLE user_favorites, sync_deletions RESTART IDENTITY CASCADE`);
+  await db.execute(
+    sql`TRUNCATE TABLE user_favorites, user_favorites_dedup_backup_0194, sync_deletions RESTART IDENTITY CASCADE`,
+  );
   await insertUser(USER_ID);
   await insertUser(OTHER_USER_ID);
   await seedClimb('kilter', KILTER_CLIMB, 'Kilter climb');
@@ -205,13 +207,10 @@ describe('mySmartPlaylistCounts — the liked-climbs card', () => {
   });
 });
 
-describe('deploy-window compatibility with the previous backend', () => {
-  // Migrations run in a gated job BEFORE the new backend image is live, so for
-  // the minutes Railway takes to roll, the OLD resolver is serving against this
-  // schema. Its insert infers `ON CONFLICT (user_id, board_name, climb_uuid,
-  // angle)`; with no unique index on those four columns Postgres raises 42P10
-  // and every favorite tap 500s. Migration 0194 keeps unique_user_favorite_legacy
-  // for exactly that window — Release 2 drops it with the columns.
+describe('legacy index and offline deletion compatibility', () => {
+  // The legacy index preserves conflict-target inference only. It does not
+  // make pre-compatibility writers safe against the new UUID unique key;
+  // the compatibility backend must be fully deployed before this migration.
   it('still resolves the old four-column ON CONFLICT target', async () => {
     const insertTheOldWay = () =>
       db.execute(sql`
@@ -231,5 +230,28 @@ describe('deploy-window compatibility with the previous backend', () => {
     // collapses onto the one row.
     await favoriteMutations.addFavorite(undefined, { input: { climbUuid: KILTER_CLIMB } }, ctx());
     expect(await favoriteRowCount(KILTER_CLIMB)).toBe(1);
+  });
+
+  it('removes archived angle variants from old devices without leaking another user or climb', async () => {
+    await db.execute(sql`
+      INSERT INTO user_favorites_dedup_backup_0194
+        (id, user_id, board_name, climb_uuid, angle, created_at, updated_at)
+      VALUES
+        (9001, ${USER_ID}, 'kilter', ${KILTER_CLIMB}, 40, now(), now()),
+        (9002, ${USER_ID}, 'kilter', ${KILTER_CLIMB}, 40, now(), now()),
+        (9003, ${OTHER_USER_ID}, 'kilter', ${KILTER_CLIMB}, 30, now(), now()),
+        (9004, ${USER_ID}, 'tension', ${TENSION_CLIMB}, 25, now(), now())
+    `);
+    await favoriteMutations.addFavorite(undefined, { input: { climbUuid: KILTER_CLIMB, angle: 50 } }, ctx());
+    await favoriteMutations.removeFavorite(undefined, { input: { climbUuid: KILTER_CLIMB } }, ctx());
+
+    const deletions = await db.execute(sql`
+      SELECT record_id, user_id FROM sync_deletions WHERE table_name = 'user_favorites' ORDER BY record_id
+    `);
+    expect(Array.from(deletions)).toEqual([
+      { record_id: `kilter:${KILTER_CLIMB}:40`, user_id: USER_ID },
+      { record_id: `kilter:${KILTER_CLIMB}:50`, user_id: USER_ID },
+    ]);
+    expect(await favoriteRowCount(KILTER_CLIMB)).toBe(0);
   });
 });

@@ -1549,10 +1549,19 @@ export const schemaSQL = `
   CREATE TRIGGER trg_playlist_climbs_delete AFTER DELETE ON playlist_climbs
     FOR EACH ROW EXECUTE FUNCTION log_deletion_playlist_climbs();
 
+  CREATE TABLE IF NOT EXISTS user_favorites_dedup_backup_0194 (LIKE user_favorites);
+
   CREATE OR REPLACE FUNCTION log_deletion_favorites() RETURNS TRIGGER AS $$
   BEGIN
     INSERT INTO sync_deletions (table_name, record_id, user_id)
-    VALUES (TG_TABLE_NAME, OLD.climb_uuid, OLD.user_id);
+    SELECT TG_TABLE_NAME, variants.board_name || ':' || OLD.climb_uuid || ':' || variants.angle::text, OLD.user_id
+    FROM (
+      SELECT OLD.board_name AS board_name, OLD.angle AS angle
+      UNION
+      SELECT backup.board_name, backup.angle
+      FROM user_favorites_dedup_backup_0194 backup
+      WHERE backup.user_id = OLD.user_id AND backup.climb_uuid = OLD.climb_uuid
+    ) variants;
     RETURN OLD;
   END;
   $$ LANGUAGE plpgsql;

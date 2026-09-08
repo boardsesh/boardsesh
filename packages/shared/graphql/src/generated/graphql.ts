@@ -1944,15 +1944,6 @@ export type EventsReplayResponse = {
   events: Array<QueueEvent>;
 };
 
-/** Count of favorited climbs per board. */
-export type FavoritesCount = {
-  __typename?: 'FavoritesCount';
-  /** Board name */
-  boardName: Scalars['String']['output'];
-  /** Number of favorited climbs */
-  count: Scalars['Int']['output'];
-};
-
 /**
  * Free-form debug context attached to a feedback submission. Stored as jsonb.
  * Every field is optional — anonymous submissions made outside a board route
@@ -5339,7 +5330,9 @@ export type Query = {
   eventsReplay: EventsReplayResponse;
   /**
    * Check which climbs from a list are favorited by the current user.
-   * Returns array of favorited climb UUIDs.
+   * Returns array of favorited climb UUIDs. Favorites are keyed by climb UUID,
+   * so the answer is board- and angle-independent; boardName and angle are
+   * accepted and ignored so older binaries keep validating.
    */
   favorites: Array<Scalars['String']['output']>;
   /**
@@ -5696,11 +5689,6 @@ export type Query = {
   /** Get unread notification count for the current user. */
   unreadNotificationCount: Scalars['Int']['output'];
   /**
-   * Get board names where the current user has playlists or favorites.
-   * Requires authentication.
-   */
-  userActiveBoards: Array<Scalars['String']['output']>;
-  /**
    * Suggest the user's logged ascents that a shared reel caption is about, by
    * matching the caption against their whole logbook's climb names. Returns full
    * ascent rows (with board art) for the matched climbs, strongest match first.
@@ -5733,11 +5721,6 @@ export type Query = {
    * Requires authentication.
    */
   userFavoriteClimbs: PlaylistClimbsResult;
-  /**
-   * Get count of favorited climbs per board for the current user.
-   * Requires authentication.
-   */
-  userFavoritesCounts: Array<FavoritesCount>;
   /**
    * Get public ascent feed grouped by climb and day.
    * Useful for summary displays.
@@ -9202,9 +9185,7 @@ export type CreateSessionMutation = {
 };
 
 export type FavoritesQueryVariables = Exact<{
-  boardName: Scalars['String']['input'];
   climbUuids: Array<Scalars['String']['input']> | Scalars['String']['input'];
-  angle: Scalars['Int']['input'];
 }>;
 
 export type FavoritesQuery = { __typename?: 'Query'; favorites: Array<string> };
@@ -9217,17 +9198,6 @@ export type ToggleFavoriteMutation = {
   __typename?: 'Mutation';
   toggleFavorite: { __typename?: 'ToggleFavoriteResult'; favorited: boolean };
 };
-
-export type UserFavoritesCountsQueryVariables = Exact<{ [key: string]: never }>;
-
-export type UserFavoritesCountsQuery = {
-  __typename?: 'Query';
-  userFavoritesCounts: Array<{ __typename?: 'FavoritesCount'; boardName: string; count: number }>;
-};
-
-export type UserActiveBoardsQueryVariables = Exact<{ [key: string]: never }>;
-
-export type UserActiveBoardsQuery = { __typename?: 'Query'; userActiveBoards: Array<string> };
 
 export type GetUserFavoriteClimbsQueryVariables = Exact<{
   input: GetUserFavoriteClimbsInput;
@@ -12955,11 +12925,6 @@ export const FavoritesDocument = {
       variableDefinitions: [
         {
           kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardName' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
-        },
-        {
-          kind: 'VariableDefinition',
           variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuids' } },
           type: {
             kind: 'NonNullType',
@@ -12968,11 +12933,6 @@ export const FavoritesDocument = {
               type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
             },
           },
-        },
-        {
-          kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
         },
       ],
       selectionSet: {
@@ -12984,18 +12944,8 @@ export const FavoritesDocument = {
             arguments: [
               {
                 kind: 'Argument',
-                name: { kind: 'Name', value: 'boardName' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardName' } },
-              },
-              {
-                kind: 'Argument',
                 name: { kind: 'Name', value: 'climbUuids' },
                 value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuids' } },
-              },
-              {
-                kind: 'Argument',
-                name: { kind: 'Name', value: 'angle' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
               },
             ],
           },
@@ -13044,46 +12994,6 @@ export const ToggleFavoriteDocument = {
     },
   ],
 } as unknown as DocumentNode<ToggleFavoriteMutation, ToggleFavoriteMutationVariables>;
-export const UserFavoritesCountsDocument = {
-  kind: 'Document',
-  definitions: [
-    {
-      kind: 'OperationDefinition',
-      operation: 'query',
-      name: { kind: 'Name', value: 'UserFavoritesCounts' },
-      selectionSet: {
-        kind: 'SelectionSet',
-        selections: [
-          {
-            kind: 'Field',
-            name: { kind: 'Name', value: 'userFavoritesCounts' },
-            selectionSet: {
-              kind: 'SelectionSet',
-              selections: [
-                { kind: 'Field', name: { kind: 'Name', value: 'boardName' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'count' } },
-              ],
-            },
-          },
-        ],
-      },
-    },
-  ],
-} as unknown as DocumentNode<UserFavoritesCountsQuery, UserFavoritesCountsQueryVariables>;
-export const UserActiveBoardsDocument = {
-  kind: 'Document',
-  definitions: [
-    {
-      kind: 'OperationDefinition',
-      operation: 'query',
-      name: { kind: 'Name', value: 'UserActiveBoards' },
-      selectionSet: {
-        kind: 'SelectionSet',
-        selections: [{ kind: 'Field', name: { kind: 'Name', value: 'userActiveBoards' } }],
-      },
-    },
-  ],
-} as unknown as DocumentNode<UserActiveBoardsQuery, UserActiveBoardsQueryVariables>;
 export const GetUserFavoriteClimbsDocument = {
   kind: 'Document',
   definitions: [
