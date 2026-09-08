@@ -1,6 +1,6 @@
 import { useMemo, useRef, type ComponentType, type RefObject } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
-import { useSharedValue, withSpring, runOnJS, type SharedValue } from 'react-native-reanimated';
+import { cancelAnimation, useSharedValue, withSpring, runOnJS, type SharedValue } from 'react-native-reanimated';
 import { springs } from '../../theme/animations';
 
 // Pull-down-to-dismiss for the full-screen player route. The route is a native
@@ -9,7 +9,8 @@ import { springs } from '../../theme/animations';
 // fired in the bare grabber region ("only works using the drag handle"). This
 // RNGH Pan lives in the same gesture tree as the scroll + board, so it can yield
 // to them and drive a dismiss from the WHOLE surface. The route sets
-// `gestureEnabled: false`; dismissal is `router.dismiss()` past the threshold.
+// `gestureEnabled: false`. A route-owned surface continues the release on the
+// UI thread and removes the route only once it is offscreen.
 //
 // Key wiring: the Pan is an ANCESTOR of the RNGH ScrollView, so it MUST declare
 // `.simultaneousWithExternalGesture(scrollRef)` — otherwise the native scroll
@@ -31,9 +32,19 @@ const DISMISS_DISTANCE_THRESHOLD = 110;
 /** Downward fling velocity (px/s) that commits a dismiss even on a short drag. */
 const DISMISS_VELOCITY_THRESHOLD = 600;
 
+export type SwipeDismissAnimation = {
+  translateY: SharedValue<number>;
+  height: SharedValue<number>;
+  isDismissing: SharedValue<boolean>;
+  /** Called after the surface has finished sliding offscreen. */
+  onComplete: () => void;
+};
+
 type UseDrawerDismissGestureOptions = {
   /** Dismiss the route (e.g. `router.dismiss`). */
   onDismiss: () => void;
+  /** The route moves its background and content as one surface. */
+  swipeDismiss?: SwipeDismissAnimation;
   /** Live scroll offset of the drawer's ScrollView. The dismiss only engages when
    *  the gesture starts at the very top (<= 0); anywhere else it's a scroll. */
   scrollYSV: SharedValue<number>;
@@ -59,13 +70,17 @@ type UseDrawerDismissGestureReturn = {
 
 export function useDrawerDismissGesture({
   onDismiss,
+  swipeDismiss,
   scrollYSV,
   scrollRef,
   swipeTranslateX,
   swipeIsAnimating,
 }: UseDrawerDismissGestureOptions): UseDrawerDismissGestureReturn {
-  const translateY = useSharedValue(0);
-  const isDismissing = useSharedValue(false);
+  const localTranslateY = useSharedValue(0);
+  const localIsDismissing = useSharedValue(false);
+  const translateY = swipeDismiss?.translateY ?? localTranslateY;
+  const isDismissing = swipeDismiss?.isDismissing ?? localIsDismissing;
+  const dismissHeight = swipeDismiss?.height;
   // Captured at touch-down: only a gesture that STARTS at the top can dismiss, so
   // a scroll-up that reaches the top doesn't suddenly yank the drawer down.
   const startedAtTop = useSharedValue(false);
@@ -73,7 +88,7 @@ export function useDrawerDismissGesture({
   // Captured ONCE by the gesture memo — must only close over the ref so a later
   // render's onDismiss is still reached (mirrors use-carousel-gesture).
   const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
+  onDismissRef.current = swipeDismiss?.onComplete ?? onDismiss;
   const commitDismiss = () => {
     onDismissRef.current();
   };
@@ -89,6 +104,8 @@ export function useDrawerDismissGesture({
       .failOffsetX([-DISMISS_FAIL_OFFSET_X, DISMISS_FAIL_OFFSET_X])
       .onBegin(() => {
         'worklet';
+        if (isDismissing.value) return;
+        cancelAnimation(translateY);
         startedAtTop.value = scrollYSV.value <= 0;
       })
       .onUpdate((event) => {
@@ -110,6 +127,7 @@ export function useDrawerDismissGesture({
       })
       .onEnd((event) => {
         'worklet';
+        if (isDismissing.value) return;
         // Same guard as onUpdate, and it must run BEFORE the velocity check: a fast
         // horizontal flick carries vertical velocity, so without this an accidental
         // down-component could satisfy velocityY > threshold and commit a dismiss
@@ -122,26 +140,43 @@ export function useDrawerDismissGesture({
           startedAtTop.value &&
           (translateY.value > DISMISS_DISTANCE_THRESHOLD || event.velocityY > DISMISS_VELOCITY_THRESHOLD);
         if (committed) {
-          // Hand off to the native route's slide-out; leave translateY where it is
-          // so the dismiss continues from the dragged position.
           isDismissing.value = true;
-          runOnJS(commitDismiss)();
+          if (dismissHeight) {
+            // Never pause at the release position waiting for navigation/JS.
+            // Continue this SAME transform, carrying the downward release speed.
+            translateY.value = withSpring(
+              Math.max(dismissHeight.value, translateY.value),
+              { ...springs.snappy, velocity: Math.max(0, event.velocityY), overshootClamping: true },
+              (finished) => {
+                if (finished) {
+                  runOnJS(commitDismiss)();
+                } else {
+                  isDismissing.value = false;
+                  translateY.value = withSpring(0, springs.interactive);
+                }
+              },
+            );
+          } else {
+            // Standalone hosts without a route-owned surface retain their close.
+            runOnJS(commitDismiss)();
+          }
         } else {
           translateY.value = withSpring(0, springs.interactive);
         }
       })
-      // The route normally unmounts after a committed dismiss, but a
-      // dismiss/re-navigate race on this live-behind `transparentModal` could
-      // leave the gesture alive with `isDismissing` stuck true — `onUpdate` would
-      // then early-return forever and the drawer could never be dragged again.
-      // Reset on finalize so the next drag always starts clean. (translateY is
-      // left as-is so a committed dismiss keeps sliding from the dragged offset.)
-      .onFinalize(() => {
+      // Finalize fires at finger-up, BEFORE the release spring completes. Keep
+      // its latch locked; a second touch must not interrupt a committed close.
+      // Cancellation (including a second finger) still returns an open drag home.
+      .onFinalize((_event, success) => {
         'worklet';
-        isDismissing.value = false;
+        if (!dismissHeight) {
+          isDismissing.value = false;
+          return;
+        }
+        if (!success && !isDismissing.value) translateY.value = withSpring(0, springs.interactive);
       });
     return scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan;
-  }, [translateY, isDismissing, startedAtTop, scrollYSV, scrollRef, swipeTranslateX, swipeIsAnimating]);
+  }, [translateY, isDismissing, dismissHeight, startedAtTop, scrollYSV, scrollRef, swipeTranslateX, swipeIsAnimating]);
 
   return { gesture, translateY };
 }

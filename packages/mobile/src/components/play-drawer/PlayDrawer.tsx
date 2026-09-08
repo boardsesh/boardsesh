@@ -59,7 +59,7 @@ import {
   shouldShowPanePlaceholder,
 } from './play-drawer-layout';
 import { useBelowFoldContentRequest } from './use-below-fold-content-request';
-import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
+import { useDrawerDismissGesture, type SwipeDismissAnimation } from './use-drawer-dismiss-gesture';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
@@ -149,6 +149,9 @@ export type PlayDrawerOpenTarget = {
 };
 
 type PlayDrawerProps = {
+  /** `/play` owns the transform so its backing and content travel together. */
+  swipeDismiss?: SwipeDismissAnimation;
+  onClose?: () => void;
   boardConfig: BoardConfig;
   onAngleChange?: (angle: number) => void;
   /** When false, the board's angle is fixed — the angle pill is hidden. */
@@ -235,13 +238,15 @@ const DEFAULT_LOGBOOK_HEADER_HEIGHT = 52;
 
 /**
  * Full-screen "now playing" player (Spotify-style track view). Rendered as the
- * content of the `app/play.tsx` modal route (`presentation: 'fullScreenModal'`):
- * the native modal VC gives the slide-up present, the swipe-down dismiss, and —
+ * content of the `app/play.tsx` modal route (`presentation: 'transparentModal'`):
+ * the native modal VC gives the slide-up present, button dismiss, and —
  * crucially — a view-controller stack that the sub-drawers / queue / share sheet
  * present ABOVE (the FullWindowOverlay it replaced could not, since native sheets
  * present off the key window beneath it).
  */
 export function PlayDrawer({
+  swipeDismiss,
+  onClose,
   boardConfig,
   onAngleChange,
   isAngleAdjustable = true,
@@ -370,8 +375,9 @@ export function PlayDrawer({
   const handleDismiss = useCallback(() => {
     // The pane is persistent — nothing to dismiss (and no modal to pop).
     if (isPane) return;
-    router.dismiss();
-  }, [isPane]);
+    if (onClose) onClose();
+    else router.dismiss();
+  }, [isPane, onClose]);
 
   // The header (title + grade) rides this exact value as the board so they swipe
   // in lockstep; the carousel's gesture writes into it (externalTranslateX). The
@@ -388,6 +394,7 @@ export function PlayDrawer({
   // when an accidental downward drift would otherwise yank the drawer down.
   const { gesture: dismissGesture, translateY: dismissTranslateY } = useDrawerDismissGesture({
     onDismiss: handleDismiss,
+    swipeDismiss,
     scrollYSV,
     scrollRef: scrollGestureRef,
     swipeTranslateX,
@@ -1235,7 +1242,7 @@ export function PlayDrawer({
         />
       ) : (
         <GestureDetector gesture={dismissGesture.enabled(!isPane)}>
-          <Animated.View style={[styles.content, dismissAnimatedStyle]}>
+          <Animated.View style={[styles.content, !swipeDismiss && dismissAnimatedStyle]}>
             <ScrollView
               ref={scrollRef}
               nestedScrollEnabled

@@ -363,6 +363,29 @@ is fine. A navigator _below_ the modal you're standing in needs the dismiss firs
 
 ## A latency footgun (any route)
 
+### Player swipe dismissal
+
+The player keeps its native opening and chevron-close transitions. A downward
+swipe instead owns one Reanimated translation for the entire route surface,
+including its opaque backing and glass. `use-drawer-dismiss-gesture` continues
+that transform on release with the downward velocity and a clamped spring. It
+does not wait for JavaScript to start a second native animation from the dragged
+position: that handoff caused a visible pause just after release.
+
+`use-play-swipe-dismiss` removes the route only after the spring finishes. It
+sets `animation: 'none'`, then yields two animation frames before dismissal so
+the option update and removal are separate native mounting transactions. Those
+frames happen with the player already offscreen. The closing latch survives
+gesture finalization, blocks repeat touches and chevron taps, and releases on
+animation cancellation. A completion after unmount is ignored; if another modal
+has taken focus, the player restores itself underneath it instead of dismissing
+the newer modal. The route's existing programmatic close waiter stays native.
+
+The iPad pane does not receive this route-owned animation. Keep the modal's
+live-behind presentation and accessory-host mount rules above when changing it.
+
+### Opening a heavy route
+
 A modal route's present animation can't START until React commits the route's first frame. If
 that first render is heavy (the player mounts board geometry + a stack of hooks), the slide
 visibly lags the tap. Paint only a cheap first frame (a solid/`GlassSurface` background) and

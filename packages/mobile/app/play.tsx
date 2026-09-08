@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
+import Animated from 'react-native-reanimated';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { GlassSurface } from '../src/components/GlassSurface';
 import { PlayDrawer } from '../src/components/play-drawer';
@@ -17,11 +18,12 @@ import { useQueueActions, useQueueSessionControls } from '../src/providers/queue
 import { useTheme } from '../src/providers/theme-provider';
 import { playDrawerMaterialTint } from '../src/theme/colors';
 import { usePlayerDismissAndWait } from '../src/components/create-climb/use-player-dismiss-and-wait';
+import { usePlaySwipeDismiss } from '../src/components/play-drawer/use-play-swipe-dismiss';
 import type { Climb } from '@boardsesh/shared-schema';
 import { dismissManagedSheetAndWait, type DismissAndWaitResult } from '../src/providers/sheet-presentation-provider';
 
 /**
- * Full-screen "now playing" player route (`presentation: 'fullScreenModal'`,
+ * Full-screen "now playing" player route (`presentation: 'transparentModal'`,
  * registered in app/_layout.tsx). Replaces the old FullWindowOverlay: as a real
  * modal view controller, everything presented from inside its React tree — the
  * sub-drawers, the share sheet, and this route's own QueueSheet — stacks ABOVE
@@ -58,6 +60,7 @@ export default function PlayScreen() {
   const { setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const { systemColors, colorScheme } = useTheme();
+  const { swipeDismiss, animatedStyle, onLayout, close } = usePlaySwipeDismiss();
 
   const queueSheetRef = useRef<QueueSheetHandle>(null);
   const presentQueue = useCallback(() => queueSheetRef.current?.present(), []);
@@ -117,7 +120,7 @@ export default function PlayScreen() {
   });
 
   return (
-    <View style={styles.root}>
+    <Animated.View style={[styles.root, animatedStyle]} onLayout={onLayout}>
       {/* Opaque backstop. The player is a transparentModal, so the live tabs
           screen sits behind it — paint a solid background under the glass so the
           Climbs list doesn't show through the translucent GlassSurface. */}
@@ -146,6 +149,8 @@ export default function PlayScreen() {
       {contentMounted && activeBoardConfig ? (
         <>
           <PlayDrawer
+            swipeDismiss={swipeDismiss}
+            onClose={close}
             boardConfig={activeBoardConfig}
             onAngleChange={onAngleChange}
             isAngleAdjustable={isAngleAdjustable}
@@ -174,7 +179,7 @@ export default function PlayScreen() {
           player's lightbulb (when disconnected) presents OVER the player. Claims
           the picker, suppressing the app-root instance while mounted. */}
       <DevicePickerSheetHost registerExternal />
-    </View>
+    </Animated.View>
   );
 }
 
