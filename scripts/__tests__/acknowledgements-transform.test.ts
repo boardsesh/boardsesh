@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   isBotLogin,
   aggregateContributors,
+  resolveAcknowledgements,
   transformSponsors,
+  type AcknowledgementsData,
   type AuthorRef,
   type RawSponsorNode,
 } from '../lib/acknowledgements-transform';
@@ -79,5 +81,52 @@ describe('transformSponsors', () => {
   it('backfills a profile URL when the entity omits one', () => {
     const [first] = transformSponsors([{ sponsorEntity: { login: 'patron' } }]);
     expect(first.url).toBe('https://github.com/patron');
+  });
+});
+
+describe('resolveAcknowledgements', () => {
+  const existingAcknowledgements: AcknowledgementsData = {
+    generatedAt: '2026-06-15T03:43:45.371Z',
+    contributors: [
+      {
+        login: 'existing-contributor',
+        name: null,
+        avatarUrl: '',
+        htmlUrl: 'https://github.com/existing-contributor',
+        pullRequests: 1,
+        issues: 0,
+        contributions: 1,
+      },
+    ],
+    sponsors: [{ login: 'existing-sponsor', name: null, avatarUrl: '', url: 'https://github.com/existing-sponsor' }],
+    privateSponsorCount: 2,
+  };
+
+  it('keeps unavailable sections for best-effort local refreshes', () => {
+    const acknowledgements = resolveAcknowledgements(
+      existingAcknowledgements,
+      {
+        contributors: [],
+        sponsors: [
+          { login: 'fresh-sponsor', name: 'Fresh Sponsor', avatarUrl: '', url: 'https://github.com/fresh-sponsor' },
+        ],
+        privateSponsorCount: null,
+      },
+      'best-effort',
+    );
+
+    expect(acknowledgements.contributors).toEqual([]);
+    expect(acknowledgements.sponsors.map((sponsor) => sponsor.login)).toEqual(['fresh-sponsor']);
+    expect(acknowledgements.privateSponsorCount).toBe(2);
+  });
+
+  it('rejects a partial refresh in strict scheduled mode', () => {
+    expect(() =>
+      resolveAcknowledgements(
+        existingAcknowledgements,
+        { contributors: null, sponsors: [], privateSponsorCount: null },
+        'strict',
+      ),
+    ).toThrow('Unable to refresh acknowledgements: contributors, private sponsor count.');
   });
 });

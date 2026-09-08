@@ -45,9 +45,6 @@ export default function AboutScreen() {
   const handleOpenAcknowledgements = useCallback(() => {
     router.push('/acknowledgements');
   }, [router]);
-  const handleOpenChangelog = useCallback(() => {
-    router.push('/changelog');
-  }, [router]);
   const handleOpenGithub = useCallback(() => {
     void openExternalUrl(GITHUB_REPO_URL, 'about-github');
   }, []);
@@ -152,28 +149,6 @@ export default function AboutScreen() {
             style={styles.partnerButton}
           />
         </View>
-
-        <PressableSurface
-          onPress={handleOpenChangelog}
-          feedback="opacity"
-          opacityTo={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.about.changelogLink')}
-          style={[styles.linkRow, { backgroundColor: systemColors.secondaryBackground }]}
-        >
-          <View style={[styles.cardIcon, { backgroundColor: systemColors.fill }]}>
-            <Icon name="flash" size={22} color={systemColors.accent} />
-          </View>
-          <View style={styles.cardText}>
-            <Text variant="headline" style={styles.cardTitle}>
-              {t('mobile.about.changelogLink')}
-            </Text>
-            <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.cardBody}>
-              {t('mobile.about.changelogLinkBody')}
-            </Text>
-          </View>
-          <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
-        </PressableSurface>
 
         <PressableSurface
           onPress={handleOpenAcknowledgements}

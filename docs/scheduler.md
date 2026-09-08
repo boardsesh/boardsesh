@@ -101,6 +101,22 @@ scheduler's `timeoutMs` becomes the only bound.
 `packages/web/vercel.json` itself stays until the Phase 4 scrub; it is not
 deleted now that the last cron has left it.
 
+### GitHub Actions acknowledgement refresh
+
+`refresh-acknowledgements.yml` remains a GitHub Actions job because it reads
+GitHub contributors and Sponsors, then commits the bundled mobile snapshot.
+It runs each Monday at 07:00 UTC and uses the Boardsesh Repo Bot installation
+token for both the GraphQL requests and its protected-`main` commit. The App
+needs repository Contents: write plus Organization Members: read; the latter
+authorizes `sponsorshipsAsMaintainer`, including the private-sponsor total.
+
+The job runs the acknowledgement generator in strict mode. A missing GitHub
+source, malformed GraphQL response, or unavailable private-sponsor count fails
+the run before the committed snapshot changes. Successful and failed runs post
+their outcome to the deployments Discord channel through the Production-scoped
+`DISCORD_DEPLOY_WEBHOOK` secret. The legacy `ACKNOWLEDGEMENTS_GH_TOKEN` remains
+unused and may be retained until its normal secret-rotation review.
+
 ### Not in scope
 
 - The GitHub-Actions-scheduled jobs (`refresh-recommendations`,
