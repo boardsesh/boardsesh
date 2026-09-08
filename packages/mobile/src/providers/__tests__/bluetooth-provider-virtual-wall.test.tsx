@@ -58,6 +58,7 @@ const bluetooth = vi.hoisted(() => {
       connect: vi.fn(async () => true),
       disconnect: vi.fn(async () => {}),
       sendFramesToBoard: vi.fn<SendFramesToBoard>(async () => true),
+      consumeBackgroundAdoptSendGate: vi.fn(() => false),
       pickerState: null as PickerState | null,
       reconnectSerialForCurrentBoard: null,
       connectInitialSendRef: { current: null as { frames: string; mirrored: boolean; colorSignature: string } | null },
