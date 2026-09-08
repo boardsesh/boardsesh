@@ -27,6 +27,13 @@ export const userFavorites = pgTable(
   (table) => ({
     // One favorite per user per climb, board- and angle-independent.
     uniqueFavorite: uniqueIndex('unique_user_favorite').on(table.userId, table.climbUuid),
+    // Retained until compatibility writers have fully rolled out.
+    uniqueFavoriteLegacy: uniqueIndex('unique_user_favorite_legacy').on(
+      table.userId,
+      table.boardName,
+      table.climbUuid,
+      table.angle,
+    ),
     // Index for efficient lookup by user
     userFavoritesIdx: index('user_favorites_user_idx').on(table.userId),
     // Index for checking if a climb is favorited
