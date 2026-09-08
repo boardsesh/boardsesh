@@ -63,6 +63,24 @@ export function getDatabaseHandle(): SQLiteDatabase | null {
 }
 
 /**
+ * Retracts the published handle when the connection behind it is being closed.
+ *
+ * `SQLiteProvider`'s effect teardown calls `db.closeAsync()`, and until #5292 nothing
+ * told this module about it: `getDatabaseHandle()` kept serving the closed connection
+ * and every local read threw `Access to closed resource` (~249 users/30d). Called from
+ * the provider's own teardown so the handle goes null BEFORE the close lands, rather
+ * than leaving a window where a non-React reader (sync scheduler, mutation drainer)
+ * picks up a dead connection.
+ *
+ * Identity-checked: an effect cleanup can run after a newer connection has already
+ * published itself, and retracting unconditionally would switch offline storage off
+ * for a database that is perfectly alive.
+ */
+export function releaseDatabaseHandle(db: SQLiteDatabase): void {
+  if (databaseHandle === db) setDatabaseHandle(null);
+}
+
+/**
  * How many times the whole setup sequence is attempted before giving up, and the
  * hard wall-clock ceiling across all of them.
  *
@@ -189,6 +207,13 @@ export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   // Recorded on EVERY call, including the remount that only gets the shared promise
   // back, so the in-flight chain can retarget onto the live connection.
   latestDatabase = db;
+  // A second connection arriving means `SQLiteProvider` has torn the previous one
+  // down — its teardown closes it (expo-sqlite `build/hooks.js`), and the close can
+  // land before or after this call. Retract synchronously, before the first await, so
+  // from the instant `onInit` runs for the new connection no reader can be handed the
+  // old one (#5292). The chain below republishes once the new connection's migrations
+  // are in place.
+  if (databaseHandle !== null && databaseHandle !== db) setDatabaseHandle(null);
   activeInitialization ??= beginInitialization(db);
   return activeInitialization;
 }
@@ -264,6 +289,23 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       }
 
       if (outcome.status === 'ready') {
+        // A remount landed between the publish inside `attemptInitialization` and this
+        // line, so the connection just prepared is already closed. The remount was
+        // handed this (about to resolve) promise and nothing else will initialize its
+        // connection, so retarget here instead of returning and leaving offline
+        // storage dead for the session. Spends a superseded refund, not retry budget:
+        // no lock was contended, the file is simply behind a newer connection.
+        if (latestDatabase !== null && latestDatabase !== target && supersededRestarts < MAX_SUPERSEDED_RESTARTS) {
+          markStartup('sqlite.recovery.start');
+          supersededRestarts += 1;
+          continue;
+        }
+        // Drop the single-flight guard on the way out. Holding it past a successful
+        // chain is what made #5292 permanent: the next mount was handed this resolved
+        // promise, `setDatabaseHandle` never ran again, and the handle stayed pinned to
+        // a connection `SQLiteProvider` had since closed. Nothing awaits between here
+        // and the `return`, so no mount can slip in after the clear and be stranded.
+        activeInitialization = null;
         if (attempts > 1) markStartup('sqlite.recovery.end', 'ready');
         // Only a chain that survived a GENUINE lock failure recovered from
         // contention. A chain whose only failure was against a superseded (closed)

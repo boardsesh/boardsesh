@@ -5,6 +5,7 @@ export {
   initializeDatabase,
   setDatabaseHandle,
   getDatabaseHandle,
+  releaseDatabaseHandle,
   clearUserData,
   purgeLocalDataForSignOut,
   type SignOutPurgeResult,
