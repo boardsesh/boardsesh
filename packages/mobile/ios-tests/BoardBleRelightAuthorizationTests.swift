@@ -392,9 +392,17 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         )
     }
 
-    /// The other side of the bound: a recovery that used its whole budget is
-    /// still the recovery we asked for, and still repaints the wall (#3181).
-    func testWriteStallOnTheFreshnessBoundStillReconnectsAndRelights() {
+    /// The other side of the bound: a recovery that spent nearly its whole
+    /// budget is still the recovery we asked for, and still repaints the
+    /// wall (#3181).
+    ///
+    /// Rewound to just INSIDE the bound, not exactly onto it. The guard reads
+    /// the wall clock when the disconnect is consumed, so a stamp aged by
+    /// exactly `implicitRelightMaxRequestAge` is already microseconds past the
+    /// bound by the time it is measured — that flake would read as a real
+    /// regression. Inclusivity of `<=` is pinned exactly, and without a clock,
+    /// by `testWriteStallRecoveryFreshnessMatrix`.
+    func testWriteStallJustInsideTheFreshnessBoundStillReconnectsAndRelights() {
         let peripheral = FakeWritablePeripheral()
         installConnection(peripheral: peripheral)
 
@@ -402,7 +410,8 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         fireLatestOneShot(label: "writeAckWatchdog")
 
         let maxRequestAge = manager.testHooks.sync { manager.testHooks.implicitRelightMaxRequestAge }
-        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.rewindWriteStallRecovery(by: maxRequestAge) })
+        let almostTheWholeBudget = maxRequestAge - 10
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.rewindWriteStallRecovery(by: almostTheWholeBudget) })
 
         manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
 
