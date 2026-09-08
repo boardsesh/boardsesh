@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-08T21:01:26.647Z",
+  "generatedAt": "2026-09-08T21:11:04.416Z",
   "entries": [
+    {
+      "prNumber": 5283,
+      "category": "fixed",
+      "title": "See fresh beta that matches the board and layout you chose.",
+      "mergedAt": "2026-09-08T21:06:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5283"
+    },
+    {
+      "prNumber": 5334,
+      "category": "fixed",
+      "title": "Return from a climb to your list without thumbnails flashing.",
+      "mergedAt": "2026-09-08T21:04:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5334"
+    },
     {
       "prNumber": 5262,
       "category": "fixed",

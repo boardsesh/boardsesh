@@ -27,6 +27,8 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- See fresh beta that matches the board and layout you chose. ([#5283](https://github.com/boardsesh/boardsesh/pull/5283))
+- Return from a climb to your list without thumbnails flashing. ([#5334](https://github.com/boardsesh/boardsesh/pull/5334))
 - Fewer duplicate MoonBoard search results, with your ticks and favourites kept. ([#5262](https://github.com/boardsesh/boardsesh/pull/5262))
 - Swipe the player closed in one continuous motion, without the pause after lifting your finger. ([#5322](https://github.com/boardsesh/boardsesh/pull/5322))
 - Your Android board sheet now keeps its dark surface, and the Play Store gallery opens with a lit Tension board. ([#5321](https://github.com/boardsesh/boardsesh/pull/5321))
