@@ -259,6 +259,15 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
+          # The dev-client loads Metro's DEV bundle (unminified, React dev mode) and
+          # the store flow cold-starts it four times. On the AVD's default RAM the
+          # third cold start tripped Android's low-memory killer (logcat: "low
+          # watermark is breached", system processes reaped, the logcat stream
+          # itself died) and expo-dev-launcher fell back to its "Development
+          # servers" screen instead of loading the bundle. ubuntu-latest has 16 GB;
+          # give the emulator room and a bigger app heap.
+          ram-size: 4096M
+          heap-size: 1024M
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: bash "$GITHUB_WORKSPACE/scripts/ci-android-screenshot-capture.sh"
