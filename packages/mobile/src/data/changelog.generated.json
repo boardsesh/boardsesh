@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-08T22:53:06.746Z",
+  "generatedAt": "2026-09-08T23:40:42.235Z",
   "entries": [
+    {
+      "prNumber": 5341,
+      "category": "fixed",
+      "title": "Your hearts follow the climb across angles.",
+      "mergedAt": "2026-09-08T23:39:23Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5341"
+    },
+    {
+      "prNumber": 5343,
+      "category": "fixed",
+      "title": "Party sessions no longer drop out from under you. A hiccup fetching a beta",
+      "mergedAt": "2026-09-08T23:38:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5343",
+      "body": "thumbnail or an avatar used to take down the server everyone in the session was\nconnected to — mid-climb, mid-queue. Now a bad image read is just a bad image\nread: your session, the kiosk board and your notifications keep running."
+    },
     {
       "prNumber": 5123,
       "category": "fixed",

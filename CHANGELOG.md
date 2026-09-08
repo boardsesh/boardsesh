@@ -27,6 +27,11 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Your hearts follow the climb across angles. ([#5341](https://github.com/boardsesh/boardsesh/pull/5341))
+- Party sessions no longer drop out from under you. A hiccup fetching a beta ([#5343](https://github.com/boardsesh/boardsesh/pull/5343))
+  thumbnail or an avatar used to take down the server everyone in the session was
+  connected to — mid-climb, mid-queue. Now a bad image read is just a bad image
+  read: your session, the kiosk board and your notifications keep running.
 - Put a previewed climb on the wall through your session mate's connection, without a “Connection failed” error. ([#5123](https://github.com/boardsesh/boardsesh/pull/5123))
 - Offline search and your logbook stop coming up empty after the app reloads itself ([#5336](https://github.com/boardsesh/boardsesh/pull/5336))
 - Staying signed in now survives a locked phone. If the app woke up in the background — refreshing your session, reconnecting to a party, updating a Live Activity — it could quietly fail to read your login and bounce you to the sign-in screen. Anyone who installed before mid-July was stuck in that loop for good; now iOS can reach your credentials once the phone has been unlocked since its last restart, and if the app happens to wake while the phone is still locked it tries again the moment you open it. ([#4127](https://github.com/boardsesh/boardsesh/pull/4127))
