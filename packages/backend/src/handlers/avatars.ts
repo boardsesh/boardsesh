@@ -257,6 +257,13 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
         return;
       }
 
+      if (fileBuffer.length === 0) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Uploaded file is empty' }));
+        resolve();
+        return;
+      }
+
       // Capture the narrowed values so the serialized closure below keeps
       // their non-null types.
       const uploadBuffer = fileBuffer;

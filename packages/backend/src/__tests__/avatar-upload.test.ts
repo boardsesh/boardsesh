@@ -131,6 +131,30 @@ describe('avatar upload routes', () => {
     }
   });
 
+  it.each(['image/jpeg', 'image/png'])(
+    'rejects an empty %s replacement and preserves the existing avatar',
+    async (mimeType) => {
+      validateTokenMock.mockResolvedValue({ userId: USER_ID });
+      const { baseUrl, server } = await startAvatarServer();
+      try {
+        const savedResponse = await uploadAvatar(baseUrl, new Blob([JPEG_BYTES], { type: 'image/jpeg' }), 'avatar.jpg');
+        expect(savedResponse.status).toBe(200);
+        const { avatarUrl } = (await savedResponse.json()) as { avatarUrl: string };
+        const emptyResponse = await uploadAvatar(baseUrl, new Blob([], { type: mimeType }), 'empty.jpg');
+        expect(emptyResponse.status).toBe(400);
+        expect(await emptyResponse.json()).toEqual({ error: 'Uploaded file is empty' });
+        const preserved = await fetch(`${baseUrl}${avatarUrl}`);
+        expect(preserved.status).toBe(200);
+        expect(Buffer.from(await preserved.arrayBuffer())).toEqual(JPEG_BYTES);
+        expect((await readdir(getAvatarsDir())).filter((filename) => filename.startsWith(USER_ID))).toEqual([
+          `${USER_ID}.jpg`,
+        ]);
+      } finally {
+        await closeServer(server);
+      }
+    },
+  );
+
   it('concurrent cross-extension uploads leave exactly one avatar (never zero)', async () => {
     validateTokenMock.mockResolvedValue({ userId: USER_ID });
     const { baseUrl, server } = await startAvatarServer();

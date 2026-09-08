@@ -1,4 +1,4 @@
-import { File } from 'expo-file-system';
+import { appendUploadImage } from '../upload-image';
 import { FEEDBACK_SCREENSHOT_MAX_COUNT } from '@boardsesh/shared-schema';
 import { authenticatedFetch } from '../auth-interceptor';
 import { BACKEND_URL } from '../env';
@@ -16,22 +16,12 @@ const SCREENSHOT_ENDPOINT = `${BACKEND_URL}/api/feedback-screenshots`;
  * the fetch layer, and `authenticatedFetch` only touches `Authorization`.
  */
 export async function uploadFeedbackScreenshot(uri: string): Promise<string> {
-  const localFile = new File(uri);
-
   const formData = new FormData();
-  // Expo's global `fetch` (WinterCG) rejects React Native's legacy
-  // `{ uri, name, type }` FormData file descriptor with "Unsupported FormDataPart
-  // implementation": its multipart encoder only accepts a string, a Blob, or an
-  // object exposing `bytes()`. Hand it the file's bytes plus an explicit
-  // name/type so the part carries a `filename` (busboy treats it as a file, not a
-  // field) and the correct `Content-Type`. Cast through `unknown` because the DOM
-  // `FormData` types only know `Blob`.
-  const screenshotPart = {
+  await appendUploadImage(formData, 'screenshot', {
+    uri,
     name: 'screenshot.jpg',
     type: 'image/jpeg',
-    bytes: () => localFile.bytes(),
-  };
-  formData.append('screenshot', screenshotPart as unknown as Blob);
+  });
 
   const response = await authenticatedFetch(SCREENSHOT_ENDPOINT, {
     method: 'POST',

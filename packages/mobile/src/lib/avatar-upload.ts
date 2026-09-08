@@ -1,4 +1,4 @@
-import { File } from 'expo-file-system';
+import { appendUploadImage } from './upload-image';
 import { authenticatedFetch } from './auth-interceptor';
 import { BACKEND_URL } from './env';
 
@@ -47,22 +47,12 @@ function withCacheBuster(url: string): string {
  * added by the fetch layer, and `authenticatedFetch` only touches `Authorization`.
  */
 export async function uploadAvatar(file: AvatarUploadFile, userId: string): Promise<string> {
-  const localFile = new File(file.uri);
-
   const formData = new FormData();
-  // Expo's global `fetch` (WinterCG) rejects React Native's legacy
-  // `{ uri, name, type }` FormData file descriptor with "Unsupported FormDataPart
-  // implementation": its multipart encoder only accepts a string, a Blob, or an
-  // object exposing `bytes()`. Hand it the file's bytes plus an explicit
-  // name/type so the part carries a `filename` (busboy treats it as a file, not a
-  // field) and the correct `Content-Type`. Cast through `unknown` because the DOM
-  // `FormData` types only know `Blob`.
-  const avatarPart = {
+  await appendUploadImage(formData, 'avatar', {
+    uri: file.uri,
     name: file.name ?? 'avatar.jpg',
     type: file.type ?? 'image/jpeg',
-    bytes: () => localFile.bytes(),
-  };
-  formData.append('avatar', avatarPart as unknown as Blob);
+  });
   formData.append('userId', userId);
 
   const response = await authenticatedFetch(AVATAR_ENDPOINT, {
