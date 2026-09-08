@@ -52,7 +52,7 @@
  */
 
 import { createRequire } from 'node:module';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
@@ -307,6 +307,13 @@ export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
     'dev-client-only — it never ships in a store binary.',
 };
 
+/** Server-only patches stay outside patches/, which is a native fingerprint input.
+ * Postgres is guarded by the backend's ESM/CJS disconnect regression tests.
+ */
+export const SERVER_PATCHES: Readonly<Record<string, string>> = {
+  'postgres@3.4.9': 'packages/db/patches/postgres@3.4.9.patch',
+};
+
 /**
  * Strip `//` line comments and block comments from Objective-C++ source.
  *
@@ -381,6 +388,8 @@ export interface PatchInventoryInput {
   patchedDependencies: Record<string, string>;
   /** Filenames present in patches/ (basenames, not paths). */
   patchFilenames: readonly string[];
+  /** Existing repo-relative server patch paths; only SERVER_PATCHES may use these. */
+  serverPatchPaths?: readonly string[];
   /** `patchedKey` of every entry in {@link RULES}. */
   guardedKeys: readonly string[];
   /** Keys deliberately left unguarded, mapped to the reason. */
@@ -402,9 +411,18 @@ export function checkPatchInventory(input: PatchInventoryInput): string[] {
   const guarded = new Set(input.guardedKeys);
 
   for (const [patchedKey, patchPath] of Object.entries(input.patchedDependencies)) {
+    if (Object.prototype.hasOwnProperty.call(SERVER_PATCHES, patchedKey)) {
+      const expectedPath = SERVER_PATCHES[patchedKey];
+      if (patchPath !== expectedPath) {
+        errors.push(`${patchedKey}: server patch must stay at ${expectedPath}, outside native fingerprint inputs.`);
+      } else if (!input.serverPatchPaths?.includes(patchPath)) {
+        errors.push(`${patchedKey}: server patch ${patchPath} is missing.`);
+      }
+      continue;
+    }
     const filename = basename(patchPath);
     referenced.add(filename);
-    if (!present.has(filename)) {
+    if (patchPath !== `patches/${filename}` || !present.has(filename)) {
       errors.push(
         `${patchedKey}: "patchedDependencies" points at ${patchPath}, but that file is not in patches/. ` +
           `pnpm cannot apply a patch it can't read — restore the file or drop the key.`,
@@ -609,6 +627,7 @@ export function main(): number {
   const inventoryErrors = checkPatchInventory({
     patchedDependencies,
     patchFilenames,
+    serverPatchPaths: Object.values(SERVER_PATCHES).filter((patchPath) => existsSync(resolve(repoRoot, patchPath))),
     guardedKeys: RULES.map((rule) => rule.patchedKey),
     allowUnguarded: UNGUARDED_PATCHES,
   });
