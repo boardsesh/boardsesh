@@ -73,7 +73,7 @@ run `eoas doctor`.
 ### Standing rules
 
 - **Never drop `expo-app-id`, `expo-channel-name`, or `xprem-branch`.** Self-hosted clients bake all
-  three in `updates.requestHeaders`; xprem's official picker overrides only `xprem-branch`.
+  three in `updates.requestHeaders`; xprem's branch API overrides only `xprem-branch`.
 - **Move the `eoas` pin first, the V3 server image second — never the other way round.** A CLI that
   trails the server can 404 on app-scoped routes. Re-verify after every bump (above).
 - **Dashboard creds are production-release creds.** `/dashboard` mints API keys, exports the cert,
@@ -90,7 +90,7 @@ run `eoas doctor`.
 | Publish        | `vp run mobile:publish` (→ `eas update`) | auto on push to `main` (`mobile-ota-production.yml`); manual: publish one platform, then immediately run `mobile:upload-sourcemaps` (→ `eoas publish` + Sentry Debug ID upload) |
 
 A third path rides the **same self-hosted server**: per-PR `pr-<number>` branches that let any user
-validate a specific PR on a compatible store/TestFlight build via xprem's official branch picker —
+validate a specific PR on a compatible store/TestFlight build via **Test a PR preview** —
 see [Per-PR preview branches](#per-pr-preview-branches-self-hosted) below.
 
 The split is decided in `packages/mobile/app.config.ts` (`resolveUpdatesConfig`): when
@@ -310,7 +310,7 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 
 - **Production** is mapped once, by hand, in the dashboard — nothing on `main` remaps it.
 - **Per-PR previews are branches, not channels.** The production channel enables xprem Branch
-  Surfing with the narrow pattern `pr-*`; the official `@xprem/control-center` sends
+  Surfing with the narrow pattern `pr-*`; the branch API in `@xprem/control-center` sends
   `xprem-branch: pr-N`. No per-PR channel or mapping is created.
 - **Branch Surfing is ON** for `production` with the pattern `pr-*` (enabled 2026-09-01, once native
   builds carrying the picker and the baked `xprem-branch` header had reached testers — that ordering
@@ -1085,24 +1085,21 @@ EXPO_UPDATES_URL=https://example.test/manifest vp exec expo prebuild
    `packages/mobile/src/...` source lines, their Debug IDs match the uploaded OTA maps, and the
    events' native release/dist still identify the installed store binaries rather than the OTA.
 
-## Official branch picker
+## PR preview picker
 
-Production/TestFlight builds follow xprem's
-[official Branch Surfing integration](https://mercure-technologies.gitbook.io/xprem/concepts/branch-surfing)
-and mount `ControlCenter` from `@xprem/control-center@3.1.2`. Xprem probes
-`/branch_lists` once per JS session and renders its built-in blue edge marker only when Branch
-Surfing is enabled for the production channel and a compatible branch exists. It is available to
-every app user and shows xprem's raw branch names such as `pr-4613`.
+Production/TestFlight builds use xprem's
+[Branch Surfing API](https://mercure-technologies.gitbook.io/xprem/concepts/branch-surfing)
+through the `qa-surf.ts` adapter, which retains the config and surf modules from
+`@xprem/control-center@3.1.2`. The app does not mount the package's `ControlCenter` UI.
+Its floating edge target and light-only sheet were removed for #5287 after reports of
+the sheet opening while closing climb search.
 
-The marker is not the only entry point, and treating it as one was a mistake worth recording: it
-renders **nothing at all** when surfing is off or no branch matches this binary, so "the marker is
-missing" and "there is nothing to test" look identical from a tester's side of the screen. Every
-user now also gets Boardsesh's own **Test a PR preview** row — in the user drawer and under
-**Previews** on the More tab — which opens a screen that *says* which of the two it is
-("Previews are switched off", "Nothing to test right now"). The row is hidden only on a binary that
-cannot surf at all, where it would offer something the app genuinely cannot do.
+Every user on a surfing-capable binary gets Boardsesh's **Test a PR preview** row in the
+user drawer and under **Previews** on the More tab. Both open the themed preview screen,
+which lists compatible PR branches and explains "Previews are switched off" or "Nothing
+to test right now" when appropriate. The row is hidden only on a binary that cannot surf.
 
-On top of both, a user whose profile has `isTester` is *prompted* without asking: on every cold
+A user whose profile has `isTester` is also *prompted* without asking: on every cold
 start the app either offers a PR preview list (title, risk, how fresh) or, if they are already on a
 `pr-<n>` bundle, shows that PR's `## Test plan`. Finishing sends an approve/decline verdict back to
 the PR and clears the branch pin. Anyone signed in can file such a verdict from the screens above;
@@ -1124,16 +1121,18 @@ manifest signing remain enforced by expo-updates.
 Old builds may have a native `expo-channel-name` override and a best-effort AsyncStorage mirror under
 `dev_ota_channel_override`. On the first launch in the fingerprint cohort carrying the required
 Branch Surfing headers, Boardsesh clears the native override unconditionally, removes the mirror, persists a
-dedicated migration-complete marker, and reloads before mounting `ControlCenter`. The marker matters:
+dedicated migration-complete marker, and reloads before publishing QA readiness. The root's
+`OtaBranchSurfingInitializer` renders nothing and keeps this migration independent of preview UI.
+The marker matters:
 the mirror can be absent even when the native override exists, while later launches must preserve
-xprem's own selected branch. A failed read/clear/write leaves the picker disabled and retries later.
+xprem's own selected branch. A failed read/clear/write leaves QA readiness false and retries on a later launch.
 EAS preview builds skip this migration; their separate tester-only `BranchSwitcherScreen` remains
 available under More → Preview Build.
 
 The retired custom channel switcher, GraphQL GitHub proxy, preview route, and web QR page were
 removed. The Android `/preview` intent filter remains only as a compatibility ingress, so existing
 `/preview/pr-N` links still land safely on What's New, including after login; branch selection happens
-only through xprem's marker. Sentry crash tools now live at More → Development → Sentry
+through **Test a PR preview** in More or the user drawer. Sentry crash tools now live at More → Development → Sentry
 Diagnostics for tester accounts.
 
 Telemetry keeps `ota_channel=production` and reads the selected branch from
@@ -1143,7 +1142,7 @@ in PostHog/Sentry. Diagnostic eligibility uses the same manifest field.
 ## Per-PR preview branches (self-hosted)
 
 Every PR with React Native changes can publish its JS bundle to its own self-hosted branch
-`pr-<number>`, which any user can switch to on a compatible store/TestFlight build via the official picker
+`pr-<number>`, which any user can switch to on a compatible store/TestFlight build via the preview picker
 above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.yml` (sweep:
 `mobile-ota-preview-sweep.yml`).
 

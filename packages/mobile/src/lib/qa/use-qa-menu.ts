@@ -12,8 +12,8 @@ import { readRunningPrNumber } from './qa-surf';
  * `show` is the binary's capability alone. Every signed-in user gets the entry
  * point: the picker is the one surface that can SAY why there is nothing to load
  * ("Previews are switched off", "Nothing to test right now"), and hiding it left
- * everyone but a tester with only xprem's edge marker — which renders nothing at
- * all in exactly those cases, so "no marker" and "no previews" looked identical.
+ * everyone but a tester with only xprem's former edge marker, which rendered
+ * nothing in those cases, so "no marker" and "no previews" looked identical.
  * A build that cannot surf still hides it: there the row would offer something
  * the binary genuinely cannot do.
  *

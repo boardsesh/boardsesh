@@ -71,15 +71,15 @@ describe('redirectSystemPath', () => {
   });
 
   // Existing OTA-preview PR comments outlive the retired custom preview route.
-  // New builds land each old link on What's New while xprem's official edge
-  // marker remains the picker entry point.
+  // New builds land each old link on What's New. Preview selection is available
+  // from More and the user drawer.
   it.each([
     'com.boardsesh.app://preview/pr-1234',
     'com.boardsesh.app:///preview/pr-1234',
     '/preview/pr-1234',
     'https://boardsesh.com/preview/pr-1234',
     'https://www.boardsesh.com/preview/pr-1234',
-  ])('lands the legacy preview link on the official picker entry point: %s', (path) => {
+  ])("lands the legacy preview link on What's New: %s", (path) => {
     getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
     expect(redirectSystemPath({ path, initial: true })).toBe('/changelog');
   });

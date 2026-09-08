@@ -15,12 +15,10 @@ author, risk (`Risk: N/5` from the PR body) and how fresh the branch is, plus ch
 verdict they already filed, and a branch the server refused because it crashed here. Tapping one
 surfs onto it and reloads.
 
-The row stays put when that list is empty, and that is the point. The screen is the only surface
-that can SAY *"Previews are switched off"* or *"Nothing to test right now"* — xprem's blue edge
-marker renders nothing at all in exactly those cases, so while this was tester-only, "no button" and
-"no previews" were indistinguishable from the outside and reports read as "the preview option is
-gone". Hiding it now needs a real reason: a binary that cannot surf, where the row would offer
-something the app genuinely cannot do.
+The row stays put when that list is empty: the screen explains *"Previews are switched off"*
+or *"Nothing to test right now"*. It is hidden only on a binary that cannot surf.
+The floating xprem marker and its light-only sheet were removed for #5287; preview selection
+uses these themed menu destinations. The app still uses xprem's branch API through `qa-surf.ts`.
 
 **The cold-start prompt is still tester-only.** A user whose profile has `isTester` gets one prompt
 per cold start without asking for it — the pick list on production, or on a `pr-<n>` bundle the
@@ -142,7 +140,7 @@ menu entry does not consult `isTester` at all, so it is unaffected — only the 
 **Nothing prompts before xprem's migration settles.** A surfing-capable binary's first launch clears
 a retired channel override and calls `Updates.reloadAsync()`. `app/_layout.tsx` publishes that state
 through `src/lib/ota-branch-surfing-state.ts`; the gate waits for `ready` so it never pushes a route
-the reload throws away. `ready` also covers the store's pre-launch state — `OtaBranchControlCenter`
+the reload throws away. `ready` also covers the store's pre-launch state — `OtaBranchSurfingInitializer`
 is the LAST root sibling, so its publishing effect runs after the gate's — which is why
 `decideQaGate` waits on `surfingReady` alone rather than on `surfingBuild && !surfingReady`. Reading
 an unpublished store as "this build cannot surf" would resolve to `none`, and the gate marks the

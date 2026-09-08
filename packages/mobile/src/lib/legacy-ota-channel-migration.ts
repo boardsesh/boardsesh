@@ -41,14 +41,14 @@ type OtaBranchSurfingPreparationDependencies = {
 export type OtaBranchSurfingPreparation = 'skipped' | 'ready' | 'reloading';
 
 /**
- * Clear Boardsesh's retired channel override exactly once before xprem mounts.
+ * Clear Boardsesh's retired channel override exactly once before QA is ready.
  *
  * The old AsyncStorage mirror was best-effort, so its absence does not prove the
  * native override is absent. A dedicated completion marker lets the first new
  * build clear native state unconditionally, while preserving xprem's own branch
  * override on every later launch. Changing the native headers requires a reload:
- * Updates.channel is a module constant for the current JS runtime and xprem reads
- * it when the ControlCenter mounts.
+ * Updates.channel is a module constant for the current JS runtime and xprem's
+ * branch API reads it when resolving the config for a preview action.
  */
 export async function prepareOtaBranchSurfing({
   branchSurfingBuild,

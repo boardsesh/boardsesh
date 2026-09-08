@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 /**
- * What the root layout's `OtaBranchControlCenter` already knows about this
+ * What the root layout's `OtaBranchSurfingInitializer` already knows about this
  * binary's ability to surf OTA branches, published so surfaces outside that
  * subtree (the QA launch gate, the user drawer) can read it without redoing the
  * work or, worse, racing it.
