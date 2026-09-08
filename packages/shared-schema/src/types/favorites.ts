@@ -1,9 +1,11 @@
-// Favorites types
+// Favorites use (userId, climbUuid) for identity. Optional boardName/angle
+// remain storage hints during rollout so shipped clients and queued offline
+// mutations keep working against both database schemas.
 
 export type ToggleFavoriteInput = {
-  boardName: string;
+  boardName?: string | null;
   climbUuid: string;
-  angle: number;
+  angle?: number | null;
 };
 
 export type ToggleFavoriteResult = {
@@ -11,13 +13,13 @@ export type ToggleFavoriteResult = {
 };
 
 export type AddFavoriteInput = {
-  boardName: string;
+  boardName?: string | null;
   climbUuid: string;
-  angle: number;
+  angle?: number | null;
 };
 
 export type RemoveFavoriteInput = {
-  boardName: string;
+  boardName?: string | null;
   climbUuid: string;
-  angle: number;
+  angle?: number | null;
 };
