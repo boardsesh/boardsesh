@@ -44,6 +44,7 @@ overrides:
   react-native-screens: 4.26.2
 
 patchedDependencies:
+  'react-native-ble-plx@3.5.1': patches/react-native-ble-plx@3.5.1.patch
   '@expo/fingerprint@0.20.11': patches/@expo__fingerprint@0.20.11.patch
   '@expo/ui@57.0.14': patches/@expo__ui@57.0.14.patch
   'expo-dev-launcher@57.0.16': patches/expo-dev-launcher@57.0.16.patch

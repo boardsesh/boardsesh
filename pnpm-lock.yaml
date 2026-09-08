@@ -13,6 +13,7 @@ patchedDependencies:
   expo-dev-launcher@57.0.16: ba11bf1ad99f2bed1d9c959e8e68d1fe44e76bed157286850cde1dd5fc342d56
   expo-image@57.0.3: 68cfa579530a19eff0353bb5b9c0ea543980992877a93a69d832471f6ef91f60
   expo-updates@57.0.19: 67f24f95aa789e95b632312352bca97ddc9fd5264328d4c85a8fcc929f96f50a
+  react-native-ble-plx@3.5.1: 243c7040f835074cd999a8719675046d66acf9fe2e88948c40d11d8133f181c4
   react-native-screens@4.26.2: 6b77eaedcf3b2210551b4099df209748d8135cff58ee4d89c3b20d8e6d2cf246
 
 importers:
@@ -765,7 +766,7 @@ importers:
         version: 0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1)
       react-native-ble-plx:
         specifier: 3.5.1
-        version: 3.5.1(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
+        version: 3.5.1(patch_hash=243c7040f835074cd999a8719675046d66acf9fe2e88948c40d11d8133f181c4)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
       react-native-edge-to-edge:
         specifier: 1.8.1
         version: 1.8.1(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
@@ -21030,7 +21031,7 @@ snapshots:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
-  react-native-ble-plx@3.5.1(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3):
+  react-native-ble-plx@3.5.1(patch_hash=243c7040f835074cd999a8719675046d66acf9fe2e88948c40d11d8133f181c4)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3):
     dependencies:
       react: 19.2.3
       react-native: 0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.2.18)(bufferutil@4.1.0)(react@19.2.3)(supports-color@8.1.1)

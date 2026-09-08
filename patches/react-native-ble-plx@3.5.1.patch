@@ -1,0 +1,347 @@
+diff --git a/android/build.gradle b/android/build.gradle
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -67,6 +67,10 @@
+     }
+   }
+ 
++  testOptions {
++    unitTests.returnDefaultValues = true
++  }
++
+   lintOptions {
+     disable "GradleCompatible"
+   }
+@@ -89,6 +93,9 @@
+   // For > 0.71, this will be replaced by `com.facebook.react:react-android:$version` by react gradle plugin
+   //noinspection GradleDynamicVersion
+   implementation "com.facebook.react:react-native:+"
++  testImplementation 'junit:junit:4.13.2'
++  testImplementation 'org.mockito:mockito-core:5.14.2'
++  testImplementation 'org.json:json:20240303'
+   implementation 'io.reactivex.rxjava2:rxjava:2.2.17'
+   implementation "com.polidea.rxandroidble2:rxandroidble:1.17.2"
+ }
+diff --git a/android/src/main/java/com/bleplx/BlePlxModule.java b/android/src/main/java/com/bleplx/BlePlxModule.java
+--- a/android/src/main/java/com/bleplx/BlePlxModule.java
++++ b/android/src/main/java/com/bleplx/BlePlxModule.java
+@@ -11,6 +11,7 @@
+ import com.bleplx.adapter.Descriptor;
+ import com.bleplx.adapter.Device;
+ import com.bleplx.adapter.OnErrorCallback;
++import com.bleplx.adapter.OnConnectionStateChangeCallback;
+ import com.bleplx.adapter.OnEventCallback;
+ import com.bleplx.adapter.OnSuccessCallback;
+ import com.bleplx.adapter.RefreshGattMoment;
+@@ -407,12 +408,16 @@
+           safePromise.resolve(deviceConverter.toJSObject(data));
+         }
+       },
+-      new OnEventCallback<ConnectionState>() {
+-        @Override
+-        public void onEvent(ConnectionState connectionState) {
++      new OnConnectionStateChangeCallback() {
++        @Override
++        public void onEvent(ConnectionState connectionState, @Nullable BleError disconnectError) {
+           if (connectionState == ConnectionState.DISCONNECTED) {
+             WritableArray event = Arguments.createArray();
+-            event.pushNull();
++            if (disconnectError == null) {
++              event.pushNull();
++            } else {
++              event.pushString(errorConverter.toJs(disconnectError));
++            }
+             WritableMap device = Arguments.createMap();
+             device.putString("id", deviceId);
+             event.pushMap(device);
+diff --git a/android/src/main/java/com/bleplx/adapter/BleAdapter.java b/android/src/main/java/com/bleplx/adapter/BleAdapter.java
+--- a/android/src/main/java/com/bleplx/adapter/BleAdapter.java
++++ b/android/src/main/java/com/bleplx/adapter/BleAdapter.java
+@@ -68,7 +68,7 @@
+     String deviceIdentifier,
+     ConnectionOptions connectionOptions,
+     OnSuccessCallback<Device> onSuccessCallback,
+-    OnEventCallback<ConnectionState> onConnectionStateChangedCallback,
++    OnConnectionStateChangeCallback onConnectionStateChangedCallback,
+     OnErrorCallback onErrorCallback);
+ 
+   void cancelDeviceConnection(
+diff --git a/android/src/main/java/com/bleplx/adapter/BleModule.java b/android/src/main/java/com/bleplx/adapter/BleModule.java
+--- a/android/src/main/java/com/bleplx/adapter/BleModule.java
++++ b/android/src/main/java/com/bleplx/adapter/BleModule.java
+@@ -47,6 +47,7 @@
+ 
+ import java.util.ArrayList;
+ import java.util.HashMap;
++import java.util.concurrent.atomic.AtomicReference;
+ import java.util.List;
+ import java.util.UUID;
+ import java.util.concurrent.TimeUnit;
+@@ -393,7 +394,7 @@
+   public void connectToDevice(String deviceIdentifier,
+                               ConnectionOptions connectionOptions,
+                               OnSuccessCallback<Device> onSuccessCallback,
+-                              OnEventCallback<ConnectionState> onConnectionStateChangedCallback,
++                              OnConnectionStateChangeCallback onConnectionStateChangedCallback,
+                               OnErrorCallback onErrorCallback) {
+     if (rxBleClient == null) {
+       onErrorCallback.onError(new BleError(BleErrorCode.BluetoothManagerDestroyed, "BleManager not created when tried to connect to device", null));
+@@ -1233,19 +1234,14 @@
+                                    final Long timeout,
+                                    final int connectionPriority,
+                                    final OnSuccessCallback<Device> onSuccessCallback,
+-                                   final OnEventCallback<ConnectionState> onConnectionStateChangedCallback,
++                                   final OnConnectionStateChangeCallback onConnectionStateChangedCallback,
+                                    final OnErrorCallback onErrorCallback) {
+ 
+     final SafeExecutor<Device> safeExecutor = new SafeExecutor<>(onSuccessCallback, onErrorCallback);
+ 
+     Observable<RxBleConnection> connect = device
+       .establishConnection(autoConnect)
+-      .doOnSubscribe(disposable -> onConnectionStateChangedCallback.onEvent(ConnectionState.CONNECTING))
+-      .doFinally(() -> {
+-        safeExecutor.error(BleErrorUtils.cancelled());
+-        onDeviceDisconnected(device);
+-        onConnectionStateChangedCallback.onEvent(ConnectionState.DISCONNECTED);
+-      });
++      .doOnSubscribe(disposable -> onConnectionStateChangedCallback.onEvent(ConnectionState.CONNECTING, null));
+ 
+     if (refreshGattMoment == RefreshGattMoment.ON_CONNECTED) {
+       connect = connect.flatMap(rxBleConnection -> rxBleConnection
+@@ -1276,10 +1272,20 @@
+     }
+ 
+ 
++    // boardsesh/boardsesh#5279: SafeExecutor is consumed by connect success.
++    // Capture the terminal error before cleanup disposes the subscription, and
++    // finalize AFTER all connection operators so MTU/timeout failures survive too.
++    final AtomicReference<BleError> disconnectError = new AtomicReference<>();
+     final Disposable subscription = connect
++      .doOnError(error -> disconnectError.set(errorConverter.toError(error)))
++      .doFinally(() -> {
++        safeExecutor.error(BleErrorUtils.cancelled());
++        onDeviceDisconnected(device);
++        onConnectionStateChangedCallback.onEvent(ConnectionState.DISCONNECTED, disconnectError.get());
++      })
+       .subscribe(rxBleConnection -> {
+         Device localDevice = rxBleDeviceToDeviceMapper.map(device, rxBleConnection);
+-        onConnectionStateChangedCallback.onEvent(ConnectionState.CONNECTED);
++        onConnectionStateChangedCallback.onEvent(ConnectionState.CONNECTED, null);
+         cleanServicesAndCharacteristicsForDevice(localDevice);
+         connectedDevices.put(device.getMacAddress(), localDevice);
+         activeConnections.put(device.getMacAddress(), rxBleConnection);
+diff --git a/android/src/main/java/com/bleplx/adapter/OnConnectionStateChangeCallback.java b/android/src/main/java/com/bleplx/adapter/OnConnectionStateChangeCallback.java
+new file mode 100644
+--- /dev/null
++++ b/android/src/main/java/com/bleplx/adapter/OnConnectionStateChangeCallback.java
+@@ -0,0 +1,9 @@
++package com.bleplx.adapter;
++
++import androidx.annotation.Nullable;
++import com.bleplx.adapter.errors.BleError;
++
++/** Connection errors travel with the terminal event, independently of the connect promise. */
++public interface OnConnectionStateChangeCallback {
++  void onEvent(ConnectionState state, @Nullable BleError error);
++}
+diff --git a/android/src/main/java/com/bleplx/converter/BleErrorToJsObjectConverter.java b/android/src/main/java/com/bleplx/converter/BleErrorToJsObjectConverter.java
+--- a/android/src/main/java/com/bleplx/converter/BleErrorToJsObjectConverter.java
++++ b/android/src/main/java/com/bleplx/converter/BleErrorToJsObjectConverter.java
+@@ -1,6 +1,8 @@
+ package com.bleplx.converter;
+ 
+ import com.bleplx.adapter.errors.BleError;
++import com.bleplx.adapter.errors.BleErrorCode;
++import org.json.JSONObject;
+ import com.facebook.react.bridge.Arguments;
+ import com.facebook.react.bridge.ReadableArray;
+ import com.facebook.react.bridge.WritableArray;
+@@ -15,7 +17,9 @@
+   }
+ 
+   public String toJs(BleError error) {
+-    WritableArray array = Arguments.createArray();
++    // Disconnect status is a connection/HCI code, even when below 0x80.
++    // ATT status retains the upstream mapping for characteristic operations.
++    boolean isDisconnect = error.errorCode == BleErrorCode.DeviceDisconnected;
+     StringBuilder stringBuilder = new StringBuilder();
+     stringBuilder.append("{");
+ 
+@@ -23,7 +27,7 @@
+     stringBuilder.append(error.errorCode.code);
+ 
+     stringBuilder.append(",\"attErrorCode\":");
+-    if (error.androidCode == null || error.androidCode >= 0x80 || error.androidCode < 0) {
++    if (isDisconnect || error.androidCode == null || error.androidCode >= 0x80 || error.androidCode < 0) {
+       stringBuilder.append("null");
+     } else {
+       stringBuilder.append(error.androidCode.intValue());
+@@ -32,7 +36,7 @@
+     stringBuilder.append(",\"iosErrorCode\": null");
+ 
+     stringBuilder.append(",\"androidErrorCode\":");
+-    if (error.androidCode == null || error.androidCode < 0x80) {
++    if (error.androidCode == null || error.androidCode < 0 || (!isDisconnect && error.androidCode < 0x80)) {
+       stringBuilder.append("null");
+     } else {
+       stringBuilder.append(error.androidCode.intValue());
+@@ -57,9 +61,7 @@
+     if (value == null) {
+       stringBuilder.append("null");
+     } else {
+-      stringBuilder.append("\"");
+-      stringBuilder.append(value);
+-      stringBuilder.append("\"");
++      stringBuilder.append(JSONObject.quote(value));
+     }
+   }
+ }
+diff --git a/android/src/test/java/com/bleplx/adapter/DisconnectDiagnosticsTest.java b/android/src/test/java/com/bleplx/adapter/DisconnectDiagnosticsTest.java
+new file mode 100644
+--- /dev/null
++++ b/android/src/test/java/com/bleplx/adapter/DisconnectDiagnosticsTest.java
+@@ -0,0 +1,144 @@
++package com.bleplx.adapter;
++
++import static org.junit.Assert.*;
++import static org.mockito.Mockito.*;
++
++import android.bluetooth.BluetoothManager;
++import android.content.Context;
++import com.bleplx.adapter.errors.BleError;
++import com.bleplx.adapter.errors.BleErrorCode;
++import com.bleplx.converter.BleErrorToJsObjectConverter;
++import com.polidea.rxandroidble2.RxBleClient;
++import com.polidea.rxandroidble2.RxBleConnection;
++import com.polidea.rxandroidble2.RxBleDevice;
++import com.polidea.rxandroidble2.exceptions.BleDisconnectedException;
++import io.reactivex.Single;
++import io.reactivex.subjects.PublishSubject;
++import java.lang.reflect.Field;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.concurrent.CountDownLatch;
++import java.util.concurrent.TimeUnit;
++import org.json.JSONObject;
++import org.junit.Before;
++import org.junit.Test;
++
++public class DisconnectDiagnosticsTest {
++  private static final String ADDRESS = "01:02:03:04:05:06";
++  private BleModule module;
++  private RxBleDevice device;
++  private RxBleConnection connection;
++  private PublishSubject<RxBleConnection> link;
++  private final List<BleError> disconnects = new ArrayList<>();
++  private final List<BleError> failures = new ArrayList<>();
++  private final List<Device> successes = new ArrayList<>();
++  private final CountDownLatch disconnected = new CountDownLatch(1);
++
++  @Before public void setUp() throws Exception {
++    Context context = mock(Context.class);
++    when(context.getSystemService(Context.BLUETOOTH_SERVICE)).thenReturn(mock(BluetoothManager.class));
++    module = new BleModule(context);
++    RxBleClient client = mock(RxBleClient.class);
++    Field clientField = BleModule.class.getDeclaredField("rxBleClient");
++    clientField.setAccessible(true);
++    clientField.set(module, client);
++    device = mock(RxBleDevice.class);
++    connection = mock(RxBleConnection.class);
++    when(client.getBleDevice(ADDRESS)).thenReturn(device);
++    when(device.getMacAddress()).thenReturn(ADDRESS);
++    when(device.getName()).thenReturn("MoonBoard");
++    when(connection.getMtu()).thenReturn(23);
++    link = PublishSubject.create();
++    when(device.establishConnection(false)).thenAnswer(invocation -> link);
++  }
++
++  private void connect(int mtu, Long timeout) {
++    module.connectToDevice(ADDRESS, new ConnectionOptions(false, mtu, null, timeout, 0),
++      successes::add, (state, error) -> {
++        if (state == ConnectionState.DISCONNECTED) {
++          disconnects.add(error);
++          disconnected.countDown();
++        }
++      }, failures::add);
++  }
++
++  @Test public void preservesDropAfterConnectSuccessAndEmitsOnce() {
++    connect(0, null);
++    link.onNext(connection);
++    link.onError(new BleDisconnectedException(ADDRESS, 8));
++    assertEquals(1, successes.size());
++    assertTrue(failures.isEmpty());
++    assertEquals(1, disconnects.size());
++    assertEquals(BleErrorCode.DeviceDisconnected, disconnects.get(0).errorCode);
++    assertEquals(Integer.valueOf(8), disconnects.get(0).androidCode);
++  }
++
++  @Test public void deliberateDisconnectStaysNullAndReconnectHasNoStaleError() {
++    connect(0, null);
++    link.onNext(connection);
++    link.onError(new BleDisconnectedException(ADDRESS, 19));
++    assertEquals(Integer.valueOf(19), disconnects.get(0).androidCode);
++    link = PublishSubject.create();
++    connect(0, null);
++    link.onNext(connection);
++    module.cancelDeviceConnection(ADDRESS, ignored -> {}, failures::add);
++    assertEquals(2, disconnects.size());
++    assertNull(disconnects.get(1));
++    assertTrue(failures.isEmpty());
++  }
++
++  @Test public void connectionFailureStillRejectsAndCarriesTerminalError() {
++    connect(0, null);
++    link.onError(new BleDisconnectedException(ADDRESS, 133));
++    assertTrue(successes.isEmpty());
++    assertEquals(1, failures.size());
++    assertEquals(1, disconnects.size());
++    assertEquals(Integer.valueOf(133), disconnects.get(0).androidCode);
++  }
++
++  @Test public void downstreamMtuFailureSurvivesUpstreamDisposal() {
++    when(connection.requestMtu(247)).thenReturn(Single.error(new IllegalStateException("MTU failed")));
++    connect(247, null);
++    link.onNext(connection);
++    assertTrue(successes.isEmpty());
++    assertEquals(1, failures.size());
++    assertEquals(1, disconnects.size());
++    assertNotNull(disconnects.get(0));
++    assertTrue(disconnects.get(0).reason.contains("MTU failed"));
++  }
++
++  @Test public void connectionTimeoutCarriesErrorInsteadOfCancellation() throws Exception {
++    connect(0, 10L);
++    assertTrue(disconnected.await(5, TimeUnit.SECONDS));
++    assertEquals(1, failures.size());
++    assertEquals(1, disconnects.size());
++    assertEquals(BleErrorCode.OperationTimedOut, disconnects.get(0).errorCode);
++  }
++
++  @Test public void serializesConnectionStatusesAsAndroidNotAtt() throws Exception {
++    for (int status : new int[] {0, 8, 19, 22, 133}) {
++      JSONObject payload = new JSONObject(new BleErrorToJsObjectConverter().toJs(
++        new BleError(BleErrorCode.DeviceDisconnected, "link dropped", status)));
++      assertEquals(status, payload.getInt("androidErrorCode"));
++      assertTrue(payload.isNull("attErrorCode"));
++    }
++  }
++
++  @Test public void missingAndNegativeConnectionStatusesStayUnknown() throws Exception {
++    for (Integer status : new Integer[] {null, -1}) {
++      JSONObject payload = new JSONObject(new BleErrorToJsObjectConverter().toJs(
++        new BleError(BleErrorCode.DeviceDisconnected, "no status", status)));
++      assertTrue(payload.isNull("androidErrorCode"));
++      assertTrue(payload.isNull("attErrorCode"));
++    }
++  }
++
++  @Test public void attOperationsKeepTheirExistingMappingAndReasonsAreValidJson() throws Exception {
++    String reason = "write \"failed\"\npath\\device";
++    JSONObject payload = new JSONObject(new BleErrorToJsObjectConverter().toJs(
++      new BleError(BleErrorCode.CharacteristicWriteFailed, reason, 8)));
++    assertEquals(8, payload.getInt("attErrorCode"));
++    assertTrue(payload.isNull("androidErrorCode"));
++    assertEquals(reason, payload.getString("reason"));
++  }
++}

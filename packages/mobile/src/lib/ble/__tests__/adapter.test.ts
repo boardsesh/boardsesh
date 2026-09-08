@@ -1176,6 +1176,30 @@ describe('RNBleAdapter', () => {
       );
     });
 
+    it.each([8, 19, 133])('forwards patched Android disconnect status %s', async (androidErrorCode) => {
+      const adapter = setupConnectableAdapter(
+        'moonboard',
+        'dev-disc-android',
+        vi.fn().mockResolvedValue([{ uuid: 'uart-write-uuid' }]),
+      );
+      await adapter.requestAndConnect();
+      const callback = vi.fn();
+      adapter.onDisconnect(callback);
+      const handler = mockBleManager.onDeviceDisconnected.mock.calls.at(-1)?.[1] as
+        | ((error: unknown, device: unknown) => void)
+        | undefined;
+      handler?.({ errorCode: 201, androidErrorCode, iosErrorCode: null, reason: 'Link dropped' }, null);
+      expect(callback).toHaveBeenCalledOnce();
+      expect(callback).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: 'ble-plx',
+          bleErrorCode: 201,
+          androidErrorCode,
+          description: 'Link dropped',
+        }),
+      );
+    });
+
     it('forwards a clean (null-error) ble-plx drop as a source-only BleDisconnectInfo', async () => {
       const adapter = setupConnectableAdapter(
         'aurora',

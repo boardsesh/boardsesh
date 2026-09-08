@@ -119,6 +119,8 @@ Long-pressing the lightbulb opens the `LightControlDrawer` (`light-control-drawe
 
 **Unexpected disconnect (`handleDisconnection` callback):**
 
+- Android's pinned `react-native-ble-plx` patch preserves native disconnect errors independently of the already-resolved connect promise. Connection status codes (including 8: timeout and 19: peer termination) reach `disconnectAndroidCode`; genuine ATT operation errors keep their original mapping. Deliberate cancellation and unavailable platform statuses remain unclassified. The patch also preserves setup/MTU timeout errors and safely serializes quoted error descriptions. This requires a new native Android build; older binaries still report null errors. See #5279, whose intermittent disconnect cause remains unconfirmed.
+
 - Fires when native iOS or ble-plx reports a link drop, or when a write failure tears down the connection.
 - Consumes only when both adapter identity and generation match, so duplicate or stale callbacks cannot end a replacement link.
 - Fires analytics with `reason: 'unexpected'`, `disconnectTrigger: 'link_drop'`, the available platform-specific `disconnect*` fields, and the same `connectionDurationSec` lifetime property. Platform fields and `disconnectCategory` are absent from deliberate disconnects.
