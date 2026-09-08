@@ -26,24 +26,24 @@
         },
         {
           "type": "RECOMMENDED_CROWD_FAVORITES",
-          "count": 259
+          "count": 262
         },
         {
           "type": "RECOMMENDED_HIDDEN_GEMS",
-          "count": 1142
+          "count": 1154
         },
         {
           "type": "RECOMMENDED_AT_LEVEL",
-          "count": 222
+          "count": 225
         },
         {
           "type": "RECOMMENDED_FRESH",
-          "count": 40754
+          "count": 40735
         }
       ]
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T18:53:57.004Z",
+  "recordedAt": "2026-09-08T23:01:35.607Z",
   "upstream": "https://ws.boardsesh.com"
 }

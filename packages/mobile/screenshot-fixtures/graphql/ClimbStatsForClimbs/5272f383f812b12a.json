@@ -100,38 +100,38 @@
         {
           "climbUuid": "18E0834CBBB64952AE12BB7DD7F56E28",
           "angle": 35,
-          "ascensionistCount": 3314,
-          "qualityAverage": 4.96138,
+          "ascensionistCount": 3315,
+          "qualityAverage": 4.961379999999999,
           "difficultyAverage": 15.9964,
           "displayDifficulty": 15.9964,
           "difficulty": "6a/V3",
           "faUsername": "OG_Bieber",
           "faAt": "2022-11-24 20:01:29",
-          "syncSeq": "305671126"
+          "syncSeq": "309275480"
         },
         {
           "climbUuid": "18E0834CBBB64952AE12BB7DD7F56E28",
           "angle": 40,
-          "ascensionistCount": 16363,
-          "qualityAverage": 4.971930154749526,
+          "ascensionistCount": 16370,
+          "qualityAverage": 4.971930227439472,
           "difficultyAverage": 16.0028,
           "displayDifficulty": 16.0028,
           "difficulty": "6a/V3",
           "faUsername": "tensionclimbing",
           "faAt": "2022-08-19 23:26:29",
-          "syncSeq": "308898406"
+          "syncSeq": "309683313"
         },
         {
           "climbUuid": "18E0834CBBB64952AE12BB7DD7F56E28",
           "angle": 45,
-          "ascensionistCount": 3934,
-          "qualityAverage": 4.966948405797101,
+          "ascensionistCount": 3937,
+          "qualityAverage": 4.966968394308943,
           "difficultyAverage": 16.9936,
           "displayDifficulty": 16.9936,
           "difficulty": "6a+/V3",
           "faUsername": "tensionclimbing",
           "faAt": "2022-08-20 21:40:43",
-          "syncSeq": "305671490"
+          "syncSeq": "309277209"
         },
         {
           "climbUuid": "18E0834CBBB64952AE12BB7DD7F56E28",
@@ -185,6 +185,6 @@
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T18:54:28.337Z",
+  "recordedAt": "2026-09-08T22:19:09.853Z",
   "upstream": "https://ws.boardsesh.com"
 }

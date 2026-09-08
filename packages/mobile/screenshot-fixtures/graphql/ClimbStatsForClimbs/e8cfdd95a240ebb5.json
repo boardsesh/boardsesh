@@ -117,38 +117,38 @@
         {
           "climbUuid": "0034faec87954c9fb62c643f8383ae84",
           "angle": 30,
-          "ascensionistCount": 1114,
-          "qualityAverage": 3.17,
+          "ascensionistCount": 1116,
+          "qualityAverage": 3.18,
           "difficultyAverage": 17.99,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "kilterjackie",
           "faAt": "2020-11-24 01:45:33",
-          "syncSeq": "306044466"
+          "syncSeq": "309652323"
         },
         {
           "climbUuid": "0034faec87954c9fb62c643f8383ae84",
           "angle": 35,
-          "ascensionistCount": 828,
-          "qualityAverage": 3.21,
+          "ascensionistCount": 830,
+          "qualityAverage": 3.22,
           "difficultyAverage": 18.95,
           "displayDifficulty": 19,
           "difficulty": "6b+/V4",
           "faUsername": "jwilder",
           "faAt": "2020-11-21 20:22:28",
-          "syncSeq": "301475541"
+          "syncSeq": "309652661"
         },
         {
           "climbUuid": "0034faec87954c9fb62c643f8383ae84",
           "angle": 40,
-          "ascensionistCount": 2053,
-          "qualityAverage": 3.2338348803126524,
+          "ascensionistCount": 2056,
+          "qualityAverage": 3.2338292682926832,
           "difficultyAverage": 19.98,
           "displayDifficulty": 20,
           "difficulty": "6c/V5",
           "faUsername": "griffinwhiteside",
           "faAt": "2020-11-04 22:57:43",
-          "syncSeq": "291480371"
+          "syncSeq": "309632560"
         },
         {
           "climbUuid": "0034faec87954c9fb62c643f8383ae84",
@@ -225,74 +225,74 @@
         {
           "climbUuid": "02184e5f6f8a41379117e6f45acdb931",
           "angle": 20,
-          "ascensionistCount": 1138,
-          "qualityAverage": 3.1523746701846966,
+          "ascensionistCount": 1140,
+          "qualityAverage": 3.1523705004389813,
           "difficultyAverage": 13,
           "displayDifficulty": 13,
           "difficulty": "5a/V1",
           "faUsername": "pt_the_dude",
           "faAt": "2021-02-16 23:53:29",
-          "syncSeq": "306874777"
+          "syncSeq": "309634578"
         },
         {
           "climbUuid": "02184e5f6f8a41379117e6f45acdb931",
           "angle": 25,
-          "ascensionistCount": 1560,
-          "qualityAverage": 3.0899999999999994,
+          "ascensionistCount": 1561,
+          "qualityAverage": 3.09,
           "difficultyAverage": 13.01,
           "displayDifficulty": 13,
           "difficulty": "5a/V1",
           "faUsername": "gaeljaffrain",
           "faAt": "2021-01-22 01:29:50",
-          "syncSeq": "306024653"
+          "syncSeq": "309631245"
         },
         {
           "climbUuid": "02184e5f6f8a41379117e6f45acdb931",
           "angle": 30,
-          "ascensionistCount": 1977,
+          "ascensionistCount": 1978,
           "qualityAverage": 3.14,
           "difficultyAverage": 13.97,
           "displayDifficulty": 14,
           "difficulty": "5b/V1",
           "faUsername": "nebula524",
           "faAt": "2020-12-31 15:47:24",
-          "syncSeq": "301475879"
+          "syncSeq": "309653156"
         },
         {
           "climbUuid": "02184e5f6f8a41379117e6f45acdb931",
           "angle": 35,
-          "ascensionistCount": 1497,
-          "qualityAverage": 3.1711155913978493,
+          "ascensionistCount": 1498,
+          "qualityAverage": 3.1811014103425115,
           "difficultyAverage": 14.99,
           "displayDifficulty": 15,
           "difficulty": "5c/V2",
           "faUsername": "JChupacabra",
           "faAt": "2020-12-11 01:18:54",
-          "syncSeq": "309244152"
+          "syncSeq": "309631208"
         },
         {
           "climbUuid": "02184e5f6f8a41379117e6f45acdb931",
           "angle": 40,
-          "ascensionistCount": 2368,
-          "qualityAverage": 3.202210884353742,
+          "ascensionistCount": 2370,
+          "qualityAverage": 3.202209005947324,
           "difficultyAverage": 15.96,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "griffinwhiteside",
           "faAt": "2020-11-04 23:05:24",
-          "syncSeq": "309247713"
+          "syncSeq": "309657136"
         },
         {
           "climbUuid": "02184e5f6f8a41379117e6f45acdb931",
           "angle": 45,
-          "ascensionistCount": 1009,
+          "ascensionistCount": 1012,
           "qualityAverage": 3.14,
           "difficultyAverage": 15,
           "displayDifficulty": 15,
           "difficulty": "5c/V2",
           "faUsername": "UncleDuncan",
           "faAt": "2021-01-06 22:53:54",
-          "syncSeq": "294701016"
+          "syncSeq": "309657402"
         },
         {
           "climbUuid": "02184e5f6f8a41379117e6f45acdb931",
@@ -309,14 +309,14 @@
         {
           "climbUuid": "02184e5f6f8a41379117e6f45acdb931",
           "angle": 55,
-          "ascensionistCount": 64,
-          "qualityAverage": 3.330625,
+          "ascensionistCount": 65,
+          "qualityAverage": 3.330461538461538,
           "difficultyAverage": 18,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "MariusK",
           "faAt": "2022-01-02 15:26:33",
-          "syncSeq": "303743855"
+          "syncSeq": "309650203"
         },
         {
           "climbUuid": "02184e5f6f8a41379117e6f45acdb931",
@@ -417,38 +417,38 @@
         {
           "climbUuid": "133ea4dc18df4a68b60c67855491eb76",
           "angle": 30,
-          "ascensionistCount": 1189,
-          "qualityAverage": 3.15,
+          "ascensionistCount": 1192,
+          "qualityAverage": 3.16,
           "difficultyAverage": 15,
           "displayDifficulty": 15,
           "difficulty": "5c/V2",
           "faUsername": "kilterjackie",
           "faAt": "2021-02-11 01:52:59",
-          "syncSeq": "306045381"
+          "syncSeq": "309653247"
         },
         {
           "climbUuid": "133ea4dc18df4a68b60c67855491eb76",
           "angle": 35,
-          "ascensionistCount": 793,
-          "qualityAverage": 3.1499999999999995,
+          "ascensionistCount": 794,
+          "qualityAverage": 3.15,
           "difficultyAverage": 14.99,
           "displayDifficulty": 15,
           "difficulty": "5c/V2",
           "faUsername": "jwilder",
           "faAt": "2021-01-16 20:57:08",
-          "syncSeq": "299083306"
+          "syncSeq": "309651975"
         },
         {
           "climbUuid": "133ea4dc18df4a68b60c67855491eb76",
           "angle": 40,
-          "ascensionistCount": 2969,
-          "qualityAverage": 3.192050152490681,
+          "ascensionistCount": 2972,
+          "qualityAverage": 3.2020311442112392,
           "difficultyAverage": 15.98,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "briancarlson",
           "faAt": "2021-01-12 16:58:26",
-          "syncSeq": "306448889"
+          "syncSeq": "309653541"
         },
         {
           "climbUuid": "133ea4dc18df4a68b60c67855491eb76",
@@ -549,14 +549,14 @@
         {
           "climbUuid": "1AFD857976594253A2D9ACB0B06B6360",
           "angle": 20,
-          "ascensionistCount": 104,
-          "qualityAverage": 3.445242718446602,
+          "ascensionistCount": 105,
+          "qualityAverage": 3.450576923076923,
           "difficultyAverage": 13.01,
           "displayDifficulty": 13,
           "difficulty": "5a/V1",
           "faUsername": "rdance",
           "faAt": "2021-08-05 18:17:17",
-          "syncSeq": "305221480"
+          "syncSeq": "309684977"
         },
         {
           "climbUuid": "1AFD857976594253A2D9ACB0B06B6360",
@@ -585,26 +585,26 @@
         {
           "climbUuid": "1AFD857976594253A2D9ACB0B06B6360",
           "angle": 35,
-          "ascensionistCount": 1032,
-          "qualityAverage": 3.209795719844358,
+          "ascensionistCount": 1034,
+          "qualityAverage": 3.2097961165048545,
           "difficultyAverage": 16.01,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "jwilder",
           "faAt": "2020-12-10 20:12:00",
-          "syncSeq": "306044137"
+          "syncSeq": "309651953"
         },
         {
           "climbUuid": "1AFD857976594253A2D9ACB0B06B6360",
           "angle": 40,
-          "ascensionistCount": 3979,
-          "qualityAverage": 3.231614043950492,
+          "ascensionistCount": 3984,
+          "qualityAverage": 3.2318062563067604,
           "difficultyAverage": 16.96,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "kiel",
           "faAt": "2020-11-17 00:48:35",
-          "syncSeq": "309244025"
+          "syncSeq": "309681955"
         },
         {
           "climbUuid": "1AFD857976594253A2D9ACB0B06B6360",
@@ -729,14 +729,14 @@
         {
           "climbUuid": "255402F2554441AAA6FB050679E82E49",
           "angle": 25,
-          "ascensionistCount": 719,
+          "ascensionistCount": 720,
           "qualityAverage": 3.1,
           "difficultyAverage": 14,
           "displayDifficulty": 14,
           "difficulty": "5b/V1",
           "faUsername": "gaeljaffrain",
           "faAt": "2021-01-22 01:31:32",
-          "syncSeq": "282906835"
+          "syncSeq": "309648741"
         },
         {
           "climbUuid": "255402F2554441AAA6FB050679E82E49",
@@ -753,26 +753,26 @@
         {
           "climbUuid": "255402F2554441AAA6FB050679E82E49",
           "angle": 35,
-          "ascensionistCount": 1481,
-          "qualityAverage": 3.164314789687924,
+          "ascensionistCount": 1485,
+          "qualityAverage": 3.164303112313938,
           "difficultyAverage": 16.01,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "kilterjackie",
           "faAt": "2020-12-03 04:38:52",
-          "syncSeq": "306049227"
+          "syncSeq": "309657356"
         },
         {
           "climbUuid": "255402F2554441AAA6FB050679E82E49",
           "angle": 40,
-          "ascensionistCount": 2471,
-          "qualityAverage": 3.2003257328990227,
+          "ascensionistCount": 2473,
+          "qualityAverage": 3.2003254678600492,
           "difficultyAverage": 16.02,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "kilterjackie",
           "faAt": "2020-11-22 00:02:34",
-          "syncSeq": "309240179"
+          "syncSeq": "309654634"
         },
         {
           "climbUuid": "255402F2554441AAA6FB050679E82E49",
@@ -789,14 +789,14 @@
         {
           "climbUuid": "255402F2554441AAA6FB050679E82E49",
           "angle": 50,
-          "ascensionistCount": 317,
-          "qualityAverage": 3.239240506329114,
+          "ascensionistCount": 318,
+          "qualityAverage": 3.2492113564668768,
           "difficultyAverage": 16.04,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "JohnPaulWeener",
           "faAt": "2021-04-11 21:19:22",
-          "syncSeq": "301072867"
+          "syncSeq": "309652093"
         },
         {
           "climbUuid": "255402F2554441AAA6FB050679E82E49",
@@ -921,38 +921,38 @@
         {
           "climbUuid": "2657B92D24E541098E27963FFE5B5B0C",
           "angle": 30,
-          "ascensionistCount": 2575,
-          "qualityAverage": 3.1507215288611543,
+          "ascensionistCount": 2577,
+          "qualityAverage": 3.1507209664848013,
           "difficultyAverage": 13.03,
           "displayDifficulty": 13,
           "difficulty": "5a/V1",
           "faUsername": "kilterjackie",
           "faAt": "2021-02-11 02:02:15",
-          "syncSeq": "308846848"
+          "syncSeq": "309653549"
         },
         {
           "climbUuid": "2657B92D24E541098E27963FFE5B5B0C",
           "angle": 35,
-          "ascensionistCount": 935,
-          "qualityAverage": 3.18,
-          "difficultyAverage": 13.97,
+          "ascensionistCount": 936,
+          "qualityAverage": 3.1799999999999997,
+          "difficultyAverage": 13.98,
           "displayDifficulty": 14,
           "difficulty": "5b/V1",
           "faUsername": "kilterjackie",
           "faAt": "2020-12-01 03:59:19",
-          "syncSeq": "299082847"
+          "syncSeq": "309651524"
         },
         {
           "climbUuid": "2657B92D24E541098E27963FFE5B5B0C",
           "angle": 40,
-          "ascensionistCount": 7359,
-          "qualityAverage": 3.151938301938302,
+          "ascensionistCount": 7365,
+          "qualityAverage": 3.151936715766503,
           "difficultyAverage": 15.99,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "KilterStudio",
           "faAt": "2020-10-26 21:50:40",
-          "syncSeq": "306042912"
+          "syncSeq": "309650640"
         },
         {
           "climbUuid": "2657B92D24E541098E27963FFE5B5B0C",
@@ -1113,26 +1113,26 @@
         {
           "climbUuid": "28c385726d0d4163bd5b283a2539c0b7",
           "angle": 35,
-          "ascensionistCount": 1088,
-          "qualityAverage": 3.18,
+          "ascensionistCount": 1091,
+          "qualityAverage": 3.19,
           "difficultyAverage": 20,
           "displayDifficulty": 20,
           "difficulty": "6c/V5",
           "faUsername": "JChupacabra",
           "faAt": "2020-12-11 01:32:27",
-          "syncSeq": "306447712"
+          "syncSeq": "309652259"
         },
         {
           "climbUuid": "28c385726d0d4163bd5b283a2539c0b7",
           "angle": 40,
-          "ascensionistCount": 1274,
-          "qualityAverage": 3.2234173228346457,
+          "ascensionistCount": 1277,
+          "qualityAverage": 3.223409269442262,
           "difficultyAverage": 20.98,
           "displayDifficulty": 21,
           "difficulty": "6c+/V5",
           "faUsername": "griffinwhiteside",
           "faAt": "2020-11-04 22:58:56",
-          "syncSeq": "308446439"
+          "syncSeq": "309653408"
         },
         {
           "climbUuid": "28c385726d0d4163bd5b283a2539c0b7",
@@ -1245,38 +1245,38 @@
         {
           "climbUuid": "3612238A9FC74E7AA4CDA22FB7009AAD",
           "angle": 30,
-          "ascensionistCount": 515,
+          "ascensionistCount": 516,
           "qualityAverage": 3.25,
           "difficultyAverage": 17.01,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "T1m",
           "faAt": "2021-03-20 21:27:27",
-          "syncSeq": "290688917"
+          "syncSeq": "309652298"
         },
         {
           "climbUuid": "3612238A9FC74E7AA4CDA22FB7009AAD",
           "angle": 35,
-          "ascensionistCount": 786,
+          "ascensionistCount": 787,
           "qualityAverage": 3.25,
           "difficultyAverage": 18.05,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "kilterjackie",
           "faAt": "2020-11-29 00:19:38",
-          "syncSeq": "294288636"
+          "syncSeq": "309652282"
         },
         {
           "climbUuid": "3612238A9FC74E7AA4CDA22FB7009AAD",
           "angle": 40,
-          "ascensionistCount": 1137,
-          "qualityAverage": 3.3819787985865726,
-          "difficultyAverage": 18.11,
+          "ascensionistCount": 1140,
+          "qualityAverage": 3.391955947136564,
+          "difficultyAverage": 18.12,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "kilterjackie",
           "faAt": "2020-11-05 01:39:44",
-          "syncSeq": "308426519"
+          "syncSeq": "309631850"
         },
         {
           "climbUuid": "3612238A9FC74E7AA4CDA22FB7009AAD",
@@ -1425,26 +1425,26 @@
         {
           "climbUuid": "3C91F0465D0B412DACEA368B20ECD853",
           "angle": 35,
-          "ascensionistCount": 748,
-          "qualityAverage": 3.3721908602150537,
+          "ascensionistCount": 751,
+          "qualityAverage": 3.372182061579652,
           "difficultyAverage": 17.96,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "griffinwhiteside",
           "faAt": "2021-02-18 01:04:36",
-          "syncSeq": "309223558"
+          "syncSeq": "309631226"
         },
         {
           "climbUuid": "3C91F0465D0B412DACEA368B20ECD853",
           "angle": 40,
-          "ascensionistCount": 222,
-          "qualityAverage": 3.48,
+          "ascensionistCount": 223,
+          "qualityAverage": 3.49,
           "difficultyAverage": 16.99,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "briancarlson",
           "faAt": "2021-02-19 19:55:03",
-          "syncSeq": "280918332"
+          "syncSeq": "309652327"
         },
         {
           "climbUuid": "3C91F0465D0B412DACEA368B20ECD853",
@@ -1557,26 +1557,26 @@
         {
           "climbUuid": "403828250F6A459F9316527080375CEB",
           "angle": 35,
-          "ascensionistCount": 1493,
-          "qualityAverage": 3.1927236045729654,
+          "ascensionistCount": 1495,
+          "qualityAverage": 3.1927199462726663,
           "difficultyAverage": 19.96,
           "displayDifficulty": 20,
           "difficulty": "6c/V5",
           "faUsername": "griffinwhiteside",
           "faAt": "2021-03-26 03:02:29",
-          "syncSeq": "309272101"
+          "syncSeq": "309654560"
         },
         {
           "climbUuid": "403828250F6A459F9316527080375CEB",
           "angle": 40,
-          "ascensionistCount": 834,
-          "qualityAverage": 3.35234375,
+          "ascensionistCount": 836,
+          "qualityAverage": 3.352338129496403,
           "difficultyAverage": 18.98,
           "displayDifficulty": 19,
           "difficulty": "6b+/V4",
           "faUsername": "briancarlson",
           "faAt": "2021-03-28 02:18:19",
-          "syncSeq": "306026033"
+          "syncSeq": "309633327"
         },
         {
           "climbUuid": "403828250F6A459F9316527080375CEB",
@@ -1701,38 +1701,38 @@
         {
           "climbUuid": "4D781AC7471944B2AB13CDECC88C83BF",
           "angle": 30,
-          "ascensionistCount": 1987,
+          "ascensionistCount": 1990,
           "qualityAverage": 3.19,
           "difficultyAverage": 18.96,
           "displayDifficulty": 19,
           "difficulty": "6b+/V4",
           "faUsername": "kilterjackie",
           "faAt": "2021-03-06 02:27:59",
-          "syncSeq": "301476102"
+          "syncSeq": "309653268"
         },
         {
           "climbUuid": "4D781AC7471944B2AB13CDECC88C83BF",
           "angle": 35,
-          "ascensionistCount": 1046,
-          "qualityAverage": 3.211714559386973,
+          "ascensionistCount": 1049,
+          "qualityAverage": 3.2117096466093598,
           "difficultyAverage": 20,
           "displayDifficulty": 20,
           "difficulty": "6c/V5",
           "faUsername": "jwilder",
           "faAt": "2021-03-06 04:06:13",
-          "syncSeq": "306044114"
+          "syncSeq": "309654598"
         },
         {
           "climbUuid": "4D781AC7471944B2AB13CDECC88C83BF",
           "angle": 40,
-          "ascensionistCount": 1310,
-          "qualityAverage": 3.3160092095165004,
+          "ascensionistCount": 1315,
+          "qualityAverage": 3.3159862385321106,
           "difficultyAverage": 20,
           "displayDifficulty": 20,
           "difficulty": "6c/V5",
           "faUsername": "arubin88",
           "faAt": "2021-03-05 22:52:33",
-          "syncSeq": "304840824"
+          "syncSeq": "309657296"
         },
         {
           "climbUuid": "4D781AC7471944B2AB13CDECC88C83BF",
@@ -1845,14 +1845,14 @@
         {
           "climbUuid": "57F29CB4D99B47ABA21F0DE9911CA46E",
           "angle": 35,
-          "ascensionistCount": 1162,
-          "qualityAverage": 3.199826989619377,
+          "ascensionistCount": 1165,
+          "qualityAverage": 3.1998274374460745,
           "difficultyAverage": 20.96,
           "displayDifficulty": 21,
           "difficulty": "6c+/V5",
           "faUsername": "Cuckovich",
           "faAt": "2021-03-26 23:19:30",
-          "syncSeq": "306048949"
+          "syncSeq": "309657230"
         },
         {
           "climbUuid": "57F29CB4D99B47ABA21F0DE9911CA46E",
@@ -1965,26 +1965,26 @@
         {
           "climbUuid": "6448D03D8BDE4F6496B1BC9260AE7503",
           "angle": 35,
-          "ascensionistCount": 1009,
-          "qualityAverage": 3.2407562189054726,
+          "ascensionistCount": 1010,
+          "qualityAverage": 3.2407554671968195,
           "difficultyAverage": 21.96,
           "displayDifficulty": 22,
           "difficulty": "7a/V6",
           "faUsername": "biscuit",
           "faAt": "2020-12-03 19:23:55",
-          "syncSeq": "309272112"
+          "syncSeq": "309632774"
         },
         {
           "climbUuid": "6448D03D8BDE4F6496B1BC9260AE7503",
           "angle": 40,
-          "ascensionistCount": 64,
-          "qualityAverage": 3.59234375,
+          "ascensionistCount": 65,
+          "qualityAverage": 3.6116923076923078,
           "difficultyAverage": 20.98,
           "displayDifficulty": 21,
           "difficulty": "6c+/V5",
           "faUsername": "arubin88",
           "faAt": "2021-01-05 23:22:42",
-          "syncSeq": "236270661"
+          "syncSeq": "309654997"
         },
         {
           "climbUuid": "6448D03D8BDE4F6496B1BC9260AE7503",
@@ -2097,14 +2097,14 @@
         {
           "climbUuid": "754AAB248BC04B2E8820773200BBF54C",
           "angle": 35,
-          "ascensionistCount": 1134,
+          "ascensionistCount": 1135,
           "qualityAverage": 3.2,
           "difficultyAverage": 14.98,
           "displayDifficulty": 15,
           "difficulty": "5c/V2",
           "faUsername": "kilterjackie",
           "faAt": "2020-11-29 00:21:10",
-          "syncSeq": "309243443"
+          "syncSeq": "309652833"
         },
         {
           "climbUuid": "754AAB248BC04B2E8820773200BBF54C",
@@ -2121,14 +2121,14 @@
         {
           "climbUuid": "754AAB248BC04B2E8820773200BBF54C",
           "angle": 45,
-          "ascensionistCount": 342,
+          "ascensionistCount": 343,
           "qualityAverage": 3.2,
           "difficultyAverage": 15.97,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "cata_rey",
           "faAt": "2021-01-01 20:57:50",
-          "syncSeq": "272823411"
+          "syncSeq": "309649771"
         },
         {
           "climbUuid": "754AAB248BC04B2E8820773200BBF54C",
@@ -2253,38 +2253,38 @@
         {
           "climbUuid": "86DDB41829E4445EA5E80BC300C47D17",
           "angle": 35,
-          "ascensionistCount": 933,
-          "qualityAverage": 3.2227438370846735,
+          "ascensionistCount": 934,
+          "qualityAverage": 3.2327194860813706,
           "difficultyAverage": 21.99,
           "displayDifficulty": 22,
           "difficulty": "7a/V6",
           "faUsername": "kiel",
           "faAt": "2021-04-21 23:17:31",
-          "syncSeq": "309272121"
+          "syncSeq": "309652391"
         },
         {
           "climbUuid": "86DDB41829E4445EA5E80BC300C47D17",
           "angle": 40,
-          "ascensionistCount": 1694,
-          "qualityAverage": 3.2210526315789476,
+          "ascensionistCount": 1698,
+          "qualityAverage": 3.2310442477876107,
           "difficultyAverage": 22.02,
           "displayDifficulty": 22,
           "difficulty": "7a/V6",
           "faUsername": "Ben17",
           "faAt": "2021-05-05 18:54:08",
-          "syncSeq": "290693451"
+          "syncSeq": "309656813"
         },
         {
           "climbUuid": "86DDB41829E4445EA5E80BC300C47D17",
           "angle": 45,
-          "ascensionistCount": 445,
-          "qualityAverage": 3.3215280898876403,
+          "ascensionistCount": 446,
+          "qualityAverage": 3.32152466367713,
           "difficultyAverage": 22.96,
           "displayDifficulty": 23,
           "difficulty": "7a+/V7",
           "faUsername": "hannahD",
           "faAt": "2021-04-16 02:20:46",
-          "syncSeq": "301874126"
+          "syncSeq": "309634339"
         },
         {
           "climbUuid": "86DDB41829E4445EA5E80BC300C47D17",
@@ -2361,14 +2361,14 @@
         {
           "climbUuid": "8C82E9400EDE40ADB05EFA0FEDAC2017",
           "angle": 15,
-          "ascensionistCount": 7,
-          "qualityAverage": 2.71,
-          "difficultyAverage": 13.43,
-          "displayDifficulty": 13,
-          "difficulty": "5a/V1",
+          "ascensionistCount": 8,
+          "qualityAverage": 3,
+          "difficultyAverage": 13.5,
+          "displayDifficulty": 14,
+          "difficulty": "5b/V1",
           "faUsername": "CooperWilde",
           "faAt": "2022-04-23 02:02:11",
-          "syncSeq": "236241159"
+          "syncSeq": "309639481"
         },
         {
           "climbUuid": "8C82E9400EDE40ADB05EFA0FEDAC2017",
@@ -2397,38 +2397,38 @@
         {
           "climbUuid": "8C82E9400EDE40ADB05EFA0FEDAC2017",
           "angle": 30,
-          "ascensionistCount": 2837,
-          "qualityAverage": 3.14,
+          "ascensionistCount": 2841,
+          "qualityAverage": 3.1399999999999997,
           "difficultyAverage": 16,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "nebula524",
           "faAt": "2020-12-31 15:44:00",
-          "syncSeq": "306049140"
+          "syncSeq": "309657299"
         },
         {
           "climbUuid": "8C82E9400EDE40ADB05EFA0FEDAC2017",
           "angle": 35,
-          "ascensionistCount": 818,
+          "ascensionistCount": 819,
           "qualityAverage": 3.24,
           "difficultyAverage": 16.03,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "JChupacabra",
           "faAt": "2020-12-11 01:34:45",
-          "syncSeq": "293890429"
+          "syncSeq": "309651931"
         },
         {
           "climbUuid": "8C82E9400EDE40ADB05EFA0FEDAC2017",
           "angle": 40,
-          "ascensionistCount": 1512,
-          "qualityAverage": 3.2446902065289813,
+          "ascensionistCount": 1515,
+          "qualityAverage": 3.254654255319149,
           "difficultyAverage": 16.98,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "kilterjackie",
           "faAt": "2020-11-05 02:33:28",
-          "syncSeq": "307245279"
+          "syncSeq": "309654632"
         },
         {
           "climbUuid": "8C82E9400EDE40ADB05EFA0FEDAC2017",
@@ -2565,50 +2565,50 @@
         {
           "climbUuid": "928F78A433ED44468D91FD2A59BB4673",
           "angle": 30,
-          "ascensionistCount": 574,
+          "ascensionistCount": 575,
           "qualityAverage": 3.23,
           "difficultyAverage": 16,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "tlaufer",
           "faAt": "2021-03-14 15:09:40",
-          "syncSeq": "301475061"
+          "syncSeq": "309652198"
         },
         {
           "climbUuid": "928F78A433ED44468D91FD2A59BB4673",
           "angle": 35,
-          "ascensionistCount": 1227,
-          "qualityAverage": 3.261427399507793,
+          "ascensionistCount": 1231,
+          "qualityAverage": 3.2614227309893704,
           "difficultyAverage": 16.94,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "griffinwhiteside",
           "faAt": "2021-02-18 01:01:34",
-          "syncSeq": "309244271"
+          "syncSeq": "309653656"
         },
         {
           "climbUuid": "928F78A433ED44468D91FD2A59BB4673",
           "angle": 40,
-          "ascensionistCount": 800,
-          "qualityAverage": 3.3304282115869017,
+          "ascensionistCount": 802,
+          "qualityAverage": 3.330427135678392,
           "difficultyAverage": 16.99,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "briancarlson",
           "faAt": "2021-02-19 20:54:53",
-          "syncSeq": "292676443"
+          "syncSeq": "309631832"
         },
         {
           "climbUuid": "928F78A433ED44468D91FD2A59BB4673",
           "angle": 45,
-          "ascensionistCount": 251,
-          "qualityAverage": 3.26,
+          "ascensionistCount": 252,
+          "qualityAverage": 3.27,
           "difficultyAverage": 16.99,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "arubin88",
           "faAt": "2021-02-18 01:09:13",
-          "syncSeq": "297882692"
+          "syncSeq": "309651040"
         },
         {
           "climbUuid": "928F78A433ED44468D91FD2A59BB4673",
@@ -2661,14 +2661,14 @@
         {
           "climbUuid": "97D0A8FC30A44BA4ADB2494D09FC0632",
           "angle": 10,
-          "ascensionistCount": 20,
+          "ascensionistCount": 21,
           "qualityAverage": 3.24,
           "difficultyAverage": 13,
           "displayDifficulty": 13,
           "difficulty": "5a/V1",
           "faUsername": "jgurganus",
           "faAt": "2022-01-30 20:40:31",
-          "syncSeq": "309272115"
+          "syncSeq": "309272206"
         },
         {
           "climbUuid": "97D0A8FC30A44BA4ADB2494D09FC0632",
@@ -2721,26 +2721,26 @@
         {
           "climbUuid": "97D0A8FC30A44BA4ADB2494D09FC0632",
           "angle": 35,
-          "ascensionistCount": 982,
-          "qualityAverage": 3.22,
+          "ascensionistCount": 984,
+          "qualityAverage": 3.2200000000000006,
           "difficultyAverage": 17.98,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "rileym",
           "faAt": "2021-02-16 02:02:31",
-          "syncSeq": "306041210"
+          "syncSeq": "309648820"
         },
         {
           "climbUuid": "97D0A8FC30A44BA4ADB2494D09FC0632",
           "angle": 40,
-          "ascensionistCount": 2227,
-          "qualityAverage": 3.261451104100946,
+          "ascensionistCount": 2228,
+          "qualityAverage": 3.2614504504504502,
           "difficultyAverage": 18,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "steven97",
           "faAt": "2021-02-21 03:08:35",
-          "syncSeq": "309247994"
+          "syncSeq": "309657740"
         },
         {
           "climbUuid": "97D0A8FC30A44BA4ADB2494D09FC0632",
@@ -2877,26 +2877,26 @@
         {
           "climbUuid": "A06C1BB99B4F4F1D8FB266E2A4410C61",
           "angle": 35,
-          "ascensionistCount": 831,
-          "qualityAverage": 3.2019347037484884,
+          "ascensionistCount": 832,
+          "qualityAverage": 3.201932367149759,
           "difficultyAverage": 16.98,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "jwilder",
           "faAt": "2021-02-23 22:01:36",
-          "syncSeq": "290688366"
+          "syncSeq": "309651592"
         },
         {
           "climbUuid": "A06C1BB99B4F4F1D8FB266E2A4410C61",
           "angle": 40,
-          "ascensionistCount": 1009,
-          "qualityAverage": 3.2507462686567163,
+          "ascensionistCount": 1010,
+          "qualityAverage": 3.250745526838966,
           "difficultyAverage": 16.98,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "steven97",
           "faAt": "2021-02-06 21:55:34",
-          "syncSeq": "292696230"
+          "syncSeq": "309652955"
         },
         {
           "climbUuid": "A06C1BB99B4F4F1D8FB266E2A4410C61",
@@ -3009,38 +3009,38 @@
         {
           "climbUuid": "A344052FE63347B2922041CB13A5A52E",
           "angle": 30,
-          "ascensionistCount": 2090,
-          "qualityAverage": 3.149447381066795,
+          "ascensionistCount": 2091,
+          "qualityAverage": 3.1494476464937557,
           "difficultyAverage": 15,
           "displayDifficulty": 15,
           "difficulty": "5c/V2",
           "faUsername": "nebula524",
           "faAt": "2020-12-25 11:28:14",
-          "syncSeq": "306044884"
+          "syncSeq": "309652808"
         },
         {
           "climbUuid": "A344052FE63347B2922041CB13A5A52E",
           "angle": 35,
-          "ascensionistCount": 1736,
-          "qualityAverage": 3.15106998264893,
+          "ascensionistCount": 1739,
+          "qualityAverage": 3.151068129330254,
           "difficultyAverage": 16,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "jwilder",
           "faAt": "2021-01-09 18:52:46",
-          "syncSeq": "306044351"
+          "syncSeq": "309652251"
         },
         {
           "climbUuid": "A344052FE63347B2922041CB13A5A52E",
           "angle": 40,
-          "ascensionistCount": 1184,
-          "qualityAverage": 3.26,
+          "ascensionistCount": 1186,
+          "qualityAverage": 3.27,
           "difficultyAverage": 16.98,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "briancarlson",
           "faAt": "2021-01-04 18:18:56",
-          "syncSeq": "307244938"
+          "syncSeq": "309651990"
         },
         {
           "climbUuid": "A344052FE63347B2922041CB13A5A52E",
@@ -3177,38 +3177,38 @@
         {
           "climbUuid": "A6E04278AE294E03AD9DD2A8E0CDE31F",
           "angle": 35,
-          "ascensionistCount": 1831,
-          "qualityAverage": 3.181899012074643,
+          "ascensionistCount": 1834,
+          "qualityAverage": 3.1918794520547946,
           "difficultyAverage": 17.96,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "biscuit",
           "faAt": "2020-12-03 18:39:37",
-          "syncSeq": "309247738"
+          "syncSeq": "309657430"
         },
         {
           "climbUuid": "A6E04278AE294E03AD9DD2A8E0CDE31F",
           "angle": 40,
-          "ascensionistCount": 4738,
-          "qualityAverage": 3.1809661016949153,
+          "ascensionistCount": 4742,
+          "qualityAverage": 3.180965283657917,
           "difficultyAverage": 17.99,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "KilterStudio",
           "faAt": "2020-10-26 22:01:17",
-          "syncSeq": "309245130"
+          "syncSeq": "309654453"
         },
         {
           "climbUuid": "A6E04278AE294E03AD9DD2A8E0CDE31F",
           "angle": 45,
-          "ascensionistCount": 758,
+          "ascensionistCount": 759,
           "qualityAverage": 3.19,
           "difficultyAverage": 18.01,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "ninjanate",
           "faAt": "2020-12-28 01:30:50",
-          "syncSeq": "301474759"
+          "syncSeq": "309651848"
         },
         {
           "climbUuid": "A6E04278AE294E03AD9DD2A8E0CDE31F",
@@ -3345,26 +3345,26 @@
         {
           "climbUuid": "ab627b64f3e843b88c347f89365c26c1",
           "angle": 30,
-          "ascensionistCount": 408,
+          "ascensionistCount": 409,
           "qualityAverage": 3.2299999999999995,
           "difficultyAverage": 17.01,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "overlando.calrissian",
           "faAt": "2021-03-16 23:23:50",
-          "syncSeq": "297883779"
+          "syncSeq": "309652201"
         },
         {
           "climbUuid": "ab627b64f3e843b88c347f89365c26c1",
           "angle": 35,
-          "ascensionistCount": 829,
-          "qualityAverage": 3.25,
+          "ascensionistCount": 831,
+          "qualityAverage": 3.26,
           "difficultyAverage": 19.99,
           "displayDifficulty": 20,
           "difficulty": "6c/V5",
           "faUsername": "jwilder",
           "faAt": "2020-12-12 19:25:58",
-          "syncSeq": "303747928"
+          "syncSeq": "309655022"
         },
         {
           "climbUuid": "ab627b64f3e843b88c347f89365c26c1",
@@ -3477,26 +3477,26 @@
         {
           "climbUuid": "B0EBB29503CC42B4BC20EEA494935DD8",
           "angle": 30,
-          "ascensionistCount": 1751,
-          "qualityAverage": 3.119358533791524,
+          "ascensionistCount": 1753,
+          "qualityAverage": 3.119359267734554,
           "difficultyAverage": 16.98,
           "displayDifficulty": 17,
           "difficulty": "6a+/V3",
           "faUsername": "nebula524",
           "faAt": "2020-12-27 16:42:52",
-          "syncSeq": "290689818"
+          "syncSeq": "309653016"
         },
         {
           "climbUuid": "B0EBB29503CC42B4BC20EEA494935DD8",
           "angle": 35,
-          "ascensionistCount": 1307,
-          "qualityAverage": 3.152072141212586,
+          "ascensionistCount": 1308,
+          "qualityAverage": 3.152070552147239,
           "difficultyAverage": 18,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "kilterdojo",
           "faAt": "2020-12-15 18:44:02.690951",
-          "syncSeq": "286880952"
+          "syncSeq": "309632685"
         },
         {
           "climbUuid": "B0EBB29503CC42B4BC20EEA494935DD8",
@@ -3633,38 +3633,38 @@
         {
           "climbUuid": "cc7ded81378d43418d4c0713ea131d1b",
           "angle": 25,
-          "ascensionistCount": 215,
-          "qualityAverage": 3.12,
+          "ascensionistCount": 217,
+          "qualityAverage": 3.1299999999999994,
           "difficultyAverage": 13,
           "displayDifficulty": 13,
           "difficulty": "5a/V1",
           "faUsername": "gaeljaffrain",
           "faAt": "2021-02-05 01:02:06",
-          "syncSeq": "273327245"
+          "syncSeq": "309653664"
         },
         {
           "climbUuid": "cc7ded81378d43418d4c0713ea131d1b",
           "angle": 30,
-          "ascensionistCount": 1813,
+          "ascensionistCount": 1815,
           "qualityAverage": 3.18,
           "difficultyAverage": 15.97,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "kilterjackie",
           "faAt": "2021-01-02 02:34:49",
-          "syncSeq": "301476324"
+          "syncSeq": "309653717"
         },
         {
           "climbUuid": "cc7ded81378d43418d4c0713ea131d1b",
           "angle": 35,
-          "ascensionistCount": 949,
+          "ascensionistCount": 950,
           "qualityAverage": 3.24,
           "difficultyAverage": 15.98,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "jwilder",
           "faAt": "2021-01-09 18:53:47",
-          "syncSeq": "290688873"
+          "syncSeq": "309652228"
         },
         {
           "climbUuid": "cc7ded81378d43418d4c0713ea131d1b",
@@ -3681,14 +3681,14 @@
         {
           "climbUuid": "cc7ded81378d43418d4c0713ea131d1b",
           "angle": 45,
-          "ascensionistCount": 554,
-          "qualityAverage": 3.2014440433213,
+          "ascensionistCount": 555,
+          "qualityAverage": 3.2014414414414416,
           "difficultyAverage": 16,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "ninjanate",
           "faAt": "2020-12-28 01:10:19",
-          "syncSeq": "301475177"
+          "syncSeq": "309652352"
         },
         {
           "climbUuid": "cc7ded81378d43418d4c0713ea131d1b",
@@ -3801,14 +3801,14 @@
         {
           "climbUuid": "CE3B9040268B4B58A74E617C26A8602B",
           "angle": 30,
-          "ascensionistCount": 2437,
-          "qualityAverage": 3.200574948665298,
+          "ascensionistCount": 2439,
+          "qualityAverage": 3.200574476815757,
           "difficultyAverage": 19.97,
           "displayDifficulty": 20,
           "difficulty": "6c/V5",
           "faUsername": "kilterjackie",
           "faAt": "2021-03-05 21:45:02",
-          "syncSeq": "306049128"
+          "syncSeq": "309657442"
         },
         {
           "climbUuid": "CE3B9040268B4B58A74E617C26A8602B",
@@ -3825,26 +3825,26 @@
         {
           "climbUuid": "CE3B9040268B4B58A74E617C26A8602B",
           "angle": 40,
-          "ascensionistCount": 1027,
-          "qualityAverage": 3.260721951219512,
+          "ascensionistCount": 1030,
+          "qualityAverage": 3.2707101167315176,
           "difficultyAverage": 22.01,
           "displayDifficulty": 22,
           "difficulty": "7a/V6",
           "faUsername": "steven97",
           "faAt": "2021-02-28 01:29:37",
-          "syncSeq": "306045669"
+          "syncSeq": "309654638"
         },
         {
           "climbUuid": "CE3B9040268B4B58A74E617C26A8602B",
           "angle": 45,
-          "ascensionistCount": 135,
-          "qualityAverage": 3.33,
+          "ascensionistCount": 136,
+          "qualityAverage": 3.34,
           "difficultyAverage": 23,
           "displayDifficulty": 23,
           "difficulty": "7a+/V7",
           "faUsername": "mtjohns8588",
           "faAt": "2021-05-31 23:15:50",
-          "syncSeq": "285303036"
+          "syncSeq": "309657541"
         },
         {
           "climbUuid": "CE3B9040268B4B58A74E617C26A8602B",
@@ -3945,26 +3945,26 @@
         {
           "climbUuid": "D8C748138579411FBE2EE9E167E166E4",
           "angle": 35,
-          "ascensionistCount": 895,
-          "qualityAverage": 3.2419775280898877,
+          "ascensionistCount": 897,
+          "qualityAverage": 3.2419730941704037,
           "difficultyAverage": 22.96,
           "displayDifficulty": 23,
           "difficulty": "7a+/V7",
           "faUsername": "griffinwhiteside",
           "faAt": "2021-03-26 03:10:28",
-          "syncSeq": "306044709"
+          "syncSeq": "309652630"
         },
         {
           "climbUuid": "D8C748138579411FBE2EE9E167E166E4",
           "angle": 40,
-          "ascensionistCount": 344,
-          "qualityAverage": 3.3747383720930233,
+          "ascensionistCount": 345,
+          "qualityAverage": 3.3747246376811595,
           "difficultyAverage": 23.01,
           "displayDifficulty": 23,
           "difficulty": "7a+/V7",
           "faUsername": "arubin88",
           "faAt": "2021-03-27 21:01:19",
-          "syncSeq": "286900832"
+          "syncSeq": "309651914"
         },
         {
           "climbUuid": "D8C748138579411FBE2EE9E167E166E4",
@@ -4017,14 +4017,14 @@
         {
           "climbUuid": "E6D894D60766479B8F710E8A7FF1D7AF",
           "angle": 35,
-          "ascensionistCount": 802,
-          "qualityAverage": 3.2521902377972465,
+          "ascensionistCount": 804,
+          "qualityAverage": 3.262172284644195,
           "difficultyAverage": 22.94,
           "displayDifficulty": 23,
           "difficulty": "7a+/V7",
           "faUsername": "biscuit",
           "faAt": "2020-12-03 18:59:44",
-          "syncSeq": "290694283"
+          "syncSeq": "309657574"
         },
         {
           "climbUuid": "E6D894D60766479B8F710E8A7FF1D7AF",
@@ -4161,14 +4161,14 @@
         {
           "climbUuid": "ED575A2468F640B2B758361B887A4B3E",
           "angle": 35,
-          "ascensionistCount": 1263,
-          "qualityAverage": 3.12,
-          "difficultyAverage": 16.01,
+          "ascensionistCount": 1267,
+          "qualityAverage": 3.13,
+          "difficultyAverage": 16,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "kilterdojo",
           "faAt": "2020-12-15 18:29:12.639881",
-          "syncSeq": "306040248"
+          "syncSeq": "309654644"
         },
         {
           "climbUuid": "ED575A2468F640B2B758361B887A4B3E",
@@ -4305,38 +4305,38 @@
         {
           "climbUuid": "FC08DF05598B46BFB404BEDCA07685A2",
           "angle": 30,
-          "ascensionistCount": 558,
+          "ascensionistCount": 559,
           "qualityAverage": 3.23,
           "difficultyAverage": 16.01,
           "displayDifficulty": 16,
           "difficulty": "6a/V3",
           "faUsername": "abain",
           "faAt": "2021-04-08 19:40:37",
-          "syncSeq": "306049242"
+          "syncSeq": "309657486"
         },
         {
           "climbUuid": "FC08DF05598B46BFB404BEDCA07685A2",
           "angle": 35,
-          "ascensionistCount": 1751,
-          "qualityAverage": 3.172,
+          "ascensionistCount": 1752,
+          "qualityAverage": 3.1719988545246274,
           "difficultyAverage": 18.94,
           "displayDifficulty": 19,
           "difficulty": "6b+/V4",
           "faUsername": "griffinwhiteside",
           "faAt": "2021-03-26 03:20:27",
-          "syncSeq": "301454753"
+          "syncSeq": "309630431"
         },
         {
           "climbUuid": "FC08DF05598B46BFB404BEDCA07685A2",
           "angle": 40,
-          "ascensionistCount": 6220,
-          "qualityAverage": 3.202325957034405,
+          "ascensionistCount": 6226,
+          "qualityAverage": 3.202323705018558,
           "difficultyAverage": 17.99,
           "displayDifficulty": 18,
           "difficulty": "6b/V4",
           "faUsername": "hilterkilter",
           "faAt": "2021-03-27 20:15:27",
-          "syncSeq": "306848596"
+          "syncSeq": "309654484"
         },
         {
           "climbUuid": "FC08DF05598B46BFB404BEDCA07685A2",
@@ -4461,14 +4461,14 @@
         {
           "climbUuid": "FE683AA3D04845DD857FC5B5F94F5EBD",
           "angle": 35,
-          "ascensionistCount": 933,
-          "qualityAverage": 3.291842672413793,
-          "difficultyAverage": 20.85,
+          "ascensionistCount": 935,
+          "qualityAverage": 3.3018279569892472,
+          "difficultyAverage": 20.84,
           "displayDifficulty": 21,
           "difficulty": "6c+/V5",
           "faUsername": "griffinwhiteside",
           "faAt": "2021-03-26 03:00:08",
-          "syncSeq": "306041310"
+          "syncSeq": "309632541"
         },
         {
           "climbUuid": "FE683AA3D04845DD857FC5B5F94F5EBD",
@@ -4510,6 +4510,6 @@
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T18:48:44.057Z",
+  "recordedAt": "2026-09-08T22:58:43.973Z",
   "upstream": "https://ws.boardsesh.com"
 }

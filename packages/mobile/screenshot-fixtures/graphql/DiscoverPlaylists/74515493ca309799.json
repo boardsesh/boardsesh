@@ -179,12 +179,12 @@
             "isGeneratedRecommendation": false
           }
         ],
-        "totalCount": 268,
+        "totalCount": 270,
         "hasMore": true
       }
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T18:48:31.491Z",
+  "recordedAt": "2026-09-08T22:58:33.456Z",
   "upstream": "https://ws.boardsesh.com"
 }
