@@ -360,6 +360,19 @@ export function BoardForm({
               <Button title={t('mobile.create.useMyLocation')} variant="text" onPress={onUseMyLocation} />
             )}
 
+            {/* Lights heads the group the serial belongs to — both describe the
+                LED hardware on the wall. Nothing below is hidden when the toggle
+                goes off: buildUpdateInput submits the serial and timer from
+                retained state either way, so hiding a field would be a silent
+                submit trap, and the Rogue workout timer isn't an LED device. */}
+            <SectionLabel>{t('mobile.create.lights')}</SectionLabel>
+            <SwitchRow
+              label={t('mobile.create.hasLeds')}
+              description={t('mobile.create.hasLedsHint')}
+              value={builder.hasLeds}
+              onValueChange={builder.setHasLeds}
+            />
+
             <SectionLabel>{t('mobile.create.serial')}</SectionLabel>
             <BuilderTextInput
               value={builder.serialNumber}

@@ -238,6 +238,7 @@ const GYM_BOARD_FIELDS = `
   setIds
   angle
   isAngleAdjustable
+  hasLeds
   isPublic
   isUnlisted
   locationName

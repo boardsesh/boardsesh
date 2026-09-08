@@ -120,6 +120,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       isUnlisted: board.isUnlisted,
       hideLocation: board.hideLocation,
       isAngleAdjustable: board.isAngleAdjustable,
+      hasLeds: board.hasLeds,
       locationName: board.locationName ?? undefined,
       latitude: board.latitude ?? undefined,
       longitude: board.longitude ?? undefined,

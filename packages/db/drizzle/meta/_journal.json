@@ -1555,6 +1555,13 @@
       "when": 1788743531556,
       "tag": "0221_backfill_trailing_no_match_characteristic",
       "breakpoints": true
+    },
+    {
+      "idx": 222,
+      "version": "7",
+      "when": 1788838320776,
+      "tag": "0222_board_has_leds",
+      "breakpoints": true
     }
   ]
 }

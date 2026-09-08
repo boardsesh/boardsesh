@@ -32,6 +32,7 @@ export type BoardBuilderSeed = {
   isUnlisted?: boolean;
   hideLocation?: boolean;
   isAngleAdjustable?: boolean;
+  hasLeds?: boolean;
   locationName?: string;
   latitude?: number | null;
   longitude?: number | null;
@@ -73,6 +74,10 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
   const [hideLocation, setHideLocation] = useState(seed?.hideLocation ?? false);
   // Most home boards with a kicker tilt are adjustable; default on.
   const [isAngleAdjustable, setIsAngleAdjustable] = useState(seed?.isAngleAdjustable ?? true);
+  // Nearly every Kilter/Tension wall ships with a light kit; default on so the
+  // common case needs no thought. Turning it off is what unlocks the no-LED
+  // "active climb" flow (#4585).
+  const [hasLeds, setHasLeds] = useState(seed?.hasLeds ?? true);
   const [locationName, setLocationName] = useState(seed?.locationName ?? '');
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(
     seed?.latitude != null && seed?.longitude != null ? { latitude: seed.latitude, longitude: seed.longitude } : null,
@@ -203,6 +208,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
       isUnlisted,
       hideLocation,
       isAngleAdjustable,
+      hasLeds,
       serialNumber: serialNumber.trim() || undefined,
       timerName: timerName.trim() || undefined,
       locationName: locationName.trim() || undefined,
@@ -247,6 +253,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
       isUnlisted,
       hideLocation,
       isAngleAdjustable,
+      hasLeds,
       // null (not undefined) so emptying a previously-set field clears it on the
       // server — undefined would leave the old value in place (see UpdateBoardInput).
       serialNumber: serialNumber.trim() || null,
@@ -284,6 +291,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
     isUnlisted,
     hideLocation,
     isAngleAdjustable,
+    hasLeds,
     locationName,
     coords,
     serialNumber,
@@ -308,6 +316,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
     setIsUnlisted,
     setHideLocation,
     setIsAngleAdjustable,
+    setHasLeds,
     setLocationName,
     setCoords,
     setSerialNumber,

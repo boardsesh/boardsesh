@@ -353,6 +353,22 @@ describe('QueueProvider cross-board add gate', () => {
     });
   });
 
+  it('keeps a personal ledless wall named when switching boards in a session', async () => {
+    const ledlessBoard = { ...boards.tension, hasLeds: false, gymId: null };
+    roster.boards = [boards.kilter, ledlessBoard];
+    const provider = await mountProvider();
+
+    let pending!: Promise<'added' | 'cancelled'>;
+    act(() => {
+      pending = provider.latest().addToQueue(tensionItem('ledless-switch'));
+    });
+    await answerPrompt(0, 'switch');
+    await expect(pending).resolves.toBe('added');
+
+    expect(setActiveBoard).toHaveBeenCalledWith(ledlessBoard);
+    expect(queueMutations.setSessionBoardPath).toHaveBeenCalledWith('/b/board-tension/25');
+  });
+
   it('cancels the add when activating the board fails, rather than rejecting into the void', async () => {
     setActiveBoard.mockImplementation(async () => {
       throw new Error('activation failed');

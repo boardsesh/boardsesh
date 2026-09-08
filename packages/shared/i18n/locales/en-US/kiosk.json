@@ -18,8 +18,8 @@
   },
   "board": {
     "wallsOpen": "Wall's open",
-    "lastLit": "Last lit: {{name}}",
-    "litBy": "lit by {{name}}",
+    "lastLit": "Last up: {{name}}",
+    "litBy": "{{name}}'s pick",
     "unnamedClimb": "Unnamed climb"
   },
   "installQr": {

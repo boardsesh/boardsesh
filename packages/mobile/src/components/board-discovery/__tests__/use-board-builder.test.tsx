@@ -84,6 +84,64 @@ describe('useBoardBuilder', () => {
     expect(result.current.buildCreateInput()?.isAngleAdjustable).toBe(false);
   });
 
+  it('defaults hasLeds on and carries it into both inputs', () => {
+    const { result } = renderHook(() => useBoardBuilder());
+    act(() => result.current.selectBoard('kilter'));
+    act(() => result.current.selectLayout(1));
+
+    // Almost every Kilter/Tension wall ships with a light kit, so the create
+    // flow must not ask the 99% case to think about it.
+    expect(result.current.hasLeds).toBe(true);
+    expect(result.current.buildCreateInput()?.hasLeds).toBe(true);
+    expect(result.current.buildUpdateInput('board-uuid-1')?.hasLeds).toBe(true);
+
+    act(() => result.current.setHasLeds(false));
+    expect(result.current.buildCreateInput()?.hasLeds).toBe(false);
+    expect(result.current.buildUpdateInput('board-uuid-1')?.hasLeds).toBe(false);
+  });
+
+  it('keeps a seeded hasLeds=false across re-renders', () => {
+    // A fresh seed object every render, like an unmemoised prop: the meta seeds
+    // run once in the useState initialisers, so a re-render can't reset the flag.
+    const { result, rerender } = renderHook(() =>
+      useBoardBuilder({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '20,1', hasLeds: false }),
+    );
+    expect(result.current.hasLeds).toBe(false);
+
+    rerender();
+
+    expect(result.current.hasLeds).toBe(false);
+    expect(result.current.buildCreateInput()?.hasLeds).toBe(false);
+  });
+
+  // The no-LED toggle is purely additive: it must not hide the serial or the
+  // timer. Both are submitted from retained state on every save, so a hidden
+  // field would be a silent submit trap — and the Rogue workout timer isn't an
+  // LED device in the first place.
+  it('still submits the serial and the timer when hasLeds is off', () => {
+    const { result } = renderHook(() =>
+      useBoardBuilder({
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '20,1',
+        hasLeds: false,
+        serialNumber: 'SN-9',
+        timerName: 'Rogue-1234',
+      }),
+    );
+
+    const createInput = result.current.buildCreateInput();
+    expect(createInput?.hasLeds).toBe(false);
+    expect(createInput?.serialNumber).toBe('SN-9');
+    expect(createInput?.timerName).toBe('Rogue-1234');
+
+    const updateInput = result.current.buildUpdateInput('board-uuid-1');
+    expect(updateInput?.hasLeds).toBe(false);
+    expect(updateInput?.serialNumber).toBe('SN-9');
+    expect(updateInput?.timerName).toBe('Rogue-1234');
+  });
+
   it('returns a null create input before the config is complete', () => {
     const { result } = renderHook(() => useBoardBuilder());
     expect(result.current.buildCreateInput()).toBeNull();

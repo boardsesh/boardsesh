@@ -438,6 +438,10 @@
     "errorLedMissing": "Impossible d'envoyer à la board — données LED manquantes pour cette configuration.",
     "errorIncompatible": "Ce bloc est pour une configuration de board différente.",
     "errorTooManyHolds": "Trop de prises allumées à la fois pour le contrôleur LED de cette board.",
+    "noLedsCta": "Ce mur n'a pas de LED",
+    "noLedsBody": "Prends le mur à la place. Tout le monde ici voit le bloc que tu grimpes, et l'écran de la salle aussi.",
+    "takeWall": "Prendre le mur",
+    "releaseWall": "Libérer le mur",
     "barControl": {
       "connectedLabel": "Board connectée, vous avez le contrôle",
       "connectedHint": "Ouvre les commandes de la board",
@@ -445,7 +449,11 @@
       "peerLabelAnonymous": "Sur le mur",
       "peerHint": "Ouvre la voie sur le mur",
       "disconnectedLabel": "Board déconnectée",
-      "disconnectedHint": "Se connecter à la board"
+      "disconnectedHint": "Se connecter à la board",
+      "wallHeldLabel": "Vous avez le mur",
+      "wallHeldHint": "Libère le mur",
+      "wallOpenLabel": "Le mur est libre",
+      "wallOpenHint": "Prend le mur"
     }
   },
   "integrations": {

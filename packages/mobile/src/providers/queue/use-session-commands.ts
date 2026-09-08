@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { buildBoardPath } from '@boardsesh/board-config';
+import { buildSessionBoardPath } from '../../lib/boards/session-board-path';
 import { execute } from '@boardsesh/graphql-client';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { LEAVE_SESSION } from '@boardsesh/graphql/operations/queue-session';
@@ -108,13 +108,7 @@ export function useSessionCommands({
           return null;
         }
 
-        const boardPath = buildBoardPath(
-          activeBoard.boardType,
-          activeBoard.layoutId,
-          activeBoard.sizeId,
-          activeBoard.setIds,
-          activeBoard.angle,
-        );
+        const boardPath = buildSessionBoardPath(activeBoard);
 
         try {
           const response = await getHttpClient().request<CreateSessionMutationResponse>(CREATE_SESSION, {

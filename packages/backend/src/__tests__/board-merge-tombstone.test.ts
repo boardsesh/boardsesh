@@ -5,6 +5,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { socialBoardQueries, socialBoardMutations } from '../graphql/resolvers/social/boards';
+import { resolveBoardBySlug } from '../graphql/resolvers/shared/board-lookup';
 import { boardPresenceMutations } from '../graphql/resolvers/board-presence/mutations';
 import { findChosenBoardForSerial } from '../graphql/resolvers/board-presence/shared';
 import { lockBoardSerialWrite } from '../graphql/resolvers/board-serial-write-lock';
@@ -426,10 +427,23 @@ describe('boardByUuid tombstone following', () => {
 });
 
 describe('boardBySlug tombstone following', () => {
+  it('rejects malformed and missing slugs without resolving another board', async () => {
+    for (const slug of ['', '../private', 'UPPERCASE', '-leading', 'trailing-', 'a'.repeat(121), 'no-such-board']) {
+      expect(await resolveBoardBySlug(slug)).toBeNull();
+    }
+  });
+
   it('returns the canonical survivor when the slug belongs to a merged loser', async () => {
     const board = await boardBySlug(LOSER_SLUG);
     expect(board?.uuid).toBe(SURVIVOR_UUID);
     expect(board?.slug).toBe(SURVIVOR_SLUG);
+    expect(await resolveBoardBySlug(LOSER_SLUG)).toMatchObject({
+      uuid: SURVIVOR_UUID,
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,2',
+    });
   });
 
   it('returns null for a plain soft-deleted slug (no tombstone)', async () => {
@@ -446,6 +460,30 @@ describe('boardBySlug tombstone following', () => {
     const board = await boardBySlug(REUSED_SLUG);
     // The new active board wins — we must NOT follow the merged loser's tombstone.
     expect(board?.uuid).toBe(REUSED_ACTIVE_UUID);
+  });
+
+  it('keeps private canonical boards masked from anonymous callers after raw lookup extraction', async () => {
+    const privateUuid = uuidv4();
+    const mergedSlug = `${PREFIX}-public-merged-into-private`;
+    await insertBoard({
+      uuid: privateUuid,
+      slug: `${PREFIX}-private-slug-survivor`,
+      ownerId: OWNER_SURVIVOR,
+      isPublic: false,
+    });
+    await insertBoard({
+      uuid: uuidv4(),
+      slug: mergedSlug,
+      ownerId: OWNER_A,
+      deleted: true,
+      mergedInto: privateUuid,
+    });
+
+    expect((await resolveBoardBySlug(mergedSlug))?.uuid).toBe(privateUuid);
+    expect(await boardBySlug(mergedSlug)).toBeNull();
+    const authenticated = await socialBoardQueries.boardBySlug(null, { slug: mergedSlug }, authCtx(OWNER_B));
+    expect(authenticated?.uuid).toBe(privateUuid);
+    expect(authenticated?.boardId).toBeNull();
   });
 });
 

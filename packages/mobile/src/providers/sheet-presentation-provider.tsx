@@ -65,7 +65,14 @@ const ABORTED_RESULT: DismissAndWaitResult = { status: 'aborted' };
  * down mid-animation and the event never arrives). */
 const IOS_SHEET_SETTLE_MS = 550;
 const ANDROID_SHEET_SETTLE_MS = 350;
-const SETTLE_MS = Platform.OS === 'ios' ? IOS_SHEET_SETTLE_MS : ANDROID_SHEET_SETTLE_MS;
+/**
+ * Ceiling for "a dismissed sheet is fully gone". Exported so a caller that has to
+ * act AFTER a native sheet has left the screen — raising a toast, which is a
+ * root-level JS view and would otherwise render behind it — waits the same amount
+ * of time this coordinator does, instead of guessing its own number.
+ */
+export const SHEET_SETTLE_MS = Platform.OS === 'ios' ? IOS_SHEET_SETTLE_MS : ANDROID_SHEET_SETTLE_MS;
+const SETTLE_MS = SHEET_SETTLE_MS;
 
 type Registration = {
   group: PresenterGroup;

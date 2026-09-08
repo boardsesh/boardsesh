@@ -4,9 +4,15 @@
 // validate once after hydration and again whenever the app returns to the
 // foreground. The backend follows merge tombstones and returns the canonical
 // board; a null result means an ordinary deletion.
+//
+// The snapshot is also refreshed in place when the same board comes back with a
+// different `hasLeds` — a gym admin flipping the light-kit flag has to reach
+// every climber already carrying that board, and their next foreground is the
+// only moment we look.
 
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import { fetchBoardByUuid } from '../graphql/hooks';
 import {
   getActiveBoardWriteGeneration,
@@ -40,6 +46,10 @@ export function useActiveBoardSelfHeal(): void {
 
   const activeUuid = activeBoard?.uuid ?? null;
   const activeUuidRef = useRef<string | null>(activeUuid);
+  // The whole stored board, not just its uuid: `validate` doesn't list
+  // `activeBoard` in its deps, so reading the closed-over value inside the async
+  // body would compare the server's answer against a stale snapshot.
+  const activeBoardRef = useRef<UserBoard | null>(activeBoard ?? null);
   const selectionGenerationRef = useRef(0);
   const mountedRef = useRef(true);
   const validationInFlightRef = useRef(false);
@@ -60,6 +70,7 @@ export function useActiveBoardSelfHeal(): void {
     activeUuidRef.current = activeUuid;
     selectionGenerationRef.current += 1;
   }
+  activeBoardRef.current = activeBoard ?? null;
 
   const validate = useCallback(
     (reason: ValidationReason): void => {
@@ -103,6 +114,20 @@ export function useActiveBoardSelfHeal(): void {
               // The canonical board does not need an immediate second initial
               // validation when the active-board cache re-renders this hook.
               markInitiallyValidatedActiveBoardUuid(resolved.uuid, hookValidationCacheEpoch);
+            }
+          } else if (resolved.hasLeds !== activeBoardRef.current?.hasLeds) {
+            // Same board, different light-kit flag: a gym admin turned LEDs on or
+            // off since this phone stored its copy. Compared with `!==` on the
+            // optional values, so `undefined` on both sides (a query that omitted
+            // the field) is not a difference and writes nothing.
+            const currentBoard = activeBoardRef.current;
+            if (currentBoard?.uuid === storedUuid) {
+              // The active angle is a local/session override, not the entity's
+              // saved default. Refresh only the capability on the same board.
+              definitive = await setActiveBoardIfCurrent(requestWriteGeneration, {
+                ...currentBoard,
+                hasLeds: resolved.hasLeds,
+              });
             }
           } else {
             definitive = true;

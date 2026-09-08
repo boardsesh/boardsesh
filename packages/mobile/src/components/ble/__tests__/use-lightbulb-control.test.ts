@@ -12,6 +12,12 @@ type BluetoothCtx = {
   armUndoWallChangeToast: ReturnType<typeof vi.fn>;
   reconnectSerialForCurrentBoard: string | null;
   reconnectDeviceIdForCurrentBoard: string | null;
+  ledless: boolean;
+  virtualWallHeld: boolean;
+  wallHeldByOtherUser: boolean;
+  canDriveWall: boolean;
+  takeVirtualWall: ReturnType<typeof vi.fn>;
+  releaseVirtualWall: ReturnType<typeof vi.fn>;
 } | null;
 
 const ctrl = vi.hoisted(() => ({
@@ -25,6 +31,7 @@ const ctrl = vi.hoisted(() => ({
   presence: undefined as BoardPresenceCurrentState | undefined,
 }));
 const trackMock = vi.hoisted(() => vi.fn());
+const hapticLightMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => ctrl.bluetooth }));
 vi.mock('../../../providers/board-presence-provider', () => ({
@@ -38,6 +45,9 @@ vi.mock('../../../providers/queue-provider', () => ({
   }),
 }));
 vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
+// The hook fires a light haptic on take/release; the real module pulls in
+// react-native (Flow-typed), which this jsdom suite can't parse.
+vi.mock('../../../lib/haptics', () => ({ hapticLight: hapticLightMock }));
 
 import { useLightbulbControl } from '../use-lightbulb-control';
 
@@ -50,6 +60,12 @@ function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullab
     armUndoWallChangeToast: vi.fn(),
     reconnectSerialForCurrentBoard: null,
     reconnectDeviceIdForCurrentBoard: null,
+    ledless: false,
+    virtualWallHeld: false,
+    wallHeldByOtherUser: false,
+    canDriveWall: false,
+    takeVirtualWall: vi.fn(),
+    releaseVirtualWall: vi.fn(),
     ...over,
   };
 }
@@ -211,5 +227,69 @@ describe('useLightbulbControl press action', () => {
     result.current.onPress();
     expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
     expect(ctrl.bluetooth?.disconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('useLightbulbControl on a wall with no LED light kit', () => {
+  it('takes the wall instead of connecting, and never arms the undo toast', () => {
+    // The first take has no previous wall state to restore, so an undo toast
+    // would offer to undo nothing.
+    ctrl.bluetooth = makeBluetooth({ ledless: true, reconnectSerialForCurrentBoard: 'serial-1' });
+    const { result } = renderControl();
+    result.current.onPress();
+    expect(ctrl.bluetooth?.takeVirtualWall).toHaveBeenCalledOnce();
+    expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
+    expect(ctrl.bluetooth?.armUndoWallChangeToast).not.toHaveBeenCalled();
+    // The provider's takeVirtualWall owns the haptic (and the toast it goes
+    // with). Buzzing here as well would stutter every tap.
+    expect(hapticLightMock).not.toHaveBeenCalled();
+  });
+
+  it('releases the wall on the next tap', () => {
+    ctrl.bluetooth = makeBluetooth({ ledless: true, virtualWallHeld: true });
+    const { result } = renderControl();
+    result.current.onPress();
+    expect(ctrl.bluetooth?.releaseVirtualWall).toHaveBeenCalledOnce();
+    expect(ctrl.bluetooth?.disconnect).not.toHaveBeenCalled();
+    expect(hapticLightMock).not.toHaveBeenCalled();
+  });
+
+  it('reads lit while holding the wall, without claiming a local BLE link', () => {
+    ctrl.bluetooth = makeBluetooth({ ledless: true, virtualWallHeld: true });
+    const { result } = renderControl();
+    expect(result.current.lit).toBe(true);
+    expect(result.current.localConnected).toBe(false);
+    expect(result.current.wallHeldLocally).toBe(true);
+    expect(result.current.ledless).toBe(true);
+  });
+
+  it('keeps the BLE controls sheet unreachable under a virtual hold', () => {
+    // Every action in that sheet (Re-light / Turn off / Disconnect) writes the
+    // radio, and there is no controller behind a virtual hold to write to.
+    const openControls = vi.fn();
+    ctrl.bluetooth = makeBluetooth({ ledless: true, virtualWallHeld: true });
+    const { result } = renderHook(() => useLightbulbControl({ onOpenControls: openControls }), { wrapper });
+    result.current.onLongPress();
+    expect(openControls).not.toHaveBeenCalled();
+  });
+
+  it('still disconnects a ledless board that somehow holds a live link', () => {
+    // Recovery path for a board wrongly flagged as having no lights, and for the
+    // back doors that can connect one (creator header toggle, iOS reconnect intent).
+    ctrl.bluetooth = makeBluetooth({ ledless: true, isConnected: true });
+    const { result } = renderControl();
+    result.current.onPress();
+    expect(ctrl.bluetooth?.disconnect).toHaveBeenCalledOnce();
+    expect(ctrl.bluetooth?.takeVirtualWall).not.toHaveBeenCalled();
+  });
+
+  it("reads a peer holding the server slot as their wall, not this device's", () => {
+    // Two climbers can both tap take; the server keeps one holder. The loser must
+    // stop showing a held control.
+    ctrl.bluetooth = makeBluetooth({ ledless: true, virtualWallHeld: true, wallHeldByOtherUser: true });
+    const { result } = renderControl();
+    expect(result.current.localConnected).toBe(false);
+    expect(result.current.wallHeldLocally).toBe(true);
+    expect(result.current.lit).toBe(true);
   });
 });

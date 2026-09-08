@@ -814,6 +814,7 @@ describe('useBoardPresence — connection holder', () => {
     });
     expect(result.current.holder?.userId).toBe('alice');
     expect(result.current.holder?.displayName).toBe('Alice');
+    expect(result.current.lastConnectionSeq).toBe(0);
   });
 
   it('updates the holder live from a BoardConnectionChanged push', async () => {
@@ -824,12 +825,14 @@ describe('useBoardPresence — connection holder', () => {
       harness.emit(connectionEvent(2, holder({ userId: 'bob', displayName: 'Bob' })));
     });
     expect(result.current.holder?.userId).toBe('bob');
+    expect(result.current.lastConnectionSeq).toBe(2);
 
     // A later push frees the board.
     act(() => {
       harness.emit(connectionEvent(3, null));
     });
     expect(result.current.holder).toBeNull();
+    expect(result.current.lastConnectionSeq).toBe(3);
   });
 
   it('a live push that arrives before the seed wins; the late seed cannot clobber it', async () => {
@@ -860,6 +863,7 @@ describe('useBoardPresence — connection holder', () => {
 
     rerender({ boardId: 2 });
     expect(result.current.holder).toBeNull();
+    expect(result.current.lastConnectionSeq).toBe(0);
   });
 });
 
@@ -916,6 +920,12 @@ describe('BoardPresenceProvider — split contexts', () => {
     expect(renderCounts.actions).toBe(actionRenderCountAfterAttach);
     expect(renderCounts.current).toBeGreaterThan(1);
     expect(renderCounts.feed).toBeGreaterThan(1);
+
+    act(() => {
+      harness.emit(connectionEvent(5, holder({ userId: 'new-holder' })));
+    });
+    expect(currentSnapshots.at(-1)?.lastConnectionSeq).toBe(5);
+    expect(renderCounts.actions).toBe(actionRenderCountAfterAttach);
   });
 
   it('exposes a presence-only hasClimb that flips on appear/disappear, not on climb identity', async () => {

@@ -12,6 +12,7 @@ import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
+import { hapticSelection } from '../../lib/haptics';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
@@ -23,6 +24,13 @@ type DevicePickerSheetProps = {
   devices: DiscoveredDevice[];
   onSelect: (deviceId: string) => void;
   onDismiss: () => void;
+  /**
+   * Take the wall with no Bluetooth, for the "this wall has no lights" offer
+   * after a scan that finds nothing. Omitted where no such action exists; the
+   * offer is then not rendered. Passed in rather than read off BluetoothContext
+   * because BluetoothProvider renders this sheet.
+   */
+  onNoLeds?: () => void;
   isScanning: boolean;
   resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>;
   currentBoardConfig?: BleBoardConfig;
@@ -35,6 +43,7 @@ export function DevicePickerSheet({
   isScanning,
   resolvedBoards,
   currentBoardConfig,
+  onNoLeds,
 }: DevicePickerSheetProps) {
   const { t } = useTranslation('settings');
   const theme = useTheme();
@@ -112,6 +121,27 @@ export function DevicePickerSheet({
   const handleEnableLocationServices = useCallback(() => {
     void promptEnableLocationServices();
   }, [promptEnableLocationServices]);
+
+  // A scan that finished with ZERO devices is the only place this belongs. Boards
+  // that WERE found but are the wrong type (`noneMatchedSelectedType`) mean there
+  // is LED hardware in the room, so the offer would be misleading there.
+  const showNoLedsOffer = onNoLeds !== undefined && showEmptyState && !showLocationHint && !showLocationServicesHint;
+
+  const handleNoLeds = useCallback(() => {
+    hapticSelection();
+    // Stops the scan and clears the host's picker state, which unmounts this
+    // sheet — so there is no post-dismiss callback left to hang the take off.
+    onDismiss();
+    // Session-local only. This deliberately does NOT write `hasLeds: false`: an
+    // empty scan is weak evidence (box powered off, out of range, or the Android
+    // RN 0.86 scan regression) and a wrong server flip would strip the Bluetooth
+    // affordance from every climber on this board. The server flag is set only
+    // from the board edit form.
+    //
+    // The surviving provider owns the dismissal delay and cancellation. This
+    // sheet unmounts on dismissal, so it cannot own the deferred action.
+    onNoLeds?.();
+  }, [onDismiss, onNoLeds]);
 
   return (
     <BottomSheetModal
@@ -226,6 +256,27 @@ export function DevicePickerSheet({
             <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
               {t('ble.troubleshootTips')}
             </Text>
+            {/* The wall may simply have no light kit. Offer to drive it anyway:
+                everyone on the board feed (and the gym screen) still sees the
+                climb. Session-local — nothing is written to the board record. */}
+            {showNoLedsOffer && (
+              <View style={styles.noLedsOffer}>
+                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+                  {t('ble.noLedsBody')}
+                </Text>
+                <Button
+                  title={t('ble.noLedsCta')}
+                  onPress={handleNoLeds}
+                  variant="text"
+                  size="medium"
+                  icon="pin"
+                  // The handler fires hapticSelection itself so the tap keeps one
+                  // haptic; takeVirtualWall's own hapticLight lands after the
+                  // dismissal, alongside the "You've got the wall" toast.
+                  haptic={false}
+                />
+              </View>
+            )}
           </View>
         )}
         <Button title={t('ble.cancel')} onPress={onDismiss} variant="text" size="medium" role="cancel" />
@@ -278,5 +329,12 @@ const styles = StyleSheet.create({
   },
   troubleshootTip: {
     textAlign: 'center',
+  },
+  noLedsOffer: {
+    alignItems: 'center',
+    gap: spacing[1],
+    // The troubleshoot block's own gap is spacing[1]; this pushes the no-lights
+    // offer clear of the hardware tips so it reads as a separate suggestion.
+    marginTop: spacing[3],
   },
 });

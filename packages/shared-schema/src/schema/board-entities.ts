@@ -47,6 +47,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     angle: Int!
     "Whether the board's angle is physically adjustable"
     isAngleAdjustable: Boolean!
+    "Whether this wall has an LED light kit"
+    hasLeds: Boolean!
     "When created"
     createdAt: String!
     "Human-readable layout name"
@@ -201,6 +203,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     angle: Int
     "Whether the board's angle is physically adjustable (default true)"
     isAngleAdjustable: Boolean
+    "Whether this wall has an LED light kit (default true)"
+    hasLeds: Boolean
     "Controller box serial number"
     serialNumber: String
     "Paired Rogue Fitness timer's advertised BLE name"
@@ -245,6 +249,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     angle: Int
     "New angle adjustable flag"
     isAngleAdjustable: Boolean
+    "New LED light kit flag"
+    hasLeds: Boolean
     "New layout ID (authorized editors only; existing ticks are preserved untouched)"
     layoutId: Int
     "New size ID (authorized editors only; existing ticks are preserved untouched)"

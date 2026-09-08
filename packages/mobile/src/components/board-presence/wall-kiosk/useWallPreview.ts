@@ -16,7 +16,7 @@ export const PREVIEW_IDLE_MS = 30_000;
 export type WallPreviewStepDirection = 'older' | 'newer';
 
 /** Why "Light this" is unavailable, if it is. */
-export type WallLightBlockedReason = 'not-driver' | 'no-frames' | null;
+export type WallLightBlockedReason = 'not-driver' | 'no-frames' | 'no-leds-not-held' | null;
 
 export type WallPreviewState = {
   /** The climb to render in the hero: the previewed one, or the live one. */
@@ -46,12 +46,14 @@ export type WallPreviewState = {
   /** Return to the live wall. */
   backToLive: () => void;
 
-  /** True when Light-this can proceed for the current preview. */
+  /** True when EITHER transport can put the previewed climb on the wall. */
   canLight: boolean;
   lightBlockedReason: WallLightBlockedReason;
   isLighting: boolean;
   lightError: boolean;
-  /** Re-light the previewed climb on the physical wall (frames-guarded, driver-gated). */
+  /** Put the previewed climb back on the wall (frames-guarded, driver-gated).
+   *  On a wall with no lights that means reporting it to the board feed rather
+   *  than writing LED frames — `relightPresenceClimb` picks the transport. */
   lightThis: () => void;
 
   /** A newer climb lit after preview began, so Light-this needs a second confirm. */
@@ -82,6 +84,35 @@ function dedupeNewestFirst(a: BoardPresenceClimb[], b: BoardPresenceClimb[]): Bo
 }
 
 /**
+ * Which blocked affordance the scrubber should offer, if any. Split out of the
+ * hook so the precedence is one readable ladder instead of a ternary chain.
+ *
+ * **Being able to drive the wall is tested first**, the same rule
+ * `derivePlayDrawerLightbulbPressAction` follows: a board wrongly flagged as
+ * having no lights can still hold a live Bluetooth link (the creator header's
+ * toggle, an iOS reconnect intent), and that climber can light the wall. Asking
+ * them to "take the wall" would hand them a dead button — `takeVirtualWall`
+ * refuses while connected. `canDriveWall` already covers the virtual hold, so
+ * the ledless branch only ever answers for someone who cannot drive at all.
+ */
+function deriveLightBlockedReason({
+  ledless,
+  canDriveWall,
+  previewHasFrames,
+}: {
+  ledless: boolean;
+  canDriveWall: boolean;
+  /** null when nothing is previewed. */
+  previewHasFrames: boolean | null;
+}): WallLightBlockedReason {
+  // Can't drive it at all: offer the way in. On a wall with no light kit the
+  // answer is never "connect Bluetooth" — there is nothing to connect to.
+  if (!canDriveWall) return ledless ? 'no-leds-not-held' : 'not-driver';
+  if (previewHasFrames === false) return 'no-frames';
+  return null;
+}
+
+/**
  * The wall-kiosk preview-then-confirm state machine. Stepping back/forward through
  * the wall's own history PREVIEWS a climb on the iPad only; "Light this" then re-
  * lights the physical wall over Bluetooth.
@@ -96,7 +127,11 @@ export function useWallPreview(): WallPreviewState {
   const { olderHistory, isLoadingOlder, hasMore, loadOlder } = useBoardHistoryPagination();
   const { refresh } = useBoardPresenceActions();
   const bluetooth = useOptionalBluetoothContext();
-  const { localConnected } = useBoardConnectionState();
+  // `canDriveWall`, not `localConnected`: a wall with no light kit is driven by a
+  // virtual hold that writes zero bytes, and that climber may re-put a climb up
+  // exactly like a Bluetooth driver. `ledless` only decides WHICH blocked
+  // affordance to offer someone who can't drive it.
+  const { canDriveWall, ledless } = useBoardConnectionState();
 
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const [isLighting, setIsLighting] = useState(false);
@@ -143,8 +178,8 @@ export function useWallPreview(): WallPreviewState {
   previewClimbRef.current = previewClimb;
   const liveClimbRef = useRef(liveClimb);
   liveClimbRef.current = liveClimb;
-  const localConnectedRef = useRef(localConnected);
-  localConnectedRef.current = localConnected;
+  const canDriveWallRef = useRef(canDriveWall);
+  canDriveWallRef.current = canDriveWall;
   const bluetoothRef = useRef(bluetooth);
   bluetoothRef.current = bluetooth;
   const refreshRef = useRef(refresh);
@@ -284,7 +319,7 @@ export function useWallPreview(): WallPreviewState {
   const lightThis = useCallback(() => {
     bumpActivity();
     const climb = previewClimbRef.current;
-    if (!climb || !climb.frames || !localConnectedRef.current) return;
+    if (!climb || !climb.frames || !canDriveWallRef.current) return;
     // Busy wall: the physical wall advanced since preview began (including from
     // dark → lit) and it isn't the climb we're about to relight → require an
     // explicit second confirm before clobbering it.
@@ -310,12 +345,12 @@ export function useWallPreview(): WallPreviewState {
     setPendingOverride(false);
   }, [bumpActivity]);
 
-  const lightBlockedReason: WallLightBlockedReason = !localConnected
-    ? 'not-driver'
-    : previewClimb && !previewClimb.frames
-      ? 'no-frames'
-      : null;
-  const canLight = isPreviewing && localConnected && !!previewClimb?.frames && !isLighting;
+  const lightBlockedReason = deriveLightBlockedReason({
+    ledless,
+    canDriveWall,
+    previewHasFrames: previewClimb ? !!previewClimb.frames : null,
+  });
+  const canLight = isPreviewing && canDriveWall && !!previewClimb?.frames && !isLighting;
 
   // Older is available while previewing if there's a loaded entry below the current
   // one (or a page to fetch); at live, if any entry sits below the head. The stale

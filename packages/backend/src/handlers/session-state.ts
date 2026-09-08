@@ -6,6 +6,7 @@ import { verifyWidgetSession } from './widget-session-guard';
 import { checkSessionUserRateLimit, ensureSessionUserRateLimitPruner } from './session-user-rate-limit';
 import { sendJson } from './http-utils';
 import { roomManager } from '../services/room-manager';
+import { resolveBoardBySlug } from '../graphql/resolvers/shared/board-lookup';
 import { logger } from '../utils/logger';
 
 /**
@@ -62,13 +63,26 @@ export async function handleSessionState(req: IncomingMessage, res: ServerRespon
     // Reuse the session row the guard already loaded — no second getSessionById
     // round-trip, since the watch polls this endpoint continuously.
     const queueState = await roomManager.getQueueState(sessionId);
-    const parsedBoard = parseBoardPath(guard.session.boardPath);
-    if (parsedBoard === null && parseNamedBoardPath(guard.session.boardPath) === null) {
+    const namedBoardPath = parseNamedBoardPath(guard.session.boardPath);
+    let parsedBoard = namedBoardPath ? null : parseBoardPath(guard.session.boardPath);
+    if (namedBoardPath) {
+      // Auth and durable session membership already passed. Use the same raw
+      // lookup as boardBySlug, avoiding profile/count enrichment on every poll.
+      const board = await resolveBoardBySlug(namedBoardPath.slug);
+      if (board) {
+        parsedBoard = {
+          boardName: board.boardType,
+          layoutId: board.layoutId,
+          sizeId: board.sizeId,
+          setIds: board.setIds,
+          angle: namedBoardPath.angle ?? board.angle,
+        };
+      }
+    } else if (parsedBoard === null) {
       // Neither a positional board path nor a named-board (/b/{slug}) path — a
       // genuinely malformed value. The watch gets null board fields and can't
-      // build a saveTick, so surface it. (Named boards intentionally resolve to
-      // null board fields here — the watch can't yet build a saveTick for them —
-      // and must NOT warn on every ~3s poll.)
+      // build a saveTick, so surface it. A valid named path with no surviving
+      // board also returns null fields without warning on every ~3s poll.
       logger.warn(
         `[SessionState] Could not parse boardPath for session ${sessionId}: ${JSON.stringify(guard.session.boardPath)}`,
       );

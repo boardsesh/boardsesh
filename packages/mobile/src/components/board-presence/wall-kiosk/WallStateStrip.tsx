@@ -6,6 +6,7 @@ import { Text } from '../../Text';
 import { readableTextColor } from '../../grade/grade-chip-colors';
 import { useTheme } from '../../../providers/theme-provider';
 import { useDisplayGrade } from '../../../hooks/use-display-grade';
+import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import { formatRelativeTime } from '../../../lib/format-relative-time';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { WallKioskTypeScale } from './wall-kiosk-type';
@@ -32,6 +33,12 @@ function WallStateStripComponent({ mode, stepsBack, previewTimestamp, liveClimb,
   const { t } = useTranslation('session');
   const { brandColors, systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
+  // Read from the active board rather than the Bluetooth context: this memoized
+  // leaf re-renders on every glance-line change already, and `useActiveBoard`'s
+  // Infinity-staleTime query keeps a stable identity where the Bluetooth context
+  // value churns. Optional-field contract: only an explicit `false` is ledless.
+  const { data: activeBoard } = useActiveBoard();
+  const ledless = activeBoard?.hasLeds === false;
 
   const barColor =
     mode === 'live' ? brandColors.live : mode === 'history' ? brandColors.historyFill : systemColors.fill;
@@ -45,6 +52,10 @@ function WallStateStripComponent({ mode, stepsBack, previewTimestamp, liveClimb,
       ? systemColors.label
       : readableTextColor(mode === 'live' ? brandColors.live : brandColors.historyFill);
 
+  // A wall with no light kit is never "dark" — nothing was ever lit — so the idle
+  // glance line says what is actually true: nobody has put a climb up yet. Bar
+  // colour and label colour are unchanged.
+  const idleLine = ledless ? t('mobile.boardPresence.kiosk.nothingUpYet') : t('mobile.boardPresence.kiosk.wallDark');
   const glanceLine =
     mode === 'live'
       ? t('mobile.boardPresence.kiosk.liveBadge')
@@ -52,7 +63,7 @@ function WallStateStripComponent({ mode, stepsBack, previewTimestamp, liveClimb,
         ? `${t('mobile.boardPresence.kiosk.historyBadge')} · ${t('mobile.boardPresence.kiosk.historyPosition', {
             count: stepsBack,
           })}`
-        : t('mobile.boardPresence.kiosk.wallDark');
+        : idleLine;
   const detailLine = mode === 'history' ? formatRelativeTime(previewTimestamp) : null;
 
   const stateTextStyle = { fontSize: typeScale.stateFontSize, lineHeight: typeScale.stateLineHeight };
