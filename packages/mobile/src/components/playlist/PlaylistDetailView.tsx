@@ -255,6 +255,12 @@ export function PlaylistDetailView({
   const actionNode = actions?.(collapsed);
 
   const handleEndReached = useCallback(() => {
+    // One page in screenshot mode — the same cap `screenshotModeNextPageParam`
+    // applies to the app's own infinite queries, but from the consumer side:
+    // both lists behind this view (`usePlaylistClimbs`, `useSmartPlaylist`)
+    // live in the renderer-agnostic `@boardsesh/playlists-react`, which web
+    // also consumes and which must not read a mobile build flag.
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 

@@ -35,12 +35,19 @@ import {
   SCREENSHOT_FIXTURE_FORMAT_VERSION,
   STATIC_KEY_LENGTH,
   VARIANT_COUNT_NOTE_THRESHOLD,
+  batchRequestIds,
+  batchScopeKey,
+  batchedOperationSpec,
+  cappedUnrecordedIds,
+  composeBatchedResponse,
   emptyManifest,
   findSensitiveVariableKeys,
   finalizeRecordingFrozenNow,
   fixtureSizeNote,
+  formatMissVariables,
   formatScreenshotBackendLine,
   graphqlFixtureKey,
+  indexBatchItemsById,
   redactIgnoredVariablePaths,
   resolveOperationName,
   sortManifestEntries,
@@ -48,8 +55,10 @@ import {
   staticFixtureKey,
   validateScreenshotFixtureManifest,
   variantCountNote,
+  type BatchedOperationSpec,
   type GraphqlFixtureFile,
   type GraphqlManifestEntry,
+  type GraphqlMissReason,
   type ScreenshotBackendLogLine,
   type ScreenshotBackendMode,
   type ScreenshotFixtureManifest,
@@ -535,6 +544,109 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     rewriteManifest();
   };
 
+  /**
+   * One batch scope's recorded fixtures, decomposed: every id the recording
+   * ever asked for under these non-id variables, mapped to the items recorded
+   * for it, plus one recorded body to reshape a composed answer into.
+   */
+  type BatchedScopeIndex = { itemsById: Map<string, unknown[]>; templateResponse: unknown };
+
+  /**
+   * Replay only: `operationName` -> (`documentHash + non-id variables`) -> that
+   * scope's decomposed fixtures. Built lazily, once per operation, on the first
+   * request of a batched operation that misses its exact key — a set with no
+   * batched traffic never reads a fixture twice, and one with it pays the read
+   * once instead of per request.
+   */
+  const batchedIndexes = new Map<string, Map<string, BatchedScopeIndex>>();
+
+  const batchedIndexFor = (operationName: string, spec: BatchedOperationSpec): Map<string, BatchedScopeIndex> => {
+    const cached = batchedIndexes.get(operationName);
+    if (cached) return cached;
+    const scopes = new Map<string, BatchedScopeIndex>();
+    for (const entry of manifest.graphql) {
+      if (entry.operationName !== operationName) continue;
+      if (!isFixtureFileWithinDirectory(fixturesDir, entry.file)) continue;
+      let fixture: GraphqlFixtureFile;
+      try {
+        fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
+      } catch {
+        // The startup check already refuses to serve a set with an unreadable
+        // fixture, so this only happens to a file that went missing mid-run —
+        // reported by the request that asks for it directly.
+        continue;
+      }
+      const recordedIds = batchRequestIds(spec, fixture.variables);
+      if (!recordedIds) continue;
+      const itemsById = indexBatchItemsById(spec, recordedIds, fixture.response);
+      if (!itemsById) continue;
+      // The document hash is part of the scope: a fixture recorded against an
+      // older selection set must not compose an answer to today's query.
+      const scopeKey = `${entry.documentHash}\n${batchScopeKey(operationName, spec, fixture.variables)}`;
+      const scope = scopes.get(scopeKey);
+      if (!scope) {
+        scopes.set(scopeKey, { itemsById, templateResponse: fixture.response });
+        continue;
+      }
+      // FIRST RECORDING WINS per id, matching the recorder's own duplicate
+      // rule, so which fixture answers an id does not depend on manifest order
+      // changing under a re-record.
+      for (const [id, items] of itemsById) if (!scope.itemsById.has(id)) scope.itemsById.set(id, items);
+    }
+    batchedIndexes.set(operationName, scopes);
+    return scopes;
+  };
+
+  /**
+   * Answer a batched operation by MEMBERSHIP when its exact id list was never
+   * recorded: the items for the ids it asked for, in request order, inside a
+   * recorded response's own envelope.
+   *
+   * Returns true when it answered (a composed hit, or a miss naming the ids
+   * nothing recorded), false when this request is not composable at all and
+   * belongs on the ordinary miss path.
+   */
+  const replayComposedBatch = (
+    response: ServerResponse,
+    operationName: string,
+    documentHash: string,
+    hash12: string,
+    variables: unknown,
+    missGraphql: (loggedName: string, reason: GraphqlMissReason, unrecordedIds?: readonly string[]) => void,
+  ): boolean => {
+    const spec = batchedOperationSpec(operationName);
+    if (!spec) return false;
+    const requestedIds = batchRequestIds(spec, variables);
+    if (!requestedIds) return false;
+    const scopeKey = `${documentHash}\n${batchScopeKey(operationName, spec, variables)}`;
+    const scope = batchedIndexFor(operationName, spec).get(scopeKey);
+    // Nothing was recorded under these non-id variables (another board, another
+    // entity type). That is an ordinary "nobody recorded this", not a partial
+    // batch — composing across scopes would answer with the wrong board's rows.
+    if (!scope) return false;
+
+    const composedItems: unknown[] = [];
+    const unrecordedIds: string[] = [];
+    for (const id of requestedIds) {
+      const items = scope.itemsById.get(id);
+      if (!items) {
+        unrecordedIds.push(id);
+        continue;
+      }
+      composedItems.push(...items);
+    }
+    if (unrecordedIds.length > 0) {
+      missGraphql(operationName, 'unrecorded-ids', cappedUnrecordedIds(unrecordedIds));
+      return true;
+    }
+    const composed = composeBatchedResponse(spec, scope.templateResponse, composedItems);
+    if (!composed.ok) return false;
+    hits += 1;
+    emit({ event: 'hit', kind: 'graphql', operationName, hash12, composed: requestedIds.length });
+    sendJson(response, 200, composed.response);
+    return true;
+  };
+
   const replayGraphql = (response: ServerResponse, parsedBody: Record<string, unknown>): void => {
     const operationName = resolveOperationName(parsedBody);
     const query = typeof parsedBody.query === 'string' ? parsedBody.query : '';
@@ -543,25 +655,46 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       sha256Hex,
     );
     const hash12 = shortHash(key.variablesHash);
+    const loggedVariables = formatMissVariables(operationName ?? '', parsedBody.variables);
+
+    /** Every graphql miss answers 200 + `errors`, never a 5xx — see `handleGraphql`. */
+    const missGraphql = (
+      loggedName: string,
+      reason: GraphqlMissReason,
+      unrecordedIds: readonly string[] = [],
+    ): void => {
+      misses += 1;
+      emit({
+        event: 'miss',
+        kind: 'graphql',
+        operationName: loggedName,
+        hash12,
+        reason,
+        unrecordedIds,
+        variables: loggedVariables,
+      });
+      sendJson(response, 200, fixtureMissBody(loggedName, hash12));
+    };
 
     if (!operationName) {
-      misses += 1;
-      emit({ event: 'miss', kind: 'graphql', operationName: 'anonymous', hash12, reason: 'anonymous-operation' });
-      sendJson(response, 200, fixtureMissBody('anonymous', hash12));
+      missGraphql('anonymous', 'anonymous-operation');
       return;
     }
 
     const entry = graphqlIndex.get(`${operationName}\n${key.variablesHash}`);
     if (!entry) {
-      misses += 1;
-      emit({ event: 'miss', kind: 'graphql', operationName, hash12, reason: 'no-fixture' });
-      sendJson(response, 200, fixtureMissBody(operationName, hash12));
+      // EXACT KEY FIRST, always: a batch that was recorded verbatim replays its
+      // own recorded bytes. Only a batch nobody recorded as a whole is composed
+      // out of the recorded ones — see `BATCHED_OPERATIONS` for why membership,
+      // not the exact id list, is the stable key for these.
+      if (replayComposedBatch(response, operationName, key.documentHash, hash12, parsedBody.variables, missGraphql)) {
+        return;
+      }
+      missGraphql(operationName, 'no-fixture');
       return;
     }
     if (entry.documentHash !== key.documentHash) {
-      misses += 1;
-      emit({ event: 'miss', kind: 'graphql', operationName, hash12, reason: 'document-changed' });
-      sendJson(response, 200, fixtureMissBody(operationName, hash12));
+      missGraphql(operationName, 'document-changed');
       return;
     }
     if (!isFixtureFileWithinDirectory(fixturesDir, entry.file)) {
@@ -569,9 +702,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       // entry shaped like this, so reaching here means something wrote past
       // that check. Answer exactly like a fixture that was never recorded —
       // never follow the path.
-      misses += 1;
-      emit({ event: 'miss', kind: 'graphql', operationName, hash12, reason: 'no-fixture' });
-      sendJson(response, 200, fixtureMissBody(operationName, hash12));
+      missGraphql(operationName, 'no-fixture');
       return;
     }
 
@@ -587,15 +718,13 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         // missing or was truncated DURING the run. Answer exactly like any
         // other miss — a 500 here would flip the app into "backend
         // unreachable" and bury the problem under a connectivity banner.
-        misses += 1;
-        emit({ event: 'miss', kind: 'graphql', operationName, hash12, reason: 'unreadable-fixture' });
-        sendJson(response, 200, fixtureMissBody(operationName, hash12));
+        missGraphql(operationName, 'unreadable-fixture');
         return;
       }
       replayResponseCache.set(entry.file, serializedResponse);
     }
     hits += 1;
-    emit({ event: 'hit', kind: 'graphql', operationName, hash12 });
+    emit({ event: 'hit', kind: 'graphql', operationName, hash12, composed: null });
     sendRawJson(response, 200, serializedResponse);
   };
 

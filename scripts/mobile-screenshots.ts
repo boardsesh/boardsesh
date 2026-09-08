@@ -1492,6 +1492,9 @@ function captureIosDevice(
   }
 
   const captureDir = mkdtempSync(join(tmpdir(), 'boardsesh-shots-'));
+  // Every exit below this point but the last is a failure, and the finally block
+  // cannot see a return value — so the last statement of the try flips this.
+  let captureSucceeded = false;
   try {
     // Metro is already up and pre-warmed by runIos (once per locale, before this
     // per-device loop), so this goes straight to launching the app.
@@ -1636,7 +1639,9 @@ function captureIosDevice(
       `${LOG} Saved ${saved.length} screenshot(s) to app-stores/${STORE_BY_PLATFORM.ios}/screenshots/{${localeTarget.appStoreLocales.join(',')}}/${deviceSlug(device.name)}/`,
     );
     for (const file of saved) console.log(`${LOG}   ${file}`);
+    captureSucceeded = true;
   } finally {
+    if (!captureSucceeded) preserveFailedRunArtifacts(captureDir);
     rmSync(captureDir, { force: true, recursive: true });
     clearStatusBar(device.udid);
     if (options.shutdown) {
@@ -1822,6 +1827,9 @@ function runAndroid(options: ScreenshotOptions): number {
   }
 
   const captureDir = mkdtempSync(join(tmpdir(), 'boardsesh-android-shots-'));
+  // See captureIosDevice: the finally block cannot see a return value, so the
+  // last statement of the try flips this.
+  let captureSucceeded = false;
   let devClientSession: DevClientSession | null = null;
   let backendSession: ScreenshotBackendSession | null = null;
   let backendLogBaseline = 0;
@@ -1879,7 +1887,6 @@ function runAndroid(options: ScreenshotOptions): number {
     );
     if (maestroStatus !== 0) {
       console.error(`${LOG} FAILED: Maestro exited with ${maestroStatus}.`);
-      preserveFailedCaptures(captureDir);
       return maestroStatus;
     }
 
@@ -1916,6 +1923,7 @@ function runAndroid(options: ScreenshotOptions): number {
       `${LOG} Saved ${saved.length} screenshot(s) to app-stores/${STORE_BY_PLATFORM.android}/screenshots/${deviceSlug(deviceName)}/`,
     );
     for (const file of saved) console.log(`${LOG}   ${file}`);
+    captureSucceeded = true;
   } finally {
     // First, so a Maestro failure (or any early return above) still takes Metro
     // and the readiness server down with it.
@@ -1923,6 +1931,7 @@ function runAndroid(options: ScreenshotOptions): number {
     stopScreenshotBackend(backendSession);
     logcatStream.kill();
     clearAndroidStatusBar(deviceId);
+    if (!captureSucceeded) preserveFailedRunArtifacts(captureDir);
     rmSync(captureDir, { force: true, recursive: true });
     if (options.shutdown && deviceId.startsWith('emulator-')) {
       runCapture('adb', ['-s', deviceId, 'emu', 'kill']);
@@ -1933,20 +1942,34 @@ function runAndroid(options: ScreenshotOptions): number {
 }
 
 /**
- * Keep whatever Maestro shot before it failed. captureDir is a temp dir that the
- * finally block removes, so on a failed run the partial set (the evidence of which
- * step went wrong) would vanish; CI's capture script exports SCREENSHOT_DEBUG_DIR
- * (uploaded as an artifact) for exactly this.
+ * Keep the evidence of a failed run: whatever Maestro shot before it gave up,
+ * and the screenshot backend's own log.
+ *
+ * captureDir is a temp dir the finally block removes, so the partial set (which
+ * step went wrong) would otherwise vanish; CI's capture script exports
+ * SCREENSHOT_DEBUG_DIR (uploaded as an artifact) for exactly this.
+ *
+ * The backend log matters just as much and used to be left behind: it lives in
+ * the OS temp dir, so the artifact carried the PNGs and the device log but not
+ * the one file that says which operation missed and with what variables.
+ * Diagnosing run 34240391447 meant brute-forcing a 12-character hash offline;
+ * the log now rides along.
  */
-function preserveFailedCaptures(captureDir: string): void {
+function preserveFailedRunArtifacts(captureDir: string): void {
   const debugDir = process.env.SCREENSHOT_DEBUG_DIR;
   if (!debugDir) return;
   const pngs = readdirSync(captureDir).filter((file) => file.endsWith('.png'));
-  if (pngs.length === 0) return;
-  const target = join(debugDir, 'captures');
-  mkdirSync(target, { recursive: true });
-  for (const png of pngs) copyFileSync(join(captureDir, png), join(target, png));
-  console.error(`${LOG} kept ${pngs.length} capture(s) from the failed run in ${target}`);
+  if (pngs.length > 0) {
+    const target = join(debugDir, 'captures');
+    mkdirSync(target, { recursive: true });
+    for (const png of pngs) copyFileSync(join(captureDir, png), join(target, png));
+    console.error(`${LOG} kept ${pngs.length} capture(s) from the failed run in ${target}`);
+  }
+  if (!existsSync(SCREENSHOT_BACKEND_LOG_PATH)) return;
+  mkdirSync(debugDir, { recursive: true });
+  const backendLogTarget = join(debugDir, 'screenshot-backend.log');
+  copyFileSync(SCREENSHOT_BACKEND_LOG_PATH, backendLogTarget);
+  console.error(`${LOG} kept the screenshot backend log from the failed run in ${backendLogTarget}`);
 }
 
 function resolveAndroidDeviceId(): string | null {
