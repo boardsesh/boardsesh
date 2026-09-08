@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from '../migrations';
 import { SCHEMA_STATEMENTS } from '../schema';
+import { TABLE_CONFIGS } from '../../sync/table-config';
 import { createTestDatabase, listTables, primaryKeyColumns, tableColumns } from '../../testing/sqlite-test-db';
 
 // The set of tables migration 1 must create (the sync manifest's per-table list
@@ -58,6 +59,31 @@ async function rollBackAlterColumnsAbove(
 }
 
 describe('runMigrations', () => {
+  it.each([0, 4])('matches every sync column and primary key after upgrading schema v%i', async (version) => {
+    const database = createTestDatabase();
+    try {
+      if (version > 0) {
+        for (const migration of MIGRATIONS.filter((entry) => entry.version <= version)) {
+          for (const statement of migration.statements) await database.execAsync(statement);
+        }
+        await database.execAsync(`CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL);
+          INSERT INTO schema_version VALUES (1, ${version});
+          INSERT INTO board_climbs (uuid, board_type, layout_id) VALUES ('keep', 'tension', 10);`);
+      }
+      await runMigrations(database);
+      for (const [tableName, config] of Object.entries(TABLE_CONFIGS)) {
+        expect(new Set(await tableColumns(database, tableName)), tableName).toEqual(new Set(config.localColumns));
+        expect(await primaryKeyColumns(database, tableName), tableName).toEqual(config.primaryKeyColumns);
+      }
+      if (version > 0)
+        expect(
+          await database.getFirstAsync("SELECT uuid, is_hidden FROM board_climbs WHERE uuid = 'keep'"),
+        ).toMatchObject({ uuid: 'keep', is_hidden: null });
+    } finally {
+      database.close();
+    }
+  });
+
   it('creates every expected table on a fresh database', async () => {
     const db = createTestDatabase();
 

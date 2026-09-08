@@ -1,4 +1,4 @@
-import type { OfflineDatabase, QueryInvalidator, SqlValue } from '../database';
+import type { OfflineDatabase, QueryInvalidator, SqlExecutor, SqlValue } from '../database';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
 import {
@@ -14,6 +14,14 @@ import {
   DELETIONS_CHECKPOINT_KEY,
 } from './checkpoints';
 import { markUserDataComplete } from './local-user-owner';
+import {
+  getSchemaRefreshState,
+  markSchemaRefreshComplete,
+  writeSchemaRefreshState,
+  REFRESH_START_CURSOR,
+  type SchemaRefreshState,
+} from './schema-refresh';
+import type { SyncCheckpoint } from './checkpoints';
 import {
   bootstrapScopeFromSnapshot,
   bootstrapScopeGradesFromSnapshot,
@@ -97,11 +105,11 @@ import {
 } from '../offline-board-key';
 
 /**
- * Telemetry hook for schema drift: a sync document carried a column the local
- * allowlist doesn't know. The app adapter reports it (mobile → Sentry, tags
- * source: 'offline-sync', kind: 'schema-drift'); tests and headless callers omit it.
+ * Compatible additions are observational breadcrumbs, not failures. Missing
+ * expected snapshot columns are rejected separately before rows can be changed.
  */
-export type SchemaDriftReporter = (drift: { tableName: string; column: string }) => void;
+export type { SchemaDriftReporter } from './schema-compatibility';
+import { reportExtraColumn, type SchemaDriftReporter } from './schema-compatibility';
 
 /**
  * What a report site inside the bootstrap phase supplies. `reason` and `aborted`
@@ -541,8 +549,8 @@ export type SyncOptions = {
   /** Telemetry for a scope getting back onto the snapshot path (issue #4313). */
   onBootstrapPathRecovered?: BootstrapPathRecoveredReporter;
   /**
-   * Whether the device is on an unmetered link. Consulted for ONE decision: the
-   * automatic heal of a partly-crawled scope, which is a ~100 MB download the
+   * Whether the device is on an unmetered link. Consulted for automatic schema
+   * refreshes and the heal of a partly-crawled scope, which is a ~100 MB download the
    * user did not ask for today. A fresh bootstrap (they just enabled the board,
    * behind a size-disclosing confirm) and a user-requested retry both ignore it.
    *
@@ -551,7 +559,8 @@ export type SyncOptions = {
    * not fired yet on a cold launch, and answer "unmetered" for the very first
    * cycle — the one that starts a ~100 MB heal over cellular.
    *
-   * DEFAULTS TO `() => true`, so web and every existing caller are unchanged.
+   * Snapshot healing defaults to true for legacy callers. Automatic schema
+   * refreshes require an affirmative probe; absent means defer the extra traffic.
    */
   isOnUnmeteredNetwork?: () => boolean | Promise<boolean>;
   /**
@@ -568,10 +577,6 @@ export type SyncOptions = {
 type BoardScope = OfflineBoardScope & { scopeKey: string };
 
 const PAGE_LIMIT = 500;
-
-// One schema-drift report per (table, column) per app launch — a 500-row page
-// must not emit 500 identical telemetry events.
-const reportedUnknownSyncColumns = new Set<string>();
 
 function buildSyncQuery(queryName: string, isPerBoard: boolean): string {
   // Per-board pulls carry the board type plus optional layout/size scope so a
@@ -643,11 +648,25 @@ export function multiRowChunkSize(columnCount: number): number {
   return Math.max(1, Math.floor(SQLITE_MAX_BIND_VARIABLES / columnCount));
 }
 
-function buildMultiRowInsertSql(tableName: string, columns: readonly string[], rowCount: number): string {
+function buildMultiRowInsertSql(
+  tableName: string,
+  columns: readonly string[],
+  rowCount: number,
+  preserveNewerRows = false,
+): string {
   const columnList = columns.join(', ');
   const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
   const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
-  return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+  if (!preserveNewerRows) return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+  const { primaryKeyColumns, cursorColumn } = TABLE_CONFIGS[tableName];
+  const assignments = columns
+    .filter((column) => !primaryKeyColumns.includes(column))
+    .map((column) => `${column} = excluded.${column}`)
+    .join(', ');
+  return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause}
+    ON CONFLICT (${primaryKeyColumns.join(', ')}) DO UPDATE SET ${assignments}
+    WHERE ${tableName}.${cursorColumn} IS NULL
+       OR (excluded.${cursorColumn}, excluded.sync_seq) >= (${tableName}.${cursorColumn}, ${tableName}.sync_seq)`;
 }
 
 async function upsertDocuments(
@@ -656,8 +675,13 @@ async function upsertDocuments(
   documents: Record<string, unknown>[],
   allowedColumns: readonly string[],
   onSchemaDrift?: SchemaDriftReporter,
-): Promise<void> {
-  if (documents.length === 0) return;
+  page?: {
+    canWrite: () => boolean;
+    afterUpsert: (transaction: SqlExecutor) => Promise<void>;
+    preserveNewerRows: boolean;
+  },
+): Promise<boolean> {
+  if (documents.length === 0) return true;
 
   // Unknown columns are SKIPPED, not fatal: the backend deploys before OTA
   // clients update, so a newly-added server column must not brick every older
@@ -669,10 +693,7 @@ async function upsertDocuments(
   for (const document of documents) {
     const unknownColumns = Object.keys(document).filter((column) => !allowedColumnSet.has(column));
     for (const unknownColumn of unknownColumns) {
-      const driftKey = `${tableName}.${unknownColumn}`;
-      if (reportedUnknownSyncColumns.has(driftKey)) continue;
-      reportedUnknownSyncColumns.add(driftKey);
-      onSchemaDrift?.({ tableName, column: unknownColumn });
+      reportExtraColumn(onSchemaDrift, { origin: 'pull', tableName, column: unknownColumn });
     }
   }
 
@@ -698,7 +719,7 @@ async function upsertDocuments(
   const sqlForRowCount = (rowCount: number): string => {
     let sql = sqlByRowCount.get(rowCount);
     if (!sql) {
-      sql = buildMultiRowInsertSql(tableName, columns, rowCount);
+      sql = buildMultiRowInsertSql(tableName, columns, rowCount, page?.preserveNewerRows);
       sqlByRowCount.set(rowCount, sql);
     }
     return sql;
@@ -708,10 +729,12 @@ async function upsertDocuments(
   // thousands of pages, and a per-50-row transaction multiplied every page's
   // commit overhead by 10 while giving the drainer no meaningful extra window —
   // it can interleave between pages either way.
+  let committed = false;
   await db.withExclusiveTransactionAsync(async (transaction) => {
     // This page's insert runs on its own connection (busy_timeout defaults to 0);
     // wait for a held lock instead of losing the whole page to an instant SQLITE_BUSY.
     await applyBusyTimeout(transaction);
+    if (page && !page.canWrite()) return;
     for (let chunkStart = 0; chunkStart < documents.length; chunkStart += chunkSize) {
       const chunk = documents.slice(chunkStart, chunkStart + chunkSize);
       const values: SqlValue[] = [];
@@ -722,7 +745,30 @@ async function upsertDocuments(
       }
       await transaction.runAsync(sqlForRowCount(chunk.length), values);
     }
+    await page?.afterUpsert(transaction);
+    committed = true;
   });
+  return committed;
+}
+
+function assertSyncPageProgress(result: SyncResult, cursor: SyncCursorInput | undefined): void {
+  if (result.documents.length === 0) {
+    if (result.hasMore) throw new Error('Sync returned an empty page with hasMore=true');
+    return;
+  }
+  const timestamp = Date.parse(result.cursor.updatedAt);
+  if (!Number.isFinite(timestamp) || !/^\d+$/.test(result.cursor.syncSeq)) {
+    throw new Error('Sync returned an invalid cursor');
+  }
+  if (cursor?.updatedAt && cursor.syncSeq) {
+    const previousTime = Date.parse(cursor.updatedAt);
+    if (
+      timestamp < previousTime ||
+      (timestamp === previousTime && BigInt(result.cursor.syncSeq) <= BigInt(cursor.syncSeq))
+    ) {
+      throw new Error('Sync returned a nonadvancing cursor');
+    }
+  }
 }
 
 async function syncTable(
@@ -735,6 +781,7 @@ async function syncTable(
   boardScope?: BoardScope,
   onProgress?: (documentsProcessed: number) => void,
   onSchemaDrift?: SchemaDriftReporter,
+  refresh?: { state: SchemaRefreshState; shouldContinue: () => Promise<boolean> },
 ): Promise<{ reachedTail: boolean; rowsProcessed: number; resumedFromCheckpoint: boolean }> {
   const config = TABLE_CONFIGS[tableName];
   if (!config) throw new Error(`No sync config for table: ${tableName}`);
@@ -747,7 +794,16 @@ async function syncTable(
   const purgeKey = boardScope ? purgeNamespaceKey(boardScope) : undefined;
 
   const checkpointKey = getCheckpointKey(tableName, boardScope?.scopeKey);
-  const checkpoint = await getCheckpoint(db, checkpointKey);
+  const checkpoint = refresh?.state ?? (await getCheckpoint(db, checkpointKey));
+  const revision = boardScope ? config.refreshRevision : undefined;
+  const previousRefresh =
+    revision && boardScope ? await getSchemaRefreshState(db, tableName, boardScope.scopeKey) : null;
+  const fullDownload =
+    !refresh &&
+    (!checkpoint ||
+      (previousRefresh?.revision === revision && previousRefresh?.mode === 'download' && !previousRefresh.complete));
+  const canWrite = (): boolean => !isSigningOut() && !hasPurgeLanded(purgeToken, purgeKey) && !isBackgrounded();
+  let lastCursor: SyncCheckpoint = checkpoint ?? REFRESH_START_CURSOR;
   // Whether some earlier call already advanced this cursor, so the caller can
   // tell "these are all the rows" from "these are the tail of a crawl someone
   // else started" (issue #4393). Sound because `setCheckpoint` below only runs
@@ -760,6 +816,13 @@ async function syncTable(
     ? { updatedAt: checkpoint.updatedAt, syncSeq: checkpoint.syncSeq }
     : undefined;
   let totalProcessed = 0;
+  let completedAtTail = false;
+  const finish = (reachedTail: boolean) => {
+    if (totalProcessed > 0) {
+      for (const key of config.invalidateKeys) queryClient.invalidateQueries({ queryKey: key });
+    }
+    return { reachedTail, rowsProcessed: totalProcessed, resumedFromCheckpoint };
+  };
 
   // The signing-out boolean is only true for the milliseconds the wipe takes;
   // a page fetch in flight across that window sees `false` on both sides and
@@ -777,8 +840,7 @@ async function syncTable(
   while (hasMore) {
     // Sign-out is wiping local data: stop before this page writes the old
     // user's rows back (mirrors the drainer's guard).
-    if (isSigningOut() || hasPurgeLanded(purgeToken, purgeKey) || isBackgrounded())
-      return { reachedTail: false, rowsProcessed: totalProcessed, resumedFromCheckpoint };
+    if (!canWrite() || (refresh && !(await refresh.shouldContinue())) || !canWrite()) return finish(false);
     const variables: Record<string, unknown> = { cursor, limit: PAGE_LIMIT };
     if (config.isPerBoard && boardScope) {
       variables.boardType = boardScope.boardType;
@@ -792,15 +854,39 @@ async function syncTable(
     // Re-check after the await: the wipe (or this scope's purge) may have
     // started AND fully completed while this page was on the wire. This is the
     // check that discards an in-flight page.
-    if (isSigningOut() || hasPurgeLanded(purgeToken, purgeKey) || isBackgrounded())
-      return { reachedTail: false, rowsProcessed: totalProcessed, resumedFromCheckpoint };
+    if (isSigningOut() || hasPurgeLanded(purgeToken, purgeKey) || isBackgrounded()) return finish(false);
 
-    // An empty page would not advance the cursor; if the backend ever returns
-    // documents:[] with hasMore:true we'd spin forever. Stop here (I2).
+    assertSyncPageProgress(result, cursor);
     if (result.documents.length === 0) break;
 
-    await upsertDocuments(db, tableName, result.documents, config.localColumns, onSchemaDrift);
-    await setCheckpoint(db, checkpointKey, result.cursor);
+    const committed = await upsertDocuments(db, tableName, result.documents, config.localColumns, onSchemaDrift, {
+      canWrite,
+      preserveNewerRows: !!refresh,
+      afterUpsert: async (transaction) => {
+        if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
+        if (revision && boardScope && (refresh || fullDownload)) {
+          if (!result.hasMore) {
+            await markSchemaRefreshComplete(
+              transaction,
+              tableName,
+              boardScope.scopeKey,
+              result.cursor,
+              refresh ? 'refresh' : 'download',
+            );
+            completedAtTail = true;
+          } else {
+            await writeSchemaRefreshState(transaction, tableName, boardScope.scopeKey, {
+              ...result.cursor,
+              revision,
+              complete: false,
+              mode: refresh ? 'refresh' : 'download',
+            });
+          }
+        }
+      },
+    });
+    if (!committed) return finish(false);
+    lastCursor = result.cursor;
 
     totalProcessed += result.documents.length;
     onProgress?.(totalProcessed);
@@ -809,19 +895,25 @@ async function syncTable(
     hasMore = result.hasMore;
   }
 
-  // Only bust caches when this table actually changed. Sync runs on every
-  // foreground + reconnect, and an unconditional invalidation here refetches
-  // every active climb/logbook/playlist query over the network even when zero
-  // rows moved (matching processDeletions, which only invalidates on arrivals).
-  if (totalProcessed > 0) {
-    for (const key of config.invalidateKeys) {
-      queryClient.invalidateQueries({ queryKey: key });
-    }
+  if (revision && boardScope && (refresh || fullDownload) && !completedAtTail) {
+    let completed = false;
+    await db.withExclusiveTransactionAsync(async (transaction) => {
+      await applyBusyTimeout(transaction);
+      if (!canWrite()) return;
+      await markSchemaRefreshComplete(
+        transaction,
+        tableName,
+        boardScope.scopeKey,
+        lastCursor,
+        refresh ? 'refresh' : 'download',
+      );
+      completed = true;
+    });
+    if (!completed) return finish(false);
   }
 
-  // Both loop exits here mean the server has nothing more for this cursor:
-  // hasMore === false, or an empty page (the tail). Aborts return early above.
-  return { reachedTail: true, rowsProcessed: totalProcessed, resumedFromCheckpoint };
+  // Completion requires a terminal page; malformed empty/nonadvancing pages throw.
+  return finish(true);
 }
 
 async function processDeletions(
@@ -3041,6 +3133,40 @@ export async function pullSync(
         ...timings,
         phases,
       });
+    }
+  }
+
+  // Ordinary deltas retain priority and their own checkpoint, including on cellular.
+  // Only already-complete catalogs need this conservative replay after an upgrade.
+  for (const boardScope of boardScopes) {
+    if (cycleAborted()) return reportInterruptedCycle();
+    if (scopePurged(boardScope) || !(await isScopeDownloadComplete(db, boardScope.scopeKey))) continue;
+    for (const tableName of BOARD_DATA_TABLES) {
+      const revision = TABLE_CONFIGS[tableName].refreshRevision;
+      if (!revision) continue;
+      const state = await getSchemaRefreshState(db, tableName, boardScope.scopeKey);
+      if (state && state.revision >= revision && state.complete) continue;
+      if (cycleAborted() || scopePurged(boardScope)) break;
+      const shouldContinue = async (): Promise<boolean> =>
+        !cycleAborted() && !scopePurged(boardScope) && (await (options?.isOnUnmeteredNetwork?.() ?? false));
+      if (!(await shouldContinue())) continue;
+      await syncTable(
+        db,
+        queryClient,
+        graphqlFetch,
+        tableName,
+        purgeToken,
+        boardScope,
+        undefined,
+        options?.onSchemaDrift,
+        {
+          state:
+            state?.revision === revision
+              ? state
+              : { ...REFRESH_START_CURSOR, revision, complete: false, mode: 'refresh' },
+          shouldContinue,
+        },
+      );
     }
   }
 

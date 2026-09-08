@@ -35,7 +35,7 @@ import { beginScopePurge, __resetDrainerStateForTests } from '../../mutation-que
 import { configureMainConnection } from '../../db/pragmas';
 import { isDatabaseLockedError } from '../../db/lock-errors';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
-import { SCHEMA_STATEMENTS } from '../../db/schema';
+import { MIGRATIONS } from '../../db/migrations';
 import { climbsScopeFilter } from '../board-scope-sql';
 import type { OfflineBoardScope } from '../../offline-board-key';
 import type { OfflineDatabase, QueryInvalidator } from '../../database';
@@ -105,7 +105,7 @@ function twoLayoutArtifact(): ArtifactShape {
 function buildArtifact(filePath: string, shape: ArtifactShape): void {
   const artifact = new DatabaseSync(filePath);
   try {
-    for (const statement of SCHEMA_STATEMENTS) artifact.exec(statement);
+    for (const migration of MIGRATIONS) for (const statement of migration.statements) artifact.exec(statement);
     artifact.exec(SNAPSHOT_META_DDL);
     const insertClimb = artifact.prepare(
       `INSERT OR REPLACE INTO board_climbs
@@ -355,7 +355,7 @@ describe('stats keyset query plan', () => {
 
     const planDb = new DatabaseSync(':memory:');
     try {
-      for (const statement of SCHEMA_STATEMENTS) planDb.exec(statement);
+      for (const migration of MIGRATIONS) for (const statement of migration.statements) planDb.exec(statement);
       planDb.exec(`ATTACH DATABASE '${artifactPath}' AS bs_snapshot`);
       planDb.exec('CREATE TEMP TABLE bs_import_climbs (uuid TEXT PRIMARY KEY)');
       const bindCount = (statsInsert as string).split('?').length - 1;
@@ -380,6 +380,7 @@ describe('batch accounting', () => {
   it('reports the scoped row count, a finite batch count and a measured lock hold', async () => {
     const { db } = await freshClientDb('accounting');
     const batchProgress: Array<{ rowsImported: number; batches: number }> = [];
+    const startedAt = Date.now();
     const result = await bootstrapScopeFromSnapshot({
       db,
       scope: KILTER_SCOPE,
@@ -388,6 +389,7 @@ describe('batch accounting', () => {
       batchRows: 3,
       onBatch: (progress) => batchProgress.push({ ...progress }),
     });
+    const elapsedMs = Date.now() - startedAt;
 
     // Rows, not batches: a keyset range over the artifact's stats PK walks
     // ARTIFACT rows, so ceil(scopedStats / B) is NOT the batch count.
@@ -403,8 +405,8 @@ describe('batch accounting', () => {
     );
     expect(batchProgress[batchProgress.length - 1].rowsImported).toBe(42);
 
-    // The timings are all real numbers, and the batch loop cannot be shorter
-    // than the longest hold inside it.
+    // Lock timing includes reconciliation and the final checkpoint commit, not
+    // just row batches. Only the whole import bounds every exclusive hold.
     for (const timing of [
       result.importVerifyMs,
       result.importReconcileMs,
@@ -414,7 +416,7 @@ describe('batch accounting', () => {
       expect(Number.isFinite(timing)).toBe(true);
       expect(timing).toBeGreaterThanOrEqual(0);
     }
-    expect(result.importRowsMs).toBeGreaterThanOrEqual(result.importLockMaxMs);
+    expect(elapsedMs).toBeGreaterThanOrEqual(result.importLockMaxMs);
   });
 
   // Dropping the `applyBulkImportPragmas` call would pass every other test in

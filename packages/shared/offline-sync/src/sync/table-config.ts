@@ -13,6 +13,8 @@ export type TableSyncConfig = {
   invalidateKeys: InvalidateKeys;
   primaryKeyColumns: string[];
   localColumns: readonly string[];
+  /** Bump when existing reference rows need newly synced fields backfilled. */
+  refreshRevision?: number;
   /**
    * The timestamp half of this table's `(timestamp, sync_seq)` keyset cursor —
    * whatever the resolver passes as `updatedAtColumn` in
@@ -121,6 +123,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     localColumns: ['playlist_uuid', 'follower_id', 'created_at', 'updated_at'],
   },
   board_climbs: {
+    refreshRevision: 1,
     queryName: 'syncClimbs',
     cursorColumn: UPDATED_AT_CURSOR,
     operationKey: 'SYNC_CLIMBS',

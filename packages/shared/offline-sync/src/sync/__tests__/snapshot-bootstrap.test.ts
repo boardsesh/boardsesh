@@ -55,7 +55,6 @@ import {
   __resetDrainerStateForTests,
 } from '../../mutation-queue/drainer';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
-import { SCHEMA_STATEMENTS } from '../../db/schema';
 import type { OfflineBoardScope } from '../../offline-board-key';
 import {
   SNAPSHOT_MANIFEST_FORMAT_VERSION,
@@ -123,7 +122,7 @@ function buildArtifact(spec: ArtifactSpec): void {
       db.exec(spec.climbsDdl ?? '');
       db.exec(spec.statsDdl ?? '');
     } else {
-      for (const statement of SCHEMA_STATEMENTS) db.exec(statement);
+      for (const migration of MIGRATIONS) for (const statement of migration.statements) db.exec(statement);
     }
     db.exec(SNAPSHOT_META_DDL);
 
@@ -666,10 +665,9 @@ describe('bootstrapScopeFromSnapshot', () => {
     expect(climbs.map((row) => row.uuid)).toEqual(['fresh-row']);
   });
 
-  it('tolerates schema drift in both directions and reports it to telemetry', async () => {
+  it('rejects missing expected columns without importing or advancing checkpoints', async () => {
     const filePath = join(workDir, 'drift.db');
-    // Seed has an extra column (extra_seed, ignored) and is missing one the live
-    // table has (setter_username → NULL-filled). Stats table is the standard one.
+    // A partial schema must be rejected even when its metadata claims to be current.
     buildArtifact({
       filePath,
       climbs: [],
@@ -700,17 +698,67 @@ describe('bootstrapScopeFromSnapshot', () => {
     const onSchemaDrift = vi.fn();
     await expect(
       bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath, onSchemaDrift }),
-    ).resolves.toBeDefined();
+    ).rejects.toMatchObject({ name: 'SnapshotSchemaCompatibilityError', direction: 'missing-source-column' });
 
     const row = await db.getFirstAsync<{ uuid: string; setter_username: string | null }>(
       'SELECT uuid, setter_username FROM board_climbs WHERE uuid = ?',
       ['d1'],
     );
-    expect(row?.uuid).toBe('d1');
-    expect(row?.setter_username).toBeNull(); // main-only column, NULL-filled
-    const driftColumns = onSchemaDrift.mock.calls.map(([drift]) => (drift as { column: string }).column);
-    expect(driftColumns).toContain('extra_seed'); // seed-only → dropped
-    expect(driftColumns).toContain('setter_username'); // main-only → NULL-filled
+    expect(row).toBeNull();
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
+    expect(onSchemaDrift).not.toHaveBeenCalled();
+  });
+
+  it.each(['local', 'source'] as const)(
+    'rejects a missing %s column before reconciling cached climbs',
+    async (side) => {
+      const filePath = join(workDir, `missing-${side}.db`);
+      buildArtifact({
+        filePath,
+        climbs: [],
+        stats: [],
+        climbsWatermark: CLIMBS_WATERMARK,
+        statsWatermark: STATS_WATERMARK,
+      });
+      await db.runAsync(
+        "INSERT INTO board_climbs (uuid, board_type, layout_id, compatible_size_ids, updated_at, sync_seq) VALUES ('keep', 'kilter', 1, '[5]', '1970-01-01T00:00:00.000Z', 0)",
+      );
+      if (side === 'local') await db.execAsync('ALTER TABLE board_climbs DROP COLUMN is_hidden');
+      else {
+        const artifact = new DatabaseSync(filePath);
+        artifact.exec('ALTER TABLE board_climbs DROP COLUMN is_hidden');
+        artifact.close();
+      }
+      await expect(
+        bootstrapScopeFromSnapshot({ db, filePath, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5' }),
+      ).rejects.toMatchObject({
+        name: 'SnapshotSchemaCompatibilityError',
+        direction: `missing-${side}-column`,
+        columns: ['is_hidden'],
+      });
+      expect(await db.getFirstAsync("SELECT uuid FROM board_climbs WHERE uuid = 'keep'")).not.toBeNull();
+      expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
+    },
+  );
+
+  it.each(['invalid', 'inconsistent'] as const)('rejects %s schema metadata before importing', async (kind) => {
+    const filePath = join(workDir, `schema-${kind}.db`);
+    buildArtifact({
+      filePath,
+      climbs: [],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const artifact = new DatabaseSync(filePath);
+    artifact
+      .prepare("UPDATE snapshot_meta SET schema_version = ? WHERE table_name = 'board_climb_stats'")
+      .run(kind === 'invalid' ? 'banana' : LATEST_SCHEMA_VERSION + 1);
+    artifact.close();
+    await expect(
+      bootstrapScopeFromSnapshot({ db, filePath, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5' }),
+    ).rejects.toMatchObject({ name: 'SnapshotSchemaCompatibilityError', direction: 'invalid-version' });
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
   });
 
   it('throws (no rows, no checkpoints) on a corrupt/garbage artifact', async () => {

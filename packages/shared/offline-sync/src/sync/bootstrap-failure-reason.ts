@@ -102,6 +102,7 @@ export function classifySnapshotBootstrapFailure(cause: unknown): SnapshotBootst
   const name = cause instanceof Error ? cause.name : null;
   if (name === 'SnapshotWipedError') return 'aborted-wipe';
   if (name === 'SnapshotSchemaStaleError') return 'schema-stale';
+  if (name === 'SnapshotSchemaCompatibilityError') return 'artifact-invalid';
   if (name === 'SnapshotWatermarkRegressionError') return 'watermark-regression';
   if (name === 'SnapshotPermanentMissError') return 'permanent-miss';
   if (name === 'SnapshotArtifactTruncatedError') return 'artifact-truncated';

@@ -24,6 +24,8 @@ import type { SnapshotGradesArtifact, SnapshotManifestEntry, SnapshotTableName }
 import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from './snapshot-manifest';
 import { climbsScopeFilter, isSizeScopedBoard } from './board-scope-sql';
 import { TABLE_CONFIGS } from './table-config';
+import { reportExtraColumn, SnapshotSchemaCompatibilityError } from './schema-compatibility';
+import { markSchemaRefreshComplete } from './schema-refresh';
 import {
   compareCheckpoints,
   getCheckpointKey,
@@ -717,29 +719,38 @@ async function tableColumns(db: SqlExecutor, tableName: string, schema: string):
 }
 
 /**
- * The columns present in BOTH the live table and the artifact's copy of it, in
- * live (main) order. A snapshot built at a different client schema than the live
- * DB is tolerated: a column only in the artifact is dropped from the copy (its
- * data is skipped); a column only in main is left out of the SELECT and thus
- * NULL-filled. Both directions are reported as drift telemetry.
+ * Import the client's configured columns. Extra source columns are compatible;
+ * missing expected columns would leave permanent holes behind the stamped cursor.
  */
 async function sharedColumns(
   db: SqlExecutor,
   tableName: string,
   onSchemaDrift: SchemaDriftReporter | undefined,
+  artifactSchemaVersion: number,
   alias: string = SNAPSHOT_ALIAS,
 ): Promise<string[]> {
   const mainColumns = await tableColumns(db, tableName, 'main');
   const snapshotColumns = await tableColumns(db, tableName, alias);
   const mainSet = new Set(mainColumns);
   const snapshotSet = new Set(snapshotColumns);
+  const expectedColumns = TABLE_CONFIGS[tableName].localColumns;
+  for (const [direction, available] of [
+    ['missing-local-column', mainSet],
+    ['missing-source-column', snapshotSet],
+  ] as const) {
+    const missing = expectedColumns.filter((column) => !available.has(column));
+    if (missing.length > 0) {
+      throw new SnapshotSchemaCompatibilityError(tableName, direction, missing, artifactSchemaVersion);
+    }
+  }
+  const expectedSet = new Set(expectedColumns);
   for (const column of snapshotColumns) {
-    if (!mainSet.has(column)) onSchemaDrift?.({ tableName, column });
+    if (!expectedSet.has(column)) {
+      reportExtraColumn(onSchemaDrift, { origin: 'snapshot', tableName, column, artifactSchemaVersion });
+    }
   }
-  for (const column of mainColumns) {
-    if (!snapshotSet.has(column)) onSchemaDrift?.({ tableName, column });
-  }
-  return mainColumns.filter((column) => snapshotSet.has(column));
+  assertSafeColumns(expectedColumns);
+  return [...expectedColumns];
 }
 
 // --- Import SQL ---------------------------------------------------------------
@@ -968,11 +979,11 @@ async function beginExclusiveWithRetry(db: SqlExecutor, sleep: (ms: number) => P
 async function importScopeBatched(
   txn: SqlExecutor,
   scope: OfflineBoardScope,
-  onSchemaDrift: SchemaDriftReporter | undefined,
+  columns: Record<SnapshotTableName, string[]>,
   options: SnapshotImportBatchOptions,
 ): Promise<{ climbsImported: number; statsImported: number; batches: number }> {
-  const climbColumns = await sharedColumns(txn, 'board_climbs', onSchemaDrift);
-  const statsColumns = await sharedColumns(txn, 'board_climb_stats', onSchemaDrift);
+  const climbColumns = columns.board_climbs;
+  const statsColumns = columns.board_climb_stats;
   assertSafeColumns(climbColumns);
   assertSafeColumns(statsColumns);
   if (climbColumns.length === 0) throw new Error('snapshot bootstrap: no shared board_climbs columns');
@@ -1087,6 +1098,7 @@ const DELETIONS_SNAPSHOT_META_TABLE = 'sync_deletions';
 
 type VerifiedSnapshotMeta = {
   builtAt: string;
+  schemaVersion: number;
   /**
    * Optional for backwards compatibility. Artifacts published before this
    * metadata row shipped fall back to the older scoped-row watermark rewind.
@@ -1197,6 +1209,7 @@ async function verifySnapshotMeta(
   tables: readonly string[] = SNAPSHOT_TABLES,
 ): Promise<VerifiedSnapshotMeta> {
   let artifactBuiltAt: string | null = null;
+  let schemaVersion: number | null = null;
   for (const tableName of tables) {
     const meta = await db.getFirstAsync<SnapshotMetaRow>(
       `SELECT table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version
@@ -1204,6 +1217,14 @@ async function verifySnapshotMeta(
       [tableName],
     );
     if (!meta) throw new Error(`snapshot bootstrap: snapshot_meta missing row for ${tableName}`);
+    if (
+      !Number.isSafeInteger(meta.schema_version) ||
+      meta.schema_version < 1 ||
+      (schemaVersion !== null && schemaVersion !== meta.schema_version)
+    ) {
+      throw new SnapshotSchemaCompatibilityError(tableName, 'invalid-version', [], meta.schema_version);
+    }
+    schemaVersion = meta.schema_version;
     if (meta.format_version !== SNAPSHOT_MANIFEST_FORMAT_VERSION) {
       throw new Error(
         `snapshot bootstrap: format_version ${meta.format_version} != ${SNAPSHOT_MANIFEST_FORMAT_VERSION} for ${tableName}`,
@@ -1231,9 +1252,11 @@ async function verifySnapshotMeta(
     }
   }
 
-  if (!artifactBuiltAt) throw new Error('snapshot bootstrap: snapshot_meta did not contain a built_at');
+  if (!artifactBuiltAt || schemaVersion === null)
+    throw new Error('snapshot bootstrap: snapshot_meta did not contain a built_at');
   return {
     builtAt: artifactBuiltAt,
+    schemaVersion,
     deletionsReplayFrom: await readDeletionsReplayFrom(db, alias, artifactBuiltAt),
   };
 }
@@ -1341,6 +1364,7 @@ export async function bootstrapScopeFromSnapshot(params: {
   const purgeKey = purgeNamespaceKey(scope);
 
   let watermarks: Record<SnapshotTableName, SyncCheckpoint> | null = null;
+  let columns: Record<SnapshotTableName, string[]>;
   let deletionsReplayFrom: SyncCheckpoint | null = null;
   let imported = { climbsImported: 0, statsImported: 0, batches: 0 };
   let importVerifyMs = 0;
@@ -1373,6 +1397,10 @@ export async function bootstrapScopeFromSnapshot(params: {
         }
 
         const snapshotMeta = await verifySnapshotMeta(txn);
+        columns = {
+          board_climbs: await sharedColumns(txn, 'board_climbs', onSchemaDrift, snapshotMeta.schemaVersion),
+          board_climb_stats: await sharedColumns(txn, 'board_climb_stats', onSchemaDrift, snapshotMeta.schemaVersion),
+        };
         deletionsReplayFrom = snapshotMeta.deletionsReplayFrom;
         watermarks = await scopedWatermarks(txn, scope);
 
@@ -1466,7 +1494,7 @@ export async function bootstrapScopeFromSnapshot(params: {
 
         const rowsStartedAt = Date.now();
         const waitBeforeRows = importLockWaitMs;
-        imported = await importScopeBatched(txn, scope, onSchemaDrift, { batchRows, runExclusive, onBatch });
+        imported = await importScopeBatched(txn, scope, columns, { batchRows, runExclusive, onBatch });
         importRowsMs = Date.now() - rowsStartedAt - (importLockWaitMs - waitBeforeRows);
 
         // CHECKPOINTS LAST, in their own transaction, after every row batch has
@@ -1475,6 +1503,8 @@ export async function bootstrapScopeFromSnapshot(params: {
         // unrecoverable (see this function's docblock and scope-teardown.ts).
         await runExclusive(async () => {
           await setCheckpoint(txn, getCheckpointKey('board_climbs', scopeKey), stampedWatermarks.board_climbs);
+          await markSchemaRefreshComplete(txn, 'board_climbs', scopeKey, stampedWatermarks.board_climbs);
+          await markSchemaRefreshComplete(txn, 'board_climb_stats', scopeKey, stampedWatermarks.board_climb_stats);
           await setCheckpoint(
             txn,
             getCheckpointKey('board_climb_stats', scopeKey),
@@ -1631,6 +1661,7 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
   let rowsImported = 0;
   let gradesVerifyMs = 0;
   let gradesLockMs = 0;
+  let gradeColumns: string[];
   try {
     await db.withExclusiveTransactionAsync(async (txn) => {
       await txn.execAsync('COMMIT');
@@ -1648,7 +1679,8 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
         // Verified against the ONE-ELEMENT grades list. The client's
         // whole-layout SNAPSHOT_TABLES is untouched, which is what keeps this
         // change invisible to every pre-change artifact still on the CDN.
-        await verifySnapshotMeta(txn, GRADES_ALIAS, GRADES_SNAPSHOT_TABLES);
+        const snapshotMeta = await verifySnapshotMeta(txn, GRADES_ALIAS, GRADES_SNAPSHOT_TABLES);
+        gradeColumns = await sharedColumns(txn, GRADES_TABLE, onSchemaDrift, snapshotMeta.schemaVersion, GRADES_ALIAS);
 
         if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
@@ -1676,7 +1708,6 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
       // still open.
       try {
         const lockHeldFrom = Date.now();
-        const gradeColumns = await sharedColumns(txn, GRADES_TABLE, onSchemaDrift, GRADES_ALIAS);
         assertSafeColumns(gradeColumns);
         if (gradeColumns.length === 0)
           throw new Error('snapshot grades bootstrap: no shared board_climb_grades columns');
@@ -1719,6 +1750,7 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
         if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
         await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
+        await markSchemaRefreshComplete(txn, GRADES_TABLE, scopeKey, watermark);
         // COMMIT here rather than leaving it for the wrapper, so gradesLockMs
         // covers the whole hold, then hand the wrapper an empty transaction.
         await txn.execAsync('COMMIT');

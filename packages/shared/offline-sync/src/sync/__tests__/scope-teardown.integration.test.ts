@@ -74,7 +74,7 @@ function createFetch(climbsCursors: unknown[]): GraphqlFetchMock {
       climbsCursors.push(variables?.cursor);
       return {
         syncClimbs: {
-          documents: [CLIMB_DOC],
+          documents: variables?.cursor ? [] : [CLIMB_DOC],
           cursor: { updatedAt: CLIMB_DOC.updated_at, syncSeq: '10' },
           hasMore: false,
         },
