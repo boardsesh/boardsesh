@@ -27,6 +27,7 @@
   "response": {
     "data": {
       "searchClimbs": {
+        "hasMore": true,
         "climbs": [
           {
             "uuid": "F868A4BEA8BC415482302248CB4FDD7A",
@@ -2045,12 +2046,11 @@
               29
             ]
           }
-        ],
-        "hasMore": true
+        ]
       }
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T17:28:45.056Z",
+  "recordedAt": "2026-09-08T18:48:42.337Z",
   "upstream": "https://ws.boardsesh.com"
 }
