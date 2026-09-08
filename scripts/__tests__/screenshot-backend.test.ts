@@ -25,6 +25,7 @@ import {
 import {
   FIXTURE_SIZE_NOTE_BYTES,
   RE_RECORD_COMMAND,
+  findScreenshotBackendNotes,
   findScreenshotBackendProblems,
   fixtureSizeNote,
   validateScreenshotFixtureManifest,
@@ -808,22 +809,37 @@ describe('screenshot backend', () => {
     });
 
     it('never composes across the non-id variables: a kilter recording cannot answer a tension request', async () => {
-      // climb-b exists in the recorded set, but only under boardName kilter.
-      const response = await replayBatch('tension', ['climb-a', 'climb-b']);
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] });
-      expect(hasLine('reason=unrecorded-ids ids=climb-b')).toBe(true);
+      // climb-b exists in the recorded set, but only under boardName kilter, so
+      // it stays uncovered here — and tension's own climb-a still answers.
+      expect(await rowsOf(await replayBatch('tension', ['climb-a', 'climb-b']))).toEqual([statsRow('climb-a', 10)]);
+      expect(hasLine('uncovered=1 ids=climb-b')).toBe(true);
 
-      // And the id that IS recorded under tension answers with tension's row.
+      // The same id under tension answers with TENSION's row, never kilter's.
       expect(await rowsOf(await replayBatch('tension', ['climb-a']))).toEqual([statsRow('climb-a', 10)]);
     });
 
-    it('names the ids nothing recorded, so the failure says which screen to re-record', async () => {
+    it('tolerates an id no recorded batch covers, answering with the rest', async () => {
+      // climb-z is a row the recording never mounted — draw distance, or a
+      // shuffled pool. Answering with no rows for it is a shape the real server
+      // produces too, and the list renders its own counts for that row.
       const response = await replayBatch('kilter', ['climb-a', 'climb-z']);
       expect(response.status).toBe(200);
-      expect(hasLine('reason=unrecorded-ids ids=climb-z')).toBe(true);
+      expect(await rowsOf(response)).toEqual([statsRow('climb-a', 0), statsRow('climb-a', 20)]);
+      expect(hasLine('HIT graphql ClimbStatsForClimbs')).toBe(true);
+      expect(hasLine('composed=1 uncovered=1 ids=climb-z')).toBe(true);
+      // Worth saying, never worth failing on.
+      expect(findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' })).toEqual([]);
+      const [note] = findScreenshotBackendNotes(logLines.join('\n'));
+      expect(note).toContain('ClimbStatsForClimbs answered 1 batch(es) with 1 uncovered id(s)');
+    });
+
+    it('still misses when NOT ONE requested id was recorded — that is an uncaptured screen', async () => {
+      const response = await replayBatch('kilter', ['climb-y', 'climb-z']);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] });
+      expect(hasLine('reason=unrecorded-ids ids=climb-y,climb-z')).toBe(true);
       const [problem] = findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' });
-      expect(problem).toContain('ClimbStatsForClimbs asked for ids no recorded batch covers: climb-z');
+      expect(problem).toContain('ClimbStatsForClimbs asked for a batch where NO id was recorded: climb-y, climb-z');
       expect(problem).toContain('"boardName":"kilter"');
       expect(problem).toContain(RE_RECORD_COMMAND);
     });

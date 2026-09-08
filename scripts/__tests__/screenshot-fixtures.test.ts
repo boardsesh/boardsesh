@@ -14,6 +14,7 @@ import {
   IGNORED_VARIABLE_PATHS,
   MISS_VARIABLES_LOG_LIMIT,
   collectBatchItems,
+  findScreenshotBackendNotes,
   REDACTED_PER_RUN_VALUE,
   RE_RECORD_COMMAND,
   SCREENSHOT_BACKEND_LOG_PREFIX,
@@ -521,11 +522,39 @@ describe('log grammar', () => {
     ],
     [
       'HIT graphql SyncTicks 0123456789ab',
-      { event: 'hit', kind: 'graphql', operationName: 'SyncTicks', hash12: '0123456789ab', composed: null },
+      {
+        event: 'hit',
+        kind: 'graphql',
+        operationName: 'SyncTicks',
+        hash12: '0123456789ab',
+        composed: null,
+        uncoveredCount: 0,
+        uncoveredIds: [],
+      },
     ],
     [
       'HIT graphql ClimbStatsForClimbs 0123456789ab composed=4',
-      { event: 'hit', kind: 'graphql', operationName: 'ClimbStatsForClimbs', hash12: '0123456789ab', composed: 4 },
+      {
+        event: 'hit',
+        kind: 'graphql',
+        operationName: 'ClimbStatsForClimbs',
+        hash12: '0123456789ab',
+        composed: 4,
+        uncoveredCount: 0,
+        uncoveredIds: [],
+      },
+    ],
+    [
+      'HIT graphql ClimbStatsForClimbs 0123456789ab composed=4 uncovered=2 ids=climb-y,climb-z',
+      {
+        event: 'hit',
+        kind: 'graphql',
+        operationName: 'ClimbStatsForClimbs',
+        hash12: '0123456789ab',
+        composed: 4,
+        uncoveredCount: 2,
+        uncoveredIds: ['climb-y', 'climb-z'],
+      },
     ],
     [
       'HIT static /static/avatars/a.jpg?size=64',
@@ -653,6 +682,8 @@ describe('log grammar', () => {
       operationName: 'SyncTicks',
       hash12: '0123456789ab',
       composed: null,
+      uncoveredCount: 0,
+      uncoveredIds: [],
     });
   });
 
@@ -766,7 +797,7 @@ describe('findScreenshotBackendProblems', () => {
     expect(problems[0]).toContain('×2');
   });
 
-  it('names the ids a batched miss could not cover, and asks for a re-record of that screen', () => {
+  it('fails a batch where NOT ONE id was covered — that is a screen nobody recorded', () => {
     const log = [
       line('HIT graphql Me 0000aaaa1111'),
       line(
@@ -774,9 +805,18 @@ describe('findScreenshotBackendProblems', () => {
       ),
     ].join('\n');
     const [problem] = findScreenshotBackendProblems(log, { mode: 'replay' });
-    expect(problem).toContain('ClimbStatsForClimbs asked for ids no recorded batch covers: climb-y, climb-z');
-    expect(problem).toContain('capture the screen they appear on');
+    expect(problem).toContain('ClimbStatsForClimbs asked for a batch where NO id was recorded: climb-y, climb-z');
+    expect(problem).toContain('was never captured');
     expect(problem).toContain(RE_RECORD_COMMAND);
+  });
+
+  it('does not fail a capture for a partly-covered batch', () => {
+    // Draw distance, a shuffled pool — routine, and it cannot blank a visible
+    // row (the list's own counts render when there is no canonical row).
+    const log = [line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=18 uncovered=2 ids=climb-y,climb-z')].join(
+      '\n',
+    );
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
   });
 
   it('counts a composed batch hit as a graphql hit', () => {
@@ -904,5 +944,33 @@ describe('collectBatchItems', () => {
     expect(items).toEqual([]);
     expect(unrecordedIds).toEqual([]);
     expect(answeredIds).toEqual(['climb-c']);
+  });
+});
+
+describe('findScreenshotBackendNotes', () => {
+  const line = (body: string): string => `${SCREENSHOT_BACKEND_LOG_PREFIX} ${body}`;
+
+  it('is silent when every batch was fully covered', () => {
+    const log = [
+      line('HIT graphql SyncTicks 0123456789ab'),
+      line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=18'),
+    ].join('\n');
+    expect(findScreenshotBackendNotes(log)).toEqual([]);
+  });
+
+  it('counts the batches and the ids per operation', () => {
+    const log = [
+      line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=18 uncovered=2 ids=climb-y,climb-z'),
+      line('HIT graphql ClimbStatsForClimbs aaaabbbbcccc composed=9 uncovered=1 ids=climb-q'),
+      line('HIT graphql GetBulkVoteSummaries ddddeeeeffff composed=20 uncovered=3 ids=one,two,three'),
+      line('HIT graphql ClimbStatsForClimbs 111122223333 composed=4'),
+    ].join('\n');
+    const notes = findScreenshotBackendNotes(log);
+    expect(notes).toHaveLength(2);
+    expect(notes[0]).toBe(
+      'ClimbStatsForClimbs answered 2 batch(es) with 3 uncovered id(s) — rows mounted beyond the fold; ' +
+        're-record if a visible row shows blank stats.',
+    );
+    expect(notes[1]).toContain('GetBulkVoteSummaries answered 1 batch(es) with 3 uncovered id(s)');
   });
 });
