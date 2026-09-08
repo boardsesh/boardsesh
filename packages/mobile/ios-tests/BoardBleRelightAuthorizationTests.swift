@@ -181,6 +181,45 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         XCTAssertEqual(manager.testHooks.sync { manager.testHooks.implicitRelightMaxRequestAge }, 120)
     }
 
+    func testWriteStallRecoveryFreshnessMatrix() {
+        let now = Date()
+        let maxAge: TimeInterval = 120
+
+        // Fresh, and exactly on the bound — both still ours to finish. The bound
+        // is inclusive, matching shouldPerformImplicitRelight.
+        for age in [TimeInterval(0), 1, 24, maxAge] {
+            XCTAssertTrue(
+                BoardBleManager.writeStallRecoveryIsFresh(
+                    requestedAt: now.addingTimeInterval(-age),
+                    now: now,
+                    maxRequestAge: maxAge
+                ),
+                "expected a \(age)s-old stall to still be recoverable"
+            )
+        }
+
+        // Past the bound: the suspension case this guard exists for.
+        for age in [maxAge + 0.001, 3600, 86_400 * 3] {
+            XCTAssertFalse(
+                BoardBleManager.writeStallRecoveryIsFresh(
+                    requestedAt: now.addingTimeInterval(-age),
+                    now: now,
+                    maxRequestAge: maxAge
+                ),
+                "expected a \(age)s-old stall to be abandoned"
+            )
+        }
+
+        // Clock moved backwards: the age is unknowable, so fail closed.
+        XCTAssertFalse(
+            BoardBleManager.writeStallRecoveryIsFresh(
+                requestedAt: now.addingTimeInterval(30),
+                now: now,
+                maxRequestAge: maxAge
+            )
+        )
+    }
+
     // MARK: - The connect paths
 
     func testFreshUserConnectRelightsOnce() {
@@ -272,6 +311,138 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         XCTAssertEqual(connectedEvents, [peripheral.identifier.uuidString])
         XCTAssertEqual(cancelledPeripheralIds.count, cancelsBeforeReady)
         XCTAssertEqual(manager.connectedDeviceId, peripheral.identifier.uuidString)
+    }
+
+    /// Pins the carry itself, independent of what a stale recovery then does:
+    /// the reconnect must inherit the STALL's stamp, not mint a new one on the
+    /// didDisconnect that triggered it. Fails against the old code, where the
+    /// age at the success point would read ~0 no matter how long the gap was.
+    func testWriteStallReconnectInheritsTheStallsTimestamp() {
+        let peripheral = FakeWritablePeripheral()
+        installConnection(peripheral: peripheral)
+
+        manager.testHooks.sync { manager.write(data: Data([0x01])) { _, _ in } }
+        fireLatestOneShot(label: "writeAckWatchdog")
+        XCTAssertNotNil(manager.testHooks.sync { manager.testHooks.writeStallRecoveryRequestedAt })
+
+        // A gap well inside the budget, so the reconnect still goes out and the
+        // only thing under test is which clock it was stamped with.
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.rewindWriteStallRecovery(by: 60) })
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        guard let requestedAt = manager.testHooks.sync({ manager.testHooks.connectRequestedAt }) else {
+            return XCTFail("expected the reconnect to carry a stamp")
+        }
+        // Loose bound: the assertion is "the stall's clock, not this callback's",
+        // and anything above ~0 can only have come from the carried stamp.
+        XCTAssertGreaterThan(Date().timeIntervalSince(requestedAt), 30)
+    }
+
+    /// The hole the connect-window test above cannot reach: the phone suspends
+    /// between the stall's cancel and its `didDisconnect`. Both watchdogs
+    /// bounding that gap are GCD work items, so they thaw alongside the callback
+    /// rather than expiring during it — which is why the arriving disconnect
+    /// must be judged by the stall's own wall clock and not re-stamped (#4499).
+    func testWriteStallStrandedAcrossASuspensionNeverReconnects() {
+        let peripheral = FakeWritablePeripheral()
+        var disconnectEvents: [(String, [String: Any]?)] = []
+        installConnection(peripheral: peripheral)
+        manager.testHooks.sync {
+            manager.setEventHandlers(
+                onScanResult: nil,
+                onDisconnect: { deviceId, body in disconnectEvents.append((deviceId, body)) },
+                onConnected: nil
+            )
+            manager.write(data: Data([0x01])) { _, _ in }
+        }
+        fireLatestOneShot(label: "writeAckWatchdog")
+
+        // The stall cycled the link and is waiting on didDisconnect.
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.writeStallRecoveringPeripheralId },
+            peripheral.identifier
+        )
+        XCTAssertEqual(cancelledPeripheralIds, [peripheral.identifier])
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+
+        // Suspended for an hour. The stamp is the stall's, so rewinding it is
+        // the same thing as the process having been frozen since.
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.rewindWriteStallRecovery(by: 3600) })
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        // No reconnect is issued at all — not one that connects and stays quiet.
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+        XCTAssertFalse(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.writeStallRecoveringPeripheralId })
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.writeStallRecoveryRequestedAt })
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.writeStallRecoveries }, 0)
+
+        // And the wall was never repainted.
+        XCTAssertEqual(attempts, 0)
+        XCTAssertEqual(disconnectEvents.count, 1)
+        XCTAssertEqual(
+            disconnectEvents.first?.1?["context"] as? String,
+            "write_stall_recovery_stale"
+        )
+    }
+
+    /// The other side of the bound: a recovery that used its whole budget is
+    /// still the recovery we asked for, and still repaints the wall (#3181).
+    func testWriteStallOnTheFreshnessBoundStillReconnectsAndRelights() {
+        let peripheral = FakeWritablePeripheral()
+        installConnection(peripheral: peripheral)
+
+        manager.testHooks.sync { manager.write(data: Data([0x01])) { _, _ in } }
+        fireLatestOneShot(label: "writeAckWatchdog")
+
+        let maxRequestAge = manager.testHooks.sync { manager.testHooks.implicitRelightMaxRequestAge }
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.rewindWriteStallRecovery(by: maxRequestAge) })
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.connectRequestOrigin },
+            BoardBleConnectOrigin.writeStallRecovery
+        )
+
+        manager.testHooks.fireConnectionReady(
+            peripheral: peripheral,
+            characteristic: makeWriteCharacteristic()
+        )
+
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(suppressions, 0)
+    }
+
+    /// An abandoned recovery leaves no link, so it must leave no provenance
+    /// either — otherwise a `configure(appActive: false)` landing afterwards
+    /// passes the authorisation latch against a board nobody is connected to.
+    func testAbandonedWriteStallRecoveryForgetsWhoAsked() {
+        let peripheral = FakeWritablePeripheral()
+        installConnection(peripheral: peripheral)
+
+        manager.testHooks.sync { manager.write(data: Data([0x01])) { _, _ in } }
+        fireLatestOneShot(label: "writeAckWatchdog")
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.rewindWriteStallRecovery(by: 3600) })
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.connectRequestOrigin })
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.connectRequestedAt })
+        XCTAssertFalse(manager.testHooks.sync { manager.testHooks.implicitRelightAuthorizedForConnection })
+
+        let attemptsBeforeConfigure = attempts
+        let suppressionsBeforeConfigure = suppressions
+        manager.testHooks.sync {
+            manager.testHooks.configure(moonboardConfiguration(), appActive: false)
+        }
+        XCTAssertEqual(attempts, attemptsBeforeConfigure)
+        // The gate was reached and refused, rather than skipped — without the
+        // provenance clear this connection would still read as authorised.
+        XCTAssertEqual(suppressions, suppressionsBeforeConfigure + 1)
     }
 
     func testRestoredConnectionIsSuppressedAndRetained() {

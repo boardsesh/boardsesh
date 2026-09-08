@@ -38,6 +38,12 @@ const APP_RECOVERY_CONTEXTS = new Set([
   'write_stall_recovery_failed',
   'write_stall_budget_exhausted',
   'write_stall_recovery_timeout',
+  // The cancel's didDisconnect arrived so long after the stall that the
+  // recovery was abandoned rather than reconnected — the phone was suspended
+  // through the window no watchdog can bound (#4499). Kept distinct from
+  // _timeout, which is the opposite failure (no didDisconnect at all while the
+  // radio stayed on): same bucket, different signature to query on.
+  'write_stall_recovery_stale',
 ]);
 
 export function classifyBleDisconnect(info: BleDisconnectInfo | null | undefined): BleDisconnectCategory {
