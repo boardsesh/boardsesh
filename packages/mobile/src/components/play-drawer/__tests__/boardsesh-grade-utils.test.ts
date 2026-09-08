@@ -133,6 +133,58 @@ describe('buildBoardseshGradeView', () => {
     expect(view.kind).toBe('provisional');
   });
 
+  it('gives MoonBoard its own estimate view instead of the blanket no-crowd-grade message', () => {
+    // MoonBoard's crowdGrade capability is (and stays) false, but a problem
+    // graded at only one of the board's two angles now carries a transposed
+    // grade at the other — that has to reach the reader.
+    const view = buildBoardseshGradeView(
+      'moonboard',
+      makeGrade({
+        confidence: 'moonboard_angle_estimate',
+        universalGrade: null,
+        localGrade: 21,
+        gradeLow: 19.5,
+        gradeHigh: 22.5,
+        ascensionistCount: 0,
+        computedAt: '2026-04-01T00:00:00Z',
+      }),
+      'v-grade',
+    );
+    expect(view).toMatchObject({
+      kind: 'moonboardAngleEstimate',
+      gradeValue: 21,
+      range: { low: 'V5', high: 'V7' },
+      computedAt: '2026-04-01T00:00:00Z',
+    });
+    if (view.kind === 'moonboardAngleEstimate') expect(view.grade.label).toBe('V5+');
+  });
+
+  it('drops the range when the estimate band is too wide to print', () => {
+    const view = buildBoardseshGradeView(
+      'moonboard',
+      makeGrade({
+        confidence: 'moonboard_angle_estimate',
+        universalGrade: null,
+        localGrade: 21,
+        gradeLow: 15,
+        gradeHigh: 27,
+      }),
+      'v-grade',
+    );
+    expect(view).toMatchObject({ kind: 'moonboardAngleEstimate', range: null });
+  });
+
+  it('still shows the no-crowd-grade message for every other MoonBoard tier', () => {
+    expect(buildBoardseshGradeView('moonboard', makeGrade({ confidence: 'confirmed' }), 'v-grade')).toEqual({
+      kind: 'noCrowdGrade',
+      boardName: 'moonboard',
+    });
+    expect(buildBoardseshGradeView('moonboard', null, 'v-grade')).toEqual({
+      kind: 'noCrowdGrade',
+      boardName: 'moonboard',
+    });
+  });
+
   it('passes computedAt through unchanged for confirmed and provisional tiers', () => {
     const confirmed = buildBoardseshGradeView('kilter', makeGrade({ computedAt: '2026-03-15T00:00:00Z' }), 'v-grade');
     expect(confirmed).toMatchObject({ kind: 'confirmed', computedAt: '2026-03-15T00:00:00Z' });
@@ -289,6 +341,15 @@ describe('buildBoardseshGradeSummary', () => {
       'v-grade',
     );
     expect(buildBoardseshGradeSummary(view)).toBe('V5–V6 ~');
+  });
+
+  it('marks a MoonBoard angle estimate with ≈ and no seal', () => {
+    const view = buildBoardseshGradeView(
+      'moonboard',
+      makeGrade({ confidence: 'moonboard_angle_estimate', universalGrade: null, localGrade: 20 }),
+      'v-grade',
+    );
+    expect(buildBoardseshGradeSummary(view, { crowdLabel: 'V6' })).toBe('≈V5');
   });
 
   it('returns null for no-crowd-grade and setter-only tiers', () => {

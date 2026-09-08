@@ -243,6 +243,57 @@ Publication has a rollout guard: the scheduled job must explicitly pass
 only after the compatible mobile build is the minimum supported version; older
 clients do not understand the new confidence tier safely.
 
+### MoonBoard's angle transpose (standalone, not part of this model)
+
+MoonBoard problems are set at one of two fixed angles, 25° or 40°, and 96.7% of
+them (263,316 of 272,294) only ever carry a grade at one of the two — nobody has
+climbed the other, so it shows nothing at all. The section above cannot help:
+its projection transports a *crowd mean* through the fitted angle surface, and
+MoonBoard has no crowd mean to transport.
+
+So MoonBoard gets a separate, much smaller mechanism that works from setter
+labels alone. `packages/db/src/queries/grade-model/moonboard-angle-model.ts`
+learns a per-grade-band delta between the two angles from the ~5,983 problems
+that do carry a real grade at both, and
+`packages/db/scripts/refresh-moonboard-angle-estimates.ts` transposes each
+single-angle problem's grade onto its missing angle and writes it as an ordinary
+`board_climb_grades` row tiered `moonboard_angle_estimate`.
+
+What keeps it honest, given the input is setter labels:
+
+- **Two directional tables, median not mean.** `from25` is banded on the 25°
+  grade and carries (40° − 25°); `from40` is banded on the 40° grade and carries
+  the reverse. Each band's value is the median of its pairs, plus a
+  leave-one-out stability check reusing the bridge estimator's
+  `MOON_BRIDGE_MAX_LOO_DELTA` (0.25). A mean is demonstrably fragile here: about
+  15% of dual-graded pairs are not harder at 40° at all, and the v9+ band
+  (n = 54) flips sign outright under one.
+- **Band guards with a pooled fallback.** A band keeps its own delta only when
+  it has ≥ `ANGLE_CELL_MIN_CLIMBS` (30) pairs, its sign agrees with the pooled
+  direction, and it is LOO-stable. Anything else falls back to the pooled `all`
+  delta, and a pooled delta that is itself missing or wrong-signed aborts the run
+  with nothing written.
+- **A band, not a point.** `grade_low`/`grade_high` come from a robust spread
+  (1.4826 × MAD) floored at `DEFAULT_SIGMA_WITHIN` and capped so the published
+  range stays inside what the play drawer will actually print.
+- **`universal_grade` is always NULL.** There is no cross-board bridge for
+  MoonBoard, and this mechanism does not create one.
+
+It is deliberately outside everything above: MoonBoard is not in
+`CROWD_MEAN_BOARDS`, the nightly `refresh-climb-grades.ts` never touches it, no
+type is shared with the EB pipeline, and rows are stamped
+`model_version = 'moonboard-angle-v1'` rather than `GRADE_MODEL_VERSION` so a
+MoonBoard row is never mistaken for one that went through the blend. Its own
+weekly job (`.github/workflows/refresh-moonboard-angle-estimates.yml`) owns
+cleanup too: nothing else writes MoonBoard grade rows, so an estimate whose
+problem has since been climbed at that angle is reaped in the same transaction.
+
+Do not confuse this with the **Moon bridge**
+(`grade-model/bridges.ts`, §3 "Cross-board offset"), which is a different thing
+entirely: that one is cross-board, feeds `universal_grade`, needs paired users,
+and is still report-only. This one is within-board, feeds `local_grade` only,
+needs no users at all, and ships now.
+
 ### Per-climb isotonic angle constraint (v1.1)
 
 Each angle's crowd herds independently, so raw per-angle grades can invert —
@@ -365,6 +416,7 @@ Estimator: `estimateBoardOffsets`.
 | `provisional`          | 3 ≤ n < 20, or a confirmed Kilter row tripped the v1.2 display-delta hygiene rule   | grade with a visible ± band                     |
 | `setter_only`          | n < 3                                                                               | no Boardsesh number, setter's call              |
 | `cross_angle_estimate` | 0 ascents at this angle, projected from 2+ sibling angles                           | `≈` grade, muted, "projected from other angles" |
+| `moonboard_angle_estimate` | MoonBoard only: 0 ascents at this angle, transposed from the board's other fixed angle | `≈` grade, muted, "worked out from the other angle" |
 
 ### Publish hysteresis
 
@@ -425,9 +477,16 @@ model to beat the display label itself would reject any useful non-label signal.
 These are real and we'd rather state them than paper over them.
 
 - **Moon is not standardized.** No crowd mean (label-only feed), circular
-  benchmarks, and paired-user coverage below the bridge threshold. Moon shows
-  its native grade plus "not standardized yet." The unlock is Moon logbook
-  growth — more logged Moon sends create shared users for the bridge report.
+  benchmarks, and paired-user coverage below the bridge threshold, so Moon gets
+  no Boardsesh grade and shows its native grade plus "not standardized yet."
+  The one exception is the angle transpose (§3): a problem graded at only one of
+  25°/40° now shows a marked `≈` estimate at the other, worked out from the
+  setter labels of problems graded at both. That is a transposed label, not a
+  standardized grade — the labels it comes from are noisy (~15% of dual-graded
+  pairs don't get harder with angle), the v9+ band is too thin to fit on its own,
+  and there is no cross-board claim (`universal_grade` stays NULL). The unlock
+  for a real grade is still Moon logbook growth — more logged Moon sends create
+  shared users for the bridge report.
 - **Small boards aren't universalized.** Decoy, Grasshopper, So iLL, and
   Touchstone have no anchor, so they get a within-board grade with no
   cross-board claim.
@@ -462,7 +521,11 @@ These are real and we'd rather state them than paper over them.
   ascents exist (into the reserved `content_prior` column), and the same
   embedding powers climb similarity and style recommendations. It enters the
   blend as one more `DeherdedGradeSignal` (§3), under the no-shock clamp, and is
-  the only path to grading MoonBoard (no crowd mean, no bridge users). Full
+  the only path to a *real* Boardsesh grade for MoonBoard — one anchored in
+  something other than the setter's own label (no crowd mean, no bridge users).
+  The angle transpose described in §3 is not a substitute for it: it moves a
+  setter label from one angle to the other and inherits every bias in that
+  label. Full
   design + phased rollout: `docs/climb2vec.md`. **Groundwork shipped:** the
   generated per-hold feature substrate (`board_hold_features` — geometry +
   de-confounded behavioral difficulty per placement, refreshed nightly by
@@ -512,6 +575,21 @@ vp run db:refresh-climb-grades -- --publish-cross-angle-estimates
 - `--allow-empty-backtest` is only for dev-style databases without stats history;
   production validation should not use it.
 
+The MoonBoard angle transpose is a separate job with its own flags:
+
+```
+vp run db:refresh-moonboard-angle-estimates -- --validate-only
+vp run db:refresh-moonboard-angle-estimates -- --dry-run
+vp run db:refresh-moonboard-angle-estimates -- --publish
+```
+
+- `--validate-only` fits the deltas and prints per-band n / median / spread /
+  LOO stability plus which bands fell back to the pooled value. Writes nothing.
+- `--dry-run` also builds the full plan (estimate rows and stale rows to reap)
+  and prints sample row shapes. Writes nothing.
+- `--publish` is the only flag that writes — a run with no flags reports and
+  exits, so a mis-scheduled job can never publish by accident.
+
 ### Where things are stored
 
 - `board_climb_grades` — one row per climb+angle: `local_grade`,
@@ -521,16 +599,20 @@ vp run db:refresh-climb-grades -- --publish-cross-angle-estimates
 - `board_grade_coefficients` — versioned coefficient rows keyed by
   `(coeff_version, kind, key)`. Kinds: `echo_fraction`, `sigma_within`,
   `tau_squared`, `angle_offset`, `board_offset`, `rater_model`,
-  `behavior_model`, `bridge_readiness`, and `gate_results` (per-run pass/fail +
-  metrics). Plain table, `pg_dump`-portable.
+  `behavior_model`, `bridge_readiness`, `gate_results` (per-run pass/fail +
+  metrics), and `moonboard_angle_offset` (the standalone angle transpose, keyed
+  `from25:<band>` / `from40:<band>`). Plain table, `pg_dump`-portable. The
+  nightly refresh ignores the MoonBoard kind when it picks a frozen coefficient
+  set — that job mints its own `coeff_version` on its own schedule.
 - Climb and tick/session GraphQL payloads (`climb`, `searchClimbs`, `ticks`,
   `sessionGroupedFeed`, `sessionDetail`, and friends) each embed
   `boardseshDifficulty` (`COALESCE(universal_grade, local_grade)`) and
   `boardseshConfidence` alongside the legacy grade fields, for row-level
   display without a per-climb refetch. Both are nullable — null whenever no
-  `board_climb_grades` row exists (MoonBoard, or too few ascents) — and
-  clients fall back to the legacy consensus/Aurora grade in that case (and
-  when `boardseshConfidence` is `setter_only`).
+  `board_climb_grades` row exists (too few ascents, or a MoonBoard problem
+  already graded at both angles) — and clients fall back to the legacy
+  consensus/Aurora grade in that case (and when `boardseshConfidence` is
+  `setter_only` or either estimate tier).
 - **On-device (mobile offline).** When a board is downloaded for offline
   browsing on native, `board_climb_grades` is synced
   to on-device SQLite alongside `board_climbs`/`board_climb_stats`. The pull is

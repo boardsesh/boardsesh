@@ -138,6 +138,11 @@
       "body": "Diesen Winkel hat noch niemand geklettert — die Zahl ist aus den Winkeln mit Begehungen hochgerechnet.",
       "bodyRange": "Diesen Winkel hat noch niemand geklettert — wahrscheinlich {{low}}–{{high}}, hochgerechnet aus den Winkeln mit Begehungen."
     },
+    "moonboardAngle": {
+      "label": "Geschätzt",
+      "body": "In diesem Winkel hat es noch niemand getoppt – der Grad kommt daher, wie es im anderen Winkel geht.",
+      "bodyRange": "In diesem Winkel hat es noch niemand getoppt – wahrscheinlich {{low}}–{{high}}, abgeleitet vom anderen Winkel."
+    },
     "dumbbell": {
       "legendBoardsesh": "Boardsesh-Grad",
       "legendCrowd": "Alter Grad",

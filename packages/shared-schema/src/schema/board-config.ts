@@ -96,9 +96,11 @@ export const boardConfigTypeDefs = /* GraphQL */ `
   """
   The Boardsesh grade for a climb at one angle: the data-science-backed grade
   produced by the nightly refresh job, or — for an angle nobody has climbed yet
-  — a cross_angle_estimate projected from the same climb's other angles. Null
-  query result means neither exists (e.g. MoonBoard, too few ascents, or fewer
-  than two other ascent-backed angles to project from).
+  — a cross_angle_estimate projected from the same climb's other angles. On
+  MoonBoard, which has no crowd mean, a single-angle problem instead carries a
+  moonboard_angle_estimate transposed from the board's other fixed angle. Null
+  query result means none of those exist (too few ascents, or fewer than two
+  other ascent-backed angles to project from).
   """
   type BoardseshGrade {
     "Within-board shrunk grade on the shared difficulty scale (null when unavailable)"
@@ -111,7 +113,7 @@ export const boardConfigTypeDefs = /* GraphQL */ `
     gradeLow: Float
     "High end of the 95% band on the surfaced grade"
     gradeHigh: Float
-    "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles, no ascents here)"
+    "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) — neither estimate tier has ascents here"
     confidence: String!
     "Ascent count that produced this row"
     ascensionistCount: Int!
@@ -140,7 +142,7 @@ export const boardConfigTypeDefs = /* GraphQL */ `
     gradeLow: Float
     "High end of the 95% band on the surfaced grade"
     gradeHigh: Float
-    "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles, no ascents here)"
+    "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) — neither estimate tier has ascents here"
     confidence: String!
     "Ascent count that produced this row"
     ascensionistCount: Int!

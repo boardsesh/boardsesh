@@ -39,13 +39,20 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   // MoonBoard and Woods have no community grade data in our feed, so skip the
   // fetch (see the crowdGrade row of the board-capability table).
   const noCrowdGrade = !getBoardCapabilities(boardName).crowdGrade;
+  // MoonBoard is the exception that still has a row worth fetching: a problem
+  // graded at only one of the board's two fixed angles carries a
+  // `moonboard_angle_estimate` at the other. That is not a crowd grade — the
+  // capability stays false — so only the singular grade is fetched, never the
+  // crowd history or the per-angle series behind the dumbbell.
+  const isMoonboard = boardName.toLowerCase() === 'moonboard';
+  const fetchGrade = !noCrowdGrade || isMoonboard;
   const {
     data: grade,
     isLoading,
     isError,
     refetch,
   } = useBoardseshGrade(boardName, climbUuid, angle, {
-    enabled: !noCrowdGrade,
+    enabled: fetchGrade,
   });
 
   const view = useMemo(
@@ -83,7 +90,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
     void refetch();
   }, [refetch]);
 
-  if (!noCrowdGrade && isLoading) {
+  if (fetchGrade && isLoading) {
     return <View style={[styles.skeleton, styles.skeletonBlock]} />;
   }
 
@@ -91,7 +98,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   // row invites a retry that cannot land, and falling through to the
   // setter-only view would assert something we never got to ask about. One
   // muted line instead — the global connectivity banner owns the recovery.
-  if (!noCrowdGrade && effectiveOffline && !grade) {
+  if (fetchGrade && effectiveOffline && !grade) {
     return (
       <View style={styles.row}>
         <Text variant="subheadline" color={iosSystemColors.systemGray}>
@@ -101,7 +108,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
     );
   }
 
-  if (!noCrowdGrade && isError) {
+  if (fetchGrade && isError) {
     return (
       <Pressable
         onPress={handleRetry}
@@ -114,6 +121,34 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           {t('boardseshGrade.loadError')}
         </Text>
       </Pressable>
+    );
+  }
+
+  if (view.kind === 'moonboardAngleEstimate') {
+    // A MoonBoard problem set at one angle, shown at the other. Same muted,
+    // `≈`-marked, seal-free treatment as a projected angle, but its own
+    // sentence: this number was worked out from the problem's grade at the
+    // board's other angle, not from a crowd. No dumbbell — MoonBoard has no
+    // crowd series to put beside it.
+    return (
+      <View style={styles.container}>
+        <View style={styles.singleHero}>
+          <Text variant="caption1" color={iosSystemColors.systemGray}>
+            {t('boardseshGrade.moonboardAngle.label')}
+          </Text>
+          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+            {`${ESTIMATE_PREFIX}${view.grade.label}`}
+          </Text>
+        </View>
+        <View style={styles.row}>
+          <Icon name="angle" size={18} color={iosSystemColors.systemGray} />
+          <Text variant="footnote" color={iosSystemColors.systemGray} style={styles.flexText}>
+            {view.range
+              ? t('boardseshGrade.moonboardAngle.bodyRange', { low: view.range.low, high: view.range.high })
+              : t('boardseshGrade.moonboardAngle.body')}
+          </Text>
+        </View>
+      </View>
     );
   }
 

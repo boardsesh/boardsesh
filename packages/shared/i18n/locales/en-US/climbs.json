@@ -138,6 +138,11 @@
       "body": "Nobody's climbed this angle yet — this number is projected from how it grades at the angles that have.",
       "bodyRange": "Nobody's climbed this angle yet — likely {{low}}–{{high}}, projected from the angles that have."
     },
+    "moonboardAngle": {
+      "label": "Estimated",
+      "body": "Nobody's climbed this at this angle yet — the grade is worked out from how it goes at the other one.",
+      "bodyRange": "Nobody's climbed this at this angle yet — likely {{low}}–{{high}}, worked out from how it goes at the other angle."
+    },
     "dumbbell": {
       "legendBoardsesh": "Boardsesh grade",
       "legendCrowd": "Old grade",

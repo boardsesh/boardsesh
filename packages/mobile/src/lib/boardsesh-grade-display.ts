@@ -13,7 +13,7 @@
 import { formatGrade, type GradeDisplayFormat } from '@boardsesh/play-view';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { BOULDER_GRADES, type BoulderGrade } from '@boardsesh/board-constants/boulder-grade-mapping';
-import { BOARDSESH_TIER, isCrossAngleEstimate, resolveCrowdDifficulty } from '@boardsesh/logbook';
+import { BOARDSESH_TIER, isEstimatedGrade, resolveCrowdDifficulty } from '@boardsesh/logbook';
 
 export const GRADE_BY_ID = new Map<number, BoulderGrade>(BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade]));
 
@@ -57,9 +57,11 @@ export type DisplayGrade = {
   /** True when this label/color came from the Boardsesh grade, not the legacy Aurora grade. */
   isBoardsesh: boolean;
   /**
-   * True when the grade was projected from the climb's other angles because
-   * nobody has climbed this one (`cross_angle_estimate`). The label already
-   * carries the `≈` marker; this flag lets a row also mute or annotate it.
+   * True when nobody has climbed this angle and the grade stands in for it —
+   * projected from the climb's other angles (`cross_angle_estimate`), or, on
+   * MoonBoard, transposed from the board's other fixed angle
+   * (`moonboard_angle_estimate`). The label already carries the `≈` marker;
+   * this flag lets a row also mute or annotate it.
    */
   isEstimated: boolean;
 };
@@ -78,9 +80,9 @@ export const ESTIMATE_PREFIX = '≈';
  * confidence). Does not check the app-wide toggle — callers gate on that
  * separately (see `resolveDisplayGrade`, `useDisplayGrade`).
  *
- * A `cross_angle_estimate` DOES pass: it is a real number, it is what grade
+ * Both estimate tiers DO pass: each is a real number, it is what grade
  * search/sort/filter now index on, and hiding it would put the list back in
- * disagreement with the detail view. Callers that render it must mark it — see
+ * disagreement with the detail view. Callers that render one must mark it — see
  * `resolveDisplayGrade`'s `isEstimated`.
  */
 export function resolveBoardseshDifficulty(fields: BoardseshGradeFields): number | null {
@@ -112,11 +114,11 @@ export function resolveDisplayGrade(
     if (boardseshId != null) {
       const rendered = renderDifficulty(boardseshId, opts.gradeFormat);
       if (rendered) {
-        // A projected angle wears the marker everywhere it is shown, including
-        // the compact chips in search results, the queue and session rows —
-        // otherwise a grade nobody has climbed reads identically to one 200
-        // people have.
-        const estimated = isCrossAngleEstimate(climb.boardseshConfidence);
+        // An angle nobody has climbed wears the marker everywhere its grade is
+        // shown, including the compact chips in search results, the queue and
+        // session rows — otherwise a grade nobody has climbed reads identically
+        // to one 200 people have. Both estimate tiers qualify.
+        const estimated = isEstimatedGrade(climb.boardseshConfidence);
         return {
           ...rendered,
           label: estimated ? `${ESTIMATE_PREFIX}${rendered.label}` : rendered.label,
@@ -150,17 +152,17 @@ export const resolveCrowdDifficultyId = resolveCrowdDifficulty;
  * graded their own ascent. Logging itself still writes to the normal Aurora
  * scale — this only chooses which value the picker opens on.
  *
- * A `cross_angle_estimate` never seeds the picker. Everything else here is a
- * grade the crowd produced, so pre-filling it is just showing the climber what
- * the crowd already thinks; a projection is the MODEL's number, and pre-filling
- * that would feed the model's own output back into the ascent grades it is
- * estimated from. The echo problem the whole model is built to correct for
+ * Neither estimate tier ever seeds the picker. Everything else here is a grade
+ * the crowd produced, so pre-filling it is just showing the climber what the
+ * crowd already thinks; an estimate is the MODEL's number, and pre-filling that
+ * would feed the model's own output back into the ascent grades it is estimated
+ * from. The echo problem the whole model is built to correct for
  * (docs/boardsesh-grade.md §2) is exactly this loop, and the first ascents at a
  * new angle are the ones with the least reason to be anchored.
  */
 export function resolveTickDefaultGradeName(fields: BoardseshGradeFields, useBoardseshGrades: boolean): string | null {
   if (!useBoardseshGrades) return null;
-  if (isCrossAngleEstimate(fields.boardseshConfidence)) return null;
+  if (isEstimatedGrade(fields.boardseshConfidence)) return null;
   const boardseshId = resolveBoardseshDifficultyId(fields);
   if (boardseshId == null) return null;
   return GRADE_BY_ID.get(boardseshId)?.difficulty_name ?? null;

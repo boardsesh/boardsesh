@@ -139,6 +139,16 @@ describe('resolveDisplayGrade', () => {
     expect(display.isBoardsesh).toBe(true);
     expect(display.isEstimated).toBe(true);
   });
+
+  it('marks a MoonBoard angle estimate the same way — a grade nobody has climbed', () => {
+    const display = resolveDisplayGrade(
+      { difficulty: '6b/V4', boardseshDifficulty: 20, boardseshConfidence: 'moonboard_angle_estimate' },
+      { useBoardseshGrades: true, gradeFormat: 'v-grade' },
+    );
+    expect(display.label).toBe('≈V5');
+    expect(display.isBoardsesh).toBe(true);
+    expect(display.isEstimated).toBe(true);
+  });
 });
 
 describe('resolveCrowdDifficultyId', () => {
@@ -164,6 +174,15 @@ describe('resolveCrowdDifficultyId', () => {
     expect(
       resolveCrowdDifficultyId(
         { boardseshDifficulty: 18.4, boardseshConfidence: 'setter_only', consensusDifficulty: 15 },
+        true,
+      ),
+    ).toBe(15);
+  });
+
+  it('falls back to the consensus for a MoonBoard angle estimate: a logbook row can’t caveat it', () => {
+    expect(
+      resolveCrowdDifficultyId(
+        { boardseshDifficulty: 21, boardseshConfidence: 'moonboard_angle_estimate', consensusDifficulty: 15 },
         true,
       ),
     ).toBe(15);
@@ -196,6 +215,9 @@ describe('resolveTickDefaultGradeName', () => {
     // ascent grades it's estimated from — the echo loop the model corrects for.
     expect(
       resolveTickDefaultGradeName({ boardseshDifficulty: 20, boardseshConfidence: 'cross_angle_estimate' }, true),
+    ).toBeNull();
+    expect(
+      resolveTickDefaultGradeName({ boardseshDifficulty: 20, boardseshConfidence: 'moonboard_angle_estimate' }, true),
     ).toBeNull();
   });
 
