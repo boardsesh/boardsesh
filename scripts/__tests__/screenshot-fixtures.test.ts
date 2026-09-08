@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   FIXTURE_SIZE_NOTE_BYTES,
   IGNORED_VARIABLE_PATHS,
+  REDACTED_PER_RUN_VALUE,
   RE_RECORD_COMMAND,
   SCREENSHOT_BACKEND_LOG_PREFIX,
   canonicalJson,
@@ -23,6 +24,7 @@ import {
   graphqlFixtureKey,
   normalizeDocument,
   parseScreenshotBackendLogLine,
+  redactIgnoredVariablePaths,
   resolveOperationName,
   sortManifestEntries,
   sortedQueryString,
@@ -43,6 +45,7 @@ function validManifest(): ScreenshotFixtureManifest {
     frozenNow: '2026-09-08T09:00:00Z',
     upstream: 'https://ws.boardsesh.com',
     accountEmail: 'shots@boardsesh.com',
+    accountUserId: '11111111-2222-3333-4444-555555555555',
     flow: 'app-store',
     graphql: [
       {
@@ -100,7 +103,14 @@ describe('canonicalJson', () => {
 
 describe('stripIgnoredVariablePaths', () => {
   it('documents only client-generated per-run values', () => {
-    expect(IGNORED_VARIABLE_PATHS).toEqual({ RegisterActivityPushToken: ['token'] });
+    // The same APNs push token under all four names it is sent as: the two JS
+    // operations and the two the Swift Live Activity module declares itself.
+    expect(IGNORED_VARIABLE_PATHS).toEqual({
+      RegisterActivityPushToken: ['token'],
+      UnregisterActivityPushToken: ['token'],
+      RegisterToken: ['token'],
+      UnregisterToken: ['token'],
+    });
   });
 
   it('removes a listed path without mutating the caller variables', () => {
@@ -131,6 +141,37 @@ describe('stripIgnoredVariablePaths', () => {
     } finally {
       delete mutableIgnorePaths.NestedOperation;
     }
+  });
+});
+
+describe('redactIgnoredVariablePaths', () => {
+  it('replaces an ignored value in place, without mutating the caller variables', () => {
+    const variables = { sessionId: 'session-1', token: 'apns-abc' };
+    expect(redactIgnoredVariablePaths('RegisterToken', variables)).toEqual({
+      sessionId: 'session-1',
+      token: REDACTED_PER_RUN_VALUE,
+    });
+    expect(variables.token).toBe('apns-abc');
+  });
+
+  it('never invents a path the request did not carry', () => {
+    expect(redactIgnoredVariablePaths('UnregisterToken', { sessionId: 'session-1' })).toEqual({
+      sessionId: 'session-1',
+    });
+  });
+
+  it('leaves operations with no ignore list untouched', () => {
+    expect(redactIgnoredVariablePaths('SyncTicks', { token: 'kept' })).toEqual({ token: 'kept' });
+  });
+
+  it('redacts the bytes while the key still strips them, so replay matches across runs', () => {
+    const query = 'mutation RegisterToken($sessionId: ID!, $token: String!) { registerToken(id: $sessionId) { ok } }';
+    const recorded = { sessionId: 'session-1', token: 'apns-run-1' };
+    const replayed = { sessionId: 'session-1', token: 'apns-run-2' };
+    expect(graphqlFixtureKey({ operationName: 'RegisterToken', query, variables: replayed }, sha256Hex)).toEqual(
+      graphqlFixtureKey({ operationName: 'RegisterToken', query, variables: recorded }, sha256Hex),
+    );
+    expect(redactIgnoredVariablePaths('RegisterToken', recorded)).not.toMatchObject({ token: 'apns-run-1' });
   });
 });
 
@@ -192,6 +233,14 @@ describe('findSensitiveVariableKeys', () => {
   it('matches a snake_case-prefixed and a plural form', () => {
     expect(findSensitiveVariableKeys({ auth_token: 'abc' })).toEqual(['auth_token']);
     expect(findSensitiveVariableKeys({ credentials: {} })).toEqual(['credentials']);
+  });
+
+  it('exempts a key already holding the per-run redaction, but nothing else', () => {
+    // The push-token mutations are recorded with their token replaced; only
+    // that exact literal is exempt, so a real secret beside it still refuses.
+    expect(findSensitiveVariableKeys({ sessionId: 'a', token: REDACTED_PER_RUN_VALUE })).toEqual([]);
+    expect(findSensitiveVariableKeys({ token: REDACTED_PER_RUN_VALUE, password: 'hunter2' })).toEqual(['password']);
+    expect(findSensitiveVariableKeys({ token: `${REDACTED_PER_RUN_VALUE} apns-abc` })).toEqual(['token']);
   });
 
   it('does not false-positive on a key that merely mentions one, like tokenCount', () => {
@@ -269,6 +318,9 @@ describe('validateScreenshotFixtureManifest', () => {
     ['a missing frozenNow', () => ({ ...validManifest(), frozenNow: undefined }), 'frozenNow'],
     ['a missing upstream', () => ({ ...validManifest(), upstream: 42 }), 'upstream'],
     ['a non-string accountEmail', () => ({ ...validManifest(), accountEmail: null }), 'accountEmail'],
+    // Replay mints its synthetic jwt around this id, so a manifest without one
+    // would sign the capture in as nobody.
+    ['a missing accountUserId', () => ({ ...validManifest(), accountUserId: undefined }), 'accountUserId'],
     ['a non-string flow', () => ({ ...validManifest(), flow: 7 }), 'flow'],
     ['a non-array graphql', () => ({ ...validManifest(), graphql: {} }), 'graphql must be an array'],
     ['a non-array static', () => ({ ...validManifest(), static: {} }), 'static must be an array'],
@@ -374,6 +426,7 @@ describe('emptyManifest / sortManifestEntries', () => {
       frozenNow: '2026-09-08T09:00:00Z',
       upstream: 'https://ws.boardsesh.com',
       accountEmail: '',
+      accountUserId: '',
       flow: 'app-store',
     });
     expect(manifest.formatVersion).toBe(1);
@@ -459,6 +512,16 @@ describe('log grammar', () => {
         operationName: 'anonymous',
         hash12: '0123456789ab',
         reason: 'anonymous-operation',
+      },
+    ],
+    [
+      'MISS graphql SyncTicks 0123456789ab reason=unreadable-fixture',
+      {
+        event: 'miss',
+        kind: 'graphql',
+        operationName: 'SyncTicks',
+        hash12: '0123456789ab',
+        reason: 'unreadable-fixture',
       },
     ],
     ['MISS static /static/avatars/a.jpg', { event: 'miss', kind: 'static', subject: '/static/avatars/a.jpg' }],
@@ -603,6 +666,17 @@ describe('findScreenshotBackendProblems', () => {
     expect(problems[1]).toContain(
       'the app signed in as other@example.com but the fixtures were recorded for shots@boardsesh.com',
     );
+  });
+
+  it('names a fixture that went unreadable mid-run, and how to fix it', () => {
+    const log = [
+      line('HIT graphql Me 0000aaaa1111'),
+      line('MISS graphql SyncTicks 0123456789ab reason=unreadable-fixture'),
+    ].join('\n');
+    const [problem] = findScreenshotBackendProblems(log, { mode: 'replay' });
+    expect(problem).toContain('the recorded response for SyncTicks could not be read');
+    expect(problem).toContain('the fixture file is missing or malformed');
+    expect(problem).toContain(RE_RECORD_COMMAND);
   });
 
   it('names the fix for a route nobody serves', () => {

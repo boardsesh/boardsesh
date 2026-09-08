@@ -22,6 +22,17 @@ broken answer is not a fixture. First recording of a key wins; a repeat logs
 disk, hands out synthetic auth tokens for the recorded account, serves the
 recorded asset bytes, and 404s anything it has no handler for.
 
+Before it serves anything, replay **proves the fixture set readable**: every
+graphql fixture the manifest names is read and parsed and checked against the
+key it was filed under (`formatVersion`, `operationName`, `documentHash`,
+`variablesHash`, and a `response` that is actually there), and every static file
+is stat'd against its recorded byte count. Any problem and `listen()` rejects
+with one error listing every offending file — a capture is a long unattended
+run, so a fixture set that cannot be replayed has to fail at second zero, not
+halfway through. If a fixture goes missing or truncated *during* a run, the
+request answers the ordinary miss (200 + `errors`, or a `404` for an asset) and
+logs `reason=unreadable-fixture`; it is never a 500.
+
 A replay miss answers **HTTP 200 with a GraphQL `errors` array**, never a 5xx or
 an `INTERNAL_SERVER_ERROR` extension — those are what flip the app's
 connectivity store into "backend unreachable"
@@ -54,7 +65,8 @@ vp run mobile:screenshot-backend -- --mode record --upstream https://ws.boardses
 It binds `0.0.0.0` so the iOS simulator (localhost) and the Android emulator
 (`adb reverse`) both reach it, prints its `READY` line to stdout, and stays up
 until SIGINT/SIGTERM. A recording run exits `1` if any fixture was refused for
-carrying a live token.
+carrying a live token; a replay run exits `1` before binding the port if the
+startup check found a fixture it cannot replay, printing the list.
 
 ## Routes
 
@@ -93,11 +105,24 @@ Splitting the two is what lets replay say `document-changed` (the query moved,
 re-record) instead of `no-fixture` (nobody ever recorded this).
 
 `IGNORED_VARIABLE_PATHS` excludes per-run client values from the variables hash —
-today just `RegisterActivityPushToken.token`. **Only** client-generated values
-belong there (uuids, device tokens, wall-clock stamps), never a data-shaping
-input: stripping a filter or a cursor would collapse two different responses onto
-one fixture and the capture would silently shoot the wrong data. The same list is
-applied at record and replay, so the two can never disagree.
+today the `token` of the four push-token mutations
+(`RegisterActivityPushToken` / `UnregisterActivityPushToken` from JS, and the
+`RegisterToken` / `UnregisterToken` the Live Activity module sends under its own
+names from Swift). **Only** client-generated values belong there (uuids, device
+tokens, wall-clock stamps), never a data-shaping input: stripping a filter or a
+cursor would collapse two different responses onto one fixture and the capture
+would silently shoot the wrong data. The same list is applied at record and
+replay, so the two can never disagree.
+
+**An ignored path is hashed out AND redacted.** Two steps, both at record time:
+the key ignores the value (so a later run sending a different token still hits
+the fixture), and the persisted `variables` carry the literal
+`<redacted:per-run>` in its place (so no client credential is committed). The
+variable itself stays present — a fixture that dropped it would no longer show
+what the app sends. `findSensitiveVariableKeys` runs *after* that swap and skips
+a key already holding the literal, which is why an APNs push token is redacted
+rather than refusing the fixture, while any other `password` / `secret` /
+`token` / `credential` still refuses it outright.
 
 Static assets are keyed on the original pathname plus its query sorted into a
 stable order. PROD answers `/static/*` with a `302` to a CDN; the recorder
@@ -134,14 +159,26 @@ the run at exit. The same check runs against the request's own `variables`: any
 key that looks like `password`, `secret`, `token` or `credential` (at any depth,
 case-insensitively — see `findSensitiveVariableKeys`) is refused before the
 fixture is ever written, since a board-login mutation carries the climber's
-Aurora credentials as an ordinary variable, not a header. Replay hands out
-`screenshot-replay.<hash>` / `screenshot-replay-refresh` instead, so a fixture
-set is safe to commit.
+Aurora credentials as an ordinary variable, not a header (the exception is an
+ignored per-run path, already replaced by `<redacted:per-run>` — see Keying).
+Replay hands out a synthetic session instead, so a fixture set is safe to
+commit.
 
 **`manifest.json`'s `accountEmail` is committed to the repo in plain text.**
 Record fixtures only with the dedicated screenshots account
 (`test@boardsesh.com`), never a personal one — whatever email signs in during
 recording ends up readable in git history.
+
+`manifest.json` also carries **`accountUserId`**: the `sub` claim the recorder
+decoded (unverified, in memory) out of the live jwt the upstream returned. The
+id is written; the token never is. Replay needs it because the app reads its own
+user id back out of its session token (`userIdFromJwt`,
+`packages/mobile/src/lib/jwt-user-id.ts`) to decide what is "yours" while
+offline — so the synthetic session is a real jwt *shape*: three base64url
+segments, `alg: none`, the recorded id as `sub`, `iss: screenshot-replay`, and
+the literal `screenshot-replay` where a signature would be. The refresh token
+stays the constant `screenshot-replay-refresh`. Both are inert: nothing verifies
+them, because in replay nothing but the fixture set answers a request.
 
 ## Log grammar
 
@@ -152,7 +189,7 @@ READY mode=replay port=8090 fixtures=<dir> frozenNow=<iso> graphql=<n> static=<n
 HIT graphql <Op> <hash12>
 HIT static <path?query>
 HIT auth credentials|refresh
-MISS graphql <Op> <hash12> reason=no-fixture|document-changed|anonymous-operation
+MISS graphql <Op> <hash12> reason=no-fixture|document-changed|anonymous-operation|unreadable-fixture
 MISS static <path?query>
 MISS route <METHOD> <path>
 MISS auth email=<e> expected=<e>

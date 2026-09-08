@@ -97,8 +97,25 @@ export function canonicalJson(value: unknown): string {
  * lookup can never disagree about what was ignored.
  */
 export const IGNORED_VARIABLE_PATHS: Readonly<Record<string, readonly string[]>> = {
+  // One APNs push token, four operation names. The JS twins live in
+  // packages/mobile/src/lib/graphql/operations.ts; the Live Activity module
+  // sends the same two mutations under its own names from Swift
+  // (packages/mobile/modules/live-activity/ios/LiveActivityModule.swift).
   RegisterActivityPushToken: ['token'],
+  UnregisterActivityPushToken: ['token'],
+  RegisterToken: ['token'],
+  UnregisterToken: ['token'],
 };
+
+/**
+ * What a persisted fixture holds in place of an ignored path's value.
+ *
+ * An ignored path is hashed out of the key AND redacted from the bytes. The key
+ * already ignores the value, so writing the live one would commit a per-run
+ * credential to the repo for nothing; the variable itself stays present, since
+ * a fixture that dropped it would no longer show what the app sends.
+ */
+export const REDACTED_PER_RUN_VALUE = '<redacted:per-run>';
 
 function cloneJsonValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(cloneJsonValue);
@@ -123,16 +140,54 @@ function deleteDotPath(root: Record<string, unknown>, dotPath: string): void {
   delete cursor[segments[segments.length - 1]];
 }
 
+function redactDotPath(root: Record<string, unknown>, dotPath: string): void {
+  const segments = dotPath.split('.');
+  let cursor: Record<string, unknown> = root;
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const next = cursor[segments[index]];
+    // Tolerant, exactly like deleteDotPath: a path this call did not carry is
+    // not an error, and must not be invented by the redaction.
+    if (typeof next !== 'object' || next === null || Array.isArray(next)) return;
+    cursor = next as Record<string, unknown>;
+  }
+  const leaf = segments[segments.length - 1];
+  if (Object.hasOwn(cursor, leaf)) cursor[leaf] = REDACTED_PER_RUN_VALUE;
+}
+
+function ignoredPathsFor(operationName: string): readonly string[] {
+  return Object.hasOwn(IGNORED_VARIABLE_PATHS, operationName) ? IGNORED_VARIABLE_PATHS[operationName] : [];
+}
+
 /** `variables` with this operation's ignored dot paths removed. Never mutates the input. */
 export function stripIgnoredVariablePaths(operationName: string, variables: unknown): unknown {
-  const ignoredPaths = Object.hasOwn(IGNORED_VARIABLE_PATHS, operationName)
-    ? IGNORED_VARIABLE_PATHS[operationName]
-    : [];
+  const ignoredPaths = ignoredPathsFor(operationName);
   if (ignoredPaths.length === 0) return variables;
   if (typeof variables !== 'object' || variables === null || Array.isArray(variables)) return variables;
   const stripped = cloneJsonValue(variables) as Record<string, unknown>;
   for (const dotPath of ignoredPaths) deleteDotPath(stripped, dotPath);
   return stripped;
+}
+
+/**
+ * `variables` as they should be PERSISTED: every ignored path that this call
+ * actually carried replaced by `REDACTED_PER_RUN_VALUE`. Never mutates the
+ * input.
+ *
+ * The two-step rule, both halves applied at record time:
+ *   1. `stripIgnoredVariablePaths` removes the path from the fixture KEY, so a
+ *      later run with a different token still hits the same fixture.
+ *   2. this replaces the value in the BYTES, so the recorded token is never
+ *      committed.
+ * Only the first is applied on replay — the key has to be computed the same way
+ * on both sides, and replay writes nothing.
+ */
+export function redactIgnoredVariablePaths(operationName: string, variables: unknown): unknown {
+  const ignoredPaths = ignoredPathsFor(operationName);
+  if (ignoredPaths.length === 0) return variables;
+  if (typeof variables !== 'object' || variables === null || Array.isArray(variables)) return variables;
+  const redacted = cloneJsonValue(variables) as Record<string, unknown>;
+  for (const dotPath of ignoredPaths) redactDotPath(redacted, dotPath);
+  return redacted;
 }
 
 /**
@@ -153,6 +208,13 @@ const SENSITIVE_VARIABLE_KEY_PATTERN = /(^|_)(password|secret|token|credential)s
  * `password`), so — unlike header-derived tokens, which are caught by
  * `carriesSensitiveToken` — a secret can arrive as an ordinary request
  * variable and would otherwise be committed to the repo verbatim.
+ *
+ * A key already holding `REDACTED_PER_RUN_VALUE` is not reported: it carries no
+ * secret any more, and refusing it would mean the Live Activity's push-token
+ * mutations could never be recorded at all. Run this AFTER
+ * `redactIgnoredVariablePaths`, so an ignored path is the only exemption and
+ * every other `password`/`secret`/`token`/`credential` still refuses the
+ * fixture.
  */
 export function findSensitiveVariableKeys(variables: unknown): string[] {
   const sensitiveKeys = new Set<string>();
@@ -163,7 +225,7 @@ export function findSensitiveVariableKeys(variables: unknown): string[] {
     }
     if (typeof value !== 'object' || value === null) return;
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      if (SENSITIVE_VARIABLE_KEY_PATTERN.test(key)) sensitiveKeys.add(key);
+      if (SENSITIVE_VARIABLE_KEY_PATTERN.test(key) && entry !== REDACTED_PER_RUN_VALUE) sensitiveKeys.add(key);
       walk(entry);
     }
   };
@@ -277,6 +339,14 @@ export type ScreenshotFixtureManifest = {
   upstream: string;
   /** The account the recording signed in as; replay only accepts this email. */
   accountEmail: string;
+  /**
+   * The `sub` claim of the jwt that account was issued — the user id the app
+   * reads back out of its own token (`packages/mobile/src/lib/jwt-user-id.ts`).
+   * Replay mints a synthetic jwt carrying this id, so screens that classify
+   * data as "yours" behave as they did when the fixtures were recorded. The
+   * live token is decoded in memory and NEVER written; only this id is.
+   */
+  accountUserId: string;
   /** Which capture flow was recorded (`app-store`, `onboarding`, …). */
   flow: string;
   graphql: GraphqlManifestEntry[];
@@ -288,6 +358,7 @@ export function emptyManifest(fields: {
   frozenNow: string;
   upstream: string;
   accountEmail: string;
+  accountUserId: string;
   flow: string;
 }): ScreenshotFixtureManifest {
   return {
@@ -296,6 +367,7 @@ export function emptyManifest(fields: {
     frozenNow: fields.frozenNow,
     upstream: fields.upstream,
     accountEmail: fields.accountEmail,
+    accountUserId: fields.accountUserId,
     flow: fields.flow,
     graphql: [],
     static: [],
@@ -406,6 +478,7 @@ export function validateScreenshotFixtureManifest(value: unknown): ScreenshotFix
   if (!isNonEmptyString(value.frozenNow)) return { ok: false, reason: 'frozenNow must be a non-empty string' };
   if (!isNonEmptyString(value.upstream)) return { ok: false, reason: 'upstream must be a non-empty string' };
   if (typeof value.accountEmail !== 'string') return { ok: false, reason: 'accountEmail must be a string' };
+  if (typeof value.accountUserId !== 'string') return { ok: false, reason: 'accountUserId must be a string' };
   if (typeof value.flow !== 'string') return { ok: false, reason: 'flow must be a string' };
   if (!Array.isArray(value.graphql)) return { ok: false, reason: 'graphql must be an array' };
   if (!Array.isArray(value.static)) return { ok: false, reason: 'static must be an array' };
@@ -424,9 +497,14 @@ export function validateScreenshotFixtureManifest(value: unknown): ScreenshotFix
 // Log grammar
 // ---------------------------------------------------------------------------
 
-export type GraphqlMissReason = 'no-fixture' | 'document-changed' | 'anonymous-operation';
+export type GraphqlMissReason = 'no-fixture' | 'document-changed' | 'anonymous-operation' | 'unreadable-fixture';
 
-const GRAPHQL_MISS_REASONS: readonly GraphqlMissReason[] = ['no-fixture', 'document-changed', 'anonymous-operation'];
+const GRAPHQL_MISS_REASONS: readonly GraphqlMissReason[] = [
+  'no-fixture',
+  'document-changed',
+  'anonymous-operation',
+  'unreadable-fixture',
+];
 
 /**
  * One line of the backend log, parsed. The server never writes a line by hand —
@@ -679,6 +757,11 @@ function describeProblem(line: ScreenshotBackendLogLine): ScreenshotBackendProbl
               return {
                 description: `an unnamed GraphQL operation reached the backend (variables ${line.hash12})`,
                 remedy: `name the operation, then ${RE_RECORD_REMEDY}`,
+              };
+            case 'unreadable-fixture':
+              return {
+                description: `the recorded response for ${line.operationName} could not be read (variables ${line.hash12})`,
+                remedy: `the fixture file is missing or malformed; ${RE_RECORD_REMEDY}`,
               };
           }
           break;

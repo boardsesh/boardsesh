@@ -30,9 +30,34 @@ import {
 
 const FROZEN_NOW = '2026-09-08T09:00:00Z';
 const ACCOUNT_EMAIL = 'shots@boardsesh.com';
-const UPSTREAM_JWT = 'upstream.jwt.value.that.must.never.reach.disk';
-const UPSTREAM_REFRESH_TOKEN = 'upstream-refresh-token-that-must-never-reach-disk';
+const ACCOUNT_USER_ID = '11111111-2222-3333-4444-555555555555';
 const AVATAR_BYTES = Buffer.from('fake-jpeg-bytes-for-the-avatar', 'utf8');
+
+const base64Url = (text: string): string => Buffer.from(text, 'utf8').toString('base64url');
+
+// A real jwt SHAPE, because the recorder reads the account's user id out of it
+// and the app reads its own id out of the synthetic one replay hands back. The
+// whole token and its payload segment are both things that must never reach
+// disk — only the `sub` inside may.
+const UPSTREAM_JWT_PAYLOAD = base64Url(JSON.stringify({ sub: ACCOUNT_USER_ID, email: ACCOUNT_EMAIL }));
+const UPSTREAM_JWT = `${base64Url('{"alg":"HS256","typ":"JWT"}')}.${UPSTREAM_JWT_PAYLOAD}.upstream-signature-never-on-disk`;
+const UPSTREAM_REFRESH_TOKEN = 'upstream-refresh-token-that-must-never-reach-disk';
+
+/**
+ * A local copy of `userIdFromJwt`'s parsing rules
+ * (packages/mobile/src/lib/jwt-user-id.ts): exactly three dot-separated
+ * segments, `sub` read out of the base64url middle one. Copied rather than
+ * imported so this test fails if the replay token stops being decodable by the
+ * app, not merely if it stops matching the backend's own encoder.
+ */
+function subjectFromJwt(token: string): string | undefined {
+  const segments = token.split('.');
+  if (segments.length !== 3) return undefined;
+  const payload: unknown = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8'));
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const subject = (payload as { sub?: unknown }).sub;
+  return typeof subject === 'string' ? subject : undefined;
+}
 
 const SYNC_TICKS_QUERY =
   'query SyncTicks($cursor: SyncCursorInput) {\n  syncTicks(cursor: $cursor) {\n    documents\n  }\n}';
@@ -202,6 +227,8 @@ describe('screenshot backend', () => {
       expect(manifest).not.toBeNull();
       expect(validateScreenshotFixtureManifest(manifest).ok).toBe(true);
       expect(manifest?.accountEmail).toBe(ACCOUNT_EMAIL);
+      // The id out of the live jwt, never the jwt itself.
+      expect(manifest?.accountUserId).toBe(ACCOUNT_USER_ID);
       expect(manifest?.frozenNow).toBe(FROZEN_NOW);
       expect(manifest?.graphql).toHaveLength(1);
       expect(manifest?.graphql[0].operationName).toBe('SyncTicks');
@@ -224,6 +251,9 @@ describe('screenshot backend', () => {
       for (const file of files) {
         const contents = readFileSync(join(fixturesDir, file), 'utf8');
         expect(contents, `${file} leaked the jwt`).not.toContain(UPSTREAM_JWT);
+        // Not just the whole token: its payload segment alone would be a
+        // decodable copy of the live session.
+        expect(contents, `${file} leaked the jwt payload`).not.toContain(UPSTREAM_JWT_PAYLOAD);
         expect(contents, `${file} leaked the refresh token`).not.toContain(UPSTREAM_REFRESH_TOKEN);
         expect(contents.toLowerCase(), `${file} persisted an authorization header`).not.toContain('authorization');
         expect(contents.toLowerCase(), `${file} persisted a cookie header`).not.toContain('cookie');
@@ -312,6 +342,53 @@ describe('screenshot backend', () => {
       expect(stats?.redacted).toBe(1);
       expect(readScreenshotFixtureManifest(fixturesDir)?.graphql).toHaveLength(0);
       expect(listFixtureFiles(fixturesDir).some((file) => file.startsWith('graphql/'))).toBe(false);
+    });
+
+    it('redacts a per-run push token instead of refusing the fixture, and still replays it', async () => {
+      const registerQuery =
+        'mutation RegisterToken($sessionId: ID!, $token: String!) { registerActivityPushToken(sessionId: $sessionId, token: $token) { ok } }';
+      const registerResponse = { data: { registerActivityPushToken: { ok: true } } };
+
+      await start({ mode: 'record', fresh: true });
+      upstream.nextGraphqlResponse = { status: 200, body: registerResponse };
+      await postGraphql({
+        operationName: 'RegisterToken',
+        query: registerQuery,
+        variables: { sessionId: 'session-1', token: 'apns-abc' },
+      });
+      const stats = backend?.stats();
+      await stop();
+
+      // The APNs token is a client-generated per-run value, not a login secret:
+      // refusing the fixture over it would mean this mutation could never be
+      // recorded at all.
+      expect(hasLine('REDACTED graphql RegisterToken')).toBe(false);
+      expect(stats?.redacted).toBe(0);
+
+      const manifest = readScreenshotFixtureManifest(fixturesDir);
+      expect(manifest?.graphql).toHaveLength(1);
+      const fixture = JSON.parse(readFileSync(join(fixturesDir, manifest?.graphql[0].file ?? ''), 'utf8')) as {
+        variables: { sessionId: string; token: string };
+      };
+      expect(fixture.variables.token).toBe('<redacted:per-run>');
+      expect(fixture.variables.sessionId).toBe('session-1');
+      for (const file of listFixtureFiles(fixturesDir)) {
+        expect(readFileSync(join(fixturesDir, file), 'utf8'), `${file} leaked the push token`).not.toContain(
+          'apns-abc',
+        );
+      }
+
+      // The next run mints a different token; the key ignores it, so the
+      // recorded answer still comes back.
+      await start({ mode: 'replay' });
+      const replayed = await postGraphql({
+        operationName: 'RegisterToken',
+        query: registerQuery,
+        variables: { sessionId: 'session-1', token: 'apns-a-different-run' },
+      });
+      expect(replayed.status).toBe(200);
+      expect(await replayed.json()).toEqual(registerResponse);
+      expect(hasLine('HIT graphql RegisterToken')).toBe(true);
     });
 
     it('treats a malicious operationName as anonymous rather than writing outside the fixtures dir', async () => {
@@ -472,7 +549,10 @@ describe('screenshot backend', () => {
       });
       expect(accepted.status).toBe(200);
       const session = (await accepted.json()) as { jwt: string; refreshToken: string; expiresAt: string };
-      expect(session.jwt.startsWith('screenshot-replay.')).toBe(true);
+      // A decodable jwt SHAPE: the app reads its own user id back out of this
+      // token, and anything but three segments reads to it as "no id".
+      expect(session.jwt.split('.')).toHaveLength(3);
+      expect(subjectFromJwt(session.jwt)).toBe(ACCOUNT_USER_ID);
       expect(session.refreshToken).toBe('screenshot-replay-refresh');
       expect(Date.parse(session.expiresAt)).toBeGreaterThan(Date.now());
       expect(session.jwt).not.toContain(UPSTREAM_JWT);
@@ -489,7 +569,9 @@ describe('screenshot backend', () => {
         body: JSON.stringify({ refreshToken: 'screenshot-replay-refresh' }),
       });
       expect(refreshed.status).toBe(200);
-      expect((await refreshed.json()) as { jwt: string }).toMatchObject({ refreshToken: 'screenshot-replay-refresh' });
+      const refreshedSession = (await refreshed.json()) as { jwt: string; refreshToken: string };
+      expect(refreshedSession.refreshToken).toBe('screenshot-replay-refresh');
+      expect(subjectFromJwt(refreshedSession.jwt)).toBe(ACCOUNT_USER_ID);
       expect(hasLine('HIT auth refresh')).toBe(true);
 
       const rejected = await fetch(`${backendOrigin}/auth/native/credentials`, {
@@ -513,6 +595,28 @@ describe('screenshot backend', () => {
       const response = await fetch(`${backendOrigin}/static/avatars/nobody.jpg`);
       expect(response.status).toBe(404);
       expect(hasLine('MISS static /static/avatars/nobody.jpg')).toBe(true);
+    });
+
+    it('answers a miss, not a 500, when a fixture disappears after startup', async () => {
+      const manifest = readScreenshotFixtureManifest(fixturesDir);
+      rmSync(join(fixturesDir, manifest?.graphql[0].file ?? ''));
+
+      const response = await postGraphql({
+        operationName: 'SyncTicks',
+        query: SYNC_TICKS_QUERY,
+        variables: { cursor: null },
+      });
+      // A 5xx would flip the app into "backend unreachable" and hide the very
+      // thing the log is reporting.
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { errors: Array<{ extensions: { code: string } }> };
+      expect(body.errors[0].extensions.code).toBe('SCREENSHOT_FIXTURE_MISS');
+      expect(hasLine('reason=unreadable-fixture')).toBe(true);
+
+      rmSync(join(fixturesDir, manifest?.static[0].file ?? ''));
+      const asset = await fetch(`${backendOrigin}/static/avatars/marco.jpg?size=128&v=3`);
+      expect(asset.status).toBe(404);
+      expect(hasLine('MISS static /static/avatars/marco.jpg?size=128&v=3')).toBe(true);
     });
 
     it('answers the health probe in the shape backend-reachability classifies as healthy', async () => {
@@ -620,6 +724,59 @@ describe('screenshot backend', () => {
   });
 
   describe('startup guards', () => {
+    /** One recorded fixture set (auth + one query + one asset) to then corrupt. */
+    const recordOnce = async (): Promise<void> => {
+      await start({ mode: 'record', fresh: true });
+      await fetch(`${backendOrigin}/auth/native/credentials`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: ACCOUNT_EMAIL, password: 'hunter2' }),
+      });
+      await postGraphql({ operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } });
+      await fetch(`${backendOrigin}/static/avatars/marco.jpg?v=3&size=128`);
+      await stop();
+    };
+
+    /** The error `listen` rejected with, or null when it resolved instead. */
+    const listenFailure = async (): Promise<Error | null> => {
+      backend = createScreenshotBackend({
+        mode: 'replay',
+        fixturesDir,
+        upstreamUrl: null,
+        frozenNow: FROZEN_NOW,
+        log: (line) => logLines.push(line),
+      });
+      return backend.listen(0).then(
+        () => null,
+        (listenError: unknown) => listenError as Error,
+      );
+    };
+
+    it('refuses to start when a recorded graphql fixture is truncated, and names the file', async () => {
+      await recordOnce();
+      const fixtureFile = readScreenshotFixtureManifest(fixturesDir)?.graphql[0].file ?? '';
+      const fixturePath = join(fixturesDir, fixtureFile);
+      writeFileSync(fixturePath, readFileSync(fixturePath, 'utf8').slice(0, 40), 'utf8');
+
+      const failure = await listenFailure();
+      // Catching this at request time instead would cost the whole capture:
+      // the run is long, unattended, and the PNGs come out looking plausible.
+      expect(failure, 'listen resolved on a truncated fixture').not.toBeNull();
+      expect(failure?.message).toContain(fixtureFile);
+      expect(failure?.message).toContain('record one again');
+    });
+
+    it('refuses to start when a recorded asset no longer matches its byte count', async () => {
+      await recordOnce();
+      const staticFile = readScreenshotFixtureManifest(fixturesDir)?.static[0].file ?? '';
+      writeFileSync(join(fixturesDir, staticFile), Buffer.concat([AVATAR_BYTES, Buffer.from('truncated-or-grown')]));
+
+      const failure = await listenFailure();
+      expect(failure, 'listen resolved on an asset with the wrong byte count').not.toBeNull();
+      expect(failure?.message).toContain(staticFile);
+      expect(failure?.message).toContain('bytes');
+    });
+
     it('refuses to replay a fixture set that does not exist', async () => {
       expect(() =>
         createScreenshotBackend({

@@ -16,7 +16,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import {
   createServer,
   type IncomingHttpHeaders,
@@ -31,6 +31,7 @@ import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import {
   FIXTURE_HASH_DISPLAY_LENGTH,
   FIXTURE_SIZE_NOTE_BYTES,
+  RE_RECORD_COMMAND,
   SCREENSHOT_FIXTURE_FORMAT_VERSION,
   STATIC_KEY_LENGTH,
   VARIANT_COUNT_NOTE_THRESHOLD,
@@ -39,6 +40,7 @@ import {
   fixtureSizeNote,
   formatScreenshotBackendLine,
   graphqlFixtureKey,
+  redactIgnoredVariablePaths,
   resolveOperationName,
   sortManifestEntries,
   sortedQueryString,
@@ -90,7 +92,17 @@ export const DEFAULT_SCREENSHOT_FLOW = 'app-store';
 /** The synthetic refresh token replay hands out. Constant, and never a real credential. */
 export const REPLAY_REFRESH_TOKEN = 'screenshot-replay-refresh';
 
-const REPLAY_JWT_PREFIX = 'screenshot-replay.';
+/**
+ * The synthetic jwt replay hands out is a REAL jwt SHAPE — three base64url
+ * segments — because the app decodes its own token to learn who it is
+ * (`userIdFromJwt`, packages/mobile/src/lib/jwt-user-id.ts) and a token with
+ * anything but three segments reads as "no id". It is not signed and never
+ * could be: `alg: none`, a fixed literal where a signature would go, and the
+ * recorded `accountUserId` as its subject.
+ */
+const REPLAY_JWT_HEADER_JSON = '{"alg":"none","typ":"JWT"}';
+const REPLAY_JWT_ISSUER = 'screenshot-replay';
+const REPLAY_JWT_SIGNATURE = 'screenshot-replay';
 /**
  * Comfortably longer than the app's own 24h `isTokenExpiringSoon` threshold
  * (`packages/mobile/src/lib/auth-store.ts`). A replay session used to be
@@ -134,6 +146,32 @@ function rawFrameText(frame: RawData): string {
 
 function sha256Hex(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+function base64Url(text: string): string {
+  return Buffer.from(text, 'utf8').toString('base64url');
+}
+
+/**
+ * The `sub` claim of a jwt, decoded WITHOUT verifying anything.
+ *
+ * Deliberately a small reimplementation of `userIdFromJwt`
+ * (packages/mobile/src/lib/jwt-user-id.ts) rather than an import: a build
+ * script must not reach into the mobile app's source graph. The rules it has to
+ * agree on are only these two — exactly three dot-separated segments, and a
+ * `sub` string in the base64url-encoded middle one.
+ */
+export function jwtSubject(token: string): string | null {
+  const segments = token.split('.');
+  if (segments.length !== 3) return null;
+  try {
+    const payload: unknown = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8'));
+    if (typeof payload !== 'object' || payload === null) return null;
+    const subject = (payload as { sub?: unknown }).sub;
+    return typeof subject === 'string' && subject.length > 0 ? subject : null;
+  } catch {
+    return null;
+  }
 }
 
 function shortHash(hash: string): string {
@@ -270,6 +308,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       frozenNow,
       upstream: upstreamUrl ?? '',
       accountEmail: '',
+      accountUserId: '',
       flow: options.flow ?? DEFAULT_SCREENSHOT_FLOW,
     });
   if (isRecording) {
@@ -405,7 +444,12 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       documentHash: key.documentHash,
       variablesHash: key.variablesHash,
       query,
-      variables: parsedBody.variables ?? {},
+      // Ignored paths are hashed out of the key above AND redacted here: the
+      // Live Activity's push token is a per-run APNs value the key already
+      // ignores, so persisting it would put a client credential in the repo for
+      // nothing — while dropping the variable outright would hide what the app
+      // actually sends.
+      variables: redactIgnoredVariablePaths(key.operationName, parsedBody.variables ?? {}),
       response: responseBody,
       status: upstreamResponse.status,
       recordedAt: new Date().toISOString(),
@@ -414,7 +458,9 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     // A board-login mutation carries the climber's Aurora password as an
     // ordinary GraphQL variable, not a header — `carriesSensitiveToken` below
     // only ever sees a header-derived jwt/refresh token, so this is the check
-    // that actually catches it before the fixture reaches disk.
+    // that actually catches it before the fixture reaches disk. Run on the
+    // REDACTED variables, so an ignored path that was already replaced no
+    // longer refuses the fixture but every other secret-shaped key still does.
     const sensitiveVariableKeys = findSensitiveVariableKeys(fixture.variables);
     if (sensitiveVariableKeys.length > 0) {
       redacted += 1;
@@ -505,10 +551,21 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
 
     let serializedResponse = replayResponseCache.get(entry.file);
     if (serializedResponse === undefined) {
-      const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
-      // The recorded body verbatim, `errors` included: a screen that was
-      // recorded showing a partial error must screenshot the same way.
-      serializedResponse = JSON.stringify(fixture.response);
+      try {
+        const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
+        // The recorded body verbatim, `errors` included: a screen that was
+        // recorded showing a partial error must screenshot the same way.
+        serializedResponse = JSON.stringify(fixture.response);
+      } catch {
+        // The startup check already read every fixture, so the file went
+        // missing or was truncated DURING the run. Answer exactly like any
+        // other miss — a 500 here would flip the app into "backend
+        // unreachable" and bury the problem under a connectivity banner.
+        misses += 1;
+        emit({ event: 'miss', kind: 'graphql', operationName, hash12, reason: 'unreadable-fixture' });
+        sendJson(response, 200, fixtureMissBody(operationName, hash12));
+        return;
+      }
       replayResponseCache.set(entry.file, serializedResponse);
     }
     hits += 1;
@@ -552,15 +609,25 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
   // Auth
   // -------------------------------------------------------------------------
 
-  const syntheticSession = (email: string): { jwt: string; refreshToken: string; expiresAt: string } => ({
-    jwt: `${REPLAY_JWT_PREFIX}${sha256Hex(email).slice(0, 16)}`,
-    refreshToken: REPLAY_REFRESH_TOKEN,
+  const syntheticSession = (): { jwt: string; refreshToken: string; expiresAt: string } => {
     // Deliberately real wall-clock, not frozenNow: the app refreshes on an
     // expiry it computes itself, and a frozen (long past) expiry would send it
     // into a refresh loop for the whole capture. See REPLAY_SESSION_LIFETIME_MS
     // for why the lifetime itself also has to clear the app's own threshold.
-    expiresAt: new Date(Date.now() + REPLAY_SESSION_LIFETIME_MS).toISOString(),
-  });
+    const expiresAt = new Date(Date.now() + REPLAY_SESSION_LIFETIME_MS);
+    const claims = JSON.stringify({
+      sub: manifest.accountUserId,
+      iss: REPLAY_JWT_ISSUER,
+      exp: Math.floor(expiresAt.getTime() / 1000),
+    });
+    return {
+      // Three segments, so the app's own unverified decode finds the recorded
+      // user id instead of reading the session as "no id".
+      jwt: `${base64Url(REPLAY_JWT_HEADER_JSON)}.${base64Url(claims)}.${REPLAY_JWT_SIGNATURE}`,
+      refreshToken: REPLAY_REFRESH_TOKEN,
+      expiresAt: expiresAt.toISOString(),
+    };
+  };
 
   const recordAuth = async (
     request: IncomingMessage,
@@ -593,10 +660,21 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     const requestBody = parseJsonBody(rawBody);
     const email =
       typeof requestBody === 'object' && requestBody !== null ? (requestBody as { email?: unknown }).email : undefined;
+    let manifestChanged = false;
     if (typeof email === 'string' && email.length > 0 && manifest.accountEmail !== email) {
       manifest.accountEmail = email;
-      rewriteManifest();
+      manifestChanged = true;
     }
+    // The id, not the token: replay needs a jwt the app can read a `sub` out
+    // of, and the live jwt itself must never reach disk. `/auth/native/refresh`
+    // carries no email but does carry a jwt, so it fills this in too.
+    const liveJwt = (session as Record<string, unknown>).jwt;
+    const subject = typeof liveJwt === 'string' ? jwtSubject(liveJwt) : null;
+    if (subject && manifest.accountUserId !== subject) {
+      manifest.accountUserId = subject;
+      manifestChanged = true;
+    }
+    if (manifestChanged) rewriteManifest();
   };
 
   const replayCredentials = (response: ServerResponse, rawBody: Buffer): void => {
@@ -612,7 +690,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     }
     hits += 1;
     emit({ event: 'hit', kind: 'auth', route: 'credentials' });
-    sendJson(response, 200, syntheticSession(manifest.accountEmail));
+    sendJson(response, 200, syntheticSession());
   };
 
   // -------------------------------------------------------------------------
@@ -661,7 +739,16 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       sendJson(response, 404, { error: `no recorded asset for ${subject}` });
       return;
     }
-    const bytes = readFileSync(join(fixturesDir, entry.file));
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(join(fixturesDir, entry.file));
+    } catch {
+      // Deleted or truncated after the startup check — a miss, not a 500.
+      misses += 1;
+      emit({ event: 'miss', kind: 'static', subject });
+      sendJson(response, 404, { error: `no recorded asset for ${subject}` });
+      return;
+    }
     hits += 1;
     emit({ event: 'hit', kind: 'static', subject });
     response.writeHead(200, { 'content-type': entry.contentType, 'content-length': bytes.length });
@@ -697,7 +784,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       else {
         hits += 1;
         emit({ event: 'hit', kind: 'auth', route: 'refresh' });
-        sendJson(response, 200, syntheticSession(manifest.accountEmail));
+        sendJson(response, 200, syntheticSession());
       }
       return;
     }
@@ -800,9 +887,92 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     });
   });
 
+  /**
+   * Every manifest entry checked against the bytes actually on disk, BEFORE
+   * replay starts serving.
+   *
+   * A capture is a long, expensive, mostly-unattended run, and a fixture that
+   * turns out to be truncated or missing halfway through it costs the whole
+   * capture — while at request time all it can honestly do is answer a miss.
+   * So the fixture set is proved readable up front: every graphql fixture is
+   * parsed and checked against the key the manifest filed it under, and every
+   * static file's size is compared with the recorded byte count.
+   */
+  const unusableFixtureProblems = (): string[] => {
+    const problems: string[] = [];
+    for (const entry of manifest.graphql) {
+      const label = `${entry.file} (${entry.operationName})`;
+      if (!isFixtureFileWithinDirectory(fixturesDir, entry.file)) {
+        problems.push(`${label} resolves outside the fixtures directory`);
+        continue;
+      }
+      let fixture: unknown;
+      try {
+        fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8'));
+      } catch (readError) {
+        const detail = readError instanceof Error ? readError.message : String(readError);
+        problems.push(`${label} could not be read as JSON: ${detail}`);
+        continue;
+      }
+      if (typeof fixture !== 'object' || fixture === null || Array.isArray(fixture)) {
+        problems.push(`${label} is not a JSON object`);
+        continue;
+      }
+      const recorded = fixture as Partial<GraphqlFixtureFile>;
+      if (recorded.formatVersion !== SCREENSHOT_FIXTURE_FORMAT_VERSION) {
+        problems.push(`${label} has formatVersion ${JSON.stringify(recorded.formatVersion)}`);
+        continue;
+      }
+      // A fixture that disagrees with the entry pointing at it would replay
+      // one operation's body under another operation's key.
+      for (const field of ['operationName', 'documentHash', 'variablesHash'] as const) {
+        if (recorded[field] !== entry[field]) {
+          problems.push(
+            `${label} has ${field} ${JSON.stringify(recorded[field])}, but the manifest says ${entry[field]}`,
+          );
+        }
+      }
+      if (!Object.hasOwn(recorded, 'response')) problems.push(`${label} has no recorded response`);
+    }
+    for (const entry of manifest.static) {
+      const label = `${entry.file} (${entry.path})`;
+      if (!isFixtureFileWithinDirectory(fixturesDir, entry.file)) {
+        problems.push(`${label} resolves outside the fixtures directory`);
+        continue;
+      }
+      let byteLength: number;
+      try {
+        byteLength = statSync(join(fixturesDir, entry.file)).size;
+      } catch (statError) {
+        const detail = statError instanceof Error ? statError.message : String(statError);
+        problems.push(`${label} could not be read: ${detail}`);
+        continue;
+      }
+      if (byteLength !== entry.bytes) {
+        problems.push(`${label} is ${byteLength} bytes, but the manifest recorded ${entry.bytes}`);
+      }
+    }
+    return problems;
+  };
+
   return {
     listen(port: number): Promise<number> {
       return new Promise<number>((resolve, reject) => {
+        if (!isRecording) {
+          const fixtureProblems = unusableFixtureProblems();
+          if (fixtureProblems.length > 0) {
+            reject(
+              new Error(
+                [
+                  `${fixtureProblems.length} recorded fixture(s) under ${fixturesDir} cannot be replayed:`,
+                  ...fixtureProblems.map((problem) => `  - ${problem}`),
+                  `record one again with \`${RE_RECORD_COMMAND}\`.`,
+                ].join('\n'),
+              ),
+            );
+            return;
+          }
+        }
         const onListenError = (listenError: Error): void => reject(listenError);
         httpServer.once('error', onListenError);
         // 0.0.0.0 so the iOS simulator (localhost) and the Android emulator
