@@ -35,7 +35,7 @@ export type { SaveClimbOptions, SaveClimbResponse, UpdateClimbResponse } from '.
 
 export { useLogbook, useInvalidateLogbook } from './use-logbook';
 export { useSaveTick } from './use-save-tick';
-export { useEffectiveClimbStats } from './use-effective-climb-stats';
+export { prefetchClimbStatsForClimbs, useEffectiveClimbStats } from './use-effective-climb-stats';
 export type { EffectiveClimbStats, EffectiveClimbStatsBase } from './use-effective-climb-stats';
 export {
   applyCanonicalClimbStats,

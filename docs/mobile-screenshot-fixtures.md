@@ -163,12 +163,52 @@ Two rules keep it honest:
   with `reason=unrecorded-ids ids=<up to 10>`; the failure names the ids and
   asks for a re-record of the screen those rows appear on.
 
+#### The composer is the safety net, not the fix
+
+Composition can only re-assemble ids that were recorded SOMEWHERE. Run
+34248313427 hit the other half of the problem: three kilter and eight tension
+climbs were never in ANY recorded `ClimbStatsForClimbs` batch, because at record
+time their rows had not been drawn yet. The `SearchClimbs` page they sit on is
+byte-identical between the two runs — replay is just fast enough that FlashList
+mounts further down it.
+
+So screenshot mode makes the membership deterministic at the source, and the two
+operations get there differently:
+
+- **`GetBulkVoteSummaries` already was.** Its ids come from the whole loaded feed
+  (`sessions` flattened across pages in `SessionsTab.tsx` / `home/index.tsx`),
+  never from the mounted rows, so pinning the feed to one page
+  (`screenshotModeNextPageParam`) was enough — run 34248313427 logged no vote
+  misses at all.
+- **`ClimbStatsForClimbs` needed the batch widened.** `useEffectiveClimbStats`
+  queues one read per mounted row and the coordinator flushes whatever queued by
+  the end of the microtask. `useScreenshotClimbStatsPrefetch`
+  (`packages/mobile/src/hooks/`) instead asks for the whole loaded page in one
+  go through `prefetchClimbStatsForClimbs`
+  (`packages/shared/board-react/src/use-effective-climb-stats.ts`), as soon as
+  the search results land. Ids are de-duplicated and sorted, and each key is
+  retained for the duration — the coordinator drops a read whose key has no
+  mounted selector, which is exactly the not-yet-drawn rows this exists to
+  cover.
+
+The shared function is deliberately env-blind: `@boardsesh/board-react` is
+renderer-agnostic and knows nothing about screenshot mode. The mobile hook holds
+the inline `process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1'` gate and dead-strips
+from normal builds with the rest of screenshot mode.
+
+The composer stays either way. Per-row sub-batches still fire (a row that mounts
+before the prefetch resolves, the play drawer's single-climb read), and every one
+of them is a subset of what the prefetch recorded — which is precisely what
+composition answers.
+
 Adding one: read the operation document for the id list's path and the response
 list's own id field, add a row to `BATCHED_OPERATIONS` in
 `scripts/lib/screenshot-fixtures.ts`, and let the drift test check the paths
 against the committed fixtures. Only add an operation whose response list is a
 per-id lookup — never one whose items depend on the batch as a whole (a ranking,
-a page, an aggregate over the set).
+a page, an aggregate over the set). If its ids come from mounted rows rather than
+from loaded data, widen the batch in screenshot mode too — the composer alone
+cannot cover an id nothing ever recorded.
 
 Static assets are keyed on the original pathname plus its query sorted into a
 stable order. PROD answers `/static/*` with a `302` to a CDN; the recorder
@@ -396,6 +436,10 @@ mobile build flag.
 A set recorded after this change therefore holds only first pages. The extra
 pages in the committed set (`GetSessionGroupedFeed` up to cursor `{"o":60}`,
 `SearchClimbs` up to page 2) are harmless — they are simply never asked for.
+
+The same is true of the old per-row `ClimbStatsForClimbs` batches: a set recorded
+after the whole-list prefetch holds one wide batch per board instead, and the
+narrow ones left over from before just go unused.
 
 There is no macOS or Android hardware in the loop locally, so a set is recorded
 by the capture workflows and merged afterwards.
