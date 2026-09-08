@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-08T04:24:05.421Z",
+  "generatedAt": "2026-09-08T04:46:56.681Z",
   "entries": [
+    {
+      "prNumber": 5310,
+      "category": "fixed",
+      "title": "Close climb search without a PR preview sheet popping up.",
+      "mergedAt": "2026-09-08T04:42:18Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5310"
+    },
     {
       "prNumber": 5313,
       "category": "new",

@@ -22,6 +22,7 @@ A new version shipped to the Play Store.
 
 ### Fixed
 
+- Close climb search without a PR preview sheet popping up. ([#5310](https://github.com/boardsesh/boardsesh/pull/5310))
 - Keep downloaded climbs up to date after app updates. ([#5284](https://github.com/boardsesh/boardsesh/pull/5284))
 - Get password-reset and verification emails when you need them. ([#5311](https://github.com/boardsesh/boardsesh/pull/5311))
 - Flip a climb on a Woods board and the wall now flips with it ([#5237](https://github.com/boardsesh/boardsesh/pull/5237))
