@@ -1,19 +1,18 @@
-Novedades de 2.4:
+Novedades de 2.5:
 
-AURA: UN NUEVO ASPECTO PARA TU PLAFÓN
+TOMA EL MURO, SIN LEDS
 
-Las presas encendidas brillan ahora con su propia silueta, calcada del dibujo del plafón, mientras el resto del muro se atenúa. Se acabaron los círculos de color sobre la foto: el bloque se lee desde el otro lado de la sala. Se llama Aura. Es el nuevo aspecto por defecto en todos los plafones, Woods incluido, y en los Kilter Homewall la luz sale de la placa LED que rodea cada presa.
+¿Escalas en un plafón sin kit de luces? Toma el muro y toda la sesión sigue el bloque que pones, y la pantalla del rocódromo también. Desactiva Luces en los ajustes del plafón: los turnos siguen rotando, tu ángulo se mantiene y las sesiones en un muro con nombre también se registran desde el reloj.
 
-Hazlo tuyo en Perfil > Más > Aspecto del plafón. Empieza por un preajuste (Aura, Aura sutil, Aura intensa, Máximo contraste) o toma el control de cada detalle: resplandor, velo, marcas, miniaturas de listas, glifos de rol y paletas para daltonismo que también encienden tu plafón con esos colores, no solo la pantalla. ¿Prefieres los círculos de antes? Pon Renderizado en Clásico.
+ESPEJO DESDE LA PANTALLA DE BLOQUEO
 
-MOONBOARD
-
-- ¿Usas el controlador LED de código abierto con Arduino para MoonBoard? Activa «Iluminar la presa de arriba» para añadir un LED más tenue sobre cada presa de inicio o de mano iluminada.
+Mientras tu teléfono controla el plafón, la actividad en vivo y la Dynamic Island tienen un botón Espejo junto a Anterior, Siguiente y la bombilla. La app, tu gente, las miniaturas y los LED siguen el bloque espejeado, y sigue en espejo cuando abres la app.
 
 CORREGIDO
 
-- Conectarte a un plafón ya no lo apaga: lo que esté iluminado en el muro sigue así hasta que elijas un bloque.
-- Las fotos del plafón y las superposiciones de presas cargan sin la pausa extra.
-- Un bloque de Woods que la app no puede iluminar con exactitud ahora lo dice, en vez de encender las presas equivocadas.
+- Tu plafón se queda apagado hasta que tú lo pidas. Un teléfono que vuelve a entrar en alcance horas o días después ya no enciende tu último bloque. La bombilla, el widget y las reconexiones a mitad de bloque lo encienden al instante, como siempre.
+- La pestaña Bloques y su búsqueda ya no se quedan colgadas después de cerrar una lista encima a mitad de sesión. Se acabó forzar el cierre de la app para recuperar la búsqueda.
+- Los bloques descargados se mantienen al día tras actualizar la app.
+- Cerrar la búsqueda de bloques ya no hace aparecer un panel de vista previa.
 
 Gratis, sin anuncios, código abierto.

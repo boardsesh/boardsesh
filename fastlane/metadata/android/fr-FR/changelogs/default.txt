@@ -1,5 +1,5 @@
-Nouveautés de la version 2.4 :
-- Aura, le nouveau look de ta board : les prises allumées brillent dans leur propre silhouette et le mur s'assombrit. Look par défaut sur toutes les boards, Woods compris.
-- À régler dans Profil > Plus > Look de la board : préréglages, lueur, voile, marques, palettes daltonisme. Tu préfères les cercles ? Mets Rendu sur Classique.
-- MoonBoard : avec le contrôleur LED open source Arduino, active « Allumer la prise du dessus ».
-- Les panneaux se ferment bien.
+Nouveautés de la version 2.5 :
+- Prends le mur sur une board sans LED : ton crew et l'écran de la salle suivent le bloc que tu mets. Désactive l'Éclairage dans les réglages de la board ; le tour de rôle continue, ton angle reste.
+- Mets ton bloc en miroir depuis la notification Android quand ton téléphone pilote la board ; l'app, ton crew et les LED suivent.
+- Les blocs téléchargés restent à jour après une mise à jour.
+- Fermer la recherche de blocs ne fait plus surgir de feuille d'aperçu.

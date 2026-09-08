@@ -1,5 +1,5 @@
-Novedades de 2.4:
-- Aura, el nuevo aspecto de tu plafón: las presas encendidas brillan con su propia silueta y el muro se atenúa. Es el aspecto por defecto en todos los plafones, Woods incluido.
-- Hazlo tuyo en Perfil > Más > Aspecto del plafón: preajustes, resplandor, velo, marcas, paletas para daltonismo. ¿Prefieres círculos? Pon Renderizado en Clásico.
-- MoonBoard: con el controlador LED de código abierto con Arduino, activa «Iluminar la presa de arriba».
-- Los paneles se cierran bien.
+Novedades de 2.5:
+- Toma el muro en un plafón sin LED: tu gente y la pantalla del rocódromo siguen el bloque que pones. Desactiva Luces en los ajustes del plafón; los turnos siguen rotando y tu ángulo se mantiene.
+- Espejea tu bloque desde la notificación de Android mientras tu teléfono controla el plafón; la app, tu gente y los LED lo siguen.
+- Los bloques descargados se mantienen al día tras actualizar la app.
+- Cerrar la búsqueda de bloques ya no hace aparecer un panel de vista previa.
