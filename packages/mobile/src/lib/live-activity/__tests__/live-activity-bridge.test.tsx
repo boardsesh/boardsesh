@@ -2,6 +2,7 @@
 import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { WidgetMirrorEvent } from '../../../../modules/live-activity/src/index';
 import { LiveActivityBridge } from '../live-activity-bridge';
 
 type QueueNavigateEvent = {
@@ -24,14 +25,20 @@ function makeItem(index: number): ClimbQueueItem {
 
 const queue = vi.hoisted(() => ({
   sessionId: 'session-1' as string | null,
+  mirrorCurrentClimb: vi.fn(),
+  dispatchWidgetMirror: vi.fn(async () => true),
   dispatchWidgetNavigation: vi.fn(),
   state: {
+    serverSequence: 4,
     queue: [] as ClimbQueueItem[],
     currentClimbQueueItem: null as ClimbQueueItem | null,
   },
 }));
 
 const widget = vi.hoisted(() => ({
+  mirrorListener: null as null | ((event: WidgetMirrorEvent) => void),
+  pendingMirror: vi.fn(async (): Promise<WidgetMirrorEvent | null> => null),
+  acknowledgeMirror: vi.fn(async () => {}),
   listener: null as null | ((event: QueueNavigateEvent) => void),
   boardControlListener: null as null | ((event: BoardControlEvent) => void),
   useLiveActivity: vi.fn(),
@@ -86,6 +93,8 @@ vi.mock('../../board-render-settings', () => ({
   requestedBoardRenderMode: (settings: { mode: string }) => (settings.mode === 'classic' ? 'classic' : 'aura'),
 }));
 
+vi.mock('react-native', () => ({ AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })) } }));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -96,6 +105,8 @@ vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({
     state: queue.state,
     sessionId: queue.sessionId,
+    mirrorCurrentClimb: queue.mirrorCurrentClimb,
+    dispatchWidgetMirror: queue.dispatchWidgetMirror,
     dispatchWidgetNavigation: queue.dispatchWidgetNavigation,
   }),
 }));
@@ -140,6 +151,14 @@ vi.mock('../use-live-activity', () => ({
 }));
 
 vi.mock('../live-activity-plugin', () => ({
+  getPendingWidgetMirror: widget.pendingMirror,
+  acknowledgeWidgetMirror: widget.acknowledgeMirror,
+  addWidgetMirrorListener: (listener: (event: WidgetMirrorEvent) => void) => {
+    widget.mirrorListener = listener;
+    return () => {
+      widget.mirrorListener = null;
+    };
+  },
   addWidgetQueueNavigateListener: (listener: (event: QueueNavigateEvent) => void) => {
     widget.listener = listener;
     return () => {
@@ -528,5 +547,68 @@ describe('LiveActivityBridge on a wall with no LED light kit', () => {
         widgetNavigationAllowed: false,
       }),
     );
+  });
+});
+
+describe('mirror controls', () => {
+  beforeEach(() => {
+    queue.sessionId = 'session-1';
+    queue.state.queue = [makeItem(0)];
+    queue.state.currentClimbQueueItem = queue.state.queue[0];
+    boardState.boardConnection = 'connectedByMe';
+    boardState.inAppBoardConnection = 'connectedByMe';
+    boardState.ledless = false;
+    queue.mirrorCurrentClimb.mockClear();
+    queue.dispatchWidgetMirror.mockClear();
+    queue.dispatchWidgetMirror.mockResolvedValue(true);
+    widget.acknowledgeMirror.mockClear();
+    widget.pendingMirror.mockResolvedValue(null);
+  });
+  const tap = { kind: 'request', sessionId: 'session-1', queueItemUuid: 'queue-item-0', mirrored: true } as const;
+  const receipt = { ...tap, kind: 'confirmed', sequence: 5, stateHash: 'hash' } as const;
+
+  it('routes a supported Android mirror tap through the shared mutation', async () => {
+    render(<LiveActivityBridge boardName="tension" layoutId={1} sizeId={1} setIds="1" />);
+    await act(async () => {
+      widget.mirrorListener?.(tap);
+    });
+    expect(queue.mirrorCurrentClimb).toHaveBeenCalledWith(true, 'queue-item-0');
+  });
+  it.each(['heldByPeer', 'disconnected'] as const)('drops a tap after ownership changes to %s', async (connection) => {
+    boardState.boardConnection = connection;
+    render(<LiveActivityBridge boardName="tension" layoutId={1} sizeId={1} setIds="1" />);
+    await act(async () => {
+      widget.mirrorListener?.(tap);
+    });
+    expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+  });
+  it('drops unsupported, stale-item and stale-session taps', async () => {
+    const view = renderBridge();
+    await act(async () => {
+      widget.mirrorListener?.(tap);
+    });
+    view.rerender(<LiveActivityBridge boardName="tension" layoutId={1} sizeId={1} setIds="1" />);
+    await act(async () => {
+      widget.mirrorListener?.({ ...tap, sessionId: 'old-session' });
+      widget.mirrorListener?.({ ...tap, queueItemUuid: 'old-slot' });
+    });
+    expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+  });
+  it('replays an iOS receipt without sending a second mirror mutation', async () => {
+    widget.pendingMirror.mockResolvedValue(receipt);
+    await act(async () => {
+      renderBridge();
+    });
+    expect(queue.dispatchWidgetMirror).toHaveBeenCalledWith(receipt);
+    expect(widget.acknowledgeMirror).toHaveBeenCalledWith('session-1', 5);
+    expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+  });
+  it('retains a receipt when reconciliation is not ready', async () => {
+    queue.dispatchWidgetMirror.mockResolvedValue(false);
+    widget.pendingMirror.mockResolvedValue(receipt);
+    await act(async () => {
+      renderBridge();
+    });
+    expect(widget.acknowledgeMirror).not.toHaveBeenCalled();
   });
 });

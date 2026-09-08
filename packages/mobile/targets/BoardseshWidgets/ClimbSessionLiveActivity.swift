@@ -223,6 +223,7 @@ private func resolveBoardState(
 private struct ThumbnailView: View {
     @Environment(\.colorScheme) private var colorScheme
     let climbUuid: String
+    var mirrored: Bool = false
     let width: CGFloat
     let height: CGFloat
 
@@ -234,6 +235,7 @@ private struct ThumbnailView: View {
             Image(uiImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
+                .scaleEffect(x: mirrored ? -1 : 1, y: 1)
                 .frame(width: width, height: height)
                 .clipShape(RoundedRectangle(cornerRadius: VelvetSend.Radius.lg, style: .continuous))
         } else {
@@ -404,6 +406,10 @@ private struct WallControlButton: View {
 
 @available(iOS 17.0, *)
 private struct NavigationControlsView: View {
+    let sessionId: String
+    let queueItemUuid: String?
+    let mirrored: Bool
+    let supportsMirroring: Bool
     let hasPrevious: Bool
     let hasNext: Bool
 
@@ -429,6 +435,18 @@ private struct NavigationControlsView: View {
             // connectedByMe is the only state that renders this row, so the bulb
             // is always lit here.
             WallControlButton(lit: true)
+            if supportsMirroring, let queueItemUuid {
+                Button(intent: MirrorClimbIntent(sessionId: sessionId, queueItemUuid: queueItemUuid, mirrored: !mirrored)) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(mirrored ? Color.accentColor : Color.primary)
+                        .frame(width: 40, height: 40)
+                        .background(mirrored ? Color.accentColor.opacity(0.18) : Color.clear, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(mirrored ? String(localized: "Unmirror climb") : String(localized: "Mirror climb"))
+                .accessibilityAddTraits(mirrored ? .isSelected : [])
+            }
 
             Button(intent: NextClimbIntent()) {
                 NavigationButtonLabel(
@@ -519,6 +537,10 @@ private struct DisconnectedFooter: View {
 /// state that instantiates NavigationControlsView.
 @available(iOS 17.0, *)
 private struct SessionFooter: View {
+    let sessionId: String
+    let queueItemUuid: String?
+    let mirrored: Bool
+    let supportsMirroring: Bool
     let state: ResolvedBoardState
     let hasPrevious: Bool
     let hasNext: Bool
@@ -527,6 +549,8 @@ private struct SessionFooter: View {
         switch state.connection {
         case .connectedByMe:
             NavigationControlsView(
+                sessionId: sessionId, queueItemUuid: queueItemUuid,
+                mirrored: mirrored, supportsMirroring: supportsMirroring,
                 hasPrevious: hasPrevious,
                 hasNext: hasNext
             )
@@ -555,6 +579,7 @@ struct ClimbSessionLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     ThumbnailView(
                         climbUuid: context.state.climbUuid,
+                        mirrored: context.state.mirrored ?? false,
                         width: 48,
                         height: 60
                     )
@@ -571,6 +596,10 @@ struct ClimbSessionLiveActivity: Widget {
 
                 DynamicIslandExpandedRegion(.bottom) {
                     SessionFooter(
+                        sessionId: context.attributes.sessionId,
+                        queueItemUuid: context.state.queueItemUuid,
+                        mirrored: context.state.mirrored ?? false,
+                        supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
                         state: state,
                         hasPrevious: context.state.hasPrevious,
                         hasNext: context.state.hasNext
@@ -712,6 +741,7 @@ private struct LockScreenView: View {
             // Thumbnail
             ThumbnailView(
                 climbUuid: context.state.climbUuid,
+                        mirrored: context.state.mirrored ?? false,
                 width: 76,
                 height: 96
             )
@@ -747,6 +777,10 @@ private struct LockScreenView: View {
                 // disconnected hide the nav controls entirely so the card
                 // shrinks instead of leaving an empty gap.
                 SessionFooter(
+                        sessionId: context.attributes.sessionId,
+                        queueItemUuid: context.state.queueItemUuid,
+                        mirrored: context.state.mirrored ?? false,
+                        supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
                     state: state,
                     hasPrevious: context.state.hasPrevious,
                     hasNext: context.state.hasNext

@@ -13,6 +13,7 @@ Pod::Spec.new do |s|
   s.platforms      = { ios: '16.4' }
   s.swift_version  = '5.9'
   s.source_files   = '*.swift'
+  s.resources      = '*.lproj'
   s.frameworks     = 'ActivityKit', 'CoreBluetooth', 'WidgetKit', 'AppIntents'
   s.dependency 'ExpoModulesCore'
   # libwebp-backed coder for the bundled board-background webp(s) composited into

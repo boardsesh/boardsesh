@@ -35,6 +35,7 @@ class BoardSessionActionReceiverTest {
     @Before
     fun setUp() {
         mockkObject(SessionPresenceModule.Companion)
+        every { SessionPresenceModule.dispatchMirror(any(), any(), any()) } just Runs
         every { SessionPresenceModule.dispatchBoardControl(any(), any()) } just Runs
         every { SessionPresenceModule.dispatchQueueNavigate(any(), any(), any()) } just Runs
     }
@@ -42,6 +43,23 @@ class BoardSessionActionReceiverTest {
     @After
     fun tearDown() {
         unmockkObject(SessionPresenceModule.Companion)
+    }
+
+    @Test
+    fun `mirror forwards an absolute orientation for the notification slot`() {
+        val intent = Intent(BoardSessionService.ACTION_MIRROR).apply {
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, "session")
+            putExtra(BoardSessionService.EXTRA_QUEUE_ITEM_UUID, "slot")
+            putExtra(BoardSessionService.EXTRA_MIRRORED, true)
+        }
+        receiver.onReceive(context, intent)
+        verify(exactly = 1) { SessionPresenceModule.dispatchMirror("session", "slot", true) }
+    }
+
+    @Test
+    fun `mirror ignores incomplete notification intents`() {
+        receiver.onReceive(context, Intent(BoardSessionService.ACTION_MIRROR))
+        verify(exactly = 0) { SessionPresenceModule.dispatchMirror(any(), any(), any()) }
     }
 
     private fun bulbIntent(connection: String): Intent =

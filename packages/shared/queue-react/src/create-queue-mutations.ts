@@ -203,7 +203,7 @@ export type QueueMutationsActions<TItem> = {
    * climber cleared earlier in the app process.
    */
   wasUuidExplicitlyRemoved: (uuid: string) => boolean;
-  mirrorCurrentClimb: (mirrored: boolean) => Promise<void>;
+  mirrorCurrentClimb: (mirrored: boolean, expectedQueueItemUuid?: string) => Promise<void>;
   /**
    * Broadcast a playback engine state change for a multi-frame climb so party
    * peers stay in sync. Best-effort; no-op in solo (no active session).
@@ -502,10 +502,10 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
 
     wasUuidExplicitlyRemoved: (uuid) => removedUuids.has(uuid),
 
-    mirrorCurrentClimb: async (mirrored) => {
+    mirrorCurrentClimb: async (mirrored, expectedQueueItemUuid) => {
       const ready = await resolveCore({ allowCreate: false });
       if (!ready) return;
-      await runMutation(ready.client, { query: MIRROR_CURRENT_CLIMB, variables: { mirrored } });
+      await runMutation(ready.client, { query: MIRROR_CURRENT_CLIMB, variables: { mirrored, expectedQueueItemUuid } });
     },
 
     publishPlaybackState: async (input) => {

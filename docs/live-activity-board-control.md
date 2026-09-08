@@ -23,10 +23,39 @@ The **React Native layer** (`packages/mobile/src/lib/ble/`) owns BLE for the Exp
 
 **What's still missing for full lock-screen board control:**
 
-1. Widget can only do prev/next -- no add, remove, reorder, or mirror mutations from lock screen
+1. Widget has no add, remove, or reorder controls from the lock screen
 2. Rust board renderer has no Swift/iOS bindings -- only targets WASM today
 3. MoonBoard remains on the existing Capacitor BLE path; the native background BLE path currently targets Aurora boards only
 4. Cross-device repaint when _another_ user navigates: if your phone is suspended, your board stays stale until you unlock the phone. Tracked in issue #2174 (presence/ack design) and ultimately solved by the planned WS-enabled board controller.
+
+## Mirroring from the Lock Screen and Android notification
+
+On supported layouts (Tension except layout 11, Decoy, and Woods), the BLE holder
+sees a Mirror climb button in the iOS Lock Screen / expanded Dynamic Island and
+the Android foreground notification. The button becomes Unmirror climb when the
+current queue slot is mirrored. Previous, Next, and the lightbulb remain available.
+Android uses a custom notification-content button to preserve all three action slots.
+
+Mirroring is an absolute, server-confirmed update to the current queue slot.
+iOS calls `POST /api/widget/mirror` with its registered bearer token, session ID,
+queue-item UUID, and desired orientation. Android forwards the same identity and
+orientation to the existing GraphQL mutation. Requests for an old current slot are
+rejected. A failed/offline request leaves the climb unchanged; retrying cannot
+flip twice. The active-session in-app button uses the same shared mutation.
+Solo climbs and previews retain their local mirror controls.
+
+The backend publishes `ClimbMirrored` and includes orientation and queue-item UUID
+in APNs content. iOS persists a confirmation receipt until JS applies that sequence
+or a newer authoritative snapshot. Reopening the app replays the receipt through
+the queue sync gate. Native queue snapshots reject older sequences; a fresh socket
+subscription can rebaseline after a server sequence reset. Queue sequence metadata
+travels with the rendered JS state so older renders cannot overwrite native mirror
+confirmations. ActivityKit updates read the latest committed snapshot before publishing,
+and BLE rechecks ownership and receipt freshness immediately before writing.
+
+Deploy the additive backend schema/endpoint before shipping new native iOS and
+Android builds. Old binaries omit the new optional fields and keep existing controls.
+An OTA update alone cannot install these native buttons or App Intents.
 
 ## Connection ownership (lightbulb + Previous/Next)
 

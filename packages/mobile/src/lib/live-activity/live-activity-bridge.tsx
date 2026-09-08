@@ -1,6 +1,7 @@
+import { AppState } from 'react-native';
 import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getBoardCapabilities, toBoardName } from '@boardsesh/board-config';
+import { getBoardCapabilities, toBoardName, boardSupportsMirroring } from '@boardsesh/board-config';
 import { nativeBleSupportsBoard } from '../ble/adapter-factory';
 import { requestedBoardRenderMode, useBoardRenderSettings } from '../board-render-settings';
 import { resolveClimbRenderBoard } from '../boards/climb-render-board';
@@ -9,6 +10,10 @@ import { useBoardConnectionState } from '../../components/ble/use-board-connecti
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
 import { useLiveActivity } from './use-live-activity';
 import {
+  addWidgetMirrorListener,
+  getPendingWidgetMirror,
+  acknowledgeWidgetMirror,
+  type WidgetMirrorEvent,
   addWidgetQueueNavigateListener,
   addBoardControlListener,
   isAndroidSessionPresence,
@@ -31,7 +36,7 @@ type LiveActivityBridgeProps = {
 // selected) so a guest user without a board doesn't trigger Live Activity
 // authorization prompts at random.
 export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: LiveActivityBridgeProps) {
-  const { state, sessionId, dispatchWidgetNavigation } = useQueue();
+  const { state, sessionId, dispatchWidgetNavigation, mirrorCurrentClimb, dispatchWidgetMirror } = useQueue();
   const { t } = useTranslation('session');
   // Board-connection ownership (shared with the in-app lightbulb). Drives the
   // Live Activity lightbulb + Previous/Next visibility: controls show only while
@@ -100,6 +105,8 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       contentTitleFallback: t('mobile.session.notification.contentTitleFallback'),
       previousLabel: t('mobile.session.notification.previous'),
       nextLabel: t('mobile.session.notification.next'),
+      mirrorLabel: t('mobile.session.notification.mirror'),
+      unmirrorLabel: t('mobile.session.notification.unmirror'),
       relightLabel: t('mobile.session.notification.relight'),
       reconnectLabel: t('mobile.session.notification.reconnect'),
       onWallTemplate: t('mobile.session.notification.onWall'),
@@ -108,6 +115,7 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   );
 
   useLiveActivity({
+    queueSequence: state.serverSequence,
     queue: state.queue,
     currentClimbQueueItem: state.currentClimbQueueItem,
     board: { boardName, layoutId, sizeId, setIds },
@@ -204,6 +212,50 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     });
     return unsubscribe;
   }, []);
+
+  const handleMirrorRef = useRef<(event: WidgetMirrorEvent) => Promise<void>>(async () => {});
+  handleMirrorRef.current = async (event) => {
+    if (event.sessionId !== sessionId) return;
+    if (event.kind === 'confirmed') {
+      // Native already changed the wall. Replay the sequenced result, never toggle again.
+      if (await dispatchWidgetMirror(event)) await acknowledgeWidgetMirror(event.sessionId, event.sequence);
+    } else if (
+      boardConnection === 'connectedByMe' &&
+      boardSupportsMirroring(boardName, layoutId) &&
+      state.currentClimbQueueItem?.uuid === event.queueItemUuid
+    ) {
+      await mirrorCurrentClimb(event.mirrored, event.queueItemUuid);
+    }
+  };
+  useEffect(() => {
+    const receive = (event: WidgetMirrorEvent) => {
+      void handleMirrorRef
+        .current(event)
+        .catch((error: unknown) => console.warn('[LiveActivity] Mirror sync failed:', error));
+    };
+    const replay = () => {
+      void getPendingWidgetMirror().then((event) => {
+        if (event) receive(event);
+      });
+    };
+    const unsubscribe = addWidgetMirrorListener(receive);
+    const appState = AppState.addEventListener('change', (next) => {
+      if (next === 'active') replay();
+    });
+    replay();
+    return () => {
+      unsubscribe();
+      appState.remove();
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
+    void getPendingWidgetMirror()
+      .then((event) => {
+        if (event) return handleMirrorRef.current(event);
+      })
+      .catch((error: unknown) => console.warn('[LiveActivity] Mirror replay failed:', error));
+  }, [state.queue]);
 
   return null;
 }

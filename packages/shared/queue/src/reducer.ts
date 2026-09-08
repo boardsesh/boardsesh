@@ -27,6 +27,14 @@ export function queueReducer<TSearchParams extends QueueSearchParams>(
   state: QueueState<TSearchParams>,
   action: QueueAction<TSearchParams>,
 ): QueueState<TSearchParams> {
+  const nextState = reduceQueue(state, action);
+  return action.serverSequence === undefined ? nextState : { ...nextState, serverSequence: action.serverSequence };
+}
+
+function reduceQueue<TSearchParams extends QueueSearchParams>(
+  state: QueueState<TSearchParams>,
+  action: QueueAction<TSearchParams>,
+): QueueState<TSearchParams> {
   switch (action.type) {
     case 'SET_CURRENT_CLIMB': {
       const currentIndex = state.currentClimbQueueItem

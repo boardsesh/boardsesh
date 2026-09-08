@@ -1,3 +1,4 @@
+import type { WidgetMirrorEvent } from '../../../modules/live-activity/src/index';
 import { createContext, useContext } from 'react';
 import type {
   QueueState,
@@ -68,6 +69,8 @@ type QueueContextValue = {
    * can't double-advance when the WebSocket echo lands before the Darwin event.
    * Mirrors web's `dispatchWidgetNavigation`.
    */
+  mirrorCurrentClimb: (mirrored: boolean, queueItemUuid: string) => Promise<void>;
+  dispatchWidgetMirror: (event: Extract<WidgetMirrorEvent, { kind: 'confirmed' }>) => Promise<boolean>;
   dispatchWidgetNavigation: (item: ClimbQueueItem, correlationId: string) => void;
   /** Replace the playlist suggestion source that drives swipe-through climbs. */
   setPlaylistSuggestionSource: (source: PlaylistSuggestionSource | null) => void;

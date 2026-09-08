@@ -42,6 +42,7 @@ import {
   handleKilterCredentialsStart,
 } from './handlers/kilter-credentials-oauth';
 import { handleGymClaimVerify } from './handlers/gym-claims';
+import { handleWidgetMirror } from './handlers/widget-mirror';
 import { handleWidgetNavigate } from './handlers/widget-navigate';
 import { handleWidgetTakeControl } from './handlers/widget-take-control';
 import { handleSessionNavigate, handleSessionTakeControl } from './handlers/session-actions';
@@ -581,6 +582,10 @@ export async function startServer(): Promise<ServerResources> {
       }
 
       // Widget queue navigation endpoint (called by iOS lock-screen widget)
+      if (pathname === '/api/widget/mirror' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleWidgetMirror(req, res);
+        return;
+      }
       if (pathname === '/api/widget/navigate' && (req.method === 'POST' || req.method === 'OPTIONS')) {
         await handleWidgetNavigate(req, res);
         return;

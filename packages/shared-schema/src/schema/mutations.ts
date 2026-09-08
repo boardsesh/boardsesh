@@ -72,7 +72,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     Toggle mirrored display for the current climb.
     """
-    mirrorCurrentClimb(mirrored: Boolean!): ClimbQueueItem
+    mirrorCurrentClimb(mirrored: Boolean!, expectedQueueItemUuid: ID): ClimbQueueItem
 
     """
     Broadcast the current playback state for a variable-speed climb so

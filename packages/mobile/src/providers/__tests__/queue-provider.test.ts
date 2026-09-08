@@ -452,3 +452,24 @@ describe('findPreviousQueueItem', () => {
     expect(findPreviousQueueItem([itemA], orphan)).toBeNull();
   });
 });
+
+it('commits server sequence with the mirrored snapshot and rebaselines on full sync', () => {
+  const item = makeClimbQueueItem({ uuid: 'current' });
+  const before = makeState({ queue: [item], currentClimbQueueItem: item, serverSequence: 4 });
+  const mirrored = queueReducer(before, {
+    type: 'DELTA_MIRROR_CURRENT_CLIMB',
+    serverSequence: 5,
+    payload: { mirroredUuid: item.uuid, mirrored: true },
+  });
+  expect(before.serverSequence).toBe(4);
+  expect(before.currentClimbQueueItem?.climb.mirrored).toBeUndefined();
+  expect(mirrored.serverSequence).toBe(5);
+  expect(mirrored.currentClimbQueueItem?.climb.mirrored).toBe(true);
+  const reset = queueReducer(mirrored, {
+    type: 'INITIAL_QUEUE_DATA',
+    serverSequence: 1,
+    payload: { queue: [item], currentClimbQueueItem: item },
+  });
+  expect(reset.serverSequence).toBe(1);
+  expect(reset.currentClimbQueueItem?.climb.mirrored).toBeUndefined();
+});

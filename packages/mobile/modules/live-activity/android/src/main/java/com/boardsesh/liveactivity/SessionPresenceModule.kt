@@ -17,6 +17,8 @@ class AndroidNotificationStrings : Record {
     @Field var channelDescription: String = ""
     @Field var contentTitleFallback: String = "Climbing session"
     @Field var previousLabel: String = "Previous"
+    @Field var mirrorLabel: String = "Mirror climb"
+    @Field var unmirrorLabel: String = "Unmirror climb"
     @Field var nextLabel: String = "Next"
     @Field var relightLabel: String = "Relight wall"
     @Field var reconnectLabel: String = "Connect to board"
@@ -27,6 +29,7 @@ class AndroidNotificationStrings : Record {
 // visibility. iOS reads these via the App Group; on Android they ride the START
 // intent.
 class StartSessionOptions : Record {
+    @Field var sessionId: String = ""
     @Field var androidNotification: AndroidNotificationStrings? = null
     @Field var boardConnection: String = "connectedByMe"
     @Field var holderDisplayName: String? = null
@@ -39,6 +42,10 @@ class StartSessionOptions : Record {
 // `backgroundPaths` are the bundled board background layers under it; the service
 // composites them locally — no backend fetch.
 class SessionUpdateOptions : Record {
+    @Field var sessionId: String = ""
+    @Field var queueItemUuid: String = ""
+    @Field var supportsMirroring: Boolean = false
+    @Field var mirrored: Boolean = false
     @Field var climbName: String = ""
     @Field var climbDifficulty: String = ""
     @Field var angle: Int = 0
@@ -87,7 +94,8 @@ class SessionPresenceModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("SessionPresence")
 
-        Events("queueNavigate", "boardControl")
+        Events("queueNavigate", "boardControl", "queueMirror")
+        Constants("supportsMirrorControl" to true)
 
         OnCreate { instance = WeakReference(this@SessionPresenceModule) }
         OnDestroy {
@@ -204,6 +212,13 @@ class SessionPresenceModule : Module() {
          * (connectedByMe) or "reconnect" otherwise; the JS bridge maps it to
          * bluetooth.reassertWall() / bluetooth.connect().
          */
+        fun dispatchMirror(sessionId: String, queueItemUuid: String, mirrored: Boolean) {
+            dispatch("queueMirror", mapOf(
+                "kind" to "request", "sessionId" to sessionId,
+                "queueItemUuid" to queueItemUuid, "mirrored" to mirrored,
+            ))
+        }
+
         fun dispatchBoardControl(action: String, correlationId: String) {
             dispatch(
                 "boardControl",

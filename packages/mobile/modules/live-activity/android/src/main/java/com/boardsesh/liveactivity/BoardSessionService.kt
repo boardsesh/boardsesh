@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Matrix
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -63,6 +64,13 @@ class BoardSessionService : Service() {
     private var reconnectLabel: String = "Connect to board"
     private var onWallTemplate: String = "{{name}} is on the wall"
 
+    private var sessionId: String = ""
+    private var queueItemUuid: String = ""
+    private var supportsMirroring: Boolean = false
+    private var mirrored: Boolean = false
+    private var mirrorLabel: String = "Mirror climb"
+    private var unmirrorLabel: String = "Unmirror climb"
+
     private var climbName: String? = null
     private var subtitle: String? = null
     private var hasNext: Boolean = false
@@ -113,6 +121,9 @@ class BoardSessionService : Service() {
                     channelNameLocalized = true
                 }
                 channelDescription = intent.getStringExtra(EXTRA_CHANNEL_DESC) ?: channelDescription
+                sessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: ""
+                mirrorLabel = intent.getStringExtra(EXTRA_MIRROR_LABEL) ?: mirrorLabel
+                unmirrorLabel = intent.getStringExtra(EXTRA_UNMIRROR_LABEL) ?: unmirrorLabel
                 contentTitleFallback = intent.getStringExtra(EXTRA_TITLE_FALLBACK) ?: contentTitleFallback
                 previousLabel = intent.getStringExtra(EXTRA_PREV_LABEL) ?: previousLabel
                 nextLabel = intent.getStringExtra(EXTRA_NEXT_LABEL) ?: nextLabel
@@ -123,20 +134,27 @@ class BoardSessionService : Service() {
                 holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
             }
             ACTION_UPDATE -> {
-                climbName = intent.getStringExtra(EXTRA_CLIMB_NAME) ?: climbName
-                subtitle = intent.getStringExtra(EXTRA_SUBTITLE) ?: subtitle
-                hasNext = intent.getBooleanExtra(EXTRA_HAS_NEXT, hasNext)
-                hasPrevious = intent.getBooleanExtra(EXTRA_HAS_PREVIOUS, hasPrevious)
-                currentIndex = intent.getIntExtra(EXTRA_CURRENT_INDEX, currentIndex)
-                totalClimbs = intent.getIntExtra(EXTRA_TOTAL_CLIMBS, totalClimbs)
-                boardConnection = intent.getStringExtra(EXTRA_BOARD_CONNECTION) ?: boardConnection
-                // Absent extra ⇒ no peer holder ⇒ clear (the controller only sends
-                // it for heldByPeer).
-                holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
-                // Absent overlay ⇒ render not ready yet; keep the last one so the
-                // thumbnail doesn't flicker out between updates.
-                intent.getStringExtra(EXTRA_OVERLAY_PATH)?.let { overlayPath = it }
-                intent.getStringArrayListExtra(EXTRA_BACKGROUND_PATHS)?.let { backgroundPaths = it }
+                val updateSessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: ""
+                if (sessionId.isEmpty() || updateSessionId == sessionId) {
+                    sessionId = updateSessionId
+                    queueItemUuid = intent.getStringExtra(EXTRA_QUEUE_ITEM_UUID) ?: ""
+                    supportsMirroring = intent.getBooleanExtra(EXTRA_SUPPORTS_MIRRORING, false)
+                    mirrored = intent.getBooleanExtra(EXTRA_MIRRORED, false)
+                    climbName = intent.getStringExtra(EXTRA_CLIMB_NAME) ?: climbName
+                    subtitle = intent.getStringExtra(EXTRA_SUBTITLE) ?: subtitle
+                    hasNext = intent.getBooleanExtra(EXTRA_HAS_NEXT, hasNext)
+                    hasPrevious = intent.getBooleanExtra(EXTRA_HAS_PREVIOUS, hasPrevious)
+                    currentIndex = intent.getIntExtra(EXTRA_CURRENT_INDEX, currentIndex)
+                    totalClimbs = intent.getIntExtra(EXTRA_TOTAL_CLIMBS, totalClimbs)
+                    boardConnection = intent.getStringExtra(EXTRA_BOARD_CONNECTION) ?: boardConnection
+                    // Absent extra ⇒ no peer holder ⇒ clear (the controller only sends
+                    // it for heldByPeer).
+                    holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
+                    // Absent overlay ⇒ render not ready yet; keep the last one so the
+                    // thumbnail doesn't flicker out between updates.
+                    intent.getStringExtra(EXTRA_OVERLAY_PATH)?.let { overlayPath = it }
+                    intent.getStringArrayListExtra(EXTRA_BACKGROUND_PATHS)?.let { backgroundPaths = it }
+                }
             }
         }
 
@@ -312,6 +330,12 @@ class BoardSessionService : Service() {
             views.setTextViewText(R.id.session_subtitle, collapsedSubtitle)
         }
 
+        val showMirror = supportsMirroring && sessionId.isNotEmpty() && queueItemUuid.isNotEmpty() &&
+            boardConnection == CONNECTION_CONNECTED_BY_ME
+        views.setViewVisibility(R.id.session_mirror, if (showMirror) android.view.View.VISIBLE else android.view.View.GONE)
+        views.setContentDescription(R.id.session_mirror, if (mirrored) unmirrorLabel else mirrorLabel)
+        views.setInt(R.id.session_mirror, "setImageAlpha", if (mirrored) 255 else 140)
+        if (showMirror) views.setOnClickPendingIntent(R.id.session_mirror, mirrorPendingIntent())
         val bitmap = currentBitmap()
         if (bitmap != null) {
             views.setImageViewBitmap(R.id.session_image, bitmap)
@@ -360,6 +384,16 @@ class BoardSessionService : Service() {
     // The lightbulb carries the current ownership so the receiver can choose
     // reassert (connectedByMe) vs reconnect; the notification is rebuilt on every
     // update, so the extra is always current.
+    private fun mirrorPendingIntent(): PendingIntent {
+        val intent = Intent(this, BoardSessionActionReceiver::class.java).apply {
+            action = ACTION_MIRROR
+            putExtra(EXTRA_SESSION_ID, sessionId)
+            putExtra(EXTRA_QUEUE_ITEM_UUID, queueItemUuid)
+            putExtra(EXTRA_MIRRORED, !mirrored)
+        }
+        return PendingIntent.getBroadcast(this, REQ_MIRROR, intent, pendingFlags())
+    }
+
     private fun bulbPendingIntent(): PendingIntent {
         val intent = Intent(this, BoardSessionActionReceiver::class.java).apply {
             action = ACTION_BULB
@@ -385,11 +419,13 @@ class BoardSessionService : Service() {
     // then re-fires once the bundled board layers are cached) would hit the cached
     // holds-only composite keyed by overlay alone and never re-render with the board
     // photo. The separator is a null char (never present in a file path).
-    private fun imageKey(overlay: String, backgrounds: List<String>): String =
-        if (backgrounds.isEmpty()) overlay else overlay + "\u0000" + backgrounds.joinToString("\u0000")
+    private fun imageKey(overlay: String, backgrounds: List<String>, mirrored: Boolean): String {
+        val base = if (backgrounds.isEmpty()) overlay else overlay + "\u0000" + backgrounds.joinToString("\u0000")
+        return if (mirrored) base + "\u0000mirrored" else base
+    }
 
     private fun currentBitmap(): Bitmap? =
-        overlayPath?.takeIf { it.isNotBlank() }?.let { bitmapCache.get(imageKey(it, backgroundPaths)) }
+        overlayPath?.takeIf { it.isNotBlank() }?.let { bitmapCache.get(imageKey(it, backgroundPaths, mirrored)) }
 
     // Composites the current climb's thumbnail off the main thread (after
     // promotion), then re-posts the notification with it. Never blocks
@@ -397,13 +433,14 @@ class BoardSessionService : Service() {
     private fun maybeComposeImage() {
         val overlay = overlayPath?.takeIf { it.isNotBlank() } ?: return
         val backgrounds = backgroundPaths
-        val key = imageKey(overlay, backgrounds)
+        val imageMirrored = mirrored
+        val key = imageKey(overlay, backgrounds, imageMirrored)
         currentImageKey = key
         if (bitmapCache.get(key) != null) return
         if (!inFlight.add(key)) return
         imageExecutor.execute {
             val bitmap = try {
-                imageComposer(overlay, backgrounds)
+                imageComposer(overlay, backgrounds)?.let { orientThumbnail(it, imageMirrored) }
             } catch (error: Throwable) {
                 // Throwable, not Exception: decoding/compositing large board PNGs can
                 // OutOfMemoryError on low-memory devices, which is an Error — catching
@@ -521,13 +558,27 @@ class BoardSessionService : Service() {
         // downscale ceiling. ~256 KB per thumbnail → ~8 entries at 2 MB.
         private const val BITMAP_CACHE_BYTES = 2 * 1024 * 1024
 
+        @VisibleForTesting
+        internal fun orientThumbnail(bitmap: Bitmap, mirrored: Boolean): Bitmap {
+            if (!mirrored) return bitmap
+            val transform = Matrix().apply { setScale(-1f, 1f) }
+            return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, transform, true)
+        }
+
         const val ACTION_START = "com.boardsesh.liveactivity.action.START"
         const val ACTION_UPDATE = "com.boardsesh.liveactivity.action.UPDATE"
         const val ACTION_STOP = "com.boardsesh.liveactivity.action.STOP"
         const val ACTION_NAV_PREVIOUS = "com.boardsesh.liveactivity.action.NAV_PREVIOUS"
         const val ACTION_NAV_NEXT = "com.boardsesh.liveactivity.action.NAV_NEXT"
+        const val ACTION_MIRROR = "com.boardsesh.liveactivity.action.MIRROR"
         const val ACTION_BULB = "com.boardsesh.liveactivity.action.BULB"
 
+        const val EXTRA_SESSION_ID = "sessionId"
+        const val EXTRA_QUEUE_ITEM_UUID = "queueItemUuid"
+        const val EXTRA_SUPPORTS_MIRRORING = "supportsMirroring"
+        const val EXTRA_MIRRORED = "mirrored"
+        const val EXTRA_MIRROR_LABEL = "mirrorLabel"
+        const val EXTRA_UNMIRROR_LABEL = "unmirrorLabel"
         const val EXTRA_CHANNEL_NAME = "channelName"
         const val EXTRA_CHANNEL_DESC = "channelDescription"
         const val EXTRA_TITLE_FALLBACK = "contentTitleFallback"
@@ -556,6 +607,7 @@ class BoardSessionService : Service() {
         private const val REQ_NEXT = 1
         private const val REQ_CONTENT = 2
         private const val REQ_BULB = 3
+        private const val REQ_MIRROR = 4
 
         // Process-static so a rapid stop/start keeps thumbnails warm (mirrors the
         // iOS ThumbnailFetcher's persistent cache intent) and so a single worker

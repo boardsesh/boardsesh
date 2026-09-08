@@ -1,3 +1,4 @@
+import type { WidgetMirrorEvent } from '../../modules/live-activity/src/index';
 import {
   useReducer,
   useState,
@@ -750,6 +751,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       pendingUnsyncedCurrentRef.current = null;
       dispatch({
         type: 'INITIAL_QUEUE_DATA',
+        serverSequence: queueState.sequence,
         payload: {
           queue: queueState.queue.map(toClimbQueueItem),
           currentClimbQueueItem: queueState.currentClimbQueueItem
@@ -1481,6 +1483,46 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const mirrorRequestRef = useRef(false);
+  const mirrorCurrentClimb = useCallback(
+    async (mirrored: boolean, queueItemUuid: string) => {
+      if (
+        !sessionIdRef.current ||
+        stateRef.current.currentClimbQueueItem?.uuid !== queueItemUuid ||
+        mirrorRequestRef.current
+      )
+        return;
+      mirrorRequestRef.current = true;
+      try {
+        await mutations.mirrorCurrentClimb(mirrored, queueItemUuid);
+        // Subscription confirmation normally arrives first; refresh also covers a lost echo.
+        await resyncQueueFromServerRef.current();
+      } catch (error) {
+        showQueueMutationErrorToast(error, t, showToast);
+      } finally {
+        mirrorRequestRef.current = false;
+      }
+    },
+    [mutations, showToast, t],
+  );
+
+  const dispatchWidgetMirror = useCallback(async (event: Extract<WidgetMirrorEvent, { kind: 'confirmed' }>) => {
+    if (event.sessionId !== sessionIdRef.current) return false;
+    const gate = queueSyncGateRef.current;
+    if (!gate) return false;
+    const envelope = { ...event, __typename: 'ClimbMirrored' as const };
+    const decision = gate.evaluateIncoming(envelope);
+    if (decision === 'ignore-stale') return true;
+    if (decision === 'resync-gap') return resyncQueueFromServerRef.current();
+    gate.noteApplied(envelope);
+    dispatch({
+      type: 'DELTA_MIRROR_CURRENT_CLIMB',
+      serverSequence: event.sequence,
+      payload: { mirroredUuid: event.queueItemUuid, mirrored: event.mirrored },
+    });
+    return true;
+  }, []);
+
   const setPlaylistSuggestionSource = useCallback((source: PlaylistSuggestionSource | null) => {
     setPlaylistSuggestionSourceState(source);
   }, []);
@@ -1549,6 +1591,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       nextClimb,
       previousClimb,
       dispatchWidgetNavigation,
+      mirrorCurrentClimb,
+      dispatchWidgetMirror,
       setPlaylistSuggestionSource,
       refreshPlaylistSuggestionSource,
       clearSession,
@@ -1574,6 +1618,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       nextClimb,
       previousClimb,
       dispatchWidgetNavigation,
+      mirrorCurrentClimb,
+      dispatchWidgetMirror,
       setPlaylistSuggestionSource,
       refreshPlaylistSuggestionSource,
       clearSession,

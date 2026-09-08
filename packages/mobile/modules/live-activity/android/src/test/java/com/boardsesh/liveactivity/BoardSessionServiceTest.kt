@@ -31,6 +31,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Config
 import java.util.concurrent.Executor
 
@@ -43,6 +44,50 @@ import java.util.concurrent.Executor
  */
 @RunWith(RobolectricTestRunner::class)
 class BoardSessionServiceTest {
+
+    @Test
+    @Config(sdk = [30])
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun `mirror flips thumbnail pixels and leaves source bitmap unchanged`() {
+        val bitmap = Bitmap.createBitmap(2, 1, Bitmap.Config.ARGB_8888)
+        bitmap.setPixel(0, 0, android.graphics.Color.RED)
+        bitmap.setPixel(1, 0, android.graphics.Color.BLUE)
+        val mirrored = BoardSessionService.orientThumbnail(bitmap, true)
+        assertEquals(android.graphics.Color.BLUE, mirrored.getPixel(0, 0))
+        assertEquals(android.graphics.Color.RED, mirrored.getPixel(1, 0))
+        assertEquals(android.graphics.Color.RED, bitmap.getPixel(0, 0))
+        assertSame(bitmap, BoardSessionService.orientThumbnail(bitmap, false))
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `mirror content button requires supported board and ownership and retains navigation`() {
+        val captured = slot<Notification>()
+        every { ServiceCompat.startForeground(any(), any(), capture(captured), any()) } just Runs
+        val service = startService()
+        fun update(connection: String, supported: Boolean, mirrored: Boolean = false) {
+            service.onStartCommand(updateIntent(connection, hasPrevious = true, hasNext = true).apply {
+                putExtra(BoardSessionService.EXTRA_SESSION_ID, "session")
+                putExtra(BoardSessionService.EXTRA_QUEUE_ITEM_UUID, "queue-item")
+                putExtra(BoardSessionService.EXTRA_SUPPORTS_MIRRORING, supported)
+                putExtra(BoardSessionService.EXTRA_MIRRORED, mirrored)
+            }, 0, 2)
+        }
+        for (layout in listOf(R.layout.notification_session_collapsed, R.layout.notification_session_expanded)) {
+            update("connectedByMe", true, true)
+            val content = service.buildContentView(layout).apply(context, FrameLayout(context))
+            val button = content.findViewById<android.widget.ImageButton>(R.id.session_mirror)
+            assertEquals(android.view.View.VISIBLE, button.visibility)
+            assertEquals("Unmirror climb", button.contentDescription)
+            assertEquals(listOf("Previous", "Relight wall", "Next"), actionTitles(captured.captured))
+            update("heldByPeer", true)
+            assertEquals(android.view.View.GONE, service.buildContentView(layout)
+                .apply(context, FrameLayout(context)).findViewById<android.view.View>(R.id.session_mirror).visibility)
+            update("connectedByMe", false)
+            assertEquals(android.view.View.GONE, service.buildContentView(layout)
+                .apply(context, FrameLayout(context)).findViewById<android.view.View>(R.id.session_mirror).visibility)
+        }
+    }
 
     private val connectedDevice = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
 

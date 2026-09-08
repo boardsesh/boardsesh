@@ -12,6 +12,9 @@ struct ClimbSessionAttributes: ActivityAttributes {
         var hasNext: Bool
         var hasPrevious: Bool
         var climbUuid: String
+        var queueItemUuid: String? = nil
+        var mirrored: Bool? = nil
+        var supportsMirroring: Bool? = nil
         /// Who currently drives the board, from THIS device's point of view:
         /// "connectedByMe" | "heldByPeer" | "disconnected". Optional so an older
         /// binary decoding a newer push (or vice-versa) never fails to decode;

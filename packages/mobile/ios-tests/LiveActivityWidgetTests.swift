@@ -20,6 +20,54 @@ final class LiveActivityWidgetTests: XCTestCase {
         super.tearDown()
     }
 
+    private func prepareMirror() {
+        defaults.set("session", forKey: SharedConstants.sessionIdKey)
+        defaults.set(true, forKey: SharedConstants.supportsMirroringKey)
+        SharedWidgetWallControlState.save(navigationAllowed: true, isPartySession: true, to: defaults)
+        SharedWidgetWallControlState.saveBoardConnection("connectedByMe", holderDisplayName: nil, to: defaults)
+        SharedQueueState.save(items: [makeQueueItem()], currentIndex: 0, to: defaults)
+    }
+
+    func testMirrorReceiptSurvivesReplayAndRejectsOldAcknowledgement() {
+        prepareMirror()
+        let receipt = SharedMirrorConfirmation(sessionId: "session", queueItemUuid: "queue-1", mirrored: true, sequence: 5, stateHash: "hash", stateHashOrdered: nil)
+        XCTAssertNotNil(SharedMirrorState.apply(receipt, in: defaults))
+        XCTAssertEqual(SharedQueueState.load(from: defaults).0.first?.mirrored, true)
+        XCTAssertEqual(SharedMirrorState.pending(in: defaults), receipt)
+        SharedMirrorState.acknowledge(sessionId: "other", sequence: 6, in: defaults)
+        SharedMirrorState.acknowledge(sessionId: "session", sequence: 4, in: defaults)
+        XCTAssertNotNil(SharedMirrorState.pending(in: defaults))
+        SharedMirrorState.acknowledge(sessionId: "session", sequence: 5, in: defaults)
+        XCTAssertNil(SharedMirrorState.pending(in: defaults))
+    }
+
+    func testOlderMirrorResponseCannotOverwriteNewerNativeState() {
+        prepareMirror()
+        XCTAssertTrue(SharedMirrorState.persist(items: [makeQueueItem(mirrored: false)], currentIndex: 0, sequence: 7, in: defaults))
+        let receipt = SharedMirrorConfirmation(sessionId: "session", queueItemUuid: "queue-1", mirrored: true, sequence: 6, stateHash: "hash", stateHashOrdered: nil)
+        XCTAssertNil(SharedMirrorState.apply(receipt, in: defaults))
+        XCTAssertEqual(SharedQueueState.load(from: defaults).0.first?.mirrored, false)
+    }
+
+    func testBufferedSocketSnapshotCannotUndoAcceptedMirror() {
+        prepareMirror()
+        let receipt = SharedMirrorConfirmation(sessionId: "session", queueItemUuid: "queue-1", mirrored: true, sequence: 6, stateHash: "hash", stateHashOrdered: nil)
+        XCTAssertNotNil(SharedMirrorState.apply(receipt, in: defaults))
+        XCTAssertFalse(SharedMirrorState.persist(items: [makeQueueItem()], currentIndex: 0, sequence: 5, in: defaults))
+        XCTAssertTrue(SharedMirrorState.isCurrent(receipt, in: defaults))
+        SharedWidgetWallControlState.saveBoardConnection("heldByPeer", holderDisplayName: "Crew", to: defaults)
+        XCTAssertFalse(SharedMirrorState.isCurrent(receipt, in: defaults))
+    }
+
+    func testFreshSubscriptionCanRebaselineAfterServerSequenceReset() {
+        prepareMirror()
+        XCTAssertTrue(SharedMirrorState.persist(items: [makeQueueItem(mirrored: true)], currentIndex: 0, sequence: 8, in: defaults))
+        XCTAssertFalse(SharedMirrorState.persist(items: [makeQueueItem()], currentIndex: 0, sequence: 2, subscriptionSequence: 7, in: defaults))
+        XCTAssertTrue(SharedMirrorState.persist(items: [makeQueueItem()], currentIndex: 0, sequence: 2, subscriptionSequence: 8, in: defaults))
+        XCTAssertEqual(SharedMirrorState.sequence(in: defaults), 2)
+        XCTAssertFalse(SharedQueueState.load(from: defaults).0[0].mirrored)
+    }
+
     private func makeQueueItem(
         uuid: String = "queue-1",
         climbUuid: String = "climb-1",

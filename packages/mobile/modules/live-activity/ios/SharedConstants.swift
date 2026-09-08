@@ -17,6 +17,10 @@ enum SharedConstants {
     /// https://ws.boardsesh.com/api/widget/navigate). The widget POSTs button
     /// taps here. Kept fully qualified rather than derived from `serverUrlKey`
     /// so the native contract remains explicit.
+    static let widgetMirrorUrlKey = "bs_widget_mirror_url"
+    static let supportsMirroringKey = "bs_supports_mirroring"
+    static let queueSequenceKey = "bs_queue_sequence"
+    static let pendingMirrorKey = "bs_pending_mirror"
     static let widgetNavigateUrlKey = "bs_widget_navigate_url"
     /// Fully-qualified backend `/api/widget/take-control` URL. The widget
     /// POSTs non-driver lightbulb taps here before enabling local navigation.

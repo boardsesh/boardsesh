@@ -630,7 +630,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         items: [SharedQueueItem],
         currentIndex: Int,
         readyTimeout: TimeInterval,
-        drainTimeout: TimeInterval = 1.5
+        drainTimeout: TimeInterval = 1.5,
+        stillCurrent: @escaping @Sendable () -> Bool = { true }
     ) async -> Bool {
         await waitUntilReady(timeout: readyTimeout)
         let ready = runOnBleQueueSync { isReadyForWrite }
@@ -646,14 +647,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         return await displayCurrentItemAwaitingDrain(
             items: items,
             currentIndex: currentIndex,
-            drainTimeout: drainTimeout
+            drainTimeout: drainTimeout,
+            stillCurrent: stillCurrent
         )
     }
 
     private func displayCurrentItemAwaitingDrain(
         items: [SharedQueueItem],
         currentIndex: Int,
-        drainTimeout: TimeInterval
+        drainTimeout: TimeInterval,
+        stillCurrent: @escaping @Sendable () -> Bool = { true }
     ) async -> Bool {
         let displayOutcome = BoardBleDisplayWriteOutcome()
         // Both blocks enter the same serial queue in call order: the display
@@ -661,6 +664,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // waiter evaluates the global queue predicate.
         runOnBleQueue { [weak self] in
             guard let self else {
+                displayOutcome.settle(succeeded: false)
+                return
+            }
+            guard stillCurrent() else {
                 displayOutcome.settle(succeeded: false)
                 return
             }

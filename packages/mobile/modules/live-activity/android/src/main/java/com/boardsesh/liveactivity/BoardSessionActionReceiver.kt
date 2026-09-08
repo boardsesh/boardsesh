@@ -15,6 +15,12 @@ class BoardSessionActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val correlationId = intent.getStringExtra(BoardSessionService.EXTRA_CORRELATION_ID) ?: ""
         when (intent.action) {
+            BoardSessionService.ACTION_MIRROR -> {
+                val sessionId = intent.getStringExtra(BoardSessionService.EXTRA_SESSION_ID) ?: return
+                val queueItemUuid = intent.getStringExtra(BoardSessionService.EXTRA_QUEUE_ITEM_UUID) ?: return
+                if (sessionId.isBlank() || queueItemUuid.isBlank() || !intent.hasExtra(BoardSessionService.EXTRA_MIRRORED)) return
+                SessionPresenceModule.dispatchMirror(sessionId, queueItemUuid, intent.getBooleanExtra(BoardSessionService.EXTRA_MIRRORED, false))
+            }
             BoardSessionService.ACTION_NAV_PREVIOUS ->
                 SessionPresenceModule.dispatchQueueNavigate(
                     "previous",

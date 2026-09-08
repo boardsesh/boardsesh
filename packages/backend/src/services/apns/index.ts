@@ -34,6 +34,8 @@ export interface LiveActivityContentState {
   hasNext: boolean;
   hasPrevious: boolean;
   climbUuid: string;
+  queueItemUuid?: string;
+  mirrored?: boolean;
   /**
    * Per-token board-connection state, derived from the board's current holder
    * (see board-connection.ts). OPTIONAL on the device: when omitted, iOS falls

@@ -90,6 +90,14 @@ const TEST_SOURCE_FILES = [
     projectPath: 'BoardseshTests/LiveActivitySources/SharedKeychain.swift',
   },
   {
+    sourcePath: '../modules/live-activity/ios/SharedMirrorState.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/SharedMirrorState.swift',
+  },
+  {
+    sourcePath: '../modules/live-activity/ios/MirrorClimbIntent.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/MirrorClimbIntent.swift',
+  },
+  {
     sourcePath: '../modules/live-activity/ios/WidgetNetworking.swift',
     projectPath: 'BoardseshTests/LiveActivitySources/WidgetNetworking.swift',
   },

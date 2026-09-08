@@ -476,6 +476,8 @@
         "contentTitleFallback": "Kletter-Session",
         "previous": "Zurück",
         "next": "Weiter",
+        "mirror": "Boulder spiegeln",
+        "unmirror": "Spiegelung aufheben",
         "relight": "Wand neu beleuchten",
         "reconnect": "Mit Board verbinden",
         "onWall": "{{name}} ist an der Wand"

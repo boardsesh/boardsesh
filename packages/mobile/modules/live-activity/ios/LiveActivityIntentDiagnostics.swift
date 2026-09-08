@@ -5,6 +5,7 @@ import Foundation
 /// Fixed, non-identifying intent kinds. Keep this exhaustive with every
 /// `LiveActivityIntent` compiled into the main app and widget targets.
 enum LiveActivityIntentDiagnosticKind: String, Codable, CaseIterable {
+    case mirrorClimb
     case nextClimb
     case previousClimb
     case takeControl

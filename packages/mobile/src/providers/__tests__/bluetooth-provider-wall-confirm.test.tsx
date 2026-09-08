@@ -235,9 +235,13 @@ vi.mock('../../components/ble/BleControlSheet', () => ({
 
 vi.mock('../queue-provider', () => ({
   useQueue: () => ({
+    sessionId: queue.sessionId,
     state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: [] },
   }),
-  useQueueActions: () => ({ setCurrentClimb: vi.fn() }),
+  useQueueActions: () => ({
+    setCurrentClimb: vi.fn(),
+    getQueueSnapshot: () => ({ currentClimbQueueItem: queue.currentClimbQueueItem, queue: [] }),
+  }),
   useQueueSessionControls: () => {
     const activeSessionId = queue.sessionId;
     return {
@@ -541,12 +545,25 @@ describe('BluetoothProvider wall-confirm integration', () => {
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
   });
 
+  it('uses confirmed session mirroring for automatic writes and relighting', async () => {
+    bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+      bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+    queue.currentClimbQueueItem = makeQueueItem('climb-1', 'p1r12', true);
+    renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[0]?.[1]).toBe(true);
+    act(() => capturedBluetooth?.setMirrorIntent('climb-1', false));
+    await act(async () => {
+      await capturedBluetooth?.relightPresenceClimb(makePresenceClimb({ climbUuid: 'climb-1', frames: 'p1r12' }));
+    });
+    expect(bluetooth.state.sendFramesToBoard.mock.calls.at(-1)?.[1]).toBe(true);
+  });
+
   // ── Mirror intent (#5217) ────────────────────────────────────────────────
-  // The play drawer's flip is drawer-local state — it never writes
-  // `climb.mirrored`. It hands the provider an intent instead, so the flip rides
-  // the AutoSender's normal write and the dedup record follows it.
+  // Solo climbs keep their local mirror intent; sessions use confirmed queue state.
 
   it('re-pushes the current climb mirrored when the drawer flips it', async () => {
+    queue.sessionId = null;
     bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
       bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
 
@@ -578,6 +595,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
   });
 
   it('keeps the wall mirrored when the same climb is re-broadcast after a flip', async () => {
+    queue.sessionId = null;
     // The bug this guards: a direct sendFramesToBoard left the dedup record
     // describing the un-mirrored orientation, so the next byte-identical
     // re-broadcast re-pushed un-mirrored frames and silently un-flipped the wall.
@@ -610,9 +628,6 @@ describe('BluetoothProvider wall-confirm integration', () => {
         }),
       );
     });
-    await waitFor(() => {
-      expect(queue.confirmClimbOnWall).toHaveBeenCalled();
-    });
 
     // No third write, and nothing un-mirrored went out.
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
@@ -625,6 +640,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
   });
 
   it('falls back to the queue item once the current climb changes', async () => {
+    queue.sessionId = null;
     bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
       bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
 
@@ -670,6 +686,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
   });
 
   it('does not re-light a stale flip when you navigate back to a climb you had mirrored', async () => {
+    queue.sessionId = null;
     // The drawer resets its mirror toggle on every navigation, so returning to a
     // climb you had flipped must NOT light it mirrored under an un-mirrored
     // screen. The drawer re-states the orientation on each climb change; this
@@ -742,6 +759,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
   });
 
   it('does not write again when the orientation is restated unchanged', async () => {
+    queue.sessionId = null;
     // Restating the same orientation must not produce a write: the drain wakes,
     // computes the same signature, and dedups.
     bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
@@ -762,6 +780,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
   });
 
   it('un-flips the wall when you turn off a climb that is mirrored by default', async () => {
+    queue.sessionId = null;
     // A mirrored ascent (a logbook tick, or a crew member's item) is already lit
     // mirrored off its own `climb.mirrored`. Turning the flip OFF records the
     // first intent for that climb — so anything that decides "no write needed"
@@ -1936,6 +1955,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     });
 
     it('relights a climb in the orientation it is still flipped to', async () => {
+      queue.sessionId = null;
       // A flip belongs to the climb, so every write path honours it. Relighting
       // it un-mirrored would leave the wall disagreeing with the toggle a drawer
       // opening on that climb will show — reachable on iPhone, where the player
@@ -1970,6 +1990,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     });
 
     it('leaves the undone wall alone when the current climb is still flipped', async () => {
+      queue.sessionId = null;
       // Undo relights the PREVIOUS climb; the current one is still flipped. The
       // flip must stay recorded — dropping it makes the next drain compute an
       // un-mirrored current climb, whose signature no longer matches what was

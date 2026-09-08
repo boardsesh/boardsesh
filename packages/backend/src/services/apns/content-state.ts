@@ -31,5 +31,7 @@ export function buildContentStateFromQueueState(queueState: QueueState): LiveAct
     hasNext: currentIndex < queueState.queue.length - 1,
     hasPrevious: currentIndex > 0,
     climbUuid: currentItem.climb.uuid,
+    queueItemUuid: currentItem.uuid,
+    mirrored: currentItem.climb.mirrored === true,
   };
 }
