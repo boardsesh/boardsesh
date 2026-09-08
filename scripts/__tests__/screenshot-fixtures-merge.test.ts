@@ -10,6 +10,7 @@ function manifest(overrides: Partial<ScreenshotFixtureManifest> = {}): Screensho
     frozenNow: '2026-09-08T12:00:00Z',
     upstream: 'https://ws.boardsesh.com',
     accountEmail: 'test@boardsesh.com',
+    accountUserId: 'user-test',
     flow: 'app-store',
     graphql: [],
     static: [],
