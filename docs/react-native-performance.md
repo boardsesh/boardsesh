@@ -317,6 +317,14 @@ uptime (#3803). Four contracts keep them in check:
   `memoryWarning` event is a _last_ resort, not a foreground lever: iOS delivers it only after an
   allocation has already failed. Re-decodes from disk (no network).
 
+**Phone player transitions retain thumbnails.** Opening `/play` must keep the underlying
+list's image layers mounted. Although the player has an opaque backing, its opening and closing
+animations expose the list; an interactive swipe exposes it while `/play` is still focused.
+Unmounting on route focus leaves blank thumbnails until their images decode again. Keep the
+existing image instances throughout the transition, including a cancelled swipe. This retains
+the mounted list thumbnails while the player is open; list virtualization, cache limits,
+app-background cleanup, and inactive-iPad-tab cleanup continue to bound image memory.
+
 **Why:** On-device profiling (Pixel 8 Pro, Android 16) showed ~248 MB native heap idle on the feed
 and the play-drawer carousel piling a native-res (~7 MB RGBA) overlay per swiped climb into the
 cache. Display-sizing + recycling cut carousel browse-growth ~19%; background-blanking cut the
