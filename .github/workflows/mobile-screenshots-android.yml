@@ -32,10 +32,16 @@ name: Mobile Screenshots (Android)
 #     reason to the step summary.
 #   * shipped=true, or any dispatch → `android` runs the whole capture.
 # The gate is a separate two-line job rather than a condition threaded through
-# `android`'s steps: `android` is ~15 steps, a custom step-level `if:` silently
-# replaces that step's implicit success() check, and repeating the gate fifteen
-# times would have been fifteen chances to write `if: shipped == 'true'` where
-# `success() && shipped == 'true'` was meant. One `needs:` says it once.
+# `android`'s 21 steps. A per-step `if: shipped == 'true'` would actually be safe
+# on its own: per docs.github.com (Expressions -> Status check functions), "A
+# default status check of success() is applied unless you include one of these
+# functions" (success()/failure()/always()/cancelled()) — so a bare
+# `shipped == 'true'` still implicitly ANDs success(), same as writing
+# `success() && shipped == 'true'` by hand. The real case for a separate job is
+# cost, not correctness: one ~10s API call on a cheap ubuntu runner decides
+# whether the ~17-minute emulator job (KVM setup, Maestro install, AVD boot,
+# capture) is worth booting at all, instead of paying for all of that on every
+# JS-only push before discovering there was nothing to shoot.
 #
 # Split out from the old combined mobile-screenshots.yml so iOS and Android run
 # independently: an Android-only change reruns here in ~15-20 min without waiting
@@ -109,6 +115,14 @@ on:
 # GitHub coalesces whatever queues behind it down to the newest. Every dispatch
 # gets its own group keyed on the run id, so a `commit_to_main` run by hand is
 # never cancelled by a native deploy landing mid-capture — or by another dispatch.
+#
+# Accepted trade-off: a dispatch is never cancelled, so per-run groups only
+# serialize automatic runs against each other — two `commit_to_main` dispatches,
+# or a dispatch and an automatic run, can overlap and both reach `git push
+# origin HEAD:main` for the screenshots commit. Last writer wins; the loser's
+# push is simply rejected and retried against the new main (see the retry loop
+# in "Commit screenshots to main" below), so this can reorder which capture's
+# pixels land, but never corrupts the commit.
 concurrency:
   group: ${{ github.event_name == 'workflow_run' && 'mobile-screenshots-android' || format('mobile-screenshots-android-dispatch-{0}', github.run_id) }}
   cancel-in-progress: false
@@ -147,17 +161,37 @@ jobs:
             echo "::notice::Manual dispatch of $SOURCE_SHA — capturing without the shipped-binary gate."
             exit 0
           fi
-          # android-apk-rn.yml tags with `git tag --force <tag> $GITHUB_SHA`,
-          # i.e. a LIGHTWEIGHT tag, so each ref's object.sha IS the commit and
-          # needs no peeling. Read it over the API: this job has no checkout.
-          tagged_shas="$(gh api --paginate \
+          # android-apk-rn.yml tags with `git tag --force <tag> $GITHUB_SHA`, i.e. a
+          # LIGHTWEIGHT tag, so its ref's object.sha is normally already the commit.
+          # But a lightweight-only assumption is fragile — an annotated tag (made by
+          # hand, or by a future change to the deploy workflow) points at a TAG
+          # object instead, whose own sha is not a commit sha, and would read as
+          # "never shipped" even when it names the right commit. So read each ref's
+          # object type alongside its sha, and peel any "tag"-typed object through
+          # the Git Data API to the commit sha it points at before comparing. Read
+          # over the API: this job has no checkout. Assignment before use (no
+          # `local`) so `set -e` aborts the job on any API failure here — fail
+          # closed rather than mis-reading a real shipped commit as unshipped.
+          tagged_refs="$(gh api --paginate \
             "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/fingerprint-android-" \
-            --jq '.[].object.sha')"
-          # Assign first, grep second. Piping gh straight into `grep -q` lets grep
-          # close the pipe on its first match, and the SIGPIPE that then kills gh
-          # would read as "not shipped" under `pipefail` — inverting the gate on
-          # exactly the runs that should capture.
-          if printf '%s\n' "$tagged_shas" | grep -qx "$SOURCE_SHA"; then
+            --jq '.[] | "\(.object.type) \(.object.sha)"')"
+          shipped_commit_shas=""
+          while IFS=' ' read -r object_type object_sha; do
+            [ -n "$object_sha" ] || continue
+            if [ "$object_type" = "tag" ]; then
+              commit_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq .object.sha)"
+            else
+              commit_sha="$object_sha"
+            fi
+            shipped_commit_shas="$shipped_commit_shas
+          $commit_sha"
+          done <<<"$tagged_refs"
+          # Assign first, grep second, and via a herestring rather than a pipe:
+          # piping straight into `grep -q` lets grep close the pipe on its first
+          # match, and the SIGPIPE that then kills the producer would read as "not
+          # shipped" under `pipefail` — inverting the gate on exactly the runs that
+          # should capture.
+          if grep -qxF -- "$SOURCE_SHA" <<<"$shipped_commit_shas"; then
             echo "shipped=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Android binary shipped at $SOURCE_SHA — capturing."
           else
@@ -453,6 +487,12 @@ jobs:
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # workflow_run always resolves $GITHUB_REF_NAME to the DEFAULT branch
+          # (the branch the workflow file itself lives on), not the branch the
+          # capture ran against — it never names the commit that actually shipped.
+          # Name the captured commit instead on that trigger; keep the branch name
+          # (a human's own choice) for a dispatch.
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -uo pipefail
           if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
@@ -474,8 +514,14 @@ jobs:
             file_args+=(-F "files[${index}]=@${shot}")
             index=$((index + 1))
           done
-          content=$(printf '📸 **Play Store screenshots** (%d shots) on `%s`\n<%s>' \
-            "${#shots[@]}" "$GITHUB_REF_NAME" "$RUN_URL")
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
+            short_sha="${SOURCE_SHA:0:7}"
+            ref_label="commit \`${short_sha}\` (<https://github.com/${GITHUB_REPOSITORY}/commit/${SOURCE_SHA}>)"
+          else
+            ref_label="\`${GITHUB_REF_NAME}\`"
+          fi
+          content=$(printf '📸 **Play Store screenshots** (%d shots) on %s\n<%s>' \
+            "${#shots[@]}" "$ref_label" "$RUN_URL")
           payload=$(jq -nc --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}')
           curl -sS --fail-with-body -X POST "$DISCORD_DEPLOY_WEBHOOK" \
             -F "payload_json=${payload}" \

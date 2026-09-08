@@ -38,9 +38,16 @@ name: Mobile Screenshots (iOS)
 #   * shipped=true, probe unchanged → setup + ios-build + probe run, ios-capture
 #     is skipped (probe succeeded, changed=false), ios-finalize runs with
 #     UNCHANGED=true: no dimension gate, no upload, no baseline refresh.
-#   * shipped=true, probe changed (or a gate=full dispatch) → ios-capture fans
-#     out, ios-finalize runs with FULL_SET_CAPTURED=true: dimension gate, then
-#     the App Store Connect upload and the baseline refresh.
+#   * shipped=true, probe changed → ios-capture fans out, ios-finalize runs with
+#     FULL_SET_CAPTURED=true: dimension gate, then — because this run came from
+#     the workflow_run trigger — the App Store Connect upload and the baseline
+#     refresh both fire automatically; neither needs an `upload` or
+#     `publish_baseline` input, since workflow_run has no inputs at all.
+#   * a `gate=full` dispatch (a human asking for the whole set) fans out the same
+#     way and, when it captured the full app-store set, runs the same dimension
+#     gate — but the upload only fires with `upload: true` on that dispatch, and
+#     the baseline only refreshes with `publish_baseline: true`. A capture-only
+#     dispatch (the defaults) does neither.
 #
 # Split out from the old combined mobile-screenshots.yml so iOS and Android run
 # independently. The Android half lives in mobile-screenshots-android.yml.
@@ -75,9 +82,10 @@ name: Mobile Screenshots (iOS)
 #                  excluded from the matrix (the probe already uploaded it), so a
 #                  changed probe fans out to the remaining 11.
 #   ios-finalize — merge the per-shard artifacts into one tree, run the dimension
-#                  gate (it needs all five App Store locales at once), and upload.
-#                  An automatic run refreshes the baseline itself after a green
-#                  full capture; a dispatch has to ask with `publish_baseline`.
+#                  gate and the content gate (each needs all five App Store
+#                  locales at once), and upload. An automatic run refreshes the
+#                  baseline itself after a green full capture; a dispatch has to
+#                  ask with `publish_baseline`.
 #
 # The shard body itself lives in .github/actions/ios-screenshot-shard so probe and
 # ios-capture capture BYTE-IDENTICALLY — a probe that captured differently from
@@ -89,7 +97,13 @@ name: Mobile Screenshots (iOS)
 # ios-finalize uploads the captured set to App Store Connect (screenshots ONLY —
 # no binary, no text metadata) on an automatic run that captured the full set,
 # and on a dispatch with `upload = true`. A plain capture-only dispatch never
-# uploads. The fastlane lane skips cleanly when App Store Connect has no editable
+# uploads. The automatic upload is gated on dimensions AND content — the
+# dimension gate only proves a PNG is the right pixel size, not that it isn't a
+# blank frame or a mid-load skeleton, so assert-screenshot-content.ts runs right
+# after it with an absolute byte floor plus a check against the last published
+# baseline, mirroring the blank/mid-load checks the Android capture job already
+# has (mobile-screenshots-android.yml, "Assert screenshots are not blank"). The
+# fastlane lane skips cleanly when App Store Connect has no editable
 # version yet, and mobile-store-draft.yml re-attaches the published baseline once
 # it creates one — so an automatic upload that lands early is not lost.
 #
@@ -155,6 +169,15 @@ on:
 # behind it down to the newest. Every dispatch gets its own group keyed on the
 # run id, so an `upload: true` run by hand is never cancelled by a native deploy
 # landing mid-capture — or by another dispatch.
+#
+# Accepted trade-off: a dispatch is never cancelled, so per-run groups only
+# serialize automatic runs against each other — two `upload`/`publish_baseline`
+# dispatches, or a dispatch and an automatic run, CAN run ios-finalize
+# concurrently and both reach `gh release upload --clobber` (the baseline
+# prerelease) and the App Store Connect screenshots upload. Neither is
+# transactional across two runs, so the last writer wins on both; we accept
+# that rather than adding cross-run locking, since a screenshot-only mismatch is
+# cheap to notice and re-run.
 concurrency:
   group: ${{ github.event_name == 'workflow_run' && 'mobile-screenshots-ios' || format('mobile-screenshots-ios-dispatch-{0}', github.run_id) }}
   cancel-in-progress: false
@@ -203,17 +226,37 @@ jobs:
             echo "::notice::Manual dispatch of $SOURCE_SHA — capturing without the shipped-binary gate."
             exit 0
           fi
-          # ios-testflight-rn.yml tags with `git tag --force <tag> $GITHUB_SHA`,
-          # i.e. a LIGHTWEIGHT tag, so each ref's object.sha IS the commit and
-          # needs no peeling. Read it over the API: setup has no checkout.
-          tagged_shas="$(gh api --paginate \
+          # ios-testflight-rn.yml tags with `git tag --force <tag> $GITHUB_SHA`, i.e.
+          # a LIGHTWEIGHT tag, so its ref's object.sha is normally already the
+          # commit. But a lightweight-only assumption is fragile — an annotated tag
+          # (made by hand, or by a future change to the deploy workflow) points at a
+          # TAG object instead, whose own sha is not a commit sha, and would read as
+          # "never shipped" even when it names the right commit. So read each ref's
+          # object type alongside its sha, and peel any "tag"-typed object through
+          # the Git Data API to the commit sha it points at before comparing. Read
+          # over the API: setup has no checkout. Assignment before use (no `local`)
+          # so `set -e` aborts the job on any API failure here — fail closed rather
+          # than mis-reading a real shipped commit as unshipped.
+          tagged_refs="$(gh api --paginate \
             "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/fingerprint-ios-" \
-            --jq '.[].object.sha')"
-          # Assign first, grep second. Piping gh straight into `grep -q` lets grep
-          # close the pipe on its first match, and the SIGPIPE that then kills gh
-          # would read as "not shipped" under `pipefail` — inverting the gate on
-          # exactly the runs that should capture.
-          if printf '%s\n' "$tagged_shas" | grep -qx "$SOURCE_SHA"; then
+            --jq '.[] | "\(.object.type) \(.object.sha)"')"
+          shipped_commit_shas=""
+          while IFS=' ' read -r object_type object_sha; do
+            [ -n "$object_sha" ] || continue
+            if [ "$object_type" = "tag" ]; then
+              commit_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq .object.sha)"
+            else
+              commit_sha="$object_sha"
+            fi
+            shipped_commit_shas="$shipped_commit_shas
+          $commit_sha"
+          done <<<"$tagged_refs"
+          # Assign first, grep second, and via a herestring rather than a pipe:
+          # piping straight into `grep -q` lets grep close the pipe on its first
+          # match, and the SIGPIPE that then kills the producer would read as "not
+          # shipped" under `pipefail` — inverting the gate on exactly the runs that
+          # should capture.
+          if grep -qxF -- "$SOURCE_SHA" <<<"$shipped_commit_shas"; then
             echo "shipped=true" >> "$GITHUB_OUTPUT"
             echo "::notice::iOS binary shipped at $SOURCE_SHA — capturing."
           else
@@ -224,12 +267,22 @@ jobs:
 
       - name: Compute locales, matrix and gate
         id: compute
+        env:
+          # `locales` is free text and would otherwise be pasted straight into the
+          # shell via `${{ }}`. `flow`/`upload`/`gate` are declared as
+          # choice/boolean dispatch inputs, but that only constrains the UI — a
+          # dispatch made through the API/gh CLI can still pass an arbitrary
+          # string — so all four go through env the same way.
+          LOCALES: ${{ inputs.locales || '' }}
+          FLOW: ${{ inputs.flow || 'app-store' }}
+          UPLOAD_INPUT: ${{ inputs.upload || 'false' }}
+          GATE_INPUT: ${{ inputs.gate || 'full' }}
         run: |
           set -euo pipefail
-          locales="${{ inputs.locales || '' }}"
-          flow="${{ inputs.flow || 'app-store' }}"
-          upload="${{ inputs.upload || 'false' }}"
-          gate="${{ inputs.gate || 'full' }}"
+          locales="$LOCALES"
+          flow="$FLOW"
+          upload="$UPLOAD_INPUT"
+          gate="$GATE_INPUT"
           # An automatic run after a native deploy always probes first: it is the
           # unattended path, most native releases move no store pixels, and the
           # probe is one macOS runner instead of twelve. A dispatch keeps the
@@ -674,12 +727,52 @@ jobs:
         # The gate needs the full App Store set (all five store locales, app-store
         # flow). Skip it for the onboarding flow, a narrowed `locales` run, or an
         # unchanged probe — those are capture-only and hold one shard at most; the
-        # per-shard artifacts are still produced + uploaded. `success() &&` is
-        # mandatory here too (see the note above the fastlane step below): a
-        # custom `if:` overrides the default success() status check, so without
-        # it this would still run after a failed merge.
+        # per-shard artifacts are still produced + uploaded. `success() &&` is kept
+        # here for readability, not because it's load-bearing: per docs.github.com
+        # (Expressions -> Status check functions), a custom `if:` that omits
+        # success()/failure()/always()/cancelled() still gets the default
+        # success() ANDed in automatically, so this condition would behave
+        # identically without the explicit `success() &&` prefix.
         if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
         run: vp run check:screenshot-dimensions -- --platform ios
+
+      # Fetch the last published baseline for the content gate below to compare
+      # against. `--all` rebuilds the full <locale>/<device>/ tree
+      # (screenshot-baseline.ts), matching this job's own merged
+      # app-stores/apple/screenshots layout so relative paths line up. Exits 0
+      # with found=false when no baseline has ever been published (first run, or
+      # a pruned prerelease) — that is the first-run state, not an error, so the
+      # content gate below runs floor-only in that case (no --baseline-dir). Same
+      # `if` as the dimension gate: both protect the same automatic upload below.
+      - name: Fetch previous screenshot baseline
+        id: previous_baseline
+        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          vp run screenshot:baseline -- fetch \
+            --platform ios \
+            --all \
+            --out "$RUNNER_TEMP/previous-baseline"
+
+      # Second half of the automatic-upload gate, alongside the dimension check
+      # above: an absolute byte floor plus a ratio against the baseline fetched
+      # above, mirroring the blank/mid-load checks the Android capture job
+      # already runs (mobile-screenshots-android.yml, "Assert screenshots are not
+      # blank"). Same `if` as the dimension gate.
+      - name: Assert screenshot content
+        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
+        env:
+          BASELINE_FOUND: ${{ steps.previous_baseline.outputs.found }}
+        run: |
+          set -euo pipefail
+          if [ "$BASELINE_FOUND" = "true" ]; then
+            vp run screenshot:assert-content -- \
+              --dir app-stores/apple/screenshots \
+              --baseline-dir "$RUNNER_TEMP/previous-baseline"
+          else
+            vp run screenshot:assert-content -- --dir app-stores/apple/screenshots
+          fi
 
       # --- Upload to App Store Connect ---
       # Screenshots ONLY — no binary, no metadata, no review submission. Gated
@@ -688,10 +781,13 @@ jobs:
       # on a version in "Prepare for Submission", and the lane pre-flights that:
       # with no editable version it skips with a summary instead of failing, and
       # mobile-store-draft.yml attaches the published baseline once it creates
-      # one. The `success() &&` prefix is required: a custom `if:` overrides the default
-      # success() status check, so without it these would run even if a prior step
-      # failed. fastlane's screenshots lane is a pure network upload (no Xcode), so
-      # it runs fine on ubuntu.
+      # one. The `success() &&` prefix below is kept for readability, not because
+      # it changes behaviour: per docs.github.com (Expressions -> Status check
+      # functions), a custom `if:` that omits
+      # success()/failure()/always()/cancelled() still gets the default
+      # success() ANDed in automatically, so these steps would already skip after
+      # a prior failure without it. fastlane's screenshots lane is a pure network
+      # upload (no Xcode), so it runs fine on ubuntu.
       - name: Set up Ruby + fastlane
         if: ${{ success() && (env.UPLOAD_RUN == 'true' || (github.event_name == 'workflow_run' && env.FULL_SET_CAPTURED == 'true')) }}
         uses: ruby/setup-ruby@v1

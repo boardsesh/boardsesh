@@ -1048,6 +1048,14 @@ export default defineConfig({
         command: 'tsx scripts/assert-screenshot-dimensions.ts',
         cache: false,
       },
+      // Content gate run right after the dimension gate in ios-finalize, before the
+      // automatic App Store Connect upload: an absolute byte floor plus a ratio
+      // against the last published baseline (scripts/assert-screenshot-content.ts),
+      // mirroring the blank/mid-load checks the Android capture job already has.
+      'screenshot:assert-content': {
+        command: 'tsx scripts/assert-screenshot-content.ts',
+        cache: false,
+      },
       // Probe gate for the iOS screenshot fan-out: compares one freshly captured
       // shard against the stored baseline (scripts/compare-screenshots.ts).
       'screenshot:compare': {

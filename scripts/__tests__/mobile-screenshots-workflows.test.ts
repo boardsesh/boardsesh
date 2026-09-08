@@ -86,6 +86,19 @@ function checkoutSteps(workflow: ParsedWorkflow): WorkflowStep[] {
 }
 
 /**
+ * Every `actions/checkout` step inside the shared shard composite action. It has
+ * none today — the action's own doc comment says the caller must check out first
+ * — but a composite action's `runs.steps` is a completely separate structure
+ * from a workflow's `jobs`, so `checkoutSteps()` above would silently miss one
+ * added here. Folded into the same ref: assertion below so that blind spot can't
+ * reopen.
+ */
+function shardActionCheckoutSteps(): WorkflowStep[] {
+  const action = parse(readYaml(SHARD_ACTION_PATH)) as { runs: { steps?: WorkflowStep[] } };
+  return (action.runs.steps ?? []).filter((step) => (step.uses ?? '').startsWith('actions/checkout@'));
+}
+
+/**
  * Every `inputs.<name>` read must survive the `workflow_run` trigger, where the
  * whole `inputs` context is null. Exactly three shapes do:
  *
@@ -365,10 +378,13 @@ describe('screenshot captures follow the native deploys', () => {
   });
 
   it.each(workflows)('$platform checks out the commit that shipped the binary', (entry) => {
-    const steps = checkoutSteps(parseWorkflow(entry.path));
+    const steps = [...checkoutSteps(parseWorkflow(entry.path)), ...shardActionCheckoutSteps()];
     expect(steps.length).toBeGreaterThan(0);
     for (const step of steps) {
-      expect(step.with?.ref, `every checkout in ${entry.path} must pin the source sha`).toBe(SOURCE_SHA_EXPRESSION);
+      expect(
+        step.with?.ref,
+        `every checkout in ${entry.path} (or the shard composite action) must pin the source sha`,
+      ).toBe(SOURCE_SHA_EXPRESSION);
     }
   });
 
@@ -404,7 +420,11 @@ describe('screenshot captures follow the native deploys', () => {
 
   it('probes first on an automatic iOS run and keeps the input on a dispatch', () => {
     const source = readYaml(IOS_WORKFLOW_PATH);
-    expect(source).toContain(`gate="\${{ inputs.gate || 'full' }}"`);
+    // `gate` is read from an env var (GATE_INPUT), not interpolated directly via
+    // `${{ }}` in the script body — see the "Compute locales, matrix and gate"
+    // step's `env:` block, which is where the dispatch default actually lives now.
+    expect(source).toContain(`GATE_INPUT: \${{ inputs.gate || 'full' }}`);
+    expect(source).toContain('gate="$GATE_INPUT"');
     expect(source).toContain('if [ "$EVENT_NAME" = "workflow_run" ]; then\n            gate=probe');
   });
 
