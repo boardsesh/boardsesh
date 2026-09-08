@@ -15,7 +15,7 @@
 #   SCREENSHOT_DEV_CLIENT      '1' to pass --dev-client to the orchestrator
 #   SCREENSHOT_RENDER_MODE     board drawing            (empty = the app default, Aura)
 #   SCREENSHOT_BOARDS          "|"-separated walls      (empty = the app default)
-#   SCREENSHOT_FIXTURES        live | record | replay   (default live = no --fixtures flag)
+#   SCREENSHOT_FIXTURES        replay | record | live   (default replay = serve the committed fixture set)
 #   SCREENSHOT_FROZEN_NOW      record only: ISO instant to freeze "now" at (empty = mint one)
 set -euo pipefail
 
@@ -49,11 +49,12 @@ if [ "${SCREENSHOT_DEV_CLIENT:-}" = "1" ]; then
   retarget+=(--dev-client)
 fi
 
-# The record/replay backend. `live` (the default) passes nothing, so the capture
-# talks to PROD exactly as it did before fixtures existed. A recording run starts
-# from an empty set so what it uploads is only what THIS capture asked for; the
-# merge step unions it with the iOS shards.
-fixtures="${SCREENSHOT_FIXTURES:-live}"
+# The record/replay backend. `replay` (the default) serves the committed fixture
+# set, so captures are deterministic. `live` passes nothing, so the capture talks
+# to PROD exactly as it did before fixtures existed. A recording run starts from
+# an empty set so what it uploads is only what THIS capture asked for; the merge
+# step unions it with the iOS shards.
+fixtures="${SCREENSHOT_FIXTURES:-replay}"
 if [ "$fixtures" != "live" ]; then
   retarget+=(--fixtures "$fixtures")
   if [ "$fixtures" = "record" ]; then

@@ -366,11 +366,13 @@ by the capture workflows and merged afterwards.
    regardless — this is what keeps a shard's own recorded data from rendering
    as being from the future relative to the merged set's frozen "now".
 5. Commit `packages/mobile/screenshot-fixtures/`.
-6. Flip both workflows' `fixtures` input default from `live` to `replay`, so an
-   ordinary dispatch captures against the committed set.
 
-Until step 6 the default stays `live` and captures run against PROD exactly as
-they always have.
+Both workflows' `fixtures` input now defaults to `replay`, so an ordinary
+dispatch captures against the committed set — CI never talks to PROD unless a
+dispatch explicitly asks it to. To refresh the set, dispatch again with
+`fixtures = record`, re-run steps 3-5 above, and commit the result. `fixtures =
+live` is the old direct-to-PROD path (no fixtures at all), kept as an escape
+hatch for debugging against real data.
 
 ## The drift test
 
