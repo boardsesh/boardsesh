@@ -424,7 +424,11 @@ jobs:
 
       - name: Attach baseline screenshots to the draft
         id: attach_screenshots
-        if: steps.draft.outcome == 'success' && steps.baseline.outcome == 'success'
+        # Gate on the fetch script's own `found` output, not just its exit code —
+        # `vp run screenshot:baseline -- fetch` exits 0 with found=false whenever
+        # no baseline has been published yet (first run, or a pruned prerelease),
+        # and attaching an empty screenshots directory would otherwise run anyway.
+        if: steps.draft.outcome == 'success' && steps.baseline.outputs.found == 'true'
         continue-on-error: true
         working-directory: fastlane
         env:
@@ -440,9 +444,16 @@ jobs:
           [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] || { echo "::error::Missing APP_STORE_CONNECT_ISSUER_ID."; exit 1; }
           bundle exec fastlane ios screenshots
 
+      - name: Warn if no screenshot baseline has been published yet
+        if: steps.draft.outcome == 'success' && steps.baseline.outputs.found != 'true'
+        # Block scalar (not a one-line plain string): "publish_baseline: true"
+        # contains a literal ": ", which a plain YAML scalar can't carry safely.
+        run: |
+          echo "::warning::No screenshot baseline published yet — dispatch Mobile Screenshots (iOS) with publish_baseline: true, or attach screenshots by hand in App Store Connect."
+
       - name: Warn if attaching screenshots failed
-        if: steps.baseline.outcome == 'failure' || steps.attach_screenshots.outcome == 'failure'
-        run: echo "::warning::Could not attach baseline screenshots to the App Store draft. Best-effort — re-run Mobile Screenshots (iOS) with upload=true, or attach them by hand in App Store Connect."
+        if: steps.attach_screenshots.outcome == 'failure'
+        run: echo "::warning::Could not attach baseline screenshots to the App Store draft. Best-effort — re-run after resolving, or attach them by hand in App Store Connect."
 
       - name: Warn if the App Store draft step failed
         if: steps.draft.outcome == 'failure'

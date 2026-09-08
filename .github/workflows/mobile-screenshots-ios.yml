@@ -31,8 +31,11 @@ name: Mobile Screenshots (iOS)
 #                  excluded from the matrix (the probe already uploaded it), so a
 #                  changed probe fans out to the remaining 11.
 #   ios-finalize — merge the per-shard artifacts into one tree, run the dimension
-#                  gate (it needs all five App Store locales at once), refresh the
-#                  baseline, and upload.
+#                  gate (it needs all five App Store locales at once), and upload.
+#                  Publishing the baseline needs `publish_baseline: true` on this
+#                  dispatch (gate=full, or gate=probe when no baseline exists yet)
+#                  until the `workflow_run` trigger (next PR in this series) does
+#                  it automatically after each green full capture.
 #
 # The shard body itself lives in .github/actions/ios-screenshot-shard so probe and
 # ios-capture capture BYTE-IDENTICALLY — a probe that captured differently from
@@ -89,7 +92,7 @@ on:
         type: boolean
         default: false
       publish_baseline:
-        description: 'After a green FULL capture, publish the set as the `screenshots-baseline` prerelease that the probe gate compares against. Automatic runs on main do this by themselves.'
+        description: 'After a green FULL capture, publish the set as the `screenshots-baseline` prerelease that the probe gate compares against. The `workflow_run` trigger (next PR in this series) will do this automatically after each green full capture; until then, dispatch with this flag set (gate=full, or gate=probe when no baseline exists yet).'
         type: boolean
         default: false
 
@@ -161,8 +164,19 @@ jobs:
           # a shard artifact, so exclude that pair from the fan-out instead of
           # shooting it twice.
           devices='[{"name":"iPhone 16 Pro Max","slug":"iphone-16-pro-max"},{"name":"iPad Pro 13-inch (M5)","slug":"ipad-pro-13-inch-m5"},{"name":"iPad Pro 11-inch (M5)","slug":"ipad-pro-11-inch-m5"}]'
+          # devices[0] must stay the iPhone 16 Pro Max entry: the probe shard is
+          # always en-US × devices[0], and the exclude below is derived from that
+          # same element, so a reordered $devices array would otherwise silently
+          # probe (and exclude) the wrong device.
+          if [ "$(printf '%s' "$devices" | jq -r '.[0].slug')" != "iphone-16-pro-max" ]; then
+            echo "::error::devices[0] must be the iPhone 16 Pro Max entry (the probe shard assumption)."
+            exit 1
+          fi
           if [ "$gate" = "probe" ]; then
-            exclude='[{"locale":"en-US","device":{"name":"iPhone 16 Pro Max","slug":"iphone-16-pro-max"}}]'
+            # Derive the excluded (locale, device) pair from devices[0] instead of
+            # hand-copying the literal, so it can never drift from the device the
+            # probe actually shoots.
+            exclude=$(printf '%s' "$devices" | jq -c '[{locale:"en-US", device: .[0]}]')
           else
             exclude='[]'
           fi
@@ -476,8 +490,11 @@ jobs:
         # The gate needs the full App Store set (all five store locales, app-store
         # flow). Skip it for the onboarding flow, a narrowed `locales` run, or an
         # unchanged probe — those are capture-only and hold one shard at most; the
-        # per-shard artifacts are still produced + uploaded.
-        if: ${{ env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
+        # per-shard artifacts are still produced + uploaded. `success() &&` is
+        # mandatory here too (see the note above the fastlane step below): a
+        # custom `if:` overrides the default success() status check, so without
+        # it this would still run after a failed merge.
+        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
         run: vp run check:screenshot-dimensions -- --platform ios
 
       # --- Upload to App Store Connect ---

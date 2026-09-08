@@ -84,9 +84,11 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(source).toContain('upload=true cannot be combined with gate=probe');
     // A narrowed / onboarding / uploading run has no full-set baseline to compare against.
     expect(source).toContain('if [ -n "$locales" ] || [ "$flow" = "onboarding" ] || [ "$upload" = "true" ]; then');
-    expect(source).toContain(
-      `exclude='[{"locale":"en-US","device":{"name":"iPhone 16 Pro Max","slug":"iphone-16-pro-max"}}]'`,
-    );
+    // The exclude is derived from devices[0], not hand-copied, and a guard fails
+    // the step if devices[0] ever stops being the iPhone 16 Pro Max the probe
+    // shard actually shoots.
+    expect(source).toContain(`jq -r '.[0].slug')" != "iphone-16-pro-max" ]; then`);
+    expect(source).toContain(`exclude=$(printf '%s' "$devices" | jq -c '[{locale:"en-US", device: .[0]}]')`);
   });
 
   it('runs the probe on gate=probe only, off the shared shard action', () => {
@@ -134,13 +136,34 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(flatten(finalize.if)).toContain('!cancelled()');
     // The baseline prerelease is the only thing this workflow writes.
     expect(finalize.permissions).toEqual({ contents: 'write' });
-    expect(flatten(finalize.environment)).toContain("github.event_name == 'workflow_run'");
+    // `environment:` folds across lines in the YAML source (`>-`); flatten()
+    // collapses that fold to single spaces the same way it does for `if:` above.
+    expect(flatten(finalize.environment)).toBe(
+      "${{ ((github.event_name == 'workflow_dispatch' && inputs.upload) || " +
+        "(github.event_name == 'workflow_run' && needs.ios-capture.result == 'success')) && 'Production' || '' }}",
+    );
+    expect(flatten(finalize.env?.UNCHANGED)).toBe(
+      "${{ needs.probe.result == 'success' && needs.probe.outputs.changed == 'false' }}",
+    );
+    // FULL_SET_CAPTURED also folds across lines (`>-`); same flatten() treatment.
+    expect(flatten(finalize.env?.FULL_SET_CAPTURED)).toBe(
+      "${{ needs.ios-capture.result == 'success' && " +
+        "(needs.probe.result == 'skipped' || needs.probe.result == 'success') && " +
+        "(inputs.flow == null || inputs.flow == 'app-store') && " +
+        "(inputs.locales == null || inputs.locales == '') }}",
+    );
 
     const gateStep = (finalize.steps ?? []).find((step) => step.name === 'Assert screenshot dimensions');
-    expect(flatten(gateStep?.if)).toContain("env.UNCHANGED != 'true'");
+    expect(flatten(gateStep?.if)).toBe(
+      "${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && " +
+        "(inputs.locales == '' || inputs.locales == null) }}",
+    );
 
     const publishStep = (finalize.steps ?? []).find((step) => step.name === 'Publish screenshot baseline');
-    expect(flatten(publishStep?.if)).toContain("env.FULL_SET_CAPTURED == 'true'");
+    expect(flatten(publishStep?.if)).toBe(
+      "${{ success() && env.FULL_SET_CAPTURED == 'true' && " +
+        "(github.event_name == 'workflow_run' || inputs.publish_baseline == true) }}",
+    );
     expect(publishStep?.run).toContain('vp run screenshot:baseline -- publish');
     expect(publishStep?.run).toContain('--commit "${{ needs.setup.outputs.source_sha }}"');
   });
@@ -158,7 +181,9 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     // scripts/mobile-ci-env-parity.test.ts asserts the shape of this line; it must
     // not migrate into the composite action with the rest of the shard body.
     const cacheKeyLine = source.split('\n').find((line) => line.includes('screenshot-sim-app-v1-${{ hashFiles('));
-    expect(cacheKeyLine).toBeTruthy();
+    expect(cacheKeyLine).toBe(
+      "        run: echo \"key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}\" >> \"$GITHUB_OUTPUT\"",
+    );
     const buildSteps = workflow.jobs['ios-build'].steps ?? [];
     expect(buildSteps.some((step) => step.name === 'Compute app cache key')).toBe(true);
   });
@@ -219,8 +244,11 @@ describe('mobile-store-draft.yml screenshot attach', () => {
     expect(steps[fetchIndex].run).toContain('vp run screenshot:baseline -- fetch --platform ios --all');
     expect(steps[attachIndex].run).toContain('bundle exec fastlane ios screenshots');
     expect(flatten(steps[fetchIndex].if)).toBe("steps.draft.outcome == 'success'");
+    // Gates on the fetch script's own `found` output, not just its exit code —
+    // `screenshot-baseline.ts` fetch exits 0 with found=false whenever no
+    // baseline has been published yet, and this must not attach an empty tree.
     expect(flatten(steps[attachIndex].if)).toBe(
-      "steps.draft.outcome == 'success' && steps.baseline.outcome == 'success'",
+      "steps.draft.outcome == 'success' && steps.baseline.outputs.found == 'true'",
     );
   });
 
@@ -232,5 +260,17 @@ describe('mobile-store-draft.yml screenshot attach', () => {
       | (WorkflowStep & { 'continue-on-error'?: boolean })
       | undefined;
     expect(attachStep?.['continue-on-error']).toBe(true);
+  });
+
+  it('distinguishes "no baseline yet" from "attach failed" in its warnings', () => {
+    const steps = workflow.jobs.ios.steps ?? [];
+    const noBaselineStep = steps.find((step) => step.name === 'Warn if no screenshot baseline has been published yet');
+    const attachFailedStep = steps.find((step) => step.name === 'Warn if attaching screenshots failed');
+
+    expect(flatten(noBaselineStep?.if)).toBe(
+      "steps.draft.outcome == 'success' && steps.baseline.outputs.found != 'true'",
+    );
+    expect(noBaselineStep?.run).toContain('publish_baseline: true');
+    expect(flatten(attachFailedStep?.if)).toBe("steps.attach_screenshots.outcome == 'failure'");
   });
 });

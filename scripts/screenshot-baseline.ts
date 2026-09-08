@@ -39,6 +39,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -115,18 +116,31 @@ export function parseAssetName(
 }
 
 /**
- * Refuse a tree that is short a locale, a device folder or a PNG. A baseline is
- * only useful if it is the whole store set — publishing a partial one would make
- * the next probe compare against a hole and report a false change (or worse,
- * make the store-draft attach step upload an incomplete listing).
+ * Refuse a tree that is short a locale, a device folder or a PNG — or that
+ * carries one outside the expected set. A baseline is only useful if it is
+ * EXACTLY the whole store set: a missing shard would make the next probe
+ * compare against a hole (or make the store-draft attach step upload an
+ * incomplete listing), and an unrecognised locale or device directory is
+ * either a typo'd capture or a stale slug nobody is reading — fail closed
+ * instead of silently packing (or skipping) it.
  */
 export function assertCompleteTree(tree: ScreenshotShardTree): void {
   const problems: string[] = [];
+  for (const locale of Object.keys(tree)) {
+    if (!(EXPECTED_APP_STORE_LOCALES as readonly string[]).includes(locale)) {
+      problems.push(`unknown locale directory ${locale}`);
+    }
+  }
   for (const locale of EXPECTED_APP_STORE_LOCALES) {
     const devices = tree[locale];
     if (!devices) {
       problems.push(`missing locale directory ${locale}`);
       continue;
+    }
+    for (const deviceSlug of Object.keys(devices)) {
+      if (!(EXPECTED_APP_STORE_DEVICE_SLUGS as readonly string[]).includes(deviceSlug)) {
+        problems.push(`unknown device directory ${locale}/${deviceSlug}`);
+      }
     }
     for (const deviceSlug of EXPECTED_APP_STORE_DEVICE_SLUGS) {
       const files = devices[deviceSlug];
@@ -196,6 +210,55 @@ function runOrThrow(runner: CommandRunner, command: string, args: readonly strin
     throw new Error(`${command} ${args.join(' ')} failed (exit ${result.status}): ${result.stderr.trim()}`);
   }
   return result;
+}
+
+/**
+ * Info-ZIP's `unzip` exits 1 for "one or more warnings were given, but
+ * processing completed successfully" — e.g. after it silently strips a `../`
+ * path-traversal component from an entry name. That is not a failure, so only
+ * exit codes other than 0 and 1 are treated as one here.
+ */
+function runUnzip(runner: CommandRunner, args: readonly string[]): CommandResult {
+  const result = runner.run('unzip', args);
+  if (result.status === 0) return result;
+  if (result.status === 1) {
+    console.warn(`${LOG} unzip warned (exit 1) for ${args.join(' ')}: ${result.stderr.trim()}`);
+    return result;
+  }
+  throw new Error(`unzip ${args.join(' ')} failed (exit ${result.status}): ${result.stderr.trim()}`);
+}
+
+export interface ShardVerification {
+  ok: boolean;
+  problems: string[];
+}
+
+/**
+ * Pure: compare a shard's actually-extracted file hashes against what the
+ * manifest recorded for `<locale>/<deviceSlug>/<name>`. No I/O here — `shardDir`
+ * is only used to build a readable path in each problem message. A file the
+ * manifest never listed and a file whose bytes changed are both reported the
+ * same way: fetchBaseline treats either as a baseline it cannot trust.
+ */
+export function verifyShardAgainstManifest(
+  manifest: BaselineManifest,
+  shardDir: string,
+  locale: string,
+  deviceSlug: string,
+  sha256ByFile: Readonly<Record<string, string>>,
+): ShardVerification {
+  const problems: string[] = [];
+  for (const [name, actualSha256] of Object.entries(sha256ByFile)) {
+    const relativePath = `${locale}/${deviceSlug}/${name}`;
+    const expectedSha256 = manifest.files[relativePath];
+    const filePath = join(shardDir, name);
+    if (expectedSha256 === undefined) {
+      problems.push(`${filePath} is not listed in the manifest (${relativePath})`);
+    } else if (expectedSha256 !== actualSha256) {
+      problems.push(`${filePath} does not match the manifest (expected ${expectedSha256}, got ${actualSha256})`);
+    }
+  }
+  return { ok: problems.length === 0, problems };
 }
 
 export interface PackOptions {
@@ -351,18 +414,10 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
     return { found: false, commit: '', unzipped: [] };
   }
 
-  const unzipped: string[] = [];
-  for (const zipName of downloaded.sort()) {
-    const shard = parseAssetName(options.platform, zipName);
-    // `--all` rebuilds the <locale>/<slug>/ tree fastlane reads; a single-asset
-    // fetch stays flat so it can be compared against one capture directory.
-    const target = options.all && shard ? join(outDir, shard.locale, shard.deviceSlug) : outDir;
-    mkdirSync(target, { recursive: true });
-    runOrThrow(runner, 'unzip', ['-o', '-q', join(downloadDir, zipName), '-d', target]);
-    unzipped.push(target);
-  }
-
+  // Read the manifest BEFORE unzipping so each shard can be checked against it
+  // as it lands, rather than trusting the zip contents on faith.
   let commit = '';
+  let manifest: BaselineManifest | null = null;
   const manifestFile = join(downloadDir, manifestName);
   if (existsSync(manifestFile)) {
     const parsed: unknown = JSON.parse(readFileSync(manifestFile, 'utf8'));
@@ -370,6 +425,45 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
       const parsedCommit = (parsed as { commit: unknown }).commit;
       if (typeof parsedCommit === 'string') commit = parsedCommit;
     }
+    if (parsed && typeof parsed === 'object' && 'files' in parsed) {
+      manifest = parsed as BaselineManifest;
+    }
+  }
+
+  const unzipped: string[] = [];
+  let verified = true;
+  for (const zipName of downloaded.sort()) {
+    const shard = parseAssetName(options.platform, zipName);
+    // `--all` rebuilds the <locale>/<slug>/ tree fastlane reads; a single-asset
+    // fetch stays flat so it can be compared against one capture directory.
+    const target = options.all && shard ? join(outDir, shard.locale, shard.deviceSlug) : outDir;
+    mkdirSync(target, { recursive: true });
+    runUnzip(runner, ['-o', '-q', join(downloadDir, zipName), '-d', target]);
+    unzipped.push(target);
+
+    if (manifest && shard) {
+      const sha256ByFile: Record<string, string> = {};
+      for (const name of readdirSync(target).filter((entry) => entry.toLowerCase().endsWith('.png'))) {
+        sha256ByFile[name] = sha256Of(join(target, name));
+      }
+      const verification = verifyShardAgainstManifest(manifest, target, shard.locale, shard.deviceSlug, sha256ByFile);
+      if (!verification.ok) {
+        for (const problem of verification.problems) {
+          console.warn(`${LOG} baseline verification failed: ${problem}`);
+        }
+        rmSync(target, { recursive: true, force: true });
+        verified = false;
+      }
+    }
+  }
+
+  if (!verified) {
+    // A shard that does not match the manifest it shipped with is not a
+    // baseline anything should trust — treat it exactly like no baseline at
+    // all so the caller (the probe, or the store-draft attach) fans out /
+    // refuses to attach instead of comparing against or shipping bad pixels.
+    console.log(`${LOG} baseline failed manifest verification; treating as no baseline.`);
+    return { found: false, commit: '', unzipped: [] };
   }
 
   console.log(

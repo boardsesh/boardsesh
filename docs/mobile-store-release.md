@@ -100,18 +100,22 @@ red-mask diff PNG per changed shot, so you can see what moved before trusting
 the fan-out.
 
 The baseline lives on a rolling GitHub prerelease tagged `screenshots-baseline`:
-one `ios-<store-locale>-<device>.zip` per shard plus an `ios-manifest.json`
-recording the commit, the run id and a sha256 per file. Captured PNGs are
-deliberately not committed (issue #2905), and the prerelease keeps them out of
-git history while staying writable by the plain `GITHUB_TOKEN` — the tag ruleset
-covers only `build-*`, `fingerprint-*` and `release/*`. `vp run
-screenshot:baseline` packs, publishes and fetches it, and refuses to publish a
-tree that is short a locale or a device.
+`pack` writes 15 `ios-<store-locale>-<device>.zip` files — 5 store locales × 3
+devices, since the captured `es` app locale fans out into both `es-ES` and
+`es-MX` — plus an `ios-manifest.json` recording the commit, the run id and a
+sha256 per file. Captured PNGs are deliberately not committed (issue #2905),
+and the prerelease keeps them out of git history while staying writable by the
+plain `GITHUB_TOKEN` — the tag ruleset covers only `build-*`, `fingerprint-*`
+and `release/*`. `vp run screenshot:baseline` packs, publishes and fetches it,
+and refuses to publish a tree that is short a locale or a device.
 
-The automatic trigger refreshes the baseline after every complete capture; a
-manual dispatch has to ask with `publish_baseline: true`, so a run that
-deliberately retargets `render_mode` or `boards` cannot silently redefine
-"unchanged" for everyone else. `upload: true` is unchanged and still pushes the
+Publishing is manual today: dispatch with `publish_baseline: true`
+(`gate: full`, or `gate: probe` when no baseline exists yet) after a green
+capture, so a run that deliberately retargets `render_mode` or `boards` cannot
+silently redefine "unchanged" for everyone else. The `workflow_run` trigger (a
+later PR in this series) will publish automatically after each green full
+capture; the nightly `schedule` cron stays capture-only and never publishes (it
+is being removed in #5320). `upload: true` is unchanged and still pushes the
 freshly captured set to App Store Connect.
 
 The iOS `release_notes.txt` is pushed by Mobile Store Metadata. Android release

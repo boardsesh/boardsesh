@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -8,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EXPECTED_APP_STORE_DEVICE_SLUGS, EXPECTED_APP_STORE_LOCALES } from '../assert-screenshot-dimensions';
 import {
   BASELINE_TAG,
+  type BaselineManifest,
   type CommandResult,
   type CommandRunner,
   type ScreenshotShardTree,
@@ -20,6 +22,7 @@ import {
   parseBaselineArguments,
   publishBaseline,
   readShardTree,
+  verifyShardAgainstManifest,
 } from '../screenshot-baseline';
 
 /**
@@ -135,6 +138,61 @@ describe('assertCompleteTree', () => {
     const tree = completeTree();
     tree['de-DE']['iphone-16-pro-max'] = [];
     expect(() => assertCompleteTree(tree)).toThrow(/no PNGs in de-DE\/iphone-16-pro-max/);
+  });
+
+  it('refuses a tree with an unknown locale directory', () => {
+    const tree = completeTree();
+    tree['pt-BR'] = { 'iphone-16-pro-max': ['01-discover.png'] };
+    expect(() => assertCompleteTree(tree)).toThrow(/unknown locale directory pt-BR/);
+  });
+
+  it('refuses a tree with an unknown device directory in a known locale', () => {
+    const tree = completeTree();
+    tree['en-US']['iphone-14-plus'] = ['01-discover.png'];
+    expect(() => assertCompleteTree(tree)).toThrow(/unknown device directory en-US\/iphone-14-plus/);
+  });
+});
+
+describe('verifyShardAgainstManifest', () => {
+  const manifest: BaselineManifest = {
+    platform: 'ios',
+    commit: 'deadbeef',
+    runId: '7',
+    capturedAt: '2026-09-08T00:00:00.000Z',
+    files: {
+      'en-US/iphone-16-pro-max/01-discover.png': 'aa'.repeat(32),
+      'en-US/iphone-16-pro-max/02-board.png': 'bb'.repeat(32),
+    },
+  };
+
+  it('reports ok when every hash matches the manifest', () => {
+    const result = verifyShardAgainstManifest(manifest, '/shard', 'en-US', 'iphone-16-pro-max', {
+      '01-discover.png': 'aa'.repeat(32),
+      '02-board.png': 'bb'.repeat(32),
+    });
+    expect(result).toEqual({ ok: true, problems: [] });
+  });
+
+  it('flags a file whose hash no longer matches the manifest', () => {
+    const result = verifyShardAgainstManifest(manifest, '/shard', 'en-US', 'iphone-16-pro-max', {
+      '01-discover.png': 'ff'.repeat(32),
+      '02-board.png': 'bb'.repeat(32),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.problems).toHaveLength(1);
+    expect(result.problems[0]).toContain(join('/shard', '01-discover.png'));
+    expect(result.problems[0]).toContain('does not match the manifest');
+  });
+
+  it('flags a file the manifest never listed', () => {
+    const result = verifyShardAgainstManifest(manifest, '/shard', 'en-US', 'iphone-16-pro-max', {
+      '01-discover.png': 'aa'.repeat(32),
+      '03-extra.png': 'cc'.repeat(32),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.problems).toHaveLength(1);
+    expect(result.problems[0]).toContain(join('/shard', '03-extra.png'));
+    expect(result.problems[0]).toContain('is not listed in the manifest');
   });
 });
 
@@ -307,6 +365,123 @@ describe('fetchBaseline', () => {
     const download = runner.calls.find((call) => call.args[1] === 'download');
     expect(download?.args).toContain('ios-en-US-iphone-16-pro-max.zip');
     expect(download?.args).toContain('ios-manifest.json');
+  });
+
+  it('discards a fetched shard and reports found=false when a file does not match the manifest', () => {
+    const downloadDir = join(workDir, 'download');
+    mkdirSync(downloadDir, { recursive: true });
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    const manifest: BaselineManifest = {
+      platform: 'ios',
+      commit: 'cafebabe',
+      runId: '3',
+      capturedAt: 'now',
+      files: { 'en-US/iphone-16-pro-max/01-discover.png': 'aa'.repeat(32) },
+    };
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    const outDir = join(workDir, 'baseline');
+    // The fake unzip performs a REAL extraction (unlike the other fetchBaseline
+    // tests) so the sha256 verification has actual bytes to hash — bytes that
+    // deliberately do not match the manifest's recorded hash.
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'unzip') {
+        mkdirSync(outDir, { recursive: true });
+        writeFileSync(join(outDir, '01-discover.png'), 'tampered bytes');
+      }
+      return ok();
+    });
+
+    const result = fetchBaseline({
+      platform: 'ios',
+      outDir,
+      asset: 'ios-en-US-iphone-16-pro-max.zip',
+      all: false,
+      runner,
+      downloadDir,
+    });
+
+    expect(result).toEqual({ found: false, commit: '', unzipped: [] });
+    expect(existsSync(outDir)).toBe(false);
+  });
+
+  it('keeps a fetched shard when its extracted file matches the manifest', () => {
+    const downloadDir = join(workDir, 'download');
+    mkdirSync(downloadDir, { recursive: true });
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    const fileBytes = 'real screenshot bytes';
+    const expectedSha256 = createHash('sha256').update(fileBytes).digest('hex');
+    const manifest: BaselineManifest = {
+      platform: 'ios',
+      commit: 'cafebabe',
+      runId: '3',
+      capturedAt: 'now',
+      files: { 'en-US/iphone-16-pro-max/01-discover.png': expectedSha256 },
+    };
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    const outDir = join(workDir, 'baseline');
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'unzip') {
+        mkdirSync(outDir, { recursive: true });
+        writeFileSync(join(outDir, '01-discover.png'), fileBytes);
+      }
+      return ok();
+    });
+
+    const result = fetchBaseline({
+      platform: 'ios',
+      outDir,
+      asset: 'ios-en-US-iphone-16-pro-max.zip',
+      all: false,
+      runner,
+      downloadDir,
+    });
+
+    expect(result.found).toBe(true);
+    expect(existsSync(join(outDir, '01-discover.png'))).toBe(true);
+  });
+
+  it('treats an unzip exit code of 1 as a warning, not a failure', () => {
+    const downloadDir = join(workDir, 'download');
+    mkdirSync(downloadDir, { recursive: true });
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    // No manifest.json here, so verification is skipped — this test isolates
+    // the unzip exit-code handling from the manifest-verification behaviour.
+    const runner = new FakeRunner((invocation) =>
+      invocation.command === 'unzip'
+        ? { status: 1, stdout: '', stderr: '1 warning; stripped leading "../" from an entry' }
+        : ok(),
+    );
+
+    const result = fetchBaseline({
+      platform: 'ios',
+      outDir: join(workDir, 'baseline'),
+      asset: 'ios-en-US-iphone-16-pro-max.zip',
+      all: false,
+      runner,
+      downloadDir,
+    });
+
+    expect(result.found).toBe(true);
+  });
+
+  it('fails on an unzip exit code other than 0 or 1', () => {
+    const downloadDir = join(workDir, 'download');
+    mkdirSync(downloadDir, { recursive: true });
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    const runner = new FakeRunner((invocation) =>
+      invocation.command === 'unzip' ? { status: 2, stdout: '', stderr: 'cannot find zipfile directory' } : ok(),
+    );
+
+    expect(() =>
+      fetchBaseline({
+        platform: 'ios',
+        outDir: join(workDir, 'baseline'),
+        asset: 'ios-en-US-iphone-16-pro-max.zip',
+        all: false,
+        runner,
+        downloadDir,
+      }),
+    ).toThrow(/unzip/);
   });
 
   it('rebuilds the locale/device tree when fetching every shard', () => {
