@@ -23,10 +23,13 @@ A new version shipped to the App Store and Play Store.
 
 ### Improved
 
+- New sponsors and contributors now show up automatically in Acknowledgements. ([#5348](https://github.com/boardsesh/boardsesh/pull/5348))
+  About is cleaner, with What's New in one place.
 - Your feedback draft stays ready when you reopen it, without slowing browsing. ([#5328](https://github.com/boardsesh/boardsesh/pull/5328))
 
 ### Fixed
 
+- Open climbs with a steady board image and no scrollbar. ([#5342](https://github.com/boardsesh/boardsesh/pull/5342))
 - Your hearts follow the climb across angles. ([#5341](https://github.com/boardsesh/boardsesh/pull/5341))
 - Party sessions no longer drop out from under you. A hiccup fetching a beta ([#5343](https://github.com/boardsesh/boardsesh/pull/5343))
   thumbnail or an avatar used to take down the server everyone in the session was

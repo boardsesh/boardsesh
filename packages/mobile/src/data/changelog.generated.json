@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-08T23:40:42.235Z",
+  "generatedAt": "2026-09-08T23:50:24.949Z",
   "entries": [
+    {
+      "prNumber": 5348,
+      "category": "improved",
+      "title": "New sponsors and contributors now show up automatically in Acknowledgements.",
+      "mergedAt": "2026-09-08T23:45:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5348",
+      "body": "About is cleaner, with What's New in one place."
+    },
+    {
+      "prNumber": 5342,
+      "category": "fixed",
+      "title": "Open climbs with a steady board image and no scrollbar.",
+      "mergedAt": "2026-09-08T23:41:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5342"
+    },
     {
       "prNumber": 5341,
       "category": "fixed",
