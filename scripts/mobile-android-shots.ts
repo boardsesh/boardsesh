@@ -322,6 +322,8 @@ function screenshotEnvOptions(options: ShotsOptions): ScreenshotOptions {
     renderMode: null,
     boards: null,
     appPath: null,
+    // This whole flow is the dev-client + Metro path.
+    devClient: true,
     shutdown: false,
     orientation: null,
   };

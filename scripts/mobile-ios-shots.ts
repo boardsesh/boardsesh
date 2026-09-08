@@ -401,6 +401,8 @@ function screenshotEnvOptions(options: ShotsOptions): ScreenshotOptions {
     renderMode: null,
     boards: null,
     appPath: options.appPath,
+    // iOS is always a dev-client; the flag is Android-only (see mobile-screenshots.ts).
+    devClient: false,
     shutdown: false,
     orientation: null,
   };

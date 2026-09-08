@@ -48,6 +48,7 @@
     "mobile-screenshots.ts",
     "mobile-ios-shots.ts",
     "mobile-android-apk.ts",
+    "mobile-android-shots.ts",
     "__tests__/ios-profiling-tools.test.ts",
     "__tests__/mobile-ios-run.test.ts",
     "__tests__/mobile-screenshots.test.ts",
