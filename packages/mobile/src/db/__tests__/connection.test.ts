@@ -38,6 +38,7 @@ import {
   initializeDatabase,
   INIT_RETRY_DELAYS_MS,
   setDatabaseHandle,
+  releaseDatabaseHandle,
 } from '../connection';
 import { isSchemaReady } from '../schema-ready';
 import { resetDatabaseInitializationForTests } from '../testing';
@@ -434,7 +435,13 @@ describe('initializeDatabase lock contention (#4104)', () => {
   // `error` may be a function to vary the throw per failure (attempt N is contended,
   // attempt N+1 is a closed handle).
   function createContendedDatabase(
-    options: { error?: Error | ((failureCount: number) => Error); onFailure?: (failureCount: number) => void } = {},
+    options: {
+      error?: Error | ((failureCount: number) => Error);
+      onFailure?: (failureCount: number) => void;
+      // The same hook for an attempt that is going to SUCCEED: a remount landing
+      // during the winning attempt is the production case, not just the contended one.
+      onExec?: (source: string) => void;
+    } = {},
   ) {
     const { error = new Error(LOCK_ERROR_MESSAGE) } = options;
     const failureFor = (failureCount: number) => (typeof error === 'function' ? error(failureCount) : error);
@@ -443,6 +450,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
 
     const wrapper = {
       execAsync: async (source: string): Promise<void> => {
+        options.onExec?.(source);
         if (locked && /pending_mutations/i.test(source)) {
           failures += 1;
           // Lets a test land a remount WHILE this attempt is in flight, which is the
@@ -737,5 +745,102 @@ describe('initializeDatabase lock contention (#4104)', () => {
     await retryMount;
 
     expect(getDatabaseHandle()).toBe(healthy.db);
+  });
+
+  // #5292: the success-path counterpart to the exhausted-window case above. A chain
+  // that WON kept the single-flight guard forever, so the next mount was handed the
+  // resolved promise, the handle was never republished, and every local read went on
+  // hitting the connection SQLiteProvider had closed ("Access to closed resource",
+  // ~249 users/30d). The remount triggers are production ones — the root error
+  // boundary's retry, Android activity recreation — not just Fast Refresh.
+  it('re-publishes the connection a remount opened', async () => {
+    const first = createContendedDatabase();
+    first.unlock();
+    await initializeDatabase(first.db);
+    expect(getDatabaseHandle()).toBe(first.db);
+
+    // The remount: SQLiteProvider closed first.db and opened second.db, calling
+    // onInit again with it.
+    const second = createContendedDatabase();
+    second.unlock();
+    await initializeDatabase(second.db);
+
+    expect(getDatabaseHandle()).toBe(second.db);
+    expect(isSchemaReady()).toBe(true);
+  });
+
+  it('retracts the closed connection when the remount starts, not when its migrations land', async () => {
+    vi.useFakeTimers();
+    const first = createContendedDatabase();
+    first.unlock();
+    await initializeDatabase(first.db);
+    expect(getDatabaseHandle()).toBe(first.db);
+
+    // The replacement connection is contended, so its own init cannot publish for at
+    // least one backoff. The old handle still has to go the instant onInit is called
+    // for the new one: the teardown that closed first.db is landing right now, and
+    // the sync scheduler and mutation drainer read the handle from outside React,
+    // where nothing tells them a remount happened. Asserted BEFORE any await —
+    // republishing on success alone would leave that whole window serving a corpse.
+    const second = createContendedDatabase();
+    const remount = initializeDatabase(second.db);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+
+    await remount;
+    second.unlock();
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
+
+    expect(getDatabaseHandle()).toBe(second.db);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('retargets when the remount lands during the attempt that wins', async () => {
+    const second = createContendedDatabase();
+    second.unlock();
+    let remounted = false;
+    // The remount lands mid-attempt, so this chain publishes a connection that is
+    // already being torn down. It has to notice on the way out and initialize the
+    // replacement itself: the remount was handed this promise, so nothing else will.
+    const first = createContendedDatabase({
+      // Fires on the mutation-queue DDL — the same seam the contended tests use, and
+      // late enough that `initializeDatabase` has finished assigning the single-flight
+      // guard, so this really is a remount arriving into a running chain.
+      onExec: (source) => {
+        if (remounted || !/pending_mutations/i.test(source)) return;
+        remounted = true;
+        void initializeDatabase(second.db);
+      },
+    });
+    first.unlock();
+
+    await initializeDatabase(first.db);
+    await vi.waitFor(() => {
+      expect(getDatabaseHandle()).toBe(second.db);
+    });
+
+    expect(isSchemaReady()).toBe(true);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    // Working around a remount is not recovering from contention — no lock was ever
+    // held, so the recovery event must stay quiet (#4325).
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('ignores a teardown for a connection a newer mount has already replaced', () => {
+    const first = createContendedDatabase();
+    const second = createContendedDatabase();
+    setDatabaseHandle(second.db);
+
+    // An effect cleanup can run after the replacement connection has published
+    // itself. Retracting unconditionally here would switch offline storage off for a
+    // database that is perfectly alive.
+    releaseDatabaseHandle(first.db);
+    expect(getDatabaseHandle()).toBe(second.db);
+    expect(isSchemaReady()).toBe(true);
+
+    // ...and the teardown that DOES own the published handle still retracts it.
+    releaseDatabaseHandle(second.db);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
   });
 });

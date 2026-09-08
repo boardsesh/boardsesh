@@ -92,9 +92,10 @@ export function useConnectivityBanner(): ConnectivityBannerModel {
   const connectivity = useConnectivity();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
-  // The SQLite handle is null until migrations land and goes null again on
-  // sign-out, and neither is a React state change on its own — the readiness
-  // store is what makes re-reading it a subscription rather than a guess.
+  // The SQLite handle is null until migrations land, and null again from the
+  // moment `SQLiteProvider` tears a connection down until the replacement one is
+  // migrated (#5292), and neither is a React state change on its own — the
+  // readiness store is what makes re-reading it a subscription rather than a guess.
   const schemaReady = useOfflineSchemaReady();
   const outbox = useOutboxSummary(schemaReady ? getDatabaseHandle() : null);
 
