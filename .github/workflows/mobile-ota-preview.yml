@@ -1,8 +1,8 @@
 name: Mobile OTA Preview (Per-PR Branch)
 
 # Publishes a PR's JS bundle to its own self-hosted OTA branch `pr-<number>` so
-# anyone on a compatible store / TestFlight binary can load it through xprem's
-# official branch picker. The native config keeps the `production` channel fixed;
+# anyone on a compatible store / TestFlight binary can load it through Test a PR
+# preview in More or the user drawer. Native config keeps the `production` channel fixed;
 # `pr-<number>` is only the eoas upload branch. See docs/mobile-ota-updates.md.
 #
 # ─── SECURITY — READ BEFORE EDITING ──────────────────────────────────────────────
@@ -761,8 +761,9 @@ jobs:
             }
             const howto = anyPublished
               ? ['',
-                 `In Boardsesh, tap xprem's blue branch marker, then select **\`${branch}\`**. ` +
-                   `Reset in the same panel when you are done.`,
+                 `In Boardsesh, open **More → Previews → Test a PR preview** (also in the user drawer), ` +
+                   `then select **\`${branch}\`**. When done, open the test plan under **More → Previews** ` +
+                   `and choose **Leave preview**.`,
                  '<sub>The server may take up to 15 seconds to refresh the branch list after publishing.</sub>',
                  '']
               : [''];

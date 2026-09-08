@@ -187,7 +187,7 @@ jobs:
               '',
               `Any older \`${branch}\` revision was removed. A maintainer with repository write access can ` +
                 `comment **\`/ota-preview\`** to publish this fork's current revision. Then select it from ` +
-                `xprem's blue branch marker.`,
+                `**More → Previews → Test a PR preview** in Boardsesh.`,
               '',
               '<sub>Re-comment `/ota-preview` after new pushes to refresh the preview. A native change ' +
                 'needs a TestFlight/Play build instead.</sub>',
