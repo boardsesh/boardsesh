@@ -37,6 +37,15 @@ describe('PR workflow capacity controls', () => {
     expect(source).toContain(cancellation);
   });
 
+  it('keeps Claude Code review advisory when the action cannot complete', () => {
+    const source = workflow('claude-code-review.yml');
+    const reviewStepStart = source.indexOf('      - name: Run Claude Code Review');
+    const reviewStepEnd = source.indexOf('\n      - name:', reviewStepStart + 1);
+    const reviewStep = source.slice(reviewStepStart, reviewStepEnd < 0 ? undefined : reviewStepEnd);
+
+    expect(reviewStep).toContain('continue-on-error: true');
+  });
+
   it('caps every PR test matrix without serializing main', () => {
     const source = workflow('ci.yml');
     const defaultTests = mappingEntry(source, 'test-default', 2);
