@@ -2,6 +2,8 @@ import { createRequire } from 'node:module';
 
 import { describe, expect, it } from 'vitest';
 
+import { SAMPLE_APP_BUILD_GRADLE } from '../../../test/expo-android-template';
+
 const require = createRequire(import.meta.url);
 
 type AndroidReleaseSigningPlugin = {
@@ -12,33 +14,12 @@ type AndroidReleaseSigningPlugin = {
 
 const plugin = require('../../../plugins/with-android-release-signing.js') as AndroidReleaseSigningPlugin;
 
-// Trimmed shape of the android/app/build.gradle Expo generates: a single
-// `debug` signing config and a release build type signed with the debug key.
-// Both build types carry an identical `signingConfig signingConfigs.debug`
-// line, which is exactly the ambiguity the transform has to resolve.
-const SAMPLE_BUILD_GRADLE = `android {
-    ndkVersion rootProject.ext.ndkVersion
-
-    signingConfigs {
-        debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
-        }
-    }
-    buildTypes {
-        debug {
-            signingConfig signingConfigs.debug
-        }
-        release {
-            // Caution! In production, you need to generate your own keystore file.
-            signingConfig signingConfigs.debug
-            shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
-            minifyEnabled enableProguardInReleaseBuilds
-        }
-    }
-}`;
+// The SDK 57 template shape, shared with the with-android-minify suite so
+// template drift is a one-place edit. This file previously inlined its own copy
+// that still carried the SDK 56 spelling (`minifyEnabled
+// enableProguardInReleaseBuilds`); harmless for these assertions, but the minify
+// guard's tests depend on the fixture being truthful.
+const SAMPLE_BUILD_GRADLE = SAMPLE_APP_BUILD_GRADLE;
 
 describe('with-android-release-signing', () => {
   it('injects a release signing config that reads the keystore from env', () => {
