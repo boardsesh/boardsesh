@@ -1,6 +1,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { createRunOncePlugin, withAppBuildGradle, withDangerousMod, withGradleProperties } = require('expo/config-plugins');
+const {
+  createRunOncePlugin,
+  withAppBuildGradle,
+  withDangerousMod,
+  withGradleProperties,
+} = require('expo/config-plugins');
 
 // Turns on R8 for the Android `release` build type.
 //

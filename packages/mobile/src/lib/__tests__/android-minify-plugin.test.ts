@@ -36,9 +36,7 @@ describe('with-android-minify', () => {
     });
 
     it('overwrites an existing false rather than appending a duplicate', () => {
-      const result = plugin.applyMinifyProperties([
-        { type: 'property', key: plugin.MINIFY_PROPERTY, value: 'false' },
-      ]);
+      const result = plugin.applyMinifyProperties([{ type: 'property', key: plugin.MINIFY_PROPERTY, value: 'false' }]);
 
       const entries = result.filter((entry) => entry.key === plugin.MINIFY_PROPERTY);
       expect(entries).toHaveLength(1);
@@ -100,7 +98,10 @@ describe('with-android-minify', () => {
       const debugOnly = SAMPLE_APP_BUILD_GRADLE.replace(
         'minifyEnabled enableMinifyInReleaseBuilds',
         'minifyEnabled false',
-      ).replace('debug {\n            signingConfig', 'debug {\n            minifyEnabled enableMinifyInReleaseBuilds\n            signingConfig');
+      ).replace(
+        'debug {\n            signingConfig',
+        'debug {\n            minifyEnabled enableMinifyInReleaseBuilds\n            signingConfig',
+      );
 
       expect(debugOnly).toContain('minifyEnabled enableMinifyInReleaseBuilds');
       expect(() => plugin.assertTemplateReadsMinifyProperty(debugOnly)).toThrow(/no longer applies/);
@@ -184,10 +185,7 @@ describe('with-android-minify', () => {
   // that name moves, the rule silently stops covering anything.
   describe('drift against the sources the rules promise about', () => {
     it('pins the JNI class the native library actually exports', () => {
-      const jni = readFileSync(
-        join(MOBILE_ROOT, 'modules/board-renderer/android/src/main/cpp/jni_bridge.cpp'),
-        'utf8',
-      );
+      const jni = readFileSync(join(MOBILE_ROOT, 'modules/board-renderer/android/src/main/cpp/jni_bridge.cpp'), 'utf8');
 
       const symbol = jni.match(/Java_([A-Za-z0-9_]+)_nativeRender/)?.[1];
       expect(symbol, 'jni_bridge.cpp no longer exports a *_nativeRender symbol').toBeDefined();

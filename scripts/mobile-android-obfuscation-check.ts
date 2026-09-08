@@ -164,9 +164,7 @@ export function verifyObfuscation(stats: MappingStats, { minFraction, minClasses
   }).filter((entry) => entry !== null);
 
   if (broken.length > 0) {
-    const detail = broken
-      .map(({ className, why, became }) => `  - ${className}: ${became}\n      ${why}`)
-      .join('\n');
+    const detail = broken.map(({ className, why, became }) => `  - ${className}: ${became}\n      ${why}`).join('\n');
     return {
       ok: false,
       message:
@@ -205,7 +203,9 @@ export function resolveAabPath(target: string): string {
 
   const bundles = readdirSync(target).filter((name) => name.endsWith('.aab'));
   if (bundles.length !== 1) {
-    throw new Error(`Expected exactly one .aab in ${target}, found ${bundles.length}: ${bundles.join(', ') || '(none)'}`);
+    throw new Error(
+      `Expected exactly one .aab in ${target}, found ${bundles.length}: ${bundles.join(', ') || '(none)'}`,
+    );
   }
   return join(target, bundles[0]!);
 }
@@ -306,7 +306,9 @@ export function main(argv: string[] = process.argv.slice(2)): number {
       ...(aabVerdict ? [`- AAB mapping: ${aabVerdict.message}`] : []),
       '',
       'Top packages by kept classes:',
-      ...stats.byPackage.slice(0, 5).map((stat) => `- \`${stat.prefix}\`: ${stat.total - stat.renamed} of ${stat.total} kept`),
+      ...stats.byPackage
+        .slice(0, 5)
+        .map((stat) => `- \`${stat.prefix}\`: ${stat.total - stat.renamed} of ${stat.total} kept`),
     ];
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
   }
