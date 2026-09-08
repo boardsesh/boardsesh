@@ -39,6 +39,7 @@ import * as sharedOperations from '@boardsesh/graphql/operations';
 import * as sharedAccount from '@boardsesh/graphql/operations/account';
 import * as sharedActivityFeed from '@boardsesh/graphql/operations/activity-feed';
 import * as sharedBetaLinks from '@boardsesh/graphql/operations/beta-links';
+import * as sharedBoardPresence from '@boardsesh/graphql/operations/board-presence';
 import * as sharedBoards from '@boardsesh/graphql/operations/boards';
 import * as sharedFavorites from '@boardsesh/graphql/operations/favorites';
 import * as sharedGyms from '@boardsesh/graphql/operations/gyms';
@@ -63,9 +64,56 @@ import { checkSelectionCoverage } from './fixture-selection-coverage';
 
 const MOBILE_OPERATIONS_PATH = 'packages/mobile/src/lib/graphql/operations.ts';
 const MOBILE_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+const REPO_ROOT = join(MOBILE_ROOT, '..', '..');
 const MOBILE_OPERATIONS_ABSOLUTE_PATH = join(MOBILE_ROOT, 'src', 'lib', 'graphql', 'operations.ts');
 const FIXTURES_DIR = join(MOBILE_ROOT, 'screenshot-fixtures');
 const MANIFEST_PATH = join(FIXTURES_DIR, 'manifest.json');
+
+/**
+ * Every `packages/shared/*-react` package mobile depends on, resolved to its
+ * `src` directory.
+ *
+ * A shared `*-react` package (`@boardsesh/board-react`, `@boardsesh/playlists-react`,
+ * …) sends GraphQL documents from its own hooks — `use-logbook.ts` sends
+ * `GetTicks`, `use-discover-playlists.ts` sends `DiscoverPlaylists` — so the
+ * import scanner has to read its source too, not just `packages/mobile/src`
+ * and `packages/mobile/app`. Derived from `packages/mobile/package.json`
+ * rather than hand-listed so a newly added `*-react` dependency is picked up
+ * automatically; each resolved directory is asserted to exist so a renamed
+ * package fails loudly here instead of silently shrinking the registry.
+ */
+function resolveSharedReactPackageRoots(): string[] {
+  const mobilePackageJsonPath = join(MOBILE_ROOT, 'package.json');
+  const mobilePackageJson = JSON.parse(readFileSync(mobilePackageJsonPath, 'utf8')) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const dependencyNames = [
+    ...Object.keys(mobilePackageJson.dependencies ?? {}),
+    ...Object.keys(mobilePackageJson.devDependencies ?? {}),
+  ];
+  const reactPackageNames = dependencyNames.filter((name) => /^@boardsesh\/.+-react$/.test(name));
+  return reactPackageNames
+    .map((name) => {
+      const packageDirName = name.slice('@boardsesh/'.length);
+      const packageSrcDir = join(REPO_ROOT, 'packages', 'shared', packageDirName, 'src');
+      if (!existsSync(packageSrcDir)) {
+        throw new Error(
+          `packages/mobile/package.json depends on ${name}, which should resolve to ${packageSrcDir}, but that ` +
+            `directory does not exist. The package was likely renamed or moved — update resolveSharedReactPackageRoots.`,
+        );
+      }
+      return packageSrcDir;
+    })
+    .sort();
+}
+
+/**
+ * Every directory the shared-import scanner (and the F10 unscannable-import
+ * guard beside it) reads: mobile's own `src` and `app`, plus every
+ * `*-react` package mobile depends on.
+ */
+const SCAN_ROOTS = [join(MOBILE_ROOT, 'src'), join(MOBILE_ROOT, 'app'), ...resolveSharedReactPackageRoots()];
 
 /**
  * The store flow's spine. If any of these has no fixture, a capture is reading
@@ -95,6 +143,7 @@ const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/account': sharedAccount,
   '@boardsesh/graphql/operations/activity-feed': sharedActivityFeed,
   '@boardsesh/graphql/operations/beta-links': sharedBetaLinks,
+  '@boardsesh/graphql/operations/board-presence': sharedBoardPresence,
   '@boardsesh/graphql/operations/boards': sharedBoards,
   '@boardsesh/graphql/operations/favorites': sharedFavorites,
   '@boardsesh/graphql/operations/gyms': sharedGyms,
@@ -121,8 +170,21 @@ function sha256Hex(text: string): string {
   return createHash('sha256').update(text).digest('hex');
 }
 
+/**
+ * Whether a namespace export is an operation document mobile can send, as
+ * opposed to a bare fragment (`PLAYLIST_FIELDS`), a type, or a helper.
+ *
+ * Delegates to `resolveOperationName` — the same resolver the backend uses to
+ * key a fixture — rather than re-deriving the check: several operations
+ * (`GetAllUserPlaylists`, `GetMyPinnedPlaylists`) are built as
+ * `` gql`${PLAYLIST_FIELDS} query …` ``, so the exported STRING starts with the
+ * interpolated fragment's text, not the `query` keyword. An anchored
+ * `/^\s*(query|…)/` check rejects those outright; `resolveOperationName`
+ * already searches the whole document for the operation keyword, which is
+ * exactly the classification this needs.
+ */
 function isOperationDocument(value: unknown): value is string {
-  return typeof value === 'string' && /^\s*(query|mutation|subscription)\s/.test(value);
+  return typeof value === 'string' && resolveOperationName({ query: value }) !== null;
 }
 
 interface RegisteredDocument {
@@ -198,7 +260,9 @@ function listSourceFiles(dir: string, files: string[] = []): string[] {
 }
 
 /**
- * The exact names mobile pulls out of the shared operations package, by module.
+ * The exact names mobile pulls out of the shared operations package, by
+ * module — scanned across `SCAN_ROOTS` (mobile's own `src`/`app` plus every
+ * `*-react` package it depends on, since those hooks send documents too).
  *
  * Read from source rather than namespace-importing every module wholesale: the
  * package index alone re-exports ~180 documents, most of them web-only, and a
@@ -207,7 +271,7 @@ function listSourceFiles(dir: string, files: string[] = []): string[] {
  */
 function collectSharedImports(): Map<string, Set<string>> {
   const byModule = new Map<string, Set<string>>();
-  const files = [...listSourceFiles(join(MOBILE_ROOT, 'src')), ...listSourceFiles(join(MOBILE_ROOT, 'app'))];
+  const files = SCAN_ROOTS.flatMap((root) => listSourceFiles(root));
   const unscannable: string[] = [];
   for (const file of files) {
     const sourceText = readFileSync(file, 'utf8');
@@ -332,6 +396,14 @@ describe('the operations mobile sends', () => {
   it('carries every operation the store flow depends on', () => {
     const missing = REQUIRED_STORE_FLOW_OPERATIONS.filter((operationName) => !registry.has(operationName));
     expect(missing).toEqual([]);
+  });
+
+  it('registers a document contributed only by a shared *-react package', () => {
+    // GetTicks is sent by @boardsesh/board-react's use-logbook.ts and is not
+    // imported anywhere under packages/mobile/src or packages/mobile/app — if
+    // SCAN_ROOTS ever regresses to just the two mobile roots, this is the
+    // first thing to go missing.
+    expect(registry.has('GetTicks')).toBe(true);
   });
 });
 

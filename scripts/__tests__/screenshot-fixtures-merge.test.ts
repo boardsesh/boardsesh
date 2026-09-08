@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { mergeFixtureSets, parseMergeArguments, type FixtureSetForMerge } from '../screenshot-fixtures-merge';
-import type { ScreenshotFixtureManifest } from '../lib/screenshot-fixtures';
+import {
+  graphqlFixtureContentHash,
+  mergeFixtureSets,
+  parseMergeArguments,
+  type FixtureSetForMerge,
+} from '../screenshot-fixtures-merge';
+import type { GraphqlFixtureFile, ScreenshotFixtureManifest } from '../lib/screenshot-fixtures';
 
 function manifest(overrides: Partial<ScreenshotFixtureManifest> = {}): ScreenshotFixtureManifest {
   return {
@@ -31,11 +36,27 @@ function staticEntry(path: string, query = '') {
   return { path, query, file: `static/${path.replaceAll('/', '_')}.jpg`, contentType: 'image/jpeg', bytes: 12 };
 }
 
+function graphqlFixtureFile(overrides: Partial<GraphqlFixtureFile> = {}): GraphqlFixtureFile {
+  return {
+    formatVersion: 1,
+    operationName: 'GetProfile',
+    documentHash: 'doc-GetProfile',
+    variablesHash: 'aaaa',
+    query: 'query GetProfile { profile { id } }',
+    variables: {},
+    response: { data: { profile: { id: '1' } } },
+    status: 200,
+    recordedAt: '2026-09-08T13:23:06Z',
+    upstream: 'https://ws.boardsesh.com',
+    ...overrides,
+  };
+}
+
 function set(label: string, entries: ReturnType<typeof graphqlEntry>[], hashes: Record<string, string>) {
   return {
     label,
     manifest: manifest({ graphql: entries }),
-    fileHashes: new Map(Object.entries(hashes)),
+    contentHashes: new Map(Object.entries(hashes)),
   } satisfies FixtureSetForMerge;
 }
 
@@ -53,25 +74,94 @@ describe('mergeFixtureSets', () => {
     expect(merged.sources.get(climb.file)).toBe('shard-b');
   });
 
-  it('keeps one copy when two shards recorded the same key byte-identically', () => {
+  it('keeps one copy when two shards recorded the same content at different recordedAt', () => {
+    // Real recording proof: two shards that hit the SAME response content
+    // minutes apart (13:23:06 vs 13:25:45) must merge cleanly — computed via
+    // the actual hash function, not a hand-picked equal literal, so a
+    // mutation that stops stripping `recordedAt` before hashing is caught
+    // here rather than only in `mergeFixtureSets`'s own conflict-resolution
+    // tests below.
     const profile = graphqlEntry('GetProfile', 'aaaa');
+    const fixtureEarly = graphqlFixtureFile({ recordedAt: '2026-09-08T13:23:06Z' });
+    const fixtureLate = graphqlFixtureFile({ recordedAt: '2026-09-08T13:25:45Z' });
+    expect(fixtureEarly.recordedAt).not.toBe(fixtureLate.recordedAt);
+
     const merged = mergeFixtureSets([
-      set('shard-a', [profile], { [profile.file]: 'same-bytes' }),
-      set('shard-b', [profile], { [profile.file]: 'same-bytes' }),
+      {
+        ...set('shard-a', [profile], { [profile.file]: graphqlFixtureContentHash(fixtureEarly) }),
+        graphqlRecordedAt: new Map([[profile.file, fixtureEarly.recordedAt]]),
+      },
+      {
+        ...set('shard-b', [profile], { [profile.file]: graphqlFixtureContentHash(fixtureLate) }),
+        graphqlRecordedAt: new Map([[profile.file, fixtureLate.recordedAt]]),
+      },
     ]);
 
     expect(merged.manifest.graphql).toHaveLength(1);
     expect(merged.sources.get(profile.file)).toBe('shard-a');
+    expect(merged.conflicts).toEqual([]);
   });
 
-  it('fails, naming the key, when the same key was recorded differently', () => {
+  it('fails, naming the key and pointing at --on-conflict newest, when the same key was recorded differently', () => {
     const profile = graphqlEntry('GetProfile', 'aaaa');
     expect(() =>
       mergeFixtureSets([
-        set('shard-a', [profile], { [profile.file]: 'bytes-one' }),
-        set('shard-b', [profile], { [profile.file]: 'bytes-two' }),
+        set('shard-a', [profile], { [profile.file]: 'content-one' }),
+        set('shard-b', [profile], { [profile.file]: 'content-two' }),
       ]),
-    ).toThrow(/GetProfile \(variables aaaa\).*shard-a.*shard-b/s);
+    ).toThrow(/GetProfile \(variables aaaa\).*shard-a.*shard-b.*--on-conflict newest/s);
+  });
+
+  it('with onConflict newest, keeps the later recording, reports it, and sources the file from the winner', () => {
+    const profile = graphqlEntry('GetProfile', 'aaaa');
+    const merged = mergeFixtureSets(
+      [
+        {
+          ...set('shard-early', [profile], { [profile.file]: 'content-early' }),
+          graphqlRecordedAt: new Map([[profile.file, '2026-09-08T13:23:06Z']]),
+        },
+        {
+          ...set('shard-late', [profile], { [profile.file]: 'content-late' }),
+          graphqlRecordedAt: new Map([[profile.file, '2026-09-08T13:25:45Z']]),
+        },
+      ],
+      { onConflict: 'newest' },
+    );
+
+    expect(merged.manifest.graphql).toHaveLength(1);
+    expect(merged.sources.get(profile.file)).toBe('shard-late');
+    expect(merged.conflicts).toEqual([
+      {
+        key: 'GetProfile (variables aaaa)',
+        took: 'shard-late',
+        over: 'shard-early',
+        tookRecordedAt: '2026-09-08T13:25:45Z',
+        overRecordedAt: '2026-09-08T13:23:06Z',
+      },
+    ]);
+  });
+
+  it('with onConflict newest, a static key lacking recordedAt keeps the first', () => {
+    const avatar = staticEntry('/static/avatars/one.jpg', 'size=64');
+    const setWith = (label: string, hash: string): FixtureSetForMerge => ({
+      label,
+      manifest: manifest({ static: [avatar] }),
+      contentHashes: new Map([[avatar.file, hash]]),
+    });
+    const merged = mergeFixtureSets([setWith('shard-a', 'content-one'), setWith('shard-b', 'content-two')], {
+      onConflict: 'newest',
+    });
+
+    expect(merged.sources.get(avatar.file)).toBe('shard-a');
+    expect(merged.conflicts).toEqual([
+      {
+        key: '/static/avatars/one.jpg?size=64',
+        took: 'shard-a',
+        over: 'shard-b',
+        tookRecordedAt: '',
+        overRecordedAt: '',
+      },
+    ]);
   });
 
   it('fails, naming the asset, when a static key differs between shards', () => {
@@ -79,7 +169,7 @@ describe('mergeFixtureSets', () => {
     const setWith = (label: string, hash: string): FixtureSetForMerge => ({
       label,
       manifest: manifest({ static: [avatar] }),
-      fileHashes: new Map([[avatar.file, hash]]),
+      contentHashes: new Map([[avatar.file, hash]]),
     });
     expect(() => mergeFixtureSets([setWith('shard-a', 'bytes-one'), setWith('shard-b', 'bytes-two')])).toThrow(
       /\/static\/avatars\/one\.jpg\?size=64/,
@@ -92,7 +182,7 @@ describe('mergeFixtureSets', () => {
     const shardB: FixtureSetForMerge = {
       label: 'shard-b',
       manifest: manifest({ graphql: [profile], accountEmail: 'marco@example.com' }),
-      fileHashes: new Map([[profile.file, 'same-bytes']]),
+      contentHashes: new Map([[profile.file, 'same-bytes']]),
     };
     expect(() => mergeFixtureSets([shardA, shardB])).toThrow(
       /different accounts.*test@boardsesh\.com.*marco@example\.com/s,
@@ -105,7 +195,7 @@ describe('mergeFixtureSets', () => {
     const shardB: FixtureSetForMerge = {
       label: 'shard-b',
       manifest: manifest({ graphql: [profile], upstream: 'http://localhost:8080' }),
-      fileHashes: new Map([[profile.file, 'same-bytes']]),
+      contentHashes: new Map([[profile.file, 'same-bytes']]),
     };
     expect(() => mergeFixtureSets([shardA, shardB])).toThrow(/different upstreams/);
   });
@@ -116,7 +206,7 @@ describe('mergeFixtureSets', () => {
     const shardB: FixtureSetForMerge = {
       label: 'shard-b',
       manifest: manifest({ graphql: [profile], flow: 'onboarding' }),
-      fileHashes: new Map([[profile.file, 'same-bytes']]),
+      contentHashes: new Map([[profile.file, 'same-bytes']]),
     };
     expect(() => mergeFixtureSets([shardA, shardB])).toThrow(/different flows.*app-store.*onboarding/s);
   });
@@ -127,7 +217,7 @@ describe('mergeFixtureSets', () => {
     const shardB: FixtureSetForMerge = {
       label: 'shard-b',
       manifest: manifest({ graphql: [profile], accountUserId: 'user-other' }),
-      fileHashes: new Map([[profile.file, 'same-bytes']]),
+      contentHashes: new Map([[profile.file, 'same-bytes']]),
     };
     expect(() => mergeFixtureSets([shardA, shardB])).toThrow(/different accounts.*user-test.*user-other/s);
   });
@@ -138,7 +228,7 @@ describe('mergeFixtureSets', () => {
     const shardB: FixtureSetForMerge = {
       label: 'shard-b',
       manifest: manifest({ graphql: [profile], accountUserId: '' }),
-      fileHashes: new Map([[profile.file, 'same-bytes']]),
+      contentHashes: new Map([[profile.file, 'same-bytes']]),
     };
     expect(() => mergeFixtureSets([shardA, shardB])).toThrow(/shard shard-b never signed in/);
   });
@@ -197,7 +287,7 @@ describe('mergeFixtureSets', () => {
     const shard: FixtureSetForMerge = {
       label: 'shard-stale',
       manifest: manifest({ graphql: [stale], frozenNow: '2026-09-08T13:07:50Z' }),
-      fileHashes: new Map([[stale.file, 'hash']]),
+      contentHashes: new Map([[stale.file, 'hash']]),
       // Recorded AFTER the manifest's own frozenNow — a pre-fix or hand-edited
       // set. The merge must not trust manifest.frozenNow blindly here.
       graphqlRecordedAt: new Map([[stale.file, '2026-09-08T13:18:23.456Z']]),
@@ -211,7 +301,7 @@ describe('mergeFixtureSets', () => {
     const shard: FixtureSetForMerge = {
       label: 'shard-clean',
       manifest: manifest({ graphql: [clean], frozenNow: '2026-09-08T13:07:50Z' }),
-      fileHashes: new Map([[clean.file, 'hash']]),
+      contentHashes: new Map([[clean.file, 'hash']]),
       graphqlRecordedAt: new Map([[clean.file, '2026-09-08T13:00:00Z']]),
     };
     const merged = mergeFixtureSets([shard]);
@@ -228,6 +318,20 @@ describe('mergeFixtureSets', () => {
   });
 });
 
+describe('graphqlFixtureContentHash', () => {
+  it('hashes identically when only recordedAt differs', () => {
+    const early = graphqlFixtureFile({ recordedAt: '2026-09-08T13:23:06Z' });
+    const late = graphqlFixtureFile({ recordedAt: '2026-09-08T13:25:45Z' });
+    expect(graphqlFixtureContentHash(early)).toBe(graphqlFixtureContentHash(late));
+  });
+
+  it('hashes differently when the response differs', () => {
+    const original = graphqlFixtureFile({ response: { data: { profile: { id: '1' } } } });
+    const changed = graphqlFixtureFile({ response: { data: { profile: { id: '2' } } } });
+    expect(graphqlFixtureContentHash(original)).not.toBe(graphqlFixtureContentHash(changed));
+  });
+});
+
 describe('parseMergeArguments', () => {
   it('resolves relative inputs against the repo root and defaults --out', () => {
     const options = parseMergeArguments(['--', 'artifacts/shard-a', 'artifacts/shard-b']);
@@ -239,5 +343,14 @@ describe('parseMergeArguments', () => {
   it('requires at least one input and rejects an output that is also an input', () => {
     expect(() => parseMergeArguments([])).toThrow(/at least one input directory/);
     expect(() => parseMergeArguments(['--out', '/tmp/merged', '/tmp/merged'])).toThrow(/also one of the inputs/);
+  });
+
+  it('defaults --on-conflict to fail, accepts newest, and rejects anything else', () => {
+    expect(parseMergeArguments(['artifacts/shard-a']).onConflict).toBe('fail');
+    expect(parseMergeArguments(['--on-conflict', 'fail', 'artifacts/shard-a']).onConflict).toBe('fail');
+    expect(parseMergeArguments(['--on-conflict', 'newest', 'artifacts/shard-a']).onConflict).toBe('newest');
+    expect(() => parseMergeArguments(['--on-conflict', 'bogus', 'artifacts/shard-a'])).toThrow(
+      /--on-conflict must be "fail" or "newest"/,
+    );
   });
 });

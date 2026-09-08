@@ -1,0 +1,29 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncFavorites",
+  "documentHash": "a2d83dd77b731d225ef3d88183b9284828f228cc896bc53481149e51210b0ba9",
+  "variablesHash": "bb00460751b12a6ba9ca685383f87780aa7a4e2caca80d0223a16fb250e55297",
+  "query": "\n    query SyncFavorites($cursor: SyncCursorInput, $limit: Int! = 500) {\n      syncFavorites(cursor: $cursor, limit: $limit) {\n        documents\n        cursor {\n          updatedAt\n          syncSeq\n        }\n        hasMore\n      }\n    }\n  ",
+  "variables": {
+    "cursor": {
+      "updatedAt": "2026-08-06T04:18:41.766129Z",
+      "syncSeq": "18185"
+    },
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncFavorites": {
+        "documents": [],
+        "cursor": {
+          "updatedAt": "2026-08-06T04:18:41.766129Z",
+          "syncSeq": "18185"
+        },
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:23:08.920Z",
+  "upstream": "https://ws.boardsesh.com"
+}

@@ -1,0 +1,32 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetBulkVoteSummaries",
+  "documentHash": "05588e2743fdf1f49b71058ddfebdecb233cb20a7fe32e75887cdabe078f369e",
+  "variablesHash": "8dec8d1f757d0e6938bf183e3489f7912915f075907c643654b91b31f297a515",
+  "query": "\n  query GetBulkVoteSummaries($input: BulkVoteSummaryInput!) {\n    bulkVoteSummaries(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n",
+  "variables": {
+    "input": {
+      "entityType": "session",
+      "entityIds": [
+        "55a31da4-a6d4-4593-8f23-85f8cc14cfb6"
+      ]
+    }
+  },
+  "response": {
+    "data": {
+      "bulkVoteSummaries": [
+        {
+          "entityType": "session",
+          "entityId": "55a31da4-a6d4-4593-8f23-85f8cc14cfb6",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:24:53.070Z",
+  "upstream": "https://ws.boardsesh.com"
+}

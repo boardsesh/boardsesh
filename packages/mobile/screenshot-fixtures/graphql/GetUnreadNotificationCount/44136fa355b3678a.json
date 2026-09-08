@@ -1,0 +1,16 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetUnreadNotificationCount",
+  "documentHash": "88e9f55fcd47502c7a0c4ae64a7a6430a96773a3024ac3ac4fd4a1437573f2b8",
+  "variablesHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "query": "\n  query GetUnreadNotificationCount {\n    unreadNotificationCount\n  }\n",
+  "variables": {},
+  "response": {
+    "data": {
+      "unreadNotificationCount": 0
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:20:22.302Z",
+  "upstream": "https://ws.boardsesh.com"
+}

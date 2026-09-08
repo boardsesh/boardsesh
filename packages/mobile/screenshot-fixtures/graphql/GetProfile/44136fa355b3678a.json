@@ -1,0 +1,24 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetProfile",
+  "documentHash": "cd1e2bbc3568f5cb58bbb2520871bf5bb1ffc0c6d0280889b0880481a3296c5e",
+  "variablesHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "query": "\n  query GetProfile {\n    profile {\n      id\n      email\n      displayName\n      avatarUrl\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n",
+  "variables": {},
+  "response": {
+    "data": {
+      "profile": {
+        "id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+        "email": "test@boardsesh.com",
+        "displayName": "Test User",
+        "avatarUrl": "https://ws.boardsesh.com/static/avatars/fbb773f8-5bec-473e-8216-e34ca55b073b.jpg?v=c919f471-a05b-4607-bac9-edd08aa0a9c6&v=1781787108044",
+        "isTester": false,
+        "createdAt": "2026-03-31T21:51:46.872Z",
+        "favoriteCount": 22
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T13:20:16.169Z",
+  "upstream": "https://ws.boardsesh.com"
+}
