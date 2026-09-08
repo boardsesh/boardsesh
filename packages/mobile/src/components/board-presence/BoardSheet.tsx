@@ -93,7 +93,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   },
   ref,
 ) {
-  const { sheet } = useTheme();
+  const { sheet, sheetSurface } = useTheme();
   const sheetRef = useRef<BottomSheetModal>(null);
   const panelRef = useRef<NowOnTheWallPanelHandle>(null);
 
@@ -139,6 +139,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   }, [isPresented, visibleHistory.length]);
 
   const snapPoints = useMemo(() => ['55%', '92%'], []);
+  const backgroundStyle = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
 
   const invalidatePanelActions = useCallback(() => {
     panelRef.current?.invalidatePendingActions();
@@ -212,6 +213,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
       onChange={handleSheetChange}
       {...sheetDismissProps}
       handleIndicatorStyle={sheet.handleStyle}
+      backgroundStyle={backgroundStyle}
       style={styles.sheet}
     >
       {isPresented ? (

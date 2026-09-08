@@ -40,6 +40,7 @@ const toast = vi.hoisted(() => ({
 const sheetModal = vi.hoisted(() => ({
   present: vi.fn(),
   dismiss: vi.fn(),
+  backgroundStyle: undefined as unknown,
   // The BottomSheetModal's `onChange` prop, captured so tests can fire native
   // index changes (index >= 0 = the sheet actually came up).
   onChange: null as ((index: number) => void) | null,
@@ -113,8 +114,16 @@ vi.mock('react-native', () => ({
 
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetModal: forwardRef(
-    ({ children, onChange }: { children?: ReactNode; onChange?: (index: number) => void }, ref: Ref<unknown>) => {
+    (
+      {
+        children,
+        onChange,
+        backgroundStyle,
+      }: { children?: ReactNode; onChange?: (index: number) => void; backgroundStyle?: unknown },
+      ref: Ref<unknown>,
+    ) => {
       sheetModal.onChange = onChange ?? null;
+      sheetModal.backgroundStyle = backgroundStyle;
       useImperativeHandle(ref, () => ({ present: sheetModal.present, dismiss: sheetModal.dismiss }));
       return createElement('div', { 'data-sheet': 'true' }, children);
     },
@@ -311,6 +320,7 @@ vi.mock('../../../providers/theme-provider', () => ({
     },
     brandColors: { warning: '#B45309', primary: '#6D28D9' },
     sheet: { scrimOpacity: 0.3, handleStyle: {} },
+    sheetSurface: '#191422',
   }),
 }));
 vi.mock('../../../providers/toast-provider', () => ({
@@ -394,6 +404,7 @@ describe('BoardSheet', () => {
     toast.showToast.mockClear();
     sheetModal.present.mockClear();
     sheetModal.dismiss.mockClear();
+    sheetModal.backgroundStyle = undefined;
     sheetModal.onChange = null;
     managedSheet.deferSettle = false;
     managedSheet.lastOnFullyDismissed = null;
@@ -421,6 +432,19 @@ describe('BoardSheet', () => {
 
     ref.current?.dismiss();
     expect(sheetModal.dismiss).toHaveBeenCalled();
+  });
+
+  it('passes the opaque themed surface to the native sheet', () => {
+    render(
+      createElement(BoardSheet, {
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+      }),
+    );
+
+    expect(sheetModal.backgroundStyle).toEqual({ backgroundColor: '#191422' });
   });
 
   it('forwards dismissAndWait through the imperative ref', async () => {
