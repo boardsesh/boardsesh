@@ -6,10 +6,10 @@ import { users } from '../auth/users';
 // Keyed by (user_id, climb_uuid): a climb is the same climb whichever board
 // config or angle you were looking at when you hearted it.
 //
-// `board_name` and `angle` are VESTIGIAL — nothing reads them any more. They
-// stay for one release because `syncFavorites` still emits them to offline
-// clients whose local SQLite table declares them NOT NULL; a pre-OTA device
-// would otherwise fail its whole pull cycle. Defaults let new rows omit them.
+// `board_name` and `angle` remain compatibility metadata. The writer populates
+// them for older readers, and sync rows and deletion IDs still carry them for
+// clients with a composite SQLite key and NOT NULL columns. They do not define
+// favorite identity. Defaults also let new rows omit them.
 // Dropped in the follow-up release once the fleet has rolled.
 export const userFavorites = pgTable(
   'user_favorites',
@@ -27,7 +27,7 @@ export const userFavorites = pgTable(
   (table) => ({
     // One favorite per user per climb, board- and angle-independent.
     uniqueFavorite: uniqueIndex('unique_user_favorite').on(table.userId, table.climbUuid),
-    // Retained until compatibility writers have fully rolled out.
+    // Retained until the legacy columns are removed in the cleanup release.
     uniqueFavoriteLegacy: uniqueIndex('unique_user_favorite_legacy').on(
       table.userId,
       table.boardName,
