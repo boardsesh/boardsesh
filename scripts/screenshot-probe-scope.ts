@@ -62,7 +62,8 @@ export const PROBE_SCOPE_RULES: readonly ProbeScopeRule[] = [
   {
     name: 'shared-i18n-non-en-us-locale',
     description: 'a non-en-US shared i18n catalog under packages/shared/i18n/locales/**',
-    matches: (path) => path.startsWith(SHARED_I18N_LOCALES_PREFIX) && !path.startsWith(`${SHARED_I18N_LOCALES_PREFIX}en-US/`),
+    matches: (path) =>
+      path.startsWith(SHARED_I18N_LOCALES_PREFIX) && !path.startsWith(`${SHARED_I18N_LOCALES_PREFIX}en-US/`),
   },
   {
     name: 'mobile-locales',
@@ -101,7 +102,10 @@ export function decideProbeScope(changedFiles: readonly string[]): ProbeScopeDec
   for (const rule of PROBE_SCOPE_RULES) {
     const matchedFile = changedFiles.find((path) => rule.matches(path));
     if (matchedFile !== undefined) {
-      return { forceFull: true, reason: `${matchedFile} matches ${rule.description}, which the probe shard cannot see` };
+      return {
+        forceFull: true,
+        reason: `${matchedFile} matches ${rule.description}, which the probe shard cannot see`,
+      };
     }
   }
   return {

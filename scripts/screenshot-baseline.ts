@@ -457,7 +457,9 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
   }
 
   if (!manifest) {
-    console.warn(`::warning::${LOG} baseline manifest ${manifestName} is missing or unreadable; treating as no baseline.`);
+    console.warn(
+      `::warning::${LOG} baseline manifest ${manifestName} is missing or unreadable; treating as no baseline.`,
+    );
     return { found: false, commit: '', unzipped: [] };
   }
 
