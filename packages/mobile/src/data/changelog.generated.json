@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-08T09:01:47.474Z",
+  "generatedAt": "2026-09-08T09:08:50.089Z",
   "entries": [
+    {
+      "prNumber": 5322,
+      "category": "fixed",
+      "title": "Swipe the player closed in one continuous motion, without the pause after lifting your finger.",
+      "mergedAt": "2026-09-08T09:07:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5322"
+    },
     {
       "prNumber": 5321,
       "category": "fixed",

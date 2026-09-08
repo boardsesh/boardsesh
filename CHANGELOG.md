@@ -22,6 +22,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Swipe the player closed in one continuous motion, without the pause after lifting your finger. ([#5322](https://github.com/boardsesh/boardsesh/pull/5322))
 - Your Android board sheet now keeps its dark surface, and the Play Store gallery opens with a lit Tension board. ([#5321](https://github.com/boardsesh/boardsesh/pull/5321))
 - Your board stays dark until you ask for it. If you walked off without disconnecting, the app no longer lights up your last climb when you wander back into range days later. The lightbulb, the widget, and mid-climb reconnects still light it instantly. ([#4551](https://github.com/boardsesh/boardsesh/pull/4551))
   </content>
