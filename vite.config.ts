@@ -1048,6 +1048,18 @@ export default defineConfig({
         command: 'tsx scripts/assert-screenshot-dimensions.ts',
         cache: false,
       },
+      // Probe gate for the iOS screenshot fan-out: compares one freshly captured
+      // shard against the stored baseline (scripts/compare-screenshots.ts).
+      'screenshot:compare': {
+        command: 'tsx scripts/compare-screenshots.ts',
+        cache: false,
+      },
+      // Packs / publishes / fetches the `screenshots-baseline` prerelease assets
+      // the compare above reads (scripts/screenshot-baseline.ts).
+      'screenshot:baseline': {
+        command: 'tsx scripts/screenshot-baseline.ts',
+        cache: false,
+      },
       'mobile:publish': {
         command: 'tsx scripts/mobile-publish.ts',
         cache: false,

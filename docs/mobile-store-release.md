@@ -77,6 +77,43 @@ Screenshots stay on demand: **Mobile Screenshots** (`mobile-screenshots-ios.yml`
 and `mobile-screenshots-android.yml`, `upload: true`) captures and uploads each
 platform independently.
 
+### The iOS probe gate
+
+The iOS capture is a 12-shard macOS fan-out (4 app locales × 3 devices) and a
+public repo gets 5 concurrent macOS runners, so the run sizes itself. With
+`gate: probe` it shoots ONE shard first — en-US × iPhone 16 Pro Max — pulls the
+matching shard out of the stored baseline and compares them pixel by pixel
+(`vp run screenshot:compare`, `scripts/compare-screenshots.ts`). Unchanged and
+the run stops there in roughly 15 minutes; changed, or no baseline yet, and it
+fans out to the remaining 11 shards. `gate: full`, the default, always captures
+everything, and a narrowed `locales` list, the `onboarding` flow or
+`upload: true` force it back to `full` — none of those has a full-set baseline to
+compare against.
+
+Two thresholds decide "changed": a per-channel tolerance of 8 (simulator text
+and shadow rasterization wobbles by a step or two between runs) and a max
+differing-pixel ratio of 0.001. Both can be overridden per run through
+`SCREENSHOT_CHANNEL_TOLERANCE` / `SCREENSHOT_MAX_DIFF_RATIO`; the header comment
+in `scripts/compare-screenshots.ts` carries the recalibration procedure. The
+probe uploads an `ios-probe-compare` artifact with the summary JSON and a
+red-mask diff PNG per changed shot, so you can see what moved before trusting
+the fan-out.
+
+The baseline lives on a rolling GitHub prerelease tagged `screenshots-baseline`:
+one `ios-<store-locale>-<device>.zip` per shard plus an `ios-manifest.json`
+recording the commit, the run id and a sha256 per file. Captured PNGs are
+deliberately not committed (issue #2905), and the prerelease keeps them out of
+git history while staying writable by the plain `GITHUB_TOKEN` — the tag ruleset
+covers only `build-*`, `fingerprint-*` and `release/*`. `vp run
+screenshot:baseline` packs, publishes and fetches it, and refuses to publish a
+tree that is short a locale or a device.
+
+The automatic trigger refreshes the baseline after every complete capture; a
+manual dispatch has to ask with `publish_baseline: true`, so a run that
+deliberately retargets `render_mode` or `boards` cannot silently redefine
+"unchanged" for everyone else. `upload: true` is unchanged and still pushes the
+freshly captured set to App Store Connect.
+
 The iOS `release_notes.txt` is pushed by Mobile Store Metadata. Android release
 notes ship with the AAB from each
 `fastlane/metadata/android/<locale>/changelogs/default.txt`; Play caps each file
@@ -97,7 +134,13 @@ wrong build.
 The iOS lane waits up to 45 minutes for App Store Connect to finish processing
 the tagged build, then attaches it to the editable version (creating the version
 first if needed) and dispatches Mobile Store Metadata for iOS so the listing
-text and What's New land on that version (§3). The Android lane promotes the
+text and What's New land on that version (§3). Screenshots have the same
+ordering problem one step further out — the capture workflow finishes long
+before ASC has processed the build, so its own upload finds no editable version
+and skips — so the lane then pulls the published `screenshots-baseline` set
+(§3) and attaches it to the version it just created. That step is best-effort:
+a failure warns rather than reds the job, and deliver's `sync_screenshots`
+makes a repeat run replace rather than append. The Android lane promotes the
 internal-track release carrying the tagged versionCode to a production release
 in draft status.
 
@@ -118,7 +161,7 @@ future fingerprint.
 1. Set the release version and translate both stores' release notes on `main`.
 2. Land the focused native change; wait for TestFlight and Play internal builds.
 3. Complete native QA against the exact uploaded candidates.
-4. Re-capture screenshots if they changed; listing text pushes itself.
+4. Re-capture screenshots when the UI moved (`gate: probe` decides for you); listing text pushes itself.
 5. Verify the store drafts select the tagged builds, then submit both manually.
 6. After approval, confirm both immutable release anchors were created.
 
