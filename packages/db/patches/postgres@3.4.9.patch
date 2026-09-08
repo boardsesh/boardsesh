@@ -1,0 +1,144 @@
+--- a/src/connection.js
++++ b/src/connection.js
+@@ -252,7 +252,7 @@
+   }
+ 
+   function nextWrite(fn) {
+-    const x = socket.write(chunk, fn)
++    const x = socket && chunk && socket.write(chunk, fn)
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+     chunk = nextWriteTimer = null
+     return x
+@@ -425,6 +425,7 @@
+       error(Errors.connection('CONNECTION_DESTROYED', options))
+ 
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     if (socket) {
+       socket.removeListener('data', data)
+       socket.removeListener('connect', connected)
+@@ -438,6 +439,7 @@
+     remaining = 0
+     incomings = null
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     socket.removeListener('data', data)
+     socket.removeListener('connect', connected)
+     idleTimer.cancel()
+@@ -451,6 +453,9 @@
+       return reconnect()
+ 
+     !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
++    // A replacement socket must not inherit a failed result or fatal error.
++    query = results = errorResponse = null
++    result = new Result()
+     closedTime = performance.now()
+     hadError && options.shared.retries++
+     delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
+--- a/src/index.js
++++ b/src/index.js
+@@ -236,13 +236,21 @@
+     const queries = Queue()
+     let savepoints = 0
+       , connection
++      , connectionError = null
+       , prepare = null
+ 
+     try {
+       await sql.unsafe('begin ' + options.replace(/[^a-z ]/ig, ''), [], { onexecute }).execute()
+       return await Promise.race([
+         scope(connection, fn),
+-        new Promise((_, reject) => connection.onclose = reject)
++        new Promise((_, reject) => connection.onclose = error => {
++          // A transaction cannot use this connection again, even after the
++          // pool reconnects it. Settle statements waiting in its own queue.
++          connectionError = error
++          while (queries.length)
++            queries.shift().reject(error)
++          reject(error)
++        })
+       ])
+     } catch (error) {
+       throw error
+@@ -290,6 +298,9 @@
+ 
+       function handler(q) {
+         q.catch(e => uncaughtError || (uncaughtError = e))
++        // Includes automatic rollback and callbacks resuming after close.
++        if (connectionError)
++          return q.reject(connectionError)
+         c.queue === full
+           ? queries.push(q)
+           : c.execute(q) || move(c, full)
+--- a/cjs/src/connection.js
++++ b/cjs/src/connection.js
+@@ -252,7 +252,7 @@
+   }
+ 
+   function nextWrite(fn) {
+-    const x = socket.write(chunk, fn)
++    const x = socket && chunk && socket.write(chunk, fn)
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+     chunk = nextWriteTimer = null
+     return x
+@@ -425,6 +425,7 @@
+       error(Errors.connection('CONNECTION_DESTROYED', options))
+ 
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     if (socket) {
+       socket.removeListener('data', data)
+       socket.removeListener('connect', connected)
+@@ -438,6 +439,7 @@
+     remaining = 0
+     incomings = null
+     clearImmediate(nextWriteTimer)
++    chunk = nextWriteTimer = null
+     socket.removeListener('data', data)
+     socket.removeListener('connect', connected)
+     idleTimer.cancel()
+@@ -451,6 +453,9 @@
+       return reconnect()
+ 
+     !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
++    // A replacement socket must not inherit a failed result or fatal error.
++    query = results = errorResponse = null
++    result = new Result()
+     closedTime = performance.now()
+     hadError && options.shared.retries++
+     delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
+--- a/cjs/src/index.js
++++ b/cjs/src/index.js
+@@ -236,13 +236,21 @@
+     const queries = Queue()
+     let savepoints = 0
+       , connection
++      , connectionError = null
+       , prepare = null
+ 
+     try {
+       await sql.unsafe('begin ' + options.replace(/[^a-z ]/ig, ''), [], { onexecute }).execute()
+       return await Promise.race([
+         scope(connection, fn),
+-        new Promise((_, reject) => connection.onclose = reject)
++        new Promise((_, reject) => connection.onclose = error => {
++          // A transaction cannot use this connection again, even after the
++          // pool reconnects it. Settle statements waiting in its own queue.
++          connectionError = error
++          while (queries.length)
++            queries.shift().reject(error)
++          reject(error)
++        })
+       ])
+     } catch (error) {
+       throw error
+@@ -290,6 +298,9 @@
+ 
+       function handler(q) {
+         q.catch(e => uncaughtError || (uncaughtError = e))
++        // Includes automatic rollback and callbacks resuming after close.
++        if (connectionError)
++          return q.reject(connectionError)
+         c.queue === full
+           ? queries.push(q)
+           : c.execute(q) || move(c, full)
