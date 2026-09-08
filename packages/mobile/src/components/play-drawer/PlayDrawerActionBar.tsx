@@ -66,6 +66,11 @@ type PlayDrawerActionBarProps = {
   showBackToLive?: boolean;
   /** Commit-mode only: hidden when the displayed climb is already the lit one. */
   showPutOnWall?: boolean;
+  /** Commit-mode only: someone moved the wall mid-browse, so the pair swaps to
+   *  Keep theirs / Put mine up and the question floats above the row. */
+  showConfirm?: boolean;
+  /** Commit-mode only: the lit climb's name, for the confirm's question. */
+  wallClimbName?: string | null;
   /** Commit-mode only: "Put on the wall" vs "Set active" where no wall is reachable. */
   commitLabel?: CommitButtonLabel;
   onBackToLive?: () => void;
@@ -125,6 +130,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   secondaryMode = 'actions',
   showBackToLive = false,
   showPutOnWall = false,
+  showConfirm = false,
+  wallClimbName = null,
   commitLabel = 'putOnWall',
   onBackToLive,
   onCommit,
@@ -316,6 +323,8 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           <PlayDrawerCommitBar
             showBackToLive={showBackToLive}
             showPutOnWall={showPutOnWall}
+            showConfirm={showConfirm}
+            wallClimbName={wallClimbName}
             commitLabel={commitLabel}
             onBackToLive={onBackToLive}
             onCommit={onCommit}

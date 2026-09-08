@@ -34,6 +34,7 @@ export {
   isPlaylistPeekQueueItemUuid,
   getQueueBoardKey,
   createPlaylistSuggestionSource,
+  reanchorPlaylistSuggestionSource,
 } from './playlist-suggestions';
 export type { QueueBoardKeyTarget } from './playlist-suggestions';
 

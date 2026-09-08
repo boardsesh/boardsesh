@@ -49,6 +49,7 @@ import { reportHandledError } from '../../../src/lib/error-reporting';
 import { toQueueClimbs } from '../../../src/lib/climb-types';
 import { hapticSelection } from '../../../src/lib/haptics';
 import { useAuth } from '../../../src/providers/auth-provider';
+import { useIsSharedSession } from '../../../src/providers/queue-provider';
 import { useToast } from '../../../src/providers/toast-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
@@ -64,6 +65,10 @@ export default function PlaylistDetail() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
+  // Whether anyone else is in this session. Read off a dedicated selector context
+  // so the ≤1/2s session-stats push doesn't re-render this screen's list — the
+  // boolean flips only across the solo ↔ crew boundary.
+  const isSharedSession = useIsSharedSession();
   const { showToast } = useToast();
   const { systemColors, brandColors } = useTheme();
   const { updatePlaylist, deletePlaylist, pinPlaylist, unpinPlaylist, followPlaylist, unfollowPlaylist } =
@@ -172,6 +177,12 @@ export default function PlaylistDetail() {
     allClimbs,
     fetchPage,
     viewOnlyBoard: resolveViewOnlyBoard,
+    // In a crew a row tap browses: it opens the drawer on the tapped climb with
+    // the playlist seeded as the swipe track, and leaves the queue alone. The
+    // alternative here is the loudest write in the app — `replaceQueueOnActivate`
+    // swaps the whole crew's queue for the playlist order and takes the wall,
+    // which is not what tapping a row to look at it means.
+    previewOnly: isSharedSession,
     refreshErrorMessage: 'Failed to refresh playlist suggestions:',
     replaceQueueOnActivate: true,
   });
