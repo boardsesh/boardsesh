@@ -160,6 +160,7 @@ vi.mock('../AngleSelectorSheet', () => ({
 }));
 vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
 vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
+vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
 vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 
@@ -171,7 +172,6 @@ vi.mock('../../../providers/queue-provider', () => ({
     nextClimb: vi.fn(),
     previousClimb: vi.fn(),
     addToQueue: vi.fn(async () => 'added'),
-    noteClimbViewed: vi.fn(),
   }),
   useQueueSessionId: () => ({ sessionId: null }),
   usePlaylistSuggestionSource: () => null,

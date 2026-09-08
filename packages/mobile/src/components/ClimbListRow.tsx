@@ -278,19 +278,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
   unsupportedRef.current = unsupported;
   // Board metadata for analytics, read through a ref so the dep-free handlers below
   // never capture a stale value when the list's board config changes.
-  const boardMetaRef = useRef({ boardName, layoutId });
-  boardMetaRef.current = { boardName, layoutId };
-
-  // One place that opens the reaction menu + records how it was reached, so the
-  // ⋮-button experiment can compare open rates + entry point between cohorts.
-  const openActions = useCallback((source: 'long_press' | 'more_button') => {
+  // One place that opens the reaction menu, whether it was reached by long press
+  // or by the ⋮ button.
+  const openActions = useCallback(() => {
     if (unsupportedRef.current) return;
-    track(SHARED_EVENTS.ClimbActionsOpened, {
-      source,
-      climbUuid: climbRef.current.uuid,
-      boardName: boardMetaRef.current.boardName,
-      layoutId: boardMetaRef.current.layoutId,
-    });
     onOpenActionsRef.current?.(climbRef.current);
   }, []);
 
@@ -304,14 +295,14 @@ const ClimbListRow = React.memo(function ClimbListRow({
 
   const handleLongPress = useCallback(() => {
     hapticMedium();
-    openActions('long_press');
+    openActions();
   }, [openActions]);
 
   // The ⋮ button's tap — same destination as the long-press, on a plain tap. Reads
   // the same refs so it stays dep-free and the row's memo/renderItem is untouched.
   const handleOpenActions = useCallback(() => {
     hapticMedium();
-    openActions('more_button');
+    openActions();
   }, [openActions]);
 
   // Screen-reader activate → the same handlers the RNGH taps call. Branch on the

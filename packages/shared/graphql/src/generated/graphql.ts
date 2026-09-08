@@ -7643,6 +7643,14 @@ export type SimilarClimb = {
   /** Number of hold positions on the candidate climb. */
   candidateHoldCount: Scalars['Int']['output'];
   /**
+   * Structured climb rules ('no_match', 'any_feet', 'campus', 'no_kickboard',
+   * method_*). Nullable, unlike compatibleSizeIds above: null means the server
+   * did not record the rules, and an empty array means the climb is set under
+   * all the defaults. The Woods play drawer states both rules on every problem,
+   * so it has to be able to tell those two apart (issue #5214).
+   */
+  characteristics?: Maybe<Array<Scalars['String']['output']>>;
+  /**
    * Product sizes this climb fits on (denormalised from edge bounds). Callers
    * on a smaller wall can use this to grey out climbs that extend beyond
    * their physical board — those climbs are still navigable in the actions
@@ -9236,6 +9244,8 @@ export type GetUserFavoriteClimbsQuery = {
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
       compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
     }>;
   };
 };
@@ -9536,6 +9546,7 @@ export type SimilarClimbsQuery = {
     qualityAverage?: number | null;
     ascensionistCount?: number | null;
     compatibleSizeIds: Array<number>;
+    characteristics?: Array<string> | null;
     similarity: number;
     sharedHoldCount: number;
     candidateHoldCount: number;
@@ -10012,6 +10023,8 @@ export type GetPlaylistClimbsQuery = {
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
       compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
     }>;
   };
 };
@@ -10146,6 +10159,8 @@ export type GetSmartPlaylistQuery = {
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
       compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
     }>;
   };
 };
@@ -10613,6 +10628,49 @@ export type SetCommunitySettingsMutation = {
     setBy?: string | null;
     createdAt: string;
     updatedAt: string;
+  };
+};
+
+export type ResolveProposalFeedMutationVariables = Exact<{
+  input: ResolveProposalInput;
+}>;
+
+export type ResolveProposalFeedMutation = {
+  __typename?: 'Mutation';
+  resolveProposal: {
+    __typename?: 'Proposal';
+    uuid: string;
+    climbUuid: string;
+    boardType: string;
+    angle?: number | null;
+    proposerId: string;
+    proposerDisplayName?: string | null;
+    proposerAvatarUrl?: string | null;
+    type: ProposalType;
+    proposedValue: string;
+    currentValue: string;
+    status: ProposalStatus;
+    reason?: string | null;
+    resolvedAt?: string | null;
+    resolvedBy?: string | null;
+    createdAt: string;
+    weightedUpvotes: number;
+    weightedDownvotes: number;
+    requiredUpvotes: number;
+    userVote: number;
+    climbName?: string | null;
+    frames?: string | null;
+    layoutId?: number | null;
+    climbSetterUsername?: string | null;
+    climbDifficulty?: string | null;
+    climbQualityAverage?: string | null;
+    climbAscensionistCount?: number | null;
+    climbDifficultyError?: string | null;
+    climbBenchmarkDifficulty?: string | null;
+    climbIsNoMatch?: boolean | null;
+    upvoterCount: number;
+    commentCount: number;
+    climbIsHidden?: boolean | null;
   };
 };
 
@@ -11087,6 +11145,8 @@ export type GetSetterClimbsFullQuery = {
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
       compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
     }>;
   };
 };
@@ -11122,6 +11182,8 @@ export type GetUserClimbsQuery = {
       boardseshDifficulty?: number | null;
       boardseshConfidence?: string | null;
       compatibleSizeIds?: Array<number> | null;
+      characteristics?: Array<string> | null;
+      is_no_match?: boolean | null;
       renderBoard?: {
         __typename?: 'RenderBoardConfig';
         layoutId: number;
@@ -13054,6 +13116,8 @@ export const GetUserFavoriteClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
                     ],
                   },
                 },
@@ -13837,6 +13901,7 @@ export const SimilarClimbsDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'similarity' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'sharedHoldCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'candidateHoldCount' } },
@@ -15139,6 +15204,8 @@ export const GetPlaylistClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
                     ],
                   },
                 },
@@ -15504,6 +15571,8 @@ export const GetSmartPlaylistDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
                     ],
                   },
                 },
@@ -16584,6 +16653,79 @@ export const SetCommunitySettingsDocument = {
     },
   ],
 } as unknown as DocumentNode<SetCommunitySettingsMutation, SetCommunitySettingsMutationVariables>;
+export const ResolveProposalFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ResolveProposalFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'ResolveProposalInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'resolveProposal' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerDisplayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposerAvatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'proposedValue' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'currentValue' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'reason' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resolvedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'weightedUpvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'weightedDownvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'requiredUpvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbSetterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbQualityAverage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbAscensionistCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvoterCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbIsHidden' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ResolveProposalFeedMutation, ResolveProposalFeedMutationVariables>;
 export const QaPreviewsDocument = {
   kind: 'Document',
   definitions: [
@@ -17697,6 +17839,8 @@ export const GetSetterClimbsFullDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
                     ],
                   },
                 },
@@ -17765,6 +17909,8 @@ export const GetUserClimbsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'compatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'characteristics' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'is_no_match' } },
                       {
                         kind: 'Field',
                         name: { kind: 'Name', value: 'renderBoard' },

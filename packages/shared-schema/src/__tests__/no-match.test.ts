@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getDisplayDescription, isNoMatchClimb, withNoMatch } from '../utils';
+import { getDisplayDescription, isNoMatchClimb, resolveClimbNoMatch, withNoMatch } from '../utils';
 
 describe('isNoMatchClimb', () => {
   it('detects a leading "no match" marker, case-insensitively', () => {
@@ -9,6 +9,95 @@ describe('isNoMatchClimb', () => {
     expect(isNoMatchClimb('')).toBe(false);
     expect(isNoMatchClimb(null)).toBe(false);
     expect(isNoMatchClimb(undefined)).toBe(false);
+  });
+
+  // #5127: Aurora has no rules field, and setters commonly append the
+  // declaration after their own prose. Every string here is a real catalog
+  // description (or a minimal edit of one).
+  it('detects a declaration appended after the setter prose', () => {
+    for (const description of [
+      'Kick board is off. No matching.',
+      'Nerds gummy cluster FTW. No matching.',
+      'Remedial training for my terrible open hip climbing\nNo matching',
+      '1145 ascents on 12ft. Original by iansutherland. No matching.',
+      '15 degrees. Approx V5. No matching',
+      'Nice one (V5) No matching.',
+      'Beta [hard] No matching',
+      'Nice one - no matching',
+      'beta\r\nNo matching',
+      'Feet follow hands! NO MATCHES',
+      'Big jugs. no-match',
+    ]) {
+      expect(isNoMatchClimb(description), description).toBe(true);
+    }
+  });
+
+  // The precision contract: the declaration has to open a sentence. A wrong
+  // glyph is worse than a missing one, so these stay false even though they end
+  // with the phrase.
+  it('leaves prose that merely mentions matching alone', () => {
+    for (const description of [
+      'You can match start hold but the rest is no matching',
+      'Campus, no match',
+      'Aidan climb (no matching)',
+      '40 degrees, No matching.',
+      'Feet: no matches.',
+      'Big move to the jug, there is no match',
+      'Matching is fine',
+      'Match only the finish hold',
+      'Start matched.\nNo feet after the crimp.',
+    ]) {
+      expect(isNoMatchClimb(description), description).toBe(false);
+    }
+  });
+
+  // The two halves are OR'd, never swapped: 10,241 catalog rows match the
+  // leading form and not the trailing one.
+  it('keeps every leading-form verdict the trailing pattern would reject', () => {
+    for (const description of [
+      'No matching feet allowed',
+      'No matching. Some extra notes',
+      'No match\nbeta',
+      'no matching allowed on this one',
+    ]) {
+      expect(isNoMatchClimb(description), description).toBe(true);
+    }
+  });
+});
+
+describe('resolveClimbNoMatch', () => {
+  // The #5127 review gap: the editor stores `[]` as an explicit "matching IS
+  // allowed" while deliberately keeping the setter's prose, so a payload that
+  // reads the description alone contradicts the climb view.
+  it('lets a non-null characteristics array override the description', () => {
+    expect(resolveClimbNoMatch('kilter', [], 'Kick board is off. No matching.')).toBe(false);
+    expect(resolveClimbNoMatch('kilter', ['campus'], 'No match\nbeta')).toBe(false);
+    expect(resolveClimbNoMatch('kilter', ['no_match'], 'Crimpy start')).toBe(true);
+    expect(resolveClimbNoMatch('kilter', ['no_kickboard', 'no_match'], null)).toBe(true);
+  });
+
+  it('falls back to the description only when characteristics is null', () => {
+    expect(resolveClimbNoMatch('kilter', null, 'Kick board is off. No matching.')).toBe(true);
+    expect(resolveClimbNoMatch('kilter', undefined, 'No match\nbeta')).toBe(true);
+    expect(resolveClimbNoMatch('kilter', null, 'Crimpy start')).toBe(false);
+    expect(resolveClimbNoMatch('tension', null, null)).toBe(false);
+  });
+
+  // MoonBoard and Woods never had Aurora's description convention: there the
+  // same words are the setter's own prose.
+  it('never reads the description on the code-driven boards', () => {
+    expect(resolveClimbNoMatch('moonboard', null, 'No match\nbeta')).toBe(false);
+    expect(resolveClimbNoMatch('woods', null, 'Kick board is off. No matching.')).toBe(false);
+    // The array still wins on those boards.
+    expect(resolveClimbNoMatch('moonboard', ['no_match'], 'Crimpy start')).toBe(true);
+  });
+
+  // boardType is only populated in multi-board contexts, so an absent one keeps
+  // the pre-capability verdict rather than silently dropping the rule.
+  it('fails open when boardType is missing', () => {
+    expect(resolveClimbNoMatch(null, null, 'No match\nbeta')).toBe(true);
+    expect(resolveClimbNoMatch(undefined, null, 'Kick board is off. No matching.')).toBe(true);
+    expect(resolveClimbNoMatch(null, [], 'No match\nbeta')).toBe(false);
   });
 });
 
@@ -36,6 +125,14 @@ describe('withNoMatch', () => {
     // "no match" is not the whole first line here — leave the user's text alone.
     expect(withNoMatch('No matching feet allowed', false)).toBe('No matching feet allowed');
     expect(withNoMatch('No match feet, then jump\nbody', false)).toBe('No match feet, then jump\nbody');
+  });
+
+  it('never rewrites prose that carries the declaration at the end', () => {
+    // Enabling no-ops (the description already declares it) rather than stacking
+    // a second "No match" line; disabling leaves the setter's sentence intact.
+    const prose = 'Kick board is off. No matching.';
+    expect(withNoMatch(prose, true)).toBe(prose);
+    expect(withNoMatch(prose, false)).toBe(prose);
   });
 
   it('leaves an unmarked description unchanged when disabling', () => {
@@ -117,6 +214,12 @@ describe('getDisplayDescription', () => {
     );
     expect(getDisplayDescription('No matching.\nFeet follow hands.')).toBe('No matching.\nFeet follow hands.');
     expect(getDisplayDescription('Matching is fine')).toBe('Matching is fine');
+    // #5127 deliberately did NOT teach the stripper the trailing form: the
+    // surviving sentence is usually load-bearing (attribution, beta), and
+    // updateClimb writes the description straight back to the row.
+    expect(getDisplayDescription('1145 ascents on 12ft. Original by iansutherland. No matching.')).toBe(
+      '1145 ascents on 12ft. Original by iansutherland. No matching.',
+    );
   });
 
   it('handles the marker and a restatement stacked together', () => {

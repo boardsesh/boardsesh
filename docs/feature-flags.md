@@ -116,6 +116,10 @@ diagnostic) applies on native. The whole surface lives in three files:
   `useBackendOutageDetectionEnabled` and published to the store by
   `ConnectivityBridge`; the 20 s request deadline stays on either way. See
   `docs/offline-sync-plan.md` → "Backend reachability".
+  `climb-moderation-kill` is a kill switch (read through
+  `useClimbModerationEnabled`, unresolved = enabled) that takes down the whole
+  community-moderation surface at once: the "Report climb" action, the More-tab
+  Moderation row, and the community moderation status on a climb.
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,

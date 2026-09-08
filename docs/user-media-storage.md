@@ -75,7 +75,38 @@ Objects are reached through the backend's `/static/*` routes, which stream them 
 | `/static/gym-photos/<file>` | `handleStaticGymPhoto` |
 | `/static/beta-link-thumbnails/<platform>/<file>` | `handleStaticBetaThumbnail` |
 
-All four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-schema/src/image-sizes.ts`). Beta thumbnails persist the resized bytes at `<baseKey>@<size>.jpg` because their key is immutable; avatars and gym images resize on the fly, because their key is overwritten in place on re-upload and a cached variant would shadow the new image.
+All four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-schema/src/image-sizes.ts`). When the media bucket has a public base URL, these routes redirect to its CDN, with sized requests addressing `<baseKey>@<size>.jpg`. The bucket cannot resize on demand.
+
+New Instagram and TikTok thumbnails write the shared `BETA_THUMBNAIL_REQUEST_SIZE` (280px) variant before the original and before returning a URL for the feed. Avatars and gym images write every allowed size on each upload; their `?v=` parameter prevents stale images after replacement. Without a public base URL, the backend proxies images and resizes on demand, caching variants only for immutable beta thumbnails.
+
+### Repairing missing beta thumbnail variants
+
+An original returning 200 while its `@280.jpg` URL returns 404 means the resized object is missing. After deploying the upload fix, run the existing backfill with the production media bucket environment:
+
+```bash
+vp exec tsx packages/backend/src/scripts/backfill-image-variants.ts --prefix beta-link-thumbnails/ --dry-run
+vp exec tsx packages/backend/src/scripts/backfill-image-variants.ts --prefix beta-link-thumbnails/
+```
+
+The backfill creates only missing variants and skips existing objects. It does not change beta links or refetch Instagram/TikTok posts. Re-run the dry run to confirm no variants remain, then check the affected public URLs; cached CDN 404s may need time to expire.
+
+### App multipart uploads
+
+Avatars, bug-report screenshots and PR QA screenshots use the mobile app's
+`appendUploadImage` adapter. Native release bundles pin React Native's fetch with
+`EXPO_PUBLIC_USE_RN_FETCH=1` because Expo fetch can crash Hermes (see
+`docs/mobile-ota-updates.md`). RN multipart parts must carry a readable `uri`,
+plus `name` and `type`. A `bytes()`-only descriptor sends an empty file part.
+
+The native adapter also exposes a non-enumerable `bytes()` reader for Expo fetch
+in development. RN's serializer spreads only the URI and metadata into the
+native bridge; Expo reads the original entry's method. Both paths can replay the
+form after authentication refresh. Keep the fetch pin in place.
+
+The browser adapter reads picker/manipulator `blob:` or `data:` URLs without
+backend credentials and appends a real Blob with an explicit filename. Both
+adapters reject missing or empty images, and leave the multipart boundary to
+fetch. The backend rejects empty avatar and screenshot parts before storage.
 
 ### Feedback screenshots
 

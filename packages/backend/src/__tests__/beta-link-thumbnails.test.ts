@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
+import sharp from 'sharp';
+import { BETA_THUMBNAIL_REQUEST_SIZE } from '@boardsesh/shared-schema';
+import { staticPathToMediaRedirect } from '../lib/media-url';
 
 vi.mock('../storage/s3', () => ({
   isS3Configured: vi.fn(() => true),
@@ -96,8 +99,8 @@ describe('cacheInstagramThumbnail', () => {
     // handleStaticBetaThumbnail), not the direct S3 URL — Tigris on Railway
     // doesn't honor public-read ACLs.
     expect(url).toBe('/static/beta-link-thumbnails/instagram/ABC123.jpg');
-    expect(uploadToS3).toHaveBeenCalledTimes(1);
-    const [, buffer, key, contentType] = vi.mocked(uploadToS3).mock.calls[0];
+    expect(uploadToS3).toHaveBeenCalledTimes(2);
+    const [, buffer, key, contentType] = vi.mocked(uploadToS3).mock.calls[1];
     expect(Buffer.isBuffer(buffer)).toBe(true);
     expect(key).toBe('beta-link-thumbnails/instagram/ABC123.jpg');
     expect(contentType).toBe('image/jpeg');
@@ -123,6 +126,9 @@ describe('cacheInstagramThumbnail', () => {
     vi.mocked(uploadToS3).mockRejectedValueOnce(new Error('s3 down'));
     const url = await cacheInstagramThumbnail('ABC123', 'https://scontent.cdninstagram.com/photo.jpg');
     expect(url).toBeNull();
+    // A failed variant must not publish the base or a URL for the feed.
+    expect(uploadToS3).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(uploadToS3).mock.calls[0][2]).toBe('beta-link-thumbnails/instagram/ABC123.jpg@280.jpg');
   });
 
   it('falls back to image/jpeg when content-type header is missing', async () => {
@@ -155,8 +161,72 @@ describe('cacheTikTokThumbnail', () => {
     const url = await cacheTikTokThumbnail('cache_42', 'https://p16-sign.tiktokcdn.com/photo.webp');
 
     expect(url).toBe('/static/beta-link-thumbnails/tiktok/cache_42.jpg');
-    const [, , key, contentType] = vi.mocked(uploadToS3).mock.calls[0];
+    const [, , key, contentType] = vi.mocked(uploadToS3).mock.calls[1];
     expect(key).toBe('beta-link-thumbnails/tiktok/cache_42.jpg');
     expect(contentType).toBe('image/webp');
+  });
+});
+
+describe('new beta thumbnails served from the media bucket', () => {
+  beforeEach(() => {
+    vi.mocked(uploadToS3).mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['Instagram', cacheInstagramThumbnail, 'https://scontent.cdninstagram.com/photo.jpg'],
+    ['TikTok', cacheTikTokThumbnail, 'https://p16-sign.tiktokcdn.com/photo.webp'],
+  ] as const)(
+    'writes a readable %s image at the exact CDN redirect target before publishing',
+    async (_platform, cacheThumbnail, sourceUrl) => {
+      const original = await sharp({
+        create: { width: 600, height: 800, channels: 3, background: { r: 10, g: 20, b: 30 } },
+      })
+        .webp()
+        .toBuffer();
+      mockFetchImageOnce({ contentType: 'image/webp', body: new Uint8Array(original) });
+
+      const thumbnailUrl = await cacheThumbnail('fresh_beta', sourceUrl);
+
+      expect(thumbnailUrl).not.toBeNull();
+      const mediaBaseUrl = 'https://media.boardsesh.com';
+      const redirectUrl = staticPathToMediaRedirect(
+        thumbnailUrl!,
+        new URLSearchParams({ size: String(BETA_THUMBNAIL_REQUEST_SIZE) }),
+        mediaBaseUrl,
+      );
+      const [variantUpload, originalUpload] = vi.mocked(uploadToS3).mock.calls;
+      expect(uploadToS3).toHaveBeenCalledTimes(2);
+      const [bucket, variantBody, variantKey, variantContentType, options] = variantUpload;
+      expect(bucket).toBe('media');
+      expect(`${mediaBaseUrl}/${variantKey}`).toBe(redirectUrl);
+      expect(variantContentType).toBe('image/jpeg');
+      expect(options).toEqual({ cacheControl: 'public, max-age=31536000, immutable' });
+      expect(await sharp(variantBody).metadata()).toMatchObject({
+        format: 'jpeg',
+        width: BETA_THUMBNAIL_REQUEST_SIZE,
+        height: BETA_THUMBNAIL_REQUEST_SIZE,
+      });
+      expect(originalUpload).toEqual(['media', original, thumbnailUrl!.slice('/static/'.length), 'image/webp']);
+    },
+  );
+
+  it('keeps original bytes and MIME type at the variant key when resizing fails', async () => {
+    const original = new Uint8Array([1, 2, 3]);
+    mockFetchImageOnce({ contentType: 'image/webp', body: original });
+
+    expect(await cacheTikTokThumbnail('unresizable', 'https://p16-sign.tiktokcdn.com/photo.webp')).not.toBeNull();
+
+    expect(uploadToS3).toHaveBeenNthCalledWith(
+      1,
+      'media',
+      Buffer.from(original),
+      'beta-link-thumbnails/tiktok/unresizable.jpg@280.jpg',
+      'image/webp',
+      { cacheControl: 'public, max-age=31536000, immutable' },
+    );
   });
 });

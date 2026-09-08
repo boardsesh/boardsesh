@@ -4,6 +4,7 @@ import { buildCohortPersonProperties, type CohortProfileInput } from '../cohort-
 const FULL_INPUT: CohortProfileInput = {
   isTester: false,
   createdAt: '2024-01-01T00:00:00.000Z',
+  email: 'climber@example.com',
   primaryBoard: 'kilter',
   favoriteCount: 12,
   integrationsConnectedCount: 1,
@@ -15,6 +16,7 @@ describe('buildCohortPersonProperties', () => {
 
     expect(set).toEqual({
       role: 'user',
+      email: 'climber@example.com',
       primary_board: 'kilter',
       favorite_count: 12,
       integrations_connected_count: 1,
@@ -31,6 +33,7 @@ describe('buildCohortPersonProperties', () => {
     const { set, setOnce } = buildCohortPersonProperties({
       isTester: null,
       createdAt: null,
+      email: null,
       primaryBoard: null,
       favoriteCount: null,
       integrationsConnectedCount: null,
@@ -38,6 +41,7 @@ describe('buildCohortPersonProperties', () => {
 
     expect(set).toEqual({
       role: undefined,
+      email: undefined,
       primary_board: undefined,
       favorite_count: undefined,
       integrations_connected_count: undefined,

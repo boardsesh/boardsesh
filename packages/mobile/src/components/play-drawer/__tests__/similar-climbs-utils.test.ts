@@ -85,6 +85,22 @@ describe('buildClimbStub', () => {
       ascensionist_count: 0,
     });
   });
+
+  // Woods states both climb rules on every problem, and the drawer reads them off
+  // `characteristics`. A tapped similar climb opens the drawer with this stub and
+  // nothing refetches it, so the array has to survive the hop — including the
+  // difference between "set under the defaults" and "rules never recorded" (#5214).
+  it('carries characteristics through to the stub', () => {
+    expect(buildClimbStub(makeSimilar({ characteristics: ['no_match'] }), 'woods').characteristics).toEqual([
+      'no_match',
+    ]);
+  });
+
+  it('keeps an empty characteristics array distinct from a missing one', () => {
+    expect(buildClimbStub(makeSimilar({ characteristics: [] }), 'woods').characteristics).toEqual([]);
+    expect(buildClimbStub(makeSimilar({ characteristics: null }), 'woods').characteristics).toBeNull();
+    expect(buildClimbStub(makeSimilar(), 'woods').characteristics).toBeNull();
+  });
 });
 
 describe('rankBySizeCompatibility', () => {

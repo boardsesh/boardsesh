@@ -11,6 +11,7 @@
  * log-ascent button) don't have to resolve the active board independently.
  */
 
+import { useClimbModerationEnabled } from './feature-flags-provider';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { router, useSegments } from 'expo-router';
@@ -31,6 +32,7 @@ import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
 import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu';
 import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
+import { ReportClimbSheet } from '../components/report-climb/ReportClimbSheet';
 import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
 import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
@@ -70,6 +72,11 @@ export type OpenClimbActionsOptions = {
    *  with it (the "tick sheet closes immediately" bug). Same fix shape as
    *  `onAddBetaVideo` (#3505). Receives the climb/board snapshot the menu opened for. */
   onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /** When set, the "Report climb" action runs this instead of opening the root
+   *  report sheet. The play drawer passes its own in-tree opener so the sheet
+   *  stacks above the `/play` fullScreenModal (a root-tree sheet can't — see
+   *  #3505). It receives the climb/board snapshot the menu was opened for. */
+  onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
   /** Awaitable close for a native BoardSheet / QueueSheet underneath the custom
    * actions overlay. Omitted when the source is an inline iPad pane. */
   dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
@@ -173,6 +180,11 @@ type DrawerHostValue = {
    *  boardConfig (for the angle) at open time. Used by the iOS climb context menu's
    *  shared action list (useClimbActions). */
   openAddBetaVideo: (climb: Climb, boardConfigOverride?: BoardConfig) => void;
+  /** Opens the "Report climb" sheet for the given climb (hide it, or argue its
+   *  grade). Snapshots the active boardConfig at open time. Used by the shared
+   *  action list (useClimbActions); the play drawer overrides it with its own
+   *  in-tree opener. */
+  openReportClimb: (climb: Climb, boardConfigOverride?: BoardConfig) => void;
   /** Opens the queue list sheet (from the play-drawer queue button or the
    *  "Climb added to queue" snackbar's Open action). */
   openQueueSheet: () => void;
@@ -335,12 +347,20 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     close: closeBetaVideoSheet,
     clearIfClosed: clearBetaVideoSheet,
   } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
+  const {
+    data: reportClimbData,
+    visible: reportClimbVisible,
+    open: openReportClimbSheet,
+    close: closeReportClimbSheet,
+    clearIfClosed: clearReportClimbSheet,
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
   const [climbActions, setClimbActions] = useState<{
     climb: Climb;
     boardConfig: BoardConfig;
     onEditEntry?: () => void;
     onAddBetaVideo?: (climb: Climb, boardConfig: BoardConfig) => void;
     onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
+    onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
     dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
     dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   } | null>(null);
@@ -522,6 +542,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         onEditEntry: options?.onEditEntry,
         onAddBetaVideo: options?.onAddBetaVideo,
         onTick: options?.onTick,
+        onReportClimb: options?.onReportClimb,
         dismissSourceSheet: options?.dismissSourceSheet,
         dismissPlayerAndWait: options?.dismissPlayerAndWait,
       });
@@ -558,6 +579,25 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   );
 
   const closeAddBetaVideo = closeBetaVideoSheet;
+
+  // Single parameterized report opener (mirrors openAddBetaVideo), used by the
+  // reaction menu's shared action list (useClimbActions). Falls back to the
+  // stored active board, not the override-inclusive one, so a temporary drawer
+  // board override can't leak into the report.
+  // The kill switch gates every entry point that reaches this opener; keep the
+  // opener itself gated too so a future caller cannot bypass the flag.
+  const moderationEnabled = useClimbModerationEnabled();
+  const openReportClimb = useCallback(
+    (climb: Climb, boardConfigOverride?: BoardConfig) => {
+      if (!moderationEnabled) return;
+      const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
+      if (!boardConfig) return;
+      openReportClimbSheet({ climb, boardConfig });
+    },
+    [moderationEnabled, openReportClimbSheet],
+  );
+
+  const closeReportClimb = closeReportClimbSheet;
 
   // Present the always-mounted queue sheet imperatively. Calling `present()`
   // synchronously from the handler (rather than from a `visible`-prop effect)
@@ -828,6 +868,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       closeClimbActions,
       openAddToPlaylist,
       openAddBetaVideo,
+      openReportClimb,
       openQueueSheet,
       openBoardSheet,
       playDrawerPaneProps,
@@ -842,6 +883,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       closeClimbActions,
       openAddToPlaylist,
       openAddBetaVideo,
+      openReportClimb,
       openQueueSheet,
       openBoardSheet,
       playDrawerPaneProps,
@@ -910,6 +952,19 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onFullyDismissed={clearBetaVideoSheet}
           />
         ) : null}
+        {reportClimbData ? (
+          <ReportClimbSheet
+            visible={reportClimbVisible}
+            climb={reportClimbData.climb}
+            boardName={reportClimbData.boardConfig.boardName as BoardName}
+            layoutId={reportClimbData.boardConfig.layoutId}
+            sizeId={reportClimbData.boardConfig.sizeId}
+            setIds={reportClimbData.boardConfig.setIds}
+            angle={reportClimbData.boardConfig.angle}
+            onClose={closeReportClimb}
+            onFullyDismissed={clearReportClimbSheet}
+          />
+        ) : null}
         {playlistData ? (
           <AddToPlaylistSheet
             visible={playlistVisible}
@@ -958,6 +1013,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onEditEntry={climbActions.onEditEntry}
             onAddBetaVideo={climbActions.onAddBetaVideo}
             onTick={climbActions.onTick}
+            onReportClimb={climbActions.onReportClimb}
             dismissSourceSheet={climbActions.dismissSourceSheet}
             dismissPlayerAndWait={climbActions.dismissPlayerAndWait}
             reduceMotion={reduceMotion}

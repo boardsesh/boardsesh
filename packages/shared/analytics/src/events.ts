@@ -87,17 +87,18 @@ export const SHARED_EVENTS = {
   // failed seed from wiping the live queue, plus the re-seed it kicks off. Lets
   // us measure how often the seed lifecycle degrades in the field (#3878).
   QueueSeedFullSyncGuarded: 'Queue Seed FullSync Guarded',
-  // Climb actions
-  // Fired when the climb reaction/actions menu is opened, with a `source` prop
-  // ('long_press' | 'more_button'). Powers the ⋮-button discoverability experiment:
-  // compare open rates + entry point between the flag's control/treatment cohorts.
-  ClimbActionsOpened: 'Climb Actions Opened',
   // Fired when the climber toggles the "Show quick-actions button" setting, with an
   // `enabled` prop — measures opt-in (control) vs opt-out (treatment) against the flag.
   ClimbQuickActionsSettingChanged: 'Climb Quick Actions Setting Changed',
   FavoriteToggle: 'Favorite Toggle',
   MirrorClimb: 'Mirror Climb',
   ClimbShared: 'Climb Shared',
+  // A climber sent a community report on a climb. Props: { kind: 'hide' |
+  // 'grade', boardType, status: 'created' | 'added' | 'already_reported' }.
+  // The status split is the signal: mostly `added` means one bad climb is
+  // gathering reports, mostly `already_reported` means the UI isn't telling
+  // people their report already landed.
+  ClimbReported: 'Climb Reported',
   OpenInAuroraApp: 'Open in Aurora App',
   CreatePlaylist: 'Create Playlist',
   AddToPlaylist: 'Add to Playlist',
@@ -145,8 +146,6 @@ export const SHARED_EVENTS = {
   // never carried it. The CTA href itself stays UTM-free — attribution is
   // these properties, because the app route has to match the bare pathname.
   ClimbHandoffClicked: 'Climb Handoff Clicked',
-  // Logbook
-  LogbookRowClicked: 'Logbook Row Clicked',
   // Logbook search / filter usage — privacy-safe (counts, field names, and the
   // sort preset only; never the raw query text or grade/date values). Drives the
   // "promote the most-used facets to the top level" call.
@@ -358,12 +357,6 @@ export const SHARED_EVENTS = {
   // Props: { boardId?, historyCount }.
   BoardSwapTapped: 'Board Swap Tapped',
   BoardSwapInvokedFromSheet: 'Board Swap Invoked From Sheet',
-  // Fired after a board-history catch-up completes. Props:
-  // { boardId?, reason: 'gap' | 'reconnect' | 'foreground' | 'manual',
-  //   recoveredThroughSeqDelta }. `recoveredThroughSeqDelta > 0` means live
-  //   events were silently dropped (Redis pub/sub has no replay) and just
-  //   recovered — the signal for "history was slow/stale to update".
-  BoardHistoryCatchUp: 'Board History Catch Up',
   // Fired each time "load older" resolves a page of durable history (past the
   // live feed's in-memory HISTORY_CAP window). Props:
   // { boardId?, pageSize: number, returnedCount: number }. `returnedCount <
@@ -814,35 +807,14 @@ export const SHARED_EVENTS = {
   OfflineNudgeAccepted: 'Offline Nudge Accepted',
   // Plus { dismissKind: 'once' | 'forever' }.
   OfflineNudgeDismissed: 'Offline Nudge Dismissed',
-  // Board render mode (issue #2202) — the classic-vs-Boardsesh drawing A/B and
-  // the Boardsesh glow-falloff A/B (soft vs plateau). Full contract, property
-  // tables and the stratification rule (never pool across boardName or
-  // glowFalloffSource): docs/board-render-analytics.md. Builders live in
-  // board-render-events.ts, re-exported from @boardsesh/analytics.
+  // Board render (issue #2202) — the board-look settings surface and the
+  // render-failure signal. The `Climb View Opened` / `Board Pinch` /
+  // `Climb First Action` trio that once measured the classic-vs-Aura A/B was
+  // retired once the flags went away and nothing read the events. Full
+  // contract, property tables and the stratification rule (never pool across
+  // boardName or glowFalloffSource): docs/board-render-analytics.md. Builders
+  // live in board-render-events.ts, re-exported from @boardsesh/analytics.
   //
-  // Fired once per change of the climb drawn on the board — mobile fires it
-  // from a queue-provider effect on the current climb, plus the play drawer's
-  // preview latch. `reopened_in_session` distinguishes a genuinely fresh view
-  // from a climber navigating back to a climb already open once this app run.
-  //
-  // Doubles as the glow-falloff experiment's CUSTOM EXPOSURE event: on a
-  // `boardsesh` render whose falloff came from the flag it also carries
-  // `$feature_flag` / `$feature_flag_response`. Mobile reads flags with
-  // `sendEvent: false`, so `$feature_flag_called` is deliberately never sent —
-  // see board-render-events.ts and docs/board-render-analytics.md.
-  ClimbViewOpened: 'Climb View Opened',
-  // Fired once per 2-finger pinch gesture END on the board (never per frame),
-  // gated on a minimum absolute `scale_delta` so incidental finger jitter
-  // doesn't count as a deliberate zoom. `scale_delta` is SIGNED (end minus
-  // start), so a zoom-out counts as much as a zoom-in; `scale_max` /
-  // `scale_min` are the gesture's true extremes.
-  BoardPinch: 'Board Pinch',
-  // Fired at most once per `Climb View Opened`, on whichever of "added to
-  // queue" or "sent to board" happens first. `ms_since_open` is the gap
-  // between the view opening and this action — the funnel this exists to
-  // answer is whether the Boardsesh drawing changes how fast a climber commits
-  // to a climb.
-  ClimbFirstAction: 'Climb First Action',
   // The climber changed a Boardsesh render setting from the settings screen
   // (issue #2202, settings-screen PR). `field` names the setting; `value` is
   // its new value stringified.

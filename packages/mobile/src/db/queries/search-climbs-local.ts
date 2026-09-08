@@ -1,6 +1,6 @@
 import { getLocalUserId, type OfflineDatabase } from '@boardsesh/offline-sync';
 import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
-import { isNoMatch } from '@boardsesh/shared-schema';
+import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
@@ -495,7 +495,7 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     benchmark_difficulty: bench !== null && bench > 0 ? String(bench) : null,
     is_draft: !!row.is_draft,
     is_hidden: !!row.is_hidden,
-    is_no_match: isNoMatch(characteristics),
+    is_no_match: resolveClimbNoMatch(boardType, characteristics, row.description),
     characteristics,
     published_at: row.published_at,
     created_at: row.created_at,

@@ -1,5 +1,6 @@
 import type { PostHog } from 'posthog-react-native';
 import { createAnalytics, type GlowFalloffSource } from '@boardsesh/analytics';
+import { resetScreenSessionGate, shouldEmitScreenForSession } from './analytics-screen-session-gate';
 import { getPostHogClient, registerAppSuperProperties } from './posthog-client';
 import { registerConnectivitySuperProperty } from './analytics-connectivity';
 import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
@@ -222,6 +223,12 @@ export function registerRenderSuperProperties(effective: {
 // and every remaining event of the launch would lose its venue.
 export function reset(): boolean {
   const didReset = analytics.reset();
+  // Clear the screen gate here rather than at each sign-out call site, so a new
+  // "forget this person" path cannot forget it. analytics.reset() nulls the
+  // SDK's persisted SessionId, which would re-arm the gate on the next
+  // getSessionId() anyway — this just makes that explicit instead of a side
+  // effect a reader has to know about.
+  resetScreenSessionGate();
   const client = getClient();
   if (client) {
     registerAppSuperProperties(client);
@@ -236,7 +243,20 @@ export function reset(): boolean {
 // autocapture can't read Expo Router's navigation, so AnalyticsScreenTracker
 // calls this from a route-change effect. `screen()` emits the native $screen
 // event PostHog's mobile insights key off.
+//
+// Only the CAPTURE is gated to once per screen per session (see
+// analytics-screen-session-gate.ts). `registerForSession` must run on EVERY
+// navigation: the SDK's `screen()` calls it internally to keep `$screen_name`
+// current, and that value is stamped onto every subsequent event — it is how
+// `Tick Logged` knows it happened on /play. Gating the whole call would silently
+// misattribute every other event to whatever screen last got past the gate, and
+// the drift would worsen the longer a session ran. It is redundant on the
+// emitting path and load-bearing on the suppressed one; keep it unconditional.
 export function trackScreen(path: string): void {
   if (__DEV__) console.info('[analytics] $screen', path);
-  void getClient()?.screen(path);
+  const client = getClient();
+  if (!client) return;
+  client.registerForSession({ $screen_name: path });
+  if (!shouldEmitScreenForSession(path)) return;
+  void client.screen(path);
 }

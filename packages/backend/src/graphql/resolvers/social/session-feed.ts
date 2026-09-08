@@ -3,7 +3,7 @@ import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
-import { requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/helpers';
+import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
 import { resolveRenderBoard, type RenderBoardCandidate } from '@boardsesh/board-config';
 import { boardseshDifficultyExpr, boardseshConfidenceExpr, boardseshGradeTickJoin } from '../shared/sql-expressions';
@@ -523,6 +523,7 @@ export const sessionFeedQueries = {
         tick: dbSchema.boardseshTicks,
         climbName: dbSchema.boardClimbs.name,
         climbDescription: dbSchema.boardClimbs.description,
+        climbCharacteristics: dbSchema.boardClimbs.characteristics,
         setterUsername: dbSchema.boardClimbs.setterUsername,
         layoutId: dbSchema.boardClimbs.layoutId,
         frames: dbSchema.boardClimbs.frames,
@@ -652,7 +653,7 @@ export const sessionFeedQueries = {
         quality: row.tick.quality,
         isMirror: row.tick.isMirror ?? false,
         isBenchmark: row.tick.isBenchmark ?? false,
-        isNoMatch: isNoMatchClimb(row.climbDescription),
+        isNoMatch: resolveClimbNoMatch(row.tick.boardType, row.climbCharacteristics, row.climbDescription),
         comment: row.tick.comment || null,
         frames: row.frames || null,
         setterUsername: row.setterUsername || null,
@@ -1156,6 +1157,7 @@ type TickHighlightRow = {
   climbUuid: string;
   climbName: string | null;
   climbDescription: string | null;
+  climbCharacteristics: string[] | null;
   boardType: string;
   layoutId: number | null;
   compatibleSizeIds: number[] | null;
@@ -1218,7 +1220,7 @@ function mapTickHighlightRow(row: TickHighlightRow, ownerBoards: RenderBoardCand
     quality: row.quality,
     isMirror: row.isMirror ?? false,
     isBenchmark: row.isBenchmark ?? false,
-    isNoMatch: isNoMatchClimb(row.climbDescription),
+    isNoMatch: resolveClimbNoMatch(row.boardType, row.climbCharacteristics, row.climbDescription),
     comment: row.comment || null,
     frames: row.frames,
     setterUsername: row.setterUsername,
@@ -1236,6 +1238,7 @@ function tickHighlightSelectSql(groupIdExpression: SQL = sql`NULL::text`) {
     t.climb_uuid AS "climbUuid",
     cf.name AS "climbName",
     cf.description AS "climbDescription",
+    cf.characteristics AS "climbCharacteristics",
     t.board_type AS "boardType",
     cf.layout_id AS "layoutId",
     cf.compatible_size_ids AS "compatibleSizeIds",

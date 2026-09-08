@@ -523,6 +523,44 @@ describe('searchClimbsLocal', () => {
     expect(climb.angle).toBe(40);
   });
 
+  // #5127. A null characteristics column means "this row predates the backfill",
+  // not "no rule" — so the local read falls back to Aurora's description
+  // convention exactly like the server's Climb.is_no_match resolver. Without it
+  // a downloaded board silently drops the glyph, because these reads serve
+  // local-first even while online.
+  it('falls back to the description when the characteristics column is null', async () => {
+    await insertClimb(db, { uuid: 'trailing', description: 'Kick board is off. No matching.' });
+    await insertClimb(db, { uuid: 'leading', description: 'No match\nCrimpy' });
+    await insertClimb(db, { uuid: 'prose', description: 'Campus, no match' });
+    // An array that is present is authoritative: `noMatch: false` has to stick
+    // even when the prose still declares the rule.
+    await insertClimb(db, {
+      uuid: 'explicit-off',
+      description: 'Kick board is off. No matching.',
+      characteristics: [],
+    });
+    for (const uuid of ['trailing', 'leading', 'prose', 'explicit-off']) {
+      await insertStat(db, { climbUuid: uuid, ascensionistCount: 1 });
+    }
+
+    const byUuid = new Map(
+      (await searchClimbsLocal(db, makeInput())).climbs.map((climb) => [climb.uuid, climb.is_no_match]),
+    );
+    expect(byUuid.get('trailing')).toBe(true);
+    expect(byUuid.get('leading')).toBe(true);
+    expect(byUuid.get('prose')).toBe(false);
+    expect(byUuid.get('explicit-off')).toBe(false);
+  });
+
+  it('never reads the description on the code-driven boards', async () => {
+    await insertClimb(db, { uuid: 'moon', boardType: 'moonboard', description: 'Crimpy. No matching.' });
+    await insertStat(db, { climbUuid: 'moon', boardType: 'moonboard', ascensionistCount: 1 });
+
+    const [climb] = (await searchClimbsLocal(db, makeInput({ boardName: 'moonboard' }))).climbs;
+    expect(climb.uuid).toBe('moon');
+    expect(climb.is_no_match).toBe(false);
+  });
+
   it('joins the Boardsesh grade + confidence, preferring universal over local', async () => {
     await insertClimb(db, { uuid: 'graded' });
     await insertStat(db, { climbUuid: 'graded', ascensionistCount: 30 });

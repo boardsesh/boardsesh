@@ -5,7 +5,7 @@ import { searchClimbs as sharedSearchClimbs, mapSearchInputToParams } from '@boa
 import { getBoardClimbSearchTag } from '@/app/lib/climb-search-cache';
 import type { ParsedBoardRouteParameters, SearchRequestPagination, BoardName, Climb } from '@/app/lib/types';
 import { sortObjectKeys } from '@/app/lib/cache-utils';
-import { isNoMatch, isNoMatchClimb } from '@/app/lib/no-match-climb';
+import { resolveClimbNoMatch } from '@/app/lib/no-match-climb';
 import { withReadDeadline } from '@/app/lib/db/read-deadline';
 
 /**
@@ -62,9 +62,7 @@ async function _executeClimbSearch(
   const climbs: Climb[] = result.climbs.map((row) => ({
     ...row,
     mirrored: undefined,
-    // Prefer the structured characteristic; fall back to the Aurora description
-    // convention for rows synced before the column was backfilled.
-    is_no_match: row.characteristics != null ? isNoMatch(row.characteristics) : isNoMatchClimb(row.description),
+    is_no_match: resolveClimbNoMatch(params.board_name, row.characteristics, row.description),
   }));
 
   return { climbs, hasMore: result.hasMore };
@@ -106,7 +104,7 @@ function _getCachedFn(boardName: BoardName, revalidate: number): CachedClimbSear
     // stats-less ones — cached truncated pages must not keep serving the old result.
     // v8: rows now carry compatibleSizeIds; a cached v7 row lacks it, which reads
     // as "no compatibility data" and switches the client-side size check off.
-    fn = unstable_cache(_executeClimbSearch, [`climb-search-v8:${boardName}`], {
+    fn = unstable_cache(_executeClimbSearch, [`climb-search-v9:${boardName}`], {
       revalidate,
       tags: ['climb-search', getBoardClimbSearchTag(boardName)],
     });

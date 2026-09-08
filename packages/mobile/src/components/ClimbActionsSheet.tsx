@@ -40,6 +40,10 @@ type ClimbActionsSheetProps = {
   onEditEntry?: () => void;
   /** When provided, shows an "Add beta video" row that opens the share-your-beta sheet. */
   onAddBetaVideo?: () => void;
+  /** When provided, shows a "Report climb" row that opens the report sheet
+   *  (hide the climb, or argue its grade). The caller gates it on auth + the
+   *  moderation kill switch. */
+  onReportClimb?: () => void;
   /** Supplied only by the `/play` route; omitted by the persistent iPad pane. */
   dismissPlayerAndWait?: DismissSurfaceAndWait;
   onClose: () => void;
@@ -70,6 +74,7 @@ function ClimbActionsSheet({
   onTick,
   onEditEntry,
   onAddBetaVideo,
+  onReportClimb,
   dismissPlayerAndWait,
   onClose,
 }: ClimbActionsSheetProps) {
@@ -118,6 +123,11 @@ function ClimbActionsSheet({
     onAddBetaVideo?.();
     onClose();
   }, [onAddBetaVideo, onClose]);
+
+  const handleReportClimb = useCallback(() => {
+    onReportClimb?.();
+    onClose();
+  }, [onReportClimb, onClose]);
 
   // Only boards with an official app page get the row; the guard is what turns
   // the loose board string into the AuroraBoardName the builder assumes.
@@ -291,13 +301,23 @@ function ClimbActionsSheet({
           title={t('mobile.climbActions.copyLink')}
           leading={<Icon name="copy" size={22} color={accentActionIconColor} />}
           onPress={handleCopyLink}
-          showSeparator={!!auroraAppUrl}
+          showSeparator={!!auroraAppUrl || !!onReportClimb}
         />
         {auroraAppUrl && (
           <ListRow
             title={t('mobile.climbActions.openInApp')}
             leading={<Icon name="open.external" size={22} color={accentActionIconColor} />}
             onPress={handleOpenInApp}
+            showSeparator={!!onReportClimb}
+          />
+        )}
+        {/* Last row, and last for a reason: the one action that acts AGAINST the
+            climb sits below everything a climber came here to do. */}
+        {onReportClimb && (
+          <ListRow
+            title={t('mobile.climbActions.report')}
+            leading={<Icon name="flag" size={22} color={accentActionIconColor} />}
+            onPress={handleReportClimb}
             showSeparator={false}
           />
         )}

@@ -45,6 +45,7 @@ compose_bad=$(
   grep -rlE "['\"]@expo/ui/jetpack-compose" "${scan_dirs[@]}" \
     --include='*.ts' --include='*.tsx' \
     | grep -vE '\.android\.(ts|tsx)$' \
+    | grep -vE '/__tests__/[^/]+\.test\.(ts|tsx)$' \
     || true
 )
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SESSION_GAP_MS, expandWindow, reconcileWindow } from '../index';
+import { SESSION_GAP_MS, expandWindow, expandReconciliationWindow, reconcileWindow } from '../index';
 import type { ExistingExplicitSession, ExistingInferredSession, InferenceTick } from '../types';
 
 const HOUR = 60 * 60 * 1000;
@@ -19,8 +19,8 @@ function inferred(id: string, anchorTickId: number, userEdited = false): Existin
   return { id, anchorTickId, userEdited };
 }
 
-function explicit(id: string, firstTickAt: number, lastTickAt: number): ExistingExplicitSession {
-  return { id, firstTickAt, lastTickAt };
+function explicit(id: string): ExistingExplicitSession {
+  return { id };
 }
 
 function reconcile(
@@ -186,7 +186,7 @@ describe('runs whose ticks already carry an inferred session id', () => {
       ...entry,
       sessionId: 'party-1',
     }));
-    const party = explicit('party-1', DAY_ONE + 90 * MINUTE, DAY_ONE + 2 * HOUR);
+    const party = explicit('party-1');
 
     const result = reconcile([...loose, ...partyTicks], [inferred('sess-a', 1)], [party]);
 
@@ -200,7 +200,7 @@ describe('runs whose ticks already carry an inferred session id', () => {
 
 describe('explicit sessions win', () => {
   const sessionTicks = run(10, DAY_ONE + 8 * HOUR, 4).map((entry) => ({ ...entry, sessionId: 'party-1' }));
-  const party = explicit('party-1', DAY_ONE + 8 * HOUR, DAY_ONE + 8 * HOUR + 30 * MINUTE);
+  const party = explicit('party-1');
 
   it('absorbs loose ticks logged earlier the same day', () => {
     const beforeStart = run(1, DAY_ONE, 2);
@@ -228,24 +228,28 @@ describe('explicit sessions win', () => {
     expect(otherRun?.sessionId).toBeNull();
   });
 
-  it('picks the nearer session when a day holds two', () => {
-    const morningParty = explicit('party-am', DAY_ONE, DAY_ONE + 30 * MINUTE);
-    const eveningParty = explicit('party-pm', DAY_ONE + 12 * HOUR, DAY_ONE + 13 * HOUR);
+  it('picks the nearer assigned tick inside a connected run', () => {
+    const morningParty = explicit('party-am');
+    const eveningParty = explicit('party-pm');
     const strays = [tick(77, DAY_ONE + 11 * HOUR)];
-    const result = reconcile(strays, [], [morningParty, eveningParty]);
+    const result = reconcile(
+      [tick(1, DAY_ONE, 'party-am'), ...strays, tick(2, DAY_ONE + 12 * HOUR, 'party-pm')],
+      [],
+      [morningParty, eveningParty],
+    );
 
-    expect(result.runs[0].sessionId).toBe('party-pm');
+    expect(result.runs.find((run) => run.tickIds.includes(77))?.sessionId).toBe('party-pm');
   });
 });
 
 describe('lone ticks', () => {
-  it('folds into a bigger run on the same day', () => {
+  it('keeps a singleton separate across an eight-hour gap on the same UTC day', () => {
     const main = run(1, DAY_ONE, 5);
     const afterthought = [tick(80, DAY_ONE + 9 * HOUR)];
     const result = reconcile([...main, ...afterthought]);
 
-    expect(result.runs).toHaveLength(1);
-    expect(result.runs[0].tickIds).toContain(80);
+    expect(result.runs).toHaveLength(2);
+    expect(result.runs[1].tickIds).toEqual([80]);
   });
 
   it('stands alone when it is the only climbing that day', () => {
@@ -336,5 +340,128 @@ describe('empty window', () => {
 
     expect(result.runs).toEqual([]);
     expect(result.emptiedSessionIds).toEqual(['sess-a', 'sess-b']);
+  });
+});
+
+describe('expandReconciliationWindow', () => {
+  it('includes same-day runs separated by more than eight hours', () => {
+    const ticks = [...run(1, DAY_ONE, 3), ...run(10, DAY_ONE + 10 * HOUR, 3)];
+    expect(expandReconciliationWindow(ticks, DAY_ONE, DAY_ONE)).toEqual(ticks);
+  });
+
+  it('includes both whole days when a run crosses midnight', () => {
+    const midnight = Date.UTC(2026, 4, 11);
+    const ticks = [
+      { id: 1, climbedAt: midnight - 12 * HOUR, sessionId: null },
+      { id: 2, climbedAt: midnight - HOUR, sessionId: null },
+      { id: 3, climbedAt: midnight + HOUR, sessionId: null },
+      { id: 4, climbedAt: midnight + 12 * HOUR, sessionId: null },
+      { id: 5, climbedAt: midnight + 36 * HOUR, sessionId: null },
+    ];
+    for (const tick of ticks.slice(0, 4)) {
+      expect(expandReconciliationWindow(ticks, tick.climbedAt, tick.climbedAt)).toEqual(ticks.slice(0, 4));
+    }
+  });
+});
+
+describe('multiple explicit sessions in a timing run', () => {
+  it('preserves explicit assignments and sends only loose ticks to the nearest session', () => {
+    const explicitSessions = [explicit('morning'), explicit('later')];
+    const ticks = [
+      tick(1, DAY_ONE, 'morning'),
+      tick(2, DAY_ONE + HOUR, 'morning'),
+      tick(3, DAY_ONE + HOUR + 5 * MINUTE),
+      tick(4, DAY_ONE + 2 * HOUR - 5 * MINUTE),
+      tick(5, DAY_ONE + 2 * HOUR, 'later'),
+      tick(6, DAY_ONE + 3 * HOUR, 'later'),
+    ];
+    const result = reconcile(ticks, [], explicitSessions);
+    expect(result.runs.map((run) => ({ sessionId: run.sessionId, tickIds: run.tickIds }))).toEqual([
+      { sessionId: 'morning', tickIds: [1, 2, 3] },
+      { sessionId: 'later', tickIds: [4, 5, 6] },
+    ]);
+    const assigned = ticks.map((tick) => ({
+      ...tick,
+      sessionId: result.runs.find((run) => run.tickIds.includes(tick.id))!.sessionId,
+    }));
+    expect(reconcile(assigned, [], explicitSessions)).toEqual(result);
+  });
+
+  it('preserves a lone explicit tick across a hard gap', () => {
+    const ticks = [
+      tick(1, DAY_ONE, 'morning'),
+      tick(2, DAY_ONE + 10 * MINUTE, 'morning'),
+      tick(3, DAY_ONE + 10 * HOUR, 'later'),
+    ];
+    const result = reconcile(ticks, [], [explicit('morning'), explicit('later')]);
+    expect(result.runs.map((run) => ({ sessionId: run.sessionId, tickIds: run.tickIds }))).toEqual([
+      { sessionId: 'morning', tickIds: [1, 2] },
+      { sessionId: 'later', tickIds: [3] },
+    ]);
+  });
+});
+
+describe('explicit sessions crossing midnight', () => {
+  it('loads legacy connected UTC days without merging their separate runs', () => {
+    const firstDay = Date.UTC(2026, 0, 1);
+    const ticks = Array.from({ length: 40 }, (_, day) => [
+      tick(day * 2 + 1, firstDay + day * 24 * HOUR + HOUR, day === 0 ? 'party' : null),
+      tick(day * 2 + 2, firstDay + day * 24 * HOUR + 23 * HOUR),
+    ]).flat();
+    expect(expandReconciliationWindow(ticks, ticks[0].climbedAt, ticks[0].climbedAt)).toEqual(ticks);
+
+    const result = reconcile(ticks, [], [explicit('party')]);
+    expect(result.runs).toHaveLength(41);
+    expect(result.runs.filter((run) => run.sessionId === 'party').map((run) => run.tickIds)).toEqual([[1]]);
+    expect(result.runs.flatMap((run) => run.tickIds).sort((first, second) => first - second)).toEqual(
+      ticks.map((tick) => tick.id),
+    );
+  });
+
+  it('keeps earlier climbing separate from a midnight explicit session', () => {
+    const midnight = Date.UTC(2026, 8, 2);
+    const ticks = [
+      tick(1, midnight - 14 * HOUR),
+      tick(2, midnight - 13 * HOUR),
+      tick(3, midnight - HOUR),
+      tick(4, midnight + HOUR, 'party'),
+    ];
+    const result = reconcile(ticks, [], [explicit('party')]);
+    expect(result.runs.map((run) => ({ sessionId: run.sessionId, tickIds: run.tickIds }))).toEqual([
+      { sessionId: null, tickIds: [1, 2] },
+      { sessionId: 'party', tickIds: [3, 4] },
+    ]);
+    expect(result.runs.flatMap((run) => run.tickIds).sort((first, second) => first - second)).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe('eight-hour automatic boundary', () => {
+  it.each([0, 10, -7])('is independent of calendar dates at UTC offset %i', (offset) => {
+    const evening = Date.UTC(2026, 4, 10, 19) - offset * HOUR;
+    const result = reconcile([tick(1, evening), tick(2, evening + 30 * MINUTE), tick(3, evening + 14 * HOUR)]);
+    expect(result.runs.map((run) => run.tickIds)).toEqual([[1, 2], [3]]);
+  });
+
+  it.each([8 * HOUR, 8 * HOUR + 1])('splits only when gap %i exceeds eight hours', (gap) => {
+    expect(reconcile([tick(1, DAY_ONE), tick(2, DAY_ONE + gap)]).runs).toHaveLength(gap > 8 * HOUR ? 2 : 1);
+  });
+
+  it('preserves explicit ownership across a long gap without absorbing an unrelated middle run', () => {
+    const result = reconcile(
+      [tick(1, DAY_ONE, 'party'), tick(2, DAY_ONE + 10 * HOUR), tick(3, DAY_ONE + 20 * HOUR, 'party')],
+      [],
+      [explicit('party')],
+    );
+    expect(result.runs.map((run) => run.sessionId)).toEqual(['party', null, 'party']);
+  });
+
+  it('splits a legacy inferred session while preserving its anchor and social identity', () => {
+    const result = reconcile(
+      [tick(1, DAY_ONE, 'old'), tick(2, DAY_ONE + 10 * HOUR, 'old')],
+      [inferred('old', 1, true)],
+    );
+    expect(result.runs.map((run) => run.sessionId)).toEqual(['old', null]);
+    expect(result.merges).toEqual([]);
+    expect(result.emptiedSessionIds).toEqual([]);
   });
 });

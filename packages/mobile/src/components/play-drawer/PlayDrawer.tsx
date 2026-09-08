@@ -63,6 +63,7 @@ import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
+import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { Icon } from '../Icon';
 import {
@@ -75,6 +76,7 @@ import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider'
 import { useSetting } from '../../settings';
 import type { OpenClimbActionsOptions } from '../../providers/drawer-host-provider';
 import { useAuth } from '../../providers/auth-provider';
+import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
@@ -83,6 +85,7 @@ import { useShareClimb } from '../../hooks/use-share-climb';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
 import { hapticSuccess } from '../../lib/haptics';
+import { nextMirrorIntentAction, resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
 import { getSimilarClimbTapMode, getSwipeNavigationTarget, swipeStaysViewOnly } from './play-drawer-navigation';
@@ -296,7 +299,12 @@ export function PlayDrawer({
   // translate) — it can't be a child of the 32pt pill in the header's flank.
   const [wallCalloutOpen, setWallCalloutOpen] = useState(false);
   const [headerBottomY, setHeaderBottomY] = useState(0);
-  const [isMirrored, setIsMirrored] = useState(false);
+  // The mirror toggle, scoped to the climb it was made on. A bare boolean went
+  // stale whenever the current climb changed by a route the drawer doesn't own
+  // (a party peer advancing the queue, a reorder, the accessory bar) — the
+  // drawer only resets it in its own navigation handlers. `isMirrored` is
+  // derived below, so a climb this flip wasn't made on simply reads false.
+  const [mirrorFlip, setMirrorFlip] = useState<{ climbUuid: string; mirrored: boolean } | null>(null);
   // Local optimistic override for the heart. `null` means "no local change —
   // show the server's favorite status". A tap sets it optimistically, the
   // mutation's returned `favorited` confirms it, and a failure rolls it back.
@@ -312,6 +320,11 @@ export function PlayDrawer({
   // to the live displayedClimb (the FAB path). Mirrors betaVideoTarget so a party-
   // session queue/angle change mid-menu can't retarget the sheet.
   const [tickTarget, setTickTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
+  // Pinned climb/board the reaction menu opened the report sheet for; null falls
+  // back to the live displayedClimb (the Android actions-sheet path). Mirrors
+  // betaVideoTarget for the same reason.
+  const [reportTarget, setReportTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
+  const [reportClimbOpen, setReportClimbOpen] = useState(false);
   const {
     requested: belowFoldContentRequested,
     request: requestBelowFoldContent,
@@ -419,7 +432,7 @@ export function PlayDrawer({
   }, []);
 
   const { queue, currentClimbQueueItem } = useQueueData();
-  const { setCurrentClimb, nextClimb, previousClimb, addToQueue, noteClimbViewed } = useQueueActions();
+  const { setCurrentClimb, nextClimb, previousClimb, addToQueue } = useQueueActions();
   const { sessionId } = useQueueSessionId();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
@@ -431,6 +444,9 @@ export function PlayDrawer({
   // tick picker's default grade below.
   const { boardseshActive } = useDisplayGrade();
   const { isAuthenticated } = useAuth();
+  // Kill switch: unresolved reads as enabled, so the Report row never pops in a
+  // beat after the sheet opens. See useClimbModerationEnabled.
+  const moderationEnabled = useClimbModerationEnabled();
 
   const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
   const displayedClimb = displayedQueueItem?.climb;
@@ -438,6 +454,35 @@ export function PlayDrawer({
   // never set `drawerPreviewItem`, so this is true only for genuine previews
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
   const isPreview = drawerPreviewItem != null;
+
+  const displayedClimbUuid = displayedClimb?.uuid;
+  // A flip only applies to the climb it was made on. With no local flip for the
+  // climb on screen, fall back to the orientation the wall was last asked for:
+  // the drawer is a route on iPhone, so reopening it must show the flip that is
+  // actually lit rather than assuming none and lying about the wall.
+  //
+  // The fallback reads a ref through a context callback, which is safe on two
+  // invariants — break either and this silently shows the wrong orientation:
+  //  - Single writer. Only the effect below states an intent, and it writes back
+  //    exactly what this line computed, so the ref cannot drift from the toggle.
+  //  - Single instance. `/play` and the iPad pane are mutually exclusive
+  //    (`(tabs)/_layout.tsx`), so two drawers never state intents at once.
+  // The React Compiler memoises this on `mirrorFlip`/`displayedClimbUuid`/
+  // `bluetooth`, so a ref changed underneath is NOT re-read, and the read is
+  // invisible to `react-hooks/refs` — lint will not catch a second writer.
+  //
+  // With nothing stated for this climb either, fall back to the climb's OWN
+  // mirror: activating a mirrored logbook tick carries `mirrored: true` through
+  // `tickToClimb`, and that ascent must relight the way it was climbed. A stated
+  // `false` is not the same as nothing stated, which is why the reader is
+  // tri-state — otherwise turning a mirrored tick's flip off would be undone by
+  // its own `climb.mirrored` on the next render.
+  const isMirrored = resolveMirroredOrientation({
+    explicitFlip: mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid ? mirrorFlip.mirrored : undefined,
+    statedIntent: bluetooth?.getMirrorIntent(displayedClimbUuid),
+    climbMirrored: displayedClimb?.mirrored,
+  });
+  const clearMirror = useCallback(() => setMirrorFlip(null), []);
 
   // #5099: the shown climb does not have to belong to the board the climber has
   // selected. A queue item left over from a board switch, a party peer on
@@ -622,10 +667,15 @@ export function PlayDrawer({
   // Auto-close tick bar and drop the favorite override when climb changes, so the
   // new climb's heart shows its real (server) status rather than the previous
   // climb's optimistic value.
-  const displayedClimbUuid = displayedClimb?.uuid;
   useEffect(() => {
     setIsTickBarActive(false);
     setFavoriteOverride(null);
+    // Drop the local flip on EVERY climb change, not just the drawer's own
+    // navigation handlers. A climb change it doesn't own (a party peer, Live
+    // Activity, the accessory bar) would otherwise leave the flip parked on its
+    // old climb, and coming back to that climb would resurrect it — remembering
+    // a flip that swiping away forgets.
+    setMirrorFlip(null);
     // A new climb's Logbook re-lays out from scratch — don't let a stale expand
     // intent auto-scroll it.
     pendingLogbookScrollRef.current = false;
@@ -726,7 +776,7 @@ export function PlayDrawer({
     // Mirroring is drawer-local per displayed climb: every other navigation
     // resets it, and carrying a preview's mirror onto the committed head would
     // render (and, once animatable playback resumes, re-send) the head flipped.
-    setIsMirrored(false);
+    clearMirror();
     // Close the callout explicitly rather than trusting the stale-state effect
     // above: previewing the committed climb itself changes neither
     // `wallPillState` nor `displayedClimbUuid` on exit, which would strand the
@@ -804,7 +854,7 @@ export function PlayDrawer({
       setDrawerPreviewItem(previewItem);
       setDrawerPreviewSuggestionSource(previewItem ? playlistSuggestionSource : null);
       setDrawerPreviewIsWallClimb(previewItem ? (options?.previewIsWallClimb ?? false) : false);
-      setIsMirrored(false);
+      clearMirror();
       // Drop any stale optimistic heart so the opened climb shows its real
       // (server) favorite status rather than a leftover from the last climb.
       setFavoriteOverride(null);
@@ -848,14 +898,10 @@ export function PlayDrawer({
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
       setDrawerPreviewItem(previewTarget.targetItem);
-      // A previewed climb is drawn on the board, so it is a view — but this
-      // branch never touches the queue, so the provider's current-climb effect
-      // will not see it. Report it here (issue #2202).
-      noteClimbViewed(previewTarget.targetItem.climb.uuid);
       // Swiping off the lit climb makes "this is the wall climb" false — the
       // flag means displayed-equals-wall, and the wall didn't move.
       setDrawerPreviewIsWallClimb(false);
-      setIsMirrored(false);
+      clearMirror();
       // The favorite override is cleared by the climb-change effect.
       return;
     }
@@ -863,16 +909,9 @@ export function PlayDrawer({
     setDrawerPreviewItem(null);
     setDrawerPreviewIsWallClimb(false);
     previousClimb();
-    setIsMirrored(false);
+    clearMirror();
     // The favorite override is cleared by the climb-change effect.
-  }, [
-    drawerPreviewSuggestionSource,
-    drawerPreviewItem,
-    navigationState.prevItem,
-    previousClimb,
-    lightOnSwipe,
-    noteClimbViewed,
-  ]);
+  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.prevItem, previousClimb, lightOnSwipe]);
 
   const handleNext = useCallback(() => {
     const previewTarget = getSwipeNavigationTarget({
@@ -884,13 +923,10 @@ export function PlayDrawer({
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
       setDrawerPreviewItem(previewTarget.targetItem);
-      // See handlePrev: a previewed climb is on the board, and nothing in this
-      // branch reaches the queue, so the view is reported from here.
-      noteClimbViewed(previewTarget.targetItem.climb.uuid);
       // See handlePrev: displayed-equals-wall stops being true the moment the
       // swipe lands somewhere else.
       setDrawerPreviewIsWallClimb(false);
-      setIsMirrored(false);
+      clearMirror();
       // The favorite override is cleared by the climb-change effect.
       return;
     }
@@ -898,16 +934,9 @@ export function PlayDrawer({
     setDrawerPreviewItem(null);
     setDrawerPreviewIsWallClimb(false);
     nextClimb();
-    setIsMirrored(false);
+    clearMirror();
     // The favorite override is cleared by the climb-change effect.
-  }, [
-    drawerPreviewSuggestionSource,
-    drawerPreviewItem,
-    navigationState.nextItem,
-    nextClimb,
-    lightOnSwipe,
-    noteClimbViewed,
-  ]);
+  }, [drawerPreviewSuggestionSource, drawerPreviewItem, navigationState.nextItem, nextClimb, lightOnSwipe]);
 
   // Commit the browse latch: the previewed climb becomes the current queue item,
   // the latch drops, and the lightbulb (which acts on the current climb) now
@@ -921,20 +950,42 @@ export function PlayDrawer({
     setDrawerPreviewIsWallClimb(false);
   }, [drawerPreviewItem, drawerPreviewSuggestionSource, setCurrentClimb, markLatchExit]);
 
+  // Keep the wall's orientation in lockstep with the toggle, declaratively.
+  //
+  // `isMirrored` is reset to false at eight different navigation sites, and the
+  // provider can't see any of them: an intent set once by the tap would outlive
+  // the reset, so returning to a climb you had flipped would light it mirrored
+  // under a screen (and a button) showing it un-mirrored. Re-stating it here
+  // means there is one place the two can disagree, and it is this line.
+  //
+  // Not gated on `isConnected`: recording the intent while disconnected is what
+  // lets a flip survive until the lightbulb re-takes the wall. A preview is
+  // deliberately excluded — mirroring what you are merely looking at must not
+  // re-light the live climb (the Browsing chrome promises the wall stays put).
+  //
+  // Known gap: while a party peer's `climb.mirrored` and this local toggle
+  // disagree, the local one wins on this device's wall — for a toggle made on
+  // the climb already showing. On a peer-driven climb CHANGE the auto-sender
+  // runs first and falls back to `climb.mirrored`, and the restatement below
+  // deliberately doesn't reassert, so the peer's orientation would stand with
+  // the screen reading un-mirrored. Unreachable today: nothing in the app calls
+  // `mirrorCurrentClimb`, so that fallback is always false.
+  useEffect(() => {
+    if (isPreview || !displayedClimbUuid) return;
+    // The rule itself lives in `nextMirrorIntentAction`, where it is unit-tested
+    // without a renderer — this effect is just the wiring.
+    const action = nextMirrorIntentAction({ isPreview, displayedClimbUuid, mirrorFlip });
+    if (action.kind === 'state') bluetooth?.setMirrorIntent(action.climbUuid, action.mirrored);
+    else if (action.kind === 'retain') bluetooth?.retainMirrorIntentFor(action.climbUuid);
+  }, [bluetooth, displayedClimbUuid, mirrorFlip, isPreview]);
+
+  // Local state only — the effect above is what carries the flip to the wall,
+  // through the AutoSender's normal write so the dedup record and the
+  // wall-confirm describe the orientation actually lit.
   const handleMirror = useCallback(() => {
-    const nextMirrored = !isMirrored;
-    setIsMirrored(nextMirrored);
-    // The wall doesn't follow the toggle by itself: the AutoSender keys off
-    // the queue item's own `climb.mirrored`, not this drawer-local state, so
-    // without an explicit re-push the LEDs would keep showing the previous
-    // orientation. isConnected means this device holds the BLE link (and
-    // therefore drives the wall). While a preview is pinned the toggle acts
-    // on-screen only — mirroring what you're merely looking at must not
-    // replace the live climb on the wall.
-    if (bluetooth?.isConnected && displayedClimb?.frames && !isPreview) {
-      void bluetooth.sendFramesToBoard(displayedClimb.frames, nextMirrored);
-    }
-  }, [isMirrored, bluetooth, displayedClimb, isPreview]);
+    if (!displayedClimbUuid) return;
+    setMirrorFlip({ climbUuid: displayedClimbUuid, mirrored: !isMirrored });
+  }, [displayedClimbUuid, isMirrored]);
 
   const handleToggleFavorite = useCallback(() => {
     if (!displayedClimb) return;
@@ -1009,6 +1060,27 @@ export function PlayDrawer({
     setIsTickBarActive(true);
   }, []);
 
+  // Android actions-sheet report: null target → the sheet tracks the live
+  // displayedClimb, same as the beta "+" path.
+  const handleOpenReportClimb = useCallback(() => {
+    setReportTarget(null);
+    setReportClimbOpen(true);
+  }, []);
+
+  // Reaction-menu report: open the drawer's OWN in-tree sheet (it stacks above
+  // the `/play` modal) instead of the root one, and pin the climb/board the menu
+  // was opened for so a party-session queue/angle change can't retarget it (#3505).
+  const handleOpenReportClimbForClimb = useCallback((targetClimb: Climb, targetBoardConfig: BoardConfig) => {
+    setReportTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
+    setReportClimbOpen(true);
+  }, []);
+
+  // Same rule as handleCloseAddBetaVideo: leave reportTarget alone while the
+  // sheet animates out, the next open overwrites it.
+  const handleCloseReportClimb = useCallback(() => {
+    setReportClimbOpen(false);
+  }, []);
+
   // Don't clear betaVideoTarget here: the sheet is still animating out and reads
   // from it, so nulling it mid-dismiss would swap the shown climb for a frame. The
   // next open overwrites it (the "+" path to null, the reaction path to its snapshot).
@@ -1026,11 +1098,18 @@ export function PlayDrawer({
       onOpenClimbActions(displayedClimb, undefined, {
         onAddBetaVideo: handleOpenAddBetaVideoForClimb,
         onTick: handleOpenTickForClimb,
+        onReportClimb: handleOpenReportClimbForClimb,
       });
       return;
     }
     setActiveSubDrawer('actions');
-  }, [onOpenClimbActions, displayedClimb, handleOpenAddBetaVideoForClimb, handleOpenTickForClimb]);
+  }, [
+    onOpenClimbActions,
+    displayedClimb,
+    handleOpenAddBetaVideoForClimb,
+    handleOpenTickForClimb,
+    handleOpenReportClimbForClimb,
+  ]);
 
   // Arm (expand) / disarm (collapse) the scroll-into-view for the Logbook peek.
   const handleLogbookToggle = useCallback((expanded: boolean) => {
@@ -1088,12 +1167,9 @@ export function PlayDrawer({
       if (getSimilarClimbTapMode(viewer) === 'preview') {
         setDrawerPreviewItem(queueItem);
         setDrawerPreviewSuggestionSource(null);
-        // Same as the swipe preview branches: a previewed climb is drawn on the
-        // board but never reaches the queue, so report the view here (#2202).
-        noteClimbViewed(queueItem.climb.uuid);
         // A different climb is on screen now, so it is not the lit one.
         setDrawerPreviewIsWallClimb(false);
-        setIsMirrored(false);
+        clearMirror();
         setIsTickBarActive(false);
         return;
       }
@@ -1106,12 +1182,12 @@ export function PlayDrawer({
       // clear any preview that was showing.
       setDrawerPreviewItem(null);
       setDrawerPreviewSuggestionSource(null);
-      setIsMirrored(false);
+      clearMirror();
       // The favorite override is cleared by the climb-change effect.
       setIsTickBarActive(false);
       setCurrentClimb(queueItem, { playlistSuggestionSource: null });
     },
-    [addToQueue, setCurrentClimb, viewer, noteClimbViewed],
+    [addToQueue, setCurrentClimb, viewer],
   );
 
   // The first screen is sized so the action bar stays visible and the Logbook
@@ -1164,6 +1240,7 @@ export function PlayDrawer({
   const angleSelectorVisible = activeSubDrawer === 'angleSelector';
   const mountClimbActions = useMountedOnFirstOpen(climbActionsVisible);
   const mountAddBetaVideo = useMountedOnFirstOpen(addBetaVideoOpen);
+  const mountReportClimb = useMountedOnFirstOpen(reportClimbOpen);
   const mountAngleSelector = useMountedOnFirstOpen(angleSelectorVisible);
   const mountLogAscent = useMountedOnFirstOpen(isTickBarActive);
   const mountBleControl = useMountedOnFirstOpen(bleControlVisible);
@@ -1495,6 +1572,7 @@ export function PlayDrawer({
           }}
           onToggleFavorite={handleToggleFavorite}
           onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
+          onReportClimb={isAuthenticated && moderationEnabled ? handleOpenReportClimb : undefined}
           dismissPlayerAndWait={dismissPlayerAndWait}
           onClose={handleCloseSubDrawer}
         />
@@ -1510,6 +1588,23 @@ export function PlayDrawer({
           layoutId={betaVideoTarget?.boardConfig.layoutId ?? layoutId}
           angle={betaVideoTarget?.boardConfig.angle ?? angle}
           onClose={handleCloseAddBetaVideo}
+        />
+      )}
+
+      {/* Sub-drawer: Report climb — opened from the reaction menu (iOS) or the
+          actions sheet's "Report climb" row (Android). Mounted on first open and
+          then kept, so it never unmounts between reports — which is why it
+          resets its own form on each fresh open rather than on unmount. */}
+      {mountReportClimb && (
+        <ReportClimbSheet
+          visible={reportClimbOpen}
+          climb={reportTarget?.climb ?? displayedClimb ?? null}
+          boardName={(reportTarget?.boardConfig.boardName ?? boardName) as BoardName}
+          layoutId={reportTarget?.boardConfig.layoutId ?? layoutId}
+          sizeId={reportTarget?.boardConfig.sizeId ?? sizeId}
+          setIds={reportTarget?.boardConfig.setIds ?? setIds}
+          angle={reportTarget?.boardConfig.angle ?? angle}
+          onClose={handleCloseReportClimb}
         />
       )}
 

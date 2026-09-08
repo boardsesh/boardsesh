@@ -13,7 +13,8 @@ import { logger } from '../../../utils/logger';
 export { validateInput, parseArrayTolerant } from '../../../validation/schemas';
 // Re-export MAX_RETRIES from types
 export { MAX_RETRIES } from './types';
-export { isNoMatchClimb, isNoMatch } from '@boardsesh/shared-schema';
+// The one no-match read path — every feed/tick/notification payload goes through it.
+export { resolveClimbNoMatch } from '@boardsesh/shared-schema';
 
 /**
  * Configuration for session membership retry behavior.

@@ -70,7 +70,7 @@ import { integrationMutations } from './integrations/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
 import { syncQueries } from './sync/queries';
-import { isNoMatchClimb, isNoMatch } from './shared/helpers';
+import { resolveClimbNoMatch } from './shared/helpers';
 
 export const resolvers = {
   // Scalar types
@@ -177,11 +177,14 @@ export const resolvers = {
 
   // Climb type resolvers (derived fields)
   Climb: {
-    // Prefer the structured characteristic; fall back to the Aurora description
-    // convention for any parent that didn't select the characteristics array
-    // (or for rows synced before the column was backfilled — the prefix persists).
-    is_no_match: (climb: { characteristics?: string[] | null; description?: string | null }) =>
-      climb.characteristics != null ? isNoMatch(climb.characteristics) : isNoMatchClimb(climb.description),
+    // One definition for every surface — see resolveClimbNoMatch.
+    // A parent that doesn't select `characteristics` silently falls back to the
+    // description, so every Climb producer must project the column.
+    is_no_match: (climb: {
+      characteristics?: string[] | null;
+      description?: string | null;
+      boardType?: string | null;
+    }) => resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
   },
 
   // Union type resolvers

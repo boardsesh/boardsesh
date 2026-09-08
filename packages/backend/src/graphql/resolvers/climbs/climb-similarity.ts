@@ -9,6 +9,7 @@ import {
 import type { BoardName } from '@boardsesh/board-constants';
 import {
   CLIMB_CHARACTERISTICS,
+  NO_MATCH_TRAILING_SQL_PATTERN,
   buildRuleSignature,
   isNoMatchClimb,
   usesAuroraNoMatchDescription,
@@ -55,6 +56,7 @@ export type SimilarClimbResult = {
   qualityAverage: number | null;
   ascensionistCount: number | null;
   compatibleSizeIds: number[];
+  characteristics: string[] | null;
   similarity: number;
   sharedHoldCount: number;
   candidateHoldCount: number;
@@ -174,8 +176,13 @@ function ruleMatchSql(
   description: SQLWrapper,
   signature: string,
 ): SQL {
+  // Both halves of isNoMatchClimb: Aurora's leading marker, and the declaration
+  // appended after the setter's prose. Dropping either half here would make the
+  // gate disagree with buildStoredRuleSignature and stop matching.
   const legacyNoMatch = usesAuroraNoMatchDescription(boardType)
-    ? sql`CASE WHEN LOWER(COALESCE(${description}, '')) LIKE 'no match%' THEN ARRAY['no_match']::text[] ELSE '{}'::text[] END`
+    ? sql`CASE WHEN LOWER(COALESCE(${description}, '')) LIKE 'no match%'
+             OR COALESCE(${description}, '') ~* ${NO_MATCH_TRAILING_SQL_PATTERN}
+          THEN ARRAY['no_match']::text[] ELSE '{}'::text[] END`
     : sql`'{}'::text[]`;
   const stored = sql`COALESCE(${characteristics}, ${legacyNoMatch})`;
   const tokens = signature ? signature.split(',') : [];
@@ -401,6 +408,7 @@ export async function findSimilarClimbs({
       quality_average: number | null;
       ascensionist_count: number | null;
       compatible_size_ids: number[] | null;
+      characteristics: string[] | null;
       shared: number;
       candidate_hold_count: number;
       jaccard: number;
@@ -472,6 +480,7 @@ export async function findSimilarClimbs({
         c.layout_id AS layout_id,
         c.frames AS frames,
         c.compatible_size_ids AS compatible_size_ids,
+        c.characteristics AS characteristics,
         bdg.boulder_name AS difficulty_name,
         ${dbSchema.boardClimbStats.qualityAverage} AS quality_average,
         ${dbSchema.boardClimbStats.ascensionistCount} AS ascensionist_count,
@@ -508,6 +517,10 @@ export async function findSimilarClimbs({
     qualityAverage: row.quality_average == null ? null : Number(row.quality_average),
     ascensionistCount: row.ascensionist_count == null ? null : Number(row.ascensionist_count),
     compatibleSizeIds: row.compatible_size_ids ?? [],
+    // `?? null`, not `?? []`, unlike compatibleSizeIds above: an empty array is
+    // a climb set under all the default rules, and null is a climb whose rules
+    // were never recorded. The Woods drawer prints those differently (#5214).
+    characteristics: row.characteristics ?? null,
     similarity: Number(row.jaccard),
     sharedHoldCount: Number(row.shared),
     candidateHoldCount: Number(row.candidate_hold_count),

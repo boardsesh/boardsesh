@@ -6,7 +6,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { ThemeOverride } from '@boardsesh/key-value-storage';
 import { SUPPORTED_LOCALES, LOCALE_LABELS } from '@boardsesh/i18n';
+import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { useOptionalBluetoothContext } from '../../../src/providers/bluetooth-provider';
 import { useLocalePreference } from '../../../src/providers/i18n-provider';
 import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/locale-preference';
 import { openExternalUrl } from '../../../src/lib/open-url';
@@ -59,6 +61,7 @@ import {
   useFeatureFlag,
   useOfflineDownloadsEnabled,
   useBoardseshGradeEnabled,
+  useClimbModerationEnabled,
 } from '../../../src/providers/feature-flags-provider';
 import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
 import { replayBoardLookStep } from '../../../src/lib/board-render/replay-board-look-step';
@@ -84,6 +87,7 @@ export default function MoreScreen() {
   const { t: tSettings } = useTranslation('settings');
   const { t: tBoards } = useTranslation('boards');
   const { t: tNotifications } = useTranslation('notifications');
+  const { t: tClimbs } = useTranslation('climbs');
   const confirmSignOut = useConfirmSignOut();
   const { data: profile } = useProfile();
   // Its own query, deliberately not a field on the profile document — see
@@ -99,6 +103,8 @@ export default function MoreScreen() {
   const { enabled: showBoardseshGrades, setEnabled: setShowBoardseshGrades } = useBoardseshGradesPreference();
   const { enabled: showQuickActionsButton, setEnabled: setShowQuickActionsButton } = useClimbQuickActionsButton();
   const boardseshGradeFlagEnabled = useBoardseshGradeEnabled();
+  // Kill switch for the whole community-moderation surface. Off hides the way in.
+  const climbModerationEnabled = useClimbModerationEnabled();
   const { showToast } = useToast();
   const stravaEnabled = useFeatureFlag('strava-integration') === true;
   // Off until the Connect IQ watch app ships — nothing to pair to before then.
@@ -114,6 +120,16 @@ export default function MoreScreen() {
   const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
   const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
   const autoDisconnectTimeoutLabels = useAutoDisconnectTimeoutLabels();
+  // MoonBoard "V2" additional-LED feature — same setting + toggle handler as the
+  // BLE control sheet (BleControlSheetHost), so it's reachable without opening a
+  // live connection. Only shown for a MoonBoard, same gate as that sheet.
+  const bluetooth = useOptionalBluetoothContext();
+  const showMoonboardLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
+  const handleToggleMoonboardLightAdjacentHolds = (next: boolean) => {
+    hapticSelection();
+    bluetooth?.setMoonboardLightAdjacentHolds(next);
+    bluetooth?.reassertWall();
+  };
   const { enableBoardsOffline } = useBoardDownloads();
   const { data: myBoardsConnection } = useMyBoards(undefined, { enabled: offlineEnabled && !!profile });
   // Memoized so the empty-while-loading fallback keeps a stable identity — the
@@ -448,6 +464,26 @@ export default function MoreScreen() {
     });
   }
 
+  // Community — its own section rather than a row in Library, because Library is
+  // gated on being signed in and this isn't: anyone can read what the crew is
+  // deciding, and the vote buttons handle the signed-out case themselves.
+  if (climbModerationEnabled) {
+    sections.push({
+      key: 'community',
+      title: tClimbs('mobile.moderation.moreSectionTitle'),
+      rows: [
+        {
+          kind: 'nav',
+          key: 'moderation',
+          label: tClimbs('mobile.moderation.title'),
+          subtitle: tClimbs('mobile.moderation.moreRowSubtitle'),
+          icon: 'moderation',
+          onPress: navAction(() => router.push('/moderation')),
+        },
+      ],
+    });
+  }
+
   // Integrations.
   sections.push({
     key: 'integrations',
@@ -636,6 +672,18 @@ export default function MoreScreen() {
           setLightOnClimbTap(next);
         },
       },
+      ...(showMoonboardLightAdjacentHolds
+        ? [
+            {
+              kind: 'toggle' as const,
+              key: 'moonboardLightAdjacentHolds',
+              label: t('lightControl.lightAdjacentHolds'),
+              subtitle: t('lightControl.lightAdjacentHoldsHelp'),
+              value: bluetooth?.moonboardLightAdjacentHolds ?? false,
+              onValueChange: handleToggleMoonboardLightAdjacentHolds,
+            },
+          ]
+        : []),
     ],
   });
 

@@ -7,9 +7,11 @@ import {
   hijackedClimbUuidsForProblem,
   holdsBatchKey,
   ownedClimbAngles,
+  problemSkipReason,
   resolveCatalogClimbUuid,
   resolveIncumbentReplacement,
   statsBatchKey,
+  withdrawnCanonicalUuids,
   type ExistingCatalogClimb,
   type MappedCatalogClimb,
   type MoonBoardCatalogProblem,
@@ -20,9 +22,10 @@ import { recordUnmappedMoonBoardGrade } from './moonboard-helpers.js';
 // Staging one catalog file's rows
 // =============================================================================
 // Everything the importer decides per problem — merge target, the skip guards,
-// the same-holds collapse — happens here, so it can be exercised without a
-// database. import-moonboard-catalog.ts keeps the I/O: reading files, building
-// the match index, and writing the rows this returns.
+// the same-holds collapse, and which climbs a withdrawn problem leaves behind —
+// happens here, so it can be exercised without a database.
+// import-moonboard-catalog.ts keeps the I/O: reading files, building the match
+// index, and writing the rows this returns.
 // =============================================================================
 
 export type CatalogClimbRow = typeof boardClimbs.$inferInsert;
@@ -45,6 +48,30 @@ export type CatalogBatchCounters = {
   skippedHijacked: number;
   /** Later problems folded onto an earlier same-holds problem in this batch. */
   foldedInBatch: number;
+  /**
+   * Problems that shared a climb with another problem in the same file, so
+   * they did not add a climb of their own. Their stats either lost the
+   * isBetterCatalogClimb contest or displaced an earlier problem's — either
+   * way exactly one problem's data survives per climb. Both ids still resolve
+   * to it (aliases are recorded before the contest).
+   *
+   * Counted so the run log balances: matched + inserted + sharedClimbInBatch
+   * plus every skip counter equals the problems in the file. Without it ~0.4%
+   * of a capture vanishes from the accounting and an operator reconciling the
+   * totals cannot tell a collapse from a silent drop. `foldedInBatch` is a
+   * narrower subset — only the brand-new-problem case.
+   */
+  sharedClimbInBatch: number;
+  /** Problems upstream has withdrawn (a subset of skippedProblems). */
+  withdrawn: number;
+  /** Withdrawn problems that resolved to a climb row we can stop listing. */
+  withdrawnWithClimbs: number;
+};
+
+export type WithdrawnProblemSample = {
+  problemId: number;
+  name: string;
+  climbUuids: string[];
 };
 
 export type CatalogBatchStaging = {
@@ -52,6 +79,16 @@ export type CatalogBatchStaging = {
   stats: CatalogStatsRow[];
   holds: CatalogHoldRow[];
   aliases: CatalogAliasRow[];
+  /**
+   * Climbs to stop listing: every climb a withdrawn problem still owns, minus
+   * every climb this batch actually wrote. The subtraction is the point — two
+   * problems can share holds and collapse onto one climb, so a withdrawn
+   * problem can resolve to a uuid a LIVE problem in the same file also writes.
+   * Unlisting that would hide a climb upstream still publishes.
+   */
+  withdrawnClimbUuids: string[];
+  /** First few withdrawn problems, for an operator-facing sample in the log. */
+  withdrawnSamples: WithdrawnProblemSample[];
   counters: CatalogBatchCounters;
   /**
    * Setter grade string → how many graded configurations spelled it, for the
@@ -77,6 +114,9 @@ export type StageCatalogBatchArgs = {
   onWarning?: (message: string) => void;
 };
 
+/** How many withdrawn problems to keep for the run log. Enough to eyeball, not enough to drown it. */
+const WITHDRAWN_SAMPLE_LIMIT = 10;
+
 export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStaging {
   const { problems, layoutId, existingIndex, existingClimbUuids, canonicalByAlias } = args;
   const upstreamSyncedAt = args.upstreamSyncedAt ?? new Date().toISOString();
@@ -99,6 +139,11 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
   // holds, for problems that matched nothing in the database (see the fold below).
   const stagedUuidByFingerprint = new Map<string, string>();
 
+  // Climbs a withdrawn problem still owns. Collected across the whole file and
+  // filtered against `climbByUuid` at the end (see CatalogBatchStaging).
+  const withdrawnUuids = new Set<string>();
+  const withdrawnSamples: WithdrawnProblemSample[] = [];
+
   const counters: CatalogBatchCounters = {
     matched: 0,
     inserted: 0,
@@ -107,6 +152,9 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
     skippedDrifted: 0,
     skippedHijacked: 0,
     foldedInBatch: 0,
+    sharedClimbInBatch: 0,
+    withdrawn: 0,
+    withdrawnWithClimbs: 0,
   };
 
   // Grade strings the shared map has no difficulty id for. Those configurations
@@ -115,6 +163,29 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
   const unmappedGrades = new Map<string, number>();
 
   for (const problem of problems) {
+    if (problemSkipReason(problem) === 'withdrawn') {
+      counters.skippedProblems++;
+      counters.withdrawn++;
+      // ownedClimbAngles([]) — every angle MoonBoard has ever been imported at.
+      // A withdrawn problem's own configurations are unreliable here: they are
+      // often soft-deleted alongside it, so "the angles it is graded at today"
+      // would miss the rows it actually owns.
+      const climbUuids = withdrawnCanonicalUuids({
+        problemId: problem.id,
+        angles: ownedClimbAngles([]),
+        existingClimbUuids,
+        canonicalByAlias,
+      });
+      if (climbUuids.length > 0) {
+        counters.withdrawnWithClimbs++;
+        for (const uuid of climbUuids) withdrawnUuids.add(uuid);
+        if (withdrawnSamples.length < WITHDRAWN_SAMPLE_LIMIT) {
+          withdrawnSamples.push({ problemId: problem.id, name: problem.name, climbUuids });
+        }
+      }
+      continue;
+    }
+
     const mapped = catalogProblemToClimbs(problem, layoutId);
     if (!mapped) {
       counters.skippedProblems++;
@@ -240,6 +311,10 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
     }
 
     const incumbent = bestByUuid.get(uuid);
+    // Count before the contest resolves: whether this problem wins or loses, it
+    // is sharing a climb rather than contributing one, and both outcomes must
+    // land in the same bucket for the totals to balance.
+    if (incumbent) counters.sharedClimbInBatch++;
     const decision = resolveIncumbentReplacement(uuid, mapped, incumbent);
     if (!decision.accept) continue;
     if (!incumbent) {
@@ -333,6 +408,8 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
     stats: [...statsByUuidAngle.values()],
     holds: [...holdsByKey.values()],
     aliases: [...aliasByUuid.values()],
+    withdrawnClimbUuids: [...withdrawnUuids].filter((uuid) => !climbByUuid.has(uuid)),
+    withdrawnSamples,
     counters,
     unmappedGrades,
   };

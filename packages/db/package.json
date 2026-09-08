@@ -88,6 +88,8 @@
     "db:import-moonboard": "tsx scripts/import-moonboard-problems.ts",
     "db:import-moonboard-2024": "tsx scripts/import-moonboard-2024.ts",
     "db:import-moonboard-catalog": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/import-moonboard-catalog.ts",
+    "db:import-moonboard-beta-links": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/import-moonboard-beta-links.ts",
+    "db:report-moonboard-withdrawn": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/report-moonboard-withdrawn.ts",
     "db:import-woods-catalog": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/import-woods-catalog.ts",
     "db:import-aurora-unified": "tsx scripts/import-aurora-board-unified.ts",
     "db:generate-moonboard-cell-sets": "tsx scripts/generate-moonboard-cell-sets.ts",

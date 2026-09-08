@@ -40,6 +40,9 @@ export type ClimbListItemClimb = {
   difficulty: string;
   mirrored?: boolean | null;
   is_draft?: boolean | null;
+  /** Voted out of the browse lists by the community. Optional because the queue's
+   *  own `Climb` type doesn't carry it — a queued row simply shows no chip. */
+  is_hidden?: boolean | null;
   ascensionist_count?: number | null;
   quality_average: string;
   setter_username?: string | null;
@@ -145,6 +148,34 @@ const FavoriteGlyph = React.memo(function FavoriteGlyph({ climbUuid }: { climbUu
   return (
     <View accessibilityRole="image" accessibilityLabel={t('mobile.climbRow.favorited')}>
       <Icon name="favorite.fill" size={16} color={theme.systemColors.secondaryLabel} />
+    </View>
+  );
+});
+
+/**
+ * "Hidden" chip for a climb the community voted out of the browse lists. It only
+ * ever appears on the surfaces that still show such a climb — an explicit name
+ * search, the setter's own climbs, a direct link — so it answers the question
+ * those rows raise: why is this one no longer in the list?
+ *
+ * Props-free and memoized, so a row that isn't hidden pays nothing and a hidden
+ * one renders the chip once per mount.
+ */
+const HiddenChip = React.memo(function HiddenChip() {
+  const { t } = useTranslation('climbs');
+  const { systemColors } = useTheme();
+
+  return (
+    <View
+      style={[styles.hiddenChip, { backgroundColor: systemColors.fill }]}
+      accessibilityRole="text"
+      accessibilityLabel={t('mobile.hidden.chip')}
+      testID="climb-row-hidden-chip"
+    >
+      <Icon name="visibility.off" size={11} color={systemColors.secondaryLabel} />
+      <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
+        {t('mobile.hidden.chip')}
+      </Text>
     </View>
   );
 });
@@ -357,6 +388,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             characteristics={climb.characteristics}
             isNoMatch={climb.is_no_match}
           />
+          {climb.is_hidden ? <HiddenChip /> : null}
         </View>
         {primarySubtitleOverride === undefined ? (
           <LiveClimbSubtitle
@@ -423,6 +455,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     // Shrink so the name (not the trailing attribute glyphs) absorbs truncation.
     flexShrink: 1,
+  },
+  hiddenChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginLeft: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    // Never absorbs the row's truncation — the name does (see `climbName`).
+    flexShrink: 0,
   },
   subtitle: {
     opacity: 0.6,

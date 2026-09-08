@@ -16,7 +16,7 @@ import {
   resolveClimbCreatedSubscriptionRecipients,
 } from './recipient-resolution';
 import { isHideProposalEvent } from './notification-worker';
-import { isNoMatchClimb } from '../graphql/resolvers/shared/helpers';
+import { resolveClimbNoMatch } from '../graphql/resolvers/shared/helpers';
 import { logger } from '../utils/logger';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 
@@ -159,6 +159,7 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
             uuid: dbSchema.boardClimbs.uuid,
             name: dbSchema.boardClimbs.name,
             description: dbSchema.boardClimbs.description,
+            characteristics: dbSchema.boardClimbs.characteristics,
             layoutId: dbSchema.boardClimbs.layoutId,
             angle: resolvedClimbAngleSql,
             frames: dbSchema.boardClimbs.frames,
@@ -258,7 +259,7 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
             angle: climb.angle ?? null,
             frames: climb.frames ?? null,
             difficultyName: climb.difficultyName ?? event.metadata.difficultyName ?? null,
-            isNoMatch: isNoMatchClimb(climb.description),
+            isNoMatch: resolveClimbNoMatch(boardType, climb.characteristics, climb.description),
             createdAt: climb.createdAt ?? new Date().toISOString(),
           },
         });

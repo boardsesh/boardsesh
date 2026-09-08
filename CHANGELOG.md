@@ -4,10 +4,39 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
-## 2026-09-07
+## 2026-09-08
+
+### New
+
+- Find "Light the hold above" for MoonBoard in Settings → Board lighting, not just the Bluetooth menu ([#5280](https://github.com/boardsesh/boardsesh/pull/5280))
 
 ### Fixed
 
+- Flip a climb on a Woods board and the wall now flips with it ([#5237](https://github.com/boardsesh/boardsesh/pull/5237))
+  Flipping a climb no longer un-flips itself when the board re-lights
+- Attach screenshots to bug reports and PR feedback, and update your profile photo again. ([#5281](https://github.com/boardsesh/boardsesh/pull/5281))
+
+## 2026-09-07
+
+### New
+
+- Your climbing history groups climbs into sessions, with breaks over eight hours starting a new one. ([#5194](https://github.com/boardsesh/boardsesh/pull/5194))
+- Thousands more MoonBoard problems, with fresh grades and repeat counts across all seven boards ([#5250](https://github.com/boardsesh/boardsesh/pull/5250))
+  Beta videos now show on MoonBoard climbs — see how other climbers did it before you pull on
+  Problems the setter has pulled down no longer clutter MoonBoard search
+- Report a junk climb from its menu and the crew votes to hide it ([#5188](https://github.com/boardsesh/boardsesh/pull/5188))
+  New Moderation feed under More: vote on reports and grade changes, or decide them if you are a community leader
+  Hidden climbs say why in their Community section, and setters hear when their climb gets reported
+
+### Fixed
+
+- Board setup switches now respond when you tap them directly on Android. ([#5269](https://github.com/boardsesh/boardsesh/pull/5269))
+- Fresh beta links show their thumbnail when you browse climbs. ([#5256](https://github.com/boardsesh/boardsesh/pull/5256))
+- Woods climbs show their real matching and feet rules everywhere you open them — playlists, favourites, a setter's climbs, your own climbs and similar climbs. ([#5244](https://github.com/boardsesh/boardsesh/pull/5244))
+  No-match climbs get their ⊘ back in those lists on every board.
+- The no-matching symbol now shows on every Kilter and Tension climb that calls for it, not ([#5243](https://github.com/boardsesh/boardsesh/pull/5243))
+  just the ones whose notes lead with the rule — about 1,100 more on the Tension Board 2
+  Spray alone.
 - Fixed the Attempt and Send buttons in the tick sheet: they now fill the row evenly instead of floating at odd sizes ([#4226](https://github.com/boardsesh/boardsesh/pull/4226))
 
 ## 2026-09-06

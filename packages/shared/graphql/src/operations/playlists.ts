@@ -178,6 +178,8 @@ export const GET_PLAYLIST_CLIMBS = gql`
         boardseshDifficulty
         boardseshConfidence
         compatibleSizeIds
+        characteristics
+        is_no_match
       }
       totalCount
       hasMore
@@ -449,6 +451,8 @@ export type PlaylistClimbsResult = {
     boardseshDifficulty?: number | null;
     boardseshConfidence?: string | null;
     compatibleSizeIds?: number[] | null;
+    characteristics?: string[] | null;
+    is_no_match?: boolean | null;
   }>;
   totalCount: number;
   hasMore: boolean;
@@ -751,6 +755,8 @@ export const GET_SMART_PLAYLIST = gql`
         boardseshDifficulty
         boardseshConfidence
         compatibleSizeIds
+        characteristics
+        is_no_match
       }
       totalCount
       hasMore

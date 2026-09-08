@@ -15,6 +15,10 @@ const temporaryClimbs = pgTable('board_climbs', {
 
 test('Aurora round trips preserve explicit false without freezing upstream rule changes', async () => {
   const prose = 'No matching hands';
+  // #5127: the form setters actually use — the declaration appended after their
+  // own prose. isNoMatchClimb now reads it, so the sync derives no_match from it
+  // and the explicit-false sentinel has to hold against that.
+  const trailing = 'Kick board is off. No matching.';
   const cases = [
     { before: [], description: prose, incoming: withNoMatch(prose, false), expected: [], authored: true },
     {
@@ -57,6 +61,16 @@ test('Aurora round trips preserve explicit false without freezing upstream rule 
     },
     { before: null, description: prose, incoming: prose, expected: ['no_match'], authored: true, published: true },
     { before: [], description: prose, incoming: prose, expected: ['no_match'], authored: false, published: true },
+    // Trailing-declaration twins. The first two are the regression #5127 could
+    // have introduced: a user turns the toggle off on a climb whose prose still
+    // declares no-match, and the next sync must not put it back.
+    { before: [], description: trailing, incoming: trailing, expected: [], authored: true },
+    { before: [], description: trailing, incoming: trailing, expected: [], authored: true, published: true },
+    { before: null, description: trailing, incoming: trailing, expected: ['no_match'], authored: true },
+    { before: [], description: trailing, incoming: trailing, expected: ['no_match'], authored: false },
+    // Prose that merely ends with the phrase is not a declaration, so nothing
+    // is derived from it either way.
+    { before: null, description: 'Campus, no match', incoming: 'Campus, no match', expected: null, authored: true },
   ];
   await db.transaction(async (transaction) => {
     await transaction.execute(sql`CREATE TEMP TABLE board_climbs (

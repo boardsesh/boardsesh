@@ -3,7 +3,7 @@
 // colour) plus a `run()` that performs the action and then calls `onAfterAction` (the
 // reaction menu passes its animated dismiss).
 //
-// The hook self-sources most openers (preview / queue / tick / beta video) from
+// The hook self-sources most openers (preview / queue / tick / beta video / report) from
 // `useDrawerHost`, the favourite state + mutation from `useFavoriteStatus` /
 // `useToggleFavorite`, the native share from `useShareClimb`, and the create-climb
 // routes from `useCreateClimbNavigation`, so a caller supplies the climb, its board
@@ -26,6 +26,7 @@ import { useQueueActions, useQueueSessionId } from '../../providers/queue-provid
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { useTheme } from '../../providers/theme-provider';
+import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { track } from '../../lib/analytics';
 
@@ -40,7 +41,8 @@ export type ClimbActionId =
   | 'edit'
   | 'fork'
   | 'share'
-  | 'openInApp';
+  | 'openInApp'
+  | 'report';
 
 export type ClimbActionItem = {
   id: ClimbActionId;
@@ -98,6 +100,15 @@ type UseClimbActionsArgs = {
    * ticking opens the root sheet (correct off `/play`, where nothing conflicts).
    */
   onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /**
+   * When provided, the "Report climb" action runs this INSTEAD of opening the
+   * root `ReportClimbSheet`. The play drawer passes its own in-tree sheet opener
+   * so the report sheet stacks above the `/play` modal (a root-tree sheet can't
+   * present over it — see #3505). Receives the same `climb`/`boardConfig`
+   * snapshot the fallback path uses, so a party-session queue/angle change while
+   * the menu is open can't retarget it. Omit it and reporting opens the root sheet.
+   */
+  onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
   /** Native BoardSheet / QueueSheet underneath the custom overlay, if any. */
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** `/play`-owned native-stack close waiter; absent for every inline surface. */
@@ -124,6 +135,7 @@ export function useClimbActions({
   onSelectPlaylist,
   onAddBetaVideo,
   onTick,
+  onReportClimb,
   dismissSourceSheet,
   dismissPlayerAndWait,
 }: UseClimbActionsArgs): ClimbActionItem[] {
@@ -140,7 +152,17 @@ export function useClimbActions({
   // lives in its own split context, so reading it here costs no extra renders.
   const { sessionId } = useQueueSessionId();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
-  const { openPlayDrawer, openLogAscent, openAddBetaVideo, boardConfig: activeBoardConfig } = useDrawerHost();
+  const {
+    openPlayDrawer,
+    openLogAscent,
+    openAddBetaVideo,
+    openReportClimb,
+    boardConfig: activeBoardConfig,
+  } = useDrawerHost();
+  // Kill switch, so an unresolved flag still shows the row (see
+  // useClimbModerationEnabled). Flipping it in PostHog takes reporting down
+  // everywhere at once.
+  const moderationEnabled = useClimbModerationEnabled();
   // Native share sheet — the same action the play drawer uses.
   const shareClimb = useShareClimb({
     climb,
@@ -390,6 +412,25 @@ export function useClimbActions({
       });
     }
 
+    // Last in the list, and last for a reason: it is the one action that acts
+    // AGAINST the climb, so it sits below everything a climber came here to do.
+    if (isAuthenticated && moderationEnabled) {
+      items.push({
+        id: 'report',
+        title: t('mobile.climbActions.report'),
+        icon: 'flag',
+        color: accentColor,
+        run: () => {
+          // In-tree override (play drawer) stacks the sheet above the `/play`
+          // modal; the root sheet can't. Both take the climb/board snapshot so a
+          // live queue change can't retarget it. See #3505.
+          if (onReportClimb) onReportClimb(climb, boardConfig);
+          else openReportClimb(climb, boardConfig);
+          after();
+        },
+      });
+    }
+
     return items;
   }, [
     climb,
@@ -400,6 +441,8 @@ export function useClimbActions({
     onSelectPlaylist,
     onAddBetaVideo,
     onTick,
+    onReportClimb,
+    moderationEnabled,
     dismissSourceSheet,
     dismissPlayerAndWait,
     after,
@@ -414,6 +457,7 @@ export function useClimbActions({
     openPlayDrawer,
     openLogAscent,
     openAddBetaVideo,
+    openReportClimb,
     activeBoardConfig,
     sessionId,
   ]);

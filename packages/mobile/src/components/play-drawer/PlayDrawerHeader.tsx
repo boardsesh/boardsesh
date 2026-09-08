@@ -7,6 +7,7 @@ import { getBoardCapabilities } from '@boardsesh/board-config';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { formatSends, formatQuality } from '../../lib/format-climb-stats';
 import { Text } from '../Text';
+import { Icon } from '../Icon';
 import { MarqueeText } from '../MarqueeText';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
@@ -34,10 +35,18 @@ type PlayDrawerHeaderProps = {
   benchmarkDifficulty?: string | null;
   /** Climb characteristics; no-match and MoonBoard method_* tokens render as glyphs/labels. */
   characteristics?: string[] | null;
+  /** Fallback no-match flag for a climb that carries the bool but no characteristics
+   *  array (tick- and notification-sourced rows). Ignored when the rules line states
+   *  matching in full, so the two never say it twice. */
+  isNoMatch?: boolean | null;
   /** The board being played. Boards whose `explicitClimbRules` capability is on
    *  (Woods) print both climb rules under the subtitle; everything else keeps the
    *  exception-only glyph cluster beside the name. */
   boardName?: BoardName;
+  /** The community voted this climb out of the browse lists. Prints a caption under
+   *  the subtitle so someone who reached it by link, queue or deep link knows why
+   *  it stopped showing up in search. */
+  isHidden?: boolean;
   /** Left-aligned element on the name's row (e.g. the on-wall status). The header
    *  balances both flanks so the name stays centered. The swipe peek passes a
    *  reserve-only copy so the incoming header matches this one exactly. */
@@ -57,7 +66,9 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   setterUsername,
   benchmarkDifficulty,
   characteristics,
+  isNoMatch,
   boardName,
+  isHidden = false,
   leading,
   onLongPressName,
 }: PlayDrawerHeaderProps) {
@@ -122,11 +133,22 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
             <ClimbAttributeIcons
               benchmarkDifficulty={benchmarkDifficulty}
               characteristics={residualCharacteristics?.length ? residualCharacteristics : null}
+              isNoMatch={ruleLabels ? undefined : isNoMatch}
             />
           </View>
           <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
             {subtitleParts.join(' · ')}
           </Text>
+          {/* One caption line, same grey as the subtitle: this is context for a
+              climb you can still open by link or queue, not an error. */}
+          {isHidden ? (
+            <View style={styles.hiddenRow} testID="play-drawer-climb-hidden">
+              <Icon name="visibility.off" size={14} color={iosSystemColors.systemGray} />
+              <Text variant="caption1" style={styles.hiddenText}>
+                {t('mobile.hidden.banner')}
+              </Text>
+            </View>
+          ) : null}
           {/* Deliberately unbounded lines: at the largest Dynamic Type sizes, or
               on a narrow phone in German, "Matching allowed · Marked holds only"
               does not fit one line, and a truncated climb RULE is worse than a
@@ -193,7 +215,9 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
       setterUsername={climb.setter_username}
       benchmarkDifficulty={climb.benchmark_difficulty}
       characteristics={climb.characteristics}
+      isNoMatch={climb.is_no_match}
       boardName={boardName}
+      isHidden={climb.is_hidden === true}
       leading={leading}
       onLongPressName={onLongPressName}
     />
@@ -232,6 +256,18 @@ const styles = StyleSheet.create({
     color: iosSystemColors.systemGray,
     marginTop: 2,
     textAlign: 'center',
+  },
+  // The row carries the 2pt rhythm the subtitle sets; the label inside it must
+  // not add a second one, or the glyph and the text sit on different baselines.
+  hiddenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  hiddenText: {
+    color: iosSystemColors.systemGray,
   },
   // Same grey as the subtitle it sits under — the rules are context, not a
   // second headline competing with the name and the grade.

@@ -95,6 +95,7 @@ const CLIMB_SEARCH_FIELDS = `
   difficulty_error
   benchmark_difficulty
   is_draft
+  is_hidden
   is_no_match
   characteristics
   published_at
@@ -130,6 +131,7 @@ const CLIMB_DETAIL_FIELDS = `
   userAscents
   userAttempts
   is_draft
+  is_hidden
   created_at
   published_at
   framesCount

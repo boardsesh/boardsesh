@@ -1,4 +1,5 @@
 import type { UserBoard } from './types/board-entities';
+import { isNoMatch, usesAuroraNoMatchDescription } from './characteristics';
 
 /** The board config tuple needed to prefer a same-config serial match. */
 export type SerialBoardConfig = {
@@ -77,15 +78,70 @@ export function selectForeignSerialBoards(
   return [...sameConfig, ...otherConfig];
 }
 
+/** Aurora's canonical marker: the no-match declaration opens the description. */
+const NO_MATCH_LEADING = /^no match/i;
+
+/**
+ * The declaration appended after the setter's own prose — "Kick board is off.
+ * No matching." — which is how ~14.9k catalog climbs carry the rule (#5127).
+ *
+ * It has to OPEN a sentence: start of string, one of `\n . ! ? ; ) ]`, or a
+ * space-hyphen. That precision is what keeps out "You can match start hold but
+ * the rest is no matching", "Campus, no match" and "(no match)"; it costs the
+ * ~2.2k rows that end with the phrase after a bare space or comma, which stay
+ * untagged on purpose — a wrong glyph is worse than a missing one.
+ *
+ * Keep in step with {@link NO_MATCH_TRAILING_SQL_PATTERN}.
+ */
+const NO_MATCH_TRAILING = /(^|[\n.!?;)\]]|\s-)\s*no[\s-]?match(ing|es)?[.!?;,\s]*$/i;
+
+/**
+ * POSIX twin of {@link NO_MATCH_TRAILING} for the SQL callers — `ruleMatchSql`
+ * in the duplicate gate, and the no-match backfill migration. One divergence:
+ * JS `\s` matches U+00A0 and POSIX `[[:space:]]` does not, so a description
+ * separated by a non-breaking space is caught in JS but not in SQL. No catalog
+ * row differs today, and the read-path fallback covers such a row anyway.
+ */
+export const NO_MATCH_TRAILING_SQL_PATTERN =
+  '(^|[\\n.!?;)\\]]|[[:space:]]-)[[:space:]]*no[[:space:]-]?match(ing|es)?[.!?;,[:space:]]*$';
+
 /**
  * @deprecated Aurora interop only. The structured `no_match` characteristic
  * (see {@link isNoMatch} and `board_climbs.characteristics`) is now the internal
- * source of truth. This regex stays because Aurora encodes "no match" as a
- * `No match\n` description prefix that we still ingest and derive from — use it
- * only on the ingest/wire-format boundary, never as the internal read path.
+ * source of truth. This stays because Aurora has no rules field at all: the rule
+ * lives in the climb description as setter prose, in either of the two forms
+ * above — use it only on the ingest/wire-format boundary, never as the internal
+ * read path.
  */
 export function isNoMatchClimb(description: string | null | undefined): boolean {
-  return /^no match/i.test(description || '');
+  const value = description || '';
+  return NO_MATCH_LEADING.test(value) || NO_MATCH_TRAILING.test(value);
+}
+
+/**
+ * Whether a climb forbids matching — the ONE read path every surface should use.
+ *
+ * A non-null `characteristics` array is authoritative and ends the question: it is
+ * what makes `noMatch: false` stick on a climb whose prose still declares the rule
+ * (the editor stores `[]` as an explicit false). Only a null array falls back to
+ * Aurora's description convention, and only on the boards that have one — on
+ * MoonBoard and Woods the same words are the setter's own prose.
+ *
+ * `boardType` fails open when absent, because it is only populated in multi-board
+ * contexts (see `Climb.boardType`); an unknown board keeps the pre-capability
+ * behaviour rather than silently losing the rule.
+ *
+ * Feed, tick and notification payloads used to derive this from the description
+ * alone, so they disagreed with the climb view for any climb whose author had
+ * turned the rule off without editing their prose (#5127 review).
+ */
+export function resolveClimbNoMatch(
+  boardType: string | null | undefined,
+  characteristics: readonly string[] | null | undefined,
+  description: string | null | undefined,
+): boolean {
+  if (characteristics != null) return isNoMatch(characteristics);
+  return (boardType == null || usesAuroraNoMatchDescription(boardType)) && isNoMatchClimb(description);
 }
 
 /** Canonical marker prepended to a description to flag a "no match" climb. */

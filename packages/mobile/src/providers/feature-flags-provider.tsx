@@ -111,6 +111,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Abort interactive GraphQL requests after 20 s so a hung server cannot pin a screen. Kill switch for marginal networks: set to false (sync keeps its own 30 s).',
   },
+  {
+    key: 'climb-moderation-kill',
+    label: 'Disable climb reporting + moderation',
+    description:
+      'Emergency kill switch: hides the Report climb action, the More-tab Moderation row and the community moderation status. Unresolved reads as enabled (kill switches invert the default; see docs/feature-flags.md).',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -204,6 +210,21 @@ export function useOfflineDownloadProgressEnabled(): boolean {
  */
 export function useAnonymousClimbViewEnabled(): boolean {
   return useFeatureFlag('anonymous-climb-view-kill') !== true;
+}
+
+/**
+ * Kill switch for community climb moderation: the "Report climb" action, the
+ * More-tab Moderation row, and the community moderation status on a climb.
+ *
+ * A KILL switch, not a positive rollout flag, for the same reason as
+ * `useAnonymousClimbViewEnabled`: PostHog resolves asynchronously, so a positive
+ * flag reads as OFF for the first frames of a cold open — which here would mean
+ * the Report row appearing a beat after the menu opens, under the climber's
+ * thumb. Missing/undefined reads as "not killed", i.e. reporting is on, and
+ * flipping the flag ON in PostHog takes the whole feature down.
+ */
+export function useClimbModerationEnabled(): boolean {
+  return useFeatureFlag('climb-moderation-kill') !== true;
 }
 
 /**

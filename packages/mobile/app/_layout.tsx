@@ -89,7 +89,6 @@ import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider
 import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
 import { ImageCacheTabSweeper } from '../src/components/ImageCacheTabSweeper';
 import { AnalyticsGymProperties } from '../src/components/analytics/AnalyticsGymProperties';
-import { AnalyticsPersonProperties } from '../src/components/analytics/AnalyticsPersonProperties';
 import { BoardOpenRecorder } from '../src/components/board-activity/BoardOpenRecorder';
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
@@ -592,8 +591,6 @@ function RootLayout() {
                       <ObserveRuntimeConfigSync />
                       <AuthProvider onReady={onAuthReady}>
                         <PartyProfileProvider>
-                          {/* Needs auth + query, both in scope here. Null render. */}
-                          <AnalyticsPersonProperties />
                           {/* Stamps the active board's gym on every event. Null render. */}
                           <AnalyticsGymProperties />
                           {/* Records board opens, which order "Your boards". Null render. */}
@@ -721,6 +718,22 @@ function RootLayout() {
                                                                         options={{
                                                                           presentation: 'modal',
                                                                           headerShown: false,
+                                                                        }}
+                                                                      />
+                                                                      {/* The moderation feed — ONE root modal, not a copy in each
+                                                      tab stack. The play drawer's Community section links into
+                                                      it, and /play is itself a root transparentModal, so a push
+                                                      aimed at a tab stack lands BENEATH the player (dead tap,
+                                                      stranded screen). A root modal card presents above whatever
+                                                      is open, so the More tab, both tabs' proposal notifications
+                                                      and the drawer all push the same route. app/moderation.tsx
+                                                      titles itself on its own Stack.Screen, the way
+                                                      about/changelog/scout do. */}
+                                                                      <Stack.Screen
+                                                                        name="moderation"
+                                                                        options={{
+                                                                          presentation: 'modal',
+                                                                          headerShown: true,
                                                                         }}
                                                                       />
                                                                       {/* First-run walkthrough. Full-screen cover over the

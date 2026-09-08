@@ -379,6 +379,8 @@ export const GET_SETTER_CLIMBS_FULL = gql`
         boardseshDifficulty
         boardseshConfidence
         compatibleSizeIds
+        characteristics
+        is_no_match
       }
       totalCount
       hasMore
@@ -435,6 +437,8 @@ export const GET_USER_CLIMBS = gql`
         boardseshDifficulty
         boardseshConfidence
         compatibleSizeIds
+        characteristics
+        is_no_match
         renderBoard {
           layoutId
           sizeId

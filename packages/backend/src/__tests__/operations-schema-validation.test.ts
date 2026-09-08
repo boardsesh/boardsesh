@@ -257,6 +257,65 @@ describe('CLIMB_SEARCH_FIELDS carries the fields the play drawer renders', () =>
   });
 });
 
+// The server half of this contract is guarded by resolver-climb-fields.test.ts.
+// This is the client half, and it is the half the user sees: a resolver can
+// project `characteristics` perfectly and the play drawer still prints "Matching
+// rule not recorded" if the document never asked for it. Both halves were
+// missing on all five list documents until issue #5214.
+//
+// `is_no_match` rides along because web reads it directly (climb-title.tsx) to
+// draw the no-match glyph, and its field resolver falls back to the Aurora
+// description convention — a no-op on Woods and MoonBoard — whenever the parent
+// did not select `characteristics`.
+describe('climb-list documents select the rule fields the play drawer renders', () => {
+  function climbsSelectionFields(operationSource: string): Set<string> {
+    const fields = new Set<string>();
+    visit(parse(operationSource), {
+      Field(node) {
+        if (node.name.value !== 'climbs' || !node.selectionSet) return;
+        for (const selection of node.selectionSet.selections) {
+          if (selection.kind === 'Field') fields.add(selection.name.value);
+        }
+      },
+    });
+    return fields;
+  }
+
+  // Every document that returns a full Climb list a client opens the play drawer
+  // from without refetching. Add new ones here.
+  const documents: [string, string][] = [
+    ['GET_USER_FAVORITE_CLIMBS', publicOperations.GET_USER_FAVORITE_CLIMBS],
+    ['GET_PLAYLIST_CLIMBS', publicOperations.GET_PLAYLIST_CLIMBS],
+    ['GET_SMART_PLAYLIST', publicOperations.GET_SMART_PLAYLIST],
+    ['GET_SETTER_CLIMBS_FULL', publicOperations.GET_SETTER_CLIMBS_FULL],
+    ['GET_USER_CLIMBS', publicOperations.GET_USER_CLIMBS],
+  ];
+
+  for (const [name, source] of documents) {
+    it(`${name} selects characteristics and is_no_match (#5214)`, () => {
+      const fields = climbsSelectionFields(source);
+
+      expect(fields.size).toBeGreaterThan(0);
+      expect(fields.has('characteristics')).toBe(true);
+      expect(fields.has('is_no_match')).toBe(true);
+    });
+  }
+
+  it('SIMILAR_CLIMBS_QUERY selects characteristics, so a tapped similar climb keeps its rules', () => {
+    const fields = new Set<string>();
+    visit(parse(publicOperations.SIMILAR_CLIMBS_QUERY), {
+      Field(node) {
+        if (node.name.value !== 'similarClimbs' || !node.selectionSet) return;
+        for (const selection of node.selectionSet.selections) {
+          if (selection.kind === 'Field') fields.add(selection.name.value);
+        }
+      },
+    });
+
+    expect(fields.has('characteristics')).toBe(true);
+  });
+});
+
 describe('native iOS queue subscription drift guard', () => {
   it('matches the shared-schema native queue operation exactly after whitespace normalization', () => {
     const nativeOperation = readNativeIosQueueUpdatesOperation();

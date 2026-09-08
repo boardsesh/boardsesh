@@ -62,6 +62,11 @@ export const favoriteClimbsQuery = {
         frames_count: tables.climbs.framesCount,
         frames_pace: tables.climbs.framesPace,
         compatible_size_ids: tables.climbs.compatibleSizeIds,
+        // The structured climb rules. Omitting them here does not just blank a
+        // badge: the derived `Climb.is_no_match` resolver falls back to the Aurora
+        // description convention when the array is absent, and the play drawer
+        // prints "rule not recorded" on Woods (issue #5214).
+        characteristics: tables.climbs.characteristics,
         // Stats data
         ascensionist_count: tables.climbStats.ascensionistCount,
         difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
@@ -113,6 +118,11 @@ export const favoriteClimbsQuery = {
       framesCount: result.frames_count ?? null,
       framesPace: result.frames_pace ?? null,
       compatibleSizeIds: result.compatible_size_ids ?? null,
+      characteristics: result.characteristics ?? null,
+      // Every row is scoped to this board by the join; carrying it keeps
+      // is_no_match from applying Aurora's description convention to a
+      // MoonBoard climb whose prose just happens to mention matching.
+      boardType: boardName,
       angle: input.angle,
       ascensionist_count: Number(result.ascensionist_count || 0),
       difficulty: getGradeLabel(result.difficulty_id),
