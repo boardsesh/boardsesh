@@ -24,6 +24,9 @@ const state = vi.hoisted(() => ({
     hasSignal: boolean;
   }>,
   taskReleases: 0,
+  // Every `release()` that landed while the fake's native URLSessionTask
+  // pointer was still live — the EXC_BAD_ACCESS window of issue #5297.
+  releasesDuringNativeTeardown: 0,
   taskResolvesNull: false,
   /** Overrides the finished file's on-disk size, for the exact decoded-size gate. */
   downloadedFileSize: null as number | null,
@@ -141,13 +144,41 @@ vi.mock('expo-file-system', () => {
           hasOnProgress: options?.onProgress !== undefined,
           hasSignal: options?.signal !== undefined,
         });
+        // Models the iOS SharedObject lifecycle that issue #5297 crashed on.
+        // `downloadAsync()` settles from `didFinishDownloadingTo`, but the
+        // native object only drops its URLSessionTask pointer later, from a
+        // SEPARATE delegate callback — `didCompleteWithError`'s
+        // `defer { finishTask() }`. Until then the pointer is live and
+        // Foundation is already tearing the task down.
+        let nativeTaskPointerLive = false;
+        const dropPointerOnALaterTurn = () => {
+          // A later turn, never the one that settled the promise: that gap is
+          // the whole bug.
+          setTimeout(() => {
+            nativeTaskPointerLive = false;
+          }, 0);
+        };
         return {
           downloadAsync: async () => {
-            const file = await runFakeTransfer(destination, options);
-            return state.taskResolvesNull ? null : file;
+            nativeTaskPointerLive = true;
+            try {
+              const file = await runFakeTransfer(destination, options);
+              return state.taskResolvesNull ? null : file;
+            } finally {
+              dropPointerOnALaterTurn();
+            }
           },
           release: () => {
             state.taskReleases += 1;
+            // `sharedObjectWillRelease()` cancels `downloadTask` with no
+            // completed-task guard. On a live pointer that is a use-after-free
+            // and the process dies; here it is a loud, catchable throw.
+            if (nativeTaskPointerLive) {
+              state.releasesDuringNativeTeardown += 1;
+              throw new Error(
+                'EXC_BAD_ACCESS: FileSystemDownloadTask.sharedObjectWillRelease cancelled a task Foundation is already tearing down',
+              );
+            }
           },
         };
       },
@@ -314,6 +345,7 @@ beforeEach(() => {
   state.files.clear();
   state.taskCalls = [];
   state.taskReleases = 0;
+  state.releasesDuringNativeTeardown = 0;
   state.taskResolvesNull = false;
   state.downloadedFileSize = null;
 });
@@ -665,17 +697,43 @@ describe('fixed download transport', () => {
     expect(signal.aborted).toBe(false);
   });
 
-  it('releases the native task handle on the success AND the throw path', async () => {
-    await mobileSnapshotSource.downloadArtifact(ENTRY);
-    expect(state.taskReleases).toBe(1);
+  // Issue #5297. The handle used to be released in a `finally` on the tick
+  // `downloadAsync()` settled, which runs iOS's `sharedObjectWillRelease()` →
+  // an unguarded `downloadTask?.cancel()` on a task Foundation is already
+  // tearing down. EXC_BAD_ACCESS, and the climber loses the whole ~100 MB
+  // transfer. The fake turns that window into a throw, so a regression here
+  // fails the transfer instead of passing quietly.
+  it('never touches the native task handle on the tick the transfer settles', async () => {
+    const result = await mobileSnapshotSource.downloadArtifact(ENTRY);
 
-    // A different build, so the sidecar the first download wrote cannot short
-    // -circuit this one into the reuse path.
+    expect(result).not.toBeNull();
+    expect(state.releasesDuringNativeTeardown).toBe(0);
+    expect(state.taskReleases).toBe(0);
+  });
+
+  it('leaves the handle alone on the throw path too, and still reports the failure', async () => {
     state.downloadError = new Error('boom');
-    await expect(
-      mobileSnapshotSource.downloadArtifact({ ...ENTRY, builtAt: '2026-06-02T00:00:00.000Z' }),
-    ).rejects.toThrow(/transfer failed/);
-    expect(state.taskReleases).toBe(2);
+
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(/transfer failed/);
+
+    // The rejection must be the transport's, not a fault raised by our own
+    // teardown — a released-handle crash would replace it.
+    expect(state.releasesDuringNativeTeardown).toBe(0);
+    expect(state.taskReleases).toBe(0);
+  });
+
+  it('cancels through the abort signal only, and expo guards that call', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY, { signal: controller.signal })).rejects.toThrow();
+
+    // Not vacuous: the transfer really did reach the task transport.
+    expect(state.taskCalls).toHaveLength(1);
+    // Cancellation has exactly one owner: the signal expo wires to
+    // `DownloadTask.cancel()`. We never add a second, unguarded one.
+    expect(state.releasesDuringNativeTeardown).toBe(0);
+    expect(state.taskReleases).toBe(0);
   });
 
   it('treats a task that resolves null as a failed transfer, not a silent success', async () => {
