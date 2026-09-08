@@ -12,6 +12,7 @@ A new version shipped to the Play Store.
 
 ### New
 
+- Mirror your climb from the Lock Screen or Android notification, then pick up the same mirrored climb in the app. ([#5313](https://github.com/boardsesh/boardsesh/pull/5313))
 - Take turns on walls without LEDs. Your crew and gym screen follow the climb you put up. ([#4762](https://github.com/boardsesh/boardsesh/pull/4762))
   Share a personal wall without lights, keep your chosen angle, and log named-wall sessions from your watch.
 - Holds draw faster: the board renderer no longer shares a line with the rest of the app ([#5210](https://github.com/boardsesh/boardsesh/pull/5210))

@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-08T03:59:57.375Z",
+  "generatedAt": "2026-09-08T04:24:05.421Z",
   "entries": [
+    {
+      "prNumber": 5313,
+      "category": "new",
+      "title": "Mirror your climb from the Lock Screen or Android notification, then pick up the same mirrored climb in the app.",
+      "mergedAt": "2026-09-08T04:08:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5313"
+    },
     {
       "prNumber": 5284,
       "category": "fixed",
@@ -4707,6 +4714,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-08T13:13:09+10:00",
+      "sha": "4489a2448979766009a2675e4b2886d8889a46ef",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "fe6be4f208f1018689ee70874760ebe21340f8cd"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-08T12:42:58+10:00",
