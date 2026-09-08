@@ -126,6 +126,66 @@ importer does not act on it. The app's paginated endpoint filters rows out of it
 own window, so absence from one capture is not proof of deletion. Step 5 reports
 that group instead.
 
+## Residual duplicate reconciliation (#5253)
+
+The third dedup migration combines 0193's live hold-signature grouping with
+0163's same-angle ascent policy. It includes angle-null catalog climbs. Only
+listed, non-draft, single-frame catalog **roots** contribute; user-created climbs,
+retired rows and existing redirects do not. Previously retired rows can still
+carry stats already merged by 0163, so including them would count those ascents
+twice. A listed redirect leaving a signature group blocks that group's merge.
+
+The canonical is the member with the most own-angle upstream ascents, falling
+back to its highest per-angle count when needed; ties use oldest creation date,
+then UUID. Each stats angle stays separate. If every contributing stats row has
+the same case-insensitive name and the same upstream count, use MAX. Otherwise
+use SUM. Null counts count as zero; unknown names cannot prove a double import.
+Grades and upstream quality keep the canonical's non-null values, filling gaps
+from the member graded at that angle, then highest upstream count and UUID.
+Boardsesh ascents and quality are recounted from the surviving tick history.
+
+Climb rows, holds and ticks remain. Aliases and related content follow the
+canonical; duplicate relationship rows follow 0193's existing collision policies
+(latest vote, earliest favourite or playlist entry). Offline tombstones cover
+removed stats and vacated local relationship keys. The semantic guard
+`moonboard_residual_dedup_5253` prevents repeated application from adding counts
+again, even if the migration filename is later renumbered.
+
+Before applying, produce a **read-only** report against the target database:
+
+```sh
+op run --env-file=/tmp/prod-db.env -- \
+  vp run '@boardsesh/db#db:report-moonboard-reconciliation' /path/to/catalog \
+    --previous /path/to/previous-catalog --out reconciliation-before.json
+```
+
+The report uses one repeatable-read, read-only transaction. It lists each
+ambiguous, drifted or hijacked problem with its candidate/owned UUIDs, redirects,
+hold differences, per-angle upstream counts and tick/favourite/playlist/beta
+usage. Group eligibility and the projected skip counts use the migration's
+rules. An ambiguous problem can become a hijacked one after its matching group
+merges: the projection makes that remaining conflict visible.
+
+History compares both raw `moves` and parsed hold fingerprints. Token reordering
+does not count as changed holds. Missing or unparseable historical moves are
+reported as missing evidence, never as proof of an upstream edit. The report
+does not change differing holds or repair conflicting ownership. It creates a
+new JSON file with private permissions and refuses to overwrite an existing file.
+
+Rehearse the migration and catalog import on a disposable database before
+deployment. Measure the migration runtime: 0193's transaction-start sync-cursor
+limitation still applies, so deploy in a quiet window or use a sync stability
+window longer than that runtime. Apply the migration before importing the
+capture again. Run this report afterward with a new output filename, compare
+actual skips with the projection, and retain the differing-hold cases for a
+separate repair. Do not force those problems through the importer guards.
+
+The audited September 7 capture has unchanged raw moves for every problem ID
+also present in the older `app-catalog` capture. That comparison rules out edits
+between those captures; it does not establish how the older database rows got
+their different holds. Captures marked incomplete in the scraper handoff remain
+excluded. Snapshot and alias distribution follow the normal schedules below.
+
 ## Step 3: `required_set_ids`
 
 The importer leaves `required_set_ids` NULL. Until the backfill runs, new climbs

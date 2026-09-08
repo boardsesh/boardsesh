@@ -279,7 +279,7 @@ export default defineConfig({
       'test:db': {
         command: 'pnpm --filter @boardsesh/db run test',
       },
-      // The one packages/db node:test file CI runs (from ci.yml's db-migrations
+      // The migration-journal node:test suite CI runs (from ci.yml's db-migrations
       // job, against its current PostgreSQL service). It builds its own throwaway
       // migrations folder and database, so it needs no board data and no db:up.
       // Locally it skips unless DATABASE_URL/MIGRATION_JOURNAL_DB_URL points at

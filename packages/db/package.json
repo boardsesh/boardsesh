@@ -70,6 +70,11 @@
       "types": "./src/test-utils/sql-text.ts",
       "import": "./src/test-utils/sql-text.ts",
       "default": "./src/test-utils/sql-text.ts"
+    },
+    "./testing/moonboard-residual-dedup-replay": {
+      "types": "./src/testing/moonboard-residual-dedup-replay.ts",
+      "import": "./src/testing/moonboard-residual-dedup-replay.ts",
+      "default": "./src/testing/moonboard-residual-dedup-replay.ts"
     }
   },
   "scripts": {
@@ -107,7 +112,8 @@
     "db:seed-social": "tsx scripts/seed-social.ts",
     "db:create-test-user": "tsx scripts/create-test-user.ts",
     "db:seed-beta-links": "tsx scripts/seed-dev-beta-links.ts",
-    "db:load-snapshots": "tsx scripts/load-board-snapshots.ts"
+    "db:load-snapshots": "tsx scripts/load-board-snapshots.ts",
+    "db:report-moonboard-reconciliation": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/report-moonboard-reconciliation.ts"
   },
   "dependencies": {
     "@boardsesh/board-config": "workspace:*",
