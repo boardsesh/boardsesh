@@ -98,10 +98,30 @@ done
   exit 1
 }
 
-vp run mobile:screenshots -- \
-  --platform android \
-  --flow "$flow" \
-  --backend prod \
-  --device "$device" \
-  ${retarget[@]+"${retarget[@]}"} \
-  --app-path "$apk_path"
+# Bounded retry, mirroring the iOS job's two-attempt shard loop: the dev-client
+# cold start intermittently dies with a native SIGSEGV inside React Native's
+# Fabric mounting (MountingCoordinator::pullTransaction, seen on CI run
+# 34214269041 on the third of four cold launches). A fresh orchestrator run
+# reinstalls the APK, restarts Metro and reruns the whole flow; the emulator
+# stays up. The blank/size gates in the workflow still judge the final set.
+attempts=2
+for attempt in $(seq 1 "$attempts"); do
+  if vp run mobile:screenshots -- \
+    --platform android \
+    --flow "$flow" \
+    --backend prod \
+    --device "$device" \
+    ${retarget[@]+"${retarget[@]}"} \
+    --app-path "$apk_path"; then
+    echo "capture succeeded on attempt ${attempt}/${attempts}"
+    exit 0
+  fi
+  if [ "$attempt" -lt "$attempts" ]; then
+    echo "::warning::capture attempt ${attempt}/${attempts} failed; retrying with a fresh install + Metro"
+    # Let the previous orchestrator's Metro / readiness process group exit and
+    # release their ports before the next attempt binds them.
+    sleep 15
+  fi
+done
+echo "::error::capture failed after ${attempts} attempts"
+exit 1
