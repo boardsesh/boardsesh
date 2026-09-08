@@ -237,6 +237,7 @@ describe('migrateSecureKeysToV2', () => {
       scope: 'auth',
       keys: 2,
       migrated: 1,
+      repaired: 0,
       already_v2: 0,
       absent: 0,
       superseded: 0,

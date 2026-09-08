@@ -1,5 +1,6 @@
 import { createOnceRunner, isMigrationComplete, migrateSecureKeysToV2 } from './keychain-namespace-migration';
 import {
+  SECURE_STORE_TOMBSTONE,
   deleteSecureValue,
   readSecureValue,
   writeSecureValue,
@@ -9,7 +10,6 @@ import {
 const JWT_KEY = 'boardsesh_jwt';
 const REFRESH_TOKEN_KEY = 'boardsesh_refresh_token';
 const EXPIRES_AT_KEY = 'boardsesh_token_expires_at';
-const CLEARED_CREDENTIAL = '__boardsesh_auth_credential_cleared__';
 const AUTH_SECURE_KEYS = [JWT_KEY, REFRESH_TOKEN_KEY, EXPIRES_AT_KEY] as const;
 let credentialGeneration = 0;
 let credentialMutationQueue: Promise<void> = Promise.resolve();
@@ -31,10 +31,12 @@ class AuthCredentialCleanupError extends Error {
 // getStoredCredential rather than a mounted component so it runs off the app's
 // first token read — before AuthProvider has decided whether to render children.
 //
-// The migration treats the CLEARED_CREDENTIAL tombstone as an opaque value and
-// carries it across unchanged: it must stay visible to getStoredCredential in v2,
-// or a signed-out user whose deletion never physically landed would read the live
-// legacy credential through the fallback and be signed back in.
+// The migration treats the SECURE_STORE_TOMBSTONE value as an opaque value and
+// carries it across unchanged: it must stay visible to readSecureValue in v2, or a
+// signed-out user whose deletion never physically landed would read the live legacy
+// credential through the fallback and be signed back in. #5345's freshness stamp
+// keeps that true in the other direction too — a tombstone whose legacy half was
+// rejected records legacy as unknown, and an unknown never out-ranks v2.
 //
 // The pass reports whether it COMPLETED, and only a complete pass latches. A
 // process cold-launched in the background on a locked phone (BGTask, push, Live
@@ -58,8 +60,9 @@ async function getStoredCredential(key: string): Promise<string | null> {
   // too, which is exactly today's behaviour — the migration must never change
   // the outcome of the read it precedes.
   await ensureAuthCredentialsMigrated().catch(() => undefined);
-  const storedCredential = await readSecureValue(key);
-  return storedCredential === CLEARED_CREDENTIAL ? null : storedCredential;
+  // readSecureValue already maps SECURE_STORE_TOMBSTONE to null, in whichever
+  // namespace it lands, so there is nothing left to translate here.
+  return readSecureValue(key);
 }
 
 /**
@@ -72,18 +75,17 @@ async function getStoredCredential(key: string): Promise<string | null> {
  * but what a subsequent getAuthToken would return, which is v2 when v2 has
  * anything and legacy only otherwise.
  *
- * A surviving tombstone counts as cleared. It can only be there because an
- * earlier sign-out already found deletion impossible and overwrote the
- * credential with it, so the credential is gone and getStoredCredential already
- * reads this as null.
+ * A surviving tombstone counts as cleared, and readSecureValue is what makes that
+ * true: it can only be there because an earlier sign-out already found deletion
+ * impossible and overwrote the credential with it, so the credential is gone and
+ * the read reports null.
  *
  * Throws are NOT caught here — a read that fails leaves us unable to tell
  * "deleted" from "still there but unreadable", and each caller has its own
  * (identical, conservative) answer for that: treat it as not cleared.
  */
 async function isStoredCredentialCleared(key: string): Promise<boolean> {
-  const remaining = await readSecureValue(key);
-  return remaining === null || remaining === CLEARED_CREDENTIAL;
+  return (await readSecureValue(key)) === null;
 }
 
 async function clearStoredCredential(key: string): Promise<void> {
@@ -125,7 +127,7 @@ async function clearStoredCredential(key: string): Promise<void> {
     // must not insist on v2: if the v2 write is the one that rejects, a
     // v2-first-then-mirror writer would throw before the legacy write ran and
     // leave the surviving legacy credential readable through the read fallback.
-    await writeSecureValueToEitherNamespace(key, CLEARED_CREDENTIAL);
+    await writeSecureValueToEitherNamespace(key, SECURE_STORE_TOMBSTONE);
     // A landed tombstone is not the same as a cleared credential, and the gap
     // between them is a session that survives its own sign-out. That writer is
     // satisfied by EITHER namespace accepting, so with both namespaces live —

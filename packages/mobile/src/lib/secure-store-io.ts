@@ -16,14 +16,43 @@
 // must never fail the real (v2) write which just succeeded.
 //
 // Phase 2, once this has soaked, drops the mirror, deletes the legacy copies and
-// collapses the read back to a single call. Tracked as the follow-up issue on the
-// #4103 PR.
+// collapses the read back to a single call. Tracked as #4128.
+//
+// Two namespaces means two candidates for "current", and the ORDER above is only
+// right while v2 is the newer one. A bundle rolled back past #4127 writes legacy
+// alone, so its token refresh lands ahead of v2 and the roll-forward would read a
+// stale, already-revoked credential (#5345). Every mutation here therefore stamps
+// what it left in each namespace, and the migration reads that stamp to tell a
+// stale v2 copy from a fresh one — see secure-store-stamp.ts and
+// docs/keychain-namespaces.md.
 //
 // Every mutation also records its key here so a migration pass running
 // concurrently can stand down — see touchedSecureKeys below.
 
 import * as SecureStore from 'expo-secure-store';
 import { SECURE_STORE_V2_OPTIONS, SECURE_STORE_WRITE_OPTIONS, USES_V2_NAMESPACE } from './secure-store-options';
+import {
+  clearNamespaceStamp,
+  fingerprintSecureValue,
+  writeNamespaceStamp,
+  type NamespaceContent,
+} from './secure-store-stamp';
+
+/**
+ * The value that means "this key is gone" to every reader here.
+ *
+ * iOS deletion cannot be confirmed from its result — expo-secure-store's
+ * deleteValueWithKeyAsync discards all three SecItemDelete statuses and never
+ * throws (SecureStoreModule.swift:43-51) — so an item that refuses deletion but
+ * still accepts an overwrite is retired by writing this over it instead.
+ *
+ * The literal is load-bearing and must never change: tombstones written by earlier
+ * builds are sitting in real keychains, and a rename would turn every one of them
+ * back into a readable value. It reads as auth-specific because sign-out is where
+ * it started (#4127); readSecureValue now honours it for every key, so a cleared
+ * preference cannot resurface through the legacy fallback either.
+ */
+export const SECURE_STORE_TOMBSTONE = '__boardsesh_auth_credential_cleared__';
 
 // Keys this process has written or deleted. The migration pass reads it to avoid
 // racing the app: migrateKey reads legacy, then writes that value into v2, and a
@@ -84,8 +113,13 @@ export async function readSecureValue(key: string): Promise<string | null> {
   // A v2 hit ends the read: it is both the current value and the proof this key
   // already migrated, so the legacy copy is never consulted again. That is the
   // whole fix — the legacy read is the one that rejects on a locked device.
-  if (v2Value !== null || !USES_V2_NAMESPACE) return v2Value;
-  return SecureStore.getItemAsync(key);
+  if (v2Value !== null || !USES_V2_NAMESPACE) return liveValue(v2Value);
+  return liveValue(await SecureStore.getItemAsync(key));
+}
+
+/** A tombstone reads as absent, in either namespace. */
+function liveValue(stored: string | null): string | null {
+  return stored === SECURE_STORE_TOMBSTONE ? null : stored;
 }
 
 /** Write to v2, then mirror into legacy for rollback safety (best-effort). */
@@ -93,12 +127,19 @@ export async function writeSecureValue(key: string, value: string): Promise<void
   touchedSecureKeys.add(key);
   await SecureStore.setItemAsync(key, value, SECURE_STORE_V2_OPTIONS);
   if (!USES_V2_NAMESPACE) return;
+  const fingerprint = fingerprintSecureValue(value);
+  let legacyContent: NamespaceContent;
   try {
     await SecureStore.setItemAsync(key, value, SECURE_STORE_WRITE_OPTIONS);
+    legacyContent = fingerprint;
   } catch {
     // Rollback insurance only. The authoritative v2 write already landed, and a
-    // stale legacy copy is harmless while readSecureValue prefers v2.
+    // stale legacy copy is harmless while readSecureValue prefers v2. The stamp
+    // below records legacy as UNKNOWN rather than as this value, which is what
+    // stops a later pass from treating the untouched legacy copy as newer.
+    legacyContent = undefined;
   }
+  await writeNamespaceStamp(key, fingerprint, legacyContent);
 }
 
 /**
@@ -117,11 +158,15 @@ export async function writeSecureValue(key: string, value: string): Promise<void
 export async function writeSecureValueToEitherNamespace(key: string, value: string): Promise<void> {
   touchedSecureKeys.add(key);
   const failures: unknown[] = [];
+  const fingerprint = fingerprintSecureValue(value);
 
+  let v2Content: NamespaceContent;
   try {
     await SecureStore.setItemAsync(key, value, SECURE_STORE_V2_OPTIONS);
+    v2Content = fingerprint;
   } catch (error) {
     failures.push(error);
+    v2Content = undefined;
   }
 
   if (!USES_V2_NAMESPACE) {
@@ -129,15 +174,25 @@ export async function writeSecureValueToEitherNamespace(key: string, value: stri
     return;
   }
 
+  let legacyContent: NamespaceContent;
   try {
     await SecureStore.setItemAsync(key, value, SECURE_STORE_WRITE_OPTIONS);
+    legacyContent = fingerprint;
   } catch (error) {
     failures.push(error);
+    legacyContent = undefined;
   }
 
-  // One landed write is enough: readSecureValue consults v2 first and legacy
-  // second, so either copy is reachable.
+  // Nothing landed, so nothing about the stored state changed and the existing
+  // stamp is still the accurate one. Overwriting it with two unknowns would throw
+  // away a repair we could otherwise still make.
   if (failures.length === 2) throw new SecureStoreWriteError(key, failures);
+
+  // One landed write is enough: readSecureValue consults v2 first and legacy
+  // second, so either copy is reachable. Recording WHICH one landed is what keeps
+  // a sign-out tombstone ahead of the live credential a rejected legacy write left
+  // in place — an unconfirmed side never out-ranks a confirmed one.
+  await writeNamespaceStamp(key, v2Content, legacyContent);
 }
 
 /**
@@ -150,5 +205,38 @@ export async function writeSecureValueToEitherNamespace(key: string, value: stri
 export async function deleteSecureValue(key: string): Promise<void> {
   touchedSecureKeys.add(key);
   await SecureStore.deleteItemAsync(key, SECURE_STORE_V2_OPTIONS);
-  if (USES_V2_NAMESPACE) await SecureStore.deleteItemAsync(key);
+  if (!USES_V2_NAMESPACE) return;
+  await SecureStore.deleteItemAsync(key);
+
+  // Confirm by reading, the way clearStoredCredential already does for
+  // credentials. A delete that reports nothing and did nothing is
+  // indistinguishable from one that worked, and with two namespaces a landed v2
+  // delete beside a silently failed legacy one leaves the old value reachable
+  // through the read fallback — where the next launch's migrateKey would copy it
+  // back into v2 and make it durable.
+  let cleared: boolean;
+  try {
+    cleared = (await readSecureValue(key)) === null;
+  } catch {
+    // Unreadable is not proof of deletion. Tombstone it; on a keychain this
+    // locked the write below rejects too, and nothing is worse off.
+    cleared = false;
+  }
+  if (cleared) {
+    await clearNamespaceStamp(key);
+    return;
+  }
+
+  try {
+    // Some keychain failures reject deletion while still permitting an overwrite.
+    // Written to whichever namespace accepts it, because a tombstone in legacy
+    // alone still shadows nothing while v2 is empty — and readSecureValue treats
+    // it as absent in both.
+    await writeSecureValueToEitherNamespace(key, SECURE_STORE_TOMBSTONE);
+  } catch {
+    // Neither namespace accepts a write and neither accepts a delete. Nothing in
+    // JS can retire the item; the caller's own read still reports what survived.
+    // Callers that must know — sign-out — verify separately and raise their own
+    // error (auth-store's AuthCredentialCleanupError).
+  }
 }
