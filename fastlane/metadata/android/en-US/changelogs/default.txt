@@ -1,5 +1,5 @@
 New in 2.5:
-- Take the wall on a board with no LEDs: your crew and the gym screen follow the climb you put up. Switch Lights off in the board's settings; turns keep rotating and your angle stays put.
-- Mirror your climb straight from the Android notification while your phone drives the board; the app, your crew and the LEDs follow.
-- Downloaded climbs stay up to date after an app update.
-- Closing climb search no longer pops up a stray preview sheet.
+- Works with Woods, front to back: add your 12x12 or 8x10, browse 5,000+ climbs with their rules, light them over Bluetooth, set and remix your own, and mirror a climb so the wall flips with it.
+- Take the wall on a board with no LEDs: your crew and the gym screen follow the climb you put up.
+- Mirror your climb from the Android notification; the app, your crew and the LEDs follow.
+- Holds draw faster. Downloaded climbs stay current after an app update.

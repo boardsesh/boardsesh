@@ -1,5 +1,5 @@
 Nouveautés de la version 2.5 :
-- Prends le mur sur une board sans LED : ton crew et l'écran de la salle suivent le bloc que tu mets. Désactive l'Éclairage dans les réglages de la board ; le tour de rôle continue, ton angle reste.
-- Mets ton bloc en miroir depuis la notification Android quand ton téléphone pilote la board ; l'app, ton crew et les LED suivent.
-- Les blocs téléchargés restent à jour après une mise à jour.
-- Fermer la recherche de blocs ne fait plus surgir de feuille d'aperçu.
+- Compatible Woods de bout en bout : ajoute ta 12x12 ou 8x10, parcours 5 000 blocs et leurs règles, allume-les en Bluetooth, ouvre et remixe les tiens, mets un bloc en miroir et le mur suit.
+- Prends le mur sur une board sans LED : ton crew et l'écran de la salle suivent le bloc que tu mets.
+- Mets ton bloc en miroir depuis la notification Android ; l'app, ton crew et les LED suivent.
+- Les prises s'affichent plus vite et les blocs téléchargés restent à jour.

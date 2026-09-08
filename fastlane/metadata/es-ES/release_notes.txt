@@ -1,5 +1,9 @@
 Novedades de 2.5:
 
+COMPATIBLE CON WOODS, DE PRINCIPIO A FIN
+
+¿Tienes un Woods Board? Añade tu 12x12 o tu 8x10, explora más de 5.000 bloques con sus reglas de igualar y de pies, y enciende cualquiera por Bluetooth. Crea y remezcla tus propios bloques en cualquiera de los dos tamaños (el editor solo ofrece presas que están de verdad en tu muro), espejea un bloque y el muro lo sigue, y usa Anterior, Siguiente y Espejo desde la pantalla de bloqueo y la Dynamic Island. Las presas se dibujan con el aspecto Aura y contornos más nítidos.
+
 TOMA EL MURO, SIN LEDS
 
 ¿Escalas en un plafón sin kit de luces? Toma el muro y toda la sesión sigue el bloque que pones, y la pantalla del rocódromo también. Desactiva Luces en los ajustes del plafón: los turnos siguen rotando, tu ángulo se mantiene y las sesiones en un muro con nombre también se registran desde el reloj.
@@ -10,6 +14,7 @@ Mientras tu teléfono controla el plafón, la actividad en vivo y la Dynamic Isl
 
 CORREGIDO
 
+- Las presas se dibujan más rápido: el renderizado del plafón ya no espera al resto de la app.
 - Tu plafón se queda apagado hasta que tú lo pidas. Un teléfono que vuelve a entrar en alcance horas o días después ya no enciende tu último bloque. La bombilla, el widget y las reconexiones a mitad de bloque lo encienden al instante, como siempre.
 - La pestaña Bloques y su búsqueda ya no se quedan colgadas después de cerrar una lista encima a mitad de sesión. Se acabó forzar el cierre de la app para recuperar la búsqueda.
 - Los bloques descargados se mantienen al día tras actualizar la app.

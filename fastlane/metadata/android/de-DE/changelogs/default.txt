@@ -1,5 +1,5 @@
 Neu in 2.5:
-- Übernimm die Wand an einem Board ohne LEDs: Crew und Hallen-Bildschirm folgen dem Boulder, den du zeigst. Schalt die Beleuchtung in den Board-Einstellungen aus; ihr wechselt euch weiter ab, dein Winkel bleibt.
-- Spiegle deinen Boulder direkt aus der Android-Benachrichtigung, während dein Handy das Board steuert; App, Crew und LEDs folgen.
-- Heruntergeladene Boulder bleiben nach einem App-Update aktuell.
-- Die Boulder-Suche schließt sich, ohne dass ein Vorschau-Sheet aufspringt.
+- Läuft mit Woods, von vorn bis hinten: Leg dein 12x12 oder 8x10 an, stöbere in über 5.000 Bouldern mit ihren Regeln, beleuchte sie per Bluetooth, bau und remixe eigene, spiegle einen Boulder, das Board zieht mit.
+- Übernimm die Wand an einem Board ohne LEDs: Crew und Hallen-Bildschirm folgen dem Boulder, den du zeigst.
+- Spiegle deinen Boulder aus der Android-Benachrichtigung; App, Crew und LEDs folgen.
+- Griffe zeichnen schneller; geladene Boulder bleiben nach Updates aktuell.
