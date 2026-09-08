@@ -1198,23 +1198,16 @@ export type RecentBetaVideo = Omit<RecentBetaLinkGqlRow, 'betaLink'> & {
 };
 
 /**
- * Narrow recent beta-link rows to the shelf the client actually shows:
- * scoped to the selected layout, video-only, deduped by stable video
- * identity, and capped at `limit`. A null `layoutId` means "any layout".
+ * Narrow recent beta-link rows to beta videos, dedupe by stable video identity,
+ * and cap the shelf at `limit`. The backend applies the requested board/layout
+ * scope before its result limit, so filtering here would reintroduce starvation.
  * Exported for tests; production callers go through `useRecentBetaLinks`.
  */
-export function selectRecentBetaVideos(
-  rows: RecentBetaLinkGqlRow[],
-  layoutId: number | null | undefined,
-  limit: number,
-): RecentBetaVideo[] {
+export function selectRecentBetaVideos(rows: RecentBetaLinkGqlRow[], limit: number): RecentBetaVideo[] {
   const seenIdentities = new Set<string>();
   const videos: RecentBetaVideo[] = [];
 
   for (const row of rows) {
-    // Beta is board-specific: a Kilter Original beta is useless on a Kilter
-    // Homewall, so scope to the selected board's layout too, not just type.
-    if (layoutId != null && row.layoutId !== layoutId) continue;
     const betaLink = mapBetaLink(row.betaLink);
     if (!isBetaVideoUrl(betaLink.link)) continue;
     const identity = betaLinkIdentity(betaLink.link);
@@ -1248,14 +1241,12 @@ export function useRecentBetaLinks(limit = 20, boardType?: string | null, layout
       getHttpClient().request<GetRecentBetaLinksQueryResponse, GetRecentBetaLinksQueryVariables>(
         GET_RECENT_BETA_LINKS,
         {
-          // Over-fetch when a layout is set so the client-side layout filter
-          // below still fills the shelf (the server query only narrows by board
-          // type). A backend `layoutId` arg would let us drop this.
-          limit: layoutId != null ? limit * 4 : limit,
+          limit,
           boardType,
+          layoutId,
         },
       ),
-    select: (data) => selectRecentBetaVideos(data.recentBetaLinks, layoutId, limit),
+    select: (data) => selectRecentBetaVideos(data.recentBetaLinks, limit),
     enabled,
     staleTime: 5 * 60 * 1000,
   });

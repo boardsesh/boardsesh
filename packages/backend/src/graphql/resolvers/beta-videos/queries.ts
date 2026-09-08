@@ -1,3 +1,4 @@
+import { GraphQLError } from 'graphql';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { eq, and, desc, isNotNull, like, or, sql } from 'drizzle-orm';
@@ -67,20 +68,18 @@ const HOME_PER_USER_CAP = 3;
 // with a long TTL refreshed at deploy via a distributed lock, plus
 // invalidation on writes for snappier feedback.
 //
-// Cache key is intentionally parameter-free — we store the unfiltered,
-// uncapped (post-window-cap) row set and let the resolver slice by
-// `limit` + filter by `boardType` in JavaScript. One cache key covers
-// every caller.
-const RECENT_BETA_LINKS_REDIS_KEY = 'boardsesh:recent-beta-links';
+// Scope the cache before the CTE's per-user cap and total limit. Filtering a
+// global top-N result in JavaScript can otherwise leave a board/layout with an
+// empty strip even when it has fresh beta links further down the table.
+const RECENT_BETA_LINKS_REDIS_KEY_PREFIX = 'boardsesh:recent-beta-links';
+const RECENT_BETA_LINKS_REDIS_GENERATION_KEY = `${RECENT_BETA_LINKS_REDIS_KEY_PREFIX}:generation`;
 // 24 h TTL: beta-link content rotates faster than popular-board catalog,
 // but writes bust the cache anyway. TTL is the safety net, not the
 // primary freshness mechanism.
 const RECENT_BETA_LINKS_REDIS_TTL_SECONDS = 24 * 60 * 60;
 const RECENT_BETA_LINKS_REDIS_LOCK_KEY = 'boardsesh:recent-beta-links:lock';
 const RECENT_BETA_LINKS_REDIS_LOCK_TTL_SECONDS = 120;
-// Cache up to 2x the public max so JS-side `boardType` filtering still has
-// headroom and a single boardType call can return MAX_LIMIT rows.
-const RECENT_BETA_LINKS_CACHE_SIZE = RECENT_BETA_LINKS_MAX_LIMIT * 2;
+const RECENT_BETA_LINKS_CACHE_SIZE = RECENT_BETA_LINKS_MAX_LIMIT;
 
 // Extract an Instagram handle from `userProfiles.instagramUrl`. The field
 // holds a profile URL — we only want the handle so we can match against
@@ -305,15 +304,29 @@ type CachedRecentBetaLinkRow = {
   layout_id: number | null;
 };
 
+type RecentBetaLinksScope = {
+  boardType: string | null;
+  layoutId: number | null;
+};
+
+function recentBetaLinksScopeKey(scope: RecentBetaLinksScope): string {
+  if (!scope.boardType) return 'global';
+  const boardType = encodeURIComponent(scope.boardType);
+  if (scope.layoutId === null) return `board:${boardType}`;
+  return `board:${boardType}:layout:${scope.layoutId}`;
+}
+
+function recentBetaLinksCacheKey(scopeKey: string, generation: string): string {
+  return `${RECENT_BETA_LINKS_REDIS_KEY_PREFIX}:${scopeKey}:v${generation}`;
+}
+
 /**
- * Run the actual CTE that powers the home strip. Returns the unfiltered,
- * uncapped (post-window-cap) top-N rows ordered by `created_at DESC`. No
- * boardType arg — we cache one global result set and filter in JS at the
- * resolver layer.
+ * Run the actual CTE that powers the home strip. Scope predicates must be
+ * inside the CTE, before the per-user ranking and total limit.
  */
-async function runRecentBetaLinksQuery(): Promise<CachedRecentBetaLinkRow[]> {
+async function runRecentBetaLinksQuery(scope: RecentBetaLinksScope): Promise<CachedRecentBetaLinkRow[]> {
   const result = await db.execute<CachedRecentBetaLinkRow>(sql`
-    WITH ranked AS (
+    WITH scoped AS (
       SELECT
         bl.board_type,
         bl.climb_uuid,
@@ -326,17 +339,23 @@ async function runRecentBetaLinksQuery(): Promise<CachedRecentBetaLinkRow[]> {
         bl.tick_uuid,
         bl.board_id,
         bc.name AS climb_name,
-        bc.layout_id AS layout_id,
-        ROW_NUMBER() OVER (
-          PARTITION BY bl.foreign_username
-          ORDER BY bl.created_at DESC
-        ) AS user_rank
+        bc.layout_id AS layout_id
       FROM ${dbSchema.boardBetaLinks} bl
       LEFT JOIN ${dbSchema.boardClimbs} bc
         ON bc.board_type = bl.board_type AND bc.uuid = bl.climb_uuid
       WHERE bl.is_listed = true
         AND bl.thumbnail IS NOT NULL
         AND bl.thumbnail LIKE ${`${STATIC_THUMBNAIL_PREFIX}%`}
+        ${scope.boardType ? sql`AND bl.board_type = ${scope.boardType}` : sql``}
+        ${scope.layoutId !== null ? sql`AND bc.layout_id = ${scope.layoutId}` : sql``}
+    ), ranked AS (
+      SELECT
+        scoped.*,
+        ROW_NUMBER() OVER (
+          PARTITION BY scoped.foreign_username
+          ORDER BY scoped.created_at DESC
+        ) AS user_rank
+      FROM scoped
     )
     SELECT board_type, climb_uuid, link, foreign_username, angle, thumbnail, is_listed, created_at, tick_uuid, board_id, climb_name, layout_id
     FROM ranked
@@ -353,19 +372,17 @@ async function runRecentBetaLinksQuery(): Promise<CachedRecentBetaLinkRow[]> {
  * (same fall-through pattern as `getPopularConfigs` in social/boards.ts).
  */
 /**
- * One key for every caller, deliberately: the CTE below fetches a fixed
- * RECENT_BETA_LINKS_CACHE_SIZE rows regardless of the caller's `limit`, which
- * the resolver then slices. So two concurrent callers asking for different
- * limits are asking for the same statement — the same reason the Redis key
- * isn't parameterised either.
+ * Calls with the same canonical scope join one in-flight CTE; different board
+ * or layout scopes execute independently. The generation is part of the key
+ * so a caller after an invalidation never joins a pre-write read.
  */
-const RECENT_BETA_LINKS_FLIGHT_KEY = 'recent-beta-links';
+const RECENT_BETA_LINKS_FLIGHT_KEY_PREFIX = 'recent-beta-links';
 
 /**
  * Redis-less fallback, mirroring `getPopularConfigs`. Never read or written
  * when a shared cache is available, so production behaviour is unchanged.
  */
-let localFallbackRows: { rows: CachedRecentBetaLinkRow[]; expiresAt: number } | null = null;
+const localFallbackRows = new Map<string, { rows: CachedRecentBetaLinkRow[]; expiresAt: number }>();
 
 /**
  * Bumped on every invalidation. A CTE that was already running when a climber
@@ -382,37 +399,47 @@ let fallbackGeneration = 0;
  * next from the previous one's fixture.
  */
 export function dropRecentBetaLinksFallback(): void {
-  localFallbackRows = null;
+  localFallbackRows.clear();
   fallbackGeneration += 1;
 }
 
-async function getCachedRecentBetaLinks(): Promise<CachedRecentBetaLinkRow[]> {
+async function getRedisGeneration(): Promise<string> {
+  const { publisher } = redisClientManager.getClients();
+  return (await publisher.get(RECENT_BETA_LINKS_REDIS_GENERATION_KEY)) ?? '0';
+}
+
+async function getCachedRecentBetaLinks(scope: RecentBetaLinksScope): Promise<CachedRecentBetaLinkRow[]> {
+  const scopeKey = recentBetaLinksScopeKey(scope);
+  const localGeneration = fallbackGeneration;
+  let redisGeneration: string | null = null;
   if (redisClientManager.isRedisConnected()) {
     try {
+      redisGeneration = await getRedisGeneration();
       const { publisher } = redisClientManager.getClients();
-      const cached = await publisher.get(RECENT_BETA_LINKS_REDIS_KEY);
+      const cached = await publisher.get(recentBetaLinksCacheKey(scopeKey, redisGeneration));
       if (cached) {
         return JSON.parse(cached) as CachedRecentBetaLinkRow[];
       }
     } catch (err) {
       logger.error('[RecentBetaLinks] Redis read failed:', err);
     }
-  } else if (localFallbackRows && localFallbackRows.expiresAt > Date.now()) {
-    return localFallbackRows.rows;
+  } else {
+    const fallback = localFallbackRows.get(scopeKey);
+    if (fallback && fallback.expiresAt > Date.now()) return fallback.rows;
   }
 
   // Same pool-exhaustion hazard as popularBoardConfigs (#4463): the other half
   // of the home page's cold read. One in-flight copy per process, joined by
   // every concurrent caller.
-  return singleFlight(RECENT_BETA_LINKS_FLIGHT_KEY, async () => {
-    const generationAtStart = fallbackGeneration;
-    const rows = await runRecentBetaLinksQuery();
+  const generation = redisGeneration ?? String(localGeneration);
+  return singleFlight(`${RECENT_BETA_LINKS_FLIGHT_KEY_PREFIX}:${scopeKey}:v${generation}`, async () => {
+    const rows = await runRecentBetaLinksQuery(scope);
 
     if (redisClientManager.isRedisConnected()) {
       try {
         const { publisher } = redisClientManager.getClients();
         await publisher.set(
-          RECENT_BETA_LINKS_REDIS_KEY,
+          recentBetaLinksCacheKey(scopeKey, redisGeneration ?? '0'),
           JSON.stringify(rows),
           'EX',
           RECENT_BETA_LINKS_REDIS_TTL_SECONDS,
@@ -420,8 +447,8 @@ async function getCachedRecentBetaLinks(): Promise<CachedRecentBetaLinkRow[]> {
       } catch (err) {
         logger.error('[RecentBetaLinks] Redis write failed:', err);
       }
-    } else if (fallbackGeneration === generationAtStart) {
-      localFallbackRows = { rows, expiresAt: Date.now() + REDISLESS_FALLBACK_TTL_MS };
+    } else if (fallbackGeneration === localGeneration) {
+      localFallbackRows.set(scopeKey, { rows, expiresAt: Date.now() + REDISLESS_FALLBACK_TTL_MS });
     }
     return rows;
   });
@@ -457,8 +484,12 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
       logger.info('[RecentBetaLinks] Another node is refreshing the cache, skipping');
       return;
     }
-    // Winning node: delete stale cache so getCachedRecentBetaLinks() runs the SQL query
-    await publisher.del(RECENT_BETA_LINKS_REDIS_KEY);
+    // Winning node: delete the current global scope so getCachedRecentBetaLinks()
+    // runs the SQL query. Scoped mobile reads warm on demand.
+    const generation = await getRedisGeneration();
+    await publisher.del(
+      recentBetaLinksCacheKey(recentBetaLinksScopeKey({ boardType: null, layoutId: null }), generation),
+    );
   } catch (err) {
     logger.error('[RecentBetaLinks] Redis lock failed:', err);
     return;
@@ -466,7 +497,7 @@ export async function warmRecentBetaLinksCache(): Promise<void> {
 
   logger.info('[RecentBetaLinks] Refreshing cache...');
   try {
-    const rows = await getCachedRecentBetaLinks();
+    const rows = await getCachedRecentBetaLinks({ boardType: null, layoutId: null });
     logger.info(`[RecentBetaLinks] Cache warmed with ${rows.length} rows`);
   } catch (err) {
     logger.error('[RecentBetaLinks] Cache warm-up failed:', err);
@@ -485,7 +516,9 @@ export async function invalidateRecentBetaLinksCache(): Promise<void> {
   if (!redisClientManager.isRedisConnected()) return;
   try {
     const { publisher } = redisClientManager.getClients();
-    await publisher.del(RECENT_BETA_LINKS_REDIS_KEY);
+    // A generation in every scope key makes invalidation atomic for global,
+    // board, and board-layout caches without scanning Redis for matching keys.
+    await publisher.incr(RECENT_BETA_LINKS_REDIS_GENERATION_KEY);
   } catch (err) {
     logger.error('[RecentBetaLinks] Redis invalidation failed:', err);
   }
@@ -567,20 +600,22 @@ export const betaLinkQueries = {
   //
   // Wrapped in a Redis cache (see `getCachedRecentBetaLinks` below) because
   // the underlying CTE was slow enough in production to starve the DB
-  // connection pool. The cache holds the unfiltered top-N; this resolver
-  // slices by `limit` and filters by `boardType` in JavaScript so every
-  // call hits the same cache key.
+  // connection pool. The cache holds the top-N rows for the requested scope;
+  // the resolver only slices by `limit` after that scoped query completes.
   recentBetaLinks: async (
     _: unknown,
-    { limit, boardType }: { limit?: number | null; boardType?: string | null },
+    { limit, boardType, layoutId }: { limit?: number | null; boardType?: string | null; layoutId?: number | null },
   ): Promise<RecentBetaLinkResult[]> => {
     const cappedLimit = Math.min(Math.max(limit ?? RECENT_BETA_LINKS_DEFAULT_LIMIT, 1), RECENT_BETA_LINKS_MAX_LIMIT);
+    if (layoutId !== null && layoutId !== undefined && !boardType) {
+      throw new GraphQLError('layoutId requires boardType', { extensions: { code: 'BAD_USER_INPUT' } });
+    }
+    const scope: RecentBetaLinksScope = { boardType: boardType ?? null, layoutId: layoutId ?? null };
 
-    const cached = await getCachedRecentBetaLinks();
+    const cached = await getCachedRecentBetaLinks(scope);
 
     const filtered: RecentBetaLinkResult[] = [];
     for (const r of cached) {
-      if (boardType && r.board_type !== boardType) continue;
       if (isKayaClimbUrl(r.link)) continue;
       // The CTE filters `thumbnail LIKE '/static/beta-link-thumbnails/%'`,
       // so every cached row's thumbnail is already on our static prefix —
