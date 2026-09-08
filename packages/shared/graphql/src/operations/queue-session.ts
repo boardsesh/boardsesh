@@ -172,8 +172,8 @@ export const SET_CURRENT_CLIMB = `
 `;
 
 export const MIRROR_CURRENT_CLIMB = `
-  mutation MirrorCurrentClimb($mirrored: Boolean!) {
-    mirrorCurrentClimb(mirrored: $mirrored) {
+  mutation MirrorCurrentClimb($mirrored: Boolean!, $expectedQueueItemUuid: ID) {
+    mirrorCurrentClimb(mirrored: $mirrored, expectedQueueItemUuid: $expectedQueueItemUuid) {
       ${QUEUE_ITEM_FIELDS}
     }
   }

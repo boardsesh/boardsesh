@@ -81,6 +81,7 @@ final class SessionWebSocketManager {
     // MARK: - Connection State
 
     private var urlSession: URLSession
+    private var subscriptionSequence = -1
     private var webSocketTask: URLSessionWebSocketTask?
     private(set) var isConnected = false
     private var subscriptionId: String = "1"
@@ -168,6 +169,7 @@ final class SessionWebSocketManager {
         // of the old one), so a sequence carried over from the previous
         // connection must not gap-check the new stream.
         self.lastSequence = -1
+        self.subscriptionSequence = SharedConstants.sharedDefaults.map { SharedMirrorState.sequence(in: $0) } ?? -1
 
         let urlString: String
         if let wsUrl = self.wsUrl, !wsUrl.isEmpty {
@@ -493,12 +495,21 @@ final class SessionWebSocketManager {
         )
         queueItems = newState.items
         currentIndex = newState.currentIndex
-        persistAndNotify(repaintBoard: QueueEventRepaintPolicy.shouldRepaintBoard(for: event))
+        let fullSyncSequence: Int?
+        if case .fullSync = event { fullSyncSequence = subscriptionSequence } else { fullSyncSequence = nil }
+        persistAndNotify(repaintBoard: QueueEventRepaintPolicy.shouldRepaintBoard(for: event), subscriptionSequence: fullSyncSequence)
     }
 
-    private func persistAndNotify(repaintBoard: Bool = false) {
+    private func persistAndNotify(repaintBoard: Bool = false, subscriptionSequence: Int? = nil) {
         if let defaults = SharedConstants.sharedDefaults {
-            SharedQueueState.save(items: queueItems, currentIndex: currentIndex, to: defaults)
+            // HTTP mirror may be ahead of this socket's buffered deltas. Reduce those
+            // internally until it catches up, without repainting an older wall state.
+            guard SharedMirrorState.persist(items: queueItems, currentIndex: currentIndex, sequence: lastSequence, subscriptionSequence: subscriptionSequence, in: defaults) else {
+                // The FullSync was requested before a newer mirror confirmation.
+                // Reconnect so a fresh authoritative snapshot can safely rebaseline.
+                if subscriptionSequence != nil { webSocketTask?.cancel(with: .goingAway, reason: nil) }
+                return
+            }
         }
         if repaintBoard {
             BoardBleManager.shared.displayCurrentItem(items: queueItems, currentIndex: currentIndex)

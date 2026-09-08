@@ -596,7 +596,7 @@ export function useSessionRealtime({
             // sequence slot).
             gate.noteApplied(gateEvent);
             if (result.kind !== 'dispatch') return;
-            dispatch(result.action);
+            dispatch({ ...result.action, serverSequence: gateEvent.sequence ?? undefined });
             switch (result.eventType) {
               case 'QueueItemAdded': {
                 // The server echoes our own adds back to us. A locally

@@ -20,14 +20,19 @@ enum LiveActivityBleBridge {
     /// the global write queue drained inside its existing timeout. This is
     /// diagnostic-only; failed or late writes keep their existing behavior.
     @discardableResult
-    static func writeBoardForIntent(items: [SharedQueueItem], currentIndex: Int) async -> Bool {
+    static func writeBoardForIntent(items: [SharedQueueItem], currentIndex: Int, mirrorReceipt: SharedMirrorConfirmation? = nil) async -> Bool {
         let task = BleIntentBackgroundTask()
         task.begin(name: "ble-display-intent")
         defer { task.end() }
         return await BoardBleManager.shared.displayCurrentItemAwaitingReady(
             items: items,
             currentIndex: currentIndex,
-            readyTimeout: 3.0
+            readyTimeout: 3.0,
+            stillCurrent: {
+                guard let mirrorReceipt else { return true }
+                guard let defaults = SharedConstants.sharedDefaults else { return false }
+                return SharedMirrorState.isCurrent(mirrorReceipt, in: defaults)
+            }
         )
     }
 

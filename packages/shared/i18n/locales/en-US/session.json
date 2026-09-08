@@ -476,6 +476,8 @@
         "contentTitleFallback": "Climbing session",
         "previous": "Previous",
         "next": "Next",
+        "mirror": "Mirror climb",
+        "unmirror": "Unmirror climb",
         "relight": "Relight wall",
         "reconnect": "Connect to board",
         "onWall": "{{name}} is on the wall"

@@ -112,6 +112,9 @@ enum ClimbNavigationIntent {
             hasNext: newIndex < items.count - 1,
             hasPrevious: newIndex > 0,
             climbUuid: newItem.climbUuid,
+            queueItemUuid: newItem.uuid,
+            mirrored: newItem.mirrored,
+            supportsMirroring: defaults.bool(forKey: SharedConstants.supportsMirroringKey),
             // Prev/Next are only shown when this device drives the wall, so the
             // optimistic frame keeps the bulb lit + controls shown.
             boardConnection: "connectedByMe",

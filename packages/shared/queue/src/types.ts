@@ -113,6 +113,8 @@ export type ClimbRegradePatch = {
 export type QueueSearchParams = Record<string, unknown>;
 
 export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchParams> = {
+  /** Server sequence committed with this queue snapshot. */
+  serverSequence?: number;
   queue: ClimbQueue;
   currentClimbQueueItem: ClimbQueueItem | null;
   climbSearchParams: TSearchParams;
@@ -123,6 +125,11 @@ export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchPara
 };
 
 export type QueueAction<TSearchParams extends QueueSearchParams = QueueSearchParams> =
+  QueueActionPayload<TSearchParams> & {
+    serverSequence?: number;
+  };
+
+type QueueActionPayload<TSearchParams extends QueueSearchParams> =
   | { type: 'ADD_TO_QUEUE'; payload: ClimbQueueItem }
   | { type: 'REMOVE_FROM_QUEUE'; payload: ClimbQueueItem[] }
   | { type: 'SET_CURRENT_CLIMB'; payload: ClimbQueueItem }

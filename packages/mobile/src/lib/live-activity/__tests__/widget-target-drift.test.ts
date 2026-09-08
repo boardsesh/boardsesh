@@ -35,6 +35,8 @@ const DUPLICATED_FILES = [
   'SharedKeychain.swift',
   'TakeControlIntent.swift',
   'WidgetNetworking.swift',
+  'SharedMirrorState.swift',
+  'MirrorClimbIntent.swift',
 ];
 
 function sha(path: string): string {
@@ -46,6 +48,7 @@ const RECORDER_SYMBOL_PATTERN = /LiveActivityIntentDiagnostic|diagnosticRun|comp
 const PRODUCTION_WIDGET_COMPILATION_CONDITIONS = new Set(['WIDGET_EXTENSION']);
 
 const TYPESCRIPT_DIAGNOSTIC_KINDS = {
+  mirrorClimb: true,
   nextClimb: true,
   previousClimb: true,
   takeControl: true,
@@ -238,7 +241,12 @@ describe('Widget target Swift drift', () => {
   });
 
   it('guards every shared-intent recorder call from widget compilation', () => {
-    const instrumentedFiles = ['ClimbNavigationIntent.swift', 'TakeControlIntent.swift', 'ReconnectBoardIntent.swift'];
+    const instrumentedFiles = [
+      'ClimbNavigationIntent.swift',
+      'TakeControlIntent.swift',
+      'ReconnectBoardIntent.swift',
+      'MirrorClimbIntent.swift',
+    ];
 
     for (const file of instrumentedFiles) {
       const source = readFileSync(join(WIDGET_TARGET, file), 'utf8');
@@ -292,6 +300,7 @@ describe('Widget target Swift drift', () => {
     }).sort();
 
     expect(intentTypes).toEqual([
+      'MirrorClimbIntent',
       'NextClimbIntent',
       'PreviousClimbIntent',
       'ReconnectBoardIntent',

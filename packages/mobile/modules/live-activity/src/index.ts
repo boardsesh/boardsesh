@@ -215,6 +215,7 @@ export type LiveActivityStartSessionOptions = {
   authToken?: string;
   wsUrl?: string;
   graphqlUrl?: string;
+  supportsMirroring?: boolean;
   widgetNavigationAllowed: boolean;
   isPartySession: boolean;
   /** Board-connection state from this device's POV (see the type doc). */
@@ -249,6 +250,8 @@ export type LiveActivityStartSessionOptions = {
     contentTitleFallback: string;
     previousLabel: string;
     nextLabel: string;
+    mirrorLabel?: string;
+    unmirrorLabel?: string;
     /** Lightbulb action label while this device drives the wall (connectedByMe). */
     relightLabel: string;
     /** Lightbulb action label while a peer holds it / nobody is driving. */
@@ -270,6 +273,10 @@ export type LiveActivityQueueItem = {
 };
 
 export type LiveActivityUpdateOptions = {
+  sessionId?: string;
+  queueSequence?: number;
+  queueItemUuid?: string;
+  mirrored?: boolean;
   climbName: string;
   climbDifficulty: string;
   angle: number;
@@ -279,6 +286,7 @@ export type LiveActivityUpdateOptions = {
   hasPrevious: boolean;
   climbUuid: string;
   queue: LiveActivityQueueItem[];
+  supportsMirroring?: boolean;
   widgetNavigationAllowed: boolean;
   isPartySession: boolean;
   /** Board-connection state from this device's POV (see the type doc). */
@@ -304,13 +312,27 @@ export type LiveActivityUpdateOptions = {
 
 export type LiveActivityClimbUpdateOptions = Omit<LiveActivityUpdateOptions, 'queue'>;
 
+export type WidgetMirrorEvent = {
+  sessionId: string;
+  queueItemUuid: string;
+  mirrored: boolean;
+} & (
+  | { kind: 'request' }
+  | { kind: 'confirmed'; sequence: number; stateHash: string; stateHashOrdered?: string | null }
+);
+
 export type WidgetQueueNavigateEvent = {
   action: 'next' | 'previous';
   currentIndex: number;
   correlationId: string;
 };
 
-export type LiveActivityIntentDiagnosticKind = 'nextClimb' | 'previousClimb' | 'takeControl' | 'reconnectBoard';
+export type LiveActivityIntentDiagnosticKind =
+  | 'mirrorClimb'
+  | 'nextClimb'
+  | 'previousClimb'
+  | 'takeControl'
+  | 'reconnectBoard';
 
 export type LiveActivityIntentDiagnosticStage =
   | 'entered'
@@ -361,6 +383,9 @@ export type BoardControlEvent = {
 };
 
 type LiveActivityNativeModule = {
+  supportsMirrorControl?: boolean;
+  getPendingMirror?(): Promise<WidgetMirrorEvent | null>;
+  acknowledgeMirror?(sessionId: string, sequence: number): Promise<void>;
   isAvailable(): Promise<{ available: boolean }>;
   startSession(options: LiveActivityStartSessionOptions): Promise<void>;
   endSession(): Promise<void>;
@@ -370,6 +395,7 @@ type LiveActivityNativeModule = {
   markIntentReactRootMounted?(): Promise<void>;
   /** Optional for OTA compatibility with binaries predating #4077. */
   consumeInterruptedIntentRuns?(): Promise<InterruptedLiveActivityIntentDiagnostic[]>;
+  addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
 };
 
@@ -385,11 +411,13 @@ export const liveActivityNative = requireOptionalNativeModule<LiveActivityNative
 // requireOptionalNativeModule returns null on iOS (where 'LiveActivity'/'BoardBle'
 // are the live modules) and in Expo Go / pre-module builds.
 type SessionPresenceNativeModule = {
+  supportsMirrorControl?: boolean;
   isAvailable(): Promise<{ available: boolean }>;
   startSession(options: LiveActivityStartSessionOptions): Promise<void>;
   endSession(): Promise<void>;
   updateActivity(options: LiveActivityUpdateOptions): Promise<void>;
   updateActivityClimb(options: LiveActivityClimbUpdateOptions): Promise<void>;
+  addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
   // Android-only: lightbulb taps on the ongoing notification (reconnect/reassert).
   addListener(event: 'boardControl', listener: (payload: BoardControlEvent) => void): EventSubscription;

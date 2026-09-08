@@ -152,6 +152,17 @@ actor LiveActivityManager {
             return
         }
 
+        // Queued JS/socket work may resume after a newer mirror confirmation.
+        // Read the committed snapshot here, on the actor, immediately before publishing.
+        var state = state
+        if let defaults = SharedConstants.sharedDefaults {
+            guard activity.attributes.sessionId == defaults.string(forKey: SharedConstants.sessionIdKey) else { return }
+            let (items, index) = SharedQueueState.load(from: defaults)
+            if let latestState = Self.buildContentState(items: items, currentIndex: index) {
+                state = latestState
+            }
+        }
+
         // The ping timeout timer refreshes the stale date every 60s while
         // the native WebSocket is healthy, and each JS updateActivity call
         // also resets it. If all update paths fail for the stale interval,
@@ -305,6 +316,9 @@ actor LiveActivityManager {
             hasNext: currentIndex < items.count - 1,
             hasPrevious: currentIndex > 0,
             climbUuid: item.climbUuid,
+            queueItemUuid: item.uuid,
+            mirrored: item.mirrored,
+            supportsMirroring: SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false,
             boardConnection: boardConnection,
             holderDisplayName: holderDisplayName
         )

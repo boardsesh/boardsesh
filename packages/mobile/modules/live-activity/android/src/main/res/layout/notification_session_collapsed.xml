@@ -46,4 +46,14 @@
             android:ellipsize="end"
             android:textAppearance="@style/TextAppearance.Compat.Notification.Info" />
     </LinearLayout>
+    <ImageButton
+        android:id="@+id/session_mirror"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="center_vertical"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_mirror"
+        android:padding="12dp"
+        android:visibility="gone"
+        tools:ignore="ContentDescription" />
 </LinearLayout>

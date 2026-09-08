@@ -1,3 +1,4 @@
+import { boardSupportsMirroring } from '@boardsesh/board-config';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import type { ClimbQueueItem } from '@boardsesh/queue';
@@ -28,12 +29,15 @@ type AndroidNotificationStrings = {
   contentTitleFallback: string;
   previousLabel: string;
   nextLabel: string;
+  mirrorLabel?: string;
+  unmirrorLabel?: string;
   relightLabel: string;
   reconnectLabel: string;
   onWallTemplate: string;
 };
 
 type UseLiveActivityOptions = {
+  queueSequence?: number;
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
   board: BoardConfig | null;
@@ -145,6 +149,7 @@ async function resolveBoardBackgroundPaths(board: BoardConfig): Promise<string[]
 // circuits at the plugin layer (the selected module is null), so this hook is
 // safe to mount unconditionally.
 export function useLiveActivity({
+  queueSequence,
   queue,
   currentClimbQueueItem,
   board,
@@ -203,6 +208,8 @@ export function useLiveActivity({
   overlayValidatorRef.current = validateAndroidThumbnailOverlay;
   const backgroundPathsRef = useRef(androidThumbnailBackgroundPaths);
   backgroundPathsRef.current = androidThumbnailBackgroundPaths;
+  const queueSequenceRef = useRef(queueSequence);
+  queueSequenceRef.current = queueSequence;
   const queueRef = useRef(queue);
   queueRef.current = queue;
   const currentClimbRef = useRef(currentClimbQueueItem);
@@ -338,6 +345,7 @@ export function useLiveActivity({
             layoutId: stableBoard.layoutId,
             sizeId: stableBoard.sizeId,
             setIds: stableBoard.setIds,
+            supportsMirroring: boardSupportsMirroring(stableBoard.boardName, stableBoard.layoutId),
             widgetNavigationAllowed: widgetNavigationAllowedRef.current,
             isPartySession: isPartySessionRef.current,
             boardConnection: boardConnectionRef.current,
@@ -365,7 +373,12 @@ export function useLiveActivity({
             hasNext: idx < q.length - 1,
             hasPrevious: idx > 0,
             climbUuid: displayItem.climb.uuid,
+            sessionId: sessionIdRef.current ?? undefined,
+            queueSequence: queueSequenceRef.current,
+            queueItemUuid: displayItem.uuid,
+            mirrored: displayItem.climb.mirrored === true,
             queue: serializedQueueRef.current,
+            supportsMirroring: boardSupportsMirroring(stableBoard.boardName, stableBoard.layoutId),
             widgetNavigationAllowed: widgetNavigationAllowedRef.current,
             isPartySession: isPartySessionRef.current,
             boardConnection: boardConnectionRef.current,
@@ -463,7 +476,12 @@ export function useLiveActivity({
       hasNext: currentIndex < queueRef.current.length - 1,
       hasPrevious: currentIndex > 0,
       climbUuid: displayItem.climb.uuid,
+      sessionId: sessionIdRef.current ?? undefined,
+      queueSequence: queueSequenceRef.current,
+      queueItemUuid: displayItem.uuid,
+      mirrored: displayItem.climb.mirrored === true,
       queue: serializedQueue,
+      supportsMirroring: boardSupportsMirroring(stableBoard.boardName, stableBoard.layoutId),
       widgetNavigationAllowed,
       isPartySession,
       boardConnection,
@@ -487,6 +505,7 @@ export function useLiveActivity({
     // its thumbnail in the new mode.
     renderMode,
     serializedQueue,
+    queueSequence,
     stableBoard,
     widgetNavigationAllowed,
   ]);
@@ -511,6 +530,11 @@ export function useLiveActivity({
       hasNext: currentIndex < queue.length - 1,
       hasPrevious: currentIndex > 0,
       climbUuid: displayItem.climb.uuid,
+      sessionId: sessionIdRef.current ?? undefined,
+      queueSequence: queueSequenceRef.current,
+      queueItemUuid: displayItem.uuid,
+      mirrored: displayItem.climb.mirrored === true,
+      supportsMirroring: boardSupportsMirroring(stableBoard.boardName, stableBoard.layoutId),
       widgetNavigationAllowed,
       isPartySession,
       boardConnection,

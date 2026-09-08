@@ -27,6 +27,14 @@ export function queueReducer<TSearchParams extends QueueSearchParams>(
   state: QueueState<TSearchParams>,
   action: QueueAction<TSearchParams>,
 ): QueueState<TSearchParams> {
+  const nextState = reduceQueue(state, action);
+  return action.serverSequence === undefined ? nextState : { ...nextState, serverSequence: action.serverSequence };
+}
+
+function reduceQueue<TSearchParams extends QueueSearchParams>(
+  state: QueueState<TSearchParams>,
+  action: QueueAction<TSearchParams>,
+): QueueState<TSearchParams> {
   switch (action.type) {
     case 'SET_CURRENT_CLIMB': {
       const currentIndex = state.currentClimbQueueItem
@@ -335,39 +343,19 @@ export function queueReducer<TSearchParams extends QueueSearchParams>(
 
     case 'DELTA_MIRROR_CURRENT_CLIMB': {
       const { mirrored, mirroredUuid } = action.payload;
-      if (!state.currentClimbQueueItem) return state;
-      // Server-sourced events carry the uuid of the climb that was actually
-      // mirrored on the server, or null when the server had no current
-      // climb at publish time (a pre-B7 no-op event from history replay).
-      // Suppress both cases:
-      //   - null uuid: the server intentionally mirrored "nothing", so
-      //     applying it to whatever the local current climb happens to be
-      //     would mirror an unrelated climb until the next FullSync.
-      //   - uuid mismatch: peer navigated to a different climb between the
-      //     mirror mutation firing and the broadcast reaching us.
-      // Local-origin dispatches always pass the local current climb's
-      // uuid, so neither branch fires there.
-      if (mirroredUuid === null || state.currentClimbQueueItem.uuid !== mirroredUuid) {
-        return state;
-      }
-
-      const updatedCurrentItem = {
-        ...state.currentClimbQueueItem,
-        climb: {
-          ...state.currentClimbQueueItem.climb,
-          mirrored,
-        },
-      };
-
-      // Update the item in the queue as well if it exists
-      const updatedQueue = state.queue.map((item) =>
-        item.uuid === state.currentClimbQueueItem?.uuid ? updatedCurrentItem : item,
-      );
-
+      if (mirroredUuid === null) return state;
+      const mirrorsCurrent = state.currentClimbQueueItem?.uuid === mirroredUuid;
+      if (!mirrorsCurrent && !state.queue.some((item) => item.uuid === mirroredUuid)) return state;
+      const mirrorItem = (item: ClimbQueueItem) => ({ ...item, climb: { ...item.climb, mirrored } });
+      // Optimistic navigation may already point elsewhere. The event still
+      // updates its exact queue slot so returning to it preserves the flip.
       return {
         ...state,
-        queue: updatedQueue,
-        currentClimbQueueItem: updatedCurrentItem,
+        queue: state.queue.map((item) => (item.uuid === mirroredUuid ? mirrorItem(item) : item)),
+        currentClimbQueueItem:
+          mirrorsCurrent && state.currentClimbQueueItem
+            ? mirrorItem(state.currentClimbQueueItem)
+            : state.currentClimbQueueItem,
       };
     }
 

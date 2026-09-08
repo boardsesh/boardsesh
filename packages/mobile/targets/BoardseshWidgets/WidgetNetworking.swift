@@ -6,7 +6,45 @@ enum WidgetNavigationResult: Equatable {
     case retryableFailure
 }
 
+enum WidgetMirrorResult: Equatable {
+    case success(SharedMirrorConfirmation)
+    case serverRejected
+    case retryableFailure
+}
+
 enum WidgetNetworking {
+    static func sendMirror(sessionId: String, queueItemUuid: String, mirrored: Bool) async -> WidgetMirrorResult {
+        guard let defaults = SharedConstants.sharedDefaults,
+              let urlString = defaults.string(forKey: SharedConstants.widgetMirrorUrlKey),
+              let url = URL(string: urlString),
+              let token = SharedKeychain.get(SharedKeychain.livePushTokenKey), !token.isEmpty
+        else { return .serverRejected }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "sessionId": sessionId, "queueItemUuid": queueItemUuid, "mirrored": mirrored
+        ])
+        do {
+            let (bytes, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            if status == 410 {
+                CFNotificationCenterPostNotification(
+                    CFNotificationCenterGetDarwinNotifyCenter(),
+                    CFNotificationName(SharedConstants.pushRegistrationStaleNotification as CFString), nil, nil, true
+                )
+            }
+            if (400...499).contains(status) { return .serverRejected }
+            guard status == 200,
+                  let receipt = try? JSONDecoder().decode(SharedMirrorConfirmation.self, from: bytes),
+                  receipt.sessionId == sessionId, receipt.queueItemUuid == queueItemUuid,
+                  receipt.mirrored == mirrored, receipt.sequence >= 0 else { return .retryableFailure }
+            return .success(receipt)
+        } catch { return .retryableFailure }
+    }
+
     private static func postWidgetRequest(urlKey: String, body: [String: Any], requestName: String) async -> WidgetNavigationResult {
         guard let defaults = SharedConstants.sharedDefaults,
               let widgetUrl = defaults.string(forKey: urlKey)

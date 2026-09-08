@@ -1,6 +1,7 @@
 import type { ConnectionContext, ClimbQueueItem, QueueState } from '@boardsesh/shared-schema';
 import { roomManager, VersionConflictError } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
+import { mirrorSessionClimb } from '../../../services/queue-mirror';
 import { setCurrentClimbAndPublish } from '../../../services/queue-navigation';
 import {
   requireSessionWithReconnectGrace,
@@ -292,51 +293,17 @@ export const queueMutations = {
    * Toggle the mirrored state of the current climb
    * Updates both the current climb and the queue item if present
    */
-  mirrorCurrentClimb: async (_: unknown, { mirrored }: { mirrored: boolean }, ctx: ConnectionContext) => {
+  mirrorCurrentClimb: async (
+    _: unknown,
+    { mirrored, expectedQueueItemUuid }: { mirrored: boolean; expectedQueueItemUuid?: string | null },
+    ctx: ConnectionContext,
+  ) => {
     const startTime = performance.now();
     await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
-
-    const mirrorResult = await withQueueVersionRetry('mirrorCurrentClimb', sessionId, async (currentState) => {
-      // No current climb means there's nothing to mirror. Don't publish a
-      // no-op ClimbMirrored event — it clutters logs, occupies bus
-      // bandwidth, and (because sequence/stateHash don't advance) is fragile
-      // under co-sequencing with FullSync replay.
-      if (!currentState.currentClimbQueueItem) {
-        return null;
-      }
-
-      // Update the mirrored state
-      const currentClimb: ClimbQueueItem = {
-        ...currentState.currentClimbQueueItem,
-        climb: { ...currentState.currentClimbQueueItem.climb, mirrored },
-      };
-
-      // Also update in queue if present
-      const queue = currentState.queue.map((i) =>
-        i.uuid === currentClimb.uuid ? { ...i, climb: { ...i.climb, mirrored } } : i,
-      );
-
-      const updated = await roomManager.updateQueueState(sessionId, queue, currentClimb, currentState.version);
-      return { currentClimb, ...updated };
-    });
-
-    if (!mirrorResult) {
-      logMutationMetrics('mirrorCurrentClimb', performance.now() - startTime, sessionId);
-      return null;
-    }
-
-    pubsub.publishQueueEvent(sessionId, {
-      __typename: 'ClimbMirrored',
-      sequence: mirrorResult.sequence,
-      stateHash: mirrorResult.stateHash,
-      stateHashOrdered: mirrorResult.stateHashOrdered,
-      uuid: mirrorResult.currentClimb.uuid,
-      mirrored,
-    });
-
+    const result = await mirrorSessionClimb(sessionId, mirrored, expectedQueueItemUuid);
     logMutationMetrics('mirrorCurrentClimb', performance.now() - startTime, sessionId);
-    return mirrorResult.currentClimb;
+    return result?.item ?? null;
   },
 
   /**

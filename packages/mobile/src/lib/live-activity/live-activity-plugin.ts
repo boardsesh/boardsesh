@@ -6,6 +6,7 @@ import {
   type LiveActivityUpdateOptions,
   type LiveActivityClimbUpdateOptions,
   type WidgetQueueNavigateEvent,
+  type WidgetMirrorEvent,
   type BoardControlEvent,
   type InterruptedLiveActivityIntentDiagnostic,
 } from '../../../modules/live-activity/src/index';
@@ -104,3 +105,20 @@ export function addBoardControlListener(callback: (event: BoardControlEvent) => 
 }
 
 export type { WidgetQueueNavigateEvent, BoardControlEvent, InterruptedLiveActivityIntentDiagnostic };
+
+/** New native binaries only; older OTA hosts do not declare this event. */
+export function addWidgetMirrorListener(callback: (event: WidgetMirrorEvent) => void): () => void {
+  if (!sessionModule?.supportsMirrorControl) return () => {};
+  const subscription = sessionModule.addListener('queueMirror', callback);
+  return () => subscription.remove();
+}
+
+export async function getPendingWidgetMirror(): Promise<WidgetMirrorEvent | null> {
+  return (await liveActivityNative?.getPendingMirror?.()) ?? null;
+}
+
+export async function acknowledgeWidgetMirror(sessionId: string, sequence: number): Promise<void> {
+  await liveActivityNative?.acknowledgeMirror?.(sessionId, sequence);
+}
+
+export type { WidgetMirrorEvent };

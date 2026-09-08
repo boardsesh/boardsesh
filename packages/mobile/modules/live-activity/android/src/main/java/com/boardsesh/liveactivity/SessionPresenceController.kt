@@ -59,6 +59,9 @@ internal class SessionPresenceController(
         val strings = options?.androidNotification
         val intent = Intent(context, BoardSessionService::class.java).apply {
             action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, options?.sessionId ?: "")
+            putExtra(BoardSessionService.EXTRA_MIRROR_LABEL, strings?.mirrorLabel ?: "Mirror climb")
+            putExtra(BoardSessionService.EXTRA_UNMIRROR_LABEL, strings?.unmirrorLabel ?: "Unmirror climb")
             putExtra(BoardSessionService.EXTRA_CHANNEL_NAME, strings?.channelName ?: "Active climbing session")
             putExtra(BoardSessionService.EXTRA_CHANNEL_DESC, strings?.channelDescription ?: "")
             putExtra(BoardSessionService.EXTRA_TITLE_FALLBACK, strings?.contentTitleFallback ?: "Climbing session")
@@ -95,6 +98,10 @@ internal class SessionPresenceController(
         }
         val intent = Intent(context, BoardSessionService::class.java).apply {
             action = BoardSessionService.ACTION_UPDATE
+            putExtra(BoardSessionService.EXTRA_SESSION_ID, options.sessionId)
+            putExtra(BoardSessionService.EXTRA_QUEUE_ITEM_UUID, options.queueItemUuid)
+            putExtra(BoardSessionService.EXTRA_SUPPORTS_MIRRORING, options.supportsMirroring)
+            putExtra(BoardSessionService.EXTRA_MIRRORED, options.mirrored)
             putExtra(BoardSessionService.EXTRA_CLIMB_NAME, options.climbName)
             putExtra(BoardSessionService.EXTRA_SUBTITLE, subtitle)
             putExtra(BoardSessionService.EXTRA_HAS_NEXT, options.hasNext)

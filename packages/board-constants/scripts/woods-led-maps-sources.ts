@@ -14,6 +14,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { WOODS_ROW_LENGTHS } from '../src/woods';
 
 export const WOODS_LED_MAP_SIZES = [
   { size: '8x10', file: 'light-map-8x10.json' },
@@ -108,15 +109,33 @@ ${json}
 
     private static let ledMaps: [String: [Int: Int]] = decode(ledMapsJSON)
 
+    // Generated from the same row geometry used by JS's hold mirroring.
+    private static let rowLengths: [String: [Int]] = [
+${WOODS_LED_MAP_SIZES.map(({ size }) => `        "${size}": [${WOODS_ROW_LENGTHS[size].join(', ')}]`).join(',\n')}
+    ]
+
     /// Woods size_id → dimension per WOODS_SIZES in
     /// packages/shared/board-config/src/woods-config.ts. Unknown sizes return
     /// nil so the caller can refuse the write instead of darkening the wall.
-    static func ledMap(forSizeId sizeId: Int) -> [Int: Int]? {
+    static func ledMap(forSizeId sizeId: Int, mirrored: Bool = false) -> [Int: Int]? {
+        let dimension: String
         switch sizeId {
-        case 1: return ledMaps["8x10"]
-        case 2: return ledMaps["12x12"]
+        case 1: dimension = "8x10"
+        case 2: dimension = "12x12"
         default: return nil
         }
+        guard let ledMap = ledMaps[dimension] else { return nil }
+        guard mirrored else { return ledMap }
+        guard let rows = rowLengths[dimension] else { return nil }
+        var reflected: [Int: Int] = [:]
+        var start = 0
+        for length in rows {
+            for column in 0..<length {
+                reflected[start + column] = ledMap[start + length - 1 - column]
+            }
+            start += length
+        }
+        return reflected
     }
 
     private static func decode(_ json: String) -> [String: [Int: Int]] {

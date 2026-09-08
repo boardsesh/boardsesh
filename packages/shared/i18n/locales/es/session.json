@@ -476,6 +476,8 @@
         "contentTitleFallback": "Sesión de escalada",
         "previous": "Anterior",
         "next": "Siguiente",
+        "mirror": "Espejear bloque",
+        "unmirror": "Quitar espejo",
         "relight": "Reactivar el muro",
         "reconnect": "Conectar al plafón",
         "onWall": "{{name}} está en el muro"

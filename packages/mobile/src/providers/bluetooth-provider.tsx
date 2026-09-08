@@ -368,7 +368,7 @@ function BluetoothAutoSender({
     encodingSignature: string;
   };
 
-  const { state } = useQueue();
+  const { state, sessionId } = useQueue();
   const { currentClimbQueueItem } = state;
   const onWallConfirmedRef = useRef(onWallConfirmed);
   useEffect(() => {
@@ -535,7 +535,8 @@ function BluetoothAutoSender({
           // reads this one value, so the wall and our record of it agree.
           const intent = mirrorIntentRef.current;
           const effectiveMirrored = resolveMirroredOrientation({
-            statedIntent: intent != null && intent.climbUuid === item.climb.uuid ? intent.mirrored : undefined,
+            statedIntent:
+              !sessionId && intent != null && intent.climbUuid === item.climb.uuid ? intent.mirrored : undefined,
             climbMirrored: item.climb.mirrored,
           });
 
@@ -626,7 +627,15 @@ function BluetoothAutoSender({
     };
 
     void drain();
-  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, mirrorNonce, colorSignature, encodingSignature]);
+  }, [
+    currentClimbQueueItem,
+    sendFramesToBoard,
+    reassertNonce,
+    mirrorNonce,
+    colorSignature,
+    encodingSignature,
+    sessionId,
+  ]);
 
   return null;
 }
@@ -751,7 +760,7 @@ export function BluetoothProvider({
   const { showUndoWallChangeSnackbar } = useQueueSnackbar();
   // Queue actions (no state subscription, so the provider doesn't re-render on
   // queue changes) + toast, for advancing past a spill climb and telling the user.
-  const { setCurrentClimb } = useQueueActions();
+  const { setCurrentClimb, getQueueSnapshot } = useQueueActions();
   const { showToast } = useToast();
   const [autoDisconnectBle] = useSetting('autoDisconnectBle');
   const [autoDisconnectTimeoutSeconds] = useSetting('autoDisconnectTimeoutSeconds');
@@ -842,10 +851,22 @@ export function BluetoothProvider({
   // logbook tick carries `climb.mirrored` through `tickToClimb`), and only the
   // caller knows what to fall back to; collapsing "unstated" into `false` would
   // relight such an ascent un-mirrored.
-  const mirrorIntentFor = useCallback((climbUuid: string | undefined): boolean | undefined => {
-    const intent = mirrorIntentRef.current;
-    return intent != null && intent.climbUuid === climbUuid ? intent.mirrored : undefined;
-  }, []);
+  const mirrorIntentFor = useCallback(
+    (climbUuid: string | undefined): boolean | undefined => {
+      const intent = mirrorIntentRef.current;
+      if (sessionIdRef.current) {
+        const { currentClimbQueueItem, queue } = getQueueSnapshot();
+        // Current slot wins when a climb is queued twice in different orientations.
+        if (currentClimbQueueItem && currentClimbQueueItem.climb.uuid === climbUuid)
+          return currentClimbQueueItem.climb.mirrored === true;
+        const matches = queue.filter((item) => item.climb.uuid === climbUuid);
+        // A non-current duplicate has no unambiguous orientation without a queue UUID.
+        return matches.length === 1 ? matches[0].climb.mirrored === true : undefined;
+      }
+      return intent != null && intent.climbUuid === climbUuid ? intent.mirrored : undefined;
+    },
+    [getQueueSnapshot],
+  );
   // Drop a flip that belongs to some OTHER climb, keep one that belongs to this
   // one. The slot holds explicit taps only, so this is how navigation forgets a
   // flip while a dismiss-and-reopen still finds it.

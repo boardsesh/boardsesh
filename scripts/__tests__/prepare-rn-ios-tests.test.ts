@@ -39,6 +39,8 @@ const MODULE_SOURCE_NAMES = [
   'SessionQueueState.swift',
   'SharedKeychain.swift',
   'WidgetNetworking.swift',
+  'SharedMirrorState.swift',
+  'MirrorClimbIntent.swift',
   'LiveActivityIntentDiagnostics.swift',
   'ClimbNavigationIntent.swift',
   'NextClimbIntent.swift',

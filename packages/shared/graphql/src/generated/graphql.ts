@@ -4090,6 +4090,7 @@ export type MutationMergeGymsArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationMirrorCurrentClimbArgs = {
+  expectedQueueItemUuid?: InputMaybe<Scalars['ID']['input']>;
   mirrored: Scalars['Boolean']['input'];
 };
 

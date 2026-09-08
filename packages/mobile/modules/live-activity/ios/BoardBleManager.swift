@@ -630,7 +630,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         items: [SharedQueueItem],
         currentIndex: Int,
         readyTimeout: TimeInterval,
-        drainTimeout: TimeInterval = 1.5
+        drainTimeout: TimeInterval = 1.5,
+        stillCurrent: @escaping @Sendable () -> Bool = { true }
     ) async -> Bool {
         await waitUntilReady(timeout: readyTimeout)
         let ready = runOnBleQueueSync { isReadyForWrite }
@@ -646,14 +647,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         return await displayCurrentItemAwaitingDrain(
             items: items,
             currentIndex: currentIndex,
-            drainTimeout: drainTimeout
+            drainTimeout: drainTimeout,
+            stillCurrent: stillCurrent
         )
     }
 
     private func displayCurrentItemAwaitingDrain(
         items: [SharedQueueItem],
         currentIndex: Int,
-        drainTimeout: TimeInterval
+        drainTimeout: TimeInterval,
+        stillCurrent: @escaping @Sendable () -> Bool = { true }
     ) async -> Bool {
         let displayOutcome = BoardBleDisplayWriteOutcome()
         // Both blocks enter the same serial queue in call order: the display
@@ -661,6 +664,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // waiter evaluates the global queue predicate.
         runOnBleQueue { [weak self] in
             guard let self else {
+                displayOutcome.settle(succeeded: false)
+                return
+            }
+            guard stillCurrent() else {
                 displayOutcome.settle(succeeded: false)
                 return
             }
@@ -1186,11 +1193,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // the plain-ASCII `led,role,…,!` format — BoardPlacementData has no
         // woods rows, so falling through to the Aurora path would refuse every
         // climb (and would let an empty-frames item write an *Aurora* clear
-        // packet to a Woods wall). Woods mirroring is JS-side geometry with no
-        // placement table here, and the JS send path dispatches raw frames for
-        // Woods too, so frames go out as-is.
+        // packet to a Woods wall). Reflect the per-size LED map for mirrored
+        // climbs using the same generated row geometry as the JS send path.
         if configuration.boardName == "woods" {
-            guard let ledMap = WoodsBoardData.ledMap(forSizeId: configuration.sizeId) else {
+            guard let ledMap = WoodsBoardData.ledMap(forSizeId: configuration.sizeId, mirrored: item.mirrored) else {
                 logger.error("No Woods LED table for size=\(configuration.sizeId, privacy: .public)")
                 completion?(false)
                 return

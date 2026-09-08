@@ -476,6 +476,8 @@
         "contentTitleFallback": "Session d'escalade",
         "previous": "Précédent",
         "next": "Suivant",
+        "mirror": "Miroir du bloc",
+        "unmirror": "Annuler le miroir",
         "relight": "Rallumer le mur",
         "reconnect": "Se connecter à la board",
         "onWall": "{{name}} est sur le mur"

@@ -8,6 +8,14 @@ import { WOODS_HOLD_POSITIONS, WOODS_OCCUPIED_HOLD_IDS } from './generated/woods
 export { WOODS_LED_MAPS, WOODS_HOLD_POSITIONS, WOODS_OCCUPIED_HOLD_IDS };
 export type { WoodsBoardSize };
 
+// Shared row geometry for JS hold reflection and generated native LED maps.
+const repeat = (count: number, value: number): number[] => Array.from({ length: count }, () => value);
+
+export const WOODS_ROW_LENGTHS: Record<WoodsBoardSize, number[]> = {
+  '8x10': [...repeat(1, 11), ...repeat(21, 21), ...repeat(3, 11)],
+  '12x12': [...repeat(3, 17), ...repeat(23, 33), ...repeat(3, 17), ...repeat(1, 17), ...repeat(1, 16)],
+};
+
 // The Woods board advertises its name over the Nordic UART Service. Both the v1
 // ("Woods Board") and v2 ("Woods Board v2") controllers share this prefix and
 // speak the same LED command format, so one case-insensitive prefix matches both

@@ -77,7 +77,8 @@ public class LiveActivityModule: Module {
     public func definition() -> ModuleDefinition {
         Name("LiveActivity")
 
-        Events("queueNavigate")
+        Events("queueNavigate", "queueMirror")
+        Constants(["supportsMirrorControl": true])
 
         OnDestroy {
             self.stopDarwinObservation()
@@ -91,12 +92,21 @@ public class LiveActivityModule: Module {
                 self.hasListener = true
             }
             self.drainPendingEvents()
+            self.emitPendingMirror()
         }
 
         OnStopObserving {
             self.bufferQueue.sync {
                 self.hasListener = false
             }
+        }
+
+        AsyncFunction("getPendingMirror") { () -> [String: Any]? in
+            SharedConstants.sharedDefaults.flatMap { SharedMirrorState.pending(in: $0)?.eventBody }
+        }
+        AsyncFunction("acknowledgeMirror") { (sessionId: String, sequence: Int) in
+            guard let defaults = SharedConstants.sharedDefaults else { return }
+            SharedMirrorState.acknowledge(sessionId: sessionId, sequence: sequence, in: defaults)
         }
 
         AsyncFunction("isAvailable") { () -> [String: Any] in
@@ -331,9 +341,17 @@ public class LiveActivityModule: Module {
 
     @objc private func handleAppWillEnterForeground() {
         retryPendingRegistrationIfNeeded(trigger: "foreground")
+        emitPendingMirror()
+    }
+
+    private func emitPendingMirror() {
+        guard let defaults = SharedConstants.sharedDefaults,
+              let pending = SharedMirrorState.pending(in: defaults) else { return }
+        emitOrBuffer(name: "queueMirror", body: pending.eventBody)
     }
 
     private func handleQueueNavigateFromWidget() {
+        emitPendingMirror()
         guard let defaults = SharedConstants.sharedDefaults else { return }
 
         guard let action = defaults.string(forKey: SharedConstants.widgetNavigateActionKey) else {
@@ -659,6 +677,13 @@ public class LiveActivityModule: Module {
             components.fragment = nil
             return components.url?.absoluteString
         }()
+        let widgetMirrorUrl: String? = {
+            guard let graphqlUrl, var components = URLComponents(string: graphqlUrl) else { return nil }
+            components.path = "/api/widget/mirror"
+            components.query = nil
+            components.fragment = nil
+            return components.url?.absoluteString
+        }()
         let widgetTakeControlUrl: String? = {
             guard let graphqlUrl, var components = URLComponents(string: graphqlUrl) else { return nil }
             components.path = "/api/widget/take-control"
@@ -668,6 +693,12 @@ public class LiveActivityModule: Module {
         }()
 
         if let defaults = SharedConstants.sharedDefaults {
+            if defaults.string(forKey: SharedConstants.sessionIdKey) != sessionId {
+                defaults.removeObject(forKey: SharedConstants.pendingMirrorKey)
+                defaults.removeObject(forKey: SharedConstants.queueSequenceKey)
+            }
+            defaults.set(options.supportsMirroring, forKey: SharedConstants.supportsMirroringKey)
+            defaults.set(widgetMirrorUrl, forKey: SharedConstants.widgetMirrorUrlKey)
             defaults.set(sessionId, forKey: SharedConstants.sessionIdKey)
             defaults.set(serverUrl, forKey: SharedConstants.serverUrlKey)
             if let widgetNavigateUrl {
@@ -725,6 +756,7 @@ public class LiveActivityModule: Module {
 
         wsManager.onQueueStateChanged = { [weak self] items, currentIndex in
             guard let self else { return }
+            self.emitPendingMirror()
             guard let state = LiveActivityManager.buildContentState(
                 items: items,
                 currentIndex: currentIndex
@@ -828,6 +860,7 @@ public class LiveActivityModule: Module {
             defaults.removeObject(forKey: SharedConstants.currentIndexKey)
             defaults.removeObject(forKey: SharedConstants.sessionIdKey)
             defaults.removeObject(forKey: SharedConstants.pendingActionKey)
+            defaults.removeObject(forKey: SharedConstants.pendingMirrorKey)
             defaults.removeObject(forKey: SharedConstants.widgetNavigateUrlKey)
             defaults.removeObject(forKey: SharedConstants.widgetTakeControlUrlKey)
             defaults.removeObject(forKey: SharedConstants.authTokenKey)
@@ -854,6 +887,12 @@ public class LiveActivityModule: Module {
 
     private func updateActivity(options: UpdateActivityOptions) {
         guard #available(iOS 17.0, *) else { return }
+        guard acceptQueueUpdate(
+            sessionId: options.sessionId, sequence: options.queueSequence,
+            navigationAllowed: options.widgetNavigationAllowed, isPartySession: options.isPartySession,
+            boardConnection: options.boardConnection, holderDisplayName: options.holderDisplayName,
+            supportsMirroring: options.supportsMirroring
+        ) else { return }
 
         var wallControlChanged = false
         var renderModeChanged = false
@@ -889,7 +928,11 @@ public class LiveActivityModule: Module {
                     mirrored: item.mirrored
                 ))
             }
-            SharedQueueState.save(items: queueItems, currentIndex: options.currentIndex, to: defaults)
+            if let sequence = options.queueSequence {
+                guard SharedMirrorState.persist(items: queueItems, currentIndex: options.currentIndex, sequence: sequence, in: defaults) else { return }
+            } else {
+                SharedQueueState.save(items: queueItems, currentIndex: options.currentIndex, to: defaults)
+            }
             SharedWidgetWallControlState.save(
                 navigationAllowed: options.widgetNavigationAllowed,
                 isPartySession: options.isPartySession,
@@ -911,6 +954,9 @@ public class LiveActivityModule: Module {
             hasNext: options.hasNext,
             hasPrevious: options.hasPrevious,
             climbUuid: options.climbUuid,
+            queueItemUuid: options.queueItemUuid,
+            mirrored: options.mirrored,
+            supportsMirroring: options.supportsMirroring,
             boardConnection: options.boardConnection,
             holderDisplayName: options.holderDisplayName
         )
@@ -933,10 +979,41 @@ public class LiveActivityModule: Module {
         }
     }
 
+    /// Ownership always advances, even while an older JS queue waits for mirror reconciliation.
+    private func acceptQueueUpdate(
+        sessionId: String?, sequence: Int?, navigationAllowed: Bool, isPartySession: Bool,
+        boardConnection: String, holderDisplayName: String?, supportsMirroring: Bool
+    ) -> Bool {
+        guard let defaults = SharedConstants.sharedDefaults else { return true }
+        if let sessionId, sessionId != defaults.string(forKey: SharedConstants.sessionIdKey) { return false }
+        defaults.set(supportsMirroring, forKey: SharedConstants.supportsMirroringKey)
+        let receipt = SharedMirrorState.pending(in: defaults)
+        let stale = sequence.map { $0 < SharedMirrorState.sequence(in: defaults) } ?? (receipt != nil)
+        if stale {
+            SharedWidgetWallControlState.save(navigationAllowed: navigationAllowed, isPartySession: isPartySession, to: defaults)
+            SharedWidgetWallControlState.saveBoardConnection(boardConnection, holderDisplayName: holderDisplayName, to: defaults)
+            let (items, index) = SharedQueueState.load(from: defaults)
+            if let state = LiveActivityManager.buildContentState(items: items, currentIndex: index) {
+                enqueueLifecycleWork { await LiveActivityManager.shared.updateActivity(state: state) }
+            }
+            return false
+        }
+        if let receipt, let sequence {
+            SharedMirrorState.acknowledge(sessionId: receipt.sessionId, sequence: sequence, in: defaults)
+        }
+        return true
+    }
+
     // MARK: - updateActivityClimb (lightweight — no queue serialization)
 
     private func updateActivityClimb(options: UpdateActivityClimbOptions) {
         guard #available(iOS 17.0, *) else { return }
+        guard acceptQueueUpdate(
+            sessionId: options.sessionId, sequence: options.queueSequence,
+            navigationAllowed: options.widgetNavigationAllowed, isPartySession: options.isPartySession,
+            boardConnection: options.boardConnection, holderDisplayName: options.holderDisplayName,
+            supportsMirroring: options.supportsMirroring
+        ) else { return }
 
         var wallControlChanged = false
         var renderModeChanged = false
@@ -955,7 +1032,19 @@ public class LiveActivityModule: Module {
                 defaults.set(renderMode, forKey: SharedConstants.renderModeKey)
             }
 
-            SharedQueueState.saveCurrentIndex(options.currentIndex, to: defaults)
+            if let sequence = options.queueSequence {
+                let (items, _) = SharedQueueState.load(from: defaults)
+                let updatedItems = items.map { item in
+                    item.uuid == options.queueItemUuid ? SharedQueueItem(
+                        uuid: item.uuid, climbUuid: item.climbUuid, climbName: item.climbName,
+                        difficulty: item.difficulty, angle: item.angle, frames: item.frames,
+                        setterUsername: item.setterUsername, mirrored: options.mirrored
+                    ) : item
+                }
+                guard SharedMirrorState.persist(items: updatedItems, currentIndex: options.currentIndex, sequence: sequence, in: defaults) else { return }
+            } else {
+                SharedQueueState.saveCurrentIndex(options.currentIndex, to: defaults)
+            }
             SharedWidgetWallControlState.save(
                 navigationAllowed: options.widgetNavigationAllowed,
                 isPartySession: options.isPartySession,
@@ -977,6 +1066,9 @@ public class LiveActivityModule: Module {
             hasNext: options.hasNext,
             hasPrevious: options.hasPrevious,
             climbUuid: options.climbUuid,
+            queueItemUuid: options.queueItemUuid,
+            mirrored: options.mirrored,
+            supportsMirroring: options.supportsMirroring,
             boardConnection: options.boardConnection,
             holderDisplayName: options.holderDisplayName
         )
@@ -1011,6 +1103,7 @@ struct StartSessionOptions: Record {
     @Field var authToken: String?
     @Field var wsUrl: String?
     @Field var graphqlUrl: String?
+    @Field var supportsMirroring: Bool = false
     @Field var widgetNavigationAllowed: Bool = true
     @Field var isPartySession: Bool = false
     /// Board-connection state from THIS device's POV: "connectedByMe" |
@@ -1042,6 +1135,10 @@ struct UpdateActivityQueueItem: Record {
 }
 
 struct UpdateActivityOptions: Record {
+    @Field var sessionId: String?
+    @Field var queueSequence: Int?
+    @Field var queueItemUuid: String?
+    @Field var mirrored: Bool = false
     @Field var climbName: String = ""
     @Field var climbDifficulty: String = ""
     @Field var angle: Int = 0
@@ -1051,6 +1148,7 @@ struct UpdateActivityOptions: Record {
     @Field var hasPrevious: Bool = false
     @Field var climbUuid: String = ""
     @Field var queue: [UpdateActivityQueueItem] = []
+    @Field var supportsMirroring: Bool = false
     @Field var widgetNavigationAllowed: Bool = true
     @Field var isPartySession: Bool = false
     @Field var boardConnection: String = "connectedByMe"
@@ -1061,6 +1159,10 @@ struct UpdateActivityOptions: Record {
 }
 
 struct UpdateActivityClimbOptions: Record {
+    @Field var sessionId: String?
+    @Field var queueSequence: Int?
+    @Field var queueItemUuid: String?
+    @Field var mirrored: Bool = false
     @Field var climbName: String = ""
     @Field var climbDifficulty: String = ""
     @Field var angle: Int = 0
@@ -1069,6 +1171,7 @@ struct UpdateActivityClimbOptions: Record {
     @Field var hasNext: Bool = false
     @Field var hasPrevious: Bool = false
     @Field var climbUuid: String = ""
+    @Field var supportsMirroring: Bool = false
     @Field var widgetNavigationAllowed: Bool = true
     @Field var isPartySession: Bool = false
     @Field var boardConnection: String = "connectedByMe"

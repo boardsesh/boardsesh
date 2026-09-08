@@ -432,7 +432,7 @@ export function PlayDrawer({
   }, []);
 
   const { queue, currentClimbQueueItem } = useQueueData();
-  const { setCurrentClimb, nextClimb, previousClimb, addToQueue } = useQueueActions();
+  const { setCurrentClimb, nextClimb, previousClimb, addToQueue, mirrorCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionId();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
@@ -456,32 +456,16 @@ export function PlayDrawer({
   const isPreview = drawerPreviewItem != null;
 
   const displayedClimbUuid = displayedClimb?.uuid;
-  // A flip only applies to the climb it was made on. With no local flip for the
-  // climb on screen, fall back to the orientation the wall was last asked for:
-  // the drawer is a route on iPhone, so reopening it must show the flip that is
-  // actually lit rather than assuming none and lying about the wall.
-  //
-  // The fallback reads a ref through a context callback, which is safe on two
-  // invariants — break either and this silently shows the wrong orientation:
-  //  - Single writer. Only the effect below states an intent, and it writes back
-  //    exactly what this line computed, so the ref cannot drift from the toggle.
-  //  - Single instance. `/play` and the iPad pane are mutually exclusive
-  //    (`(tabs)/_layout.tsx`), so two drawers never state intents at once.
-  // The React Compiler memoises this on `mirrorFlip`/`displayedClimbUuid`/
-  // `bluetooth`, so a ref changed underneath is NOT re-read, and the read is
-  // invisible to `react-hooks/refs` — lint will not catch a second writer.
-  //
-  // With nothing stated for this climb either, fall back to the climb's OWN
-  // mirror: activating a mirrored logbook tick carries `mirrored: true` through
-  // `tickToClimb`, and that ascent must relight the way it was climbed. A stated
-  // `false` is not the same as nothing stated, which is why the reader is
-  // tri-state — otherwise turning a mirrored tick's flip off would be undone by
-  // its own `climb.mirrored` on the next render.
-  const isMirrored = resolveMirroredOrientation({
-    explicitFlip: mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid ? mirrorFlip.mirrored : undefined,
-    statedIntent: bluetooth?.getMirrorIntent(displayedClimbUuid),
-    climbMirrored: displayedClimb?.mirrored,
-  });
+  // Live sessions have one shared orientation. Preview/solo flips stay local.
+  const sharesMirrorState = sessionId !== null && !isPreview;
+  const isMirrored = sharesMirrorState
+    ? displayedClimb?.mirrored === true
+    : resolveMirroredOrientation({
+        explicitFlip:
+          mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid ? mirrorFlip.mirrored : undefined,
+        statedIntent: bluetooth?.getMirrorIntent(displayedClimbUuid),
+        climbMirrored: displayedClimb?.mirrored,
+      });
   const clearMirror = useCallback(() => setMirrorFlip(null), []);
 
   // #5099: the shown climb does not have to belong to the board the climber has
@@ -961,42 +945,22 @@ export function PlayDrawer({
     setDrawerPreviewIsWallClimb(false);
   }, [drawerPreviewItem, drawerPreviewSuggestionSource, setCurrentClimb, markLatchExit]);
 
-  // Keep the wall's orientation in lockstep with the toggle, declaratively.
-  //
-  // `isMirrored` is reset to false at eight different navigation sites, and the
-  // provider can't see any of them: an intent set once by the tap would outlive
-  // the reset, so returning to a climb you had flipped would light it mirrored
-  // under a screen (and a button) showing it un-mirrored. Re-stating it here
-  // means there is one place the two can disagree, and it is this line.
-  //
-  // Not gated on `isConnected`: recording the intent while disconnected is what
-  // lets a flip survive until the lightbulb re-takes the wall. A preview is
-  // deliberately excluded — mirroring what you are merely looking at must not
-  // re-light the live climb (the Browsing chrome promises the wall stays put).
-  //
-  // Known gap: while a party peer's `climb.mirrored` and this local toggle
-  // disagree, the local one wins on this device's wall — for a toggle made on
-  // the climb already showing. On a peer-driven climb CHANGE the auto-sender
-  // runs first and falls back to `climb.mirrored`, and the restatement below
-  // deliberately doesn't reassert, so the peer's orientation would stand with
-  // the screen reading un-mirrored. Unreachable today: nothing in the app calls
-  // `mirrorCurrentClimb`, so that fallback is always false.
+  // Solo and preview surfaces retain their existing local mirror semantics.
   useEffect(() => {
-    if (isPreview || !displayedClimbUuid) return;
-    // The rule itself lives in `nextMirrorIntentAction`, where it is unit-tested
-    // without a renderer — this effect is just the wiring.
+    if (isPreview || sharesMirrorState || !displayedClimbUuid) return;
     const action = nextMirrorIntentAction({ isPreview, displayedClimbUuid, mirrorFlip });
     if (action.kind === 'state') bluetooth?.setMirrorIntent(action.climbUuid, action.mirrored);
     else if (action.kind === 'retain') bluetooth?.retainMirrorIntentFor(action.climbUuid);
-  }, [bluetooth, displayedClimbUuid, mirrorFlip, isPreview]);
+  }, [bluetooth, displayedClimbUuid, mirrorFlip, isPreview, sharesMirrorState]);
 
-  // Local state only — the effect above is what carries the flip to the wall,
-  // through the AutoSender's normal write so the dedup record and the
-  // wall-confirm describe the orientation actually lit.
   const handleMirror = useCallback(() => {
     if (!displayedClimbUuid) return;
-    setMirrorFlip({ climbUuid: displayedClimbUuid, mirrored: !isMirrored });
-  }, [displayedClimbUuid, isMirrored]);
+    if (sharesMirrorState && currentClimbQueueItem) {
+      void mirrorCurrentClimb(!isMirrored, currentClimbQueueItem.uuid);
+    } else {
+      setMirrorFlip({ climbUuid: displayedClimbUuid, mirrored: !isMirrored });
+    }
+  }, [displayedClimbUuid, isMirrored, sharesMirrorState, currentClimbQueueItem, mirrorCurrentClimb]);
 
   const handleToggleFavorite = useCallback(() => {
     if (!displayedClimb) return;
