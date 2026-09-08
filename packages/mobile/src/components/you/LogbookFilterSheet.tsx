@@ -25,6 +25,7 @@ import { useGrades } from '../../lib/graphql/hooks';
 import { hapticSelection } from '../../lib/haptics';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { nowDate } from '../../lib/clock';
 
 // The logbook spans every board, but Kilter and Tension share an identical
 // difficulty-id scale (the font/V-grade taxonomy), so one board's grade list is
@@ -124,7 +125,7 @@ export function LogbookFilterSheet({
   // DateRangeRow's openAndroid useCallback every time). Captured at sheet mount,
   // so a sheet left open across midnight keeps the prior day's ceiling until it's
   // reopened — an acceptable tradeoff for the stable identity.
-  const today = useMemo(() => new Date(), []);
+  const today = useMemo(() => nowDate(), []);
 
   const updateFilters = useCallback((patch: Partial<LogbookFilterState>) => {
     setDraftFilters((previous) => ({ ...previous, ...patch }));

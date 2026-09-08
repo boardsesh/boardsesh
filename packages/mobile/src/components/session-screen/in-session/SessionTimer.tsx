@@ -24,6 +24,10 @@ function format(elapsedMs: number): string {
  * minimized and reopened the overlay.
  */
 export function SessionTimer({ startedAt, color }: SessionTimerProps) {
+  // In screenshot mode `nowMs()` returns the frozen EXPO_PUBLIC_SCREENSHOT_NOW
+  // instant, so this shows that instant minus the session start, clamped at
+  // 00:00 below — a recorded session must start before that frozen instant
+  // for the timer to read as a nonzero elapsed time.
   const [now, setNow] = useState<number>(() => nowMs());
 
   useEffect(() => {

@@ -182,6 +182,20 @@ describe('deriveProfileViewModel with an injected `now`', () => {
     expect(build()).toEqual(build());
   });
 
+  it('threads the pinned `now` into the activity heatmap window', () => {
+    const vm = deriveProfileViewModel({
+      ...base,
+      allBoardsTicks: pinnedTicks,
+      selectedBoard: 'all',
+      timeframe: 'all',
+      now: pinnedNow,
+    });
+    // The heatmap's grid ends on pinnedNow's ISO week, not the real wall
+    // clock's — this is the assertion the mutation below is meant to break.
+    expect(vm.activityHeatmap).not.toBeNull();
+    expect(vm.activityHeatmap?.endDate).toBe(pinnedNow.endOf('isoWeek').format('YYYY-MM-DD'));
+  });
+
   it('threads the pinned `now` into the period comparison window', () => {
     const vm = deriveProfileViewModel({
       ...base,

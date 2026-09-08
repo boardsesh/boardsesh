@@ -68,7 +68,12 @@ export function parseTickTime(climbedAt: string): Dayjs {
  */
 export function formatTickRelativeTime(climbedAt: string, nowMs?: number): string {
   const target = dayjs.utc(requireString(climbedAt));
-  return nowMs !== undefined ? target.from(dayjs(nowMs)) : target.fromNow();
+  // `.fromNow()` compares against `dayjs.utc()` (UTC mode), not `dayjs()`
+  // (local mode) — `target.from(dayjs.utc(nowMs))` keeps this path exact
+  // parity with that, since dayjs's relativeTime diff reads calendar fields
+  // (month/year) off each side's own mode, and UTC vs. local can disagree on
+  // those fields for the same instant depending on the runtime's timezone.
+  return nowMs !== undefined ? target.from(dayjs.utc(nowMs)) : target.fromNow();
 }
 
 export function formatTickAbsoluteTime(climbedAt: string, format: string): string {

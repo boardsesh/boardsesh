@@ -47,7 +47,13 @@ import { isSupportedLocale, type Locale } from '@boardsesh/i18n';
  * otherwise render different text. `SCREENSHOT_NOW_MS` below pins "now" to
  * `EXPO_PUBLIC_SCREENSHOT_NOW` (an ISO timestamp); every "now" read in the app
  * goes through `nowMs()`/`nowDate()` in `lib/clock.ts` instead of
- * `Date.now()`/`new Date()` directly, so it's the only reader of this const.
+ * `Date.now()`/`new Date()` directly. `SCREENSHOT_NOW_MS` is read by
+ * `lib/clock.ts` and the boot log in `screenshot-board-auto-activator.tsx`.
+ *
+ * `EXPO_PUBLIC_SCREENSHOT_NOW` isn't wired up yet: it will be set by the
+ * orchestrator (`scripts/mobile-screenshots.ts`) once the replay backend
+ * lands, from the recorded fixture set's `frozenNow`. Unset today, so
+ * captures still run on the live clock.
  */
 
 /**
@@ -65,11 +71,20 @@ export const SCREENSHOT_LOCALE_OVERRIDE: Locale | null =
 /**
  * Instant the screenshots build freezes "now" to, so relative timestamps ("3h
  * ago", day dividers, the activity heatmap window) render identically across
- * repeated captures of the same seeded backend data. Set by the orchestrator
- * (`scripts/mobile-screenshots.ts`, into Metro's env on both platforms) as an
- * ISO timestamp in `EXPO_PUBLIC_SCREENSHOT_NOW`. `null` in normal builds (and
- * for an unset/unparseable value in screenshot mode), which keeps the real
- * wall clock — see `lib/clock.ts`, the only intended reader.
+ * repeated captures of the same seeded backend data. Read as an ISO timestamp
+ * from `EXPO_PUBLIC_SCREENSHOT_NOW`. `null` in normal builds (and for an
+ * unset/unparseable value in screenshot mode), which keeps the real wall
+ * clock — see `lib/clock.ts` and the boot log in
+ * `screenshot-board-auto-activator.tsx`, its two readers.
+ *
+ * Not wired up yet: this will be set by the orchestrator
+ * (`scripts/mobile-screenshots.ts`, into Metro's env on both platforms) once
+ * the replay backend lands, from the recorded fixture set's `frozenNow`.
+ * Unset today, so captures still run on the live clock.
+ *
+ * When it is wired up, the value must be mid-day UTC (e.g. `…T12:00:00Z`) —
+ * local-date derivations (day dividers, the heatmap's today cell) need to
+ * land on the same calendar day in every simulator timezone.
  */
 const screenshotNowEnv = process.env.EXPO_PUBLIC_SCREENSHOT_NOW;
 const screenshotNowParsedMs = Date.parse(screenshotNowEnv ?? '');
