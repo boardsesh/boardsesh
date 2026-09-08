@@ -49,6 +49,7 @@ function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOpti
     boards: null,
     appPath: null,
     orientation: null,
+    devClient: false,
     shutdown: false,
     ...overrides,
   };
@@ -108,6 +109,7 @@ describe('parseArgs', () => {
         'The Cellar|Kilter Board Homewall',
         '--app-path',
         '/tmp/Boardsesh.app',
+        '--dev-client',
         '--shutdown',
       ]),
     ).toEqual({
@@ -124,8 +126,17 @@ describe('parseArgs', () => {
       boards: 'The Cellar|Kilter Board Homewall',
       appPath: '/tmp/Boardsesh.app',
       orientation: null,
+      devClient: true,
       shutdown: true,
     });
+  });
+
+  it('defaults --dev-client off and parses it as a bare boolean flag', () => {
+    expect(parseArgs([]).devClient).toBe(false);
+    expect(parseArgs(['--platform', 'android', '--dev-client']).devClient).toBe(true);
+    // iOS captures are always dev-clients, so the flag is accepted and ignored
+    // there rather than rejected — `--platform all` passes one argv to both.
+    expect(parseArgs(['--dev-client']).platform).toBe('ios');
   });
 
   it('maps --orientation landscape/portrait to the iOS orientation override', () => {

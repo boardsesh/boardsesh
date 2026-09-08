@@ -47,9 +47,12 @@
     "mobile-dev-start.ts",
     "mobile-screenshots.ts",
     "mobile-ios-shots.ts",
+    "mobile-android-apk.ts",
     "__tests__/ios-profiling-tools.test.ts",
     "__tests__/mobile-ios-run.test.ts",
     "__tests__/mobile-screenshots.test.ts",
-    "__tests__/mobile-profile-capture.test.ts"
+    "__tests__/mobile-profile-capture.test.ts",
+    "__tests__/mobile-android-apk.test.ts",
+    "__tests__/with-android-dev-menu-defaults.test.ts"
   ]
 }

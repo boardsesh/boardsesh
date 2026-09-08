@@ -77,7 +77,11 @@ jobs:
     # conditional-vs-bare note at android-apk-rn.yml (gate job).
     environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.commit_to_main) && 'Production' || '' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # ~15 min on the common path (download + emulator + capture). The bound is
+    # for the fallback: when the newest rn-android-dev-* release predates a
+    # native-input change, `vp run mobile:android-apk` builds the dev-client
+    # locally with no Gradle cache (~20-30 min) before the capture starts.
+    timeout-minutes: 60
 
     env:
       # Commit the captured set back to main only on an opt-in manual dispatch.

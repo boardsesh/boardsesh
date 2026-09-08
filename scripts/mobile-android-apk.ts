@@ -18,10 +18,16 @@
  *   vp run mobile:android-apk                     # download (or build) and print the path
  *   vp run mobile:android-apk -- --build-local    # force a local Gradle build
  *   vp run mobile:android-apk -- --apk-tag rn-android-dev-42
+ *   vp run mobile:android-apk -- --require-fresh  # build locally rather than use a stale release
+ *
+ * On GitHub Actions --require-fresh is the default: a downloaded release APK is
+ * only used when its release commit is an ancestor of HEAD with no native-input
+ * change since (see devApkFreshness), so a PR that moves the native tree
+ * screenshots ITS native tree instead of main's.
  */
 
 import { createHash, type Hash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -41,7 +47,70 @@ export interface EnsureApkOptions {
   buildLocal?: boolean;
   apkTag?: string;
   appPath?: string;
+  /**
+   * Refuse a downloaded release APK that predates a native change in this
+   * checkout and build one locally instead. Defaults to on in GitHub Actions,
+   * where "the screenshots show main's native tree, not this PR's" is a silent
+   * wrong answer rather than a slow one.
+   */
+  requireFresh?: boolean;
+  /** Commit the freshness check compares the release against (default: HEAD). */
+  headSha?: string;
 }
+
+/** Where the APK came from, for the CI step output. */
+export type AndroidApkSource = 'app-path' | `release:${string}` | 'local-build';
+
+export interface ResolvedAndroidApk {
+  apkPath: string;
+  source: AndroidApkSource;
+}
+
+/**
+ * Inputs that change the native build. `files` are hashed whole; `dirs` are
+ * hashed recursively (minus node_modules/build/.cxx). Exported so the freshness
+ * check below and the hash stay one list.
+ */
+export const NATIVE_INPUT_PATHS: { readonly files: readonly string[]; readonly dirs: readonly string[] } = {
+  files: [
+    'packages/mobile/app.config.ts',
+    'packages/mobile/package.json',
+    'package.json',
+    'pnpm-lock.yaml',
+    // Patched dependencies and overrides also change the native tree.
+    'pnpm-workspace.yaml',
+  ],
+  dirs: ['packages/mobile/plugins', 'packages/mobile/modules', 'patches'],
+};
+
+/**
+ * Paths `git diff` compares between a release APK's commit and HEAD to decide
+ * whether the prebuilt APK still matches this checkout.
+ *
+ * The native inputs minus `pnpm-lock.yaml`, plus the workflow that produces the
+ * APK. The lockfile is left out on purpose: the producer workflow's `paths:`
+ * filter ignores it too, so a lockfile-only change never yields a new release
+ * and treating it as staleness would rebuild locally (~30 min) on every
+ * dependency bump. The iOS `.app` cache key makes the same trade — a
+ * transitive-only native bump is an accepted blind spot.
+ */
+export const DEV_APK_FRESHNESS_PATHS: readonly string[] = [
+  ...NATIVE_INPUT_PATHS.files.filter((path) => path !== 'pnpm-lock.yaml'),
+  ...NATIVE_INPUT_PATHS.dirs,
+  '.github/workflows/android-apk-dev-client.yml',
+];
+
+/** Minimal `git` surface devApkFreshness needs, injected so tests never spawn git. */
+export type GitRunner = (args: string[]) => { status: number; stdout: string };
+
+const defaultGitRunner: GitRunner = (args) => {
+  const { status, stdout } = runCapture('git', args, { cwd: ROOT_DIR });
+  return { status, stdout };
+};
+
+export type DevApkFreshness =
+  | { fresh: true }
+  | { fresh: false; reason: 'not-an-ancestor' | 'native-inputs-changed' | 'unknown' };
 
 /** Latest rn-android-dev-N tag by build number (not list order). Null if none/unreachable. */
 export function resolveLatestDevTag(): string | null {
@@ -99,15 +168,7 @@ function hashDir(dir: string, root: string, hash: Hash): void {
 /** Short hash over the inputs that change the native build (mirrors CI's cache key, broadened). */
 function nativeInputHash(): string {
   const hash = createHash('sha256');
-  const files = [
-    'packages/mobile/app.config.ts',
-    'packages/mobile/package.json',
-    'package.json',
-    'pnpm-lock.yaml',
-    // Patched dependencies and overrides also change the native tree.
-    'pnpm-workspace.yaml',
-  ];
-  const dirs = ['packages/mobile/plugins', 'packages/mobile/modules', 'patches'];
+  const { files, dirs } = NATIVE_INPUT_PATHS;
   for (const rel of files) {
     const abs = join(ROOT_DIR, rel);
     if (existsSync(abs)) hash.update(rel).update(readFileSync(abs));
@@ -179,28 +240,128 @@ function buildDevApkLocally(): string {
   return cachedApk;
 }
 
-/** Resolve a ready APK path per the preference order above. */
-export function ensureAndroidApk(options: EnsureApkOptions = {}): string {
+/**
+ * Commit a `rn-android-dev-*` tag points at, peeling an annotated tag object.
+ * Null on any failure (no gh, no network, unknown tag) — the caller degrades to
+ * "unknown freshness" rather than failing the run.
+ */
+export function resolveDevTagCommit(tag: string): string | null {
+  const ref = runCapture('gh', ['api', `repos/{owner}/{repo}/git/ref/tags/${tag}`, '--jq', '.object.sha,.object.type']);
+  if (ref.status !== 0) return null;
+  const [sha, type] = ref.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (!sha) return null;
+  // A lightweight tag already points at the commit; an annotated one points at a
+  // tag object that has to be peeled.
+  if (type !== 'tag') return sha;
+  const peeled = runCapture('gh', ['api', `repos/{owner}/{repo}/git/tags/${sha}`, '--jq', '.object.sha']);
+  if (peeled.status !== 0) return null;
+  const commit = peeled.stdout.trim();
+  return commit.length > 0 ? commit : null;
+}
+
+/**
+ * Does the release APK built at `tagCommit` still match `headSha`'s native tree?
+ *
+ * Pure over an injected git runner. `not-an-ancestor` means the release was cut
+ * from a commit this checkout doesn't contain (a PR branched before it, or a
+ * different line of history) — the diff would then be two-way and unreadable, so
+ * it's reported rather than measured.
+ */
+export function devApkFreshness(
+  headSha: string,
+  tagCommit: string,
+  runGit: GitRunner = defaultGitRunner,
+): DevApkFreshness {
+  const haveTagCommit = (): boolean => runGit(['cat-file', '-e', `${tagCommit}^{commit}`]).status === 0;
+  if (!haveTagCommit()) {
+    // A shallow CI checkout won't have the release commit; GitHub allows
+    // fetching a reachable SHA directly.
+    runGit(['fetch', '--quiet', 'origin', tagCommit]);
+    if (!haveTagCommit()) return { fresh: false, reason: 'unknown' };
+  }
+  if (runGit(['merge-base', '--is-ancestor', tagCommit, headSha]).status !== 0) {
+    return { fresh: false, reason: 'not-an-ancestor' };
+  }
+  const diff = runGit(['diff', '--quiet', tagCommit, headSha, '--', ...DEV_APK_FRESHNESS_PATHS]);
+  if (diff.status === 0) return { fresh: true };
+  if (diff.status === 1) return { fresh: false, reason: 'native-inputs-changed' };
+  return { fresh: false, reason: 'unknown' };
+}
+
+function resolveHeadSha(): string {
+  const head = runCapture('git', ['rev-parse', 'HEAD'], { cwd: ROOT_DIR });
+  return head.status === 0 ? head.stdout.trim() : '';
+}
+
+/**
+ * True if the downloaded `tag` APK may be used. Warns (and answers false, so the
+ * caller builds locally) when it can't be shown to match this checkout and
+ * `requireFresh` is set. Never throws: a broken freshness check must not fail a
+ * capture that would otherwise work.
+ */
+function downloadedApkIsUsable(tag: string, options: EnsureApkOptions, requireFresh: boolean): boolean {
+  let headSha = options.headSha ?? '';
+  let verdict: DevApkFreshness;
+  try {
+    headSha = headSha || resolveHeadSha();
+    const tagCommit = resolveDevTagCommit(tag);
+    verdict = headSha && tagCommit ? devApkFreshness(headSha, tagCommit) : { fresh: false, reason: 'unknown' };
+  } catch (error) {
+    console.warn(
+      `${LOG} freshness check for ${tag} failed (${error instanceof Error ? error.message : String(error)})`,
+    );
+    verdict = { fresh: false, reason: 'unknown' };
+  }
+  if (verdict.fresh) return true;
+
+  const detail = `${tag} does not match this checkout (${verdict.reason}; head ${headSha || 'unknown'})`;
+  if (requireFresh) {
+    console.warn(`::warning::${LOG} ${detail}; building the dev-client APK locally instead.`);
+    return false;
+  }
+  console.warn(`${LOG} ${detail}; using it anyway (pass --require-fresh to force a local build).`);
+  return true;
+}
+
+/** Resolve a ready APK per the preference order above, with where it came from. */
+export function resolveAndroidApk(options: EnsureApkOptions = {}): ResolvedAndroidApk {
   if (options.appPath) {
     if (!existsSync(options.appPath)) throw new Error(`--app-path not found: ${options.appPath}`);
-    return options.appPath;
+    return { apkPath: options.appPath, source: 'app-path' };
   }
-  if (options.buildLocal) return buildDevApkLocally();
+  if (options.buildLocal) return { apkPath: buildDevApkLocally(), source: 'local-build' };
 
+  const requireFresh = options.requireFresh ?? process.env.GITHUB_ACTIONS === 'true';
   try {
     const tag = options.apkTag ?? resolveLatestDevTag();
     if (!tag) throw new Error('no rn-android-dev-* release found');
     const apk = downloadDevApk(tag);
-    if (apkHasAbi(apk, REQUIRED_ABI)) return apk;
-    console.warn(
-      `${LOG} ${tag} APK has no ${REQUIRED_ABI} ABI (the CI dev-client build is not universal yet). Building locally instead.`,
-    );
+    if (apkHasAbi(apk, REQUIRED_ABI)) {
+      if (downloadedApkIsUsable(tag, options, requireFresh)) return { apkPath: apk, source: `release:${tag}` };
+    } else {
+      console.warn(
+        `${LOG} ${tag} APK has no ${REQUIRED_ABI} ABI (the CI dev-client build is not universal yet). Building locally instead.`,
+      );
+    }
   } catch (error) {
     console.warn(
       `${LOG} download path unavailable (${error instanceof Error ? error.message : String(error)}); building locally instead.`,
     );
   }
-  return buildDevApkLocally();
+  return { apkPath: buildDevApkLocally(), source: 'local-build' };
+}
+
+/** Resolve a ready APK path per the preference order above. */
+export function ensureAndroidApk(options: EnsureApkOptions = {}): string {
+  return resolveAndroidApk(options).apkPath;
+}
+
+/** GITHUB_OUTPUT lines the screenshot workflow reads to install the resolved APK. */
+export function formatApkOutputs(resolved: ResolvedAndroidApk): string {
+  return `apk_path=${resolved.apkPath}\napk_source=${resolved.source}\n`;
 }
 
 export function main(argv: readonly string[] = process.argv.slice(2)): number {
@@ -210,9 +371,16 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   const apkTag = tagIndex >= 0 ? args[tagIndex + 1] : undefined;
   const pathIndex = args.indexOf('--app-path');
   const appPath = pathIndex >= 0 ? resolve(args[pathIndex + 1]) : undefined;
+  const requireFresh = args.includes('--require-fresh') ? true : undefined;
   try {
-    const apk = ensureAndroidApk({ buildLocal, apkTag, appPath });
+    const resolved = resolveAndroidApk({ buildLocal, apkTag, appPath, requireFresh });
+    const apk = resolve(resolved.apkPath);
     console.log(`${LOG} APK ready: ${apk}`);
+    // The screenshot workflow installs the APK this resolved, so hand it back as
+    // a step output rather than making the caller re-derive it.
+    if (process.env.GITHUB_OUTPUT) {
+      appendFileSync(process.env.GITHUB_OUTPUT, formatApkOutputs({ apkPath: apk, source: resolved.source }));
+    }
     return 0;
   } catch (error) {
     console.error(`${LOG} FAILED: ${error instanceof Error ? error.message : String(error)}`);

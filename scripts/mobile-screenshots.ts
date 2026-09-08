@@ -26,12 +26,18 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  *                                 [--locales all|<comma-list>] [--device "iPhone 16 Pro Max"]
  *                                 [--variant material|liquidGlass] [--shutdown]
  *                                 [--app-path <path/to/Boardsesh.app|app.apk>]
- *                                 [--orientation portrait|landscape]
+ *                                 [--orientation portrait|landscape] [--dev-client]
+ *
+ * --dev-client makes the Android capture work the way iOS always has: install the
+ * dev-client APK (com.boardsesh.app.dev) and load its JS from a Metro this script
+ * starts, instead of installing a standalone APK with JS baked in. iOS is always a
+ * dev-client, so the flag is Android-only.
  *
  * Requires: Maestro (https://maestro.mobile.dev) plus platform tooling (xcrun for
  * iOS, adb for Android). For --backend local, bring up the seeded dev DB +
  * backend first (`vp run dev`). iOS can build a Debug simulator .app when
- * --app-path is omitted; Android expects --app-path to point at a prebuilt APK.
+ * --app-path is omitted; Android expects --app-path to point at a prebuilt APK
+ * (or resolves a dev-client APK itself with --dev-client).
  * Credentials come from SCREENSHOT_USER_EMAIL / SCREENSHOT_USER_PASSWORD
  * (default test@boardsesh.com / test).
  */
@@ -74,6 +80,19 @@ import {
   waitForMetro,
   waitForPortToClose,
 } from './lib/metro-dev-server';
+import {
+  connectDevClient,
+  installDevClient,
+  launchDevClientToHome,
+  startMetroForDevClient,
+  stopDevClientSession,
+  type DevClientSession,
+} from './lib/android-dev-client';
+import { ANDROID_DEV_PACKAGE } from './lib/android-app';
+// Orchestrator-to-orchestrator import (mobile-android-shots.ts already does the
+// same): resolving a dev-client APK is one behaviour with one cache, and the lib
+// layer can't own it because it shells out to gh/gradle.
+import { ensureAndroidApk } from './mobile-android-apk';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -114,6 +133,12 @@ const DEFAULT_ANDROID_APK = resolve(
 // so localhost is correct for a sim build pointed at the local dev backend.
 const LOCAL_BACKEND_URL = 'http://localhost:8080';
 const LOCAL_WEB_URL = 'http://localhost:3000';
+// An emulator's localhost is its OWN loopback, so --backend local additionally
+// needs these two reversed onto the host. Derived from the URLs above so a port
+// move there can't leave the reverse behind.
+const LOCAL_BACKEND_REVERSE_PORTS: readonly number[] = [LOCAL_BACKEND_URL, LOCAL_WEB_URL].map((url) =>
+  Number.parseInt(new URL(url).port, 10),
+);
 export const DEFAULT_USER_EMAIL = 'test@boardsesh.com';
 export const DEFAULT_USER_PASSWORD = 'test';
 const MAESTRO_INSTALL_HINT = 'Install Maestro: curl -Ls "https://get.maestro.mobile.dev" | bash';
@@ -217,6 +242,12 @@ export interface ScreenshotOptions {
    * orientation; null falls back to portrait for unlisted names.
    */
   orientation: IosDeviceOrientation | null;
+  /**
+   * Android only: install the dev-client APK and serve its JS from a Metro this
+   * script starts, instead of a standalone APK with the bundle baked in. iOS is
+   * always a dev-client, so the flag does nothing there.
+   */
+  devClient: boolean;
   shutdown: boolean;
 }
 
@@ -242,6 +273,7 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     boards: null,
     appPath: null,
     orientation: null,
+    devClient: false,
     shutdown: false,
   };
 
@@ -308,6 +340,9 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
         index++;
         break;
       }
+      case '--dev-client':
+        options.devClient = true;
+        break;
       case '--shutdown':
         options.shutdown = true;
         break;
@@ -1204,19 +1239,30 @@ function runAndroid(options: ScreenshotOptions): number {
     return 1;
   }
 
-  const appPath = resolveAndroidAppPath(options);
+  // The dev-client APK carries no JS, so it resolves through the shared APK
+  // cache (download the latest rn-android-dev-* release, or build one) and runs
+  // under the side-by-side .dev package.
+  const appPath = options.devClient
+    ? ensureAndroidApk({ appPath: options.appPath ?? undefined })
+    : resolveAndroidAppPath(options);
+  const packageId = options.devClient ? ANDROID_DEV_PACKAGE : APP_ID;
   const deviceName = androidDeviceName(options);
   console.log(`${LOG} Installing ${appPath} on ${deviceId} (${deviceName})...`);
-  runCapture('adb', ['-s', deviceId, 'uninstall', APP_ID]);
-  const installStatus = runInherit('adb', ['-s', deviceId, 'install', '-r', appPath], process.env);
-  if (installStatus !== 0) {
-    console.error(`${LOG} FAILED: adb install exited ${installStatus}.`);
-    return installStatus;
+  if (options.devClient) {
+    // Throws on a failed install; main() turns that into a FAILED line + exit 1.
+    installDevClient('adb', deviceId, appPath);
+  } else {
+    runCapture('adb', ['-s', deviceId, 'uninstall', APP_ID]);
+    const installStatus = runInherit('adb', ['-s', deviceId, 'install', '-r', appPath], process.env);
+    if (installStatus !== 0) {
+      console.error(`${LOG} FAILED: adb install exited ${installStatus}.`);
+      return installStatus;
+    }
+    // The uninstall should leave a fresh data directory. Clear again after install
+    // so reruns against an already-installed, same-signature APK also start signed
+    // out with no stale active board.
+    runCapture('adb', ['-s', deviceId, 'shell', 'pm', 'clear', APP_ID]);
   }
-  // The uninstall should leave a fresh data directory. Clear again after install
-  // so reruns against an already-installed, same-signature APK also start signed
-  // out with no stale active board.
-  runCapture('adb', ['-s', deviceId, 'shell', 'pm', 'clear', APP_ID]);
   // Drop whatever an earlier run left in the ring buffer, then start streaming to
   // a file BEFORE Maestro launches the app — see LOGCAT_LOG_PATH for why a
   // post-hoc `logcat -d` loses the app's markers on a chatty run.
@@ -1231,7 +1277,23 @@ function runAndroid(options: ScreenshotOptions): number {
   }
 
   const captureDir = mkdtempSync(join(tmpdir(), 'boardsesh-android-shots-'));
+  let devClientSession: DevClientSession | null = null;
   try {
+    if (options.devClient) {
+      // Android captures the single en-US tree (the locale matrix is iOS-only),
+      // so no locale is baked into the bundle here.
+      const metroEnv = buildScreenshotEnv(options, process.env, null);
+      console.log(
+        `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}${options.variant ? `, variant=${options.variant}` : ''})...`,
+      );
+      devClientSession = startMetroForDevClient(metroEnv);
+      connectDevClient('adb', deviceId, options.backend === 'local' ? LOCAL_BACKEND_REVERSE_PORTS : []);
+      if (!launchDevClientToHome('adb', deviceId, { logPrefix: LOG })) {
+        console.error(`${LOG} FAILED: dev-client never reached home`);
+        return 1;
+      }
+    }
+
     const email = process.env.SCREENSHOT_USER_EMAIL ?? DEFAULT_USER_EMAIL;
     const password = process.env.SCREENSHOT_USER_PASSWORD ?? DEFAULT_USER_PASSWORD;
     console.log(`${LOG} Running Maestro flow ${options.flow} on ${deviceId}...`);
@@ -1243,9 +1305,9 @@ function runAndroid(options: ScreenshotOptions): number {
         'test',
         flowFile,
         // The flows declare `appId: ${APP_ID}`; the standalone store APK is the
-        // production package (the local dev-client path passes the .dev package).
+        // production package (the dev-client path passes the .dev package).
         '-e',
-        `APP_ID=${APP_ID}`,
+        `APP_ID=${packageId}`,
         '-e',
         `SCREENSHOT_USER_EMAIL=${email}`,
         '-e',
@@ -1283,6 +1345,9 @@ function runAndroid(options: ScreenshotOptions): number {
     );
     for (const file of saved) console.log(`${LOG}   ${file}`);
   } finally {
+    // First, so a Maestro failure (or any early return above) still takes Metro
+    // and the readiness server down with it.
+    if (devClientSession) stopDevClientSession(devClientSession);
     logcatStream.kill();
     clearAndroidStatusBar(deviceId);
     rmSync(captureDir, { force: true, recursive: true });

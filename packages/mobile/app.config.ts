@@ -709,6 +709,12 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // can't cover the captured screens across a cold relaunch. See the plugin
       // for why per-launch args aren't enough on CI.
       ...(isScreenshotBuild ? ['./plugins/with-screenshot-dev-menu'] : []),
+      // Dev variant only: the Android twin of the plugin above. The dev-client
+      // APK auto-connects to Metro on a plain launch and drops the dev-menu
+      // onboarding sheet + floating gear button, so screenshot captures aren't
+      // covered by dev chrome. Must stay gated on the dev variant — registering
+      // it unconditionally would move the production native fingerprint.
+      ...(isDevVariant ? ['./plugins/with-android-dev-menu-defaults'] : []),
       // Apple Health entitlement + usage strings for the health-workouts native
       // module (writes finished sessions as HKWorkouts, reads body mass for the
       // calorie estimate). iOS-only mod; the module is skipped on Android. No
