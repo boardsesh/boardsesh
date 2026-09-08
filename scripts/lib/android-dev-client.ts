@@ -67,8 +67,21 @@ export function startMetroForDevClient(metroEnv: NodeJS.ProcessEnv): DevClientSe
   return { metro, readinessServer };
 }
 
+/** Run one `adb reverse` and throw, naming the port, if it doesn't exit 0. */
+function reversePort(adbBinary: string, serial: string, port: number): void {
+  const result = runCapture(adbBinary, ['-s', serial, 'reverse', `tcp:${port}`, `tcp:${port}`]);
+  if (result.status !== 0) {
+    throw new Error(`adb reverse tcp:${port} failed (exit ${result.status}): ${result.stderr.trim()}`);
+  }
+}
+
 /**
  * Wire the emulator to reach Metro and the readiness server on the host.
+ *
+ * Each `adb reverse` is checked: a failure (e.g. the transient "device offline"
+ * right after boot) used to be silently ignored, leaving the dev-client unable
+ * to reach Metro and timing out 3x240s later with no clue why — now it throws
+ * immediately, naming the port that failed.
  *
  * The readiness-port reverse is NEW: the app's readiness GET to
  * localhost:<SCREENSHOT_READY_PORT> never left the emulator before, so
@@ -77,11 +90,9 @@ export function startMetroForDevClient(metroEnv: NodeJS.ProcessEnv): DevClientSe
  * signals and Android previously got only one).
  */
 export function connectDevClient(adbBinary: string, serial: string, extraPorts: readonly number[] = []): void {
-  runCapture(adbBinary, ['-s', serial, 'reverse', `tcp:${METRO_PORT}`, `tcp:${METRO_PORT}`]);
-  runCapture(adbBinary, ['-s', serial, 'reverse', `tcp:${SCREENSHOT_READY_PORT}`, `tcp:${SCREENSHOT_READY_PORT}`]);
-  for (const port of extraPorts) {
-    runCapture(adbBinary, ['-s', serial, 'reverse', `tcp:${port}`, `tcp:${port}`]);
-  }
+  reversePort(adbBinary, serial, METRO_PORT);
+  reversePort(adbBinary, serial, SCREENSHOT_READY_PORT);
+  for (const port of extraPorts) reversePort(adbBinary, serial, port);
 }
 
 /** Fire the deep link that loads the dev-client's JS from Metro. Does not wait. */

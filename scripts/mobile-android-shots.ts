@@ -53,6 +53,7 @@ import {
   launchDevClientToHome,
   startMetroForDevClient,
   stopDevClientSession,
+  type DevClientSession,
 } from './lib/android-dev-client';
 import {
   DEFAULT_USER_EMAIL,
@@ -452,10 +453,14 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   console.log(
     `${LOG} Starting Metro on ${METRO_PORT} (screenshotMode=${options.screenshotMode}, backend=${options.backend})...`,
   );
-  const session = startMetroForDevClient(metroEnv);
 
+  // Declared before the try so a Metro startup failure (startMetroForDevClient
+  // throws) still runs the finally below — otherwise clearAndroidStatusBar and
+  // the "left emulator running for debugging" hint never fire on that failure.
+  let session: DevClientSession | null = null;
   let succeeded = false;
   try {
+    session = startMetroForDevClient(metroEnv);
     connectDevClient(adbBinary, serial);
 
     if (options.screenshotMode) {
@@ -492,14 +497,16 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
     }
     succeeded = true;
   } finally {
+    // session is null when startMetroForDevClient itself threw — nothing to stop
+    // in that case, but the emulator-side cleanup/hint below still needs to run.
     if (options.shutdown) {
-      stopDevClientSession(session);
+      if (session) stopDevClientSession(session);
       clearAndroidStatusBar(serial);
       shutdownEmulator(serial, env);
     } else if (!succeeded) {
       // A mid-pipeline failure: free the Metro port, but leave the emulator up for
       // debugging and tell the user how to stop it.
-      stopDevClientSession(session);
+      if (session) stopDevClientSession(session);
       console.error(
         `${LOG} Left emulator ${serial} running for debugging; stop it with: vp run mobile:android-shots -- shutdown`,
       );

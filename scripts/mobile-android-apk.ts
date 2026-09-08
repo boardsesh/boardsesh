@@ -190,7 +190,11 @@ function buildDevApkLocally(): string {
   }
 
   // The local build needs build-tools + JDK 21 (the gradle/RN toolchain).
-  const toolchain = ensureAndroidSdk({ includeBuildTools: true });
+  // buildOnly: true skips the emulator + system-image packages — a Gradle build
+  // never boots an emulator, and in CI reactivecircus/android-emulator-runner
+  // installs the system image itself, so the ~2GB image was downloaded for
+  // nothing before.
+  const toolchain = ensureAndroidSdk({ includeBuildTools: true, buildOnly: true });
   if (!toolchain.java21) {
     throw new Error('Local APK build needs JDK 21; run `vp run mobile:android-doctor -- --build` first.');
   }
@@ -220,6 +224,9 @@ function buildDevApkLocally(): string {
     'assembleDebug',
     `-PreactNativeArchitectures=${REQUIRED_ABI}`,
     `-PboardseshAbiFilters=${REQUIRED_ABI}`,
+    // Reuse task outputs from ~/.gradle/caches across runs (CI restores it via
+    // actions/cache; see mobile-screenshots-android.yml).
+    '--build-cache',
     '--no-daemon',
     '--console=plain',
   ];

@@ -17,7 +17,10 @@ name: Mobile Screenshots (Android)
 # EXPO_PUBLIC_SCREENSHOT_* values set into Metro's env, exactly like the iOS job.
 # It's installed on a freshly booted emulator and driven by Maestro. Everything
 # runs against PROD signed in as the test user (the canonical store recipe), so
-# there's no local backend.
+# there's no local backend. A dispatch on a branch whose native inputs changed
+# since the newest rn-android-dev-* release finds no usable prerelease and
+# builds the dev-client locally first (see "Resolve dev-client APK" below) —
+# that run can take ~45 min instead of the common ~15-20.
 #
 # Getting screenshots to the store: this workflow does NOT upload to Google Play.
 # On a manual dispatch with `commit_to_main = true` it commits the captured set
@@ -80,7 +83,8 @@ jobs:
     # ~15 min on the common path (download + emulator + capture). The bound is
     # for the fallback: when the newest rn-android-dev-* release predates a
     # native-input change, `vp run mobile:android-apk` builds the dev-client
-    # locally with no Gradle cache (~20-30 min) before the capture starts.
+    # locally (~45 min on a cold Gradle cache, faster once the cache above is warm)
+    # before the capture starts.
     timeout-minutes: 60
 
     env:
@@ -160,6 +164,21 @@ jobs:
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
+      # Only the local-build fallback below runs Gradle, so this cache only pays
+      # off on that path; the common (download) path just restores it as a cheap
+      # no-op (nothing new to save, since the fallback step doesn't run). Key
+      # mirrors the same native-input files devApkFreshness diffs, so it's
+      # invalidated exactly when the fallback build's own output would change.
+      - name: Cache Gradle (local-build fallback only)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-rn-dev-client-${{ hashFiles('packages/mobile/package.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-rn-dev-client-
+
       # Downloads the newest rn-android-dev-* universal dev-client APK
       # (android-apk-dev-client.yml) — no bundled JS, so no Gradle build on the
       # common path. When that release predates a native-input change on this
@@ -173,16 +192,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: vp run mobile:android-apk
 
-      # There's no Gradle tree to reclaim any more (the common path only
-      # downloads an APK), but the emulator system-image install still needs
-      # room, so the big preinstalled toolchains we never use still get purged —
-      # a full local-build fallback previously left the runner too full and
-      # `sdkmanager` failed with "No space left on device", aborting capture
-      # before it started. Best-effort.
+      # Traceability for `apk_source` (written above but otherwise unread): a
+      # captured set can always be tied back to release:rn-android-dev-N vs a
+      # local-build fallback without digging into the step logs.
+      - name: Record APK source
+        run: |
+          echo "APK source: ${{ steps.apk.outputs.apk_source }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::APK source: ${{ steps.apk.outputs.apk_source }}"
+
+      # The local-build fallback (buildDevApkLocally, invoked by the Resolve step
+      # above when no fresh rn-android-dev-* release exists) leaves a multi-GB
+      # packages/mobile/android/ tree behind after copying the built APK out to
+      # ~/.cache/boardsesh/android/local-build/ — reclaim it first; the common
+      # (download) path never creates that tree, so this is a no-op there. The
+      # emulator system-image install still needs room regardless, so the big
+      # preinstalled toolchains we never use get purged too. The fallback build is
+      # what previously filled the runner and made `sdkmanager` fail with "No
+      # space left on device", aborting capture before it started. Best-effort.
       - name: Free disk space for the emulator
         run: |
           set -eu
           echo "Disk before cleanup:"; df -h /
+          rm -rf packages/mobile/android 2>/dev/null || true
           sudo rm -rf \
             /usr/share/dotnet \
             /usr/local/lib/android/sdk/ndk \

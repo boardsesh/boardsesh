@@ -13,19 +13,23 @@ name: app-store screenshots android
 # walls, followed by the six core app surfaces. Party, playlist, logbook, and session
 # detail stay out of the Android listing because there is no room for them here.
 #
-# WAITING (why this differs from the iOS flow): the CI emulator runs on a software GL
-# renderer (swiftshader) against the PROD backend, so it is far slower than the iOS sim,
-# and — unlike iOS — there's no Metro `$screen /home` gate before the flow runs (this is a
-# release APK; the marker is __DEV__-only). So a bare `waitForAnimationToEnd` captured the
-# splash screen and skeleton loaders. Each shot now waits for real content:
+# WAITING (why the waits stay generous even though the app is already home): the
+# orchestrator's launchDevClientToHome waits for Metro's `$screen /home` marker
+# BEFORE this flow runs — the APK is a debug dev-client, not a release build, so
+# the __DEV__-only marker fires — so the `launchApp` below is a relaunch of an
+# already-Metro-connected, already-home app, same as iOS, not a cold boot. What
+# stays slow is the CI emulator's software GL renderer (swiftshader) fetching
+# real data from the PROD backend, so a bare `waitForAnimationToEnd` can still
+# catch a skeleton loader mid-fetch. Each shot waits for real content instead:
 #   - testID anchors where they exist (`home-screen` clears the splash; `climb-row` proves
 #     the climb list loaded, replacing `climb-list-row-skeleton`).
 #   - `waitForAnimationToEnd: { timeout }` everywhere else — it's pixel-diff based, so it
 #     blocks on the skeleton shimmer until the data swaps in and the screen goes static,
 #     then continues (it never fails the flow, just proceeds on timeout).
 #
-# Screenshot-mode deep-link params (honoured because the APK is built with
-# EXPO_PUBLIC_SCREENSHOT_MODE=1):
+# Screenshot-mode deep-link params (honoured because Metro's env carries
+# EXPO_PUBLIC_SCREENSHOT_MODE=1 — the dev-client ships no bundled JS of its own,
+# so nothing is "built with" it; the running bundle just reads it from Metro):
 #   ://climbs?screenshotOpenFirst=1       -> auto-opens the first climb's board view
 #   ://climbs?screenshotBoardIndex=0|1    -> switches to a named screenshot wall first
 #   ://climbs?screenshotOpenBoardSheet=1  -> opens the board-presence "now on the wall" sheet

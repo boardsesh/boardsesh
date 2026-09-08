@@ -42,10 +42,23 @@ export const BUILD_TOOLS_VERSION = `${ANDROID_API_LEVEL}.0.0`;
 const SDK_PACKAGES_CORE = ['platform-tools', 'emulator', `platforms;android-${ANDROID_API_LEVEL}`, SYSTEM_IMAGE];
 // Extra packages the local Gradle fallback build needs.
 const SDK_PACKAGES_BUILD = [`build-tools;${BUILD_TOOLS_VERSION}`];
+// Subset of the core list a Gradle build alone needs: platform-tools + the
+// platform, no emulator and no system-image (see EnsureSdkOptions.buildOnly).
+const SDK_PACKAGES_BUILD_ONLY_CORE = SDK_PACKAGES_CORE.filter(
+  (pkg) => pkg === 'platform-tools' || pkg.startsWith('platforms;'),
+);
 
 export interface EnsureSdkOptions {
   /** Also install build-tools — only needed for the local Gradle fallback build. */
   includeBuildTools?: boolean;
+  /**
+   * Skip `emulator` and the `system-images;...` package: a Gradle build never
+   * boots an emulator, and in CI `reactivecircus/android-emulator-runner`
+   * installs the system image itself, so pulling it here is a ~2GB download for
+   * nothing. Only platform-tools + the platform package (plus build-tools, when
+   * includeBuildTools is set) are installed.
+   */
+  buildOnly?: boolean;
 }
 
 export interface AndroidToolchain {
@@ -83,8 +96,22 @@ export function emulatorPath(home: string): string {
   return join(home, 'emulator', 'emulator');
 }
 
-/** Locate a JDK 21 (override env, our cache, a system install) without downloading. */
+/** True if `javaHome` has a `bin/java` that reports itself as JDK 21. */
+function isJdk21(javaHome: string): boolean {
+  const javaBin = join(javaHome, 'bin', 'java');
+  if (!existsSync(javaBin)) return false;
+  const version = runCapture(javaBin, ['-version']);
+  return /(version "21|openjdk 21|\b21\.\d)/.test(`${version.stderr}${version.stdout}`);
+}
+
+/** Locate a JDK 21 (JAVA_HOME, override env, our cache, a system install) without downloading. */
 function findJava21(): string | null {
+  // actions/setup-java exports JAVA_HOME under /opt/hostedtoolcache, which none
+  // of the other candidate roots below cover. Only accept it once it's proven to
+  // be JDK 21 — never trust an arbitrary JAVA_HOME.
+  const javaHomeEnv = process.env.JAVA_HOME;
+  if (javaHomeEnv && isJdk21(javaHomeEnv)) return javaHomeEnv;
+
   const override = process.env.JAVA21_HOME ?? process.env.JAVA_21_HOME;
   if (override && existsSync(join(override, 'bin', 'java'))) return override;
   if (existsSync(join(JDK21_HOME, 'bin', 'java'))) return JDK21_HOME;
@@ -95,10 +122,7 @@ function findJava21(): string | null {
     for (const entry of readdirSync(dir)) {
       if (!entry.includes('21')) continue;
       const javaHome = join(dir, entry);
-      const javaBin = join(javaHome, 'bin', 'java');
-      if (!existsSync(javaBin)) continue;
-      const version = runCapture(javaBin, ['-version']);
-      if (/(version "21|openjdk 21|\b21\.\d)/.test(`${version.stderr}${version.stdout}`)) return javaHome;
+      if (isJdk21(javaHome)) return javaHome;
     }
   }
   return null;
@@ -199,7 +223,10 @@ export function ensureAndroidSdk(options: EnsureSdkOptions = {}): AndroidToolcha
   const home = resolveAndroidHome();
   mkdirSync(home, { recursive: true });
 
-  const wanted = [...SDK_PACKAGES_CORE, ...(options.includeBuildTools ? SDK_PACKAGES_BUILD : [])];
+  const wanted = [
+    ...(options.buildOnly ? SDK_PACKAGES_BUILD_ONLY_CORE : SDK_PACKAGES_CORE),
+    ...(options.includeBuildTools ? SDK_PACKAGES_BUILD : []),
+  ];
   const needCmdlineTools = !existsSync(sdkmanagerPath(home));
   const missing = wanted.filter((pkg) => !existsSync(packageInstallPath(home, pkg)));
 

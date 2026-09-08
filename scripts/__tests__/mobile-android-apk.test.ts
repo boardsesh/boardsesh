@@ -61,10 +61,17 @@ describe('devApkFreshness', () => {
   });
 
   it('reports not-an-ancestor when the release commit is not in this history', () => {
-    expect(devApkFreshness(HEAD, TAG_COMMIT, fakeGit({ catFile: [0], isAncestor: 1 }))).toEqual({
+    const calls: GitCall[] = [];
+    expect(devApkFreshness(HEAD, TAG_COMMIT, fakeGit({ catFile: [0], isAncestor: 1 }, calls))).toEqual({
       fresh: false,
       reason: 'not-an-ancestor',
     });
+
+    // Pins the argument ORDER: `merge-base --is-ancestor <tagCommit> <headSha>`
+    // asks "is the release commit an ancestor of HEAD?" — swapped, it silently
+    // asks the opposite question and this test would stay green.
+    const mergeBaseCall = calls.find((call) => call.args[0] === 'merge-base');
+    expect(mergeBaseCall?.args).toEqual(['merge-base', '--is-ancestor', TAG_COMMIT, HEAD]);
   });
 
   it('reports native-inputs-changed when git diff exits 1', () => {
