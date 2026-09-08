@@ -78,10 +78,9 @@ at 500 characters.
 
 ## 4. Prepare and submit the exact store builds
 
-`mobile-store-draft.yml` is best-effort and disabled unless
-`ENABLE_STORE_DRAFT_SUBMISSION` is `true`. It runs whenever **iOS TestFlight
-Deploy** or **Android Play Internal Deploy** completes on `main`, and on demand;
-there is no schedule. It pins the current `main` SHA, selects the exact highest
+`mobile-store-draft.yml` is best-effort and always on; there is no enable flag.
+It runs whenever **iOS TestFlight Deploy** or **Android Play Internal Deploy**
+completes on `main`, and on demand; there is no schedule. It pins the current `main` SHA, selects the exact highest
 iOS and Android build tags for that version, and checks that both tagged
 binaries match `main`'s platform fingerprints. Immediately before changing
 either store draft it rechecks that `main` and both selected tags have not

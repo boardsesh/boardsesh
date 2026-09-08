@@ -156,6 +156,9 @@ describe('native release workflow contracts', () => {
     expect(workflowRun.types).toEqual(['completed']);
     expect(workflowRun.branches).toEqual(['main']);
     expect(triggers).toHaveProperty('workflow_dispatch');
+    // No enable flag: the candidate gates are the protection, and the lanes only make drafts.
+    expect(draft).not.toContain('ENABLE_STORE_DRAFT_SUBMISSION');
+    expect(draft).not.toMatch(/vars\.[A-Z_]*ENABLE/);
     // A failed or cancelled deploy has nothing to draft.
     expect(draft).toContain(
       "if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'",

@@ -8,9 +8,10 @@ name: Mobile Store Draft Submission
 # no metadata (those are owned by mobile-store-metadata.yml / the screenshot
 # workflows), no review submission, no rollout.
 #
-# OFF BY DEFAULT: both jobs are gated on the repo variable
-# ENABLE_STORE_DRAFT_SUBMISSION == 'true' because they mutate live store state.
-# Flip the variable on once you've validated the lanes. Runs whenever a
+# ALWAYS ON: there is no enable flag. What protects the stores is that this only
+# ever prepares DRAFTS (submit_for_review: false, release_status: draft), and
+# that main-candidate refuses to draft anything but the exact highest build tag
+# for main's version whose fingerprint matches main's head. Runs whenever a
 # TestFlight or Play deploy on main completes (workflow_run) and on demand — no
 # schedule, so a draft follows each native build by minutes rather than hours.
 # The candidate check tolerates the other platform not being there yet (it exits
@@ -300,7 +301,6 @@ jobs:
     needs: main-candidate
     if: >-
       needs.main-candidate.outputs.candidate_ready == 'true' &&
-      vars.ENABLE_STORE_DRAFT_SUBMISSION == 'true' &&
       (github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')
     runs-on: ubuntu-latest
     # The lane waits up to 45 min for App Store Connect to finish processing the
@@ -389,7 +389,6 @@ jobs:
     needs: main-candidate
     if: >-
       needs.main-candidate.outputs.candidate_ready == 'true' &&
-      vars.ENABLE_STORE_DRAFT_SUBMISSION == 'true' &&
       (github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 15
