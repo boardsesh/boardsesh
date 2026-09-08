@@ -62,6 +62,30 @@ async function getStoredCredential(key: string): Promise<string | null> {
   return storedCredential === CLEARED_CREDENTIAL ? null : storedCredential;
 }
 
+/**
+ * Whether `key` now reads as absent through the exact path the getters use.
+ *
+ * This is the only definition of "cleared" in the file, and both the delete
+ * loop and the tombstone write below check against it, so neither can drift
+ * into believing something the getters disagree with. It reads through
+ * readSecureValue on purpose: what matters is not which namespace holds what,
+ * but what a subsequent getAuthToken would return, which is v2 when v2 has
+ * anything and legacy only otherwise.
+ *
+ * A surviving tombstone counts as cleared. It can only be there because an
+ * earlier sign-out already found deletion impossible and overwrote the
+ * credential with it, so the credential is gone and getStoredCredential already
+ * reads this as null.
+ *
+ * Throws are NOT caught here — a read that fails leaves us unable to tell
+ * "deleted" from "still there but unreadable", and each caller has its own
+ * (identical, conservative) answer for that: treat it as not cleared.
+ */
+async function isStoredCredentialCleared(key: string): Promise<boolean> {
+  const remaining = await readSecureValue(key);
+  return remaining === null || remaining === CLEARED_CREDENTIAL;
+}
+
 async function clearStoredCredential(key: string): Promise<void> {
   const failures: unknown[] = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -76,22 +100,17 @@ async function clearStoredCredential(key: string): Promise<void> {
       // the legacy copy for the read fallback to find. Confirm by reading.
       //
       // A throw from that read-back is treated as a failed attempt even though
-      // the delete may well have worked. That is the safe direction: we cannot
-      // tell "deleted" from "still there but unreadable", and retrying, then
-      // tombstoning, lands the same correct end state either way. The cost of
-      // being wrong here is one redundant tombstone write, not a session that
+      // the delete may well have worked. That is the safe direction: retrying,
+      // then tombstoning, lands the same correct end state either way, and the
+      // cost of being wrong is one redundant tombstone write, not a session that
       // comes back.
       //
-      // A surviving tombstone counts as cleared. It can only be there because an
-      // earlier sign-out already found deletion impossible and overwrote the
-      // credential with it, so the credential is gone and getStoredCredential
-      // already reads this as null. Treating it as "still present" would spend
-      // the second attempt re-deleting a value that is already inert and then
-      // re-write an identical tombstone — and on a device not unlocked since
-      // boot that write rejects, turning an already-correct state into an
+      // Recognising an already-present tombstone as cleared is what stops the
+      // second attempt from re-deleting a value that is already inert and then
+      // re-writing an identical tombstone — on a device not unlocked since boot
+      // that write rejects, turning an already-correct state into an
       // AuthCredentialCleanupError.
-      const remaining = await readSecureValue(key);
-      if (remaining === null || remaining === CLEARED_CREDENTIAL) return;
+      if (await isStoredCredentialCleared(key)) return;
     } catch (error) {
       failures.push(error);
     }
@@ -107,10 +126,24 @@ async function clearStoredCredential(key: string): Promise<void> {
     // v2-first-then-mirror writer would throw before the legacy write ran and
     // leave the surviving legacy credential readable through the read fallback.
     await writeSecureValueToEitherNamespace(key, CLEARED_CREDENTIAL);
+    // A landed tombstone is not the same as a cleared credential, and the gap
+    // between them is a session that survives its own sign-out. That writer is
+    // satisfied by EITHER namespace accepting, so with both namespaces live —
+    // the post-migration steady state — a rejected v2 write plus an accepted
+    // legacy one leaves the tombstone sitting behind the credential it was
+    // meant to retire, because readSecureValue consults v2 first. Returning
+    // there would report a sign-out that getAuthToken immediately contradicts.
+    //
+    // There is no stronger remedy available: nothing in JS can remove a keychain
+    // item that refuses both deletion and overwrite. Failing loudly is the
+    // remedy, and it hands the caller the same AuthCredentialCleanupError it
+    // already handles for a doubly-rejected tombstone.
+    if (await isStoredCredentialCleared(key)) return;
+    failures.push(new Error(`Stored auth credential outlived its cleanup tombstone: ${key}`));
   } catch (error) {
     failures.push(error);
-    throw new AuthCredentialCleanupError(`Failed to clear stored auth credential: ${key}`, failures);
   }
+  throw new AuthCredentialCleanupError(`Failed to clear stored auth credential: ${key}`, failures);
 }
 
 function serializeCredentialMutation<Result>(mutation: () => Promise<Result>): Promise<Result> {

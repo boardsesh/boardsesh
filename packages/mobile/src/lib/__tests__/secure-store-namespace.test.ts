@@ -248,6 +248,31 @@ describe('auth-store over the v2 namespace', () => {
     await expect(getAuthToken()).resolves.toBeNull();
   });
 
+  it('refuses to report a sign-out when the legacy tombstone lands behind a live v2 credential', async () => {
+    const store = await secureStore();
+    // The post-migration steady state: the credential exists in BOTH namespaces,
+    // which the tombstone test above cannot reach because it seeds legacy alone.
+    store.__seed(V2_SERVICE, 'boardsesh_jwt', 'v2-jwt');
+    store.__seed(LEGACY_SERVICE, 'boardsesh_jwt', 'legacy-jwt');
+    // v2 refuses both the delete and the tombstone write; legacy accepts both.
+    // writeSecureValueToEitherNamespace is satisfied by that one legacy write,
+    // but readSecureValue consults v2 FIRST, so the tombstone it just landed is
+    // shadowed by the credential it was meant to retire.
+    store.__makeUndeletable(V2_SERVICE);
+    store.__failWriteFor(V2_SERVICE, 'boardsesh_jwt');
+    const { clearTokens, getAuthToken } = await import('../auth-store');
+
+    // Nothing in JS can remove an item the keychain refuses to delete or
+    // overwrite, so failing loudly is the whole remedy: a resolved clearTokens
+    // here would tell the caller the session is gone while the very next
+    // getAuthToken hands back the live credential.
+    await expect(clearTokens()).rejects.toMatchObject({ name: 'AuthCredentialCleanupError' });
+
+    expect(store.__get(LEGACY_SERVICE, 'boardsesh_jwt')).toBe('__boardsesh_auth_credential_cleared__');
+    expect(store.__get(V2_SERVICE, 'boardsesh_jwt')).toBe('v2-jwt');
+    await expect(getAuthToken()).resolves.toBe('v2-jwt');
+  });
+
   it('fails the sign-out cleanup only when BOTH namespaces reject the tombstone', async () => {
     const store = await secureStore();
     store.__seed(LEGACY_SERVICE, 'boardsesh_jwt', 'legacy-jwt');
