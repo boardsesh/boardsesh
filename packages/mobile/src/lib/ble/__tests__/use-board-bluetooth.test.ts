@@ -135,6 +135,11 @@ import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-
 // dispatch tests below assert the real ASCII command, so the LED table is read
 // here rather than restated as magic numbers.
 import { WOODS_LED_MAPS } from '@boardsesh/board-constants/woods';
+// Real Woods geometry, for the same reason: the mirror pairs below are read from
+// the board config rather than restated, so a geometry change fails these tests
+// instead of quietly disagreeing with them.
+import { getWoodsBoardDetails } from '@boardsesh/board-config';
+import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import {
   bleConnectReportLevel,
   bleWriteDiagnosticsProperties,
@@ -786,6 +791,71 @@ describe('useBoardBluetooth', () => {
     expect(mockGetAuroraBluetoothPacket).toHaveBeenCalledWith('p99r12', expect.anything(), 'tension', 3, undefined);
   });
 
+  // ── Guards on the hoisted mirror block (#5217) ────────────────────────────
+  // The mirror step moved above the per-board dispatch so Woods could reach it.
+  // These two pin the boards it must NOT have captured on the way past.
+
+  it('does not gate a MoonBoard send on holdsData when mirrored is true', async () => {
+    // MoonBoard reports supportsMirroring: false, so a mirrored flag is inert
+    // there and must not trip the hoisted holdsData guard.
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([1]),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 1,
+      isClear: false,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      sent = await result.current.sendFramesToBoard('p1r42', true);
+    });
+
+    expect(sent).toBe(true);
+    // The un-mirrored frames reach the encoder: MoonBoard has no mirror map.
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('p1r42', 18, expect.anything());
+    const failureCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
+    expect(failureCall).toBeUndefined();
+  });
+
+  it('still clears an Aurora board when a mirrored clear-all arrives with no holdsData', async () => {
+    // Empty frames mean "dark the wall", which needs no hold map. Without the
+    // `frames !== ''` gate the hoisted guard would refuse this with
+    // missing_mirror_data instead of clearing.
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetAuroraBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([0x00]),
+      skippedPositionCount: 0,
+      skippedRoleCount: 0,
+      totalPlacements: 0,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'tension', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      sent = await result.current.sendFramesToBoard('', true);
+    });
+
+    expect(sent).toBe(true);
+    expect(fakeAdapter.write).toHaveBeenCalledTimes(1);
+    const failureCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
+    expect(failureCall).toBeUndefined();
+  });
+
   it('passes configured Aurora role colours to the packet builder', async () => {
     const fakeAdapter = makeFakeAdapter({
       requestAndConnect: vi.fn().mockResolvedValue({ deviceId: 'dev-1', deviceName: 'Kilter A1#0042@3' }),
@@ -1307,6 +1377,138 @@ describe('useBoardBluetooth', () => {
     expect(fakeAdapter.write).not.toHaveBeenCalled();
     const failureCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
     expect(failureCall?.[1]).toMatchObject({ boardName: 'woods', failureReason: 'missing_led_placements' });
+  });
+
+  // ── Woods mirroring (#5217) ───────────────────────────────────────────────
+  // Woods reports supportsMirroring, so a flip must reach the wall. 8×10 row 0
+  // is 11 holds wide, so the mirror of column c is column 10 - c: 0↔10, 1↔9, and
+  // 5 (the odd-width centre) maps to itself. `holdsData` is the real board
+  // config, the same object the provider hands the hook in the app.
+  const woods8x10Holds = getWoodsBoardDetails({ size_id: 1 }).holdsData;
+  const woodsLed = (baseHoldLocation: number) => WOODS_LED_MAPS['8x10'][baseHoldLocation];
+
+  it('sends the mirrored Woods packet when the mirror toggle is on', async () => {
+    const woodsWrite = makeWriteSpy();
+    const fakeAdapter = makeFakeAdapter({ write: woodsWrite });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1, holdsData: woods8x10Holds }),
+    );
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      sent = await result.current.sendFramesToBoard('p0r4p1r2', true);
+    });
+
+    expect(sent).toBe(true);
+    // Start moves 0 → 10, Hand moves 1 → 9.
+    expect(new TextDecoder().decode(woodsWrite.mock.calls[0]![0])).toBe(`${woodsLed(10)},4,${woodsLed(9)},2,!`);
+    // ...and is emphatically NOT the un-mirrored packet this used to send.
+    expect(new TextDecoder().decode(woodsWrite.mock.calls[0]![0])).not.toBe(`${woodsLed(0)},4,${woodsLed(1)},2,!`);
+  });
+
+  it('mirrors a Woods hold whose mirror is location 0 (base hold locations are 0-indexed)', async () => {
+    // The regression behind the falsy `if (hold.mirroredHoldId)` guard: hold 10
+    // mirrors onto hold 0, which a truthy check dropped from the map, throwing
+    // and failing the whole send for 8.3% of the 8×10 catalogue.
+    const woodsWrite = makeWriteSpy();
+    const fakeAdapter = makeFakeAdapter({ write: woodsWrite });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1, holdsData: woods8x10Holds }),
+    );
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      sent = await result.current.sendFramesToBoard('p10r4', true);
+    });
+
+    expect(sent).toBe(true);
+    expect(new TextDecoder().decode(woodsWrite.mock.calls[0]![0])).toBe(`${woodsLed(0)},4,!`);
+  });
+
+  it('leaves an odd-row centre Woods hold on itself when mirrored', async () => {
+    const woodsWrite = makeWriteSpy();
+    const fakeAdapter = makeFakeAdapter({ write: woodsWrite });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1, holdsData: woods8x10Holds }),
+    );
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p5r2', true);
+    });
+
+    // Centre of an 11-wide row: neither dropped nor moved.
+    expect(new TextDecoder().decode(woodsWrite.mock.calls[0]![0])).toBe(`${woodsLed(5)},2,!`);
+  });
+
+  it('refuses a mirrored Woods send when holdsData is missing (never sends un-mirrored frames)', async () => {
+    // Proves the mirror guard now sits ABOVE the Woods dispatch: before #5217
+    // the Woods branch returned first and wrote the un-mirrored packet.
+    const woodsWrite = makeWriteSpy();
+    const fakeAdapter = makeFakeAdapter({ write: woodsWrite });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      sent = await result.current.sendFramesToBoard('p0r4p1r2', true);
+    });
+
+    expect(sent).toBe(false);
+    expect(woodsWrite).not.toHaveBeenCalled();
+    const failureCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
+    expect(failureCall?.[1]).toMatchObject({
+      boardName: 'woods',
+      failureReason: 'missing_mirror_data',
+      mirrored: true,
+    });
+  });
+
+  it('flattens a multi-frame Woods route instead of refusing it', async () => {
+    // Woods now takes the collapsed string like every other board. The encoder
+    // still throws on a comma, but nothing upstream hands it one any more.
+    const woodsWrite = makeWriteSpy();
+    const fakeAdapter = makeFakeAdapter({ write: woodsWrite });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const route = 'p0r4,p1r2';
+    expect(toFlatFrames(route, 'woods')).toBe('p0r4p1r2');
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      sent = await result.current.sendFramesToBoard(route);
+    });
+
+    expect(sent).toBe(true);
+    expect(new TextDecoder().decode(woodsWrite.mock.calls[0]![0])).toBe(`${woodsLed(0)},4,${woodsLed(1)},2,!`);
   });
 
   it('asks the factory for acknowledged writes on Woods and never configures the native board', async () => {
@@ -2866,6 +3068,12 @@ describe('convertToMirroredFramesString', () => {
     const result = convertToMirroredFramesString(frames, holdsData);
 
     expect(result).toBe('p84r5');
+  });
+
+  it('maps a hold whose mirroredHoldId is 0 (Woods hold ids are 0-indexed)', () => {
+    const holdsData: HoldPlacement[] = [makePlacement(10, 0)];
+
+    expect(convertToMirroredFramesString('p10r4', holdsData)).toBe('p0r4');
   });
 
   it('handles multiple holds with different state codes', () => {
