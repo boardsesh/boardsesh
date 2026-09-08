@@ -112,4 +112,22 @@ describe('screenshot-mode', () => {
     const screenshotMode = await import('../screenshot-mode');
     expect(screenshotMode.SCREENSHOT_NOW_MS).toBeNull();
   });
+
+  it('leaves infinite lists paging normally outside screenshot mode', async () => {
+    const { screenshotModeNextPageParam } = await import('../screenshot-mode');
+    expect(screenshotModeNextPageParam(20, 1)).toBe(20);
+    expect(screenshotModeNextPageParam('eyJvIjo4MH0', 4)).toBe('eyJvIjo4MH0');
+    // A list that has genuinely run out still stops.
+    expect(screenshotModeNextPageParam(undefined, 3)).toBeUndefined();
+  });
+
+  it('stops an infinite list after its first page in screenshot mode', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    const { screenshotModeNextPageParam } = await import('../screenshot-mode');
+    // Nothing is capped before the first page has landed.
+    expect(screenshotModeNextPageParam(20, 0)).toBe(20);
+    // React Query asks with allPages.length === 1 once page one is in.
+    expect(screenshotModeNextPageParam(20, 1)).toBeUndefined();
+    expect(screenshotModeNextPageParam('eyJvIjo4MH0', 4)).toBeUndefined();
+  });
 });

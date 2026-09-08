@@ -51,8 +51,11 @@ import * as sharedQa from '@boardsesh/graphql/operations/qa';
 import * as sharedQueueSession from '@boardsesh/graphql/operations/queue-session';
 
 import {
+  BATCHED_OPERATIONS,
   RE_RECORD_COMMAND,
+  batchRequestIds,
   canonicalJson,
+  indexBatchItemsById,
   normalizeDocument,
   resolveOperationName,
   stripIgnoredVariablePaths,
@@ -489,6 +492,45 @@ describe.skipIf(!manifest)('the recorded screenshot fixtures', () => {
     const recorded = new Set(entries.map((entry) => entry.operationName));
     const uncovered = REQUIRED_STORE_FLOW_OPERATIONS.filter((operationName) => !recorded.has(operationName));
     expect(uncovered).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (d) The batched-replay table still describes the committed fixtures
+// ---------------------------------------------------------------------------
+
+/**
+ * `BATCHED_OPERATIONS` is three dot paths per operation, and a wrong one fails
+ * SILENTLY: replay simply never composes, every batch whose exact id list moved
+ * misses, and the capture shoots error placards — the exact failure the table
+ * exists to prevent. So check the paths against the fixtures they describe.
+ */
+describe('BATCHED_OPERATIONS', () => {
+  const batchedEntries = Object.entries(BATCHED_OPERATIONS);
+
+  it.each(batchedEntries)('%s names a document the app still sends', (operationName) => {
+    expect(registry.has(operationName)).toBe(true);
+  });
+
+  it.each(batchedEntries)('%s resolves its id list and item ids in every recorded fixture', (operationName, spec) => {
+    if (!manifest) return;
+    const entries = manifest.graphql.filter((entry) => entry.operationName === operationName);
+    // Not a precondition to skip on: an empty list would make this vacuous, and
+    // both operations are recorded many times over by the store flow.
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      const fixture = readFixture(entry.file);
+      const recordedIds = batchRequestIds(spec, fixture.variables);
+      expect(recordedIds, `${entry.file}: no id list at variables.${spec.idsVariablePath}`).not.toBeNull();
+      const itemsById = indexBatchItemsById(spec, recordedIds ?? [], fixture.response);
+      expect(itemsById, `${entry.file}: no item list at response.${spec.responseListPath}`).not.toBeNull();
+      // Every recorded item carries the id field, so nothing is dropped on the
+      // floor when a batch is decomposed: the map holds exactly the ids the
+      // recording asked for, never an extra one invented by a missing field.
+      for (const id of itemsById?.keys() ?? []) {
+        expect(recordedIds, `${entry.file}: response item id "${id}" was never requested`).toContain(id);
+      }
+    }
   });
 });
 

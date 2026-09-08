@@ -70,8 +70,9 @@ fi
 # why a screen captured empty, since the emulator is killed when this step ends.
 debug_dir="${GITHUB_WORKSPACE:-$PWD}/android-capture-debug"
 mkdir -p "$debug_dir"
-# The orchestrator copies the PNGs Maestro shot before a failure here (see
-# preserveFailedCaptures in scripts/mobile-screenshots.ts).
+# The orchestrator copies the PNGs Maestro shot before a failure here, plus the
+# screenshot backend's own log (see preserveFailedRunArtifacts in
+# scripts/mobile-screenshots.ts).
 export SCREENSHOT_DEBUG_DIR="$debug_dir"
 
 logcat_pid=""

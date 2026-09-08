@@ -193,3 +193,31 @@ const screenshotBoardsEnv = (process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS ?? '')
   .filter(Boolean);
 export const SCREENSHOT_BOARDS: string[] =
   screenshotBoardsEnv.length > 0 ? screenshotBoardsEnv : DEFAULT_SCREENSHOT_BOARDS;
+
+/**
+ * A `useInfiniteQuery`'s next page param, capped to ONE page in screenshot mode.
+ *
+ * Infinite lists page a timing-dependent distance: against a live backend the
+ * app moves on before the list has prefetched much, but a replay backend
+ * answers instantly, so the same flow scrolls further and asks for pages the
+ * recording never reached. Screenshot run 34240391447 failed exactly there —
+ * the session feed asked for page 5 (`cursor {"o":80}`) against a set that
+ * stopped at page 4.
+ *
+ * A store screenshot never shows page two, so the cap costs nothing and makes
+ * the paging depth a property of the flow instead of the machine's timing.
+ * `hasNextPage` goes false with the param, so every `onEndReached` handler
+ * downstream stops firing too.
+ *
+ * Pass the param the query would otherwise use and the number of pages already
+ * loaded (React Query hands `getNextPageParam` `allPages`, so that is
+ * `allPages.length`). The inline `process.env.EXPO_PUBLIC_SCREENSHOT_MODE`
+ * comparison is deliberate — see the note at the top of this module.
+ */
+export function screenshotModeNextPageParam<TPageParam>(
+  nextParam: TPageParam,
+  pagesLoaded: number,
+): TPageParam | undefined {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && pagesLoaded >= 1) return undefined;
+  return nextParam;
+}

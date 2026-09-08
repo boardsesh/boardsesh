@@ -124,6 +124,52 @@ a key already holding the literal, which is why an APNs push token is redacted
 rather than refusing the fixture, while any other `password` / `secret` /
 `token` / `credential` still refuses it outright.
 
+### Batched operations are keyed by membership, not by the exact id list
+
+Two operations carry a LIST OF IDS assembled at runtime, and for those an
+exact-variables key can never be stable:
+
+| Operation | ids at | items at | item id field |
+| --- | --- | --- | --- |
+| `ClimbStatsForClimbs` | `climbUuids` | `data.climbStatsForClimbs` | `climbUuid` |
+| `GetBulkVoteSummaries` | `input.entityIds` | `data.bulkVoteSummaries` | `entityId` |
+
+Both are viewport batches — `useQueries` over chunks of whatever rows had
+mounted when the batch flushed
+(`packages/mobile/src/lib/graphql/hooks/use-social.ts` for the vote summaries,
+`fetchClimbStatsForClimbs` in `packages/mobile/src/providers/board-adapter.tsx`
+for the stats). Replay answers instantly, so the app scrolls and flushes on a
+different schedule than the recording did and asks for id subsets the recording
+never sent as one batch. Android run 34240391447 failed on exactly that.
+
+So replay composes them. **The exact key is still tried first** — a batch that
+was recorded verbatim replays its own recorded bytes. Only when that misses does
+the backend build (lazily, once per operation) an index over EVERY recorded
+fixture of that operation, decomposed into `id -> its recorded items`, and answer
+with the items for the requested ids **in request order**, inside a recorded
+response's own envelope. It logs `HIT graphql <Op> <hash12> composed=<n>`, where
+`n` is the number of ids answered, and that counts as a GraphQL hit like any
+other.
+
+Two rules keep it honest:
+
+- **Everything outside the id list must match exactly.** The scope key is the
+  recorded document hash plus the canonical variables with the id path removed,
+  so a Kilter recording can never answer a Tension request and a fixture
+  recorded against an older selection set can never answer today's query.
+- **An id the recording asked for but the backend had nothing for is a recorded
+  fact, not a gap** — it composes to zero items. Only an id no recorded batch
+  ever *asked* for is unrecorded, and that answers the ordinary miss envelope
+  with `reason=unrecorded-ids ids=<up to 10>`; the failure names the ids and
+  asks for a re-record of the screen those rows appear on.
+
+Adding one: read the operation document for the id list's path and the response
+list's own id field, add a row to `BATCHED_OPERATIONS` in
+`scripts/lib/screenshot-fixtures.ts`, and let the drift test check the paths
+against the committed fixtures. Only add an operation whose response list is a
+per-id lookup — never one whose items depend on the batch as a whole (a ranking,
+a page, an aggregate over the set).
+
 Static assets are keyed on the original pathname plus its query sorted into a
 stable order. PROD answers `/static/*` with a `302` to a CDN; the recorder
 follows it for the bytes but files them under what the app asked for.
@@ -187,9 +233,11 @@ Every line is single-line and prefixed `[screenshot-backend]`.
 ```
 READY mode=replay port=8090 fixtures=<dir> frozenNow=<iso> graphql=<n> static=<n>
 HIT graphql <Op> <hash12>
+HIT graphql <Op> <hash12> composed=<n>
 HIT static <path?query>
 HIT auth credentials|refresh
-MISS graphql <Op> <hash12> reason=no-fixture|document-changed|anonymous-operation|unreadable-fixture
+MISS graphql <Op> <hash12> reason=no-fixture|document-changed|anonymous-operation|unreadable-fixture variables=<canonical json>
+MISS graphql <Op> <hash12> reason=unrecorded-ids ids=<id,id,…> variables=<canonical json>
 MISS static <path?query>
 MISS route <METHOD> <path>
 MISS auth email=<e> expected=<e>
@@ -203,6 +251,16 @@ WS connection_init ack
 WS subscribe <Op>
 WS error <message>
 ```
+
+A `MISS graphql` line carries the **canonical variables** it missed on, stripped
+of the ignored paths exactly as the key was, elided past
+`MISS_VARIABLES_LOG_LIMIT` (600 characters) with `…`. Before that the line held
+only the 12-character hash, and diagnosing a CI failure meant brute-forcing the
+hash offline. `ids=` names up to `MISS_UNRECORDED_IDS_LOG_LIMIT` (10) of the
+requested ids no recorded batch covers, and appears only on
+`reason=unrecorded-ids`. Both tails are optional in the parser, so a log written
+by an older backend build still parses — an unparsed `MISS` would vanish from
+`findScreenshotBackendProblems` and pass a broken capture.
 
 Only a `HIT graphql` line counts toward the "the app never reached the replay
 backend" check — an app that only ever authenticated (`HIT auth`) never actually
@@ -304,8 +362,17 @@ on device 1's misses) and prints each problem `findScreenshotBackendProblems`
 returns as
 
 ```
-[mobile:screenshots] FAILED: no recorded response for GetClimb (variables 3f2a1b9c0d11) — re-record with `…`
+[mobile:screenshots] FAILED: no recorded response for GetClimb (variables 3f2a1b9c0d11 = {"boardName":"kilter","uuid":"…"}) — re-record with `…`
 ```
+
+The variables of the FIRST occurrence of each problem are printed with it;
+repeats still collapse into `×N`.
+
+On a failed capture the orchestrator copies the backend log into
+`SCREENSHOT_DEBUG_DIR` as `screenshot-backend.log` (both platforms — see
+`preserveFailedRunArtifacts` in `scripts/mobile-screenshots.ts`), so the CI
+debug artifact carries the one file that says what the app actually asked for.
+The log itself lives in the OS temp dir, which no artifact upload sees.
 
 Any problem fails the run. A record run instead prints what it captured — new
 responses, the set's totals, hits and misses — and fails if any fixture was
@@ -313,6 +380,22 @@ refused for carrying a live auth token, since that leaves a hole the NEXT
 capture would only discover as a replay miss.
 
 ## Recording a set
+
+**Infinite lists stop after their first page in screenshot mode.** How far a
+list pages is timing-dependent — against a live backend the flow moves on before
+much has prefetched, against an instant replay backend it scrolls further — so
+`screenshotModeNextPageParam` (`packages/mobile/src/lib/screenshot-mode.ts`)
+returns `undefined` for every page after the first while
+`EXPO_PUBLIC_SCREENSHOT_MODE` is on. A store screenshot never shows page two,
+and `hasNextPage` goes false with the param, so every `onEndReached` downstream
+stops firing too. The two lists behind `PlaylistDetailView` are capped at that
+component instead, because their hooks live in the renderer-agnostic
+`@boardsesh/playlists-react`, which web also consumes and which must not read a
+mobile build flag.
+
+A set recorded after this change therefore holds only first pages. The extra
+pages in the committed set (`GetSessionGroupedFeed` up to cursor `{"o":60}`,
+`SearchClimbs` up to page 2) are harmless — they are simply never asked for.
 
 There is no macOS or Android hardware in the loop locally, so a set is recorded
 by the capture workflows and merged afterwards.
