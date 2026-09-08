@@ -80,7 +80,8 @@ export const NATIVE_INPUT_PATHS: { readonly files: readonly string[]; readonly d
     // Patched dependencies and overrides also change the native tree.
     'pnpm-workspace.yaml',
   ],
-  dirs: ['packages/mobile/plugins', 'packages/mobile/modules', 'patches'],
+  // dev-assets: the dev variant's icon / adaptive icon / splash (app.config.ts).
+  dirs: ['packages/mobile/plugins', 'packages/mobile/modules', 'packages/mobile/dev-assets', 'patches'],
 };
 
 /**

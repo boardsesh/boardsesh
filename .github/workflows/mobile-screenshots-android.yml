@@ -80,12 +80,12 @@ jobs:
     # conditional-vs-bare note at android-apk-rn.yml (gate job).
     environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.commit_to_main) && 'Production' || '' }}
     runs-on: ubuntu-latest
-    # ~15 min on the common path (download + emulator + capture). The bound is
-    # for the fallback: when the newest rn-android-dev-* release predates a
-    # native-input change, `vp run mobile:android-apk` builds the dev-client
-    # locally (~45 min on a cold Gradle cache, faster once the cache above is warm)
-    # before the capture starts.
-    timeout-minutes: 60
+    # Measured: ~17 min on the common path (download + emulator + capture). The
+    # bound covers the fallback: when the newest rn-android-dev-* release predates
+    # a native-input change, `vp run mobile:android-apk` builds the dev-client
+    # locally first (16-19 min cold, ~7 min on a warm Gradle cache), and the
+    # capture script retries the flow once (up to ~17 min per attempt).
+    timeout-minutes: 75
 
     env:
       # Commit the captured set back to main only on an opt-in manual dispatch.

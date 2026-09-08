@@ -17,6 +17,7 @@ const EXPECTED_FRESHNESS_PATHS = [
   'pnpm-workspace.yaml',
   'packages/mobile/plugins',
   'packages/mobile/modules',
+  'packages/mobile/dev-assets',
   'patches',
   '.github/workflows/android-apk-dev-client.yml',
 ];

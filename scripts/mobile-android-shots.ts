@@ -494,6 +494,9 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
     } else {
       printReadyBanner(serial);
       await blockUntilExit(session.metro);
+      // Metro is gone now, but the readiness server startMetroForDevClient started is a
+      // separate detached process — stop the whole session so nothing lingers on 19870.
+      stopDevClientSession(session);
     }
     succeeded = true;
   } finally {
