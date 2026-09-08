@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-09-08
 
+### New
+
+- Find "Light the hold above" for MoonBoard in Settings → Board lighting, not just the Bluetooth menu ([#5280](https://github.com/boardsesh/boardsesh/pull/5280))
+
 ### Fixed
 
 - Attach screenshots to bug reports and PR feedback, and update your profile photo again. ([#5281](https://github.com/boardsesh/boardsesh/pull/5281))

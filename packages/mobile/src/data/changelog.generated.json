@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-08T00:56:13.365Z",
+  "generatedAt": "2026-09-08T01:16:46.615Z",
   "entries": [
+    {
+      "prNumber": 5280,
+      "category": "new",
+      "title": "Find \"Light the hold above\" for MoonBoard in Settings → Board lighting, not just the Bluetooth menu",
+      "mergedAt": "2026-09-08T01:15:34Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5280"
+    },
     {
       "prNumber": 5281,
       "category": "fixed",
