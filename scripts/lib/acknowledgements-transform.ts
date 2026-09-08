@@ -32,6 +32,14 @@ export type AcknowledgementsData = {
   privateSponsorCount: number;
 };
 
+export type AcknowledgementsRefresh = {
+  contributors: Contributor[] | null;
+  sponsors: Sponsor[] | null;
+  privateSponsorCount: number | null;
+};
+
+export type AcknowledgementsRefreshMode = 'best-effort' | 'strict';
+
 /** A GraphQL pull-request / issue `author` (an Actor: User, Organization, Bot, …). */
 export type AuthorRef = {
   login?: string;
@@ -151,4 +159,33 @@ export function transformSponsors(nodes: RawSponsorNode[]): Sponsor[] {
       avatarUrl: entity.avatarUrl ?? '',
       url: entity.url ?? `https://github.com/${entity.login}`,
     }));
+}
+
+/**
+ * Combines fresh GitHub results with the committed snapshot. Local runs may be
+ * best-effort so a developer without every permission can still refresh what
+ * they can see. Scheduled publishing is strict: a partial result would make a
+ * public thank-you list look current while silently retaining stale sections.
+ */
+export function resolveAcknowledgements(
+  existingAcknowledgements: AcknowledgementsData,
+  refreshedAcknowledgements: AcknowledgementsRefresh,
+  refreshMode: AcknowledgementsRefreshMode,
+): AcknowledgementsData {
+  const unavailableSections = [
+    refreshedAcknowledgements.contributors === null ? 'contributors' : null,
+    refreshedAcknowledgements.sponsors === null ? 'public sponsors' : null,
+    refreshedAcknowledgements.privateSponsorCount === null ? 'private sponsor count' : null,
+  ].filter((section): section is string => section !== null);
+
+  if (refreshMode === 'strict' && unavailableSections.length > 0) {
+    throw new Error(`Unable to refresh acknowledgements: ${unavailableSections.join(', ')}.`);
+  }
+
+  return {
+    generatedAt: existingAcknowledgements.generatedAt,
+    contributors: refreshedAcknowledgements.contributors ?? existingAcknowledgements.contributors,
+    sponsors: refreshedAcknowledgements.sponsors ?? existingAcknowledgements.sponsors,
+    privateSponsorCount: refreshedAcknowledgements.privateSponsorCount ?? existingAcknowledgements.privateSponsorCount,
+  };
 }
