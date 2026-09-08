@@ -32,8 +32,8 @@ const DEFAULT_MIN_HEIGHT = 160;
 
 /**
  * Horizontal card scroller with a section title and an optional "See all"
- * affordance. Uses a ScrollView (the loaded card count per shelf is bounded)
- * and fires `onEndReached` as the content scrolls within
+ * affordance for fixed, small shelves. Growing playlist shelves use PlaylistShelf.
+ * Fires `onEndReached` as the content scrolls within
  * `END_REACHED_THRESHOLD` of the right edge. Generic over its children —
  * playlist shelves on Discover and the beta-links shelf on profiles share it.
  */
