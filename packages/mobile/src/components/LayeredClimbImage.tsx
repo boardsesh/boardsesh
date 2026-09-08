@@ -1,3 +1,4 @@
+import { MEMORY_PROFILING_ENABLED, memoryOwner, memoryProfile } from '../lib/profiling/memory-profile';
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, View, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
@@ -189,6 +190,15 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
     retainedOverlay.uri !== overlayUri
       ? retainedOverlay.uri
       : null;
+  const profileOwner = useRef<string | null>(null);
+  if (MEMORY_PROFILING_ENABLED && profileOwner.current === null) profileOwner.current = memoryOwner();
+  const mountedImageCount = hidden ? 0 : backgroundPaths.length + (overlayUri ? 1 : 0) + (bridgeOverlay ? 1 : 0);
+  useEffect(() => {
+    if (!MEMORY_PROFILING_ENABLED || !profileOwner.current) return;
+    const owner = profileOwner.current;
+    memoryProfile.image(owner, mountedImageCount);
+    return () => memoryProfile.image(owner, 0);
+  }, [mountedImageCount]);
   if (hidden) {
     return <View style={[styles.stack, mirrored && styles.mirrored]} />;
   }

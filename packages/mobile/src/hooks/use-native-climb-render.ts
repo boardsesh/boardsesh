@@ -1,3 +1,4 @@
+import { MEMORY_PROFILING_ENABLED, memoryOwner, memoryProfile } from '../lib/profiling/memory-profile';
 import { useCallback, useEffect, useMemo, useState, useRef, useSyncExternalStore } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
 import {
@@ -1950,6 +1951,15 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // next swipe. Hit in the play-drawer carousel when swiping onto a climb
   // whose overlay is already cached (sync branch, no new promise) while the
   // previous climb's render is still in flight.
+  const memoryRenderOwner = useRef<string | null>(null);
+  if (MEMORY_PROFILING_ENABLED && memoryRenderOwner.current === null) memoryRenderOwner.current = memoryOwner();
+  useEffect(() => {
+    if (!MEMORY_PROFILING_ENABLED || !memoryRenderOwner.current) return;
+    const owner = memoryRenderOwner.current;
+    memoryProfile.rendered(owner, currentCacheKey, effectiveRenderSettings.mode);
+    return () => memoryProfile.rendered(owner, null);
+  }, [currentCacheKey, effectiveRenderSettings.mode]);
+
   const latestCacheKeyRef = useRef(currentCacheKey);
   latestCacheKeyRef.current = currentCacheKey;
   const nativeRenderRef = useRef(nativeRender);

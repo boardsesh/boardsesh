@@ -1,3 +1,4 @@
+import { memoryProfile } from '../lib/profiling/memory-profile';
 /**
  * DrawerHostProvider mounts PlayDrawer and LogAscentSheet once at the app root
  * and exposes imperative openers via `useDrawerHost()`. This lets the
@@ -296,6 +297,28 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const queueSheetRef = useRef<QueueSheetHandle>(null);
   const boardSheetRef = useRef<BoardSheetHandle>(null);
   const { data: activeBoard } = useActiveBoard();
+  const memoryBoardName = activeBoard?.boardType;
+  const memoryLayoutId = activeBoard?.layoutId;
+  const memorySizeId = activeBoard?.sizeId;
+  const memorySetIds = activeBoard?.setIds;
+  const memoryAngle = activeBoard?.angle;
+  useEffect(() => {
+    memoryProfile.board(
+      memoryBoardName !== undefined &&
+        memoryLayoutId !== undefined &&
+        memorySizeId !== undefined &&
+        memorySetIds !== undefined &&
+        memoryAngle !== undefined
+        ? {
+            name: memoryBoardName,
+            layoutId: memoryLayoutId,
+            sizeId: memorySizeId,
+            setIds: memorySetIds,
+            angle: memoryAngle,
+          }
+        : null,
+    );
+  }, [memoryBoardName, memoryLayoutId, memorySizeId, memorySetIds, memoryAngle]);
   // iPad regular width hosts the PlayDrawer as a persistent right-column pane
   // rather than the `/play` route. `usesDetailPane` mirrors the shell's pane
   // budget (resolveDetailPaneSurface — the tightest regular portraits fall back

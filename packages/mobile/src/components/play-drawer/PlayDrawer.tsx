@@ -1,3 +1,5 @@
+import { MEMORY_PROFILING_ENABLED, memoryOwner, memoryProfile } from '../../lib/profiling/memory-profile';
+import { useMemoryClimbObservation } from '../../lib/profiling/use-memory-observation';
 import {
   useCallback,
   useEffect,
@@ -463,6 +465,7 @@ export function PlayDrawer({
   const isPreview = drawerPreviewItem != null;
 
   const displayedClimbUuid = displayedClimb?.uuid;
+  useMemoryClimbObservation(displayedClimbUuid, 'carousel', isSheetOpen);
   // Live sessions have one shared orientation. Preview/solo flips stay local.
   const sharesMirrorState = sessionId !== null && !isPreview;
   const isMirrored = sharesMirrorState
@@ -631,6 +634,32 @@ export function PlayDrawer({
     () => (upcomingPrefetchFramesKey ? upcomingPrefetchFramesKey.split(PREFETCH_FRAMES_SEPARATOR) : NO_PREFETCH_FRAMES),
     [upcomingPrefetchFramesKey],
   );
+
+  const memoryPrefetchOwner = useRef<string | null>(null);
+  if (MEMORY_PROFILING_ENABLED && memoryPrefetchOwner.current === null) memoryPrefetchOwner.current = memoryOwner();
+  useMemoryClimbObservation(navigationState.nextItem?.climb.uuid, 'carousel');
+  useMemoryClimbObservation(navigationState.prevItem?.climb.uuid, 'carousel');
+  useEffect(() => {
+    if (!MEMORY_PROFILING_ENABLED) return;
+    const upcoming = findUpcomingQueueItemsWithSuggestions(
+      queue,
+      displayedQueueItem,
+      navigationSuggestionSource,
+      PREFETCH_AHEAD,
+    );
+    const owners: string[] = [];
+    for (let index = 0; index < upcoming.length; index += 1) {
+      const candidate = upcoming[index];
+      const frames = peekFramesOnBoard(candidate.climb, boardConfig, renderBoardConfig);
+      if (!frames || frames === displayedClimbFrames || frames.includes(',')) continue;
+      const owner = `${memoryPrefetchOwner.current}-prefetch-${index}`;
+      owners.push(owner);
+      memoryProfile.incidental(owner, candidate.climb.uuid);
+    }
+    return () => {
+      for (const owner of owners) memoryProfile.incidental(owner, null);
+    };
+  }, [queue, displayedQueueItem, navigationSuggestionSource, boardConfig, renderBoardConfig, displayedClimbFrames]);
 
   // Host-owned post-fling reset: once the swiped-to climb has actually rendered
   // (the displayed queue item changes), snap the shared swipe offset back to 0 and

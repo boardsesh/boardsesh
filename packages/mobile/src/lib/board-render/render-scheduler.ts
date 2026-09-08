@@ -373,3 +373,8 @@ export function _renderSchedulerStateForTests(): {
     maxDispatched,
   };
 }
+
+/** Read-only counters; exposes no request, closure, or promise. */
+export function getRenderSchedulerCounts() {
+  return { pendingRenders: requests.size, queuedRenders: queued.length, dispatchedRenders: dispatched.size };
+}

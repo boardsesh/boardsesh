@@ -172,3 +172,8 @@ export function _resetOverlayIndexForTests(): void {
 }
 
 export const _renderedOverlaysForTests = renderedOverlays;
+
+/** Read-only scalar counter for opt-in profiling. */
+export function getOverlayIndexSize(): number {
+  return renderedOverlays.size;
+}

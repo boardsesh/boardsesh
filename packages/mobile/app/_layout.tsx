@@ -14,6 +14,8 @@ import '../src/lib/analytics-bootstrap';
 // isInitialized() when a screen mounts and throws if it changes afterwards — so
 // this cannot become a hook or an effect. See observe-bootstrap.ts.
 import '../src/lib/observe-bootstrap';
+import { MemoryProfileObserver } from '../src/lib/profiling/use-memory-profile';
+import { MEMORY_PROFILING_ENABLED } from '../src/lib/profiling/memory-profile';
 import { markStartup } from '../src/lib/profiling/startup-profile';
 import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
 import { LogBox, Pressable, StyleSheet, View } from 'react-native';
@@ -575,6 +577,7 @@ function RootLayout() {
 
   return (
     <GestureHandlerRootView style={layoutStyles.root}>
+      {MEMORY_PROFILING_ENABLED && <MemoryProfileObserver />}
       {/* Effect runs only after this React root commits. It marks whether an
           iOS LiveActivityIntent background launch mounted React, then consumes
           eligible interrupted markers when the app is foregrounded. */}

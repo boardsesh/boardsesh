@@ -1,3 +1,4 @@
+import { MEMORY_PROFILING_ENABLED, memoryProfile, wakeMemoryExport } from '../lib/profiling/memory-profile';
 import { useEffect, useRef } from 'react';
 import { AppState, Platform } from 'react-native';
 import { Image } from 'expo-image';
@@ -66,6 +67,27 @@ export const IMAGE_DISK_CACHE_MAX_BYTES = 150 * 1024 * 1024;
 // see (going to background frees the whole working set, not just the excess) and
 // they cost nothing once the cap is in place. The disk cache is untouched
 // throughout, so anything evicted re-decodes from disk in tens of ms, no network.
+
+function clearImageMemoryCache(): void {
+  if (!MEMORY_PROFILING_ENABLED) {
+    void Image.clearMemoryCache();
+    return;
+  }
+  // Read native AppState here too: listener/effect ordering must not misattribute a clear.
+  memoryProfile.appState(AppState.currentState);
+  const generation = memoryProfile.clearStarted();
+  void Image.clearMemoryCache().then(
+    (succeeded) => {
+      memoryProfile.clearCompleted(generation, succeeded);
+      wakeMemoryExport();
+    },
+    () => {
+      memoryProfile.clearCompleted(generation, false);
+      wakeMemoryExport();
+    },
+  );
+}
+
 export function useImageCacheMemoryManagement(): void {
   const isBackgrounded = useIsAppBackgrounded();
 
@@ -83,12 +105,12 @@ export function useImageCacheMemoryManagement(): void {
   }, []);
 
   useEffect(() => {
-    if (isBackgrounded) void Image.clearMemoryCache();
+    if (isBackgrounded) clearImageMemoryCache();
   }, [isBackgrounded]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('memoryWarning', () => {
-      void Image.clearMemoryCache();
+      clearImageMemoryCache();
     });
     // React Native Web does not implement the native memoryWarning event and
     // returns no subscription. The background sweep above still works there.
@@ -125,6 +147,6 @@ export function useIpadTabSwitchImageCacheSweep(): void {
     }
     if (activeTab === lastTab.current) return;
     lastTab.current = activeTab;
-    if (isPad) void Image.clearMemoryCache();
+    if (isPad) clearImageMemoryCache();
   }, [activeTab, isPad]);
 }

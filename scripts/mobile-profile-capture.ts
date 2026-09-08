@@ -5,7 +5,14 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { hasUsefulStartupArtifact } from './lib/ios-profile-identity';
+import { captureMemory } from './lib/ios-memory-capture';
+import {
+  type MemorySurface,
+  type MemoryWorkload,
+  validateMemoryMeasurements,
+  validateOwnershipMeasurements,
+} from './lib/ios-memory-profile';
+import { hasUsefulStartupArtifact, assertMatchingIdentity, readAppIdentity } from './lib/ios-profile-identity';
 import { guardSimulatorCommand, holdSimulatorLease } from './lib/ios-simulator-lease';
 
 const require = createRequire(import.meta.url);
@@ -492,25 +499,112 @@ export async function main(argv = process.argv.slice(2)) {
     configuration: flags.get('--configuration') === 'Debug' ? 'Debug' : 'Release',
     port: Number(flags.get('--port') ?? '8097'),
   };
+  if (
+    flags.get('--scenario') === 'memory' &&
+    [
+      'measurements.json',
+      'ownership-measurements.json',
+      'capture-validity.json',
+      'memory-samples.json',
+      'memory-manifest.json',
+      'ownership',
+    ].some((filename) => existsSync(join(options.runDir, filename)))
+  )
+    throw new Error('Memory capture directory already contains evidence; use a fresh run directory.');
   mkdirSync(options.runDir, { recursive: true });
   holdSimulatorLease(options.udid, process.cwd());
   try {
+    const scenario = flags.get('--scenario') ?? 'default';
+    if (!['default', 'memory'].includes(scenario)) throw new Error('Invalid capture scenario.');
+    const surface = flags.get('--surface') ?? 'list';
+    const workload = flags.get('--workload') ?? 'replay';
+    const inspection = flags.get('--inspection') ?? 'none';
+    const inspectionOnlyFlag = flags.get('--inspection-only') ?? 'false';
+    if (!['true', 'false'].includes(inspectionOnlyFlag)) throw new Error('--inspection-only requires true or false.');
+    const inspectionOnly = inspectionOnlyFlag === 'true';
+    if (inspectionOnly && scenario !== 'memory') throw new Error('Ownership-only capture requires --scenario memory.');
+    if (
+      !['list', 'carousel'].includes(surface) ||
+      !['replay', 'expanding', 'idle'].includes(workload) ||
+      !['none', 'ownership', 'graphs'].includes(inspection)
+    )
+      throw new Error('Invalid memory capture options.');
+    const expectedIdentity = flags.get('--app-path')
+      ? readAppIdentity(flags.get('--app-path')!, options.configuration)
+      : null;
+    if (scenario === 'memory' && !expectedIdentity)
+      throw new Error('Memory capture requires --app-path for installed executable verification.');
+    const verifyInstalled = () => {
+      if (expectedIdentity)
+        assertMatchingIdentity(
+          expectedIdentity,
+          readAppIdentity(
+            simctl(options, ['get_app_container', options.udid, options.appId, 'app']),
+            options.configuration,
+          ),
+        );
+    };
+    verifyInstalled();
+    let previousRunId = previousStartupRunId(options);
     const measurements =
-      options.configuration === 'Debug' ? await captureDebug(options) : await captureRelease(options);
-    save(options.runDir, 'measurements.json', measurements);
+      scenario === 'memory'
+        ? await captureMemory(
+            {
+              ...options,
+              surface: surface as MemorySurface,
+              workload: workload as MemoryWorkload,
+              inspection: inspection as 'none' | 'ownership' | 'graphs',
+              inspectionOnly,
+              failedAllocationProbe: flags.get('--failed-allocation-probe') ?? null,
+              memoryManifest: resolve(flags.get('--memory-manifest') ?? '.boardsesh/ios-memory-climbs.json'),
+              compareCache: flags.get('--compare-cache') ?? null,
+              idleSchedule: flags.get('--idle-schedule') ?? null,
+            },
+            {
+              simctl: (args) => simctl(options, args),
+              launch: () => launch(options),
+              terminate: () => terminate(options),
+              navigate: (route) => navigate(options, route),
+              footprint: physicalFootprintMiB,
+              startup: async () => {
+                const artifact = await waitForStartup(options, previousRunId);
+                previousRunId = artifact.runId;
+                return artifact;
+              },
+            },
+          )
+        : options.configuration === 'Debug'
+          ? await captureDebug(options)
+          : await captureRelease(options);
+    verifyInstalled();
+    if (inspectionOnly) validateOwnershipMeasurements(measurements);
+    else if (scenario === 'memory') validateMemoryMeasurements(measurements);
+    save(options.runDir, inspectionOnly ? 'ownership-measurements.json' : 'measurements.json', measurements);
     save(options.runDir, 'capture-validity.json', {
       valid: true,
       completed: true,
       configuration: options.configuration,
-      limitations: [
-        'Simulator only; device validation required.',
-        'No native FPS claim.',
-        'Pending supplemental captures: allocation inspection, exact distinct climb IDs, and 20/100/200 shelf populations.',
-      ],
+      scenario: inspectionOnly ? 'ownership' : scenario,
+      limitations:
+        scenario === 'memory'
+          ? [
+              'Simulator only; physical-device conclusions remain pending.',
+              'Surviving-object reference inspection is supplemental and does not establish a leak automatically.',
+            ]
+          : [
+              'Simulator only; device validation required.',
+              'No native FPS claim.',
+              'Pending supplemental captures: allocation inspection, exact distinct climb IDs, and 20/100/200 shelf populations.',
+            ],
     });
     return 0;
   } catch (error) {
-    save(options.runDir, 'capture-validity.json', { valid: false, completed: false, error: String(error) });
+    save(options.runDir, 'capture-validity.json', {
+      valid: false,
+      completed: false,
+      scenario: flags.get('--inspection-only') === 'true' ? 'ownership' : (flags.get('--scenario') ?? 'default'),
+      error: String(error),
+    });
     console.error(error);
     return 1;
   }

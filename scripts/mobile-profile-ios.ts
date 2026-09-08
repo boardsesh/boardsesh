@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync, closeSync
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { validateMemoryManifest, type MemorySurface, type MemoryWorkload } from './lib/ios-memory-profile';
 import { leaseEnvironment, resolveSimulatorUdid } from './lib/ios-simulator-lease';
 import { assertMatchingIdentity, fileSha256, readAppIdentity, validateCaptureFiles } from './lib/ios-profile-identity';
 
@@ -18,6 +19,15 @@ export interface ProfileOptions {
   runDir: string;
   checkout: string | null;
   fixtureManifest: string;
+  scenario: 'default' | 'memory';
+  surface: MemorySurface;
+  workload: MemoryWorkload;
+  memoryManifest: string;
+  compareCache: string | null;
+  idleSchedule: string | null;
+  inspection: 'none' | 'ownership' | 'graphs';
+  inspectionOnly: boolean;
+  failedAllocationProbe: string | null;
 }
 
 export function parseProfileArgs(argv: readonly string[]): ProfileOptions {
@@ -29,6 +39,15 @@ export function parseProfileArgs(argv: readonly string[]): ProfileOptions {
     runDir: join(ROOT, '.boardsesh', `ios-profile-${new Date().toISOString().replace(/[:.]/g, '-')}`),
     checkout: null,
     fixtureManifest: join(ROOT, '.boardsesh/ios-performance-fixtures.json'),
+    scenario: 'default',
+    surface: 'list',
+    workload: 'replay',
+    memoryManifest: join(ROOT, '.boardsesh/ios-memory-climbs.json'),
+    compareCache: null,
+    idleSchedule: null,
+    inspection: 'none',
+    inspectionOnly: false,
+    failedAllocationProbe: null,
   };
   const args = argv.filter((argument) => argument !== '--');
   for (let index = 0; index < args.length; index += 2) {
@@ -42,11 +61,36 @@ export function parseProfileArgs(argv: readonly string[]): ProfileOptions {
     else if (flag === '--port') options.port = Number(argument);
     else if (flag === '--run-dir') options.runDir = resolve(argument);
     else if (flag === '--checkout') options.checkout = resolve(argument);
+    else if (flag === '--scenario' && ['default', 'memory'].includes(argument))
+      options.scenario = argument as ProfileOptions['scenario'];
+    else if (flag === '--surface' && ['list', 'carousel'].includes(argument))
+      options.surface = argument as MemorySurface;
+    else if (flag === '--workload' && ['replay', 'expanding', 'idle'].includes(argument))
+      options.workload = argument as MemoryWorkload;
+    else if (flag === '--memory-manifest') options.memoryManifest = resolve(argument);
+    else if (flag === '--compare-cache') options.compareCache = resolve(argument);
+    else if (flag === '--idle-schedule') options.idleSchedule = resolve(argument);
+    else if (flag === '--inspection-only' && ['true', 'false'].includes(argument))
+      options.inspectionOnly = argument === 'true';
+    else if (flag === '--failed-allocation-probe') options.failedAllocationProbe = resolve(argument);
+    else if (flag === '--inspection' && ['none', 'ownership', 'graphs'].includes(argument))
+      options.inspection = argument as ProfileOptions['inspection'];
     else if (flag === '--fixtures') options.fixtureManifest = resolve(argument);
     else throw new Error(`Unknown option or invalid value: ${flag} ${argument}`);
   }
   if (!/^[0-9a-f-]{36}$/i.test(options.udid)) throw new Error('--udid must identify an explicitly owned simulator.');
   if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) throw new Error('Invalid --port.');
+  if (options.scenario === 'memory' && options.configuration !== 'Release')
+    throw new Error('Memory scenario requires Release.');
+  if (options.scenario === 'memory' && options.workload === 'idle' && !options.idleSchedule)
+    throw new Error('Idle memory workload requires --idle-schedule.');
+  if (
+    options.inspectionOnly &&
+    (options.scenario !== 'memory' || options.inspection === 'none' || options.workload === 'idle')
+  )
+    throw new Error('Ownership-only capture requires memory replay/expanding with --inspection ownership or graphs.');
+  if (options.inspection === 'graphs' && !options.failedAllocationProbe)
+    throw new Error('Graph fallback requires --failed-allocation-probe.');
   return options;
 }
 
@@ -99,20 +143,24 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(apiUrl)) {
     throw new Error('Set EXPO_PUBLIC_BACKEND_URL to the seeded local backend before profiling.');
   }
-  if (!existsSync(options.fixtureManifest))
-    throw new Error('Seed local profiling fixtures and pass their manifest with --fixtures.');
-  const fixtures = JSON.parse(readFileSync(options.fixtureManifest, 'utf8')) as {
-    owned?: number;
-    community?: number;
-    climbs?: unknown[];
-  };
-  if (
-    (fixtures.owned ?? 0) < 200 ||
-    (fixtures.community ?? 0) < 200 ||
-    !Array.isArray(fixtures.climbs) ||
-    fixtures.climbs.length === 0
-  ) {
-    throw new Error('Profiling requires at least 200 owned and 200 community playlists with real climbs.');
+  if (options.scenario === 'memory') {
+    validateMemoryManifest(JSON.parse(readFileSync(options.memoryManifest, 'utf8')) as unknown);
+  } else {
+    if (!existsSync(options.fixtureManifest))
+      throw new Error('Seed local profiling fixtures and pass their manifest with --fixtures.');
+    const fixtures = JSON.parse(readFileSync(options.fixtureManifest, 'utf8')) as {
+      owned?: number;
+      community?: number;
+      climbs?: unknown[];
+    };
+    if (
+      (fixtures.owned ?? 0) < 200 ||
+      (fixtures.community ?? 0) < 200 ||
+      !Array.isArray(fixtures.climbs) ||
+      fixtures.climbs.length === 0
+    ) {
+      throw new Error('Profiling requires at least 200 owned and 200 community playlists with real climbs.');
+    }
   }
   assertCapturePrerequisites();
   if (existsSync(join(options.runDir, 'manifest.json')))
@@ -127,14 +175,21 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     BOARDSESH_PROFILE_SOURCE_DIR: checkout,
     BOARDSESH_SCREENSHOT_BUILD: undefined,
     EXPO_PUBLIC_PROFILE_STARTUP: '1',
+    EXPO_PUBLIC_PROFILE_MEMORY: options.scenario === 'memory' ? '1' : undefined,
     BOARDSESH_METRO_PORT: String(options.port),
     TAILSCALE_HOSTNAME: 'localhost',
     REACT_NATIVE_PACKAGER_HOSTNAME: 'localhost',
     CI: '1',
+    SENTRY_DISABLE_AUTO_UPLOAD: 'true',
     BOARDSESH_IOS_BUILD_CACHE_DIR: join(options.runDir, 'native-cache', 'build'),
   };
   const manifest: Record<string, unknown> = {
     version: 1,
+    scenario: options.scenario,
+    memoryOptions:
+      options.scenario === 'memory'
+        ? { surface: options.surface, workload: options.workload, inspection: options.inspection }
+        : null,
     startedAt: new Date().toISOString(),
     sourceCheckout: checkout,
     configuration: options.configuration,
@@ -144,8 +199,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       host: 'host monotonic observation; command overhead included',
       js: 'runtime performance.now; never subtract from host timestamps',
     },
-    fixtureManifestSha256: fileSha256(options.fixtureManifest),
-    fixtureManifest: options.fixtureManifest,
+    fixtureManifestSha256: fileSha256(options.scenario === 'memory' ? options.memoryManifest : options.fixtureManifest),
+    fixtureManifest: options.scenario === 'memory' ? options.memoryManifest : options.fixtureManifest,
     fixtureEnvironment: Object.fromEntries(
       [
         'EXPO_PUBLIC_BACKEND_URL',
@@ -170,6 +225,11 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         'This source needs the companion startup instrumentation (src/lib/profiling/startup-profile.ts) before native profiling builds.',
       );
     }
+    if (
+      options.scenario === 'memory' &&
+      !existsSync(join(checkout, 'packages/mobile/src/lib/profiling/memory-profile.ts'))
+    )
+      throw new Error('Memory profiling requires the companion opt-in memory diagnostics.');
     // Profiling must never reuse a previously generated native project.
     if (existsSync(join(checkout, 'packages/mobile/ios')))
       throw new Error('Profiling checkout already has ios/. Use a fresh dedicated checkout.');
@@ -328,6 +388,25 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         String(options.port),
         '--app-path',
         appPath,
+        '--scenario',
+        options.scenario,
+        ...(options.scenario === 'memory'
+          ? [
+              '--surface',
+              options.surface,
+              '--workload',
+              options.workload,
+              '--memory-manifest',
+              options.memoryManifest,
+              '--inspection',
+              options.inspection,
+              '--inspection-only',
+              String(options.inspectionOnly),
+              ...(options.failedAllocationProbe ? ['--failed-allocation-probe', options.failedAllocationProbe] : []),
+              ...(options.compareCache ? ['--compare-cache', options.compareCache] : []),
+              ...(options.idleSchedule ? ['--idle-schedule', options.idleSchedule] : []),
+            ]
+          : []),
       ],
       checkout,
       env,
@@ -337,7 +416,12 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       readAppIdentity(simctl(['get_app_container', udid, identity.bundleIdentifier, 'app']), options.configuration),
     );
     validateCaptureFiles(
-      JSON.parse(readFileSync(join(options.runDir, 'measurements.json'), 'utf8')) as unknown,
+      JSON.parse(
+        readFileSync(
+          join(options.runDir, options.inspectionOnly ? 'ownership-measurements.json' : 'measurements.json'),
+          'utf8',
+        ),
+      ) as unknown,
       JSON.parse(readFileSync(join(options.runDir, 'capture-validity.json'), 'utf8')) as unknown,
     );
     manifest.status = 'complete';

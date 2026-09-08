@@ -1,6 +1,8 @@
+import { useMemoryBrowseControl, acknowledgeMemoryBrowseControl } from '../../../src/lib/profiling/memory-control';
+import { useMemoryListViewability } from '../../../src/lib/profiling/use-memory-list-viewability';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import { View, StyleSheet, RefreshControl, Keyboard, InteractionManager, Pressable } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
@@ -173,6 +175,11 @@ const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
 
 function ClimbListInner() {
   const router = useRouter();
+  const recordMemoryViewability = useMemoryListViewability();
+  const memoryBrowseCommand = useMemoryBrowseControl();
+  const memoryRequestedPage = useRef<string | null>(null);
+  const memoryAppliedCommand = useRef<string | null>(null);
+  const memoryListRef = useRef<FlashListRef<Climb>>(null);
   // Screenshot mode opens the first climb's board view via this deep-link param
   // (see the auto-open effect below). Absent on the plain `/climbs` list shot.
   // screenshotBoardIndex picks which followed board to render (default [0]); the
@@ -813,6 +820,31 @@ function ClimbListInner() {
     },
     [activateClimbListClimb, blurSearchInputs, lightOnClimbTap, openPlayDrawer],
   );
+
+  useEffect(() => {
+    if (!memoryBrowseCommand || memoryAppliedCommand.current === memoryBrowseCommand.commandId) return;
+    const { action, targetUuid, targetIndex, commandId } = memoryBrowseCommand;
+    const target = visibleClimbs[targetIndex];
+    if (!target) {
+      // Exactly one ordinary page request per explicit command, never a drain loop.
+      if (memoryRequestedPage.current !== commandId) {
+        memoryRequestedPage.current = commandId;
+        handleEndReached();
+      }
+      return;
+    }
+    if (target.uuid !== targetUuid) {
+      acknowledgeMemoryBrowseControl(commandId, 'mismatch');
+      return;
+    }
+    if (action === 'open') handleClimbPress(target);
+    else {
+      if (!memoryListRef.current) return;
+      void memoryListRef.current.scrollToIndex({ index: targetIndex, animated: true, viewPosition: 0 });
+    }
+    memoryAppliedCommand.current = commandId;
+    acknowledgeMemoryBrowseControl(commandId, 'complete');
+  }, [memoryBrowseCommand, visibleClimbs, handleEndReached, handleClimbPress]);
 
   // Screenshot mode: when a specific board index is requested, switch the active
   // board to it first; the open-first effect below waits until it's active.
@@ -1481,7 +1513,9 @@ function ClimbListInner() {
     <View testID="climbs-screen" style={[styles.container, { backgroundColor: systemColors.background }]}>
       <Stack.Screen options={stackOptions} />
       <FlashList
+        ref={memoryListRef}
         testID="climb-list"
+        onViewableItemsChanged={recordMemoryViewability}
         data={visibleClimbs}
         renderItem={renderClimbItem}
         keyExtractor={keyExtractor}
