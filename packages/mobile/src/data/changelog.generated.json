@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-08T02:44:06.645Z",
+  "generatedAt": "2026-09-08T03:14:56.593Z",
   "entries": [
+    {
+      "prNumber": 5311,
+      "category": "fixed",
+      "title": "Get password-reset and verification emails when you need them.",
+      "mergedAt": "2026-09-08T03:12:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5311"
+    },
     {
       "prNumber": 5210,
       "category": "new",

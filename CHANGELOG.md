@@ -15,6 +15,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Get password-reset and verification emails when you need them. ([#5311](https://github.com/boardsesh/boardsesh/pull/5311))
 - Flip a climb on a Woods board and the wall now flips with it ([#5237](https://github.com/boardsesh/boardsesh/pull/5237))
   Flipping a climb no longer un-flips itself when the board re-lights
 - Attach screenshots to bug reports and PR feedback, and update your profile photo again. ([#5281](https://github.com/boardsesh/boardsesh/pull/5281))
