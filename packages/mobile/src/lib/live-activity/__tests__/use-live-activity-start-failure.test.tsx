@@ -65,6 +65,7 @@ function Harness() {
     widgetNavigationAllowed: true,
     isPartySession: false,
     boardConnection: 'connectedByMe',
+    renderMode: 'aura',
   });
   return null;
 }

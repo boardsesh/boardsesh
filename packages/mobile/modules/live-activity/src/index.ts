@@ -77,7 +77,9 @@ export type NativeBleWriteDiagnostics = {
     | 'defaultWithoutResponse'
     | 'watchdogFallback'
     | 'learnedPersistentFallback'
-    | 'moonboardCharacteristic';
+    | 'moonboardCharacteristic'
+    | 'woodsProtocol'
+    | 'bareNameHint';
   chunkSize: number;
   /** Planned chunks for the write (stamped at enqueue), not progress. */
   chunkCount: number;
@@ -130,6 +132,15 @@ export type NativeBleConfigureBoardOptions = {
 };
 
 type BoardBleNativeModule = {
+  /**
+   * Boards this binary's Swift BLE layer can encode and drive natively.
+   * Constant, exported by binaries ≥ #3314. Absent on older binaries — gate
+   * every native board behaviour on it via `nativeBleSupportsBoard`
+   * (packages/mobile/src/lib/ble/native-ios-adapter.ts) and treat absence as
+   * the pre-#3314 surface (Aurora + MoonBoard, never Woods), because an OTA JS
+   * update can run against an older binary.
+   */
+  nativeBoardControlBoards?: string[];
   isAvailable(): Promise<{ available: boolean }>;
   /** An empty `services` array means "scan unfiltered" on newer binaries. */
   startScan(services?: string[]): Promise<void>;
@@ -191,6 +202,9 @@ export const boardBleNative = requireOptionalNativeModule<BoardBleNativeModule>(
  */
 export type LiveActivityBoardConnection = 'connectedByMe' | 'heldByPeer' | 'disconnected';
 
+/** The climber's saved board look (requestedBoardRenderMode). */
+export type LiveActivityBoardRenderMode = 'classic' | 'aura';
+
 export type LiveActivityStartSessionOptions = {
   sessionId: string;
   serverUrl: string;
@@ -215,6 +229,14 @@ export type LiveActivityStartSessionOptions = {
    * only; the Android foreground service ignores it.
    */
   boardBackgroundPaths?: string[];
+  /**
+   * The climber's saved board look, sent to the server thumbnail render and
+   * baked into the thumbnail cache filename. iOS only — Android renders the
+   * notification thumbnail on-device in the climber's look already. Absent on
+   * an older native build's Record → ignored; absent from an older JS bundle →
+   * Swift resolves aura, the app and server default.
+   */
+  renderMode?: LiveActivityBoardRenderMode;
   /**
    * Localized strings for the Android foreground-service notification. Ignored
    * on iOS (ActivityKit builds its UI in Swift). Supplied so the ongoing
@@ -272,6 +294,12 @@ export type LiveActivityUpdateOptions = {
    */
   androidThumbnailOverlayPath?: string | null;
   androidThumbnailBackgroundPaths?: string[];
+  /**
+   * The climber's saved board look — refreshed on every update so a settings
+   * change reaches a running activity (startSession is not re-called for it).
+   * iOS only; see LiveActivityStartSessionOptions.renderMode.
+   */
+  renderMode?: LiveActivityBoardRenderMode;
 };
 
 export type LiveActivityClimbUpdateOptions = Omit<LiveActivityUpdateOptions, 'queue'>;

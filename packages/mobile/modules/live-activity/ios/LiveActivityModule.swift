@@ -690,6 +690,15 @@ public class LiveActivityModule: Module {
             } else {
                 defaults.set(boardBackgroundPaths, forKey: SharedConstants.boardBackgroundPathsKey)
             }
+            // The climber's saved board look for the server thumbnail render.
+            // Staged raw; SharedBoardRenderMode.resolve validates on read (one
+            // choke point). Removed when the JS bundle didn't send one so a
+            // previous session's value can't linger past what JS knows about.
+            if let renderMode = options.renderMode, !renderMode.isEmpty {
+                defaults.set(renderMode, forKey: SharedConstants.renderModeKey)
+            } else {
+                defaults.removeObject(forKey: SharedConstants.renderModeKey)
+            }
             SharedWidgetWallControlState.save(
                 navigationAllowed: widgetNavigationAllowed,
                 isPartySession: isPartySession,
@@ -847,6 +856,7 @@ public class LiveActivityModule: Module {
         guard #available(iOS 17.0, *) else { return }
 
         var wallControlChanged = false
+        var renderModeChanged = false
         if let defaults = SharedConstants.sharedDefaults {
             let previousWallControl = SharedWidgetWallControlState.load(from: defaults)
             let previousBoardConnection = defaults.string(forKey: SharedConstants.boardConnectionKey)
@@ -854,6 +864,17 @@ public class LiveActivityModule: Module {
                 previousWallControl.navigationAllowed != options.widgetNavigationAllowed ||
                 previousWallControl.requiresServerAuthorization != options.isPartySession ||
                 previousBoardConnection != options.boardConnection
+
+            // A look change bypasses the dedup window like a wall-control
+            // change: the pushed content state is unchanged, but the widget
+            // must re-render to read the re-fetched thumbnail for the new
+            // mode. Set-if-present only — a nil from an older OTA'd JS bundle
+            // must never clear the value startSession staged.
+            if let renderMode = options.renderMode, !renderMode.isEmpty {
+                renderModeChanged = defaults.string(forKey: SharedConstants.renderModeKey) != renderMode
+                wallControlChanged = wallControlChanged || renderModeChanged
+                defaults.set(renderMode, forKey: SharedConstants.renderModeKey)
+            }
 
             var queueItems: [SharedQueueItem] = []
             for item in options.queue {
@@ -896,6 +917,12 @@ public class LiveActivityModule: Module {
 
         let activityManager = LiveActivityManager.shared
         enqueueLifecycleWork {
+            // A look change re-renders the widget against a mode-suffixed
+            // thumbnail filename that doesn't exist yet — cache it BEFORE the
+            // push, or the image goes blank until an unrelated later update.
+            if renderModeChanged {
+                await activityManager.prefetchCurrentThumbnail()
+            }
             let elapsed = await activityManager.timeSinceLastUpdate()
             let unchanged = await activityManager.lastPushedState() == state
             if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
@@ -912,6 +939,7 @@ public class LiveActivityModule: Module {
         guard #available(iOS 17.0, *) else { return }
 
         var wallControlChanged = false
+        var renderModeChanged = false
         if let defaults = SharedConstants.sharedDefaults {
             let previousWallControl = SharedWidgetWallControlState.load(from: defaults)
             let previousBoardConnection = defaults.string(forKey: SharedConstants.boardConnectionKey)
@@ -919,6 +947,13 @@ public class LiveActivityModule: Module {
                 previousWallControl.navigationAllowed != options.widgetNavigationAllowed ||
                 previousWallControl.requiresServerAuthorization != options.isPartySession ||
                 previousBoardConnection != options.boardConnection
+
+            // Same look-change bypass + set-if-present rule as updateActivity.
+            if let renderMode = options.renderMode, !renderMode.isEmpty {
+                renderModeChanged = defaults.string(forKey: SharedConstants.renderModeKey) != renderMode
+                wallControlChanged = wallControlChanged || renderModeChanged
+                defaults.set(renderMode, forKey: SharedConstants.renderModeKey)
+            }
 
             SharedQueueState.saveCurrentIndex(options.currentIndex, to: defaults)
             SharedWidgetWallControlState.save(
@@ -948,6 +983,11 @@ public class LiveActivityModule: Module {
 
         let activityManager = LiveActivityManager.shared
         enqueueLifecycleWork {
+            // See updateActivity: a look change must cache the new mode's
+            // thumbnail before the push so the re-render never lands blank.
+            if renderModeChanged {
+                await activityManager.prefetchCurrentThumbnail()
+            }
             let elapsed = await activityManager.timeSinceLastUpdate()
             let unchanged = await activityManager.lastPushedState() == state
             if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
@@ -983,6 +1023,11 @@ struct StartSessionOptions: Record {
     /// Empty when none resolved. iOS-only; the Android SessionPresence Record
     /// ignores the extra key.
     @Field var boardBackgroundPaths: [String] = []
+    /// The climber's saved board look ("classic" | "aura") for the server
+    /// thumbnail render. Nil from a JS bundle that predates it; the shared
+    /// defaults reader falls back to aura. iOS-only; Android renders the
+    /// notification thumbnail on-device in the climber's look already.
+    @Field var renderMode: String?
 }
 
 struct UpdateActivityQueueItem: Record {
@@ -1010,6 +1055,9 @@ struct UpdateActivityOptions: Record {
     @Field var isPartySession: Bool = false
     @Field var boardConnection: String = "connectedByMe"
     @Field var holderDisplayName: String?
+    /// The climber's saved board look; nil (older JS) leaves the staged value
+    /// untouched. See StartSessionOptions.renderMode.
+    @Field var renderMode: String?
 }
 
 struct UpdateActivityClimbOptions: Record {
@@ -1025,4 +1073,7 @@ struct UpdateActivityClimbOptions: Record {
     @Field var isPartySession: Bool = false
     @Field var boardConnection: String = "connectedByMe"
     @Field var holderDisplayName: String?
+    /// The climber's saved board look; nil (older JS) leaves the staged value
+    /// untouched. See StartSessionOptions.renderMode.
+    @Field var renderMode: String?
 }

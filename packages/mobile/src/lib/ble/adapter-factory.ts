@@ -5,7 +5,7 @@ import {
   type NativeBleConnectedEvent,
 } from '../../../modules/live-activity/src/index';
 import { RNBleAdapter } from './adapter';
-import { NativeIosBleAdapter, nativeBleSupportsConnectionAdoption } from './native-ios-adapter';
+import { NativeIosBleAdapter, nativeBleSupportsBoard, nativeBleSupportsConnectionAdoption } from './native-ios-adapter';
 import type { BleAdapterOptions, BluetoothAdapter, BoardScanFamily, DevicePickerFn } from './types';
 
 // Returns the BluetoothAdapter implementation appropriate for the current
@@ -19,20 +19,25 @@ import type { BleAdapterOptions, BluetoothAdapter, BoardScanFamily, DevicePicker
 // always take the native path.
 //
 // A board that demands acknowledged writes (options.preferWriteWithResponse —
-// Woods, per its protocol spec §8) also stays on RNBleAdapter on iOS: the
-// native path's write type is fixed in Swift until #3314, and routing through
-// ble-plx additionally keeps the Swift encoder — which would treat a Woods
-// board as Aurora — from ever seeing a Woods configuration.
+// Woods, per its protocol spec §8) takes the native path only when the running
+// binary proves it can drive that board (`nativeBleSupportsBoard`, the #3314
+// constant): the old Swift layer both fixes the write type to
+// without-response and would encode a Woods climb as Aurora, so on older
+// binaries such a board stays on RNBleAdapter, which keeps the Swift encoder
+// from ever seeing its configuration.
 export function createBluetoothAdapter(
   devicePicker: DevicePickerFn,
   scanFamily: BoardScanFamily,
   options?: BleAdapterOptions,
 ): BluetoothAdapter {
-  if (Platform.OS === 'ios' && boardBleNative && !options?.preferWriteWithResponse) {
+  const nativeCanServe = !options?.preferWriteWithResponse || nativeBleSupportsBoard(options.boardName);
+  if (Platform.OS === 'ios' && boardBleNative && nativeCanServe) {
     return new NativeIosBleAdapter(devicePicker, scanFamily, options);
   }
   return new RNBleAdapter(devicePicker, scanFamily, options);
 }
+
+export { nativeBleSupportsBoard };
 
 // `true` iff the runtime adapter is the native iOS one — used by the
 // provider to decide whether to push board configuration into native shared

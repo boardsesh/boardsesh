@@ -101,6 +101,7 @@ function activeProps(overrides: Partial<HookProps> = {}): HookProps {
     widgetNavigationAllowed: true,
     isPartySession: false,
     boardConnection: 'connectedByMe',
+    renderMode: 'aura',
     ...overrides,
   };
 }
@@ -138,6 +139,30 @@ describe('useLiveActivity start-failure contract', () => {
     expect(plugin.updateLiveActivity).toHaveBeenCalledWith(
       expect.objectContaining({ climbName: 'Test Climb', currentIndex: 0, totalClimbs: 1 }),
     );
+  });
+
+  it("threads the climber's saved board look through start and updates, and pushes on a toggle", async () => {
+    plugin.startLiveActivitySession.mockResolvedValue(undefined);
+    const props = activeProps(); // renderMode: 'aura'
+    const { rerender } = render(<Harness {...props} />);
+
+    await waitFor(() => expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(1));
+    expect(plugin.startLiveActivitySession).toHaveBeenCalledWith(expect.objectContaining({ renderMode: 'aura' }));
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1));
+    expect(plugin.updateLiveActivity).toHaveBeenCalledWith(expect.objectContaining({ renderMode: 'aura' }));
+    plugin.updateLiveActivity.mockClear();
+    plugin.updateLiveActivityClimb.mockClear();
+
+    rerender(<Harness {...props} renderMode="classic" />);
+
+    // A look change fires exactly one full update (Effect 1; Effect 2's
+    // duplicate is suppressed by queueSyncedRef) — and never restarts the
+    // session, which would re-request the activity and rebind push tokens.
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1));
+    expect(plugin.updateLiveActivity).toHaveBeenCalledWith(expect.objectContaining({ renderMode: 'classic' }));
+    expect(plugin.updateLiveActivityClimb).not.toHaveBeenCalled();
+    expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(1);
+    expect(plugin.endLiveActivitySession).not.toHaveBeenCalled();
   });
 
   it('refreshes an Android thumbnail when its generation changes at the same path', async () => {

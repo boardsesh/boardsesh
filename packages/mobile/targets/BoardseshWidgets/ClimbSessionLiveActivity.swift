@@ -9,7 +9,11 @@ func loadThumbnail(climbUuid: String) -> UIImage? {
     guard let containerURL = FileManager.default.containerURL(
         forSecurityApplicationGroupIdentifier: SharedConstants.appGroupId
     ) else { return nil }
-    let path = containerURL.appendingPathComponent("thumbnails/\(climbUuid).webp")
+    // ThumbnailFetcher (main-app process) caches per render mode; resolve the
+    // saved look the same way so the widget reads the file the fetcher wrote.
+    let renderMode = SharedBoardRenderMode.resolve(from: SharedConstants.sharedDefaults)
+    let fileName = SharedBoardRenderMode.thumbnailFileName(climbUuid: climbUuid, renderMode: renderMode)
+    let path = containerURL.appendingPathComponent("thumbnails/\(fileName)")
     guard let data = try? Data(contentsOf: path) else { return nil }
     return UIImage(data: data)
 }

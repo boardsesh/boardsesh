@@ -122,12 +122,16 @@ vi.mock('../adapter-factory', () => ({
   // Adoption seam: null/absent = platform without native connection adoption.
   subscribeNativeBleConnected: vi.fn(() => null),
   getNativeBleConnectedDevice: vi.fn(async () => null),
+  // The #3314 binary-capability probe. Default true = a binary whose Swift
+  // layer drives every board; the old-binary tests flip it to false.
+  nativeBleSupportsBoard: vi.fn(() => true),
 }));
 
 import {
   createBluetoothAdapter,
   getNativeBleConnectedDevice,
   isNativeIosBleAdapter,
+  nativeBleSupportsBoard,
   subscribeNativeBleConnected,
 } from '../adapter-factory';
 import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol/aurora';
@@ -155,6 +159,13 @@ import { getBleEncodingSignature } from '../encoding-signature';
 import type { BleWriteDiagnostics } from '../types';
 import { reportHandledError } from '../../error-reporting';
 import { createBleWriteActivityStore } from '../write-activity-store';
+
+// The #3314 binary-capability probe defaults to "new binary" (drives every
+// board) for the whole file; old-binary tests flip it per test and this
+// outermost beforeEach undoes that before the next test.
+beforeEach(() => {
+  vi.mocked(nativeBleSupportsBoard).mockReturnValue(true);
+});
 
 // ── Factory helpers ────────────────────────────────────────────────────────
 
@@ -284,6 +295,7 @@ describe('useBoardBluetooth', () => {
     expect(createBluetoothAdapter).toHaveBeenCalledTimes(1);
     expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'moonboard', {
       preferWriteWithResponse: false,
+      boardName: 'moonboard',
     });
 
     await act(async () => {
@@ -312,6 +324,7 @@ describe('useBoardBluetooth', () => {
 
     expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'aurora', {
       preferWriteWithResponse: false,
+      boardName: 'kilter',
     });
     expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.unknownError');
   });
@@ -1379,6 +1392,29 @@ describe('useBoardBluetooth', () => {
     expect(failureCall?.[1]).toMatchObject({ boardName: 'woods', failureReason: 'missing_led_placements' });
   });
 
+  it('asks the factory for acknowledged writes on Woods, naming the board for the binary probe', async () => {
+    // Woods firmware takes write requests (protocol spec §8). The factory
+    // decides native-vs-ble-plx from the #3314 binary probe (covered in
+    // adapter-factory.test.ts); the hook's job is to hand it the preference
+    // AND the board name. On a ble-plx adapter (isNativeIosBleAdapter false —
+    // an old binary, or Android) there is no configureBoard handoff.
+    const fakeAdapter = { ...makeFakeAdapter(), configureBoard: vi.fn().mockResolvedValue(undefined) };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'moonboard', {
+      preferWriteWithResponse: true,
+      boardName: 'woods',
+    });
+    expect(fakeAdapter.configureBoard).not.toHaveBeenCalled();
+  });
+
   // ── Woods mirroring (#5217) ───────────────────────────────────────────────
   // Woods reports supportsMirroring, so a flip must reach the wall. 8×10 row 0
   // is 11 holds wide, so the mirror of column c is column 10 - c: 0↔10, 1↔9, and
@@ -1527,8 +1563,46 @@ describe('useBoardBluetooth', () => {
 
     expect(createBluetoothAdapter).toHaveBeenCalledWith(expect.any(Function), 'moonboard', {
       preferWriteWithResponse: true,
+      boardName: 'woods',
     });
     expect(fakeAdapter.configureBoard).not.toHaveBeenCalled();
+  });
+
+  it('hands the native adapter the Woods config on a binary that drives it (#3314)', async () => {
+    // New binary + native routing: the connect flow pushes configureBoard so
+    // the widget intent path can encode Woods packets without JS.
+    const fakeAdapter = { ...makeFakeAdapter(), configureBoard: vi.fn().mockResolvedValue(undefined) };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    vi.mocked(isNativeIosBleAdapter).mockReturnValue(true);
+    try {
+      const { result } = renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+      await act(async () => {
+        await result.current.connect();
+      });
+
+      // The config is staged BEFORE the physical connect: native connection
+      // setup relights the shared queue with whatever config is persisted, so
+      // a stale previous-board config would encode the wrong protocol (an
+      // Aurora packet to a Woods wall). The pre-stage carries the board
+      // identity but no device-derived fields; the post-connect call re-stages
+      // with deviceName.
+      const requestAndConnectMock = fakeAdapter.requestAndConnect as ReturnType<typeof vi.fn>;
+      expect(fakeAdapter.configureBoard.mock.invocationCallOrder[0]).toBeLessThan(
+        requestAndConnectMock.mock.invocationCallOrder[0],
+      );
+      expect(fakeAdapter.configureBoard).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ boardName: 'woods', layoutId: 1, sizeId: 1 }),
+      );
+      expect(fakeAdapter.configureBoard.mock.calls[0][0].deviceName).toBeUndefined();
+      expect(fakeAdapter.configureBoard).toHaveBeenLastCalledWith(
+        expect.objectContaining({ boardName: 'woods', layoutId: 1, sizeId: 1, deviceName: 'Kilter Board#123@3' }),
+      );
+    } finally {
+      vi.mocked(isNativeIosBleAdapter).mockReturnValue(false);
+    }
   });
 
   it('attaches write diagnostics alongside failureReason on a failed send (#3230)', async () => {
@@ -2148,10 +2222,12 @@ describe('useBoardBluetooth native connection adoption', () => {
     });
   });
 
-  it('never arms adoption for Woods — no listener, no throwaway adapter, no configureBoard', async () => {
-    // Woods always runs on the JS ble-plx adapter (acknowledged writes), so
-    // there is never a native connection to adopt. The effect bails before it
-    // subscribes, rather than building an adapter just to discover that.
+  it('never arms adoption for Woods on a binary that cannot drive it — no listener, no throwaway adapter', async () => {
+    // On an old binary (#3314 probe false) Woods runs on the JS ble-plx
+    // adapter, so there is never a native connection to adopt. The effect
+    // bails before it subscribes, rather than building an adapter just to
+    // discover that.
+    vi.mocked(nativeBleSupportsBoard).mockReturnValue(false);
     const adapter = makeAdoptableAdapter();
     vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
 
@@ -2162,6 +2238,18 @@ describe('useBoardBluetooth native connection adoption', () => {
     expect(adapter.adoptConnection).not.toHaveBeenCalled();
     expect(adapter.configureBoard).not.toHaveBeenCalled();
     expect(result.current.isConnected).toBe(false);
+  });
+
+  it('arms adoption for Woods on a binary that drives it (#3314)', async () => {
+    // New binary: Woods rides the native adapter, so a native connection
+    // (Dynamic Island reconnect, state restoration) is adoptable like any
+    // Aurora board's.
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+
+    renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
+
+    expect(subscribeNativeBleConnected).toHaveBeenCalledTimes(1);
   });
 
   it('refuses to adopt a device it cannot positively identify as the active board type', async () => {

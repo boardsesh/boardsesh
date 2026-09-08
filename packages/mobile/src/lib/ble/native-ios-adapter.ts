@@ -35,6 +35,26 @@ export function nativeBleSupportsConnectionAdoption(): boolean {
   return typeof boardBleNative?.getConnectedDevice === 'function';
 }
 
+/**
+ * True when this binary's Swift BLE layer can encode and drive `boardName`
+ * natively (packet builder + manager dispatch + write type). Binaries ≥ #3314
+ * export the supported set as the `nativeBoardControlBoards` constant; on
+ * older binaries (and on Android, where the module is null) the constant is
+ * absent and the pre-#3314 surface applies — everything except Woods, whose
+ * frames the old Swift encoder would misencode as Aurora.
+ */
+export function nativeBleSupportsBoard(boardName: string | undefined): boolean {
+  // An unknown board is never claimed as natively drivable — a caller without
+  // a board name gets the safe ble-plx / hidden-controls answer on every
+  // binary generation.
+  if (boardName === undefined) return false;
+  const supportedBoards = boardBleNative?.nativeBoardControlBoards;
+  if (Array.isArray(supportedBoards)) {
+    return supportedBoards.includes(boardName);
+  }
+  return boardName !== 'woods';
+}
+
 function uint8ArrayToHex(bytes: Uint8Array): string {
   let hex = '';
   for (let byteIndex = 0; byteIndex < bytes.length; byteIndex++) {
@@ -80,10 +100,11 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
   // can read it.
   private lastConnectDiagnostics: BleConnectDiagnostics | null = null;
   // Accepted for signature symmetry with RNBleAdapter, deliberately NOT acted
-  // on: a native write's type is decided in Swift
-  // (`BoardBleEncoding.preferredWriteType`), which JS can't reach without a
-  // native release (#3314). The factory keeps boards that need acknowledged
-  // writes off this adapter entirely, so an honoured value never comes up.
+  // on in JS: a native write's type is decided in Swift
+  // (`BoardBleEncoding.preferredWriteType`), which honours acknowledged-write
+  // boards (Woods, spec §8) on binaries ≥ #3314. The factory only routes such
+  // a board here when `nativeBleSupportsBoard` confirms this binary encodes
+  // it, so a value Swift wouldn't honour never comes up.
   readonly options: BleAdapterOptions;
 
   constructor(

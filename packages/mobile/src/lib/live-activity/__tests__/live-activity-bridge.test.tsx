@@ -65,6 +65,25 @@ const climbRender = vi.hoisted(() => ({
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 
+// The #3314 binary-capability probe. Default true = a binary whose Swift BLE
+// layer drives every board; the old-binary test flips it per test.
+const bleProbe = vi.hoisted(() => ({
+  nativeBleSupportsBoard: vi.fn((_boardName: string | undefined) => true),
+}));
+
+const renderSettings = vi.hoisted(() => ({
+  mode: 'aura' as 'aura' | 'classic',
+}));
+
+vi.mock('../../ble/adapter-factory', () => ({
+  nativeBleSupportsBoard: bleProbe.nativeBleSupportsBoard,
+}));
+
+vi.mock('../../board-render-settings', () => ({
+  useBoardRenderSettings: () => ({ settings: { mode: renderSettings.mode }, loaded: true }),
+  requestedBoardRenderMode: (settings: { mode: string }) => (settings.mode === 'classic' ? 'classic' : 'aura'),
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -149,6 +168,8 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     bt.armUndoWallChangeToast.mockClear();
     bt.reassertWall.mockClear();
     bt.reconnectSerialForCurrentBoard = 'serial-123';
+    bleProbe.nativeBleSupportsBoard.mockReturnValue(true);
+    renderSettings.mode = 'aura';
   });
 
   it('passes connectedByMe + enables widget navigation when this device holds the board', () => {
@@ -177,19 +198,41 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     );
   });
 
-  it('hides widget navigation for a board the native encoder cannot drive (Woods)', () => {
-    // Previous/Next write the wall from Swift App Intents, and BoardBleEncoding
-    // has no Woods encoder (#3314) — it would fall through to Aurora and light
-    // the wrong holds. Holding the board is not enough for these controls.
+  it('hides widget navigation for Woods on a binary whose Swift encoder cannot drive it', () => {
+    // Previous/Next write the wall from Swift App Intents. A pre-#3314 binary's
+    // BoardBleEncoding has no Woods encoder — it would fall through to Aurora
+    // and light the wrong holds — and OTA'd JS can be newer than the installed
+    // native build, so holding the board is not enough for these controls.
     boardState.boardConnection = 'connectedByMe';
+    bleProbe.nativeBleSupportsBoard.mockReturnValue(false);
     render(<LiveActivityBridge boardName="woods" layoutId={1} sizeId={2} setIds="1" />);
 
+    expect(bleProbe.nativeBleSupportsBoard).toHaveBeenCalledWith('woods');
     expect(widget.useLiveActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         boardConnection: 'connectedByMe',
         widgetNavigationAllowed: false,
       }),
     );
+  });
+
+  it('enables widget navigation for Woods on a binary whose Swift encoder drives it (#3314)', () => {
+    boardState.boardConnection = 'connectedByMe';
+    render(<LiveActivityBridge boardName="woods" layoutId={1} sizeId={2} setIds="1" />);
+
+    expect(widget.useLiveActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        boardConnection: 'connectedByMe',
+        widgetNavigationAllowed: true,
+      }),
+    );
+  });
+
+  it("passes the climber's saved board look through to the live activity", () => {
+    renderSettings.mode = 'classic';
+    renderBridge();
+
+    expect(widget.useLiveActivity).toHaveBeenCalledWith(expect.objectContaining({ renderMode: 'classic' }));
   });
 
   it('hides widget navigation when nobody is driving the board', () => {

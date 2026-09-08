@@ -6,13 +6,15 @@ import SDWebImageWebPCoder
 
 // MARK: - ThumbnailFetcher
 
-/// Fetches climb hold-overlay thumbnails from the server and caches them in
-/// the App Group shared container so Live Activities can display them. The
-/// request intentionally omits `include_background=1`; bundled board photos
-/// must not be fetched over the network from native widget code. Instead the
-/// holds overlay is composited on top of the bundled board-background webp(s)
-/// staged by `LiveActivityModule.startSession` (the no-network-board-art rule),
-/// so the cached thumbnail the widget renders carries the full board photo.
+/// Fetches climb thumbnails from the server and caches them in the App Group
+/// shared container so Live Activities can display them. The request
+/// (`SharedQueueState.boardRenderUrl`) asks the server for the finished image —
+/// board photo composited behind the holds (`include_background=1`), darkened
+/// for thumbnail readability (`dim_background`), drawn in the climber's saved
+/// look (`render_mode`) — and the response is persisted verbatim. The
+/// on-device compositor over the bundled board-background webp(s) staged by
+/// `LiveActivityModule.startSession` is retained but unused, pending the
+/// "offline board art" revisit issue.
 actor ThumbnailFetcher {
 
     // MARK: - Configuration
@@ -38,8 +40,10 @@ actor ThumbnailFetcher {
     /// refetched. The cache key is the climbUuid (not the URL), so the new param
     /// alone would otherwise keep serving the old image. Mirrors
     /// `RENDERER_VERSION` in use-native-climb-render.ts, which solved the same
-    /// transition in-app.
-    static let cacheVersion = 5
+    /// transition in-app. v6 = the render mode (the climber's saved look) joined
+    /// the URL and the cache filename (`<climbUuid>-<mode>.webp`), so v5's
+    /// unsuffixed server-default files are unreachable and must be dropped.
+    static let cacheVersion = 6
 
     // MARK: - Dependencies
 
@@ -82,10 +86,12 @@ actor ThumbnailFetcher {
     // MARK: - Public API
 
     /// Builds the thumbnail URL for a given queue item using board details
-    /// stored in shared UserDefaults.
-    func buildThumbnailURL(for item: SharedQueueItem) -> URL? {
+    /// stored in shared UserDefaults. `renderMode` pins the look resolved by
+    /// the caller so URL and cache filename always agree; nil resolves it from
+    /// the shared defaults.
+    func buildThumbnailURL(for item: SharedQueueItem, renderMode: String? = nil) -> URL? {
         guard let defaults = sharedDefaults else { return nil }
-        return SharedQueueState.boardRenderUrl(for: item, from: defaults)
+        return SharedQueueState.boardRenderUrl(for: item, from: defaults, renderMode: renderMode)
     }
 
     /// Fetches a thumbnail for the given queue item and returns a file URL
@@ -97,8 +103,14 @@ actor ThumbnailFetcher {
         // version bump (e.g. overlay-only → board-composited) forces a re-render.
         purgeStaleCacheIfNeeded()
 
+        // Resolve the climber's saved look ONCE per fetch, so the request URL
+        // (built from the same defaults) and the cache filename can't straddle
+        // a mid-fetch settings change.
+        let renderMode = SharedBoardRenderMode.resolve(from: sharedDefaults)
+
         // Return cached file if it already exists.
-        if let cached = cachedFileURL(for: item.climbUuid), fileManager.fileExists(atPath: cached.path) {
+        if let cached = cachedFileURL(for: item.climbUuid, renderMode: renderMode),
+           fileManager.fileExists(atPath: cached.path) {
             // Touch the file so eviction treats it as recently used.
             try? fileManager.setAttributes(
                 [.modificationDate: Date()],
@@ -107,18 +119,20 @@ actor ThumbnailFetcher {
             return cached
         }
 
-        // Deduplicate in-flight requests for the same climb.
-        if let existing = inFlightTasks[item.climbUuid] {
+        // Deduplicate in-flight requests for the same climb — keyed with the
+        // mode so a look toggle mid-fetch can't join the other mode's fetch.
+        let inFlightKey = "\(item.climbUuid):\(renderMode)"
+        if let existing = inFlightTasks[inFlightKey] {
             return await existing.value
         }
 
         let task = Task<URL?, Never> { [weak self] in
             guard let self else { return nil }
-            return await self._fetchAndSave(item: item)
+            return await self._fetchAndSave(item: item, renderMode: renderMode)
         }
 
-        inFlightTasks[item.climbUuid] = task
-        defer { inFlightTasks.removeValue(forKey: item.climbUuid) }
+        inFlightTasks[inFlightKey] = task
+        defer { inFlightTasks.removeValue(forKey: inFlightKey) }
         return await task.value
     }
 
@@ -191,11 +205,15 @@ actor ThumbnailFetcher {
 
     // MARK: - Internal Helpers
 
-    /// Returns the file URL where a thumbnail for the given climb UUID
-    /// would be stored, or `nil` if the shared container is unavailable.
-    func cachedFileURL(for climbUuid: String) -> URL? {
+    /// Returns the file URL where a thumbnail for the given climb UUID and
+    /// render mode would be stored, or `nil` if the shared container is
+    /// unavailable. The filename contract is shared with the widget's
+    /// `loadThumbnail` via `SharedBoardRenderMode.thumbnailFileName`.
+    func cachedFileURL(for climbUuid: String, renderMode: String) -> URL? {
         guard let directory = thumbnailsDirectoryURL() else { return nil }
-        return directory.appendingPathComponent("\(climbUuid).webp")
+        return directory.appendingPathComponent(
+            SharedBoardRenderMode.thumbnailFileName(climbUuid: climbUuid, renderMode: renderMode)
+        )
     }
 
     /// Returns the thumbnails directory URL inside the shared container,
@@ -213,9 +231,9 @@ actor ThumbnailFetcher {
 
     // MARK: - Private
 
-    private func _fetchAndSave(item: SharedQueueItem) async -> URL? {
-        guard let remoteURL = buildThumbnailURL(for: item) else { return nil }
-        guard let fileURL = cachedFileURL(for: item.climbUuid) else { return nil }
+    private func _fetchAndSave(item: SharedQueueItem, renderMode: String) async -> URL? {
+        guard let remoteURL = buildThumbnailURL(for: item, renderMode: renderMode) else { return nil }
+        guard let fileURL = cachedFileURL(for: item.climbUuid, renderMode: renderMode) else { return nil }
 
         do {
             let (data, response) = try await urlSession.data(from: remoteURL)

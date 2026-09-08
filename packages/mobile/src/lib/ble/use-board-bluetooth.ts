@@ -36,6 +36,7 @@ import {
   createBluetoothAdapter,
   getNativeBleConnectedDevice,
   isNativeIosBleAdapter,
+  nativeBleSupportsBoard,
   subscribeNativeBleConnected,
 } from './adapter-factory';
 import { requestBleRuntimePermissions } from './use-ble-permissions';
@@ -265,10 +266,11 @@ function scanFamilyForBoard(boardName: string): 'aurora' | 'moonboard' {
 }
 
 // Transport preferences for the board in view. Woods takes acknowledged writes
-// (protocol spec §8), which also routes it onto the JS ble-plx adapter on iOS —
-// see createBluetoothAdapter.
+// (protocol spec §8); on iOS the factory routes it onto the native Swift
+// adapter only when the running binary can encode Woods, else onto ble-plx —
+// see createBluetoothAdapter / nativeBleSupportsBoard.
 function adapterOptionsForBoard(boardName: string): BleAdapterOptions {
-  return { preferWriteWithResponse: boardName === 'woods' };
+  return { preferWriteWithResponse: boardName === 'woods', boardName };
 }
 
 /**
@@ -1414,6 +1416,35 @@ export function useBoardBluetooth({
           reconnect: !!targetSerial || !!targetDeviceId,
         });
 
+        // Stage the board configuration into the native manager BEFORE the
+        // physical connect: native connection setup relights the shared queue
+        // with whatever configuration is currently persisted, so on a board
+        // switch the first native write after a fresh connect would otherwise
+        // be encoded for the PREVIOUS board — e.g. an Aurora packet to a Woods
+        // wall. configure() and connect() land on the same serial BLE queue,
+        // so this ordering is honoured natively. The device-derived fields
+        // (deviceName, apiLevel) are unknown until the link exists; the
+        // post-connect configureBoard below re-stages the full picture.
+        if (
+          isNativeIosBleAdapter(adapter) &&
+          typeof adapter.configureBoard === 'function' &&
+          layoutId !== undefined &&
+          sizeId !== undefined
+        ) {
+          try {
+            await adapter.configureBoard({
+              boardName,
+              layoutId,
+              sizeId,
+              colorOverrides: sanitizedColorOverrides,
+              numRows: moonboardNumRowsForNative(boardName, layoutId),
+              lightAdjacentHolds: moonboardLightAdjacentHolds,
+            });
+          } catch (error) {
+            console.warn('[BLE] Failed to pre-stage board configuration to native side:', error);
+          }
+        }
+
         const connection = await adapter.requestAndConnect(targetSerial, targetDeviceId);
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;
@@ -1818,10 +1849,13 @@ export function useBoardBluetooth({
   // JS was suspended are missed). No-op on Android and on binaries older than
   // the `getConnectedDevice` surface.
   useEffect(() => {
-    // A board native code can't drive (Woods) never rides the native adapter, so
-    // there is no native connection to adopt — and no point building a throwaway
-    // adapter just to learn that from isNativeIosBleAdapter below.
-    if (!getBoardCapabilities(boardName).nativeBoardControl) return;
+    // A board this binary's native code can't drive never rides the native
+    // adapter, so there is no native connection to adopt — and no point
+    // building a throwaway adapter just to learn that from
+    // isNativeIosBleAdapter below. Two gates: the static product capability,
+    // and the running binary's actual encoder support (an OTA'd JS can be
+    // newer than the installed Swift — see nativeBleSupportsBoard).
+    if (!getBoardCapabilities(boardName).nativeBoardControl || !nativeBleSupportsBoard(boardName)) return;
     const adopt = (deviceId: string, rawDeviceName?: string) => {
       // The bridge sends '' for a missing name — normalise so name parsing
       // (board type, serial, API level) sees undefined instead.

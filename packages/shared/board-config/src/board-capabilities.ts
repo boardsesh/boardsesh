@@ -79,13 +79,15 @@ export type BoardCapabilities = {
    * Native code can encode and drive the board without going through JS.
    *
    * The Live Activity widget's Previous/Next App Intents encode and write the
-   * wall packet natively from Swift (`BoardBleEncoding`), which has no Woods
-   * encoder and would fall through to the Aurora one — lighting the wrong holds,
-   * or nothing at all. Until the Swift side learns Woods
-   * (boardsesh/boardsesh#3314) the wall-driving widget controls must not be
-   * offered for it, and the adapter factory keeps Woods on `RNBleAdapter` even
-   * on iOS: the JS write path is the only one that can encode a Woods board
-   * today.
+   * wall packet natively from Swift (`BoardBleEncoding`), which drives the
+   * Aurora family, MoonBoard, and — since #3314 — Woods.
+   *
+   * This is the static PRODUCT capability: "some Boardsesh binary drives this
+   * board natively". Because JS rides OTA onto older binaries, every consumer
+   * must ALSO ask the running binary via `nativeBleSupportsBoard`
+   * (packages/mobile/src/lib/ble/native-ios-adapter.ts) before routing a board
+   * to the native path — a pre-#3314 Swift layer would encode a Woods packet
+   * as Aurora and light the wrong holds.
    */
   nativeBoardControl: boolean;
   /**
@@ -135,15 +137,17 @@ const MOONBOARD_CAPABILITIES: BoardCapabilities = {
 
 /**
  * Woods: a code-driven catalog — browse, search, light up, tick and (since
- * #4750) author. `nativeBoardControl` stays false until the Swift encoder learns
- * Woods (#3314); `crowdGrade` until there is community grade data behind it.
+ * #4750) author. `nativeBoardControl` became true with the Swift Woods encoder
+ * (#3314) — binaries older than that are screened out at the consumer sites by
+ * `nativeBleSupportsBoard`. `crowdGrade` stays false until there is community
+ * grade data behind it.
  */
 const WOODS_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
   climbCreation: true,
   explicitClimbRules: true,
   multiFrameClimbs: false,
-  nativeBoardControl: false,
+  nativeBoardControl: true,
   auroraAppLink: false,
 };
 

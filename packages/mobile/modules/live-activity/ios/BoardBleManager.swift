@@ -49,6 +49,9 @@ enum BoardBleWriteTypeSource: String {
     case watchdogFallback
     case learnedPersistentFallback
     case moonboardCharacteristic
+    // Woods mandates acknowledged writes up front (spec §8) — its own source so
+    // telemetry doesn't mislabel a Woods write as a MoonBoard characteristic.
+    case woodsProtocol
     // Proactive: the box advertises a bare Aurora name with no `#serial@apiLevel`
     // suffix (a mid-2025+ Kilter-built, write-with-response-only box). We start
     // this connection on with-response instead of eating the without-response
@@ -1018,7 +1021,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             for: characteristic.properties,
             boardName: configuration?.boardName
         )
-        let writeTypeSource: BoardBleWriteTypeSource = writeType == .withResponse ? .moonboardCharacteristic : .defaultWithoutResponse
+        let writeTypeSource = staticWriteTypeSource(for: writeType)
         let initialWriteResolution = resolvedWriteType(for: characteristic)
         let chunkSize = BoardBleEncoding.effectiveChunkSize(
             negotiatedMaxWriteLength: peripheral.maximumWriteValueLength(for: initialWriteResolution.writeType),
@@ -1106,6 +1109,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // Deliberate clear — never prefix with the V2 additional-LED
             // marker (see makeMoonboardPacket / getMoonboardBluetoothPacket).
             result = BoardBleEncoding.makeMoonboardPacket(frames: "", numRows: configuration.numRows)
+        } else if configuration.boardName == "woods" {
+            // Woods clears with the bare `,!` terminator (spec §5: zero pairs)
+            // — no LED table involved.
+            result = BoardBleEncoding.makeWoodsPacket(frames: "", ledMap: [:])
         } else {
             result = BoardBleEncoding.makeAuroraPacket(
                 frames: "",
@@ -1163,6 +1170,37 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 // makeMoonboardPacket returns an empty packet for this all-skipped
                 // case so it never reaches the wall.
                 logger.warning("Skipping MoonBoard BLE write: no encodable holds for climb \(item.climbUuid, privacy: .public)")
+                completion?(false)
+                return
+            }
+            writeOnBleQueue(data: result.packet) { [weak self] error, _ in
+                if let error {
+                    self?.logger.error("BLE write failed: \(error.localizedDescription, privacy: .public)")
+                }
+                completion?(error == nil)
+            }
+            return
+        }
+
+        // Woods encodes through its own per-size LED table (WoodsBoardData) into
+        // the plain-ASCII `led,role,…,!` format — BoardPlacementData has no
+        // woods rows, so falling through to the Aurora path would refuse every
+        // climb (and would let an empty-frames item write an *Aurora* clear
+        // packet to a Woods wall). Woods mirroring is JS-side geometry with no
+        // placement table here, and the JS send path dispatches raw frames for
+        // Woods too, so frames go out as-is.
+        if configuration.boardName == "woods" {
+            guard let ledMap = WoodsBoardData.ledMap(forSizeId: configuration.sizeId) else {
+                logger.error("No Woods LED table for size=\(configuration.sizeId, privacy: .public)")
+                completion?(false)
+                return
+            }
+            let result = BoardBleEncoding.makeWoodsPacket(frames: item.frames, ledMap: ledMap)
+            guard !result.packet.isEmpty else {
+                // Multi-frame, all-skipped, or parsed-to-nothing → refuse to
+                // write rather than dark the wall (mirrors the JS dispatcher's
+                // `incompatible` outcome in use-board-bluetooth.ts).
+                logger.warning("Skipping Woods BLE write: no encodable holds for climb \(item.climbUuid, privacy: .public)")
                 completion?(false)
                 return
             }
@@ -1984,8 +2022,15 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             for: characteristic.properties,
             boardName: configuration?.boardName
         )
-        let source: BoardBleWriteTypeSource = writeType == .withResponse ? .moonboardCharacteristic : .defaultWithoutResponse
-        return BoardBleWriteTypeResolution(writeType: writeType, source: source)
+        return BoardBleWriteTypeResolution(writeType: writeType, source: staticWriteTypeSource(for: writeType))
+    }
+
+    /// Labels a STATIC preferred-path write type for telemetry: with-response
+    /// comes from either the MoonBoard property fallback or the Woods protocol
+    /// mandate, depending on the configured board.
+    private func staticWriteTypeSource(for writeType: CBCharacteristicWriteType) -> BoardBleWriteTypeSource {
+        guard writeType == .withResponse else { return .defaultWithoutResponse }
+        return configuration?.boardName == "woods" ? .woodsProtocol : .moonboardCharacteristic
     }
 
     private func connectionDiagnosticsOnBleQueue(

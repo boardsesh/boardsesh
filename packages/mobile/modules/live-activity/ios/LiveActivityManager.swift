@@ -174,6 +174,19 @@ actor LiveActivityManager {
         }
     }
 
+    /// Fetches the CURRENT item's thumbnail and waits for it. Run this before
+    /// an ActivityKit push forced by a board-look change: the widget re-render
+    /// would otherwise land on a cache miss (the mode-suffixed file for the
+    /// new look doesn't exist yet, and a fetch completing after the push
+    /// triggers no second render), leaving the image blank until the next
+    /// unrelated update. A single thumbnail-sized fetch — the adjacent items
+    /// still ride the fire-and-forget pre-fetch above.
+    func prefetchCurrentThumbnail() async {
+        guard let defaults = SharedConstants.sharedDefaults,
+              let item = SharedQueueState.currentItem(from: defaults) else { return }
+        _ = await thumbnailFetcher.fetchThumbnail(for: item)
+    }
+
     /// Returns time since the last ActivityKit update, or nil if no update has occurred.
     func timeSinceLastUpdate() -> TimeInterval? {
         guard let lastUpdateTime else { return nil }

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getBoardCapabilities, toBoardName } from '@boardsesh/board-config';
+import { nativeBleSupportsBoard } from '../ble/adapter-factory';
+import { requestedBoardRenderMode, useBoardRenderSettings } from '../board-render-settings';
 import { resolveClimbRenderBoard } from '../boards/climb-render-board';
 import { useQueue } from '../../providers/queue-provider';
 import { useBoardConnectionState } from '../../components/ble/use-board-connection-state';
@@ -36,6 +38,13 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   // THIS device holds the BLE link (connectedByMe); once a peer takes the wall
   // the bulb goes out and the controls hide, leaving just the current climb.
   const { bluetooth, boardConnection, holderDisplayName } = useBoardConnectionState();
+  // The climber's saved board look for the iOS server-rendered thumbnail. The
+  // REQUESTED mode, not the device-probed effective one: the server always
+  // renders aura. Pre-hydration the store snapshot resolves to the default
+  // (aura); if a classic preference hydrates later, the update path repairs
+  // the App Group value — no need to gate on `loaded`.
+  const { settings: boardRenderSettings } = useBoardRenderSettings();
+  const renderMode = requestedBoardRenderMode(boardRenderSettings);
 
   // On-device thumbnail for the Android notification: render the current climb's
   // holds-only PNG via the BoardRenderer native module and layer the bundled board
@@ -109,12 +118,18 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     // Widget Previous/Next are enabled only while this device holds the board
     // (connectedByMe) — they write BLE to the wall, so a non-holder can't drive.
     // This also gates the App Intents' `navigationAllowed` guard natively.
-    // Boards the Swift encoder can't drive (Woods, until #3314) never get them:
-    // native would encode the packet itself and light the wrong holds.
-    widgetNavigationAllowed: boardConnection === 'connectedByMe' && getBoardCapabilities(boardName).nativeBoardControl,
+    // Two board gates: the static product capability, and whether THIS binary's
+    // Swift encoder actually drives the board (nativeBleSupportsBoard — an
+    // OTA'd JS can be newer than the installed native build; the old Swift
+    // layer would encode a Woods packet as Aurora and light the wrong holds).
+    widgetNavigationAllowed:
+      boardConnection === 'connectedByMe' &&
+      getBoardCapabilities(boardName).nativeBoardControl &&
+      nativeBleSupportsBoard(boardName),
     isPartySession: sessionId !== null,
     boardConnection,
     holderDisplayName,
+    renderMode,
     androidNotification,
     androidThumbnailOverlayPath: overlayUri,
     androidThumbnailOverlayLoadKey: overlayLoadKey,

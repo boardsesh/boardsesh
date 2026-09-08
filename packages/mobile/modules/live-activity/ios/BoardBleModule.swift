@@ -38,6 +38,16 @@ public class BoardBleModule: Module {
     public func definition() -> ModuleDefinition {
         Name("BoardBle")
 
+        // Boards this binary's Swift BLE layer (BoardBleEncoding packet
+        // builders + BoardBleManager dispatch + preferredWriteType) can encode
+        // and drive natively. JS rides OTA onto older binaries, so JS gates
+        // every native board behaviour on this constant and treats its absence
+        // as the pre-#3314 set (Aurora + MoonBoard, never Woods) — see
+        // nativeBleSupportsBoard in packages/mobile/src/lib/ble/native-ios-adapter.ts.
+        Constant("nativeBoardControlBoards") {
+            ["kilter", "tension", "decoy", "touchstone", "grasshopper", "soill", "moonboard", "woods"]
+        }
+
         Events("scanResult", "disconnected", "connected")
 
         OnCreate {

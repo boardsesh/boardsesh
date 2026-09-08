@@ -34,6 +34,7 @@ const MODULE_SOURCE_NAMES = [
   'ClimbSessionAttributes.swift',
   'BoardBleEncoding.swift',
   'BoardPlacementData.swift',
+  'WoodsBoardData.swift',
   'SharedConstants.swift',
   'SessionQueueState.swift',
   'SharedKeychain.swift',
