@@ -93,6 +93,7 @@ import { BoardOpenRecorder } from '../src/components/board-activity/BoardOpenRec
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { LowPowerModeTracker } from '../src/components/analytics/LowPowerModeTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
+import { KeychainNamespaceMigration } from '../src/components/KeychainNamespaceMigration';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
@@ -869,6 +870,7 @@ function RootLayout() {
                                                               <OtaUpdateTracker />
                                                               <LowPowerModeTracker />
                                                               <InstallReferrerTracker />
+                                                              <KeychainNamespaceMigration />
                                                             </ShareTargetProvider>
                                                           </DeepLinkProvider>
                                                         </DrawerHostProvider>

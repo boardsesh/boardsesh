@@ -5,13 +5,12 @@
 // AsyncStorage. The exception is active-board-store, which uses AsyncStorage
 // because the stored UserBoard payload can exceed SecureStore's iOS 2 KB limit.
 
-import * as SecureStore from 'expo-secure-store';
 import type { KeyValueStorage } from '@boardsesh/key-value-storage';
-import { SECURE_STORE_WRITE_OPTIONS } from '../secure-store-options';
+import { deleteSecureValue, readSecureValue, writeSecureValue } from '../secure-store-io';
 
 export const secureStorePreferences: KeyValueStorage = {
   async get<T>(key: string): Promise<T | null> {
-    const raw = await SecureStore.getItemAsync(key);
+    const raw = await readSecureValue(key);
     if (raw === null) return null;
     try {
       return JSON.parse(raw) as T;
@@ -23,9 +22,9 @@ export const secureStorePreferences: KeyValueStorage = {
     }
   },
   async set<T>(key: string, value: T): Promise<void> {
-    await SecureStore.setItemAsync(key, JSON.stringify(value), SECURE_STORE_WRITE_OPTIONS);
+    await writeSecureValue(key, JSON.stringify(value));
   },
   async remove(key: string): Promise<void> {
-    await SecureStore.deleteItemAsync(key);
+    await deleteSecureValue(key);
   },
 };
