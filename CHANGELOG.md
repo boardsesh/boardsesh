@@ -22,6 +22,9 @@ A new version shipped to the Play Store.
 
 ### Fixed
 
+- Your board stays dark until you ask for it. If you walked off without disconnecting, the app no longer lights up your last climb when you wander back into range days later. The lightbulb, the widget, and mid-climb reconnects still light it instantly. ([#4551](https://github.com/boardsesh/boardsesh/pull/4551))
+  </content>
+  </invoke>
 - Close climb search without a PR preview sheet popping up. ([#5310](https://github.com/boardsesh/boardsesh/pull/5310))
 - Keep downloaded climbs up to date after app updates. ([#5284](https://github.com/boardsesh/boardsesh/pull/5284))
 - Get password-reset and verification emails when you need them. ([#5311](https://github.com/boardsesh/boardsesh/pull/5311))

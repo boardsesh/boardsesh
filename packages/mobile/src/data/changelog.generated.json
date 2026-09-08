@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-08T04:46:56.681Z",
+  "generatedAt": "2026-09-08T05:20:19.639Z",
   "entries": [
+    {
+      "prNumber": 4551,
+      "category": "fixed",
+      "title": "Your board stays dark until you ask for it. If you walked off without disconnecting, the app no longer lights up your last climb when you wander back into range days later. The lightbulb, the widget, and mid-climb reconnects still light it instantly.",
+      "mergedAt": "2026-09-08T05:18:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4551",
+      "body": "</content>\n</invoke>"
+    },
     {
       "prNumber": 5310,
       "category": "fixed",
@@ -4721,6 +4729,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-08T14:08:41+10:00",
+      "sha": "15e3aaf4f6b781949db912c809d3554549ff6c28",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "f5a3624fedb3171f8af97781c937d227a3d58e29"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-08T13:13:09+10:00",
