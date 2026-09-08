@@ -1116,4 +1116,79 @@ final class BoardBleDisconnectTests: XCTestCase {
         manager.testHooks.fireDidDisconnect(peripheral: recoveringPeripheral, error: nil)
         XCTAssertEqual(connectedPeripheralIds, [winningPeripheral.identifier])
     }
+
+    /// The phone suspended between the stall's cancel and its `didDisconnect`.
+    /// Both watchdogs bounding that gap are GCD work items that thaw alongside
+    /// the callback, so the arriving disconnect must be judged by the STALL's
+    /// wall clock. A recovery that old is abandoned outright rather than
+    /// reconnected: these boards are last-connection-wins, so grabbing the link
+    /// back days later takes the wall from whoever is on it now (#4499).
+    func testStaleWriteStallRecoveryDoesNotStealTheBoardBack() {
+        let peripheral = FakeWritablePeripheral()
+        var disconnectEvents: [(String, [String: Any]?)] = []
+        installConnection(peripheral: peripheral) { deviceId, body in
+            disconnectEvents.append((deviceId, body))
+        }
+
+        manager.testHooks.sync {
+            manager.write(data: Data([0x01])) { _, _ in }
+        }
+        fireLatestOneShot(label: "writeAckWatchdog")
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.writeStallRecoveringPeripheralId },
+            peripheral.identifier
+        )
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.rewindWriteStallRecovery(by: 3600) })
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        // Nothing was grabbed.
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.writeStallRecoveringPeripheralId })
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.writeStallRecoveries }, 0)
+        XCTAssertFalse(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+
+        // JS hears about it, so the lightbulb reflects a dark wall.
+        XCTAssertEqual(disconnectEvents.count, 1)
+        XCTAssertEqual(disconnectEvents.first?.0, peripheral.identifier.uuidString)
+        XCTAssertEqual(
+            disconnectEvents.first?.1?["context"] as? String,
+            "write_stall_recovery_stale"
+        )
+    }
+
+    /// The staleness guard lives in the recovery arm on purpose, so a queued
+    /// USER connect still wins the barrier no matter how old the stall is — a
+    /// human asked for that one. This fails if the check is ever hoisted to the
+    /// top of consumeManagerCancellationBarrierOnBleQueue.
+    func testStaleWriteStallStillHonoursAQueuedUserConnect() {
+        let peripheral = FakeWritablePeripheral()
+        var disconnectEvents: [(String, [String: Any]?)] = []
+        installConnection(peripheral: peripheral) { deviceId, body in
+            disconnectEvents.append((deviceId, body))
+        }
+
+        manager.testHooks.sync {
+            manager.write(data: Data([0x01])) { _, _ in }
+        }
+        fireLatestOneShot(label: "writeAckWatchdog")
+        let threeDays: TimeInterval = 3 * 86_400
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.rewindWriteStallRecovery(by: threeDays) })
+
+        // The user taps the board in the picker while the stall is still parked.
+        manager.testHooks.sync {
+            manager.connect(deviceId: peripheral.identifier.uuidString) { _ in }
+        }
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.deferredConnectPeripheralId },
+            peripheral.identifier
+        )
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertTrue(disconnectEvents.isEmpty)
+    }
 }

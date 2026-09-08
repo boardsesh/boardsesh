@@ -22,6 +22,7 @@ describe('classifyBleDisconnect', () => {
     expect(classifyBleDisconnect({ source: 'native-ios', context: 'write_stall_recovery_timeout' })).toBe(
       'app_recovery',
     );
+    expect(classifyBleDisconnect({ source: 'native-ios', context: 'write_stall_recovery_stale' })).toBe('app_recovery');
   });
 
   it('maps the central-state marker to bluetooth_off', () => {

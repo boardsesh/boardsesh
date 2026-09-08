@@ -44,6 +44,25 @@ enum BoardBleWriteOrigin: String {
     case native
 }
 
+/// Who asked for the connection currently being brought up. Stamped at every
+/// `connectOnBleQueue` CALL SITE — never inside it, because that funnel is
+/// shared by the automatic paths, so a flag set there could not tell a human
+/// apart from a retry. Read at the single write-ready success point to decide
+/// whether the wall may be re-lit from the persisted shared queue without
+/// anyone asking for it (#4499).
+enum BoardBleConnectOrigin: String {
+    /// `connect(deviceId:)` over the JS bridge — the in-app device picker or an
+    /// in-app silent reconnect the user triggered.
+    case userConnect
+    /// The Live Activity lightbulb / `ReconnectBoardIntent`.
+    case liveActivityIntent
+    /// Automatic link cycling after a write stall (#3181).
+    case writeStallRecovery
+    /// CoreBluetooth state restoration adopted a link this process never
+    /// requested. Never authorises an implicit re-light.
+    case restored
+}
+
 enum BoardBleWriteTypeSource: String {
     case defaultWithoutResponse
     case watchdogFallback
@@ -208,6 +227,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private struct DeferredConnectRequest {
         let deviceId: String
         let peripheralId: UUID
+        let origin: BoardBleConnectOrigin
+        let requestedAt: Date
         let completion: (Result<Void, Error>) -> Void
     }
 
@@ -251,6 +272,15 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // with-response via the stall fallback stay ack-only (no fixed delay).
     private let kilterBoxChunkDelay: TimeInterval = 0.100
     private let connectTimeout: TimeInterval = 8
+    // How old a connect request may be before its success stops authorising an
+    // implicit re-light of the wall (#4499). Deliberately WALL CLOCK, not
+    // DispatchTime: every in-process deadline in this file is a GCD work item
+    // that cannot fire while the app is suspended, and CoreBluetooth's own
+    // `connect(_:)` has no timeout at all — so a request can sit pending in the
+    // system and be honoured days later, when the board comes back into range.
+    // 120 s is ~15x connectTimeout: generous enough for a legitimate connect
+    // that spans a short suspend/resume, far below the hours-to-days failure.
+    private let implicitRelightMaxRequestAge: TimeInterval = 120
     // How long a write parked on `canSendWriteWithoutResponse` may wait for
     // peripheralIsReady before the queue is failed. Generous: a healthy link
     // drains its transmit buffer in milliseconds.
@@ -286,6 +316,19 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var connectedPeripheral: WritableBlePeripheral?
     private var writeCharacteristic: CBCharacteristic?
     private var pendingConnectCompletion: ((Result<Void, Error>) -> Void)?
+    // Provenance of the connection currently being brought up (or held). See
+    // BoardBleConnectOrigin and shouldPerformImplicitRelight (#4499).
+    private var connectRequestOrigin: BoardBleConnectOrigin?
+    private var connectRequestedAt: Date?
+    // Whether the CURRENT connection's success point authorised an implicit
+    // re-light. Read by `configure(_:)` so a colour change pushed by a
+    // backgrounded JS adopt can't repaint a wall the gate just kept dark.
+    private var implicitRelightAuthorizedForConnection = false
+    // Counters for the Swift suite and for `getConnectedDevice` diagnostics —
+    // the bug is not reproducible on demand, so the only way to learn whether
+    // the gate fires in the wild is to report it.
+    private var implicitRelightAttempts = 0
+    private var implicitRelightSuppressions = 0
     private var connectTimeoutTimer: BleOneShotTimer?
     private var scanRequested = false
     private var scanServices: [CBUUID] = []
@@ -293,6 +336,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // falling back to a scan: connect as soon as this UUID advertises.
     private var reconnectScanTargetUuid: UUID?
     private var reconnectScanCompletion: ((Result<Void, Error>) -> Void)?
+    private var reconnectScanOrigin: BoardBleConnectOrigin?
+    private var reconnectScanRequestedAt: Date?
     private var reconnectScanTimeoutWorkItem: DispatchWorkItem?
     private var intentionalDisconnectGenerations: [UUID: UInt64] = [:]
     // CoreBluetooth's terminal callback for a manager-initiated cancellation can
@@ -390,8 +435,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var pendingWriteAck: (() -> Void)?
     private var pendingWriteAckWatchdog: BleOneShotTimer?
     // Write-stall recovery (#3181). `writeStallRecoveries` counts consecutive
-    // stalls (reset on any drained write). `writeStallRecoveringPeripheralId` is
-    // the board whose congested link we deliberately cycled; it is set across the
+    // stalls (reset on any drained write). `writeStallRecovery` describes the
+    // board whose congested link we deliberately cycled; it is set across the
     // whole recovery window (cancel → deferred reconnect → characteristics
     // discovered) so that: (1) only the matching didDisconnectPeripheral triggers
     // the reconnect — never an unrelated peripheral's intentional disconnect —
@@ -399,8 +444,20 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // the self-healing `writeTimedOut` rather than `notConnected`, which the JS
     // classifier would mistake for a hard drop and tear the link down. Cleared by
     // any successful (re)connect, a deliberate disconnect, or Bluetooth-off.
+    private struct WriteStallRecovery {
+        let peripheralId: UUID
+        // Wall clock at the moment the stall was DETECTED — not at the moment
+        // the deferred didDisconnect was consumed. Every deadline bounding that
+        // gap is a GCD work item that neither fires while the process is
+        // suspended nor advances across device sleep, so re-stamping on arrival
+        // would hand an hours-old stall a fresh re-light budget: exactly the
+        // #4499 failure this file's provenance gate exists to stop. Paired with
+        // the id in one value so no clear site can drop half of it.
+        let requestedAt: Date
+    }
+
     private var writeStallRecoveries = 0
-    private var writeStallRecoveringPeripheralId: UUID?
+    private var writeStallRecovery: WriteStallRecovery?
     // Fail-closed safety net for the recover window: if the cancel's
     // `didDisconnectPeripheral` never arrives (a wedged link while Bluetooth
     // stays on), this fires so the window can't strand forever (wall dark, JS
@@ -505,6 +562,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
+    /// How the current connection came to be, and whether its success point was
+    /// allowed to re-light the wall (#4499). Reported to JS through
+    /// `getConnectedDevice` → Sentry tags: the bug is not reproducible on
+    /// demand, so field reports are the only way to see the gate working.
+    var connectRelightProvenance: (origin: String?, implicitRelightSuppressed: Bool) {
+        runOnBleQueueSync {
+            (connectRequestOrigin?.rawValue, !implicitRelightAuthorizedForConnection)
+        }
+    }
+
     /// Service UUIDs discovered on the peripheral for the most recent connect
     /// that failed in service/characteristic discovery, or nil if there is no
     /// such failure to report. Clear-on-read so a single failure is attributed
@@ -529,11 +596,33 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
-    func configure(_ configuration: BoardBleConfiguration) {
+    /// Push the board configuration JS holds into native, and re-light so a
+    /// colour / mirroring change takes effect on the wall immediately.
+    ///
+    /// `appActive` is the discriminator the connect gate can't supply: this is a
+    /// JS-only entry point, and JS calls it from its adopt path too — a
+    /// background BLE wake boots React Native, which would otherwise repaint a
+    /// wall the connect gate just kept dark (#4499). It defaults to `true` at
+    /// the bridge so an older JS bundle running against this binary keeps
+    /// today's behaviour instead of silently losing mid-session re-lights.
+    func configure(_ configuration: BoardBleConfiguration, appActive: Bool = true) {
         runOnBleQueue { [weak self] in
             guard let self else { return }
             self.configuration = configuration
             self.writeConfiguration(configuration)
+            // Foreground: the user is looking at the app and just changed
+            // something, so re-light regardless of how the link came to be.
+            // Background: only re-light onto a connection the gate already
+            // authorised (a lightbulb reconnect, a write-stall recovery).
+            guard appActive || self.implicitRelightAuthorizedForConnection else {
+                self.implicitRelightSuppressions += 1
+                // .info, not .error: this is the gate working as designed, and on a
+                // restored link every background adopt would otherwise write an
+                // error line into the error-rate signal.
+                self.logger.info("Suppressed configureBoard re-light while backgrounded on an unauthorised connection (#4499)")
+                return
+            }
+            self.implicitRelightAttempts += 1
             self.displaySharedCurrentItemOnBleQueue()
         }
     }
@@ -551,8 +640,17 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func connect(deviceId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        // Stamped here, before the queue hop, so the age measured at the success
+        // point is the age of the USER's request rather than of the moment the
+        // serial queue happened to get to it.
+        let requestedAt = Date()
         runOnBleQueue { [weak self] in
-            self?.connectOnBleQueue(deviceId: deviceId, completion: completion)
+            self?.connectOnBleQueue(
+                deviceId: deviceId,
+                origin: .userConnect,
+                requestedAt: requestedAt,
+                completion: completion
+            )
         }
     }
 
@@ -572,9 +670,17 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// event (fired from didDiscoverCharacteristicsFor) and adopts the
     /// connection; if the event fired while JS was suspended, the foreground
     /// `getConnectedDevice` check in useBoardBluetooth picks it up instead.
-    func reconnectToLastKnownBoard(completion: @escaping (Result<Void, Error>) -> Void) {
+    func reconnectToLastKnownBoard(
+        origin: BoardBleConnectOrigin,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        let requestedAt = Date()
         runOnBleQueue { [weak self] in
-            self?.reconnectToLastKnownBoardOnBleQueue(completion: completion)
+            self?.reconnectToLastKnownBoardOnBleQueue(
+                origin: origin,
+                requestedAt: requestedAt,
+                completion: completion
+            )
         }
     }
 
@@ -743,7 +849,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
-    private func connectOnBleQueue(deviceId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+    private func connectOnBleQueue(
+        deviceId: String,
+        origin: BoardBleConnectOrigin,
+        requestedAt: Date,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
         // Supersede any in-flight reconnect-by-last-known scan: this is a no-op
         // when called from the reconnect path itself (which already nils the scan
         // state first), but settles a stranded scan immediately when an unrelated
@@ -755,10 +866,15 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
 
+        // Record who asked, and when, before ANY arm below can succeed —
+        // including the already-connected fast path, which re-lights too.
+        connectRequestOrigin = origin
+        connectRequestedAt = requestedAt
+
         let requestedPeripheralId = UUID(uuidString: deviceId)
-        if let recoveringPeripheralId = writeStallRecoveringPeripheralId,
+        if let recoveringPeripheralId = writeStallRecovery?.peripheralId,
            requestedPeripheralId != recoveringPeripheralId {
-            writeStallRecoveringPeripheralId = nil
+            writeStallRecovery = nil
             writeStallRecoveries = 0
             writeStallRecoveryWatchdog?.cancel()
             writeStallRecoveryWatchdog = nil
@@ -791,6 +907,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 deferConnectUntilCancellationSettles(
                     deviceId: deviceId,
                     peripheralId: peripheralId,
+                    origin: origin,
+                    requestedAt: requestedAt,
                     completion: completion
                 )
                 return
@@ -804,7 +922,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
         if connectedPeripheral?.identifier.uuidString == deviceId, writeCharacteristic != nil {
             completion(.success(()))
-            displaySharedCurrentItemOnBleQueue()
+            performImplicitRelightIfAuthorizedOnBleQueue(deviceId: deviceId)
             return
         }
 
@@ -819,8 +937,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // DIFFERENT board supersedes any in-flight recovery: clear the recovery
         // window + watchdog so a stale didDisconnect for the old board can't hijack
         // this connect, and reset the budget for the new link (#3181).
-        if writeStallRecoveringPeripheralId != peripheral.identifier {
-            writeStallRecoveringPeripheralId = nil
+        if writeStallRecovery?.peripheralId != peripheral.identifier {
+            writeStallRecovery = nil
             writeStallRecoveries = 0
             writeStallRecoveryWatchdog?.cancel()
             writeStallRecoveryWatchdog = nil
@@ -864,6 +982,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private func deferConnectUntilCancellationSettles(
         deviceId: String,
         peripheralId: UUID,
+        origin: BoardBleConnectOrigin,
+        requestedAt: Date,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         failDeferredConnect(BoardBleError.superseded)
@@ -884,6 +1004,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         deferredConnectRequest = DeferredConnectRequest(
             deviceId: deviceId,
             peripheralId: peripheralId,
+            origin: origin,
+            requestedAt: requestedAt,
             completion: completion
         )
     }
@@ -894,11 +1016,19 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         deferredConnectRequest.completion(.failure(error))
     }
 
-    private func reconnectToLastKnownBoardOnBleQueue(completion: @escaping (Result<Void, Error>) -> Void) {
+    private func reconnectToLastKnownBoardOnBleQueue(
+        origin: BoardBleConnectOrigin,
+        requestedAt: Date,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
         // Already connected — re-light the wall and report success.
-        if connectedPeripheral != nil, writeCharacteristic != nil {
+        if let connectedPeripheral, writeCharacteristic != nil {
+            connectRequestOrigin = origin
+            connectRequestedAt = requestedAt
             completion(.success(()))
-            displaySharedCurrentItemOnBleQueue()
+            performImplicitRelightIfAuthorizedOnBleQueue(
+                deviceId: connectedPeripheral.identifier.uuidString
+            )
             return
         }
         guard centralStateOnBleQueue == .poweredOn else {
@@ -920,17 +1050,36 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             if let name = peripheral.name {
                 discoveredNames[uuidString] = name
             }
-            connectOnBleQueue(deviceId: uuidString, completion: completion)
+            connectOnBleQueue(
+                deviceId: uuidString,
+                origin: origin,
+                requestedAt: requestedAt,
+                completion: completion
+            )
             return
         }
 
         // Fallback: scan, and connect when the stored UUID advertises.
-        beginReconnectScanOnBleQueue(targetUuid: uuid, completion: completion)
+        beginReconnectScanOnBleQueue(
+            targetUuid: uuid,
+            origin: origin,
+            requestedAt: requestedAt,
+            completion: completion
+        )
     }
 
-    private func beginReconnectScanOnBleQueue(targetUuid: UUID, completion: @escaping (Result<Void, Error>) -> Void) {
+    private func beginReconnectScanOnBleQueue(
+        targetUuid: UUID,
+        origin: BoardBleConnectOrigin,
+        requestedAt: Date,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
         reconnectScanTargetUuid = targetUuid
         reconnectScanCompletion = completion
+        // Carried through the scan so the eventual connect is attributed to the
+        // request that started the scan, not to the advertisement that ended it.
+        reconnectScanOrigin = origin
+        reconnectScanRequestedAt = requestedAt
 
         let timeout = DispatchWorkItem { [weak self] in
             self?.failReconnectScan(BoardBleError.connectTimedOut)
@@ -959,6 +1108,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard let completion = reconnectScanCompletion else { return }
         reconnectScanCompletion = nil
         reconnectScanTargetUuid = nil
+        reconnectScanOrigin = nil
+        reconnectScanRequestedAt = nil
         reconnectScanTimeoutWorkItem?.cancel()
         reconnectScanTimeoutWorkItem = nil
         stopScanOnBleQueue()
@@ -980,13 +1131,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         connectionGeneration += 1
         // A deliberate disconnect supersedes any in-flight write-stall recovery
         // (#3181): drop the recovery window and reset the budget.
-        writeStallRecoveringPeripheralId = nil
+        writeStallRecovery = nil
         writeStallRecoveries = 0
         // Settle any in-flight reconnect-by-last-known scan before tearing down.
         failReconnectScan(BoardBleError.notConnected)
         // A deliberate disconnect forgets the board so the widget lightbulb won't
         // silently reconnect to it later. An unexpected drop leaves it intact.
         clearLastConnectedPeripheral()
+        // Forget who asked, so a later restored or long-parked connect cannot
+        // inherit this request's human provenance and re-light the wall (#4499).
+        clearConnectProvenanceOnBleQueue()
         stopScanOnBleQueue()
         failQueuedWrites(BoardBleError.notConnected)
         completePendingConnect(.failure(BoardBleError.notConnected))
@@ -1013,7 +1167,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // (a warning JS rides out with `isConnected` kept) rather than
             // `notConnected`, which the JS classifier treats as a hard drop and
             // would tear the connection down mid-recovery (#3181).
-            completion?(writeStallRecoveringPeripheralId != nil ? BoardBleError.writeTimedOut : BoardBleError.notConnected, nil)
+            completion?(writeStallRecovery != nil ? BoardBleError.writeTimedOut : BoardBleError.notConnected, nil)
             return
         }
 
@@ -1305,7 +1459,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // disconnect could be mistaken for a stall recovery, writes would
             // keep parking on the window, or a post-power-on session would start
             // with a depleted budget (#3181).
-            writeStallRecoveringPeripheralId = nil
+            writeStallRecovery = nil
             writeStallRecoveries = 0
             writeStallRecoveryWatchdog?.cancel()
             writeStallRecoveryWatchdog = nil
@@ -1322,6 +1476,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             failDeferredConnect(BoardBleError.bluetoothUnavailable)
             failReconnectScan(BoardBleError.bluetoothUnavailable)
             completePendingConnect(.failure(BoardBleError.bluetoothUnavailable))
+            // Every link generation is invalid below .poweredOn, so no request
+            // that predates this boundary may authorise a re-light (#4499).
+            clearConnectProvenanceOnBleQueue()
 
             // Below .poweredOn iOS invalidates every peripheral WITHOUT
             // delivering didDisconnectPeripheral, so an active link vanishes
@@ -1361,6 +1518,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
         let deviceId = peripheral.identifier.uuidString
         connectionGeneration += 1
+        // Restoration runs at launch, before this process can have issued any
+        // connect of its own, so this can never clobber a live request. Nobody
+        // in THIS process asked for the link, so it must not re-light (#4499).
+        connectRequestOrigin = .restored
+        connectRequestedAt = nil
+        implicitRelightAuthorizedForConnection = false
         discoveredPeripherals[deviceId] = peripheral
         peripheral.delegate = self
 
@@ -1446,11 +1609,24 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // scan and connects). Fires exactly once.
         if let targetUuid = reconnectScanTargetUuid, peripheral.identifier == targetUuid,
            let completion = reconnectScanCompletion {
+            // Both are set together with the completion this branch guards on,
+            // so neither fallback is reachable — `distantPast` keeps the
+            // unreachable one failing CLOSED (the connect still proceeds, it
+            // just won't re-light on its own).
+            let scanOrigin = reconnectScanOrigin ?? .userConnect
+            let scanRequestedAt = reconnectScanRequestedAt ?? .distantPast
             reconnectScanCompletion = nil
             reconnectScanTargetUuid = nil
+            reconnectScanOrigin = nil
+            reconnectScanRequestedAt = nil
             reconnectScanTimeoutWorkItem?.cancel()
             reconnectScanTimeoutWorkItem = nil
-            connectOnBleQueue(deviceId: deviceId, completion: completion)
+            connectOnBleQueue(
+                deviceId: deviceId,
+                origin: scanOrigin,
+                requestedAt: scanRequestedAt,
+                completion: completion
+            )
         }
     }
 
@@ -1573,6 +1749,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         failQueuedWrites(error ?? BoardBleError.notConnected)
         onDisconnect?(deviceId, BoardBleEncoding.disconnectReasonBody(from: error))
 
+        // The link this request produced is gone, so the request stops being
+        // ours to honour: forget it, exactly as a deliberate disconnect does
+        // (#4499). Keeps "provenance describes the CURRENT connection" true for
+        // the window between an unexpected drop and the next connect, so a
+        // `configure(appActive: false)` arriving in that window cannot pass the
+        // authorisation latch against a dead link. Write-stall recovery is
+        // unaffected: its didDisconnect is consumed by the cancellation barrier
+        // above and returns long before here, re-stamping on its own reconnect.
+        clearConnectProvenanceOnBleQueue()
+
         // No auto-reconnect. These boards are last-connection-wins, so silently
         // re-grabbing the link would steal the wall back from whoever took it — a
         // ping-pong that flickers the LEDs. Reconnection is user-initiated only:
@@ -1601,49 +1787,114 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             deferredRequest = nil
         }
 
-        if writeStallRecoveringPeripheralId == peripheralId {
+        if writeStallRecovery?.peripheralId == peripheralId {
             // The normal connection timeout owns the deadline from here.
             writeStallRecoveryWatchdog?.cancel()
             writeStallRecoveryWatchdog = nil
         }
 
         if let deferredRequest {
-            let isJoiningWriteStallRecovery = writeStallRecoveringPeripheralId == peripheralId
-            connectOnBleQueue(deviceId: deferredRequest.deviceId) { [weak self] result in
+            let isJoiningWriteStallRecovery = writeStallRecovery?.peripheralId == peripheralId
+            // Replayed with the USER's original stamp, so a days-late replay is
+            // already gate-suppressed at the success point and never re-lights.
+            // It does still take the link — accepted, unlike the stall-recovery
+            // arm below: a queued connect began as an explicit human request,
+            // and the picker showing a board it cannot reach is worse than a
+            // silent link. Deliberate asymmetry, not an oversight (#4499).
+            connectOnBleQueue(
+                deviceId: deferredRequest.deviceId,
+                origin: deferredRequest.origin,
+                requestedAt: deferredRequest.requestedAt
+            ) { [weak self] result in
                 deferredRequest.completion(result)
                 if isJoiningWriteStallRecovery {
                     self?.finishWriteStallReconnectOnBleQueue(peripheralId: peripheralId, result: result)
                 }
             }
-        } else if writeStallRecoveringPeripheralId == peripheralId {
+        } else if writeStallRecovery?.peripheralId == peripheralId {
             beginWriteStallReconnectOnBleQueue(peripheralId: peripheralId)
         }
         return true
     }
 
     private func beginWriteStallReconnectOnBleQueue(peripheralId: UUID) {
+        guard let recovery = writeStallRecovery, recovery.peripheralId == peripheralId else { return }
+        let deviceId = peripheralId.uuidString
+
+        // Recovery re-lights on purpose (#3181) — repainting the wall the user is
+        // actively climbing is the whole point. What separates that three-second
+        // recovery from the same one honoured three days later is the STALL's
+        // wall clock, carried here from handleWriteStall. Stamping `Date()` at
+        // this point instead would mint a brand-new freshness budget for a
+        // didDisconnect that thawed out of a suspension, because the two
+        // watchdogs bounding the cancel → didDisconnect gap are GCD work items
+        // that thaw alongside it (#4499).
+        guard Self.writeStallRecoveryIsFresh(
+            requestedAt: recovery.requestedAt,
+            now: Date(),
+            maxRequestAge: implicitRelightMaxRequestAge
+        ) else {
+            // Don't reconnect at all — not even silently. These boards are
+            // last-connection-wins, so a days-late reconnect takes the wall from
+            // whoever is on it now, which is the same harm that makes an
+            // unexpected drop refuse to auto-reconnect (see
+            // handleDidDisconnectOnBleQueue). Gate-suppressing the re-light would
+            // stop the repaint but not the theft.
+            logger.info("Abandoning stale BLE write-stall recovery for \(deviceId, privacy: .public)")
+            abandonWriteStallRecoveryOnBleQueue(
+                peripheralId: peripheralId,
+                context: "write_stall_recovery_stale"
+            )
+            return
+        }
+
         let completion: (Result<Void, Error>) -> Void = { [weak self] result in
             self?.finishWriteStallReconnectOnBleQueue(peripheralId: peripheralId, result: result)
         }
-        let deviceId = peripheralId.uuidString
         if discoveredPeripherals[deviceId] != nil {
-            connectOnBleQueue(deviceId: deviceId, completion: completion)
+            connectOnBleQueue(
+                deviceId: deviceId,
+                origin: .writeStallRecovery,
+                requestedAt: recovery.requestedAt,
+                completion: completion
+            )
         } else {
-            reconnectToLastKnownBoardOnBleQueue(completion: completion)
+            reconnectToLastKnownBoardOnBleQueue(
+                origin: .writeStallRecovery,
+                requestedAt: recovery.requestedAt,
+                completion: completion
+            )
         }
     }
 
     private func finishWriteStallReconnectOnBleQueue(peripheralId: UUID, result: Result<Void, Error>) {
         guard case .failure(let error) = result,
-              writeStallRecoveringPeripheralId == peripheralId
+              writeStallRecovery?.peripheralId == peripheralId
         else { return }
         logger.error("BLE write-stall reconnect failed: \(error.localizedDescription, privacy: .public)")
-        writeStallRecoveringPeripheralId = nil
+        writeStallRecovery = nil
         writeStallRecoveries = 0
         onDisconnect?(peripheralId.uuidString, [
             "context": "write_stall_recovery_failed",
             "errorDescription": error.localizedDescription,
         ])
+    }
+
+    /// Give up on an in-flight write-stall recovery and tell JS the link is
+    /// gone. Shared by the no-`didDisconnect` watchdog and the stale-arrival
+    /// guard: both mean the recovery we started is no longer ours to finish, and
+    /// no reconnect is coming.
+    private func abandonWriteStallRecoveryOnBleQueue(peripheralId: UUID, context: String) {
+        writeStallRecovery = nil
+        writeStallRecoveries = 0
+        writeCharacteristic = nil
+        connectedPeripheral = nil
+        // No link is coming, so the request stops being ours to honour — the
+        // same invariant handleDidDisconnectOnBleQueue keeps after an unexpected
+        // drop, so a `configure(appActive: false)` landing here cannot pass the
+        // authorisation latch against a dead link (#4499).
+        clearConnectProvenanceOnBleQueue()
+        onDisconnect?(peripheralId.uuidString, ["context": context])
     }
 
     // MARK: - CBPeripheralDelegate
@@ -1697,6 +1948,102 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return .select(match)
         }
         return hasRetriedFullDiscovery ? .fail : .retryFullDiscovery
+    }
+
+    /// Whether a connection that just became write-ready may re-light the wall
+    /// from the persisted shared queue WITHOUT anyone asking for it (#4499).
+    ///
+    /// Pure so the whole matrix is unit-testable without CoreBluetooth. Two
+    /// independent conditions must hold:
+    ///
+    /// 1. **Someone in this process asked.** `.restored` means CoreBluetooth
+    ///    handed us a link at launch that nobody here requested — the wall stays
+    ///    dark until the user does something.
+    /// 2. **They asked recently.** `CBCentralManager.connect(_:)` has no timeout;
+    ///    our only bound is a GCD work item that cannot fire while the process is
+    ///    suspended. A request can therefore be honoured hours or days later,
+    ///    when the board comes back into range — which is exactly the reported
+    ///    bug. Wall clock, not `DispatchTime`, because a mach-uptime deadline
+    ///    does not advance across device sleep either.
+    ///
+    /// A negative age means the wall clock moved backwards (a manual change or an
+    /// NTP correction). The real age is then unknowable, so this fails closed:
+    /// the worst case is one skipped re-light the user recovers with a re-tap.
+    static func shouldPerformImplicitRelight(
+        origin: BoardBleConnectOrigin?,
+        requestedAt: Date?,
+        now: Date,
+        maxRequestAge: TimeInterval
+    ) -> Bool {
+        guard let origin, let requestedAt else { return false }
+        let age = now.timeIntervalSince(requestedAt)
+        guard age >= 0, age <= maxRequestAge else { return false }
+        switch origin {
+        case .userConnect, .liveActivityIntent, .writeStallRecovery:
+            return true
+        case .restored:
+            return false
+        }
+    }
+
+    /// Whether a write-stall recovery that was deferred to `didDisconnect` is
+    /// still the recovery we asked for (#4499).
+    ///
+    /// Same wall-clock reasoning as `shouldPerformImplicitRelight`, for the same
+    /// reason: the two deadlines bounding the cancel → `didDisconnect` gap
+    /// (`writeStallRecoveryWatchdog` and the cancellation barrier's watchdog) are
+    /// GCD work items, so a suspended process thaws them alongside the very
+    /// callback they were meant to bound. The stall's own clock is the only
+    /// honest measure of how long ago we asked. A negative age (the wall clock
+    /// moved backwards) is unknowable, so it fails closed like its sibling.
+    static func writeStallRecoveryIsFresh(
+        requestedAt: Date,
+        now: Date,
+        maxRequestAge: TimeInterval
+    ) -> Bool {
+        let age = now.timeIntervalSince(requestedAt)
+        return age >= 0 && age <= maxRequestAge
+    }
+
+    /// Evaluate the gate for the connection currently in hand, record the
+    /// verdict for `configure(_:)` and diagnostics, and re-light only when it
+    /// passes. The link itself is ALWAYS kept: the reported harm is the wall
+    /// lighting up, and a held-but-silent connection writes nothing. These
+    /// boards are last-connection-wins, so the next climber's connect displaces
+    /// us immediately; turning a successful connect into a failure would instead
+    /// invert the JS promise, the persisted last board, and the adoption event
+    /// for a strictly smaller harm.
+    @discardableResult
+    private func performImplicitRelightIfAuthorizedOnBleQueue(deviceId: String) -> Bool {
+        let origin = connectRequestOrigin
+        let requestedAt = connectRequestedAt
+        let authorized = Self.shouldPerformImplicitRelight(
+            origin: origin,
+            requestedAt: requestedAt,
+            now: Date(),
+            maxRequestAge: implicitRelightMaxRequestAge
+        )
+        implicitRelightAuthorizedForConnection = authorized
+        guard authorized else {
+            implicitRelightSuppressions += 1
+            let ageSeconds = requestedAt.map { Date().timeIntervalSince($0) } ?? -1
+            // .info: a refused re-light is the designed outcome of the gate, not a
+            // fault. The verdict still needs to be readable in Console.app.
+            logger.info("Suppressed implicit BLE re-light for \(deviceId, privacy: .public): origin=\(origin?.rawValue ?? "none", privacy: .public) ageSeconds=\(ageSeconds, privacy: .public)")
+            return false
+        }
+        implicitRelightAttempts += 1
+        displaySharedCurrentItemOnBleQueue()
+        return true
+    }
+
+    /// Forget who asked for the current connection. Called wherever the request
+    /// stops being ours to honour, so a later restored or long-parked connect
+    /// cannot inherit a human origin.
+    private func clearConnectProvenanceOnBleQueue() {
+        connectRequestOrigin = nil
+        connectRequestedAt = nil
+        implicitRelightAuthorizedForConnection = false
     }
 
     /// The write characteristic UUID paired with a discovered service UUID.
@@ -1805,7 +2152,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         writeCharacteristic = characteristic
         // Any successful (re)connect closes a write-stall recovery window (#3181)
         // — writes flow normally again from here.
-        writeStallRecoveringPeripheralId = nil
+        writeStallRecovery = nil
         // A fresh link re-earns normal backpressure: drop any stuck-false gate
         // bypass so a healthy connection isn't permanently ungated.
         bypassCanSendWriteWithoutResponse = false
@@ -1839,8 +2186,28 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // readiness — the intent's awaited code will issue its own
         // displayCurrentItem with the same shared state, and we'd otherwise
         // write the identical packet twice.
-        if !hadPendingReadyWaiters {
-            displaySharedCurrentItemOnBleQueue()
+        if hadPendingReadyWaiters {
+            // An intent is waiting on readiness and will issue its own
+            // displayCurrentItem with the same shared state, so the implicit
+            // write is skipped — but the gate's verdict is still recorded, so
+            // `configure(_:)` and the diagnostics see this connection's
+            // provenance rather than the previous connection's.
+            let authorized = Self.shouldPerformImplicitRelight(
+                origin: connectRequestOrigin,
+                requestedAt: connectRequestedAt,
+                now: Date(),
+                maxRequestAge: implicitRelightMaxRequestAge
+            )
+            implicitRelightAuthorizedForConnection = authorized
+            // The counters track writes attempted vs written, and this branch
+            // issues neither — the intent's explicit displayCurrentItem does.
+            // Log the verdict anyway so Console.app still shows what the gate
+            // decided for this connection.
+            if !authorized {
+                logger.info("Implicit BLE re-light unauthorised for \(connectedDeviceId, privacy: .public) (origin=\(self.connectRequestOrigin?.rawValue ?? "none", privacy: .public)); an awaiting intent owns this write")
+            }
+        } else {
+            performImplicitRelightIfAuthorizedOnBleQueue(deviceId: connectedDeviceId)
         }
     }
 
@@ -2595,7 +2962,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             logger.error("BLE write-stall recovery budget exhausted; surfacing disconnect for \(deviceId, privacy: .public)")
             failQueuedWrites(BoardBleError.writeRecoveryFailed)
             writeStallRecoveries = 0
-            writeStallRecoveringPeripheralId = nil
+            writeStallRecovery = nil
             cancelConnectionIntentionallyOnBleQueue(peripheral)
             onDisconnect?(deviceId, ["context": "write_stall_budget_exhausted"])
             return
@@ -2612,7 +2979,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         failQueuedWrites(BoardBleError.writeTimedOut)
         writeStallRecoveries += 1
         logger.error("BLE write-stall recovery \(self.writeStallRecoveries, privacy: .public)/\(self.maxWriteStallRecoveries, privacy: .public): cycling the connection for \(deviceId, privacy: .public)")
-        writeStallRecoveringPeripheralId = peripheral.identifier
+        // Stamped HERE, at detection, and carried through the cancellation
+        // barrier into the reconnect — the reconnect must never re-stamp (#4499).
+        writeStallRecovery = WriteStallRecovery(
+            peripheralId: peripheral.identifier,
+            requestedAt: Date()
+        )
         cancelConnectionIntentionallyOnBleQueue(peripheral)
         // NOTE: bleLastPeripheralUuidKey is intentionally NOT cleared so the
         // deferred reconnectToLastKnownBoard can find this board.
@@ -2623,13 +2995,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let recoveringId = peripheral.identifier
         writeStallRecoveryWatchdog?.cancel()
         writeStallRecoveryWatchdog = timerScheduler.scheduleOneShot(after: connectTimeout, label: "writeStallRecoveryWatchdog") { [weak self] in
-            guard let self, self.writeStallRecoveringPeripheralId == recoveringId else { return }
+            guard let self, self.writeStallRecovery?.peripheralId == recoveringId else { return }
             self.logger.error("BLE write-stall recovery stalled before reconnect (no didDisconnect); surfacing disconnect for \(recoveringId.uuidString, privacy: .public)")
-            self.writeStallRecoveringPeripheralId = nil
-            self.writeStallRecoveries = 0
-            self.writeCharacteristic = nil
-            self.connectedPeripheral = nil
-            self.onDisconnect?(recoveringId.uuidString, ["context": "write_stall_recovery_timeout"])
+            self.abandonWriteStallRecoveryOnBleQueue(
+                peripheralId: recoveringId,
+                context: "write_stall_recovery_timeout"
+            )
         }
     }
 
@@ -2946,6 +3317,26 @@ extension BoardBleManager {
             }
         }
 
+        /// Seed the connect provenance the implicit-re-light gate reads, so a
+        /// test can age a request past the freshness bound (or clear it) without
+        /// waiting or mutating the clock (#4499).
+        func setConnectRequest(origin: BoardBleConnectOrigin?, requestedAt: Date?) {
+            manager.connectRequestOrigin = origin
+            manager.connectRequestedAt = requestedAt
+        }
+
+        /// Drive `configure(_:)` with an explicit foreground flag.
+        func configure(_ configuration: BoardBleConfiguration, appActive: Bool) {
+            manager.configure(configuration, appActive: appActive)
+        }
+
+        var connectRequestOrigin: BoardBleConnectOrigin? { manager.connectRequestOrigin }
+        var connectRequestedAt: Date? { manager.connectRequestedAt }
+        var implicitRelightAuthorizedForConnection: Bool { manager.implicitRelightAuthorizedForConnection }
+        var implicitRelightAttempts: Int { manager.implicitRelightAttempts }
+        var implicitRelightSuppressions: Int { manager.implicitRelightSuppressions }
+        var implicitRelightMaxRequestAge: TimeInterval { manager.implicitRelightMaxRequestAge }
+
         /// Exercise the pure service-discovery decision (retry-then-fail
         /// fallback) without a real `CBPeripheral` (#3480).
         func serviceDiscoveryDecision(
@@ -2976,7 +3367,22 @@ extension BoardBleManager {
         var writeGeneration: UInt64 { manager.writeGeneration }
         var currentTelemetry: BoardBleWriteTelemetry? { manager.currentWriteTelemetry }
         var writeStallRecoveries: Int { manager.writeStallRecoveries }
-        var writeStallRecoveringPeripheralId: UUID? { manager.writeStallRecoveringPeripheralId }
+        var writeStallRecoveringPeripheralId: UUID? { manager.writeStallRecovery?.peripheralId }
+        var writeStallRecoveryRequestedAt: Date? { manager.writeStallRecovery?.requestedAt }
+
+        /// Rewind the stall's stamp so a test can model a suspension inside the
+        /// cancel → `didDisconnect` gap without mutating the clock (#4499).
+        /// Returns false when no recovery is in flight, so a test can assert the
+        /// setup it thought it had.
+        @discardableResult
+        func rewindWriteStallRecovery(by interval: TimeInterval) -> Bool {
+            guard let recovery = manager.writeStallRecovery else { return false }
+            manager.writeStallRecovery = .init(
+                peripheralId: recovery.peripheralId,
+                requestedAt: recovery.requestedAt.addingTimeInterval(-interval)
+            )
+            return true
+        }
         var bypassCanSendWriteWithoutResponse: Bool { manager.bypassCanSendWriteWithoutResponse }
         var forceWriteWithResponse: Bool { manager.forceWriteWithResponse }
         var forceWriteWithResponseSource: BoardBleWriteTypeSource? { manager.forceWriteWithResponseSource }
