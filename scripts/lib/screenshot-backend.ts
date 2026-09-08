@@ -37,6 +37,7 @@ import {
   VARIANT_COUNT_NOTE_THRESHOLD,
   emptyManifest,
   findSensitiveVariableKeys,
+  finalizeRecordingFrozenNow,
   fixtureSizeNote,
   formatScreenshotBackendLine,
   graphqlFixtureKey,
@@ -60,7 +61,16 @@ export type ScreenshotBackendServerOptions = {
   fixturesDir: string;
   /** The backend to record from. Always null in replay mode — replay makes no outbound request. */
   upstreamUrl: string | null;
-  /** The instant the capture pretends it is. Recorded into the manifest, echoed in READY. */
+  /**
+   * The instant the capture pretends it is, echoed in READY. In replay this is
+   * exactly what the persisted manifest carries. In record mode it is only the
+   * START floor: the app runs on this value for the whole session, but
+   * `rewriteManifest` bumps the PERSISTED manifest's `frozenNow` past the
+   * newest response actually recorded, so a long recording never ships a
+   * fixture that would replay as being in the future — see
+   * `finalizeRecordingFrozenNow`.
+   */
+
   frozenNow: string;
   log: (line: string) => void;
   /** Record only: throw away the existing fixture set instead of extending it. */
@@ -345,6 +355,15 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
   let redacted = 0;
 
   /**
+   * `recordedAt` of every fixture written THIS session (record mode only). A
+   * capture can run 20+ minutes, so the instant minted at startup (`frozenNow`
+   * above) can end up earlier than a response recorded near the end —
+   * `rewriteManifest` uses this list to keep the persisted `frozenNow` from
+   * ever landing before something it is supposed to be "now" relative to.
+   */
+  const recordedAtInstants: string[] = [];
+
+  /**
    * Replay only: `entry.file` -> its response, already serialized. A hot
    * fixture (e.g. SearchClimbs, requested on every keystroke) is read and
    * JSON.parsed once per process, not once per request. Nothing ever
@@ -354,6 +373,12 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
   const replayResponseCache = new Map<string, string>();
 
   const rewriteManifest = (): void => {
+    // Record only (the only mode that ever calls this): keep the persisted
+    // frozenNow trailing the newest response this session has written so far —
+    // see finalizeRecordingFrozenNow. The app itself keeps running on the
+    // start instant for the rest of this recording; only the FILE (which
+    // replay reads) carries the finalized value.
+    if (isRecording) manifest.frozenNow = finalizeRecordingFrozenNow(frozenNow, recordedAtInstants);
     writeJsonFile(join(fixturesDir, MANIFEST_FILENAME), sortManifestEntries(manifest));
   };
 
@@ -492,6 +517,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     };
     manifest.graphql.push(entry);
     graphqlIndex.set(indexKey, entry);
+    recordedAtInstants.push(fixture.recordedAt);
     recorded += 1;
     emit({
       event: 'recorded',
@@ -716,6 +742,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     const entry: StaticManifestEntry = { path: pathname, query, file: relativeFile, contentType, bytes: bytes.length };
     manifest.static.push(entry);
     staticIndex.set(subject, entry);
+    recordedAtInstants.push(new Date().toISOString());
     recorded += 1;
     emit({ event: 'recorded', kind: 'static', subject, file: relativeFile });
     rewriteManifest();

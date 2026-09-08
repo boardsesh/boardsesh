@@ -16,6 +16,7 @@
 #   SCREENSHOT_RENDER_MODE     board drawing            (empty = the app default, Aura)
 #   SCREENSHOT_BOARDS          "|"-separated walls      (empty = the app default)
 #   SCREENSHOT_FIXTURES        live | record | replay   (default live = no --fixtures flag)
+#   SCREENSHOT_FROZEN_NOW      record only: ISO instant to freeze "now" at (empty = mint one)
 set -euo pipefail
 
 flow="${SCREENSHOT_FLOW:-app-store}"
@@ -57,6 +58,9 @@ if [ "$fixtures" != "live" ]; then
   retarget+=(--fixtures "$fixtures")
   if [ "$fixtures" = "record" ]; then
     retarget+=(--fresh)
+    if [ -n "${SCREENSHOT_FROZEN_NOW:-}" ]; then
+      retarget+=(--frozen-now "$SCREENSHOT_FROZEN_NOW")
+    fi
   fi
 fi
 

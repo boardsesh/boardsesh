@@ -110,20 +110,112 @@ describe('mergeFixtureSets', () => {
     expect(() => mergeFixtureSets([shardA, shardB])).toThrow(/different upstreams/);
   });
 
-  it('takes provenance from the first shard and sorts the merged entries', () => {
+  it('refuses shards recorded from different flows', () => {
+    const profile = graphqlEntry('GetProfile', 'aaaa');
+    const shardA = set('shard-a', [profile], { [profile.file]: 'same-bytes' });
+    const shardB: FixtureSetForMerge = {
+      label: 'shard-b',
+      manifest: manifest({ graphql: [profile], flow: 'onboarding' }),
+      fileHashes: new Map([[profile.file, 'same-bytes']]),
+    };
+    expect(() => mergeFixtureSets([shardA, shardB])).toThrow(/different flows.*app-store.*onboarding/s);
+  });
+
+  it('refuses shards recorded under different account ids, even with the same email', () => {
+    const profile = graphqlEntry('GetProfile', 'aaaa');
+    const shardA = set('shard-a', [profile], { [profile.file]: 'same-bytes' });
+    const shardB: FixtureSetForMerge = {
+      label: 'shard-b',
+      manifest: manifest({ graphql: [profile], accountUserId: 'user-other' }),
+      fileHashes: new Map([[profile.file, 'same-bytes']]),
+    };
+    expect(() => mergeFixtureSets([shardA, shardB])).toThrow(/different accounts.*user-test.*user-other/s);
+  });
+
+  it('refuses a shard that never signed in, naming it', () => {
+    const profile = graphqlEntry('GetProfile', 'aaaa');
+    const shardA = set('shard-a', [profile], { [profile.file]: 'same-bytes' });
+    const shardB: FixtureSetForMerge = {
+      label: 'shard-b',
+      manifest: manifest({ graphql: [profile], accountUserId: '' }),
+      fileHashes: new Map([[profile.file, 'same-bytes']]),
+    };
+    expect(() => mergeFixtureSets([shardA, shardB])).toThrow(/shard shard-b never signed in/);
+  });
+
+  it('takes provenance (account, upstream, flow) from the first shard and sorts the merged entries', () => {
     const zulu = graphqlEntry('Zulu', 'cccc');
     const alpha = graphqlEntry('Alpha', 'dddd');
     const merged = mergeFixtureSets([
-      { ...set('shard-a', [zulu], { [zulu.file]: 'h1' }), manifest: manifest({ graphql: [zulu], flow: 'app-store' }) },
-      {
-        ...set('shard-b', [alpha], { [alpha.file]: 'h2' }),
-        manifest: manifest({ graphql: [alpha], flow: 'onboarding', recordedAt: '2026-09-09T12:00:00Z' }),
-      },
+      set('shard-a', [zulu], { [zulu.file]: 'h1' }),
+      set('shard-b', [alpha], { [alpha.file]: 'h2' }),
     ]);
 
     expect(merged.manifest.flow).toBe('app-store');
-    expect(merged.manifest.recordedAt).toBe('2026-09-08T12:00:03Z');
+    expect(merged.manifest.accountEmail).toBe('test@boardsesh.com');
     expect(merged.manifest.graphql.map((entry) => entry.operationName)).toEqual(['Alpha', 'Zulu']);
+  });
+
+  it('takes the MAXIMUM frozenNow and recordedAt across every input, not the first', () => {
+    const early = graphqlEntry('Early', 'aaaa');
+    const mid = graphqlEntry('Mid', 'bbbb');
+    const late = graphqlEntry('Late', 'cccc');
+    const merged = mergeFixtureSets([
+      {
+        ...set('shard-early', [early], { [early.file]: 'h1' }),
+        manifest: manifest({
+          graphql: [early],
+          frozenNow: '2026-09-08T09:00:00Z',
+          recordedAt: '2026-09-08T09:00:03Z',
+        }),
+      },
+      {
+        ...set('shard-late', [late], { [late.file]: 'h3' }),
+        manifest: manifest({
+          graphql: [late],
+          frozenNow: '2026-09-08T12:00:00Z',
+          recordedAt: '2026-09-08T12:00:03Z',
+        }),
+      },
+      {
+        ...set('shard-mid', [mid], { [mid.file]: 'h2' }),
+        manifest: manifest({
+          graphql: [mid],
+          frozenNow: '2026-09-08T10:00:00Z',
+          recordedAt: '2026-09-08T10:00:03Z',
+        }),
+      },
+    ]);
+
+    // The latest shard's instant wins regardless of input order.
+    expect(merged.manifest.frozenNow).toBe('2026-09-08T12:00:00Z');
+    expect(merged.manifest.recordedAt).toBe('2026-09-08T12:00:03Z');
+  });
+
+  it('re-derives an input whose own manifest.frozenNow predates one of its own entries (belt and braces)', () => {
+    const stale = graphqlEntry('GetSessionGroupedFeed', 'aaaa');
+    const shard: FixtureSetForMerge = {
+      label: 'shard-stale',
+      manifest: manifest({ graphql: [stale], frozenNow: '2026-09-08T13:07:50Z' }),
+      fileHashes: new Map([[stale.file, 'hash']]),
+      // Recorded AFTER the manifest's own frozenNow — a pre-fix or hand-edited
+      // set. The merge must not trust manifest.frozenNow blindly here.
+      graphqlRecordedAt: new Map([[stale.file, '2026-09-08T13:18:23.456Z']]),
+    };
+    const merged = mergeFixtureSets([shard]);
+    expect(Date.parse(merged.manifest.frozenNow)).toBeGreaterThan(Date.parse('2026-09-08T13:18:24.456Z'));
+  });
+
+  it('leaves frozenNow alone when every entry predates it, even with graphqlRecordedAt present', () => {
+    const clean = graphqlEntry('GetProfile', 'aaaa');
+    const shard: FixtureSetForMerge = {
+      label: 'shard-clean',
+      manifest: manifest({ graphql: [clean], frozenNow: '2026-09-08T13:07:50Z' }),
+      fileHashes: new Map([[clean.file, 'hash']]),
+      graphqlRecordedAt: new Map([[clean.file, '2026-09-08T13:00:00Z']]),
+    };
+    const merged = mergeFixtureSets([shard]);
+    expect(merged.manifest.frozenNow).toBe('2026-09-08T13:07:50Z');
   });
 
   it('fails when a manifest names a file the set does not hold', () => {

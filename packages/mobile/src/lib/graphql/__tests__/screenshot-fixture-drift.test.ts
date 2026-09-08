@@ -63,6 +63,7 @@ import { checkSelectionCoverage } from './fixture-selection-coverage';
 
 const MOBILE_OPERATIONS_PATH = 'packages/mobile/src/lib/graphql/operations.ts';
 const MOBILE_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+const MOBILE_OPERATIONS_ABSOLUTE_PATH = join(MOBILE_ROOT, 'src', 'lib', 'graphql', 'operations.ts');
 const FIXTURES_DIR = join(MOBILE_ROOT, 'screenshot-fixtures');
 const MANIFEST_PATH = join(FIXTURES_DIR, 'manifest.json');
 
@@ -139,6 +140,54 @@ interface RegisteredDocument {
 
 const SHARED_IMPORT_PATTERN = /import\s+(type\s+)?\{([^}]*)\}\s*from\s*'(@boardsesh\/graphql\/operations[^']*)'/g;
 
+/**
+ * Import forms this file's registry CANNOT see: only a named `import { … }`
+ * form (matched by `SHARED_IMPORT_PATTERN` above) is scanned. A namespace
+ * import, a default import, or a bare re-export would let an operation ship
+ * without ever reaching the registry — silently turning every check below
+ * into a no-op for that document — so `findUnscannableSharedOperationImports`
+ * fails the file outright instead of quietly missing it.
+ *
+ * (Deliberately not spelling out an example `from '@boardsesh/graphql/…'`
+ * literal in this comment: the scanners below match raw file TEXT, not an AST,
+ * so a fake import statement here would be indistinguishable from a real one —
+ * see the guard's own tests, which use inline string samples for exactly this
+ * reason.)
+ */
+const UNSCANNABLE_SHARED_IMPORT_PATTERNS: ReadonlyArray<{ pattern: RegExp; describe: string }> = [
+  {
+    pattern: /import\s+\*\s+as\s+\w+\s+from\s*'(@boardsesh\/graphql\/operations[^']*)'/g,
+    describe: 'a namespace import (`import * as … from`)',
+  },
+  {
+    pattern: /import\s+\w+\s*(?:,\s*\{[^}]*\})?\s*from\s*'(@boardsesh\/graphql\/operations[^']*)'/g,
+    describe: 'a default import (`import … from`)',
+  },
+  {
+    pattern: /export\s+\{[^}]*\}\s*from\s*'(@boardsesh\/graphql\/operations[^']*)'/g,
+    describe: 'a re-export (`export { … } from`)',
+  },
+];
+
+/**
+ * Every import of `@boardsesh/graphql/operations*` in `sourceText` that this
+ * test's registry cannot see, described for a failure message. Pure — no `fs`,
+ * so it can be exercised with an inline string sample.
+ */
+export function findUnscannableSharedOperationImports(sourceText: string, sourceLabel: string): string[] {
+  const problems: string[] = [];
+  for (const { pattern, describe } of UNSCANNABLE_SHARED_IMPORT_PATTERNS) {
+    for (const match of sourceText.matchAll(pattern)) {
+      problems.push(
+        `${sourceLabel} imports ${describe} '${match[1]}' — this test only scans named ` +
+          `\`import { … }\` forms; rewrite it as one, or the operations it carries will never be ` +
+          `checked against the schema or the fixture set.`,
+      );
+    }
+  }
+  return problems;
+}
+
 function listSourceFiles(dir: string, files: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
@@ -159,8 +208,25 @@ function listSourceFiles(dir: string, files: string[] = []): string[] {
 function collectSharedImports(): Map<string, Set<string>> {
   const byModule = new Map<string, Set<string>>();
   const files = [...listSourceFiles(join(MOBILE_ROOT, 'src')), ...listSourceFiles(join(MOBILE_ROOT, 'app'))];
+  const unscannable: string[] = [];
   for (const file of files) {
-    for (const match of readFileSync(file, 'utf8').matchAll(SHARED_IMPORT_PATTERN)) {
+    const sourceText = readFileSync(file, 'utf8');
+    // Skip files this guard would only ever false-positive on:
+    //   - `__tests__` files are never product code the app can send from — and
+    //     this very test file legitimately namespace-imports every shared
+    //     operations module up top to build SHARED_OPERATION_MODULES, plus
+    //     carries fake import statements as inline string samples for the
+    //     guard's own tests below.
+    //   - mobile's own operations.ts, which re-exports a few documents from the
+    //     shared package (`export { TOGGLE_FAVORITE, … } from
+    //     '@boardsesh/graphql/operations/favorites'`) — that file is already
+    //     scanned exhaustively via the `mobileOperations` namespace import
+    //     above (a re-export shows up on the namespace object like any other
+    //     export), so it is never actually invisible to the registry.
+    if (!file.includes('/__tests__/') && file !== MOBILE_OPERATIONS_ABSOLUTE_PATH) {
+      unscannable.push(...findUnscannableSharedOperationImports(sourceText, file));
+    }
+    for (const match of sourceText.matchAll(SHARED_IMPORT_PATTERN)) {
       if (match[1]) continue; // `import type { … }` never carries a document
       const names = byModule.get(match[3]) ?? new Set<string>();
       for (const clause of match[2].split(',')) {
@@ -171,6 +237,7 @@ function collectSharedImports(): Map<string, Set<string>> {
       byModule.set(match[3], names);
     }
   }
+  if (unscannable.length > 0) throw new Error(unscannable.join('\n'));
   return byModule;
 }
 
@@ -421,5 +488,69 @@ describe('checkSelectionCoverage', () => {
 
   it('reports every selected field when a scalar came back where an object was selected', () => {
     expect(coverage('query C { climb { id name } }', { climb: 'oops' })).toEqual(['climb.id', 'climb.name']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The import-discovery guard's own tests
+// ---------------------------------------------------------------------------
+
+describe('findUnscannableSharedOperationImports', () => {
+  it('flags a namespace import', () => {
+    const problems = findUnscannableSharedOperationImports(
+      `import * as sharedOperations from '@boardsesh/graphql/operations';`,
+      'some-file.ts',
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('some-file.ts');
+    expect(problems[0]).toContain('namespace import');
+  });
+
+  it('flags a default import', () => {
+    const problems = findUnscannableSharedOperationImports(
+      `import sharedOperations from '@boardsesh/graphql/operations/boards';`,
+      'some-file.ts',
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('default import');
+  });
+
+  it('flags a default import combined with a named import', () => {
+    const problems = findUnscannableSharedOperationImports(
+      `import sharedDefault, { GetProfile } from '@boardsesh/graphql/operations';`,
+      'some-file.ts',
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('default import');
+  });
+
+  it('flags a re-export', () => {
+    const problems = findUnscannableSharedOperationImports(
+      `export { GetProfile } from '@boardsesh/graphql/operations';`,
+      'some-file.ts',
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('re-export');
+  });
+
+  it('accepts a named import — the only form the registry scans', () => {
+    expect(
+      findUnscannableSharedOperationImports(
+        `import { GetProfile } from '@boardsesh/graphql/operations';`,
+        'some-file.ts',
+      ),
+    ).toEqual([]);
+  });
+
+  it('accepts a type-only namespace or default import — it carries no document', () => {
+    const source = [
+      `import type * as SharedTypes from '@boardsesh/graphql/operations';`,
+      `import type SharedDefault from '@boardsesh/graphql/operations';`,
+    ].join('\n');
+    expect(findUnscannableSharedOperationImports(source, 'some-file.ts')).toEqual([]);
+  });
+
+  it('ignores imports from modules outside the shared operations package', () => {
+    expect(findUnscannableSharedOperationImports(`import * as React from 'react';`, 'some-file.ts')).toEqual([]);
   });
 });

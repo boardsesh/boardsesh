@@ -30,7 +30,9 @@ import { listFixtureFiles, readScreenshotFixtureManifest, MANIFEST_FILENAME } fr
 import {
   DEFAULT_SCREENSHOT_FIXTURES_DIR,
   canonicalJson,
+  finalizeRecordingFrozenNow,
   sortManifestEntries,
+  type GraphqlFixtureFile,
   type GraphqlManifestEntry,
   type ScreenshotFixtureManifest,
   type StaticManifestEntry,
@@ -49,6 +51,15 @@ export interface FixtureSetForMerge {
   label: string;
   manifest: ScreenshotFixtureManifest;
   fileHashes: ReadonlyMap<string, string>;
+  /**
+   * Each graphql fixture's own `recordedAt`, keyed by the same manifest `file`
+   * path as `fileHashes`. Belt and braces on top of the backend's own
+   * finalization (screenshot-backend.ts's `rewriteManifest`): re-derives the
+   * floor here too, in case an input set's `manifest.frozenNow` predates one of
+   * its own entries (a pre-fix or hand-edited set). Optional so a caller that
+   * doesn't have this handy (or a test that doesn't care about it) can omit it.
+   */
+  graphqlRecordedAt?: ReadonlyMap<string, string>;
 }
 
 export interface MergedFixtureSet {
@@ -62,25 +73,60 @@ export interface MergedFixtureSet {
  *
  * `accountEmail` above all: replay only answers the recorded account, so a set
  * merged across two accounts would half-work and the failing half would look
- * like a plain auth miss. `upstream` matters for the same reason at one remove —
+ * like a plain auth miss. `accountUserId` for the same reason, one level down:
+ * the app reads its own id back out of the session token to decide what is
+ * "yours" while offline, so two shards recorded under different ids merged into
+ * one set would leave that classification depending on which shard answered —
+ * and a shard that never signed in at all (an empty id) never recorded anything
+ * worth merging. `flow` picks the capture flow a replay run stamps into its logs
+ * and re-record command, so two shards from different flows are not one
+ * recording either. `upstream` matters for the same reason at one more remove —
  * two shards recorded against different backends are not one fixture set.
  */
-function assertProvenanceAgrees(sets: readonly FixtureSetForMerge[]): void {
-  const [first, ...rest] = sets;
-  for (const other of rest) {
-    if (other.manifest.accountEmail !== first.manifest.accountEmail) {
+function assertProvenanceAgrees(fixtureSets: readonly FixtureSetForMerge[]): void {
+  for (const fixtureSet of fixtureSets) {
+    if (fixtureSet.manifest.accountUserId === '') {
+      throw new Error(`shard ${fixtureSet.label} never signed in — re-record it.`);
+    }
+  }
+
+  const [firstSet, ...otherSets] = fixtureSets;
+  for (const otherSet of otherSets) {
+    if (otherSet.manifest.accountEmail !== firstSet.manifest.accountEmail) {
       throw new Error(
-        `fixture sets were recorded as different accounts: ${first.label} used ${first.manifest.accountEmail}, ` +
-          `${other.label} used ${other.manifest.accountEmail}. Re-record both with the screenshots account.`,
+        `fixture sets were recorded as different accounts: ${firstSet.label} used ${firstSet.manifest.accountEmail}, ` +
+          `${otherSet.label} used ${otherSet.manifest.accountEmail}. Re-record both with the screenshots account.`,
       );
     }
-    if (other.manifest.upstream !== first.manifest.upstream) {
+    if (otherSet.manifest.accountUserId !== firstSet.manifest.accountUserId) {
       throw new Error(
-        `fixture sets were recorded against different upstreams: ${first.label} used ${first.manifest.upstream}, ` +
-          `${other.label} used ${other.manifest.upstream}.`,
+        `fixture sets were recorded as different accounts: ${firstSet.label} recorded user id ${firstSet.manifest.accountUserId}, ` +
+          `${otherSet.label} recorded ${otherSet.manifest.accountUserId}. Re-record both with the screenshots account.`,
+      );
+    }
+    if (otherSet.manifest.flow !== firstSet.manifest.flow) {
+      throw new Error(
+        `fixture sets were recorded from different flows: ${firstSet.label} used ${firstSet.manifest.flow}, ` +
+          `${otherSet.label} used ${otherSet.manifest.flow}.`,
+      );
+    }
+    if (otherSet.manifest.upstream !== firstSet.manifest.upstream) {
+      throw new Error(
+        `fixture sets were recorded against different upstreams: ${firstSet.label} used ${firstSet.manifest.upstream}, ` +
+          `${otherSet.label} used ${otherSet.manifest.upstream}.`,
       );
     }
   }
+}
+
+/**
+ * The later of two ISO instants, compared by parsed time (not lexicographically
+ * — two manifests can carry different precisions, e.g. whole seconds vs
+ * milliseconds, where a string compare would pick the wrong one). Returns the
+ * original string of whichever instant wins, never a reformatted one.
+ */
+function maxIsoInstant(left: string, right: string): string {
+  return Date.parse(left) >= Date.parse(right) ? left : right;
 }
 
 /**
@@ -89,71 +135,101 @@ function assertProvenanceAgrees(sets: readonly FixtureSetForMerge[]): void {
  */
 function foldEntry<Entry extends GraphqlManifestEntry | StaticManifestEntry>(
   entry: Entry,
-  set: FixtureSetForMerge,
+  fixtureSet: FixtureSetForMerge,
   key: string,
   merged: Map<string, { entry: Entry; label: string }>,
   fileHashes: Map<string, string>,
 ): void {
   const existing = merged.get(entry.file);
-  const hash = set.fileHashes.get(entry.file);
+  const hash = fixtureSet.fileHashes.get(entry.file);
   if (hash === undefined) {
-    throw new Error(`${set.label} lists ${entry.file} in its manifest but the file is missing from the set.`);
+    throw new Error(`${fixtureSet.label} lists ${entry.file} in its manifest but the file is missing from the set.`);
   }
   if (!existing) {
-    merged.set(entry.file, { entry, label: set.label });
+    merged.set(entry.file, { entry, label: fixtureSet.label });
     fileHashes.set(entry.file, hash);
     return;
   }
   if (fileHashes.get(entry.file) !== hash) {
     throw new Error(
-      `${key} was recorded differently in ${existing.label} and ${set.label} (${entry.file} differs byte-for-byte). ` +
+      `${key} was recorded differently in ${existing.label} and ${fixtureSet.label} (${entry.file} differs byte-for-byte). ` +
         `Something behind that response is not deterministic — look at it before merging.`,
     );
   }
   if (canonicalJson(existing.entry) !== canonicalJson(entry)) {
     throw new Error(
-      `${key} has the same bytes but a different manifest entry in ${existing.label} and ${set.label} (${entry.file}).`,
+      `${key} has the same bytes but a different manifest entry in ${existing.label} and ${fixtureSet.label} (${entry.file}).`,
     );
   }
 }
 
 /**
  * The union of every input set: one manifest, and where each file's bytes come
- * from. Provenance (`frozenNow`, `recordedAt`, `upstream`, `accountEmail`,
- * `flow`) is taken from the FIRST input — a merged set replays as one run, so it
- * gets one frozen instant, and the shards all recorded within minutes of each
- * other.
+ * from.
+ *
+ * `frozenNow` and `recordedAt` are the MAXIMUM across every input, not the
+ * first's — a merged set replays as one run pretending to be one instant, and
+ * taking anything earlier than the latest shard's clock would render that
+ * shard's own recorded data as being from the future. Before taking that max,
+ * each input's `frozenNow` is itself re-finalized against its own entries
+ * (`finalizeRecordingFrozenNow`, belt and braces on top of what the backend
+ * already did while recording), so a pre-fix or hand-edited input whose
+ * `frozenNow` predates one of its own recorded responses still can't slip a
+ * "renders in the future" fixture through the merge. `upstream`,
+ * `accountEmail`, `accountUserId` and `flow` are taken from the first input:
+ * `assertProvenanceAgrees` above already required every shard to agree on them,
+ * so "first" and "any" are the same value.
  */
-export function mergeFixtureSets(sets: readonly FixtureSetForMerge[]): MergedFixtureSet {
-  if (sets.length === 0) throw new Error('nothing to merge: pass at least one recorded fixture directory.');
-  assertProvenanceAgrees(sets);
+export function mergeFixtureSets(fixtureSets: readonly FixtureSetForMerge[]): MergedFixtureSet {
+  if (fixtureSets.length === 0) throw new Error('nothing to merge: pass at least one recorded fixture directory.');
+  assertProvenanceAgrees(fixtureSets);
 
   const graphqlEntries = new Map<string, { entry: GraphqlManifestEntry; label: string }>();
   const staticEntries = new Map<string, { entry: StaticManifestEntry; label: string }>();
   const fileHashes = new Map<string, string>();
 
-  for (const set of sets) {
-    for (const entry of set.manifest.graphql) {
-      foldEntry(entry, set, `${entry.operationName} (variables ${entry.variablesHash})`, graphqlEntries, fileHashes);
+  for (const fixtureSet of fixtureSets) {
+    for (const entry of fixtureSet.manifest.graphql) {
+      foldEntry(
+        entry,
+        fixtureSet,
+        `${entry.operationName} (variables ${entry.variablesHash})`,
+        graphqlEntries,
+        fileHashes,
+      );
     }
-    for (const entry of set.manifest.static) {
-      foldEntry(entry, set, `${entry.path}${entry.query ? `?${entry.query}` : ''}`, staticEntries, fileHashes);
+    for (const entry of fixtureSet.manifest.static) {
+      foldEntry(entry, fixtureSet, `${entry.path}${entry.query ? `?${entry.query}` : ''}`, staticEntries, fileHashes);
     }
   }
 
-  const first = sets[0].manifest;
+  const firstSet = fixtureSets[0].manifest;
+  let frozenNow = firstSet.frozenNow;
+  let recordedAt = firstSet.recordedAt;
+  for (const fixtureSet of fixtureSets) {
+    // Belt and braces on top of the backend's own finalization
+    // (screenshot-backend.ts's rewriteManifest): re-derive the floor from this
+    // set's OWN entries too, rather than trusting `manifest.frozenNow` as
+    // already-correct — a pre-fix or hand-edited input could still carry a
+    // frozenNow earlier than one of its own recorded responses.
+    const recordedAtInThisSet = [...(fixtureSet.graphqlRecordedAt?.values() ?? [])];
+    const finalizedFrozenNow = finalizeRecordingFrozenNow(fixtureSet.manifest.frozenNow, recordedAtInThisSet);
+    frozenNow = maxIsoInstant(frozenNow, finalizedFrozenNow);
+    recordedAt = maxIsoInstant(recordedAt, fixtureSet.manifest.recordedAt);
+  }
+
   const sources = new Map<string, string>();
   for (const [file, { label }] of [...graphqlEntries, ...staticEntries]) sources.set(file, label);
 
   return {
     manifest: sortManifestEntries({
-      formatVersion: first.formatVersion,
-      recordedAt: first.recordedAt,
-      frozenNow: first.frozenNow,
-      upstream: first.upstream,
-      accountEmail: first.accountEmail,
-      accountUserId: first.accountUserId,
-      flow: first.flow,
+      formatVersion: firstSet.formatVersion,
+      recordedAt,
+      frozenNow,
+      upstream: firstSet.upstream,
+      accountEmail: firstSet.accountEmail,
+      accountUserId: firstSet.accountUserId,
+      flow: firstSet.flow,
       graphql: [...graphqlEntries.values()].map(({ entry }) => entry),
       static: [...staticEntries.values()].map(({ entry }) => entry),
     }),
@@ -223,11 +299,18 @@ function readFixtureSet(dir: string): FixtureSetForMerge {
   const manifest = readScreenshotFixtureManifest(dir);
   if (!manifest) throw new Error(`${dir} holds no ${MANIFEST_FILENAME} — it is not a recorded fixture set.`);
   const fileHashes = new Map<string, string>();
+  const graphqlRecordedAt = new Map<string, string>();
   for (const file of listFixtureFiles(dir)) {
     if (file === MANIFEST_FILENAME) continue;
     fileHashes.set(file, sha256File(join(dir, file)));
+    // Each graphql fixture's own recordedAt, for the belt-and-braces re-check
+    // in mergeFixtureSets — not in the manifest entry itself, only the file.
+    if (file.startsWith('graphql/')) {
+      const fixture = JSON.parse(readFileSync(join(dir, file), 'utf8')) as GraphqlFixtureFile;
+      if (typeof fixture.recordedAt === 'string') graphqlRecordedAt.set(file, fixture.recordedAt);
+    }
   }
-  return { label: dir, manifest, fileHashes };
+  return { label: dir, manifest, fileHashes, graphqlRecordedAt };
 }
 
 export function main(argv: readonly string[] = process.argv.slice(2)): number {
@@ -242,18 +325,18 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   const sets: FixtureSetForMerge[] = [];
   try {
     for (const dir of options.inputDirs) {
-      const set = readFixtureSet(dir);
+      const fixtureSet = readFixtureSet(dir);
       console.log(
-        `${LOG} ${dir}: ${set.manifest.graphql.length} graphql + ${set.manifest.static.length} static fixture(s)`,
+        `${LOG} ${dir}: ${fixtureSet.manifest.graphql.length} graphql + ${fixtureSet.manifest.static.length} static fixture(s)`,
       );
-      sets.push(set);
+      sets.push(fixtureSet);
     }
     merged = mergeFixtureSets(sets);
   } catch (mergeError) {
     fail(mergeError instanceof Error ? mergeError.message : String(mergeError));
   }
 
-  const setsByLabel = new Map(sets.map((set) => [set.label, set]));
+  const setsByLabel = new Map(sets.map((fixtureSet) => [fixtureSet.label, fixtureSet]));
   mkdirSync(options.outDir, { recursive: true });
   for (const [file, label] of merged.sources) {
     const source = setsByLabel.get(label);

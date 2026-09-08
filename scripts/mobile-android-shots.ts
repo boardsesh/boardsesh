@@ -331,6 +331,7 @@ function screenshotEnvOptions(options: ShotsOptions): ScreenshotOptions {
     fixtures: 'off',
     fixturesDir: DEFAULT_SCREENSHOT_FIXTURES_DIR,
     fresh: false,
+    frozenNow: null,
     shutdown: false,
     orientation: null,
   };
