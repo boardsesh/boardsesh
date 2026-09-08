@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-08T21:11:04.416Z",
+  "generatedAt": "2026-09-08T21:39:24.011Z",
   "entries": [
+    {
+      "prNumber": 4127,
+      "category": "fixed",
+      "title": "Staying signed in now survives a locked phone. If the app woke up in the background — refreshing your session, reconnecting to a party, updating a Live Activity — it could quietly fail to read your login and bounce you to the sign-in screen. Anyone who installed before mid-July was stuck in that loop for good; now iOS can reach your credentials once the phone has been unlocked since its last restart, and if the app happens to wake while the phone is still locked it tries again the moment you open it.",
+      "mergedAt": "2026-09-08T21:37:56Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4127"
+    },
     {
       "prNumber": 5283,
       "category": "fixed",
