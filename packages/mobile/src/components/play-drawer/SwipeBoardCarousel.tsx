@@ -1,12 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  StyleSheet,
-  useWindowDimensions,
-  PixelRatio,
-  type LayoutChangeEvent,
-  type ViewStyle,
-} from 'react-native';
+import { View, StyleSheet, useWindowDimensions, PixelRatio, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useDerivedValue,
@@ -15,7 +8,6 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { useTranslation } from 'react-i18next';
 import { computePeekOffset, type PeekDirection } from '@boardsesh/play-view';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
@@ -99,7 +91,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   swipeTranslateX,
   swipeIsAnimating,
 }: SwipeBoardCarouselProps) {
-  const { t } = useTranslation('session');
   const { width: screenWidth } = useWindowDimensions();
   // Measured box the board is laid out into. The board is sized to *fit* this
   // box (contain) so the play drawer's full-screen first view can keep the
@@ -117,19 +108,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   const boardBox = useMemo(
     () => computeContainedBoardSize(containerSize.width, containerSize.height, aspectRatio),
     [containerSize, aspectRatio],
-  );
-  const boardStyle = useMemo<ViewStyle | undefined>(
-    () => (boardBox ? { width: boardBox.width, height: boardBox.height } : undefined),
-    [boardBox],
-  );
-  // Render the per-climb holds overlay at the displayed pixel size, not the
-  // board's native ~1080px. The board photo stays full-res (backgroundVariant
-  // "full"); only the overlay shrinks. Without this, swiping through climbs
-  // piles a native-res (~7 MB RGBA) overlay per climb into expo-image's memory
-  // cache. Clamped to native width inside useNativeClimbRender (never upscales).
-  const overlayRenderWidth = useMemo(
-    () => (boardBox ? Math.round(boardBox.width * PixelRatio.get()) : undefined),
-    [boardBox],
   );
   // The carousel works in board-width units: a letterboxed (narrower) board
   // must slide off by its own width and the peek board must enter edge-adjacent.
@@ -253,9 +231,24 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
 
   const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
 
+  // Keep measuring the flex box, but never mount images at an implicit/full-width
+  // size. Cached photos can paint before onLayout reaches JS, making the later
+  // contain-fit correction look like a zoom during the native opening animation.
+  if (!boardBox) {
+    return (
+      <GestureDetector gesture={composedGesture}>
+        <View style={styles.container} onLayout={handleLayout} testID="play-drawer-board-container" />
+      </GestureDetector>
+    );
+  }
+
+  // Only request display-sized overlays once layout is known. The shared photo
+  // stays full-res; useNativeClimbRender clamps the overlay to native resolution.
+  const overlayRenderWidth = Math.round(boardBox.width * PixelRatio.get());
+
   return (
     <GestureDetector gesture={composedGesture}>
-      <View style={styles.container} onLayout={handleLayout}>
+      <View style={styles.container} onLayout={handleLayout} testID="play-drawer-board-container">
         {isScreenshotMode ? (
           // Screenshot mode: render the board in PLAIN (non-reanimated) Views.
           // The swipe/zoom `Animated.View` wrappers promote the board to a render
@@ -266,7 +259,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
           // board-presence sheet (no carousel) already captures reliably, confirming
           // the carousel layer is the culprit. overlayTestID anchors on the painted
           // holds overlay.
-          <View style={[styles.boardWrapper, boardBox ? { width: boardBox.width } : null]}>
+          <View style={[styles.boardWrapper, boardBox]}>
             <BoardImageNative
               frames={currentFrameOverride ?? currentFrames}
               boardName={boardName}
@@ -279,7 +272,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               renderWidth={overlayRenderWidth}
               backgroundVariant="full"
               recyclingKey={currentFrames}
-              style={boardStyle}
+              style={boardBox}
               overlayTestID="play-drawer-board-overlay"
               // The one board a climber is actually looking at: `surface: 'play'`
               // on render-failure telemetry, and the only surface that watches
@@ -288,8 +281,8 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             />
           </View>
         ) : (
-          <Animated.View style={[styles.boardWrapper, boardBox ? { width: boardBox.width } : null, currentStyle]}>
-            <Animated.View style={animatedZoomStyle}>
+          <Animated.View style={[styles.boardWrapper, boardBox, currentStyle]}>
+            <Animated.View style={[boardBox, animatedZoomStyle]}>
               <BoardImageNative
                 frames={currentFrameOverride ?? currentFrames}
                 boardName={boardName}
@@ -304,7 +297,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
                 // Climb identity (not the per-frame override) so the overlay
                 // recycles on swipe-to-new-climb, not on every playback frame.
                 recyclingKey={currentFrames}
-                style={boardStyle}
+                style={boardBox}
                 // During a swipe commit the current board's frames swap to the
                 // climb the peek was showing; that overlay is already cached, so an
                 // instant (no-fade) swap lands it before the reset uncovers it —
@@ -336,7 +329,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               // Climb identity (peekFrames is the neighbour's frames, not a
               // per-frame override) so the peek overlay recycles per climb.
               recyclingKey={peekFrames}
-              style={boardStyle}
+              style={boardBox}
             />
           )}
         </Animated.View>

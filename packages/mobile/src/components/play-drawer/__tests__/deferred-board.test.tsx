@@ -36,6 +36,7 @@ vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#8
 import { DeferredBoard } from '../DeferredBoard';
 
 const baseProps = {
+  layoutReady: true,
   boardName: 'kilter' as const,
   boardRenderData: { boardWidth: 1080, boardHeight: 1920 },
   layoutId: 1,
@@ -72,6 +73,7 @@ describe('DeferredBoard', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it('shows a board-sized placeholder before the deferred frame fires', () => {
@@ -90,6 +92,62 @@ describe('DeferredBoard', () => {
     expect(container.querySelector('[data-testid="deferred-board-placeholder"]')).toBeNull();
     const board = container.querySelector('[data-testid="swipe-board"]');
     expect(board?.getAttribute('data-frames')).toBe('p1145r15');
+  });
+
+  it('waits for delayed layout, then defers one frame after the measured commit', () => {
+    const { container, rerender } = render(
+      createElement(DeferredBoard, { ...baseProps, open: true, layoutReady: false }),
+    );
+    flushFrame();
+    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
+    expect(requestFrame).not.toHaveBeenCalled();
+
+    rerender(createElement(DeferredBoard, { ...baseProps, open: true }));
+    expect(container.querySelector('[data-testid="deferred-board-placeholder"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
+
+    flushFrame();
+    expect(container.querySelector('[data-testid="swipe-board"]')).toBeTruthy();
+  });
+
+  it('does not mount when layout arrives after the drawer closes', () => {
+    const { container, rerender } = render(
+      createElement(DeferredBoard, { ...baseProps, open: true, layoutReady: false }),
+    );
+    rerender(createElement(DeferredBoard, { ...baseProps, open: false }));
+    flushFrame();
+
+    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
+    expect(requestFrame).not.toHaveBeenCalled();
+  });
+
+  it('keeps the carousel mounted when board geometry changes after opening', () => {
+    const { container, rerender } = render(createElement(DeferredBoard, { ...baseProps, open: true }));
+    flushFrame();
+    const carousel = container.querySelector('[data-testid="swipe-board"]');
+
+    rerender(
+      createElement(DeferredBoard, {
+        ...baseProps,
+        open: true,
+        boardRenderData: { boardWidth: 1200, boardHeight: 1200 },
+      }),
+    );
+
+    expect(container.querySelector('[data-testid="swipe-board"]')).toBe(carousel);
+    expect(requestFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it('still requires measured layout in screenshot mode', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    const { container, rerender } = render(
+      createElement(DeferredBoard, { ...baseProps, open: true, layoutReady: false }),
+    );
+    expect(container.querySelector('[data-testid="swipe-board"]')).toBeNull();
+
+    rerender(createElement(DeferredBoard, { ...baseProps, open: true }));
+    expect(container.querySelector('[data-testid="swipe-board"]')).toBeTruthy();
+    expect(requestFrame).not.toHaveBeenCalled();
   });
 
   it('does NOT re-defer when the climb changes while open (no swipe flash)', () => {

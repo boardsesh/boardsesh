@@ -1277,6 +1277,8 @@ export function PlayDrawer({
             <ScrollView
               ref={scrollRef}
               nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+              showsHorizontalScrollIndicator={false}
               // No top/bottom rubber-band: at the top, a downward drag is the
               // dismiss (the drawer translates) — a simultaneous scroll bounce would
               // fight it and read as double movement.
@@ -1379,6 +1381,7 @@ export function PlayDrawer({
                         {boardRenderData ? (
                           <DeferredBoard
                             open={isSheetOpen}
+                            layoutReady={sheetViewportHeight > 0 && headerBottomY > 0 && logbookHeaderHeight > 0}
                             boardName={boardName as BoardName}
                             boardRenderData={boardRenderData}
                             layoutId={layoutId}
