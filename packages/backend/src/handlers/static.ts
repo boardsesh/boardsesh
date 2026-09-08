@@ -3,6 +3,7 @@ import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
 import path, { extname } from 'path';
 import { applyCorsHeaders } from './cors';
+import { pipeStreamToResponse } from './http-utils';
 import { getAvatarsDir } from './avatars';
 import { getGymLogosDir } from './gym-logos';
 import { getGymPhotosDir } from './gym-photos';
@@ -34,17 +35,18 @@ async function serveResizedImageFromS3(
   res: ServerResponse,
   baseKey: string,
   size: AllowedImageSize,
-  options: { cacheVariant: boolean; cacheControl: string },
+  options: { cacheVariant: boolean; cacheControl: string; route: string },
 ): Promise<boolean> {
   if (options.cacheVariant) {
-    const cached = await getFromS3('media', resizedVariantKey(baseKey, size));
+    const variantKey = resizedVariantKey(baseKey, size);
+    const cached = await getFromS3('media', variantKey);
     if (cached) {
       res.writeHead(200, {
         'Content-Type': cached.contentType || 'image/jpeg',
         ...(cached.contentLength && { 'Content-Length': cached.contentLength }),
         'Cache-Control': options.cacheControl,
       });
-      cached.stream.pipe(res);
+      await pipeStreamToResponse(cached.stream, res, { route: options.route, source: variantKey });
       return true;
     }
   }
@@ -117,6 +119,7 @@ export async function handleStaticAvatar(
       const served = await serveResizedImageFromS3(res, s3Key, size, {
         cacheVariant: false,
         cacheControl: 'public, max-age=86400',
+        route: req.url ?? '/static/avatars',
       });
       if (!served) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -142,8 +145,8 @@ export async function handleStaticAvatar(
       'Cache-Control': 'public, max-age=86400', // 1 day
     });
 
-    // Pipe the S3 stream to the response
-    s3Object.stream.pipe(res);
+    // Pipe the S3 stream to the response, guarding both ends.
+    await pipeStreamToResponse(s3Object.stream, res, { route: req.url ?? '/static/avatars', source: s3Key });
     return;
   }
 
@@ -186,7 +189,10 @@ export async function handleStaticAvatar(
       'Last-Modified': fileStat.mtime.toUTCString(),
     });
 
-    createReadStream(filePath).pipe(res);
+    await pipeStreamToResponse(createReadStream(filePath), res, {
+      route: req.url ?? filePath,
+      source: filePath,
+    });
   } catch {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));
@@ -233,6 +239,7 @@ async function serveStaticGymImage(
       const served = await serveResizedImageFromS3(res, s3Key, size, {
         cacheVariant: false,
         cacheControl: 'public, max-age=86400',
+        route: req.url ?? `/static/${s3Prefix}`,
       });
       if (!served) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -258,7 +265,7 @@ async function serveStaticGymImage(
       'Cache-Control': 'public, max-age=86400', // 1 day
     });
 
-    s3Object.stream.pipe(res);
+    await pipeStreamToResponse(s3Object.stream, res, { route: req.url ?? `/static/${s3Prefix}`, source: s3Key });
     return;
   }
 
@@ -297,7 +304,10 @@ async function serveStaticGymImage(
       'Last-Modified': fileStat.mtime.toUTCString(),
     });
 
-    createReadStream(filePath).pipe(res);
+    await pipeStreamToResponse(createReadStream(filePath), res, {
+      route: req.url ?? filePath,
+      source: filePath,
+    });
   } catch {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));
@@ -373,6 +383,7 @@ export async function handleStaticBetaThumbnail(
     const served = await serveResizedImageFromS3(res, s3Key, size, {
       cacheVariant: true,
       cacheControl: 'public, max-age=31536000, immutable',
+      route: req.url ?? '/static/beta-link-thumbnails',
     });
     if (!served) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -397,5 +408,8 @@ export async function handleStaticBetaThumbnail(
     'Cache-Control': 'public, max-age=31536000, immutable',
   });
 
-  s3Object.stream.pipe(res);
+  await pipeStreamToResponse(s3Object.stream, res, {
+    route: req.url ?? '/static/beta-link-thumbnails',
+    source: s3Key,
+  });
 }
