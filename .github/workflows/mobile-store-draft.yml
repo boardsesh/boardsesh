@@ -8,18 +8,28 @@ name: Mobile Store Draft Submission
 # no metadata (those are owned by mobile-store-metadata.yml / the screenshot
 # workflows), no review submission, no rollout.
 #
-# OFF BY DEFAULT: both jobs are gated on the repo variable
-# ENABLE_STORE_DRAFT_SUBMISSION == 'true' because they mutate live store state.
-# Flip the variable on once you've validated the lanes. Runs on a schedule (so a
-# draft is prepared shortly after a build finishes processing) and on demand.
-# Lives on cheap ubuntu (not the 60-min macOS build) and separate from the native
-# builds so build-processing latency never blocks a release. Idempotent — deliver
-# / supply update the existing draft rather than duplicating it.
+# ALWAYS ON: there is no enable flag. What protects the stores is that this only
+# ever prepares DRAFTS (submit_for_review: false, release_status: draft), and
+# that main-candidate refuses to draft anything but the exact highest build tag
+# for main's version whose fingerprint matches main's head. Runs whenever a
+# TestFlight or Play deploy on main completes (workflow_run) and on demand — no
+# schedule, so a draft follows each native build by minutes rather than hours.
+# The candidate check tolerates the other platform not being there yet (it exits
+# quietly and that platform's own completion re-triggers this), and the iOS lane
+# waits for App Store Connect to finish processing the build before attaching
+# it. Lives on cheap ubuntu (not the 60-min macOS build) and separate from the
+# native builds so that wait never blocks a release. Idempotent — re-running
+# updates the existing draft rather than duplicating it.
 
 on:
-  schedule:
-    # Offset from mobile-auto-version-bump.yml (0 */6) so they don't collide.
-    - cron: '30 */6 * * *'
+  workflow_run:
+    # Names must match the `name:` of the two deploy workflows exactly;
+    # scripts/native-release-workflows.test.ts pins both.
+    workflows:
+      - iOS TestFlight Deploy (React Native)
+      - Android Play Internal Deploy (React Native)
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       platform:
@@ -57,6 +67,9 @@ env:
 
 jobs:
   main-candidate:
+    # workflow_run fires on every completion; a failed or cancelled deploy has
+    # nothing new to draft. Dispatch runs are always allowed.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Only the Maps key is mapped into pinned-main code below. It is required
@@ -288,10 +301,11 @@ jobs:
     needs: main-candidate
     if: >-
       needs.main-candidate.outputs.candidate_ready == 'true' &&
-      vars.ENABLE_STORE_DRAFT_SUBMISSION == 'true' &&
       (github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The lane waits up to 45 min for App Store Connect to finish processing the
+    # tagged build before attaching it; keep this above that bound.
+    timeout-minutes: 60
     environment: Production
 
     steps:
@@ -375,7 +389,6 @@ jobs:
     needs: main-candidate
     if: >-
       needs.main-candidate.outputs.candidate_ready == 'true' &&
-      vars.ENABLE_STORE_DRAFT_SUBMISSION == 'true' &&
       (github.event_name != 'workflow_dispatch' || github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 15

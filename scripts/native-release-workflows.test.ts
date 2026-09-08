@@ -144,6 +144,46 @@ describe('native release workflow contracts', () => {
     expect(draft).not.toContain(removedReleaseBranch);
   });
 
+  it('drafts follow each completed native deploy instead of a schedule', () => {
+    const triggers = parse(draft)['on'] as Record<string, unknown>;
+    expect(triggers).not.toHaveProperty('schedule');
+    expect(draft).not.toContain('cron:');
+    const workflowRun = triggers.workflow_run as { workflows: string[]; types: string[]; branches: string[] };
+    expect(workflowRun.workflows).toEqual([
+      'iOS TestFlight Deploy (React Native)',
+      'Android Play Internal Deploy (React Native)',
+    ]);
+    expect(workflowRun.types).toEqual(['completed']);
+    expect(workflowRun.branches).toEqual(['main']);
+    expect(triggers).toHaveProperty('workflow_dispatch');
+    // No enable flag: the candidate gates are the protection, and the lanes only make drafts.
+    expect(draft).not.toContain('ENABLE_STORE_DRAFT_SUBMISSION');
+    expect(draft).not.toMatch(/vars\.[A-Z_]*ENABLE/);
+    // A failed or cancelled deploy has nothing to draft.
+    expect(draft).toContain(
+      "if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'",
+    );
+    // The names the trigger subscribes to must keep matching the deploy workflows.
+    expect(ios).toMatch(/^name: iOS TestFlight Deploy \(React Native\)$/m);
+    expect(android).toMatch(/^name: Android Play Internal Deploy \(React Native\)$/m);
+  });
+
+  it('attaches the tagged build to the draft rather than relying on deliver/supply side effects', () => {
+    const fastfile = readFileSync('fastlane/Fastfile', 'utf8');
+    // deliver only selects a build inside submit_for_review, which the lane never calls,
+    // so the lane waits for THIS build to finish processing and attaches it itself.
+    expect(fastfile).toContain('FastlaneCore::BuildWatcher.wait_for_build_processing_to_be_complete(');
+    expect(fastfile).toContain('build_version: build_number,');
+    expect(fastfile).toContain('select_latest: false');
+    expect(fastfile).toContain('edit_version.select_build(build_id: build.id)');
+    // supply with every upload skipped never touches a track; promotion does.
+    expect(fastfile).toContain('track_promote_to: "production",');
+    expect(fastfile).toContain('track_promote_release_status: "draft",');
+    expect(fastfile).not.toMatch(/track: "production",\n\s+version_code:/);
+    // The processing wait (45 min) must fit inside the ios job's timeout.
+    expect(draft).toMatch(/^  ios:\n(?:.*\n){1,12}?\s+timeout-minutes: 60$/m);
+  });
+
   it('keeps the established main anchor on Production', () => {
     const anchor = workflow('mobile-auto-version-bump.yml');
     expect(anchor).toContain('environment: Production');
