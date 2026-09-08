@@ -141,6 +141,22 @@ describe('screenshot-mode', () => {
     expect(loadMore).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps real randomness in a normal build', async () => {
+    const { screenshotModeRandom } = await import('../screenshot-mode');
+    // The real thing, not a wrapper: nothing about a shipped build should be
+    // reproducible, and identity is the cheapest way to say so.
+    expect(screenshotModeRandom()).toBe(Math.random);
+  });
+
+  it('draws the same sequence every capture in screenshot mode', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    const { screenshotModeRandom } = await import('../screenshot-mode');
+    expect(screenshotModeRandom()).not.toBe(Math.random);
+    const first = Array.from({ length: 6 }, screenshotModeRandom());
+    const second = Array.from({ length: 6 }, screenshotModeRandom());
+    expect(first).toEqual(second);
+  });
+
   it('turns a hand-rolled pager into a no-op in screenshot mode', async () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
     const { screenshotModeLoadMore } = await import('../screenshot-mode');

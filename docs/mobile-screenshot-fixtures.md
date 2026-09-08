@@ -468,6 +468,18 @@ drift test scans the source for a `useInfiniteQuery(` with no
 cap; the two `@boardsesh/playlists-react` hooks are on its allowlist because
 `PlaylistDetailView` caps them instead.
 
+**The workout generator's shuffle is seeded in screenshot mode.** Its candidate
+pool is shuffled per grade and a refresh re-rolls a row out of it, so on
+`Math.random` the preview picks different climbs every run — the shot is not
+byte-stable, and the app asks the replay backend for stats on climbs the
+recording never fetched. `screenshotModeRandom()`
+(`packages/mobile/src/lib/screenshot-mode.ts`) hands `shuffleInPlace` /
+`pickRandomUnused` a `mulberry32` generator seeded from
+`SCREENSHOT_RANDOM_SEED`, fresh per call so no draw depends on how many came
+before it. **Moving that seed invalidates the recorded set** — the generator
+picks different climbs, and their stats were never recorded. Change it only
+alongside a re-record.
+
 A set recorded after this change therefore holds only first pages. The extra
 pages in the committed set (`GetSessionGroupedFeed` up to cursor `{"o":60}`,
 `SearchClimbs` up to page 2) are harmless — they are simply never asked for.
