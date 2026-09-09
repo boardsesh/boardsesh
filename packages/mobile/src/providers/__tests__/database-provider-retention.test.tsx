@@ -52,6 +52,19 @@ const sqlite = vi.hoisted(() => {
   const openedConnectionIds: number[] = [];
   let nextConnectionId = 0;
 
+  // `openDatabaseAsync` awaits `ensureDatabasePathExistsAsync` BEFORE it reaches the
+  // constructor that bumps the refcount, so the reference does not exist the moment
+  // the call is made. This models that gap: opens past `ungatedOpens` wait until the
+  // test releases them.
+  let ungatedOpens = Number.POSITIVE_INFINITY;
+  let gate: Promise<void> | null = null;
+  let openCalls = 0;
+
+  async function awaitOpenGate(): Promise<void> {
+    openCalls += 1;
+    if (openCalls > ungatedOpens && gate !== null) await gate;
+  }
+
   // `NativeDatabase`'s constructor: a cached connection for the same path is reused
   // and its refcount bumped; only a cache miss opens a new `sqlite3*`.
   function openNative(path: string): NativeConnection {
@@ -85,11 +98,26 @@ const sqlite = vi.hoisted(() => {
     openedConnectionIds,
     openNative,
     closeNative,
+    awaitOpenGate,
+    /** Stall every open past the first `count`; returns the release. */
+    stallOpensAfter(count: number): () => void {
+      ungatedOpens = count;
+      let release = (): void => {};
+      gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return () => {
+        release();
+      };
+    },
     reset(): void {
       cache.clear();
       freedConnectionIds.length = 0;
       openedConnectionIds.length = 0;
       nextConnectionId = 0;
+      ungatedOpens = Number.POSITIVE_INFINITY;
+      gate = null;
+      openCalls = 0;
     },
   };
 });
@@ -101,6 +129,7 @@ vi.mock('expo-sqlite', async () => {
   // The JS wrapper `openDatabaseAsync` returns: a fresh object per call, all of them
   // bound to one refcounted native connection.
   async function openDatabaseAsync(databaseName: string): Promise<unknown> {
+    await sqlite.awaitOpenGate();
     const native = sqlite.openNative(databaseName);
     return {
       native,
@@ -163,9 +192,8 @@ beforeEach(() => {
 });
 
 /**
- * Drain every pending microtask. The retain is started from `onInit` and deliberately
- * not awaited, and the provider's close is `void db.closeAsync()` — both settle a few
- * microtasks after the render/unmount that triggered them.
+ * Drain the pending task queue. The provider's close is `void db.closeAsync()`, which
+ * settles a few microtasks after the unmount that started it.
  */
 async function settle(): Promise<void> {
   await act(async () => {
@@ -173,14 +201,24 @@ async function settle(): Promise<void> {
   });
 }
 
-async function mountUntilPublished(): Promise<{ unmount: () => void }> {
-  const view = render(
+function renderProvider(): { unmount: () => void; queryByTestId: (id: string) => unknown } {
+  return render(
     <DatabaseProvider>
       <div data-testid="child" />
     </DatabaseProvider>,
   );
+}
+
+/**
+ * Mount and wait until the provider has PUBLISHED — children rendered, meaning
+ * `onInit` resolved and its teardown now has a connection to close. Waiting on the
+ * module handle instead would be too early: `initializeDatabase` publishes that while
+ * `onInit` is still settling.
+ */
+async function mountUntilPublished(): Promise<{ unmount: () => void }> {
+  const view = renderProvider();
   await waitFor(() => {
-    expect(getDatabaseHandle()).not.toBeNull();
+    expect(view.queryByTestId('child')).not.toBeNull();
   });
   await settle();
   return view;
@@ -213,6 +251,34 @@ describe('DatabaseProvider connection retention', () => {
     expect(sqlite.freedConnectionIds).toEqual([]);
 
     second.unmount();
+    await settle();
+    expect(sqlite.freedConnectionIds).toEqual([]);
+  });
+
+  it('does not publish the provider while the reference is still being taken', async () => {
+    // The retain's open is stalled where the real one waits on
+    // `ensureDatabasePathExistsAsync` — after the call is made, before the constructor
+    // that bumps the refcount. The provider's own open (the first) runs normally.
+    const releaseRetainOpen = sqlite.stallOpensAfter(1);
+    const view = renderProvider();
+
+    // The setup sequence has finished and published the module handle, so `onInit` is
+    // waiting on nothing but the retain.
+    await waitFor(() => {
+      expect(getDatabaseHandle()).not.toBeNull();
+    });
+    await settle();
+
+    view.unmount();
+    await settle();
+
+    // `onInit` had not resolved, so the provider never stored a connection and its
+    // teardown had nothing to close. Start the retain and forget it, and this unmount
+    // frees the only reference while that open is still in flight — the crash, moved
+    // to the first seconds of launch instead of avoided.
+    expect(sqlite.freedConnectionIds).toEqual([]);
+
+    releaseRetainOpen();
     await settle();
     expect(sqlite.freedConnectionIds).toEqual([]);
   });

@@ -32,8 +32,8 @@ function DatabaseHandleLifecycle() {
 }
 
 /**
- * The provider's `onInit`: take the process-lifetime reference on the connection
- * first, then run the usual setup sequence.
+ * The provider's `onInit`: run the usual setup sequence and, alongside it, take the
+ * process-lifetime reference on the connection.
  *
  * Ordering matters. `SQLiteProvider` opens the connection, awaits `onInit`, and only
  * then stores it in the ref its teardown closes — so `onInit` is the earliest point at
@@ -43,9 +43,23 @@ function DatabaseHandleLifecycle() {
  * whatever query was mid-flight on another module-queue thread keeps reading live
  * memory instead of a freed `sqlite3*`.
  *
- * Started, never awaited: the provider renders nothing until `onInit` resolves, so
- * launch must not wait on a second open, and nothing in the setup sequence depends on
- * it. `retainDatabaseConnection` never rejects.
+ * Both are STARTED synchronously and awaited together, which is load-bearing at both
+ * ends:
+ *
+ * - `initializeDatabase` first and un-awaited, so its synchronous retraction of a
+ *   stale handle still lands the instant `onInit` runs for a new connection (#5336).
+ *   Putting an await in front of it would push that retraction a microtask later.
+ * - `onInit` does not resolve until the reference exists. `openDatabaseAsync` awaits
+ *   `ensureDatabasePathExistsAsync` before it reaches the constructor that bumps the
+ *   refcount, so a fire-and-forget retain leaves a window where the provider has
+ *   already published — and can therefore already tear down and close the only
+ *   reference — while the retain is still in flight. Resolving late costs nothing
+ *   next to the migrations running alongside it, and on every later mount the retain
+ *   is an already-settled promise.
+ *
+ * Neither promise rejects (`initializeDatabase` swallows setup failures so the app is
+ * never stuck rendering null; `retainDatabaseConnection` reports and resolves null),
+ * so neither does this.
  *
  * Declared at module scope rather than as a `useCallback`, because `onInit` sits in
  * `SQLiteProviderNonSuspense`'s effect deps AND in its `memo` comparator — a fresh
@@ -53,8 +67,8 @@ function DatabaseHandleLifecycle() {
  * which is the exact churn this file exists to survive.
  */
 function initializeAndRetainDatabase(db: SQLiteDatabase): Promise<void> {
-  void retainDatabaseConnection();
-  return initializeDatabase(db);
+  const initialization = initializeDatabase(db);
+  return Promise.all([initialization, retainDatabaseConnection()]).then(() => undefined);
 }
 
 export function DatabaseProvider({ children }: { children: ReactNode }) {
