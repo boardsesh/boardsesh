@@ -23,7 +23,8 @@ import {
 import { isValidBoardName } from '../../../db/queries/util/table-select';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
-import { findSimilarClimbs, parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
+import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
+import { findSimilarClimbsCached } from './similar-climbs-cache';
 import {
   BoardNameSchema,
   CheckMoonBoardClimbDuplicatesInputSchema,
@@ -158,7 +159,10 @@ export const climbQueries = {
     // that isn't saved yet) have to start sending one.
     if (isSizeScopedSimilarityBoard(boardType) && sizeId === undefined) return [];
 
-    return findSimilarClimbs({
+    // Redis-cached and single-flighted (#4968). The statement is a catalogue-wide
+    // aggregate — see `similar-climbs-cache.ts` for the measured cost and for why
+    // the cache had to move off the web instance's `unstable_cache`.
+    return findSimilarClimbsCached({
       boardType,
       layoutId: validated.layoutId,
       holds,

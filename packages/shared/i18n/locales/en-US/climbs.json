@@ -790,13 +790,15 @@
     },
     "beta": {
       "heading": "Beta videos",
-      "empty": "No beta filmed yet."
+      "empty": "No beta filmed yet.",
+      "unavailable": "Beta didn't load this time. Reload the page to try again."
     },
     "community": {
       "heading": "Community"
     },
     "similar": {
-      "heading": "Climbs like this one"
+      "heading": "Climbs like this one",
+      "unavailable": "Climbs like this one didn't load. Trying again…"
     },
     "cta": {
       "climbThis": "Climb this",

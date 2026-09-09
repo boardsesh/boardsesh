@@ -13,6 +13,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { formatBoardDisplayName, resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
+import type { FrontDoorSection } from '@/app/lib/data/front-door-data.server';
 import type { BetaLink } from '@/app/lib/beta-video-url';
 import type { BoardDetails, BoardName, Climb } from '@/app/lib/types';
 import AngleCrossLinks from './angle-cross-links';
@@ -27,8 +28,13 @@ type ClimbFrontDoorProps = {
   angle: number;
   canonicalAngle: number;
   angleStats: ClimbStatsForAngle[];
-  similarClimbs: SimilarClimb[];
-  betaLinks: BetaLink[];
+  /**
+   * Both sections carry their own provenance rather than a bare array, so the
+   * page can tell "nobody has filmed this" apart from "the backend did not
+   * answer in three seconds" and say the true one. See `FrontDoorSection`.
+   */
+  similarClimbs: FrontDoorSection<SimilarClimb>;
+  betaLinks: FrontDoorSection<BetaLink>;
   /**
    * The pathname the "Climb this" CTA hands to the app — the URL the reader is
    * actually on. Deliberately NOT the page's canonical: on `/b/{slug}` the
@@ -85,6 +91,9 @@ const sectionSx = { mt: 4 };
 
 const sectionHeadingSx = { fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1.5 };
 
+// Shared by the "nothing here yet" and the "this did not load" lines. Same
+// muted weight for both: a degraded read is not an error the reader caused, and
+// shouting about a supplementary section would be louder than the climb.
 const emptySectionSx = { m: 0, color: 'var(--neutral-400)' };
 
 /**
@@ -273,8 +282,17 @@ export default async function ClimbFrontDoor({
         <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
           {t('frontDoor.beta.heading')}
         </Typography>
-        {betaLinks.length > 0 ? (
-          <BoardseshBetaList links={betaLinks} isLoading={false} source="drawer" />
+        {/* Three states, not two. `frontDoor.beta.empty` says nobody has filmed
+            this climb, which is a claim about the climb — it may only be
+            rendered when the backend actually answered. This section has no
+            client-side query to recover it, so the degraded copy asks for the
+            one thing that does. */}
+        {betaLinks.status === 'unavailable' ? (
+          <Typography variant="body2" component="p" sx={emptySectionSx}>
+            {t('frontDoor.beta.unavailable')}
+          </Typography>
+        ) : betaLinks.items.length > 0 ? (
+          <BoardseshBetaList links={betaLinks.items} isLoading={false} source="drawer" />
         ) : (
           <Typography variant="body2" component="p" sx={emptySectionSx}>
             {t('frontDoor.beta.empty')}
@@ -286,6 +304,14 @@ export default async function ClimbFrontDoor({
         <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
           {t('frontDoor.similar.heading')}
         </Typography>
+        {/* On an unavailable read the list gets NO seed, which is the retry:
+            React Query treats a seeded query as fresh for five minutes, so
+            handing it `[]` would pin "No similar climbs on this layout." on the
+            page for the whole visit. Unseeded, the browser fetches the section
+            itself on hydration — off the server-render budget, and against the
+            reader's own IP rather than the web server's single shared one.
+            `pendingMessage` is what the crawler (and the reader, for that one
+            round trip) reads meanwhile: prose, never a bare spinner. */}
         <SimilarClimbsList
           boardType={boardDetails.board_name as BoardName}
           layoutId={boardDetails.layout_id}
@@ -294,7 +320,8 @@ export default async function ClimbFrontDoor({
           angle={angle}
           threshold={0.5}
           limit={10}
-          initialClimbs={similarClimbs}
+          initialClimbs={similarClimbs.status === 'loaded' ? similarClimbs.items : undefined}
+          pendingMessage={similarClimbs.status === 'unavailable' ? t('frontDoor.similar.unavailable') : undefined}
           emptyMessage={t('similarClimbs.emptyOnLayout')}
         />
       </Box>

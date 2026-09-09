@@ -54,6 +54,16 @@ type SimilarClimbsListProps = {
    *  not refetch what the server just resolved. The climb front door passes
    *  it; the in-app callers don't and keep the client fetch. */
   initialClimbs?: SimilarClimb[];
+  /**
+   * Prose to render instead of the spinner while the first fetch is in flight.
+   *
+   * Only the climb front door passes it, and only when its server-side read
+   * came back `unavailable` (#4968). That page is indexed, so the section may
+   * not server-render as a bare spinner — a crawler reads the loading state as
+   * the page's final content. Everywhere else the list opens behind an
+   * interaction, where a spinner is the right thing and nobody indexes it.
+   */
+  pendingMessage?: string;
 } & ({ climbUuid: string; frames?: never } | { climbUuid?: never; frames: string });
 
 export default function SimilarClimbsList({
@@ -66,6 +76,7 @@ export default function SimilarClimbsList({
   viewerBoardDetails,
   enabled = true,
   initialClimbs,
+  pendingMessage,
   climbUuid,
   frames,
 }: SimilarClimbsListProps) {
@@ -119,6 +130,13 @@ export default function SimilarClimbsList({
   if (!enabled) return null;
 
   if (isLoading) {
+    if (pendingMessage) {
+      return (
+        <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+          {pendingMessage}
+        </Typography>
+      );
+    }
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
         <CircularProgress size={24} />

@@ -790,13 +790,15 @@
     },
     "beta": {
       "heading": "Vidéos de beta",
-      "empty": "Aucune beta filmée pour l’instant."
+      "empty": "Aucune beta filmée pour l’instant.",
+      "unavailable": "La beta n’a pas chargé cette fois. Recharge la page pour réessayer."
     },
     "community": {
       "heading": "Communauté"
     },
     "similar": {
-      "heading": "Des blocs dans le même esprit"
+      "heading": "Des blocs dans le même esprit",
+      "unavailable": "Les blocs similaires n’ont pas chargé. Rechargement en cours…"
     },
     "cta": {
       "climbThis": "Grimper ce bloc",
