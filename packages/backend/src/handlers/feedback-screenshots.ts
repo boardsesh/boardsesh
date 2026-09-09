@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { mkdir, writeFile } from 'fs/promises';
 import { FEEDBACK_SCREENSHOT_MAX_UPLOAD_BYTES, FEEDBACK_SCREENSHOT_PREFIX } from '@boardsesh/shared-schema';
 import { applyCorsHeaders } from './cors';
+import { guardUploadFileStream } from './http-utils';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
 import {
@@ -178,6 +179,10 @@ export async function handleFeedbackScreenshotUpload(req: IncomingMessage, res: 
     let invalidMimeType = false;
 
     busboy.on('file', (name: string, stream: NodeJS.ReadableStream, info: { mimeType: string }) => {
+      // Before every early return: busboy destroys this stream with an error on
+      // any truncated part, and an unlistened one exits the process (#5359).
+      guardUploadFileStream(stream, { route: req.url ?? '/api/feedback-screenshots', field: name });
+
       if (name !== 'screenshot') {
         stream.resume();
         return;

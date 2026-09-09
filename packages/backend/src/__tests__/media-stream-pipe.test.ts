@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
 import { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
+import { recordUncaughtExceptions } from './helpers/uncaught-exceptions';
 
 const isS3ConfiguredMock = vi.hoisted(() => vi.fn(() => true));
 const getFromS3Mock = vi.hoisted(() => vi.fn());
@@ -25,12 +26,14 @@ vi.mock('../services/user-data-export', () => ({
   requestUserDataExport: vi.fn(),
 }));
 
-const { handleStaticBetaThumbnail } = await import('../handlers/static');
+const { handleStaticAvatar, handleStaticBetaThumbnail } = await import('../handlers/static');
 const { handleUserDataExportDownload } = await import('../handlers/user-data-export');
 const { logger } = await import('../utils/logger');
 
 const THUMBNAIL_PATH = '/static/beta-link-thumbnails/instagram/ABC123.jpg';
 const EXPORT_PATH = '/api/user-data-export/download?boardType=kilter';
+const AVATAR_FILE = '11111111-1111-4111-8111-111111111111.jpg';
+const SIZED_AVATAR_PATH = `/static/avatars/${AVATAR_FILE}?size=128`;
 
 // Declared Content-Length far larger than the bytes we actually push, so a
 // truncated response is unambiguous to the client's HTTP parser.
@@ -106,39 +109,19 @@ function closeServer(server: Server): Promise<void> {
  */
 const CLIENT_DEADLINE_MS = 2000;
 
-/**
- * Run `body` with `process.on('uncaughtException')` swapped for a recorder, so a
- * stream error thrown out of a `nextTick` is captured instead of taking down the
- * worker. Node's own listeners are restored with `rawListeners`, which preserves
- * `once` wrappers.
- */
-async function recordUncaughtExceptions(body: () => Promise<void>): Promise<Error[]> {
-  const recorded: Error[] = [];
-  const original = process.rawListeners('uncaughtException') as NodeJS.UncaughtExceptionListener[];
-  process.removeAllListeners('uncaughtException');
-  process.on('uncaughtException', (error) => {
-    recorded.push(error);
-  });
-
-  try {
-    await body();
-    // Let a queued `emitErrorNT` land before we hand the process back.
-    await delay(100);
-  } finally {
-    process.removeAllListeners('uncaughtException');
-    for (const listener of original) process.on('uncaughtException', listener);
-  }
-
-  return recorded;
-}
-
 let infoSpy: ReturnType<typeof vi.spyOn>;
 let warnSpy: ReturnType<typeof vi.spyOn>;
+let errorSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   isS3ConfiguredMock.mockReturnValue(true);
+  // Three separate spies on purpose. `SentryWinstonTransport` is constructed at
+  // `level: 'error'`, so the level IS the alerting behaviour — merging these and
+  // asserting only that *something* logged is what let #5343's regression
+  // through (#5359).
   infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => logger);
   warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+  errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
 });
 
 afterEach(() => {
@@ -178,7 +161,7 @@ describe('media streaming: an S3 body that fails mid-response', () => {
     expect(serverResponse?.writableEnded).toBe(false);
   });
 
-  it('logs the failed read with its route and object key', async () => {
+  it('logs the failed read at error, with its route, object key and the error', async () => {
     getFromS3Mock.mockResolvedValue(s3Object(abortingSource()));
 
     const { baseUrl, server } = await startServer((req, res) =>
@@ -196,17 +179,55 @@ describe('media streaming: an S3 body that fails mid-response', () => {
       await closeServer(server);
     }
 
-    // `aborted` is whitelisted in isClientAbortError, so this classifies as an
-    // abort and logs at info — the point is that it is logged, with the key,
-    // instead of killing the replica.
-    const logged = [...infoSpy.mock.calls, ...warnSpy.mock.calls];
-    expect(logged.length).toBeGreaterThan(0);
-    const streamLog = logged.find((call) => String(call[0]).startsWith('Stream to client'));
-    expect(streamLog).toBeDefined();
-    expect(streamLog?.[1]).toMatchObject({
-      route: THUMBNAIL_PATH,
-      source: 'beta-link-thumbnails/instagram/ABC123.jpg',
-    });
+    // `error`, not `warn` or `info`: SentryWinstonTransport only takes `error`,
+    // so anything quieter means the next R2 degradation is invisible — which is
+    // exactly what #5343 shipped. The error object rides along for the stack.
+    expect(errorSpy).toHaveBeenCalledWith(
+      'Upstream read failed',
+      expect.objectContaining({
+        route: THUMBNAIL_PATH,
+        source: 'beta-link-thumbnails/instagram/ABC123.jpg',
+      }),
+      expect.any(Error),
+    );
+    // And it is not ALSO filed as a routine client abort.
+    expect(infoSpy).not.toHaveBeenCalledWith('Stream to client aborted', expect.anything());
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('answers a sized request whose buffered read dies, instead of hanging', async () => {
+    // `?size=` on a mutable key (`cacheVariant: false`) buffers the original
+    // rather than piping it — the one S3 body not routed through
+    // `pipeStreamToResponse`. Unguarded, the rejection unwound past the router,
+    // which read `aborted` as a client abort and returned without writing, so
+    // the connection sat open until the client gave up (#5359).
+    getFromS3Mock.mockResolvedValue(s3Object(abortingSource()));
+
+    const { baseUrl, server } = await startServer((req, res) => handleStaticAvatar(req, res, AVATAR_FILE, 128));
+
+    try {
+      const recorded = await recordUncaughtExceptions(async () => {
+        // The deadline is the assertion: a regression fails here in 2s rather
+        // than hanging the suite.
+        const response = await fetch(`${baseUrl}${SIZED_AVATAR_PATH}`, {
+          signal: AbortSignal.timeout(CLIENT_DEADLINE_MS),
+        });
+        expect(response.status).toBe(502);
+        await expect(response.json()).resolves.toEqual({ error: 'Upstream read failed' });
+      });
+
+      expect(recorded.map((error) => error.message)).toEqual([]);
+    } finally {
+      await closeServer(server);
+    }
+
+    // Headers were still unsent here, so the 502 branch is reachable — and the
+    // failure still has to reach Sentry.
+    expect(errorSpy).toHaveBeenCalledWith(
+      'Upstream read failed',
+      expect.objectContaining({ source: `avatars/${AVATAR_FILE}`, headersSent: false }),
+      expect.any(Error),
+    );
   });
 
   it('guards the user-data-export download too', async () => {
@@ -270,10 +291,13 @@ describe('media streaming: a client that walks away mid-download', () => {
     // Without pipeline this upstream socket would keep draining into a dead
     // response; with it, the client's disconnect tears the S3 read down.
     expect(source.destroyed).toBe(true);
-    expect(warnSpy).not.toHaveBeenCalled();
+    // The other half of the classification: a tab close must NOT page. If this
+    // ever logs at `error`, every closed tab becomes a Sentry event.
     expect(infoSpy).toHaveBeenCalledWith(
       'Stream to client aborted',
       expect.objectContaining({ route: THUMBNAIL_PATH }),
     );
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });

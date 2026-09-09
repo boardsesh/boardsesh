@@ -4,6 +4,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { mkdir, writeFile, unlink } from 'fs/promises';
 import { applyCorsHeaders } from './cors';
+import { guardUploadFileStream } from './http-utils';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3, deleteUserAvatarsFromS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
@@ -187,6 +188,10 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
     });
 
     busboy.on('file', (name: string, stream: NodeJS.ReadableStream, info: { mimeType: string }) => {
+      // Before every early return: busboy destroys this stream with an error on
+      // any truncated part, and an unlistened one exits the process (#5359).
+      guardUploadFileStream(stream, { route: req.url ?? '/api/avatars', field: name });
+
       if (name !== 'avatar') {
         stream.resume();
         return;
