@@ -64,6 +64,8 @@ Every uncertainty resolves to "v2 wins", so the only path to a repair is the rol
 
 **Why it is not stored in the value.** Wrapping a value in an envelope would hand a rolled-back build JSON where it expects a JWT — including a rollback to #4127 itself, which reads v2. Bare values in both namespaces is what keeps every older bundle able to read what we write. **Why v2 only.** Legacy items are `WHEN_UNLOCKED` and reject on exactly the locked devices this whole thing exists for; a stamp you cannot read when you need it is worse than no stamp. It also leaves phase 2 nothing extra to clean up.
 
+**When legacy cannot be read.** A locked `WHEN_UNLOCKED` legacy item makes the comparison impossible, and the pass reports `reconcile-deferred`: healthy (it is not a failure and never lands in the `failed` count #4128 gates on) but *not* terminal, so the migration does not latch and retries on the next AppState `active`. That matters because an OTA update is applied at launch, and a background cold launch on a locked phone applies it as readily as a foreground one — a pass that declared itself finished there would leave the process on the revoked credential for its whole life. The report-once-per-scope dedupe keys on incomplete rather than failed, so a device retrying on every token read still emits a single event.
+
 **Cost.** One extra lock-safe v2 read per key per process (the generation is then cached), one extra v2 write per mutation, and — only for keys that already have a stamp — one legacy read per key per migration pass. An unstamped key never touches the legacy namespace, so the zero-legacy-contact path for locked devices is preserved.
 
 ## The tombstone contract
@@ -88,7 +90,7 @@ Sign-out does the same thing one level up and *fails loudly*: `clearStoredCreden
 
 **Rolling back is safe.** Every write is mirrored into legacy, so pre-#4127 JS finds a current token. Nothing is deleted from legacy until phase 2.
 
-**Rolling forward is safe from #5345 onward.** The stamp detects the rolled-back build's legacy writes and `migrateKey` repairs v2 from them. Watch the `Keychain Namespace Migration` PostHog event: a non-zero `repaired` count is devices coming back from a rolled-back bundle that would previously have been signed out.
+**Rolling forward is safe from #5345 onward.** The stamp detects the rolled-back build's legacy writes and `migrateKey` repairs v2 from them. Watch the `Keychain Namespace Migration` PostHog event: a non-zero `repaired` count is devices coming back from a rolled-back bundle that would previously have been signed out, and `deferred` is devices that woke up locked and will repair on their next foreground. A scope stuck on `deferred` with no `repaired` ever following it is the thing to escalate.
 
 **Rolling forward to a build between #4127 and #5345 is not safe.** That build reads v2 first and has no way to notice the newer legacy copy, so anyone whose token refreshed during the rollback gets a revoked refresh token, a 401 and a forced sign-out — roughly **1/7 of active users per day spent on the rolled-back build**, since the refresh fires inside the JWT's last day of a 7-day expiry.
 
