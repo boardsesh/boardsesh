@@ -768,6 +768,87 @@ describe('initializeDatabase lock contention (#4104)', () => {
     expect(trackMock.mock.calls[0][1]).toMatchObject({ phase: 'queue-table', sqliteCode: 5 });
   });
 
+  // The cost of the longer ladder, paid back. A remount inside a slow gap only moved
+  // `latestDatabase` and got the already-resolved launch gate, while the chain stayed
+  // parked in `delay()` — so the replacement provider rendered with a null handle and
+  // `schemaReady` false for up to a MINUTE over a connection that was usable
+  // immediately. At the old 17.5s ceiling that stranding cost seconds.
+  it('wakes the backoff when a replacement connection arrives, instead of sleeping out the gap', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    // Spend the fast ladder, which parks the chain in the first slow gap.
+    await vi.advanceTimersByTimeAsync(FAST_LADDER_MS);
+    expect(getDatabaseHandle()).toBeNull();
+
+    // SQLiteProvider remounts. Its connection is fine — whatever held the file is gone
+    // with the connection that waited on it.
+    const replacement = createContendedDatabase();
+    replacement.unlock();
+    await initializeDatabase(replacement.db);
+
+    // ONE tick of the fake clock, nowhere near the remaining gap. Reading the wake off
+    // the fake timer rather than a wall-clock wait keeps the assertion off the box's
+    // load: without the wake, the chain is still asleep here.
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(getDatabaseHandle()).toBe(replacement.db);
+    expect(isSchemaReady()).toBe(true);
+    // Retargeted, not retried: the stale connection is not touched again after the
+    // attempt that predates the remount.
+    expect(contended.failures()).toBe(INIT_RETRY_DELAYS_MS.length + 1);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  // The wake ends a SLEEP; it must not hand the loop a second go at an attempt that is
+  // still running. `wakeFromBackoff` is null outside the sleep, so a remount landing
+  // mid-attempt falls through to the retarget path the chain already had.
+  it('does not double-run an attempt when the remount lands while one is in flight', async () => {
+    vi.useFakeTimers();
+    const healthy = createContendedDatabase();
+    healthy.unlock();
+    const contended = createContendedDatabase({
+      onFailure: (failureCount) => {
+        if (failureCount === 1) void initializeDatabase(healthy.db);
+      },
+    });
+
+    await initializeDatabase(contended.db);
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
+
+    expect(contended.failures()).toBe(1);
+    expect(getDatabaseHandle()).toBe(healthy.db);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  // A remount storm must not turn the ladder into a perpetual motion machine: a wake
+  // shortens a wait, it does not refund budget. The chain still ends inside
+  // MAX_INIT_ATTEMPTS and still reports exactly once.
+  it('spends the same budget however many remounts wake it', async () => {
+    vi.useFakeTimers();
+    // One connection per attempt the ladder allows: the first starts the chain, and
+    // every other one wakes it out of the gap it had just entered. If a wake refunded
+    // budget this would never run out.
+    const connections = Array.from({ length: TOTAL_ATTEMPTS }, () => createContendedDatabase());
+
+    await initializeDatabase(connections[0].db);
+    for (const connection of connections.slice(1)) {
+      await initializeDatabase(connection.db);
+      await vi.advanceTimersByTimeAsync(1);
+    }
+
+    const totalFailures = connections.reduce((total, connection) => total + connection.failures(), 0);
+    expect(totalFailures).toBe(TOTAL_ATTEMPTS);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    // And the chain is over rather than still parked, so nothing is left to fire into
+    // the next launch: no sleep survives the whole remaining ladder.
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
+    expect(totalFailures).toBe(TOTAL_ATTEMPTS);
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+  });
+
   it('does not retry a failure that is not lock contention', async () => {
     // A full disk or a corrupt file fails identically forever; burning the window on
     // it would just delay the report.

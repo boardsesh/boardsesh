@@ -190,8 +190,52 @@ type InitOutcome =
 // shapes differ per platform and are only knowable from telemetry, so they need a
 // test pinning the literal strings Sentry carries.
 
-function delay(durationMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, durationMs));
+/**
+ * Ends the backoff the chain is currently parked in. Non-null ONLY while a sleep is in
+ * flight — `sleepUntilRetry` sets it as it parks and clears it on the way out, so a
+ * wake that arrives during an attempt finds nothing to do and cannot make the loop
+ * run that attempt twice. At most one sleeper exists: `activeInitialization`
+ * single-flights the chain, and every path that clears it has already returned.
+ */
+let wakeFromBackoff: (() => void) | null = null;
+
+/**
+ * The gap between two attempts, endable early.
+ *
+ * The slow #4314 gaps run to a minute, and a `SQLiteProvider` remount arriving inside
+ * one used to be invisible to the chain: `initializeDatabase` moves `latestDatabase`
+ * and hands the remount the already-resolved launch gate, so the replacement provider
+ * renders with a null handle and `schemaReady` false until the sleep runs out — over a
+ * fresh connection that would work right now. The wake exists so that lands on the
+ * NEXT loop iteration instead, which reads `latestDatabase` and retargets through the
+ * path that already exists rather than a second one.
+ *
+ * It shortens a wait; it does not buy an attempt. The budget slot was already spent
+ * before the sleep and `supersededRestarts` is untouched, so a remount loop cannot
+ * keep one chain alive past `MAX_INIT_ATTEMPTS`.
+ */
+function sleepUntilRetry(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    // Both exits null the slot, so "set" and "parked" are the same state. That is what
+    // makes the no-double-run property above STRUCTURAL rather than accidental: there
+    // is no window where a wake could reach a chain that is mid-attempt.
+    //
+    // A left-behind resolver would in fact be inert — it closes over its own timer and
+    // its own promise, both already settled by the time it could be called again, and
+    // the next sleep overwrites the slot regardless. Mutation-tested: dropping either
+    // assignment changes no observable behaviour. They are kept because the invariant,
+    // not the assignment, is the thing this function's callers rely on.
+    const timer = setTimeout(() => {
+      wakeFromBackoff = null;
+      resolve();
+    }, durationMs);
+
+    wakeFromBackoff = () => {
+      clearTimeout(timer);
+      wakeFromBackoff = null;
+      resolve();
+    };
+  });
 }
 
 /**
@@ -237,6 +281,7 @@ async function readJournalMode(db: SQLiteDatabase): Promise<string> {
  * layout, size) scope.
  */
 export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
+  const replacesTheOneInFlight = latestDatabase !== null && latestDatabase !== db;
   // Recorded on EVERY call, including the remount that only gets the shared promise
   // back, so the in-flight chain can retarget onto the live connection.
   latestDatabase = db;
@@ -247,6 +292,11 @@ export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   // old one (#5292). The chain below republishes once the new connection's migrations
   // are in place.
   if (databaseHandle !== null && databaseHandle !== db) setDatabaseHandle(null);
+  // Whatever lock the chain is sitting out belongs to a connection that no longer
+  // exists, so the rest of the gap buys nothing — and at the slow #4314 gaps it costs
+  // this mount up to a minute of null handle. End the sleep and let the loop retarget.
+  // A no-op unless the chain is actually parked (see `wakeFromBackoff`).
+  if (replacesTheOneInFlight) wakeFromBackoff?.();
   activeInitialization ??= beginInitialization(db);
   return activeInitialization;
 }
@@ -427,7 +477,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       }
 
       markStartup('sqlite.recovery.start');
-      await delay(retryDelayMs);
+      await sleepUntilRetry(retryDelayMs);
     }
   })();
 
@@ -469,6 +519,9 @@ export function resetDatabaseInitializationForTests(): void {
   activeInitialization = null;
   latestDatabase = null;
   hasReportedRecovery = false;
+  // A chain a test walked away from must not be reachable from the next one's first
+  // `initializeDatabase` call.
+  wakeFromBackoff = null;
 }
 
 /**
