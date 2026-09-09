@@ -1004,7 +1004,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
     first.unlock();
 
     await initializeDatabase(first.db);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
 
     // The retarget really did run, and not one of its statements ran while a reader
     // could have been handed the connection SQLiteProvider had already closed.
@@ -1020,6 +1020,58 @@ describe('initializeDatabase lock contention (#4104)', () => {
     expect(reportErrorMock).toHaveBeenCalledTimes(1);
     const [, context] = reportErrorMock.mock.calls[0];
     expect(context.tags).toMatchObject({ kind: 'sqlite-init', sqlite_code: 5 });
+  });
+
+  // Where #5355 and #5371 actually meet, and the one path neither could have pinned:
+  // #5355 landed the interruptible backoff, #5371 landed the single gated publish, and
+  // each was reviewed against a tree without the other. A retarget the WAKE started,
+  // superseded again before it finishes, runs the publish gate on a connection the
+  // chain reached through the wake rather than through a slept-out gap — so it is the
+  // combination, not either change, that has to keep #5366's promise.
+  it('never publishes a woken retarget that is superseded before it finishes', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    // What the chain ends up on. Every statement it runs must see a null handle: if the
+    // gate let the woken (and by then closed) retarget publish, that connection would
+    // already be on offer here.
+    const handlesSeenAfterSupersede: unknown[] = [];
+    const newest = createContendedDatabase({
+      onExec: () => {
+        handlesSeenAfterSupersede.push(getDatabaseHandle());
+      },
+    });
+    newest.unlock();
+
+    // The connection the wake retargets onto — closed out from under it by a third
+    // mount while its own setup is still running.
+    let supersededOnce = false;
+    const replacement = createContendedDatabase({
+      onExec: (source) => {
+        if (supersededOnce || !/pending_mutations/i.test(source)) return;
+        supersededOnce = true;
+        void initializeDatabase(newest.db);
+      },
+    });
+    replacement.unlock();
+
+    await initializeDatabase(contended.db);
+    // Park the chain in the first slow gap — the window a remount is invisible in
+    // without the wake, and the reason #5355 exists.
+    await vi.advanceTimersByTimeAsync(FAST_LADDER_MS);
+    expect(getDatabaseHandle()).toBeNull();
+
+    // The wake ends the gap and the loop retargets onto `replacement`.
+    await initializeDatabase(replacement.db);
+    await vi.advanceTimersByTimeAsync(1);
+
+    // The interleaving really happened: without this the assertions below hold
+    // vacuously against a chain that simply woke onto a connection nothing superseded.
+    expect(supersededOnce).toBe(true);
+    expect(handlesSeenAfterSupersede.length).toBeGreaterThan(0);
+    expect(handlesSeenAfterSupersede.every((handle) => handle === null)).toBe(true);
+    expect(getDatabaseHandle()).toBe(newest.db);
+    expect(isSchemaReady()).toBe(true);
   });
 
   // #5366: the other half. Once the refunds run out the guard used to fall through to
@@ -1077,7 +1129,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
     expect(isSchemaReady()).toBe(false);
 
     // Still null after the whole window is spent, and still not ready.
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
     expect(getDatabaseHandle()).toBeNull();
     expect(isSchemaReady()).toBe(false);
 
@@ -1105,7 +1157,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
     setDatabaseHandle(stale.db);
     expect(getDatabaseHandle()).toBe(stale.db);
 
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
 
     expect(getDatabaseHandle()).toBeNull();
     expect(isSchemaReady()).toBe(false);
