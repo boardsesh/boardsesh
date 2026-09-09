@@ -230,6 +230,8 @@ function makeSession(overrides: Partial<SessionDetail> = {}): SessionDetail {
     sessionType: 'party',
     sessionName: null,
     ownerUserId: 'user-1',
+    socialEntityType: 'session',
+    socialEntityId: 'session-1',
     participants: [
       {
         userId: 'user-1',
@@ -374,6 +376,33 @@ describe('SessionDetailContent', () => {
     const sessionVote = voteButtons.find((el) => el.getAttribute('data-entity-type') === 'session');
     expect(sessionVote).toBeTruthy();
     expect(sessionVote!.getAttribute('data-entity-id')).toBe('session-1');
+  });
+
+  it('routes votes/comments to the resolved social entity for a daily-highlight session, not the synthetic sessionId', () => {
+    // `daily:<user>:<date>` has no board_sessions row of its own — voting or
+    // commenting against it would be rejected outright (same class of bug as
+    // #5290 on mobile). The resolver redirects to the day's hardest tick.
+    render(
+      <SessionDetailContent
+        session={makeSession({
+          sessionId: 'daily:user-1:2026-09-06',
+          sessionType: 'daily_highlight',
+          socialEntityType: 'tick',
+          socialEntityId: 'highlight-tick-uuid',
+        })}
+      />,
+    );
+    const voteButtons = screen.getAllByTestId('vote-button');
+    const highlightVote = voteButtons.find((el) => el.getAttribute('data-entity-id') === 'highlight-tick-uuid');
+    expect(highlightVote).toBeTruthy();
+    expect(highlightVote!.getAttribute('data-entity-type')).toBe('tick');
+    expect(voteButtons.some((el) => el.getAttribute('data-entity-id') === 'daily:user-1:2026-09-06')).toBe(false);
+
+    fireEvent.click(screen.getByTestId('session-comment-toggle'));
+    const commentSections = screen.getAllByTestId('comment-section');
+    const highlightComment = commentSections.find((el) => el.getAttribute('data-entity-id') === 'highlight-tick-uuid');
+    expect(highlightComment).toBeTruthy();
+    expect(highlightComment!.getAttribute('data-entity-type')).toBe('tick');
   });
 
   it('renders session-level CommentSection collapsed by default', () => {

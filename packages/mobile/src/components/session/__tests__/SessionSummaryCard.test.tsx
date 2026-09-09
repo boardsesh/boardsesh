@@ -37,7 +37,7 @@ vi.mock('../../you/AvatarGroup', () => ({
   },
 }));
 vi.mock('../../you/FeedSocialRow', () => ({
-  FeedSocialRow: (props: { entityId: string }) => {
+  FeedSocialRow: (props: { entityId: string; entityType: string }) => {
     mockFeedSocialRow(props);
     return createElement('div', { 'data-testid': 'social-row', 'data-entity': props.entityId });
   },
@@ -89,6 +89,10 @@ function session(overrides: Partial<SessionDetail> = {}): SessionDetail {
     gradeDistribution: [],
     boardTypes: ['kilter'],
     hardestGrade: 'V6',
+    // Defaults to a real party session voting/commenting on itself. Daily-highlight
+    // tests below override both to the tick-based pair a `daily:` session resolves to.
+    socialEntityType: 'session',
+    socialEntityId: 'sess-1',
     firstTickAt: '2026-06-15T09:00:00.000Z',
     lastTickAt: '2026-06-15T11:00:00.000Z',
     durationMinutes: 120,
@@ -184,16 +188,46 @@ describe('SessionSummaryCard', () => {
     expect(container.textContent).not.toContain('sessionFeedCard.hardest');
   });
 
-  it('passes the sessionId to FeedSocialRow', () => {
-    render_(session({ sessionId: 'sess-42' }), 'Sesh', false);
-    expect(mockFeedSocialRow).toHaveBeenCalledWith(expect.objectContaining({ entityId: 'sess-42' }));
+  it('passes the resolved social entity (not sessionId) to FeedSocialRow', () => {
+    // A `party` session's socialEntityId happens to equal its sessionId, but the
+    // component must read socialEntityId — not sessionId — since those diverge
+    // for a daily-highlight session (see the dedicated test below). Using two
+    // different values here catches a regression that reads the wrong field.
+    render_(session({ sessionId: 'sess-42', socialEntityType: 'session', socialEntityId: 'sess-42' }), 'Sesh', false);
+    expect(mockFeedSocialRow).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'sess-42', entityType: 'session' }),
+    );
   });
 
-  it('wires onOpenComments through to FeedSocialRow', () => {
+  it('routes votes/comments to the day-hardest tick for a daily-highlight session, not the synthetic sessionId', () => {
+    // `daily:<user>:<date>` has no board_sessions row: validateEntityExists would
+    // reject it outright for both voting and commenting (issue #5290). The
+    // resolver redirects socialEntityType/Id to the day's hardest tick instead.
+    render_(
+      session({
+        sessionId: 'daily:user-1:2026-09-06',
+        sessionType: 'daily_highlight',
+        socialEntityType: 'tick',
+        socialEntityId: 'highlight-tick-uuid',
+      }),
+      'Sesh',
+      false,
+    );
+    expect(mockFeedSocialRow).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'highlight-tick-uuid', entityType: 'tick' }),
+    );
+  });
+
+  it('wires onOpenComments through to FeedSocialRow with the resolved entity type', () => {
     const onOpenComments = vi.fn();
     render(
       createElement(SessionSummaryCard, {
-        session: session({ sessionId: 'sess-42' }),
+        session: session({
+          sessionId: 'daily:user-1:2026-09-06',
+          sessionType: 'daily_highlight',
+          socialEntityType: 'tick',
+          socialEntityId: 'highlight-tick-uuid',
+        }),
         title: 'Sesh',
         titleIsDate: false,
         onOpenComments,
@@ -204,8 +238,10 @@ describe('SessionSummaryCard', () => {
       onOpenComments: (id: string) => void;
     };
     expect(typeof capturedProps.onOpenComments).toBe('function');
-    capturedProps.onOpenComments('sess-42');
-    expect(onOpenComments).toHaveBeenCalledWith('sess-42');
+    // FeedSocialRow only ever hands back the entityId it was given; the card must
+    // supply the entityType itself rather than hard-coding 'session'.
+    capturedProps.onOpenComments('highlight-tick-uuid');
+    expect(onOpenComments).toHaveBeenCalledWith('highlight-tick-uuid', 'tick');
   });
 
   it('passes participants to AvatarGroup', () => {
