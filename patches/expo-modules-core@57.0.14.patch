@@ -1,0 +1,53 @@
+diff --git a/ios/Core/Exceptions/Exception.swift b/ios/Core/Exceptions/Exception.swift
+index a7e93d2a974ff28811619a8cd7a648b19a197520..b49f62c015f812b36fb1f242d87b88b78662f4f6 100644
+--- a/ios/Core/Exceptions/Exception.swift
++++ b/ios/Core/Exceptions/Exception.swift
+@@ -5,9 +5,16 @@ open class Exception: CodedError, ChainableException, CustomStringConvertible, C
+ 
+   /**
+    String describing the reason of the exception.
++
++   boardsesh/boardsesh#5296: `init(name:description:code:)` below only ever
++   assigned `description`, never `reason` — so `debugDescription` (and thus the
++   default `JavaScriptThrowable.message`) always fell back to "undefined
++   reason", regardless of what `Promise.reject(code, description)` was called
++   with. `explicitReason` carries that description through so a two-arg
++   rejection keeps its message on the JS side.
+    */
+   open var reason: String {
+-    "undefined reason"
++    explicitReason ?? "undefined reason"
+   }
+ 
+   /**
+@@ -20,6 +27,14 @@ open class Exception: CodedError, ChainableException, CustomStringConvertible, C
+    */
+   let customCode: String?
+ 
++  /**
++   boardsesh/boardsesh#5296: the description passed to `init(name:description:code:)`,
++   surfaced back out through `reason` so `debugDescription` renders it instead of the
++   base-class default. `nil` for the no-arg initializer, which keeps today's behavior
++   for subclasses that override `reason` themselves.
++   */
++  private let explicitReason: String?
++
+   /**
+    The default initializer that captures the place in the code where the exception was created.
+    - Warning: Call it only without arguments!
+@@ -27,6 +42,7 @@ open class Exception: CodedError, ChainableException, CustomStringConvertible, C
+   public init(file: String = #fileID, line: UInt = #line, function: String = #function) {
+     self.origin = ExceptionOrigin(file: file, line: line, function: function)
+     self.customCode = nil
++    self.explicitReason = nil
+   }
+ 
+   public init(name: String, description: String, code: String? = nil, file: String = #fileID, line: UInt = #line, function: String = #function) {
+@@ -34,6 +50,7 @@ open class Exception: CodedError, ChainableException, CustomStringConvertible, C
+     self.customCode = code
+     self.name = name
+     self.description = description
++    self.explicitReason = description
+   }
+ 
+   // MARK: - CodedError
