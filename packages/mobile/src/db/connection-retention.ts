@@ -38,6 +38,12 @@
 // `OnDestroy` closes every cached connection when the module goes away. In dev the
 // provider's teardown also unregisters the database from the devtools plugin even
 // though our handle survives; the next mount re-registers it.
+//
+// It also costs nothing at the WAL switch, which is the obvious place to worry.
+// `configureMainConnection` flips `journal_mode` on the first launch after install,
+// and SQLite refuses that flip while ANOTHER connection holds the file. This is a
+// refcount bump on the same `NativeDatabase` — the same `sqlite3*` — not a second
+// connection, so there is nothing new to contend with.
 
 import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { reportError } from '../lib/error-reporting';
