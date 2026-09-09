@@ -146,7 +146,10 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
   AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })) },
 }));
-vi.mock('expo-crypto', () => ({ randomUUID: () => 'test-correlation-id' }));
+vi.mock('expo-crypto', () => {
+  let sequence = 0;
+  return { randomUUID: () => `test-uuid-${++sequence}` };
+});
 vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/graphql-client')>()),
   execute: graph.execute,
@@ -159,6 +162,7 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => ({
 vi.mock('../../lib/graphql/ws-client', () => ({ getWsClient: () => ws.client }));
 vi.mock('../../lib/session-store', () => sessionStore);
 vi.mock('../../lib/queue-snapshot-store', () => queueSnapshotStore);
+vi.mock('../../lib/board-details', () => ({ getBoardRenderData: () => null }));
 vi.mock('../../lib/active-board-store', () => ({
   getStoredActiveBoard: async () => activeBoardStore.getSnapshot().board,
 }));
@@ -180,6 +184,7 @@ vi.mock('../queue-snackbar-provider', () => ({ useQueueSnackbar: () => ({ showQu
 vi.mock('../queue/use-cross-board-add-gate', () => ({
   useCrossBoardAddGate: () => async () => ({ outcome: 'add' }),
 }));
+vi.mock('../feature-flags-provider', () => ({ useSharedSessionBrowseEnabled: () => false }));
 vi.mock('../party-profile-provider', () => ({
   usePartyProfile: () => ({ username: undefined, avatarUrl: undefined }),
 }));
@@ -479,6 +484,71 @@ describe('QueueProvider board switch (#5099)', () => {
     expect(latest().playlistSuggestionSource?.activatedClimbUuid).toBe('tension-picked');
   });
 
+  it('filters mixed-board suggestions restored under a matching board key', async () => {
+    const current = makeClimb('kilter-current', 'kilter', 1);
+    const foreign = makeClimb('tension-foreign', 'tension', 8);
+    const compatible = makeClimb('kilter-next', 'kilter', 1);
+    const currentItem = makeItem('item-current', current);
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue: [currentItem],
+      currentClimbQueueItem: currentItem,
+      playlistSuggestionSource: kilterSource([current, foreign, compatible], current),
+      savedAt: '2026-06-10T00:00:00.000Z',
+    });
+    renderProvider();
+    await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe(currentItem.uuid));
+    act(() => latest().nextClimb());
+    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe(compatible.uuid);
+    expect(latest().state.queue.some(({ climb }) => climb.uuid === foreign.uuid)).toBe(false);
+  });
+
+  it('continues a restored mixed source when its current climb belongs to another board', async () => {
+    activeBoardStore.set(boards.tension);
+    const current = makeClimb('kilter-current', 'kilter', 1);
+    const foreign = makeClimb('kilter-foreign', 'kilter', 1);
+    const compatible = makeClimb('tension-next', 'tension', 8);
+    const following = makeClimb('tension-following', 'tension', 8);
+    const currentItem = makeItem('item-current', current);
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue: [currentItem],
+      currentClimbQueueItem: currentItem,
+      playlistSuggestionSource: {
+        ...kilterSource([current, foreign, compatible, following], current),
+        boardKey: TENSION_BOARD_KEY,
+      },
+      savedAt: '2026-06-10T00:00:00.000Z',
+    });
+    renderProvider();
+    await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe(currentItem.uuid));
+    act(() => latest().nextClimb());
+    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe(compatible.uuid);
+    act(() => latest().nextClimb());
+    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe(following.uuid);
+    expect(latest().state.queue.some(({ climb }) => climb.uuid === foreign.uuid)).toBe(false);
+  });
+
+  it('replaces an all-foreign restored source even when its board key matches', async () => {
+    activeBoardStore.set(boards.tension);
+    const current = makeClimb('kilter-current', 'kilter', 1);
+    const currentItem = makeItem('item-current', current);
+    const compatible = makeClimb('tension-feed', 'tension', 8);
+    continuationFeed.climbs = [compatible];
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue: [currentItem],
+      currentClimbQueueItem: currentItem,
+      playlistSuggestionSource: {
+        ...kilterSource([current, makeClimb('foreign', 'kilter', 1)], current),
+        boardKey: TENSION_BOARD_KEY,
+      },
+      savedAt: '2026-06-10T00:00:00.000Z',
+    });
+    renderProvider();
+    await waitFor(() => expect(latest().playlistSuggestionSource?.playlistUuid).toBe('board-feed'));
+    act(() => latest().nextClimb());
+    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe(compatible.uuid);
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
   it('drops a restored snapshot source that belongs to another board, keeping the queue', async () => {
     const kilterClimb = makeClimb('kilter-stored', 'kilter', 1);
     const storedItem = makeItem('item-kilter-stored', kilterClimb);
@@ -676,5 +746,13 @@ describe('QueueProvider cross-board swipe skip (#5099)', () => {
     // Announcing a dead end mid-fetch would be contradicted the moment the feed
     // lands and re-anchors.
     expect(toast.showToast).not.toHaveBeenCalled();
+
+    continuationFeed.climbs = [makeClimb('tension-feed', 'tension', 8)];
+    continuationFeed.isSettled = true;
+    act(() => activeBoardStore.set({ ...boards.tension }));
+    await waitFor(() => expect(latest().playlistSuggestionSource?.boardKey).toBe(TENSION_BOARD_KEY));
+    expect(toast.showToast).not.toHaveBeenCalled();
+    act(() => latest().nextClimb());
+    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe('tension-feed');
   });
 });

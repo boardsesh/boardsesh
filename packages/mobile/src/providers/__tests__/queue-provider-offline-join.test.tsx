@@ -9,6 +9,11 @@
 // on the edge back to reachable. Same harness as
 // queue-provider-backgrounded-join.test.tsx, with the AppState gate swapped
 // for a controllable connectivity store.
+// This transport-only harness mounts no React Query provider.
+vi.mock('../queue/use-board-continuation-feed', () => ({
+  useBoardContinuationFeed: () => ({ climbs: [], isSettled: true }),
+}));
+
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

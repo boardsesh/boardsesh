@@ -692,6 +692,7 @@ export function PlayDrawer({
       displayedQueueItem,
       navigationSuggestionSource,
       PREFETCH_AHEAD,
+      navigationBoardConfig,
     );
     const framesToWarm = new Set<string>();
     for (const item of upcomingItems) {
@@ -705,7 +706,15 @@ export function PlayDrawer({
       framesToWarm.add(frames);
     }
     return [...framesToWarm].join(PREFETCH_FRAMES_SEPARATOR);
-  }, [queue, displayedQueueItem, navigationSuggestionSource, boardConfig, renderBoardConfig, displayedClimbFrames]);
+  }, [
+    queue,
+    displayedQueueItem,
+    navigationSuggestionSource,
+    navigationBoardConfig,
+    boardConfig,
+    renderBoardConfig,
+    displayedClimbFrames,
+  ]);
   // Split back out of the joined key rather than memoized on the walk's inputs:
   // the queue gets a fresh array identity on every broadcast, and a new array
   // here would remount every warmed render for a list that hasn't changed.

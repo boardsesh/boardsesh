@@ -51,3 +51,23 @@ export function createBoardFeedSuggestionSource({
     climbs: anchorIndex >= 0 ? feedClimbs : [anchorClimb, ...feedClimbs],
   };
 }
+
+/**
+ * Older snapshots could stamp a mixed-board playlist with the active board key.
+ * Normalize every provider source before navigation reads it, preserving identity
+ * when it already fits. A synthetic board feed alone may keep its foreign first
+ * anchor: it connects the previous board's current climb to this board's feed.
+ */
+export function normalizeBoardSuggestionSource(
+  source: PlaylistSuggestionSource,
+  isClimbable: (climb: Climb) => boolean,
+): PlaylistSuggestionSource {
+  const climbs = source.climbs.filter(
+    (climb, index) =>
+      (source.playlistUuid === BOARD_FEED_SUGGESTION_SOURCE_ID &&
+        index === 0 &&
+        climb.uuid === source.activatedClimbUuid) ||
+      isClimbable(climb),
+  );
+  return climbs.length === source.climbs.length ? source : { ...source, climbs };
+}

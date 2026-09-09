@@ -359,6 +359,7 @@ export function findUpcomingQueueItemsWithSuggestions(
   currentClimbQueueItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
   count: number,
+  activeConfig?: ActiveBoardForCompatibility,
 ): ClimbQueueItem[] {
   const upcomingItems: ClimbQueueItem[] = [];
   if (count <= 0) return upcomingItems;
@@ -375,7 +376,7 @@ export function findUpcomingQueueItemsWithSuggestions(
   let stepsLeft = count + queue.length;
   while (upcomingItems.length < count && stepsLeft > 0) {
     stepsLeft -= 1;
-    const nextItem = findNextQueueItemWithSuggestions(queue, walkFrom, source);
+    const nextItem = findNextQueueItemWithSuggestions(queue, walkFrom, source, activeConfig);
     if (!nextItem) break;
     if (seenItemUuids.has(nextItem.uuid)) break;
     seenItemUuids.add(nextItem.uuid);

@@ -624,7 +624,7 @@ describe('selectNextQueueItemWithSuggestions board awareness', () => {
     expect(selection.skippedItems).toEqual([]);
   });
 
-  it('falls through to the suggestion feed when the whole tail is off-board', () => {
+  it('follows the active list before scanning an off-board queue tail', () => {
     // The exact #5099 shape: every remaining queued climb belongs to the board
     // the climber left, so `next` must re-anchor onto the feed rather than
     // returning null and dead-ending the swipe.
@@ -639,7 +639,8 @@ describe('selectNextQueueItemWithSuggestions board awareness', () => {
     const selection = selectNextQueueItemWithSuggestions(queue, queue[0], source, TENSION_BOARD);
     expect(selection.item?.climb.uuid).toBe('feed-1');
     expect(selection.item?.uuid).toBe(getPlaylistPeekQueueItemUuid('feed-1'));
-    expect(selection.skippedItems).toHaveLength(2);
+    // List-first navigation never considered the queue tail, so no skip notice.
+    expect(selection.skippedItems).toEqual([]);
   });
 
   it('returns no item when the tail is off-board and there is no feed to fall back on', () => {
@@ -720,4 +721,15 @@ describe('computeNavigationStateWithSuggestions board awareness', () => {
     expect(state.prevItem?.uuid).toBe('item-kilter-1');
     expect(state.canPrevious).toBe(true);
   });
+});
+
+it('prefetches the same reachable climbs as board-aware forward navigation', () => {
+  const queue = [
+    queueItemOnBoard('current', 'tension', 8),
+    queueItemOnBoard('kilter-1', 'kilter', 1),
+    queueItemOnBoard('kilter-2', 'kilter', 1),
+    queueItemOnBoard('tension-1', 'tension', 8),
+    queueItemOnBoard('tension-2', 'tension', 8),
+  ];
+  expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], null, 2, TENSION_BOARD)).toEqual([queue[3], queue[4]]);
 });

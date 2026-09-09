@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import type { Climb } from '@boardsesh/queue';
+import type { Climb, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { canAddClimbToBoard, type BoardCompatibilityTarget } from '@boardsesh/board-config';
 import { findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
-import { createBoardFeedSuggestionSource, BOARD_FEED_SUGGESTION_SOURCE_ID } from '../board-feed-suggestion-source';
+import {
+  createBoardFeedSuggestionSource,
+  normalizeBoardSuggestionSource,
+  BOARD_FEED_SUGGESTION_SOURCE_ID,
+} from '../board-feed-suggestion-source';
 
 function makeClimb(uuid: string, boardType = 'tension', layoutId = 8): Climb {
   return {
@@ -64,5 +69,58 @@ describe('createBoardFeedSuggestionSource', () => {
     });
     expect(next?.climb.uuid).toBe('tension-1');
     expect(next?.suggested).toBe(true);
+  });
+});
+
+describe('normalizeBoardSuggestionSource', () => {
+  const tensionTarget: BoardCompatibilityTarget = { board_name: 'tension', layout_id: 8, holdsData: [] };
+  const fitsTension = (climb: Climb) => canAddClimbToBoard(climb, tensionTarget).ok;
+  function sourceFor(climbs: Climb[], playlistUuid = 'saved-playlist'): PlaylistSuggestionSource {
+    return { playlistUuid, activatedClimbUuid: climbs[0].uuid, boardKey: BOARD_KEY, climbs };
+  }
+
+  it('retains identity when every climb already fits', () => {
+    const source = sourceFor([makeClimb('first'), makeClimb('next')]);
+    expect(normalizeBoardSuggestionSource(source, fitsTension)).toBe(source);
+  });
+
+  it('filters a foreign activated climb in a real playlist without mutating its snapshot', () => {
+    const foreign = makeClimb('foreign', 'kilter', 1);
+    const local = makeClimb('local');
+    const source = sourceFor([foreign, local]);
+    expect(normalizeBoardSuggestionSource(source, fitsTension).climbs).toEqual([local]);
+    expect(source.climbs).toEqual([foreign, local]);
+  });
+
+  it('keeps only the synthetic first foreign anchor and can navigate forward from it', () => {
+    const anchor = makeClimb('anchor', 'kilter', 1);
+    const local = makeClimb('local');
+    const source = sourceFor([anchor, makeClimb('foreign', 'kilter', 1), local], BOARD_FEED_SUGGESTION_SOURCE_ID);
+    const normalized = normalizeBoardSuggestionSource(source, fitsTension);
+    expect(normalized.climbs).toEqual([anchor, local]);
+    const current = { uuid: 'current', climb: anchor };
+    expect(findNextQueueItemWithSuggestions([current], current, normalized)?.climb).toBe(local);
+  });
+
+  it('rejects a same-layout climb for a different board size', () => {
+    const target: BoardCompatibilityTarget = { board_name: 'woods', layout_id: 1, size_id: 2, holdsData: [] };
+    const local = { ...makeClimb('local', 'woods', 1), compatibleSizeIds: [2] };
+    const foreign = { ...makeClimb('small', 'woods', 1), compatibleSizeIds: [1] };
+    const normalized = normalizeBoardSuggestionSource(
+      sourceFor([local, foreign]),
+      (climb) => canAddClimbToBoard(climb, target).ok,
+    );
+    expect(normalized.climbs).toEqual([local]);
+  });
+
+  it('rejects a same-layout MoonBoard climb requiring uninstalled hold sets', () => {
+    const target: BoardCompatibilityTarget = { board_name: 'moonboard', layout_id: 3, set_ids: [5], holdsData: [] };
+    const local = { ...makeClimb('base', 'moonboard', 3), frames: 'p1r42p9r43' };
+    const foreign = { ...makeClimb('wooden', 'moonboard', 3), frames: 'p1r42p2r43p17r44' };
+    const normalized = normalizeBoardSuggestionSource(
+      sourceFor([local, foreign]),
+      (climb) => canAddClimbToBoard(climb, target).ok,
+    );
+    expect(normalized.climbs).toEqual([local]);
   });
 });

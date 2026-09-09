@@ -17,6 +17,7 @@ import {
   generateClientId,
   playlistSuggestionSourceMatches,
   getQueueBoardKey,
+  isPlaylistPeekQueueItemUuid,
   decideAdd,
   deriveAcceptedConfigs,
 } from '@boardsesh/queue';
@@ -36,7 +37,12 @@ import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/qu
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
-import { classifyClimbBoardCompatibility, toBoardName, type ActiveBoardForCompatibility } from '@boardsesh/board-config';
+import {
+  canAddClimbToBoard,
+  classifyClimbBoardCompatibility,
+  toBoardName,
+  type ActiveBoardForCompatibility,
+} from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
@@ -56,6 +62,7 @@ import {
 } from '@boardsesh/play-view';
 import { useSharedSessionBrowseEnabled } from './feature-flags-provider';
 import { toClimbQueueItem } from '../lib/queue-conversion';
+import { getPlaylistRenderBoardTarget } from '../lib/playlists/playlist-climb-render-board';
 import { resolveCommittableQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
 import { track, registerRenderSuperProperties } from '../lib/analytics';
 import {
@@ -95,7 +102,10 @@ import {
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
 } from './queue/queue-contexts';
-import { createBoardFeedSuggestionSource } from '../lib/playlists/board-feed-suggestion-source';
+import {
+  createBoardFeedSuggestionSource,
+  normalizeBoardSuggestionSource,
+} from '../lib/playlists/board-feed-suggestion-source';
 import { useBoardContinuationFeed } from './queue/use-board-continuation-feed';
 import { useCrossBoardAddGate } from './queue/use-cross-board-add-gate';
 import { useQueueRegrade } from './queue/use-queue-regrade';
@@ -329,10 +339,37 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // for the feed comes back to the board's popular list, not the original
   // browse. One slot, one source — holding a source per board would need state
   // that outlives the snapshot we persist.
-  const playlistSuggestionSource =
-    activeBoardKey == null || rawPlaylistSuggestionSource?.boardKey === activeBoardKey
-      ? rawPlaylistSuggestionSource
-      : null;
+  const currentClimbForSource = state.currentClimbQueueItem?.climb;
+  const playlistSuggestionSource = useMemo(() => {
+    if (!rawPlaylistSuggestionSource || !activeBoard || activeBoardKey == null) return rawPlaylistSuggestionSource;
+    if (rawPlaylistSuggestionSource.boardKey !== activeBoardKey) return null;
+    const target = getPlaylistRenderBoardTarget({
+      boardName: activeBoard.boardType,
+      layoutId: activeBoard.layoutId,
+      sizeId: activeBoard.sizeId,
+      setIds: activeBoard.setIds,
+      angle: activeBoard.angle,
+    });
+    const normalized = normalizeBoardSuggestionSource(
+      rawPlaylistSuggestionSource,
+      (climb) => canAddClimbToBoard(climb, target).ok,
+    );
+    // Old mixed snapshots can also have a foreign current climb. Preserve its
+    // position as an anchor, never as a successor, so the surviving list is reachable.
+    if (
+      currentClimbForSource &&
+      normalized !== rawPlaylistSuggestionSource &&
+      rawPlaylistSuggestionSource.climbs.some(({ uuid }) => uuid === currentClimbForSource.uuid) &&
+      !normalized.climbs.some(({ uuid }) => uuid === currentClimbForSource.uuid)
+    ) {
+      return createBoardFeedSuggestionSource({
+        anchorClimb: currentClimbForSource,
+        feedClimbs: normalized.climbs,
+        boardKey: activeBoardKey,
+      });
+    }
+    return normalized;
+  }, [rawPlaylistSuggestionSource, activeBoard, activeBoardKey, currentClimbForSource]);
   const playlistSuggestionSourceRef = useRef<PlaylistSuggestionSource | null>(null);
   playlistSuggestionSourceRef.current = playlistSuggestionSource;
   const { showToast } = useToast();
@@ -375,20 +412,22 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     suggestionSourceIsOffBoard,
   );
   const anchorClimbForReanchor = state.currentClimbQueueItem?.climb ?? null;
-  useEffect(() => {
-    if (!suggestionSourceIsOffBoard || activeBoardKey == null || !anchorClimbForReanchor) return;
-    const reanchoredSource = createBoardFeedSuggestionSource({
+  const pendingReanchoredSource = useMemo(() => {
+    if (!suggestionSourceIsOffBoard || activeBoardKey == null || !anchorClimbForReanchor) return null;
+    return createBoardFeedSuggestionSource({
       anchorClimb: anchorClimbForReanchor,
       feedClimbs: boardContinuationClimbs,
       boardKey: activeBoardKey,
     });
-    // Null while the feed is still empty: leave the stale source masked so this
-    // effect runs again when the climbs land, rather than installing a dead end.
-    if (!reanchoredSource) return;
-    // The climber may have activated a climb on the new board while the feed was
-    // in flight. That source is already anchored correctly — never overwrite it.
-    setPlaylistSuggestionSourceState((current) => (current?.boardKey === activeBoardKey ? current : reanchoredSource));
   }, [suggestionSourceIsOffBoard, activeBoardKey, anchorClimbForReanchor, boardContinuationClimbs]);
+  useEffect(() => {
+    if (!pendingReanchoredSource) return;
+    // Replace only the exact rejected source. A matching key may still contain
+    // no usable climbs, while a newer activation or explicit clear must win.
+    setPlaylistSuggestionSourceState((current) =>
+      current === rawPlaylistSuggestionSource ? pendingReanchoredSource : current,
+    );
+  }, [pendingReanchoredSource, rawPlaylistSuggestionSource]);
 
   // The signed-in user's display name + avatar (undefined while signed out or
   // still loading). Sent with JOIN_SESSION so the backend roster shows real
@@ -1573,6 +1612,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // latest queue, not on a render that may be a tick behind). The two can
   // disagree in the window between a dispatch and its commit, so whichever
   // reaches a skip run first reports it and the other stays quiet.
+  const currentQueueItemUuid = state.currentClimbQueueItem?.uuid;
   const skipRunReportedForCurrentRef = useRef(false);
   useEffect(() => {
     skipRunReportedForCurrentRef.current = false;
@@ -1646,7 +1686,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       deadEndReportedBoardKeyRef.current = null;
       return;
     }
-    if (!boardContinuationIsSettled || deadEndReportedBoardKeyRef.current === activeBoardKey) return;
+    // A settled feed can already have a usable source waiting for its state commit.
+    if (!boardContinuationIsSettled || pendingReanchoredSource || deadEndReportedBoardKeyRef.current === activeBoardKey)
+      return;
     deadEndReportedBoardKeyRef.current = activeBoardKey;
     // A swipe from here can add nothing to this; don't let it repeat the news.
     skipRunReportedForCurrentRef.current = true;
@@ -1658,7 +1700,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       }),
       'info',
     );
-  }, [forwardSelection, boardContinuationIsSettled, activeBoardKey, showToast, tSettings, trackClimbsSkippedOnBoard]);
+  }, [
+    forwardSelection,
+    boardContinuationIsSettled,
+    pendingReanchoredSource,
+    activeBoardKey,
+    showToast,
+    tSettings,
+    trackClimbsSkippedOnBoard,
+  ]);
 
   const nextClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;

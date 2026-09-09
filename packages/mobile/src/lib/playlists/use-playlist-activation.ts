@@ -336,7 +336,7 @@ export function usePlaylistActivation({
         }),
         boardName: activeBoard.boardType,
         angle: activeBoard.angle,
-        // Keep climbs THIS board can actually draw out of the swipe order. The
+        // Keep climbs this board cannot draw out of the swipe order. The
         // playlist-detail screens run the resolver in all-boards mode on
         // purpose, so `allClimbs` — which seeds the synchronous source before
         // the board-scoped refresh lands — carries other board types, other
