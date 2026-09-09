@@ -20,6 +20,16 @@ export const USER_CLIMB_PERCENTILE_CACHE_TAG = 'user-climb-percentile';
 /**
  * Execute a GraphQL query via HTTP (non-cached version for internal use).
  * Pass `signal` to enforce a deadline via `AbortController`.
+ *
+ * Sends `INTERNAL_SERVICE_SECRET` as a bearer credential when configured, so
+ * the backend can identify this as Boardsesh's own trusted SSR data-fetch
+ * layer rather than an anonymous visitor (issue #5291) — see
+ * `authenticateInternalServiceSecret` in
+ * `packages/backend/src/middleware/internal-service-auth.ts`. This module is
+ * `server-only`, so the secret never reaches a client bundle. Safe to leave
+ * unset: the call still succeeds, just under the (pre-#5291) anonymous
+ * identity, so this degrades rather than breaks when the secret isn't yet
+ * provisioned in an environment.
  */
 export async function executeGraphQLInternal<T = unknown, V extends Variables = Variables>(
   document: RequestDocument,
@@ -27,9 +37,11 @@ export async function executeGraphQLInternal<T = unknown, V extends Variables = 
   signal?: AbortSignal,
 ): Promise<T> {
   const url = getGraphQLHttpUrl();
+  const internalServiceSecret = process.env.INTERNAL_SERVICE_SECRET;
   const client = new GraphQLClient(url, {
     headers: {
       'Content-Type': 'application/json',
+      ...(internalServiceSecret ? { Authorization: `Bearer ${internalServiceSecret}` } : {}),
     },
     signal,
   });

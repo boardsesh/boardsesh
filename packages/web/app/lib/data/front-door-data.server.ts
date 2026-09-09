@@ -13,12 +13,15 @@ import type { BoardName } from '@/app/lib/types';
  * Server-side reads for the climb front door's two GraphQL-backed sections.
  *
  * Both are cached, and the cache on `similarClimbs` is load-bearing rather than
- * an optimisation. The resolver is rate-limited 30 requests/minute per IP
- * (`packages/backend/src/graphql/resolvers/climbs/queries.ts`), and a
- * server-side call presents ONE IP — the web server's — for the whole world's
- * traffic. Its CTE also scans `board_climb_holds` across the entire layout. A
- * crawler walking a few hundred thousand climb pages is precisely the workload
- * that saturates both.
+ * an optimisation. The resolver is rate-limited 30 requests/minute
+ * (`packages/backend/src/graphql/resolvers/climbs/queries.ts`), and its CTE
+ * scans `board_climb_holds` across the entire layout. A crawler walking a few
+ * hundred thousand climb pages is precisely the workload that saturates it.
+ *
+ * `executeGraphQLInternal` authenticates as a trusted internal-service caller
+ * (`INTERNAL_SERVICE_SECRET`, issue #5291) rather than presenting an anonymous
+ * IP, so this no longer collapses onto the same per-visitor bucket every other
+ * anonymous caller shares — see `applyRateLimit`'s `isInternalService` branch.
  *
  * Both helpers swallow their errors and return an empty list. A 429 or a
  * backend blip must degrade the section, never 500 an indexed page.
