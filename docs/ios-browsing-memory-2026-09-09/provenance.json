@@ -37,6 +37,72 @@
       "warmupCycles": 2,
       "measuredCycles": 20,
       "valid": true
+    },
+    {
+      "name": "list-idle-replay-01",
+      "hostRunId": "ed5a527a-9838-4858-a9a2-2a3bee95ba46",
+      "runtimeId": "1788903961852-nc351v62",
+      "pid": 89583,
+      "processStartedAt": "Wed  9 Sep 07:46:00 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "list-expanding-01",
+      "hostRunId": "d57d18e5-1d4d-4f36-a0f9-c21fca734f30",
+      "runtimeId": "1788908582032-vzs70r7l",
+      "pid": 58780,
+      "processStartedAt": "Wed  9 Sep 09:03:00 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "list-idle-expanding-01",
+      "hostRunId": "2435e363-ad02-4285-818d-dbaa351c5e91",
+      "runtimeId": "1788911425898-l4y378zs",
+      "pid": 11711,
+      "processStartedAt": "Wed  9 Sep 09:50:24 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "carousel-replay-01",
+      "hostRunId": "c41d692f-779d-4c79-97d5-9961a798acbe",
+      "runtimeId": "1788913306987-c3cvxbc5",
+      "pid": 84435,
+      "processStartedAt": "Wed  9 Sep 10:21:45 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "carousel-replay-02",
+      "hostRunId": "24a386ce-d89e-452d-b0c9-880abcfde78f",
+      "runtimeId": "1788916070526-cccdjy5i",
+      "pid": 37109,
+      "processStartedAt": "Wed  9 Sep 11:07:49 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "carousel-idle-replay-02",
+      "hostRunId": "74f97fd9-7b1b-464c-9273-d8dfbfae82d4",
+      "runtimeId": "1788918543818-srwh6iou",
+      "pid": 64669,
+      "processStartedAt": "Wed  9 Sep 11:49:02 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
     }
   ],
   "appIdentity": {
@@ -44,5 +110,11 @@
     "executableUuid": "F4F60E96-B015-3C10-9988-D774246B73D2 (arm64)",
     "executableSha256": "530692605a0d8174e514ba93e95d15ebbbd90bd2116ff6e2a515d63158dabdaf",
     "embeddedBundleSha256": "7d4b4556810773d2a325a6127a181477cbaed52a4e71dbbf7a214d5f9a373ce3"
+  },
+  "otaProvenance": {
+    "updatesEnabled": true,
+    "embeddedUpdateId": "1dfd87a5-5a8d-4490-abba-0c0a3c999006",
+    "embeddedRuntimeVersion": "296198af47a24bec0c7baa75f938038a8cc3bb70",
+    "audit": "Read-only database inventory contained only embedded updates. Current entry matches embedded manifest; native launcher resolves embedded status to binary main.jsbundle. Launch checks fail HTTP 400 because no channel is configured. Snapshots do not directly export per-launch update ID."
   }
 }

@@ -1,0 +1,663 @@
+{
+  "schemaVersion": 1,
+  "sourceKind": "saved vmmap -summary reports; no live query",
+  "sizeConvention": "Exact printed K/M/G strings and rounding preserved; no exact byte conversion",
+  "regionColumns": [
+    "VIRTUAL SIZE",
+    "RESIDENT SIZE",
+    "DIRTY SIZE",
+    "SWAPPED SIZE",
+    "VOLATILE SIZE",
+    "NONVOL SIZE",
+    "EMPTY SIZE",
+    "REGION COUNT (non-coalesced)"
+  ],
+  "mallocZoneColumns": [
+    "VIRTUAL SIZE",
+    "RESIDENT SIZE",
+    "DIRTY SIZE",
+    "SWAPPED SIZE",
+    "ALLOCATION COUNT",
+    "BYTES ALLOCATED",
+    "DIRTY+SWAP FRAG SIZE",
+    "% FRAG",
+    "REGION COUNT"
+  ],
+  "checkpoints": {
+    "0": {
+      "source": "ownership/home-0/vmmap.json",
+      "sourceSha256": "b9d1bd56878248a53523e570279b797482ab8e82e079e3c54fcfa6ccbab1659c",
+      "usable": true,
+      "toolStatus": {
+        "status": 0,
+        "timedOut": false,
+        "overflow": false,
+        "cleanupConfirmed": true,
+        "durationMs": 690
+      },
+      "processIdentity": {
+        "pid": 64228,
+        "startedAt": "Wed  9 Sep 12:29:17 2026",
+        "executable": "/Users/marco/Library/Developer/CoreSimulator/Devices/EF3B3CC1-A130-4254-82A6-6ADCA7423106/data/Containers/Bundle/Application/6234AA9F-D767-49C5-8686-32A04D6C9C7F/Boardsesh.app/Boardsesh"
+      },
+      "printedDateTime": "2026-09-09 12:32:58.835 +1000",
+      "printedLaunchTime": "2026-09-09 12:29:17.261 +1000",
+      "printedTargetType": "corpse",
+      "physicalFootprint": "282.4M",
+      "peakPhysicalFootprint": "304.4M",
+      "summaryLines": [
+        "ReadOnly portion of Libraries: Total=2.0G resident=677.3M(34%) swapped_out_or_unallocated=1.3G(66%)",
+        "Writable regions: Total=346.3M written=1971K(1%) resident=294.7M(85%) swapped_out=0K(0%) unallocated=51.6M(15%)"
+      ],
+      "regions": {
+        "CG raster data": {
+          "columns": {
+            "VIRTUAL SIZE": "65.9M",
+            "RESIDENT SIZE": "16.5M",
+            "DIRTY SIZE": "16.5M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "193"
+          },
+          "annotation": "",
+          "printedRow": "CG raster data                    65.9M    16.5M    16.5M       0K       0K       0K       0K      193 "
+        },
+        "CoreAnimation": {
+          "columns": {
+            "VIRTUAL SIZE": "18.0M",
+            "RESIDENT SIZE": "16.5M",
+            "DIRTY SIZE": "16.5M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "2400K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "161"
+          },
+          "annotation": "",
+          "printedRow": "CoreAnimation                     18.0M    16.5M    16.5M       0K       0K    2400K       0K      161 "
+        },
+        "IOSurface": {
+          "columns": {
+            "VIRTUAL SIZE": "2944K",
+            "RESIDENT SIZE": "0K",
+            "DIRTY SIZE": "0K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "3"
+          },
+          "annotation": "",
+          "printedRow": "IOSurface                         2944K       0K       0K       0K       0K       0K       0K        3 "
+        },
+        "MALLOC metadata": {
+          "columns": {
+            "VIRTUAL SIZE": "1600K",
+            "RESIDENT SIZE": "1104K",
+            "DIRTY SIZE": "896K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "6"
+          },
+          "annotation": "",
+          "printedRow": "MALLOC metadata                   1600K    1104K     896K       0K       0K       0K       0K        6 "
+        },
+        "MALLOC_SMALL": {
+          "columns": {
+            "VIRTUAL SIZE": "152.6M",
+            "RESIDENT SIZE": "151.5M",
+            "DIRTY SIZE": "77.0M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "386"
+          },
+          "annotation": "see MALLOC ZONE table below",
+          "printedRow": "MALLOC_SMALL                     152.6M   151.5M    77.0M       0K       0K       0K       0K      386         see MALLOC ZONE table below"
+        },
+        "MALLOC_SMALL (empty)": {
+          "columns": {
+            "VIRTUAL SIZE": "19.4M",
+            "RESIDENT SIZE": "13.5M",
+            "DIRTY SIZE": "0K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "17"
+          },
+          "annotation": "see MALLOC ZONE table below",
+          "printedRow": "MALLOC_SMALL (empty)              19.4M    13.5M       0K       0K       0K       0K       0K       17         see MALLOC ZONE table below"
+        },
+        "MALLOC_TINY": {
+          "columns": {
+            "VIRTUAL SIZE": "4096K",
+            "RESIDENT SIZE": "176K",
+            "DIRTY SIZE": "176K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "1"
+          },
+          "annotation": "see MALLOC ZONE table below",
+          "printedRow": "MALLOC_TINY                       4096K     176K     176K       0K       0K       0K       0K        1         see MALLOC ZONE table below"
+        },
+        "Stack": {
+          "columns": {
+            "VIRTUAL SIZE": "14.4M",
+            "RESIDENT SIZE": "736K",
+            "DIRTY SIZE": "656K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "13"
+          },
+          "annotation": "",
+          "printedRow": "Stack                             14.4M     736K     656K       0K       0K       0K       0K       13 "
+        },
+        "Stack (reserved)": {
+          "columns": {
+            "VIRTUAL SIZE": "544K",
+            "RESIDENT SIZE": "0K",
+            "DIRTY SIZE": "0K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "1"
+          },
+          "annotation": "reserved VM address space (unallocated)",
+          "printedRow": "Stack (reserved)                   544K       0K       0K       0K       0K       0K       0K        1         reserved VM address space (unallocated)"
+        },
+        "VM_ALLOCATE": {
+          "columns": {
+            "VIRTUAL SIZE": "146.0M",
+            "RESIDENT SIZE": "122.5M",
+            "DIRTY SIZE": "122.5M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "39"
+          },
+          "annotation": "",
+          "printedRow": "VM_ALLOCATE                      146.0M   122.5M   122.5M       0K       0K       0K       0K       39 "
+        },
+        "dyld private memory": {
+          "columns": {
+            "VIRTUAL SIZE": "3.0G",
+            "RESIDENT SIZE": "20.8M",
+            "DIRTY SIZE": "20.8M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "89"
+          },
+          "annotation": "",
+          "printedRow": "dyld private memory                3.0G    20.8M    20.8M       0K       0K       0K       0K       89 "
+        },
+        "mapped file": {
+          "columns": {
+            "VIRTUAL SIZE": "377.6M",
+            "RESIDENT SIZE": "30.4M",
+            "DIRTY SIZE": "0K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "25"
+          },
+          "annotation": "",
+          "printedRow": "mapped file                      377.6M    30.4M       0K       0K       0K       0K       0K       25 "
+        },
+        "unused but dirty shlib __DATA": {
+          "columns": {
+            "VIRTUAL SIZE": "20.3M",
+            "RESIDENT SIZE": "17.2M",
+            "DIRTY SIZE": "3613K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "537"
+          },
+          "annotation": "",
+          "printedRow": "unused but dirty shlib __DATA     20.3M    17.2M    3613K       0K       0K       0K       0K      537 "
+        },
+        "TOTAL": {
+          "columns": {
+            "VIRTUAL SIZE": "6.1G",
+            "RESIDENT SIZE": "1.2G",
+            "DIRTY SIZE": "289.5M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "2448K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "4784"
+          },
+          "annotation": "",
+          "printedRow": "TOTAL                              6.1G     1.2G   289.5M       0K       0K    2448K       0K     4784 "
+        },
+        "TOTAL, minus reserved VM space": {
+          "columns": {
+            "VIRTUAL SIZE": "6.1G",
+            "RESIDENT SIZE": "1.2G",
+            "DIRTY SIZE": "289.5M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "2448K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "4784"
+          },
+          "annotation": "",
+          "printedRow": "TOTAL, minus reserved VM space     6.1G     1.2G   289.5M       0K       0K    2448K       0K     4784 "
+        }
+      },
+      "mallocZones": {
+        "DefaultMallocZone_0x1069b8000": {
+          "columns": {
+            "VIRTUAL SIZE": "173.5M",
+            "RESIDENT SIZE": "162.3M",
+            "DIRTY SIZE": "74.7M",
+            "SWAPPED SIZE": "0K",
+            "ALLOCATION COUNT": "426461",
+            "BYTES ALLOCATED": "118.3M",
+            "DIRTY+SWAP FRAG SIZE": "0K",
+            "% FRAG": "0%",
+            "REGION COUNT": "233"
+          },
+          "printedRow": "DefaultMallocZone_0x1069b8000             173.5M     162.3M      74.7M         0K     426461     118.3M         0K      0%     233"
+        },
+        "QuartzCore_0x106a80000": {
+          "columns": {
+            "VIRTUAL SIZE": "3440K",
+            "RESIDENT SIZE": "3392K",
+            "DIRTY SIZE": "2768K",
+            "SWAPPED SIZE": "0K",
+            "ALLOCATION COUNT": "25146",
+            "BYTES ALLOCATED": "2308K",
+            "DIRTY+SWAP FRAG SIZE": "460K",
+            "% FRAG": "17%",
+            "REGION COUNT": "158"
+          },
+          "printedRow": "QuartzCore_0x106a80000                     3440K      3392K      2768K         0K      25146      2308K       460K     17%     158"
+        },
+        "AttributeGraph_0x113109dc0": {
+          "columns": {
+            "VIRTUAL SIZE": "1024K",
+            "RESIDENT SIZE": "912K",
+            "DIRTY SIZE": "896K",
+            "SWAPPED SIZE": "0K",
+            "ALLOCATION COUNT": "20010",
+            "BYTES ALLOCATED": "715K",
+            "DIRTY+SWAP FRAG SIZE": "181K",
+            "% FRAG": "21%",
+            "REGION COUNT": "1"
+          },
+          "printedRow": "AttributeGraph_0x113109dc0                 1024K       912K       896K         0K      20010       715K       181K     21%       1"
+        },
+        "AttributeGraph graph data_0x106c78000": {
+          "columns": {
+            "VIRTUAL SIZE": "432K",
+            "RESIDENT SIZE": "432K",
+            "DIRTY SIZE": "432K",
+            "SWAPPED SIZE": "0K",
+            "ALLOCATION COUNT": "718",
+            "BYTES ALLOCATED": "220K",
+            "DIRTY+SWAP FRAG SIZE": "212K",
+            "% FRAG": "50%",
+            "REGION COUNT": "17"
+          },
+          "printedRow": "AttributeGraph graph data_0x106c78000       432K       432K       432K         0K        718       220K       212K     50%      17"
+        },
+        "TOTAL": {
+          "columns": {
+            "VIRTUAL SIZE": "178.3M",
+            "RESIDENT SIZE": "167.0M",
+            "DIRTY SIZE": "78.7M",
+            "SWAPPED SIZE": "0K",
+            "ALLOCATION COUNT": "472335",
+            "BYTES ALLOCATED": "121.4M",
+            "DIRTY+SWAP FRAG SIZE": "0K",
+            "% FRAG": "0%",
+            "REGION COUNT": "409"
+          },
+          "printedRow": "TOTAL                                     178.3M     167.0M      78.7M         0K     472335     121.4M         0K      0%     409"
+        }
+      },
+      "graphComparison": {
+        "printedGraphDateTime": "2026-09-09 12:32:52.317 +1000",
+        "physicalFootprint": "282.4M",
+        "vmmapAfterGraphSeconds": 6.518,
+        "allocatedNodes": 480081,
+        "allocatedBytes": 127508273
+      }
+    },
+    "20": {
+      "source": "ownership/home-20/vmmap.json",
+      "sourceSha256": "61f9653a999deca6c6f083c35537960a223cd905a02290e2be7b02db6e081580",
+      "usable": true,
+      "toolStatus": {
+        "status": 0,
+        "timedOut": false,
+        "overflow": false,
+        "cleanupConfirmed": true,
+        "durationMs": 706
+      },
+      "processIdentity": {
+        "pid": 64228,
+        "startedAt": "Wed  9 Sep 12:29:17 2026",
+        "executable": "/Users/marco/Library/Developer/CoreSimulator/Devices/EF3B3CC1-A130-4254-82A6-6ADCA7423106/data/Containers/Bundle/Application/6234AA9F-D767-49C5-8686-32A04D6C9C7F/Boardsesh.app/Boardsesh"
+      },
+      "printedDateTime": "2026-09-09 13:09:17.696 +1000",
+      "printedLaunchTime": "2026-09-09 12:29:17.261 +1000",
+      "printedTargetType": "corpse",
+      "physicalFootprint": "327.9M",
+      "peakPhysicalFootprint": "369.9M",
+      "summaryLines": [
+        "ReadOnly portion of Libraries: Total=2.0G resident=676.7M(34%) swapped_out_or_unallocated=1.3G(66%)",
+        "Writable regions: Total=409.3M written=2035K(0%) resident=365.8M(89%) swapped_out=0K(0%) unallocated=43.5M(11%)"
+      ],
+      "regions": {
+        "CG raster data": {
+          "columns": {
+            "VIRTUAL SIZE": "65.9M",
+            "RESIDENT SIZE": "16.5M",
+            "DIRTY SIZE": "16.5M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "193"
+          },
+          "annotation": "",
+          "printedRow": "CG raster data                    65.9M    16.5M    16.5M       0K       0K       0K       0K      193 "
+        },
+        "CoreAnimation": {
+          "columns": {
+            "VIRTUAL SIZE": "18.0M",
+            "RESIDENT SIZE": "16.5M",
+            "DIRTY SIZE": "16.5M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "2400K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "161"
+          },
+          "annotation": "",
+          "printedRow": "CoreAnimation                     18.0M    16.5M    16.5M       0K       0K    2400K       0K      161 "
+        },
+        "IOSurface": {
+          "columns": {
+            "VIRTUAL SIZE": "2944K",
+            "RESIDENT SIZE": "0K",
+            "DIRTY SIZE": "0K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "3"
+          },
+          "annotation": "",
+          "printedRow": "IOSurface                         2944K       0K       0K       0K       0K       0K       0K        3 "
+        },
+        "MALLOC metadata": {
+          "columns": {
+            "VIRTUAL SIZE": "1600K",
+            "RESIDENT SIZE": "1360K",
+            "DIRTY SIZE": "896K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "6"
+          },
+          "annotation": "",
+          "printedRow": "MALLOC metadata                   1600K    1360K     896K       0K       0K       0K       0K        6 "
+        },
+        "MALLOC_SMALL": {
+          "columns": {
+            "VIRTUAL SIZE": "168.0M",
+            "RESIDENT SIZE": "166.5M",
+            "DIRTY SIZE": "77.0M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "396"
+          },
+          "annotation": "see MALLOC ZONE table below",
+          "printedRow": "MALLOC_SMALL                     168.0M   166.5M    77.0M       0K       0K       0K       0K      396         see MALLOC ZONE table below"
+        },
+        "MALLOC_SMALL (empty)": {
+          "columns": {
+            "VIRTUAL SIZE": "24.0M",
+            "RESIDENT SIZE": "24.0M",
+            "DIRTY SIZE": "0K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "20"
+          },
+          "annotation": "see MALLOC ZONE table below",
+          "printedRow": "MALLOC_SMALL (empty)              24.0M    24.0M       0K       0K       0K       0K       0K       20         see MALLOC ZONE table below"
+        },
+        "MALLOC_TINY": {
+          "columns": {
+            "VIRTUAL SIZE": "4096K",
+            "RESIDENT SIZE": "176K",
+            "DIRTY SIZE": "176K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "1"
+          },
+          "annotation": "see MALLOC ZONE table below",
+          "printedRow": "MALLOC_TINY                       4096K     176K     176K       0K       0K       0K       0K        1         see MALLOC ZONE table below"
+        },
+        "Stack": {
+          "columns": {
+            "VIRTUAL SIZE": "13.3M",
+            "RESIDENT SIZE": "528K",
+            "DIRTY SIZE": "528K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "11"
+          },
+          "annotation": "",
+          "printedRow": "Stack                             13.3M     528K     528K       0K       0K       0K       0K       11 "
+        },
+        "Stack (reserved)": {
+          "columns": {
+            "VIRTUAL SIZE": "544K",
+            "RESIDENT SIZE": "0K",
+            "DIRTY SIZE": "0K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "1"
+          },
+          "annotation": "reserved VM address space (unallocated)",
+          "printedRow": "Stack (reserved)                   544K       0K       0K       0K       0K       0K       0K        1         reserved VM address space (unallocated)"
+        },
+        "VM_ALLOCATE": {
+          "columns": {
+            "VIRTUAL SIZE": "190.0M",
+            "RESIDENT SIZE": "168.0M",
+            "DIRTY SIZE": "168.0M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "50"
+          },
+          "annotation": "",
+          "printedRow": "VM_ALLOCATE                      190.0M   168.0M   168.0M       0K       0K       0K       0K       50 "
+        },
+        "dyld private memory": {
+          "columns": {
+            "VIRTUAL SIZE": "3.0G",
+            "RESIDENT SIZE": "20.8M",
+            "DIRTY SIZE": "20.8M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "89"
+          },
+          "annotation": "",
+          "printedRow": "dyld private memory                3.0G    20.8M    20.8M       0K       0K       0K       0K       89 "
+        },
+        "mapped file": {
+          "columns": {
+            "VIRTUAL SIZE": "377.6M",
+            "RESIDENT SIZE": "30.4M",
+            "DIRTY SIZE": "0K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "25"
+          },
+          "annotation": "",
+          "printedRow": "mapped file                      377.6M    30.4M       0K       0K       0K       0K       0K       25 "
+        },
+        "unused but dirty shlib __DATA": {
+          "columns": {
+            "VIRTUAL SIZE": "20.3M",
+            "RESIDENT SIZE": "17.2M",
+            "DIRTY SIZE": "3613K",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "0K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "537"
+          },
+          "annotation": "",
+          "printedRow": "unused but dirty shlib __DATA     20.3M    17.2M    3613K       0K       0K       0K       0K      537 "
+        },
+        "TOTAL": {
+          "columns": {
+            "VIRTUAL SIZE": "6.1G",
+            "RESIDENT SIZE": "1.3G",
+            "DIRTY SIZE": "335.0M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "2448K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "4804"
+          },
+          "annotation": "",
+          "printedRow": "TOTAL                              6.1G     1.3G   335.0M       0K       0K    2448K       0K     4804 "
+        },
+        "TOTAL, minus reserved VM space": {
+          "columns": {
+            "VIRTUAL SIZE": "6.1G",
+            "RESIDENT SIZE": "1.3G",
+            "DIRTY SIZE": "335.0M",
+            "SWAPPED SIZE": "0K",
+            "VOLATILE SIZE": "0K",
+            "NONVOL SIZE": "2448K",
+            "EMPTY SIZE": "0K",
+            "REGION COUNT (non-coalesced)": "4804"
+          },
+          "annotation": "",
+          "printedRow": "TOTAL, minus reserved VM space     6.1G     1.3G   335.0M       0K       0K    2448K       0K     4804 "
+        }
+      },
+      "mallocZones": {
+        "DefaultMallocZone_0x1069b8000": {
+          "columns": {
+            "VIRTUAL SIZE": "193.5M",
+            "RESIDENT SIZE": "188.0M",
+            "DIRTY SIZE": "74.8M",
+            "SWAPPED SIZE": "0K",
+            "ALLOCATION COUNT": "430055",
+            "BYTES ALLOCATED": "108.9M",
+            "DIRTY+SWAP FRAG SIZE": "0K",
+            "% FRAG": "0%",
+            "REGION COUNT": "245"
+          },
+          "printedRow": "DefaultMallocZone_0x1069b8000             193.5M     188.0M      74.8M         0K     430055     108.9M         0K      0%     245"
+        },
+        "QuartzCore_0x106a80000": {
+          "columns": {
+            "VIRTUAL SIZE": "3456K",
+            "RESIDENT SIZE": "3408K",
+            "DIRTY SIZE": "2720K",
+            "SWAPPED SIZE": "0K",
+            "ALLOCATION COUNT": "25407",
+            "BYTES ALLOCATED": "2318K",
+            "DIRTY+SWAP FRAG SIZE": "402K",
+            "% FRAG": "15%",
+            "REGION COUNT": "159"
+          },
+          "printedRow": "QuartzCore_0x106a80000                     3456K      3408K      2720K         0K      25407      2318K       402K     15%     159"
+        },
+        "AttributeGraph_0x113109dc0": {
+          "columns": {
+            "VIRTUAL SIZE": "1024K",
+            "RESIDENT SIZE": "912K",
+            "DIRTY SIZE": "896K",
+            "SWAPPED SIZE": "0K",
+            "ALLOCATION COUNT": "20010",
+            "BYTES ALLOCATED": "715K",
+            "DIRTY+SWAP FRAG SIZE": "181K",
+            "% FRAG": "21%",
+            "REGION COUNT": "1"
+          },
+          "printedRow": "AttributeGraph_0x113109dc0                 1024K       912K       896K         0K      20010       715K       181K     21%       1"
+        },
+        "AttributeGraph graph data_0x106c78000": {
+          "columns": {
+            "VIRTUAL SIZE": "432K",
+            "RESIDENT SIZE": "432K",
+            "DIRTY SIZE": "432K",
+            "SWAPPED SIZE": "0K",
+            "ALLOCATION COUNT": "718",
+            "BYTES ALLOCATED": "220K",
+            "DIRTY+SWAP FRAG SIZE": "212K",
+            "% FRAG": "50%",
+            "REGION COUNT": "17"
+          },
+          "printedRow": "AttributeGraph graph data_0x106c78000       432K       432K       432K         0K        718       220K       212K     50%      17"
+        },
+        "TOTAL": {
+          "columns": {
+            "VIRTUAL SIZE": "198.3M",
+            "RESIDENT SIZE": "192.7M",
+            "DIRTY SIZE": "78.7M",
+            "SWAPPED SIZE": "0K",
+            "ALLOCATION COUNT": "476190",
+            "BYTES ALLOCATED": "112.1M",
+            "DIRTY+SWAP FRAG SIZE": "0K",
+            "% FRAG": "0%",
+            "REGION COUNT": "422"
+          },
+          "printedRow": "TOTAL                                     198.3M     192.7M      78.7M         0K     476190     112.1M         0K      0%     422"
+        }
+      },
+      "graphComparison": {
+        "printedGraphDateTime": "2026-09-09 13:09:10.738 +1000",
+        "physicalFootprint": "327.9M",
+        "vmmapAfterGraphSeconds": 6.958,
+        "allocatedNodes": 472770,
+        "allocatedBytes": 117530081
+      }
+    }
+  },
+  "vmmapIntervalSeconds": 2178.861
+}
