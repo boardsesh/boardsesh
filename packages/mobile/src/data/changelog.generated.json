@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-09T04:01:29.833Z",
+  "generatedAt": "2026-09-09T08:53:54.105Z",
   "entries": [
+    {
+      "prNumber": 5350,
+      "category": "fixed",
+      "title": "Rolling an app update back and then forward again no longer signs you out, or back in after you signed out.",
+      "mergedAt": "2026-09-09T08:53:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5350"
+    },
+    {
+      "prNumber": 5356,
+      "category": "fixed",
+      "title": "Downloading a board for offline no longer crashes the app on iPhone or iPad. A transfer that used to die at the finish line — taking the whole 100 MB with it — now lands, and the board is ready to browse.",
+      "mergedAt": "2026-09-09T08:52:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5356"
+    },
     {
       "prNumber": 5362,
       "category": "fixed",

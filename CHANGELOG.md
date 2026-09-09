@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Rolling an app update back and then forward again no longer signs you out, or back in after you signed out. ([#5350](https://github.com/boardsesh/boardsesh/pull/5350))
+- Downloading a board for offline no longer crashes the app on iPhone or iPad. A transfer that used to die at the finish line — taking the whole 100 MB with it — now lands, and the board is ready to browse. ([#5356](https://github.com/boardsesh/boardsesh/pull/5356))
 - The wall-state pill's tap explainer no longer crashes the app in a browser — screen-reader focus now lands on the explainer sentence there too. This ships fixing a crash-only path (browser had a 100% failure rate on tap), so there's no meaningful behavior change to describe to native app users. ([#5362](https://github.com/boardsesh/boardsesh/pull/5362))
 - Start the app while a board is still downloading and offline mode used to switch itself off until you force-quit — your ticks went straight to the network and offline search came up empty. Now the app waits the download out and offline storage comes back on its own. ([#5355](https://github.com/boardsesh/boardsesh/pull/5355))
 - Your downloaded boards stop going stale. A busy moment in the local database used to kill the whole sync in one go, so climbs, stats and grades you had already asked for sat half-downloaded until the next attempt hit the same wall — with nothing on screen to tell you. Sync now waits out the busy moment and carries on. ([#5360](https://github.com/boardsesh/boardsesh/pull/5360))
