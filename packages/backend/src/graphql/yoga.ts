@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { schema } from './index';
 import { validateToken } from '../middleware/auth';
 import { authenticateCronBearer } from '../middleware/cron-auth';
+import { authenticateInternalServiceSecret } from '../middleware/internal-service-auth';
 import type { AuthResult } from '../middleware/auth';
 import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from '../websocket/client-ip';
 import { CLIENT_PLATFORM_HEADER, type ConnectionContext } from '@boardsesh/shared-schema';
@@ -68,6 +69,12 @@ type NodeServerContext = { req?: IncomingMessage; res?: ServerResponse };
  *
  * When no IP resolves (the `yoga.fetch` path) `clientIp` stays undefined and
  * `applyRateLimit` falls back to the connectionId branch, exactly as before.
+ *
+ * A third bearer credential, `INTERNAL_SERVICE_SECRET`, identifies Boardsesh's
+ * own SSR data-fetch layer (`executeGraphQLInternal`) the same way
+ * `CRON_SECRET` identifies the cron trigger — see `internal-service-auth.ts`
+ * and issue #5291. It shares the Authorization header slot with cron and user
+ * bearer tokens (checked in that order) rather than adding a new header.
  */
 export async function buildHttpConnectionContext({
   request,
@@ -78,7 +85,8 @@ export async function buildHttpConnectionContext({
   const { clientIdentity, clientIdentityRaw } = resolveClientIdentity(request.headers.get(CLIENT_IDENTITY_HEADER));
 
   const isCronAuthenticated = authenticateCronBearer(authHeader);
-  const authResult = isCronAuthenticated ? null : await authenticateHttpBearer(authHeader);
+  const isInternalService = !isCronAuthenticated && authenticateInternalServiceSecret(authHeader);
+  const authResult = isCronAuthenticated || isInternalService ? null : await authenticateHttpBearer(authHeader);
 
   // First-party active-user count (#2644). Fire-and-forget: never on the
   // request's critical path, and it never throws.
@@ -95,6 +103,7 @@ export async function buildHttpConnectionContext({
     isAuthenticated: authResult !== null,
     authCredentialProvided: authHeader !== null,
     isCronAuthenticated,
+    isInternalService,
     clientIp,
     socketPeerIp: resolveWebSocketSocketPeerIp(req),
     clientIdentity,
