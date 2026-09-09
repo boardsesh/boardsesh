@@ -8,6 +8,12 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Switch boards and keep swiping through climbs for the board you're on. ([#5125](https://github.com/boardsesh/boardsesh/pull/5125))
+  When queue history includes another board, skip those climbs with a notice.
+- Fixed a crash that killed the app a few seconds after opening, straight back to your home screen, before you'd even picked a board. Your on-device climb data now stays open for the whole session instead of being closed out from under whatever the app was reading. ([#5358](https://github.com/boardsesh/boardsesh/pull/5358))
+- The send you log in the gym stops vanishing when the network wobbles. A tick queued while your phone ([#5344](https://github.com/boardsesh/boardsesh/pull/5344))
+  is on a flaky connection now waits for signal and syncs when it comes back, instead of being written
+  off on its first failed attempt and buried in Sync issues for you to find.
 - Like counts and your own likes keep loading as you scroll deep into the Home feed and your Sessions list. Past about the fourth page they used to stop showing up entirely. ([#4123](https://github.com/boardsesh/boardsesh/pull/4123))
 
 ## 2026-09-08
