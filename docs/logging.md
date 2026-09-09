@@ -63,7 +63,9 @@ Two rules to remember when adding an `error` log:
 
 The transport is gated to prod-like environments (`!isLocalDevelopment() && !isTestEnvironment()`, from `@boardsesh/db/client/config`), matching the same gate on `Sentry.init({ enabled })` in `instrument.ts`, so dev and test runs do not emit Sentry events even when an `Error` is attached. This is deliberately **not** a bare `NODE_ENV === 'production'` check: the Railway backend deploy leaves `NODE_ENV` unset, so the old equality gate silently disabled Sentry in production (issues #3603 / #3183).
 
-Specialised error paths still call `Sentry.captureException` directly (`graphql/yoga.ts`, `websocket/setup.ts`, `handlers/sync.ts`, `index.ts`) — those exist to attach finer-grained tags or filter out noisy client-input `GraphQLError`s before capture. The winston transport is the default; direct capture is the exception.
+Specialised error paths still call `Sentry.captureException` directly (`graphql/yoga.ts`, `websocket/setup.ts`, `handlers/sync.ts`, `index.ts`, `services/github-mirror-report.ts`) — those exist to attach finer-grained tags or filter out noisy client-input `GraphQLError`s before capture. The winston transport is the default; direct capture is the exception.
+
+`services/github-mirror-report.ts` is the pattern to copy when a failure needs per-event context. It pairs a **message-only** `logger.error` (which the transport deliberately skips) with its own `Sentry.withScope` capture, so the event carries the row that was lost and the user whose write it was — a `logger.error(msg, err)` there would file a second, poorer copy of the same failure.
 
 ### Dedup and DB-error masking
 

@@ -18,6 +18,7 @@
 
 import { createPrivateKey } from 'node:crypto';
 import { SignJWT, importPKCS8 } from 'jose';
+import { GithubRequestError, readGithubErrorDetail } from './github-error';
 import { logger } from '../utils/logger';
 
 const GITHUB_API = 'https://api.github.com';
@@ -209,8 +210,11 @@ async function githubAppRequest<T>(path: string, jwt: string, method: 'GET' | 'P
     signal: AbortSignal.timeout(MINT_TIMEOUT_MS),
   });
   if (!response.ok) {
-    // The body is not logged: GitHub echoes the request in some error shapes.
-    throw new Error(`GitHub ${method} ${path} responded ${response.status}`);
+    // The body IS kept now, redacted. GitHub echoes the request in some error
+    // shapes, so it was previously dropped whole — which left the 404 window
+    // where the App was not yet installed (Sentry BOARDSESH-HQ) with nothing
+    // but a status, when GitHub's own `message` names the cause outright.
+    throw new GithubRequestError(method, path, await readGithubErrorDetail(response));
   }
   return (await response.json()) as T;
 }
