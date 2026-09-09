@@ -125,7 +125,10 @@ describe('resolveNamespaceVerdict', () => {
     // newer half of that write. Both sides disagree with the stamp here on
     // purpose: a fixture whose legacy still matched would be decided by the legacy
     // rule below and would pass with this rule deleted.
-    const staleOnBothSides = { v2: fingerprintSecureValue('something-older'), legacy: fingerprintSecureValue('also-older') };
+    const staleOnBothSides = {
+      v2: fingerprintSecureValue('something-older'),
+      legacy: fingerprintSecureValue('also-older'),
+    };
 
     expect(resolveNamespaceVerdict(staleOnBothSides, V2_TOKEN, LEGACY_TOKEN)).toBe('v2-current');
   });
