@@ -37,6 +37,7 @@ import {
   getDatabaseHandle,
   initializeDatabase,
   INIT_RETRY_DELAYS_MS,
+  INIT_LOCK_RETRY_DELAYS_MS,
   setDatabaseHandle,
   releaseDatabaseHandle,
 } from '../connection';
@@ -413,6 +414,16 @@ describe('initializeDatabase lock contention (#4104)', () => {
   // and nothing else, and it keeps tracking if the backoff is ever retuned.
   const FIRST_RETRY_DELAY_MS = INIT_RETRY_DELAYS_MS[0];
 
+  // The fast ladder's gaps, plus a second to clear the attempt that follows the last
+  // of them. Advancing by exactly this leaves the chain where every phase-tagged
+  // sqlite-init report on 2.4.0 sits: the whole #4104 window spent on a real lock.
+  const FAST_LADDER_MS = INIT_RETRY_DELAYS_MS.reduce((total, gap) => total + gap, 0) + 1_000;
+  // Every gap in both ladders, so a test can drive the chain to its true end without
+  // mirroring the numbers.
+  const WHOLE_LADDER_MS =
+    [...INIT_RETRY_DELAYS_MS, ...INIT_LOCK_RETRY_DELAYS_MS].reduce((total, gap) => total + gap, 0) + 1_000;
+  const TOTAL_ATTEMPTS = INIT_RETRY_DELAYS_MS.length + INIT_LOCK_RETRY_DELAYS_MS.length + 1;
+
   // The failure report awaits a best-effort `PRAGMA journal_mode` read-back, so it
   // lands a microtask or two after the launch gate the test awaited. Wait for the
   // report itself rather than guessing a tick count.
@@ -492,9 +503,6 @@ describe('initializeDatabase lock contention (#4104)', () => {
   });
 
   it('does not block app launch on the retry, leaving the handle unpublished for now', async () => {
-    // This test deliberately walks away mid-chain, so the retry it leaves pending must
-    // sit on the fake clock: afterEach's useRealTimers() discards it, instead of a real
-    // timer firing into a later test and publishing a handle or reporting an error there.
     vi.useFakeTimers();
     const contended = createContendedDatabase();
 
@@ -509,6 +517,15 @@ describe('initializeDatabase lock contention (#4104)', () => {
     expect(getDatabaseHandle()).toBeNull();
     // A launch that is still retrying is not yet newsworthy.
     expect(reportErrorMock).not.toHaveBeenCalled();
+
+    // Let the chain END rather than walking away from it. `afterEach`'s
+    // `useRealTimers()` does NOT discard the retry this test leaves pending — it hands
+    // it to the real clock, where it goes on driving the module-level handle and the
+    // mocks into whichever test is running by then. That was survivable while the
+    // ladder ran out in 17.5s; it is not now that a lock keeps the chain alive for
+    // minutes (#4314). The unlock is the writer finishing, exactly as everywhere else.
+    contended.unlock();
+    await vi.advanceTimersByTimeAsync(FIRST_RETRY_DELAY_MS);
   });
 
   it('publishes the handle once a retry wins, instead of staying dead for the session', async () => {
@@ -664,11 +681,11 @@ describe('initializeDatabase lock contention (#4104)', () => {
     const contended = createContendedDatabase();
 
     await initializeDatabase(contended.db);
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
 
     const [, context] = reportErrorMock.mock.calls[0];
     expect(context.tags).toMatchObject({ sqlite_code: 5, journal_mode: 'wal' });
-    expect(context.extra).toMatchObject({ attempts: 5, retryable: true });
+    expect(context.extra).toMatchObject({ attempts: TOTAL_ATTEMPTS, retryable: true });
     expect(typeof context.extra.elapsedMs).toBe('number');
   });
 
@@ -707,15 +724,48 @@ describe('initializeDatabase lock contention (#4104)', () => {
     const contended = createContendedDatabase();
 
     await initializeDatabase(contended.db);
-    // Drive the whole backoff chain (500 + 2000 + 5000 + 10000 = 17.5s, inside the 30s ceiling).
-    await vi.advanceTimersByTimeAsync(30_000);
+    // Drive both ladders to their end — the fast #4104 gaps and the slow #4314 ones.
+    await vi.advanceTimersByTimeAsync(WHOLE_LADDER_MS);
 
-    expect(contended.failures()).toBe(5);
+    expect(contended.failures()).toBe(TOTAL_ATTEMPTS);
     expect(getDatabaseHandle()).toBeNull();
     expect(reportErrorMock).toHaveBeenCalledTimes(1);
     const [, context] = reportErrorMock.mock.calls[0];
     expect(context.tags).toMatchObject({ source: 'offline-sync', kind: 'sqlite-init', phase: 'queue-table' });
-    expect(context.extra).toMatchObject({ attempts: 5, retryable: true });
+    expect(context.extra).toMatchObject({ attempts: TOTAL_ATTEMPTS, retryable: true });
+  });
+
+  // #4314: the fast ladder is sized for a writer that is merely in the way, but the one
+  // that actually loses this window is a board-data snapshot import (`importMs` reaches
+  // 253,939ms). Every phase-tagged sqlite-init report on 2.4.0 reads `retryable: true`,
+  // `attempts: 4`, `elapsedMs: 29,875` — the whole window spent waiting out a real lock.
+  // The chain then RETURNED, and `SQLiteProvider` calls `onInit` once per connection, so
+  // nothing was left to try again: offline storage stayed off for the rest of the
+  // session over a database that became writable a minute later.
+  it('keeps retrying a lock that outlives the fast window, instead of dying for the session', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    await vi.advanceTimersByTimeAsync(FAST_LADDER_MS);
+
+    // The old ceiling. The lock is real and still held, so this is not the moment to
+    // declare the database unusable and file it in the sqlite-init aggregate.
+    expect(getDatabaseHandle()).toBeNull();
+    expect(reportErrorMock).not.toHaveBeenCalled();
+
+    // The import commits a minute in.
+    contended.unlock();
+    await vi.advanceTimersByTimeAsync(INIT_LOCK_RETRY_DELAYS_MS[0]);
+
+    expect(getDatabaseHandle()).toBe(contended.db);
+    expect(isSchemaReady()).toBe(true);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    // A launch that contended and came back is a recovery, not a failure — and it is
+    // the only signal that separates "fixed" from "still contending, just retrying its
+    // way out" once the fleet is on this build.
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock.mock.calls[0][1]).toMatchObject({ phase: 'queue-table', sqliteCode: 5 });
   });
 
   it('does not retry a failure that is not lock contention', async () => {

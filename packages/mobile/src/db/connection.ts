@@ -81,19 +81,55 @@ export function releaseDatabaseHandle(db: SQLiteDatabase): void {
 }
 
 /**
- * How many times the whole setup sequence is attempted before giving up, and the
- * hard wall-clock ceiling across all of them.
+ * The gaps BETWEEN attempts, in two phases. Exported so the retry tests advance their
+ * fake clock by the real gap rather than mirroring these numbers in a literal that
+ * silently drifts from them.
  *
- * Sized against the longest writer that can legitimately hold the file while the app
- * starts: `vacuumDatabase` documents an exclusive lock of 5-20s on a 200-400MB
- * database, and a snapshot import is the same order. 30s therefore outlasts a genuine
- * one, while anything still locked past it is wedged rather than busy — further
- * retries would only burn battery on a launch that has already fallen back to
- * network-only. The delays are the gaps BETWEEN attempts; the deadline is checked
- * before each sleep so a slow attempt cannot overrun the window.
+ * FAST (#4104) — sized for a writer that is merely in the way: a tick commit, a
+ * checkpoint stamp, one `SNAPSHOT_IMPORT_BATCH_ROWS` import batch. Almost every
+ * contended launch is won here, and the whole ladder fits in 17.5s.
  */
-const MAX_INIT_ATTEMPTS = 5;
-const MAX_INIT_WINDOW_MS = 30_000;
+export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
+
+/**
+ * SLOW (#4314) — the gaps that follow, reached ONLY by lock contention.
+ *
+ * The fast ladder stops at 17.5s of gaps, so the chain used to give up around 30s.
+ * That was sized against `vacuumDatabase`'s documented 5-20s exclusive lock, but the
+ * writer that actually loses this window in the field is a board-data snapshot
+ * import: `Offline Board Download Completed.importMs` runs to 253,939ms at the top of
+ * the 30-day distribution, an order of magnitude past the old ceiling. Every
+ * phase-tagged `kind: 'sqlite-init'` report on 2.4.0 has the same shape —
+ * `retryable: true`, `attempts: 4`, `elapsedMs: 29,875` — i.e. the chain spent its
+ * entire window waiting out a real lock and then walked away.
+ *
+ * Walking away was permanent. `SQLiteProvider` calls `onInit` exactly once per
+ * connection, so once the chain returned there was nothing left to try again: the
+ * handle stayed null and offline storage was off for the REST OF THE SESSION, over a
+ * database that became writable a minute or two later. These four gaps carry the
+ * chain to ~227.5s of waiting (~272s with every attempt blocking its full
+ * `busy_timeout`), which covers that 253,939ms tail.
+ *
+ * It costs a healthy launch nothing. Only a failure `classifySqliteLockError` calls
+ * contention gets here — a full disk or a corrupt file still ends the chain on
+ * attempt 1 — and a blocked attempt is an idle await, not a spin.
+ */
+export const INIT_LOCK_RETRY_DELAYS_MS = [30_000, 60_000, 60_000, 60_000];
+
+const INIT_ALL_RETRY_DELAYS_MS = [...INIT_RETRY_DELAYS_MS, ...INIT_LOCK_RETRY_DELAYS_MS];
+
+/**
+ * How many times the whole setup sequence is attempted before giving up, and the hard
+ * wall-clock ceiling across all of them.
+ *
+ * The attempt count is derived from the ladder so the two can never disagree. The
+ * ceiling is the backstop for an attempt that is itself slow — every gap plus a full
+ * `busy_timeout` on all nine attempts still lands inside it — so the ladder, not the
+ * clock, is what normally ends the chain. It is checked before each sleep, so a slow
+ * attempt cannot overrun the window.
+ */
+const MAX_INIT_ATTEMPTS = INIT_ALL_RETRY_DELAYS_MS.length + 1;
+const MAX_INIT_WINDOW_MS = 360_000;
 /**
  * How many times a superseded attempt may be refunded (see the restart branch in
  * `beginInitialization`). Each refund needs its own remount — the retry immediately
@@ -101,9 +137,6 @@ const MAX_INIT_WINDOW_MS = 30_000;
  * pathological remount loop from keeping one chain alive forever.
  */
 const MAX_SUPERSEDED_RESTARTS = 3;
-// Exported so the retry tests advance their fake clock by the real gap rather than
-// mirroring these numbers in a literal that silently drifts from them.
-export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
 
 /**
  * Single-flight guard spanning the ENTIRE init lifecycle, background retries
@@ -353,7 +386,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       }
 
       budgetSpent += 1;
-      const retryDelayMs = INIT_RETRY_DELAYS_MS[budgetSpent - 1];
+      const retryDelayMs = INIT_ALL_RETRY_DELAYS_MS[budgetSpent - 1];
       const outOfRoad =
         (!outcome.retryable && !superseded) ||
         budgetSpent === MAX_INIT_ATTEMPTS ||
