@@ -88,7 +88,10 @@ export const feedbackMutations = {
             screenshotUrls: screenshotPublicUrls(screenshotKeys),
           });
 
-          if (outcome.status === 'created') {
+          // `outcome?.` — same reason as the QA mirror: the issue-link write-back
+          // lives in this block, so an unreadable outcome degrades to a reported
+          // drop rather than a TypeError that loses the write-back too.
+          if (outcome?.status === 'created') {
             const { issue } = outcome;
             // Persist the issue link so the admin dashboard can jump straight
             // to it. Kept inside the fire-and-forget block: a failure here must
@@ -112,16 +115,15 @@ export const feedbackMutations = {
                 });
               }
             }
-          } else if (outcome.status !== 'skipped') {
+          } else if (outcome?.status !== 'skipped') {
             // A rating was never going to become an issue; anything else here
             // is a bug report that reached us and never reached the tracker.
             reportGithubMirrorDrop({
               operation: 'feedback-issue',
-              reason: outcome.status,
               record: { table: 'app_feedback', id: String(row.id) },
               repo: resolveGithubRepo(),
               userId,
-              cause: outcome.status === 'rejected' ? outcome.cause : undefined,
+              outcome,
             });
           }
         } catch (error) {

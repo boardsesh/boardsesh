@@ -184,8 +184,13 @@ export const qaMutations = {
         // Record the comment before touching labels: `github_comment_id IS NULL`
         // is the runbook's "replay this one by hand" signal, and a label failure
         // in between would otherwise strand a comment that did post.
+        // `posted?.` and not `posted.`: this block also owns the write-back
+        // below, so a mirror that answers with something unreadable must degrade
+        // to a reported drop, never to a TypeError that takes the write-back
+        // with it. The outcome is handed to the reporter uninspected — it does
+        // all the dereferencing, once, defensively.
         const posted = await postVerdictComment(row.prNumber, body);
-        if (posted.status === 'posted') {
+        if (posted?.status === 'posted') {
           await db
             .update(dbSchema.qaVerdicts)
             .set({ githubCommentId: posted.comment.id, githubCommentUrl: posted.comment.htmlUrl })
@@ -196,12 +201,11 @@ export const qaMutations = {
           // merged without its verdict.
           reportGithubMirrorDrop({
             operation: 'qa-verdict-comment',
-            reason: posted.status,
             record: { table: 'qa_verdicts', id: String(row.id) },
             repo: resolveGithubRepo(),
             prNumber: row.prNumber,
             userId: ctx.userId,
-            cause: posted.status === 'rejected' ? posted.cause : undefined,
+            outcome: posted,
           });
         }
 
@@ -222,15 +226,14 @@ export const qaMutations = {
           .limit(1);
         if (newestTesterVerdict) {
           const labelled = await applyQaLabel(row.prNumber, newestTesterVerdict.verdict);
-          if (labelled.status !== 'applied') {
+          if (labelled?.status !== 'applied') {
             reportGithubMirrorDrop({
               operation: 'qa-verdict-label',
-              reason: labelled.status,
               record: { table: 'qa_verdicts', id: String(row.id) },
               repo: resolveGithubRepo(),
               prNumber: row.prNumber,
               userId: ctx.userId,
-              cause: labelled.status === 'rejected' ? labelled.cause : undefined,
+              outcome: labelled,
             });
           }
         }

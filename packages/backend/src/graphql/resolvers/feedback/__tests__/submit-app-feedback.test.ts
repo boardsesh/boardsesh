@@ -55,6 +55,10 @@ const SCREENSHOT_KEYS = [
 const SCREENSHOT_URLS = SCREENSHOT_KEYS.map((key) => `https://media.boardsesh.com/${key}`);
 
 const ISSUE = { number: 4321, htmlUrl: 'https://github.com/boardsesh/boardsesh/issues/4321' };
+// `createFeedbackGithubIssue` answers with an outcome, not a bare issue — the
+// resolver has to tell a created issue from a dropped one to report the drop at
+// all (#5294).
+const ISSUE_CREATED = { status: 'created', issue: ISSUE };
 
 const authCtx = (userId: string): ConnectionContext =>
   ({ connectionId: `conn-${userId}`, isAuthenticated: true, userId }) as ConnectionContext;
@@ -116,7 +120,7 @@ const issuePayload = (): FeedbackIssuePayload => createFeedbackGithubIssueMock.m
 
 beforeEach(async () => {
   await db.execute(sql`TRUNCATE TABLE "app_feedback", "community_roles", "users" RESTART IDENTITY CASCADE`);
-  createFeedbackGithubIssueMock.mockReset().mockResolvedValue(ISSUE);
+  createFeedbackGithubIssueMock.mockReset().mockResolvedValue(ISSUE_CREATED);
   sendBugReportIssueEmailMock.mockReset().mockResolvedValue(undefined);
 });
 
@@ -177,9 +181,10 @@ describe('submitAppFeedback', () => {
   });
 
   it('leaves the issue columns null when no issue was opened', async () => {
-    // A rating is not a bug: `createFeedbackGithubIssue` answers null for it,
-    // and nothing downstream may run.
-    createFeedbackGithubIssueMock.mockResolvedValue(null);
+    // A rating is not a bug: `createFeedbackGithubIssue` skips it, and nothing
+    // downstream may run — including the drop report, since a skipped rating is
+    // not a lost bug report.
+    createFeedbackGithubIssueMock.mockResolvedValue({ status: 'skipped' });
     const rater = await freshReporter();
 
     await feedbackMutations.submitAppFeedback(

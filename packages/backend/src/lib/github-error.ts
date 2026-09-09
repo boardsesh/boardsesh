@@ -96,20 +96,41 @@ export type GithubErrorDetail = {
 };
 
 /**
+ * One header off a response that may not have any.
+ *
+ * A real `fetch` always hands back a `Response` with `headers`. This runs on the
+ * failure path, though, where the whole point is that things are already going
+ * wrong — a stub, a polyfill, or a mocked module boundary can hand over
+ * something thinner. Reading a header must never be the thing that turns one
+ * failure into two.
+ */
+function headerOf(response: Partial<Response> | null | undefined, name: string): string | null {
+  return response?.headers?.get?.(name) ?? null;
+}
+
+/**
  * Read a failed response into a {@link GithubErrorDetail}.
  *
- * Consumes the body, so call it once per response and only on a non-2xx. A body
- * that cannot be read (already consumed, socket gone) degrades to a marker
- * rather than throwing over the original failure.
+ * Consumes the body, so call it once per response and only on a non-2xx. Total
+ * on purpose: a body that cannot be read (already consumed, socket gone, no
+ * `text` at all) degrades to a marker, and a response with no `status` reports
+ * `0` rather than throwing over the original failure.
  */
-export async function readGithubErrorDetail(response: Response): Promise<GithubErrorDetail> {
-  const raw = await response.text().catch(() => '');
+export async function readGithubErrorDetail(
+  response: Partial<Response> | null | undefined,
+): Promise<GithubErrorDetail> {
+  let raw = '';
+  try {
+    raw = (await response?.text?.()) ?? '';
+  } catch {
+    raw = '';
+  }
   return {
-    status: response.status,
+    status: typeof response?.status === 'number' ? response.status : 0,
     body: redactGithubErrorBody(raw),
-    requestId: response.headers.get('x-github-request-id'),
-    rateLimitRemaining: response.headers.get('x-ratelimit-remaining'),
-    rateLimitReset: response.headers.get('x-ratelimit-reset'),
+    requestId: headerOf(response, 'x-github-request-id'),
+    rateLimitRemaining: headerOf(response, 'x-ratelimit-remaining'),
+    rateLimitReset: headerOf(response, 'x-ratelimit-reset'),
   };
 }
 

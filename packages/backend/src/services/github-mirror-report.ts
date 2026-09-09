@@ -46,7 +46,6 @@ export type GithubMirrorDropReason = 'unconfigured' | 'rejected' | 'unexpected-r
 
 export type GithubMirrorDrop = {
   operation: GithubMirrorOperation;
-  reason: GithubMirrorDropReason;
   /** The row that still holds what GitHub never got. */
   record: { table: 'qa_verdicts' | 'app_feedback'; id: string };
   repo: string;
@@ -54,9 +53,46 @@ export type GithubMirrorDrop = {
   prNumber?: number | null;
   /** Whose write was lost. Sizes the blast radius; never rendered publicly. */
   userId?: string | null;
-  /** What the error actually was, when there was one. */
-  cause?: unknown;
+  /**
+   * Whatever the mirror function returned. Deliberately `unknown`: the caller
+   * hands it over without inspecting it, and every dereference happens here,
+   * once, defensively — see {@link dropReasonOf}.
+   */
+  outcome?: unknown;
+  /** Reason override, for a drop with no outcome object behind it. */
+  reason?: GithubMirrorDropReason;
 };
+
+const DROP_REASONS: ReadonlySet<string> = new Set<GithubMirrorDropReason>([
+  'unconfigured',
+  'rejected',
+  'unexpected-response',
+]);
+
+/**
+ * The reason behind a non-success outcome.
+ *
+ * Reads `.status` off a value that may be `undefined`, `null`, or a shape
+ * nobody planned for, and never throws doing it. That tolerance is the whole
+ * point rather than defensive noise: this runs inside a fire-and-forget block
+ * whose other job is writing the GitHub id back onto the row, so a TypeError
+ * here does not just lose the report — it takes the write-back down with it and
+ * leaves exactly the silent drop this module exists to end.
+ *
+ * An unrecognised shape is `unexpected-response`, which is honest: we asked for
+ * a mirror and got back something we cannot read as success.
+ */
+export function dropReasonOf(outcome: unknown): GithubMirrorDropReason {
+  const status = (outcome as { status?: unknown } | null | undefined)?.status;
+  return typeof status === 'string' && DROP_REASONS.has(status)
+    ? (status as GithubMirrorDropReason)
+    : 'unexpected-response';
+}
+
+/** The error an outcome carried, if it carried one. Never throws. */
+function dropCauseOf(outcome: unknown): unknown {
+  return (outcome as { cause?: unknown } | null | undefined)?.cause;
+}
 
 /**
  * The Sentry event's exception.
@@ -74,11 +110,10 @@ export class GithubMirrorDropError extends Error {
 }
 
 /** How an operator replays one dropped mirror by hand. */
-function replayHint(drop: GithubMirrorDrop): string {
-  if (drop.record.table === 'qa_verdicts') {
-    return `SELECT * FROM qa_verdicts WHERE id = '${drop.record.id}' -- github_comment_id IS NULL`;
-  }
-  return `SELECT * FROM app_feedback WHERE id = '${drop.record.id}' -- github_issue_number IS NULL`;
+function replayHint(record: GithubMirrorDrop['record'] | undefined): string {
+  const table = record?.table ?? 'qa_verdicts';
+  const nullColumn = table === 'qa_verdicts' ? 'github_comment_id' : 'github_issue_number';
+  return `SELECT * FROM ${table} WHERE id = '${record?.id ?? 'unknown'}' -- ${nullColumn} IS NULL`;
 }
 
 /**
@@ -96,13 +131,18 @@ function replayHint(drop: GithubMirrorDrop): string {
  */
 export function reportGithubMirrorDrop(drop: GithubMirrorDrop): void {
   try {
-    const detail = githubErrorDetailOf(drop.cause);
+    const reason = drop.reason ?? dropReasonOf(drop.outcome);
+    const cause = dropCauseOf(drop.outcome);
+    const detail = githubErrorDetailOf(cause);
+    const recordTable = drop.record?.table ?? 'qa_verdicts';
+    const recordId = drop.record?.id ?? 'unknown';
+    const replay = replayHint(drop.record);
     const target = drop.prNumber != null ? ` for PR #${drop.prNumber}` : '';
     const summary =
-      `[github-mirror] ${drop.operation} was dropped (${drop.reason}` +
+      `[github-mirror] ${drop.operation} was dropped (${reason}` +
       `${detail ? `, status ${detail.status}` : ''})${target}; ` +
-      `${drop.record.table} ${drop.record.id} still holds it. ` +
-      `repo=${drop.repo} replay=${replayHint(drop)}` +
+      `${recordTable} ${recordId} still holds it. ` +
+      `repo=${drop.repo} replay=${replay}` +
       `${detail ? ` request_id=${detail.requestId ?? 'none'} body=${detail.body}` : ''}`;
 
     // Message-only on purpose — see the doc comment. The Sentry copy below is
@@ -110,8 +150,8 @@ export function reportGithubMirrorDrop(drop: GithubMirrorDrop): void {
     logger.error(summary);
 
     const title = detail
-      ? `GitHub mirror dropped ${drop.operation} (${drop.reason}, ${detail.status})`
-      : `GitHub mirror dropped ${drop.operation} (${drop.reason})`;
+      ? `GitHub mirror dropped ${drop.operation} (${reason}, ${detail.status})`
+      : `GitHub mirror dropped ${drop.operation} (${reason})`;
 
     Sentry.withScope((scope) => {
       // The backend never calls setUser, so a backend issue's "users impacted"
@@ -119,24 +159,24 @@ export function reportGithubMirrorDrop(drop: GithubMirrorDrop): void {
       // that sizes the loss, so set it here rather than nowhere.
       if (drop.userId) scope.setUser({ id: drop.userId });
       scope.setTag('github_mirror.operation', drop.operation);
-      scope.setTag('github_mirror.reason', drop.reason);
-      scope.setTag('github_mirror.record_table', drop.record.table);
+      scope.setTag('github_mirror.reason', reason);
+      scope.setTag('github_mirror.record_table', recordTable);
       if (detail) scope.setTag('github_mirror.status', String(detail.status));
       scope.setContext('github_mirror', {
         operation: drop.operation,
-        reason: drop.reason,
+        reason,
         repo: drop.repo,
-        recordTable: drop.record.table,
-        recordId: drop.record.id,
+        recordTable,
+        recordId,
         prNumber: drop.prNumber ?? null,
-        replay: replayHint(drop),
+        replay,
         status: detail?.status ?? null,
         requestId: detail?.requestId ?? null,
         rateLimitRemaining: detail?.rateLimitRemaining ?? null,
         rateLimitReset: detail?.rateLimitReset ?? null,
         responseBody: detail?.body ?? null,
       });
-      Sentry.captureException(new GithubMirrorDropError(title, { cause: drop.cause }));
+      Sentry.captureException(new GithubMirrorDropError(title, { cause }));
     });
   } catch (error) {
     // A failure inside the reporter must not escape into the mirror block that

@@ -48,7 +48,7 @@ vi.mock('../../lib/github-app-auth', () => ({
 import { reportGithubMirrorDrop } from '../github-mirror-report';
 import { postVerdictComment, resetGithubQaCaches } from '../github-qa';
 import { createFeedbackGithubIssue } from '../github-feedback';
-import { githubErrorDetailOf } from '../../lib/github-error';
+import { githubErrorDetailOf, readGithubErrorDetail } from '../../lib/github-error';
 import { logger } from '../../utils/logger';
 
 /**
@@ -126,12 +126,11 @@ describe('a rejected QA verdict mirror', () => {
     const outcome = await postVerdictComment(4872, 'verdict body');
     reportGithubMirrorDrop({
       operation: 'qa-verdict-comment',
-      reason: outcome.status === 'posted' ? 'rejected' : outcome.status,
       record: { table: 'qa_verdicts', id: '3f1c9d2e-0000-4000-8000-000000000001' },
       repo: 'boardsesh/boardsesh',
       prNumber: 4872,
       userId: 'tester-user-id',
-      cause: outcome.status === 'rejected' ? outcome.cause : undefined,
+      outcome,
     });
 
     expect(captureExceptionMock).toHaveBeenCalledTimes(1);
@@ -167,12 +166,11 @@ describe('a rejected QA verdict mirror', () => {
     const outcome = await postVerdictComment(4872, 'verdict body');
     reportGithubMirrorDrop({
       operation: 'qa-verdict-comment',
-      reason: outcome.status === 'posted' ? 'rejected' : outcome.status,
       record: { table: 'qa_verdicts', id: 'verdict-row-1' },
       repo: 'boardsesh/boardsesh',
       prNumber: 5107,
       userId: 'tester-user-id',
-      cause: outcome.status === 'rejected' ? outcome.cause : undefined,
+      outcome,
     });
 
     const logged = loggedErrors.join('\n');
@@ -196,11 +194,11 @@ describe('an unconfigured mirror', () => {
       expect(outcome.status).toBe('unconfigured');
       reportGithubMirrorDrop({
         operation: 'qa-verdict-comment',
-        reason: 'unconfigured',
         record: { table: 'qa_verdicts', id: `verdict-${prNumber}` },
         repo: 'boardsesh/boardsesh',
         prNumber,
         userId: 'tester-user-id',
+        outcome,
       });
     }
 
@@ -225,11 +223,10 @@ describe('a dropped bug report', () => {
     expect(outcome.status).toBe('rejected');
     reportGithubMirrorDrop({
       operation: 'feedback-issue',
-      reason: outcome.status === 'rejected' ? 'rejected' : 'unconfigured',
       record: { table: 'app_feedback', id: '4211' },
       repo: 'boardsesh/boardsesh',
       userId: 'reporter-user-id',
-      cause: outcome.status === 'rejected' ? outcome.cause : undefined,
+      outcome,
     });
 
     expect(mirrorContext()).toMatchObject({ recordTable: 'app_feedback', recordId: '4211', status: 404 });
@@ -269,11 +266,10 @@ describe('the response body it keeps', () => {
     const outcome = await postVerdictComment(4872, 'verdict body');
     reportGithubMirrorDrop({
       operation: 'qa-verdict-comment',
-      reason: 'rejected',
       record: { table: 'qa_verdicts', id: 'verdict-row-1' },
       repo: 'boardsesh/boardsesh',
       prNumber: 4872,
-      cause: outcome.status === 'rejected' ? outcome.cause : undefined,
+      outcome,
     });
 
     const body = String(mirrorContext().responseBody);
@@ -283,5 +279,98 @@ describe('the response body it keeps', () => {
 
     const logged = loggedErrors.join('\n');
     expect(logged).not.toContain('ghs_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5');
+  });
+});
+
+/**
+ * The regression CI caught on the first push of this branch.
+ *
+ * The reporter runs inside the same fire-and-forget block that writes the GitHub
+ * id back onto the row. Dereferencing an outcome that turned out to be
+ * `undefined` threw a TypeError there, the block's outer catch swallowed it, and
+ * the write-back never ran — a mirror-drop reporter that itself throws is worse
+ * than the silent drop it was written to end, because it takes a healthy write
+ * down with it.
+ *
+ * So: every one of these must produce a record, and none of them may throw.
+ */
+describe('an outcome the reporter cannot read', () => {
+  const unreadable: Array<[string, unknown]> = [
+    ['undefined (a partially mocked module boundary)', undefined],
+    ['null (a caller still on the pre-#5294 contract)', null],
+    ['an object with no status at all', { id: 555, htmlUrl: 'https://github.com/x' }],
+    ['a status that is not one of ours', { status: 'weird' }],
+    ['a non-object', 42],
+  ];
+
+  it.each(unreadable)('still files a diagnosable record for %s', (_label, outcome) => {
+    expect(() =>
+      reportGithubMirrorDrop({
+        operation: 'qa-verdict-comment',
+        record: { table: 'qa_verdicts', id: 'verdict-row-9' },
+        repo: 'boardsesh/boardsesh',
+        prNumber: 4872,
+        userId: 'tester-user-id',
+        outcome,
+      }),
+    ).not.toThrow();
+
+    // The positive artifact, not "it didn't crash": an unreadable outcome is
+    // still a lost verdict, and it still has to name the row that holds it.
+    expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+    expect(scopeRecord.tags['github_mirror.reason']).toBe('unexpected-response');
+    expect(mirrorContext()).toMatchObject({
+      recordTable: 'qa_verdicts',
+      recordId: 'verdict-row-9',
+      prNumber: 4872,
+    });
+    expect(loggedErrors.join('\n')).toContain('qa_verdicts verdict-row-9');
+  });
+
+  it('keeps the caller alive when the record itself is missing', () => {
+    expect(() =>
+      reportGithubMirrorDrop({
+        operation: 'feedback-issue',
+        record: undefined as unknown as { table: 'app_feedback'; id: string },
+        repo: 'boardsesh/boardsesh',
+        outcome: undefined,
+      }),
+    ).not.toThrow();
+
+    expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The other half of the same rule: the detail reader runs on the failure path
+ * too, so a response missing the pieces it wants must degrade rather than throw
+ * a second error on top of the first.
+ */
+describe('a response the detail reader cannot fully read', () => {
+  const partialResponses: Array<[string, Partial<Response> | null | undefined]> = [
+    ['absent', undefined],
+    ['null', null],
+    ['no status and no headers', { text: async (): Promise<string> => '{"message":"nope"}' }],
+    ['no text method', { status: 500 }],
+    ['a text() that throws', { status: 502, text: (): Promise<string> => Promise.reject(new Error('socket gone')) }],
+  ];
+
+  it.each(partialResponses)('reads a detail from a response that is %s', async (_label, response) => {
+    const detail = await readGithubErrorDetail(response);
+
+    expect(typeof detail.status).toBe('number');
+    expect(typeof detail.body).toBe('string');
+    expect(detail.requestId).toBeNull();
+  });
+
+  it('keeps the body when only the headers are missing', async () => {
+    const detail = await readGithubErrorDetail({
+      status: 404,
+      text: async () => '{"message":"Not Found"}',
+    } as Partial<Response>);
+
+    expect(detail.status).toBe(404);
+    expect(detail.body).toContain('Not Found');
+    expect(detail.requestId).toBeNull();
   });
 });
