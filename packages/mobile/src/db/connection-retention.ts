@@ -75,8 +75,10 @@ export function retainDatabaseConnection(): Promise<SQLiteDatabase | null> {
 
 /**
  * Test-only. Drops the retain so a suite can drive the first-launch path more than
- * once. Reachable from application code only through the ./testing barrel, which the
- * seam guard in `connection-test-seam.test.ts` keeps out of `src/` and `app/`.
+ * once. Deliberately NOT re-exported from ./testing — that barrel is imported by
+ * node-env suites, and this module's `expo-sqlite` import reaches react-native's Flow
+ * source, which Rolldown cannot parse during collection. Callers mock `expo-sqlite`
+ * and import this directly.
  */
 export function resetConnectionRetentionForTests(): void {
   retention = null;

@@ -149,7 +149,11 @@ vi.mock('expo-sqlite', async () => {
 
 import { DatabaseProvider } from '../database-provider';
 import { getDatabaseHandle, setDatabaseHandle } from '../../db/connection';
-import { resetDatabaseInitializationForTests, resetConnectionRetentionForTests } from '../../db/testing';
+import { resetDatabaseInitializationForTests } from '../../db/testing';
+// Direct, not through ./testing: that barrel must stay clear of expo-sqlite so the
+// node-env suites can use it (see the note there). Safe here because this file mocks
+// expo-sqlite above.
+import { resetConnectionRetentionForTests } from '../../db/connection-retention';
 
 beforeEach(() => {
   resetDatabaseInitializationForTests();

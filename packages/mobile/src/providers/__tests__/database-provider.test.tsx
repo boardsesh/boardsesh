@@ -86,7 +86,16 @@ vi.mock('expo-sqlite', async () => {
     return createElement(SQLiteContext.Provider, { value: databaseRef.current }, children as never);
   }
 
-  return { SQLiteProvider, useSQLiteContext: () => useContext(SQLiteContext) };
+  // The provider's `onInit` also takes the process-lifetime reference that keeps a
+  // teardown from freeing the connection (#5300). Its refcounting is what
+  // database-provider-retention.test.tsx models; here it only has to exist, and
+  // deliberately does NOT feed `sqlite.closes` — this suite is about the handle
+  // retraction, whose assertion is the provider's own close.
+  async function openDatabaseAsync(): Promise<unknown> {
+    return { retained: true, closeAsync: async (): Promise<void> => {} };
+  }
+
+  return { SQLiteProvider, openDatabaseAsync, useSQLiteContext: () => useContext(SQLiteContext) };
 });
 
 import { DatabaseProvider } from '../database-provider';
