@@ -15,6 +15,7 @@ import {
   expectedCycleUuids,
   MEMORY_PHASES,
   memoryDistribution,
+  parseMemoryFlowTimeoutMs,
   record,
   validateMemoryManifest,
   validateMemoryMeasurements,
@@ -42,6 +43,7 @@ export interface MemoryCaptureOptions {
   surface: MemorySurface;
   workload: MemoryWorkload;
   memoryManifest: string;
+  memoryFlowTimeoutMs?: number;
   compareCache: string | null;
   idleSchedule: string | null;
   inspection: 'none' | 'ownership' | 'graphs';
@@ -83,20 +85,32 @@ export function memoryCarouselFlow(
   );
 }
 
-function runFlow(options: MemoryCaptureOptions, filename: string, content: string) {
+function runFlow(options: MemoryCaptureOptions, filename: string, content: string, timeout: number) {
   const path = join(options.runDir, filename + '.yaml');
   writeFileSync(path, content);
   const args = ['--device', options.udid, 'test', path];
   guardSimulatorCommand('maestro', args, process.cwd());
-  const result = spawnSync('maestro', args, { timeout: 60_000, stdio: 'pipe' });
+  const startedAt = performance.now();
+  const result = spawnSync('maestro', args, { timeout, stdio: 'pipe' });
+  const errorCode = (result.error as NodeJS.ErrnoException | undefined)?.code ?? null;
+  save(options.runDir, filename + '-result.json', {
+    timeoutMs: timeout,
+    status: result.status,
+    signal: result.signal ?? null,
+    errorCode,
+    timedOut: errorCode === 'ETIMEDOUT',
+    durationMs: performance.now() - startedAt,
+  });
   writeFileSync(
     join(options.runDir, filename + '.log'),
     Buffer.concat([result.stdout ?? Buffer.alloc(0), result.stderr ?? Buffer.alloc(0)]),
   );
-  if (result.status !== 0) throw new Error(`Memory workload flow ${filename} failed or timed out.`);
+  if (result.status !== 0)
+    throw new Error(`Memory workload flow ${filename} failed or timed out (limit ${timeout} ms).`);
 }
 
 export async function captureMemory(options: MemoryCaptureOptions, driver: MemoryCaptureDriver) {
+  const memoryFlowTimeoutMs = parseMemoryFlowTimeoutMs(options.memoryFlowTimeoutMs);
   const inspectionOnly = options.inspectionOnly === true;
   if (inspectionOnly && (options.inspection === 'none' || options.workload === 'idle'))
     throw new Error('Ownership-only capture requires replay/expanding with --inspection ownership or graphs.');
@@ -116,6 +130,7 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
   const manifest = validateMemoryManifest(JSON.parse(readFileSync(options.memoryManifest, 'utf8')) as unknown);
   const frozenHash = fileSha256(options.memoryManifest);
   save(options.runDir, 'memory-manifest.json', manifest);
+  save(options.runDir, 'memory-run-options.json', { memoryFlowTimeoutMs });
   let schedule: MemorySample[] | null = null;
   let warmingWorkload: MemoryWorkload = options.workload;
   if (options.workload === 'idle') {
@@ -129,6 +144,8 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
       JSON.stringify(referenceRecord.manifest) !== JSON.stringify(manifest)
     )
       throw new Error('Idle reference must use the same surface and manifest.');
+    if (parseMemoryFlowTimeoutMs(referenceRecord.memoryFlowTimeoutMs) !== memoryFlowTimeoutMs)
+      throw new Error('Idle reference must use the same --memory-flow-timeout-ms.');
     schedule = referenceRecord.samples as MemorySample[];
     warmingWorkload = referenceRecord.workload as MemoryWorkload;
     if (warmingWorkload === 'idle') throw new Error('Idle controls require a browsing reference.');
@@ -223,10 +240,19 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
     if (options.surface === 'carousel')
       await checkpoint(cycle, 'settled', 'open', undefined, firstIndex, selectedWorkload);
   }
-  async function browse(cycle: number, selectedWorkload: MemoryWorkload) {
+  async function browse(
+    cycle: number,
+    selectedWorkload: MemoryWorkload,
+    stage: 'prewarm' | 'measurement' | 'ownership',
+  ) {
     if (selectedWorkload === 'idle') return;
     if (options.surface === 'carousel')
-      runFlow(options, `memory-${cycle}-browse`, memoryCarouselFlow(options.appId, manifest, selectedWorkload, cycle));
+      runFlow(
+        options,
+        `memory-${cycle}-browse-${stage}`,
+        memoryCarouselFlow(options.appId, manifest, selectedWorkload, cycle),
+        memoryFlowTimeoutMs,
+      );
     else {
       const firstIndex = selectedWorkload === 'expanding' && cycle > 0 ? (cycle - 1) * 20 : 0;
       for (let offset = 1; offset < 20; offset++)
@@ -257,7 +283,7 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
       for (let cycle = -1; cycle <= 20; cycle++) {
         await setup(cycle, warmingWorkload);
         for (const phase of MEMORY_PHASES) {
-          if (phase === 'browsed') await browse(cycle, warmingWorkload);
+          if (phase === 'browsed') await browse(cycle, warmingWorkload, 'ownership');
           if (phase === 'home') {
             if (driver.launch() !== pid) throw new Error('Inspection process restarted after backgrounding.');
             driver.navigate('home');
@@ -306,6 +332,7 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
         throw new Error('Frozen memory manifest changed during investigation.');
       const artifact = {
         scenario: 'ownership',
+        memoryFlowTimeoutMs,
         configuration: 'Release',
         surface: options.surface,
         workload: warmingWorkload,
@@ -353,7 +380,7 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
     // All expanding climbs are warmed; measured warm-ups still reuse the first twenty.
     for (let cycle = 1; cycle <= (warmingWorkload === 'expanding' ? 20 : 1); cycle++) {
       await setup(cycle, warmingWorkload);
-      await browse(cycle, warmingWorkload);
+      await browse(cycle, warmingWorkload, 'prewarm');
       await checkpoint(cycle, 'browsed', 'checkpoint', undefined, undefined, warmingWorkload);
     }
     save(options.runDir, 'warmed-cache.json', cacheFileIdentities(container));
@@ -368,7 +395,7 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
     for (let cycle = -1; cycle <= 20; cycle++) {
       await setup(cycle, options.workload);
       for (const phase of MEMORY_PHASES) {
-        if (phase === 'browsed') await browse(cycle, options.workload);
+        if (phase === 'browsed') await browse(cycle, options.workload, 'measurement');
         if (phase === 'home') {
           if (driver.launch() !== pid) throw new Error('App restarted after backgrounding.');
           driver.navigate('home');
@@ -459,6 +486,7 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
       });
     const measurements = {
       scenario: 'memory',
+      memoryFlowTimeoutMs,
       configuration: 'Release',
       surface: options.surface,
       workload: options.workload,

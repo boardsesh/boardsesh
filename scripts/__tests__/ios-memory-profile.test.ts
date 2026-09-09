@@ -7,6 +7,7 @@ import {
   assertVisitedUuids,
   expectedCycleUuids,
   MEMORY_PHASES,
+  parseMemoryFlowTimeoutMs,
   validateMemoryManifest,
   validateMemoryMeasurements,
   validateMemorySnapshot,
@@ -102,6 +103,28 @@ describe('controlled memory manifest and workloads', () => {
     ).toMatchObject({ scenario: 'memory', surface: 'carousel', workload: 'expanding' });
     expect(() => parseProfileArgs([...args, '--scenario', 'memory', '--configuration', 'Debug'])).toThrow(/Release/);
     expect(() => parseProfileArgs([...args, '--scenario', 'memory', '--workload', 'idle'])).toThrow(/idle-schedule/);
+  });
+  it('keeps the memory flow default and accepts only bounded integer overrides', () => {
+    const args = ['--udid', '00000000-0000-0000-0000-000000000001'];
+    expect(parseProfileArgs(args).memoryFlowTimeoutMs).toBe(60000);
+    expect(parseMemoryFlowTimeoutMs(undefined)).toBe(60000);
+    for (const timeout of ['1000', '90000', '120000']) {
+      expect(parseProfileArgs([...args, '--memory-flow-timeout-ms', timeout]).memoryFlowTimeoutMs).toBe(
+        Number(timeout),
+      );
+      expect(parseMemoryFlowTimeoutMs(Number(timeout))).toBe(Number(timeout));
+    }
+    for (const timeout of ['', '999', '120001', '90000.5', 'NaN', 'Infinity', '9e4', '-1'])
+      expect(() => parseProfileArgs([...args, '--memory-flow-timeout-ms', timeout])).toThrow();
+    for (const timeout of [null, true, NaN, Infinity, 90000.5, -1])
+      expect(() => parseMemoryFlowTimeoutMs(timeout)).toThrow(/memory-flow-timeout-ms/);
+  });
+  it('revalidates recorded timeout bounds while accepting legacy measurements', () => {
+    expect(() => validateMemoryMeasurements(measurements())).not.toThrow();
+    expect(() => validateMemoryMeasurements({ ...measurements(), memoryFlowTimeoutMs: 90000 })).not.toThrow();
+    expect(() => validateMemoryMeasurements({ ...measurements(), memoryFlowTimeoutMs: 120001 })).toThrow(
+      /memory-flow-timeout-ms/,
+    );
   });
   it('requires explicit ownership mode and failed-probe provenance for graph-only capture', () => {
     const args = [

@@ -5,7 +5,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync, closeSync
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { validateMemoryManifest, type MemorySurface, type MemoryWorkload } from './lib/ios-memory-profile';
+import {
+  parseMemoryFlowTimeoutMs,
+  validateMemoryManifest,
+  type MemorySurface,
+  type MemoryWorkload,
+} from './lib/ios-memory-profile';
 import { leaseEnvironment, resolveSimulatorUdid } from './lib/ios-simulator-lease';
 import { assertMatchingIdentity, fileSha256, readAppIdentity, validateCaptureFiles } from './lib/ios-profile-identity';
 
@@ -23,6 +28,7 @@ export interface ProfileOptions {
   surface: MemorySurface;
   workload: MemoryWorkload;
   memoryManifest: string;
+  memoryFlowTimeoutMs: number;
   compareCache: string | null;
   idleSchedule: string | null;
   inspection: 'none' | 'ownership' | 'graphs';
@@ -43,6 +49,7 @@ export function parseProfileArgs(argv: readonly string[]): ProfileOptions {
     surface: 'list',
     workload: 'replay',
     memoryManifest: join(ROOT, '.boardsesh/ios-memory-climbs.json'),
+    memoryFlowTimeoutMs: parseMemoryFlowTimeoutMs(undefined),
     compareCache: null,
     idleSchedule: null,
     inspection: 'none',
@@ -67,6 +74,7 @@ export function parseProfileArgs(argv: readonly string[]): ProfileOptions {
       options.surface = argument as MemorySurface;
     else if (flag === '--workload' && ['replay', 'expanding', 'idle'].includes(argument))
       options.workload = argument as MemoryWorkload;
+    else if (flag === '--memory-flow-timeout-ms') options.memoryFlowTimeoutMs = parseMemoryFlowTimeoutMs(argument);
     else if (flag === '--memory-manifest') options.memoryManifest = resolve(argument);
     else if (flag === '--compare-cache') options.compareCache = resolve(argument);
     else if (flag === '--idle-schedule') options.idleSchedule = resolve(argument);
@@ -188,7 +196,12 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     scenario: options.scenario,
     memoryOptions:
       options.scenario === 'memory'
-        ? { surface: options.surface, workload: options.workload, inspection: options.inspection }
+        ? {
+            surface: options.surface,
+            workload: options.workload,
+            inspection: options.inspection,
+            memoryFlowTimeoutMs: options.memoryFlowTimeoutMs,
+          }
         : null,
     startedAt: new Date().toISOString(),
     sourceCheckout: checkout,
@@ -396,6 +409,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
               options.surface,
               '--workload',
               options.workload,
+              '--memory-flow-timeout-ms',
+              String(options.memoryFlowTimeoutMs),
               '--memory-manifest',
               options.memoryManifest,
               '--inspection',

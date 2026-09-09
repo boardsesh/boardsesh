@@ -9,6 +9,7 @@ import { captureMemory } from './lib/ios-memory-capture';
 import {
   type MemorySurface,
   type MemoryWorkload,
+  parseMemoryFlowTimeoutMs,
   validateMemoryMeasurements,
   validateOwnershipMeasurements,
 } from './lib/ios-memory-profile';
@@ -492,6 +493,9 @@ async function captureRelease(options: CaptureOptions) {
 export async function main(argv = process.argv.slice(2)) {
   const flags = new Map<string, string>();
   for (let index = 0; index < argv.length; index += 2) flags.set(argv[index], argv[index + 1]);
+  if (flags.has('--memory-flow-timeout-ms') && flags.get('--memory-flow-timeout-ms') === undefined)
+    throw new Error('--memory-flow-timeout-ms requires a value.');
+  const memoryFlowTimeoutMs = parseMemoryFlowTimeoutMs(flags.get('--memory-flow-timeout-ms'));
   const options: CaptureOptions = {
     runDir: resolve(flags.get('--run-dir') ?? '.boardsesh/ios-profile-capture'),
     udid: flags.get('--udid') ?? '',
@@ -556,6 +560,7 @@ export async function main(argv = process.argv.slice(2)) {
               inspection: inspection as 'none' | 'ownership' | 'graphs',
               inspectionOnly,
               failedAllocationProbe: flags.get('--failed-allocation-probe') ?? null,
+              memoryFlowTimeoutMs,
               memoryManifest: resolve(flags.get('--memory-manifest') ?? '.boardsesh/ios-memory-climbs.json'),
               compareCache: flags.get('--compare-cache') ?? null,
               idleSchedule: flags.get('--idle-schedule') ?? null,

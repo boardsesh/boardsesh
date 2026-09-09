@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryCollector, parseMemoryCommand } from '../../packages/mobile/src/lib/profiling/memory-collector';
-import type { MemoryManifest, MemoryWorkload } from '../lib/ios-memory-profile';
+import { validateOwnershipMeasurements, type MemoryManifest, type MemoryWorkload } from '../lib/ios-memory-profile';
 
 const simulation = vi.hoisted(() => ({
   collector: null as ReturnType<typeof createMemoryCollector> | null,
@@ -22,6 +22,8 @@ const simulation = vi.hoisted(() => ({
   processReplaced: false,
   graphPids: [] as number[],
   graphDirectories: [] as string[],
+  flowTimeouts: [] as number[],
+  maestroTimeout: false,
   calls: [] as { pid: number; action: string; phase: string; cycle: number }[],
   readSnapshot: null as (() => string) | null,
   swipe: null as ((filename: string) => void) | null,
@@ -62,12 +64,16 @@ vi.mock('../lib/ios-memory-tools', () => ({
 }));
 vi.mock('node:child_process', () => ({
   execFileSync: vi.fn(),
-  spawnSync: (command: string, args: string[]) => {
+  spawnSync: (command: string, args: string[], options: { timeout: number }) => {
     if (command === 'sample') {
       simulation.sampleCommands += 1;
       writeFileSync(args[args.indexOf('-file') + 1], 'Physical footprint: 200M');
-    } else if (command === 'maestro') simulation.swipe!(args.at(-1)!);
-    else throw new Error(`Unexpected command: ${command}`);
+    } else if (command === 'maestro') {
+      simulation.flowTimeouts.push(options.timeout);
+      if (simulation.maestroTimeout)
+        return { status: null, signal: 'SIGTERM', error: Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }) };
+      simulation.swipe!(args.at(-1)!);
+    } else throw new Error(`Unexpected command: ${command}`);
     return { status: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   },
 }));
@@ -150,6 +156,8 @@ beforeEach(() => {
   simulation.running = false;
   simulation.launches = 0;
   simulation.calls = [];
+  simulation.flowTimeouts = [];
+  simulation.maestroTimeout = false;
   simulation.wrongTarget = false;
   simulation.wrongAngle = false;
   simulation.sampleCommands = 0;
@@ -206,9 +214,13 @@ afterEach(() => {
 });
 
 describe('host runner and real diagnostic collector lifecycle', () => {
-  it.each(['list', 'carousel'] as const)(
+  it.each([
+    ['list', undefined],
+    ['carousel', undefined],
+    ['carousel', 90000],
+  ] as const)(
     'completes %s arming, controls, background and recovery across fresh processes',
-    async (surface) => {
+    async (surface, memoryFlowTimeoutMs) => {
       simulation.workload = surface === 'carousel' ? 'expanding' : 'replay';
       const result = await captureMemory(
         {
@@ -217,6 +229,7 @@ describe('host runner and real diagnostic collector lifecycle', () => {
           appId: 'com.boardsesh.app',
           configuration: 'Release',
           surface,
+          memoryFlowTimeoutMs,
           workload: simulation.workload,
           memoryManifest: join(simulation.directory, 'manifest.json'),
           compareCache: null,
@@ -225,6 +238,16 @@ describe('host runner and real diagnostic collector lifecycle', () => {
         },
         driver(),
       );
+      expect(result.memoryFlowTimeoutMs).toBe(memoryFlowTimeoutMs ?? 60000);
+      expect(JSON.parse(readFileSync(join(simulation.directory, 'memory-run-options.json'), 'utf8'))).toEqual({
+        memoryFlowTimeoutMs: memoryFlowTimeoutMs ?? 60000,
+      });
+      if (surface === 'carousel') {
+        expect(simulation.flowTimeouts).toHaveLength(42);
+        expect(existsSync(join(simulation.directory, 'memory-1-browse-prewarm-result.json'))).toBe(true);
+        expect(existsSync(join(simulation.directory, 'memory-1-browse-measurement-result.json'))).toBe(true);
+        expect(new Set(simulation.flowTimeouts)).toEqual(new Set([memoryFlowTimeoutMs ?? 60000]));
+      }
       if (!('samples' in result)) throw new Error('Expected ordinary measurement samples.');
       expect(result.samples).toHaveLength(88);
       expect(simulation.launches).toBe(2);
@@ -237,6 +260,39 @@ describe('host runner and real diagnostic collector lifecycle', () => {
       expect(simulation.calls.some((call) => call.action === 'open')).toBe(surface === 'carousel');
     },
   );
+  it('retains precise timeout metadata and rejects an incomplete prewarm', async () => {
+    simulation.maestroTimeout = true;
+    await expect(
+      captureMemory(
+        {
+          runDir: simulation.directory,
+          udid: '00000000-0000-0000-0000-000000000001',
+          appId: 'com.boardsesh.app',
+          configuration: 'Release',
+          surface: 'carousel',
+          workload: 'replay',
+          memoryManifest: join(simulation.directory, 'manifest.json'),
+          compareCache: null,
+          idleSchedule: null,
+          inspection: 'none',
+          memoryFlowTimeoutMs: 90000,
+        },
+        driver(),
+      ),
+    ).rejects.toThrow(/90000 ms/);
+    expect(
+      JSON.parse(readFileSync(join(simulation.directory, 'memory-1-browse-prewarm-result.json'), 'utf8')),
+    ).toMatchObject({
+      timeoutMs: 90000,
+      status: null,
+      signal: 'SIGTERM',
+      errorCode: 'ETIMEDOUT',
+      timedOut: true,
+      durationMs: expect.any(Number),
+    });
+    expect(JSON.parse(readFileSync(join(simulation.directory, 'memory-samples.json'), 'utf8'))).toEqual([]);
+    expect(existsSync(join(simulation.directory, 'ordinary-measurements.json'))).toBe(false);
+  });
   it('rejects a UUID-mismatched recycled viewport before accepting a capture', async () => {
     simulation.wrongTarget = true;
     await expect(
@@ -293,7 +349,15 @@ describe('host runner and real diagnostic collector lifecycle', () => {
     const reference = await captureMemory(options, driver());
     if (!('samples' in reference)) throw new Error('Expected ordinary reference samples.');
     const referencePath = join(simulation.directory, 'reference.json');
-    writeFileSync(referencePath, JSON.stringify(reference));
+    const { memoryFlowTimeoutMs: _legacyTimeout, ...legacyReference } = reference;
+    writeFileSync(referencePath, JSON.stringify(legacyReference));
+    await expect(
+      captureMemory(
+        { ...options, workload: 'idle', idleSchedule: referencePath, memoryFlowTimeoutMs: 90000 },
+        driver(),
+      ),
+    ).rejects.toThrow(/same --memory-flow-timeout-ms/);
+    expect(simulation.launches).toBe(2);
     vi.useFakeTimers();
     const pending = captureMemory({ ...options, workload: 'idle', idleSchedule: referencePath }, driver());
     await vi.runAllTimersAsync();
@@ -330,6 +394,10 @@ describe('standalone survivor-graph investigation', () => {
     const result = await captureMemory(ownershipOptions(), driver());
     if (!('observations' in result)) throw new Error('Expected separate ownership observations.');
     expect(result.scenario).toBe('ownership');
+    expect(result.memoryFlowTimeoutMs).toBe(60000);
+    expect(() => validateOwnershipMeasurements({ ...result, memoryFlowTimeoutMs: 120001 })).toThrow(
+      /memory-flow-timeout-ms/,
+    );
     expect(result.observations).toHaveLength(88);
     expect(result.workloadCompleted).toBe(true);
     expect(result.graphComparisonAvailable).toBe(true);

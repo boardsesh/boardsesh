@@ -11,6 +11,16 @@ export const MEMORY_WARMUP_CYCLES = 2;
 export const MEMORY_MEASURED_CYCLES = 20;
 export const MEMORY_CLIMBS_PER_CYCLE = 20;
 
+export const DEFAULT_MEMORY_FLOW_TIMEOUT_MS = 60_000;
+
+export function parseMemoryFlowTimeoutMs(argument: unknown): number {
+  if (argument === undefined) return DEFAULT_MEMORY_FLOW_TIMEOUT_MS;
+  const timeout = typeof argument === 'string' && /^\d+$/.test(argument) ? Number(argument) : argument;
+  if (typeof timeout !== 'number' || !Number.isInteger(timeout) || timeout < 1000 || timeout > 120_000)
+    throw new Error('--memory-flow-timeout-ms requires an integer from 1000 to 120000.');
+  return timeout;
+}
+
 export interface MemoryManifest {
   schemaVersion: 1;
   board: { name: 'tension'; layoutId: number; sizeId: number; setIds: number[]; angle: number };
@@ -198,6 +208,7 @@ export function validateMemoryMeasurements(candidate: unknown): void {
     measurements.samples.length !== 88
   )
     throw new Error('Incomplete memory capture: require two warm-ups and twenty measured four-checkpoint cycles.');
+  parseMemoryFlowTimeoutMs(measurements.memoryFlowTimeoutMs);
   const manifest = validateMemoryManifest(measurements.manifest);
   const workload = measurements.workload as MemoryWorkload;
   const first = record(measurements.samples[0]);
@@ -415,6 +426,7 @@ export function validateOwnershipMeasurements(candidate: unknown): void {
     'launches' in artifact
   )
     throw new Error('Incomplete ownership investigation or unavailable survivor-graph comparison.');
+  parseMemoryFlowTimeoutMs(artifact.memoryFlowTimeoutMs);
   const manifest = validateMemoryManifest(artifact.manifest);
   const identity = record(artifact.process);
   if (
