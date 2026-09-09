@@ -903,7 +903,7 @@ whether offline storage comes up at all.
 | --------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Startup DDL (`ensureMutationQueueTable`, `runMigrations`) | the app's main connection                                   | milliseconds on a warm install; the full migration set on an upgrade                                                                           |
 | Snapshot import (`bootstrapScopeFromSnapshot`)            | its own native connection (`withExclusiveTransactionAsync`) | one `BEGIN EXCLUSIVE` covering `reconcileScope` + `importScope` ONLY — the artifact is already downloaded to disk before the transaction opens |
-| Paged crawl (`pull-client`)                               | its own native connection                                   | one short exclusive transaction per page, with a 5s `busy_timeout`, so a contender can win in the gaps                                         |
+| Paged crawl (`pull-client`)                               | its own native connection                                   | one short exclusive transaction per page, opened `BEGIN IMMEDIATE` with a 5s `busy_timeout`, so a contender can win in the gaps               |
 | `VACUUM` / teardown deletes                               | the main connection                                         | 5-20s on a 200-400MB file                                                                                                                      |
 
 `OfflineBoardDownloadCompleted.durationMs` is **not** a lock-hold measurement. It is
@@ -912,6 +912,28 @@ artifact download as well as the import — mostly network. Sizing a retry windo
 it overstates the real contention by an order of magnitude. The measurement that
 does describe the lock is `Offline SQLite Init Recovered`'s `elapsedMs`: how long a
 launch that lost the lock took to win it back.
+
+**What happens when the pull loses it anyway** (issue #5302)
+
+Every write transaction in `pull-client` — the page upsert, the deletions page, the
+refresh tail — goes through `runPullWrite`, which does two things the raw
+`withExclusiveTransactionAsync` call did not:
+
+- Opens the transaction with `beginImmediateWrite`, not a bare `applyBusyTimeout`.
+  Expo's wrapper opens a DEFERRED `BEGIN`, which picks its lock from whichever
+  statement runs first, and the refresh tail's first statement is a `getCheckpoint`
+  SELECT. That made it a READ transaction whose later write had to upgrade, and
+  SQLite does not run the busy handler on an upgrade (#4332 measured it failing in
+  ~1ms against a 5,000ms `busy_timeout`). `BEGIN IMMEDIATE` makes the wait real.
+- Wraps it in `runLocalWriteWithRetry` at background sizing
+  (`OFFLINE_BACKGROUND_WRITE_*`: 3 attempts, 250ms gap, 20s budget, the full 5s
+  `busy_timeout` on every attempt). Before this, a single lost lock threw out of
+  `upsertDocuments` → `syncTable` → `pullSync` and ended the CYCLE — every later
+  table skipped, no checkpoint advanced, no `scope-complete:` marker — so the board
+  stayed stale until the next 30s wake met the same contention.
+
+A recovered lock reports nothing. One the ladder cannot win still surfaces as a
+failed cycle through `warnCycleError`, so a genuinely wedged database stays visible.
 
 **Why the launch gate opens before the schema is ready**
 

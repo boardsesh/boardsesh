@@ -86,8 +86,14 @@ import {
   setDeletionsCoverageAt,
   resetUserDataForLostCoverage,
 } from './deletions-coverage';
-import { applyBusyTimeout } from '../db/pragmas';
+import { beginImmediateWrite, OFFLINE_DB_BUSY_TIMEOUT_MS } from '../db/pragmas';
 import { classifySqliteLockError } from '../db/lock-errors';
+import {
+  runLocalWriteWithRetry,
+  OFFLINE_BACKGROUND_WRITE_BUDGET_MS,
+  OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS,
+  OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS,
+} from '../db/write-retry';
 import { getPendingCount } from '../mutation-queue/queue';
 import { isNetworkError } from '../mutation-queue/error-classification';
 import {
@@ -702,6 +708,64 @@ function buildMultiRowInsertSql(
           >= (${timestampKey(`${tableName}.${cursorColumn}`)}, ${tableName}.sync_seq)`;
 }
 
+/**
+ * Run one of the pull's write transactions, retrying a lost SQLite write lock
+ * instead of letting it abort the whole cycle (issue #5302).
+ *
+ * WHAT USED TO HAPPEN. Each of these transactions opened expo's deferred `BEGIN`,
+ * set `busy_timeout`, and wrote. A `SQLITE_BUSY` anywhere inside threw out of
+ * `upsertDocuments` → `syncTable` → `pullSync`, so ONE contended page ended the
+ * cycle: every table after it in BOARD_DATA_TABLES was skipped, no checkpoint
+ * advanced, and no `scope-complete:` marker was written. The scheduler's next wake
+ * is 30s later and met the same contention, which is what "Waiting to download"
+ * looks like from the outside. 1,431 events across 365 users in 30 days landed on
+ * `phase:board_data` alone (Sentry BOARDSESH-CW / BOARDSESH-CF).
+ *
+ * TWO THINGS ARE WRONG WITH THE OLD SHAPE, and this fixes both:
+ *
+ *  1. `applyBusyTimeout` alone is not enough for a task that READS before it
+ *     writes. `markSchemaRefreshComplete` in `'refresh'` mode opens with a
+ *     `getCheckpoint` SELECT, so the deferred `BEGIN` becomes a READ transaction
+ *     and the write that follows has to UPGRADE — the case #4332 measured against
+ *     real SQLite, where the busy handler is never consulted and the write fails in
+ *     about a millisecond against a 5,000ms setting. `beginImmediateWrite` takes
+ *     the write lock up front so the wait is real for every one of these
+ *     transactions, whichever statement they happen to start with.
+ *  2. Even a write-first transaction can genuinely lose a 5s race — the code below
+ *     notes that `removeBoardScopeData` holds an exclusive transaction for seconds,
+ *     and a snapshot import batch is the other documented long holder. The engine
+ *     has had a bounded ladder for exactly this since #4332; every user-facing
+ *     write goes through it and the pull did not. Now it does, at background
+ *     sizing (see OFFLINE_BACKGROUND_WRITE_* — nobody is waiting on a tap here).
+ *
+ * SAFE TO RE-RUN, which the ladder requires: expo rolls the whole transaction back
+ * on a throw, and every statement in these three tasks is idempotent anyway —
+ * `INSERT OR REPLACE` / `ON CONFLICT DO UPDATE` upserts, `DELETE`s, and checkpoint
+ * writes that either replace a row or only move a cursor forward. The one throw
+ * that must NOT be retried, `DeletionPageAbortedError`, is not a lock error, and
+ * the ladder's default `shouldRetry` is `isDatabaseLockedError`, so it rethrows
+ * immediately.
+ *
+ * A recovered lock reports NOTHING: `runLocalWriteWithRetry` is silent unless
+ * attempt 1 threw, and no `onSettled` is passed, so the only lock that still
+ * reaches telemetry is one the ladder could not win — which surfaces exactly where
+ * it did before, as a failed cycle.
+ */
+async function runPullWrite(db: OfflineDatabase, task: (transaction: SqlExecutor) => Promise<void>): Promise<void> {
+  await runLocalWriteWithRetry(
+    () =>
+      db.withExclusiveTransactionAsync(async (transaction) => {
+        await beginImmediateWrite(transaction, OFFLINE_DB_BUSY_TIMEOUT_MS);
+        await task(transaction);
+      }),
+    {
+      maxAttempts: OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS,
+      retryDelayMs: OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS,
+      budgetMs: OFFLINE_BACKGROUND_WRITE_BUDGET_MS,
+    },
+  );
+}
+
 async function upsertDocuments(
   db: OfflineDatabase,
   tableName: string,
@@ -763,10 +827,11 @@ async function upsertDocuments(
   // commit overhead by 10 while giving the drainer no meaningful extra window —
   // it can interleave between pages either way.
   let committed = false;
-  await db.withExclusiveTransactionAsync(async (transaction) => {
-    // This page's insert runs on its own connection (busy_timeout defaults to 0);
-    // wait for a held lock instead of losing the whole page to an instant SQLITE_BUSY.
-    await applyBusyTimeout(transaction);
+  await runPullWrite(db, async (transaction) => {
+    // A retried attempt re-runs this whole body, and the rollback of the failed one
+    // means none of its rows are there — so reset rather than carry the last
+    // attempt's verdict into this one.
+    committed = false;
     if (page && !page.canWrite()) return;
     for (let chunkStart = 0; chunkStart < documents.length; chunkStart += chunkSize) {
       const chunk = documents.slice(chunkStart, chunkStart + chunkSize);
@@ -939,8 +1004,13 @@ async function syncTable(
 
     if (revision && boardScope && (refresh || fullDownload) && !completedAtTail) {
       let completed = false;
-      await db.withExclusiveTransactionAsync(async (transaction) => {
-        await applyBusyTimeout(transaction);
+      // The read-then-upgrade case runPullWrite's docblock names: in `'refresh'`
+      // mode `markSchemaRefreshComplete` opens with a `getCheckpoint` SELECT, so
+      // before #5302 this transaction's later write had to upgrade a READ
+      // transaction and lost instantly under any contention, `busy_timeout`
+      // notwithstanding.
+      await runPullWrite(db, async (transaction) => {
+        completed = false;
         if (!canWrite()) return;
         await markSchemaRefreshComplete(
           transaction,
@@ -1014,14 +1084,14 @@ async function processDeletions(
     // failed tombstone rolls the entire page back for a clean retry.
     const pageInvalidatedKeys = new Set<string>();
     try {
-      await db.withExclusiveTransactionAsync(async (transaction) => {
-        await applyBusyTimeout(transaction);
-
+      await runPullWrite(db, async (transaction) => {
         // Expo opens this wrapper with deferred BEGIN: entering the callback is
-        // NOT writer-lock ownership. Re-writing the page's current cursor (or
-        // creating the epoch cursor on page one) is the first real main-DB write,
-        // so it waits behind a purge and then acquires SQLite's RESERVED writer
-        // lock. If the purge won, the guard immediately rolls this write back.
+        // NOT writer-lock ownership — `beginImmediateWrite` inside runPullWrite is
+        // what takes it, before the first statement below rather than because of
+        // it. Re-writing the page's current cursor (or creating the epoch cursor on
+        // page one) then runs with the writer lock already held, so it still
+        // waits behind a purge and the guard after it still rolls this write back
+        // if the purge won.
         // If we won, a purge cannot finish until this transaction commits or
         // rolls back. This closes the queue gap where a stale page could otherwise
         // commit after a wipe that landed between callback entry and first DELETE.
