@@ -34,6 +34,11 @@ vi.mock('expo-secure-store', () => {
   const undeletableServices = new Set<string>();
   const writeFailureKeys = new Set<string>();
 
+  // Fires once the legacy read has produced its value but before the caller
+  // resumes — the exact window a reconcile is in when the app mutates the same key
+  // underneath it.
+  const legacyReadHooks = new Map<string, () => void>();
+
   const serviceOf = (options?: { keychainService?: string }) => options?.keychainService ?? LEGACY_SERVICE;
   const itemKey = (key: string, options?: { keychainService?: string }) => `${serviceOf(options)}::${key}`;
 
@@ -41,7 +46,15 @@ vi.mock('expo-secure-store', () => {
     AFTER_FIRST_UNLOCK,
     getItemAsync: vi.fn(async (key: string, options?: { keychainService?: string }) => {
       if (lockedServices.has(serviceOf(options))) throw new Error('User interaction is not allowed.');
-      return items.get(itemKey(key, options)) ?? null;
+      const storedValue = items.get(itemKey(key, options)) ?? null;
+      if (serviceOf(options) === LEGACY_SERVICE) {
+        const hook = legacyReadHooks.get(key);
+        if (hook) {
+          legacyReadHooks.delete(key);
+          hook();
+        }
+      }
+      return storedValue;
     }),
     setItemAsync: vi.fn(async (key: string, value: string, options?: { keychainService?: string }) => {
       if (writeFailureKeys.has(itemKey(key, options))) throw new Error('write failed');
@@ -56,12 +69,17 @@ vi.mock('expo-secure-store', () => {
       items.delete(itemKey(key, options));
     }),
     __seed: (service: string, key: string, value: string) => items.set(`${service}::${key}`, value),
+    // A raw removal, standing in for a build that deletes the legacy item without
+    // knowing v2 or the stamp exist.
+    __delete: (service: string, key: string) => items.delete(`${service}::${key}`),
     __get: (service: string, key: string) => items.get(`${service}::${key}`) ?? null,
     __makeUndeletable: (service: string) => undeletableServices.add(service),
     __lockService: (service: string) => lockedServices.add(service),
     __unlockService: (service: string) => lockedServices.delete(service),
     __failWriteFor: (service: string, key: string) => writeFailureKeys.add(`${service}::${key}`),
+    __onceOnLegacyRead: (key: string, hook: () => void) => legacyReadHooks.set(key, hook),
     __reset: () => {
+      legacyReadHooks.clear();
       items.clear();
       lockedServices.clear();
       undeletableServices.clear();
@@ -74,12 +92,15 @@ vi.mock('../analytics', () => ({ track: vi.fn() }));
 
 type SecureStoreFake = {
   __seed: (service: string, key: string, value: string) => void;
+  __delete: (service: string, key: string) => void;
   __get: (service: string, key: string) => string | null;
   __makeUndeletable: (service: string) => void;
   __lockService: (service: string) => void;
   __unlockService: (service: string) => void;
   __failWriteFor: (service: string, key: string) => void;
+  __onceOnLegacyRead: (key: string, hook: () => void) => void;
   __reset: () => void;
+  getItemAsync: ReturnType<typeof vi.fn>;
   setItemAsync: ReturnType<typeof vi.fn>;
 };
 
@@ -138,31 +159,121 @@ describe('an OTA roll-forward after a rollback', () => {
   });
 });
 
+describe('a sign-out performed on the rolled-back build', () => {
+  it('is not undone by the roll-forward', async () => {
+    const store = await secureStore();
+    const { storeTokens } = await import('../auth-store');
+    await storeTokens('jwt-A', 'refresh-A', EXPIRES_AT);
+
+    // Pre-#4127 JS has no tombstone: signing out there just deletes the legacy
+    // item. v2 is untouched and still holds the credential.
+    for (const key of [JWT_KEY, 'boardsesh_refresh_token', 'boardsesh_token_expires_at']) {
+      store.__delete(LEGACY_SERVICE, key);
+    }
+
+    relaunch();
+    const { getAuthToken, getRefreshToken } = await import('../auth-store');
+
+    // Handing these back is the user being signed back in with the credentials
+    // they signed out of — a worse outcome than the sign-out this PR prevents.
+    await expect(getAuthToken()).resolves.toBeNull();
+    await expect(getRefreshToken()).resolves.toBeNull();
+  });
+
+  it('settles after one repair instead of rewriting the key on every launch', async () => {
+    const store = await secureStore();
+    const { storeTokens } = await import('../auth-store');
+    await storeTokens('jwt-A', 'refresh-A', EXPIRES_AT);
+    store.__delete(LEGACY_SERVICE, JWT_KEY);
+
+    relaunch();
+    const { migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+
+    await expect(migrateSecureKeysToV2([JWT_KEY], 'auth')).resolves.toEqual([{ key: JWT_KEY, status: 'repaired' }]);
+    // The repair stamps legacy as EMPTY, which is what it now is. Stamping it as
+    // holding the tombstone would make the next pass disagree with itself and
+    // repair the same key forever.
+    await expect(migrateSecureKeysToV2([JWT_KEY], 'auth')).resolves.toEqual([{ key: JWT_KEY, status: 'already-v2' }]);
+  });
+});
+
+describe('a repair racing the app', () => {
+  it('stands down rather than undoing a write this process just made', async () => {
+    const store = await secureStore();
+    const { storeTokens } = await import('../auth-store');
+    await storeTokens('jwt-before-rollback', 'refresh-before-rollback', EXPIRES_AT);
+    store.__seed(LEGACY_SERVICE, JWT_KEY, 'jwt-after-rollback');
+
+    relaunch();
+    const { writeSecureValue } = await import('../secure-store-io');
+    const { migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+
+    // The app writes the key in the window between the reconcile's legacy read and
+    // its repair write. writeSecureValue marks the key synchronously, before its
+    // first await, so the mark is in place by the time the check runs.
+    store.__onceOnLegacyRead(JWT_KEY, () => {
+      void writeSecureValue(JWT_KEY, 'jwt-from-a-fresh-sign-in');
+    });
+
+    await expect(migrateSecureKeysToV2([JWT_KEY], 'auth')).resolves.toEqual([{ key: JWT_KEY, status: 'superseded' }]);
+
+    // Without the stand-down the repair writes the rolled-back value over a
+    // credential the app just stored, and readSecureValue prefers v2 — so the
+    // fresh sign-in silently reverts.
+    const { readSecureValue } = await import('../secure-store-io');
+    await expect(readSecureValue(JWT_KEY)).resolves.toBe('jwt-from-a-fresh-sign-in');
+  });
+});
+
 describe('a locked legacy namespace during the reconcile', () => {
-  it('defers instead of latching, so the repair still happens once unlocked', async () => {
+  it('costs a locked device no legacy reads once the pass has run', async () => {
+    const store = await secureStore();
+    const { storeTokens } = await import('../auth-store');
+    await storeTokens('jwt-1', 'refresh-1', EXPIRES_AT);
+
+    store.__lockService(LEGACY_SERVICE);
+    relaunch();
+    const { getAuthToken } = await import('../auth-store');
+
+    await getAuthToken();
+    store.getItemAsync.mockClear();
+    for (let read = 0; read < 5; read += 1) await getAuthToken();
+
+    // Retrying a deferred key from the read path put three throwing
+    // WHEN_UNLOCKED reads on every token read — the traffic the v2 namespace
+    // exists to remove, and the #3602/#4103 failure mode by another name.
+    const legacyReads = store.getItemAsync.mock.calls.filter(
+      (call) => (call[1] as { keychainService?: string } | undefined)?.keychainService === undefined,
+    );
+    expect(legacyReads).toHaveLength(0);
+  });
+
+  it('hands the key to the foreground retry, which repairs it', async () => {
     const store = await secureStore();
     const { storeTokens } = await import('../auth-store');
     await storeTokens('jwt-before-rollback', 'refresh-before-rollback', EXPIRES_AT);
     store.__seed(LEGACY_SERVICE, JWT_KEY, 'jwt-after-rollback');
 
     // An OTA update is applied at launch, and a background cold launch on a locked
-    // phone applies it as readily as a foreground one. Reporting this pass as
-    // finished would spend the whole process on the credential the backend has
-    // already revoked.
+    // phone applies it as readily as a foreground one. Nothing on the read path
+    // will pick this key up again, so the deferred list is the only handle on it.
     store.__lockService(LEGACY_SERVICE);
     relaunch();
-    const { isMigrationComplete, migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+    const { getAuthToken, retryDeferredCredentialReconcile } = await import('../auth-store');
+    const { deferredReconcileKeys } = await import('../keychain-namespace-migration');
 
-    const deferred = await migrateSecureKeysToV2([JWT_KEY], 'auth');
-    expect(deferred).toEqual([{ key: JWT_KEY, status: 'reconcile-deferred' }]);
-    expect(isMigrationComplete(deferred)).toBe(false);
+    await expect(getAuthToken()).resolves.toBe('jwt-before-rollback');
+    expect(deferredReconcileKeys('auth')).toContain(JWT_KEY);
 
-    // The retry auth-provider already runs on every AppState `active`.
+    // What KeychainNamespaceMigration calls on AppState `active`.
     store.__unlockService(LEGACY_SERVICE);
-    await expect(migrateSecureKeysToV2([JWT_KEY], 'auth')).resolves.toEqual([{ key: JWT_KEY, status: 'repaired' }]);
+    await retryDeferredCredentialReconcile();
+
+    await expect(getAuthToken()).resolves.toBe('jwt-after-rollback');
+    expect(deferredReconcileKeys('auth')).toHaveLength(0);
   });
 
-  it('is not reported as a failure, so it cannot pollute the phase-2 gate', async () => {
+  it('is not reported as a failure, and repeats itself without repeating the event', async () => {
     const store = await secureStore();
     const { storeTokens } = await import('../auth-store');
     await storeTokens('jwt-1', 'refresh-1', EXPIRES_AT);
@@ -173,8 +284,8 @@ describe('a locked legacy namespace during the reconcile', () => {
     const { track } = await import('../analytics');
 
     await migrateSecureKeysToV2([JWT_KEY], 'auth');
-    // Every token read on a locked device retries; only the first one is worth
-    // an event.
+    // The foreground retry runs on every app switch; an identical outcome is not
+    // worth an event.
     await migrateSecureKeysToV2([JWT_KEY], 'auth');
 
     expect(track).toHaveBeenCalledTimes(1);
@@ -184,6 +295,12 @@ describe('a locked legacy namespace during the reconcile', () => {
       // stranded, on nothing more than a phone being locked.
       expect.objectContaining({ scope: 'auth', deferred: 1, failed: 0, failures: '' }),
     );
+
+    // But a pass whose outcome CHANGES still reports, or a device moving from
+    // deferred to repaired would be invisible.
+    store.__unlockService(LEGACY_SERVICE);
+    await migrateSecureKeysToV2([JWT_KEY], 'auth');
+    expect(track).toHaveBeenCalledTimes(2);
   });
 });
 

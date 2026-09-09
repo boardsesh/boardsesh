@@ -20,7 +20,8 @@
 // last put there:
 //
 //   string    — we left this fingerprint there
-//   null      — we left it empty
+//   null      — we left it EMPTY (and an empty namespace that does not match this is
+//               therefore someone else's delete — a sign-out on rolled-back JS)
 //   undefined — we do not know (our write or delete could not be confirmed)
 //
 // and the rule that falls out of it is:
@@ -72,14 +73,21 @@ export const NAMESPACE_STAMP_SUFFIX = '.nsgen';
  */
 export type NamespaceContent = string | null | undefined;
 
+/**
+ * Wire format version. A stamp written by a future (or corrupted) format reads as
+ * NO stamp, which resolves to "v2 wins" — the conservative direction, and the same
+ * thing an unstamped device already does.
+ *
+ * There is deliberately no write counter here. One was tried and removed: it cost
+ * a keychain read on every write, nothing in the freshness decision could use it
+ * (disagreement with the fingerprints is what carries the ordering), and an
+ * unlocked read-modify-write across concurrent stamps could not actually keep it
+ * monotonic — so it would have been a number that looked like an ordering and was
+ * not one.
+ */
+export const STAMP_FORMAT_VERSION = 1;
+
 export type SecureNamespaceStamp = {
-  /**
-   * Monotonic per-key count of aware writes. Nothing in the freshness decision
-   * reads it — disagreement with the fingerprints is what carries the ordering —
-   * but it is what a human comparing two devices at 2am has to go on, and it rides
-   * along in the migration's analytics event.
-   */
-  generation: number;
   v2: NamespaceContent;
   legacy: NamespaceContent;
 };
@@ -110,10 +118,10 @@ export function fingerprintSecureValue(value: string): string {
   return `${value.length}.${(hash >>> 0).toString(36)}`;
 }
 
-type StampPayload = { g: number; v2?: string | null; l?: string | null };
+type StampPayload = { v: number; v2?: string | null; l?: string | null };
 
 export function serializeNamespaceStamp(stamp: SecureNamespaceStamp): string {
-  const payload: StampPayload = { g: stamp.generation };
+  const payload: StampPayload = { v: STAMP_FORMAT_VERSION };
   // An omitted field is the wire form of `undefined` — "we do not know" — and it
   // must stay distinguishable from an explicit null, which means "we left it
   // empty". Collapsing the two would let a rejected legacy write read back as a
@@ -143,16 +151,33 @@ export function parseNamespaceStamp(raw: string | null): SecureNamespaceStamp | 
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
   const record = parsed as Record<string, unknown>;
-  return {
-    generation: typeof record.g === 'number' ? record.g : 0,
-    v2: contentFrom(record, 'v2'),
-    legacy: contentFrom(record, 'l'),
-  };
+  if (record.v !== STAMP_FORMAT_VERSION) return null;
+  return { v2: contentFrom(record, 'v2'), legacy: contentFrom(record, 'l') };
 }
 
 /**
- * Which namespace holds the newer value, for a key that exists in both with
- * DIFFERENT content.
+ * What we would record for a namespace currently holding `value`: its fingerprint,
+ * or `null` for an empty one.
+ *
+ * The null case is load-bearing. A namespace an aware build emptied records `null`,
+ * and a namespace an UNAWARE build emptied — a sign-out on rolled-back JS, which
+ * deletes the legacy item and knows nothing about stamps — still carries whatever
+ * fingerprint we last stamped. Comparing against this is what tells those apart.
+ */
+export function contentOf(value: string | null): string | null {
+  return value === null ? null : fingerprintSecureValue(value);
+}
+
+/**
+ * Which side is newer, for a key v2 holds and legacy holds DIFFERENTLY — including
+ * legacy holding nothing at all.
+ *
+ * `legacyValue: null` is not a shortcut to "v2 wins", and treating it as one is a
+ * resurrection bug: a sign-out performed on rolled-back JS deletes the legacy item
+ * and leaves v2 untouched, so an empty legacy beside a stamp that still names a
+ * fingerprint is the user having signed out. Every aware path that empties legacy
+ * records `null`, and every aware path that leaves v2 ahead of legacy records
+ * `undefined`, so neither is mistaken for it.
  *
  * Every unknown resolves to `v2-current`, so the only way to reach `legacy-newer`
  * is a stamp that positively contradicts what legacy holds while still matching
@@ -161,7 +186,7 @@ export function parseNamespaceStamp(raw: string | null): SecureNamespaceStamp | 
 export function resolveNamespaceVerdict(
   stamp: SecureNamespaceStamp | null,
   v2Value: string,
-  legacyValue: string,
+  legacyValue: string | null,
 ): NamespaceVerdict {
   // No stamp at all: a device that has not written anything since this shipped.
   // Indistinguishable from the pre-#5345 world, and treated as it.
@@ -175,37 +200,20 @@ export function resolveNamespaceVerdict(
   // in v2 while the legacy write was rejected on a locked device, so legacy still
   // holds the live credential it was meant to retire. It must not out-rank v2.
   if (stamp.legacy === undefined) return 'v2-current';
-  // Legacy is exactly as an aware build left it (a fingerprint match), or has
-  // changed under a build that maintains no stamps — which can only be JS that
-  // predates the v2 namespace, running after our stamp.
-  return stamp.legacy === fingerprintSecureValue(legacyValue) ? 'v2-current' : 'legacy-newer';
-}
-
-// Generation of the last stamp this process wrote, per key. Saves one keychain
-// read per write after the first; a cold start still reads the stored stamp so the
-// counter carries across launches. Only the counter is cached — never a value or a
-// fingerprint, which would go stale the moment another process wrote.
-const lastWrittenGeneration = new Map<string, number>();
-
-async function readStoredStamp(key: string): Promise<SecureNamespaceStamp | null> {
-  return parseNamespaceStamp(await SecureStore.getItemAsync(namespaceStampKey(key), SECURE_STORE_V2_OPTIONS));
+  // Legacy is exactly as an aware build left it (a fingerprint match, or null on
+  // both sides), or has changed under a build that maintains no stamps — which can
+  // only be JS that predates the v2 namespace, running after our stamp.
+  return stamp.legacy === contentOf(legacyValue) ? 'v2-current' : 'legacy-newer';
 }
 
 /** Read a key's stamp. Resolves null when there is none, or it cannot be read. */
 export async function readNamespaceStamp(key: string): Promise<SecureNamespaceStamp | null> {
   if (!USES_V2_NAMESPACE) return null;
   try {
-    return await readStoredStamp(key);
+    return parseNamespaceStamp(await SecureStore.getItemAsync(namespaceStampKey(key), SECURE_STORE_V2_OPTIONS));
   } catch {
     return null;
   }
-}
-
-async function nextGeneration(key: string): Promise<number> {
-  const cached = lastWrittenGeneration.get(key);
-  if (cached !== undefined) return cached + 1;
-  const stored = await readNamespaceStamp(key);
-  return (stored?.generation ?? 0) + 1;
 }
 
 /**
@@ -218,21 +226,20 @@ async function nextGeneration(key: string): Promise<number> {
 export async function writeNamespaceStamp(key: string, v2: NamespaceContent, legacy: NamespaceContent): Promise<void> {
   if (!USES_V2_NAMESPACE) return;
   try {
-    const generation = await nextGeneration(key);
     await SecureStore.setItemAsync(
       namespaceStampKey(key),
-      serializeNamespaceStamp({ generation, v2, legacy }),
+      serializeNamespaceStamp({ v2, legacy }),
       SECURE_STORE_V2_OPTIONS,
     );
-    lastWrittenGeneration.set(key, generation);
   } catch {
-    // A locked v2 namespace means the value write next to it failed too.
+    // Best-effort, and it fails safe: a stamp that did not land leaves the PREVIOUS
+    // one, whose `v2` fingerprint no longer matches what v2 holds — rule 2, which
+    // resolves to "v2 wins". Never a wrong repair.
   }
 }
 
 /** Drop a key's stamp, for a delete that verified both namespaces are empty. */
 export async function clearNamespaceStamp(key: string): Promise<void> {
   if (!USES_V2_NAMESPACE) return;
-  lastWrittenGeneration.delete(key);
   await SecureStore.deleteItemAsync(namespaceStampKey(key), SECURE_STORE_V2_OPTIONS);
 }

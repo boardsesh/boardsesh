@@ -20,6 +20,8 @@ vi.mock('expo-secure-store', () => ({
 
 const {
   NAMESPACE_STAMP_SUFFIX,
+  STAMP_FORMAT_VERSION,
+  contentOf,
   fingerprintSecureValue,
   namespaceStampKey,
   parseNamespaceStamp,
@@ -47,14 +49,14 @@ describe('fingerprintSecureValue', () => {
 
 describe('the stamp wire format', () => {
   it('round-trips a fully known stamp', () => {
-    const stamp = { generation: 7, v2: 'a', legacy: 'b' };
+    const stamp = { v2: 'a', legacy: 'b' };
 
     expect(parseNamespaceStamp(serializeNamespaceStamp(stamp))).toEqual(stamp);
   });
 
   it('keeps "we left it empty" distinct from "we do not know"', () => {
-    const emptied = parseNamespaceStamp(serializeNamespaceStamp({ generation: 1, v2: 'a', legacy: null }));
-    const unknown = parseNamespaceStamp(serializeNamespaceStamp({ generation: 1, v2: 'a', legacy: undefined }));
+    const emptied = parseNamespaceStamp(serializeNamespaceStamp({ v2: 'a', legacy: null }));
+    const unknown = parseNamespaceStamp(serializeNamespaceStamp({ v2: 'a', legacy: undefined }));
 
     // Collapsing these would let a rejected legacy write read back as a confirmed
     // empty namespace, and a live credential would then out-rank a tombstone.
@@ -67,15 +69,43 @@ describe('the stamp wire format', () => {
     expect(parseNamespaceStamp('not json')).toBeNull();
     expect(parseNamespaceStamp('"a string"')).toBeNull();
   });
+
+  it('rejects a stamp from another format version rather than guessing at it', () => {
+    const future = JSON.stringify({ v: STAMP_FORMAT_VERSION + 1, v2: 'a', l: 'b' });
+
+    // Falls through to "v2 wins", which is what an unstamped device already does.
+    expect(parseNamespaceStamp(future)).toBeNull();
+    expect(parseNamespaceStamp(JSON.stringify({ v2: 'a', l: 'b' }))).toBeNull();
+  });
+});
+
+describe('contentOf', () => {
+  it('maps an empty namespace to null and a populated one to its fingerprint', () => {
+    expect(contentOf(null)).toBeNull();
+    expect(contentOf(V2_TOKEN)).toBe(fingerprintSecureValue(V2_TOKEN));
+  });
 });
 
 describe('resolveNamespaceVerdict', () => {
-  const fresh = { generation: 3, v2: fingerprintSecureValue(V2_TOKEN), legacy: fingerprintSecureValue(V2_TOKEN) };
+  const fresh = { v2: fingerprintSecureValue(V2_TOKEN), legacy: fingerprintSecureValue(V2_TOKEN) };
 
   it('picks legacy when it moved under a build that keeps no stamps', () => {
     // The #5345 signature: v2 is exactly as we left it, legacy is not. Only JS
     // that predates the v2 namespace writes legacy without stamping.
     expect(resolveNamespaceVerdict(fresh, V2_TOKEN, LEGACY_TOKEN)).toBe('legacy-newer');
+  });
+
+  it('picks legacy when an unaware build EMPTIED it', () => {
+    // A sign-out on rolled-back JS: it deletes the legacy item and leaves v2
+    // alone. Reading an empty legacy as "nothing to compare" hands the user back
+    // the credentials they just signed out of.
+    expect(resolveNamespaceVerdict(fresh, V2_TOKEN, null)).toBe('legacy-newer');
+  });
+
+  it('keeps v2 when WE are the ones who emptied legacy', () => {
+    const emptiedByUs = { v2: fingerprintSecureValue(V2_TOKEN), legacy: null };
+
+    expect(resolveNamespaceVerdict(emptiedByUs, V2_TOKEN, null)).toBe('v2-current');
   });
 
   it('keeps v2 when there is no stamp to compare against', () => {
@@ -85,29 +115,23 @@ describe('resolveNamespaceVerdict', () => {
   it('keeps v2 when our own legacy write could not be confirmed', () => {
     // The sign-out tombstone on a locked device: v2 holds the tombstone, legacy
     // still holds the live credential, and the credential must not win.
-    const unconfirmed = { generation: 3, v2: fingerprintSecureValue(V2_TOKEN), legacy: undefined };
+    const unconfirmed = { v2: fingerprintSecureValue(V2_TOKEN), legacy: undefined };
 
     expect(resolveNamespaceVerdict(unconfirmed, V2_TOKEN, LEGACY_TOKEN)).toBe('v2-current');
   });
 
-  it('keeps v2 when v2 itself moved since the stamp', () => {
-    // A v2-aware build wrote v2 and its legacy mirror was rejected. v2 is the
-    // newer half of that write.
-    const stale = {
-      generation: 3,
-      v2: fingerprintSecureValue('something-older'),
-      legacy: fingerprintSecureValue(LEGACY_TOKEN),
-    };
+  it('keeps v2 when v2 itself moved since the stamp, even though legacy also moved', () => {
+    // A v2-aware build wrote v2 and its legacy mirror was rejected, so v2 is the
+    // newer half of that write. Both sides disagree with the stamp here on
+    // purpose: a fixture whose legacy still matched would be decided by the legacy
+    // rule below and would pass with this rule deleted.
+    const staleOnBothSides = { v2: fingerprintSecureValue('something-older'), legacy: fingerprintSecureValue('also-older') };
 
-    expect(resolveNamespaceVerdict(stale, V2_TOKEN, LEGACY_TOKEN)).toBe('v2-current');
+    expect(resolveNamespaceVerdict(staleOnBothSides, V2_TOKEN, LEGACY_TOKEN)).toBe('v2-current');
   });
 
   it('keeps v2 when legacy is exactly what we last put there', () => {
-    const mirrored = {
-      generation: 3,
-      v2: fingerprintSecureValue(V2_TOKEN),
-      legacy: fingerprintSecureValue(LEGACY_TOKEN),
-    };
+    const mirrored = { v2: fingerprintSecureValue(V2_TOKEN), legacy: fingerprintSecureValue(LEGACY_TOKEN) };
 
     expect(resolveNamespaceVerdict(mirrored, V2_TOKEN, LEGACY_TOKEN)).toBe('v2-current');
   });

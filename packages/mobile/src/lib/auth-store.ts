@@ -1,4 +1,9 @@
-import { createOnceRunner, isMigrationComplete, migrateSecureKeysToV2 } from './keychain-namespace-migration';
+import {
+  createOnceRunner,
+  deferredReconcileKeys,
+  isMigrationComplete,
+  migrateSecureKeysToV2,
+} from './keychain-namespace-migration';
 import {
   SECURE_STORE_TOMBSTONE,
   deleteSecureValue,
@@ -54,6 +59,28 @@ class AuthCredentialCleanupError extends Error {
 const ensureAuthCredentialsMigrated = createOnceRunner(() =>
   serializeCredentialMutation(async () => isMigrationComplete(await migrateSecureKeysToV2(AUTH_SECURE_KEYS, 'auth'))),
 );
+
+/**
+ * Re-run the credential keys a locked keychain stopped the last pass from
+ * reconciling (#5345).
+ *
+ * Driven from KeychainNamespaceMigration's AppState `active` listener rather than
+ * from the read path. A deferred key needs the phone unlocked, which is exactly
+ * what a foreground transition means, and retrying it from getStoredCredential
+ * instead would put three throwing WHEN_UNLOCKED reads on every token read of a
+ * locked device — the traffic the v2 namespace exists to remove.
+ *
+ * Resolves immediately when nothing is deferred, which is the steady state.
+ * Serialized like every other credential mutation, because the repair it may
+ * perform is a write.
+ */
+export function retryDeferredCredentialReconcile(): Promise<void> {
+  const deferredKeys = deferredReconcileKeys('auth');
+  if (deferredKeys.length === 0) return Promise.resolve();
+  return serializeCredentialMutation(async () => {
+    await migrateSecureKeysToV2(deferredKeys, 'auth');
+  });
+}
 
 async function getStoredCredential(key: string): Promise<string | null> {
   // Best-effort. A keychain that refuses the migration refuses the read below

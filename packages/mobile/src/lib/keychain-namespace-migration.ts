@@ -41,18 +41,19 @@
 //
 // The SecureStore calls here are RAW on purpose: routing them through
 // secure-store-io would re-enter the auth read path that awaits this migration.
-// The one thing imported from that module is a synchronous predicate, which
-// performs no I/O and cannot re-enter anything.
+// The only things imported from that module are a synchronous predicate and a
+// string constant, neither of which performs I/O or can re-enter anything.
 
 import * as SecureStore from 'expo-secure-store';
 import { track } from './analytics';
 import { SECURE_STORE_V2_OPTIONS, USES_V2_NAMESPACE } from './secure-store-options';
-import { wasSecureKeyTouchedThisProcess } from './secure-store-io';
+import { SECURE_STORE_TOMBSTONE, wasSecureKeyTouchedThisProcess } from './secure-store-io';
 import {
-  fingerprintSecureValue,
+  contentOf,
   readNamespaceStamp,
   resolveNamespaceVerdict,
   writeNamespaceStamp,
+  type NamespaceContent,
 } from './secure-store-stamp';
 
 export type SecureKeyMigrationStatus =
@@ -78,26 +79,50 @@ export type SecureKeyMigrationOutcome = { key: string; status: SecureKeyMigratio
 // succeeded, which needs a keychain refusing v2 writes — a device that has not
 // been unlocked since boot, where the migration was going to fail anyway. The
 // next launch starts with an empty registry and picks it back up.
-const TERMINAL_STATUSES: readonly SecureKeyMigrationStatus[] = [
+// `reconcile-deferred` sits here too, and it is the one that needs an argument.
+// It is what a locked legacy namespace produces for a key that ALREADY has a v2
+// item: nothing went wrong, nothing needs fixing on most devices, but we could not
+// read legacy so we could not tell a stale v2 copy from a fresh one (#5345).
+//
+// It has to be terminal. Leaving the pass unlatched on it was tried and reverted:
+// getStoredCredential re-runs the pass on every token read, so a locked device paid
+// three throwing WHEN_UNLOCKED legacy reads per token read, forever — measured at
+// 15 for five sequential getAuthToken() calls, against zero before this change.
+// That is the exact keychain traffic the v2 namespace exists to eliminate, and
+// paying it to catch a rollback is a bad trade.
+//
+// The retry instead runs on the foreground transition, which is when a
+// WHEN_UNLOCKED item becomes readable and is the only moment a retry could
+// succeed: KeychainNamespaceMigration calls back with the keys
+// deferredReconcileKeys() left behind. Steady-state cost per token read is
+// unchanged from before this PR.
+//
+// It is also deliberately not a FAILURE. Reporting it as one would have every
+// migrated device emit `legacy-read-failed` on every locked background wake, and
+// #4128's go/no-go gate reads exactly that number.
+const SUCCESS_STATUSES: readonly SecureKeyMigrationStatus[] = [
   'already-v2',
   'migrated',
   'repaired',
   'absent',
   'superseded',
+  'reconcile-deferred',
 ];
 
-// Healthy, but NOT finished. `reconcile-deferred` is what a locked legacy
-// namespace produces for a key that already has a v2 item: nothing went wrong, and
-// nothing needs fixing on most devices — but we could not read legacy, so we could
-// not tell a stale v2 copy from a fresh one (#5345). It has to keep the pass
-// unlatched, or the first process after a roll-forward (a background cold launch on
-// a locked phone applies the new bundle just as readily as a foreground one) would
-// declare itself done and spend its whole life on the revoked credential.
-//
-// It is deliberately NOT a failure: reporting it as one would have every migrated
-// device emit `legacy-read-failed` on every locked background wake, and #4128's
-// go/no-go gate reads exactly that number.
-const HEALTHY_STATUSES: readonly SecureKeyMigrationStatus[] = [...TERMINAL_STATUSES, 'reconcile-deferred'];
+// Keys whose freshness check was blocked by a locked legacy namespace, per scope.
+// Replaced wholesale by each pass, so it always describes the latest one.
+const deferredKeysByScope = new Map<string, readonly string[]>();
+
+/**
+ * Keys in `scope` that a locked keychain stopped the last pass from reconciling.
+ *
+ * The caller re-runs them on the next foreground — auth through its own credential
+ * mutation queue, preferences straight through migrateSecureKeysToV2. Empty in the
+ * steady state, which is what makes the retry free.
+ */
+export function deferredReconcileKeys(scope: string): readonly string[] {
+  return deferredKeysByScope.get(scope) ?? [];
+}
 
 /**
  * Copy `value` into v2 and confirm it landed, then stamp both namespaces.
@@ -106,9 +131,10 @@ const HEALTHY_STATUSES: readonly SecureKeyMigrationStatus[] = [...TERMINAL_STATU
  * would otherwise leave the key looking migrated to this pass while the next
  * launch still reads legacy.
  */
-async function copyIntoV2(
+async function writeV2AndStamp(
   key: string,
   value: string,
+  legacyContent: NamespaceContent,
   status: 'migrated' | 'repaired',
 ): Promise<SecureKeyMigrationOutcome> {
   try {
@@ -125,10 +151,12 @@ async function copyIntoV2(
   }
   if (verifiedValue !== value) return { key, status: 'verify-mismatch' };
 
-  // Both namespaces now hold `value`, and saying so closes the rollback window
-  // immediately instead of waiting for the app's next write to open a stamp.
-  const fingerprint = fingerprintSecureValue(value);
-  await writeNamespaceStamp(key, fingerprint, fingerprint);
+  // Record what BOTH namespaces hold now — legacy is passed in because it is not
+  // always this value: a repair that propagates an unaware sign-out writes a
+  // tombstone into v2 while legacy stays empty. Stamping it closes the rollback
+  // window immediately instead of waiting for the app's next write, and stamping it
+  // ACCURATELY is what stops the next pass repairing the same key again forever.
+  await writeNamespaceStamp(key, contentOf(value), legacyContent);
   return { key, status };
 }
 
@@ -154,20 +182,30 @@ async function reconcileExistingV2(key: string, existingV2: string): Promise<Sec
   try {
     legacyValue = await SecureStore.getItemAsync(key);
   } catch {
-    // Locked legacy namespace. v2 still stands for this read — the outcome is
-    // exactly what it was before this check existed — but the comparison did not
-    // happen, so the pass must not latch on it. The retry lands on the next
-    // AppState `active`, which is when a WHEN_UNLOCKED legacy item is readable.
+    // Locked legacy namespace. v2 stands for this read — the outcome is exactly
+    // what it was before this check existed — but the comparison did not happen,
+    // so the key is handed to deferredReconcileKeys for the foreground retry.
     return { key, status: 'reconcile-deferred' };
   }
-  if (legacyValue === null || legacyValue === existingV2) return { key, status: 'already-v2' };
+  if (legacyValue === existingV2) return { key, status: 'already-v2' };
+  // A null legacy value is NOT a reason to stop here. An empty legacy namespace
+  // beside a stamp that still names a fingerprint is a sign-out performed on
+  // rolled-back JS, which deletes the legacy item and leaves v2 alone; returning
+  // early would hand that user back the credentials they signed out of. The verdict
+  // knows the difference, so let it decide.
   if (resolveNamespaceVerdict(stamp, existingV2, legacyValue) !== 'legacy-newer') return { key, status: 'already-v2' };
 
   // Same race, same guard as the copy below: the app writing this key in the
   // window between the legacy read and the v2 write would be undone by it.
   if (wasSecureKeyTouchedThisProcess(key)) return { key, status: 'superseded' };
 
-  return copyIntoV2(key, legacyValue, 'repaired');
+  // Propagating a delete is a WRITE, not a delete: the tombstone reads as absent
+  // through readSecureValue and, unlike SecItemDelete, can be verified by reading
+  // it back. Legacy is left empty and stamped as such, so the next pass agrees
+  // with itself instead of repairing this key on every launch.
+  if (legacyValue === null) return writeV2AndStamp(key, SECURE_STORE_TOMBSTONE, null, 'repaired');
+
+  return writeV2AndStamp(key, legacyValue, contentOf(legacyValue), 'repaired');
 }
 
 async function migrateKey(key: string): Promise<SecureKeyMigrationOutcome> {
@@ -196,33 +234,29 @@ async function migrateKey(key: string): Promise<SecureKeyMigrationOutcome> {
   // saved, because readSecureValue prefers the v2 copy this write would create.
   if (wasSecureKeyTouchedThisProcess(key)) return { key, status: 'superseded' };
 
-  return copyIntoV2(key, legacyValue, 'migrated');
+  return writeV2AndStamp(key, legacyValue, contentOf(legacyValue), 'migrated');
 }
 
 /** True when every key in the pass reached a terminal, retry-free state. */
 export function isMigrationComplete(outcomes: readonly SecureKeyMigrationOutcome[]): boolean {
-  return outcomes.every((outcome) => TERMINAL_STATUSES.includes(outcome.status));
+  return outcomes.every((outcome) => SUCCESS_STATUSES.includes(outcome.status));
 }
 
-// An incomplete pass is retried on the next token read (auth) or the next
-// foreground (preferences), and on a locked background wake every one of those
-// retries fails identically. Emitting each of them would turn a single stuck
-// device into a stream of identical events, so only the first incomplete pass
-// per scope is reported. The entry is cleared when the scope completes, so a
-// later regression is still visible.
-const reportedIncompleteScopes = new Set<string>();
+// A pass that changed nothing since the last one is not worth an event, and there
+// are two ways to produce a stream of those: a locked background wake retrying on
+// every token read and failing identically, and a foreground retry of deferred keys
+// running on every app switch. Both are covered by reporting only when the per-key
+// outcome set actually differs from the last one reported for this scope — which
+// still emits the moment a device moves from stuck to migrated, or from deferred to
+// repaired, because that changes the set.
+const lastReportedOutcomes = new Map<string, string>();
 
 function reportOutcomes(scope: string, outcomes: readonly SecureKeyMigrationOutcome[]): void {
-  const failures = outcomes.filter((outcome) => !HEALTHY_STATUSES.includes(outcome.status));
-  // Keyed on INCOMPLETE, not on failed: a deferred pass repeats on every token
-  // read until the phone is unlocked, and each of those is as identical and as
-  // useless to emit as a failing one.
-  if (isMigrationComplete(outcomes)) {
-    reportedIncompleteScopes.delete(scope);
-  } else {
-    if (reportedIncompleteScopes.has(scope)) return;
-    reportedIncompleteScopes.add(scope);
-  }
+  const signature = outcomes.map((outcome) => `${outcome.key}:${outcome.status}`).join(',');
+  if (lastReportedOutcomes.get(scope) === signature) return;
+  lastReportedOutcomes.set(scope, signature);
+
+  const failures = outcomes.filter((outcome) => !SUCCESS_STATUSES.includes(outcome.status));
   track('Keychain Namespace Migration', {
     scope,
     keys: outcomes.length,
@@ -261,6 +295,10 @@ export async function migrateSecureKeysToV2(
     outcomes.push(await migrateKey(key));
   }
 
+  deferredKeysByScope.set(
+    scope,
+    outcomes.filter((outcome) => outcome.status === 'reconcile-deferred').map((outcome) => outcome.key),
+  );
   reportOutcomes(scope, outcomes);
   return outcomes;
 }
