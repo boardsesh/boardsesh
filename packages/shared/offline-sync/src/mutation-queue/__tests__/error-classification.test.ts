@@ -12,6 +12,7 @@ import {
   isServerFailureSignal,
   isServerUnavailableError,
   isTransportNetworkError,
+  PERMANENT_GRAPHQL_ERROR_CODES,
   PERMANENT_REJECTION_STATUSES,
 } from '../error-classification';
 
@@ -543,19 +544,18 @@ describe('the masked INTERNAL_SERVER_ERROR shape (issue #4862)', () => {
     expect(isServerUnavailableError(masked)).toBe(false);
   });
 
-  it('an ordinary validation rejection served over HTTP 200 now spends max_retries before it dead-letters', () => {
-    // Changed by the default-retry flip (#5295), and worth stating plainly: a
-    // BAD_USER_INPUT riding an HTTP 200 resolves status 200, which is not a
-    // permanent-rejection status, so it retries. That is the bounded cost of
-    // the flip — the row still ends up dead-lettered, as `retries_exhausted`
-    // rather than `non_retryable`. Reading the string code here instead would
-    // be the fifth bespoke branch the flip exists to stop adding. A validation
-    // rejection that carries a real 4xx status still fails fast (see
-    // isPermanentRejection below).
+  it('still fails an ordinary validation rejection fast — BAD_USER_INPUT over 200 is a verdict, not an unknown', () => {
+    // Guard the blast radius of the default-retry flip (#5295): GraphQL
+    // delivers "your input is invalid" over HTTP 200, so a status-only rule
+    // would read 200, find no permanent status, and retry a write the server
+    // will never accept — ten attempts, head-of-line-blocking the FIFO queue
+    // for minutes, before it lands as `retries_exhausted`. Reading the code is
+    // the SAME rule applied at the layer GraphQL answers on.
     const validationError = {
       response: { status: 200, errors: [{ message: 'title is required', extensions: { code: 'BAD_USER_INPUT' } }] },
     };
-    expect(isRetryable(validationError)).toBe(true);
+    expect(isPermanentRejection(validationError)).toBe(true);
+    expect(isRetryable(validationError)).toBe(false);
   });
 });
 
@@ -698,5 +698,81 @@ describe('isPermanentRejection — the only verdict that still blocks a retry (i
   it('keeps a 5xx retryable — the server failed, it did not reject the write', () => {
     expect(isPermanentRejection({ status: 500 })).toBe(false);
     expect(isPermanentRejection({ status: 503 })).toBe(false);
+  });
+});
+
+describe('permanent GraphQL verdicts served over HTTP 200 (issue #5295)', () => {
+  // GraphQL has no way to put "your input is invalid" in the status line — it
+  // answers 200 with an `errors` array — so a status-only permanent-rejection
+  // rule cannot see a verdict the server definitely reached. Recognising these
+  // codes is default-retry applied at the GraphQL layer, not an exception to
+  // it: anything NOT listed stays retryable.
+  function graphqlRejection(code: string, status: number | null = 200) {
+    const response: Record<string, unknown> = {
+      errors: [{ message: 'nope', extensions: { code } }],
+    };
+    if (status !== null) response.status = status;
+    return Object.assign(new Error('nope'), { response });
+  }
+
+  it('names exactly the codes a replay cannot change', () => {
+    expect(Array.from(PERMANENT_GRAPHQL_ERROR_CODES).sort()).toEqual([
+      'BAD_REQUEST',
+      'BAD_USER_INPUT',
+      'FORBIDDEN',
+      'GRAPHQL_VALIDATION_FAILED',
+    ]);
+  });
+
+  it('dead-letters each of them on the first attempt', () => {
+    for (const code of PERMANENT_GRAPHQL_ERROR_CODES) {
+      expect(isPermanentRejection(graphqlRejection(code))).toBe(true);
+      expect(isRetryable(graphqlRejection(code))).toBe(false);
+    }
+  });
+
+  it('reads a bare re-thrown GraphQLError that carries no response envelope', () => {
+    const bare = Object.assign(new Error('title is required'), { extensions: { code: 'BAD_USER_INPUT' } });
+    expect(getErrorStatus(bare)).toBeNull();
+    expect(isPermanentRejection(bare)).toBe(true);
+    expect(isRetryable(bare)).toBe(false);
+  });
+
+  it('keeps RATE_LIMITED retryable — a "later" is not a "never" (#4711)', () => {
+    // The one string code this PR must NOT turn permanent. Pinned next to the
+    // permanent codes so a future addition to that list has to walk past it.
+    const rateLimited = graphqlRejection('RATE_LIMITED');
+    expect(isPermanentRejection(rateLimited)).toBe(false);
+    expect(isRetryable(rateLimited)).toBe(true);
+  });
+
+  it('keeps an UNRECOGNISED code retryable — default-retry still governs the unknown', () => {
+    const unknown = graphqlRejection('SOMETHING_NOBODY_HAS_SEEN');
+    expect(isPermanentRejection(unknown)).toBe(false);
+    expect(isRetryable(unknown)).toBe(true);
+  });
+
+  it('ignores a permanent code riding a non-2xx status — that body is an edge page, not a resolver answer', () => {
+    // A 404/502/503/504 is an edge verdict about routing (see
+    // isServerUnavailableError). Whatever its body happens to contain, the
+    // request never got a resolver's answer, so it must stay replayable.
+    for (const status of [404, 502, 503, 504]) {
+      const edge = graphqlRejection('BAD_USER_INPUT', status);
+      expect(isPermanentRejection(edge)).toBe(false);
+      expect(isRetryable(edge)).toBe(true);
+    }
+  });
+
+  it('lets the masked INTERNAL_SERVER_ERROR keep winning over a permanent code', () => {
+    // A scrubbed server-side failure is retryable (#4862) and is decided before
+    // the permanent check, so a response carrying both is still a server
+    // failure — not a rejection of this write.
+    const both = Object.assign(new Error('boom'), {
+      response: {
+        status: 200,
+        errors: [{ extensions: { code: 'INTERNAL_SERVER_ERROR' } }, { extensions: { code: 'BAD_USER_INPUT' } }],
+      },
+    });
+    expect(isRetryable(both)).toBe(true);
   });
 });

@@ -388,14 +388,58 @@ export function isServerFailureSignal(error: unknown): boolean {
 export const PERMANENT_REJECTION_STATUSES: ReadonlySet<number> = new Set([400, 403, 405, 409, 410, 413, 415, 422]);
 
 /**
+ * The STRING GraphQL `extensions.code` values that carry the same meaning as
+ * the statuses above: the server read this mutation and rejected it, and a
+ * replay of the same bytes cannot change that answer.
+ *
+ * They need their own list because GraphQL has no way to put a verdict in the
+ * status line — it answers "your input is invalid" with HTTP 200 and an
+ * `errors` array. A status-only rule reads 200, finds no permanent status, and
+ * retries a write the server will never accept: ten attempts, and because the
+ * outbox is FIFO with a break on the first retryable hit, every write queued
+ * behind it waits out those attempts too. Reading the code is the SAME rule as
+ * PERMANENT_REJECTION_STATUSES applied at the layer GraphQL actually answers
+ * on — not an exception to default-retry.
+ *
+ * Kept short on purpose. Anything NOT listed here stays retryable, and
+ * `RATE_LIMITED` is the one to keep looking at on the way past: it is a
+ * "later", not a "never", and turning it permanent is exactly the bug #4711
+ * reports. INTERNAL_SERVER_ERROR is absent too — it is a scrubbed server
+ * failure, decided as retryable before this check runs (#4862).
+ */
+export const PERMANENT_GRAPHQL_ERROR_CODES: ReadonlySet<string> = new Set([
+  'BAD_USER_INPUT',
+  'GRAPHQL_VALIDATION_FAILED',
+  'BAD_REQUEST',
+  'FORBIDDEN',
+]);
+
+/**
  * Did a server positively reject THIS request in a way a replay cannot fix?
  * This is now the only thing that stops a queued write from being retried, so
  * an error shape nobody has seen yet costs `max_retries` attempts instead of
  * costing the climber the write (#5295).
+ *
+ * Two readings of the same question: the HTTP status line, and — because
+ * GraphQL answers on HTTP 200 — the `extensions.code` a resolver attached.
  */
 export function isPermanentRejection(error: unknown): boolean {
   const status = getErrorStatus(error);
-  return status !== null && PERMANENT_REJECTION_STATUSES.has(status);
+  if (status !== null && PERMANENT_REJECTION_STATUSES.has(status)) return true;
+
+  // Only read a GraphQL verdict when the transport did not report one of its
+  // own. A 404 / 502 / 503 / 504 is an edge or proxy talking about routing (see
+  // isServerUnavailableError), and its body is an error page, not a resolver's
+  // answer — so whatever that body happens to contain, the write never reached
+  // a resolver and must stay replayable. `null` counts as "no transport
+  // verdict": that is a bare GraphQLError re-thrown without a response envelope.
+  const carriesAServerAnswer = status === null || (status >= 200 && status < 300);
+  if (!carriesAServerAnswer) return false;
+
+  for (const code of PERMANENT_GRAPHQL_ERROR_CODES) {
+    if (hasGraphqlErrorCode(error, code)) return true;
+  }
+  return false;
 }
 
 export function isRetryable(error: unknown): boolean {
@@ -426,7 +470,8 @@ export function isRetryable(error: unknown): boolean {
   }
 
   // Everything else RETRIES: only a positively identified permanent server
-  // verdict blocks a replay. The old default was the opposite — "no resolvable
+  // verdict — a rejection status, or the GraphQL code a resolver attached to an
+  // HTTP 200 — blocks a replay. The old default was the opposite — "no resolvable
   // status and not a recognized network error, so this is a programmer bug,
   // dead-letter it" — and it was wrong four times running, each time losing a
   // climber's logged send on attempt 0 of 10: a truncated 2xx body (#4099),

@@ -357,11 +357,12 @@ async function processMutation(mutation: PendingMutation) {
 The shipped classifier
 (`packages/shared/offline-sync/src/mutation-queue/error-classification.ts`) inverts that sketch's
 last default. The sketch dead-letters anything it does not recognise; the real one **retries anything
-it does not recognise**, and only `isPermanentRejection` — a resolved 400 / 403 / 405 / 409 / 410 /
-413 / 415 / 422 — blocks a replay. 404 is not in that set: this client posts GraphQL to one endpoint
-and a GraphQL server reports not-found as HTTP 200 with an `errors` array, so a 404 can only be an
-edge/proxy routing failure and joins 502/503/504 in `isServerUnavailableError`. See "Drainer safety"
-below.
+it does not recognise**, and only `isPermanentRejection` blocks a replay — a resolved
+400 / 403 / 405 / 409 / 410 / 413 / 415 / 422, or, on an HTTP 200, a `BAD_USER_INPUT` /
+`GRAPHQL_VALIDATION_FAILED` / `BAD_REQUEST` / `FORBIDDEN` extension code. 404 is in neither set: this
+client posts GraphQL to one endpoint and a GraphQL server reports not-found as HTTP 200 with an
+`errors` array, so a 404 can only be an edge/proxy routing failure and joins 502/503/504 in
+`isServerUnavailableError`. See "Drainer safety" below.
 
 ### Queue trigger points
 
@@ -515,8 +516,14 @@ rejects is itself "server down". The backend also answers connection-class DB fa
 503.
 
 **Default-retry (#5295).** `isRetryable` no longer dead-letters an error it cannot place. It returns
-`!isPermanentRejection(error)`, so only a resolved 400 / 403 / 405 / 409 / 410 / 413 / 415 / 422 —
-a server's permanent verdict on this exact request — stops a replay. The old
+`!isPermanentRejection(error)`, so only a server's permanent verdict on this exact request stops a
+replay. That verdict is read two ways, because GraphQL has no way to put one in the status line: a
+resolved 400 / 403 / 405 / 409 / 410 / 413 / 415 / 422, or — on an HTTP 200 — one of the
+`PERMANENT_GRAPHQL_ERROR_CODES` (`BAD_USER_INPUT`, `GRAPHQL_VALIDATION_FAILED`, `BAD_REQUEST`,
+`FORBIDDEN`) in the `errors` array. A code on a **non-2xx** response is ignored: that body is an edge
+error page, not a resolver's answer. `RATE_LIMITED` is deliberately absent — it is a "later", not a
+"never" (#4711) — and so is the masked `INTERNAL_SERVER_ERROR`, decided retryable before this check
+runs (#4862). An unrecognised code stays retryable; default-retry still governs the unknown. The old
 `status === null → dead-letter` default lost a queued write on attempt 0 of 10 four separate times
 (#4099 truncated 2xx body, #4027 bare NSURL prose, #4711 string `RATE_LIMITED`, #5295
 `TypeError: Network request timed out`), and each fix taught the classifier one more shape rather
