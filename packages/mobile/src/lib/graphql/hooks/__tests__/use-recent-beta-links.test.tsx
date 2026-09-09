@@ -163,4 +163,44 @@ describe('useRecentBetaLinks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(requestMock).toHaveBeenCalledWith(GET_RECENT_BETA_LINKS, { limit: 20, boardType: 'kilter', layoutId: null });
   });
+
+  // The Home shelf turns `isError` into an error card with a Retry button. When
+  // an OTA reaches phones before the backend that understands its query, that
+  // button is useless — `layoutId` shipped in #5283 and every launch in the gap
+  // got an HTTP 400 (Sentry BOARDSESH-CJ). An empty shelf is the honest reading
+  // and a state the shelf already renders.
+  it('degrades to an empty shelf when the backend does not know the query', async () => {
+    requestMock.mockRejectedValue(
+      Object.assign(new Error('Unknown argument "layoutId" on field "Query.recentBetaLinks".'), {
+        response: {
+          status: 400,
+          errors: [
+            {
+              message: 'Unknown argument "layoutId" on field "Query.recentBetaLinks".',
+              extensions: { code: 'GRAPHQL_VALIDATION_FAILED' },
+            },
+          ],
+        },
+      }),
+    );
+    const { Wrapper } = makeWrapper();
+
+    const { result } = renderHook(() => useRecentBetaLinks(20, 'moonboard', 3), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.isError).toBe(false);
+    expect(result.current.data).toEqual([]);
+  });
+
+  // The other side of that trade: a dropped connection gets better on its own,
+  // so it must still reach the shelf as an error with a Retry that works.
+  it('still surfaces a transport failure as an error, so Retry stays meaningful', async () => {
+    requestMock.mockRejectedValue(new TypeError('Network request failed'));
+    const { Wrapper } = makeWrapper();
+
+    const { result } = renderHook(() => useRecentBetaLinks(20, 'moonboard', 3), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
+  });
 });

@@ -73,6 +73,40 @@ describe('createQueryClient default retry', () => {
     expect(retry(0, rateLimited)).toBe(false);
   });
 
+  // A GRAPHQL_VALIDATION_FAILED is the server refusing the DOCUMENT: this
+  // bundle's query text does not match the deployed schema, so the identical
+  // bytes get the identical 400 forever (#5370). Three attempts would be three
+  // guaranteed rejections and three times the wait before the screen can show
+  // its degraded state.
+  it('never retries a GRAPHQL_VALIDATION_FAILED schema mismatch', () => {
+    const retry = createQueryClient().getDefaultOptions().queries?.retry;
+    if (typeof retry !== 'function') throw new Error('expected retry to be a function');
+    const schemaMismatch = Object.assign(new Error('Unknown argument "layoutId" on field "Query.recentBetaLinks".'), {
+      response: {
+        status: 400,
+        errors: [
+          {
+            message: 'Unknown argument "layoutId" on field "Query.recentBetaLinks".',
+            extensions: { code: 'GRAPHQL_VALIDATION_FAILED' },
+          },
+        ],
+      },
+    });
+    expect(retry(0, schemaMismatch)).toBe(false);
+  });
+
+  // The other half of that rule: a gateway is not a schema. A 503 whose canned
+  // body happens to carry the code must keep its retries, or a transient edge
+  // outage would look permanent to every screen at once.
+  it('still retries a 503 whose body carries the validation code', () => {
+    const retry = createQueryClient().getDefaultOptions().queries?.retry;
+    if (typeof retry !== 'function') throw new Error('expected retry to be a function');
+    const edgeOutage = Object.assign(new Error('Application failed to respond'), {
+      response: { status: 503, errors: [{ extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] },
+    });
+    expect(retry(0, edgeOutage)).toBe(true);
+  });
+
   it('retries an ordinary error up to 2 times, matching the previous retry: 2 behavior', () => {
     const retry = createQueryClient().getDefaultOptions().queries?.retry;
     if (typeof retry !== 'function') throw new Error('expected retry to be a function');

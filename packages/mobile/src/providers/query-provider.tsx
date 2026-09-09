@@ -9,6 +9,7 @@ import { isGraphqlRateLimitedError } from '../lib/graphql/extract-error-message'
 // auth interceptor and the whole secure-store chain behind it, which has no
 // business in the query provider's graph for a one-line predicate.
 import { isGraphqlRequestTimeoutError } from '../lib/graphql/request-timeout';
+import { isSchemaMismatchError } from '../lib/graphql/schema-mismatch';
 
 // React Query keys `refetchOnReconnect` / `refetchOnWindowFocus` off a browser's
 // `navigator.onLine` and window-focus events, neither of which exists on React
@@ -104,10 +105,16 @@ export function createQueryClient(): QueryClient {
         // not answering within 20s, and the connectivity store's own backoff
         // ladder is already asking whether it is back; three 20s hangs per query
         // on top of that is how an outage turns into a frozen app.
+        // A schema mismatch (#5370) is the strongest case of the same argument:
+        // the server refused the document itself, so the identical bytes get the
+        // identical 400 every time. Three attempts is three guaranteed
+        // rejections, three times the backend work, and three times the wait
+        // before the screen can show its degraded state.
         retry: (failureCount, error) => {
           if (isGraphqlRateLimitedError(error)) return false;
           if (isBackendUnavailableError(error)) return false;
           if (isGraphqlRequestTimeoutError(error)) return false;
+          if (isSchemaMismatchError(error)) return false;
           return failureCount < 2;
         },
       },

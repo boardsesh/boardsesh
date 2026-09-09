@@ -4712,6 +4712,26 @@ export type OrphanGymsInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
+/**
+ * A per-PR OTA preview channel. Retired in favour of xprem Branch Surfing
+ * (#4792) — nothing produces these any more and `otaPreviewChannels` always
+ * answers with an empty list. The type survives only so the
+ * `GetOtaPreviewChannels` document embedded in pre-#4792 store binaries keeps
+ * validating; those builds sit behind a native fingerprint change and cannot be
+ * updated by OTA. See docs/mobile-ota-updates.md.
+ */
+export type OtaPreviewChannel = {
+  __typename?: 'OtaPreviewChannel';
+  /** The OTA channel name to switch onto, e.g. "pr-3253". */
+  channel: Scalars['String']['output'];
+  /** The pull request number. */
+  prNumber: Scalars['Int']['output'];
+  /** The pull request title, for display. */
+  title: Scalars['String']['output'];
+  /** The pull request web URL. */
+  url: Scalars['String']['output'];
+};
+
 /** Analysis of whether a climb's grade is an outlier compared to adjacent angles. */
 export type OutlierAnalysis = {
   __typename?: 'OutlierAnalysis';
@@ -5525,6 +5545,22 @@ export type Query = {
    * audit list (admin only). List-only; no bulk action.
    */
   orphanGyms: OrphanGymConnection;
+  /**
+   * Retired. Always returns an empty list.
+   *
+   * This backed the in-app per-PR channel switcher until xprem Branch Surfing
+   * replaced it (#4792), which removed both the screen and this field. Removing
+   * the field turned out to break whole requests for the fleet that was left
+   * behind: a store binary built before #4792 still embeds
+   * `GetOtaPreviewChannels`, and #4792 moved the native fingerprint, so those
+   * builds cannot be handed a JS bundle that stops asking — every launch spent
+   * a guaranteed `GRAPHQL_VALIDATION_FAILED` instead (Sentry BOARDSESH-7H).
+   *
+   * Answering `[]` costs nothing and turns that into the switcher's empty
+   * state. Delete it once the pre-#4792 build tail is gone.
+   * @deprecated OTA previews moved to xprem Branch Surfing (#4792). Always empty; kept for old builds.
+   */
+  otaPreviewChannels: Array<OtaPreviewChannel>;
   /** List pending gym ownership claims for the admin review queue (admin only). */
   pendingGymClaims: GymClaimConnection;
   /**

@@ -50,6 +50,7 @@ import {
 } from '../query-keys';
 import { getDatabaseHandle } from '../../../db';
 import { offlineAwareRequest } from '../offline-request';
+import { withSchemaMismatchFallback } from '../schema-mismatch';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { favoriteToggleOrder, ownsFavoriteWrite } from './favorite-toggle-order';
@@ -1234,17 +1235,31 @@ export function useBetaLinks(boardType: string, climbUuid: string, enabled = tru
   });
 }
 
+const NO_RECENT_BETA_LINKS: GetRecentBetaLinksQueryResponse = { recentBetaLinks: [] };
+
 export function useRecentBetaLinks(limit = 20, boardType?: string | null, layoutId?: number | null, enabled = true) {
   return useQuery({
     queryKey: ['recentBetaLinks', limit, boardType ?? null, layoutId ?? null],
+    // Degrade to an empty shelf when the backend does not know this document.
+    // The Home shelf turns `isError` into an error card with a Retry button, and
+    // an OTA that reaches phones before the backend that understands it makes
+    // that button useless — `layoutId` shipped in #5283 and every launch in the
+    // gap got a 400 (Sentry BOARDSESH-CJ). A list that came back empty is the
+    // honest reading of "the server cannot answer this", and it is a state the
+    // shelf already renders. Only a schema refusal is folded away: a dropped
+    // connection still surfaces, because that one gets better on its own.
     queryFn: () =>
-      getHttpClient().request<GetRecentBetaLinksQueryResponse, GetRecentBetaLinksQueryVariables>(
-        GET_RECENT_BETA_LINKS,
-        {
-          limit,
-          boardType,
-          layoutId,
-        },
+      withSchemaMismatchFallback(
+        () =>
+          getHttpClient().request<GetRecentBetaLinksQueryResponse, GetRecentBetaLinksQueryVariables>(
+            GET_RECENT_BETA_LINKS,
+            {
+              limit,
+              boardType,
+              layoutId,
+            },
+          ),
+        NO_RECENT_BETA_LINKS,
       ),
     select: (data) => selectRecentBetaVideos(data.recentBetaLinks, limit),
     enabled,

@@ -454,6 +454,73 @@ describe('mobile QUEUE_UPDATES_SUBSCRIPTION selects the same PlaybackStateChange
 //     must STILL validate — those types were not touched.
 //   - legacy TakeControl / ReleaseControl documents must NOW fail validation — those
 //     mutations are gone.
+/**
+ * Documents that are no longer in this repo but are still ON PHONES.
+ *
+ * A store binary embeds its JS bundle, and `runtimeVersion` is a fingerprint of
+ * the native project — so a PR that moves the fingerprint cuts every older
+ * binary off from OTAs permanently. Deleting a schema field in that same PR
+ * leaves those builds asking for it forever, and GraphQL validates a document as
+ * a whole: the WHOLE request fails with HTTP 400, so the screen renders empty or
+ * errors rather than losing one field. #4792 did exactly that to
+ * `otaPreviewChannels` and 2.3.0 / 2.4.0 builds were still burning launches on
+ * it three months later (Sentry BOARDSESH-7H, issue #5370).
+ *
+ * The repo cannot see those documents, so they are pinned here verbatim. Add a
+ * case whenever a field is removed while a shipped binary still selects it, and
+ * delete the case (with the schema field) once that build tail is gone.
+ */
+describe('documents embedded in shipped binaries still validate', () => {
+  const embeddedLegacyOperations: Array<[string, string]> = [
+    [
+      // Verbatim from the Sentry BOARDSESH-7H payload's request.query.
+      'pre-#4792 GetOtaPreviewChannels (2.3.0 / 2.4.0 store builds)',
+      `query GetOtaPreviewChannels {
+        otaPreviewChannels {
+          channel
+          prNumber
+          title
+          url
+        }
+      }`,
+    ],
+  ];
+
+  for (const [name, source] of embeddedLegacyOperations) {
+    it(`${name} validates against the current schema`, () => {
+      const errors = validate(schema, parse(source));
+      if (errors.length > 0) {
+        const detail = errors.map((error, index) => `  ${index + 1}. ${error.message}`).join('\n');
+        throw new Error(
+          `"${name}" is still sent by installed builds that cannot be updated by OTA, so it must keep validating:\n${detail}`,
+        );
+      }
+      expect(errors).toHaveLength(0);
+    });
+  }
+});
+
+/**
+ * The two documents behind issue #5370, pinned by name.
+ *
+ * They are already covered by the exhaustive loop above, but a rename or a
+ * reshuffle of the operations barrel could quietly drop one from that sweep and
+ * nothing would notice. Naming them costs two assertions and keeps the
+ * regression that produced 819 Sentry events explicitly guarded.
+ */
+describe('issue #5370 operations validate against the current schema', () => {
+  it('GET_RECENT_BETA_LINKS validates, including its layoutId argument', () => {
+    const document = parse(publicOperations.GET_RECENT_BETA_LINKS);
+    expect(validate(schema, document)).toHaveLength(0);
+    expect(publicOperations.GET_RECENT_BETA_LINKS).toContain('layoutId');
+  });
+
+  it('otaPreviewChannels is a Query field again, so old builds get [] instead of a 400', () => {
+    const queryFields = schema.getQueryType()?.getFields() ?? {};
+    expect(Object.keys(queryFields)).toContain('otaPreviewChannels');
+  });
+});
+
 describe('previous-release driver operations: reduced-B7 validation split', () => {
   const stillValidLegacyOperations: Array<[string, string]> = [
     [

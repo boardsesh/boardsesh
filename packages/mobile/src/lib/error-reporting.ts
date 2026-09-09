@@ -9,6 +9,7 @@ import {
   isGraphqlRateLimitedError,
   readDuplicateBoardError,
 } from './graphql/extract-error-message';
+import { isSchemaMismatchError, shouldReportSchemaMismatch } from './graphql/schema-mismatch';
 
 // Re-exported so the public reporting surface (`{ ErrorReportContext }` from
 // './error-reporting') is unchanged; the type itself lives in './sentry' to keep
@@ -139,6 +140,10 @@ function isExpectedDuplicateBoardError(error: unknown): boolean {
  *   - GraphQL rate-limit rejections (RATE_LIMITED) are downgraded to `warning`
  *     and tagged `rate_limited` — expected backpressure from typing/panning
  *     discovery searches too fast, not a bug (#3285),
+ *   - GraphQL schema mismatches (GRAPHQL_VALIDATION_FAILED) are downgraded to
+ *     `warning`, tagged `graphql_schema_mismatch`, and reported at most once per
+ *     validator message per launch — the answer cannot change while this bundle
+ *     runs, so repeats carry no new information (#5370),
  *   - offline/network failures are downgraded to `warning` and tagged `network`,
  *   - BLE write-resume timeouts are downgraded to `warning` and tagged
  *     `ble_write_timeout` (the native layer auto-recovers them by cycling the
@@ -166,6 +171,35 @@ export function reportHandledError(error: unknown, context?: ErrorReportContext)
       ...context,
       level: 'warning',
       tags: { ...context?.tags, rate_limited: true },
+    });
+    return;
+  }
+  // A server that refuses the DOCUMENT, not the request: this bundle's query
+  // text does not match the deployed schema (issue #5370). Reported once per
+  // distinct validator message per launch and then dropped, because every later
+  // occurrence is the same permanent fact re-observed — see
+  // `shouldReportSchemaMismatch`. Kept at `warning` and tagged so it is
+  // filterable out of the crash view: nobody on the device can act on it, and
+  // the fix is a deploy, not a code path.
+  //
+  // It sits ABOVE the network branch on purpose. A validation refusal carries an
+  // HTTP 400, so today's `isNetworkError` already declines it — but the two are
+  // opposites (one can never succeed, the other is expected to succeed on
+  // reconnect) and a future loosening of the transport heuristic must not be
+  // able to quietly relabel a schema mismatch as flaky Wi-Fi.
+  if (isSchemaMismatchError(error)) {
+    if (!shouldReportSchemaMismatch(error)) {
+      addErrorBreadcrumb({
+        category: 'graphql',
+        message: 'graphql schema mismatch (already reported this launch)',
+        level: 'warning',
+      });
+      return;
+    }
+    reportError(error, {
+      ...context,
+      level: 'warning',
+      tags: { ...context?.tags, graphql_schema_mismatch: true },
     });
     return;
   }

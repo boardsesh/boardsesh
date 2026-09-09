@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error-classification';
 import { reportError, reportHandledError } from '../error-reporting';
-import { captureToSentry } from '../sentry';
+import { addBreadcrumbToSentry, captureToSentry } from '../sentry';
+import { resetSchemaMismatchReportsForTests } from '../graphql/schema-mismatch';
 import { resetObserveRuntimeForTests, setObserveRuntime } from '../observe-runtime';
 
 // captureToSentry is the only side-effecting dependency; mocking it keeps this a
@@ -9,12 +10,16 @@ import { resetObserveRuntimeForTests, setObserveRuntime } from '../observe-runti
 // global error-capture install).
 vi.mock('../sentry', () => ({
   captureToSentry: vi.fn(),
+  addBreadcrumbToSentry: vi.fn(),
 }));
 
 const mockedCaptureToSentry = vi.mocked(captureToSentry);
+const mockedAddBreadcrumb = vi.mocked(addBreadcrumbToSentry);
 
 afterEach(() => {
   mockedCaptureToSentry.mockClear();
+  mockedAddBreadcrumb.mockClear();
+  resetSchemaMismatchReportsForTests();
 });
 
 describe('reportHandledError', () => {
@@ -320,6 +325,79 @@ describe('reportHandledError', () => {
     const error = new Error('boom');
     reportHandledError(error, { level: 'info', tags: { source: 'x' } });
     expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, { level: 'info', tags: { source: 'x' } });
+  });
+});
+
+// A schema mismatch is the deployed backend refusing this bundle's query text
+// (#5370). It can never succeed while this JS runs, nobody on the device can act
+// on it, and every affected screen re-issues the same doomed query on mount,
+// focus and pull-to-refresh — which is how BOARDSESH-CJ and BOARDSESH-7H reached
+// 819 events from 79 people. One warning per broken element per launch keeps the
+// discovery signal without the stream.
+describe('reportHandledError on a GraphQL schema mismatch', () => {
+  function schemaMismatch(message: string): Error {
+    return Object.assign(new Error(message), {
+      response: {
+        status: 400,
+        errors: [{ message, extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }],
+      },
+    });
+  }
+
+  it('reports the first occurrence as a tagged warning, not an error', () => {
+    const error = schemaMismatch('Unknown argument "layoutId" on field "Query.recentBetaLinks".');
+    reportHandledError(error, { tags: { source: 'react-query', kind: 'query' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, {
+      level: 'warning',
+      tags: { source: 'react-query', kind: 'query', graphql_schema_mismatch: true },
+    });
+  });
+
+  it('breadcrumbs every repeat of the same mismatch instead of reporting it again', () => {
+    const message = 'Cannot query field "otaPreviewChannels" on type "Query".';
+    reportHandledError(schemaMismatch(message), { tags: { source: 'react-query' } });
+    reportHandledError(schemaMismatch(message), { tags: { source: 'react-query' } });
+    reportHandledError(schemaMismatch(message), { tags: { source: 'react-query' } });
+
+    expect(mockedCaptureToSentry).toHaveBeenCalledTimes(1);
+    expect(mockedAddBreadcrumb).toHaveBeenCalledTimes(2);
+  });
+
+  it('still reports a second, different broken element', () => {
+    reportHandledError(schemaMismatch('Unknown argument "layoutId" on field "Query.recentBetaLinks".'));
+    reportHandledError(schemaMismatch('Cannot query field "otaPreviewChannels" on type "Query".'));
+    expect(mockedCaptureToSentry).toHaveBeenCalledTimes(2);
+  });
+
+  // The guard on the guard: a transport failure must keep its own treatment, or
+  // "degrade on a validation error" quietly becomes "swallow everything". An
+  // offline blip is still a `network`-tagged warning, reported every time,
+  // because it is expected to succeed on the next attempt.
+  it('leaves a transport failure on the network branch, reported every time', () => {
+    const offline = new TypeError('Network request failed');
+    reportHandledError(offline, { tags: { source: 'react-query' } });
+    reportHandledError(offline, { tags: { source: 'react-query' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledTimes(2);
+    expect(mockedCaptureToSentry).toHaveBeenLastCalledWith(offline, {
+      level: 'warning',
+      tags: { source: 'react-query', network: true },
+    });
+    expect(mockedAddBreadcrumb).not.toHaveBeenCalled();
+  });
+
+  // An edge or proxy serving a canned body is not the schema speaking, so it
+  // must not be muted after one report.
+  it('does not mute a 503 whose canned body carries the validation code', () => {
+    const edgeOutage = Object.assign(new Error('Application failed to respond'), {
+      response: { status: 503, errors: [{ extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] },
+    });
+    reportHandledError(edgeOutage, { tags: { source: 'react-query' } });
+    reportHandledError(edgeOutage, { tags: { source: 'react-query' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledTimes(2);
+    expect(mockedCaptureToSentry).not.toHaveBeenCalledWith(
+      edgeOutage,
+      expect.objectContaining({ tags: expect.objectContaining({ graphql_schema_mismatch: true }) }),
+    );
   });
 });
 
