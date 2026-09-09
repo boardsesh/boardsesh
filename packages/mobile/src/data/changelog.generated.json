@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-09T01:14:44.497Z",
+  "generatedAt": "2026-09-09T01:43:26.701Z",
   "entries": [
+    {
+      "prNumber": 5360,
+      "category": "fixed",
+      "title": "Your downloaded boards stop going stale. A busy moment in the local database used to kill the whole sync in one go, so climbs, stats and grades you had already asked for sat half-downloaded until the next attempt hit the same wall — with nothing on screen to tell you. Sync now waits out the busy moment and carries on.",
+      "mergedAt": "2026-09-09T01:39:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5360"
+    },
     {
       "prNumber": 5125,
       "category": "fixed",

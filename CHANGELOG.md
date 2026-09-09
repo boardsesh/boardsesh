@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Your downloaded boards stop going stale. A busy moment in the local database used to kill the whole sync in one go, so climbs, stats and grades you had already asked for sat half-downloaded until the next attempt hit the same wall — with nothing on screen to tell you. Sync now waits out the busy moment and carries on. ([#5360](https://github.com/boardsesh/boardsesh/pull/5360))
 - Switch boards and keep swiping through climbs for the board you're on. ([#5125](https://github.com/boardsesh/boardsesh/pull/5125))
   When queue history includes another board, skip those climbs with a notice.
 - Fixed a crash that killed the app a few seconds after opening, straight back to your home screen, before you'd even picked a board. Your on-device climb data now stays open for the whole session instead of being closed out from under whatever the app was reading. ([#5358](https://github.com/boardsesh/boardsesh/pull/5358))
