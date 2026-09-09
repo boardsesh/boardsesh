@@ -3,7 +3,7 @@ import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
 import path, { extname } from 'path';
 import { applyCorsHeaders } from './cors';
-import { pipeStreamToResponse } from './http-utils';
+import { failUpstreamRead, pipeStreamToResponse } from './http-utils';
 import { getAvatarsDir } from './avatars';
 import { getGymLogosDir } from './gym-logos';
 import { getGymPhotosDir } from './gym-photos';
@@ -54,7 +54,21 @@ async function serveResizedImageFromS3(
   const original = await getFromS3('media', baseKey);
   if (!original) return false;
 
-  const originalBuffer = await streamToBuffer(original.stream);
+  // The one S3 body not routed through `pipeStreamToResponse`, and `for await`
+  // rethrows. Unguarded, an R2 body that died here unwound past the router,
+  // where `isClientAbortError` read `aborted` as a client walking away and
+  // returned having written nothing — headers unsent, response unended, the
+  // connection held open until the client timed out (#5359). Every sized avatar
+  // / gym-logo / gym-photo request reaches this line (`cacheVariant: false`),
+  // so answer it.
+  let originalBuffer: Buffer;
+  try {
+    originalBuffer = await streamToBuffer(original.stream);
+  } catch (error) {
+    failUpstreamRead(res, { route: options.route, source: baseKey }, error);
+    return true;
+  }
+
   let body = originalBuffer;
   let contentType = original.contentType || 'application/octet-stream';
   try {
