@@ -11,6 +11,7 @@ import {
   BulkVoteSummaryInputSchema,
   VoteInputSchema,
 } from '../validation/schemas';
+import { BULK_VOTE_SUMMARY_CHUNK_SIZE } from '@boardsesh/shared-schema';
 
 describe('Social Validation Schemas', () => {
   describe('FollowInputSchema', () => {
@@ -308,6 +309,13 @@ describe('Social Validation Schemas', () => {
     });
   });
 
+  // Regression coverage for issue #4102: a paginating feed handed this schema
+  // its whole accumulated list and every request past ~100 rows was rejected
+  // outright. The clients now batch by BULK_VOTE_SUMMARY_CHUNK_SIZE, which is
+  // the same constant this schema's `.max()` reads, so the derived cases below
+  // show client and server agreeing at the boundary for whatever the constant
+  // says. They pass for any value of it by construction — the literal case
+  // pins what that value actually is on the wire.
   describe('BulkVoteSummaryInputSchema', () => {
     it('should accept a populated entityIds array', () => {
       const result = BulkVoteSummaryInputSchema.safeParse({
@@ -328,7 +336,28 @@ describe('Social Validation Schemas', () => {
       }
     });
 
-    it('should reject more than 100 entityIds', () => {
+    it('should accept exactly the shared chunk size, so clients can batch right up to it', () => {
+      const result = BulkVoteSummaryInputSchema.safeParse({
+        entityType: 'tick',
+        entityIds: Array.from({ length: BULK_VOTE_SUMMARY_CHUNK_SIZE }, (_unused, index) => `id-${index}`),
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject one entityId more than the shared chunk size', () => {
+      const result = BulkVoteSummaryInputSchema.safeParse({
+        entityType: 'tick',
+        entityIds: Array.from({ length: BULK_VOTE_SUMMARY_CHUNK_SIZE + 1 }, (_unused, index) => `id-${index}`),
+      });
+      expect(result.success).toBe(false);
+    });
+
+    // The two cases above move with the constant. This one does not: it states
+    // the cap this endpoint accepts today, so widening it is a deliberate edit
+    // here rather than a silent side effect of changing a client constant.
+    it('should reject 101 entityIds — the wire cap is 100', () => {
+      expect(BULK_VOTE_SUMMARY_CHUNK_SIZE).toBe(100);
+
       const result = BulkVoteSummaryInputSchema.safeParse({
         entityType: 'tick',
         entityIds: Array.from({ length: 101 }, (_unused, index) => `id-${index}`),
