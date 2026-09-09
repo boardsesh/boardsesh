@@ -9,6 +9,7 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import { useUpdateSession } from '../../lib/graphql/hooks';
+import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { track } from '../../lib/analytics';
 import { hapticSuccess } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -61,14 +62,22 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
     }
   }, []);
 
-  // Seed both fields from the server values on each closed→open transition.
+  // Seed both fields from the server values on each closed→open transition —
+  // UNLESS the last save attempt failed. The sheet stays mounted (only its
+  // `visible` prop toggles) while its owner keeps editing, so a climber who
+  // closes it after a failed save and reopens to retry must see what they
+  // typed, not the unchanged server values. `updateSession.isError` is checked
+  // before `reset()` clears it, so a reopen after a failure keeps both the
+  // draft and the error banner until either a successful save or a fresh open.
   const wasVisibleRef = useRef(false);
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
-      setName(currentName ?? '');
-      setRecap(currentNotes ?? '');
+      if (!updateSession.isError) {
+        setName(currentName ?? '');
+        setRecap(currentNotes ?? '');
+        updateSession.reset();
+      }
       setJustSaved(false);
-      updateSession.reset();
     }
     wasVisibleRef.current = visible;
   }, [visible, currentName, currentNotes, updateSession]);
@@ -175,7 +184,7 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
           </Text>
         ) : updateSession.isError ? (
           <Text variant="footnote" color={brandColors.error} style={styles.feedback}>
-            {t('detail.editSaveFailed')}
+            {extractGraphqlMessage(updateSession.error) ?? t('detail.editSaveFailed')}
           </Text>
         ) : null}
 

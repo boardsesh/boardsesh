@@ -1,6 +1,6 @@
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { SessionDetail } from '@boardsesh/shared-schema';
+import type { SessionDetail, SocialEntityType } from '@boardsesh/shared-schema';
 import { formatTickAbsoluteTime } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -27,7 +27,7 @@ type SessionSummaryCardProps = {
   /** True when the title IS the date (unnamed session) — line 2 then shows a
    *  human "Sunday morning" instead of repeating the date. */
   titleIsDate: boolean;
-  onOpenComments: (entityId: string) => void;
+  onOpenComments: (entityId: string, entityType: SocialEntityType) => void;
   voteSummary?: { upvotes: number; userVote: number | null };
   /** Owner-only: open the edit sheet (name + recap). Absent for non-owners. */
   onEditSession?: () => void;
@@ -137,12 +137,18 @@ export function SessionSummaryCard({
       </View>
 
       <View style={styles.social}>
+        {/* A daily-highlight session has no board_sessions row of its own, so its
+            votes/comments hang off the day's hardest tick instead — sessionId
+            (possibly the synthetic `daily:<user>:<date>` feed key) would be
+            rejected by the backend. socialEntityType/Id is the resolved target;
+            see SessionDetail. */}
         <FeedSocialRow
-          entityId={session.sessionId}
+          entityId={session.socialEntityId}
+          entityType={session.socialEntityType}
           upvotes={voteSummary?.upvotes ?? session.upvotes}
           userVote={voteSummary?.userVote ?? null}
           commentCount={session.commentCount}
-          onOpenComments={onOpenComments}
+          onOpenComments={(entityId) => onOpenComments(entityId, session.socialEntityType)}
         />
       </View>
     </Card>

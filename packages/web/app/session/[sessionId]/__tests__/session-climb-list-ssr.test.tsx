@@ -110,6 +110,8 @@ function makeSession(ticks: SessionDetailTick[]): SessionDetail {
     sessionType: 'party',
     sessionName: 'Tuesday Sesh',
     ownerUserId: 'user-1',
+    socialEntityType: 'session',
+    socialEntityId: 'session-1',
     participants: [{ userId: 'user-1', displayName: 'Test User', avatarUrl: null, sends: 1, flashes: 0, attempts: 0 }],
     totalSends: 1,
     totalFlashes: 0,
