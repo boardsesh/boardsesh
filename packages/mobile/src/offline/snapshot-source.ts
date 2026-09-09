@@ -44,6 +44,7 @@ import { SNAPSHOT_BASE_URL } from '../lib/env';
 import { SNAPSHOT_DIR_NAME } from './snapshot-paths';
 import { reportHandledError } from '../lib/error-reporting';
 import { resolveSnapshotDownloadStrategy, type SnapshotDownloadStrategy } from './download-strategy';
+import { releaseDownloadTaskAfterNativeCompletion, retainDownloadTask } from './download-task-retention';
 import { reportArtifactTransfer, type ArtifactTransferOutcome } from './artifact-transfer-telemetry';
 
 // Fixed per platform for the lifetime of the bundle: iOS uses a background
@@ -357,18 +358,34 @@ async function runTransfer(args: {
   // disk. Expo documents `release()` as being for objects that "exclusively
   // retain some native memory", and only once "nothing else will use this
   // object later on". Something does: the session delegate still calls
-  // `finishTask()` on it. Dropping our last reference instead lets the GC
-  // release it seconds later, after that has run.
+  // `finishTask()` on it.
+  //
+  // Not calling `release()` is not enough on its own, though. Hermes collecting
+  // the handle runs the SAME `sharedObjectWillRelease()`, through the releaser
+  // the shared-object registry wires into the C++ native state's destructor,
+  // and nothing orders that collection after `didCompleteWithError`. So the
+  // handle is pinned for the whole transfer and released only well after it
+  // settles — see download-task-retention.ts for the ownership chain that makes
+  // GC reach the same unguarded cancel.
   //
   // Cancellation keeps exactly one owner: `args.signal`, which expo wires to
   // `DownloadTask.cancel()`. That one is state-guarded, so it is a no-op once
   // the transfer has completed, cancelled, or errored.
-  const file = await task.downloadAsync();
-  // `downloadAsync` resolves null ONLY when `pause()` was called, which we
-  // never do. Treat it as a failed transfer rather than a silent success that
-  // would hand the engine a handle to a file nobody wrote.
-  if (!file) throw new Error('snapshot download: transfer ended without a file');
-  return file;
+  retainDownloadTask(task);
+  try {
+    const file = await task.downloadAsync();
+    // `downloadAsync` resolves null ONLY when `pause()` was called, which we
+    // never do. Treat it as a failed transfer rather than a silent success that
+    // would hand the engine a handle to a file nobody wrote.
+    if (!file) throw new Error('snapshot download: transfer ended without a file');
+    return file;
+  } finally {
+    // Starts the countdown, never the release itself: the throw path settles
+    // from `didCompleteWithError`'s own `promise.reject(...)`, which runs
+    // before its `defer { finishTask() }`, so a failed transfer sits in the
+    // same window a successful one does.
+    releaseDownloadTaskAfterNativeCompletion(task);
+  }
 }
 
 /**

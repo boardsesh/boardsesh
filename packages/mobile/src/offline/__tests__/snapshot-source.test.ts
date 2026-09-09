@@ -24,9 +24,20 @@ const state = vi.hoisted(() => ({
     hasSignal: boolean;
   }>,
   taskReleases: 0,
-  // Every `release()` that landed while the fake's native URLSessionTask
-  // pointer was still live — the EXC_BAD_ACCESS window of issue #5297.
+  // Every detach that landed while the fake's native URLSessionTask pointer was
+  // still live — the EXC_BAD_ACCESS window of issue #5297. An explicit
+  // `release()` is one way in; Hermes collecting an unreferenced handle is the
+  // other, and it runs the same `sharedObjectWillRelease()`.
   releasesDuringNativeTeardown: 0,
+  // Simulated Hermes collections that actually found a collectible handle. Not
+  // an error on its own — a collection AFTER the pointer drop is exactly what
+  // is supposed to happen — but it keeps the GC-window test from passing
+  // because nothing was ever collected.
+  garbageCollectedTasks: 0,
+  // One entry per handle the fake handed out: runs a Hermes collection against
+  // it if — and only if — the app no longer references it. Lets a test open the
+  // window again on a later turn, not just at the settling tick.
+  collectUnreachableTasks: [] as Array<() => void>,
   taskResolvesNull: false,
   /** Overrides the finished file's on-disk size, for the exact decoded-size gate. */
   downloadedFileSize: null as number | null,
@@ -48,6 +59,15 @@ const state = vi.hoisted(() => ({
   // turns on file existence, sidecar contents, sizes, and mtimes, so a fake
   // where `exists` is always true would prove nothing.
   files: new Map<string, { text: string | null; bytes: Uint8Array; size: number; lastModified: number }>(),
+}));
+
+// Reachability probe for the fake's garbage-collection model, filled in below
+// from the real retention registry. It throws until then so a broken wiring
+// fails loudly instead of silently modelling "everything is always retained".
+const reachability = vi.hoisted(() => ({
+  isRetainedByApp: (_task: object): boolean => {
+    throw new Error('snapshot-source test: retention probe was never wired to download-task-retention');
+  },
 }));
 
 vi.mock('expo-file-system', () => {
@@ -151,6 +171,7 @@ vi.mock('expo-file-system', () => {
         // `defer { finishTask() }`. Until then the pointer is live and
         // Foundation is already tearing the task down.
         let nativeTaskPointerLive = false;
+        let detached = false;
         const dropPointerOnALaterTurn = () => {
           // A later turn, never the one that settled the promise: that gap is
           // the whole bug.
@@ -158,13 +179,37 @@ vi.mock('expo-file-system', () => {
             nativeTaskPointerLive = false;
           }, 0);
         };
-        return {
+        // Both `release()` and Hermes collecting the handle land here. In
+        // expo-modules-core 57.0.14 the shared-object registry wires a releaser
+        // into the C++ native state's destructor
+        // (SharedObjectRegistry.swift:127-135, SharedObject.cpp:18-20), so
+        // `~NativeState()` calls the very `sharedObjectWillRelease()` that
+        // `release()` does. There is no third behaviour to model, only two
+        // doors into one.
+        const sharedObjectWillRelease = () => {
+          if (detached) return;
+          detached = true;
+          if (nativeTaskPointerLive) {
+            state.releasesDuringNativeTeardown += 1;
+            throw new Error(
+              'EXC_BAD_ACCESS: FileSystemDownloadTask.sharedObjectWillRelease cancelled a task Foundation is already tearing down',
+            );
+          }
+        };
+        const task = {
           downloadAsync: async () => {
             nativeTaskPointerLive = true;
             try {
               const file = await runFakeTransfer(destination, options);
               return state.taskResolvesNull ? null : file;
             } finally {
+              // Hermes may collect the handle on the tick the promise settles:
+              // its last JS use was the `await`, and the JS object's
+              // native-state slot is the only strong owner of the C++ state
+              // whose destructor fires the releaser. Model that collection
+              // BEFORE the pointer drops — the app has to be the thing keeping
+              // the handle reachable, not GC timing.
+              collectIfUnreachable();
               dropPointerOnALaterTurn();
             }
           },
@@ -173,14 +218,20 @@ vi.mock('expo-file-system', () => {
             // `sharedObjectWillRelease()` cancels `downloadTask` with no
             // completed-task guard. On a live pointer that is a use-after-free
             // and the process dies; here it is a loud, catchable throw.
-            if (nativeTaskPointerLive) {
-              state.releasesDuringNativeTeardown += 1;
-              throw new Error(
-                'EXC_BAD_ACCESS: FileSystemDownloadTask.sharedObjectWillRelease cancelled a task Foundation is already tearing down',
-              );
-            }
+            sharedObjectWillRelease();
           },
         };
+        // A collection can only reach an unreferenced handle. `isRetainedByApp`
+        // asks the app's own retention registry, so this stays a real test of
+        // the app's behaviour rather than a scripted crash.
+        function collectIfUnreachable() {
+          if (detached) return;
+          if (reachability.isRetainedByApp(task)) return;
+          state.garbageCollectedTasks += 1;
+          sharedObjectWillRelease();
+        }
+        state.collectUnreachableTasks.push(collectIfUnreachable);
+        return task;
       },
     );
 
@@ -289,6 +340,11 @@ vi.mock('../artifact-transfer-telemetry', () => ({
 
 import { mobileSnapshotSource, SNAPSHOT_MANIFEST_FETCH_TIMEOUT_MS } from '../snapshot-source';
 import {
+  clearRetainedDownloadTasks,
+  DOWNLOAD_TASK_RETENTION_MS,
+  isDownloadTaskRetained,
+} from '../download-task-retention';
+import {
   setBackgrounded,
   SnapshotArtifactTruncatedError,
   SnapshotBackgroundTransferInterruptedError,
@@ -328,9 +384,38 @@ function brokenJsonResponse(status = 200): Response {
   } as unknown as Response;
 }
 
+// The fake's garbage collector asks the app whether it still holds the handle.
+reachability.isRetainedByApp = isDownloadTaskRetained;
+
+/**
+ * Re-imports the source with a fresh module graph, for the cases that need
+ * module-init state (the platform-pinned download strategy) recomputed.
+ *
+ * `vi.resetModules()` also mints a fresh retention registry, so the probe is
+ * repointed at it for the duration — otherwise the fake's collector would ask
+ * the stale registry, be told the handle is unreferenced, and fail the test
+ * with a use-after-free the app never had.
+ */
+async function withFreshSnapshotSource<T>(run: (source: typeof mobileSnapshotSource) => Promise<T>): Promise<T> {
+  vi.resetModules();
+  const { mobileSnapshotSource: freshSource } = await import('../snapshot-source');
+  const freshRetention = await import('../download-task-retention');
+  const previousProbe = reachability.isRetainedByApp;
+  reachability.isRetainedByApp = freshRetention.isDownloadTaskRetained;
+  try {
+    return await run(freshSource);
+  } finally {
+    reachability.isRetainedByApp = previousProbe;
+    freshRetention.clearRetainedDownloadTasks();
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   setBackgrounded(false);
+  // Retained handles and their pending 30-second timers are module state; a
+  // leftover from the previous test would make the next one's GC a no-op.
+  clearRetainedDownloadTasks();
   platformState.OS = 'ios';
   state.availableDiskSpace = 10_000_000_000;
   state.createdDirectories = [];
@@ -346,6 +431,8 @@ beforeEach(() => {
   state.taskCalls = [];
   state.taskReleases = 0;
   state.releasesDuringNativeTeardown = 0;
+  state.garbageCollectedTasks = 0;
+  state.collectUnreachableTasks = [];
   state.taskResolvesNull = false;
   state.downloadedFileSize = null;
 });
@@ -571,10 +658,10 @@ describe('downloadArtifact', () => {
     const downloadError = new Error("The operation couldn't be completed. cannot decode raw data");
     state.downloadError = downloadError;
     platformState.OS = 'android';
-    vi.resetModules();
-    const { mobileSnapshotSource: foregroundSnapshotSource } = await import('../snapshot-source');
 
-    const rejection = await foregroundSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error);
+    const rejection = await withFreshSnapshotSource((foregroundSnapshotSource) =>
+      foregroundSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error),
+    );
 
     expect(rejection).toBeInstanceOf(Error);
     expect(rejection).not.toBeInstanceOf(SnapshotBackgroundTransferInterruptedError);
@@ -734,6 +821,55 @@ describe('fixed download transport', () => {
     // `DownloadTask.cancel()`. We never add a second, unguarded one.
     expect(state.releasesDuringNativeTeardown).toBe(0);
     expect(state.taskReleases).toBe(0);
+  });
+
+  // Issue #5297, second door. Not calling `release()` does not keep the handle
+  // alive: expo-modules-core 57.0.14 wires the registry's releaser into the C++
+  // native state's destructor (SharedObjectRegistry.swift:127-135 →
+  // SharedObject.cpp:18-20), and the JS object's native-state slot is that
+  // state's only strong owner — the Swift pairings are weak. So a Hermes
+  // collection runs the same unguarded `downloadTask?.cancel()`, and nothing
+  // orders it after `didCompleteWithError`. The fake collects any handle the app
+  // has stopped referencing, at the exact tick the promise settles.
+  it('survives a garbage collection on the settling tick, when the native pointer is still live', async () => {
+    const result = await mobileSnapshotSource.downloadArtifact(ENTRY);
+
+    expect(result).not.toBeNull();
+    // The window was open and the collector did run — it just found the handle
+    // still referenced.
+    expect(state.taskCalls).toHaveLength(1);
+    expect(state.garbageCollectedTasks).toBe(0);
+    expect(state.releasesDuringNativeTeardown).toBe(0);
+  });
+
+  it('keeps the handle reachable on the throw path, where the reject also beats finishTask', async () => {
+    state.downloadError = new Error('boom');
+
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(/transfer failed/);
+
+    // The rejection is the transport's own, not a use-after-free raised by a
+    // collection landing inside Foundation's teardown.
+    expect(state.garbageCollectedTasks).toBe(0);
+    expect(state.releasesDuringNativeTeardown).toBe(0);
+  });
+
+  it('lets the handle go once the delegate has certainly finished with it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await mobileSnapshotSource.downloadArtifact(ENTRY);
+      // Past the drop of the native pointer AND past the retention window.
+      await vi.advanceTimersByTimeAsync(DOWNLOAD_TASK_RETENTION_MS + 1);
+
+      // Now a collection finds it — and finds nothing to cancel, because
+      // `didCompleteWithError` nilled the pointer long ago.
+      expect(state.collectUnreachableTasks).toHaveLength(1);
+      for (const collect of state.collectUnreachableTasks) collect();
+
+      expect(state.garbageCollectedTasks).toBe(1);
+      expect(state.releasesDuringNativeTeardown).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('treats a task that resolves null as a failed transfer, not a silent success', async () => {
