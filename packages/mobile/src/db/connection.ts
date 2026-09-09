@@ -81,19 +81,55 @@ export function releaseDatabaseHandle(db: SQLiteDatabase): void {
 }
 
 /**
- * How many times the whole setup sequence is attempted before giving up, and the
- * hard wall-clock ceiling across all of them.
+ * The gaps BETWEEN attempts, in two phases. Exported so the retry tests advance their
+ * fake clock by the real gap rather than mirroring these numbers in a literal that
+ * silently drifts from them.
  *
- * Sized against the longest writer that can legitimately hold the file while the app
- * starts: `vacuumDatabase` documents an exclusive lock of 5-20s on a 200-400MB
- * database, and a snapshot import is the same order. 30s therefore outlasts a genuine
- * one, while anything still locked past it is wedged rather than busy — further
- * retries would only burn battery on a launch that has already fallen back to
- * network-only. The delays are the gaps BETWEEN attempts; the deadline is checked
- * before each sleep so a slow attempt cannot overrun the window.
+ * FAST (#4104) — sized for a writer that is merely in the way: a tick commit, a
+ * checkpoint stamp, one `SNAPSHOT_IMPORT_BATCH_ROWS` import batch. Almost every
+ * contended launch is won here, and the whole ladder fits in 17.5s.
  */
-const MAX_INIT_ATTEMPTS = 5;
-const MAX_INIT_WINDOW_MS = 30_000;
+export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
+
+/**
+ * SLOW (#4314) — the gaps that follow, reached ONLY by lock contention.
+ *
+ * The fast ladder stops at 17.5s of gaps, so the chain used to give up around 30s.
+ * That was sized against `vacuumDatabase`'s documented 5-20s exclusive lock, but the
+ * writer that actually loses this window in the field is a board-data snapshot
+ * import: `Offline Board Download Completed.importMs` runs to 253,939ms at the top of
+ * the 30-day distribution, an order of magnitude past the old ceiling. Every
+ * phase-tagged `kind: 'sqlite-init'` report on 2.4.0 has the same shape —
+ * `retryable: true`, `attempts: 4`, `elapsedMs: 29,875` — i.e. the chain spent its
+ * entire window waiting out a real lock and then walked away.
+ *
+ * Walking away was permanent. `SQLiteProvider` calls `onInit` exactly once per
+ * connection, so once the chain returned there was nothing left to try again: the
+ * handle stayed null and offline storage was off for the REST OF THE SESSION, over a
+ * database that became writable a minute or two later. These four gaps carry the
+ * chain to ~227.5s of waiting (~272s with every attempt blocking its full
+ * `busy_timeout`), which covers that 253,939ms tail.
+ *
+ * It costs a healthy launch nothing. Only a failure `classifySqliteLockError` calls
+ * contention gets here — a full disk or a corrupt file still ends the chain on
+ * attempt 1 — and a blocked attempt is an idle await, not a spin.
+ */
+export const INIT_LOCK_RETRY_DELAYS_MS = [30_000, 60_000, 60_000, 60_000];
+
+const INIT_ALL_RETRY_DELAYS_MS = [...INIT_RETRY_DELAYS_MS, ...INIT_LOCK_RETRY_DELAYS_MS];
+
+/**
+ * How many times the whole setup sequence is attempted before giving up, and the hard
+ * wall-clock ceiling across all of them.
+ *
+ * The attempt count is derived from the ladder so the two can never disagree. The
+ * ceiling is the backstop for an attempt that is itself slow — every gap plus a full
+ * `busy_timeout` on all nine attempts still lands inside it — so the ladder, not the
+ * clock, is what normally ends the chain. It is checked before each sleep, so a slow
+ * attempt cannot overrun the window.
+ */
+const MAX_INIT_ATTEMPTS = INIT_ALL_RETRY_DELAYS_MS.length + 1;
+const MAX_INIT_WINDOW_MS = 360_000;
 /**
  * How many times a superseded attempt may be refunded (see the restart branch in
  * `beginInitialization`). Each refund needs its own remount — the retry immediately
@@ -101,9 +137,6 @@ const MAX_INIT_WINDOW_MS = 30_000;
  * pathological remount loop from keeping one chain alive forever.
  */
 const MAX_SUPERSEDED_RESTARTS = 3;
-// Exported so the retry tests advance their fake clock by the real gap rather than
-// mirroring these numbers in a literal that silently drifts from them.
-export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
 
 /**
  * Single-flight guard spanning the ENTIRE init lifecycle, background retries
@@ -157,8 +190,52 @@ type InitOutcome =
 // shapes differ per platform and are only knowable from telemetry, so they need a
 // test pinning the literal strings Sentry carries.
 
-function delay(durationMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, durationMs));
+/**
+ * Ends the backoff the chain is currently parked in. Non-null ONLY while a sleep is in
+ * flight — `sleepUntilRetry` sets it as it parks and clears it on the way out, so a
+ * wake that arrives during an attempt finds nothing to do and cannot make the loop
+ * run that attempt twice. At most one sleeper exists: `activeInitialization`
+ * single-flights the chain, and every path that clears it has already returned.
+ */
+let wakeFromBackoff: (() => void) | null = null;
+
+/**
+ * The gap between two attempts, endable early.
+ *
+ * The slow #4314 gaps run to a minute, and a `SQLiteProvider` remount arriving inside
+ * one used to be invisible to the chain: `initializeDatabase` moves `latestDatabase`
+ * and hands the remount the already-resolved launch gate, so the replacement provider
+ * renders with a null handle and `schemaReady` false until the sleep runs out — over a
+ * fresh connection that would work right now. The wake exists so that lands on the
+ * NEXT loop iteration instead, which reads `latestDatabase` and retargets through the
+ * path that already exists rather than a second one.
+ *
+ * It shortens a wait; it does not buy an attempt. The budget slot was already spent
+ * before the sleep and `supersededRestarts` is untouched, so a remount loop cannot
+ * keep one chain alive past `MAX_INIT_ATTEMPTS`.
+ */
+function sleepUntilRetry(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    // Both exits null the slot, so "set" and "parked" are the same state. That is what
+    // makes the no-double-run property above STRUCTURAL rather than accidental: there
+    // is no window where a wake could reach a chain that is mid-attempt.
+    //
+    // A left-behind resolver would in fact be inert — it closes over its own timer and
+    // its own promise, both already settled by the time it could be called again, and
+    // the next sleep overwrites the slot regardless. Mutation-tested: dropping either
+    // assignment changes no observable behaviour. They are kept because the invariant,
+    // not the assignment, is the thing this function's callers rely on.
+    const timer = setTimeout(() => {
+      wakeFromBackoff = null;
+      resolve();
+    }, durationMs);
+
+    wakeFromBackoff = () => {
+      clearTimeout(timer);
+      wakeFromBackoff = null;
+      resolve();
+    };
+  });
 }
 
 /**
@@ -204,6 +281,7 @@ async function readJournalMode(db: SQLiteDatabase): Promise<string> {
  * layout, size) scope.
  */
 export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
+  const replacesTheOneInFlight = latestDatabase !== null && latestDatabase !== db;
   // Recorded on EVERY call, including the remount that only gets the shared promise
   // back, so the in-flight chain can retarget onto the live connection.
   latestDatabase = db;
@@ -214,6 +292,11 @@ export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   // old one (#5292). The chain below republishes once the new connection's migrations
   // are in place.
   if (databaseHandle !== null && databaseHandle !== db) setDatabaseHandle(null);
+  // Whatever lock the chain is sitting out belongs to a connection that no longer
+  // exists, so the rest of the gap buys nothing — and at the slow #4314 gaps it costs
+  // this mount up to a minute of null handle. End the sleep and let the loop retarget.
+  // A no-op unless the chain is actually parked (see `wakeFromBackoff`).
+  if (replacesTheOneInFlight) wakeFromBackoff?.();
   activeInitialization ??= beginInitialization(db);
   return activeInitialization;
 }
@@ -353,7 +436,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       }
 
       budgetSpent += 1;
-      const retryDelayMs = INIT_RETRY_DELAYS_MS[budgetSpent - 1];
+      const retryDelayMs = INIT_ALL_RETRY_DELAYS_MS[budgetSpent - 1];
       const outOfRoad =
         (!outcome.retryable && !superseded) ||
         budgetSpent === MAX_INIT_ATTEMPTS ||
@@ -394,7 +477,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       }
 
       markStartup('sqlite.recovery.start');
-      await delay(retryDelayMs);
+      await sleepUntilRetry(retryDelayMs);
     }
   })();
 
@@ -436,6 +519,9 @@ export function resetDatabaseInitializationForTests(): void {
   activeInitialization = null;
   latestDatabase = null;
   hasReportedRecovery = false;
+  // A chain a test walked away from must not be reachable from the next one's first
+  // `initializeDatabase` call.
+  wakeFromBackoff = null;
 }
 
 /**
