@@ -1025,6 +1025,20 @@ single-flight for the process but retargets onto the latest connection on every
 attempt; a failure against a superseded handle is a lifecycle artefact and is
 deliberately not reported to error tracking.
 
+A superseded target is therefore a CLOSED one, which fixes where the handle may be
+published: only from the ready branch in `beginInitialization`, and only when
+`latestDatabase` still names the target. That is the single publish site in the
+lifecycle — publishing from anywhere that cannot see the supersede check served a
+closed connection with `isSchemaReady()` true, which is #5292's symptom list on every
+local read (#5366). A chain that runs out of superseded refunds ends with nothing
+published and reports under its own `kind: 'sqlite-init-superseded'`, kept out of the
+`sqlite-init` aggregate because no lock was contended in that failure.
+
+The retraction hung off the provider (`DatabaseHandleLifecycle`) does NOT beat the
+close: expo-sqlite enters `closeAsync()` synchronously from the parent's cleanup, which
+React runs before this child's. What it buys is the window after the unmount commit —
+queries already in flight are carried by the process-lifetime reference (#5300).
+
 ## What stays the same
 
 | Component             | Status                                                                                                        |
