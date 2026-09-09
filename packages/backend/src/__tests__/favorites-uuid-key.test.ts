@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { buildSchema, graphql } from 'graphql';
+import { typeDefs, type ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { favoriteQueries } from '../graphql/resolvers/favorites/queries';
 import { favoriteMutations } from '../graphql/resolvers/favorites/mutations';
@@ -20,6 +21,24 @@ const OTHER_USER_ID = 'fav-key-other-user';
 const KILTER_CLIMB = 'fav-key-kilter-climb';
 const TENSION_CLIMB = 'fav-key-tension-climb';
 const ORPHAN_CLIMB = 'fav-key-orphan-climb';
+const graphSchema = buildSchema(typeDefs.join('\n'));
+
+function queryLegacyLibrary(context: ConnectionContext) {
+  return graphql({
+    schema: graphSchema,
+    source: `
+      query LegacyLibrary {
+        userFavoritesCounts { ...CountFields }
+        userActiveBoards
+      }
+      fragment CountFields on FavoritesCount { boardName count }
+    `,
+    rootValue: {
+      userFavoritesCounts: () => favoriteQueries.userFavoritesCounts(undefined, undefined, context),
+      userActiveBoards: () => favoriteQueries.userActiveBoards(undefined, undefined, context),
+    },
+  });
+}
 
 function ctx(userId: string = USER_ID): ConnectionContext {
   return {
@@ -127,6 +146,49 @@ describe('favorites are keyed by (userId, climbUuid)', () => {
   it('removeFavorite on a nonexistent row is a no-op', async () => {
     const result = await favoriteMutations.removeFavorite(undefined, { input: { climbUuid: 'never-existed' } }, ctx());
     expect(result).toBe(true);
+  });
+});
+
+describe('shipped library GraphQL queries', () => {
+  it('keeps count fragments and active boards working after the UUID rekey', async () => {
+    await favoriteMutations.addFavorite(undefined, { input: { climbUuid: KILTER_CLIMB } }, ctx());
+    await favoriteMutations.addFavorite(undefined, { input: { climbUuid: TENSION_CLIMB } }, ctx());
+    await favoriteMutations.addFavorite(undefined, { input: { climbUuid: ORPHAN_CLIMB } }, ctx());
+    // Legacy columns can be defaulted or stale; use the same catalog identity
+    // as the favorite-climb page rather than grouping under an empty board.
+    await db.execute(sql`UPDATE user_favorites SET board_name = '', angle = 0 WHERE user_id = ${USER_ID}`);
+    await db.execute(sql`
+      INSERT INTO playlists (uuid, board_type, name)
+      VALUES ('legacy-library-playlist', 'moonboard', 'Playlist-only board')
+    `);
+    await db.execute(sql`
+      INSERT INTO playlist_ownership (playlist_id, user_id, role)
+      SELECT id, ${USER_ID}, 'owner' FROM playlists WHERE uuid = 'legacy-library-playlist'
+    `);
+
+    const result = await queryLegacyLibrary(ctx());
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.userFavoritesCounts).toEqual(
+      expect.arrayContaining([
+        { boardName: 'kilter', count: 1 },
+        { boardName: 'tension', count: 1 },
+      ]),
+    );
+    expect(result.data?.userFavoritesCounts).toHaveLength(2);
+    expect(result.data?.userActiveBoards).toEqual(['kilter', 'moonboard', 'tension']);
+
+    const otherUser = await queryLegacyLibrary(ctx(OTHER_USER_ID));
+    expect(otherUser.errors).toBeUndefined();
+    expect(otherUser.data).toEqual({ userFavoritesCounts: [], userActiveBoards: [] });
+  });
+
+  it('keeps both legacy library queries authenticated', async () => {
+    const result = await queryLegacyLibrary({ ...ctx(), isAuthenticated: false, userId: undefined });
+    expect(result.errors?.length).toBeGreaterThan(0);
+    expect(result.data).toBeNull();
+    await expect(
+      favoriteQueries.userActiveBoards(undefined, undefined, { ...ctx(), isAuthenticated: false, userId: undefined }),
+    ).rejects.toThrow();
   });
 });
 
