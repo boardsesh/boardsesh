@@ -1,5 +1,5 @@
 diff --git a/ios/Core/Exceptions/Exception.swift b/ios/Core/Exceptions/Exception.swift
-index a7e93d2a974ff28811619a8cd7a648b19a197520..b49f62c015f812b36fb1f242d87b88b78662f4f6 100644
+index a7e93d2a974ff28811619a8cd7a648b19a197520..8bb580122a67d38afa70fc4e9dc6ee7c47d2e5c1 100644
 --- a/ios/Core/Exceptions/Exception.swift
 +++ b/ios/Core/Exceptions/Exception.swift
 @@ -5,9 +5,16 @@ open class Exception: CodedError, ChainableException, CustomStringConvertible, C
@@ -35,7 +35,7 @@ index a7e93d2a974ff28811619a8cd7a648b19a197520..b49f62c015f812b36fb1f242d87b88b7
    /**
     The default initializer that captures the place in the code where the exception was created.
     - Warning: Call it only without arguments!
-@@ -27,6 +42,7 @@ open class Exception: CodedError, ChainableException, CustomStringConvertible, C
+@@ -27,11 +42,20 @@ open class Exception: CodedError, ChainableException, CustomStringConvertible, C
    public init(file: String = #fileID, line: UInt = #line, function: String = #function) {
      self.origin = ExceptionOrigin(file: file, line: line, function: function)
      self.customCode = nil
@@ -43,11 +43,16 @@ index a7e93d2a974ff28811619a8cd7a648b19a197520..b49f62c015f812b36fb1f242d87b88b7
    }
  
    public init(name: String, description: String, code: String? = nil, file: String = #fileID, line: UInt = #line, function: String = #function) {
-@@ -34,6 +50,7 @@ open class Exception: CodedError, ChainableException, CustomStringConvertible, C
+     self.origin = ExceptionOrigin(file: file, line: line, function: function)
      self.customCode = code
++    // `explicitReason` must be set before `name`/`description` below: those are
++    // `open lazy var`s, so assigning them goes through a dispatched (dynamically
++    // overridable) setter rather than a raw store, and Swift's definite-init
++    // pass requires every one of this class's OWN stored properties — including
++    // `explicitReason` — to already be set before `self` can be used that way.
++    // Reviewed and reproduced (compiled with the unpatched/patched/reordered
++    // variants under swift:6.0.3) in the boardsesh/boardsesh#5296 Fable review.
++    self.explicitReason = description
      self.name = name
      self.description = description
-+    self.explicitReason = description
    }
- 
-   // MARK: - CodedError
