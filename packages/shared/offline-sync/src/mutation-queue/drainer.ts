@@ -311,7 +311,14 @@ export type MutationDeadLetterInfo = {
   operation: string;
   /** Raw entity uuid or a deterministic key; keep it out of analytics props. */
   idempotencyKey: string;
-  /** `retries_exhausted` burned the whole budget; `non_retryable` was a 4xx. */
+  /**
+   * `retries_exhausted` burned the whole budget; `non_retryable` is a server's
+   * permanent verdict on this request — `isPermanentRejection`: a 400, 403,
+   * 405, 409, 410, 413, 415 or 422, or a BAD_USER_INPUT-class GraphQL code on
+   * an HTTP 200. Since the default-retry flip (#5295) an error shape the
+   * classifier cannot place lands in the FIRST bucket, not the second: only an
+   * identified rejection dead-letters on attempt one.
+   */
   reason: 'retries_exhausted' | 'non_retryable';
   retryCount: number;
   maxRetries: number;

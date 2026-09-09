@@ -8,9 +8,12 @@ import {
   isRetryable,
   getErrorStatus,
   isNetworkError,
+  isPermanentRejection,
   isServerFailureSignal,
   isServerUnavailableError,
   isTransportNetworkError,
+  PERMANENT_GRAPHQL_ERROR_CODES,
+  PERMANENT_REJECTION_STATUSES,
 } from '../error-classification';
 
 describe('isGraphQLEmptyResponseError', () => {
@@ -104,8 +107,14 @@ describe('isRetryable', () => {
     expect(isRetryable(new TypeError('Failed to fetch'))).toBe(true);
   });
 
-  it('non-network TypeError without status is NOT retryable (likely programmer bug, dead-letter)', () => {
-    expect(isRetryable(new TypeError('Cannot read property'))).toBe(false);
+  it('non-network TypeError without status IS retryable — a programmer bug costs ten attempts, a lost send costs a tick', () => {
+    // Default-retry (#5295). "No status resolved" was read as "this must be a
+    // programmer bug", and it was wrong four times: #4099 (truncated 2xx body),
+    // #4027 (bare NSURL prose), #4711 (string RATE_LIMITED), and the fetch
+    // timeout below. A genuine bug still dead-letters — it just arrives as
+    // `retries_exhausted` after max_retries instead of losing the write on
+    // attempt 0 of 10.
+    expect(isRetryable(new TypeError('Cannot read property'))).toBe(true);
   });
 
   it('an aborted request (AbortError by name) is retryable — it never completed against the server', () => {
@@ -142,20 +151,29 @@ describe('isRetryable', () => {
     expect(isRetryable({ status: 403 })).toBe(false);
   });
 
-  it('404 is not retryable', () => {
-    expect(isRetryable({ status: 404 })).toBe(false);
+  it('404 IS retryable: GraphQL answers not-found as 200 + errors, so a 404 can only be an edge verdict', () => {
+    // The drainer speaks GraphQL-over-POST to a single endpoint, and a GraphQL
+    // server reports "no such thing" as HTTP 200 with an `errors` array. A 404
+    // reaching this classifier is therefore an edge or proxy failing to route —
+    // not a verdict on this mutation. Railway's edge served exactly that for
+    // 6m30s on 2026-09-02 and three climbers lost a send (#5295).
+    expect(isRetryable({ status: 404 })).toBe(true);
   });
 
   it('409 is not retryable', () => {
     expect(isRetryable({ status: 409 })).toBe(false);
   });
 
-  it('unknown error without status is NOT retryable (dead-letter for visibility)', () => {
-    expect(isRetryable(new Error('something went wrong'))).toBe(false);
+  it('unknown error without status IS retryable — no status is no server verdict, and only a verdict may block a replay', () => {
+    // The policy flip at the heart of #5295: the classifier defaults to retry
+    // and only a positively identified permanent server verdict
+    // (isPermanentRejection) stops one. The cost is bounded — max_retries, then
+    // the row surfaces as `retries_exhausted`.
+    expect(isRetryable(new Error('something went wrong'))).toBe(true);
   });
 
-  it('plain string error without status is NOT retryable', () => {
-    expect(isRetryable('boom')).toBe(false);
+  it('plain string error without status IS retryable — a non-object throw carries no verdict either', () => {
+    expect(isRetryable('boom')).toBe(true);
   });
 
   it('network TypeError is retryable even though it has no status', () => {
@@ -447,7 +465,8 @@ describe('hasGraphqlErrorCode', () => {
 });
 
 describe('isServerUnavailableError', () => {
-  it('is true only for the edge/upstream verdicts 502, 503 and 504', () => {
+  it('is true only for the edge/proxy verdicts 404, 502, 503 and 504', () => {
+    expect(isServerUnavailableError({ status: 404 })).toBe(true);
     expect(isServerUnavailableError({ status: 502 })).toBe(true);
     expect(isServerUnavailableError({ status: 503 })).toBe(true);
     expect(isServerUnavailableError({ status: 504 })).toBe(true);
@@ -525,12 +544,235 @@ describe('the masked INTERNAL_SERVER_ERROR shape (issue #4862)', () => {
     expect(isServerUnavailableError(masked)).toBe(false);
   });
 
-  it('leaves an ordinary validation rejection dead-lettering as before', () => {
-    // Guard the blast radius: only the masked code changes verdict, so a real
-    // 4xx still fails fast instead of burning ten retries.
+  it('still fails an ordinary validation rejection fast — BAD_USER_INPUT over 200 is a verdict, not an unknown', () => {
+    // Guard the blast radius of the default-retry flip (#5295): GraphQL
+    // delivers "your input is invalid" over HTTP 200, so a status-only rule
+    // would read 200, find no permanent status, and retry a write the server
+    // will never accept — ten attempts, head-of-line-blocking the FIFO queue
+    // for minutes, before it lands as `retries_exhausted`. Reading the code is
+    // the SAME rule applied at the layer GraphQL answers on.
     const validationError = {
       response: { status: 200, errors: [{ message: 'title is required', extensions: { code: 'BAD_USER_INPUT' } }] },
     };
+    expect(isPermanentRejection(validationError)).toBe(true);
     expect(isRetryable(validationError)).toBe(false);
+  });
+});
+
+describe('a fetch timeout: TypeError "Network request timed out" (issue #5295)', () => {
+  // whatwg-fetch — the fetch React Native ships — rejects a dropped connection
+  // with "Network request failed" (fetch.umd.js:567) and a timed-out one with
+  // "Network request timed out" (:573): adjacent lines of the same
+  // xhr.onerror / xhr.ontimeout pair. Only the first was a marker, so the
+  // second resolved no status, matched nothing, and dead-lettered a queued send
+  // on attempt 0 of 10 — 24 events across 12 climbers (Sentry BOARDSESH-HT).
+  const timedOut = () => new TypeError('Network request timed out');
+
+  it('is a transport signal, a network error, and retryable', () => {
+    expect(isTransportNetworkError(timedOut())).toBe(true);
+    expect(isNetworkError(timedOut())).toBe(true);
+    expect(isRetryable(timedOut())).toBe(true);
+  });
+
+  it('resolves no status, so the drainer reads reachability rather than a server verdict', () => {
+    expect(getErrorStatus(timedOut())).toBeNull();
+  });
+
+  it('matches through a bounded cause chain, like the other transport markers', () => {
+    const wrapped = Object.assign(new Error('saveTick failed'), { cause: timedOut() });
+    expect(isTransportNetworkError(wrapped)).toBe(true);
+    expect(isNetworkError(wrapped)).toBe(true);
+  });
+
+  it('stays a FULL-phrase marker: a BLE timeout is still not transport', () => {
+    // The house rule from #3869, re-pinned here because the obvious shorthand
+    // ("timed out") would swallow every board-write timeout.
+    expect(isTransportNetworkError(new Error('BLE write timed out waiting for the board to accept data'))).toBe(false);
+    expect(isTransportNetworkError(new Error('Request timed out'))).toBe(false);
+  });
+});
+
+describe('an edge/proxy 404 (issue #5295)', () => {
+  // On 2026-09-02 Railway's edge answered five SaveTick mutations across three
+  // climbers with a 404 for 6m30s. The responses also carried
+  // `x-railway-fallback: true` — recorded here as evidence and deliberately NOT
+  // read by the classifier, which must not learn one host's header
+  // (docs/railway.md portability rule). The status alone is sufficient: this
+  // drainer speaks GraphQL-over-POST to one endpoint, and GraphQL answers
+  // not-found as HTTP 200 + `errors`, so a 404 here is always an edge verdict.
+  function railwayEdge404(body: string) {
+    return Object.assign(new Error('Application not found: POST /graphql'), {
+      response: { status: 404, error: body },
+    });
+  }
+
+  const JSON_EDGE_BODY = '{"code":404,"message":"Application not found"}';
+  const HTML_FALLBACK_BODY = '<!doctype html><html><body><h1>Application not found</h1></body></html>';
+
+  it('reads the JSON edge body as server-unavailable and keeps it retryable', () => {
+    const error = railwayEdge404(JSON_EDGE_BODY);
+    expect(getErrorStatus(error)).toBe(404);
+    expect(isServerUnavailableError(error)).toBe(true);
+    expect(isRetryable(error)).toBe(true);
+  });
+
+  it('reads an HTML fallback page the same way — the body is never parsed', () => {
+    const error = railwayEdge404(HTML_FALLBACK_BODY);
+    expect(getErrorStatus(error)).toBe(404);
+    expect(isServerUnavailableError(error)).toBe(true);
+    expect(isRetryable(error)).toBe(true);
+  });
+
+  it('is not a transport error — something answered, so the drainer takes the unavailable branch', () => {
+    // Both branches end the drain cycle with no retry_count strike; which one
+    // fires only changes the telemetry bucket.
+    expect(isNetworkError(railwayEdge404(JSON_EDGE_BODY))).toBe(false);
+  });
+});
+
+describe('a string RATE_LIMITED GraphQL rejection (issue #4711)', () => {
+  // The backend throws GraphQLError with the STRING extensions.code
+  // 'RATE_LIMITED' and no numeric status, so getErrorStatus resolves null. The
+  // old default dead-lettered it outright, losing a queued setter follow or a
+  // beta-link tick. Default-retry covers it with no bespoke branch: the
+  // drainer's backoff plus max_retries is the bound.
+  function rateLimited() {
+    return Object.assign(new Error('Too many requests'), {
+      response: {
+        errors: [{ message: 'Too many requests', extensions: { code: 'RATE_LIMITED', retryAfterSeconds: 30 } }],
+      },
+    });
+  }
+
+  it('resolves no status at all', () => {
+    expect(getErrorStatus(rateLimited())).toBeNull();
+  });
+
+  it('is retryable, so a queued follow or beta-link tick drains instead of vanishing', () => {
+    expect(isRetryable(rateLimited())).toBe(true);
+  });
+});
+
+describe('isPermanentRejection — the only verdict that still blocks a retry (issue #5295)', () => {
+  // The classifier defaults to retrying now, so this set is the entire stop
+  // list. It must stay small and it must stay statuses a replay of the same
+  // bytes genuinely cannot change.
+  it('names exactly the statuses a replay cannot change', () => {
+    expect(Array.from(PERMANENT_REJECTION_STATUSES).sort((a, b) => a - b)).toEqual([
+      400, 403, 405, 409, 410, 413, 415, 422,
+    ]);
+  });
+
+  it('is true for each of them, and each still dead-letters on the first attempt', () => {
+    for (const status of PERMANENT_REJECTION_STATUSES) {
+      expect(isPermanentRejection({ status })).toBe(true);
+      expect(isRetryable({ status })).toBe(false);
+    }
+  });
+
+  it('does NOT include 404 — an edge verdict is not a rejection of this write', () => {
+    expect(PERMANENT_REJECTION_STATUSES.has(404)).toBe(false);
+    expect(isPermanentRejection({ status: 404 })).toBe(false);
+  });
+
+  it('does NOT include 401 or 429 — both are "later", not "never"', () => {
+    // 401 already survived authenticatedFetch's refresh-and-retry; 429 is a
+    // wait, which the drainer's backoff supplies.
+    expect(isPermanentRejection({ status: 401 })).toBe(false);
+    expect(isPermanentRejection({ status: 429 })).toBe(false);
+  });
+
+  it('is false whenever no status resolves at all', () => {
+    expect(isPermanentRejection(new Error('something went wrong'))).toBe(false);
+    expect(isPermanentRejection('boom')).toBe(false);
+    expect(isPermanentRejection(null)).toBe(false);
+    expect(isPermanentRejection(new TypeError('Network request timed out'))).toBe(false);
+  });
+
+  it('reads a nested graphql-request status the same way getErrorStatus does', () => {
+    const clientError = { response: { errors: [{ message: 'invalid', extensions: { code: 422 } }] } };
+    expect(isPermanentRejection(clientError)).toBe(true);
+    expect(isRetryable(clientError)).toBe(false);
+  });
+
+  it('keeps a 5xx retryable — the server failed, it did not reject the write', () => {
+    expect(isPermanentRejection({ status: 500 })).toBe(false);
+    expect(isPermanentRejection({ status: 503 })).toBe(false);
+  });
+});
+
+describe('permanent GraphQL verdicts served over HTTP 200 (issue #5295)', () => {
+  // GraphQL has no way to put "your input is invalid" in the status line — it
+  // answers 200 with an `errors` array — so a status-only permanent-rejection
+  // rule cannot see a verdict the server definitely reached. Recognising these
+  // codes is default-retry applied at the GraphQL layer, not an exception to
+  // it: anything NOT listed stays retryable.
+  function graphqlRejection(code: string, status: number | null = 200) {
+    const response: Record<string, unknown> = {
+      errors: [{ message: 'nope', extensions: { code } }],
+    };
+    if (status !== null) response.status = status;
+    return Object.assign(new Error('nope'), { response });
+  }
+
+  it('names exactly the codes a replay cannot change', () => {
+    expect(Array.from(PERMANENT_GRAPHQL_ERROR_CODES).sort()).toEqual([
+      'BAD_REQUEST',
+      'BAD_USER_INPUT',
+      'FORBIDDEN',
+      'GRAPHQL_VALIDATION_FAILED',
+    ]);
+  });
+
+  it('dead-letters each of them on the first attempt', () => {
+    for (const code of PERMANENT_GRAPHQL_ERROR_CODES) {
+      expect(isPermanentRejection(graphqlRejection(code))).toBe(true);
+      expect(isRetryable(graphqlRejection(code))).toBe(false);
+    }
+  });
+
+  it('reads a bare re-thrown GraphQLError that carries no response envelope', () => {
+    const bare = Object.assign(new Error('title is required'), { extensions: { code: 'BAD_USER_INPUT' } });
+    expect(getErrorStatus(bare)).toBeNull();
+    expect(isPermanentRejection(bare)).toBe(true);
+    expect(isRetryable(bare)).toBe(false);
+  });
+
+  it('keeps RATE_LIMITED retryable — a "later" is not a "never" (#4711)', () => {
+    // The one string code this PR must NOT turn permanent. Pinned next to the
+    // permanent codes so a future addition to that list has to walk past it.
+    const rateLimited = graphqlRejection('RATE_LIMITED');
+    expect(isPermanentRejection(rateLimited)).toBe(false);
+    expect(isRetryable(rateLimited)).toBe(true);
+  });
+
+  it('keeps an UNRECOGNISED code retryable — default-retry still governs the unknown', () => {
+    const unknown = graphqlRejection('SOMETHING_NOBODY_HAS_SEEN');
+    expect(isPermanentRejection(unknown)).toBe(false);
+    expect(isRetryable(unknown)).toBe(true);
+  });
+
+  it('ignores a permanent code riding a non-2xx status — that body is an edge page, not a resolver answer', () => {
+    // A 404/502/503/504 is an edge verdict about routing (see
+    // isServerUnavailableError). Whatever its body happens to contain, the
+    // request never got a resolver's answer, so it must stay replayable.
+    for (const status of [404, 502, 503, 504]) {
+      const edge = graphqlRejection('BAD_USER_INPUT', status);
+      expect(isPermanentRejection(edge)).toBe(false);
+      expect(isRetryable(edge)).toBe(true);
+    }
+  });
+
+  it('lets the masked INTERNAL_SERVER_ERROR keep winning over a permanent code', () => {
+    // A scrubbed server-side failure is retryable (#4862) and is decided before
+    // the permanent check, so a response carrying both is still a server
+    // failure — not a rejection of this write.
+    const both = Object.assign(new Error('boom'), {
+      response: {
+        status: 200,
+        errors: [{ extensions: { code: 'INTERNAL_SERVER_ERROR' } }, { extensions: { code: 'BAD_USER_INPUT' } }],
+      },
+    });
+    expect(isRetryable(both)).toBe(true);
   });
 });
