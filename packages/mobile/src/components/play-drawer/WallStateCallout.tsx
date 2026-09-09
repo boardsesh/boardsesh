@@ -18,7 +18,7 @@
 // host — any state change or navigation.
 
 import { memo, useEffect, useMemo, useRef } from 'react';
-import { AccessibilityInfo, BackHandler, findNodeHandle, Pressable, StyleSheet, View } from 'react-native';
+import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInUp, useReducedMotion } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -30,6 +30,7 @@ import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { glassSize } from '../../theme/layout';
 import { Text } from '../Text';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
+import { useAnnounceBodyFocus } from './use-announce-body-focus';
 import { useWallDriver } from './use-wall-driver';
 import type { WallStatePillState } from './WallStatePill';
 
@@ -102,12 +103,8 @@ function WallStateCalloutImpl({
   // than wherever the focus happened to be when the card claimed the modal. The
   // notice asked for nothing, so it never yanks focus off whatever the climber
   // was reading — it announces politely and gets out of the way.
-  useEffect(() => {
-    if (isNotice) return;
-    const nodeHandle = findNodeHandle(bodyRef.current);
-    if (nodeHandle == null) return;
-    AccessibilityInfo.setAccessibilityFocus(nodeHandle);
-  }, [isNotice]);
+  // Forked per platform — see use-announce-body-focus.web.ts (#5301).
+  useAnnounceBodyFocus(bodyRef, !isNotice);
 
   // Android hardware back closes the explainer instead of dismissing the whole
   // player — the same "innermost transient surface first" order a sheet gets.
