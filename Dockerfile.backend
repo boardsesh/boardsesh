@@ -25,6 +25,7 @@ COPY manifests/package.json manifests/pnpm-lock.yaml manifests/pnpm-workspace.ya
 # Patch files referenced by pnpm-workspace.yaml must be present before the
 # fetch: pnpm resolves patch hashes from the lockfile and needs the files.
 COPY manifests/patches ./patches
+COPY manifests/packages/db/patches ./packages/db/patches
 
 # --- the NETWORK layer -------------------------------------------------------
 # `pnpm fetch` populates the store from the LOCKFILE ALONE, so this layer's

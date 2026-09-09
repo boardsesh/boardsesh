@@ -51,6 +51,47 @@ about which statements "look idempotent".
   Wrapping a sequence would re-run the earlier statements when a later one
   fails to connect.
 
+## Socket disconnects and transaction cleanup (#5299)
+
+The workspace patches and pins `postgres@3.4.9` until an upstream release passes
+the backend disconnect/recovery regressions. Both Node entry points (ESM and
+CommonJS) receive the patch. It lives in `packages/db/patches`, outside the root
+`patches` directory that mobile hashes into its native runtime fingerprint.
+The backend, web, and sync Dockerfiles copy it before fetching dependencies;
+the deployment-input guard checks every configured patch directory. `Dockerfile.ci`
+needs no extra line — it copies all of `manifests/packages` before `pnpm fetch`,
+so a patch stored inside a workspace package rides along.
+
+A socket closing during a transaction can reject its query, then trigger the
+driver's automatic rollback after `closed()` has nulled the socket. That small
+write schedules `nextWrite` on the immediate queue, where the null dereference
+escapes the query promise and kills the backend. No application Postgres
+`onclose` hook is involved in the reproduced path.
+
+[Upstream PR #1168](https://github.com/porsager/postgres/pull/1168) guards that
+write. The guard alone prevented the crash in our reproduction but left a
+rollback in the connection's query state, hanging subsequent pool queries.
+Our patch also records failure for the transaction's lifetime, rejects its
+queued and later statements (including automatic rollback/commit), and clears
+the write buffer and immediate handle on close/termination. Closing also clears
+the failed connection's result/error state so a server FATAL response cannot
+reject the first query on a replacement socket. A transaction
+callback resuming after pool reconnection still fails against its original
+transaction; it cannot write through the replacement connection.
+
+The existing connect retry policy is unchanged. An interrupted transaction
+fails; its statements are never replayed. Ordinary application errors still
+roll back normally, including savepoints. Sentry retains its normal fatal-error
+handling; there is no process-level exception suppression.
+
+`postgres-disconnect.test.ts` runs isolated Node processes against both installed
+entry points, using controlled socket closes and termination of the test's own
+live PostgreSQL connection. It checks query settlement, repeated pool reuse,
+fresh transactions, delayed callbacks, and startup write-timer recovery. Keep
+these tests when upgrading; remove the override and patch only when the new
+release passes them. After deployment, check BOARDSESH-GH and replica restarts,
+and confirm `/health/db` recovers after database availability returns.
+
 ## Budgets
 
 Defaults, both overridable by env:
