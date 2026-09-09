@@ -17,6 +17,7 @@ import {
   memoryDistribution,
   parseMemoryFlowTimeoutMs,
   record,
+  startingCacheFiles,
   validateMemoryManifest,
   validateMemoryMeasurements,
   validateOwnershipMeasurements,
@@ -132,6 +133,7 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
   save(options.runDir, 'memory-manifest.json', manifest);
   save(options.runDir, 'memory-run-options.json', { memoryFlowTimeoutMs });
   let schedule: MemorySample[] | null = null;
+  let referenceCacheFiles: ReturnType<typeof startingCacheFiles> | null = null;
   let warmingWorkload: MemoryWorkload = options.workload;
   if (options.workload === 'idle') {
     if (!options.idleSchedule)
@@ -146,6 +148,7 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
       throw new Error('Idle reference must use the same surface and manifest.');
     if (parseMemoryFlowTimeoutMs(referenceRecord.memoryFlowTimeoutMs) !== memoryFlowTimeoutMs)
       throw new Error('Idle reference must use the same --memory-flow-timeout-ms.');
+    referenceCacheFiles = startingCacheFiles(referenceRecord.inventories);
     schedule = referenceRecord.samples as MemorySample[];
     warmingWorkload = referenceRecord.workload as MemoryWorkload;
     if (warmingWorkload === 'idle') throw new Error('Idle controls require a browsing reference.');
@@ -452,6 +455,7 @@ export async function captureMemory(options: MemoryCaptureOptions, driver: Memor
         const files = cacheFileIdentities(container);
         inventories.push({ cycle, files });
         save(options.runDir, 'starting-cache.json', files);
+        if (referenceCacheFiles) assertMatchingCacheFiles(referenceCacheFiles, files);
         if (options.compareCache)
           assertMatchingCacheFiles(JSON.parse(readFileSync(options.compareCache, 'utf8')) as typeof files, files);
       }

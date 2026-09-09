@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -342,43 +342,96 @@ describe('host runner and real diagnostic collector lifecycle', () => {
       ),
     ).rejects.toThrow(/configuration\/account/);
   });
-  it('repeats the browsing reference schedule with an independently warmed idle process', async () => {
-    const options = {
-      runDir: simulation.directory,
-      udid: '00000000-0000-0000-0000-000000000001',
-      appId: 'com.boardsesh.app',
-      configuration: 'Release' as const,
-      surface: 'list' as const,
-      workload: 'replay' as const,
-      memoryManifest: join(simulation.directory, 'manifest.json'),
-      compareCache: null,
-      idleSchedule: null,
-      inspection: 'none' as const,
-    };
-    const reference = await captureMemory(options, driver());
-    if (!('samples' in reference)) throw new Error('Expected ordinary reference samples.');
-    const referencePath = join(simulation.directory, 'reference.json');
-    const { memoryFlowTimeoutMs: _legacyTimeout, ...legacyReference } = reference;
-    writeFileSync(referencePath, JSON.stringify(legacyReference));
-    await expect(
-      captureMemory(
-        { ...options, workload: 'idle', idleSchedule: referencePath, memoryFlowTimeoutMs: 90000 },
+  it.each(['empty', 'matching', 'mismatch', 'additional mismatch'] as const)(
+    'validates the idle reference cache automatically: %s',
+    async (cacheCase) => {
+      const cacheDirectory = join(simulation.directory, 'Library/Caches/board-thumbnails');
+      if (cacheCase !== 'empty') {
+        mkdirSync(cacheDirectory, { recursive: true });
+        writeFileSync(join(cacheDirectory, 'board.png'), 'original cached image');
+      }
+      const options = {
+        runDir: simulation.directory,
+        udid: '00000000-0000-0000-0000-000000000001',
+        appId: 'com.boardsesh.app',
+        configuration: 'Release' as const,
+        surface: 'list' as const,
+        workload: 'replay' as const,
+        memoryManifest: join(simulation.directory, 'manifest.json'),
+        compareCache: null,
+        idleSchedule: null,
+        inspection: 'none' as const,
+      };
+      const reference = await captureMemory(options, driver());
+      if (!('samples' in reference)) throw new Error('Expected ordinary reference samples.');
+      const referencePath = join(simulation.directory, 'reference.json');
+      const { memoryFlowTimeoutMs: _legacyTimeout, ...legacyReference } = reference;
+      if (cacheCase === 'empty') {
+        for (const inventories of [
+          undefined,
+          null,
+          [],
+          [{ cycle: 20, files: [] }],
+          [
+            { cycle: 0, files: [] },
+            { cycle: 0, files: [] },
+          ],
+          [{ cycle: 0, files: 'malformed' }],
+          [{ cycle: 0, files: [{ path: 'board.png', bytes: 1, sha256: 'not-a-hash' }] }],
+        ]) {
+          writeFileSync(referencePath, JSON.stringify({ ...legacyReference, inventories }));
+          await expect(
+            captureMemory({ ...options, workload: 'idle', idleSchedule: referencePath }, driver()),
+          ).rejects.toThrow(/cache.*inventory/);
+          expect(simulation.launches).toBe(2);
+        }
+      }
+      writeFileSync(referencePath, JSON.stringify(legacyReference));
+      await expect(
+        captureMemory(
+          { ...options, workload: 'idle', idleSchedule: referencePath, memoryFlowTimeoutMs: 90000 },
+          driver(),
+        ),
+      ).rejects.toThrow(/same --memory-flow-timeout-ms/);
+      expect(simulation.launches).toBe(2);
+      if (cacheCase === 'mismatch') writeFileSync(join(cacheDirectory, 'board.png'), 'changed cached image');
+      const additionalCachePath = join(simulation.directory, 'additional-cache.json');
+      if (cacheCase === 'additional mismatch') writeFileSync(additionalCachePath, JSON.stringify([]));
+      vi.useFakeTimers();
+      const pending = captureMemory(
+        {
+          ...options,
+          workload: 'idle',
+          idleSchedule: referencePath,
+          compareCache: cacheCase === 'additional mismatch' ? additionalCachePath : null,
+        },
         driver(),
-      ),
-    ).rejects.toThrow(/same --memory-flow-timeout-ms/);
-    expect(simulation.launches).toBe(2);
-    vi.useFakeTimers();
-    const pending = captureMemory({ ...options, workload: 'idle', idleSchedule: referencePath }, driver());
-    await vi.runAllTimersAsync();
-    const idle = await pending;
-    if (!('samples' in idle)) throw new Error('Expected ordinary idle samples.');
-    expect(simulation.launches).toBe(4);
-    expect(idle.samples).toHaveLength(88);
-    for (const [index, sample] of idle.samples.entries()) {
-      expect(Math.abs(sample.hostElapsedMs - reference.samples[index].hostElapsedMs)).toBeLessThanOrEqual(2000);
-      expect((sample.snapshot as { actualVisibleUuids: string[] }).actualVisibleUuids).toEqual([]);
-    }
-  });
+      );
+      if (cacheCase === 'mismatch' || cacheCase === 'additional mismatch') {
+        const rejection = expect(pending).rejects.toThrow(/cache files differ/);
+        await vi.runAllTimersAsync();
+        await rejection;
+        const partial = JSON.parse(readFileSync(join(simulation.directory, 'memory-samples.json'), 'utf8')) as {
+          cycle: number;
+        }[];
+        expect(partial).toHaveLength(8);
+        expect(partial.every((sample) => sample.cycle <= 0)).toBe(true);
+        expect(
+          JSON.parse(readFileSync(join(simulation.directory, 'ordinary-measurements.json'), 'utf8')),
+        ).toMatchObject({ workload: 'replay' });
+        return;
+      }
+      await vi.runAllTimersAsync();
+      const idle = await pending;
+      if (!('samples' in idle)) throw new Error('Expected ordinary idle samples.');
+      expect(simulation.launches).toBe(4);
+      expect(idle.samples).toHaveLength(88);
+      for (const [index, sample] of idle.samples.entries()) {
+        expect(Math.abs(sample.hostElapsedMs - reference.samples[index].hostElapsedMs)).toBeLessThanOrEqual(2000);
+        expect((sample.snapshot as { actualVisibleUuids: string[] }).actualVisibleUuids).toEqual([]);
+      }
+    },
+  );
 });
 
 function ownershipOptions() {

@@ -111,6 +111,42 @@ export interface CacheFileIdentity {
   sha256: string;
   modifiedAtMs?: number;
 }
+/** Idle comparisons require the reference run's own validated cycle-zero cache observation. */
+export function startingCacheFiles(inventories: unknown): CacheFileIdentity[] {
+  if (!Array.isArray(inventories)) throw new Error('Idle reference is missing its starting cache inventory.');
+  const starting = inventories.filter((inventory) => record(inventory)?.cycle === 0);
+  const files = starting.length === 1 ? record(starting[0])?.files : undefined;
+  if (!Array.isArray(files) || files.length > 20000)
+    throw new Error('Idle reference requires exactly one bounded cycle-zero cache inventory.');
+  const paths = new Set<string>();
+  return files.map((candidate: unknown) => {
+    const file = record(candidate);
+    if (
+      !file ||
+      typeof file.path !== 'string' ||
+      !file.path ||
+      file.path.length > 4096 ||
+      file.path.includes('\0') ||
+      file.path.split('/').some((segment) => !segment || segment === '.' || segment === '..') ||
+      paths.has(file.path) ||
+      typeof file.bytes !== 'number' ||
+      !Number.isSafeInteger(file.bytes) ||
+      file.bytes < 0 ||
+      !sha256(file.sha256) ||
+      (file.modifiedAtMs !== undefined &&
+        (typeof file.modifiedAtMs !== 'number' || !Number.isFinite(file.modifiedAtMs) || file.modifiedAtMs < 0))
+    )
+      throw new Error('Idle reference has a malformed starting cache file inventory.');
+    paths.add(file.path);
+    return {
+      path: file.path,
+      bytes: file.bytes,
+      sha256: file.sha256,
+      modifiedAtMs: file.modifiedAtMs as number | undefined,
+    };
+  });
+}
+
 export function cacheFileIdentities(container: string): CacheFileIdentity[] {
   const results: CacheFileIdentity[] = [];
   const root = join(container, 'Library', 'Caches');

@@ -8,6 +8,7 @@ import {
   expectedCycleUuids,
   MEMORY_PHASES,
   parseMemoryFlowTimeoutMs,
+  startingCacheFiles,
   validateMemoryManifest,
   validateMemoryMeasurements,
   validateMemorySnapshot,
@@ -125,6 +126,43 @@ describe('controlled memory manifest and workloads', () => {
     expect(() => validateMemoryMeasurements({ ...measurements(), memoryFlowTimeoutMs: 120001 })).toThrow(
       /memory-flow-timeout-ms/,
     );
+  });
+  it('requires one valid reference starting inventory and rejects ambiguous or malformed file evidence', () => {
+    const file = { path: 'board-thumbnails/board.png', bytes: 42, sha256: 'a'.repeat(64), modifiedAtMs: 123 };
+    expect(
+      startingCacheFiles([
+        { cycle: 0, files: [] },
+        { cycle: 20, files: [] },
+      ]),
+    ).toEqual([]);
+    expect(startingCacheFiles([{ cycle: 0, files: [file] }])).toEqual([file]);
+    for (const inventories of [
+      undefined,
+      null,
+      [],
+      [{ cycle: 20, files: [] }],
+      [
+        { cycle: 0, files: [] },
+        { cycle: 0, files: [] },
+      ],
+      [{ cycle: 0 }],
+      [{ cycle: 0, files: null }],
+    ])
+      expect(() => startingCacheFiles(inventories)).toThrow(/cache inventory/);
+    for (const invalid of [
+      null,
+      { ...file, path: '' },
+      { ...file, path: '/absolute' },
+      { ...file, path: '../outside' },
+      { ...file, path: 'cache/../outside' },
+      { ...file, bytes: -1 },
+      { ...file, bytes: 0.5 },
+      { ...file, bytes: NaN },
+      { ...file, sha256: 'missing-hash' },
+      { ...file, modifiedAtMs: Infinity },
+    ])
+      expect(() => startingCacheFiles([{ cycle: 0, files: [invalid] }])).toThrow(/cache file inventory/);
+    expect(() => startingCacheFiles([{ cycle: 0, files: [file, file] }])).toThrow(/cache file inventory/);
   });
   it('requires explicit ownership mode and failed-probe provenance for graph-only capture', () => {
     const args = [
