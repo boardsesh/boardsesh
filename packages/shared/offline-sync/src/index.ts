@@ -64,6 +64,17 @@ export type {
   MutationDeadLetterReporter,
 } from './mutation-queue/drainer';
 export { ensureMutationQueueTable, MUTATION_QUEUE_SCHEMA } from './mutation-queue/schema';
+// --- One-time recovery of the sends #5295 threw away (issue #5335) ------------
+// `requeueTransportDeadLetters` is the migration's own data step and is NOT
+// exported: nothing outside the versioned migration may replay dead letters in
+// bulk. The app reads only the notice the migration left behind — how many sends
+// it put back, and whether the climber has been told yet.
+export {
+  readDeadLetterRecoveryNotice,
+  clearDeadLetterRecoveryNotice,
+  isRecoverableTransportDeadLetter,
+  DEAD_LETTER_RECOVERY_NOTICE_KEY,
+} from './mutation-queue/dead-letter-recovery';
 export { processMutation } from './mutation-queue/handlers';
 export type { GraphQLFetch } from './mutation-queue/handlers';
 export {
