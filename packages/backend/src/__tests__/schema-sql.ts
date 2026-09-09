@@ -1066,6 +1066,69 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "feed_items_recipient_created_at_idx" ON "feed_items" ("recipient_id", "created_at" DESC, "id" DESC);
   CREATE INDEX IF NOT EXISTS "feed_items_entity_type_entity_id_idx" ON "feed_items" ("entity_type", "entity_id");
 
+  -- Mirrors migration 0053_add_vote_counts.sql's trigger (entity_type is text
+  -- here, not the social_entity_type enum — see the votes-table note above).
+  -- Keeps vote_counts in sync with votes so a resolver that reads vote_counts
+  -- (getVoteSummary, sessionDetail, sessionGroupedFeed) sees a real vote() call
+  -- land, instead of reading a table nothing ever populates in tests.
+  CREATE OR REPLACE FUNCTION update_vote_counts() RETURNS trigger AS $$
+  DECLARE
+    v_entity_type text;
+    v_entity_id text;
+    v_up int;
+    v_down int;
+    v_score int;
+    v_hot_score double precision;
+    v_created_at timestamp;
+  BEGIN
+    IF TG_OP = 'DELETE' THEN
+      v_entity_type := OLD.entity_type;
+      v_entity_id := OLD.entity_id;
+    ELSE
+      v_entity_type := NEW.entity_type;
+      v_entity_id := NEW.entity_id;
+    END IF;
+
+    SELECT
+      COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0),
+      COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0)
+    INTO v_up, v_down
+    FROM votes
+    WHERE entity_type = v_entity_type AND entity_id = v_entity_id;
+
+    v_score := v_up - v_down;
+
+    SELECT COALESCE(
+      (SELECT fi."created_at" FROM feed_items fi
+       WHERE fi."entity_type" = v_entity_type AND fi."entity_id" = v_entity_id
+       LIMIT 1),
+      NOW()
+    ) INTO v_created_at;
+
+    v_hot_score := SIGN(v_score) * LN(GREATEST(ABS(v_score), 1))
+      + EXTRACT(EPOCH FROM v_created_at) / 45000.0;
+
+    INSERT INTO vote_counts (entity_type, entity_id, upvotes, downvotes, score, hot_score, created_at)
+    VALUES (v_entity_type, v_entity_id, v_up, v_down, v_score, v_hot_score, v_created_at)
+    ON CONFLICT (entity_type, entity_id) DO UPDATE SET
+      upvotes = EXCLUDED.upvotes,
+      downvotes = EXCLUDED.downvotes,
+      score = EXCLUDED.score,
+      hot_score = EXCLUDED.hot_score;
+
+    IF v_up = 0 AND v_down = 0 THEN
+      DELETE FROM vote_counts WHERE entity_type = v_entity_type AND entity_id = v_entity_id;
+    END IF;
+
+    RETURN NULL;
+  END;
+  $$ LANGUAGE plpgsql;
+
+  DROP TRIGGER IF EXISTS votes_count_trigger ON votes;
+  CREATE TRIGGER votes_count_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON votes
+    FOR EACH ROW EXECUTE FUNCTION update_vote_counts();
+
   -- User notifications (comment replies, votes, follows, etc.). type/entity_type
   -- are text here (see the comments-table note above).
   DROP TABLE IF EXISTS "notifications" CASCADE;
