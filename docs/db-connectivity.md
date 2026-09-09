@@ -309,6 +309,95 @@ its own (`postgres/src/index.js:341`), so walking away would leave a zombie
 `select 1` that fires whenever the pool recovers, and probes would pile up
 through an outage.
 
+The same statement also reads `current_setting('max_parallel_workers_per_gather')`
+and reports it as `database.maxParallelWorkersPerGather` — see the next section
+for why. It rides the existing round trip rather than adding one.
+
+## Parallel-query DSM exhaustion, and why the guard moved to the database (#5352)
+
+`could not resize shared memory segment "/PostgreSQL.<id>" to <n> bytes: No space
+left on device` (SQLSTATE `53100`, `dsm_impl.c` / `dsm_impl_posix`) is a
+**parallel-query** failure. Postgres allocates a dynamic-shared-memory segment
+per parallel worker out of the container's `/dev/shm`; Docker's default is 64 MB.
+Measured on the dev catalogue (9.95M `board_climb_holds` rows), one `similarClimbs`
+plan holds ~33 MB across 12 segments — so two concurrent parallel plans exhaust a
+stock budget and the loser gets `53100`.
+
+It is not a connectivity problem and a retry is not a fix: the statement reached
+the server and the server refused it.
+
+### Why five rounds of call-site guards did not end it
+
+`withSerialPlan` (`packages/db/src/queries/util/serial-plan.ts`) opens a
+transaction and issues `SET LOCAL max_parallel_workers_per_gather = 0`. Measured
+under a deliberately shrunk `/dev/shm`, that guard is completely effective: the
+unguarded statement raises `53100` and the guarded one returns normally. In Sentry
+every guarded resolver went quiet the day its guard shipped —
+`mySmartPlaylistCounts` after 2026-08-11, `similarClimbs` after 2026-08-15,
+`syncClimbGrades` after 2026-08-18, `userTicks` after 2026-08-19.
+
+What failed was the strategy, not the guard. The backend has roughly 65 statements
+with the shape that Postgres can promote to a parallel plan (a join across two or
+more of `board_climbs` / `board_climb_stats` / `board_climb_holds` /
+`board_climb_grades` / `boardsesh_ticks`, or an aggregate over one). Four were
+wrapped. Whether the planner picks a `Gather` for the other sixty changes as the
+tables grow, so each round silenced one resolver and a different one surfaced
+weeks later. The guard also never reached the sync daemons
+(`recomputeClimbStatsBulk`), the board-snapshot export, SSR, OG-image data or the
+scheduler jobs, all of which share the same `/dev/shm`.
+
+### What we do instead
+
+Migration `0225_dsm_serial_plan_default.sql` sets the default on the database:
+
+```sql
+ALTER DATABASE <db> SET max_parallel_workers_per_gather = 0;
+```
+
+Every session inherits it — resolvers, background jobs, scripts, a human in psql.
+It is a **default, not a lock**: a session that wants parallelism can still
+`SET LOCAL max_parallel_workers_per_gather = <n>` inside a transaction, and the
+whole thing reverses with `ALTER DATABASE <db> RESET max_parallel_workers_per_gather`.
+It cannot change results, only latency — and on the top offender the serial plan is
+*faster* (2154 ms vs 4163 ms), because the parallel plan reaches for a Parallel Seq
+Scan where the serial plan keeps the index.
+
+Plain SQL against a stock `docker run postgres:17`: no Railway knob, no dashboard
+setting, no extension. `ALTER DATABASE ... SET` is a `pg_dumpall` global rather
+than a `pg_dump` one, which is exactly why it lives in a migration — migrations
+are how every Boardsesh database gets built, so a restored dump picks it up on the
+next `db:migrate`.
+
+Two caveats worth knowing:
+
+- **Existing pooled connections keep their old value until they cycle**
+  (`idle_timeout` is 30s outside Vercel), so the change lands within about a minute
+  of the migration rather than instantly.
+- **The migration is fail-soft.** `ALTER DATABASE ... SET` needs database
+  ownership; a deploy role without it gets a `RAISE WARNING` rather than a blocked
+  release.
+
+### The recurrence signal
+
+A warning in a migration log is exactly the kind of thing nobody reads, and five
+rounds of this bug stayed invisible for want of a signal. So the backend reports
+the value **its own pool actually sees**:
+
+```
+GET /health/db → database.maxParallelWorkersPerGather
+```
+
+`"0"` means the default landed. Anything else means it did not, and `53100` can
+come back — check whether the migration's warning fired, and whether the role owns
+the database. A value present in `pg_db_role_setting` but not on the app's
+connections would be no fix at all, which is why this reads the live session rather
+than the catalog.
+
+The other half of the signal is Sentry: until #5351 every one of these landed in
+the unfingerprinted `BOARDSESH-AK` bucket, which is why four "fixed" rounds looked
+like one continuous failure. With per-cause fingerprinting a recurrence appears as
+its own issue carrying the `graphqlPath` tag.
+
 ## Runbook
 
 - Retries are logged at `warn`: `[db] connect retry 1/3 after EAI_AGAIN …`. Warn,
