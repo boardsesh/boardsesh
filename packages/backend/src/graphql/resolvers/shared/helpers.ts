@@ -72,6 +72,20 @@ export const RATE_LIMIT_SET_QUEUE = 300;
  */
 const ANONYMOUS_SOCKET_PEER_RATE_LIMIT_FLOOR = 600;
 const ANONYMOUS_SOCKET_PEER_RATE_LIMIT_MULTIPLIER = 5;
+
+/**
+ * Ceiling for `ctx.isInternalService` callers (issue #5291) — Boardsesh's own
+ * SSR data-fetch layer, which has no per-visitor identity of its own. This
+ * caller intentionally stands in for every anonymous website visitor at once,
+ * so the per-operation `limit` (sized to police one abusive client) would be
+ * both the wrong identity AND the wrong ceiling. Scaling off the caller's own
+ * limit keeps this proportionate per-operation without a second number to
+ * tune by hand; the floor keeps low-limit operations from getting an
+ * unreasonably tight fleet-wide budget. Still finite: a backstop against a bug
+ * in our own code looping against the backend, not a real abuse control.
+ */
+const INTERNAL_SERVICE_RATE_LIMIT_FLOOR = 300;
+const INTERNAL_SERVICE_RATE_LIMIT_MULTIPLIER = 10;
 // Keep every Redis tier for one operation on the same window; changing this
 // means changing the windowMs passed to both calls below together.
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -458,6 +472,19 @@ export async function isSessionMember(ctx: ConnectionContext, sessionId: string)
  * ceiling. Hosted proxy fan-in is why this secondary limit is intentionally
  * much higher than the per-client bucket.
  *
+ * A fourth identity, `ctx.isInternalService`, covers Boardsesh's own SSR
+ * data-fetch layer (issue #5291): a server-side render has no visitor of its
+ * own, so keying it like an anonymous IP caller collapsed every visitor on
+ * earth onto one 30/min bucket once the web tier started reaching the backend
+ * over Railway's private network (no Cloudflare hop, so no per-visitor IP
+ * survives the hop). This identity gets its own fleet-wide Redis bucket at a
+ * deliberately generous, scaled ceiling — see
+ * `INTERNAL_SERVICE_RATE_LIMIT_FLOOR`/`_MULTIPLIER` — rather than either the
+ * per-visitor bucket (wrong identity) or no limit (no backstop against our
+ * own bug). It is checked first because it is never also `isAuthenticated`
+ * or WebSocket: `authenticateInternalServiceSecret` only runs on the HTTP
+ * bearer path and clears `authResult` when it matches.
+ *
  * @param ctx - Connection context
  * @param limit - Optional custom limit (default: 60 requests per minute)
  * @param operation - Operation name for Redis key namespacing (default: 'default')
@@ -466,17 +493,30 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
   if (process.env.NODE_ENV === 'development') return;
 
   const maxRequests = limit ?? 60;
+  const isInternalService = ctx.isInternalService === true;
+  const internalServiceMaxRequests = Math.max(
+    INTERNAL_SERVICE_RATE_LIMIT_FLOOR,
+    maxRequests * INTERNAL_SERVICE_RATE_LIMIT_MULTIPLIER,
+  );
 
   // Tier 1: Synchronous in-memory rate limiting (fast path, per-instance)
-  // Use userId for authenticated users, clientIp for anonymous HTTP requests,
-  // or connectionId as fallback (WebSocket connections)
+  // Use the internal-service identity first, then userId for authenticated
+  // users, then clientIp for anonymous HTTP requests, then connectionId as a
+  // last-resort fallback (WebSocket connections).
   let key: string;
-  if (ctx.isAuthenticated && ctx.userId) {
+  let effectiveMaxRequests: number;
+  if (isInternalService) {
+    key = `internal-service:${operation}`;
+    effectiveMaxRequests = internalServiceMaxRequests;
+  } else if (ctx.isAuthenticated && ctx.userId) {
     key = `${ctx.userId}:${operation}`;
+    effectiveMaxRequests = maxRequests;
   } else if (ctx.clientIp) {
     key = `ip:${ctx.clientIp}:${operation}`;
+    effectiveMaxRequests = maxRequests;
   } else {
     key = ctx.connectionId;
+    effectiveMaxRequests = maxRequests;
   }
 
   // Surface a structured RATE_LIMITED error (with retryAfterSeconds) so clients
@@ -486,11 +526,15 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
   // is preserved for older clients. See #2763.
   try {
     // Tier 1: Synchronous in-memory rate limiting (fast path, per-instance)
-    checkRateLimit(key, maxRequests);
+    checkRateLimit(key, effectiveMaxRequests);
 
     // Tier 2: Distributed Redis rate limiting. Tier 1 already ran, so Redis
     // failures must not increment the same in-memory bucket a second time.
-    if (ctx.isAuthenticated && ctx.userId) {
+    if (isInternalService) {
+      await checkRateLimitRedis('internal-service', operation, internalServiceMaxRequests, RATE_LIMIT_WINDOW_MS, {
+        fallbackToMemory: false,
+      });
+    } else if (ctx.isAuthenticated && ctx.userId) {
       await checkRateLimitRedis(ctx.userId, operation, maxRequests, RATE_LIMIT_WINDOW_MS, {
         fallbackToMemory: false,
       });
@@ -504,7 +548,7 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
     // secondary peer bucket: the request is already blocked and must not spend
     // another identity's shared-proxy quota. Header rotation keeps reaching this
     // call because each forged client bucket remains below its own limit.
-    if (!ctx.isAuthenticated && ctx.transport === 'ws' && ctx.socketPeerIp) {
+    if (!isInternalService && !ctx.isAuthenticated && ctx.transport === 'ws' && ctx.socketPeerIp) {
       const socketPeerLimit = Math.max(
         ANONYMOUS_SOCKET_PEER_RATE_LIMIT_FLOOR,
         maxRequests * ANONYMOUS_SOCKET_PEER_RATE_LIMIT_MULTIPLIER,
