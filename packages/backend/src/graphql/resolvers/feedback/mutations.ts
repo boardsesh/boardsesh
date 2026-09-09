@@ -8,6 +8,8 @@ import { applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdmin } from '../social/roles';
 import { SubmitAppFeedbackInputSchema, UpdateAppFeedbackStatusInputSchema } from '../../../validation/schemas';
 import { BUG_SOURCES, createFeedbackGithubIssue } from '../../../services/github-feedback';
+import { resolveGithubRepo } from '../../../lib/github-client';
+import { reportGithubMirrorDrop } from '../../../services/github-mirror-report';
 import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 import { loadFeedbackReport } from './queries';
 import { logger } from '../../../utils/logger';
@@ -60,14 +62,16 @@ export const feedbackMutations = {
     // Fire-and-forget side effect for bug reports: open a GitHub issue, then —
     // if the reporter opted in to contact and is signed in — email them the
     // link. Bug-vs-rating gating lives in createFeedbackGithubIssue (rating
-    // sources return null and no email is sent). Errors are logged and never
-    // bubble up; this must not block or fail the mutation. Guard on row
-    // existence — a missing returned row means a DB-layer problem, not our
-    // contract, so skip the side effect.
+    // sources come back `skipped` and no email is sent). Errors never bubble
+    // up; this must not block or fail the mutation. But a report that files no
+    // issue is now announced through `reportGithubMirrorDrop` rather than
+    // returning quietly — that silence is what hid 19 lost bug reports across
+    // a 3h23m window. Guard on row existence — a missing returned row means a
+    // DB-layer problem, not our contract, so skip the side effect.
     if (row) {
       void (async () => {
         try {
-          const issue = await createFeedbackGithubIssue({
+          const outcome = await createFeedbackGithubIssue({
             feedbackId: row.id,
             rating,
             comment,
@@ -84,7 +88,8 @@ export const feedbackMutations = {
             screenshotUrls: screenshotPublicUrls(screenshotKeys),
           });
 
-          if (issue) {
+          if (outcome.status === 'created') {
+            const { issue } = outcome;
             // Persist the issue link so the admin dashboard can jump straight
             // to it. Kept inside the fire-and-forget block: a failure here must
             // not affect the already-committed feedback row.
@@ -107,6 +112,17 @@ export const feedbackMutations = {
                 });
               }
             }
+          } else if (outcome.status !== 'skipped') {
+            // A rating was never going to become an issue; anything else here
+            // is a bug report that reached us and never reached the tracker.
+            reportGithubMirrorDrop({
+              operation: 'feedback-issue',
+              reason: outcome.status,
+              record: { table: 'app_feedback', id: String(row.id) },
+              repo: resolveGithubRepo(),
+              userId,
+              cause: outcome.status === 'rejected' ? outcome.cause : undefined,
+            });
           }
         } catch (error) {
           logger.error('[feedback] issue/email side-effect failed:', error);

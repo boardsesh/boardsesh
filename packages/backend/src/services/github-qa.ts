@@ -111,6 +111,25 @@ export type VerdictCommentPayload = {
 
 export type PostedComment = { id: number; htmlUrl: string };
 
+/**
+ * What became of a verdict mirror.
+ *
+ * Anything other than `posted` is a dropped comment the caller has to report —
+ * `cause` is a `GithubRequestError` when GitHub answered, so the status, the
+ * request id and GitHub's own message survive the trip up to the reporter.
+ */
+export type VerdictCommentOutcome =
+  | { status: 'posted'; comment: PostedComment }
+  | { status: 'unconfigured' }
+  | { status: 'unexpected-response' }
+  | { status: 'rejected'; cause: unknown };
+
+/** Same contract for the label swap. */
+export type QaLabelOutcome =
+  | { status: 'applied' }
+  | { status: 'unconfigured' }
+  | { status: 'rejected'; cause: unknown };
+
 function normalizePullRequest(payload: GitHubPullRequestPayload): QaPullRequest | null {
   const { number, title, html_url: htmlUrl, updated_at: updatedAt } = payload;
   const headSha = payload.head?.sha;
@@ -613,14 +632,19 @@ function warnMissingTokenOnce(): void {
 }
 
 /**
- * Post the verdict comment on the PR. Never throws. Returns null when there is
- * no token (local dev) or the call failed — the row already holds the verdict.
+ * Post the verdict comment on the PR. Never throws.
+ *
+ * Returns an outcome rather than `PostedComment | null`, because the caller has
+ * to be able to tell the three "no comment" cases apart: an unconfigured App
+ * (the 3h23m outage shape), a rejection from GitHub (the 403 that ate three
+ * verdicts), and a 2xx whose payload was not a comment. `null` collapsed all
+ * three into silence, and the caller then had nothing to report.
  */
-export async function postVerdictComment(prNumber: number, body: string): Promise<PostedComment | null> {
+export async function postVerdictComment(prNumber: number, body: string): Promise<VerdictCommentOutcome> {
   const token = await resolveGithubToken();
   if (!token) {
     warnMissingTokenOnce();
-    return null;
+    return { status: 'unconfigured' };
   }
 
   try {
@@ -630,13 +654,14 @@ export async function postVerdictComment(prNumber: number, body: string): Promis
       token,
     );
     if (typeof comment.id !== 'number' || typeof comment.html_url !== 'string') {
-      logger.error('[qa] verdict comment returned an unexpected response shape');
-      return null;
+      return { status: 'unexpected-response' };
     }
-    return { id: comment.id, htmlUrl: comment.html_url };
+    return { status: 'posted', comment: { id: comment.id, htmlUrl: comment.html_url } };
   } catch (error) {
-    logger.error(`[qa] posting the verdict comment on #${prNumber} failed:`, error);
-    return null;
+    // Not logged here: the caller reports the drop once, with the verdict row
+    // id and the tester's user id attached. Logging it here too would file the
+    // same failure twice in Sentry, once without any of that.
+    return { status: 'rejected', cause: error };
   }
 }
 
@@ -644,19 +669,21 @@ export async function postVerdictComment(prNumber: number, body: string): Promis
  * Move the PR to the verdict's label: add the winner, drop the other. Latest
  * verdict wins, so a decline after an approval leaves only `qa-declined`.
  * Never throws; a 404 on the removal just means the label wasn't there.
+ *
+ * Reports its outcome for the same reason `postVerdictComment` does — a PR that
+ * silently kept the wrong label is half of what #5294 was about.
  */
-export async function applyQaLabel(prNumber: number, verdict: QaVerdictKind): Promise<void> {
+export async function applyQaLabel(prNumber: number, verdict: QaVerdictKind): Promise<QaLabelOutcome> {
   const token = await resolveGithubToken();
   if (!token) {
     warnMissingTokenOnce();
-    return;
+    return { status: 'unconfigured' };
   }
 
   const repo = resolveGithubRepo();
   const [owner, name] = repo.split('/');
   if (!owner || !name) {
-    logger.error(`[qa] invalid QA repo "${repo}" (expected owner/name)`);
-    return;
+    return { status: 'rejected', cause: new Error(`invalid QA repo "${repo}" (expected owner/name)`) };
   }
   const winner = QA_LABELS[verdict];
   const loser = verdict === 'approved' ? QA_LABELS.declined : QA_LABELS.approved;
@@ -669,16 +696,17 @@ export async function applyQaLabel(prNumber: number, verdict: QaVerdictKind): Pr
       token,
     );
   } catch (error) {
-    logger.error(`[qa] adding ${winner} to #${prNumber} failed:`, error);
-    return;
+    return { status: 'rejected', cause: error };
   }
 
   try {
     await githubRequest(`/repos/${repo}/issues/${prNumber}/labels/${loser}`, { method: 'DELETE' }, token);
   } catch (error) {
-    // 404 is the normal case: the PR never carried the opposite verdict.
+    // 404 is the normal case: the PR never carried the opposite verdict. Not a
+    // drop — the label that matters is already on.
     logger.debug(`[qa] removing ${loser} from #${prNumber} was a no-op:`, error);
   }
+  return { status: 'applied' };
 }
 
 /** Test-only: drop the module caches (and the one-shot missing-token warning). */

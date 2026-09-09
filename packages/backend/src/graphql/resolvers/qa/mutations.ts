@@ -14,6 +14,8 @@ import {
   readOpenPullRequests,
 } from '../../../services/github-qa';
 import type { QaPullRequest } from '../../../services/github-qa';
+import { resolveGithubRepo } from '../../../lib/github-client';
+import { reportGithubMirrorDrop } from '../../../services/github-mirror-report';
 import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 import { toQaVerdict } from './queries';
 import { logger } from '../../../utils/logger';
@@ -134,9 +136,13 @@ export const qaMutations = {
 
     if (!row) throw new Error('Could not record the verdict');
 
-    // Fire-and-forget mirror to GitHub. Failures are logged under `[qa]` and
-    // never surface to the caller; the row stands either way, and a row with
-    // github_comment_id IS NULL is the "not mirrored" signal for the runbook.
+    // Fire-and-forget mirror to GitHub. Failures never surface to the caller and
+    // the row stands either way — but they no longer pass unnoticed: anything
+    // short of a posted comment / applied label goes through
+    // `reportGithubMirrorDrop`, which logs it under `[github-mirror]` and files
+    // a Sentry event naming this row, this PR and GitHub's own response. A row
+    // with github_comment_id IS NULL is still the runbook's replay signal; the
+    // event is what tells someone to go look.
     void (async () => {
       try {
         const tally = await db
@@ -179,11 +185,24 @@ export const qaMutations = {
         // is the runbook's "replay this one by hand" signal, and a label failure
         // in between would otherwise strand a comment that did post.
         const posted = await postVerdictComment(row.prNumber, body);
-        if (posted) {
+        if (posted.status === 'posted') {
           await db
             .update(dbSchema.qaVerdicts)
-            .set({ githubCommentId: posted.id, githubCommentUrl: posted.htmlUrl })
+            .set({ githubCommentId: posted.comment.id, githubCommentUrl: posted.comment.htmlUrl })
             .where(eq(dbSchema.qaVerdicts.id, row.id));
+        } else {
+          // The drop that used to happen here in silence: the row keeps a NULL
+          // github_comment_id, nobody ran the query that finds it, and the PR
+          // merged without its verdict.
+          reportGithubMirrorDrop({
+            operation: 'qa-verdict-comment',
+            reason: posted.status,
+            record: { table: 'qa_verdicts', id: String(row.id) },
+            repo: resolveGithubRepo(),
+            prNumber: row.prNumber,
+            userId: ctx.userId,
+            cause: posted.status === 'rejected' ? posted.cause : undefined,
+          });
         }
 
         // Latest TESTER verdict wins — but "latest" is whatever the table says,
@@ -201,7 +220,20 @@ export const qaMutations = {
           .where(and(eq(dbSchema.qaVerdicts.prNumber, row.prNumber), eq(dbSchema.qaVerdicts.byTester, true)))
           .orderBy(desc(dbSchema.qaVerdicts.createdAt), desc(dbSchema.qaVerdicts.id))
           .limit(1);
-        if (newestTesterVerdict) await applyQaLabel(row.prNumber, newestTesterVerdict.verdict);
+        if (newestTesterVerdict) {
+          const labelled = await applyQaLabel(row.prNumber, newestTesterVerdict.verdict);
+          if (labelled.status !== 'applied') {
+            reportGithubMirrorDrop({
+              operation: 'qa-verdict-label',
+              reason: labelled.status,
+              record: { table: 'qa_verdicts', id: String(row.id) },
+              repo: resolveGithubRepo(),
+              prNumber: row.prNumber,
+              userId: ctx.userId,
+              cause: labelled.status === 'rejected' ? labelled.cause : undefined,
+            });
+          }
+        }
       } catch (error) {
         logger.error('[qa] verdict mirror side-effect failed:', error);
       }

@@ -10,11 +10,13 @@
  * code by copy, so it lives here instead.
  *
  * Nothing in this module throws for a non-2xx response — callers decide. The
- * one exception is `githubRequest`, which surfaces the status so a caching
- * reader can negative-cache it.
+ * one exception is `githubRequest`, which surfaces the failure as a
+ * `GithubRequestError` so a caching reader can negative-cache on the status and
+ * a mirror that just lost a write can report why.
  */
 
 import { getInstallationAccessToken } from './github-app-auth';
+import { GithubRequestError, formatGithubErrorDetail, readGithubErrorDetail } from './github-error';
 import { logger } from '../utils/logger';
 
 export const GITHUB_API = 'https://api.github.com';
@@ -60,8 +62,11 @@ export async function ensureLabels(owner: string, repo: string, token: string, l
         body: JSON.stringify({ name: label, color: LABEL_COLORS[label] ?? 'ededed' }),
       });
       if (!response.ok && response.status !== 422) {
-        const errorText = await response.text().catch(() => '<unreadable>');
-        logger.warn(`[github] ensureLabel ${label}: ${response.status} ${errorText}`);
+        // Through the shared reader, not a raw `response.text()`: this line goes
+        // to the log drain, and an echoed request can carry the installation
+        // token that authenticated it.
+        const detail = await readGithubErrorDetail(response);
+        logger.warn(`[github] ensureLabel ${label}: ${formatGithubErrorDetail(detail)}`);
       }
     } catch (error) {
       logger.warn(`[github] ensureLabel ${label} error:`, error);
@@ -70,9 +75,15 @@ export async function ensureLabels(owner: string, repo: string, token: string, l
 }
 
 /**
- * A single GitHub REST call, JSON in and out. Throws on a non-2xx status with
- * the status in the message so a caller can negative-cache or log it; the body
- * is not included (it can carry a token echo in some error shapes).
+ * A single GitHub REST call, JSON in and out. Throws a {@link GithubRequestError}
+ * on a non-2xx, carrying the status, the request id and the response body so a
+ * caller can negative-cache on the status AND explain the failure afterwards.
+ *
+ * The body used to be dropped here on the grounds that GitHub echoes the
+ * request in some error shapes and could hand back the token that signed it.
+ * It is redacted now instead of discarded (`redactGithubErrorBody`): a 403 that
+ * silently ate three QA verdicts was unexplainable precisely because GitHub's
+ * own `message` never made it off the wire.
  *
  * `token` is optional: the public repo answers unauthenticated reads at 60/hr
  * per IP, which the caching readers stay under. Writes always need one.
@@ -91,7 +102,7 @@ export async function githubRequest<T>(path: string, init?: RequestInit, token?:
     headers: { ...headers, ...((init?.headers as Record<string, string> | undefined) ?? {}) },
   });
   if (!response.ok) {
-    throw new Error(`GitHub ${init?.method ?? 'GET'} ${path} responded ${response.status}`);
+    throw new GithubRequestError(init?.method ?? 'GET', path, await readGithubErrorDetail(response));
   }
   // 204 No Content (label DELETE) has no body to parse.
   if (response.status === 204) return undefined as T;
