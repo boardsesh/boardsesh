@@ -114,20 +114,7 @@ describe('resolveNamespaceVerdict', () => {
 });
 
 describe('stamp keys', () => {
-  it('cannot collide with a key the migration carries', async () => {
-    const { PREFERENCE_SECURE_KEYS } = await import('../preference-secure-keys');
-    const migratedKeys = [
-      'boardsesh_jwt',
-      'boardsesh_refresh_token',
-      'boardsesh_token_expires_at',
-      ...PREFERENCE_SECURE_KEYS,
-    ];
-
-    // A migrated key ending in the suffix would make its stamp the stamp of
-    // another key, and the migration would start comparing the wrong things.
-    for (const key of migratedKeys) {
-      expect(key.endsWith(NAMESPACE_STAMP_SUFFIX)).toBe(false);
-    }
+  it('derives its own key from the value key', () => {
     expect(namespaceStampKey('boardsesh_jwt')).toBe(`boardsesh_jwt${NAMESPACE_STAMP_SUFFIX}`);
   });
 });

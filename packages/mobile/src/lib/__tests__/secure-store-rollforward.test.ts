@@ -58,6 +58,8 @@ vi.mock('expo-secure-store', () => {
     __seed: (service: string, key: string, value: string) => items.set(`${service}::${key}`, value),
     __get: (service: string, key: string) => items.get(`${service}::${key}`) ?? null,
     __makeUndeletable: (service: string) => undeletableServices.add(service),
+    __lockService: (service: string) => lockedServices.add(service),
+    __unlockService: (service: string) => lockedServices.delete(service),
     __failWriteFor: (service: string, key: string) => writeFailureKeys.add(`${service}::${key}`),
     __reset: () => {
       items.clear();
@@ -74,6 +76,8 @@ type SecureStoreFake = {
   __seed: (service: string, key: string, value: string) => void;
   __get: (service: string, key: string) => string | null;
   __makeUndeletable: (service: string) => void;
+  __lockService: (service: string) => void;
+  __unlockService: (service: string) => void;
   __failWriteFor: (service: string, key: string) => void;
   __reset: () => void;
   setItemAsync: ReturnType<typeof vi.fn>;
@@ -131,6 +135,55 @@ describe('an OTA roll-forward after a rollback', () => {
     // does no work at all — a repair loop would rewrite the credential on every
     // launch forever.
     await expect(migrateSecureKeysToV2([JWT_KEY], 'auth')).resolves.toEqual([{ key: JWT_KEY, status: 'already-v2' }]);
+  });
+});
+
+describe('a locked legacy namespace during the reconcile', () => {
+  it('defers instead of latching, so the repair still happens once unlocked', async () => {
+    const store = await secureStore();
+    const { storeTokens } = await import('../auth-store');
+    await storeTokens('jwt-before-rollback', 'refresh-before-rollback', EXPIRES_AT);
+    store.__seed(LEGACY_SERVICE, JWT_KEY, 'jwt-after-rollback');
+
+    // An OTA update is applied at launch, and a background cold launch on a locked
+    // phone applies it as readily as a foreground one. Reporting this pass as
+    // finished would spend the whole process on the credential the backend has
+    // already revoked.
+    store.__lockService(LEGACY_SERVICE);
+    relaunch();
+    const { isMigrationComplete, migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+
+    const deferred = await migrateSecureKeysToV2([JWT_KEY], 'auth');
+    expect(deferred).toEqual([{ key: JWT_KEY, status: 'reconcile-deferred' }]);
+    expect(isMigrationComplete(deferred)).toBe(false);
+
+    // The retry auth-provider already runs on every AppState `active`.
+    store.__unlockService(LEGACY_SERVICE);
+    await expect(migrateSecureKeysToV2([JWT_KEY], 'auth')).resolves.toEqual([{ key: JWT_KEY, status: 'repaired' }]);
+  });
+
+  it('is not reported as a failure, so it cannot pollute the phase-2 gate', async () => {
+    const store = await secureStore();
+    const { storeTokens } = await import('../auth-store');
+    await storeTokens('jwt-1', 'refresh-1', EXPIRES_AT);
+
+    store.__lockService(LEGACY_SERVICE);
+    relaunch();
+    const { migrateSecureKeysToV2 } = await import('../keychain-namespace-migration');
+    const { track } = await import('../analytics');
+
+    await migrateSecureKeysToV2([JWT_KEY], 'auth');
+    // Every token read on a locked device retries; only the first one is worth
+    // an event.
+    await migrateSecureKeysToV2([JWT_KEY], 'auth');
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenLastCalledWith(
+      'Keychain Namespace Migration',
+      // `legacy-read-failed` here would tell #4128 that a migrated fleet is still
+      // stranded, on nothing more than a phone being locked.
+      expect.objectContaining({ scope: 'auth', deferred: 1, failed: 0, failures: '' }),
+    );
   });
 });
 

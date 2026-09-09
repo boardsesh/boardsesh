@@ -239,6 +239,7 @@ describe('migrateSecureKeysToV2', () => {
       migrated: 1,
       repaired: 0,
       already_v2: 0,
+      deferred: 0,
       absent: 0,
       superseded: 0,
       failed: 1,

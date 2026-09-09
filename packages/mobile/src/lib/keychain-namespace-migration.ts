@@ -61,6 +61,7 @@ export type SecureKeyMigrationStatus =
   | 'repaired'
   | 'absent'
   | 'superseded'
+  | 'reconcile-deferred'
   | 'v2-read-failed'
   | 'legacy-read-failed'
   | 'v2-write-failed'
@@ -77,13 +78,26 @@ export type SecureKeyMigrationOutcome = { key: string; status: SecureKeyMigratio
 // succeeded, which needs a keychain refusing v2 writes — a device that has not
 // been unlocked since boot, where the migration was going to fail anyway. The
 // next launch starts with an empty registry and picks it back up.
-const SUCCESS_STATUSES: readonly SecureKeyMigrationStatus[] = [
+const TERMINAL_STATUSES: readonly SecureKeyMigrationStatus[] = [
   'already-v2',
   'migrated',
   'repaired',
   'absent',
   'superseded',
 ];
+
+// Healthy, but NOT finished. `reconcile-deferred` is what a locked legacy
+// namespace produces for a key that already has a v2 item: nothing went wrong, and
+// nothing needs fixing on most devices — but we could not read legacy, so we could
+// not tell a stale v2 copy from a fresh one (#5345). It has to keep the pass
+// unlatched, or the first process after a roll-forward (a background cold launch on
+// a locked phone applies the new bundle just as readily as a foreground one) would
+// declare itself done and spend its whole life on the revoked credential.
+//
+// It is deliberately NOT a failure: reporting it as one would have every migrated
+// device emit `legacy-read-failed` on every locked background wake, and #4128's
+// go/no-go gate reads exactly that number.
+const HEALTHY_STATUSES: readonly SecureKeyMigrationStatus[] = [...TERMINAL_STATUSES, 'reconcile-deferred'];
 
 /**
  * Copy `value` into v2 and confirm it landed, then stamp both namespaces.
@@ -140,9 +154,11 @@ async function reconcileExistingV2(key: string, existingV2: string): Promise<Sec
   try {
     legacyValue = await SecureStore.getItemAsync(key);
   } catch {
-    // Locked legacy namespace. We cannot compare, so v2 stands — exactly what
-    // happened before this check existed, and not a failure worth retrying.
-    return { key, status: 'already-v2' };
+    // Locked legacy namespace. v2 still stands for this read — the outcome is
+    // exactly what it was before this check existed — but the comparison did not
+    // happen, so the pass must not latch on it. The retry lands on the next
+    // AppState `active`, which is when a WHEN_UNLOCKED legacy item is readable.
+    return { key, status: 'reconcile-deferred' };
   }
   if (legacyValue === null || legacyValue === existingV2) return { key, status: 'already-v2' };
   if (resolveNamespaceVerdict(stamp, existingV2, legacyValue) !== 'legacy-newer') return { key, status: 'already-v2' };
@@ -185,7 +201,7 @@ async function migrateKey(key: string): Promise<SecureKeyMigrationOutcome> {
 
 /** True when every key in the pass reached a terminal, retry-free state. */
 export function isMigrationComplete(outcomes: readonly SecureKeyMigrationOutcome[]): boolean {
-  return outcomes.every((outcome) => SUCCESS_STATUSES.includes(outcome.status));
+  return outcomes.every((outcome) => TERMINAL_STATUSES.includes(outcome.status));
 }
 
 // An incomplete pass is retried on the next token read (auth) or the next
@@ -197,8 +213,11 @@ export function isMigrationComplete(outcomes: readonly SecureKeyMigrationOutcome
 const reportedIncompleteScopes = new Set<string>();
 
 function reportOutcomes(scope: string, outcomes: readonly SecureKeyMigrationOutcome[]): void {
-  const failures = outcomes.filter((outcome) => !SUCCESS_STATUSES.includes(outcome.status));
-  if (failures.length === 0) {
+  const failures = outcomes.filter((outcome) => !HEALTHY_STATUSES.includes(outcome.status));
+  // Keyed on INCOMPLETE, not on failed: a deferred pass repeats on every token
+  // read until the phone is unlocked, and each of those is as identical and as
+  // useless to emit as a failing one.
+  if (isMigrationComplete(outcomes)) {
     reportedIncompleteScopes.delete(scope);
   } else {
     if (reportedIncompleteScopes.has(scope)) return;
@@ -212,6 +231,9 @@ function reportOutcomes(scope: string, outcomes: readonly SecureKeyMigrationOutc
     // had a stale v2 credential repaired instead of being signed out (#5345).
     repaired: outcomes.filter((outcome) => outcome.status === 'repaired').length,
     already_v2: outcomes.filter((outcome) => outcome.status === 'already-v2').length,
+    // Keys whose staleness could not be checked because legacy was locked. Not a
+    // failure — but a scope that never leaves this state never gets its repair.
+    deferred: outcomes.filter((outcome) => outcome.status === 'reconcile-deferred').length,
     absent: outcomes.filter((outcome) => outcome.status === 'absent').length,
     superseded: outcomes.filter((outcome) => outcome.status === 'superseded').length,
     failed: failures.length,
