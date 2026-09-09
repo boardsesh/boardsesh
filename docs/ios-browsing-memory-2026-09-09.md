@@ -43,6 +43,16 @@ per-launch update ID. The actual embedded Expo runtime is
 `296198af47a24bec0c7baa75f938038a8cc3bb70`, distinct from the separately recorded
 native fingerprint `2bba2c60ae36f3d914afe10e996460d0aefa6c91`.
 
+The [final OTA audit](ios-browsing-memory-2026-09-09/ota-provenance.json), collected
+after all captures, used a SQLite online backup from a read-only connection and
+parsed all 778 copied native-log lines. The database still contains only two
+embedded status-5 entries; the current ID and runtime match the frozen bundle,
+with 37 successful and zero failed launches recorded for that entry. Within the
+capture window, 341 log entries contain 62 errors, all for the missing channel,
+and no JSRuntimeError. No persisted updates-configuration override is present.
+This supports the retrospective embedded-launch inference; it does not provide
+a direct update ID for each launch or imply that OTA checking was disabled.
+
 ## Measurement contract
 
 List and carousel workloads use the production list, row recycler, activation
@@ -64,7 +74,8 @@ Per-cycle growth exports pair the cumulative union of measured browsing UUIDs
 with that cycle's Home footprint and its change from the second warm-up:
 [list replay](ios-browsing-memory-2026-09-09/list-replay.distinct-growth.csv),
 [list expanding](ios-browsing-memory-2026-09-09/list-expanding.distinct-growth.csv),
-and [carousel replay](ios-browsing-memory-2026-09-09/carousel-replay.distinct-growth.csv).
+[carousel replay](ios-browsing-memory-2026-09-09/carousel-replay.distinct-growth.csv),
+and [carousel expanding](ios-browsing-memory-2026-09-09/carousel-expanding.distinct-growth.csv).
 Warm-up identifiers and later Home-only observations are excluded from those
 unions. Repeated replay cycles intentionally have the same distinct-climb count;
 these counts describe observed content, not surviving allocations.
@@ -86,11 +97,31 @@ background clearing, cache matching, and the frozen app are unchanged. These
 protocol versions are recorded separately rather than silently treating the
 rejected attempt as complete.
 
+The ninety-second idle retry later exposed a concrete runner defect: a child
+reported `ETIMEDOUT` while returning status zero. The coordinator rejected the
+capture and stopped its owned process group. The delivered runner now rejects
+any memory Maestro flow spawn error independently of exit status, with regressions for timeout and
+output overflow. The earlier successful ninety-second references have complete
+[flow-result records](ios-browsing-memory-2026-09-09/flow-result-audit.json) independently checked for errors; older sixty-second runs
+did not retain precise spawn results and cannot receive that same audit.
+
+Because the failed control's preceding flows already took about 88 seconds, a
+fresh reference/control pair used the existing 120-second option prospectively.
+Both completed with the corrected runner and identical settings. The ninety-second
+reference remains a solo observation; deadline equality is not waived to pair
+it with the new control. The frozen application and all per-target, drain,
+background, and cache-content gates remain unchanged.
+
 Cache inventories include thumbnail/overlay PNGs, native SDImageCache files, and
 Expo image assets. Comparisons check paths, sizes, and SHA256; raw timestamps are
 retained but normal cache hits change them. Matching file hashes cannot establish
 identical LRU ordering, decoded image state, or allocator state. A completed run
 alone does not establish equivalence with another run's starting cache.
+
+The simulator is exclusively leased on a shared development host. The workflow
+does not isolate unrelated host activity or equalize thermal and scheduling
+state. Longer successful browsing flows in later runs therefore do not identify
+a code-level slowdown; timing-matched idle controls still have these limits.
 
 The production list requests 30 climbs per page and retains fetched pages under
 one infinite-query key, without a `maxPages` cap. Its mounted native tab continues
@@ -145,8 +176,12 @@ use nearest rank: p50 is the tenth ordered observation out of twenty, not the
 midpoint of the tenth and eleventh. The raw runner artifact names this p50 field
 `median`. The expanding
 list run and its idle control are also complete, along with carousel replay.
-The warmed carousel replay's idle control is complete; the expanding carousel
-workload is pending. Separate list and carousel replay ownership
+The warmed carousel replay's idle control is complete. The first completed expanding carousel
+workload is a valid solo observation; its idle control failed cache matching.
+Two completed expanding references remain solo observations after rejected controls.
+The final 120-second reference and its matching idle control are complete. In total,
+eleven ordinary runs are published, including four matched browsing/idle pairs
+and three solo references. Separate list and carousel replay ownership
 comparisons are complete below.
 
 | List replay checkpoint | Minimum MiB | p50 MiB | p95 MiB | Maximum MiB |
@@ -333,14 +368,167 @@ warming. Maximum checkpoint-request and sample-completion differences were
 From the second warm-up to cycle twenty, Home grew 35.4 MiB during carousel
 replay and 24.1 MiB during idle. From measured cycle one, growth was 28.2 and
 14.8 MiB respectively. The time series shows changes in both processes. This
-single pair cannot attribute the difference to an application owner; the separate
-carousel ownership comparison remains pending.
+single pair cannot attribute the difference to an application owner. The separate
+carousel ownership comparison below also does not establish an application defect.
 
 ![Home footprint and change from the second warm-up for warmed carousel replay and its matched idle control](ios-browsing-memory-2026-09-09/carousel-replay-idle.png)
 
 The [matched carousel idle samples](ios-browsing-memory-2026-09-09/carousel-idle-replay.samples.csv)
 and [paired timing/cache evidence](ios-browsing-memory-2026-09-09/carousel-replay-idle-comparison.json)
 belong to the 491-file replacement pair only.
+
+### Initial completed expanding carousel
+
+The replacement expanding capture completed all 88 checkpoints in one Release
+process over 46.42 minutes. Before that process started, all twenty cache-warming
+flows completed normally; the longest took 65.8 seconds. Both preparation and
+measurement used the explicitly recorded ninety-second whole-flow limit.
+
+| Expanding carousel checkpoint | Minimum MiB | p50 MiB | p95 MiB | Maximum MiB |
+| --- | ---: | ---: | ---: | ---: |
+| Settled carousel | 287.2 | 328.7 | 361.2 | 362.0 |
+| After browsing | 316.8 | 339.3 | 383.8 | 391.6 |
+| Confirmed background | 308.3 | 330.9 | 375.0 | 382.8 |
+| Settled Home | 279.7 | 327.0 | 370.2 | 378.6 |
+
+Home rose from 280.6 MiB after the second warm-up to 329.7 MiB after cycle twenty
+(+49.1 MiB), or +50.0 MiB relative to measured cycle one. The path was not
+monotonic: Home reached 378.6 MiB in cycle seventeen before ending lower.
+Measured browsing observations covered all 400 target UUIDs, 403 distinct
+mounted/prefetched UUIDs, and 846 render keys. Increasing content counts and a
+variable footprint do not by themselves identify retained objects.
+
+The carousel reported three image surfaces and nine layers at every measured
+checkpoint on the settled carousel or after browsing, zero while backgrounded,
+and nineteen or twenty surfaces with 66 or 69 layers on Home. The overlay index remained at 200, with no pending
+renders or cache clears at accepted checkpoints. These bounded mounted counts
+remain distinct from retained query pages and native/JS allocation ownership.
+Home had nineteen surfaces in cycle one and twenty in every later cycle; its
+footprint continued to fluctuate while the image count stayed fixed. Snapshots
+export aggregate counts, not a surface-to-UUID ownership map, so the exact
+additional component cannot be identified from these records.
+
+All 912 starting cache files, totaling 67,161,301 bytes, had identical paths,
+sizes, and hashes at cycle twenty. The attempted idle control added one startup
+thumbnail and failed its 913-versus-912 starting-cache check after its two warm-ups.
+It has no accepted twenty-cycle measurement sequence. This expanding run remains
+a valid solo observation; a future control from the 913-file state cannot validate
+this pair retrospectively. The later reference/control pair below uses its own naturally warmed starting
+state. The
+[individual samples](ios-browsing-memory-2026-09-09/carousel-expanding.samples.csv)
+and [growth against distinct climbs](ios-browsing-memory-2026-09-09/carousel-expanding.distinct-growth.csv)
+preserve each observation.
+
+### Warmed expanding carousel
+
+The new reference completed all 88 checkpoints in one Release process over
+52.96 minutes. All 42 preparation and measured browsing flows completed with
+status zero, no reported spawn error or signal, and no timeout. The longest
+took 87.8 seconds, below the unchanged ninety-second limit.
+
+| Warmed expanding carousel checkpoint | Minimum MiB | p50 MiB | p95 MiB | Maximum MiB |
+| --- | ---: | ---: | ---: | ---: |
+| Settled carousel | 294.2 | 352.6 | 368.1 | 368.7 |
+| After browsing | 307.2 | 351.7 | 361.8 | 362.1 |
+| Confirmed background | 302.0 | 346.9 | 357.0 | 357.2 |
+| Settled Home | 287.8 | 346.3 | 360.4 | 360.7 |
+
+Home rose from 296.0 MiB after the second warm-up to 358.6 MiB after cycle twenty
+(+62.6 MiB), or +46.0 MiB from measured cycle one. Measured browsing covered
+400 visible UUIDs, 403 mounted/prefetched UUIDs, and 846 render keys. These
+observations do not establish which allocations survived or why.
+
+Measured carousel checkpoints stayed at three image surfaces and nine layers;
+background checkpoints reported zero. Home reported nineteen surfaces and 66
+layers in cycle one, then twenty and 69 in cycles two through twenty. The overlay
+index stayed at 200, and all accepted checkpoints had no pending render or clear
+work. The aggregate counters do not identify the additional Home component.
+
+All 913 starting files, totaling 67,170,079 bytes, remained identical by path,
+size, and hash at cycle twenty. Its attempted idle control reported a timeout
+during warming and was rejected before ordinary measurement. This reference
+remains a solo observation; it is not paired with a control using a different
+deadline. The
+[replacement samples](ios-browsing-memory-2026-09-09/carousel-expanding-warmed.samples.csv)
+and [growth against distinct climbs](ios-browsing-memory-2026-09-09/carousel-expanding-warmed.distinct-growth.csv)
+remain separate from the earlier 912-file solo observation.
+
+### Expanding carousel with the 120-second flow deadline
+
+The final reference, `carousel-expanding-06`, completed all 88 checkpoints in
+one Release process over 62.28 minutes. It uses runner `25e78e5e1` with the same
+frozen application and a prospectively selected 120-second whole-flow deadline.
+All 42 preparation and measured browsing flows reported status zero, no spawn
+error or signal, and no timeout. The longest took 113.05 seconds. These results
+are retained in the [flow-result audit](ios-browsing-memory-2026-09-09/flow-result-audit.json).
+
+| 120-second expanding carousel checkpoint | Minimum MiB | p50 MiB | p95 MiB | Maximum MiB |
+| --- | ---: | ---: | ---: | ---: |
+| Settled carousel | 282.1 | 330.9 | 367.5 | 381.7 |
+| After browsing | 312.7 | 343.2 | 391.5 | 404.7 |
+| Confirmed background | 307.4 | 338.3 | 386.6 | 399.7 |
+| Settled Home | 295.7 | 328.6 | 379.8 | 390.1 |
+
+Home rose from 274.2 MiB after the second warm-up to 390.1 MiB after cycle twenty
+(+115.9 MiB), or +61.5 MiB from measured cycle one. The difference between these
+starting points includes the initial step to 328.6 MiB in cycle one; neither
+number is an allocation or leak count. Measured browsing observed 400 visible
+UUIDs, 403 mounted/prefetched UUIDs, and 846 render keys.
+
+Measured carousel checkpoints reported three image surfaces and nine layers;
+background checkpoints reported zero. Home reported nineteen surfaces and 66
+layers in cycle one, then twenty surfaces and 69 layers in cycles two through
+twenty. The overlay index stayed at 200, and pending render and cache-clear
+counters were zero at all accepted checkpoints. These counters do not identify
+the owners or lifetimes of other native or JavaScript allocations.
+
+The reference records its own normally warmed inventory: 915 files totaling
+67,188,122 bytes. Paths, sizes, and hashes matched at cycle twenty. Its starting
+inventory differs from the earlier 913-file reference, and its flow deadline
+also differs; their absolute footprints are not a controlled comparison.
+
+The matching idle control, `carousel-idle-expanding-03`, completed all 88
+checkpoints over 62.28 minutes. Its separate preparation process completed twenty
+carousel flows without a spawn error, signal, or timeout; the longest took
+117.88 seconds. The measured process stayed on Home apart from its scheduled
+background transitions. It used the same 120-second deadline and matched all
+915 starting cache files by path, size, and hash. Modification times differed
+for 830 files, consistent with normal cache access. Its own starting and ending
+cache contents also matched.
+
+Across all 88 paired checkpoints, the largest request-time difference was
+265.24 ms and the largest completion-time difference was 279.61 ms, both below
+the two-second gate.
+
+| 120-second expanding matched idle checkpoint | Minimum MiB | p50 MiB | p95 MiB | Maximum MiB |
+| --- | ---: | ---: | ---: | ---: |
+| Settled Home | 244.5 | 260.5 | 267.2 | 268.2 |
+| Scheduled browsing endpoint | 244.3 | 260.5 | 267.3 | 268.0 |
+| Confirmed background | 240.7 | 257.0 | 263.8 | 264.6 |
+| Returned Home | 245.4 | 260.6 | 268.1 | 268.2 |
+
+Idle Home footprint rose from 244.5 MiB after the second warm-up to 268.1 MiB
+after cycle twenty (+23.6 MiB), or +22.7 MiB from measured cycle one. Idle
+foreground checkpoints consistently reported nineteen image surfaces and 66
+layers; background checkpoints reported zero. The overlay index stayed at 200,
+and all accepted checkpoints had no pending render or cache-clear work.
+
+From the second warm-up, expanding carousel browsing grew 115.9 MiB versus
+23.6 MiB during matched idle. From measured cycle one, growth was 61.5 MiB versus
+22.7 MiB. This pair shows larger footprint growth during this browsing workload,
+but does not establish an application retention defect. The mounted view trees
+and query activity differ, disk matching does not equalize allocator or decoded
+image state, and the separate ownership graphs cover replay rather than this
+expanding workload. No surviving owner or JS object liveness has been established
+for the additional growth.
+
+![Home footprint and change from the second warm-up for expanding carousel browsing and its matched idle control](ios-browsing-memory-2026-09-09/carousel-expanding-idle-comparison.png)
+
+The [reference samples](ios-browsing-memory-2026-09-09/carousel-expanding-120s.samples.csv),
+[idle samples](ios-browsing-memory-2026-09-09/carousel-idle-expanding.samples.csv),
+[paired timing and cache observations](ios-browsing-memory-2026-09-09/carousel-expanding-idle-comparison.json),
+and [growth against distinct climbs](ios-browsing-memory-2026-09-09/carousel-expanding-120s.distinct-growth.csv)
+preserve the completed comparison and its run and process provenance.
 
 ## List replay ownership comparison
 
@@ -497,14 +685,40 @@ Both conservative native scans reported zero unreachable leaks; this does not
 establish absence of JS retention. The [selected VM columns](ios-browsing-memory-2026-09-09/carousel-replay-vmmap.json)
 preserve the separate accounting observations.
 
+## Disposition
+
+No application retention defect has been established. The delivered change adds
+profiling and capture validation; it does not change memory policy. An application
+before/after/restored-baseline experiment and a defect regression test therefore
+do not apply. Diagnostic bounds and runner failure handling have their own
+regression coverage.
+
+The final expanding carousel pair showed larger footprint growth than matched
+idle: +115.9 versus +23.6 MiB from the second warm-up, or +61.5 versus +22.7 MiB
+from measured cycle one. That observation warrants further ownership work,
+without identifying an application owner or establishing a leak. The four matched
+pairs and three solo references remain separate experiments; their different
+starting caches and protocol versions do not form a single before/after result.
+
+The available native graphs do not resolve JS object liveness or allocation-stack
+ownership. Further investigation would need that evidence before selecting an
+application correction. Newer application behavior on `main` and physical-device
+memory remain unmeasured here.
+
 ## Implementation verification
 
 The delivery branch is based on `main` at `fcab9e144`. Repository typechecking,
-lint, 9,378 mobile tests in 866 files, forty-four focused runner tests, and iOS/Android
+lint, 9,378 mobile tests in 866 files, fifty focused runner tests, and iOS/Android
 and browser Metro bundle checks pass on that branch, including browser shell
 and WASM assets.
 The frozen instrumented capture build separately passed simulator startup smoke
 and screenshot checks before measurement. No BLE code was changed.
+
+The idle runner now requires the reference run's validated cycle-zero cache
+inventory even when `--compare-cache` is omitted. That optional flag adds a
+second constraint. All collected idle attempts already supplied the correct
+explicit inventory, so this guard does not change their classification. The
+new guard rejects missing or malformed inventories before launching the app.
 
 ## Rejected setup and control attempts
 
@@ -527,6 +741,44 @@ and screenshot checks before measurement. No BLE code was changed.
   were accepted, and a read-only process check found no surviving Maestro flow.
   The replacement's same batch completed with status zero in 60.8 seconds under
   the explicitly recorded ninety-second limit.
+- The first expanding idle control added one filled 400-pixel thumbnail before
+  its first observed checkpoint. All original 912 cache files stayed identical,
+  but the additional 8,778-byte file caused the required starting-cache rejection.
+  A read-only catalogue lookup matches its classic-render frame hash to the
+  final target, “A Fine Line,” within the 500 searched climbs. Its recorded
+  modification time precedes the first observed checkpoint, consistent with
+  startup rendering before Aura support resolves; the exact
+  initiating component is not established. The file is preserved for a fresh
+  comparison. No cache deletion or matching-rule exception is used.
+- The second expanding idle control reported `ETIMEDOUT` during warming batch
+  four after 90.44 seconds, despite exit status zero. The old host guard allowed
+  a subsequent batch. Independent audit rejected the whole attempt, recorded
+  an explicit coordinator verdict, and stopped the identity-verified runner
+  group and its recorded helper descendant. No ordinary measurements were
+  accepted. This directly reproduced the runner error guard regression; the
+  corrected guard passed tests before the fresh 120-second pair started.
+- The first 120-second reference was stopped during warming because the
+  coordinator had unnecessarily required it to match the earlier ninety-second
+  reference. A read-only filename check found an additional 9,349-byte startup
+  thumbnail, which made that inherited gate impossible to pass. The owned runner
+  and recorded helper were stopped, and no ordinary measurements were accepted.
+  The next reference uses a fresh identity and records its own normally warmed
+  starting inventory. Its idle control must match that inventory exactly;
+  no cache file was removed and the comparison rule was not weakened.
+
+- The second 120-second reference completed all twenty warming batches, then
+  failed at measured cycle five's background checkpoint. It retained 26 partial
+  samples and is excluded from ordinary comparisons. The same app process
+  remained alive, but no fresh export arrived within the fixed 35-second limit.
+  A later diagnostic-only foreground transition recovered an invalid export:
+  background clear generation seven had started, generation six was the last
+  completed clear, and no image surfaces or renders remained mounted/pending.
+  The checkpoint timeout indicates earlier command adoption under a normal
+  clock; it does not distinguish unfinished native clearing from a suspended JS
+  promise continuation. This is an incomplete observation, not evidence of an
+  app leak. The late export remains excluded. The final fresh reference and its
+  matched idle control subsequently completed with the same native app and
+  strict background checks.
 
 ## Evidence
 

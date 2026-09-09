@@ -1,0 +1,40 @@
+{
+  "auditCapturedAt": "2026-09-09T12:47:25.979687+00:00",
+  "captureWindowStartMs": 1788901724680,
+  "lastLogTimestampMs": 1788954112000,
+  "updates": [
+    {
+      "id": "9128478B890D4A519ABD2DF52E591DB8",
+      "runtime_version": "919f3877a7ac17dbc99774d8fe0f118a41a20496",
+      "status": 5,
+      "last_accessed": 1788870405748,
+      "successful_launch_count": 25,
+      "failed_launch_count": 0,
+      "launch_asset": null,
+      "type": null
+    },
+    {
+      "id": "1DFD87A55A8D4490ABBA0C0A3C999006",
+      "runtime_version": "296198af47a24bec0c7baa75f938038a8cc3bb70",
+      "status": 5,
+      "last_accessed": 1788954111868,
+      "successful_launch_count": 37,
+      "failed_launch_count": 0,
+      "launch_asset": null,
+      "type": null
+    }
+  ],
+  "currentWindowLogCount": 341,
+  "currentWindowCodes": {
+    "None": 279,
+    "Unknown": 31,
+    "UpdateFailedToLoad": 31
+  },
+  "currentWindowErrorCount": 62,
+  "allCurrentErrorsMissingChannel": true,
+  "currentWindowJsRuntimeErrors": 0,
+  "rawLogSha256": "de4abaab7c0f576727603453655d831bf69e5724a274cda1a0c7e38434c5f2a4",
+  "consistentDatabaseSha256": "885dab55bee7de1edcebf8edbb9d9dd88664ced086c625c3e770d64122234934",
+  "collectionMethod": "SQLite online backup from a read-only connection; full native log copied after all captures. All 778 prefixed JSON log lines parsed. No direct per-launch update ID diagnostic.",
+  "persistedUpdatesConfigOverridePresent": false
+}
