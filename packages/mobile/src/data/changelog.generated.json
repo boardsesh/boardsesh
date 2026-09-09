@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-09T02:01:49.933Z",
+  "generatedAt": "2026-09-09T04:01:29.833Z",
   "entries": [
+    {
+      "prNumber": 5362,
+      "category": "fixed",
+      "title": "The wall-state pill's tap explainer no longer crashes the app in a browser — screen-reader focus now lands on the explainer sentence there too. This ships fixing a crash-only path (browser had a 100% failure rate on tap), so there's no meaningful behavior change to describe to native app users.",
+      "mergedAt": "2026-09-09T03:59:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5362"
+    },
     {
       "prNumber": 5355,
       "category": "fixed",
