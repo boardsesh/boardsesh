@@ -98,6 +98,7 @@ import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
+import { SendRecoveryGate } from '../src/components/offline/SendRecoveryGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
 import { WindowInsetPublisher } from '../src/hooks/use-window-bottom-inset';
@@ -805,6 +806,17 @@ function RootLayout() {
                                                                           headerShown: false,
                                                                         }}
                                                                       />
+                                                                      {/* One-time "sends we lost are on their way" notice
+                                                      (#5335). A plain modal, like the QA screens: it paints
+                                                      its own body and a swipe-dismiss is a perfectly good
+                                                      way to close it. */}
+                                                                      <Stack.Screen
+                                                                        name="send-recovery"
+                                                                        options={{
+                                                                          presentation: 'modal',
+                                                                          headerShown: false,
+                                                                        }}
+                                                                      />
                                                                       <Stack.Screen
                                                                         name="user-drawer"
                                                                         options={{
@@ -851,6 +863,13 @@ function RootLayout() {
                                                             else. Mounted after OnboardingGate so the first-run
                                                             walkthrough always wins a cold start. */}
                                                                   <QaTesterGate ready={authReady && fontsReady} />
+                                                                  {/* Tells a climber the one-time #5335 recovery found sends
+                                                            of theirs that never reached the server. Silent for
+                                                            everyone else, which is almost everyone. Mounted last
+                                                            of the launch gates: a first run and a PR brief both
+                                                            outrank it, and its note is durable, so a launch it
+                                                            sits out costs nothing. */}
+                                                                  <SendRecoveryGate ready={authReady && fontsReady} />
                                                                   {/* Tester-only diagnostic for the Android-16 edge-to-edge
                                                             touch-dead bug; a root sibling (stays tappable while the
                                                             <Stack> hit-region is frozen). No-op unless built with

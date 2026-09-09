@@ -655,6 +655,13 @@
         "testPlanSubtitle": "Qué probar en la vista previa que tienes abierta"
       }
     },
+    "sendRecovery": {
+      "title_one": "1 encadene va de camino",
+      "title_other": "{{count}} encadenes van de camino",
+      "body_one": "Lo registraste, pero nunca llegó hasta nosotros. Lo hemos encontrado y lo hemos puesto de nuevo en la cola. Se subirá en cuanto tengas conexión, así que no hace falta que lo vuelvas a registrar.",
+      "body_other": "Los registraste, pero nunca llegaron hasta nosotros. Los hemos encontrado y los hemos puesto de nuevo en la cola. Se subirán en cuanto tengas conexión, así que no hace falta que los vuelvas a registrar.",
+      "dismiss": "Entendido"
+    },
     "about": {
       "title": "Sobre Boardsesh",
       "heroTitle": "Boardsesh",

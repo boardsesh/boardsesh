@@ -639,6 +639,14 @@ export const SHARED_EVENTS = {
   // error }. The idempotency key is deliberately NOT a prop — it is a raw uuid
   // or a per-climb key, i.e. unbounded cardinality; it rides the Sentry event.
   OfflineMutationDeadLettered: 'Offline Mutation Dead Lettered',
+  // Offline sync — the one-time #5335 recovery put dead-lettered sends back on
+  // the queue and the climber was told. Fires when the notice is shown, once per
+  // device ever, and only for a device that actually had something to recover —
+  // so the total across the fleet IS how many climbers the recovery reached, and
+  // summing `recoveredCount` is how many sends it pulled out of the bin. Without
+  // it the recovery is unmeasurable: the rows it moves stop being dead letters,
+  // so no other event can ever count them. Props: { recoveredCount }.
+  OfflineSendRecoveryShown: 'Offline Send Recovery Shown',
   // Offline sync — how much unsynced work was already sitting in the outbox at
   // launch. Per-mutation events only count from ship day, so without this every
   // backlog that accumulated earlier is invisible. Fires at most once per app

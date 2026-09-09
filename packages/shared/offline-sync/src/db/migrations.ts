@@ -13,11 +13,21 @@
 
 import { SCHEMA_STATEMENTS } from './schema';
 import { applyBusyTimeout } from './pragmas';
+import { requeueTransportDeadLetters, setDeadLetterRecoveryNotice } from '../mutation-queue/dead-letter-recovery';
 import type { OfflineDatabase, SqlExecutor } from '../database';
 
 export type Migration = {
   version: number;
   statements: string[];
+  /**
+   * An optional DATA step, run after `statements` and inside the SAME exclusive
+   * transaction as the version stamp. Exists for the one thing a DDL string
+   * cannot do: reuse the queue's own row transitions instead of restating them
+   * as bulk SQL that can drift from them (issue #5335). Sharing the transaction
+   * is what makes such a step interruption-safe — a killed app rolls the rows
+   * and the stamp back together, and the migration re-runs cleanly next launch.
+   */
+  run?: (txn: SqlExecutor) => Promise<void>;
 };
 
 // Migration 1 stands up the full v1 schema. Future schema changes append
@@ -78,6 +88,33 @@ export const MIGRATIONS: Migration[] = [
     version: 5,
     statements: ['ALTER TABLE board_climbs ADD COLUMN is_hidden INTEGER;'],
   },
+  {
+    // One-time recovery of the sends #5295 threw away (issue #5335). Two
+    // transport failures the old classifier did not recognise dead-lettered a
+    // queued send on attempt 0 of 10; roughly 17 climbers have a row holding a
+    // send they logged and believe is recorded. This puts exactly those rows
+    // back on the queue — matched on the recorded error and nothing else, so a
+    // row a server permanently rejected stays where it is.
+    //
+    // A data step rather than a statement list because the row transition must
+    // BE `retryDeadLetter`, the same one the manual Sync-issues retry uses. It
+    // is version-stamped like any other migration, which is what makes it
+    // once-per-install, and it shares the migration's transaction, which is
+    // what makes an interrupted launch leave every row either `pending` or
+    // `dead_letter` and never a third thing.
+    //
+    // MUST ship with or after the #5295 classifier fix: revived rows meeting the
+    // old classifier would dead-letter again on the first hiccup.
+    version: 6,
+    statements: [],
+    run: async (txn) => {
+      const requeued = await requeueTransportDeadLetters(txn);
+      // Only a real recovery leaves a trace. Every fresh install runs this
+      // migration against an empty queue, and none of them should owe anybody a
+      // notice.
+      if (requeued > 0) await setDeadLetterRecoveryNotice(txn, requeued);
+    },
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `
@@ -100,9 +137,10 @@ async function stampVersion(db: SqlExecutor, version: number): Promise<void> {
 
 /**
  * Brings the database up to LATEST_SCHEMA_VERSION. Applies each pending migration
- * (version > current) in ascending order; every migration's statements plus its
- * version stamp run inside one exclusive transaction, so a crash mid-migration
- * leaves the stored version untouched and the migration re-runs cleanly next launch.
+ * (version > current) in ascending order; every migration's statements, its
+ * optional data step, and its version stamp run inside one exclusive transaction,
+ * so a crash mid-migration leaves the stored version untouched, rolls back
+ * whatever the migration had done, and re-runs cleanly next launch.
  */
 export async function runMigrations(db: OfflineDatabase): Promise<void> {
   await db.execAsync(SCHEMA_VERSION_TABLE);
@@ -120,6 +158,7 @@ export async function runMigrations(db: OfflineDatabase): Promise<void> {
       for (const statement of migration.statements) {
         await txn.execAsync(statement);
       }
+      await migration.run?.(txn);
       await stampVersion(txn, migration.version);
     });
   }

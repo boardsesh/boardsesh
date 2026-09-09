@@ -390,6 +390,13 @@
         "testPlanSubtitle": "What to try on the preview you're running"
       }
     },
+    "sendRecovery": {
+      "title_one": "1 send is on its way",
+      "title_other": "{{count}} sends are on their way",
+      "body_one": "You logged it, but it never reached us. We found it and put it back in the queue. It goes up as soon as you're online, so there's no need to log it again.",
+      "body_other": "You logged them, but they never reached us. We found them and put them back in the queue. They go up as soon as you're online, so there's no need to log them again.",
+      "dismiss": "Got it"
+    },
     "about": {
       "title": "About",
       "heroTitle": "Boardsesh",

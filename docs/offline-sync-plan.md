@@ -381,6 +381,25 @@ Each mutation gets a client-generated UUID as an idempotency key. The backend's 
 
 Mutations that exceed `MAX_RETRY_COUNT` or fail with non-retryable errors are moved to `status = 'dead_letter'`. The app shows a badge/indicator when dead-letter mutations exist. Users can view failed mutations and choose to retry or discard them. This prevents silent data loss — the user always knows if a tick didn't sync.
 
+#### The one-time recovery of the #5295 dead letters (#5335)
+
+Before the classifier fix above, two transport failures resolved as non-retryable and dead-lettered a queued send on attempt 0 of 10: whatwg-fetch's `Network request timed out`, and a Railway edge 404 whose body carried no GraphQL `errors` array. Roughly 17 climbers were left with a row holding a send they logged and believe is recorded. The fix stops new losses; it does not give those rows back, so recovery is its own decision — taken 2026-09-08 in favour of a one-time automatic requeue that the climber is told about.
+
+It is schema migration **6**, and every property it needs falls out of being one:
+
+- **Once per install** — the version stamp. No separate marker to keep, and no way to run it twice.
+- **Interruption-safe** — its data step shares the migration's exclusive transaction, so a killed app rolls the rows and the stamp back together. A row is always `pending` or `dead_letter`, never a third thing.
+- **Narrow** — `isRecoverableTransportDeadLetter` matches the RECORDED ERROR and nothing else. Not age, not table, not `retry_count`. The timeout is an equality match and the 404 an anchored `GraphQL Error (Code: 404)` prefix, because a graphql-request `ClientError` message embeds the whole request: a substring search would let a tick comment talk a 400 rejection into a replay. A row a server permanently rejected comes out untouched, which is what keeps this from being "revive everything".
+- **Reuses the row transition** — `retryDeadLetter`, the same statement More → Sync issues → Retry has always used, so the automatic recovery cannot drift from the manual one.
+
+It must land **with or after** the classifier fix. Revived rows meeting the old classifier would dead-letter again on the first hiccup.
+
+**Telling the climber.** The migration leaves a `sync_meta` note (`dead-letter-recovery-notice`) holding how many sends it put back, and only when that is at least one — a fresh install owes nobody a notice. `SendRecoveryGate`, a launch gate mounted after `OnboardingGate` and `QaTesterGate`, delivers it once as a dismissable modal route, clearing the note before it navigates, and emits `Offline Send Recovery Shown { recoveredCount }`. That event is the only way the recovery is measurable in the field: the rows it moves stop being dead letters, so nothing else can count them afterwards.
+
+The copy says the sends are **on their way**, not that they were recovered. At the moment the notice shows, the requeued rows may still be in flight, and a climber told "3 sends recovered" who then finds one still pending has been lied to. "On their way" is true when it is shown and cannot be falsified by a later failure — and with default-retry a failure now leaves the row pending rather than dead-lettering it, so the promise holds.
+
+The accepted cost: a climber who already re-logged a lost send by hand can end up with two ticks. The server-side `idempotency_key` limits duplicates but cannot eliminate this one, because a hand re-log is a genuinely different mutation. The notice is what makes that duplicate explicable rather than baffling.
+
 ## Sync pull — incremental updates
 
 A pull client that fetches changes since the last sync checkpoint using a composite cursor to avoid timestamp collision bugs.

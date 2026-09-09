@@ -390,6 +390,13 @@
         "testPlanSubtitle": "Ce qu'il faut essayer sur l'aperçu en cours"
       }
     },
+    "sendRecovery": {
+      "title_one": "1 croix est en route",
+      "title_other": "{{count}} croix sont en route",
+      "body_one": "Tu l'as enregistrée, mais elle ne nous est jamais parvenue. On l'a retrouvée et remise dans la file. Elle partira dès que tu seras en ligne, pas besoin de l'enregistrer à nouveau.",
+      "body_other": "Tu les as enregistrées, mais elles ne nous sont jamais parvenues. On les a retrouvées et remises dans la file. Elles partiront dès que tu seras en ligne, pas besoin de les enregistrer à nouveau.",
+      "dismiss": "C'est noté"
+    },
     "about": {
       "title": "À propos de Boardsesh",
       "heroTitle": "Boardsesh",

@@ -390,6 +390,13 @@
         "testPlanSubtitle": "Was du in der laufenden Vorschau ausprobieren sollst"
       }
     },
+    "sendRecovery": {
+      "title_one": "1 Begehung ist unterwegs",
+      "title_other": "{{count}} Begehungen sind unterwegs",
+      "body_one": "Du hast sie eingetragen, aber bei uns ist sie nie angekommen. Wir haben sie gefunden und zurück in die Warteschlange gelegt. Sobald du online bist, wird sie übertragen, du musst sie also nicht noch einmal eintragen.",
+      "body_other": "Du hast sie eingetragen, aber bei uns sind sie nie angekommen. Wir haben sie gefunden und zurück in die Warteschlange gelegt. Sobald du online bist, werden sie übertragen, du musst sie also nicht noch einmal eintragen.",
+      "dismiss": "Alles klar"
+    },
     "about": {
       "title": "Über",
       "heroTitle": "Boardsesh",
