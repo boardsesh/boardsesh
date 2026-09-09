@@ -1148,7 +1148,22 @@ jobs:
         run: |
           mkdir -p packages/backend/test-results
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            vp test run --project backend --changed "origin/$BASE_REF" \
+            # A change to the dependency graph itself has no module-graph edge
+            # to any spec, so `--changed` selects nothing that exercises it.
+            # #5299 patched the postgres driver every backend test runs
+            # against and this job still picked only the one new spec --
+            # ~4,500 tests never touched the patched driver. Drop the filter
+            # when the install inputs move. A shallow fetch can leave no merge
+            # base; `|| true` then keeps today's filtered behaviour.
+            selection="--changed origin/$BASE_REF"
+            changed_files=$(git diff --name-only "origin/$BASE_REF"...HEAD || true)
+            if printf '%s\n' "$changed_files" |
+              grep -qE '^(pnpm-workspace\.yaml|pnpm-lock\.yaml|patches/|packages/[^/]+/patches/)'; then
+              echo "::notice title=Full backend suite::install inputs changed; running the whole backend project, not --changed"
+              selection=""
+            fi
+            # shellcheck disable=SC2086 # $selection is an intentionally split flag pair
+            vp test run --project backend $selection \
               --shard=${{ matrix.shard }}/${{ matrix.total }} \
               --reporter=verbose --reporter=github-actions \
               --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-${{ matrix.shard }}.xml

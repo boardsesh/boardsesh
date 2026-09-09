@@ -348,11 +348,16 @@ WORKDIR /ci-seed/manifests
 # lockfile is unchanged (measured: the manifest changed on 88 of the last 180
 # days). Do not add a `source/` COPY here to "match" the other Dockerfiles --
 # a job brings its own source via `actions/checkout`.
+#
+# `manifests/packages` lands BEFORE the fetch here (the sibling Dockerfiles put
+# it after, to keep their fetch layer keyed on the lockfile alone), so it
+# already carries the patch files a patchedDependencies entry points at inside
+# a workspace package -- e.g. packages/db/patches/postgres@3.4.9.patch. No
+# extra COPY for those; only the root `patches/` needs its own line.
 COPY --chown=runner:runner \
      manifests/package.json manifests/pnpm-lock.yaml manifests/pnpm-workspace.yaml ./
 COPY --chown=runner:runner manifests/packages ./packages
 COPY --chown=runner:runner manifests/patches ./patches
-COPY --chown=runner:runner manifests/packages/db/patches ./packages/db/patches
 
 # `pnpm fetch` (not a full install) populates the content-addressable store
 # from the lockfile alone, without needing a real workspace checkout --

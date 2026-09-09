@@ -20,7 +20,14 @@ describe.each(['esm', 'cjs'])('postgres disconnect recovery (%s)', (entryPoint) 
         },
       );
       expect(stdout).toContain('disconnect recovery verified');
-      expect(stderr).toBe('');
+      // Name the #5299 crash rather than demanding an empty stderr, which any
+      // future Node or tsx deprecation warning would break. Against the stock
+      // 3.4.9 driver the `live` scenario prints exactly this, thrown from
+      // `process.processImmediate` where no query promise can catch it; the
+      // simulated scenarios instead wedge the pool, which `executeFile` already
+      // surfaces as a non-zero exit before these assertions run.
+      expect(stderr).not.toContain("Cannot read properties of null (reading 'write')");
+      expect(stderr).not.toMatch(/\bTypeError\b/);
     },
     20_000,
   );

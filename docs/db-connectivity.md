@@ -57,8 +57,10 @@ The workspace patches and pins `postgres@3.4.9` until an upstream release passes
 the backend disconnect/recovery regressions. Both Node entry points (ESM and
 CommonJS) receive the patch. It lives in `packages/db/patches`, outside the root
 `patches` directory that mobile hashes into its native runtime fingerprint.
-The backend, web, sync, and CI Dockerfiles copy it before fetching dependencies;
-the deployment-input guard checks every configured patch directory.
+The backend, web, and sync Dockerfiles copy it before fetching dependencies;
+the deployment-input guard checks every configured patch directory. `Dockerfile.ci`
+needs no extra line — it copies all of `manifests/packages` before `pnpm fetch`,
+so a patch stored inside a workspace package rides along.
 
 A socket closing during a transaction can reject its query, then trigger the
 driver's automatic rollback after `closed()` has nulled the socket. That small
