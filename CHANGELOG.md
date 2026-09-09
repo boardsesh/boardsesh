@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Start the app while a board is still downloading and offline mode used to switch itself off until you force-quit — your ticks went straight to the network and offline search came up empty. Now the app waits the download out and offline storage comes back on its own. ([#5355](https://github.com/boardsesh/boardsesh/pull/5355))
 - Your downloaded boards stop going stale. A busy moment in the local database used to kill the whole sync in one go, so climbs, stats and grades you had already asked for sat half-downloaded until the next attempt hit the same wall — with nothing on screen to tell you. Sync now waits out the busy moment and carries on. ([#5360](https://github.com/boardsesh/boardsesh/pull/5360))
 - Switch boards and keep swiping through climbs for the board you're on. ([#5125](https://github.com/boardsesh/boardsesh/pull/5125))
   When queue history includes another board, skip those climbs with a notice.

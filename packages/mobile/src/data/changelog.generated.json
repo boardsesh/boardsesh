@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-09T01:43:26.701Z",
+  "generatedAt": "2026-09-09T02:01:49.933Z",
   "entries": [
+    {
+      "prNumber": 5355,
+      "category": "fixed",
+      "title": "Start the app while a board is still downloading and offline mode used to switch itself off until you force-quit — your ticks went straight to the network and offline search came up empty. Now the app waits the download out and offline storage comes back on its own.",
+      "mergedAt": "2026-09-09T02:00:34Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5355"
+    },
     {
       "prNumber": 5360,
       "category": "fixed",
