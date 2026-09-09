@@ -1,0 +1,34 @@
+diff --git a/ReactCommon/react/featureflags/ReactNativeFeatureFlagsDefaults.h b/ReactCommon/react/featureflags/ReactNativeFeatureFlagsDefaults.h
+--- a/ReactCommon/react/featureflags/ReactNativeFeatureFlagsDefaults.h
++++ b/ReactCommon/react/featureflags/ReactNativeFeatureFlagsDefaults.h
+@@ -203,8 +203,29 @@
+     return false;
+   }
+ 
++  // boardsesh/boardsesh#5293 - flipped ON.
++  //
++  // With this off, Scheduler::uiManagerDidFinishTransaction and
++  // ::uiManagerDidDispatchCommand queue a rendering update on the
++  // RuntimeScheduler holding a RAW SchedulerDelegate*, and neither
++  // ~Scheduler nor setDelegate() ever arms the invalidation token. So when
++  // RCTScheduler's dealloc runs setDelegate(nullptr) on teardown - iOS
++  // terminating a backgrounded app via -[RCTSurfacePresenter suspend], or an
++  // expo-updates reload via -[RCTInstance invalidate] - the delegate proxy is
++  // freed while the RuntimeScheduler is still alive, and the queued lambda
++  // drains on com.facebook.react.runtime.JavaScript through freed memory.
++  // That is the EXC_BAD_ACCESS in RuntimeScheduler_Modern::updateRendering
++  // (BOARDSESH-8S); the faulting addresses are the recycled block's first
++  // eight bytes, one of which decodes to the ASCII "unicode61".
++  //
++  // Turning it on re-arms upstream's own guard, which ~Scheduler and
++  // setDelegate() already flip. There is no newer react-native to move to:
++  // react/react-native#58138 (2026-08-26) deleted the flag AND the guard, and
++  // its commit message states the remaining window - "a delegate dropped and
++  // destroyed with no error involved ... the drained lambda dereferences
++  // freed memory" - is still open on main.
+   bool enableSchedulerDelegateInvalidation() override {
+-    return false;
++    return true;
+   }
+ 
+   bool enableSwiftUIBasedFilters() override {

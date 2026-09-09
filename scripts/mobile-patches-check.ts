@@ -291,6 +291,47 @@ export const RULES: readonly PatchRule[] = [
     ],
     patchedKey: 'expo-updates@57.0.19',
   },
+  // The Fabric SchedulerDelegate use-after-free (#5293, BOARDSESH-8S). Upstream
+  // ships `enableSchedulerDelegateInvalidation` OFF, so every deferred rendering
+  // update carries a RAW SchedulerDelegate* that nothing invalidates when
+  // RCTScheduler's dealloc runs setDelegate(nullptr) — the lambda then drains on
+  // the JS thread through freed memory. Flipping the default re-arms upstream's
+  // own guard.
+  //
+  // Nothing else can see this. It is a C++ header consumed only by an Xcode
+  // build, so typecheck, the Metro bundle and every test stay green with the
+  // patch gone; the only symptom is an EXC_BAD_ACCESS on other people's phones,
+  // weeks later, in a store build.
+  {
+    package: 'react-native',
+    file: 'ReactCommon/react/featureflags/ReactNativeFeatureFlagsDefaults.h',
+    sentinels: [
+      'boardsesh/boardsesh#5293',
+      // The load-bearing line. A re-keyed patch could keep the whole comment
+      // and fail to re-apply the one-word change that does the work.
+      `bool enableSchedulerDelegateInvalidation() override {
+    return true;
+  }`,
+    ],
+    patchedKey: 'react-native@0.86.3',
+  },
+  // The other half, and the reason this rule exists on an UNPATCHED file: the
+  // flag is only worth flipping while Scheduler.cpp still honours it. Upstream
+  // deleted the flag AND the guard in react/react-native#58138 (2026-08-26), so
+  // the next react-native bump can quietly make the patch above a no-op — the
+  // defaults header would still accept it while the guard it arms is gone.
+  // Assert the guard's shape at both queue sites and the two flips that arm it.
+  {
+    package: 'react-native',
+    file: 'ReactCommon/react/renderer/scheduler/Scheduler.cpp',
+    sentinels: [
+      'invalidated = delegateInvalidated_,',
+      'if (guardEnabled && *invalidated) {',
+      '*delegateInvalidated_ = true;',
+      'delegateInvalidated_ = std::make_shared<std::atomic<bool>>(false);',
+    ],
+    patchedKey: 'react-native@0.86.3',
+  },
 ];
 
 /**
