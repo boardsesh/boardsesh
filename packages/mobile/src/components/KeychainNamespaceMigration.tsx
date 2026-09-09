@@ -19,13 +19,24 @@
 // the steady state. The auth keys get the same retry for free — auth-provider
 // re-runs checkAuth on AppState `active`, which lands in getStoredCredential.
 //
+// The foreground listener also drives the deferred #5345 reconciles for BOTH
+// scopes, including auth's, which is the one thing auth does not get for free: a
+// deferred key sits behind a pass that already latched, so nothing on the read path
+// would ever pick it up again.
+//
 // This can only ever help the NEXT launch for values read during module eval or
 // early render — by the time any component effect runs, the whole module graph
 // has already been evaluated. That is inherent to a JS-level fix.
 
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
-import { createOnceRunner, isMigrationComplete, migrateSecureKeysToV2 } from '../lib/keychain-namespace-migration';
+import { retryDeferredCredentialReconcile } from '../lib/auth-store';
+import {
+  createOnceRunner,
+  deferredReconcileKeys,
+  isMigrationComplete,
+  migrateSecureKeysToV2,
+} from '../lib/keychain-namespace-migration';
 import { PREFERENCE_SECURE_KEYS } from '../lib/preference-secure-keys';
 
 const migratePreferenceKeys = createOnceRunner(async () =>
@@ -34,6 +45,22 @@ const migratePreferenceKeys = createOnceRunner(async () =>
 
 function runPreferenceKeyMigration(): void {
   void migratePreferenceKeys().catch(() => undefined);
+}
+
+// A completed pass can still leave keys unreconciled: a locked legacy namespace
+// makes the #5345 freshness check impossible, and those keys come back
+// `reconcile-deferred`. Both scopes retry them HERE rather than from their read
+// paths, because a foreground transition is the one moment a WHEN_UNLOCKED item
+// becomes readable, and retrying on every read would put throwing legacy reads back
+// into the steady state of a locked device.
+//
+// Both calls resolve immediately when nothing is deferred.
+function retryDeferredReconciles(): void {
+  const deferredPreferenceKeys = deferredReconcileKeys('preferences');
+  if (deferredPreferenceKeys.length > 0) {
+    void migrateSecureKeysToV2(deferredPreferenceKeys, 'preferences').catch(() => undefined);
+  }
+  void retryDeferredCredentialReconcile().catch(() => undefined);
 }
 
 export function KeychainNamespaceMigration(): null {
@@ -45,6 +72,7 @@ export function KeychainNamespaceMigration(): null {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState !== 'active') return;
       runPreferenceKeyMigration();
+      retryDeferredReconciles();
     });
     return () => subscription.remove();
   }, []);

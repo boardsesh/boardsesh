@@ -97,6 +97,23 @@ describe('PREFERENCE_SECURE_KEYS', () => {
     expect(PREFERENCE_SECURE_KEYS).toContain(CREATED_SESSION_ID_KEY);
   });
 
+  it('has no key that could be mistaken for a namespace stamp', async () => {
+    const { PREFERENCE_SECURE_KEYS } = await import('../preference-secure-keys');
+    const { NAMESPACE_STAMP_SUFFIX } = await import('../secure-store-stamp');
+
+    // Stamps live beside their value under `<key><suffix>` (#5345). A migrated key
+    // ending in the suffix would make its stamp another key's stamp, and the
+    // migration would start comparing the wrong two namespaces.
+    for (const key of [
+      ...PREFERENCE_SECURE_KEYS,
+      'boardsesh_jwt',
+      'boardsesh_refresh_token',
+      'boardsesh_token_expires_at',
+    ]) {
+      expect(key.endsWith(NAMESPACE_STAMP_SUFFIX)).toBe(false);
+    }
+  });
+
   it('excludes the two keys the migration deliberately skips', async () => {
     const { PREFERENCE_SECURE_KEYS } = await import('../preference-secure-keys');
 
