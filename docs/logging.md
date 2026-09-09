@@ -78,10 +78,23 @@ Every error the mask reports is a `PostgresError` raised from the same two frame
 
 A mixed bucket does not just read badly, it reports every cause's impact as every other cause's impact. Sentry titles an issue from whichever sample event it picks, so this one was titled from a `42703` sample and triaged as **issue #4737: "presence_seq column missing, 32 users, P2"**. The 32 users were the disk-full failures; the six `42703` events were a single developer's local backend leaking as `environment: production`. Nothing was wrong with `presence_seq` in production.
 
-So `maskDatabaseError` sets `fingerprint: databaseErrorFingerprint(pgCode, graphqlPath)` — `['graphql-yoga-mask', <SQLSTATE or driver code>, <resolver path>]`. Two rules make it work, and both have tests in `mask-error.test.ts`:
+So `maskDatabaseError` sets `fingerprint: ['graphql-yoga-mask', <SQLSTATE or driver code>, <schema field name>]`. A fingerprint decides **how many Sentry issues can exist**, so every component has to be bounded and server-controlled. Two things are deliberately kept out, both with tests in `mask-error.test.ts`:
 
-- **The message is excluded.** It carries per-event noise (`could not resize shared memory segment "/PostgreSQL.523119486" to 1048576 bytes` differs every time), so grouping on it would replace one giant issue with thousands of singletons.
-- **List indices are stripped** from the path, because `userTicks.3.climb` names one row rather than one failure mode and the index is unbounded. The `graphqlPath` **tag** keeps its indices — as a tag it is a search key for the bad row; only the fingerprint needs the normalised shape.
+- **The response path — this is the subtle one.** `GraphQLError.path` is built from *response keys*, which are the client's aliases: `query { zzArbitrary: gym }` produces the path `zzArbitrary` while the field is still `gym`. Keying on it would let anyone who can send a query mint unlimited issues by rotating aliases — fragmentation strictly worse than the single bucket this replaces. The identity comes from `error.nodes` instead, where the `FieldNode` keeps the schema name in `name.value` and the alias separately in `alias`.
+- **The message.** It carries per-event noise (`could not resize shared memory segment "/PostgreSQL.523119486" to 1048576 bytes` differs every time), so grouping on it would trade one giant issue for thousands of singletons.
+
+Because the key is a single schema field name, list indices never enter it — `userTicks.3.climb` and `userTicks.90.climb` are both just `climb`.
+
+**Only the leaf field is available.** `maskError` is handed the error alone, with no `info`, so `parentType.name` cannot be included and two same-named fields on different types share one identity. That is a bounded, accepted imprecision; a client-controlled key is not an acceptable alternative. If you ever need `Query.board` precision, it has to come from an envelop hook that sees `info`, not from the error.
+
+The two tags say different things and should not be confused:
+
+| Tag | Meaning |
+| --- | --- |
+| `graphqlField` | The schema field that failed. The resolver identity, identical however the client aliased it. Group and search on this. |
+| `graphqlResponsePath` | The alias-bearing response path, e.g. `myAlias.ticks.3.climb`. Locates the exact position in one event; never group on it. |
+
+The older `graphqlPath` tag is gone: it read as a resolver name while carrying whatever the client called the field, which would mislead exactly the triage this fingerprint exists to enable.
 
 Adding or changing this fingerprint splits existing issues: old events keep their grouping and new events land in fresh, per-cause issues. That is the intended one-off cost.
 
