@@ -105,7 +105,7 @@ function runFlow(options: MemoryCaptureOptions, filename: string, content: strin
     join(options.runDir, filename + '.log'),
     Buffer.concat([result.stdout ?? Buffer.alloc(0), result.stderr ?? Buffer.alloc(0)]),
   );
-  if (result.status !== 0)
+  if (result.error || result.status !== 0)
     throw new Error(`Memory workload flow ${filename} failed or timed out (limit ${timeout} ms).`);
 }
 

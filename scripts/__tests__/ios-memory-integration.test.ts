@@ -23,7 +23,7 @@ const simulation = vi.hoisted(() => ({
   graphPids: [] as number[],
   graphDirectories: [] as string[],
   flowTimeouts: [] as number[],
-  maestroTimeout: false,
+  maestroFailure: null as { status: number | null; signal: string | null; errorCode: string } | null,
   calls: [] as { pid: number; action: string; phase: string; cycle: number }[],
   readSnapshot: null as (() => string) | null,
   swipe: null as ((filename: string) => void) | null,
@@ -70,9 +70,11 @@ vi.mock('node:child_process', () => ({
       writeFileSync(args[args.indexOf('-file') + 1], 'Physical footprint: 200M');
     } else if (command === 'maestro') {
       simulation.flowTimeouts.push(options.timeout);
-      if (simulation.maestroTimeout)
-        return { status: null, signal: 'SIGTERM', error: Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }) };
       simulation.swipe!(args.at(-1)!);
+      if (simulation.maestroFailure) {
+        const { status, signal, errorCode } = simulation.maestroFailure;
+        return { status, signal, error: Object.assign(new Error('spawn failed'), { code: errorCode }) };
+      }
     } else throw new Error(`Unexpected command: ${command}`);
     return { status: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   },
@@ -157,7 +159,7 @@ beforeEach(() => {
   simulation.launches = 0;
   simulation.calls = [];
   simulation.flowTimeouts = [];
-  simulation.maestroTimeout = false;
+  simulation.maestroFailure = null;
   simulation.wrongTarget = false;
   simulation.wrongAngle = false;
   simulation.sampleCommands = 0;
@@ -260,8 +262,12 @@ describe('host runner and real diagnostic collector lifecycle', () => {
       expect(simulation.calls.some((call) => call.action === 'open')).toBe(surface === 'carousel');
     },
   );
-  it('retains precise timeout metadata and rejects an incomplete prewarm', async () => {
-    simulation.maestroTimeout = true;
+  it.each([
+    { status: null, signal: 'SIGTERM', errorCode: 'ETIMEDOUT' },
+    { status: 0, signal: null, errorCode: 'ETIMEDOUT' },
+    { status: 0, signal: null, errorCode: 'ENOBUFS' },
+  ])('rejects a prewarm with spawn error $errorCode even at exit status $status', async (failure) => {
+    simulation.maestroFailure = failure;
     await expect(
       captureMemory(
         {
@@ -284,12 +290,15 @@ describe('host runner and real diagnostic collector lifecycle', () => {
       JSON.parse(readFileSync(join(simulation.directory, 'memory-1-browse-prewarm-result.json'), 'utf8')),
     ).toMatchObject({
       timeoutMs: 90000,
-      status: null,
-      signal: 'SIGTERM',
-      errorCode: 'ETIMEDOUT',
-      timedOut: true,
+      status: failure.status,
+      signal: failure.signal,
+      errorCode: failure.errorCode,
+      timedOut: failure.errorCode === 'ETIMEDOUT',
       durationMs: expect.any(Number),
     });
+    expect(simulation.flowTimeouts).toEqual([90000]);
+    expect(simulation.sampleCommands).toBe(0);
+    expect(simulation.launches).toBe(1);
     expect(JSON.parse(readFileSync(join(simulation.directory, 'memory-samples.json'), 'utf8'))).toEqual([]);
     expect(existsSync(join(simulation.directory, 'ordinary-measurements.json'))).toBe(false);
   });
