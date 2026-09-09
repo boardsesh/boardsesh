@@ -34,6 +34,7 @@ import {
   boardSupportsMirroring,
 } from '@boardsesh/play-view';
 import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
+import { toBoardName } from '@boardsesh/board-config';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -91,6 +92,7 @@ import { useAuth } from '../../providers/auth-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useToggleFavorite, useFavoriteStatus, useClimb } from '../../lib/graphql/hooks';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
@@ -617,9 +619,39 @@ export function PlayDrawer({
   } = useLightbulbControl({ onRelayToHolder: handleRelayToHolder, canRelay: canRelayToHolder });
   const lightbulbLabelKind = getBleLightbulbLabelKind(lightbulbPressAction, lightbulbHolderIsAuthoritative);
   const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
+  // Forward navigation skips queued climbs the wall can't draw (issue #5099), so
+  // canNext, the header peek and "N left" agree with where a swipe actually lands.
+  //
+  // Read off the ACTIVE board, and never off `boardConfig` (or any render-board
+  // config derived from the displayed climb). Two reasons, both load-bearing:
+  //
+  //  1. `boardConfig` is `boardConfigOverride ?? storedActiveBoardConfig`, so
+  //     opening a Kilter climb from the board sheet while standing at a Tension
+  //     board would scan the Tension queue against Kilter, mark every remaining
+  //     climb incompatible and kill `canNext` — a dead swipe under an action bar
+  //     still reading "N left".
+  //  2. `nextClimb` in the queue provider filters against the active board. Any
+  //     other board here makes the peek disagree with the landing.
+  //
+  // Whatever the drawer is DRAWING, the skip question is always "can the board
+  // the climber is standing at light this?".
+  const { data: activeBoardForNavigation } = useActiveBoard();
+  const navigationBoardConfig = useMemo(() => {
+    if (!activeBoardForNavigation) return undefined;
+    const resolvedBoardName = toBoardName(activeBoardForNavigation.boardType);
+    return resolvedBoardName
+      ? { boardName: resolvedBoardName, layoutId: activeBoardForNavigation.layoutId }
+      : undefined;
+  }, [activeBoardForNavigation]);
   const navigationState = useMemo(
-    () => computeNavigationStateWithSuggestions(queue, displayedQueueItem, navigationSuggestionSource),
-    [queue, displayedQueueItem, navigationSuggestionSource],
+    () =>
+      computeNavigationStateWithSuggestions(
+        queue,
+        displayedQueueItem,
+        navigationSuggestionSource,
+        navigationBoardConfig,
+      ),
+    [queue, displayedQueueItem, navigationSuggestionSource, navigationBoardConfig],
   );
 
   // The climb the header peek shows while swiping — the one being swiped toward.
@@ -660,6 +692,7 @@ export function PlayDrawer({
       displayedQueueItem,
       navigationSuggestionSource,
       PREFETCH_AHEAD,
+      navigationBoardConfig,
     );
     const framesToWarm = new Set<string>();
     for (const item of upcomingItems) {
@@ -673,7 +706,15 @@ export function PlayDrawer({
       framesToWarm.add(frames);
     }
     return [...framesToWarm].join(PREFETCH_FRAMES_SEPARATOR);
-  }, [queue, displayedQueueItem, navigationSuggestionSource, boardConfig, renderBoardConfig, displayedClimbFrames]);
+  }, [
+    queue,
+    displayedQueueItem,
+    navigationSuggestionSource,
+    navigationBoardConfig,
+    boardConfig,
+    renderBoardConfig,
+    displayedClimbFrames,
+  ]);
   // Split back out of the joined key rather than memoized on the walk's inputs:
   // the queue gets a fresh array identity on every broadcast, and a new array
   // here would remount every warmed render for a list that hasn't changed.

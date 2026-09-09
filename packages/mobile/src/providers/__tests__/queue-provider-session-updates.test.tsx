@@ -232,6 +232,14 @@ vi.mock('../party-profile-provider', () => ({
 
 vi.mock('../../lib/auth-transport-revision', async () => import('../../lib/auth-transport-revision.web'));
 
+// The board continuation feed (the re-anchor after a board switch) is a React
+// Query hook and this harness mounts no QueryClient. Its own behaviour is covered
+// by queue-provider-board-switch.test.tsx.
+// These queue lifecycle fixtures use synthetic hold IDs, not catalogue holds.
+vi.mock('../../lib/board-details', () => ({ getBoardRenderData: () => null }));
+
+vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFeed: () => ({ climbs: [] }) }));
+
 import {
   QueueProvider,
   useHasActiveClimb,

@@ -853,6 +853,23 @@ queue navigation; the browsing drawer still walks its original list in both
 directions. The first crew swipe snapshots that source, and committing or returning
 to live clears the snapshot.
 
+### Continuing after a board switch
+
+The mobile provider masks a suggestion source during render when its board key
+no longer matches the active board. A matching key is not sufficient for older
+saved playlists: their climbs are also checked against the active board's layout,
+size and installed holds before navigation reads them. The queue itself is not
+rewritten.
+
+A board switch re-anchors continuation onto the active board's popular feed,
+sharing the queue sheet's React Query entry. A synthetic first anchor preserves
+the old current climb so the next swipe reaches the new board's first suggestion.
+The dead-end notice waits for the feed to settle and any usable source to be
+installed. Forward navigation and prefetch follow the active list first, then
+skip incompatible board identities in the queue tail; previous navigation still
+allows history. The drawer's separate browse source and explicit wall commit gate
+continue to apply in shared sessions.
+
 ### Event Types
 
 | Event                 | Description             | Fields                                                       |

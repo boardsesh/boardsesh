@@ -51,8 +51,20 @@ const recorded = vi.hoisted(() => ({
   wallCallout: [] as Props[],
   deferredSections: [] as Props[],
   favoriteStatus: [] as Props[],
+  navigationBoardConfigs: [] as unknown[],
   browseFrame: 0,
   panePlaceholder: 0,
+}));
+// The board the climber is STANDING at, deliberately different from the
+// boardConfig prop the drawer renders with (see the navigation-board case).
+const activeBoard = vi.hoisted(() => ({
+  current: {
+    boardType: 'tension',
+    layoutId: 8,
+    sizeId: 20,
+    setIds: '3',
+    angle: 40,
+  } as { boardType: string; layoutId: number; sizeId: number; setIds: string; angle: number } | null,
 }));
 const queueActions = vi.hoisted(() => ({
   setCurrentClimb: vi.fn(),
@@ -148,15 +160,17 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => {
     findUpcomingQueueItemsWithSuggestions: () => [],
     computeNavigationStateWithSuggestions: (
       ...args: Parameters<typeof actual.computeNavigationStateWithSuggestions>
-    ) =>
-      session.useRealNavigation
+    ) => {
+      recorded.navigationBoardConfigs.push(args[3]);
+      return session.useRealNavigation
         ? actual.computeNavigationStateWithSuggestions(...args)
         : {
             nextItem: session.nextItem,
             prevItem: null,
             canNext: session.nextItem != null,
             canPrevious: false,
-          },
+          };
+    },
     boardSupportsMirroring: () => true,
   };
 });
@@ -168,6 +182,9 @@ vi.mock('@boardsesh/analytics', () => ({
   },
 }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: activeBoard.current, isPending: false }),
+}));
 
 // --- Children ----------------------------------------------------------------
 // Recorded rather than stubbed: these three carry the props under test.
@@ -366,6 +383,7 @@ beforeEach(() => {
   recorded.wallCallout = [];
   recorded.deferredSections = [];
   recorded.favoriteStatus = [];
+  recorded.navigationBoardConfigs = [];
   recorded.browseFrame = 0;
   recorded.panePlaceholder = 0;
   queueActions.addToQueue.mockResolvedValue('added');
@@ -1386,5 +1404,32 @@ describe('PlayDrawer — an angle change and the pinned preview', () => {
       (lastActionBarProps().onNextClick as () => void)();
     });
     expect(queueActions.nextClimb).not.toHaveBeenCalled();
+  });
+});
+
+// Issue #5099. Forward navigation skips queued climbs the wall can't draw, and
+// the board it scans against decides which ones. `boardConfig` is NOT that
+// board: it is `boardConfigOverride ?? storedActiveBoardConfig`, so opening a
+// Kilter climb from the board sheet while standing at a Tension board would
+// scan the Tension queue against Kilter, call every remaining climb
+// incompatible and kill canNext — a dead swipe under an action bar still
+// reading "N left". PR #5102 rebinds these same destructured names to the
+// DISPLAYED CLIMB's board, which would invert the fix without a merge conflict,
+// so this case is the guard.
+describe('PlayDrawer — which board forward navigation is scanned against', () => {
+  it('scans against the active board, not the board config it renders with', () => {
+    renderDrawer('member');
+    // BOARD_CONFIG is kilter/layout 1; the climber is standing at tension/layout 8.
+    expect(recorded.navigationBoardConfigs.at(-1)).toEqual({ boardName: 'tension', layoutId: 8 });
+  });
+
+  it('scans against nothing when no board is active, so nothing is skipped', () => {
+    activeBoard.current = null;
+    try {
+      renderDrawer('member');
+      expect(recorded.navigationBoardConfigs.at(-1)).toBeUndefined();
+    } finally {
+      activeBoard.current = { boardType: 'tension', layoutId: 8, sizeId: 20, setIds: '3', angle: 40 };
+    }
   });
 });
