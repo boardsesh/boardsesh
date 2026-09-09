@@ -1,6 +1,43 @@
 {
-  "generatedAt": "2026-09-09T08:53:54.105Z",
+  "generatedAt": "2026-09-09T09:02:04.337Z",
   "entries": [
+    {
+      "prNumber": 5369,
+      "category": "fixed",
+      "title": "Playlist counts and similar climbs stop failing at busy moments. When several people hit the app at once, the database could run out of shared memory mid-query and whole sections would come back empty — your logbook, your playlist cards, the similar-climbs list. That class of failure is gone.",
+      "mergedAt": "2026-09-09T08:57:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5369"
+    },
+    {
+      "prNumber": 5368,
+      "category": "fixed",
+      "title": "Uploads and images can't take your session down with them any more. A photo that",
+      "mergedAt": "2026-09-09T08:56:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5368",
+      "body": "failed to finish uploading, or a hiccup fetching an avatar or beta thumbnail,\nused to knock out the server everyone in your party was connected to. Now a bad\nupload is just a bad upload, a slow image gives up instead of spinning forever,\nand we actually get told when image storage is having a bad day."
+    },
+    {
+      "prNumber": 5367,
+      "category": "fixed",
+      "title": "Climb pages now say when beta or similar climbs didn't load, instead of pretending there are none — and similar climbs load themselves in a moment later.",
+      "mergedAt": "2026-09-09T08:55:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5367"
+    },
+    {
+      "prNumber": 5371,
+      "category": "fixed",
+      "title": "Offline search, climb details and your logbook no longer go blank after the app reloads",
+      "mergedAt": "2026-09-09T08:54:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5371",
+      "body": "itself. When local storage can't come up, the app now falls back to the network cleanly\ninstead of serving a dead connection until you restart."
+    },
+    {
+      "prNumber": 5357,
+      "category": "fixed",
+      "title": "Sends that never made it off your phone are being sent again. A network blip could quietly bin a send you'd logged, and it stayed binned. If that happened to you, the app now finds those sends, puts them back in the queue, and tells you how many are on their way — so you don't have to log them a second time.",
+      "mergedAt": "2026-09-09T08:53:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5357"
+    },
     {
       "prNumber": 5350,
       "category": "fixed",

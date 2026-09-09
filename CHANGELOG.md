@@ -8,6 +8,17 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Playlist counts and similar climbs stop failing at busy moments. When several people hit the app at once, the database could run out of shared memory mid-query and whole sections would come back empty — your logbook, your playlist cards, the similar-climbs list. That class of failure is gone. ([#5369](https://github.com/boardsesh/boardsesh/pull/5369))
+- Uploads and images can't take your session down with them any more. A photo that ([#5368](https://github.com/boardsesh/boardsesh/pull/5368))
+  failed to finish uploading, or a hiccup fetching an avatar or beta thumbnail,
+  used to knock out the server everyone in your party was connected to. Now a bad
+  upload is just a bad upload, a slow image gives up instead of spinning forever,
+  and we actually get told when image storage is having a bad day.
+- Climb pages now say when beta or similar climbs didn't load, instead of pretending there are none — and similar climbs load themselves in a moment later. ([#5367](https://github.com/boardsesh/boardsesh/pull/5367))
+- Offline search, climb details and your logbook no longer go blank after the app reloads ([#5371](https://github.com/boardsesh/boardsesh/pull/5371))
+  itself. When local storage can't come up, the app now falls back to the network cleanly
+  instead of serving a dead connection until you restart.
+- Sends that never made it off your phone are being sent again. A network blip could quietly bin a send you'd logged, and it stayed binned. If that happened to you, the app now finds those sends, puts them back in the queue, and tells you how many are on their way — so you don't have to log them a second time. ([#5357](https://github.com/boardsesh/boardsesh/pull/5357))
 - Rolling an app update back and then forward again no longer signs you out, or back in after you signed out. ([#5350](https://github.com/boardsesh/boardsesh/pull/5350))
 - Downloading a board for offline no longer crashes the app on iPhone or iPad. A transfer that used to die at the finish line — taking the whole 100 MB with it — now lands, and the board is ready to browse. ([#5356](https://github.com/boardsesh/boardsesh/pull/5356))
 - The wall-state pill's tap explainer no longer crashes the app in a browser — screen-reader focus now lands on the explainer sentence there too. This ships fixing a crash-only path (browser had a 100% failure rate on tap), so there's no meaningful behavior change to describe to native app users. ([#5362](https://github.com/boardsesh/boardsesh/pull/5362))
