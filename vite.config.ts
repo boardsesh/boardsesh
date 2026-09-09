@@ -215,6 +215,15 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/db run db:verify-journal',
         cache: false,
       },
+      // Asserts that application sessions start with max_parallel_workers_per_gather=0
+      // (#5352), and applies the database default when ADMIN_DATABASE_URL owns the
+      // database. Exits 1 when neither holds — migration 0225 cannot fix it, because
+      // ALTER DATABASE needs ownership the migration role deliberately does not have.
+      // Add `-- --check-only` to report without ever issuing DDL.
+      'db:verify-serial-plan': {
+        command: 'pnpm --filter @boardsesh/db run db:verify-serial-plan',
+        cache: false,
+      },
       'db:studio': {
         command: 'pnpm --filter @boardsesh/db run db:studio',
         dependsOn: ['db:up'],

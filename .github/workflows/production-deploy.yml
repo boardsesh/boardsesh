@@ -570,6 +570,56 @@ jobs:
           VERIFY_MIGRATION_JOURNAL: '1'
         run: vp exec pnpm --filter @boardsesh/db run db:migrate
 
+  # Round 5b of the DSM saga (#5352, #5369). Migration 0225 tried to set
+  # `max_parallel_workers_per_gather = 0` with `ALTER DATABASE ... SET`, which
+  # needs database ownership — and the role above is deliberately NOT the
+  # database owner (`reserveMigrationOwnerSession` refuses to run unless
+  # `ownerDoesNotOwnDatabase` holds). So 0225 raised `insufficient_privilege` on
+  # every production deploy, swallowed it into a `RAISE WARNING`, and drizzle
+  # recorded it as applied. It will never retry, and parallel-query DSM
+  # exhaustion (SQLSTATE 53100) stayed possible.
+  #
+  # This job checks the fact that matters — what an APPLICATION session
+  # resolves the setting to, using the same credential the app connects with —
+  # and fails when parallel query is still on. It applies the database default
+  # itself when `ADMIN_DATABASE_URL` names a connection that owns the database;
+  # otherwise it prints the one statement an operator runs once.
+  #
+  # Deliberately NOT in the `needs:` of the deploy jobs. The condition it
+  # reports is a property of the database, not of the commit being shipped, and
+  # a deploy cannot fix it — gating the release train on it would turn a
+  # reported miss into a self-inflicted outage. It is loud instead: a red job on
+  # every run plus the Discord failure alert, which is the thing a `RAISE
+  # WARNING` inside a migration log was not. Move it into `deploy-*`'s `needs:`
+  # if that trade ever changes.
+  verify-serial-plan:
+    needs: [migrate]
+    if: always() && needs.migrate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Verify parallel query is off for application sessions
+        env:
+          # The RUNTIME credential on purpose: this must assert what the app's
+          # own connections see, not what a privileged session sees.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Optional. When set to a database-owner/superuser connection the step
+          # applies the default itself and stays green from then on. When unset
+          # the step reports and fails until an operator runs the statement.
+          ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
+        run: vp exec pnpm --filter @boardsesh/db run db:verify-serial-plan
+
   deploy-production-backend:
     needs: [detect-changes, build-backend, migrate]
     if: always() && needs.detect-changes.outputs.backend_changed == 'true' && needs.build-backend.result == 'success' && needs.migrate.result == 'success'
@@ -1198,6 +1248,7 @@ jobs:
         build-web,
         build-backend,
         migrate,
+        verify-serial-plan,
         deploy-web-railway,
         deploy-production-backend,
         deploy-cloudflare,
@@ -1219,6 +1270,7 @@ jobs:
           BUILD_WEB: ${{ needs.build-web.result }}
           BUILD_BACKEND: ${{ needs.build-backend.result }}
           MIGRATE: ${{ needs.migrate.result }}
+          VERIFY_SERIAL_PLAN: ${{ needs.verify-serial-plan.result }}
           DEPLOY_WEB_RAILWAY: ${{ needs.deploy-web-railway.result }}
           DEPLOY_BACKEND: ${{ needs.deploy-production-backend.result }}
           DEPLOY_CLOUDFLARE: ${{ needs.deploy-cloudflare.result }}
@@ -1231,8 +1283,8 @@ jobs:
             exit 0
           fi
           # URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• resolve-web-targets: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web-railway: %s\n• deploy-production-backend: %s\n• deploy-cloudflare: %s\n• deploy-app-web: %s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$RESOLVE_WEB_TARGETS" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB_RAILWAY" "$DEPLOY_BACKEND" "$DEPLOY_CLOUDFLARE" "$DEPLOY_APP_WEB" "$RUN_URL")
+          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• resolve-web-targets: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• verify-serial-plan: %s\n• deploy-web-railway: %s\n• deploy-production-backend: %s\n• deploy-cloudflare: %s\n• deploy-app-web: %s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$RESOLVE_WEB_TARGETS" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$VERIFY_SERIAL_PLAN" "$DEPLOY_WEB_RAILWAY" "$DEPLOY_BACKEND" "$DEPLOY_CLOUDFLARE" "$DEPLOY_APP_WEB" "$RUN_URL")
           # --fail-with-body surfaces Discord's status + error body (e.g. 429,
           # rotated webhook) in the log instead of failing silently. Don't let a
           # webhook hiccup fail the job — the alert is best-effort.
