@@ -134,6 +134,22 @@ resolver path at all.
 hundred milliseconds, wrap the fall-through.** The Redis hit rate is not the
 safety property; the concurrency of the miss is.
 
+`similarClimbs` is the third read to take that shape (#4968,
+`graphql/resolvers/climbs/similar-climbs-cache.ts`). Measured on the dev
+catalogue — 893k climbs, 5.5M Kilter `board_climb_holds` rows, serial plan — a
+typical 18-hold Kilter climb runs **4 831 ms on a fresh Postgres and 205 ms
+warm**; the 198-hold tail is 7 860 ms cold and 1 542 ms warm. The cold figure
+for the typical case is 1.6x the front door's 3 s deadline, which is why #4968
+reads as a cold-cache failure rather than a slow-query one. (Parallelism is not
+the variable: warm serial 1 542 ms vs 1 566 ms with
+`max_parallel_workers_per_gather = 4`, and the planner chooses no `Gather` node
+for this shape — so `withSerialPlan` costs it nothing measurable.) It differs
+from the other two in one way: its key is
+per climb across the whole catalogue, so it takes **no** `REDISLESS_FALLBACK_TTL_MS`
+process-local copy. An unbounded local map in a long-lived process is a worse
+failure than re-running the statement, and single-flight alone still covers the
+concurrency of the miss, which is the half that protects the pool.
+
 ## Front-door read deadlines and pool sizing (#4461)
 
 The connect retry above bounds a _failed_ connect. It does nothing about a
@@ -196,7 +212,17 @@ one at the database.
 | read fails or deadlines, climb page | hung to the platform limit, then 404 | 500 at ~6 s per request                         |
 | read fails or deadlines, list page  | 200 with zero climbs                 | 500 at ~6 s                                     |
 | backend `boardBySlug` fails, `/b/…` | 404                                  | 500                                             |
-| backend GraphQL wedged              | climb page hung indefinitely         | similar climbs / beta links render empty at 3 s |
+| backend GraphQL wedged              | climb page hung indefinitely         | similar climbs / beta links degrade at 3 s      |
+
+Since #4968 "degrade" is not "render empty". Both sections return
+`{ status: 'unavailable' }` rather than `[]`, because `[]` is also what a climb
+nobody has filmed looks like and the page was publishing "No beta filmed yet."
+on the strength of a timeout — 6,922 + 748 renders in fourteen days. Each
+section now says it did not load, and similar climbs additionally ship WITHOUT a
+React Query seed so the reader's own browser refetches on hydration: the retry
+happens off the server-render budget and against the reader's IP rather than the
+web server's single shared one. There is deliberately no server-side retry — a
+second attempt spends another 3 s pushing work at the pool that just failed.
 
 The 5xx is the point. Google retries a 5xx and keeps the URL, while a 404 — or a
 200 with nothing on it — on a sitemapped URL reads as "drop this page".

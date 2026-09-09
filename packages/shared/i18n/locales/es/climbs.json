@@ -790,13 +790,15 @@
     },
     "beta": {
       "heading": "Vídeos de beta",
-      "empty": "Todavía nadie ha grabado beta."
+      "empty": "Todavía nadie ha grabado beta.",
+      "unavailable": "La beta no cargó esta vez. Recarga la página para volver a intentarlo."
     },
     "community": {
       "heading": "Comunidad"
     },
     "similar": {
-      "heading": "Bloques parecidos a este"
+      "heading": "Bloques parecidos a este",
+      "unavailable": "Los bloques parecidos no cargaron. Volviendo a intentarlo…"
     },
     "cta": {
       "climbThis": "Escala este bloque",

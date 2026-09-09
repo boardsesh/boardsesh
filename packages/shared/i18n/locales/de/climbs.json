@@ -790,13 +790,15 @@
     },
     "beta": {
       "heading": "Beta-Videos",
-      "empty": "Noch keine Beta gefilmt."
+      "empty": "Noch keine Beta gefilmt.",
+      "unavailable": "Die Beta wurde nicht geladen. Lad die Seite neu, um es nochmal zu probieren."
     },
     "community": {
       "heading": "Community"
     },
     "similar": {
-      "heading": "Boulder wie dieser"
+      "heading": "Boulder wie dieser",
+      "unavailable": "Ähnliche Boulder wurden nicht geladen. Wird erneut geladen…"
     },
     "cta": {
       "climbThis": "Boulder jetzt",

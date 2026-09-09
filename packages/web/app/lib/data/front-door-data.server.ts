@@ -20,17 +20,54 @@ import type { BoardName } from '@/app/lib/types';
  * crawler walking a few hundred thousand climb pages is precisely the workload
  * that saturates both.
  *
- * Both helpers swallow their errors and return an empty list. A 429 or a
- * backend blip must degrade the section, never 500 an indexed page.
+ * Since #4968 it is no longer the ONLY cache on that path. `unstable_cache` is
+ * per web instance and starts empty on every build, so a second one lives
+ * behind the resolver in Redis
+ * (`packages/backend/src/graphql/resolvers/climbs/similar-climbs-cache.ts`),
+ * shared across instances and surviving a web deploy. This one still earns its
+ * keep: it saves the round trip entirely.
+ *
+ * Both helpers swallow their errors. A 429 or a backend blip must degrade the
+ * section, never 500 an indexed page.
+ *
+ * What they must NOT do is degrade to `[]`. See {@link FrontDoorSection}.
  */
+
+/**
+ * What one supplemental front-door section resolved to.
+ *
+ * `unavailable` is deliberately not "loaded, with nothing in it", and that
+ * distinction is the whole of #4968. Until this type existed both helpers
+ * returned a bare array, so a backend deadline and a climb nobody has filmed
+ * were the same value — and the page rendered the section's empty copy for
+ * both. "No beta filmed yet." and "No similar climbs on this layout." are
+ * factual claims about the climb; a 3 s deadline that fired on a cold cache is
+ * no evidence for either. Sentry counted 6,922 similar-climbs and 748
+ * beta-links renders publishing those claims in 14 days, to readers and to
+ * Google, on a search surface whose whole job is being trustworthy.
+ *
+ * The caller decides what an unavailable section says. It has to say something:
+ * an indexable page may not render a section as a blank div or a bare spinner.
+ */
+export type FrontDoorSection<Item> = { status: 'loaded'; items: Item[] } | { status: 'unavailable' };
 
 const SIMILAR_CLIMBS_REVALIDATE_SECONDS = 3600;
 const BETA_LINKS_REVALIDATE_SECONDS = 3600;
 /**
  * Wall-clock ceiling on each backend round trip. Both callers already degrade to
- * an empty section, so this turns "the page hangs behind a wedged backend" into
- * "the page renders without that section". Shorter than the DB read deadline:
- * these two sections are supplementary, the climb itself is not.
+ * an honest "didn't load" state, so this turns "the page hangs behind a wedged
+ * backend" into "the page renders and says so". Shorter than the DB read
+ * deadline: these two sections are supplementary, the climb itself is not.
+ *
+ * **Deliberately not raised, and deliberately not retried.** Both would trade
+ * the reader's time for a section they can live without, and both push MORE
+ * work at the backend that just failed to answer in three seconds — a second
+ * attempt from the same wedged pool is the load that made the first one slow.
+ * The similar-climbs section retries instead from the reader's own browser
+ * (`SimilarClimbsList` re-runs the query on hydration when the server hands it
+ * no seed), which costs the crawler nothing, spends nobody's server-render
+ * budget, and bills the resolver's 30/min rate limit against the reader's IP
+ * rather than the web server's single shared one.
  */
 const FRONT_DOOR_BACKEND_TIMEOUT_MS = 3000;
 
@@ -53,7 +90,7 @@ function reportFrontDoorOutage(
   reportedFrontDoorFailures.add(section);
 
   const compactError = compactErrorMessage(error);
-  console.error(`Front door: ${section} unavailable, rendering the section empty`, {
+  console.error(`Front door: ${section} unavailable, rendering the section's degraded state`, {
     boardType: params.boardType,
     climbUuid: params.climbUuid,
     error: compactError,
@@ -83,7 +120,7 @@ export async function getFrontDoorSimilarClimbs(params: {
   angle: number;
   threshold?: number;
   limit?: number;
-}): Promise<SimilarClimb[]> {
+}): Promise<FrontDoorSection<SimilarClimb>> {
   const query = createCachedGraphQLQuery<SimilarClimbsResponse, SimilarClimbsQueryVariables>(
     SIMILAR_CLIMBS_QUERY,
     'similar-climbs',
@@ -103,14 +140,17 @@ export async function getFrontDoorSimilarClimbs(params: {
       },
     });
     reportFrontDoorRecovered('similar-climbs');
-    return response.similarClimbs ?? [];
+    return { status: 'loaded', items: response.similarClimbs ?? [] };
   } catch (error) {
     reportFrontDoorOutage('similar-climbs', params, error);
-    return [];
+    return { status: 'unavailable' };
   }
 }
 
-export async function getFrontDoorBetaLinks(params: { boardType: BoardName; climbUuid: string }): Promise<BetaLink[]> {
+export async function getFrontDoorBetaLinks(params: {
+  boardType: BoardName;
+  climbUuid: string;
+}): Promise<FrontDoorSection<BetaLink>> {
   const query = createCachedGraphQLQuery<GetBetaLinksQueryResponse, { boardType: string; climbUuid: string }>(
     GET_BETA_LINKS,
     `beta-links-${params.climbUuid}`,
@@ -121,9 +161,9 @@ export async function getFrontDoorBetaLinks(params: { boardType: BoardName; clim
   try {
     const response = await query({ boardType: params.boardType, climbUuid: params.climbUuid });
     reportFrontDoorRecovered('beta-links');
-    return dedupeBetaLinks(mapBetaLinksResponse(response.betaLinks ?? []));
+    return { status: 'loaded', items: dedupeBetaLinks(mapBetaLinksResponse(response.betaLinks ?? [])) };
   } catch (error) {
     reportFrontDoorOutage('beta-links', params, error);
-    return [];
+    return { status: 'unavailable' };
   }
 }
