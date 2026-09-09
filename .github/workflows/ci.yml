@@ -411,6 +411,13 @@ jobs:
               # blind spot deploy-config, listing-guards and pg18-artifacts each
               # document. This job runs it unfiltered instead.
               - 'scripts/__tests__/db-trigger-search-path.test.ts'
+              # The serial-plan default (#5352): node:test files outside
+              # Vitest's module graph, and the integration half needs this job's
+              # PostgreSQL service to build the production role shape.
+              - 'packages/db/scripts/serial-plan-default.ts'
+              - 'packages/db/scripts/serial-plan-default.test.ts'
+              - 'packages/db/scripts/serial-plan-default.integration.test.ts'
+              - 'packages/db/scripts/verify-serial-plan.ts'
             staticAssets:
               - 'packages/web/public/images/**/*.webp'
               - 'packages/web/public/brand/boardsesh-mark.png'
@@ -711,6 +718,20 @@ jobs:
       # catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
       - name: Every trigger function pins search_path
         run: vp test run --project scripts scripts/__tests__/db-trigger-search-path.test.ts
+      # #5352: `ALTER DATABASE ... SET max_parallel_workers_per_gather = 0` needs
+      # database ownership, which the production migration role deliberately does
+      # not have — so migration 0225 was a silent no-op there. The integration
+      # half builds the production role shape (NOLOGIN owner that does not own
+      # the database, reached by SET ROLE from a restricted login) on this job's
+      # PostgreSQL service and proves the refusal is surfaced, not swallowed.
+      - name: Serial-plan default is applied, or the failure is surfaced
+        working-directory: packages/db
+        env:
+          SERIAL_PLAN_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: >-
+          vp exec tsx --test
+          scripts/serial-plan-default.test.ts
+          scripts/serial-plan-default.integration.test.ts
 
   codegen-drift:
     needs: [changes]
@@ -856,6 +877,7 @@ jobs:
         run: >-
           vp test run --project scripts
           scripts/__tests__/production-deploy-web-targets.test.ts
+          scripts/__tests__/production-deploy-serial-plan.test.ts
           scripts/__tests__/static-asset-deploy-origin.test.ts
           scripts/cloudflare-apply.test.ts
           scripts/__tests__/ci-docker-web-workflow.test.ts

@@ -440,9 +440,82 @@ Two caveats worth knowing:
 - **Existing pooled connections keep their old value until they cycle**
   (`idle_timeout` is 30s outside Vercel), so the change lands within about a minute
   of the migration rather than instantly.
-- **The migration is fail-soft.** `ALTER DATABASE ... SET` needs database
-  ownership; a deploy role without it gets a `RAISE WARNING` rather than a blocked
-  release.
+- **The migration is fail-soft**, and in production that is the only path it ever
+  takes. See below.
+
+### Why the migration cannot apply in production (#5352 round 5b)
+
+`ALTER DATABASE ... SET` requires ownership of the database. The production
+migration session is deliberately the opposite of that: `production-deploy.yml`
+connects as `boardsesh_migrator` and `SET ROLE`s to `boardsesh_owner`, and
+`reserveMigrationOwnerSession` refuses to run a single statement unless
+`ownerDoesNotOwnDatabase` holds (`packages/db/scripts/migration-owner-role.ts`).
+The `railway` database is owned by the Railway-provisioned superuser; no
+credential in CI owns it or is superuser.
+
+So 0225 raised `insufficient_privilege` on every production deploy, its
+`EXCEPTION` handler turned that into a `RAISE WARNING`, drizzle recorded the
+migration as applied — and it will never retry. Reproduced against a stock
+`docker run postgres:17` wearing the same role shape:
+
+```
+WARNING:  boardsesh: could not set max_parallel_workers_per_gather on database
+          railway; (must be owner of database railway)
+-- pg_db_role_setting: 0 rows; a runtime session still reports 2
+```
+
+`ALTER ROLE <app_role> SET ...` — the pooled-URL escape hatch used for
+`statement_timeout` above — is closed for the same reason: `permission denied to
+alter role … Only roles with the CREATEROLE attribute and the ADMIN option on
+role "boardsesh_runtime" may alter this role`.
+
+Editing 0225 fixes nothing (it is already recorded), and granting the migration
+role database ownership would dismantle the least-privilege contract the PG18
+transition was built on. So the setting is owned by a **separate, idempotent
+deploy step** instead:
+
+```
+vp run db:verify-serial-plan          # add -- --check-only to never write
+```
+
+`packages/db/scripts/verify-serial-plan.ts`, run by the `verify-serial-plan` job
+after `migrate`:
+
+1. Reads the setting through an ordinary **application** connection
+   (`secrets.DATABASE_URL`, the runtime role). That is the fact that matters —
+   what a new app session resolves the GUC to, the same number `/health/db`
+   reports.
+2. Exits 0 and issues nothing when it is already `0`.
+3. Otherwise applies the database default when `ADMIN_DATABASE_URL` names a
+   connection that owns the database, then re-checks on a **new** application
+   connection (`ALTER DATABASE ... SET` never changes the session that issued
+   it, so re-reading the same session would be a vacuous check).
+4. Otherwise **exits 1**, printing the one statement an operator runs once.
+
+A **fresh database still gets the default from migrations**: 0225 applies
+normally wherever the migrating role owns the database — local docker, the
+`boardsesh-dev-db` image, CI service containers, branch deploys — which is every
+environment except the production role shape. The deploy step is what covers that
+one, and what makes a miss loud instead of a warning inside a 13k-line migration
+log.
+
+The job is deliberately **not** in the `needs:` of the deploy jobs. The condition
+it reports is a property of the database, not of the commit being shipped, and a
+deploy cannot fix it; gating the release train on it would trade a reported miss
+for a self-inflicted outage. It is loud instead — a red job on every run plus the
+Discord failure alert.
+
+**Operator handoff.** When the deploy job goes red, either:
+
+```sql
+-- once, from any psql session that owns the database (or is superuser)
+ALTER DATABASE railway SET max_parallel_workers_per_gather = 0;
+```
+
+or add `ADMIN_DATABASE_URL` to the `Production` environment pointing at such a
+connection, and the job applies it itself on the next run. Either way it survives
+restarts and is a `pg_dumpall` global, so it is a one-time action. Confirm with
+`GET /health/db → database.maxParallelWorkersPerGather`, which must read `"0"`.
 
 ### The recurrence signal
 
@@ -455,10 +528,10 @@ GET /health/db → database.maxParallelWorkersPerGather
 ```
 
 `"0"` means the default landed. Anything else means it did not, and `53100` can
-come back — check whether the migration's warning fired, and whether the role owns
-the database. A value present in `pg_db_role_setting` but not on the app's
-connections would be no fix at all, which is why this reads the live session rather
-than the catalog.
+come back — read the `verify-serial-plan` job's log, which prints both the
+session value and the database default and carries its own remediation. A value
+present in `pg_db_role_setting` but not on the app's connections would be no fix
+at all, which is why this reads the live session rather than the catalog.
 
 The other half of the signal is Sentry: until #5351 every one of these landed in
 the unfingerprinted `BOARDSESH-AK` bucket, which is why four "fixed" rounds looked
