@@ -38,6 +38,36 @@ export type ToggleFavoriteMutationResponse = {
   };
 };
 
+// Get user favorites counts per board
+export const GET_USER_FAVORITES_COUNTS = gql`
+  query UserFavoritesCounts {
+    userFavoritesCounts {
+      boardName
+      count
+    }
+  }
+`;
+
+export type FavoritesCount = {
+  boardName: string;
+  count: number;
+};
+
+export type UserFavoritesCountsQueryResponse = {
+  userFavoritesCounts: FavoritesCount[];
+};
+
+// Get active boards for the current user
+export const GET_USER_ACTIVE_BOARDS = gql`
+  query UserActiveBoards {
+    userActiveBoards
+  }
+`;
+
+export type UserActiveBoardsQueryResponse = {
+  userActiveBoards: string[];
+};
+
 // Get user's favorite climbs with full data
 export const GET_USER_FAVORITE_CLIMBS = gql`
   query GetUserFavoriteClimbs($input: GetUserFavoriteClimbsInput!) {
