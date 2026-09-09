@@ -13,9 +13,12 @@
  * the other sixty moves as the tables grow.
  *
  * So migration 0225 sets `max_parallel_workers_per_gather = 0` as the database
- * default and every connection inherits it. That migration is deliberately
- * fail-soft: `ALTER DATABASE ... SET` needs database ownership, and a deploy
- * role without it gets a warning rather than a blocked release.
+ * default and every connection inherits it. That migration is fail-soft:
+ * `ALTER DATABASE ... SET` needs database ownership, and a deploy role without
+ * it gets a warning rather than a blocked release. In production that is not a
+ * fallback but the only path — the migration role is deliberately not the
+ * database owner — so the `verify-serial-plan` deploy job owns the setting
+ * there and fails loudly when it is missing (#5352 round 5b, #5369).
  *
  * A warning in a migration log is precisely the kind of thing nobody reads —
  * five rounds of this bug stayed invisible for want of a signal. So the
@@ -178,7 +181,7 @@ describe('DSM parallel-plan default (#5352)', () => {
     });
   });
 
-  describe('migration 0225 sets the database default', () => {
+  describe('migration 0225 sets the database default — everywhere it can', () => {
     const migrationPath = join(import.meta.dirname, '../../../db/drizzle/0225_dsm_serial_plan_default.sql');
 
     it('turns per-gather parallelism off at database scope', () => {
@@ -190,11 +193,22 @@ describe('DSM parallel-plan default (#5352)', () => {
       expect(sql).toContain('current_database()');
     });
 
-    it('is fail-soft on a deploy role that cannot ALTER DATABASE', () => {
+    it('is fail-soft — which in PRODUCTION means it never applies at all', () => {
       const sql = readFileSync(migrationPath, 'utf8');
 
-      // A blocked release is worse than a reported miss — /health/db is what
-      // turns the miss into something someone can see.
+      // Not a rare fallback: `ALTER DATABASE ... SET` needs database ownership,
+      // and `reserveMigrationOwnerSession` refuses to run unless
+      // `ownerDoesNotOwnDatabase` holds, so production takes this branch on
+      // EVERY deploy and drizzle records the migration anyway. Reproduced
+      // against postgres:17 in packages/db/scripts/serial-plan-default.integration.test.ts.
+      //
+      // The migration still earns its place — it applies on every database
+      // whose migrating role owns it (local docker, the dev-db image, CI
+      // service containers, branch deploys), which is how a fresh database gets
+      // the default. Production is covered by the `verify-serial-plan` deploy
+      // job instead: it reads this same value through an application
+      // connection, applies the default when ADMIN_DATABASE_URL owns the
+      // database, and exits non-zero when neither holds (#5352 round 5b).
       expect(sql).toContain('insufficient_privilege');
       expect(sql).toContain('RAISE WARNING');
     });
