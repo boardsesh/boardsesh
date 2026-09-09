@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-09
+
+### Fixed
+
+- Like counts and your own likes keep loading as you scroll deep into the Home feed and your Sessions list. Past about the fourth page they used to stop showing up entirely. ([#4123](https://github.com/boardsesh/boardsesh/pull/4123))
+
 ## 2026-09-08
 
 ### App update

@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-09T00:05:33.373Z",
+  "generatedAt": "2026-09-09T00:12:48.117Z",
   "entries": [
+    {
+      "prNumber": 4123,
+      "category": "fixed",
+      "title": "Like counts and your own likes keep loading as you scroll deep into the Home feed and your Sessions list. Past about the fourth page they used to stop showing up entirely.",
+      "mergedAt": "2026-09-09T00:05:19Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4123"
+    },
     {
       "prNumber": 4765,
       "category": "new",
