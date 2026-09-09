@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-08T23:50:24.949Z",
+  "generatedAt": "2026-09-09T00:05:33.373Z",
   "entries": [
+    {
+      "prNumber": 4765,
+      "category": "new",
+      "title": "With crew browsing enabled, explore climbs without changing anyone's wall; put yours up when you're ready.",
+      "mergedAt": "2026-09-08T23:59:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4765",
+      "body": "Solo swipes light climbs again after an angle change or a crew session ends.\nTapping through filtered results opens and highlights the climb you selected."
+    },
     {
       "prNumber": 5348,
       "category": "improved",

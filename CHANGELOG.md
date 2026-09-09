@@ -12,6 +12,9 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- With crew browsing enabled, explore climbs without changing anyone's wall; put yours up when you're ready. ([#4765](https://github.com/boardsesh/boardsesh/pull/4765))
+  Solo swipes light climbs again after an angle change or a crew session ends.
+  Tapping through filtered results opens and highlights the climb you selected.
 - MoonBoard problems now show a rough "≈" grade estimate at the angle nobody's climbed yet, worked out from the same problem's grade at its other angle ([#5286](https://github.com/boardsesh/boardsesh/pull/5286))
 - Mirror your climb from the Lock Screen or Android notification, then pick up the same mirrored climb in the app. ([#5313](https://github.com/boardsesh/boardsesh/pull/5313))
 - Take turns on walls without LEDs. Your crew and gym screen follow the climb you put up. ([#4762](https://github.com/boardsesh/boardsesh/pull/4762))
