@@ -225,6 +225,7 @@ jobs:
               # with readFileSync, so a change to a SUITE has no other path into
               # CI on a PR either.
               - 'scripts/__tests__/production-deploy-web-targets.test.ts'
+              - 'scripts/__tests__/production-deploy-serial-plan.test.ts'
               - 'scripts/__tests__/static-asset-deploy-origin.test.ts'
               - 'scripts/cloudflare-apply.test.ts'
               # Reads ci.yml, which reaches this job via rootCi; named here so
