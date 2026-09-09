@@ -1083,15 +1083,26 @@ describe('initializeDatabase lock contention (#4104)', () => {
     // asked for and only three exist.
     const live = createContendedDatabase();
     live.unlock();
+    // A handle published behind the chain's back, against a connection that is not the
+    // live one. Injected through the exported setter for the same reason the give-up
+    // twin below does it: with one gated publish nothing inside the lifecycle can reach
+    // this state, so the seam is what pins the retract on THIS exit as well. Without it
+    // the exhaustion path's `retractSupersededHandle()` can be deleted with the whole
+    // suite still green.
+    const stale = createContendedDatabase();
     const supersedingChain = [live];
     for (let index = 0; index < 4; index += 1) {
       const next = supersedingChain[0];
+      // The mount that brings in `live` is the one that asks for the fourth refund, so
+      // its remount is the moment the stale handle has to be in place to be retracted.
+      const isLastRemount = index === 0;
       let remounted = false;
       const earlier = createContendedDatabase({
         onExec: (source) => {
           if (remounted || !/pending_mutations/i.test(source)) return;
           remounted = true;
           void initializeDatabase(next.db);
+          if (isLastRemount) setDatabaseHandle(stale.db);
         },
       });
       earlier.unlock();
