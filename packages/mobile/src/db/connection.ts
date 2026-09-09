@@ -98,7 +98,9 @@ const MAX_INIT_WINDOW_MS = 30_000;
  * How many times a superseded attempt may be refunded (see the restart branch in
  * `beginInitialization`). Each refund needs its own remount — the retry immediately
  * retargets onto the connection that superseded it — so this only exists to stop a
- * pathological remount loop from keeping one chain alive forever.
+ * pathological remount loop from keeping one chain alive forever. Hitting it ends the
+ * chain with nothing published and a Sentry report (see `reportSupersededExhaustion`),
+ * not with the superseded connection presented as ready.
  */
 const MAX_SUPERSEDED_RESTARTS = 3;
 // Exported so the retry tests advance their fake clock by the real gap rather than
@@ -130,6 +132,25 @@ let activeInitialization: Promise<void> | null = null;
  * follows the LIVE connection.
  */
 let latestDatabase: SQLiteDatabase | null = null;
+
+/**
+ * Exit protocol for the init chain: whatever is published when a chain stops must be
+ * a connection `SQLiteProvider` still owns.
+ *
+ * The single gated publish in `beginInitialization` is what makes this hold, so today
+ * this never has anything to retract. It is called at every terminal `return` anyway
+ * because the failure it backstops is silent and expensive: a superseded handle reads
+ * as `isSchemaReady() === true` while every query throws `Access to closed resource`,
+ * and the chain that left it there has already dropped `activeInitialization`, so
+ * nothing retries until the next remount (#5366). A second publish site added later —
+ * the retry ladder and its wake path are both being retuned (#4314) — would be caught
+ * here instead of shipping as #5292 for a third time.
+ */
+function retractSupersededHandle(): void {
+  if (databaseHandle !== null && latestDatabase !== null && databaseHandle !== latestDatabase) {
+    setDatabaseHandle(null);
+  }
+}
 
 /**
  * At most one recovery event per process. A launch can only recover once, but the
@@ -221,6 +242,12 @@ export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
 /**
  * Runs the setup sequence once. Never throws — the caller decides whether the
  * failure is worth another attempt.
+ *
+ * Deliberately does NOT publish the handle. It cannot tell whether the connection it
+ * just prepared is still the live one, and a remount landing during the winning
+ * attempt has already had `SQLiteProvider` close it — publishing from here handed
+ * every reader a closed connection (#5366). `beginInitialization` owns the single
+ * publish, where the supersede check already lives.
  */
 async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
   let phase: InitPhase = 'wal';
@@ -234,9 +261,6 @@ async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
     await ensureMutationQueueTable(db);
     phase = 'migrations';
     await runMigrations(db);
-    // Published only once the schema is actually in place: a handle whose migrations
-    // never ran would hand every consumer a database with no tables.
-    setDatabaseHandle(db);
     return { status: 'ready' };
   } catch (error) {
     const { locked, code } = classifySqliteLockError(error);
@@ -289,13 +313,25 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       }
 
       if (outcome.status === 'ready') {
-        // A remount landed between the publish inside `attemptInitialization` and this
-        // line, so the connection just prepared is already closed. The remount was
-        // handed this (about to resolve) promise and nothing else will initialize its
-        // connection, so retarget here instead of returning and leaving offline
-        // storage dead for the session. Spends a superseded refund, not retry budget:
-        // no lock was contended, the file is simply behind a newer connection.
-        if (latestDatabase !== null && latestDatabase !== target && supersededRestarts < MAX_SUPERSEDED_RESTARTS) {
+        // A remount landed while this attempt was in flight, so `SQLiteProvider` has
+        // already closed the connection it just prepared — its teardown runs before the
+        // replacement reaches `initializeDatabase`, so a superseded target is a CLOSED
+        // target.
+        const superseded = latestDatabase !== null && latestDatabase !== target;
+        // THE publish, and the only one in the lifecycle. Two conditions, both
+        // load-bearing: the schema is actually in place (a handle whose migrations never
+        // ran hands every consumer a database with no tables), and this connection is
+        // still the live one. Publishing a superseded target is #5292's exact symptom —
+        // `Access to closed resource` on every local read — reintroduced by #5292's own
+        // fix, because neither exit below retracted it (#5366). Keeping it here rather
+        // than inside `attemptInitialization` means no return path can leave a closed
+        // connection published: there is only one place that could have published it.
+        if (!superseded) setDatabaseHandle(target);
+        // The remount was handed this (about to resolve) promise and nothing else will
+        // initialize its connection, so retarget here instead of returning and leaving
+        // offline storage dead for the session. Spends a superseded refund, not retry
+        // budget: no lock was contended, the file is simply behind a newer connection.
+        if (superseded && supersededRestarts < MAX_SUPERSEDED_RESTARTS) {
           markStartup('sqlite.recovery.start');
           supersededRestarts += 1;
           continue;
@@ -306,6 +342,21 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
         // a connection `SQLiteProvider` had since closed. Nothing awaits between here
         // and the `return`, so no mount can slip in after the clear and be stranded.
         activeInitialization = null;
+        if (superseded) {
+          // Out of refunds with the live connection never initialized: a remount loop
+          // outran the chain. Offline storage is off for the session — nothing is
+          // published, `isSchemaReady()` is false — and only another mount can restart
+          // it, so it has to be visible. Falling through to the success path published
+          // the closed connection as ready and reported nothing at all (#5366).
+          if (attempts > 1) markStartup('sqlite.recovery.end', 'error');
+          retractSupersededHandle();
+          reportSupersededExhaustion({
+            attempts,
+            elapsedMs: Date.now() - startedAt,
+            restarts: supersededRestarts,
+          });
+          return;
+        }
         if (attempts > 1) markStartup('sqlite.recovery.end', 'ready');
         // Only a chain that survived a GENUINE lock failure recovered from
         // contention. A chain whose only failure was against a superseded (closed)
@@ -390,6 +441,10 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
             extra: { attempts, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt },
           });
         }
+        // Last thing before the chain stops, and after the awaited read-back above, so
+        // a remount landing during it is accounted for: nothing that survives this
+        // return may point at a connection `SQLiteProvider` has closed (#5366).
+        retractSupersededHandle();
         return;
       }
 
@@ -422,6 +477,27 @@ function reportInitRecovered(properties: {
   if (hasReportedRecovery) return;
   hasReportedRecovery = true;
   track(SHARED_EVENTS.OfflineSqliteInitRecovered, properties);
+}
+
+/**
+ * Report a chain that ran out of superseded-connection refunds without ever reaching
+ * the live database.
+ *
+ * The outcome is the same dead offline storage a give-up leaves — no handle, no schema
+ * readiness, every local read on the network path — so it needs the same visibility.
+ * Until #5366 this exit reported nothing at all: it fell through to the success path,
+ * published the closed connection, and looked from telemetry like a clean launch.
+ *
+ * Deliberately NOT `kind: 'sqlite-init'`. That aggregate is the lock-contention signal
+ * #4314 reads to decide whether the lock problem is fixed, and there is no lock in
+ * this failure — it is a remount loop outrunning one chain, and mixing the two is what
+ * made the closed-handle artefacts unreadable in the first place.
+ */
+function reportSupersededExhaustion(details: { attempts: number; elapsedMs: number; restarts: number }): void {
+  reportError(new Error('SQLite init ran out of superseded-connection restarts'), {
+    tags: { source: 'offline-sync', kind: 'sqlite-init-superseded' },
+    extra: details,
+  });
 }
 
 /**

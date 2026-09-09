@@ -13,14 +13,21 @@ function handleDatabaseError(error: Error): void {
  * Renders nothing; exists to hang the handle retraction off `SQLiteProvider`'s own
  * lifecycle.
  *
- * The provider's effect teardown closes the connection (expo-sqlite
- * `build/hooks.js`), and it does so asynchronously — `await db.closeAsync()`, started
- * from the cleanup. Every cleanup in the torn-down subtree runs in that same
- * synchronous commit, so retracting from here lands before the close itself does,
- * whichever order React visits them in. Without it the window between the close and
- * the replacement connection's migrations belongs to whoever reads
- * `getDatabaseHandle()` — the sync scheduler and mutation drainer, neither of which is
- * inside React and neither of which can see the provider remount (#5292).
+ * It does NOT beat the close. `SQLiteProvider`'s cleanup calls `teardown(db)`
+ * synchronously and `await db?.closeAsync()` is its first statement (expo-sqlite
+ * `build/hooks.js`), so the close is ENTERED from the parent's cleanup — and React
+ * runs the parent's cleanup before this child's. By the time the retraction runs, the
+ * connection is already closing. Queries that were already in flight are narrowed by
+ * nothing here: what keeps them off freed memory is the process-lifetime reference
+ * `initializeAndRetainDatabase` takes below (#5300), not this ordering.
+ *
+ * What it buys is the window AFTER the unmount commit: every reader that starts from
+ * then on gets null and falls back to the network instead of a closed connection that
+ * throws `Access to closed resource` (~249 users/30d, #5292). That is the sync
+ * scheduler on its interval and the mutation drainer on its listener — neither is
+ * inside React, so neither can see the provider go away. `initializeDatabase` covers
+ * the remount case as soon as the replacement connection's `onInit` runs; this covers
+ * the gap until then, and the plain unmount where no replacement is coming at all.
  *
  * Mounted as a sibling of `children` rather than wrapping them: it must not add a
  * component boundary to the tree every screen renders under.

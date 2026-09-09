@@ -4,7 +4,8 @@
 // connection to the sync scheduler and mutation drainer, neither of which is inside
 // React and neither of which can see a remount. Driven through the provider's own
 // lifecycle rather than by calling the retraction directly, because what has to hold
-// is an ordering: the handle is gone by the time the close lands.
+// is an ordering: the handle is gone by the time the unmount commit returns — NOT by
+// the time the close lands, which the fake used to pretend (#5366).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 
@@ -41,8 +42,9 @@ const sqlite = vi.hoisted(() => ({
   // A distinct object per mount, exactly like `openDatabaseAsync` — the identity is
   // what the retraction checks.
   openConnection: (): unknown => ({ connection: 'unset' }),
-  // What `getDatabaseHandle()` returned at the moment the provider closed a
-  // connection. Null means the retraction won the race, which is the point.
+  // What `getDatabaseHandle()` returned at the instant the provider entered
+  // `closeAsync()` — recorded synchronously, because that is when the real teardown
+  // enters it.
   closes: [] as { database: unknown; handleAtClose: unknown }[],
   readHandle: (): unknown => null,
 }));
@@ -71,14 +73,13 @@ vi.mock('expo-sqlite', async () => {
         databaseRef.current = null;
         setOpened(false);
         if (database === null) return;
-        // expo-sqlite's teardown is `async function teardown(db) { await
-        // db.closeAsync(); }` — started from the cleanup, settled a microtask later.
-        // Recording the handle at THAT point is the assertion that matters: whatever
-        // order React runs the cleanups in, no reader may still be holding this
-        // connection once it is actually closed.
-        void Promise.resolve().then(() => {
-          sqlite.closes.push({ database, handleAtClose: sqlite.readHandle() });
-        });
+        // Verbatim shape of `SQLiteProviderNonSuspense`'s cleanup: `teardown(db)` is
+        // called SYNCHRONOUSLY and `await db?.closeAsync()` is its first statement, so
+        // the close is entered here, not a microtask later. Record the handle at that
+        // instant — deferring the read through `Promise.resolve().then()` (what this
+        // fake used to do) hides the real ordering and manufactures a retraction that
+        // appears to beat the close (#5366).
+        sqlite.closes.push({ database, handleAtClose: sqlite.readHandle() });
       };
     }, [onInit]);
 
@@ -116,7 +117,7 @@ beforeEach(() => {
 });
 
 describe('DatabaseProvider', () => {
-  it('retracts the handle before the connection is closed', async () => {
+  it('retracts the handle in the same unmount commit that closes the connection', async () => {
     const view = render(
       <DatabaseProvider>
         <div data-testid="child" />
@@ -130,13 +131,18 @@ describe('DatabaseProvider', () => {
 
     view.unmount();
 
+    // What the retraction actually buys, and the whole of it: once the unmount commit
+    // has returned, every reader that starts from here on gets null and falls back to
+    // the network. Without <DatabaseHandleLifecycle /> the sync scheduler and the
+    // mutation drainer — neither inside React — go on holding a closed connection and
+    // throw `Access to closed resource` (#5292).
     expect(getDatabaseHandle()).toBeNull();
     expect(isSchemaReady()).toBe(false);
-    // The provider really did close the connection it had published, and by the time
-    // that close landed the handle no longer pointed at it. Without the retraction a
-    // reader here gets a connection that throws `Access to closed resource`.
-    await waitFor(() => {
-      expect(sqlite.closes).toEqual([{ database: published, handleAtClose: null }]);
-    });
+
+    // What it does NOT buy, pinned so the ordering stays honest: the parent's cleanup
+    // runs first and enters `closeAsync()` while the handle still points at this very
+    // connection. Queries already in flight are narrowed by the retraction not at all —
+    // the process-lifetime reference (#5300) is what carries them.
+    expect(sqlite.closes).toEqual([{ database: published, handleAtClose: published }]);
   });
 });

@@ -843,4 +843,140 @@ describe('initializeDatabase lock contention (#4104)', () => {
     expect(getDatabaseHandle()).toBeNull();
     expect(isSchemaReady()).toBe(false);
   });
+
+  // #5366: the retarget path the fix above introduced published the connection it was
+  // retargeting AWAY from. `SQLiteProvider` closes a connection before the replacement
+  // reaches `initializeDatabase`, so a superseded target is a closed one — and every
+  // reader that took it got `Access to closed resource`, which is #5292's own symptom
+  // list (offline search, climb detail, local ticks) reintroduced by #5292's fix.
+  it('never serves the closed connection while it retargets onto the replacement', async () => {
+    vi.useFakeTimers();
+    // The replacement is lock-contended and never comes good, so the retarget spends
+    // the whole ladder — the window a reader lives in.
+    const handlesSeenDuringRetarget: unknown[] = [];
+    const second = createContendedDatabase({
+      onExec: () => {
+        handlesSeenDuringRetarget.push(getDatabaseHandle());
+      },
+    });
+
+    let remounted = false;
+    // The remount lands mid-attempt, so this connection is torn down and closed the
+    // moment its own setup succeeds.
+    const first = createContendedDatabase({
+      onExec: (source) => {
+        if (remounted || !/pending_mutations/i.test(source)) return;
+        remounted = true;
+        void initializeDatabase(second.db);
+      },
+    });
+    first.unlock();
+
+    await initializeDatabase(first.db);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    // The retarget really did run, and not one of its statements ran while a reader
+    // could have been handed the connection SQLiteProvider had already closed.
+    expect(handlesSeenDuringRetarget.length).toBeGreaterThan(0);
+    expect(handlesSeenDuringRetarget.every((handle) => handle === null)).toBe(true);
+
+    // ...and the chain that gave up on the replacement leaves nothing published, so a
+    // reader arriving after it falls back to the network instead of throwing.
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+    // The give-up is reported as the ordinary lock failure it is — the closed
+    // connection never reaches Sentry as a sqlite-init artefact.
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    const [, context] = reportErrorMock.mock.calls[0];
+    expect(context.tags).toMatchObject({ kind: 'sqlite-init', sqlite_code: 5 });
+  });
+
+  // #5366: the other half. Once the refunds run out the guard used to fall through to
+  // the SUCCESS path, publishing the superseded connection as ready with no report at
+  // all — the same dead storage as a give-up, and less diagnosable than the bug #5336
+  // fixed.
+  it('reports rather than publishes when the superseded restarts run out', async () => {
+    // Five mounts, each superseding the one before mid-attempt: four refunds are
+    // asked for and only three exist.
+    const live = createContendedDatabase();
+    live.unlock();
+    const supersedingChain = [live];
+    for (let index = 0; index < 4; index += 1) {
+      const next = supersedingChain[0];
+      let remounted = false;
+      const earlier = createContendedDatabase({
+        onExec: (source) => {
+          if (remounted || !/pending_mutations/i.test(source)) return;
+          remounted = true;
+          void initializeDatabase(next.db);
+        },
+      });
+      earlier.unlock();
+      supersedingChain.unshift(earlier);
+    }
+
+    await initializeDatabase(supersedingChain[0].db);
+    await vi.waitFor(() => {
+      expect(reportErrorMock).toHaveBeenCalled();
+    });
+
+    // Nothing published: every connection this chain prepared was closed behind it,
+    // and the live one was never reached.
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    const [, context] = reportErrorMock.mock.calls[0];
+    // Its own kind: there was no lock here, and #4314 reads `sqlite-init` to decide
+    // whether the lock problem is fixed.
+    expect(context.tags).toMatchObject({ source: 'offline-sync', kind: 'sqlite-init-superseded' });
+    expect(context.extra).toMatchObject({ attempts: 4, restarts: 3 });
+    // Outrunning a remount loop is not recovering from contention.
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  // The readiness store is what `useSQLiteContext()` consumers gate their writes on,
+  // and they cannot see the handle at all. A null handle that still reads ready is the
+  // shape #5366 produced: `schemaReady: true` with every query throwing.
+  it('keeps schema readiness false for as long as the handle is null', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+
+    // Still null after the whole window is spent, and still not ready.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+
+    // ...and it only turns true against a handle a later mount actually publishes.
+    const healthy = createContendedDatabase();
+    healthy.unlock();
+    await initializeDatabase(healthy.db);
+    expect(getDatabaseHandle()).toBe(healthy.db);
+    expect(isSchemaReady()).toBe(true);
+  });
+
+  // The exit invariant behind the publish gate: a chain that stops must not leave a
+  // superseded connection published, whoever published it. Driven through the exported
+  // setter — the same seam the teardown test above uses — because with the single
+  // gated publish nothing inside the lifecycle can reach this state any more, and that
+  // is exactly the property a future second publish site would break.
+  it('retracts a superseded handle on the way out of a give-up', async () => {
+    vi.useFakeTimers();
+    const contended = createContendedDatabase();
+    const stale = createContendedDatabase();
+
+    await initializeDatabase(contended.db);
+
+    // Published behind the chain's back, against a connection that is not the live one.
+    setDatabaseHandle(stale.db);
+    expect(getDatabaseHandle()).toBe(stale.db);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(getDatabaseHandle()).toBeNull();
+    expect(isSchemaReady()).toBe(false);
+  });
 });
