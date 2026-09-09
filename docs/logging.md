@@ -72,6 +72,19 @@ Two small helpers keep the direct-capture paths from double-reporting and from l
 - **`utils/sentry-dedupe.ts`** — a resolver that captures a failure itself (e.g. `updateProfile`, `createSession`) calls `markErrorReported(err)`; the generic `graphql/yoga.ts` handler checks `wasErrorReported(err)` (which also inspects a `GraphQLError`'s `originalError`) and skips its own capture, so one failure yields one Sentry event. If you see a backend error reported exactly once with rich tags, that's this marker at work.
 - **`graphql/mask-error.ts`** — in prod-like environments `graphql/yoga.ts` installs a targeted `maskError`. It sanitizes **only** raw database errors (drizzle's `Failed query: …` wrapper, or anything with a PostgresError code on its cause chain) into a generic `GraphQLError`, captures the real cause to Sentry (deduped as above), and passes every other error through unchanged. Global masking stays off so intentional `throw new Error(message)` resolver copy still reaches clients.
 
+#### Why masked DB errors carry an explicit fingerprint
+
+Every error the mask reports is a `PostgresError` raised from the same two frames inside `postgres.js`, so Sentry's default grouping — exception type plus stack — put **all** of them in one issue. That bucket (`BOARDSESH-AK`) held 34 distinct `(pgCode, resolver)` pairs when it was measured over 90 days: 585 events of `53100` (disk-full) next to 6 of `42703` (undefined column).
+
+A mixed bucket does not just read badly, it reports every cause's impact as every other cause's impact. Sentry titles an issue from whichever sample event it picks, so this one was titled from a `42703` sample and triaged as **issue #4737: "presence_seq column missing, 32 users, P2"**. The 32 users were the disk-full failures; the six `42703` events were a single developer's local backend leaking as `environment: production`. Nothing was wrong with `presence_seq` in production.
+
+So `maskDatabaseError` sets `fingerprint: databaseErrorFingerprint(pgCode, graphqlPath)` — `['graphql-yoga-mask', <SQLSTATE or driver code>, <resolver path>]`. Two rules make it work, and both have tests in `mask-error.test.ts`:
+
+- **The message is excluded.** It carries per-event noise (`could not resize shared memory segment "/PostgreSQL.523119486" to 1048576 bytes` differs every time), so grouping on it would replace one giant issue with thousands of singletons.
+- **List indices are stripped** from the path, because `userTicks.3.climb` names one row rather than one failure mode and the index is unbounded. The `graphqlPath` **tag** keeps its indices — as a tag it is a search key for the bad row; only the fingerprint needs the normalised shape.
+
+Adding or changing this fingerprint splits existing issues: old events keep their grouping and new events land in fresh, per-cause issues. That is the intended one-off cost.
+
 ## Out of scope
 
 - A request-id propagation layer is a separate concern (separate issue).

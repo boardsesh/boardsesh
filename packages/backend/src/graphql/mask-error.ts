@@ -69,6 +69,41 @@ function getFailedQuery(error: unknown): string | undefined {
   return undefined;
 }
 
+// A numeric segment in a GraphQL error path is a list index ("userTicks.3.climb").
+// It names one row, not one failure mode, and it is unbounded — putting it in a
+// grouping key mints a fresh Sentry issue per array position.
+const LIST_INDEX_SEGMENT = /^\d+$/;
+
+/**
+ * The Sentry grouping key for a masked database failure: the SQLSTATE (or driver
+ * code) plus the resolver it came from, with list indices normalised away.
+ *
+ * Sentry's default grouping fingerprints on the captured exception's type and
+ * stack. Every error here is a `PostgresError` thrown from the same two frames
+ * inside postgres.js, so the default collapses *every* database failure in the
+ * service into one issue — BOARDSESH-AK, which by 2026-09 pooled 34 distinct
+ * (code, resolver) pairs behind whichever sample event Sentry chose as the title.
+ * That is not merely untidy: issue #4737 was filed as a P2 "presence_seq column
+ * missing, 32 users" against a bucket whose 32 users were really 53100 disk-full
+ * failures, while the six 42703 events that supplied the title came from one
+ * developer's local backend. A bucket that mixes causes reports every cause's
+ * impact as every other cause's impact.
+ *
+ * The message is deliberately excluded. It carries per-event noise — the shared
+ * memory segment id and byte count in `could not resize shared memory segment
+ * "/PostgreSQL.523119486" to 1048576 bytes` differ on every occurrence — and
+ * grouping on it would replace one giant issue with thousands of singletons.
+ * Code plus resolver is stable across occurrences and distinct across causes,
+ * which is exactly what a fingerprint has to be.
+ */
+export function databaseErrorFingerprint(pgCode: string | undefined, graphqlPath: string | undefined): string[] {
+  const resolverPath = (graphqlPath ?? '')
+    .split('.')
+    .filter((segment) => segment.length > 0 && !LIST_INDEX_SEGMENT.test(segment))
+    .join('.');
+  return ['graphql-yoga-mask', pgCode ?? 'unknown', resolverPath || 'unknown'];
+}
+
 function unwrapCause(error: unknown): unknown {
   const original = getOriginalError(error) ?? error;
   if (original instanceof Error && original.cause !== undefined && original.cause !== null) {
@@ -133,21 +168,25 @@ export function maskDatabaseError(error: unknown): Error {
     // so the response status below can tell an outage from a bad statement.
     const pgCode = getPostgresErrorCode(getOriginalError(error) ?? error);
     if (!wasErrorReported(error)) {
-      // We still capture the unwrapped driver error, so Sentry's fingerprint (and
-      // therefore the existing issue's history) is unchanged — tags and extra do
-      // not affect grouping. But reporting the cause alone is what made
-      // BOARDSESH-AK an anonymous bucket that every resolver's DB failures fell
-      // into, with no way to tell which query blew up (#4105). Attach the field
-      // path and the SQL as event context. This is server-side only; the client
+      // We still capture the unwrapped driver error so the event carries the real
+      // pg cause. #4105 attached the field path and the SQL as context, which made
+      // an individual event readable but left grouping alone — and tags and extra
+      // do not affect grouping, so every resolver's DB failures stayed in one
+      // anonymous bucket. `fingerprint` is the half that was missing (#4737): it
+      // splits that bucket by cause, so an issue's title and its impact count
+      // finally describe the same failure. This is server-side only; the client
       // still gets the generic message below, so #3183's info-leak fix holds.
       const graphqlPath = getGraphqlPath(error);
       const failedQuery = getFailedQuery(error);
       Sentry.captureException(unwrapCause(error), {
+        // The raw path keeps its list indices here: as a tag it is a search key
+        // for one bad row, and only the fingerprint needs the normalised shape.
         tags: {
           source: 'graphql-yoga-mask',
           pgCode: pgCode ?? 'unknown',
           ...(graphqlPath ? { graphqlPath } : {}),
         },
+        fingerprint: databaseErrorFingerprint(pgCode, graphqlPath),
         ...(failedQuery ? { extra: { failedQuery } } : {}),
       });
       markErrorReported(error);
