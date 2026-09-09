@@ -1032,3 +1032,83 @@ if url.scheme == "file" {
     expect(result.errors[0]).toContain('hasAbsoluteFilePath');
   });
 });
+
+describe('the shipped react-native SchedulerDelegate rules', () => {
+  const defaultsRule = REAL_RULES.find(
+    (rule) =>
+      rule.package === 'react-native' &&
+      rule.file === 'ReactCommon/react/featureflags/ReactNativeFeatureFlagsDefaults.h',
+  );
+  const schedulerRule = REAL_RULES.find(
+    (rule) => rule.package === 'react-native' && rule.file === 'ReactCommon/react/renderer/scheduler/Scheduler.cpp',
+  );
+
+  it('keeps the flag flip keyed to the pinned react-native version', () => {
+    expect(defaultsRule, 'the #5293 defaults-header rule must stay registered').toBeDefined();
+
+    const mobilePackageJson = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../../packages/mobile/package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string> };
+    const pinnedVersion = mobilePackageJson.dependencies?.['react-native'];
+
+    expect(pinnedVersion, 'react-native must stay a direct packages/mobile dependency').toBeDefined();
+    expect(versionFromKey(defaultsRule?.patchedKey ?? '')).toBe(pinnedVersion);
+    expect(versionFromKey(schedulerRule?.patchedKey ?? '')).toBe(pinnedVersion);
+  });
+
+  // The whole fix is one word. Asserting only the `boardsesh#5293` marker would
+  // pass on a patch that re-applied the comment and lost `return true`, which is
+  // exactly what a hand-fixed conflict during a react-native bump produces.
+  it('rejects the upstream default that leaves the delegate guard off', () => {
+    if (!defaultsRule) throw new Error('no react-native defaults rule registered');
+
+    const commentedButUnflippedHeader = `
+  // boardsesh/boardsesh#5293 - flipped ON.
+  // ... explanation of the use-after-free ...
+  bool enableSchedulerDelegateInvalidation() override {
+    return false;
+  }
+`;
+    const env = makeEnv({
+      patchedDependencies: { [defaultsRule.patchedKey]: 'patches/react-native@0.86.3.patch' },
+      versions: { [defaultsRule.package]: versionFromKey(defaultsRule.patchedKey) },
+      files: { [`${defaultsRule.package}::${defaultsRule.file}`]: commentedButUnflippedHeader },
+    });
+
+    const result = checkPatchesApplied([defaultsRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('enableSchedulerDelegateInvalidation');
+  });
+
+  // react/react-native#58138 deleted the flag AND the guard it gates. A bump that
+  // lands that commit while the defaults header still accepts the patch would
+  // leave every check green and the fix dead, so the guard's own shape is pinned.
+  it('rejects a react-native whose Scheduler.cpp dropped the invalidation token', () => {
+    if (!schedulerRule) throw new Error('no react-native Scheduler.cpp rule registered');
+
+    const postRemovalScheduler = `
+void Scheduler::setDelegate(SchedulerDelegate* delegate) {
+  delegate_ = delegate;
+}
+
+runtimeScheduler_->scheduleRenderingUpdate(
+    surfaceId,
+    [delegate = delegate_, mountingCoordinator = std::move(mountingCoordinator)]() {
+      delegate->schedulerShouldRenderTransactions(mountingCoordinator);
+    });
+`;
+    const env = makeEnv({
+      patchedDependencies: { [schedulerRule.patchedKey]: 'patches/react-native@0.86.3.patch' },
+      versions: { [schedulerRule.package]: versionFromKey(schedulerRule.patchedKey) },
+      files: { [`${schedulerRule.package}::${schedulerRule.file}`]: postRemovalScheduler },
+    });
+
+    const result = checkPatchesApplied([schedulerRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('delegateInvalidated_');
+  });
+});
