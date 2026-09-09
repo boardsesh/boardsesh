@@ -1576,6 +1576,13 @@
       "when": 1788901485567,
       "tag": "0224_dashing_whistler",
       "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1788902139797,
+      "tag": "0225_favorites_key_by_climb_uuid",
+      "breakpoints": true
     }
   ]
 }

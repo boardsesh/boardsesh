@@ -125,7 +125,7 @@ describe('syncFavorites — document shape + composite-cursor pagination', () =>
 });
 
 describe('syncDeletions — record_id encoding', () => {
-  it('encodes user_favorites deletions as board_name:climb_uuid:angle with the user id', async () => {
+  it('keeps composite favorite deletion IDs readable by older clients', async () => {
     await db.execute(sql`
       INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle, created_at, updated_at)
       VALUES (${USER_ID}, 'tension', 'del-fav-climb', 25, now(), now())
@@ -138,6 +138,7 @@ describe('syncDeletions — record_id encoding', () => {
 
     const favDeletion = result.deletions.find((d) => d.tableName === 'user_favorites');
     expect(favDeletion).toBeDefined();
+    // Old clients require three parts; the new UUID-keyed reader extracts UUID.
     expect(favDeletion?.recordId).toBe('tension:del-fav-climb:25');
     expect(typeof favDeletion?.deletedAt).toBe('string');
   });

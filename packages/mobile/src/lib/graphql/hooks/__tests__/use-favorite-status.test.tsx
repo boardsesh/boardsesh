@@ -9,8 +9,8 @@ import { GET_FAVORITES } from '@boardsesh/graphql/operations/favorites';
 // so it never reflected real favorite status and a single tap on an already-
 // favorited climb silently un-favorited it. useFavoriteStatus is the server-truth
 // seam the drawer now reads. These tests pin: it reports the real favorite state
-// keyed on (boardName, climbUuid, angle), stays disabled while the sheet is closed
-// or before a climb is selected, and a toggle busts its cache.
+// keyed on climbUuid alone (board- and angle-independent), stays disabled while
+// the sheet is closed or before a climb is selected, and a toggle busts its cache.
 
 const requestMock = vi.fn();
 vi.mock('../../client', () => ({
@@ -80,18 +80,16 @@ describe('useFavoriteStatus', () => {
     requestMock.mockResolvedValue({ favorites: ['climb-1'] });
     const { Wrapper } = makeWrapper();
 
-    const { result } = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40, { enabled: true }), {
+    const { result } = renderHook(() => useFavoriteStatus('climb-1', { enabled: true }), {
       wrapper: Wrapper,
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toBe(true);
-    // The query keys the favorite on the supplied angle (favorites are per-angle
-    // on the backend).
+    // Nothing board- or angle-shaped goes over the wire: the backend keys a
+    // favorite on (userId, climbUuid).
     expect(requestMock).toHaveBeenCalledWith(GET_FAVORITES, {
-      boardName: 'kilter',
       climbUuids: ['climb-1'],
-      angle: 40,
     });
   });
 
@@ -99,7 +97,7 @@ describe('useFavoriteStatus', () => {
     requestMock.mockResolvedValue({ favorites: [] });
     const { Wrapper } = makeWrapper();
 
-    const { result } = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40, { enabled: true }), {
+    const { result } = renderHook(() => useFavoriteStatus('climb-1', { enabled: true }), {
       wrapper: Wrapper,
     });
 
@@ -111,7 +109,7 @@ describe('useFavoriteStatus', () => {
     requestMock.mockResolvedValue({ favorites: ['climb-1'] });
     const { Wrapper } = makeWrapper();
 
-    renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40, { enabled: false }), { wrapper: Wrapper });
+    renderHook(() => useFavoriteStatus('climb-1', { enabled: false }), { wrapper: Wrapper });
 
     // Give React Query a tick; nothing should fire while disabled.
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -126,7 +124,7 @@ describe('useFavoriteStatus', () => {
     requestMock.mockResolvedValue({ favorites: ['climb-1'] });
     const { Wrapper } = makeWrapper();
 
-    renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40, { enabled: true }), { wrapper: Wrapper });
+    renderHook(() => useFavoriteStatus('climb-1', { enabled: true }), { wrapper: Wrapper });
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requestMock).not.toHaveBeenCalled();
@@ -138,7 +136,7 @@ describe('useFavoriteStatus', () => {
     requestMock.mockResolvedValue({ favorites: ['climb-1'] });
     const { Wrapper } = makeWrapper();
 
-    const { result } = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40, { enabled: true }), {
+    const { result } = renderHook(() => useFavoriteStatus('climb-1', { enabled: true }), {
       wrapper: Wrapper,
     });
 
@@ -150,7 +148,7 @@ describe('useFavoriteStatus', () => {
     requestMock.mockResolvedValue({ favorites: [] });
     const { Wrapper } = makeWrapper();
 
-    renderHook(() => useFavoriteStatus('kilter', null, 40, { enabled: true }), { wrapper: Wrapper });
+    renderHook(() => useFavoriteStatus(null, { enabled: true }), { wrapper: Wrapper });
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requestMock).not.toHaveBeenCalled();
@@ -165,7 +163,7 @@ describe('useToggleFavorite', () => {
     const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
 
     const response = await result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
     });
 
     // A toggle on an already-favorited climb returns favorited:false — the heart
@@ -178,7 +176,7 @@ describe('useToggleFavorite', () => {
     const { queryClient, Wrapper } = makeWrapper();
 
     // Seed a favorite-status query so we can observe its invalidation.
-    const statusHook = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40, { enabled: true }), {
+    const statusHook = renderHook(() => useFavoriteStatus('climb-1', { enabled: true }), {
       wrapper: Wrapper,
     });
     await waitFor(() => expect(statusHook.result.current.isSuccess).toBe(true));
@@ -188,11 +186,11 @@ describe('useToggleFavorite', () => {
     requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: false } });
     const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
     await toggleHook.result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ['favoriteStatus', 'kilter', 'climb-1', 40],
+      queryKey: ['favoriteStatus', 'climb-1'],
     });
   });
 
@@ -204,7 +202,7 @@ describe('useToggleFavorite', () => {
 
     const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
     await result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
       currentlyFavorited: false,
     });
 
@@ -219,7 +217,7 @@ describe('useToggleFavorite', () => {
 
     const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
     await result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
       currentlyFavorited: false,
     });
 
@@ -233,7 +231,7 @@ describe('useToggleFavorite', () => {
     const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
     await expect(
       result.current.mutateAsync({
-        input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+        input: { climbUuid: 'climb-1' },
         currentlyFavorited: false,
       }),
     ).rejects.toThrow('offline');
@@ -241,9 +239,8 @@ describe('useToggleFavorite', () => {
     expect(favoritesStore.getIsFavorited('climb-1')).toBe(false);
   });
 
-  // The store is a singleton scoped to one board+angle+user. A toggle that
-  // resolves after the user switched angles must not paint its result onto the
-  // list now showing a different angle.
+  // The store belongs to one user. A toggle resolving after an account switch
+  // must not write the previous user's heart into the new account.
   it('drops its store write when the favourite context changed while in flight', async () => {
     let resolveToggle: (value: { toggleFavorite: { favorited: boolean } }) => void = () => {};
     requestMock.mockImplementationOnce(
@@ -256,7 +253,7 @@ describe('useToggleFavorite', () => {
     const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
 
     const pending = result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
       currentlyFavorited: false,
     });
     // Let onMutate run (React Query awaits it) so the request is actually in
@@ -264,8 +261,8 @@ describe('useToggleFavorite', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(favoritesStore.getIsFavorited('climb-1')).toBe(true);
 
-    // The list re-scopes to another angle, clearing the store.
-    favoritesStore.applyContext('kilter:25:1');
+    // The list re-scopes to another user, clearing the store.
+    favoritesStore.applyContext('another-user:1');
     resolveToggle({ toggleFavorite: { favorited: true } });
     await pending;
 
@@ -291,7 +288,7 @@ describe('useToggleFavorite', () => {
     requestMock.mockRejectedValueOnce(new Error('second failed'));
 
     const first = result.current.mutateAsync({
-      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      input: { climbUuid: 'climb-1' },
       currentlyFavorited: false,
     });
     first.catch(() => {});
@@ -299,7 +296,7 @@ describe('useToggleFavorite', () => {
 
     await expect(
       result.current.mutateAsync({
-        input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+        input: { climbUuid: 'climb-1' },
         currentlyFavorited: true,
       }),
     ).rejects.toThrow('second failed');

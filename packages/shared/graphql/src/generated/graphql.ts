@@ -9202,9 +9202,7 @@ export type CreateSessionMutation = {
 };
 
 export type FavoritesQueryVariables = Exact<{
-  boardName: Scalars['String']['input'];
   climbUuids: Array<Scalars['String']['input']> | Scalars['String']['input'];
-  angle: Scalars['Int']['input'];
 }>;
 
 export type FavoritesQuery = { __typename?: 'Query'; favorites: Array<string> };
@@ -12955,11 +12953,6 @@ export const FavoritesDocument = {
       variableDefinitions: [
         {
           kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardName' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
-        },
-        {
-          kind: 'VariableDefinition',
           variable: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuids' } },
           type: {
             kind: 'NonNullType',
@@ -12968,11 +12961,6 @@ export const FavoritesDocument = {
               type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
             },
           },
-        },
-        {
-          kind: 'VariableDefinition',
-          variable: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
-          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
         },
       ],
       selectionSet: {
@@ -12984,18 +12972,8 @@ export const FavoritesDocument = {
             arguments: [
               {
                 kind: 'Argument',
-                name: { kind: 'Name', value: 'boardName' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardName' } },
-              },
-              {
-                kind: 'Argument',
                 name: { kind: 'Name', value: 'climbUuids' },
                 value: { kind: 'Variable', name: { kind: 'Name', value: 'climbUuids' } },
-              },
-              {
-                kind: 'Argument',
-                name: { kind: 'Name', value: 'angle' },
-                value: { kind: 'Variable', name: { kind: 'Name', value: 'angle' } },
               },
             ],
           },

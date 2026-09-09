@@ -12,8 +12,7 @@ const CHUNK_SIZE = 500;
 
 type UseClimbListFavoritesArgs = {
   boardName: string;
-  // Favourites are keyed by (userId, boardName, climbUuid, angle) on the backend,
-  // so the same climb can be favourited at 40° and not at 25°.
+  // Retained for existing list callers; favorites follow the climb UUID.
   angle: number;
   // Must be a referentially-stable array (memoize at the call site) — the effect
   // depends on it, so a fresh array every render would refetch every render.
@@ -29,11 +28,11 @@ type UseClimbListFavoritesArgs = {
  *
  * No-op while signed out (`favorites` returns an empty list for an anonymous
  * reader anyway). Dedupes via a ref so each climb is requested once; hands the
- * board/angle/auth context to the store, which clears itself when it flips so
- * one board's hearts can't paint another's rows. Deferred past the active fling
+ * account context to the store, which clears itself when the user changes.
+ * Hearts survive board and angle switches. Deferred past the active fling
  * via `runAfterInteractions`, mirroring the logbook and playlist-tag fetches.
  */
-export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimbListFavoritesArgs): void {
+export function useClimbListFavorites({ climbUuids }: UseClimbListFavoritesArgs): void {
   const { isAuthenticated } = useAuth();
   // Keyed on WHOSE favourites these are, not just whether someone is signed in.
   // On a shared device an account switch that never renders a signed-out state
@@ -44,21 +43,23 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
   const { userId, isLoading: isUserIdLoading } = useStoredUserId(isAuthenticated);
 
   const fetchedRef = useRef<Set<string>>(new Set());
-  const contextKey = `${userId ?? 'anonymous'}:${boardName}:${angle}:${isAuthenticated ? 1 : 0}`;
+  const contextKey = `${userId ?? 'anonymous'}:${isAuthenticated ? 1 : 0}`;
 
   // Reset before any fetch when the context changes. Runs in the same render
   // pass via the effect ordering below (this effect is declared first). The
   // store owns the "which context is this data for" check, so it still fires
-  // for a board or angle change that happened while the list was unmounted.
+  // for an account change that happened while the list was unmounted.
   useEffect(() => {
-    if (!favoritesStore.applyContext(contextKey)) return;
+    favoritesStore.applyContext(contextKey);
+    // Each mounted list owns its fetched set. Another list may have already
+    // switched the shared store, but this list must also forget the old user.
     fetchedRef.current = new Set();
   }, [contextKey]);
 
   useEffect(() => {
     // Waiting out the id read costs nothing and saves a wasted round trip: the
     // key changes the moment it resolves, which would reset and refetch anyway.
-    if (!isAuthenticated || isUserIdLoading || !boardName || climbUuids.length === 0) return;
+    if (!isAuthenticated || isUserIdLoading || climbUuids.length === 0) return;
     const toFetch = climbUuids.filter((uuid) => !fetchedRef.current.has(uuid));
     if (toFetch.length === 0) return;
 
@@ -84,9 +85,7 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
           // in flight is recognisably newer than the answer coming back.
           const startedAtStamp = favoritesStore.getWriteStamp();
           const response = await getHttpClient().request<FavoritesQueryResponse>(GET_FAVORITES, {
-            boardName,
             climbUuids: chunk,
-            angle,
           });
           if (cancelled) return;
           // The query returns only the favourited subset; `mergeFavorites`
@@ -114,5 +113,5 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
       // list change happened to come along.
       releaseUnmerged();
     };
-  }, [isAuthenticated, isUserIdLoading, boardName, angle, climbUuids]);
+  }, [isAuthenticated, isUserIdLoading, contextKey, climbUuids]);
 }

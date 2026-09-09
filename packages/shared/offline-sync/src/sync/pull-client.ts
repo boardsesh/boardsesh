@@ -1116,9 +1116,14 @@ async function processDeletions(
           const guardParams = hasUpdatedAt ? [deletion.deletedAt] : [];
 
           if (pkColumns.length === 1) {
+            // Older servers and retained deletion history use board:uuid:angle
+            // for favorites. After the local re-key, address the UUID while
+            // keeping the timestamp guard so a later re-add survives.
+            const legacyFavoriteParts = deletion.tableName === 'user_favorites' ? deletion.recordId.split(':') : [];
+            const recordId = legacyFavoriteParts.length === 3 ? legacyFavoriteParts[1] : deletion.recordId;
             const deleteResult = await transaction.runAsync(
               `DELETE FROM ${deletion.tableName} WHERE ${pkColumns[0]} = ?${guardClause}`,
-              [deletion.recordId, ...guardParams],
+              [recordId, ...guardParams],
             );
             // Local cascade: the server's whole-playlist delete cascades
             // playlist_climbs in Postgres but deliberately emits NO child

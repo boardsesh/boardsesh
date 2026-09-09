@@ -50,9 +50,7 @@ describe('useClimbListFavorites', () => {
     expect(favoritesStore.getIsFavorited('a')).toBe(false);
     expect(favoritesStore.getIsFavorited('b')).toBe(true);
     expect(request).toHaveBeenCalledWith(expect.anything(), {
-      boardName: 'kilter',
       climbUuids: ['a', 'b'],
-      angle: 40,
     });
   });
 
@@ -89,32 +87,23 @@ describe('useClimbListFavorites', () => {
 
     expect(request).toHaveBeenCalledTimes(2);
     expect(request).toHaveBeenLastCalledWith(expect.anything(), {
-      boardName: 'kilter',
       climbUuids: ['b'],
-      angle: 40,
     });
   });
 
-  it('clears the store and refetches when the angle changes — favorites are per-angle', async () => {
+  it('keeps hearts and avoids refetching across board and angle changes', async () => {
     request.mockResolvedValue({ favorites: ['a'] });
-
+    const climbUuids = ['a'];
     const { rerender } = renderHook(
-      (props: { angle: number }) => useClimbListFavorites({ boardName: 'kilter', climbUuids: ['a'], ...props }),
-      { initialProps: { angle: 40 } },
+      (props: { boardName: string; angle: number }) => useClimbListFavorites({ climbUuids, ...props }),
+      { initialProps: { boardName: 'kilter', angle: 40 } },
     );
     await flush();
-    expect(favoritesStore.getIsFavorited('a')).toBe(true);
-
-    request.mockResolvedValue({ favorites: [] });
-    rerender({ angle: 25 });
+    rerender({ boardName: 'tension', angle: 25 });
     await flush();
 
-    expect(favoritesStore.getIsFavorited('a')).toBe(false);
-    expect(request).toHaveBeenLastCalledWith(expect.anything(), {
-      boardName: 'kilter',
-      climbUuids: ['a'],
-      angle: 25,
-    });
+    expect(favoritesStore.getIsFavorited('a')).toBe(true);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   // A shared device where the account switch never renders a signed-out state
@@ -133,6 +122,25 @@ describe('useClimbListFavorites', () => {
     await flush();
 
     expect(favoritesStore.getIsFavorited('a')).toBe(false);
+  });
+
+  it('refreshes every mounted list when the signed-in user changes', async () => {
+    const firstClimbs = ['first'];
+    const secondClimbs = ['second'];
+    request.mockResolvedValue({ favorites: [] });
+    const { rerender } = renderHook(() => {
+      useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids: firstClimbs });
+      useClimbListFavorites({ boardName: 'tension', angle: 25, climbUuids: secondClimbs });
+    });
+    await flush();
+    request.mockResolvedValue({ favorites: ['first', 'second'] });
+    storedUser.userId = 'user-b';
+    rerender();
+    await flush();
+
+    expect(request).toHaveBeenCalledTimes(4);
+    expect(favoritesStore.getIsFavorited('first')).toBe(true);
+    expect(favoritesStore.getIsFavorited('second')).toBe(true);
   });
 
   it('waits for the user id to resolve before fetching', async () => {

@@ -569,7 +569,8 @@ export function PlayDrawer({
     });
   }, [boardName, layoutId, sizeId, setIds]);
 
-  // Real favorite status for the heart, keyed on (boardName, climbUuid, angle).
+  // Real favorite status for the heart, keyed on climbUuid alone — the heart
+  // survives a board or angle switch.
   // Gated on the sheet being open so it doesn't fetch while the drawer is closed.
   // The displayed state is the local optimistic override when set, otherwise the
   // server's truth — so the heart reflects whether the climb is already a favorite
@@ -578,7 +579,7 @@ export function PlayDrawer({
   // `favorites` is `requireAuthenticated` on the backend, and the heart is hidden
   // anonymously anyway — arming it would fire a query that can only 401 on every
   // read-only open. The hook re-checks the session itself; this is the local half.
-  const { data: serverFavorited } = useFavoriteStatus(boardName, displayedClimb?.uuid ?? null, angle, {
+  const { data: serverFavorited } = useFavoriteStatus(displayedClimb?.uuid ?? null, {
     enabled: isSheetOpen && !isAnonymous,
   });
   const isFavorited = favoriteOverride ?? serverFavorited ?? false;
@@ -1417,11 +1418,7 @@ export function PlayDrawer({
     });
     toggleFavoriteMutate(
       {
-        input: {
-          boardName,
-          climbUuid: displayedClimb.uuid,
-          angle,
-        },
+        input: { climbUuid: displayedClimb.uuid },
         currentlyFavorited: isFavorited,
       },
       {
@@ -1442,7 +1439,7 @@ export function PlayDrawer({
         },
       },
     );
-  }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, angle, toggleFavoriteMutate, showToast, t]);
+  }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, toggleFavoriteMutate, showToast, t]);
 
   const handleLightbulbLongPress = useCallback(() => {
     if (!bluetooth?.isConnected) return;

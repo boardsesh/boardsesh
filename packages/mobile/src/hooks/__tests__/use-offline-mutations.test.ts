@@ -285,7 +285,7 @@ describe('enqueueTickOutboxOnly', () => {
 // the same way and reported nothing at all. They keep today's reject-and-revert
 // behaviour on a hard failure — only the retry (and the new event) are new.
 describe('retry ladder across every local write', () => {
-  const favorite = { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 };
+  const favorite = { climbUuid: 'climb-9' };
 
   it('addFavoriteLocal recovers and lands the same state as an uncontended run', async () => {
     await addFavoriteLocal(withFailingTransactions(db, 1, LOCK_MESSAGE), favorite);
@@ -354,30 +354,30 @@ describe('retry ladder across every local write', () => {
 });
 
 describe('addFavoriteLocal', () => {
-  it('inserts (board_name, climb_uuid, angle, ...) without a synthetic id and a deterministic key', async () => {
-    await addFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
+  it('inserts a row keyed by climb_uuid alone, with no synthetic id, and a deterministic key', async () => {
+    await addFavoriteLocal(db, { climbUuid: 'climb-9' });
 
-    const favorite = await db.getFirstAsync<Row>(
-      'SELECT * FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?',
-      ['kilter', 'climb-9', 40],
-    );
+    const favorite = await db.getFirstAsync<Row>('SELECT * FROM user_favorites WHERE climb_uuid = ?', ['climb-9']);
     expect(favorite).not.toBeNull();
     expect(favorite?.user_id).toBeNull();
+    // board_name/angle are vestigial — the local write leaves them NULL.
+    expect(favorite?.board_name).toBeNull();
+    expect(favorite?.angle).toBeNull();
 
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
     expect(queued).toHaveLength(1);
-    expect(queued[0].idempotency_key).toBe('add:user_favorites:kilter:climb-9:40');
+    expect(queued[0].idempotency_key).toBe('add:user_favorites:climb-9');
   });
 
   it('announces the queued write so the banner count can move', async () => {
-    await addFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
+    await addFavoriteLocal(db, { climbUuid: 'climb-9' });
 
     expect(notifyOutboxChangedMock).toHaveBeenCalledTimes(1);
   });
 
   it('dedupes a double-tap add into a single queue row', async () => {
-    await addFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
-    await addFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
+    await addFavoriteLocal(db, { climbUuid: 'climb-9' });
+    await addFavoriteLocal(db, { climbUuid: 'climb-9' });
 
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations WHERE operation = ?', ['create']);
     expect(queued).toHaveLength(1);
@@ -387,22 +387,22 @@ describe('addFavoriteLocal', () => {
 describe('removeFavoriteLocal', () => {
   it('deletes by natural key and enqueues a deterministic delete key', async () => {
     await db.runAsync(
-      "INSERT INTO user_favorites (board_name, climb_uuid, angle, created_at, updated_at) VALUES ('kilter', 'climb-9', 40, 'now', 'now')",
+      "INSERT INTO user_favorites (climb_uuid, created_at, updated_at) VALUES ('climb-9', 'now', 'now')",
     );
 
-    await removeFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
+    await removeFavoriteLocal(db, { climbUuid: 'climb-9' });
 
     const remaining = await db.getAllAsync<Row>('SELECT * FROM user_favorites');
     expect(remaining).toHaveLength(0);
 
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
     expect(queued).toHaveLength(1);
-    expect(queued[0].idempotency_key).toBe('del:user_favorites:kilter:climb-9:40');
+    expect(queued[0].idempotency_key).toBe('del:user_favorites:climb-9');
   });
 
   it('dedupes repeat delete taps into a single queue row (reviewer I4)', async () => {
-    await removeFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
-    await removeFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
+    await removeFavoriteLocal(db, { climbUuid: 'climb-9' });
+    await removeFavoriteLocal(db, { climbUuid: 'climb-9' });
 
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations WHERE operation = ?', ['delete']);
     expect(queued).toHaveLength(1);
@@ -411,8 +411,8 @@ describe('removeFavoriteLocal', () => {
 
 describe('favorite queue coalescing', () => {
   it('add -> remove cancels the pending add but still enqueues the remove (in-flight-add race guard)', async () => {
-    await addFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
-    await removeFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
+    await addFavoriteLocal(db, { climbUuid: 'climb-9' });
+    await removeFavoriteLocal(db, { climbUuid: 'climb-9' });
 
     // The drainer doesn't mark rows in-flight, so the cancel can hit a row whose
     // mutation was already sent. The remove is enqueued unconditionally — the
@@ -421,26 +421,26 @@ describe('favorite queue coalescing', () => {
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
     expect(queued).toHaveLength(1);
     expect(queued[0].operation).toBe('delete');
-    expect(queued[0].idempotency_key).toBe('del:user_favorites:kilter:climb-9:40');
+    expect(queued[0].idempotency_key).toBe('del:user_favorites:climb-9');
   });
 
   it('collapses add -> remove -> add into one final add mutation', async () => {
-    await addFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
-    await removeFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
-    await addFavoriteLocal(db, { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 });
+    await addFavoriteLocal(db, { climbUuid: 'climb-9' });
+    await removeFavoriteLocal(db, { climbUuid: 'climb-9' });
+    await addFavoriteLocal(db, { climbUuid: 'climb-9' });
 
     const queued = await db.getAllAsync<Row>('SELECT * FROM pending_mutations');
     expect(queued).toHaveLength(1);
     expect(queued[0].operation).toBe('create');
-    expect(queued[0].idempotency_key).toBe('add:user_favorites:kilter:climb-9:40');
+    expect(queued[0].idempotency_key).toBe('add:user_favorites:climb-9');
   });
 });
 
 describe('favorite idempotency keys', () => {
   it('derive add/del keys from the target so add and remove never collide', () => {
-    const target = { boardName: 'tension', climbUuid: 'c', angle: 25 };
-    expect(favoriteAddKey(target)).toBe('add:user_favorites:tension:c:25');
-    expect(favoriteRemoveKey(target)).toBe('del:user_favorites:tension:c:25');
+    const target = { climbUuid: 'c' };
+    expect(favoriteAddKey(target)).toBe('add:user_favorites:c');
+    expect(favoriteRemoveKey(target)).toBe('del:user_favorites:c');
     expect(favoriteAddKey(target)).not.toBe(favoriteRemoveKey(target));
   });
 });
@@ -489,7 +489,7 @@ describe('useOfflineUnfollowUser', () => {
 // swallow countable is the point; reviving the row is a separate behaviour
 // change with its own issue.
 describe('enqueue suppressed by a dead-lettered key', () => {
-  const favorite = { boardName: 'kilter', climbUuid: 'climb-9', angle: 40 };
+  const favorite = { climbUuid: 'climb-9' };
 
   async function deadLetterExistingRow(idempotencyKey: string) {
     await db.runAsync("UPDATE pending_mutations SET status = 'dead_letter' WHERE idempotency_key = ?", [
