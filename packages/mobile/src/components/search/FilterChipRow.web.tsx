@@ -29,7 +29,6 @@ import {
   climbTypeChipLabel,
 } from './FilterChipRow.logic';
 import { buildSortLabel } from '../../lib/filter-labels';
-import { useBoardseshGradesActive } from '../../hooks/use-display-grade';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
 // A chip that anchors a controlled Paper Menu. The `children` render-prop receives
@@ -106,7 +105,6 @@ function FilterChipRowComponent({
     close: closeAngle,
     change: changeAngle,
   } = useMaterialAngleControl();
-  const boardseshGradesActive = useBoardseshGradesActive();
 
   const currentRecentKey = getFilterKey(currentFilters, currentSearchText);
   const hasActivePopularity = minAscents != null;
@@ -118,11 +116,6 @@ function FilterChipRowComponent({
   // Built once per render (and only when Sort is actually pinned), reused for the
   // resting label + every menu item.
   const sortLabelFor = pinnedChips.includes('sort') ? buildSortLabel(t) : null;
-  // Only offer the Boardsesh-grade sort once the climber has turned Boardsesh
-  // grades on (see useBoardseshGradesActive) — matches ClimbFilterSheet.
-  const visibleSortOptions = boardseshGradesActive
-    ? SORT_OPTIONS
-    : SORT_OPTIONS.filter((option) => option !== 'boardseshGrade');
 
   return (
     <>
@@ -363,7 +356,7 @@ function FilterChipRowComponent({
             selected={sortActive}
           >
             {(close) =>
-              visibleSortOptions.map((value) => (
+              SORT_OPTIONS.map((value) => (
                 <Menu.Item
                   key={value}
                   title={sortLabelFor?.(value) ?? value}
