@@ -12,7 +12,7 @@ import {
   storeTokens,
 } from './auth-store';
 import { raceBrowserSignIn } from './auth-session-race';
-import { nativeSignInErrorCode } from './native-auth-analytics';
+import { isAppleSignInCancellation, nativeSignInErrorCode } from './native-auth-analytics';
 import { parseDeepLinkQueryParams } from './deep-link-query';
 import { BACKEND_URL, WEB_BASE_URL } from './env';
 
@@ -101,12 +101,6 @@ function generateNonce(): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-// expo-apple-authentication rejects with a CodedError whose `.code` is
-// `ERR_REQUEST_CANCELED` when the user dismisses the system sheet.
-function isAppleCancellation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ERR_REQUEST_CANCELED';
-}
-
 export async function signInWithApple(): Promise<OAuthSignInResult> {
   const rawNonce = generateNonce();
   // Hand Apple the hash; the token's `nonce` claim will be this value (Apple
@@ -124,7 +118,11 @@ export async function signInWithApple(): Promise<OAuthSignInResult> {
       nonce: hashedNonce,
     });
   } catch (error) {
-    if (isAppleCancellation(error)) return { success: false, cancelled: true };
+    // Matches the `.code` AND Apple's cancel message, because some builds reject
+    // with the message only. Without the message arm the cancel escapes to the
+    // caller's outer catch, where iOS unconditionally runs the browser OAuth
+    // fallback — backing out of the Apple sheet then opened a web sign-in (#3088).
+    if (isAppleSignInCancellation(error)) return { success: false, cancelled: true };
     throw error;
   }
 
