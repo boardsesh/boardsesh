@@ -177,7 +177,7 @@ export const climbTypeDefs = /* GraphQL */ `
     minAscents: Int
     "Minimum quality rating"
     minRating: Float
-    "Field to sort by ('ascents', 'difficulty', 'boardseshGrade', 'name', 'quality', 'popular', 'creation', 'random')"
+    "Field to sort by ('ascents', 'difficulty', 'userGrade', 'name', 'quality', 'popular', 'creation', 'random')"
     sortBy: String
     "Sort direction ('asc' or 'desc')"
     sortOrder: String

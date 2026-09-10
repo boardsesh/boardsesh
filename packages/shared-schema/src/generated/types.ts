@@ -1219,7 +1219,7 @@ export type ClimbSearchInput = {
   showOnlyCompleted?: InputMaybe<Scalars['Boolean']['input']>;
   /** Size ID */
   sizeId: Scalars['Int']['input'];
-  /** Field to sort by ('ascents', 'difficulty', 'boardseshGrade', 'name', 'quality', 'popular', 'creation', 'random') */
+  /** Field to sort by ('ascents', 'difficulty', 'userGrade', 'name', 'quality', 'popular', 'creation', 'random') */
   sortBy?: InputMaybe<Scalars['String']['input']>;
   /** Sort direction ('asc' or 'desc') */
   sortOrder?: InputMaybe<Scalars['String']['input']>;
