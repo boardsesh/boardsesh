@@ -954,6 +954,16 @@ export default defineConfig({
         command: 'tsx scripts/mobile-embedded-commit-time-check.ts',
         cache: false,
       },
+      'check:mobile-android-obfuscation': {
+        // Postcondition for a minified Android release: assert R8 actually ran
+        // and actually renamed things, by reading its own mapping.txt. A grep for
+        // the gradle property passes even when the property name is wrong for the
+        // template, which is the failure that put Google Play at Obfuscation 1%
+        // in the first place. Only meaningful after a release build, so it runs
+        // inside the native workflows rather than in ci.yml.
+        command: 'tsx scripts/mobile-android-obfuscation-check.ts',
+        cache: false,
+      },
       'check:mobile-fingerprint-inputs': {
         command: 'tsx scripts/mobile-fingerprint-inputs-check.ts',
         cache: false,

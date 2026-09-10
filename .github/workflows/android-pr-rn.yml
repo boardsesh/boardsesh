@@ -130,7 +130,10 @@ jobs:
     needs: gate
     if: needs.gate.outputs.should_build == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 60, not 45: R8 now runs inside assembleRelease. A timeout that kills the
+    # job after the APK is already built is pure waste, and the headroom costs
+    # nothing when unused.
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -151,6 +154,31 @@ jobs:
         # The GitHub Release sideload APK uses the same arm64-only path; Play
         # distribution still goes through the signed AAB in android-apk-rn.yml.
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -PboardseshAbiFilters=arm64-v8a --no-daemon --console=plain --stacktrace
+
+      # R8 runs on every PR from here on, so this is where a keep-rule regression
+      # is cheap to find. It asserts the ARTIFACT, not the intent: a grep for the
+      # gradle property stays green when the property name is wrong for the
+      # template, which is exactly how Google Play ended up scoring us at
+      # Obfuscation 1%. Floor starts at 0.40 — see the script header for the
+      # calibration note.
+      - name: Check Android obfuscation (R8 mapping)
+        run: |
+          vp run check:mobile-android-obfuscation -- \
+            --mapping packages/mobile/android/app/build/outputs/mapping/release/mapping.txt \
+            --min-renamed-fraction 0.40 \
+            --summary
+
+      # mapping.txt symbolicates a crash a tester hits on the sideload APK below;
+      # missing_rules.txt is what AGP writes when R8 fails on missing classes, and
+      # without it a red build has to be re-run to be diagnosed.
+      - name: Upload R8 mapping and rules
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boardsesh-rn-android-pr-mapping-${{ github.event.pull_request.number || github.run_number }}
+          path: packages/mobile/android/app/build/outputs/mapping/release/*
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: Upload sideloadable APK
         uses: actions/upload-artifact@v4

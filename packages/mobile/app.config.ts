@@ -685,6 +685,20 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // Caps Gradle heap + parallel workers so the heavy native build (CMake ×4
       // ABIs + Kotlin + JS bundle + R8) doesn't OOM-kill the daemon. EAS-safe.
       './plugins/with-android-gradle-memory',
+      // Turns R8 on for the `release` build type (minify + obfuscate + optimize)
+      // and injects the keep rules the reflective call sites need. Google Play's
+      // App optimisation report scored us at Obfuscation 1% (threshold 25%)
+      // because the Expo template defaults minifyEnabled off and nothing set the
+      // property. The plugin THROWS if a future SDK renames that property, so
+      // this can never silently revert to shipping unobfuscated. EAS-safe, and
+      // registered unconditionally: an EAS preview that differs from production
+      // in minification is exactly what hides an R8 bug until it's in the store.
+      './plugins/with-android-minify',
+      // Bakes the io.sentry.proguard-uuid the release workflow mints into the
+      // manifest, so Sentry can match the R8 mapping that workflow uploads and
+      // deobfuscate Java/Kotlin frames. No-op when the env var is unset (local
+      // prebuild, PR builds); never moves the fingerprint (env isn't hashed).
+      './plugins/with-android-sentry-proguard-uuid',
       // Pins the generated Android wrapper below Gradle 9 until React Native's
       // included Foojay toolchain resolver plugin is compatible with Gradle 9.
       './plugins/with-android-gradle-wrapper-version',
