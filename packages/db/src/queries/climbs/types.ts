@@ -33,7 +33,16 @@ export type ClimbSearchParams = {
   page?: number;
   pageSize?: number;
   // Sorting
-  sortBy?: 'ascents' | 'difficulty' | 'name' | 'quality' | 'popular' | 'creation' | 'random' | (string & {});
+  sortBy?:
+    | 'ascents'
+    | 'difficulty'
+    | 'boardseshGrade'
+    | 'name'
+    | 'quality'
+    | 'popular'
+    | 'creation'
+    | 'random'
+    | (string & {});
   sortOrder?: 'asc' | 'desc' | (string & {});
   // Seed for the 'random' sort. Salts md5(uuid || sortSeed) so a shuffle stays
   // stable across OFFSET-paginated pages; a new seed reshuffles.
@@ -125,6 +134,7 @@ export type ClimbSearchInputLike = {
 const SEARCH_SORT_ALIASES: Record<string, NonNullable<ClimbSearchParams['sortBy']>> = {
   ascents: 'ascents',
   difficulty: 'difficulty',
+  boardseshGrade: 'boardseshGrade',
   name: 'name',
   quality: 'quality',
   popular: 'popular',

@@ -47,6 +47,7 @@ import { PinToggle } from './search/PinToggle';
 import { getCollectionFilter, getClimbTypeFilter, type CollectionFilter } from '../lib/collection-filter';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
+import { useBoardseshGradesActive } from '../hooks/use-display-grade';
 import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
@@ -175,6 +176,7 @@ export function ClimbFilterSheet({
 }: ClimbFilterSheetProps) {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
+  const boardseshGradesActive = useBoardseshGradesActive();
   const theme = useTheme();
   const { systemColors } = theme;
   const { isAuthenticated } = useAuth();
@@ -313,12 +315,21 @@ export function ClimbFilterSheet({
       ascents: t('mobile.filter.sort.ascents'),
       quality: t('mobile.filter.sort.quality'),
       difficulty: t('mobile.filter.sort.difficulty'),
+      boardseshGrade: t('mobile.filter.sort.boardseshGrade'),
       name: t('mobile.filter.sort.name'),
       popular: t('mobile.filter.sort.popular'),
       creation: t('mobile.filter.sort.creation'),
       random: t('mobile.filter.sort.random'),
     }),
     [t],
+  );
+
+  // Only offer the Boardsesh-grade sort once the climber has actually turned
+  // Boardsesh grades on (see useBoardseshGradesActive) — otherwise it sorts by
+  // a grade concept they've never seen and haven't opted into.
+  const visibleSortOptions = useMemo(
+    () => (boardseshGradesActive ? SORT_OPTIONS : SORT_OPTIONS.filter((option) => option !== 'boardseshGrade')),
+    [boardseshGradesActive],
   );
 
   const progressLabels = useMemo<Record<ProgressFilter, string>>(
@@ -1117,7 +1128,7 @@ export function ClimbFilterSheet({
                   native bottom sheet collapsed the chip row's height on iOS and
                   clipped the labels. SORT_OPTIONS is short, so wrapping is fine. */}
               <View style={styles.chipRow}>
-                {SORT_OPTIONS.map((option) => (
+                {visibleSortOptions.map((option) => (
                   <Chip
                     key={option}
                     label={sortLabels[option]}

@@ -45,6 +45,7 @@ const DEFAULT_PAGE_SIZE = 20;
 const SORT_ALIASES: Record<string, string> = {
   ascents: 'ascents',
   difficulty: 'difficulty',
+  boardseshGrade: 'boardseshGrade',
   name: 'name',
   quality: 'quality',
   popular: 'popular',
@@ -385,6 +386,8 @@ function sortColumnSql(sortBy: string): string {
       return 's.ascensionist_count';
     case 'difficulty':
       return 'CAST(ROUND(s.display_difficulty) AS INTEGER)';
+    case 'boardseshGrade':
+      return 'CAST(ROUND(COALESCE(g.universal_grade, g.local_grade)) AS INTEGER)';
     case 'name':
       // NOCASE so 'apple' sorts before 'Zebra', matching Postgres's locale
       // collation (SQLite's default BINARY puts all uppercase first). ASCII

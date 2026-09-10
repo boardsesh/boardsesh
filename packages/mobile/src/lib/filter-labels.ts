@@ -89,6 +89,7 @@ export function buildSortLabel(t: TFunction<'climbs'>): (sortBy: string) => stri
     ascents: t('mobile.filter.sort.ascents'),
     quality: t('mobile.filter.sort.quality'),
     difficulty: t('mobile.filter.sort.difficulty'),
+    boardseshGrade: t('mobile.filter.sort.boardseshGrade'),
     name: t('mobile.filter.sort.name'),
     popular: t('mobile.filter.sort.popular'),
     creation: t('mobile.filter.sort.creation'),
