@@ -54,6 +54,7 @@ class NordicUartBLE : public NimBLEServerCallbacks, public NimBLECharacteristicC
 
     // NimBLE callbacks
     void onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) override;
+    void onConnParamsUpdate(NimBLEConnInfo& connInfo) override;
     void onDisconnect(NimBLEServer* server, NimBLEConnInfo& connInfo, int reason) override;
     void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& connInfo) override;
 

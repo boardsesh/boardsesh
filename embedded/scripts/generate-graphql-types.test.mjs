@@ -5,26 +5,49 @@
  * Run with: node --test embedded/scripts/generate-graphql-types.test.mjs
  */
 
-import { describe, it } from 'node:test';
+import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 // Import functions directly from the source module
 import {
   parseGraphQLSchema,
+  validateControllerTypes,
   graphqlTypeToCpp,
   generateCppStruct,
-  TYPE_MAP,
-  FIELD_TYPE_OVERRIDES,
   CONTROLLER_TYPES,
   ROLE_NOT_SET,
   ANGLE_NOT_SET,
+  CONTROLLER_SCHEMA_PATH,
 } from './generate-graphql-types.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const GENERATED_OUTPUT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'boardsesh-graphql-types-'));
+const GENERATED_OUTPUT_PATH = path.join(GENERATED_OUTPUT_DIR, 'graphql_types.h');
+let generatedContent;
+
+before(() => {
+  const generation = spawnSync(process.execPath, ['embedded/scripts/generate-graphql-types.mjs'], {
+    cwd: path.join(__dirname, '../..'),
+    encoding: 'utf-8',
+    env: { ...process.env, GRAPHQL_TYPES_OUTPUT_DIR: GENERATED_OUTPUT_DIR },
+  });
+  assert.strictEqual(
+    generation.status,
+    0,
+    `GraphQL generator failed\nstdout:\n${generation.stdout}\nstderr:\n${generation.stderr}`,
+  );
+  generatedContent = fs.readFileSync(GENERATED_OUTPUT_PATH, 'utf-8');
+});
+
+after(() => {
+  fs.rmSync(GENERATED_OUTPUT_DIR, { recursive: true, force: true });
+});
 
 // ============================================
 // Tests
@@ -237,15 +260,8 @@ describe('C++ Struct Generation', () => {
 
 describe('Integration: Parse and Generate', () => {
   it('should parse real schema and generate valid C++ for LedCommand', () => {
-    const schemaPath = path.join(__dirname, '../../packages/shared-schema/src/schema.ts');
-
-    if (!fs.existsSync(schemaPath)) {
-      console.log('Skipping integration test: schema file not found');
-      return;
-    }
-
-    const schemaContent = fs.readFileSync(schemaPath, 'utf-8');
-    const types = parseGraphQLSchema(schemaContent);
+    const schemaContent = fs.readFileSync(CONTROLLER_SCHEMA_PATH, 'utf-8');
+    const types = validateControllerTypes(parseGraphQLSchema(schemaContent));
 
     // Verify we found the expected types
     assert.ok(types.has('LedCommand'), 'Should have LedCommand');
@@ -268,14 +284,7 @@ describe('Integration: Parse and Generate', () => {
   });
 
   it('should generate valid output file', () => {
-    const outputPath = path.join(__dirname, '../libs/graphql-types/src/graphql_types.h');
-
-    if (!fs.existsSync(outputPath)) {
-      console.log('Skipping output file test: generated file not found');
-      return;
-    }
-
-    const content = fs.readFileSync(outputPath, 'utf-8');
+    const content = generatedContent;
 
     // Verify header guards
     assert.ok(content.includes('#ifndef GRAPHQL_TYPES_H'), 'Should have include guard');
@@ -287,9 +296,11 @@ describe('Integration: Parse and Generate', () => {
     assert.ok(content.includes('#include <ArduinoJson.h>'), 'Should include ArduinoJson.h');
 
     // Verify structs are generated
-    assert.ok(content.includes('struct LedCommand'), 'Should have LedCommand struct');
-    assert.ok(content.includes('struct LedUpdate'), 'Should have LedUpdate struct');
-    assert.ok(content.includes('struct ControllerPing'), 'Should have ControllerPing struct');
+    for (const typeName of CONTROLLER_TYPES) {
+      const expectedDefinition =
+        typeName === 'ControllerEvent' ? `Union type: ${typeName}` : `struct ${typeName}`;
+      assert.ok(content.includes(expectedDefinition), `Should have ${typeName} definition`);
+    }
 
     // Verify operations namespace
     assert.ok(content.includes('namespace GraphQLOps'), 'Should have GraphQLOps namespace');
@@ -335,6 +346,12 @@ describe('Integration: Parse and Generate', () => {
 });
 
 describe('Edge Cases', () => {
+  it('should reject a re-export-only schema before writing unusable C++', () => {
+    const types = parseGraphQLSchema("export { typeDefs } from './schema/index';");
+
+    assert.throws(() => validateControllerTypes(types), /Controller GraphQL schema is incomplete \(missing:/);
+  });
+
   it('should handle empty schema', () => {
     const types = parseGraphQLSchema('');
     assert.strictEqual(types.size, 0);
@@ -375,14 +392,7 @@ describe('Edge Cases', () => {
 
 describe('Generated Code Verification', () => {
   it('should generate parse failure cleanup code', () => {
-    const outputPath = path.join(__dirname, '../libs/graphql-types/src/graphql_types.h');
-
-    if (!fs.existsSync(outputPath)) {
-      console.log('Skipping parse cleanup test: generated file not found');
-      return;
-    }
-
-    const content = fs.readFileSync(outputPath, 'utf-8');
+    const content = generatedContent;
 
     // Verify parseLedUpdate checks parseLedCommand return value
     assert.ok(
@@ -410,14 +420,7 @@ describe('Generated Code Verification', () => {
   });
 
   it('should verify constants match between JS and generated code', () => {
-    const outputPath = path.join(__dirname, '../libs/graphql-types/src/graphql_types.h');
-
-    if (!fs.existsSync(outputPath)) {
-      console.log('Skipping constants test: generated file not found');
-      return;
-    }
-
-    const content = fs.readFileSync(outputPath, 'utf-8');
+    const content = generatedContent;
 
     // Verify ROLE_NOT_SET value matches
     assert.ok(

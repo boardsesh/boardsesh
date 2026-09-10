@@ -18,6 +18,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'url';
 
 // ESM-compatible __dirname
@@ -28,8 +29,13 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.join(__dirname, '../..');
 const BOARD_CONSTANTS_GENERATED = path.join(PROJECT_ROOT, 'packages/board-constants/src/generated');
 const BOARD_CONFIG_SRC = path.join(PROJECT_ROOT, 'packages/shared/board-config/src');
-const IMAGES_BASE = path.join(PROJECT_ROOT, 'packages/web/public/images');
-const OUTPUT_DIR = path.join(__dirname, '../libs/board-data/src');
+const IMAGES_BASE = process.env.BOARD_DATA_IMAGE_BASE
+  ? path.resolve(process.env.BOARD_DATA_IMAGE_BASE)
+  : path.join(PROJECT_ROOT, 'packages/web/public/images');
+const OUTPUT_DIR = process.env.BOARD_DATA_OUTPUT_DIR
+  ? path.resolve(process.env.BOARD_DATA_OUTPUT_DIR)
+  : path.join(__dirname, '../libs/board-data/src');
+const requireGeneratedModule = createRequire(import.meta.url);
 
 // Target image dimensions for the 480x800 display
 const MAX_IMAGE_WIDTH = 460;
@@ -38,6 +44,42 @@ const JPEG_QUALITY = 85;
 
 // Only generate for these boards (skip moonboard)
 const BOARD_NAMES = ['kilter', 'tension'];
+
+/**
+ * Load the generated hold-placement shards used by display firmware.
+ *
+ * Hole placements used to be an inline literal in product-sizes-data.ts. They
+ * now live in per-board CommonJS shards so app runtimes can load only the active
+ * board. This one-shot Node generator intentionally loads only the two boards it
+ * emits into firmware.
+ */
+function loadHolePlacements() {
+  const holePlacements = {};
+
+  for (const boardName of BOARD_NAMES) {
+    const shardPath = path.join(BOARD_CONSTANTS_GENERATED, 'hole-placements', `${boardName}.cjs`);
+    let boardPlacements;
+
+    try {
+      boardPlacements = requireGeneratedModule(shardPath);
+    } catch (error) {
+      throw new Error(`Failed to load ${boardName} hole placements from ${shardPath}`, { cause: error });
+    }
+
+    if (
+      boardPlacements === null ||
+      typeof boardPlacements !== 'object' ||
+      Array.isArray(boardPlacements) ||
+      Object.keys(boardPlacements).length === 0
+    ) {
+      throw new Error(`Invalid or empty ${boardName} hole-placement shard at ${shardPath}`);
+    }
+
+    holePlacements[boardName] = boardPlacements;
+  }
+
+  return holePlacements;
+}
 
 /**
  * Extract a JavaScript object/array literal from TypeScript source by
@@ -115,7 +157,7 @@ function loadBoardData() {
   const LAYOUTS = extractJsObject(productSizesContent, 'LAYOUTS');
   const SETS = extractJsObject(productSizesContent, 'SETS');
   const IMAGE_FILENAMES = extractJsObject(productSizesContent, 'IMAGE_FILENAMES');
-  const HOLE_PLACEMENTS = extractJsObject(productSizesContent, 'HOLE_PLACEMENTS');
+  const HOLE_PLACEMENTS = loadHolePlacements();
   const LED_PLACEMENTS = extractJsObject(ledPlacementsContent, 'LED_PLACEMENTS');
   const BOARD_IMAGE_DIMENSIONS = extractJsObject(boardDataContent, 'BOARD_IMAGE_DIMENSIONS');
 
@@ -169,19 +211,14 @@ function enumerateConfigs(data) {
       const configKey = `${boardName}/${layoutId}/${sizeId}/${setIds.join(',')}`;
 
       // Get image filenames for each set
-      const imageFiles = [];
-      for (const setId of setIds) {
+      const imageFiles = setIds.map((setId) => {
         const key = `${layoutId}-${sizeId}-${setId}`;
         const filename = (data.IMAGE_FILENAMES[boardName] || {})[key];
-        if (filename) {
-          imageFiles.push(filename);
+        if (!filename) {
+          throw new Error(`Missing IMAGE_FILENAMES mapping for ${boardName} set ${key} in ${configKey}`);
         }
-      }
-
-      if (imageFiles.length === 0) {
-        console.warn(`  Skipping ${configKey}: no image files found`);
-        continue;
-      }
+        return filename;
+      });
 
       // Get product size data for coordinate transforms
       const sizeData = (data.PRODUCT_SIZES[boardName] || {})[sizeId];
@@ -291,7 +328,7 @@ function computeHoldMap(config, targetWidth, targetHeight) {
 /**
  * Composite multiple PNG layers and convert to JPEG buffer
  */
-async function compositeAndResize(config) {
+async function compositeAndResize(config, imagesBase = IMAGES_BASE) {
   const sharp = (await import('sharp')).default;
   const { boardName, imageFiles, boardImageDimensions } = config;
 
@@ -315,14 +352,8 @@ async function compositeAndResize(config) {
   }
 
   // Load and composite layers
-  const imagePaths = imageFiles.map((f) => path.join(IMAGES_BASE, boardName, f));
-
-  // Check all images exist
-  const existingPaths = imagePaths.filter((p) => fs.existsSync(p));
-  if (existingPaths.length === 0) {
-    console.warn(`  No image files found for ${config.configKey}`);
-    return null;
-  }
+  const imagePaths = resolveBoardImagePaths(boardName, imageFiles, imagesBase);
+  const existingPaths = requireExistingImagePaths(imagePaths, config.configKey);
 
   // Resize all layers to a common size (srcWidth x srcHeight), then composite
   // We must materialize the base to a buffer first because sharp's composite
@@ -352,6 +383,33 @@ async function compositeAndResize(config) {
     .toBuffer();
 
   return { buffer: jpegBuffer, width: targetWidth, height: targetHeight };
+}
+
+/**
+ * Require every image layer used by a board configuration to exist.
+ * Silently dropping one layer creates a valid-looking but incomplete firmware
+ * image, so generation must fail before any output is written.
+ */
+function requireExistingImagePaths(imagePaths, configKey, pathExists = fs.existsSync) {
+  const missingPaths = imagePaths.filter((imagePath) => !pathExists(imagePath));
+  if (missingPaths.length > 0) {
+    throw new Error(`Missing image layers for ${configKey}: ${missingPaths.join(', ')}`);
+  }
+  return imagePaths;
+}
+
+/** Resolve image filenames within a board-specific root and reject traversal. */
+function resolveBoardImagePaths(boardName, imageFiles, imagesBase = IMAGES_BASE) {
+  const boardImageRoot = path.resolve(imagesBase, boardName);
+  const boardImagePrefix = `${boardImageRoot}${path.sep}`;
+
+  return imageFiles.map((imageFile) => {
+    const imagePath = path.resolve(boardImageRoot, imageFile);
+    if (!imagePath.startsWith(boardImagePrefix)) {
+      throw new Error(`Board image path escapes ${boardName} root: ${imageFile}`);
+    }
+    return imagePath;
+  });
 }
 
 /**
@@ -518,7 +576,7 @@ const BoardConfig* findBoardConfig(const char* configKey) {
   return content;
 }
 
-async function main() {
+async function generateBoardData({ imagesBase = IMAGES_BASE, outputDir = OUTPUT_DIR } = {}) {
   console.log('Board Data Code Generator');
   console.log('=========================\n');
 
@@ -535,32 +593,20 @@ async function main() {
 
   for (const config of configs) {
     process.stdout.write(`  Processing ${config.configKey}... `);
+    const imageResult = await compositeAndResize(config, imagesBase);
+    const holdMap = computeHoldMap(config, imageResult.width, imageResult.height);
 
-    try {
-      const imageResult = await compositeAndResize(config);
-      if (!imageResult) {
-        console.log('SKIPPED (no images)');
-        continue;
-      }
+    results.push({
+      configKey: config.configKey,
+      buffer: imageResult.buffer,
+      width: imageResult.width,
+      height: imageResult.height,
+      holdMap,
+    });
 
-      const holdMap = computeHoldMap(config, imageResult.width, imageResult.height);
-
-      results.push({
-        configKey: config.configKey,
-        buffer: imageResult.buffer,
-        width: imageResult.width,
-        height: imageResult.height,
-        holdMap,
-      });
-
-      totalImageBytes += imageResult.buffer.length;
-      totalHolds += holdMap.length;
-      console.log(
-        `${imageResult.width}x${imageResult.height}, ${imageResult.buffer.length} bytes, ${holdMap.length} holds`,
-      );
-    } catch (err) {
-      console.log(`ERROR: ${err.message}`);
-    }
+    totalImageBytes += imageResult.buffer.length;
+    totalHolds += holdMap.length;
+    console.log(`${imageResult.width}x${imageResult.height}, ${imageResult.buffer.length} bytes, ${holdMap.length} holds`);
   }
 
   console.log(`\nProcessed ${results.length} configurations`);
@@ -571,25 +617,25 @@ async function main() {
   console.log('\nGenerating C++ source files...');
 
   // Ensure output directory exists
-  if (!fs.existsSync(OUTPUT_DIR)) {
-    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
   }
 
   // Generate image data header
   const imageHeader = generateImageHeader(results);
-  const imageHeaderPath = path.join(OUTPUT_DIR, 'board_image_data.h');
+  const imageHeaderPath = path.join(outputDir, 'board_image_data.h');
   fs.writeFileSync(imageHeaderPath, imageHeader);
   console.log(`  Written: ${imageHeaderPath} (${(imageHeader.length / 1024).toFixed(0)} KB source)`);
 
   // Generate hold data header (types + declarations only)
   const holdHeader = generateHoldHeader(results);
-  const holdHeaderPath = path.join(OUTPUT_DIR, 'board_hold_data.h');
+  const holdHeaderPath = path.join(outputDir, 'board_hold_data.h');
   fs.writeFileSync(holdHeaderPath, holdHeader);
   console.log(`  Written: ${holdHeaderPath} (${(holdHeader.length / 1024).toFixed(0)} KB source)`);
 
   // Generate board data implementation (all data arrays + lookup)
   const dataCpp = generateDataCpp(results);
-  const dataCppPath = path.join(OUTPUT_DIR, 'board_data.cpp');
+  const dataCppPath = path.join(outputDir, 'board_data.cpp');
   fs.writeFileSync(dataCppPath, dataCpp);
   console.log(`  Written: ${dataCppPath} (${(dataCpp.length / 1024).toFixed(0)} KB source)`);
 
@@ -605,7 +651,21 @@ async function main() {
   console.log('\nDone!');
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+/** Run the generator with CLI failure semantics without terminating the process. */
+async function runCli(options = {}, reportError = console.error) {
+  try {
+    await generateBoardData(options);
+    return 0;
+  } catch (error) {
+    reportError('Fatal error:', error);
+    return 1;
+  }
+}
+
+const isMainModule = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (isMainModule) {
+  process.exitCode = await runCli();
+}
+
+export { enumerateConfigs, generateBoardData, requireExistingImagePaths, resolveBoardImagePaths, runCli };

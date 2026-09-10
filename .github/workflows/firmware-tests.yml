@@ -1,14 +1,39 @@
 name: Firmware Unit Tests
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
     paths:
       - 'embedded/**'
+      - 'packages/board-constants/src/generated/product-sizes-data.ts'
+      - 'packages/board-constants/src/generated/led-placements-data.ts'
+      - 'packages/board-constants/src/generated/hole-placements/kilter.cjs'
+      - 'packages/board-constants/src/generated/hole-placements/tension.cjs'
+      - 'packages/shared/board-config/src/board-data.ts'
+      - 'packages/shared-schema/src/schema/controller.ts'
+      - 'packages/web/public/images/kilter/**'
+      - 'packages/web/public/images/tension/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/firmware-build.yml'
       - '.github/workflows/firmware-tests.yml'
   pull_request:
     paths:
       - 'embedded/**'
+      - 'packages/board-constants/src/generated/product-sizes-data.ts'
+      - 'packages/board-constants/src/generated/led-placements-data.ts'
+      - 'packages/board-constants/src/generated/hole-placements/kilter.cjs'
+      - 'packages/board-constants/src/generated/hole-placements/tension.cjs'
+      - 'packages/shared/board-config/src/board-data.ts'
+      - 'packages/shared-schema/src/schema/controller.ts'
+      - 'packages/web/public/images/kilter/**'
+      - 'packages/web/public/images/tension/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/firmware-build.yml'
       - '.github/workflows/firmware-tests.yml'
 
 concurrency:
@@ -23,6 +48,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -34,10 +69,16 @@ jobs:
           # boolean, so the gate selects the value.
           cache: ${{ runner.environment == 'github-hosted' && 'pip' || '' }}
 
+      - name: Run firmware codegen tests
+        run: vp run controller:codegen:test
+
       - name: Install PlatformIO
         run: |
           python -m pip install --upgrade pip
           pip install platformio
+
+      - name: Build Waveshare firmware from clean generated state
+        run: vp run controller:build -e waveshare-7inch
 
       - name: Run native unit tests
         working-directory: embedded/test

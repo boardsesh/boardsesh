@@ -12,7 +12,7 @@
     "controller:codegen": "node embedded/scripts/generate-graphql-types.mjs",
     "controller:codegen:board-data": "node embedded/scripts/generate-board-data.mjs",
     "controller:codegen:test": "node --test embedded/scripts/generate-graphql-types.test.mjs && node --test embedded/scripts/generate-board-data.test.mjs && python3 embedded/scripts/test_prebuild.py",
-    "controller:build": "cd embedded/projects/board-controller && pio run",
+    "controller:build": "pio run --project-dir embedded/projects/board-controller",
     "controller:upload": "cd embedded/projects/board-controller && pio run -t upload",
     "controller:monitor": "cd embedded/projects/board-controller && pio device monitor",
     "moonboard:build": "cd embedded/projects/moonboard-dev-server && pio run",

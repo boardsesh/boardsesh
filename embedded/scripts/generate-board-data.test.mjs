@@ -18,19 +18,97 @@
  *   node --test embedded/scripts/generate-board-data.test.mjs
  */
 
-import { describe, it, before } from 'node:test';
+import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
+import {
+  enumerateConfigs,
+  requireExistingImagePaths,
+  resolveBoardImagePaths,
+  runCli,
+} from './generate-board-data.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const OUTPUT_DIR = path.join(__dirname, '../libs/board-data/src');
+const OUTPUT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'boardsesh-board-data-'));
 const IMAGE_HEADER = path.join(OUTPUT_DIR, 'board_image_data.h');
 const HOLD_HEADER = path.join(OUTPUT_DIR, 'board_hold_data.h');
 const DATA_CPP = path.join(OUTPUT_DIR, 'board_data.cpp');
+
+describe('image input validation', () => {
+  it('fails when an expected set has no image filename mapping', () => {
+    const boardData = {
+      SETS: {
+        kilter: { '1-7': [{ id: 1 }, { id: 20 }] },
+        tension: {},
+      },
+      IMAGE_FILENAMES: {
+        kilter: { '1-7-1': 'product_sizes_layouts_sets/base.png' },
+        tension: {},
+      },
+    };
+
+    assert.throws(
+      () => enumerateConfigs(boardData),
+      /Missing IMAGE_FILENAMES mapping for kilter set 1-7-20 in kilter\/1\/7\/1,20/,
+    );
+  });
+
+  it('preserves a complete ordered layer list', () => {
+    const imagePaths = ['/images/base.png', '/images/holds.png'];
+    const existingPaths = new Set(imagePaths);
+
+    assert.deepEqual(
+      requireExistingImagePaths(imagePaths, 'kilter/1/7/1,20', (imagePath) => existingPaths.has(imagePath)),
+      imagePaths,
+    );
+  });
+
+  it('fails when any referenced image layer is missing', () => {
+    const imagePaths = ['/images/base.png', '/images/missing.png'];
+
+    assert.throws(
+      () => requireExistingImagePaths(imagePaths, 'kilter/1/7/1,20', (imagePath) => imagePath.endsWith('base.png')),
+      /Missing image layers for kilter\/1\/7\/1,20: \/images\/missing\.png/,
+    );
+  });
+
+  it('rejects image paths that escape the board root', () => {
+    assert.throws(
+      () => resolveBoardImagePaths('kilter', ['../tension/holds.png'], '/images'),
+      /Board image path escapes kilter root/,
+    );
+  });
+});
+
+describe('generator failure behavior', () => {
+  it('maps a missing production image layer to exit code 1 without outputs', async () => {
+    const failureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'boardsesh-board-data-failure-'));
+    const imageBase = path.join(failureRoot, 'images');
+    const outputDirectory = path.join(failureRoot, 'output');
+    fs.mkdirSync(path.join(imageBase, 'kilter'), { recursive: true });
+    fs.mkdirSync(path.join(imageBase, 'tension'), { recursive: true });
+    fs.mkdirSync(outputDirectory);
+
+    try {
+      const reportedErrors = [];
+      const exitCode = await runCli(
+        { imagesBase: imageBase, outputDir: outputDirectory },
+        (...errorParts) => reportedErrors.push(errorParts),
+      );
+
+      assert.equal(exitCode, 1, 'missing production images must map to CLI exit code 1');
+      assert.match(String(reportedErrors[0]?.[1]), /Missing image layers for/);
+      assert.deepEqual(fs.readdirSync(outputDirectory), [], 'failed generation must not write partial outputs');
+    } finally {
+      fs.rmSync(failureRoot, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('generate-board-data', () => {
   let imageContent;
@@ -40,15 +118,25 @@ describe('generate-board-data', () => {
   before(() => {
     // Run the generator
     console.log('Running board data generator...');
-    execSync('node embedded/scripts/generate-board-data.mjs', {
+    const generation = spawnSync(process.execPath, ['embedded/scripts/generate-board-data.mjs'], {
       cwd: path.join(__dirname, '../..'),
+      encoding: 'utf-8',
+      env: { ...process.env, BOARD_DATA_OUTPUT_DIR: OUTPUT_DIR },
       timeout: 300000,
-      stdio: 'pipe',
     });
+    assert.equal(
+      generation.status,
+      0,
+      `board data generator failed\nstdout:\n${generation.stdout}\nstderr:\n${generation.stderr}`,
+    );
 
     imageContent = fs.readFileSync(IMAGE_HEADER, 'utf-8');
     holdContent = fs.readFileSync(HOLD_HEADER, 'utf-8');
     dataCppContent = fs.readFileSync(DATA_CPP, 'utf-8');
+  });
+
+  after(() => {
+    fs.rmSync(OUTPUT_DIR, { recursive: true, force: true });
   });
 
   describe('output files', () => {
