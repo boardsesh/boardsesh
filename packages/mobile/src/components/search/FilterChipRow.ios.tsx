@@ -55,6 +55,7 @@ import {
   isClimbType,
 } from './FilterChipRow.logic';
 import { buildSortLabel } from '../../lib/filter-labels';
+import { useBoardseshGradesActive } from '../../hooks/use-display-grade';
 import { COLLECTION_VALUES } from '../../lib/collection-filter';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
@@ -95,9 +96,15 @@ function FilterChipRowComponent({
 }: FilterChipRowProps) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
+  const boardseshGradesActive = useBoardseshGradesActive();
   // Built once per render (and only when Sort is actually pinned), reused for the
-  // resting label + all 7 menu items.
+  // resting label + every menu item.
   const sortLabelFor = pinnedChips.includes('sort') ? buildSortLabel(t) : null;
+  // Only offer the Boardsesh-grade sort once the climber has turned Boardsesh
+  // grades on (see useBoardseshGradesActive) — matches ClimbFilterSheet.
+  const visibleSortOptions = boardseshGradesActive
+    ? SORT_OPTIONS
+    : SORT_OPTIONS.filter((option) => option !== 'boardseshGrade');
 
   // Popularity / rating chip wording lives in FilterChipRow.logic (shared with the
   // Android tree) so a filter is never worded two ways across platforms.
@@ -373,7 +380,7 @@ function FilterChipRowComponent({
                   onChangeSort(value);
                 }}
               >
-                {SORT_OPTIONS.map((value) => (
+                {visibleSortOptions.map((value) => (
                   <Text key={value} modifiers={[tag(value)]}>
                     {sortLabelFor?.(value) ?? value}
                   </Text>
