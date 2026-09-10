@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isLocalDatabaseUrl, describeDatabaseHost } from './db-connection.js';
+import { isLocalDatabaseUrl, describeDatabaseHost, READ_ONLY_CONNECTION_OPTIONS } from './db-connection.js';
 
 // Real automation paths this must recognize as local, verified against the
 // repo (see db-connection.ts's doc comment for the file:line evidence):
@@ -89,4 +89,13 @@ void test('describeDatabaseHost is not confused by "@" or "/" inside the passwor
 void test('describeDatabaseHost fails closed to "unknown" on a malformed URL', () => {
   assert.equal(describeDatabaseHost('not a url at all'), 'unknown');
   assert.equal(describeDatabaseHost(''), 'unknown');
+});
+
+// #3909: the report script's "read-only" claim must be a server-enforced fact,
+// not a convention that one stray db.update() silently breaks. Asserting the
+// startup option here (rather than opening a socket) keeps the guarantee under
+// test without needing a database.
+void test('the read-only connection asks Postgres to enforce it', () => {
+  assert.match(READ_ONLY_CONNECTION_OPTIONS, /default_transaction_read_only=on/);
+  assert.match(READ_ONLY_CONNECTION_OPTIONS, /^-c /);
 });

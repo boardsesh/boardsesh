@@ -471,6 +471,81 @@ describe('applyAuroraAscents — edit-clobber guard', () => {
   });
 });
 
+describe('applyAuroraAscents — corrected legacy climbed_at is not reverted (#3909)', () => {
+  /**
+   * The self-revert loop. Once a legacy tick's climbed_at is corrected to the
+   * true UTC instant, the Aurora pull keeps sending the climber's local wall
+   * clock relabelled UTC — so stored − incoming is a whole zone offset. Without
+   * the guard the by-aurora-id update path calls that a payload change and
+   * writes the shifted value straight back, inside one sync cycle.
+   */
+  const correctedRow = (overrides: Row = {}): Row => ({
+    uuid: 'tick-1',
+    auroraId: 'aur-1',
+    ownerUserId: 'user-1',
+    climbUuid: 'climb-1',
+    angle: 40,
+    isMirror: false,
+    status: 'send',
+    attemptCount: 3,
+    quality: 5,
+    difficulty: 20,
+    isBenchmark: false,
+    comment: '',
+    // Corrected: the pull will send "2026-05-01 22:00:00" (local wall clock),
+    // 10h ahead of this true instant.
+    climbedAt: '2026-05-01T12:00:00.000Z',
+    updatedAt: '2026-05-01T22:05:00.000Z',
+    auroraSyncedAt: '2026-05-01T22:05:00.000Z',
+    origin: 'json_import',
+    ...overrides,
+  });
+
+  it('writes nothing when the ONLY difference is a whole-offset shift', async () => {
+    const { tx, calls } = createTx({ selectResults: [[correctedRow()]] });
+
+    await applyAuroraAscents(tx as unknown as Db, 'kilter', 'user-1', [ascent()]);
+
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(0);
+    expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
+  });
+
+  it('still applies other upstream edits, but keeps the corrected timestamp', async () => {
+    const { tx, calls } = createTx({ selectResults: [[correctedRow({ quality: 3 })]] });
+
+    await applyAuroraAscents(tx as unknown as Db, 'kilter', 'user-1', [ascent()]);
+
+    const executes = calls.filter((c) => c.kind === 'execute');
+    expect(executes).toHaveLength(1);
+    const params = new PgDialect().sqlToQuery(executes[0].args[0] as SQL).params;
+    const payload = JSON.parse(params.find((p) => typeof p === 'string' && p.startsWith('[{')) as string) as Array<{
+      climbed_at: string;
+    }>;
+    // The quality edit lands; climbed_at is the STORED corrected instant, not
+    // the shifted "2026-05-01T22:00:00.000Z" the pull sent.
+    expect(payload[0].climbed_at).toBe('2026-05-01T12:00:00.000Z');
+  });
+
+  it('does NOT swallow a genuine sub-hour edit to climbed_at', async () => {
+    // 5 minutes is a real correction by the climber upstream and must still
+    // propagate — the guard is deliberately narrower than the ±60s adoption
+    // fast path for exactly this reason.
+    const { tx, calls } = createTx({
+      selectResults: [[correctedRow({ climbedAt: '2026-05-01T21:55:00.000Z' })]],
+    });
+
+    await applyAuroraAscents(tx as unknown as Db, 'kilter', 'user-1', [ascent()]);
+
+    const executes = calls.filter((c) => c.kind === 'execute');
+    expect(executes).toHaveLength(1);
+    const params = new PgDialect().sqlToQuery(executes[0].args[0] as SQL).params;
+    const payload = JSON.parse(params.find((p) => typeof p === 'string' && p.startsWith('[{')) as string) as Array<{
+      climbed_at: string;
+    }>;
+    expect(payload[0].climbed_at).toBe('2026-05-01T22:00:00.000Z');
+  });
+});
+
 describe('applyAuroraBids', () => {
   it('inserts an attempt with UTC climbed_at and no tombstone handling', async () => {
     const { tx, insertValues, calls } = createTx({ selectResults: [[], []] });
