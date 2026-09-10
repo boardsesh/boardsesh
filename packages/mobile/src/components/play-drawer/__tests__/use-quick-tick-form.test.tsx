@@ -48,6 +48,15 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({ useGrades: () => ({ data: gradesState.current }) }));
+// The climber's selected board, which the save path sends as `boardUuid` when
+// it is the wall this tick is actually on. Mocked so the test doesn't pull the
+// AsyncStorage-backed store into the graph.
+const activeBoardState = vi.hoisted(() => ({
+  current: null as { uuid: string; boardType: string; layoutId: number; sizeId: number; setIds: string } | null,
+}));
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: activeBoardState.current }),
+}));
 // Partial mock: keep the real exports (BOULDER_GRADES et al., pulled in
 // transitively via climbed-at.ts → @boardsesh/profile-stats) and override only
 // the board-name normaliser.
@@ -195,6 +204,7 @@ beforeEach(() => {
   toastMock.showToast.mockClear();
   gradesState.current = [];
   connectivityState.isOffline = false;
+  activeBoardState.current = null;
   vi.mocked(track).mockClear();
 });
 
@@ -545,5 +555,68 @@ describe('useQuickTickForm tries count', () => {
 
     fireEvent.click(getByTestId('save'));
     expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ status: 'flash', attemptCount: 1 });
+  });
+});
+
+describe('useQuickTickForm board attribution', () => {
+  // The wall the climber picked, and the config the drawer sends for a climb
+  // that lives on it. Set ids are stored in a different ORDER than the tick
+  // sends them, which is the same wall — the comparison has to normalise, the
+  // way the server's own config gate does.
+  const SELECTED_BOARD = {
+    uuid: 'board-uuid-tranquility',
+    boardType: 'moonboard',
+    layoutId: 6,
+    sizeId: 1,
+    setIds: '27,24,26,25',
+  };
+  const TICK_CONFIG = { layoutId: 6, sizeId: 1, setIds: '24,25,26,27' };
+
+  it("sends the selected board's uuid when the tick is on that wall", () => {
+    // Without this the tick carries only the config and the presence board id,
+    // and a serial-less wall's presence id is the shared per-config feed — so
+    // the tick lands on the global feed and the climber's own board reads as
+    // empty on Home (#5121).
+    boardState.current = boardWithoutHistory();
+    activeBoardState.current = SELECTED_BOARD;
+    const { getByTestId } = renderForm({ boardName: 'moonboard', ...TICK_CONFIG });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ boardUuid: SELECTED_BOARD.uuid });
+  });
+
+  it('omits the uuid when the drawer resolved a different board to render', () => {
+    // A climb that needs holds this wall hasn't got renders against another
+    // board, and the tick carries THAT config. The server drops a boardUuid
+    // whose config disagrees without falling back (#4219), so sending it here
+    // would leave the tick with no board at all.
+    boardState.current = boardWithoutHistory();
+    activeBoardState.current = SELECTED_BOARD;
+    const { getByTestId } = renderForm({ boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10' });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardUuid');
+  });
+
+  it('omits the uuid when no board is selected', () => {
+    boardState.current = boardWithoutHistory();
+    activeBoardState.current = null;
+    const { getByTestId } = renderForm({ boardName: 'moonboard', ...TICK_CONFIG });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardUuid');
+  });
+
+  it('omits the uuid when the drawer sent no config to check it against', () => {
+    boardState.current = boardWithoutHistory();
+    activeBoardState.current = SELECTED_BOARD;
+    const { getByTestId } = renderForm({ boardName: 'moonboard' });
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardUuid');
   });
 });

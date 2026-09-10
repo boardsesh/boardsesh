@@ -34,6 +34,15 @@ export type ActivePresenceBoard = Pick<
   'id' | 'name' | 'boardType' | 'layoutId' | 'sizeId' | 'setIds' | 'serialNumber' | 'angle'
 >;
 
+/**
+ * The two columns that say WHOSE board a row is. Carried alongside
+ * `ActivePresenceBoard` by the lookups that have to tell a climber's own wall
+ * apart from the system-owned per-config shared feed (see
+ * `isSharedConfigFeedBoard`). Kept off `ActivePresenceBoard` itself so the
+ * serial-candidate and resolved-board shapes don't all have to grow a slug.
+ */
+export type PresenceBoardIdentity = Pick<typeof dbSchema.userBoards.$inferSelect, 'ownerId' | 'slug'>;
+
 export function toResolvedBoard(board: ActivePresenceBoard): ResolvedBoard {
   return {
     boardId: Number(board.id),
@@ -398,7 +407,9 @@ export async function rememberBoardForSerial(
     });
 }
 
-export async function findActiveBoardById(boardId: number): Promise<ActivePresenceBoard | undefined> {
+export async function findActiveBoardById(
+  boardId: number,
+): Promise<(ActivePresenceBoard & PresenceBoardIdentity) | undefined> {
   const [board] = await db
     .select({
       id: dbSchema.userBoards.id,
@@ -409,6 +420,8 @@ export async function findActiveBoardById(boardId: number): Promise<ActivePresen
       setIds: dbSchema.userBoards.setIds,
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
+      ownerId: dbSchema.userBoards.ownerId,
+      slug: dbSchema.userBoards.slug,
     })
     .from(dbSchema.userBoards)
     .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
@@ -709,9 +722,36 @@ export function defaultBoardName(boardType: string): string {
   return `${BOARD_TYPE_LABELS[boardType] ?? boardType} Board`;
 }
 
+/**
+ * Slug namespace for the per-config shared feed boards minted by
+ * `resolveSharedBoardForConfig`. Exported so `isSharedConfigFeedBoard` tests the
+ * same prefix the builder below writes — the two cannot drift.
+ */
+export const BOARD_CONFIG_PRESENCE_SLUG_PREFIX = 'presence-';
+
 function boardConfigPresenceSlug(boardType: string, layoutId: number, sizeId: number, setIds: string): string {
   const digest = createHash('sha256').update(`${boardType}:${layoutId}:${sizeId}:${setIds}`).digest('hex').slice(0, 20);
-  return `presence-${boardType}-${layoutId}-${sizeId}-${digest}`;
+  return `${BOARD_CONFIG_PRESENCE_SLUG_PREFIX}${boardType}-${layoutId}-${sizeId}-${digest}`;
+}
+
+/**
+ * Whether a board is one of the system-owned per-config **shared feeds** that
+ * `resolveSharedBoardForConfig` mints for walls with no BLE serial (every
+ * MoonBoard, and any serial-less Kilter/Tension controller).
+ *
+ * Such a row means "some wall with this configuration" — there is exactly one
+ * globally per (type, layout, size, sets) — not "this climber's wall". Tick
+ * attribution therefore treats it as the weakest signal it has: see the board
+ * ladder in `saveTick` (#5121), where a shared feed only claims a tick once the
+ * session's board and the owner's own config-matching board have both come up
+ * empty.
+ *
+ * Identity is the owner plus the slug namespace, never the display name: the
+ * name is user-visible copy and could be edited, the slug is derived from the
+ * config and unique-indexed.
+ */
+export function isSharedConfigFeedBoard(board: PresenceBoardIdentity): boolean {
+  return board.ownerId === SYSTEM_BOARD_OWNER_ID && board.slug.startsWith(BOARD_CONFIG_PRESENCE_SLUG_PREFIX);
 }
 
 /**
