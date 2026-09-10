@@ -19,6 +19,8 @@ function reasonMessage(t: (key: string) => string, reason: string | undefined): 
       return t('claimLanding.error.reasons.expired');
     case 'used':
       return t('claimLanding.error.reasons.used');
+    case 'superseded':
+      return t('claimLanding.error.reasons.superseded');
     case 'server_error':
       return t('claimLanding.error.reasons.serverError');
     default:

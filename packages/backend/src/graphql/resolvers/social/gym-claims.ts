@@ -41,6 +41,13 @@ export const MAX_PENDING_CLAIMS_PER_USER = 10;
 export const GYM_CLAIM_LIMIT_CODE = 'GYM_CLAIM_LIMIT_REACHED';
 
 /**
+ * `extensions.code` when the claim is older than the gym's current ownership —
+ * someone already decided who owns this gym after the claim was filed, so
+ * applying it now would silently reverse that decision.
+ */
+export const GYM_CLAIM_SUPERSEDED_CODE = 'GYM_CLAIM_SUPERSEDED';
+
+/**
  * A claim that is genuinely still live: `pending` AND not past its expiry.
  *
  * The status column alone is not enough. A domain claim's token dies after 24h,
@@ -74,12 +81,78 @@ type ClaimApplied = {
 };
 
 /**
+ * Why an apply did not happen. `superseded` is its own outcome rather than a
+ * flavour of "not applied" because the two need opposite handling: a not-applied
+ * claim is already resolved or the gym is gone (nothing left to do), while a
+ * superseded one is still `pending` and needs a human to deny it or move
+ * ownership deliberately.
+ */
+export type ApplyGymClaimResult =
+  | { outcome: 'applied'; applied: ClaimApplied }
+  | { outcome: 'superseded' }
+  | { outcome: 'not_applied' };
+
+/**
+ * Has anyone decided who owns this gym since `claim` was filed?
+ *
+ * Exactly two code paths move `gyms.owner_id` — this function's own transfer and
+ * `reassignGymOwner` — and both leave a dated record: an admin handover writes a
+ * `gym_owner_reassignments` row, and a claim-driven transfer is dated by the
+ * approved claim row itself (an approved claim's `updated_at` IS its approval
+ * time). Reading both is therefore an exhaustive answer, with no new bookkeeping
+ * and no lock held across the decision.
+ *
+ * Anything newer than the claim means applying it now would reverse a decision
+ * somebody made with more information than the claim carries.
+ */
+async function ownershipMovedSinceClaim(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  gymUuid: string,
+  claim: typeof dbSchema.gymClaims.$inferSelect,
+): Promise<boolean> {
+  const [reassignment] = await tx
+    .select({ id: dbSchema.gymOwnerReassignments.id })
+    .from(dbSchema.gymOwnerReassignments)
+    .where(
+      and(
+        eq(dbSchema.gymOwnerReassignments.gymUuid, gymUuid),
+        gt(dbSchema.gymOwnerReassignments.createdAt, claim.createdAt),
+      ),
+    )
+    .limit(1);
+  if (reassignment) return true;
+
+  const [approvedSince] = await tx
+    .select({ id: dbSchema.gymClaims.id })
+    .from(dbSchema.gymClaims)
+    .where(
+      and(
+        eq(dbSchema.gymClaims.gymId, claim.gymId),
+        ne(dbSchema.gymClaims.id, claim.id),
+        eq(dbSchema.gymClaims.status, 'approved'),
+        gt(dbSchema.gymClaims.updatedAt, claim.createdAt),
+      ),
+    )
+    .limit(1);
+  return approvedSince !== undefined;
+}
+
+/**
  * Apply a claim: transfer gym ownership to the claimant. The pending row is
  * flipped to `approved` atomically first — if another transaction already
  * resolved it (double-clicked verify link, concurrent admin approval), this
- * returns null and does nothing, so the transfer + emails happen exactly once.
- * A real prior owner (not the system/import user) is kept on as a gym admin and
- * reported back so they can be notified. Returns null if the gym vanished.
+ * returns `not_applied` and does nothing, so the transfer + emails happen
+ * exactly once. A real prior owner (not the system/import user) is kept on as a
+ * gym admin and reported back so they can be notified. Also `not_applied` if
+ * the gym vanished.
+ *
+ * A claim older than the gym's current ownership returns `superseded` having
+ * written NOTHING — not even the status flip. Approving it would move ownership
+ * back to the claimant, demote whoever an admin chose to a membership row, mail
+ * them "someone verified they manage this gym" (false for a handover), and
+ * re-stamp `syncFrozenAt`, which `reassignGymOwner` goes out of its way to leave
+ * alone. The row stays `pending` so the claimant still gets a real outcome from
+ * the existing Deny path instead of being closed out silently.
  *
  * `requireCurrentOwnerId` narrows the apply to a gym still owned by that user —
  * the auto-approval path passes the system import user so it can only ever hand
@@ -90,7 +163,7 @@ type ClaimApplied = {
 export async function applyGymClaim(
   claim: typeof dbSchema.gymClaims.$inferSelect,
   opts: { reviewerId?: string; requireCurrentOwnerId?: string } = {},
-): Promise<ClaimApplied | null> {
+): Promise<ApplyGymClaimResult> {
   const { reviewerId, requireCurrentOwnerId } = opts;
   return db.transaction(async (tx) => {
     const [gym] = await tx
@@ -98,8 +171,24 @@ export async function applyGymClaim(
       .from(dbSchema.gyms)
       .where(and(eq(dbSchema.gyms.id, claim.gymId), isNull(dbSchema.gyms.deletedAt)))
       .limit(1);
-    if (!gym) return null;
-    if (requireCurrentOwnerId !== undefined && gym.ownerId !== requireCurrentOwnerId) return null;
+    if (!gym) return { outcome: 'not_applied' };
+    if (requireCurrentOwnerId !== undefined && gym.ownerId !== requireCurrentOwnerId) {
+      return { outcome: 'not_applied' };
+    }
+
+    // Only a claim that would actually move the gym can undo someone's decision.
+    // When the claimant already owns it — an admin who handed the gym straight
+    // to them rather than working the queue — the transfer block below is a
+    // no-op, so approving is how that claim finally gets an outcome. Refusing it
+    // would strand the row with Deny (and its "sorry, no" email) as the only way
+    // out, for the person who was in fact given the gym.
+    //
+    // No `FOR UPDATE`: a handover committing between this read and the transfer
+    // makes the owner-guarded UPDATE below match 0 rows and roll the whole
+    // transaction back, which is the behaviour the concurrency tests pin.
+    if (gym.ownerId !== claim.claimantUserId && (await ownershipMovedSinceClaim(tx, gym.uuid, claim))) {
+      return { outcome: 'superseded' };
+    }
 
     // Claim the pending row atomically; 0 rows means someone else already resolved it.
     const flipped = await tx
@@ -107,7 +196,7 @@ export async function applyGymClaim(
       .set({ status: 'approved', reviewedBy: reviewerId ?? null, updatedAt: new Date() })
       .where(and(eq(dbSchema.gymClaims.id, claim.id), eq(dbSchema.gymClaims.status, 'pending')))
       .returning({ id: dbSchema.gymClaims.id });
-    if (flipped.length === 0) return null;
+    if (flipped.length === 0) return { outcome: 'not_applied' };
 
     const priorOwnerId = gym.ownerId;
     const claimantId = claim.claimantUserId;
@@ -149,12 +238,15 @@ export async function applyGymClaim(
     }
 
     return {
-      gymName: gym.name,
-      gymUuid: gym.uuid,
-      gymSlug: gym.slug,
-      claimantUserId: claimantId,
-      claimEmail: claim.claimEmail,
-      priorOwnerId: notifyPriorOwnerId,
+      outcome: 'applied',
+      applied: {
+        gymName: gym.name,
+        gymUuid: gym.uuid,
+        gymSlug: gym.slug,
+        claimantUserId: claimantId,
+        claimEmail: claim.claimEmail,
+        priorOwnerId: notifyPriorOwnerId,
+      },
     };
   });
 }
@@ -215,7 +307,7 @@ export async function verifyGymClaimByToken(
   token: string,
 ): Promise<
   | { ok: true; gymName: string; gymSlug: string | null; gymUuid: string }
-  | { ok: false; reason: 'invalid' | 'expired' | 'used' }
+  | { ok: false; reason: 'invalid' | 'expired' | 'used' | 'superseded' }
 > {
   if (!token) return { ok: false, reason: 'invalid' };
   const tokenHash = hashClaimToken(token);
@@ -237,9 +329,16 @@ export async function verifyGymClaimByToken(
   }
 
   const result = await applyGymClaim(claim);
-  if (!result) return { ok: false, reason: 'used' };
-  await notifyClaimApplied(result);
-  return { ok: true, gymName: result.gymName, gymSlug: result.gymSlug, gymUuid: result.gymUuid };
+  // Not 'used': the link still works, the gym just isn't this claimant's to take
+  // any more. The claim stays pending so an admin can resolve it deliberately.
+  if (result.outcome === 'superseded') {
+    logger.warn(`[GymClaim] Domain claim ${claim.id} on gym ${claim.gymId} was superseded; leaving it pending`);
+    return { ok: false, reason: 'superseded' };
+  }
+  if (result.outcome !== 'applied') return { ok: false, reason: 'used' };
+  const { applied } = result;
+  await notifyClaimApplied(applied);
+  return { ok: true, gymName: applied.gymName, gymSlug: applied.gymSlug, gymUuid: applied.gymUuid };
 }
 
 /**
@@ -286,12 +385,15 @@ async function tryAutoApproveAdminClaim(
     await applyRateLimit(ctx, 3, 'gymClaimAutoApprove');
 
     const result = await applyGymClaim(claim, { requireCurrentOwnerId: SYSTEM_BOARD_OWNER_ID });
-    if (result) {
-      logger.info(
-        `[GymClaim] Auto-approved claim ${claim.id} on gym ${gym.uuid} for user ${claim.claimantUserId} (unclaimed listing)`,
-      );
+    if (result.outcome === 'superseded') {
+      logger.warn(`[GymClaim] Claim ${claim.id} on gym ${gym.uuid} was superseded; leaving it queued`);
+      return null;
     }
-    return result;
+    if (result.outcome !== 'applied') return null;
+    logger.info(
+      `[GymClaim] Auto-approved claim ${claim.id} on gym ${gym.uuid} for user ${claim.claimantUserId} (unclaimed listing)`,
+    );
+    return result.applied;
   } catch (error) {
     // Pass the Error itself, not `.message` — winston serializes the stack.
     logger.warn(`[GymClaim] Auto-approval of claim ${claim.id} on gym ${gym.uuid} failed; leaving it queued:`, error);
@@ -717,25 +819,40 @@ export const socialGymClaimMutations = {
       return true;
     }
 
-    // Both ways this can fail mean the same thing to the reviewer — the claim
-    // wasn't applied — so fold them into one message. `applyGymClaim` returns
-    // null when the gym is gone or the claim was already resolved, and throws
-    // when a concurrent transfer beat us to the guarded UPDATE; letting that
-    // throw escape would hand the admin an internal message instead.
-    let result: ClaimApplied | null;
+    // Two of the ways this can fail mean the same thing to the reviewer — the
+    // claim wasn't applied — so fold them into one message. `applyGymClaim`
+    // returns `not_applied` when the gym is gone or the claim was already
+    // resolved, and throws when a concurrent transfer beat us to the guarded
+    // UPDATE; letting that throw escape would hand the admin an internal
+    // message instead. `superseded` is deliberately NOT folded in — see below.
+    let result: ApplyGymClaimResult;
     try {
       result = await applyGymClaim(claim, { reviewerId: adminUserId });
     } catch (error) {
       logger.warn(`[GymClaim] Manual approval of claim ${claim.id} lost an ownership race:`, error);
-      result = null;
+      result = { outcome: 'not_applied' };
     }
 
-    if (!result) {
+    // Raised outside the catch above on purpose: this one is not "the claim
+    // wasn't applied, try again", it is a decision the reviewer has to make.
+    // Somebody already settled who owns this gym after the claim was filed, so
+    // approving would hand it back and undo them. Deny it, or move ownership on
+    // purpose with the handover panel next to the queue.
+    if (result.outcome === 'superseded') {
+      logger.warn(
+        `[GymClaim] Refused approval of claim ${claim.id} on gym ${claim.gymId}: ownership moved after it was filed`,
+      );
+      throw new GraphQLError('This gym changed hands after the claim was filed.', {
+        extensions: { code: GYM_CLAIM_SUPERSEDED_CODE },
+      });
+    }
+
+    if (result.outcome !== 'applied') {
       // The gym was removed, or the claim was resolved concurrently — don't
       // report a success the admin panel would show as "approved".
       throw new Error('Could not approve this claim — the gym may have been removed or it was already resolved');
     }
-    await notifyClaimApplied(result);
+    await notifyClaimApplied(result.applied);
     return true;
   },
 };
