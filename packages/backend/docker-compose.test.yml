@@ -2,7 +2,12 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:15
+    # PostGIS, because gyms/user_boards carry a `location` geography and the
+    # proximity branch of searchGyms is tested against it. Postgres 18 also lines
+    # this up with the CI service image (18.4 + PostGIS 3.6). Public Docker Hub
+    # build rather than our ghcr one so running the backend suite never needs a
+    # `docker login ghcr.io`.
+    image: postgis/postgis:18-3.6
     ports:
       - '5433:5432'
     environment:

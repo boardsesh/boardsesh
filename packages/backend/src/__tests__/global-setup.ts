@@ -8,8 +8,14 @@ const REDIS_PORT = 6380;
 const COMPOSE_FILE = fileURLToPath(new URL('../../docker-compose.test.yml', import.meta.url));
 
 const WORKER_DB_PREFIX = 'boardsesh_backend_test';
+// Escape hatch for pointing the suite at a Postgres of your own — see the note
+// on getConfiguredDatabaseUrl in worker-db.ts. When it is set we leave docker
+// alone entirely: whatever the URL names is the caller's to manage.
+const databaseUrlOverride = process.env.BOARDSESH_TEST_DATABASE_URL;
 const baseConnectionString = (
-  process.env.DATABASE_URL || `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`
+  databaseUrlOverride ||
+  process.env.DATABASE_URL ||
+  `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`
 ).replace(/\/[^/]+$/, '/postgres');
 
 async function isPortOpen(host: string, port: number, timeoutMs = 500): Promise<boolean> {
@@ -28,6 +34,10 @@ async function isPortOpen(host: string, port: number, timeoutMs = 500): Promise<
 
 async function ensureInfra(): Promise<void> {
   if (process.env.CI) return;
+  if (databaseUrlOverride) {
+    console.info('[test-infra] BOARDSESH_TEST_DATABASE_URL set — skipping docker orchestration');
+    return;
+  }
   if (process.env.SKIP_TEST_INFRA === '1') {
     console.info('[test-infra] SKIP_TEST_INFRA=1 — skipping docker orchestration');
     return;
@@ -90,8 +100,10 @@ export default async function globalSetup() {
   // `test-default` CI job runs without postgres, so probe the port first
   // and skip the cleanup when nothing is listening — backend tests still
   // run their `dropStaleWorkerDatabases` step in the dedicated
-  // `test-backend` job where postgres IS started.
-  if (!(await isPortOpen('127.0.0.1', PG_PORT))) {
+  // `test-backend` job where postgres IS started. An override URL points
+  // somewhere other than :5433, so the probe would be answering about the wrong
+  // server — skip it and let the connection itself report a problem.
+  if (!databaseUrlOverride && !(await isPortOpen('127.0.0.1', PG_PORT))) {
     return;
   }
   await dropStaleWorkerDatabases();

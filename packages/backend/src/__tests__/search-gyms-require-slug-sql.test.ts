@@ -180,12 +180,10 @@ describe('searchGyms requireSlug — rendered SQL', () => {
   });
 
   // The count-vs-rows agreement stated as one assertion rather than two
-  // substring checks. Ideally this would be a behavioural test against a real
-  // DB, but the backend test DB is plain `postgres:15` with no PostGIS — no
-  // `gyms.location` column, and `pg_available_extensions` lists no postgis — so
-  // ST_DWithin/ST_MakePoint cannot run there at all. Comparing the two WHERE
-  // clauses proves the same property the data test would: the set the count
-  // describes is the set the rows come from.
+  // substring checks. search-gyms-proximity.test.ts now proves the same property
+  // behaviourally against real PostGIS, so this is no longer the only evidence —
+  // it stays as the cheap structural guard, holding every rendered combination to
+  // a byte-identical WHERE including the ones no fixture covers.
   it.each([
     ['requireSlug omitted', PROXIMITY_INPUT],
     ['requireSlug true', { ...PROXIMITY_INPUT, requireSlug: true }],
