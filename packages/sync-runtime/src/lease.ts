@@ -55,6 +55,7 @@ export class DaemonLease {
 
   private held = false;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private readonly inFlightHeartbeats = new Set<Promise<void>>();
 
   constructor(daemonName: string, io: DaemonLeaseIo, runtime: DaemonLeaseRuntime = {}) {
     this.daemonName = daemonName;
@@ -104,21 +105,35 @@ export class DaemonLease {
   /** Release on shutdown so a rolling deploy hands over immediately, not after a TTL. */
   async stop(): Promise<void> {
     this.stopHeartbeat();
-    if (!this.held) return;
-    this.held = false;
-    try {
-      await this.io.release();
-      this.log(`[SyncRunner] Released the ${this.daemonName} daemon lease`);
-    } catch (error) {
-      // A failed release just means the next instance waits out the TTL.
-      this.onError(error);
+    if (this.held) {
+      this.held = false;
+      try {
+        await this.io.release();
+        this.log(`[SyncRunner] Released the ${this.daemonName} daemon lease`);
+      } catch (error) {
+        // A failed release just means the next instance waits out the TTL.
+        this.onError(error);
+      }
+    }
+
+    // A heartbeat may already be awaiting its renew query when shutdown starts.
+    // It observes held=false after that query and, if the renew re-created our
+    // row after the release above, performs a compensating release in beat(). Do
+    // not let callers close their database pool until that cleanup has settled.
+    while (this.inFlightHeartbeats.size > 0) {
+      await Promise.allSettled(this.inFlightHeartbeats);
     }
   }
 
   private startHeartbeat(): void {
     if (this.heartbeat) return;
     this.heartbeat = this.startTimer(() => {
-      void this.beat();
+      const heartbeatCompletion = this.beat();
+      this.inFlightHeartbeats.add(heartbeatCompletion);
+      void heartbeatCompletion.then(
+        () => this.inFlightHeartbeats.delete(heartbeatCompletion),
+        () => this.inFlightHeartbeats.delete(heartbeatCompletion),
+      );
     }, this.heartbeatMs);
     // Never keep the process alive just to renew a lease.
     (this.heartbeat as { unref?: () => void }).unref?.();

@@ -1,6 +1,6 @@
 # MoonBoard Sync
 
-`@boardsesh/moonboard-sync` is the MoonBoard-specific public location sync CLI. It exists because MoonBoard locations are not available through Aurora or Kilter Grips APIs.
+`@boardsesh/moonboard-sync` is the MoonBoard-specific public location sync CLI and daemon. It exists because MoonBoard locations are not available through Aurora or Kilter Grips APIs.
 
 ## Public board locations
 
@@ -38,7 +38,18 @@ When the sync first runs against a database whose MoonBoard gyms were seeded wit
 ```bash
 moonboard-sync locations
 moonboard-sync locations --username <email> --password <password> -v
+moonboard-sync daemon --skip-if-missing-credentials
 ```
+
+`daemon` runs one location sync immediately during active hours, then repeats every six to eight hours with jitter. It uses the shared Postgres daemon lease under the `moonboard-sync` key, so a second container stays in standby during a rolling deploy and takes over when the active process releases or loses the lease. The location writes remain idempotent because the lease is an overlap reduction mechanism, not a correctness lock.
+
+The combined `boardsesh-sync` image includes this command. The production sync host must run a separate service with:
+
+```bash
+bunx tsx packages/moonboard-sync/src/cli/index.ts daemon --skip-if-missing-credentials
+```
+
+Branch deploys do not run this daemon; they continue using the location snapshot in the dev database image.
 
 Environment variables:
 
@@ -55,3 +66,15 @@ op run --env-file=packages/moonboard-sync/.env.1password -- vp exec moonboard-sy
 ```
 
 The root `vp run db:seed-locations` task runs the Aurora, Kilter, and MoonBoard location CLIs instead of the removed GeoJSON seed script. Credentialed providers are safe in clean dev environments: Kilter and MoonBoard skip with a successful exit when their credentials are not configured.
+
+## First production run
+
+The first scheduled run needs an operator check because production's April 2026 MoonBoard seed predates source aliases:
+
+1. Record the current MoonBoard gym, board, and `moonboard:` source-alias counts.
+2. Configure `MOONBOARD_USERNAME` and `MOONBOARD_PASSWORD` on the sync host and start the daemon service.
+3. Confirm the sync adopts the seeded gyms through name-and-location matching and creates aliases without creating a second set of gyms.
+4. Inspect `/admin/gym-duplicates` for the rare pin correction that crossed a coarse source-key cell. Verify and merge any real twins manually.
+5. Check a later daemon cycle updates the same aliases and leaves duplicate counts stable.
+
+The repository provides the runner and container command. Sync-host service configuration, credentials, and these production data checks are deployment steps and are not performed by CI.
