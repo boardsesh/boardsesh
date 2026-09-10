@@ -9,8 +9,9 @@
 // a full UserBoard (uuid/slug/isAngleAdjustable).
 //
 // The pure logic (parse + owned-reuse + the create-input it would build) is
-// factored out so it can be unit-tested without React/GraphQL. The join screen
-// wires the real `useMyBoards` data + `useCreateBoard` mutation into `deps`.
+// factored out so it can be unit-tested without React/GraphQL. Callers wire the
+// real owned-board walk (`fetchAllMyBoards`) + `useCreateBoard` mutation into
+// `deps`.
 
 import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 import { parseBoardPath, parseNamedBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
@@ -27,8 +28,25 @@ export type ResolvedBoardConfig = {
 };
 
 export type ResolveBoardDeps = {
-  /** The boards the signed-in user already owns (from `useMyBoards`). */
-  ownedBoards: UserBoard[];
+  /**
+   * Every board the signed-in user already owns, loaded on demand.
+   *
+   * A loader rather than a pre-populated array, because the two ways of getting
+   * that array wrong both mint a duplicate of gear the user already has and the
+   * resolver cannot tell them apart from an honestly empty rack. A single
+   * `myBoards` page (20 rows by default, 50 at the cap) hides a board that sorts
+   * onto page two; and an awaited React Query `refetch()` under
+   * `networkMode: 'offlineFirst'` pauses its retryer while offline and never
+   * settles, so callers that guarded it with a `?? []` fallback handed over an
+   * empty list on exactly the failure that matters. Owning the call here makes
+   * the guard part of the contract instead of something every caller reimplements:
+   * pass an imperative walk that REJECTS (`fetchAllMyBoards`), and a failed load
+   * fails the resolve rather than creating a board.
+   *
+   * Called lazily, and only for the tuple form — a named board (`/b/{slug}`)
+   * resolves by slug and never reads the owned list.
+   */
+  loadOwnedBoards: () => Promise<UserBoard[]>;
   /** Persists a new board server-side and returns the full UserBoard. */
   createBoard: (input: CreateBoardInput) => Promise<UserBoard>;
   /** Resolve a named board (`/b/{slug}`) to its full entity, or null when the
@@ -99,6 +117,10 @@ export function buildCreateBoardInput(config: ResolvedBoardConfig): CreateBoardI
  *   1. Parse the path → config (throws on an unparseable / angle-less path).
  *   2. Reuse a matching owned board (angle overridden from the path), or
  *   3. Create a new board via `deps.createBoard`.
+ *
+ * A rejected `deps.loadOwnedBoards()` propagates: "you own no boards" and "we
+ * couldn't find out which boards you own" are the same input to step 2 and mint
+ * the same duplicate, so the resolver refuses to guess.
  */
 export async function resolveBoardForSession(boardPath: string, deps: ResolveBoardDeps): Promise<UserBoard> {
   const named = parseNamedBoardPath(boardPath);
@@ -116,7 +138,7 @@ export async function resolveBoardForSession(boardPath: string, deps: ResolveBoa
     throw new Error(`Cannot resolve a board from session boardPath: ${boardPath}`);
   }
 
-  const owned = findOwnedBoardForSession(deps.ownedBoards, config);
+  const owned = findOwnedBoardForSession(await deps.loadOwnedBoards(), config);
   if (owned) return owned;
 
   return deps.createBoard(buildCreateBoardInput(config));
