@@ -36,7 +36,7 @@ export type ClimbSearchParams = {
   sortBy?:
     | 'ascents'
     | 'difficulty'
-    | 'boardseshGrade'
+    | 'userGrade'
     | 'name'
     | 'quality'
     | 'popular'
@@ -175,7 +175,7 @@ export type ClimbSearchInputLike = {
 const SEARCH_SORT_ALIASES: Record<string, NonNullable<ClimbSearchParams['sortBy']>> = {
   ascents: 'ascents',
   difficulty: 'difficulty',
-  boardseshGrade: 'boardseshGrade',
+  userGrade: 'userGrade',
   name: 'name',
   quality: 'quality',
   popular: 'popular',

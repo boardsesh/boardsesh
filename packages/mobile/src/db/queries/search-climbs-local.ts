@@ -48,7 +48,7 @@ const DEFAULT_PAGE_SIZE = 20;
 const SORT_ALIASES: Record<string, string> = {
   ascents: 'ascents',
   difficulty: 'difficulty',
-  boardseshGrade: 'boardseshGrade',
+  userGrade: 'userGrade',
   name: 'name',
   quality: 'quality',
   popular: 'popular',
@@ -643,8 +643,10 @@ function sortColumnSql(
       // once for the SELECT and again for the sort. The alias only exists when
       // personal grades are on, which is exactly this branch.
       return useMyGrades ? `COALESCE(my_difficulty, ${crowdSort})` : crowdSort;
-    case 'boardseshGrade':
-      return 'CAST(ROUND(COALESCE(g.universal_grade, g.local_grade)) AS INTEGER)';
+    case 'userGrade':
+      // Raw mean of submitted grades — see the matching comment in the server's
+      // search-climbs.ts allowedSortColumns.
+      return eff('difficulty_average');
     case 'name':
       // NOCASE so 'apple' sorts before 'Zebra', matching Postgres's locale
       // collation (SQLite's default BINARY puts all uppercase first). ASCII
