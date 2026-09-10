@@ -216,6 +216,17 @@ describe('mobile publish argument routing', () => {
     ]);
   });
 
+  it('does not claim a publish when every platform had nothing to upload', () => {
+    // eoas exits 0 after skipping an unchanged export, so this path is reached on
+    // a green run. Saying "Published every requested platform" there is what made
+    // a preview that never got republished look ready.
+    const messages = selfHostedPublishSuccessMessages('pr-5166', false);
+
+    expect(messages.join('\n')).not.toContain('Published every requested platform');
+    expect(messages[0]).toContain('No changes to deploy');
+    expect(messages[0]).toContain('pr-5166');
+  });
+
   it('labels self-hosted production and preview modes accurately', () => {
     expect(selfHostedPublishModeLabel('production')).toBe('production (self-hosted expo-open-ota)');
     expect(selfHostedPublishModeLabel('pr-1234')).toBe('preview (self-hosted expo-open-ota)');

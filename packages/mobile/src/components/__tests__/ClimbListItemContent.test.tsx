@@ -33,7 +33,17 @@ vi.mock('@boardsesh/board-react', () => ({
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  // Surfaces `testID` and the flattened `flexShrink` so a layout rule this file
+  // cares about is assertable here. Most style regressions still need a device —
+  // the mock has no layout engine — but "does this badge shrink before the climb
+  // name does" is a single declared property, and it is the rule a new badge is
+  // most likely to get wrong.
+  View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) => {
+    const flattened = (Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : (style ?? {})) as {
+      flexShrink?: number;
+    };
+    return createElement('div', { 'data-testid': testID, 'data-flex-shrink': flattened.flexShrink }, children);
+  },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -230,6 +240,27 @@ describe('ClimbListItemContent hidden chip', () => {
     expect(chipIcon(container)).toBeNull();
   });
 
+  // The chip landed with `flexShrink: 0` against a `flexShrink: 1` name, which
+  // was right at the time. This change flips that rule so the badges shrink and
+  // the climb name — the row's identifier — keeps its width, and a rigid chip
+  // would quietly opt hidden climbs back out of it.
+  it('shrinks with the other badges rather than pushing the name into an ellipsis', () => {
+    const { container } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, is_hidden: true }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+
+    expect(container.querySelector('[data-testid="climb-row-hidden-chip"]')?.getAttribute('data-flex-shrink')).toBe(
+      '1',
+    );
+  });
+
   it('leaves a queue row without the field unmarked rather than guessing', () => {
     const { container } = render(
       <ClimbListItemContent
@@ -242,5 +273,84 @@ describe('ClimbListItemContent hidden chip', () => {
       />,
     );
     expect(chipIcon(container)).toBeNull();
+  });
+});
+
+describe('ClimbListItemContent trailing rail', () => {
+  beforeEach(() => {
+    favoritesStore.reset();
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+  });
+
+  const render_ = (props: Record<string, unknown> = {}) =>
+    render(
+      <ClimbListItemContent
+        climb={baseClimb}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        {...props}
+      />,
+    );
+
+  it('renders a trailing accessory inside the rail, not as a column of its own', () => {
+    const { container } = render_({ trailingAccessory: createElement('i', { 'data-testid': 'more' }) });
+
+    const accessory = container.querySelector('[data-testid="more"]');
+    const grade = container.querySelector('[data-variant="title3"]');
+    expect(accessory).not.toBeNull();
+    // The structural claim, and both halves are needed to make it one. The
+    // component returns a fragment, so a sibling accessory would ALSO have a
+    // parent containing the grade — that parent would just be the render root.
+    // Requiring a parent that is not the root is what distinguishes "in the
+    // rail, beside the grade" from "a fourth column of the row".
+    expect(accessory?.parentElement).not.toBe(container);
+    expect(accessory?.parentElement?.contains(grade as Node)).toBe(true);
+  });
+
+  it('renders nothing extra when no accessory is supplied', () => {
+    const { container } = render_();
+    expect(container.querySelector('[data-testid="more"]')).toBeNull();
+  });
+
+  // "V10 / 7C+" needs ~88pt at title3 — more than the rail holds once the status
+  // glyphs are in it — so it used to overflow the row and paint over the name.
+  it('stacks a two-scale grade onto two lines', () => {
+    resolveGrade.mockReturnValue({ label: 'V10 / 7C+', color: '#abcdef', isBoardsesh: false });
+    const { container } = render_();
+
+    const primary = container.querySelector('[data-variant="title3"]');
+    const secondary = container.querySelector('[data-variant="caption2"]');
+    expect(primary?.textContent).toBe('V10');
+    expect(secondary?.textContent).toBe('7C+');
+  });
+
+  // `resolveDisplayGrade` marks a projected grade by prefixing the whole label,
+  // so a naive split leaves the second scale reading as crowd-backed. The
+  // confidence-tier contract in docs/boardsesh-grade.md says a projected grade
+  // has to stay visibly marked.
+  it('keeps the estimate marker on both lines of a stacked projected grade', () => {
+    resolveGrade.mockReturnValue({ label: '≈V5 / 6C+', color: '#abcdef', isBoardsesh: true, isEstimated: true });
+    const { container } = render_();
+
+    expect(container.querySelector('[data-variant="title3"]')?.textContent).toBe('≈V5');
+    expect(container.querySelector('[data-variant="caption2"]')?.textContent).toBe('≈6C+');
+  });
+
+  it('does not mark a stacked grade that is not an estimate', () => {
+    resolveGrade.mockReturnValue({ label: 'V5 / 6C+', color: '#abcdef', isBoardsesh: true, isEstimated: false });
+    const { container } = render_();
+
+    expect(container.querySelector('[data-variant="caption2"]')?.textContent).toBe('6C+');
+  });
+
+  it('leaves a single-scale grade on one line', () => {
+    resolveGrade.mockReturnValue({ label: 'V10', color: '#abcdef', isBoardsesh: false });
+    const { container } = render_();
+
+    expect(container.querySelector('[data-variant="title3"]')?.textContent).toBe('V10');
+    expect(container.querySelector('[data-variant="caption2"]')).toBeNull();
   });
 });
