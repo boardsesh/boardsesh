@@ -104,6 +104,21 @@ export type Gym = {
    */
   isClaimed: boolean;
   /**
+   * Whether this gym's website can drive the self-service email claim: a real
+   * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
+   * the two refusals in requestGymClaim, so a claim UI can open the form that
+   * can succeed. Viewer-independent — it describes the listing, not the viewer.
+   *
+   * Required rather than optional even though NO document selects it yet:
+   * enrichGym always returns it, and requiring it is what forces every `Gym`
+   * fixture — and the client PR that follows — to acknowledge the field instead
+   * of silently reading `undefined` and routing a claimable gym to admin
+   * review. GYM_FIELDS starts selecting it one PR later, on purpose: a field
+   * the deployed backend cannot answer fails validation for the WHOLE document
+   * (same hazard as `myPendingClaim` below).
+   */
+  canClaimByDomain: boolean;
+  /**
    * The viewer's unresolved claim on this gym, or null when they have none.
    * OPTIONAL on purpose: only GET_GYM_BY_SLUG selects it. Adding it to the
    * shared GYM_FIELDS would put it in documents the mobile app ships, where a
@@ -145,6 +160,12 @@ export type SimilarGym = {
   distanceMeters?: number | null;
   ownerType: GymOwnerType;
   isClaimable: boolean;
+  /**
+   * Whether this gym's website can drive the self-service email claim: a real
+   * (non-free-provider) domain that the gym's OWNER put on the listing. A
+   * different question from `isClaimable`, which is about the viewer's standing.
+   */
+  canClaimByDomain: boolean;
   /** Upstream provider origins for a synced gym (e.g. "kilter"); empty for user-created gyms. */
   providerOrigins: string[];
 };
