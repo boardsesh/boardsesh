@@ -1,6 +1,15 @@
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 
-export const SORT_OPTIONS = ['ascents', 'quality', 'difficulty', 'name', 'popular', 'creation', 'random'] as const;
+export const SORT_OPTIONS = [
+  'ascents',
+  'quality',
+  'difficulty',
+  'boardseshGrade',
+  'name',
+  'popular',
+  'creation',
+  'random',
+] as const;
 export type SortOption = (typeof SORT_OPTIONS)[number];
 
 export const SORT_ORDERS = ['asc', 'desc'] as const;

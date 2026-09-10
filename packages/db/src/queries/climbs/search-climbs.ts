@@ -523,6 +523,11 @@ async function runStandardSearch(
     // never angle-blind in the way this fix addresses.
     ascents: sql`${statsCol('ascensionistCount')}`,
     difficulty: sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`,
+    // Boardsesh grade (community/model grade), as opposed to `difficulty` above
+    // (the setter-assigned grade). Uses the already-joined board_climb_grades
+    // row for the searched angle; NULL (no grade row) sorts last via the
+    // NULLS LAST/FIRST handling below, same as every other sort here.
+    boardseshGrade: sql`COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})`,
     name: sql`${boardClimbs.name}`,
     quality: sql`${statsCol('qualityAverage')}`,
     creation: sql`${boardClimbs.createdAt}`,
