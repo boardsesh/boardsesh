@@ -4,7 +4,7 @@ export const SORT_OPTIONS = [
   'ascents',
   'quality',
   'difficulty',
-  'boardseshGrade',
+  'userGrade',
   'name',
   'popular',
   'creation',
