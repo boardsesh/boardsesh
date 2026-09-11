@@ -12,8 +12,17 @@ function sp(params: Record<string, string> = {}): URLSearchParams {
   return new URLSearchParams(params);
 }
 
-describe('AI crawler origin rejection', () => {
-  it.each(['GPTBot/1.4', 'Claude-SearchBot/1.0', 'AMZN-SEARCHBOT/0.1'])('rejects %s before rendering', (userAgent) => {
+describe('blocked crawler origin rejection', () => {
+  it.each([
+    'GPTBot/1.4',
+    'Claude-SearchBot/1.0',
+    'AMZN-SEARCHBOT/0.1',
+    // Blocked on cost, not on what it does with the content: 36% of www
+    // requests on 2026-09-10 against 3.6% for real browsers, on the climb-view
+    // SSR path. See COST_BLOCKED_CRAWLER_TOKENS in app/lib/crawler-policy.ts.
+    'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
+    'Mozilla/5.0 (compatible; YandexRenderResourcesBot/1.0; +http://yandex.com/bots)',
+  ])('rejects %s before rendering', (userAgent) => {
     const response = middleware(
       new NextRequest('https://boardsesh-web-production.up.railway.app/fr/setter/test', {
         headers: { 'user-agent': userAgent },
@@ -27,11 +36,18 @@ describe('AI crawler origin rejection', () => {
   it.each([
     'Googlebot/2.1',
     'bingbot/2.0',
-    'YandexBot/3.0',
+    'Applebot/0.1',
     'facebookexternalhit/1.1',
     'ChatGPT-User/1.0',
     'Claude-User/1.0',
     'Mozilla/5.0',
+    // The reason COST_BLOCKED_CRAWLER_TOKENS spells out `yandexbot` and
+    // `yandexrenderresourcesbot` instead of a bare `yandex`: these three are
+    // real people on Yandex's browser and in-app search, and a substring match
+    // on `yandex` would 403 every one of them.
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 YaBrowser/23.9.1.962 Yowser/2.5 Safari/537.36',
+    'Mozilla/5.0 (Linux; arm_64; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 YaBrowser/22.11.3.104.00 SA/3 Mobile Safari/537.36',
+    'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/106.0.0.0 Mobile Safari/537.36 YandexSearch/1.0',
   ])('preserves %s', (userAgent) => {
     const response = middleware(
       new NextRequest('https://www.boardsesh.com/', { headers: { 'user-agent': userAgent } }),

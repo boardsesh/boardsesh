@@ -22,6 +22,7 @@ import {
 } from './handlers/static';
 import { staticPathToMediaRedirect } from './lib/media-url';
 import { getMediaPublicBaseUrl } from './storage/s3';
+import { handleRobotsTxt } from './handlers/robots';
 import { handleOgClimb } from './handlers/og-climb';
 import { handleBoardRender, isBoardRenderPath } from './handlers/board-render';
 import { handleBoardGeometry, isBoardGeometryPath } from './handlers/board-geometry';
@@ -356,6 +357,13 @@ export async function startServer(): Promise<ServerResources> {
       // here, not at /health (see handlers/health.ts for why).
       if (pathname === '/health/db' && req.method === 'GET') {
         await handleDatabaseHealthCheck(req, res);
+        return;
+      }
+
+      // Close this host to crawlers. See handlers/robots.ts for what it was
+      // costing us while it answered with nothing.
+      if (pathname === '/robots.txt' && (req.method === 'GET' || req.method === 'HEAD')) {
+        handleRobotsTxt(req, res);
         return;
       }
 
