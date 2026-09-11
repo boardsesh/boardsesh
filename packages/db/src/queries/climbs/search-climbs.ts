@@ -540,10 +540,15 @@ async function runStandardSearch(
     boardsesh_confidence: boardClimbGrades.confidence,
   };
 
+  // Ungraded climbs (no board_climb_stats row yet — no ascents/votes) sort to the
+  // bottom on either direction for the two grade sorts, rather than flipping to
+  // the top on ASC like every other sort's NULLs do: a climber picking "grade,
+  // easiest first" wants the softest known grade first, not a pile of unknowns.
+  const isGradeSort = sortBy === 'difficulty' || sortBy === 'userGrade';
   const orderByClause = randomOrderExpr
     ? sql`${randomOrderExpr} ASC`
     : sortOrder === 'asc'
-      ? sql`${sortColumn} ASC NULLS FIRST`
+      ? sql`${sortColumn} ASC ${isGradeSort ? sql`NULLS LAST` : sql`NULLS FIRST`}`
       : sql`${sortColumn} DESC NULLS LAST`;
 
   // Stats-presence key, used ONLY by the stats-driven fallback (issue #1971). It
