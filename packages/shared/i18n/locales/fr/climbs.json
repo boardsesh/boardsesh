@@ -123,7 +123,11 @@
       "footlessKickboard": "Sans pieds + KB",
       "noKickboard": "Sans KB"
     },
-    "anyFeet": "Pieds libres"
+    "anyFeet": "Pieds libres",
+    "gradeError": {
+      "stiff": "Sévère",
+      "soft": "Douce"
+    }
   },
   "boardseshGrade": {
     "title": "Grade Boardsesh",
@@ -591,7 +595,11 @@
         "noKickboard": "Sans KB"
       },
       "setAngleMarker": "{{angle}}°",
-      "setAngleMarkerAria": "La cotation et les croix sont à {{angle}} degrés"
+      "setAngleMarkerAria": "La cotation et les croix sont à {{angle}} degrés",
+      "gradeError": {
+        "stiff": "Sévère",
+        "soft": "Douce"
+      }
     },
     "climbRules": {
       "matchingAllowed": "Deux mains par prise autorisées",

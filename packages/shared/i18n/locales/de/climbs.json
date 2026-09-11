@@ -123,7 +123,11 @@
       "footlessKickboard": "Ohne Füße + KB",
       "noKickboard": "Ohne KB"
     },
-    "anyFeet": "Freie Füße"
+    "anyFeet": "Freie Füße",
+    "gradeError": {
+      "stiff": "Hart",
+      "soft": "Weich"
+    }
   },
   "boardseshGrade": {
     "title": "Boardsesh-Grad",
@@ -591,7 +595,11 @@
         "noKickboard": "Ohne KB"
       },
       "setAngleMarker": "{{angle}}°",
-      "setAngleMarkerAria": "Bewertung und Begehungen stammen von {{angle}} Grad"
+      "setAngleMarkerAria": "Bewertung und Begehungen stammen von {{angle}} Grad",
+      "gradeError": {
+        "stiff": "Hart",
+        "soft": "Weich"
+      }
     },
     "climbRules": {
       "matchingAllowed": "Matchen erlaubt",
