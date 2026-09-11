@@ -244,6 +244,7 @@ vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
 vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
 vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
 vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
+vi.mock('../../queue-control/RestTimerPillHost', () => ({ RestTimerPillHost: () => null }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 
 // --- Hooks / providers -------------------------------------------------------

@@ -27,6 +27,7 @@ import { reportError } from '../../../lib/error-reporting';
 import { RecordTopChrome } from '../RecordTopChrome';
 import { SESSION_START_FAB_HEIGHT, SessionStartFab } from '../SessionStartFab';
 import { BoardSummaryCard } from './BoardSummaryCard';
+import { RestTimerArmRow } from '../RestTimerArmRow';
 import {
   DEFAULT_GRADE_FOCUS_OPTIONS,
   DEFAULT_LADDER_OPTIONS,
@@ -309,6 +310,13 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
             board is set, and prompts to pick one when none is. */}
         <View style={styles.cardInset}>
           <BoardSummaryCard onPress={handleOpenBoardSwitcher} board={activeBoard ?? null} />
+        </View>
+
+        {/* Arm the rest timer for the session you're about to start (#5378). The
+            arm carries in on its own — RestTimerSessionSync binds it when the
+            session id appears. */}
+        <View style={styles.cardInset}>
+          <RestTimerArmRow />
         </View>
 
         <GeneratorPickerCard

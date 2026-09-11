@@ -96,6 +96,7 @@ vi.mock('@boardsesh/board-react', async (importOriginal) => {
 
 import { useQuickTickForm, type QuickTickFormInput, type QuickTickDismissSnapshot } from '../use-quick-tick-form';
 import { track } from '../../../lib/analytics';
+import { armRestTimer, getRestTimerState, resetRestTimerStoreForTests } from '../../../lib/rest-timer-store';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 // A DOM stand-in for the sheet: every control the real form exposes, driven
@@ -196,6 +197,7 @@ beforeEach(() => {
   gradesState.current = [];
   connectivityState.isOffline = false;
   vi.mocked(track).mockClear();
+  resetRestTimerStoreForTests();
 });
 
 afterEach(() => {
@@ -545,5 +547,60 @@ describe('useQuickTickForm tries count', () => {
 
     fireEvent.click(getByTestId('save'));
     expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ status: 'flash', attemptCount: 1 });
+  });
+});
+
+// The rest timer (#5378) anchors on the tick from this hook's per-call
+// onSuccess, beside the shipped Rogue-stopwatch kick. There is deliberately no
+// branch on delivery in the production code: React Query runs onSuccess for the
+// acknowledged AND the offline-queued save, and a rest timer is about when YOU
+// logged the send. Two tests dressed up as "two deliveries" would assert the
+// same line twice, so this asserts the contract that can actually break — that
+// the anchor is the exact timestamp we sent, not a second one derived later.
+describe('useQuickTickForm rest timer anchor', () => {
+  it('anchors the timer on the exact climbedAt the save was given', () => {
+    boardState.current = boardWithoutHistory();
+    armRestTimer('afterTick', Date.parse('2026-09-11T09:00:00.000Z'), 'session-1');
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('save'));
+
+    const sentClimbedAt = (saveMock.mutate.mock.calls[0][0] as { climbedAt: string }).climbedAt;
+    expect(getRestTimerState().lastTickAt).toBe(sentClimbedAt);
+    expect(getRestTimerState().anchorMs).toBe(Date.parse(sentClimbedAt));
+  });
+
+  it('anchors on an edited climbedAt rather than re-deriving a fresh now', () => {
+    boardState.current = boardWithoutHistory();
+    armRestTimer('afterTick', Date.parse('2026-09-11T09:00:00.000Z'), 'session-1');
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('climbedat-date'));
+    fireEvent.click(getByTestId('save'));
+
+    const sentClimbedAt = (saveMock.mutate.mock.calls[0][0] as { climbedAt: string }).climbedAt;
+    expect(getRestTimerState().lastTickAt).toBe(sentClimbedAt);
+  });
+
+  it('leaves the timer alone when the save fails', () => {
+    boardState.current = boardWithoutHistory();
+    armRestTimer('afterTick', Date.parse('2026-09-11T09:00:00.000Z'), 'session-1');
+    saveMock.state.failure = new Error('nope');
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(getRestTimerState().lastTickAt).toBeNull();
+    expect(getRestTimerState().anchorMs).toBeNull();
+  });
+
+  it('does nothing at all while the timer is disarmed', () => {
+    boardState.current = boardWithoutHistory();
+    const { getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(getRestTimerState().armed).toBe(false);
+    expect(getRestTimerState().lastTickAt).toBeNull();
   });
 });

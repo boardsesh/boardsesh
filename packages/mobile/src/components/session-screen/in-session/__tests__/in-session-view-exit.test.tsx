@@ -39,6 +39,7 @@ const session = vi.hoisted(() => ({
   createdSessionId: 'session-1' as string | null,
 }));
 
+vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
 vi.mock('react-native', () => ({
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },

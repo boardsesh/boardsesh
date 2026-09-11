@@ -29,6 +29,9 @@ import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at
 import { useGrades } from '../../lib/graphql/hooks';
 import { useToast } from '../../providers/toast-provider';
 import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
+import { getSetting } from '../../settings';
+import { nowMs } from '../../lib/clock';
+import { noteRestTimerTick } from '../../lib/rest-timer-store';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
 import { useIsOffline } from '../../hooks/use-is-offline';
@@ -280,6 +283,13 @@ export function useQuickTickForm({
       // Mirrors the server's flash-is-one-try rule; a no-op for every value the picker can show.
       const finalAttempts = clampAttempts(tickState.attemptCount, status);
 
+      // Hoisted out of the variables object so the rest timer anchors on the
+      // exact instant we send, rather than re-deriving one after onSuccess has
+      // already reset `hasEditedClimbedAtRef`.
+      // Untouched: log a fresh save-time "now". Edited: honour the pick
+      // (clamped, in case the sheet sat open past the chosen minute).
+      const climbedAtIso = (hasEditedClimbedAtRef.current ? clampToNow(climbedAt) : new Date()).toISOString();
+
       saveTick.mutate(
         {
           climbUuid,
@@ -292,9 +302,7 @@ export function useQuickTickForm({
           isBenchmark,
           baseAscensionistCount,
           comment,
-          // Untouched: log a fresh save-time "now". Edited: honour the pick
-          // (clamped, in case the sheet sat open past the chosen minute).
-          climbedAt: (hasEditedClimbedAtRef.current ? clampToNow(climbedAt) : new Date()).toISOString(),
+          climbedAt: climbedAtIso,
           ...(sessionId ? { sessionId } : {}),
           ...(layoutId != null ? { layoutId } : {}),
           ...(sizeId != null ? { sizeId } : {}),
@@ -327,6 +335,13 @@ export function useQuickTickForm({
             // the wall (see RogueTimerProvider), so a passenger's tick can't
             // touch the timer. Fire-and-forget; never block the save flow.
             void startTimerStopwatch?.();
+            // Anchor the in-app rest timer on the same instant (#5378). No-op
+            // unless the climber armed it. This runs on the offline-queued
+            // delivery too, which is correct: a rest timer is about when YOU
+            // logged the send, not when the server heard about it. The outbox
+            // drainer replays without this hook, so a tick delivered twenty
+            // minutes later can never reset a live timer.
+            noteRestTimerTick(climbedAtIso, getSetting('restTimerMode'), nowMs());
             // Reset on commit so reopening the sheet on the same climb
             // doesn't show stale state from the just-saved tick.
             setTickState(createInitialTickState());

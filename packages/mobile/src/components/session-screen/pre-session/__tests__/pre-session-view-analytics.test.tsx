@@ -53,6 +53,7 @@ const picker = vi.hoisted(() => ({ onChange: null as ((selection: GeneratorSelec
 // Surfaces the Start button's onPress.
 const startButton = vi.hoisted(() => ({ onPress: null as (() => void) | null }));
 
+vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
 vi.mock('../../../../lib/analytics', () => ({ track: analytics.track }));
 
 // Platform + PlatformColor are included so this mock is leak-safe for theme/

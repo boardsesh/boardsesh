@@ -50,6 +50,7 @@ import { RecordTopChrome } from '../RecordTopChrome';
 import { SessionTitleSheet } from '../SessionTitleSheet';
 import { useSessionExitOptions } from '../use-session-exit-options';
 import { SessionAnalytics } from './SessionAnalytics';
+import { RestTimerArmRow } from '../RestTimerArmRow';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
 import { sortHardestSends, type HardestSend } from './hardest-sends';
@@ -640,6 +641,10 @@ export function InSessionView({
         startedAt={startedAt}
         gradeDistribution={gradeDistribution}
       />
+
+      {/* Turn the rest timer on for the session you're in (#5378), and see it
+          without leaving the Record tab. */}
+      <RestTimerArmRow />
 
       <View>
         {/* SectionHeader self-insets 16px; the list already pads 16, so bleed the

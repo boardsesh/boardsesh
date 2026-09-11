@@ -1,3 +1,4 @@
+import type { RestTimerMode } from '../lib/rest-timer';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 export type AppSettings = {
@@ -61,6 +62,16 @@ export type AppSettings = {
   /** Light the connected board when tapping a climb to select it from a climbs list. */
   lightOnClimbTap: boolean;
   keepScreenAwake: boolean;
+  /**
+   * Rest timer (#5378) — the shape of the timer, not whether it is armed.
+   * Arming is deliberately in-memory (see `rest-timer-store.ts`): a flag set
+   * three weeks ago must never silently start moving someone's wall on app open.
+   */
+  restTimerTargetSeconds: number | null;
+  /** Advance the queue (and so light the next climb) when the target lands. */
+  restTimerAutoAdvance: boolean;
+  /** `afterTick` re-anchors on every tick; `onTheMinute` holds a fixed cadence. */
+  restTimerMode: RestTimerMode;
   theme: 'system' | 'light' | 'dark';
   hapticFeedbackEnabled: boolean;
   notifySessionInvites: boolean;
