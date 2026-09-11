@@ -307,11 +307,16 @@ async function readJournalMode(db: SQLiteDatabase): Promise<string> {
  */
 export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   const replacesTheOneInFlight = latestDatabase !== null && latestDatabase !== db;
-  // Pin before the overwrite below. Reassigning `latestDatabase` is what makes the
-  // PREVIOUS wrapper collectable, and on Android collecting any wrapper for this file
-  // frees the native handle the live connection is still using (#5410). Pinning both
-  // the outgoing and incoming wrapper is what makes that overwrite safe.
-  pinDatabase(latestDatabase);
+  // Reassigning `latestDatabase` below is what makes the PREVIOUS wrapper collectable,
+  // and on Android collecting any wrapper for this file frees the native handle the
+  // live connection is still using (#5410). The outgoing one was pinned by its own
+  // call to this function, so only the incoming one needs pinning here.
+  //
+  // Deliberately overlapping with the two pins in `database-provider.tsx`: today
+  // `onInit` is this function's only caller, so removing any ONE of the three leaves
+  // every wrapper pinned and the suite green. That redundancy is the point — this is
+  // the module that owns the overwrite hazard, and `initializeDatabase` is a public
+  // export, so a second caller must not have to remember the provider's pin.
   pinDatabase(db);
   // Recorded on EVERY call, including the remount that only gets the shared promise
   // back, so the in-flight chain can retarget onto the live connection.
