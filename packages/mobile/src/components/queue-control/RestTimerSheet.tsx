@@ -61,8 +61,14 @@ export function RestTimerLengthControl({ inset = true }: { inset?: boolean } = {
     // back out through the card's padding and every child re-applies the gutter
     // itself — one seam on both surfaces rather than a 32pt indent on one.
     <View style={inset ? null : styles.cardBleed}>
-      <SectionHeader title={t('mobile.restTimer.targetLabel')} />
+      {/* Label and value on ONE row: this is a field, not a section. A caption
+          stacked over a lone pill left a third of the row empty and read as a
+          heading for a group of one. `body` in `label` rather than the grey
+          uppercase caption, for the same reason — it names the value beside it. */}
       <View style={styles.lengthRow}>
+        <Text variant="body" color={systemColors.label} style={styles.lengthLabel}>
+          {t('mobile.restTimer.targetLabel')}
+        </Text>
         <RestLengthPicker value={targetSeconds} onChange={setTargetSeconds} />
       </View>
       {hasRestLength(targetSeconds) ? null : (
@@ -220,7 +226,7 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
     // content, and deliberately WITHOUT `header` / `footer`: `enableDynamicSizing`
     // with sheet chrome but no `androidContentSized` gives the Android column
     // `flex: 1` under a `matchContents` host, which resolves to zero (#4720).
-    <ModalSheet visible={visible} surface="solid" enableDynamicSizing onClose={onClose} enablePanDownToClose>
+    <ModalSheet visible={visible} enableDynamicSizing onClose={onClose} enablePanDownToClose>
       {/* No container `gap`: each block owns its own rhythm (SectionHeader brings
           the section's top padding, each control its own inset), and a blanket
           gap on top of those produced the ladder of unequal seams the old sheet
@@ -230,14 +236,15 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
             own leaf — the 1 Hz tick stops here and never reaches this form. */}
         <RestTimerHeroClock />
 
+        {/* Rest, then cadence, then what happens when it runs out — the order
+            you set them up in. The auto-advance switch carries no section
+            heading: it names itself, and a caption over a single switch is a
+            heading for a group of one. */}
         <RestTimerLengthControl />
 
-        <View>
-          <SectionHeader title={t('mobile.restTimer.whenUpLabel')} />
-          <RestTimerAutoAdvanceRow />
-        </View>
-
         <RestTimerCadenceSection />
+
+        <RestTimerAutoAdvanceRow />
 
         {/* Transport last, in the thumb zone. Tonal Reset rather than a text
             button: same silhouette as Pause, one emphasis step down, so it stops
@@ -297,11 +304,18 @@ const styles = StyleSheet.create({
     marginHorizontal: -spacing[4],
   },
   lengthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing[3],
     paddingHorizontal: TICK_GUTTER,
     paddingTop: spacing[1],
   },
   // Explanatory line under a group, aligned to the label seam the SwitchRow and
   // SectionHeader both use.
+  lengthLabel: {
+    flexShrink: 1,
+  },
   groupFootnote: {
     paddingHorizontal: TICK_GUTTER,
     paddingTop: spacing[1],

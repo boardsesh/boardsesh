@@ -11,15 +11,12 @@ import { useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Card } from '../Card';
-import { Text } from '../Text';
 import { SwitchRow } from '../SwitchRow';
-import { useTheme } from '../../providers/theme-provider';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { useRestTimerArmed } from '../../hooks/use-rest-timer';
 import { getSetting } from '../../settings';
 import { nowMs } from '../../lib/clock';
 import { armRestTimer, disarmRestTimer } from '../../lib/rest-timer-store';
-import { RestTimerClock } from '../queue-control/RestTimerPill';
 import { RestTimerAutoAdvanceRow, RestTimerLengthControl } from '../queue-control/RestTimerSheet';
 import { spacing } from '../../theme/tokens';
 
@@ -31,7 +28,6 @@ import { spacing } from '../../theme/tokens';
  */
 export function RestTimerArmRow() {
   const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
   const armed = useRestTimerArmed();
   const { sessionId } = useQueueSessionId();
 
@@ -51,14 +47,9 @@ export function RestTimerArmRow() {
 
   return (
     <Card>
-      <View style={styles.headerRow}>
-        <Text variant="headline" color={systemColors.label} style={styles.title}>
-          {t('mobile.restTimer.title')}
-        </Text>
-        {/* Its own leaf, so the 1 Hz tick never re-renders this card or the list
-            header that holds it. */}
-        <RestTimerClock variant="headline" />
-      </View>
+      {/* No clock above the switch. This card is where you TURN THE TIMER ON;
+          the running count belongs to the pill that floats over every tab, and a
+          second copy sitting above its own on/off switch just competed with it. */}
       <SwitchRow
         label={t('mobile.restTimer.armLabel')}
         description={t('mobile.restTimer.armDescription')}
@@ -79,16 +70,6 @@ export function RestTimerArmRow() {
 }
 
 const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing[2],
-    marginBottom: spacing[1],
-  },
-  title: {
-    flexShrink: 1,
-  },
   // No gap / top margin of its own: the length control's SectionHeader brings
   // the section's top rhythm and the SwitchRow its own vertical padding, so a
   // second spacing layer here just doubles both seams.

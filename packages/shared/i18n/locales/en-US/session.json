@@ -310,7 +310,6 @@
       "endSessionFailedLeft": "Couldn't end the session — you've left it instead."
     },
     "restTimer": {
-      "title": "Rest timer",
       "armLabel": "Rest timer",
       "armDescription": "Time your rest after every send, and move to the next climb when it's up.",
       "waitingForTick": "Log a climb to start",
@@ -344,7 +343,6 @@
       "clockCaptionPaused": "Paused",
       "clockCaptionOver": "Over your rest",
       "lengthOffFootnote": "Counting up from your last climb. Nothing moves on its own.",
-      "whenUpLabel": "When your rest is up",
       "autoAdvanceFootnote": "Only while Boardsesh is open.",
       "autoAdvanceNeedsLength": "Pick a rest length to move the queue automatically.",
       "lengthPillAria": "Rest length, {{value}}",
