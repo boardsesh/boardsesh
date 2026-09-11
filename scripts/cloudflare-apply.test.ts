@@ -17,6 +17,7 @@ import {
   CACHE_RULE_DESCRIPTION,
   CRAWLER_ALLOW_RULE_DESCRIPTION,
   CRAWLER_ALLOW_TOKENS,
+  CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION,
   CRAWLER_BLOCK_RULE_DESCRIPTION,
   CRAWLER_BLOCK_TOKENS,
   CLIMB_VIEW_PATH_SEGMENT,
@@ -721,9 +722,12 @@ describe('www cost-control rules (#4650)', () => {
   it('lowercases the user agent in every WAF expression', () => {
     // Cloudflare's `contains` is CASE-SENSITIVE. Without lower(), the rule installs
     // cleanly and matches nothing — the worst kind of failure, because it looks done.
+    // Not every rule matches on user agent — the climb-view challenge is
+    // path-only, because the population it exists for rotates its UA. The
+    // invariant is narrower than "every rule names an agent": every READ of the
+    // header must be a lowered one.
     for (const rule of desired.wafRules) {
       const comparisons = [...rule.expression.matchAll(/lower\(http\.user_agent\) contains "([^"]*)"/g)];
-      expect(comparisons.length).toBeGreaterThan(0);
       for (const [, token] of comparisons) {
         expect(token).toBe(token.toLowerCase());
       }
@@ -734,6 +738,13 @@ describe('www cost-control rules (#4650)', () => {
       // fragments carrying the wrapper.
       const headerReads = rule.expression.split('http.user_agent').length - 1;
       expect(headerReads).toBe(comparisons.length);
+    }
+
+    // And the guard must not pass by matching nothing: the two rules that are
+    // ABOUT user agents still have to carry lowered comparisons.
+    for (const description of [CRAWLER_ALLOW_RULE_DESCRIPTION, CRAWLER_BLOCK_RULE_DESCRIPTION]) {
+      const rule = desired.wafRules.find((candidate) => candidate.description === description);
+      expect(rule?.expression).toMatch(/lower\(http\.user_agent\) contains "/);
     }
   });
 
@@ -805,6 +816,38 @@ describe('www cost-control rules (#4650)', () => {
     }
   });
 
+  it('challenges the climb-view surface, and does it last', () => {
+    // The scraper this exists for rotates ordinary Chrome/Edge/Safari strings,
+    // so no token list reaches it. What separates it from a person is that it
+    // executes no JavaScript — 350 climb pages and zero `/_next/static` chunks
+    // in a 2026-09-11 sample — and a managed challenge is exactly that test.
+    const challengeRule = desired.wafRules.find((rule) => rule.description === CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION);
+    expect(challengeRule?.action).toBe('managed_challenge');
+    expect(challengeRule?.expression).toContain('/view/');
+    expect(challengeRule?.expression).toContain(`http.host eq "${WWW_HOSTNAME}"`);
+
+    // Last, because it is the only rule that can catch a real browser string.
+    // Anything we have a verdict on must be judged before it.
+    expect(desired.wafRules.indexOf(challengeRule!)).toBe(desired.wafRules.length - 1);
+    expect(desired.wafRules.indexOf(challengeRule!)).toBeGreaterThan(desired.wafRules.indexOf(blockRule!));
+  });
+
+  it('never challenges an engine that sends people back', () => {
+    // The allow rule skips the whole ruleset, so an allow-listed agent cannot
+    // reach the challenge. That is load-bearing for SEO and it is why Baidu and
+    // Qwant had to be added: they were passing by default, which stops working
+    // the moment an unlisted agent gets challenged.
+    const challengeIndex = desired.wafRules.findIndex(
+      (rule) => rule.description === CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION,
+    );
+    expect(desired.wafRules.indexOf(allowRule!)).toBeLessThan(challengeIndex);
+    expect(allowRule?.action).toBe('skip');
+    expect(allowRule?.action_parameters).toEqual({ ruleset: 'current' });
+    for (const sendsTraffic of ['googlebot', 'bingbot', 'duckduckbot', 'bravebot', 'baiduspider', 'qwantify']) {
+      expect(CRAWLER_ALLOW_TOKENS).toContain(sendsTraffic);
+    }
+  });
+
   it('declares the allow rule before the block rule', () => {
     // Precedence is the whole safety mechanism: skip-remaining only protects a
     // crawler if it is evaluated first.
@@ -837,6 +880,9 @@ describe('managed rule ordering and foreign-rule safety', () => {
     expect(rules.map((rule) => rule.description)).toEqual([
       CRAWLER_ALLOW_RULE_DESCRIPTION,
       CRAWLER_BLOCK_RULE_DESCRIPTION,
+      // Last on purpose: it is the only rule that can catch an ordinary browser
+      // string, so both UA verdicts must be reached first.
+      CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION,
     ]);
     // The pre-existing rule keeps its Cloudflare-assigned id rather than being
     // recreated, so its analytics and history survive.
