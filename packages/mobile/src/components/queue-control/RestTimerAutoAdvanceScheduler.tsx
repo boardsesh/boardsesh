@@ -61,15 +61,28 @@ export function RestTimerAutoAdvanceScheduler() {
   // Read through refs so the scheduling effect depends only on the timer's own
   // inputs. Re-running it on every queue edit would cancel and reschedule the
   // pending advance constantly, and a queue edit is not a reason to restart a rest.
+  // The dead-end message is resolved HERE, with the `t` react-i18next bound, and
+  // carried as a finished string. Calling `inputs.t('...')` inside the callback
+  // instead would read as a property access to `check:i18n:orphans`, which can
+  // only bind a plain `t(...)` identifier call — and the key would be reported
+  // as orphaned even though it is used.
+  const queueEndedMessage = t('mobile.restTimer.queueEndedToast');
   const advanceInputsRef = useRef({
     queue,
     currentClimbQueueItem,
     playlistSuggestionSource,
     activeBoard,
     showToast,
-    t,
+    queueEndedMessage,
   });
-  advanceInputsRef.current = { queue, currentClimbQueueItem, playlistSuggestionSource, activeBoard, showToast, t };
+  advanceInputsRef.current = {
+    queue,
+    currentClimbQueueItem,
+    playlistSuggestionSource,
+    activeBoard,
+    showToast,
+    queueEndedMessage,
+  };
 
   const fireAdvance = useCallback(
     (expectedCycleId: number) => {
@@ -93,7 +106,7 @@ export function RestTimerAutoAdvanceScheduler() {
 
       if (!canNext) {
         noteRestTimerQueueEnded();
-        inputs.showToast(inputs.t('mobile.restTimer.queueEndedToast'), 'info');
+        inputs.showToast(inputs.queueEndedMessage, 'info');
         return;
       }
 
