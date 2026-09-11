@@ -128,6 +128,10 @@ export const CRAWLER_ALLOW_RULE_DESCRIPTION =
   'boardsesh:allow-search-crawlers (managed by scripts/cloudflare-apply.ts)';
 export const CRAWLER_BLOCK_RULE_DESCRIPTION = 'boardsesh:block-seo-scrapers (managed by scripts/cloudflare-apply.ts)';
 
+/** Marker for the climb-view managed-challenge rule. Same never-rename contract as above. */
+export const CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION =
+  'boardsesh:climb-view-challenge (managed by scripts/cloudflare-apply.ts)';
+
 /** Marker for the climb-view rate-limit rule. Same never-rename contract as above. */
 export const CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION =
   'boardsesh:climb-view-rate-limit (managed by scripts/cloudflare-apply.ts)';
@@ -242,7 +246,14 @@ export interface SslDesired {
 export interface WafRuleDesired {
   description: string;
   expression: string;
-  action: 'block' | 'skip';
+  /**
+   * `managed_challenge` is the softest of the three and the only one that can
+   * separate a headless fetcher from a person: passing it requires executing
+   * JavaScript, which a real browser does transparently. Unlike the rate-limit
+   * phase — where the Free plan refused it outright (see the note on
+   * RateLimitRuleDesired) — custom rules accept it on every plan.
+   */
+  action: 'block' | 'skip' | 'managed_challenge';
   action_parameters?: { ruleset: 'current' };
   enabled: boolean;
 }
@@ -497,6 +508,12 @@ export const CRAWLER_ALLOW_TOKENS = [
   'brave-search',
   'bravebot',
   'applebot',
+  // Added 2026-09-11 with the climb-view challenge below. Both send people back
+  // (Baidu 7, Qwant 1 over 30 days) and neither was on either list, so they
+  // passed by default — which stopped working the moment an unlisted agent
+  // started getting challenged.
+  'baiduspider',
+  'qwantify',
   // Share-card unfurlers. Blocking these breaks link previews, not crawling.
   'twitterbot',
   'facebookexternalhit',
@@ -599,7 +616,48 @@ export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_T
  * page are counted along with real page loads. That is why the threshold
  * below carries headroom rather than a tight ~60/min budget.
  */
-export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and http.request.uri.path contains "/view/")`;
+export const CLIMB_VIEW_SURFACE_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and http.request.uri.path contains "/view/")`;
+
+/** The rate limit and the challenge deliberately cover the same surface. */
+export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = CLIMB_VIEW_SURFACE_EXPRESSION;
+
+/**
+ * Managed-challenge the climb-view surface for anything the allow rule did not
+ * already wave through.
+ *
+ * **Why a challenge and not a UA rule or a tighter rate limit.** The population
+ * this exists for rotates user agents: a 3.6-minute sample of production on
+ * 2026-09-11 found nine ordinary Chrome, Edge and Safari strings at roughly 45
+ * requests each, walking 350 climb pages across all four locales. No allow or
+ * block list can name it. The rate limit cannot reach it either — it runs about
+ * 12 requests a minute per agent against a Free-plan floor of 60 per 10 s
+ * (~360/min), and lowering the threshold far enough to catch it would take out
+ * a gym behind one NAT, which is exactly the failure the rate-limit rule's own
+ * comment warns about.
+ *
+ * **What it can be caught by.** In that same sample those nine agents fetched
+ * 350 HTML pages and **zero** JavaScript — not one `/_next/static` chunk, not
+ * one Sentry tunnel POST. The one real visitor in the window did the mirror
+ * image: 33 chunks and no climb pages. A managed challenge is precisely that
+ * test, so it separates the two with no list to maintain.
+ *
+ * **Who never sees it.** The allow rule is first and its action is `skip` over
+ * the current ruleset, so every search engine and share unfurler on
+ * CRAWLER_ALLOW_TOKENS bypasses this. That is why `baiduspider` and `qwantify`
+ * were added there in the same change: they send people back and were relying
+ * on passing by default, which this rule ends.
+ *
+ * **What it costs.** A first-time human visitor landing on a climb page from
+ * search gets one sub-second check, then a `cf_clearance` cookie covers them.
+ * At roughly 30-50 real web visitors a day that is a small price for dropping
+ * the majority of origin renders.
+ *
+ * Deliberately NOT excluding signed-in visitors on a session-cookie check. The
+ * WAF can only test that a cookie NAME is present, so `Cookie:
+ * <session-name>=anything` would be a one-line bypass for the scraper. The
+ * clearance cookie already keeps a logged-in climber from being re-challenged.
+ */
+export const CLIMB_VIEW_CHALLENGE_EXPRESSION = CLIMB_VIEW_SURFACE_EXPRESSION;
 
 /**
  * The apex, and only the apex. `http.host` is the request's Host header, so this
@@ -787,6 +845,15 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       description: CRAWLER_BLOCK_RULE_DESCRIPTION,
       expression: CRAWLER_BLOCK_EXPRESSION,
       action: 'block',
+      enabled: true,
+    },
+    // MUST stay last. It is the only rule here that can catch an ordinary
+    // browser string, so every agent we have an opinion about — allowed or
+    // blocked — has to be judged before it.
+    {
+      description: CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION,
+      expression: CLIMB_VIEW_CHALLENGE_EXPRESSION,
+      action: 'managed_challenge',
       enabled: true,
     },
   ],

@@ -347,8 +347,9 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
      Frog). Each was verified reaching our origin on 2026-08-24. They sell
      backlink data and send Boardsesh no traffic. The same rule also blocks
      automated AI training and search crawlers and **Yandex**, using the shared
-     tokens in `packages/web/app/lib/crawler-policy.ts`. Google, Bing, Apple,
-     Brave and share-card unfurlers remain allowed. Human-triggered AI fetchers
+     tokens in `packages/web/app/lib/crawler-policy.ts`. Google, Bing,
+     DuckDuckGo, Apple, Brave, Baidu, Qwant and the share-card unfurlers remain
+     allowed. Human-triggered AI fetchers
      are not added to this automated-crawler list.
 
   **Yandex moved from the allow list to the block list on 2026-09-11.** It was
@@ -398,6 +399,39 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
   rendering the SPA turns one page fetch into a backend query: a 3-minute sample
   of `boardsesh-backend` on 2026-09-10 had Applebot issuing 173 of the 436
   `/graphql` requests on the service.
+
+  3. `managed_challenge` on the climb-view surface, **last**. This is the only
+     rule that can catch an ordinary browser string, so every agent we have a
+     verdict on has to be judged before it.
+
+  **The challenge exists because the biggest remaining population has no name.**
+  A 3.6-minute sample of production on 2026-09-11, taken after the #5385 gates
+  deployed, found nine ordinary Chrome, Edge and Safari user agents at roughly
+  45 requests each, walking 350 climb pages across all four locales — 84% of
+  what was left. No allow or block list reaches a rotating UA, and the rate
+  limit cannot either: it runs about 12 requests a minute per agent against a
+  Free-plan floor of 60 per 10 s (~360/min), and lowering the threshold that far
+  would take out a gym behind one NAT.
+
+  What separates it from a person is JavaScript. In that sample those nine
+  agents fetched 350 HTML pages and **zero** JS — not one `/_next/static` chunk,
+  not one Sentry tunnel POST. The single real visitor in the window did the
+  mirror image: 33 chunks, no climb pages. A managed challenge is exactly that
+  test, so it needs no list to maintain.
+
+  Two consequences worth knowing. `baiduspider` and `qwantify` had to join the
+  allow list in the same change — they send people back (Baidu 7, Qwant 1 over
+  30 days) and were relying on passing by default, which ends the moment an
+  unlisted agent gets challenged. And a first-time human landing on a climb page
+  from search now gets one sub-second check before a `cf_clearance` cookie
+  covers them.
+
+  Note the plan asymmetry: `managed_challenge` is refused in the **rate-limit**
+  phase on Free (see below) but accepted on a **custom rule**, which is why the
+  mitigation lives here rather than on the rate limit.
+
+  Caching cannot substitute for this. The scraper walks unique URLs, so every
+  request is a cache miss by construction — an edge cache only helps repeats.
 
   **Order is load-bearing and enforced by the tool.** `upsertCacheRule` rewrites
   our rules as one contiguous group in declared order, because a rule-by-rule
