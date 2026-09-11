@@ -28,23 +28,26 @@ vi.mock('../../playback/PlaybackControls', () => ({
   PlaybackControls: ({
     frameCount,
     frameIndex,
-    paceUnit,
+    paceSeconds,
+    magnetSeconds,
     frameEditing,
-    onPaceChange,
+    onPaceSecondsChange,
   }: {
     frameCount?: number;
     frameIndex?: number;
-    paceUnit?: string;
+    paceSeconds?: number;
+    magnetSeconds?: number;
     frameEditing?: { onAddFrame: () => void };
-    onPaceChange?: (paceMs: number) => void;
+    onPaceSecondsChange?: (seconds: number) => void;
   }) =>
-    createElement('div', {
+    createElement('button', {
       'data-node': 'transport',
       'data-frames': frameCount,
       'data-index': frameIndex,
-      'data-pace-unit': paceUnit,
+      'data-pace-seconds': paceSeconds,
+      'data-magnet-seconds': magnetSeconds,
       'data-frame-editing': frameEditing ? 'yes' : 'no',
-      'data-pace-change': onPaceChange ? 'yes' : 'no',
+      onClick: () => onPaceSecondsChange?.(2.5),
     }),
 }));
 
@@ -52,12 +55,10 @@ import { CreateRoutePlaybackSlot } from '../CreateRoutePlaybackSlot';
 
 const playback = {
   isPlaying: false,
-  speed: 1,
   paceMs: 750,
   play: vi.fn(),
   pause: vi.fn(),
   seek: vi.fn(),
-  setSpeed: vi.fn(),
 };
 
 function renderSlot(overrides: Partial<Parameters<typeof CreateRoutePlaybackSlot>[0]> = {}) {
@@ -110,14 +111,25 @@ describe('CreateRoutePlaybackSlot', () => {
     expect(transport?.getAttribute('data-index')).toBe('2');
   });
 
-  it('puts the transport in creator configuration: frame editing and seconds', () => {
-    // Both are creator-only. The play drawer mounts the same component without
-    // them and keeps the counter and the x-multiplier, so a regression here is a
-    // regression there too.
+  it('puts the transport in creator configuration: frame editing on', () => {
+    // Creator-only. The play drawer mounts the same component without it and
+    // keeps the plain counter, so a regression here is a regression there too.
     const { transport } = renderSlot({ frameCount: 2 });
     expect(transport?.getAttribute('data-frame-editing')).toBe('yes');
-    expect(transport?.getAttribute('data-pace-unit')).toBe('seconds');
-    expect(transport?.getAttribute('data-pace-change')).toBe('yes');
+  });
+
+  it('shows the draft pace in seconds, and magnets to the default rather than itself', () => {
+    // The value being dragged cannot also be the thing the release snaps to, or
+    // the magnet is sticky and the setter can never leave the pace they have.
+    const { transport } = renderSlot({ frameCount: 2 });
+    expect(transport?.getAttribute('data-pace-seconds')).toBe('0.75');
+    expect(transport?.getAttribute('data-magnet-seconds')).toBe('0.75');
+  });
+
+  it('writes an authored pace back in milliseconds, which is what the column stores', () => {
+    const { transport, onPaceChange } = renderSlot({ frameCount: 2 });
+    (transport as HTMLButtonElement).click();
+    expect(onPaceChange).toHaveBeenCalledWith(2500);
   });
 
   it('keeps the transport under its own gesture root', () => {
@@ -132,7 +144,9 @@ describe('CreateRoutePlaybackSlot', () => {
     // Delete moved into the header's overflow menu and add became a chip inside
     // the transport card. Two rows collapsing into one card is the issue's
     // "integrate them cleanly" requirement; a button row here would undo it.
-    const { container } = renderSlot({ frameCount: 3 });
-    expect(container.querySelector('button')).toBeNull();
+    // The transport stub itself is a button, so count what is NOT it.
+    const { container, transport } = renderSlot({ frameCount: 3 });
+    const buttons = Array.from(container.querySelectorAll('button')).filter((node) => node !== transport);
+    expect(buttons).toHaveLength(0);
   });
 });

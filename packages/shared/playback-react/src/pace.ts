@@ -18,10 +18,20 @@ export const DEFAULT_PACE_MS = 750;
 export const MIN_PACE_MS = 200;
 
 /**
- * Slowest pace a setter can author, in milliseconds. Matches the upper end of
- * the "seconds per frame" control (#4633 asked for a linear range up to 10s).
+ * Slowest pace the seconds-per-frame control offers, in milliseconds — the same
+ * ceiling for the setter authoring a route and the climber reading one (#4633).
+ *
+ * 60s is where the data sits, not a round number. Of 744 synced multi-frame
+ * routes 359 are paced slower than 10s a frame and the slowest are paced at
+ * exactly 60s; Kilter routes average 18.8 frames at 7.5s, which is endurance
+ * training rather than animation. A lower ceiling would leave a climber unable
+ * to play half the catalogue at the pace its setter chose.
+ *
+ * The server accepts the same 60s (`framesPace` in the backend's climb
+ * schemas). Raising this without raising that would reject a save the control
+ * had just offered.
  */
-export const MAX_PACE_MS = 10_000;
+export const MAX_PACE_MS = 60_000;
 
 /**
  * Fastest pace a setter can author, in milliseconds.
@@ -58,4 +68,32 @@ export function clampAuthoredPaceMs(paceMs: number): number {
 export function resolveStoredPaceMs(paceMs: number | null | undefined): number {
   if (paceMs == null || !Number.isFinite(paceMs) || paceMs <= 0) return DEFAULT_PACE_MS;
   return Math.round(paceMs);
+}
+
+/**
+ * Seconds-per-frame behind a playback multiplier — the reader's unit.
+ *
+ * `speed` is the wire format (party sync carries it alongside `paceMs`), but it
+ * is meaningless on its own: 0.5× is 1.5s a frame on a route paced at 750ms and
+ * 24s a frame on one paced at 12s. Every surface displays what this returns.
+ */
+export function paceSecondsForSpeed(paceMs: number, speed: number): number {
+  if (!Number.isFinite(paceMs) || !Number.isFinite(speed) || speed <= 0) return DEFAULT_PACE_MS / 1000;
+  return paceMs / speed / 1000;
+}
+
+/**
+ * The multiplier that makes a climb paced at `paceMs` run at `seconds` a frame
+ * — the inverse of {@link paceSecondsForSpeed}, and how a seconds-per-frame
+ * control writes through to the engine.
+ *
+ * Going through the multiplier rather than overriding the pace directly is what
+ * keeps party mode in step: both phones hold the same authored `paceMs`, so a
+ * multiplier round-trips to the same number of seconds on the other side. A
+ * peer adopts `speed` from an inbound event but keeps its own `paceMs` for its
+ * timer, so broadcasting an overridden pace would desync the two.
+ */
+export function speedForPaceSeconds(paceMs: number, seconds: number): number {
+  if (!Number.isFinite(paceMs) || paceMs <= 0 || !Number.isFinite(seconds) || seconds <= 0) return 1;
+  return paceMs / (seconds * 1000);
 }
