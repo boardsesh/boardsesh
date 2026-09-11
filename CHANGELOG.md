@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-11
+
+### New
+
+- Route playback now reads in seconds a frame instead of `1×` / `1.5×`, so a pace means the same thing on every route. ([#5387](https://github.com/boardsesh/boardsesh/pull/5387))
+  Slow a route right down to a minute a frame for endurance laps — in the play drawer and the creator alike.
+
 ## 2026-09-09
 
 ### Fixed

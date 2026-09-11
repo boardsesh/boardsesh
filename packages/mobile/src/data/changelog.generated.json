@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-09T09:02:04.337Z",
+  "generatedAt": "2026-09-11T04:26:37.624Z",
   "entries": [
+    {
+      "prNumber": 5387,
+      "category": "new",
+      "title": "Route playback now reads in seconds a frame instead of `1×` / `1.5×`, so a pace means the same thing on every route.",
+      "mergedAt": "2026-09-11T04:25:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5387",
+      "body": "Slow a route right down to a minute a frame for endurance laps — in the play drawer and the creator alike."
+    },
     {
       "prNumber": 5369,
       "category": "fixed",
