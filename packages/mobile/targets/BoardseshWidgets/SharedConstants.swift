@@ -21,6 +21,12 @@ enum SharedConstants {
     static let supportsMirroringKey = "bs_supports_mirroring"
     static let queueSequenceKey = "bs_queue_sequence"
     static let pendingMirrorKey = "bs_pending_mirror"
+    /// A mirror tap whose server request never got an authoritative answer.
+    /// Written by `MirrorClimbIntent` on a retryable failure and replayed by the
+    /// main app over the WebSocket, the same shape of recovery `pendingActionKey`
+    /// gives navigation. Distinct from `pendingMirrorKey`, which holds a receipt
+    /// the server already confirmed.
+    static let pendingMirrorRequestKey = "bs_pending_mirror_request"
     static let widgetNavigateUrlKey = "bs_widget_navigate_url"
     /// Fully-qualified backend `/api/widget/take-control` URL. The widget
     /// POSTs non-driver lightbulb taps here before enabling local navigation.

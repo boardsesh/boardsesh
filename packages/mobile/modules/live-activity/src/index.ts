@@ -377,7 +377,8 @@ export type LiveActivityIntentCompletionClass =
   | 'retryableNetworkFailure'
   | 'localNavigationEnabled'
   | 'alreadyAllowed'
-  | 'bleFailure';
+  | 'bleFailure'
+  | 'mirrorNotCommitted';
 
 export type InterruptedLiveActivityIntentDiagnostic = {
   schemaVersion: 1;
@@ -408,6 +409,7 @@ type LiveActivityNativeModule = {
   supportsMirrorControl?: boolean;
   getPendingMirror?(): Promise<WidgetMirrorEvent | null>;
   acknowledgeMirror?(sessionId: string, sequence: number): Promise<void>;
+  acknowledgeMirrorRequest?(sessionId: string): Promise<void>;
   isAvailable(): Promise<{ available: boolean }>;
   startSession(options: LiveActivityStartSessionOptions): Promise<void>;
   endSession(): Promise<void>;

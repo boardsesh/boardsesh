@@ -18,9 +18,64 @@ struct SharedMirrorConfirmation: Codable, Equatable, Sendable {
     }
 }
 
+/// A tap whose server request never got an authoritative answer, kept so the
+/// main app can replay it. Carries no sequence: nothing was committed yet.
+struct SharedMirrorRequest: Codable, Equatable, Sendable {
+    /// How long a parked tap stays replayable. Long enough to survive a cold
+    /// launch and a Bluetooth reconnect, short enough that a tap the climber
+    /// has forgotten about cannot flip a climb under them later in the session.
+    static let timeToLive: TimeInterval = 10 * 60
+
+    let sessionId: String
+    let queueItemUuid: String
+    let mirrored: Bool
+    let createdAt: Date
+
+    init(sessionId: String, queueItemUuid: String, mirrored: Bool, createdAt: Date = Date()) {
+        self.sessionId = sessionId
+        self.queueItemUuid = queueItemUuid
+        self.mirrored = mirrored
+        self.createdAt = createdAt
+    }
+
+    func isFresh(at now: Date = Date()) -> Bool {
+        let age = now.timeIntervalSince(createdAt)
+        return age >= -60 && age <= Self.timeToLive
+    }
+
+    var eventBody: [String: Any] {
+        ["kind": "request", "sessionId": sessionId, "queueItemUuid": queueItemUuid, "mirrored": mirrored]
+    }
+}
+
 /// A durable receipt, retained until JS has applied this sequence (or a newer full sync).
 enum SharedMirrorState {
     private static let lock = NSLock()
+
+    // MARK: - Unconfirmed requests
+
+    static func saveRequest(_ request: SharedMirrorRequest, in defaults: UserDefaults) {
+        guard let bytes = try? JSONEncoder().encode(request) else { return }
+        defaults.set(bytes, forKey: SharedConstants.pendingMirrorRequestKey)
+    }
+
+    /// The parked tap, if one is still worth replaying. An expired or
+    /// wrong-session record is dropped on read, so nothing accumulates.
+    static func pendingRequest(in defaults: UserDefaults, at now: Date = Date()) -> SharedMirrorRequest? {
+        guard let bytes = defaults.data(forKey: SharedConstants.pendingMirrorRequestKey),
+              let request = try? JSONDecoder().decode(SharedMirrorRequest.self, from: bytes),
+              request.sessionId == defaults.string(forKey: SharedConstants.sessionIdKey)
+        else { return nil }
+        guard request.isFresh(at: now) else {
+            clearRequest(in: defaults)
+            return nil
+        }
+        return request
+    }
+
+    static func clearRequest(in defaults: UserDefaults) {
+        defaults.removeObject(forKey: SharedConstants.pendingMirrorRequestKey)
+    }
 
     static func pending(in defaults: UserDefaults) -> SharedMirrorConfirmation? {
         guard let bytes = defaults.data(forKey: SharedConstants.pendingMirrorKey),
@@ -57,23 +112,51 @@ enum SharedMirrorState {
         return true
     }
 
+    /// Whether writing this receipt to the wall is still the right thing to do.
+    ///
+    /// Deliberately NOT keyed on sequence equality. The board write happens after
+    /// an `await` on BLE readiness, so any unrelated queue event arriving in that
+    /// window used to bump `queueSequenceKey` and silently cancel the write — the
+    /// server kept the flip and the wall never moved. What actually matters is
+    /// that the current slot is still this queue item, still carries the
+    /// orientation the server confirmed, and that this device still drives the
+    /// board.
     static func isCurrent(_ receipt: SharedMirrorConfirmation, in defaults: UserDefaults) -> Bool {
         let (items, index) = SharedQueueState.load(from: defaults)
-        return sequence(in: defaults) == receipt.sequence
-            && canMirror(sessionId: receipt.sessionId, queueItemUuid: receipt.queueItemUuid, in: defaults)
-            && items.indices.contains(index) && items[index].mirrored == receipt.mirrored
+        return defaults.string(forKey: SharedConstants.sessionIdKey) == receipt.sessionId
+            && holdsBoard(in: defaults)
+            && items.indices.contains(index)
+            && items[index].uuid == receipt.queueItemUuid
+            && items[index].mirrored == receipt.mirrored
     }
 
-    /// Commit an HTTP result atomically against native WebSocket updates.
+    /// Commit an HTTP result atomically against native WebSocket updates, and
+    /// hand back the snapshot the caller should publish.
+    ///
+    /// The server is authoritative: it already refused a stale slot with
+    /// `MirrorTargetChangedError`, so holding a receipt means the write was
+    /// correct when it committed. The slot is therefore found by uuid rather
+    /// than required to sit at the current index — a widget Next landing while
+    /// the request was in flight used to make this return nil, which dropped
+    /// the widget refresh and the board write on the floor.
+    ///
+    /// Returns nil only when there is nothing to publish: a different session,
+    /// or no queue at all. A receipt older than the committed snapshot leaves
+    /// that snapshot alone and returns it unchanged, so the caller still
+    /// republishes current truth instead of going silent.
     static func apply(_ receipt: SharedMirrorConfirmation, in defaults: UserDefaults) -> (items: [SharedQueueItem], index: Int)? {
         lock.lock()
         defer { lock.unlock() }
-        guard receipt.sessionId == defaults.string(forKey: SharedConstants.sessionIdKey),
-              receipt.sequence >= sequence(in: defaults),
-              let bytes = try? JSONEncoder().encode(receipt) else { return nil }
-        defaults.set(bytes, forKey: SharedConstants.pendingMirrorKey)
-        guard canMirror(sessionId: receipt.sessionId, queueItemUuid: receipt.queueItemUuid, in: defaults) else { return nil }
+        guard receipt.sessionId == defaults.string(forKey: SharedConstants.sessionIdKey) else { return nil }
         let (items, index) = SharedQueueState.load(from: defaults)
+        let publishable: (items: [SharedQueueItem], index: Int)? = items.isEmpty ? nil : (items: items, index: index)
+        // A receipt older than the committed snapshot is not stored: it would
+        // displace a newer one JS has yet to apply.
+        guard receipt.sequence >= sequence(in: defaults) else { return publishable }
+        if let bytes = try? JSONEncoder().encode(receipt) {
+            defaults.set(bytes, forKey: SharedConstants.pendingMirrorKey)
+        }
+        guard items.contains(where: { $0.uuid == receipt.queueItemUuid }) else { return publishable }
         let updatedItems = items.map { item in
             item.uuid == receipt.queueItemUuid ? SharedQueueItem(
                 uuid: item.uuid, climbUuid: item.climbUuid, climbName: item.climbName,
@@ -86,12 +169,24 @@ enum SharedMirrorState {
         return (updatedItems, index)
     }
 
+    /// Whether this device is the one driving the wall.
+    static func holdsBoard(in defaults: UserDefaults) -> Bool {
+        defaults.string(forKey: SharedConstants.boardConnectionKey) == "connectedByMe"
+    }
+
+    /// The pre-request gate.
+    ///
+    /// No `navigationAllowed` check: the button is only rendered for
+    /// `connectedByMe`, and gating the intent on a separately persisted flag is
+    /// exactly what made Prev/Next no-op when the flag drifted from the shown
+    /// state (see the note in `ClimbNavigationIntent.perform`). The queue only
+    /// has to contain the tapped item — whether it is still the current slot is
+    /// the server's call, and it answers with 409.
     static func canMirror(sessionId: String, queueItemUuid: String, in defaults: UserDefaults) -> Bool {
-        let (items, index) = SharedQueueState.load(from: defaults)
+        let (items, _) = SharedQueueState.load(from: defaults)
         return defaults.string(forKey: SharedConstants.sessionIdKey) == sessionId
             && defaults.bool(forKey: SharedConstants.supportsMirroringKey)
-            && defaults.string(forKey: SharedConstants.boardConnectionKey) == "connectedByMe"
-            && SharedWidgetWallControlState.load(from: defaults).navigationAllowed
-            && items.indices.contains(index) && items[index].uuid == queueItemUuid
+            && holdsBoard(in: defaults)
+            && items.contains { $0.uuid == queueItemUuid }
     }
 }
