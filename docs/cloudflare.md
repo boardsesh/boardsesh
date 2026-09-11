@@ -400,7 +400,7 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
   of `boardsesh-backend` on 2026-09-10 had Applebot issuing 173 of the 436
   `/graphql` requests on the service.
 
-  3. `managed_challenge` on the board-content surface (`/view/`, `/list`, `/setter/`), **last**. This is the only
+  3. `managed_challenge` on the scraped surfaces (`/list`, `/setter/`), **last**. Climb pages are deliberately excluded — see the shareability rule below. This is the only
      rule that can catch an ordinary browser string, so every agent we have a
      verdict on has to be judged before it.
 
@@ -444,6 +444,29 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
   The **homepage is deliberately still open**. The farm hit it 8 times in that
   window, and it is the page a real first-time visitor is most likely to reach
   before any `cf_clearance` cookie exists.
+
+  **Climb pages came back out of the challenge the same day, because it broke
+  link previews.** A climb page is the thing people share, and an unfurler reads
+  its `og:image` tag. **No unfurler executes JavaScript**, so a managed challenge
+  is an unconditional fail for every one of them. Measured on a live climb page
+  on 2026-09-11: Slackbot, Discordbot, Twitterbot, facebookexternalhit, WhatsApp
+  and Applebot passed only because they sit on `CRAWLER_ALLOW_TOKENS`, while
+  Signal, Bluesky, Mastodon, Teams and a plain Safari string all returned
+  `403 cf-mitigated: challenge` and never saw the tag. The `/og/climb` endpoint
+  itself was fine throughout — the break was that nothing could read the page
+  pointing at it.
+
+  **The rule to carry forward: never JavaScript-challenge a surface you want
+  people to share.** Naming every unfurler that will ever exist is not a list
+  anyone can finish. The allow list was widened anyway (Signal, Bluesky,
+  Mastodon, Teams, Skype, Reddit and the common embed services) so the frequent
+  ones survive if `/view/` is ever re-challenged, and
+  `cloudflare-apply.test.ts` pins all of them — but the durable answer is to
+  keep shareable surfaces out of the rule.
+
+  Dropping `/view/` cost nothing: the farm had already abandoned it by the 08:34
+  sample. If it returns there, the lever is a non-JavaScript signal, not this
+  one.
 
   The rule's description string still reads `boardsesh:climb-view-challenge`
   even though it now covers three surfaces. That is the never-rename contract:

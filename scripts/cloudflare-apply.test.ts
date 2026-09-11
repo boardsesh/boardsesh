@@ -841,7 +841,6 @@ describe('www cost-control rules (#4650)', () => {
     // after the /view/-only rule pushed it off climb pages: 102 /setter/,
     // 67 /list.
     for (const path of [
-      '/kilter/original/12x12-square/screw_bolt/40/view/some-climb',
       '/de/tension/two-mirror/12-high-x-12-wide/wood_plastic/50/list',
       '/kilter/original/12x12-square/screw_bolt/40/list',
       '/setter/someclimber',
@@ -850,11 +849,51 @@ describe('www cost-control rules (#4650)', () => {
       expect(challenged(path), `${path} must be challenged`).toBe(true);
     }
 
+    // Climb pages must NOT be challenged. They are the surface people share,
+    // and an unfurler reading og:image executes no JavaScript, so a challenge
+    // is an unconditional fail for every one of them — that is how previews
+    // broke on 2026-09-11. Naming every unfurler is not a finishable list, so
+    // shareable surfaces stay out of this rule.
+    for (const path of [
+      '/kilter/original/12x12-square/screw_bolt/40/view/some-climb',
+      '/de/kilter/original/12x12-square/screw_bolt/40/view/some-climb',
+      '/b/kilter-original-12x12/40/view/some-climb',
+    ]) {
+      expect(challenged(path), `${path} must stay shareable`).toBe(false);
+    }
+
     // The homepage stays open on purpose — it is where a real first-time
     // visitor lands before any clearance cookie exists, and the farm hit it
     // 8 times against 169 for the surfaces above.
     for (const path of ['/', '/about', '/legal', '/gyms']) {
       expect(challenged(path), `${path} must stay open`).toBe(false);
+    }
+  });
+
+  it('lets every link unfurler past the ruleset, challenge or not', () => {
+    // The 2026-09-11 regression in one assertion. An unfurler reads og:image
+    // and executes no JavaScript, so if it is not on the allow list (whose
+    // action is `skip`) a managed challenge fails it outright and the share
+    // preview goes blank. Measured that day: Signal, Bluesky, Mastodon and
+    // Teams all returned `403 cf-mitigated: challenge` on a live climb page.
+    const unfurlers: [string, string][] = [
+      ['Slack', 'Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)'],
+      ['Discord', 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)'],
+      ['Twitter', 'Twitterbot/1.0'],
+      ['Facebook', 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'],
+      ['WhatsApp', 'WhatsApp/2.23.20.0'],
+      ['Telegram', 'TelegramBot (like TwitterBot)'],
+      ['LinkedIn', 'LinkedInBot/1.0'],
+      ['Signal', 'SignalBot/1.0'],
+      ['Bluesky', 'Bluesky Cardyb/1.1'],
+      ['Mastodon', 'Mastodon/4.2.1 (+https://mastodon.social/)'],
+      ['Teams', 'Mozilla/5.0 (compatible; MicrosoftPreview/2.0; +https://aka.ms/MicrosoftPreview)'],
+      ['Skype', 'SkypeUriPreview Preview/0.5'],
+      ['Reddit', 'Mozilla/5.0 (compatible; redditbot/1.0)'],
+    ];
+    for (const [label, userAgent] of unfurlers) {
+      const matched = CRAWLER_ALLOW_TOKENS.some((token) => userAgent.toLowerCase().includes(token));
+      expect(matched, `${label} must be allow-listed or its link previews break`).toBe(true);
     }
   });
 
@@ -868,7 +907,7 @@ describe('www cost-control rules (#4650)', () => {
     expect(opens).toBe(closes);
   });
 
-  it('challenges the climb-view surface, and does it last', () => {
+  it('challenges the scraped surfaces, and does it last', () => {
     // The scraper this exists for rotates ordinary Chrome/Edge/Safari strings,
     // so no token list reaches it. What separates it from a person is that it
     // executes no JavaScript — 350 climb pages and zero `/_next/static` chunks
@@ -877,8 +916,9 @@ describe('www cost-control rules (#4650)', () => {
       (rule) => rule.description === BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
     );
     expect(challengeRule?.action).toBe('managed_challenge');
-    expect(challengeRule?.expression).toContain('/view/');
     expect(challengeRule?.expression).toContain(`http.host eq "${WWW_HOSTNAME}"`);
+    // Never the climb-view surface: see the shareability case above.
+    expect(challengeRule?.expression).not.toContain('/view/');
 
     // Last, because it is the only rule that can catch a real browser string.
     // Anything we have a verdict on must be judged before it.

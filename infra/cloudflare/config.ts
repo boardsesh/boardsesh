@@ -492,7 +492,8 @@ export function buildWwwHtmlCachePathPrefixes(): string[] {
  */
 export const WWW_HTML_CACHE_EXPRESSION =
   `(http.host eq "${WWW_HOSTNAME}"` +
-  ` and (ends_with(http.request.uri.path, "${LIST_PAGE_PATH_SUFFIX}")` +
+  ` and (http.request.uri.path contains "${CLIMB_VIEW_PATH_SEGMENT}"` +
+  ` or ends_with(http.request.uri.path, "${LIST_PAGE_PATH_SUFFIX}")` +
   ` or http.request.uri.path contains "${CLIMB_VIEW_PATH_SEGMENT}")` +
   ` and (${buildWwwHtmlCachePathPrefixes()
     .map((pathPrefix) => `starts_with(http.request.uri.path, "${pathPrefix}")`)
@@ -527,7 +528,12 @@ export const CRAWLER_ALLOW_TOKENS = [
   // started getting challenged.
   'baiduspider',
   'qwantify',
-  // Share-card unfurlers. Blocking these breaks link previews, not crawling.
+  // Share-card unfurlers. Blocking these breaks link previews, not crawling —
+  // and so does CHALLENGING them, which is how climb previews broke on
+  // 2026-09-11. None of these execute JavaScript, so a managed challenge is an
+  // unconditional fail for every one of them. Extended the same day from the
+  // original seven after Signal, Bluesky, Mastodon and Teams were all measured
+  // getting `403 cf-mitigated: challenge` on a climb page.
   'twitterbot',
   'facebookexternalhit',
   'slackbot',
@@ -535,6 +541,18 @@ export const CRAWLER_ALLOW_TOKENS = [
   'linkedinbot',
   'telegrambot',
   'whatsapp',
+  'signalbot',
+  'cardyb',
+  'mastodon',
+  'microsoftpreview',
+  'skypeuripreview',
+  'redditbot',
+  'pinterest',
+  'vkshare',
+  'embedly',
+  'iframely',
+  'nuzzel',
+  'quora link preview',
 ] as const;
 
 /**
@@ -677,6 +695,25 @@ export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = CLIMB_VIEW_SURFACE_EXPRESSION;
  * it still sends. `/list` is the expensive half at 395 ms average against
  * `/setter/`'s 167 ms.
  *
+ * **Then `/view/` came back OUT the same day, because it broke link previews.**
+ * A climb page is the thing people share, and an unfurler reads its `og:image`
+ * tag. No unfurler executes JavaScript, so a managed challenge is an
+ * unconditional fail for every one of them — measured on a live climb page:
+ * Slackbot, Discordbot, Twitterbot, facebookexternalhit, WhatsApp and Applebot
+ * passed only because they are on CRAWLER_ALLOW_TOKENS, while Signal, Bluesky,
+ * Mastodon, Teams and a plain Safari string all got `403 cf-mitigated:
+ * challenge` and never saw the tag.
+ *
+ * That is structural, not a tuning problem: **you cannot JavaScript-challenge a
+ * page you want people to share**, because naming every unfurler that will ever
+ * exist is not a list anyone can finish. The allow list was widened anyway so
+ * the common ones survive if `/view/` is ever re-challenged, but the durable
+ * answer is to leave shareable surfaces out of this rule.
+ *
+ * It costs nothing today: the farm had already abandoned `/view/` entirely by
+ * the 08:34 sample. If it returns there, the lever is a non-JavaScript signal,
+ * not this one.
+ *
  * The homepage is deliberately still NOT challenged. The farm hit it 8 times
  * in that window, and it is the one page a real first-time visitor is most
  * likely to land on before any clearance cookie exists.
@@ -687,8 +724,7 @@ export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = CLIMB_VIEW_SURFACE_EXPRESSION;
  */
 export const BOARD_CONTENT_CHALLENGE_EXPRESSION =
   `(http.host eq "${WWW_HOSTNAME}"` +
-  ` and (http.request.uri.path contains "${CLIMB_VIEW_PATH_SEGMENT}"` +
-  ` or ends_with(http.request.uri.path, "${LIST_PAGE_PATH_SUFFIX}")` +
+  ` and (ends_with(http.request.uri.path, "${LIST_PAGE_PATH_SUFFIX}")` +
   ` or http.request.uri.path contains "${SETTER_PATH_SEGMENT}"))`;
 
 /**
