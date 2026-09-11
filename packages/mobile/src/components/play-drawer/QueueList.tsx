@@ -4,7 +4,12 @@ import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
-import { getPlaylistSuggestedClimbs, createPlaylistSuggestionSource, getQueueBoardKey } from '@boardsesh/queue';
+import {
+  getPlaylistSuggestedClimbs,
+  createPlaylistSuggestionSource,
+  getQueueBoardKey,
+  reanchorPlaylistSuggestionSource,
+} from '@boardsesh/queue';
 import { buildQueueListModel, type QueueFlatRow } from '@boardsesh/play-view';
 import { withSheetBottomInset } from '../sheet-content-inset';
 import { QueueItemRow, type QueueItemRowBoard, POSITION_SLOT_WIDTH, SEPARATOR_INSET } from '../QueueItemRow';
@@ -135,25 +140,35 @@ function QueueListComponent({
     [playlistSuggestionSource, queue],
   );
 
-  // Same hook — and therefore the same cached page — the queue provider re-anchors
-  // `next` onto after a board switch, so the sheet and the swipe never disagree
-  // about what comes next on this board.
+  // Page 0 of the board's popular-by-ascents list, unfiltered on purpose: these
+  // rows are how a climber finds something outside the filters they are browsing
+  // with, and filtering them would leave a narrow filter with an empty area. The
+  // queue provider no longer reads this feed at all — a swipe stops at the end of
+  // the climber's own list rather than walking into it (issue #5403).
   const { climbs: boardContinuationClimbs } = useBoardContinuationFeed(board, active);
 
-  const suggestions = useMemo<Climb[]>(() => {
+  // The ROWS may mix provenances; a swipe TRACK may not (issue #5403). The rows
+  // are a labelled discovery surface — topping a short playlist up with the
+  // board's own feed is the point of them — but a tap used to mint one track
+  // spanning both, so swiping off a filtered playlist walked silently into
+  // climbs the climber had filtered out. Keep the two segments separable, and
+  // let `handleSuggestionPress` pick the one the tapped climb came from.
+  const { suggestions, feedSuggestions } = useMemo(() => {
     const queued = new Set(queue.map((item) => item.climb?.uuid).filter((uuid): uuid is string => !!uuid));
     const seen = new Set<string>();
-    const out: Climb[] = [];
-    const add = (climbs: readonly Climb[]) => {
+    const merged: Climb[] = [];
+    const fromFeed: Climb[] = [];
+    const add = (climbs: readonly Climb[], isFeed: boolean) => {
       for (const climb of climbs) {
         if (!climb?.uuid || queued.has(climb.uuid) || seen.has(climb.uuid)) continue;
         seen.add(climb.uuid);
-        out.push(climb);
+        merged.push(climb);
+        if (isFeed) fromFeed.push(climb);
       }
     };
-    add(playlistSuggestions);
-    add(boardContinuationClimbs);
-    return out;
+    add(playlistSuggestions, false);
+    add(boardContinuationClimbs, true);
+    return { suggestions: merged, feedSuggestions: fromFeed };
   }, [playlistSuggestions, boardContinuationClimbs, queue]);
 
   const rows = useMemo<QueueListRow[]>(
@@ -225,24 +240,34 @@ function QueueListComponent({
   const handleSuggestionPress = useCallback(
     (climb: Climb) => {
       hapticSelection();
-      // Build a suggestion source anchored at the tapped climb from the CURRENT
-      // suggestions list, so the play drawer can keep swiping forward through the
-      // rest of the suggestions (mirrors how the climbs-list browse activation
-      // seeds a source from its loaded climbs).
-      const source = createPlaylistSuggestionSource({
-        playlistUuid: QUEUE_SUGGESTION_SOURCE_ID,
-        activatedClimb: climb,
-        climbs: suggestions,
-        boardKey: getQueueBoardKey({
-          board_name: board.boardName,
-          layout_id: board.layoutId,
-          size_id: board.sizeId,
-          set_ids: board.setIds,
+      // One provenance per track (issue #5403). A tap on a row from the climber's
+      // own playlist re-enters THAT track, re-anchored on the tapped climb, and
+      // nothing from the board feed joins it. A tap on a feed row gets a track of
+      // feed climbs only. The rows may interleave the two; the track never does.
+      const fromFeed = feedSuggestions.some(({ uuid }) => uuid === climb.uuid);
+      if (!fromFeed) {
+        // A playlist row only exists while a playlist source does, so this cannot
+        // come back null in practice; the guard keeps the tap from being dropped.
+        const reanchored = reanchorPlaylistSuggestionSource(playlistSuggestionSource, climb.uuid);
+        if (reanchored) onSuggestionPress(climb, reanchored);
+        return;
+      }
+      onSuggestionPress(
+        climb,
+        createPlaylistSuggestionSource({
+          playlistUuid: QUEUE_SUGGESTION_SOURCE_ID,
+          activatedClimb: climb,
+          climbs: feedSuggestions,
+          boardKey: getQueueBoardKey({
+            board_name: board.boardName,
+            layout_id: board.layoutId,
+            size_id: board.sizeId,
+            set_ids: board.setIds,
+          }),
         }),
-      });
-      onSuggestionPress(climb, source);
+      );
     },
-    [onSuggestionPress, suggestions, board],
+    [onSuggestionPress, feedSuggestions, playlistSuggestionSource, board],
   );
 
   const renderRow = useCallback(

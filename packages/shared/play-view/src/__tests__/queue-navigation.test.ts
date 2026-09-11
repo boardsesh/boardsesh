@@ -10,6 +10,8 @@ import {
   computeNavigationStateWithSuggestions,
   findUpcomingQueueItemsWithSuggestions,
   selectNextQueueItemWithSuggestions,
+  resolveNavigationSuggestionSource,
+  anchoredSuggestionSource,
 } from '../queue-navigation';
 
 function makeClimb(uuid: string): Climb {
@@ -431,10 +433,12 @@ describe('computeNavigationStateWithSuggestions', () => {
     expect(state.nextItem?.climb.uuid).toBe('y');
     expect(state.nextItem?.suggested).toBe(true);
     // `x` is first in the list and first in the queue, so there is nothing to
-    // swipe back to on either side; remainingCount stays queue-based.
+    // swipe back to on either side.
     expect(state.canPrevious).toBe(false);
     expect(state.prevItem).toBeNull();
-    expect(state.remainingCount).toBe(0);
+    // One forward swipe is available — onto `y` — so "1 left" is the honest
+    // count even though the queue tail is empty (issue #5403).
+    expect(state.remainingCount).toBe(1);
   });
 
   it('lights up canPrevious from the list predecessor for a queued climb mid-list (#4829)', () => {
@@ -451,8 +455,8 @@ describe('computeNavigationStateWithSuggestions', () => {
     expect(state.prevItem?.suggested).toBe(true);
     expect(state.canNext).toBe(true);
     expect(state.nextItem?.climb.uuid).toBe('w2');
-    // Queue-based: nothing after `w1` in the queue.
-    expect(state.remainingCount).toBe(0);
+    // Nothing after `w1` in the queue, but `w2` is one swipe away down the list.
+    expect(state.remainingCount).toBe(1);
   });
 
   it('lights up both directions for a view-only preview (orphan current in the playlist)', () => {
@@ -732,4 +736,88 @@ it('prefetches the same reachable climbs as board-aware forward navigation', () 
     queueItemOnBoard('tension-2', 'tension', 8),
   ];
   expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], null, 2, TENSION_BOARD)).toEqual([queue[3], queue[4]]);
+});
+
+describe('a suggestion track belongs to one lineage (#5403)', () => {
+  const previewedClimb = makeClimb('previewed');
+  const leftoverNeighbour = makeClimb('leftover-neighbour');
+
+  it('never lends the committed track to a source-less preview', () => {
+    // The trap: the leftover track DOES contain the previewed climb, so a
+    // membership check alone would hand it over. A pinned preview is a different
+    // lineage regardless — it navigates its own track or none.
+    const leftover = makeSource(previewedClimb, [previewedClimb, leftoverNeighbour]);
+    expect(
+      resolveNavigationSuggestionSource({
+        previewItem: itemFor(previewedClimb),
+        previewSource: null,
+        committedItem: itemFor(previewedClimb),
+        committedSource: leftover,
+      }),
+    ).toBeNull();
+  });
+
+  it('uses the track the preview was opened with', () => {
+    const own = makeSource(previewedClimb, [previewedClimb, makeClimb('own-neighbour')]);
+    const leftover = makeSource(previewedClimb, [previewedClimb, leftoverNeighbour]);
+    expect(
+      resolveNavigationSuggestionSource({
+        previewItem: itemFor(previewedClimb),
+        previewSource: own,
+        committedItem: itemFor(previewedClimb),
+        committedSource: leftover,
+      }),
+    ).toBe(own);
+  });
+
+  it('keeps the committed track while it anchors the committed climb', () => {
+    const committed = makeClimb('committed');
+    const track = makeSource(committed, [committed, makeClimb('after')]);
+    expect(
+      resolveNavigationSuggestionSource({
+        previewItem: null,
+        previewSource: null,
+        committedItem: itemFor(committed),
+        committedSource: track,
+      }),
+    ).toBe(track);
+  });
+
+  it('drops a committed track the current climb has moved off', () => {
+    const elsewhere = makeClimb('elsewhere');
+    const track = makeSource(makeClimb('anchor'), [makeClimb('anchor'), makeClimb('after')]);
+    expect(
+      resolveNavigationSuggestionSource({
+        previewItem: null,
+        previewSource: null,
+        committedItem: itemFor(elsewhere),
+        committedSource: track,
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps a track with nothing to anchor against, so an empty queue can seed from it', () => {
+    const first = makeClimb('first');
+    const track = makeSource(first, [first, makeClimb('second')]);
+    expect(anchoredSuggestionSource(track, null)).toBe(track);
+  });
+});
+
+describe("the end of the climber's own list (#5403)", () => {
+  it('dead-ends instead of continuing, and says 0 left', () => {
+    const last = makeClimb('last');
+    const track = makeSource(makeClimb('first'), [makeClimb('first'), last]);
+    const queue = [itemFor(last)];
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], track);
+    expect(state.canNext).toBe(false);
+    expect(state.nextItem).toBeNull();
+    expect(state.remainingCount).toBe(0);
+  });
+
+  it('stops the prefetch walk there too', () => {
+    const last = makeClimb('last');
+    const track = makeSource(makeClimb('first'), [makeClimb('first'), last]);
+    const queue = [itemFor(last)];
+    expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], track, 5)).toEqual([]);
+  });
 });
