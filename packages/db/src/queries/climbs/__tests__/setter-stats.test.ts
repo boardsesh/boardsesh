@@ -16,20 +16,37 @@ const SETTER_PARAMS: BoardRouteParams = {
   angle: 40,
 };
 
+const MOONBOARD_PARAMS: BoardRouteParams = {
+  board_name: 'moonboard',
+  layout_id: 1,
+  size_id: 1,
+  set_ids: [1],
+  angle: 40,
+};
+
 /**
  * A drizzle stand-in that renders whatever WHERE the query builds and returns no
  * rows. The claim under test is which predicates reach Postgres, so rendering
  * the SQL is the assertion — running it would only re-check Postgres.
+ *
+ * `innerJoin` is deliberately absent from the stubbed methods: the query must not
+ * join `board_climb_stats` (#5404), and a re-added join should blow up here rather
+ * than slip through green.
  */
 function createFakeSetterStatsDb() {
   const whereClauses: string[] = [];
+  const orderByClauses: string[] = [];
 
   const builder: Record<string, unknown> = {};
-  for (const method of ['from', 'innerJoin', 'groupBy', 'orderBy', 'limit']) {
+  for (const method of ['from', 'groupBy', 'limit']) {
     builder[method] = () => builder;
   }
   builder.where = (condition: SQL | undefined) => {
     whereClauses.push(condition ? dialect.sqlToQuery(condition).sql : '');
+    return builder;
+  };
+  builder.orderBy = (...expressions: SQL[]) => {
+    orderByClauses.push(expressions.map((expression) => dialect.sqlToQuery(expression).sql).join(', '));
     return builder;
   };
   builder.then = (
@@ -46,7 +63,7 @@ function createFakeSetterStatsDb() {
     transaction: (callback: (transactionDb: typeof tx) => unknown) => callback(tx),
   };
 
-  return { fakeDb, whereClauses };
+  return { fakeDb, whereClauses, orderByClauses };
 }
 
 void describe('getSetterStats — community-hidden climbs (#5049)', () => {
@@ -66,5 +83,69 @@ void describe('getSetterStats — community-hidden climbs (#5049)', () => {
 
     assert.match(whereClauses[0], /"board_climbs"\."is_hidden" = \$\d+/);
     assert.match(whereClauses[0], /ilike/i);
+  });
+});
+
+void describe('getSetterStats — angle-blind setter universe (#5404)', () => {
+  void it('never scopes the aggregate by board_climb_stats', async () => {
+    const { fakeDb, whereClauses } = createFakeSetterStatsDb();
+
+    await getSetterStats(fakeDb as unknown as DbInstance, SETTER_PARAMS);
+
+    // The angle-scoped INNER JOIN is the bug: it hid every setter with no climb
+    // graded at the board's current tilt. Nothing may reference the stats table.
+    assert.ok(
+      !whereClauses[0].includes('board_climb_stats'),
+      `expected no board_climb_stats reference, got: ${whereClauses[0]}`,
+    );
+    assert.ok(!whereClauses[0].includes('angle'), `expected no angle predicate, got: ${whereClauses[0]}`);
+  });
+
+  void it('excludes unlisted climbs and drafts, which the dropped join used to exclude for free', async () => {
+    const { fakeDb, whereClauses } = createFakeSetterStatsDb();
+
+    await getSetterStats(fakeDb as unknown as DbInstance, SETTER_PARAMS);
+
+    assert.match(whereClauses[0], /"board_climbs"\."is_listed" = \$\d+/);
+    assert.match(whereClauses[0], /"board_climbs"\."is_draft" = \$\d+/);
+  });
+
+  void it('scopes to the sets the board is fitted with', async () => {
+    const { fakeDb, whereClauses } = createFakeSetterStatsDb();
+
+    await getSetterStats(fakeDb as unknown as DbInstance, SETTER_PARAMS);
+
+    assert.match(whereClauses[0], /"board_climbs"\."required_set_ids" <@ ARRAY\[/);
+    // Kilter is size-scoped, so the size containment predicate stays.
+    assert.match(whereClauses[0], /"board_climbs"\."compatible_size_ids" @> ARRAY\[/);
+  });
+
+  void it('breaks count ties on the username so the 50-row cut is stable', async () => {
+    const { fakeDb, orderByClauses } = createFakeSetterStatsDb();
+
+    await getSetterStats(fakeDb as unknown as DbInstance, SETTER_PARAMS);
+
+    // The tail of this list is one-climb setters, so ties at the LIMIT 50 boundary
+    // are common. Without the second key Postgres may return a different 50 each
+    // time and the picker flickers between refetches.
+    assert.equal(orderByClauses.length, 1);
+    assert.match(orderByClauses[0], /count\(\*\) DESC/);
+    assert.match(orderByClauses[0], /"board_climbs"\."setter_username" ASC/);
+  });
+
+  void it('lets MoonBoard climbs through while required_set_ids is still backfilling', async () => {
+    const { fakeDb, whereClauses } = createFakeSetterStatsDb();
+
+    await getSetterStats(fakeDb as unknown as DbInstance, MOONBOARD_PARAMS);
+
+    assert.match(whereClauses[0], /"board_climbs"\."required_set_ids" is null/i);
+    // MoonBoard never populates compatible_size_ids — the size predicate is skipped
+    // entirely for it (#4008), so the draft/listed guards are all that stand between
+    // the picker and other people's drafts.
+    assert.ok(
+      !whereClauses[0].includes('compatible_size_ids'),
+      `expected no size predicate for MoonBoard, got: ${whereClauses[0]}`,
+    );
+    assert.match(whereClauses[0], /"board_climbs"\."is_draft" = \$\d+/);
   });
 });

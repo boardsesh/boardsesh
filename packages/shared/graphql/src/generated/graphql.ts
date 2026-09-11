@@ -7613,7 +7613,7 @@ export type SetterSearchResult = {
 
 /**
  * A setter username paired with the number of climbs they've authored
- * for a given board configuration and angle.
+ * for a given board configuration. Angle-independent.
  */
 export type SetterStat = {
   __typename?: 'SetterStat';
@@ -7628,7 +7628,7 @@ export type SetterStat = {
  * Used to power the setter filter autocomplete in the search drawer.
  */
 export type SetterStatsInput = {
-  /** Board angle in degrees */
+  /** Board angle in degrees. Accepted and ignored: the setter list is the same at every angle (#5404). */
   angle: Scalars['Int']['input'];
   /** Board type (e.g., 'kilter', 'tension') */
   boardName: Scalars['String']['input'];

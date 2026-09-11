@@ -250,7 +250,7 @@ export const climbTypeDefs = /* GraphQL */ `
     sizeId: Int!
     "Comma-separated set IDs"
     setIds: String!
-    "Board angle in degrees"
+    "Board angle in degrees. Accepted and ignored: the setter list is the same at every angle (#5404)."
     angle: Int!
     "Case-insensitive substring filter on setter username (for autocomplete)"
     search: String
@@ -258,7 +258,7 @@ export const climbTypeDefs = /* GraphQL */ `
 
   """
   A setter username paired with the number of climbs they've authored
-  for a given board configuration and angle.
+  for a given board configuration. Angle-independent.
   """
   type SetterStat {
     "Setter's username"
