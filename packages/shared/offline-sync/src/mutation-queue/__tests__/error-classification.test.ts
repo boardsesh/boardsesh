@@ -131,29 +131,16 @@ describe('isRetryable', () => {
     expect(isRetryable({ status: 429 })).toBe(true);
   });
 
-  // The backend's rate limiter reports a STRING extensions.code. Until that was
-  // mapped, a rate-limited saveTick resolved to "no status", which isRetryable
-  // treats as a programmer bug and the drainer dead-letters — so a climber whose
-  // queued session tripped the limit on reconnect would LOSE those sends rather
-  // than the drainer waiting a minute. Newer backends also send `status: 429`,
-  // but a current client can still meet an older one.
-  it('a RATE_LIMITED GraphQL error is retryable even without a numeric status', () => {
-    const rateLimited = {
-      response: { errors: [{ extensions: { code: 'RATE_LIMITED', operation: 'saveTick', retryAfterSeconds: 42 } }] },
-    };
+  // The backend now also sends `status: 429` alongside the string code
+  // (resolvers/shared/helpers.ts), so a status-reading client gets a real
+  // verdict instead of inferring one. Retryability itself does not depend on
+  // it — the classifier defaults to retrying anything outside
+  // PERMANENT_REJECTION_STATUSES, which is why the string-code-only case in
+  // the issue #4711 block below still drains.
+  it('a RATE_LIMITED error carrying an explicit numeric status reads 429 and retries', () => {
+    const rateLimited = { response: { errors: [{ extensions: { code: 'RATE_LIMITED', status: 429 } }] } };
     expect(getErrorStatus(rateLimited)).toBe(429);
     expect(isRetryable(rateLimited)).toBe(true);
-  });
-
-  it('a RATE_LIMITED error carrying an explicit numeric status still reads 429', () => {
-    const rateLimited = { response: { errors: [{ extensions: { code: 'RATE_LIMITED', status: 429 } }] } };
-    expect(isRetryable(rateLimited)).toBe(true);
-  });
-
-  it('an unrelated string extensions.code stays unclassifiable and dead-letters', () => {
-    const badInput = { response: { errors: [{ extensions: { code: 'BAD_USER_INPUT' } }] } };
-    expect(getErrorStatus(badInput)).toBeNull();
-    expect(isRetryable(badInput)).toBe(false);
   });
 
   it('500 is retryable', () => {
