@@ -295,10 +295,11 @@ export const SaveClimbInputSchema = z
     frames: z.string().min(1).max(10000),
     framesCount: z.number().int().min(1).optional(),
     // Upper bound so a client bug can't publish a route that sits on one frame
-    // for hours. 30s is well past the 10s ceiling the authoring control offers,
-    // so it rejects nonsense without second-guessing a deliberate slow route or
-    // a pace synced in from Aurora. 0 stays legal: it means "use the default".
-    framesPace: z.number().int().min(0).max(30_000).optional(),
+    // for hours. 60s is both the slowest pace the authoring control offers and
+    // the slowest one the synced Aurora catalogue actually holds, so it rejects
+    // nonsense without truncating a deliberate endurance route. 0 stays legal:
+    // it means "use the default".
+    framesPace: z.number().int().min(0).max(60_000).optional(),
     angle: z.number().int().min(-5).max(90),
     characteristics: ToggleableCharacteristicsSchema,
     noMatch: RuleFlagSchema,
@@ -321,10 +322,11 @@ export const UpdateClimbInputSchema = z
     isDraft: z.boolean().optional(),
     framesCount: z.number().int().min(1).optional(),
     // Upper bound so a client bug can't publish a route that sits on one frame
-    // for hours. 30s is well past the 10s ceiling the authoring control offers,
-    // so it rejects nonsense without second-guessing a deliberate slow route or
-    // a pace synced in from Aurora. 0 stays legal: it means "use the default".
-    framesPace: z.number().int().min(0).max(30_000).optional(),
+    // for hours. 60s is both the slowest pace the authoring control offers and
+    // the slowest one the synced Aurora catalogue actually holds, so it rejects
+    // nonsense without truncating a deliberate endurance route. 0 stays legal:
+    // it means "use the default".
+    framesPace: z.number().int().min(0).max(60_000).optional(),
     characteristics: ToggleableCharacteristicsSchema,
     noMatch: RuleFlagSchema,
     anyFeet: RuleFlagSchema,
