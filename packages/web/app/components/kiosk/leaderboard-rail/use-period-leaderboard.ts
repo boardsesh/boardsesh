@@ -64,7 +64,13 @@ export function usePeriodLeaderboard(
       const settled = await Promise.allSettled(
         boardUuids.map((boardUuid) =>
           executeGraphQL<GetBoardLeaderboardQueryResponse, GetBoardLeaderboardQueryVariables>(GET_BOARD_LEADERBOARD, {
-            input: { boardUuid, period, limit: PER_BOARD_FETCH_LIMIT },
+            // `gymScreen` reads the climber's gym-screen consent rather than
+            // their in-app one. A kiosk hangs on a wall inside the gym, which
+            // climbers reasonably answer differently from an app a stranger can
+            // open. Omitting this would publish names under the wrong consent —
+            // the resolver defaults to the in-app column precisely so a caller
+            // that forgets cannot over-publish.
+            input: { boardUuid, period, limit: PER_BOARD_FETCH_LIMIT, surface: 'gymScreen' },
           }),
         ),
       );

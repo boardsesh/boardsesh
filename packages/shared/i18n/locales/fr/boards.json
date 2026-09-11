@@ -486,7 +486,8 @@
       "sends": "Croix",
       "flashes": "Flashs",
       "hardest": "Plus dur"
-    }
+    },
+    "anonymousClimber": "Un grimpeur"
   },
   "boardPill": {
     "switchHint": "Ouvre le sélecteur de board"

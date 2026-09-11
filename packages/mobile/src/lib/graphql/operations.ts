@@ -156,6 +156,8 @@ export const GET_PROFILE = gql`
       isTester
       createdAt
       favoriteCount
+      leaderboardVisibility
+      gymScreenVisibility
     }
   }
 `;
@@ -172,6 +174,8 @@ export const UPDATE_PROFILE = gql`
       displayName
       avatarUrl
       isTester
+      leaderboardVisibility
+      gymScreenVisibility
     }
   }
 `;

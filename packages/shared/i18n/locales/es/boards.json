@@ -486,7 +486,8 @@
       "sends": "Encadenes",
       "flashes": "Flashes",
       "hardest": "Más difícil"
-    }
+    },
+    "anonymousClimber": "Un escalador"
   },
   "boardPill": {
     "switchHint": "Abre el selector de plafones"
