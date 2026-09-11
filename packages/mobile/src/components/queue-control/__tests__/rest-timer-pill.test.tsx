@@ -159,30 +159,56 @@ describe('RestTimerPill', () => {
     );
   });
 
-  it('counts up once a tick lands, in the plain label colour under the target', () => {
+  it('counts DOWN from the rest, and drops the caption the number now says', () => {
+    armWithTick();
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+
+    // 1m rest: the clock opens at the full rest, not at zero.
+    expect(elapsedText(container)).toBe('1:00');
+    advanceSeconds(30);
+    expect(elapsedText(container)).toBe('0:30');
+    expect(elapsedColor(container)).toBe('#111111');
+    // "Rest · 1m" beside a ticking countdown just repeats the number.
+    expect(container.querySelector('[data-testid="rest-timer-pill-secondary"]')).toBeNull();
+  });
+
+  it('runs past zero into the negative and turns the digits red', () => {
+    armWithTick();
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+
+    advanceSeconds(60);
+    // Exactly at zero is not yet over.
+    expect(elapsedText(container)).toBe('0:00');
+    expect(elapsedColor(container)).toBe('#111111');
+
+    advanceSeconds(5);
+    expect(elapsedText(container)).toBe('-0:05');
+    expect(elapsedColor(container)).toBe('#C81E1E');
+  });
+
+  it('counts UP when no rest is set, because there is nothing to count down from', () => {
+    harness.settings = { ...harness.settings, restTimerTargetSeconds: null };
     armWithTick();
     const { container } = render(<RestTimerPill onPress={vi.fn()} />);
 
     expect(elapsedText(container)).toBe('0:00');
     advanceSeconds(30);
     expect(elapsedText(container)).toBe('0:30');
-    expect(elapsedColor(container)).toBe('#111111');
-    expect(container.querySelector('[data-testid="rest-timer-pill-secondary"]')?.textContent).toBe(
-      'mobile.restTimer.pillLabel:1m',
-    );
   });
 
-  it('keeps counting past the target and turns the digits red', () => {
+  it('speaks the overrun without the sign, which does not read aloud', () => {
     armWithTick();
     const { container } = render(<RestTimerPill onPress={vi.fn()} />);
 
-    advanceSeconds(60);
-    // Exactly at the target is not yet past it.
-    expect(elapsedColor(container)).toBe('#111111');
+    advanceSeconds(30);
+    expect(container.querySelector('[data-testid="rest-timer-pill"]')?.getAttribute('data-label')).toBe(
+      'mobile.restTimer.countdownAria:0:30',
+    );
 
-    advanceSeconds(5);
-    expect(elapsedText(container)).toBe('1:05');
-    expect(elapsedColor(container)).toBe('#C81E1E');
+    advanceSeconds(45);
+    expect(container.querySelector('[data-testid="rest-timer-pill"]')?.getAttribute('data-label')).toBe(
+      'mobile.restTimer.overrunAria:0:15',
+    );
   });
 
   it('freezes the number while paused and says so to a screen reader', () => {
@@ -191,13 +217,13 @@ describe('RestTimerPill', () => {
 
     advanceSeconds(20);
     act(() => pauseRestTimer(harness.nowMs));
-    expect(elapsedText(container)).toBe('0:20');
+    expect(elapsedText(container)).toBe('0:40');
 
     advanceSeconds(45);
-    expect(elapsedText(container)).toBe('0:20');
+    expect(elapsedText(container)).toBe('0:40');
     expect(elapsedColor(container)).toBe('#666666');
     expect(container.querySelector('[data-testid="rest-timer-pill"]')?.getAttribute('data-label')).toBe(
-      'mobile.restTimer.pausedAria:0:20',
+      'mobile.restTimer.pausedAria:0:40',
     );
   });
 
@@ -234,7 +260,8 @@ describe('RestTimerPill', () => {
     );
 
     act(() => harness.pressable?.onAccessibilityAction?.({ nativeEvent: { actionName: 'rest-timer-reset' } }));
-    expect(elapsedText(container)).toBe('0:00');
+    // Reset puts the whole rest back on the clock.
+    expect(elapsedText(container)).toBe('1:00');
   });
 
   it('carries no auto-advance glyph — the pill is time, the sheet is settings', () => {

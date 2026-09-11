@@ -22,7 +22,12 @@ import { useSetting } from '../../settings';
 import { nowMs } from '../../lib/clock';
 import { hapticMedium } from '../../lib/haptics';
 import { pauseRestTimer, resetRestTimer, resumeRestTimer } from '../../lib/rest-timer-store';
-import { formatRestTimerElapsed, formatRestTimerTarget, isRestTimerTargetExceeded } from '../../lib/rest-timer';
+import {
+  formatRestTimerElapsed,
+  formatRestTimerSigned,
+  formatRestTimerTarget,
+  isRestTimerTargetExceeded,
+} from '../../lib/rest-timer';
 import { getRestTimerCycleElapsedSeconds } from '../../lib/rest-timer-auto-advance';
 import { REST_TIMER_PILL_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH, glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
@@ -74,8 +79,18 @@ export type RestTimerDisplay = {
   phase: RestTimerPhase;
   elapsedSeconds: number;
   targetSeconds: number | null;
-  /** The counting number, `m:ss` (widening to `h:mm:ss` past an hour). */
-  elapsedLabel: string;
+  /**
+   * Rest left, going NEGATIVE once the beat has gone. `null` when the rest
+   * length is Off and there is nothing to count down from.
+   */
+  remainingSeconds: number | null;
+  /**
+   * The number on the clock. With a rest set this counts DOWN — and keeps going
+   * past zero into the negative, so "how far over am I" is the same glance as
+   * "how long left". With no rest set there is nothing to count down from, so it
+   * counts up from the tick instead.
+   */
+  displayLabel: string;
   /** Compact target, e.g. `2m` / `1:30`. `null` when the rest length is Off. */
   targetLabel: string | null;
 };
@@ -115,16 +130,23 @@ export function useRestTimerDisplay(): RestTimerDisplay {
           ? 'exceeded'
           : 'running';
 
+  const remainingSeconds = hasTarget ? targetSeconds - elapsedSeconds : null;
+
   return {
     armed,
     isRunning,
     phase,
     elapsedSeconds,
     targetSeconds,
-    // Waiting has no elapsed to show, so the number IS the target — a false
+    remainingSeconds,
+    // Waiting has nothing to count yet, so the number IS the target — a false
     // 0:00 would read as "your rest already started".
-    elapsedLabel:
-      phase === 'waiting' && hasTarget ? formatRestTimerTarget(targetSeconds) : formatRestTimerElapsed(elapsedSeconds),
+    displayLabel:
+      phase === 'waiting' && hasTarget
+        ? formatRestTimerTarget(targetSeconds)
+        : remainingSeconds !== null
+          ? formatRestTimerSigned(remainingSeconds)
+          : formatRestTimerElapsed(elapsedSeconds),
     targetLabel: hasTarget ? formatRestTimerTarget(targetSeconds) : null,
   };
 }
@@ -142,7 +164,7 @@ type RestTimerClockProps = {
  */
 export function RestTimerClock({ variant = 'title1', color }: RestTimerClockProps) {
   const { systemColors, brandColors } = useTheme();
-  const { armed, phase, elapsedLabel } = useRestTimerDisplay();
+  const { armed, phase, displayLabel } = useRestTimerDisplay();
 
   if (!armed) return null;
 
@@ -153,7 +175,7 @@ export function RestTimerClock({ variant = 'title1', color }: RestTimerClockProp
       maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
       style={styles.tabularDigits}
     >
-      {elapsedLabel}
+      {displayLabel}
     </Text>
   );
 }
@@ -206,7 +228,7 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const reduceMotion = useReduceMotion();
-  const { armed, isRunning, phase, elapsedLabel, targetLabel } = useRestTimerDisplay();
+  const { armed, isRunning, phase, displayLabel, targetLabel, remainingSeconds } = useRestTimerDisplay();
 
   const handleLongPress = useCallback(() => {
     hapticMedium();
@@ -225,25 +247,31 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
   const numberColor = phaseColor(phase, systemColors, brandColors);
   const glyphSize = compact ? 14 : 16;
 
-  // The secondary line: what the timer is waiting for, or what it is counting
-  // towards. Never both — the pill is one row of fixed height.
+  // The secondary line exists only to say something the number cannot. Once the
+  // clock counts DOWN, the rest length is implicit in it — a "Rest · 1m" caption
+  // beside a ticking 0:41 just repeats itself — so only the two states with no
+  // meaningful number of their own carry a caption.
   const secondaryLabel =
     phase === 'waiting'
       ? t('mobile.restTimer.waitingForTick')
       : phase === 'queueEnded'
         ? t('mobile.restTimer.queueEnded')
-        : targetLabel
-          ? t('mobile.restTimer.pillLabel', { target: targetLabel })
-          : null;
+        : null;
 
   // No live region on the ticker: a polite one would speak every second. The
   // label is a snapshot read on focus, which is what a climber actually wants.
+  // Spoken, the sign is useless — "minus zero twelve" is not a sentence — so the
+  // overrun gets its own phrasing and an unsigned number.
   const accessibilityLabel =
     phase === 'waiting'
-      ? t('mobile.restTimer.noTickAria', { target: targetLabel ?? elapsedLabel })
+      ? t('mobile.restTimer.noTickAria', { target: targetLabel ?? displayLabel })
       : phase === 'paused'
-        ? t('mobile.restTimer.pausedAria', { time: elapsedLabel })
-        : t('mobile.restTimer.runningAria', { time: elapsedLabel, target: targetLabel ?? elapsedLabel });
+        ? t('mobile.restTimer.pausedAria', { time: displayLabel })
+        : remainingSeconds === null
+          ? t('mobile.restTimer.runningAria', { time: displayLabel })
+          : remainingSeconds < 0
+            ? t('mobile.restTimer.overrunAria', { time: formatRestTimerElapsed(-remainingSeconds) })
+            : t('mobile.restTimer.countdownAria', { time: displayLabel });
 
   return (
     <AccessoryBarSurface height={height} style={compact ? styles.pillCompact : styles.pill}>
@@ -271,7 +299,7 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
           style={styles.tabularDigits}
           testID="rest-timer-pill-elapsed"
         >
-          {elapsedLabel}
+          {displayLabel}
         </Text>
         {!compact && secondaryLabel ? (
           <Text

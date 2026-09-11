@@ -313,7 +313,6 @@
       "title": "Temporizador de descanso",
       "armLabel": "Temporizador de descanso",
       "armDescription": "Cronometra tu descanso tras cada encadene y pasa al siguiente bloque cuando se acabe.",
-      "pillLabel": "Descanso · {{target}}",
       "waitingForTick": "Registra un bloque para empezar",
       "targetLabel": "Descanso",
       "targetAria": "Duración del descanso",
@@ -337,7 +336,9 @@
       "queueEnded": "Cola vacía",
       "queueEndedToast": "No queda nada en la cola.",
       "openHint": "Abre las opciones del temporizador",
-      "runningAria": "Temporizador de descanso, {{time}} desde tu último bloque, objetivo {{target}}",
+      "runningAria": "Temporizador de descanso, {{time}} desde tu último bloque",
+      "countdownAria": "Temporizador de descanso, quedan {{time}}",
+      "overrunAria": "Temporizador de descanso, {{time}} de más",
       "noTickAria": "Temporizador de descanso activo, objetivo {{target}}, empieza cuando registres un bloque",
       "pausedAria": "Temporizador de descanso en pausa en {{time}}"
     },

@@ -313,7 +313,6 @@
       "title": "Rest timer",
       "armLabel": "Rest timer",
       "armDescription": "Time your rest after every send, and move to the next climb when it's up.",
-      "pillLabel": "Rest · {{target}}",
       "waitingForTick": "Log a climb to start",
       "targetLabel": "Rest",
       "targetAria": "Rest length",
@@ -337,7 +336,9 @@
       "queueEnded": "Queue's empty",
       "queueEndedToast": "Nothing left in the queue.",
       "openHint": "Opens rest timer options",
-      "runningAria": "Rest timer, {{time}} since your last climb, {{target}} target",
+      "runningAria": "Rest timer, {{time}} since your last climb",
+      "countdownAria": "Rest timer, {{time}} left",
+      "overrunAria": "Rest timer, {{time}} over your rest",
       "noTickAria": "Rest timer on, {{target}} target, starts when you log a climb",
       "pausedAria": "Rest timer paused at {{time}}"
     },

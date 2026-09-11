@@ -313,7 +313,6 @@
       "title": "Pausen-Timer",
       "armLabel": "Pausen-Timer",
       "armDescription": "Stoppt deine Pause nach jeder Begehung und schaltet zum nächsten Boulder, wenn sie um ist.",
-      "pillLabel": "Pause · {{target}}",
       "waitingForTick": "Trag eine Begehung ein",
       "targetLabel": "Pause",
       "targetAria": "Länge der Pause",
@@ -337,7 +336,9 @@
       "queueEnded": "Warteschlange leer",
       "queueEndedToast": "Nichts mehr in der Warteschlange.",
       "openHint": "Öffnet die Optionen des Pausen-Timers",
-      "runningAria": "Pausen-Timer, {{time}} seit deinem letzten Boulder, Ziel {{target}}",
+      "runningAria": "Pausen-Timer, {{time}} seit deinem letzten Boulder",
+      "countdownAria": "Pausen-Timer, noch {{time}}",
+      "overrunAria": "Pausen-Timer, {{time}} drüber",
       "noTickAria": "Pausen-Timer an, Ziel {{target}}, startet, sobald du eine Begehung einträgst",
       "pausedAria": "Pausen-Timer angehalten bei {{time}}"
     },
