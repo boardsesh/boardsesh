@@ -377,7 +377,8 @@ export type LiveActivityIntentCompletionClass =
   | 'retryableNetworkFailure'
   | 'localNavigationEnabled'
   | 'alreadyAllowed'
-  | 'bleFailure';
+  | 'bleFailure'
+  | 'mirrorNotCommitted';
 
 export type InterruptedLiveActivityIntentDiagnostic = {
   schemaVersion: 1;

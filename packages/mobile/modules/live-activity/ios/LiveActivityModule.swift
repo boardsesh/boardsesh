@@ -345,9 +345,27 @@ public class LiveActivityModule: Module {
     }
 
     private func emitPendingMirror() {
-        guard let defaults = SharedConstants.sharedDefaults,
-              let pending = SharedMirrorState.pending(in: defaults) else { return }
-        emitOrBuffer(name: "queueMirror", body: pending.eventBody)
+        guard let defaults = SharedConstants.sharedDefaults else { return }
+        if let pending = SharedMirrorState.pending(in: defaults) {
+            emitOrBuffer(name: "queueMirror", body: pending.eventBody)
+        }
+        // A tap whose server request never got an answer. JS replays it through
+        // the same mutation the Android notification button uses, then the
+        // confirmed receipt comes back down the normal path.
+        //
+        // Only handed over once a listener is attached, so it is cleared at the
+        // moment it will actually be delivered rather than buffered. Mirroring
+        // is an absolute write, so a request left parked would re-fire on every
+        // foreground and could undo a later in-app flip; `OnStartObserving`
+        // calls back into here, so nothing is lost by waiting.
+        if hasAttachedListener(), let request = SharedMirrorState.pendingRequest(in: defaults) {
+            SharedMirrorState.clearRequest(in: defaults)
+            emitOrBuffer(name: "queueMirror", body: request.eventBody)
+        }
+    }
+
+    private func hasAttachedListener() -> Bool {
+        bufferQueue.sync { hasListener }
     }
 
     private func handleQueueNavigateFromWidget() {
@@ -695,6 +713,7 @@ public class LiveActivityModule: Module {
         if let defaults = SharedConstants.sharedDefaults {
             if defaults.string(forKey: SharedConstants.sessionIdKey) != sessionId {
                 defaults.removeObject(forKey: SharedConstants.pendingMirrorKey)
+                defaults.removeObject(forKey: SharedConstants.pendingMirrorRequestKey)
                 defaults.removeObject(forKey: SharedConstants.queueSequenceKey)
             }
             defaults.set(options.supportsMirroring, forKey: SharedConstants.supportsMirroringKey)
@@ -861,6 +880,7 @@ public class LiveActivityModule: Module {
             defaults.removeObject(forKey: SharedConstants.sessionIdKey)
             defaults.removeObject(forKey: SharedConstants.pendingActionKey)
             defaults.removeObject(forKey: SharedConstants.pendingMirrorKey)
+            defaults.removeObject(forKey: SharedConstants.pendingMirrorRequestKey)
             defaults.removeObject(forKey: SharedConstants.widgetNavigateUrlKey)
             defaults.removeObject(forKey: SharedConstants.widgetTakeControlUrlKey)
             defaults.removeObject(forKey: SharedConstants.authTokenKey)

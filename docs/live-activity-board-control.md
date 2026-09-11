@@ -53,9 +53,30 @@ slot even when optimistic navigation already selected another climb. Native queu
 snapshots reject older sequences; a fresh socket
 subscription can rebaseline after a server sequence reset. Queue sequence metadata
 travels with the rendered JS state so older renders cannot overwrite native mirror
-confirmations. ActivityKit updates read the latest committed snapshot before publishing,
-and BLE rechecks ownership and receipt freshness immediately before writing.
+confirmations. ActivityKit updates read the latest committed snapshot before publishing.
 Woods reflects its per-size native LED map using the same row geometry as JS.
+
+**A confirmed mirror always reaches the widget and the wall.** The 200 is the
+authority, so `MirrorClimbIntent` publishes the committed snapshot to ActivityKit
+and writes the board from it rather than making either conditional on the local
+bookkeeping agreeing. `SharedMirrorState.apply` finds the slot by queue-item uuid,
+so a widget Next landing mid-request cannot discard a confirmed result, and an
+older receipt leaves the committed snapshot alone instead of displacing it. The
+freshness recheck before the BLE write asserts same slot, same orientation, still
+holding the board — never sequence equality, because the write happens after an
+await on Bluetooth readiness and any unrelated queue event in that window would
+otherwise cancel it silently. The pre-request gate is `connectedByMe` plus the
+queue containing the tapped item; `navigationAllowed` is deliberately not checked,
+for the same drift reason Prev/Next dropped it.
+
+**A tap the server never answered is parked, not lost.** A retryable failure writes
+`bs_pending_mirror_request` and the main app hands it to JS as a `request`-kind
+`queueMirror` event once a listener is attached, which replays it through the same
+mutation the Android notification button uses. Distinct from `bs_pending_mirror`,
+which holds a receipt the server already confirmed. The widget falls back to the
+committed App Group snapshot for orientation and queue slot when the pushed fields
+are absent — mirroring is an absolute write, so a stale label would make the next
+tap send the opposite orientation.
 
 Deploy the additive backend schema/endpoint before shipping new native iOS and
 Android builds. Old binaries omit the new optional fields and keep existing controls.
