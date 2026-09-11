@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { BOARD_FEED_SUGGESTION_SOURCE_ID } from '../playlists/board-feed-suggestion-source';
 
 vi.mock('@react-native-async-storage/async-storage', () => {
   let storage: Record<string, string> = {};
@@ -117,5 +118,33 @@ describe('queue-snapshot-store', () => {
     await setStoredQueueSnapshot({ queue: [], currentClimbQueueItem: null, playlistSuggestionSource: source });
     const stored = await getStoredQueueSnapshot();
     expect(stored?.playlistSuggestionSource?.climbs).toHaveLength(10);
+  });
+
+  // Issue #5403: up to 2.5.0 a board switch replaced the climber's own list with
+  // the board's unfiltered popular-by-ascents feed, and THAT replacement is what
+  // got persisted. Restoring one after the upgrade would reinstall the swipe bug
+  // for exactly the people who hit it, so the read path drops it — the queue
+  // itself is untouched, only the stale track.
+  it('drops a persisted board-feed source on read, keeping the queue and current item', async () => {
+    const { getStoredQueueSnapshot, setStoredQueueSnapshot } = await import('../queue-snapshot-store');
+    const queue = [makeQueueItem('a'), makeQueueItem('b')];
+    const source = { ...makeSuggestionSource(3, 1), playlistUuid: BOARD_FEED_SUGGESTION_SOURCE_ID };
+    await setStoredQueueSnapshot({ queue, currentClimbQueueItem: queue[0], playlistSuggestionSource: source });
+
+    const stored = await getStoredQueueSnapshot();
+    expect(stored?.playlistSuggestionSource).toBeNull();
+    expect(stored?.queue).toEqual(queue);
+    expect(stored?.currentClimbQueueItem).toEqual(queue[0]);
+  });
+
+  it('leaves a persisted climblist source untouched on read', async () => {
+    const { getStoredQueueSnapshot, setStoredQueueSnapshot } = await import('../queue-snapshot-store');
+    const queue = [makeQueueItem('a')];
+    const source = { ...makeSuggestionSource(3, 1), playlistUuid: 'climblist' };
+    await setStoredQueueSnapshot({ queue, currentClimbQueueItem: queue[0], playlistSuggestionSource: source });
+
+    const stored = await getStoredQueueSnapshot();
+    expect(stored?.playlistSuggestionSource).toEqual(source);
+    expect(stored?.queue).toEqual(queue);
   });
 });

@@ -116,7 +116,12 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
 // Navigation is driven per-case so a peek can be aimed at another board.
 // `@boardsesh/board-config` and `lib/board-details` stay REAL: the resolver
 // reads real layouts, sizes and hold placements, which is the whole question.
-vi.mock('@boardsesh/play-view', () => ({
+vi.mock('@boardsesh/play-view', async (importOriginal) => ({
+  // Real: PlayDrawer calls this to resolve the navigation source (#5403); every
+  // case here drives navigation through the canned `navigation.state` above, so
+  // it only ever sees a null preview item and returns the (irrelevant) source.
+  resolveNavigationSuggestionSource: (await importOriginal<typeof import('@boardsesh/play-view')>())
+    .resolveNavigationSuggestionSource,
   findUpcomingQueueItemsWithSuggestions: () => prefetchWalk.items,
   computeNavigationStateWithSuggestions: () => navigation.state,
   boardSupportsMirroring: () => true,

@@ -322,11 +322,8 @@ describe('QueueProvider board switch (#5099)', () => {
     await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
   });
 
-  it('restores the browsed list when the climber switches back before the feed lands', async () => {
+  it('restores the browsed list when the climber switches back', async () => {
     await activateKilterBrowse();
-    // Feed deliberately empty: this is the window BEFORE the re-anchor replaces
-    // the source, which is the only window in which masking restores anything.
-    continuationFeed.climbs = [];
 
     act(() => activeBoardStore.set(boards.tension));
     await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
@@ -336,19 +333,24 @@ describe('QueueProvider board switch (#5099)', () => {
     expect(latest().playlistSuggestionSource?.boardKey).toBe(KILTER_BOARD_KEY);
   });
 
-  it('comes back to the board feed, not the browsed list, once the re-anchor has run', async () => {
-    // The honest limitation of one source slot: the re-anchor REPLACES the
-    // climblist source, so a round trip that waits for the feed lands on the
-    // board's popular list. Asserted so the trade-off can't drift unnoticed.
+  it('keeps coming back to the browsed list on every round trip — masking never replaces it', async () => {
+    // Issue #5403: masking used to be a one-shot window. Once the re-anchor
+    // engine (`useBoardContinuationFeed` + the pending-source effect) landed a
+    // board-scoped popular feed, it REPLACED the climblist source for good, so a
+    // round trip that waited for the feed came back to the board's popular list
+    // instead of what the climber was browsing. That engine is gone: masking is
+    // now the whole of it, so the original source survives no matter how long the
+    // climber lingers on the other board before switching back.
     await activateKilterBrowse();
-    continuationFeed.climbs = [makeClimb('feed-1', 'tension', 8), makeClimb('feed-2', 'tension', 8)];
 
     act(() => activeBoardStore.set(boards.tension));
-    await waitFor(() => expect(latest().playlistSuggestionSource?.boardKey).toBe(TENSION_BOARD_KEY));
+    await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
+    // Give any stray effect a chance to run before switching back.
+    await act(async () => {});
 
     act(() => activeBoardStore.set(boards.kilter));
-    await waitFor(() => expect(latest().playlistSuggestionSource?.boardKey).toBe(KILTER_BOARD_KEY));
-    expect(latest().playlistSuggestionSource?.playlistUuid).toBe('board-feed');
+    await waitFor(() => expect(latest().playlistSuggestionSource?.playlistUuid).toBe('climblist'));
+    expect(latest().playlistSuggestionSource?.boardKey).toBe(KILTER_BOARD_KEY);
   });
 
   it('holds the solo snapshot save until the active board query settles', async () => {
@@ -416,13 +418,20 @@ describe('QueueProvider board switch (#5099)', () => {
     await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
   });
 
-  it('arms the continuation feed only while a held source is off-board', async () => {
+  it('never touches the board continuation feed — masking has nothing left to re-anchor onto', async () => {
+    // Issue #5403: the provider used to arm `useBoardContinuationFeed` the
+    // moment a held source went off-board, fetch the board's popular list, and
+    // replace the masked source with it. That whole engine is deleted, so the
+    // hook mocked below should never see a single call, board switch or not.
     await activateKilterBrowse();
-    expect(continuationFeed.enabledCalls.every((enabled) => enabled === false)).toBe(true);
+    expect(continuationFeed.enabledCalls).toHaveLength(0);
 
     act(() => activeBoardStore.set(boards.tension));
+    await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
+    // Give any stray effect a chance to fire before asserting the negative.
+    await act(async () => {});
 
-    await waitFor(() => expect(continuationFeed.enabledCalls.at(-1)).toBe(true));
+    expect(continuationFeed.enabledCalls).toHaveLength(0);
   });
 
   it('does not append a foreign-board climb to the queue on the swipe after a switch', async () => {
@@ -438,24 +447,24 @@ describe('QueueProvider board switch (#5099)', () => {
     expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe('kilter-current');
   });
 
-  it('re-anchors onto the new board feed so the next swipe lands on this board', async () => {
+  it('ignores an available board feed after masking — a swipe just stops at the end of the list', async () => {
+    // Issue #5403: even a feed with climbs sitting right there must not be
+    // consulted. The provider used to re-anchor onto it (`tension-1`,
+    // `tension-2` below), which fed climbers climbs they had filtered out and
+    // never asked for. Masking is now the whole of it: the source stays null and
+    // the swipe finds nothing past the one queued (kilter) climb.
     await activateKilterBrowse();
     continuationFeed.climbs = [makeClimb('tension-1', 'tension', 8), makeClimb('tension-2', 'tension', 8)];
 
     act(() => activeBoardStore.set(boards.tension));
-    await waitFor(() => expect(latest().playlistSuggestionSource?.boardKey).toBe(TENSION_BOARD_KEY));
-    // The current (kilter) climb anchors the feed, or navigation would find
-    // nothing after it and dead-end exactly as before.
-    expect(latest().playlistSuggestionSource?.climbs.map((climb) => climb.uuid)).toEqual([
-      'kilter-current',
-      'tension-1',
-      'tension-2',
-    ]);
+    await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
+    await act(async () => {});
+    expect(latest().playlistSuggestionSource).toBeNull();
 
     act(() => latest().nextClimb());
 
-    await waitFor(() => expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe('tension-1'));
-    expect(latest().state.queue.map((item) => item.climb.uuid)).toEqual(['kilter-current', 'tension-1']);
+    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe('kilter-current');
+    expect(latest().state.queue).toHaveLength(1);
   });
 
   it('yields to a real activation that landed while the feed was in flight', async () => {
@@ -527,7 +536,16 @@ describe('QueueProvider board switch (#5099)', () => {
     expect(latest().state.queue.some(({ climb }) => climb.uuid === foreign.uuid)).toBe(false);
   });
 
-  it('replaces an all-foreign restored source even when its board key matches', async () => {
+  it('masks out an all-foreign restored source even when its board key matches, with no feed to fall back to', async () => {
+    // Issue #5403: this restored source has NOTHING compatible with tension once
+    // normalized (both `current` and `foreign` are kilter climbs), so the old
+    // anchor-preserving branch handed `createBoardFeedSuggestionSource` an empty
+    // feed and then filled it from `useBoardContinuationFeed` — replacing the
+    // restored source with the board's popular list. That re-anchor engine is
+    // gone: an anchor with nothing to follow is just null
+    // (`createBoardFeedSuggestionSource` returns null for an empty feed), and
+    // `compatible` below — sitting right there in the mocked continuation feed —
+    // must stay untouched.
     activeBoardStore.set(boards.tension);
     const current = makeClimb('kilter-current', 'kilter', 1);
     const currentItem = makeItem('item-current', current);
@@ -543,9 +561,13 @@ describe('QueueProvider board switch (#5099)', () => {
       savedAt: '2026-06-10T00:00:00.000Z',
     });
     renderProvider();
-    await waitFor(() => expect(latest().playlistSuggestionSource?.playlistUuid).toBe('board-feed'));
+    await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe(currentItem.uuid));
+    expect(latest().playlistSuggestionSource).toBeNull();
     act(() => latest().nextClimb());
-    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe(compatible.uuid);
+    // No source, and nothing queued past the current item: the swipe is a
+    // dead end that changes nothing, rather than a landing on `compatible`.
+    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe(current.uuid);
+    expect(latest().state.queue).toHaveLength(1);
     expect(toast.showToast).not.toHaveBeenCalled();
   });
 
@@ -718,7 +740,16 @@ describe('QueueProvider cross-board swipe skip (#5099)', () => {
     expect(toast.showToast).toHaveBeenCalledTimes(1);
   });
 
-  it('stays quiet about a dead end while the re-anchor feed is still loading', async () => {
+  it('announces a dead end immediately on a live board switch — there is no loading window to wait through', async () => {
+    // Issue #5403: the dead-end notice used to gate on the re-anchor feed's
+    // `isSettled` flag, staying quiet until a fetch resolved (or re-anchoring
+    // before it ever had to speak). That fetch is gone — `forwardSelection` is a
+    // synchronous `useMemo` now — so the notice fires on the very commit the
+    // switch lands on, with nothing left to wait through and no feed to rescue it.
+    //
+    // This block defaults to tension; start on kilter so the queue is fully
+    // on-board at first and the switch below is the thing under test.
+    activeBoardStore.set(boards.kilter);
     const kilterClimb = makeClimb('kilter-current', 'kilter', 1);
     const storedQueue = [
       makeItem('item-kilter-current', kilterClimb),
@@ -727,32 +758,27 @@ describe('QueueProvider cross-board swipe skip (#5099)', () => {
     queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
       queue: storedQueue,
       currentClimbQueueItem: storedQueue[0],
-      playlistSuggestionSource: {
-        playlistUuid: 'climblist',
-        activatedClimbUuid: kilterClimb.uuid,
-        boardKey: KILTER_BOARD_KEY,
-        climbs: [kilterClimb],
-      },
+      playlistSuggestionSource: null,
       savedAt: '2026-06-10T00:00:00.000Z',
     });
-    continuationFeed.isSettled = false;
 
     render(createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (s) => snapshots.push(s) })));
     await waitFor(() => expect(latest().state.queue).toHaveLength(2));
-    // Flush every queued effect without burning wall-clock time. The dead-end
-    // notice fires from an effect on commit, so this is all it needs to appear.
+    // Nothing to say yet: `item-kilter-a` is still compatible with the kilter
+    // board the climber is standing at.
+    expect(toast.showToast).not.toHaveBeenCalled();
+
+    act(() => activeBoardStore.set(boards.tension));
+
+    await waitFor(() => expect(toast.showToast).toHaveBeenCalledWith('boardConfigMismatch.queueOffBoardToast', 'info'));
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Queue Climb Skipped on Board Switch',
+      expect.objectContaining({ trigger: 'queue_dead_end', skippedCount: 1, advancedToClimbUuid: null }),
+    );
+    // No continuation feed ever arrives to rescue it — the queue and the notice
+    // both stay exactly as they are.
     await act(async () => {});
-
-    // Announcing a dead end mid-fetch would be contradicted the moment the feed
-    // lands and re-anchors.
-    expect(toast.showToast).not.toHaveBeenCalled();
-
-    continuationFeed.climbs = [makeClimb('tension-feed', 'tension', 8)];
-    continuationFeed.isSettled = true;
-    act(() => activeBoardStore.set({ ...boards.tension }));
-    await waitFor(() => expect(latest().playlistSuggestionSource?.boardKey).toBe(TENSION_BOARD_KEY));
-    expect(toast.showToast).not.toHaveBeenCalled();
-    act(() => latest().nextClimb());
-    expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe('tension-feed');
+    expect(toast.showToast).toHaveBeenCalledTimes(1);
+    expect(latest().playlistSuggestionSource).toBeNull();
   });
 });

@@ -85,6 +85,10 @@ const session = vi.hoisted(() => ({
   // The committed queue head. Null in the preview-only cases (the drawer renders
   // the pinned preview); set where a case needs a live climb to fall back to.
   currentItem: null as { uuid: string; climb: unknown } | null,
+  // The real queue, read by `computeNavigationStateWithSuggestions` when
+  // `useRealNavigation` is on. Empty by default: most cases here drive
+  // navigation through the canned `nextItem` above instead.
+  queue: [] as { uuid: string; climb: unknown }[],
 }));
 // What board presence says is physically lit. Mutated between renders so a case
 // can move the wall UNDER a browsing climber — which is the whole premise of the
@@ -155,6 +159,9 @@ vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ t
 vi.mock('@boardsesh/play-view', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/play-view')>();
   return {
+    // Real: the #5403 lineage rule (preview vs. committed track) is exactly
+    // what the source-less-preview cases in this file exercise.
+    resolveNavigationSuggestionSource: actual.resolveNavigationSuggestionSource,
     // The prefetch walk: these suites assert on the displayed board, not on
     // what is warmed ahead, so nothing is ahead.
     findUpcomingQueueItemsWithSuggestions: () => [],
@@ -249,7 +256,7 @@ vi.mock('../../Icon', () => ({ Icon: () => null }));
 
 // --- Hooks / providers -------------------------------------------------------
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueData: () => ({ queue: [], currentClimbQueueItem: session.currentItem }),
+  useQueueData: () => ({ queue: session.queue, currentClimbQueueItem: session.currentItem }),
   useQueueActions: () => queueActions,
   useQueueSessionId: () => ({ sessionId: session.sessionId }),
   useIsSharedSession: () => session.isShared,
@@ -394,6 +401,7 @@ beforeEach(() => {
   session.sessionId = null;
   session.nextItem = null;
   session.currentItem = null;
+  session.queue = [];
   wall.uuid = null;
   lightbulb.lit = false;
   wall.name = null;
@@ -442,8 +450,18 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
   });
 
+  // Before #5403's fix, a browse that walked onto a suggestion-track peek
+  // CAPTURED that track into `drawerPreviewSuggestionSource` on the first swipe
+  // (`crewCapturedSuggestionSourceRef`), so it kept going even after the
+  // provider's own committed track was cleared out from under it — a private
+  // copy of a list the climber's browse had no independent claim to. That
+  // capture is gone: a preview belongs to ONE lineage (the track it was opened
+  // with, or none), so once the committed track disappears there is nothing
+  // left to walk. A mid-browse peek is never in the real queue either (it is
+  // only inserted on commit), so the queue has no fallback successor for it —
+  // the swipe is a dead end, not a landing on `thirdClimb`.
   it.each(['next', 'previous'] as const)(
-    'keeps the playlist after browsing %s and a peer leaves its track',
+    'stops at a dead end instead of continuing on a captured copy after a peer leaves the track',
     (direction) => {
       CREW();
       session.useRealNavigation = true;
@@ -471,7 +489,7 @@ describe('PlayDrawer — the shared-session browse latch', () => {
       view.rerender(drawerElement('member', target));
       act(swipe);
 
-      expect(lastDisplayedClimbUuid()).toBe(thirdClimb.uuid);
+      expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
       expect(queueActions.nextClimb).not.toHaveBeenCalled();
       expect(queueActions.previousClimb).not.toHaveBeenCalled();
       expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
@@ -866,6 +884,90 @@ describe('PlayDrawer — the shared-session browse latch', () => {
       (lastActionBarProps().onCommit as () => void)();
     });
     expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Issue #5403: a preview that carries no suggestion source of its own must
+// navigate the QUEUE, never a track left behind by an earlier, unrelated
+// activation. `resolveNavigationSuggestionSource` (@boardsesh/play-view) is
+// pinned pure elsewhere; what only a render can see is that PlayDrawer actually
+// calls it instead of falling back to the provider's committed source, and that
+// nothing captures that committed source into the preview later either.
+describe('PlayDrawer — source-less preview walks the queue (#5403)', () => {
+  // A climb list carrying no board metadata classifies as 'unknown' rather than
+  // 'incompatible', so the mismatched `activeBoard` default in this file (tension)
+  // never interferes with the queue walk under test.
+  const climb = (uuid: string, name: string): Climb => ({ ...CLIMB, uuid, name }) as unknown as Climb;
+
+  it('walks the queue instead of a leftover track when a source-less preview swipes', () => {
+    // Forces the swipe to stay view-only even solo, so the drawer's own
+    // navigation resolves the target rather than a mocked `nextClimb()`.
+    setSetting('lightOnSwipe', false);
+    session.useRealNavigation = true;
+    const a = climb('climb-a', 'A');
+    const p = climb('climb-p', 'P');
+    const z = climb('climb-z', 'Z');
+    const q = climb('climb-q', 'Q');
+    // The provider is still tracking an EARLIER activation's list — [A, P, Z] —
+    // which a source-less preview must never inherit.
+    session.suggestionSource = {
+      playlistUuid: 'climblist',
+      activatedClimbUuid: a.uuid,
+      boardKey: 'kilter:1:10:1,20',
+      climbs: [a, p, z],
+    } as unknown as PlaylistSuggestionSource;
+    const itemA = { uuid: 'queue-a', climb: a };
+    const itemP = { uuid: 'queue-p', climb: p };
+    const itemQ = { uuid: 'queue-q', climb: q };
+    session.currentItem = itemA;
+    session.queue = [itemA, itemP, itemQ];
+
+    // A list tap that pins P as a preview with no suggestion source of its own.
+    render(drawerElement('member', { climb: p, options: { previewQueueItem: itemP }, nonce: 1 }));
+
+    act(() => {
+      (lastActionBarProps().onNextClick as () => void)();
+    });
+
+    expect(lastDisplayedClimbUuid()).toBe(q.uuid);
+  });
+
+  it('does not capture a leftover track on the second swipe of a source-less browse', () => {
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    session.useRealNavigation = true;
+    const a = climb('climb-a', 'A');
+    const p = climb('climb-p', 'P');
+    const z = climb('climb-z', 'Z');
+    const q = climb('climb-q', 'Q');
+    const r = climb('climb-r', 'R');
+    session.suggestionSource = {
+      playlistUuid: 'climblist',
+      activatedClimbUuid: a.uuid,
+      boardKey: 'kilter:1:10:1,20',
+      climbs: [a, p, z],
+    } as unknown as PlaylistSuggestionSource;
+    const itemA = { uuid: 'queue-a', climb: a };
+    const itemP = { uuid: 'queue-p', climb: p };
+    const itemQ = { uuid: 'queue-q', climb: q };
+    const itemR = { uuid: 'queue-r', climb: r };
+    session.currentItem = itemA;
+    session.queue = [itemA, itemP, itemQ, itemR];
+
+    render(drawerElement('member', { climb: p, options: { previewQueueItem: itemP }, nonce: 1 }));
+
+    act(() => {
+      (lastActionBarProps().onNextClick as () => void)();
+    });
+    expect(lastDisplayedClimbUuid()).toBe(q.uuid);
+
+    // If the old bug's capture still fired, this second swipe would have picked
+    // up [A, P, Z] on the first swipe and landed on Z here instead of the queue's
+    // real successor.
+    act(() => {
+      (lastActionBarProps().onNextClick as () => void)();
+    });
+    expect(lastDisplayedClimbUuid()).toBe(r.uuid);
   });
 });
 
