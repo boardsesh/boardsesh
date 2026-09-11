@@ -162,8 +162,9 @@ export function RestTimerAutoAdvanceScheduler() {
     if (deadlineMs === null) return undefined;
 
     const remainingMs = deadlineMs - nowMs();
-    // Already past: a back-dated tick, or the app was asleep. Don't fire — the
-    // AppState effect below re-anchors instead of advancing for a beat nobody saw.
+    // Due within the grace window but already past — schedule nothing rather
+    // than firing on the spot. Anything further past than the grace never gets
+    // here: `deadlineStale` above already read it as not-scheduled.
     if (remainingMs <= 0) return undefined;
 
     const warnTimeout =
@@ -178,12 +179,13 @@ export function RestTimerAutoAdvanceScheduler() {
     };
   }, [cycleId, deadlineMs, fireAdvance]);
 
-  // Target reached with auto-advance off: one haptic and the digits go red (the
-  // colour lives in the pill). Fires once per cycle, never while an advance is
-  // pending, so the two never double up.
-  // Keyed on the target as well as the cycle: lengthening the rest mid-cycle
-  // (1 min → 5 min) is a NEW mark to reach, and a cycle-only latch would swallow
-  // it silently.
+  // Target reached with auto-advance off: one haptic, and the digits go red (the
+  // colour lives in the pill). Never while an advance is pending, so the two cues
+  // can't double up.
+  //
+  // The latch is keyed on the TARGET as well as the cycle: lengthening the rest
+  // mid-cycle (1 min → 5 min) is a new mark to reach, and a cycle-only latch
+  // swallowed it silently.
   const reachedRef = useRef<{ cycleId: number; targetSeconds: number } | null>(null);
   const { anchorMs, armed, isRunning } = timerState;
   useEffect(() => {
