@@ -1843,13 +1843,16 @@ export function PlayDrawer({
                               frameIndex={playback.frameIndex}
                               frameCount={playback.frameCount}
                               isPlaying={playback.isPlaying}
-                              speed={playback.speed}
-                              paceMs={playback.paceMs}
+                              paceSeconds={playback.paceSeconds}
+                              // Releasing near the pace this route's setter chose
+                              // snaps back to it exactly, so "as intended" stays
+                              // one easy landing on the track.
+                              magnetSeconds={playback.paceMs / 1000}
                               peerFrameMismatch={playback.peerFrameMismatch}
                               onPlay={playback.play}
                               onPause={playback.pause}
                               onSeek={playback.seek}
-                              onSpeedChange={playback.setSpeed}
+                              onPaceSecondsChange={playback.setPaceSeconds}
                             />
                           )}
 

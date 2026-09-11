@@ -1068,14 +1068,12 @@ export function useCreateClimbScreen({
   const playbackControls = useMemo(
     () => ({
       isPlaying: playback.isPlaying,
-      speed: playback.speed,
       paceMs: playback.paceMs,
       play: handlePlay,
       pause: playbackPause,
       seek: handleSeek,
-      setSpeed: playback.setSpeed,
     }),
-    [playback.isPlaying, playback.speed, playback.paceMs, playbackPause, playback.setSpeed, handlePlay, handleSeek],
+    [playback.isPlaying, playback.paceMs, playbackPause, handlePlay, handleSeek],
   );
 
   // ---- Clear holds vs. start a new climb. ----

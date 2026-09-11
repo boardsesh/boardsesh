@@ -18,15 +18,18 @@ export type CreateClimbPlayback = {
   /** True once the climb is a route (more than one frame). */
   isAnimatable: boolean;
   isPlaying: boolean;
-  speed: number;
-  /** Native per-frame pace (ms) — lets the transport glide its progress cue. */
+  /**
+   * The pace the setter is authoring (ms) — the transport's displayed value and
+   * the cadence its progress cue glides at. No multiplier here: the creator
+   * plays the route at exactly the pace it will ship with, so the engine's
+   * `speed` stays 1 and nothing reads it.
+   */
   paceMs: number;
   /** The active frame as a flat BLE string, ready for the wall. */
   currentFrameString: string;
   play: () => void;
   pause: () => void;
   seek: (index: number) => void;
-  setSpeed: (speed: number) => void;
 };
 
 /**
@@ -40,8 +43,8 @@ export type CreateClimbPlayback = {
  * `onLocalStateChange` here).
  *
  * Pace is the setter's own authored value, which is what `handleSave` now writes
- * as the climb's `frames_pace`. So "0.8s" in the creator is honestly the shipped
- * speed: the control authors the pace, it is not just a preview aid.
+ * as the climb's `frames_pace`. So "3s" in the creator is honestly the shipped
+ * cadence: the control authors the pace, it is not just a preview aid.
  */
 export function useCreateClimbPlayback({
   frames,
@@ -100,24 +103,12 @@ export function useCreateClimbPlayback({
     () => ({
       isAnimatable: engine.isAnimatable,
       isPlaying: engine.isPlaying,
-      speed: engine.speed,
       paceMs,
       currentFrameString: engine.currentFrameString,
       play: engine.play,
       pause: engine.pause,
       seek,
-      setSpeed: engine.setSpeed,
     }),
-    [
-      engine.isAnimatable,
-      engine.isPlaying,
-      engine.speed,
-      engine.currentFrameString,
-      paceMs,
-      engine.play,
-      engine.pause,
-      engine.setSpeed,
-      seek,
-    ],
+    [engine.isAnimatable, engine.isPlaying, engine.currentFrameString, paceMs, engine.play, engine.pause, seek],
   );
 }

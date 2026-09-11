@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import type { BoardName, Climb, PlaybackStateChangedEvent } from '@boardsesh/shared-schema';
+import type { BoardName, Climb, LitUpHoldsMap, PlaybackStateChangedEvent } from '@boardsesh/shared-schema';
 
 // The orchestrator composes three I/O seams — the shared playback engine, the
 // queue provider (party-sync), and the optional Bluetooth context (BLE writes).
@@ -25,7 +25,7 @@ type EngineInput = {
 type SendCall = { frame: string; mirrored?: boolean; resolve: (value: boolean) => void };
 
 const mocks = vi.hoisted(() => ({
-  climbFrames: { frames: [] as unknown[], frameStrings: [] as string[], paceMs: 500 },
+  climbFrames: { frames: [] as LitUpHoldsMap[], frameStrings: [] as string[], paceMs: 500, count: 0 },
   // Mutable engine output — tests drive `currentFrameString` / `isAnimatable`
   // through `pushEngineFrame` and rerender to fire the BLE effect.
   //
@@ -65,7 +65,12 @@ const mocks = vi.hoisted(() => ({
   sendCalls: [] as SendCall[],
 }));
 
-vi.mock('@boardsesh/playback-react', () => ({
+// Partial: the two hooks are stubbed so a test can drive the engine, but the
+// pace constants and unit converters stay REAL. Stubbing those would let this
+// file agree with itself about a conversion the app does differently — the
+// bounds a pace is clamped into are the BLE writer's, not the test's.
+vi.mock('@boardsesh/playback-react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/playback-react')>()),
   useClimbFrames: () => mocks.climbFrames,
   usePlaybackEngine: (input: EngineInput) => {
     mocks.lastEngineInput.current = input;
@@ -125,7 +130,7 @@ function playbackEvent(overrides: Partial<PlaybackStateChangedEvent> = {}): Play
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 500 };
+  mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 500, count: 3 };
   mocks.playback.isAnimatable = false;
   mocks.playback.frameCount = 0;
   mocks.playback.frameIndex = 0;
@@ -174,6 +179,16 @@ function renderPlayback(climb: Climb | null, gates: PlaybackGates = {}) {
  * "this is a route" — any non-empty frame — and the single-frame case passes it
  * explicitly.
  */
+/**
+ * Put the engine on a new multiplier the way the real one does — by handing back
+ * a FRESH memoised object. Mutating the stub in place would leave the hook's own
+ * `useMemo` (keyed on the engine's identity) holding the previous pace, so a
+ * test would read a number the app never shows.
+ */
+function setEngineSpeed(speed: number) {
+  mocks.playback = { ...mocks.playback, speed };
+}
+
 function pushEngineFrame(frame: string, isAnimatable: boolean = frame !== '') {
   mocks.playback.currentFrameString = frame;
   mocks.playback.isAnimatable = isAnimatable;
@@ -530,5 +545,76 @@ describe('useMobilePlayback — party-sync', () => {
       localFrameCount: 11,
       boardName: KILTER,
     });
+  });
+});
+
+// The climber picks seconds a frame. The engine and the wire still speak
+// multiplier, so this hook is the only place the two units meet — and party sync
+// only stays in step because the conversion happens on each phone against its
+// OWN copy of the authored pace.
+
+describe('useMobilePlayback — seconds a frame', () => {
+  it('reads the authored pace through the multiplier the engine is running', () => {
+    mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 12_000, count: 3 };
+    setEngineSpeed(1);
+    const { result, rerender } = renderPlayback(climbWith('c1'));
+    expect(result.current.paceSeconds).toBe(12);
+
+    // The number the old multiplier pill could not tell you: half speed on a 12s
+    // route is 24s a frame, and on a 750ms one it is 1.5s.
+    setEngineSpeed(0.5);
+    rerender({ climb: climbWith('c1') });
+    expect(result.current.paceSeconds).toBe(24);
+  });
+
+  it('writes a pace back as the multiplier that produces it', () => {
+    mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 800, count: 3 };
+    const { result } = renderPlayback(climbWith('c1'));
+
+    act(() => {
+      result.current.setPaceSeconds(4);
+    });
+    // 800ms at 0.2x is 4s a frame.
+    expect(mocks.playback.setSpeed).toHaveBeenLastCalledWith(0.2);
+  });
+
+  it('round-trips a chosen pace back out unchanged', () => {
+    mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 750, count: 3 };
+    const { result, rerender } = renderPlayback(climbWith('c1'));
+
+    for (const seconds of [0.3, 0.75, 1, 5, 12, 60]) {
+      act(() => {
+        result.current.setPaceSeconds(seconds);
+      });
+      const [speed] = mocks.playback.setSpeed.mock.calls.at(-1) as [number];
+      setEngineSpeed(speed);
+      rerender({ climb: climbWith('c1') });
+      expect(result.current.paceSeconds).toBeCloseTo(seconds, 10);
+    }
+  });
+
+  it('holds a pace inside the range whatever it is handed', () => {
+    // The control clamps too, but this hook is the drawer's public seam and a
+    // pace outside the range would drive the BLE writer past its throughput
+    // floor — 0.2s a frame is where the Android GATT queue starts erroring.
+    mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 750, count: 3 };
+    const { result } = renderPlayback(climbWith('c1'));
+
+    act(() => {
+      result.current.setPaceSeconds(0.01);
+    });
+    expect(mocks.playback.setSpeed).toHaveBeenLastCalledWith(750 / 300);
+
+    act(() => {
+      result.current.setPaceSeconds(600);
+    });
+    expect(mocks.playback.setSpeed).toHaveBeenLastCalledWith(750 / 60_000);
+  });
+
+  it('falls back to the default rather than dividing by a junk pace', () => {
+    mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 750, count: 3 };
+    setEngineSpeed(0);
+    const { result } = renderPlayback(climbWith('c1'));
+    expect(result.current.paceSeconds).toBe(0.75);
   });
 });

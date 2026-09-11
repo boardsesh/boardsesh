@@ -1,16 +1,18 @@
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { DEFAULT_PACE_MS } from '@boardsesh/playback-react';
 import { PlaybackControls } from '../playback/PlaybackControls';
+
+/** The pace a release snaps to while authoring: the engine's own default. */
+const DEFAULT_PACE_SECONDS = DEFAULT_PACE_MS / 1000;
 
 type PlaybackSlotControls = {
   isPlaying: boolean;
-  speed: number;
   paceMs: number;
   play: () => void;
   pause: () => void;
   seek: (index: number) => void;
-  setSpeed: (speed: number) => void;
 };
 
 type CreateRoutePlaybackSlotProps = {
@@ -60,6 +62,13 @@ export const CreateRoutePlaybackSlot = memo(function CreateRoutePlaybackSlot({
   onDeleteFrame,
   onPaceChange,
 }: CreateRoutePlaybackSlotProps) {
+  // The control speaks seconds; `frames_pace` is stored in ms. Declared above
+  // the early return — it is the only hook here and must stay unconditional.
+  const handlePaceSecondsChange = useCallback(
+    (seconds: number) => onPaceChange(Math.round(seconds * 1000)),
+    [onPaceChange],
+  );
+
   if (!showRouteTransport) return null;
 
   // The nested root is load-bearing on Android, not decoration: the pace slider
@@ -73,19 +82,19 @@ export const CreateRoutePlaybackSlot = memo(function CreateRoutePlaybackSlot({
         frameIndex={frameIndex}
         frameCount={frameCount}
         isPlaying={playback.isPlaying}
-        speed={playback.speed}
-        paceMs={playback.paceMs}
+        // Here the pace IS the thing being authored, so the control's value is
+        // the draft's own `frames_pace`. The play drawer mounts the same
+        // component and the same unit, reading its pace back through the
+        // playback multiplier.
+        paceSeconds={playback.paceMs / 1000}
+        // Not the authored pace, which is the value being dragged — a magnet on
+        // it would be sticky. The default a never-paced route gets instead.
+        magnetSeconds={DEFAULT_PACE_SECONDS}
         wallStateLabel={wallStateLabel}
         onPlay={playback.play}
         onPause={playback.pause}
         onSeek={playback.seek}
-        onSpeedChange={playback.setSpeed}
-        // Seconds, not a multiplier: in the creator this control authors the
-        // climb's own `frames_pace`, so it shows the unit the setter is choosing.
-        // The play drawer mounts the same component without these two props and
-        // keeps the ×multiplier, which is a reader's lens over the setter's pace.
-        paceUnit="seconds"
-        onPaceChange={onPaceChange}
+        onPaceSecondsChange={handlePaceSecondsChange}
         frameEditing={{ onAddFrame, onDeleteFrame }}
       />
     </GestureHandlerRootView>

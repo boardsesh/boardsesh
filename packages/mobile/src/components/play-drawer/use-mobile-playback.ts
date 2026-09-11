@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import {
+  paceSecondsForSpeed,
+  speedForPaceSeconds,
   useClimbFrames,
   usePlaybackEngine,
   type ExternalPlaybackState,
@@ -12,6 +14,8 @@ import { track } from '../../lib/analytics';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useBleFrameWriter } from '../../lib/ble/use-ble-frame-writer';
+// The seconds range and its clamp live beside the control that offers them.
+import { clampPaceSeconds } from '../playback/playback-speed-report';
 
 type UseMobilePlaybackInput = {
   climb: Climb | null | undefined;
@@ -57,8 +61,13 @@ export type UseMobilePlaybackOutput = {
   /** Current frame's flat BLE string — feed to the board renderer override. */
   currentFrameString: string;
   isPlaying: boolean;
-  speed: number;
-  /** Native per-frame pace (ms) — lets the UI glide a progress cue at the playback cadence. */
+  /**
+   * Seconds the current frame is held for — the authored pace seen through the
+   * playback multiplier, which is the only form of it a climber should ever be
+   * shown. The multiplier stays the wire format for party sync.
+   */
+  paceSeconds: number;
+  /** Native per-frame pace (ms) — the pace this climb's setter authored. */
   paceMs: number;
   /**
    * True while a party peer is counting this climb's frames differently to us
@@ -69,7 +78,8 @@ export type UseMobilePlaybackOutput = {
   play: () => void;
   pause: () => void;
   seek: (frameIndex: number) => void;
-  setSpeed: (speed: number) => void;
+  /** Plays this climb at `seconds` a frame. Clamped into the control's range. */
+  setPaceSeconds: (seconds: number) => void;
 };
 
 /**
@@ -193,6 +203,17 @@ export function useMobilePlayback({
     playback.play();
   }, [playback, onRoutePlayed]);
 
+  // The climber picks seconds a frame; the engine and the wire still speak
+  // multiplier. Converting here rather than broadcasting an overridden pace is
+  // what keeps a party in step — see `speedForPaceSeconds`.
+  const { setSpeed } = playback;
+  const setPaceSeconds = useCallback(
+    (seconds: number) => {
+      setSpeed(speedForPaceSeconds(paceMs, clampPaceSeconds(seconds)));
+    },
+    [setSpeed, paceMs],
+  );
+
   // Memoise the output so a frame tick doesn't hand the play drawer a new object
   // every render (parity with web's use-drawer-playback). `playback` is already
   // a stable useMemo from the engine and `play` is a stable useCallback.
@@ -203,14 +224,14 @@ export function useMobilePlayback({
       frameIndex: playback.frameIndex,
       currentFrameString: playback.currentFrameString,
       isPlaying: playback.isPlaying,
-      speed: playback.speed,
+      paceSeconds: paceSecondsForSpeed(paceMs, playback.speed),
       paceMs,
       peerFrameMismatch: playback.peerFrameMismatch,
       play,
       pause: playback.pause,
       seek: playback.seek,
-      setSpeed: playback.setSpeed,
+      setPaceSeconds,
     }),
-    [playback, frameStrings.length, paceMs, play],
+    [playback, frameStrings.length, paceMs, play, setPaceSeconds],
   );
 }
