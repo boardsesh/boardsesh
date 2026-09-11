@@ -8,6 +8,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Run boulders on the minute: time your rest after every send, and let Boardsesh ([#5386](https://github.com/boardsesh/boardsesh/pull/5386))
+  light the next climb when it's up
+  Pick your own rest length, pause it, or let the beat run on its own clock
+  Turn it on from the Record tab, before a session or during one
 - Route playback now reads in seconds a frame instead of `1×` / `1.5×`, so a pace means the same thing on every route. ([#5387](https://github.com/boardsesh/boardsesh/pull/5387))
   Slow a route right down to a minute a frame for endurance laps — in the play drawer and the creator alike.
 

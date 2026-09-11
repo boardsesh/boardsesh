@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-11T04:26:37.624Z",
+  "generatedAt": "2026-09-11T09:29:20.897Z",
   "entries": [
+    {
+      "prNumber": 5386,
+      "category": "new",
+      "title": "Run boulders on the minute: time your rest after every send, and let Boardsesh",
+      "mergedAt": "2026-09-11T09:27:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5386",
+      "body": "light the next climb when it's up\nPick your own rest length, pause it, or let the beat run on its own clock\nTurn it on from the Record tab, before a session or during one"
+    },
     {
       "prNumber": 5387,
       "category": "new",
