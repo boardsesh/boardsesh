@@ -34,13 +34,29 @@ export { resolveClimbNoMatch } from '@boardsesh/shared-schema';
  * Keyed on NEXTAUTH_SECRET, which the backend already requires in every
  * deployed environment. The dev fallback is a fixed string: it keeps ids
  * deterministic across a restart so local UI work behaves, and dev has no real
- * identities to protect.
+ * identities to protect. It is NOT allowed to stand in outside development —
+ * a key checked into the repo makes the pseudonym reversible by anyone who can
+ * read it, which is the one property this function exists to provide, so a
+ * deployed environment without the secret throws rather than publishing a
+ * pseudonym that protects nothing.
+ *
+ * ROTATION COUPLING: rotating NEXTAUTH_SECRET changes every pseudonym. Nothing
+ * is stored against them, so nothing is corrupted, but a kiosk merging the same
+ * anonymous climber across boards by id will split that climber into one row
+ * per board until the ranked pages refetch. Rotate outside gym hours, or accept
+ * a transient double-row on the wall display.
  */
 const ANONYMOUS_ID_DEV_KEY = 'boardsesh-dev-anonymous-id-key';
 
 export function anonymousClimberId(userId: string): string {
-  const key = process.env.NEXTAUTH_SECRET || ANONYMOUS_ID_DEV_KEY;
-  return `anon:${createHmac('sha256', key).update(userId).digest('base64url').slice(0, 22)}`;
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret && process.env.NODE_ENV === 'production') {
+    throw new Error('NEXTAUTH_SECRET is required to derive anonymous climber ids');
+  }
+  return `anon:${createHmac('sha256', secret || ANONYMOUS_ID_DEV_KEY)
+    .update(userId)
+    .digest('base64url')
+    .slice(0, 22)}`;
 }
 
 /**

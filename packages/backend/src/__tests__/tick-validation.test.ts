@@ -35,6 +35,7 @@ import {
   readTimestampFractionalSeconds,
 } from '../validation/schemas/ticks';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
+import { checkRateLimit, resetAllRateLimits } from '../utils/rate-limiter';
 
 const TEST_USER_ID = 'tick-validation-test-user';
 const TEST_TICK_UUID_PREFIX = 'tick-validation-test-tick';
@@ -314,6 +315,76 @@ describe('tickMutations.saveTick validation', () => {
     } finally {
       selectSpy.mockRestore();
       transactionSpy.mockRestore();
+    }
+  });
+});
+
+// The constants themselves are unobservable — deleting the applyRateLimit call
+// would leave every other test green. These fill the in-memory bucket the
+// resolver shares (keyed `<userId>:<operation>`) up to its ceiling, so the
+// resolver's own call is the one over the line. Both assert the write never
+// starts: a limited request must cost nothing downstream.
+describeWithDatabase('tick write-path rate limits', () => {
+  const SHARED_CEILING = 120;
+
+  afterEach(() => {
+    resetAllRateLimits();
+  });
+
+  function fillBucket(operation: string): void {
+    for (let request = 0; request < SHARED_CEILING; request++) {
+      checkRateLimit(`${TEST_USER_ID}:${operation}`, SHARED_CEILING);
+    }
+  }
+
+  it('saveTick is wired to the limiter and refuses the request over the ceiling', async () => {
+    fillBucket('saveTick');
+    const transactionSpy = vi.spyOn(db, 'transaction');
+
+    try {
+      await expect(
+        tickMutations.saveTick(
+          null,
+          {
+            input: {
+              boardType: 'kilter',
+              climbUuid: TEST_CLIMB_UUID,
+              angle: 40,
+              isMirror: false,
+              status: 'send',
+              attemptCount: 1,
+              isBenchmark: false,
+              comment: '',
+              climbedAt: new Date().toISOString(),
+            },
+          },
+          authenticatedContext,
+        ),
+      ).rejects.toMatchObject({ extensions: { code: 'RATE_LIMITED', status: 429 } });
+      expect(transactionSpy).not.toHaveBeenCalled();
+    } finally {
+      transactionSpy.mockRestore();
+    }
+  });
+
+  // climbedAt is editable, so an edit can move an old tick into the current
+  // rolling window — the same capability a create has. Bounding only the create
+  // path would leave that open.
+  it('updateTick is wired to the limiter too', async () => {
+    fillBucket('updateTick');
+    const selectSpy = vi.spyOn(db, 'select');
+
+    try {
+      await expect(
+        tickMutations.updateTick(
+          null,
+          { uuid: `${TEST_TICK_UUID_PREFIX}-rate-limited`, input: { comment: 'edited' } },
+          authenticatedContext,
+        ),
+      ).rejects.toMatchObject({ extensions: { code: 'RATE_LIMITED', status: 429 } });
+      expect(selectSpy).not.toHaveBeenCalled();
+    } finally {
+      selectSpy.mockRestore();
     }
   });
 });

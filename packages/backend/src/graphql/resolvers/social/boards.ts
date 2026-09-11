@@ -1739,7 +1739,11 @@ export const socialBoardQueries = {
         rank: Number(entry.rank),
         totalSends: Number(entry.totalSends),
         totalFlashes: Number(entry.totalFlashes),
-        hardestGrade: entry.hardestGrade ? Number(entry.hardestGrade) : null,
+        // `!= null`, not a truthiness check: 0 is a value the column can hold
+        // (two legacy rows carry difficulty = 0, which is why the new check
+        // constraint is NOT VALID), and a falsy test would report those
+        // climbers as having no hardest grade at all.
+        hardestGrade: entry.hardestGrade != null ? Number(entry.hardestGrade) : null,
         hardestGradeName: null, // TODO: resolve grade name from board-specific grade tables
         totalSessions: Number(entry.totalSessions),
       };
