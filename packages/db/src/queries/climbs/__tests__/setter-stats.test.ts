@@ -35,13 +35,18 @@ const MOONBOARD_PARAMS: BoardRouteParams = {
  */
 function createFakeSetterStatsDb() {
   const whereClauses: string[] = [];
+  const orderByClauses: string[] = [];
 
   const builder: Record<string, unknown> = {};
-  for (const method of ['from', 'groupBy', 'orderBy', 'limit']) {
+  for (const method of ['from', 'groupBy', 'limit']) {
     builder[method] = () => builder;
   }
   builder.where = (condition: SQL | undefined) => {
     whereClauses.push(condition ? dialect.sqlToQuery(condition).sql : '');
+    return builder;
+  };
+  builder.orderBy = (...expressions: SQL[]) => {
+    orderByClauses.push(expressions.map((expression) => dialect.sqlToQuery(expression).sql).join(', '));
     return builder;
   };
   builder.then = (
@@ -58,7 +63,7 @@ function createFakeSetterStatsDb() {
     transaction: (callback: (transactionDb: typeof tx) => unknown) => callback(tx),
   };
 
-  return { fakeDb, whereClauses };
+  return { fakeDb, whereClauses, orderByClauses };
 }
 
 void describe('getSetterStats — community-hidden climbs (#5049)', () => {
@@ -113,6 +118,19 @@ void describe('getSetterStats — angle-blind setter universe (#5404)', () => {
     assert.match(whereClauses[0], /"board_climbs"\."required_set_ids" <@ ARRAY\[/);
     // Kilter is size-scoped, so the size containment predicate stays.
     assert.match(whereClauses[0], /"board_climbs"\."compatible_size_ids" @> ARRAY\[/);
+  });
+
+  void it('breaks count ties on the username so the 50-row cut is stable', async () => {
+    const { fakeDb, orderByClauses } = createFakeSetterStatsDb();
+
+    await getSetterStats(fakeDb as unknown as DbInstance, SETTER_PARAMS);
+
+    // The tail of this list is one-climb setters, so ties at the LIMIT 50 boundary
+    // are common. Without the second key Postgres may return a different 50 each
+    // time and the picker flickers between refetches.
+    assert.equal(orderByClauses.length, 1);
+    assert.match(orderByClauses[0], /count\(\*\) DESC/);
+    assert.match(orderByClauses[0], /"board_climbs"\."setter_username" ASC/);
   });
 
   void it('lets MoonBoard climbs through while required_set_ids is still backfilling', async () => {
