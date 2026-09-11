@@ -31,36 +31,9 @@ function getPosthog(): PostHog | null {
   // prod PostHog project (#3814).
   if (!isProductionHost(window.location.hostname)) return null;
 
-  // Never start the SDK for a crawler. Crawlers that execute JavaScript boot it
-  // exactly like a browser does, and because they hold no cookies every page
-  // load mints a fresh anonymous person — so a crawler does not just cost
-  // requests, it becomes the audience.
-  //
-  // It already had. Measured 2026-09-11 on `$pageview` where `$lib = 'js'`:
-  //
-  //   day      mobile app   web (other browsers)   web "Safari / Mac OS X"
-  //   Sep 10          454                     29                      917
-  //   Sep  9          488                     35                      363
-  //   Sep  8          523                     52                      354
-  //
-  // That third column is Applebot. Its user agent opens
-  // `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) … Safari/605.1.15` and only
-  // names itself in a trailing `(Applebot/0.1; …)`, which PostHog's parser does
-  // not read — so it files as Safari on Mac OS X. Three things say it is not
-  // people: the bucket runs at exactly 1.00 pageviews per person every single
-  // day (335/335, 917/917, 363/363) where every other browser runs 3-8; it is
-  // active at all 24 hours, showing 104-145 "people" at 01:00-03:00 UTC while
-  // the entire rest of the audience shows 4-8; and its volume tracks the crawl,
-  // peaking on the same day Applebot was 50.5% of www traffic at the edge.
-  //
-  // So roughly 90% of web product analytics was one crawler. This gate is a
-  // data-quality fix first and a cost fix second.
-  //
-  // `isAutomatedCrawlerUserAgent`, not the plain `isCrawlerUserAgent` the locale
-  // gates use: that one knowingly misclassifies Yandex's in-app search browser,
-  // which is a real person we would rather keep counting. Same predicate the
-  // Sentry gate uses (instrumentation-client.ts), so a visitor is classified
-  // identically by both.
+  // Crawlers that execute our JS boot this SDK and, holding no cookies, mint a
+  // fresh person per page load: Applebot was 917 of the 946 web "users" on 2026-09-10.
+  // Not isCrawlerUserAgent — that one counts real YandexSearch users as bots. docs/feature-flags.md.
   if (isAutomatedCrawlerUserAgent(navigator.userAgent)) return null;
 
   const apiKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
