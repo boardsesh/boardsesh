@@ -44,9 +44,23 @@ export type RestTimerState = {
   lastTickAt: string | null;
   /**
    * Set when an auto-advance found nothing to advance to. Stops the scheduler
-   * beating against an exhausted queue, and lets the UI say why.
+   * beating against an exhausted queue, and lets the UI say why. Cleared by the
+   * next tick, and by the queue becoming advanceable again.
    */
   queueEnded: boolean;
+  /**
+   * The deadline the last auto-advance actually fired on, so the next one can
+   * never be scheduled at or before it.
+   *
+   * Without this, `onTheMinute` can advance TWICE for one beat: its deadline is
+   * recomputed from the wall clock every render, and RN's timer queue runs on a
+   * monotonic clock. If `Date.now()` reads even a millisecond below the deadline
+   * when the fire callback lands (an NTP step back, or the climber editing the
+   * device clock), the same beat is returned, and the fresh cycle id from the
+   * fire waves the second advance straight through. Two climbs skipped, the wall
+   * lit for the wrong one.
+   */
+  lastFiredDeadlineMs: number | null;
 };
 
 const INITIAL_STATE: RestTimerState = {
@@ -58,6 +72,7 @@ const INITIAL_STATE: RestTimerState = {
   cycleId: 0,
   lastTickAt: null,
   queueEnded: false,
+  lastFiredDeadlineMs: null,
 };
 
 let state: RestTimerState = INITIAL_STATE;
@@ -192,7 +207,12 @@ export function bindRestTimerToSession(sessionId: string): void {
  * `afterTick` restarts the rest from the advance instant. `onTheMinute` keeps
  * its anchor, so the next deadline is simply the next beat.
  */
-export function noteRestTimerAutoAdvanceFired(expectedCycleId: number, mode: RestTimerMode, nowMs: number): boolean {
+export function noteRestTimerAutoAdvanceFired(
+  expectedCycleId: number,
+  mode: RestTimerMode,
+  nowMs: number,
+  firedDeadlineMs: number,
+): boolean {
   if (!state.armed || state.cycleId !== expectedCycleId) return false;
   setState({
     ...state,
@@ -200,6 +220,7 @@ export function noteRestTimerAutoAdvanceFired(expectedCycleId: number, mode: Res
     isRunning: true,
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,
+    lastFiredDeadlineMs: firedDeadlineMs,
   });
   return true;
 }
@@ -208,6 +229,27 @@ export function noteRestTimerAutoAdvanceFired(expectedCycleId: number, mode: Res
 export function noteRestTimerQueueEnded(): void {
   if (!state.armed || state.queueEnded) return;
   setState({ ...state, queueEnded: true, cycleId: state.cycleId + 1 });
+}
+
+/**
+ * The queue can advance again — someone added climbs, or switched board. Clears
+ * the dead-end latch so the timer picks its beat back up without waiting for the
+ * next tick, and rolls the cycle so the scheduler has a change to react to.
+ */
+export function clearRestTimerQueueEnded(nowMs: number, mode: RestTimerMode): void {
+  if (!state.armed || !state.queueEnded) return;
+  setState({
+    ...state,
+    queueEnded: false,
+    // `afterTick`'s deadline is derived from the anchor, and by the time anyone
+    // refills the queue that deadline is minutes in the past — it would never
+    // come round again and the timer would stay dead. Restart the rest from the
+    // moment the queue became advanceable. `onTheMinute` computes its deadline
+    // forward from now, so its beat self-heals and the phase is worth keeping.
+    anchorMs: mode === 'afterTick' ? nowMs : state.anchorMs,
+    pausedElapsedSeconds: 0,
+    cycleId: state.cycleId + 1,
+  });
 }
 
 /**

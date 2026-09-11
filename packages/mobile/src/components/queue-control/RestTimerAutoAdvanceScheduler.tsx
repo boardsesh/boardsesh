@@ -26,6 +26,7 @@ import { useRestTimerState } from '../../hooks/use-rest-timer';
 import { nowMs } from '../../lib/clock';
 import { hapticLight, hapticMedium, hapticSuccess } from '../../lib/haptics';
 import {
+  clearRestTimerQueueEnded,
   noteRestTimerAutoAdvanceFired,
   noteRestTimerQueueEnded,
   reanchorRestTimerAfterBackground,
@@ -33,6 +34,7 @@ import {
 import {
   AUTO_ADVANCE_WARNING_LEAD_MS,
   getAutoAdvanceDeadlineMs,
+  isAutoAdvanceDeadlineStale,
   shouldScheduleAutoAdvance,
 } from '../../lib/rest-timer-auto-advance';
 
@@ -85,7 +87,17 @@ export function RestTimerAutoAdvanceScheduler() {
   };
 
   const fireAdvance = useCallback(
-    (expectedCycleId: number) => {
+    (expectedCycleId: number, scheduledDeadlineMs: number) => {
+      // ORDERING-PROOF background guard. Nothing orders the AppState 'active'
+      // listener ahead of the timer queue on resume — RN flushes both off the
+      // same UIApplicationDidBecomeActive, in no guaranteed order — so a timeout
+      // that came due while the phone was in a pocket can land here first. Check
+      // the deadline rather than trusting the listener to have re-anchored.
+      if (isAutoAdvanceDeadlineStale(scheduledDeadlineMs, nowMs())) {
+        reanchorRestTimerAfterBackground(nowMs(), scheduledDeadlineMs);
+        return;
+      }
+
       const inputs = advanceInputsRef.current;
       const activeConfig = inputs.activeBoard
         ? (() => {
@@ -112,7 +124,7 @@ export function RestTimerAutoAdvanceScheduler() {
 
       // Claim the cycle BEFORE advancing: a stale timeout from a re-run effect
       // or a remount loses the race here rather than skipping a second climb.
-      if (!noteRestTimerAutoAdvanceFired(expectedCycleId, mode, nowMs())) return;
+      if (!noteRestTimerAutoAdvanceFired(expectedCycleId, mode, nowMs(), scheduledDeadlineMs)) return;
 
       hapticMedium();
       nextClimb();
@@ -120,10 +132,25 @@ export function RestTimerAutoAdvanceScheduler() {
     [mode, nextClimb],
   );
 
-  const scheduled = shouldScheduleAutoAdvance({ state: timerState, targetSeconds, autoAdvance, canDriveWall });
-  const deadlineMs = scheduled
-    ? getAutoAdvanceDeadlineMs({ mode, anchorMs: timerState.anchorMs, targetSeconds, nowMs: nowMs() })
+  const wantsAdvance = shouldScheduleAutoAdvance({ state: timerState, targetSeconds, autoAdvance, canDriveWall });
+  const candidateDeadlineMs = wantsAdvance
+    ? getAutoAdvanceDeadlineMs({
+        mode,
+        anchorMs: timerState.anchorMs,
+        targetSeconds,
+        nowMs: nowMs(),
+        lastFiredDeadlineMs: timerState.lastFiredDeadlineMs,
+      })
     : null;
+
+  // A deadline already long past means the anchor is a back-dated tick — the
+  // climber logged yesterday's session with the date picker. Treat that as NOT
+  // scheduled rather than arming a pointless timer: otherwise the timer wedges
+  // (no advance, and the target buzz below stays suppressed because it is gated
+  // on nothing being pending) and the screen-wake lock is held for nothing.
+  const deadlineStale = isAutoAdvanceDeadlineStale(candidateDeadlineMs, nowMs());
+  const scheduled = wantsAdvance && !deadlineStale;
+  const deadlineMs = scheduled ? candidateDeadlineMs : null;
 
   // Keep the screen up while an advance is pending: timers are suspended in the
   // background and BLE writes need the app active, so a sleeping phone is a
@@ -143,7 +170,7 @@ export function RestTimerAutoAdvanceScheduler() {
       remainingMs > AUTO_ADVANCE_WARNING_LEAD_MS
         ? setTimeout(() => hapticLight(), remainingMs - AUTO_ADVANCE_WARNING_LEAD_MS)
         : null;
-    const fireTimeout = setTimeout(() => fireAdvance(cycleId), remainingMs);
+    const fireTimeout = setTimeout(() => fireAdvance(cycleId, deadlineMs), remainingMs);
 
     return () => {
       if (warnTimeout !== null) clearTimeout(warnTimeout);
@@ -154,25 +181,50 @@ export function RestTimerAutoAdvanceScheduler() {
   // Target reached with auto-advance off: one haptic and the digits go red (the
   // colour lives in the pill). Fires once per cycle, never while an advance is
   // pending, so the two never double up.
-  const reachedCycleRef = useRef<number | null>(null);
+  // Keyed on the target as well as the cycle: lengthening the rest mid-cycle
+  // (1 min → 5 min) is a NEW mark to reach, and a cycle-only latch would swallow
+  // it silently.
+  const reachedRef = useRef<{ cycleId: number; targetSeconds: number } | null>(null);
   const { anchorMs, armed, isRunning } = timerState;
   useEffect(() => {
     if (!armed || !isRunning || scheduled) return undefined;
     if (anchorMs === null || targetSeconds === null || targetSeconds <= 0) return undefined;
-    if (reachedCycleRef.current === cycleId) return undefined;
+    if (reachedRef.current?.cycleId === cycleId && reachedRef.current.targetSeconds === targetSeconds) return undefined;
 
     const remainingMs = anchorMs + targetSeconds * 1000 - nowMs();
     if (remainingMs <= 0) {
-      reachedCycleRef.current = cycleId;
+      reachedRef.current = { cycleId, targetSeconds };
       return undefined;
     }
 
     const timeout = setTimeout(() => {
-      reachedCycleRef.current = cycleId;
+      reachedRef.current = { cycleId, targetSeconds };
       hapticSuccess();
     }, remainingMs);
     return () => clearTimeout(timeout);
   }, [anchorMs, armed, cycleId, isRunning, scheduled, targetSeconds]);
+
+  // The queue was refilled (or the board switched) while the dead-end latch was
+  // set. Pick the beat back up instead of staying dead until the next tick. Only
+  // runs while latched, so the O(queue) walk is rare and bounded.
+  const { queueEnded } = timerState;
+  useEffect(() => {
+    if (!armed || !queueEnded) return;
+    const inputs = advanceInputsRef.current;
+    const activeConfig = inputs.activeBoard
+      ? (() => {
+          const boardName = toBoardName(inputs.activeBoard.boardType);
+          return boardName ? { boardName, layoutId: inputs.activeBoard.layoutId } : undefined;
+        })()
+      : undefined;
+    const { canNext } = computeNavigationStateWithSuggestions(
+      inputs.queue,
+      inputs.currentClimbQueueItem,
+      inputs.playlistSuggestionSource,
+      activeConfig,
+    );
+    if (canNext) clearRestTimerQueueEnded(nowMs(), mode);
+  }, [armed, mode, queue, currentClimbQueueItem, playlistSuggestionSource, activeBoard, queueEnded]);
 
   // Coming back from the background, a deadline that passed while away was never
   // actionable. Re-anchor and start a fresh cycle rather than moving the wall for

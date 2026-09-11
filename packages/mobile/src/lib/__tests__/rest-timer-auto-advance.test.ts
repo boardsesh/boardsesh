@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   AUTO_ADVANCE_MAX_BACKDATE_MS,
+  AUTO_ADVANCE_OVERDUE_GRACE_MS,
   getAutoAdvanceDeadlineMs,
+  isAutoAdvanceDeadlineStale,
   getRestTimerCycleElapsedSeconds,
   isTickFreshEnoughToArm,
   shouldScheduleAutoAdvance,
@@ -19,6 +21,7 @@ const armedState = (overrides: Partial<RestTimerState> = {}): RestTimerState => 
   cycleId: 1,
   lastTickAt: null,
   queueEnded: false,
+  lastFiredDeadlineMs: null,
   ...overrides,
 });
 
@@ -156,5 +159,64 @@ describe('getRestTimerCycleElapsedSeconds', () => {
 
   it('reports zero with no anchor', () => {
     expect(getRestTimerCycleElapsedSeconds({ ...base, mode: 'afterTick', anchorMs: null, nowMs: T0 })).toBe(0);
+  });
+});
+
+describe('a beat that already fired', () => {
+  it('is never scheduled again when the wall clock steps backwards', () => {
+    // RN's timer queue runs on a monotonic clock while the deadline is derived
+    // from Date.now(). An NTP step back of a millisecond used to hand back the
+    // beat we just fired, and the fresh cycle id waved the second advance
+    // through — two climbs skipped, the wall lit for the wrong one.
+    const fired = T0 + 60_000;
+    const deadline = getAutoAdvanceDeadlineMs({
+      mode: 'onTheMinute',
+      anchorMs: T0,
+      targetSeconds: 60,
+      nowMs: fired - 1,
+      lastFiredDeadlineMs: fired,
+    });
+    expect(deadline).toBe(T0 + 120_000);
+  });
+
+  it('keeps the cadence phase when it walks forward', () => {
+    const deadline = getAutoAdvanceDeadlineMs({
+      mode: 'onTheMinute',
+      anchorMs: T0,
+      targetSeconds: 60,
+      nowMs: T0 + 10,
+      lastFiredDeadlineMs: T0 + 300_000,
+    });
+    // Still on the anchor's minute grid, just past everything already fired.
+    expect((deadline! - T0) % 60_000).toBe(0);
+    expect(deadline).toBeGreaterThan(T0 + 300_000);
+  });
+
+  it('leaves an ordinary next beat alone', () => {
+    expect(
+      getAutoAdvanceDeadlineMs({
+        mode: 'onTheMinute',
+        anchorMs: T0,
+        targetSeconds: 60,
+        nowMs: T0 + 61_000,
+        lastFiredDeadlineMs: T0 + 60_000,
+      }),
+    ).toBe(T0 + 120_000);
+  });
+});
+
+describe('isAutoAdvanceDeadlineStale', () => {
+  it('accepts a deadline that has only just come due', () => {
+    expect(isAutoAdvanceDeadlineStale(T0, T0)).toBe(false);
+    expect(isAutoAdvanceDeadlineStale(T0, T0 + AUTO_ADVANCE_OVERDUE_GRACE_MS)).toBe(false);
+  });
+
+  it('rejects one the app slept through', () => {
+    expect(isAutoAdvanceDeadlineStale(T0, T0 + AUTO_ADVANCE_OVERDUE_GRACE_MS + 1)).toBe(true);
+    expect(isAutoAdvanceDeadlineStale(T0, T0 + 600_000)).toBe(true);
+  });
+
+  it('treats no deadline as not stale', () => {
+    expect(isAutoAdvanceDeadlineStale(null, T0)).toBe(false);
   });
 });

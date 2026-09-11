@@ -21,11 +21,22 @@ export function isTickFreshEnoughToArm(tickMs: number | null, nowMs: number): bo
   return nowMs - tickMs <= AUTO_ADVANCE_MAX_BACKDATE_MS;
 }
 
+/**
+ * How far past its deadline an advance may still fire. Anything later than this
+ * means the JS timer queue was frozen — the app was backgrounded — and firing
+ * would move the wall for an interval the climber never watched. Ordering-proof:
+ * it does not depend on the AppState listener winning a race with the timer
+ * queue on resume, which it does not reliably do.
+ */
+export const AUTO_ADVANCE_OVERDUE_GRACE_MS = 5_000;
+
 type DeadlineInput = {
   mode: RestTimerMode;
   anchorMs: number | null;
   targetSeconds: number | null;
   nowMs: number;
+  /** {@link RestTimerState.lastFiredDeadlineMs} — never schedule at or before it. */
+  lastFiredDeadlineMs?: number | null;
 };
 
 /**
@@ -37,14 +48,42 @@ type DeadlineInput = {
  * `onTheMinute` returns the next beat STRICTLY after now, so arming exactly on a
  * boundary waits a full interval instead of firing on the spot.
  */
-export function getAutoAdvanceDeadlineMs({ mode, anchorMs, targetSeconds, nowMs }: DeadlineInput): number | null {
+export function getAutoAdvanceDeadlineMs({
+  mode,
+  anchorMs,
+  targetSeconds,
+  nowMs,
+  lastFiredDeadlineMs = null,
+}: DeadlineInput): number | null {
   if (anchorMs === null || targetSeconds === null || targetSeconds <= 0) return null;
   const intervalMs = targetSeconds * 1000;
 
   if (mode === 'afterTick') return anchorMs + intervalMs;
 
   const beatsElapsed = Math.floor((nowMs - anchorMs) / intervalMs);
-  return anchorMs + (beatsElapsed + 1) * intervalMs;
+  const deadlineMs = anchorMs + (beatsElapsed + 1) * intervalMs;
+
+  // A beat we already fired can never come round again, even if the wall clock
+  // steps backwards under us. Walk forward in whole intervals so the cadence's
+  // phase is preserved exactly.
+  if (lastFiredDeadlineMs !== null && deadlineMs <= lastFiredDeadlineMs) {
+    const beatsBehind = Math.floor((lastFiredDeadlineMs - deadlineMs) / intervalMs) + 1;
+    return deadlineMs + beatsBehind * intervalMs;
+  }
+
+  return deadlineMs;
+}
+
+/**
+ * Whether a deadline is too far past to act on. See
+ * {@link AUTO_ADVANCE_OVERDUE_GRACE_MS} — this is the background guard, and it
+ * is checked at BOTH ends: when scheduling (so a back-dated tick never arms a
+ * pointless timer or holds the screen awake) and inside the fire callback (so an
+ * overdue timeout flushed on resume refuses to move the wall).
+ */
+export function isAutoAdvanceDeadlineStale(deadlineMs: number | null, nowMs: number): boolean {
+  if (deadlineMs === null) return false;
+  return nowMs - deadlineMs > AUTO_ADVANCE_OVERDUE_GRACE_MS;
 }
 
 type ScheduleInput = {
