@@ -23,6 +23,10 @@ vi.mock('posthog-js-lite', () => ({
 }));
 
 const originalLocation = window.location;
+const originalUserAgent = navigator.userAgent;
+
+const BROWSER_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
 
 function setWindowLocation(url: string): void {
   Object.defineProperty(window, 'location', {
@@ -30,6 +34,10 @@ function setWindowLocation(url: string): void {
     writable: true,
     configurable: true,
   });
+}
+
+function setUserAgent(userAgent: string): void {
+  Object.defineProperty(navigator, 'userAgent', { value: userAgent, writable: true, configurable: true });
 }
 
 describe('analytics wrapper', () => {
@@ -44,6 +52,9 @@ describe('analytics wrapper', () => {
       return mocks.posthog;
     });
     setWindowLocation('https://boardsesh.com/b/kilter');
+    // Pinned so the crawler gate's outcome is a property of each test, not of
+    // whatever UA the test environment happens to present.
+    setUserAgent(BROWSER_UA);
   });
 
   afterEach(() => {
@@ -53,6 +64,52 @@ describe('analytics wrapper', () => {
       writable: true,
       configurable: true,
     });
+    Object.defineProperty(navigator, 'userAgent', {
+      value: originalUserAgent,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  it.each([
+    [
+      'Applebot',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)',
+    ],
+    ['YandexBot', 'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)'],
+    [
+      'Googlebot',
+      'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.36 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    ],
+  ])('never starts the SDK for %s, even on a production host', async (_label, userAgent) => {
+    // Applebot renders our JavaScript, so it booted this SDK like any browser
+    // and, holding no cookies, minted a new anonymous person on every page
+    // load. On 2026-09-10 that bucket was 917 "people" against 29 real web
+    // visitors. Not constructing the client is what stops it: no client means
+    // no flags fetch, no batch POST, and no person.
+    setUserAgent(userAgent);
+    const { track } = await import('../analytics');
+
+    track('Climb Opened');
+
+    expect(mocks.PostHog).not.toHaveBeenCalled();
+    expect(mocks.posthog.capture).not.toHaveBeenCalled();
+  });
+
+  it('keeps counting a real Yandex Search in-app browser user', async () => {
+    // The reason this gate uses isAutomatedCrawlerUserAgent rather than the
+    // locale gates' isCrawlerUserAgent: that predicate knowingly misclassifies
+    // `YandexSearch`, which is a person we want in the numbers.
+    setUserAgent(
+      'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/106.0.0.0 Mobile Safari/537.36 YandexSearch/1.0',
+    );
+    const { track } = await import('../analytics');
+
+    track('Climb Opened');
+
+    expect(mocks.PostHog).toHaveBeenCalled();
+    // No properties passed through as undefined, which is what track() does.
+    expect(mocks.posthog.capture).toHaveBeenCalledWith('Climb Opened', undefined);
   });
 
   it('sends track events to PostHog on production hostnames', async () => {
