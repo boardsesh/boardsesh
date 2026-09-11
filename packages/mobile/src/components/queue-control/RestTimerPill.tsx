@@ -10,7 +10,14 @@
 // mode freezes it, so a capture of a running timer is byte-identical run to run.
 
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, type AccessibilityActionEvent, type AccessibilityActionInfo, type ColorValue } from 'react-native';
+import type { TFunction } from 'i18next';
+import {
+  StyleSheet,
+  View,
+  type AccessibilityActionEvent,
+  type AccessibilityActionInfo,
+  type ColorValue,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -31,7 +38,7 @@ import {
 import { getRestTimerCycleElapsedSeconds } from '../../lib/rest-timer-auto-advance';
 import { REST_TIMER_PILL_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH, glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
-import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
+import { CHROME_LABEL_MAX_FONT_SCALE, REST_CLOCK_MAX_FONT_SCALE } from '../../theme/typography';
 import { AccessoryBarSurface } from './AccessoryBarSurface';
 
 /** Narrowest the full-size pill goes, so a short "0:12" still reads as a pill. */
@@ -152,15 +159,16 @@ export function useRestTimerDisplay(): RestTimerDisplay {
 }
 
 type RestTimerClockProps = {
-  /** Type scale for the digits. The sheet uses `title1`, the arm row `headline`. */
+  /** Type scale for the digits. The Record tab's arm row uses `headline`. */
   variant?: 'title1' | 'title2' | 'headline' | 'body';
   color?: ColorValue;
 };
 
 /**
  * A live `m:ss` readout, tabular so the digits do not jitter. Its own leaf so
- * the screen hosting it never re-renders on the tick — the arm row and the sheet
- * both stay static while this counts.
+ * the screen hosting it never re-renders on the tick — the arm row stays static
+ * while this counts. The sheet's display-size equivalent, with the phase spelled
+ * out beneath it, is {@link RestTimerHeroClock}.
  */
 export function RestTimerClock({ variant = 'title1', color }: RestTimerClockProps) {
   const { systemColors, brandColors } = useTheme();
@@ -203,6 +211,108 @@ function phaseColor(phase: RestTimerPhase, systemColors: PhaseColorInputs, brand
     case 'running':
       return systemColors.label;
   }
+}
+
+type RestTimerAriaInputs = {
+  phase: RestTimerPhase;
+  displayLabel: string;
+  targetLabel: string | null;
+  remainingSeconds: number | null;
+};
+
+/**
+ * What a screen reader hears from a rest-timer readout, for the pill AND the
+ * sheet's hero clock. One helper because the two are the same sentence about the
+ * same machine — and because spoken, the sign is useless ("minus zero twelve" is
+ * not a sentence), so the overrun phrasing has to be applied in both places or
+ * neither.
+ *
+ * Never a live region: a polite one on a 1 Hz ticker speaks every second. This
+ * is a snapshot read on focus, which is what a climber actually wants.
+ */
+export function restTimerClockAccessibilityLabel(
+  { phase, displayLabel, targetLabel, remainingSeconds }: RestTimerAriaInputs,
+  t: TFunction<'session'>,
+): string {
+  if (phase === 'waiting') return t('mobile.restTimer.noTickAria', { target: targetLabel ?? displayLabel });
+  if (phase === 'paused') return t('mobile.restTimer.pausedAria', { time: displayLabel });
+  if (remainingSeconds === null) return t('mobile.restTimer.runningAria', { time: displayLabel });
+  if (remainingSeconds < 0) {
+    return t('mobile.restTimer.overrunAria', { time: formatRestTimerElapsed(-remainingSeconds) });
+  }
+  return t('mobile.restTimer.countdownAria', { time: displayLabel });
+}
+
+/**
+ * The rest-timer sheet's hero: the live clock at display size with the PHASE
+ * spelled out under it.
+ *
+ * It lives in this file, not the sheet, because it calls
+ * {@link useRestTimerDisplay} — and that hook's contract is that only a leaf may,
+ * since it re-renders once a second. Hoisting it into the sheet would put the
+ * whole form (two rails' worth of chips, a collapsible section, three native
+ * controls) on the 1 Hz heartbeat.
+ *
+ * One accessible element, not three: the digits and the caption are one reading,
+ * and a screen reader that stops on each in turn reads "1:20" then "2:00 rest"
+ * with no sentence between them.
+ */
+export function RestTimerHeroClock() {
+  const { t } = useTranslation('session');
+  const { systemColors, brandColors } = useTheme();
+  const { armed, phase, displayLabel, targetSeconds, targetLabel, remainingSeconds } = useRestTimerDisplay();
+
+  if (!armed) return null;
+
+  // The caption carries what the number cannot: which phase the machine is in,
+  // and — while it is simply running — which rest length it is counting against.
+  // `formatRestTimerElapsed`, so the caption is byte-identical to the rail chip
+  // the climber tapped; `formatRestTimerTarget` would print "2m" beside a "2:00"
+  // chip and read as a different setting.
+  const caption =
+    phase === 'waiting'
+      ? t('mobile.restTimer.waitingForTick')
+      : phase === 'paused'
+        ? t('mobile.restTimer.clockCaptionPaused')
+        : phase === 'queueEnded'
+          ? t('mobile.restTimer.queueEnded')
+          : phase === 'exceeded'
+            ? t('mobile.restTimer.clockCaptionOver')
+            : targetSeconds !== null && targetSeconds > 0
+              ? t('mobile.restTimer.clockCaptionRest', { target: formatRestTimerElapsed(targetSeconds) })
+              : t('mobile.restTimer.clockCaptionCountUp');
+
+  return (
+    <View
+      style={styles.hero}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`${restTimerClockAccessibilityLabel({ phase, displayLabel, targetLabel, remainingSeconds }, t)}. ${caption}`}
+      testID="rest-timer-hero-clock"
+    >
+      <Text
+        variant="largeTitle"
+        color={phaseColor(phase, systemColors, brandColors)}
+        // Not the global 1.5x: see REST_CLOCK_MAX_FONT_SCALE — an hour-long
+        // overrun is the widest string this can print, and 1.5x overflows it.
+        maxFontSizeMultiplier={REST_CLOCK_MAX_FONT_SCALE}
+        numberOfLines={1}
+        style={styles.tabularDigits}
+        testID="rest-timer-hero-digits"
+      >
+        {displayLabel}
+      </Text>
+      <Text
+        variant="subheadline"
+        color={systemColors.secondaryLabel}
+        maxFontSizeMultiplier={REST_CLOCK_MAX_FONT_SCALE}
+        style={styles.heroCaption}
+        testID="rest-timer-hero-caption"
+      >
+        {caption}
+      </Text>
+    </View>
+  );
 }
 
 export type RestTimerPillProps = {
@@ -258,20 +368,11 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
         ? t('mobile.restTimer.queueEnded')
         : null;
 
-  // No live region on the ticker: a polite one would speak every second. The
-  // label is a snapshot read on focus, which is what a climber actually wants.
-  // Spoken, the sign is useless — "minus zero twelve" is not a sentence — so the
-  // overrun gets its own phrasing and an unsigned number.
-  const accessibilityLabel =
-    phase === 'waiting'
-      ? t('mobile.restTimer.noTickAria', { target: targetLabel ?? displayLabel })
-      : phase === 'paused'
-        ? t('mobile.restTimer.pausedAria', { time: displayLabel })
-        : remainingSeconds === null
-          ? t('mobile.restTimer.runningAria', { time: displayLabel })
-          : remainingSeconds < 0
-            ? t('mobile.restTimer.overrunAria', { time: formatRestTimerElapsed(-remainingSeconds) })
-            : t('mobile.restTimer.countdownAria', { time: displayLabel });
+  // Shared with the sheet's hero clock — see restTimerClockAccessibilityLabel.
+  const accessibilityLabel = restTimerClockAccessibilityLabel(
+    { phase, displayLabel, targetLabel, remainingSeconds },
+    t,
+  );
 
   return (
     <AccessoryBarSurface height={height} style={compact ? styles.pillCompact : styles.pill}>
@@ -351,5 +452,12 @@ const styles = StyleSheet.create({
   },
   secondary: {
     flexShrink: 1,
+  },
+  hero: {
+    alignItems: 'center',
+    gap: spacing[1],
+  },
+  heroCaption: {
+    textAlign: 'center',
   },
 });

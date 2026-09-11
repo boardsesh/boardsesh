@@ -67,6 +67,9 @@ export function RestTimerArmRow() {
       />
       {armed ? (
         <View style={styles.controls}>
+          {/* `inset={false}`: the length control pulls back out through the
+              card's own 16pt padding so its rail bleeds to the card edge, then
+              re-applies the gutter to its header, chips and footnote. */}
           <RestTimerLengthControl inset={false} />
           <RestTimerAutoAdvanceRow />
         </View>
@@ -86,8 +89,10 @@ const styles = StyleSheet.create({
   title: {
     flexShrink: 1,
   },
+  // No gap / top margin of its own: the length control's SectionHeader brings
+  // the section's top rhythm and the SwitchRow its own vertical padding, so a
+  // second spacing layer here just doubles both seams.
   controls: {
-    gap: spacing[3],
-    marginTop: spacing[2],
+    marginTop: spacing[1],
   },
 });
