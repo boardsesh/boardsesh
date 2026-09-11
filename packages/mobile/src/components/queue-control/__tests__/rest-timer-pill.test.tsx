@@ -237,28 +237,25 @@ describe('RestTimerPill', () => {
     expect(elapsedText(container)).toBe('0:00');
   });
 
-  it('shows the next-climb glyph only while auto-advance is armed', () => {
-    armWithTick();
-    const { container, rerender } = render(<RestTimerPill onPress={vi.fn()} />);
-    expect(container.querySelector('[data-icon="skip.next"]')).toBeNull();
-
+  it('carries no auto-advance glyph — the pill is time, the sheet is settings', () => {
+    // The brand-violet skip glyph read as a button you could press, next to a
+    // pill that IS pressable but opens the sheet. Auto-advance state lives in the
+    // sheet and the Record-tab card.
     harness.settings = { ...harness.settings, restTimerAutoAdvance: true };
-    act(() => {
-      // Nudge the store so the pill re-reads the settings snapshot.
-      pauseRestTimer(harness.nowMs);
-    });
-    rerender(<RestTimerPill onPress={vi.fn()} />);
-    expect(container.querySelector('[data-icon="skip.next"]')).not.toBeNull();
+    armWithTick();
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+
+    expect(container.querySelector('[data-icon="skip.next"]')).toBeNull();
+    expect(container.querySelector('[data-testid="rest-timer-pill-auto-advance"]')).toBeNull();
   });
 
-  it('keeps the auto-advance glyph in the compact drawer tier and drops the second line', () => {
+  it('drops the second line in the compact drawer tier', () => {
     harness.settings = { ...harness.settings, restTimerAutoAdvance: true };
     armWithTick();
     const { container } = render(<RestTimerPill onPress={vi.fn()} compact />);
 
     expect(container.querySelector('[data-surface="true"]')?.getAttribute('data-height')).toBe('32');
     expect(container.querySelector('[data-testid="rest-timer-pill-secondary"]')).toBeNull();
-    expect(container.querySelector('[data-icon="skip.next"]')).not.toBeNull();
   });
 
   it('stops the 1 Hz interval when the timer is not running', () => {

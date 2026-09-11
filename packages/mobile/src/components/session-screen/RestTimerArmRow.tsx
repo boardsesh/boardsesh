@@ -15,7 +15,6 @@ import { Text } from '../Text';
 import { SwitchRow } from '../SwitchRow';
 import { useTheme } from '../../providers/theme-provider';
 import { useQueueSessionId } from '../../providers/queue-provider';
-import { useRestTimerEnabled } from '../../providers/feature-flags-provider';
 import { useRestTimerArmed } from '../../hooks/use-rest-timer';
 import { getSetting } from '../../settings';
 import { nowMs } from '../../lib/clock';
@@ -33,7 +32,6 @@ import { spacing } from '../../theme/tokens';
 export function RestTimerArmRow() {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const enabled = useRestTimerEnabled();
   const armed = useRestTimerArmed();
   const { sessionId } = useQueueSessionId();
 
@@ -50,8 +48,6 @@ export function RestTimerArmRow() {
     },
     [sessionId],
   );
-
-  if (!enabled) return null;
 
   return (
     <Card>

@@ -9,7 +9,6 @@ import { render, cleanup } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const harness = vi.hoisted(() => ({
-  enabled: true,
   insideTabs: true,
   restTimerBottom: 83,
   widthClass: 'compact' as 'compact' | 'regular',
@@ -22,8 +21,6 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
   useWindowDimensions: () => ({ width: harness.windowWidth, height: 844 }),
 }));
-
-vi.mock('../../../providers/feature-flags-provider', () => ({ useRestTimerEnabled: () => harness.enabled }));
 
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({
@@ -61,7 +58,6 @@ function arm() {
 
 describe('RestTimerPillHost', () => {
   beforeEach(() => {
-    harness.enabled = true;
     harness.insideTabs = true;
     harness.widthClass = 'compact';
     harness.windowWidth = 390;
@@ -76,13 +72,6 @@ describe('RestTimerPillHost', () => {
     const { queryByTestId } = render(<RestTimerPillHost />);
     expect(queryByTestId('pill')).toBeNull();
     expect(queryByTestId('sheet')).toBeNull();
-  });
-
-  it('renders nothing while the rollout flag is off, even armed', () => {
-    harness.enabled = false;
-    arm();
-    const { queryByTestId } = render(<RestTimerPillHost />);
-    expect(queryByTestId('pill')).toBeNull();
   });
 
   it('brings its OWN sheet, opened by its own pill', () => {
@@ -103,7 +92,6 @@ describe('RestTimerPillHost', () => {
 
 describe('RootRestTimerPillHost', () => {
   beforeEach(() => {
-    harness.enabled = true;
     harness.insideTabs = true;
     harness.restTimerBottom = 83;
     harness.widthClass = 'compact';
@@ -172,7 +160,6 @@ describe('the root pill gate matches the bottom-chrome reserve', () => {
   for (const { label, ...inputs } of cases) {
     it(`agrees for ${label}`, () => {
       const renders = shouldRenderRestTimerPill({
-        enabled: true,
         armed: true,
         insideTabs: inputs.insideTabs,
         usesSidebar: inputs.usesSidebar,
@@ -182,20 +169,9 @@ describe('the root pill gate matches the bottom-chrome reserve', () => {
   }
 
   it('reserves nothing and renders nothing while disarmed', () => {
-    expect(shouldRenderRestTimerPill({ enabled: true, armed: false, insideTabs: true, usesSidebar: false })).toBe(
-      false,
-    );
+    expect(shouldRenderRestTimerPill({ armed: false, insideTabs: true, usesSidebar: false })).toBe(false);
     expect(
       computeBottomChromeMetrics({ ...baseInputs, insideTabs: true, restTimerArmed: false }).scrollBottomPadding,
     ).toBe(computeBottomChromeMetrics({ ...baseInputs, insideTabs: true }).scrollBottomPadding);
-  });
-
-  // The flag is the one term the reserve does not carry. It can only ever REMOVE
-  // a pill, and `RestTimerRuntime` disarms the timer when the rollout is pulled,
-  // so the mismatch lasts at most the one frame before that effect runs.
-  it('the flag can only subtract', () => {
-    expect(shouldRenderRestTimerPill({ enabled: false, armed: true, insideTabs: true, usesSidebar: false })).toBe(
-      false,
-    );
   });
 });

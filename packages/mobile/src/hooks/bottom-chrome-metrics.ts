@@ -372,13 +372,30 @@ export function computeBottomChromeMetrics({
   // off the sidebar shell (which returned above). A fixed reserve, not a
   // measured one — see REST_TIMER_RESERVE in theme/layout for why the pill is
   // not another publish-and-measure store.
-  const restTimerReserve = restTimerArmed && insideTabs && !usesSidebar ? REST_TIMER_RESERVE : 0;
-  // The pill's own anchor: the chrome clearance BEFORE its reserve is folded in.
-  // On the native-overlay path `tabBarBottom` is the measured in-tab inset, which
-  // already contains the 49pt bar and the 56pt platter, so the pill clears UIKit
-  // chrome exactly once — adding NATIVE_BOTTOM_ACCESSORY_HEIGHT here would double
-  // count it (#4089's failure shape).
-  const restTimerBottom = tabBarBottom + activeQueueChromeReserve;
+  const restTimerShows = restTimerArmed && insideTabs && !usesSidebar;
+  const restTimerReserve = restTimerShows ? REST_TIMER_RESERVE : 0;
+  // The pill sits one gap ABOVE the queue chrome, not flush on it. Without this
+  // the pill's rounded bottom edge touched the iOS 26 accessory platter and the
+  // two read as a pile rather than a stack. `TOOLBAR_GAP_ABOVE_TABBAR` is the
+  // right constant twice over: it is the gap the floating JS queue bar already
+  // leaves above the tab bar, and it matches the gap UIKit itself leaves between
+  // the accessory platter and the tab bar (device-measured ~9pt, iPhone 16 Pro).
+  //
+  // Gated on the pill actually showing, so every offset below is byte-identical
+  // while the timer is off — `connectivityBannerBottom` reads this value.
+  //
+  // The rest of the anchor is the chrome clearance BEFORE the reserve is folded
+  // in. On the native-overlay path `tabBarBottom` is the measured in-tab inset,
+  // which already contains the 49pt bar and the 56pt platter, so the pill clears
+  // UIKit chrome exactly once — adding NATIVE_BOTTOM_ACCESSORY_HEIGHT here would
+  // double count it (#4089's failure shape).
+  //
+  // Everything ABOVE the pill derives from `queueChromeBottom`, not from
+  // `restTimerBottom`: `REST_TIMER_RESERVE` is already gap + height, so adding it
+  // to an anchor that carries the gap counts the gap twice and floats the banner
+  // 10pt above the pill's top edge instead of on it.
+  const queueChromeBottom = tabBarBottom + activeQueueChromeReserve;
+  const restTimerBottom = queueChromeBottom + (restTimerShows ? TOOLBAR_GAP_ABOVE_TABBAR : 0);
   const contentInsetBottom = tabBarOverlaysContent || !insideTabs ? tabBarBottom : 0;
   // A fixed footer docks exactly where the pill floats (on the native-overlay
   // path `contentInsetBottom + activeQueueChromeReserve` IS `restTimerBottom`;
@@ -398,13 +415,13 @@ export function computeBottomChromeMetrics({
     jsQueueReserve,
     nativeAccessoryReserve,
     scrollBottomPadding: scrollTabBarBottom + jsQueueReserve + restTimerReserve + connectivityBannerHeight,
-    floatingControlBottom: restTimerBottom + restTimerReserve + connectivityBannerHeight,
+    floatingControlBottom: queueChromeBottom + restTimerReserve + connectivityBannerHeight,
     // Deliberately the pre-pill, pre-banner value — see the field doc. It is the
     // same Math.max the floating offset used inline before either existed.
     restTimerBottom,
     // Above the pill, below the floating controls: the banner's own anchor still
     // excludes only its OWN height, so it must include the pill's reserve.
-    connectivityBannerBottom: restTimerBottom + restTimerReserve,
+    connectivityBannerBottom: queueChromeBottom + restTimerReserve,
     fixedFooterBottom,
     // selectByVariant (vs a raw ternary) keeps these exhaustive: a new UiVariant is
     // a compile error here, since this file is outside the components/ guard scope.

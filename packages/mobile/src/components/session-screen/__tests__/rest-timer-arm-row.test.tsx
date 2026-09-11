@@ -18,7 +18,6 @@ type SwitchProps = {
 
 const harness = vi.hoisted(() => ({
   nowMs: 0,
-  enabled: true,
   sessionId: null as string | null,
   settings: { restTimerMode: 'afterTick' } as Record<string, unknown>,
 }));
@@ -58,8 +57,6 @@ vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: harness.sessionId }),
 }));
 
-vi.mock('../../../providers/feature-flags-provider', () => ({ useRestTimerEnabled: () => harness.enabled }));
-
 vi.mock('../../../settings', () => ({ getSetting: (key: string) => harness.settings[key] }));
 
 vi.mock('../../../lib/clock', () => ({ nowMs: () => harness.nowMs }));
@@ -85,7 +82,6 @@ const ARM_SWITCH = '[data-switch="mobile.restTimer.armLabel"]';
 describe('RestTimerArmRow', () => {
   beforeEach(() => {
     harness.nowMs = NOW_MS;
-    harness.enabled = true;
     harness.sessionId = 'session-1';
     harness.settings = { restTimerMode: 'afterTick' };
   });
@@ -93,12 +89,6 @@ describe('RestTimerArmRow', () => {
   afterEach(() => {
     cleanup();
     resetRestTimerStoreForTests();
-  });
-
-  it('stays off the screen entirely while the rollout flag is off', () => {
-    harness.enabled = false;
-    const { queryByTestId } = render(<RestTimerArmRow />);
-    expect(queryByTestId('card')).toBeNull();
   });
 
   it('arms the real store with the persisted cadence and the live session', () => {

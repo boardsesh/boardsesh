@@ -9,7 +9,6 @@
 
 import { useCallback, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
-import { useRestTimerEnabled } from '../../providers/feature-flags-provider';
 import { useRestTimerArmed } from '../../hooks/use-rest-timer';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
@@ -25,19 +24,18 @@ export type RestTimerPillHostProps = {
 };
 
 /**
- * The pill plus the sheet it opens. Gated on the rollout flag and on the timer
- * actually being armed — an unarmed timer has no pill, which is also why
- * `armed` is never persisted (see lib/rest-timer-store.ts).
+ * The pill plus the sheet it opens. Gated on the timer actually being armed — an
+ * unarmed timer has no pill, which is also why `armed` is never persisted (see
+ * lib/rest-timer-store.ts).
  */
 export function RestTimerPillHost({ compact = false }: RestTimerPillHostProps) {
-  const enabled = useRestTimerEnabled();
   const armed = useRestTimerArmed();
   const [sheetVisible, setSheetVisible] = useState(false);
 
   const openSheet = useCallback(() => setSheetVisible(true), []);
   const closeSheet = useCallback(() => setSheetVisible(false), []);
 
-  if (!enabled || !armed) return null;
+  if (!armed) return null;
 
   return (
     <>
@@ -48,7 +46,6 @@ export function RestTimerPillHost({ compact = false }: RestTimerPillHostProps) {
 }
 
 export type RestTimerPillGateInputs = {
-  enabled: boolean;
   armed: boolean;
   /** `BottomChromeMetrics.insideTabs`. */
   insideTabs: boolean;
@@ -59,26 +56,20 @@ export type RestTimerPillGateInputs = {
 /**
  * Whether the ROOT pill renders.
  *
- * This must agree with the bottom-chrome reserve, byte for byte. That reserve is
+ * This must agree with the bottom-chrome reserve, term for term. That reserve is
  *
  *     restTimerArmed && insideTabs && !usesSidebar        (bottom-chrome-metrics.ts)
  *
  * and if the two ever disagree the climber gets one of two visible bugs: a dead
  * 54pt gap under the last list row (reserve without a pill), or the pill sitting
- * on top of list rows (pill without a reserve). The flag is the only extra term,
- * and it can only ever REMOVE a pill — nothing can arm the timer with the
- * rollout off, and `RestTimerRuntime` disarms if the rollout is pulled.
+ * on top of list rows (pill without a reserve). The two are now the SAME
+ * expression, with no extra term on either side.
  *
- * Pinned by `rest-timer-pill-host.test.ts`, which drives this against the real
+ * Pinned by `rest-timer-pill-host.test.tsx`, which drives this against the real
  * `computeBottomChromeMetrics`.
  */
-export function shouldRenderRestTimerPill({
-  enabled,
-  armed,
-  insideTabs,
-  usesSidebar,
-}: RestTimerPillGateInputs): boolean {
-  return enabled && armed && insideTabs && !usesSidebar;
+export function shouldRenderRestTimerPill({ armed, insideTabs, usesSidebar }: RestTimerPillGateInputs): boolean {
+  return armed && insideTabs && !usesSidebar;
 }
 
 /**
@@ -91,7 +82,6 @@ export function shouldRenderRestTimerPill({
  * here is #4089's failure shape.
  */
 export function RootRestTimerPillHost() {
-  const enabled = useRestTimerEnabled();
   const armed = useRestTimerArmed();
   const bottomChrome = useBottomChromeMetrics();
   const { widthClass } = useDeviceLayout();
@@ -104,7 +94,7 @@ export function RootRestTimerPillHost() {
   const detailPaneOwnsQueue =
     usesSidebar && resolveDetailPaneSurface({ width, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
 
-  if (!shouldRenderRestTimerPill({ enabled, armed, insideTabs: bottomChrome.insideTabs, usesSidebar })) return null;
+  if (!shouldRenderRestTimerPill({ armed, insideTabs: bottomChrome.insideTabs, usesSidebar })) return null;
   // Unreachable while the gate above holds (a detail pane implies the sidebar),
   // but stated so the iPad shell's intent survives a future edit to either.
   if (detailPaneOwnsQueue) return null;
