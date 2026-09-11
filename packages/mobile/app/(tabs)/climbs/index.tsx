@@ -74,6 +74,7 @@ import { useOfflineCatalogState } from '../../../src/offline/use-offline-catalog
 import { OfflineCatalogCta } from '../../../src/components/offline/OfflineCatalogCta';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
+import { useFrozenSearchBasis } from '../../../src/lib/playlists/use-frozen-search-basis';
 import { toQueueClimb, toQueueClimbs } from '../../../src/lib/climb-types';
 import {
   buildScreenshotWallSeed,
@@ -784,13 +785,27 @@ function ClimbListInner() {
     }
   }, [fetchNextPage, hasNextPage, isClimbsLoading, isFetchingNextPage, isRefetching]);
 
+  // The search the swipe track pages against, frozen at selection (issue #5402).
+  // See `useFrozenSearchBasis` for why it must not follow the live filters.
+  const searchBasis = useFrozenSearchBasis({ filters, boardFilters, name });
+
   // Page the same search query the list uses so the play-drawer swipe can walk
   // climbs beyond what's loaded. Activation pages and search pages are both 0-based.
+  //
+  // Reads the frozen basis rather than taking the filters as dependencies, so one
+  // drain cannot straddle two orderings and the callback identity stays stable
+  // across list refetches.
   const fetchSearchPage = useCallback(
     async ({ page, pageSize }: { page: number; pageSize: number }) => {
+      const { filters: basisFilters, boardFilters: basisBoardFilters, name: basisName } = searchBasis.read();
       const input = mergeBoardFilters(
-        toClimbSearchInput(filters, { boardName, layoutId, sizeId, setIds, angle }, { page, pageSize }, { name }),
-        boardFilters,
+        toClimbSearchInput(
+          basisFilters,
+          { boardName, layoutId, sizeId, setIds, angle },
+          { page, pageSize },
+          { name: basisName },
+        ),
+        basisBoardFilters,
       );
       // Same offline-aware source the list uses, so the play-drawer swipe keeps
       // paging climbs with no signal on a downloaded board.
@@ -800,7 +815,7 @@ function ClimbListInner() {
         hasMore: response.searchClimbs.hasMore,
       };
     },
-    [filters, boardName, layoutId, sizeId, setIds, angle, name, boardFilters],
+    [searchBasis, boardName, layoutId, sizeId, setIds, angle],
   );
 
   const allQueueClimbs = useMemo(() => toQueueClimbs(visibleClimbs), [visibleClimbs]);
@@ -819,6 +834,10 @@ function ClimbListInner() {
   const handleClimbPress = useCallback(
     (climb: Climb) => {
       blurSearchInputs();
+      // This tap IS the selection, so it is the one moment the swipe track may be
+      // re-derived. Capture before either branch: the view-only branch seeds a
+      // track too, by way of the activation hook's previewOnly path (#5402).
+      searchBasis.capture();
       if (!lightOnClimbTap && !isSharedSession) {
         // Board lighting off for taps: open view-only (the Browsing pill + the
         // commit row) instead of committing — same landing as the explicit
@@ -834,7 +853,7 @@ function ClimbListInner() {
       // of the lighting setting.
       void activateClimbListClimb.activate(toQueueClimb(climb));
     },
-    [activateClimbListClimb, blurSearchInputs, isSharedSession, lightOnClimbTap, openPlayDrawer],
+    [activateClimbListClimb, blurSearchInputs, searchBasis, isSharedSession, lightOnClimbTap, openPlayDrawer],
   );
 
   // Screenshot mode: when a specific board index is requested, switch the active

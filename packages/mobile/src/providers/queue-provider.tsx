@@ -387,6 +387,44 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   }, [rawPlaylistSuggestionSource, activeBoard, activeBoardKey, currentClimbItemForSource, currentClimbForSource]);
   const playlistSuggestionSourceRef = useRef<PlaylistSuggestionSource | null>(null);
   playlistSuggestionSourceRef.current = playlistSuggestionSource;
+
+  // A held track stopped steering swipes: the climber still has a source, but the
+  // mask above resolved it to null, so next/prev fall back to the queue (#5402).
+  //
+  // Edge-triggered on the SOURCE, not on the state. The mask is a memo, so a
+  // state-shaped check would fire once per render for as long as the climber sat
+  // on an off-list climb. Keying on the source identity also covers the two ways
+  // out of dormancy: the track reviving (the climber swipes back onto the list —
+  // #5403 leaves the state in place, so this is no longer one-way) and a fresh
+  // selection replacing it. Either way the next dormancy is a new episode.
+  //
+  // Consequence for anyone querying this: it counts EPISODES, not climbers. One
+  // climber wandering off their list four times is four rows.
+  const dormantForSourceRef = useRef<PlaylistSuggestionSource | null>(null);
+  useEffect(() => {
+    if (!rawPlaylistSuggestionSource || playlistSuggestionSource) {
+      dormantForSourceRef.current = null;
+      return;
+    }
+    if (dormantForSourceRef.current === rawPlaylistSuggestionSource) return;
+    dormantForSourceRef.current = rawPlaylistSuggestionSource;
+    // Three ways the mask nulls a held source, kept apart rather than pooled:
+    // pooling distinct causes into one bucket is what made BOARDSESH-AK
+    // unreadable (#4737). Board first, since an off-board source is masked before
+    // the anchor question is even asked.
+    const onThisBoard = activeBoardKey != null && rawPlaylistSuggestionSource.boardKey === activeBoardKey;
+    const currentUuid = currentClimbForSource?.uuid;
+    const leftTrack =
+      currentUuid != null && !rawPlaylistSuggestionSource.climbs.some(({ uuid }) => uuid === currentUuid);
+    track(SHARED_EVENTS.QueueSwipeTrackDormant, {
+      reason: !onThisBoard ? 'board_switched' : leftTrack ? 'current_climb_left_track' : 'nothing_drawable_on_board',
+      boardName: activeBoardRef.current?.boardType ?? null,
+      trackLength: rawPlaylistSuggestionSource.climbs.length,
+      msSinceSelection: suggestionSourceSelectedAtRef.current
+        ? Date.now() - suggestionSourceSelectedAtRef.current
+        : null,
+    });
+  }, [rawPlaylistSuggestionSource, playlistSuggestionSource, activeBoardKey, currentClimbForSource]);
   const { showToast } = useToast();
   const { showQueueAddedSnackbar } = useQueueSnackbar();
   const { t } = useTranslation('session');
@@ -1768,7 +1806,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     return true;
   }, []);
 
+  // When the track the climber is currently walking was selected. Only the
+  // dormancy event below reads it, to say how long the track stayed live (#5402).
+  const suggestionSourceSelectedAtRef = useRef<number | null>(null);
   const setPlaylistSuggestionSource = useCallback((source: PlaylistSuggestionSource | null) => {
+    suggestionSourceSelectedAtRef.current = source ? Date.now() : null;
     setPlaylistSuggestionSourceState(source);
   }, []);
 
