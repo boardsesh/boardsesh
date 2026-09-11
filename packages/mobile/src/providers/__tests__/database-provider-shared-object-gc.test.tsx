@@ -237,6 +237,13 @@ async function mountUntilPublished(): Promise<{ unmount: () => void }> {
  * restating which wrappers ought to be pinned, so a funnel that stops firing shows up
  * here as a destroyed connection instead of as a stale expectation.
  */
+// NOTE ON MUTATION COVERAGE. Disabling `pinDatabase` outright fails five of these,
+// which is the regression that matters. Removing any ONE of the three funnels
+// (`onInit`, the lifecycle effect, `initializeDatabase`) leaves the suite green,
+// because each independently covers every wrapper. That is defence in depth against
+// an expo-sqlite internal changing under us, not an untested branch — the two guards
+// that ARE individually load-bearing, the `useNewConnection` refusal and the effect
+// pin's skip-onInit case, each have a test that fails without them.
 function collectUnpinned(): void {
   for (const wrapper of sqlite.allWrappers()) {
     if (!isDatabasePinned(wrapper as never)) sqlite.collect(wrapper);
