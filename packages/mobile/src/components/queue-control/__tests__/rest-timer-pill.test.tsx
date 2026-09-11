@@ -28,7 +28,15 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({
+    children,
+    testID,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    testID?: string;
+    accessibilityLabel?: string;
+  }) => createElement('div', { 'data-testid': testID, 'data-label': accessibilityLabel }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
 }));
 
@@ -54,7 +62,10 @@ vi.mock('../../../lib/clock', () => ({ nowMs: () => harness.nowMs }));
 vi.mock('../../../lib/haptics', () => ({ hapticMedium: vi.fn() }));
 
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
-vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
+vi.mock('../../../theme/typography', () => ({
+  CHROME_LABEL_MAX_FONT_SCALE: 1.2,
+  REST_CLOCK_MAX_FONT_SCALE: 1.3,
+}));
 
 vi.mock('../../Text', () => ({
   Text: ({ children, color, testID }: { children?: ReactNode; color?: string; testID?: string }) =>
@@ -92,12 +103,13 @@ vi.mock('../AccessoryBarSurface', () => ({
 import { hapticMedium } from '../../../lib/haptics';
 import {
   armRestTimer,
+  noteRestTimerQueueEnded,
   noteRestTimerTick,
   pauseRestTimer,
   resetRestTimerStoreForTests,
   getRestTimerState,
 } from '../../../lib/rest-timer-store';
-import { RestTimerPill } from '../RestTimerPill';
+import { RestTimerHeroClock, RestTimerPill } from '../RestTimerPill';
 
 const START_MS = Date.parse('2026-09-11T10:00:00.000Z');
 
@@ -293,5 +305,108 @@ describe('RestTimerPill', () => {
 
     act(() => pauseRestTimer(harness.nowMs));
     expect(vi.getTimerCount()).toBeLessThan(runningTimers);
+  });
+});
+
+/**
+ * The sheet's hero. It lives in this file because it calls
+ * `useRestTimerDisplay` — the 1 Hz hook only a leaf may call — so its specs
+ * live here too, against the same real store.
+ *
+ * What it has to get right is the CAPTION: it is the only thing on the sheet
+ * that says which phase the machine is in, and (while simply running) which rest
+ * length the countdown is measured against.
+ */
+describe('RestTimerHeroClock', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    harness.nowMs = START_MS;
+    harness.settings = { restTimerTargetSeconds: 120, restTimerMode: 'afterTick', restTimerAutoAdvance: false };
+  });
+
+  afterEach(() => {
+    cleanup();
+    resetRestTimerStoreForTests();
+    vi.useRealTimers();
+  });
+
+  function heroDigits(container: HTMLElement) {
+    return container.querySelector('[data-testid="rest-timer-hero-digits"]');
+  }
+
+  function heroCaption(container: HTMLElement): string {
+    return container.querySelector('[data-testid="rest-timer-hero-caption"]')?.textContent ?? '';
+  }
+
+  it('renders nothing while the timer is disarmed', () => {
+    const { container } = render(<RestTimerHeroClock />);
+    expect(container.querySelector('[data-testid="rest-timer-hero-clock"]')).toBeNull();
+  });
+
+  it('counts down in the label colour and names the rest it is counting against', () => {
+    armWithTick();
+    const { container } = render(<RestTimerHeroClock />);
+
+    expect(heroDigits(container)?.textContent).toBe('2:00');
+    expect(heroDigits(container)?.getAttribute('data-color')).toBe('#111111');
+    // `formatRestTimerElapsed`, so the caption is byte-identical to the rail chip
+    // the climber tapped — `formatRestTimerTarget` would print "2m" instead.
+    expect(heroCaption(container)).toBe('mobile.restTimer.clockCaptionRest:2:00');
+  });
+
+  it('says it is counting up when no rest length is set', () => {
+    harness.settings = { ...harness.settings, restTimerTargetSeconds: null };
+    armWithTick();
+    const { container } = render(<RestTimerHeroClock />);
+
+    expect(heroDigits(container)?.textContent).toBe('0:00');
+    expect(heroCaption(container)).toBe('mobile.restTimer.clockCaptionCountUp');
+  });
+
+  it('dims to tertiary while waiting for the first tick', () => {
+    act(() => armRestTimer('afterTick', harness.nowMs, null));
+    const { container } = render(<RestTimerHeroClock />);
+
+    expect(heroDigits(container)?.getAttribute('data-color')).toBe('#AAAAAA');
+    expect(heroCaption(container)).toBe('mobile.restTimer.waitingForTick');
+  });
+
+  it('dims to secondary and says so when paused', () => {
+    armWithTick();
+    advanceSeconds(30);
+    act(() => pauseRestTimer(harness.nowMs));
+    const { container } = render(<RestTimerHeroClock />);
+
+    expect(heroDigits(container)?.getAttribute('data-color')).toBe('#666666');
+    expect(heroCaption(container)).toBe('mobile.restTimer.clockCaptionPaused');
+  });
+
+  it('turns red past the rest — never a success green', () => {
+    armWithTick();
+    const { container } = render(<RestTimerHeroClock />);
+
+    advanceSeconds(125);
+    expect(heroDigits(container)?.textContent).toBe('-0:05');
+    expect(heroDigits(container)?.getAttribute('data-color')).toBe('#C81E1E');
+    expect(heroCaption(container)).toBe('mobile.restTimer.clockCaptionOver');
+  });
+
+  it('reuses the queue-ended caption when auto-advance ran out of climbs', () => {
+    armWithTick();
+    act(() => noteRestTimerQueueEnded());
+    const { container } = render(<RestTimerHeroClock />);
+
+    expect(heroDigits(container)?.getAttribute('data-color')).toBe('#666666');
+    expect(heroCaption(container)).toBe('mobile.restTimer.queueEnded');
+  });
+
+  it('is ONE accessible element carrying the same sentence the pill speaks', () => {
+    armWithTick();
+    advanceSeconds(30);
+    const { container } = render(<RestTimerHeroClock />);
+
+    expect(container.querySelector('[data-testid="rest-timer-hero-clock"]')?.getAttribute('data-label')).toBe(
+      'mobile.restTimer.countdownAria:1:30. mobile.restTimer.clockCaptionRest:2:00',
+    );
   });
 });
