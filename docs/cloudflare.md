@@ -400,7 +400,7 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
   of `boardsesh-backend` on 2026-09-10 had Applebot issuing 173 of the 436
   `/graphql` requests on the service.
 
-  3. `managed_challenge` on the climb-view surface, **last**. This is the only
+  3. `managed_challenge` on the board-content surface (`/view/`, `/list`, `/setter/`), **last**. This is the only
      rule that can catch an ordinary browser string, so every agent we have a
      verdict on has to be judged before it.
 
@@ -432,6 +432,22 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
 
   Caching cannot substitute for this. The scraper walks unique URLs, so every
   request is a cache miss by construction — an edge cache only helps repeats.
+
+  **Broadened three hours after it shipped, because the farm moved rather than
+  left.** The first rule covered `/view/` only. A sample at 08:34-08:53 UTC the
+  same day (n=501) found the same nine rotating strings sending **zero**
+  climb-view requests and instead 102 `/setter/` and 67 `/list` — 81% of its
+  remaining traffic, with `/list` the expensive half at 395 ms average against
+  `/setter/`'s 167 ms. Expect this again: the surface list is the part of this
+  rule that needs re-checking after each change, not the mechanism.
+
+  The **homepage is deliberately still open**. The farm hit it 8 times in that
+  window, and it is the page a real first-time visitor is most likely to reach
+  before any `cf_clearance` cookie exists.
+
+  The rule's description string still reads `boardsesh:climb-view-challenge`
+  even though it now covers three surfaces. That is the never-rename contract:
+  renaming the marker orphans the live rule and creates a second one beside it.
 
   **Order is load-bearing and enforced by the tool.** `upsertCacheRule` rewrites
   our rules as one contiguous group in declared order, because a rule-by-rule

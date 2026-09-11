@@ -128,8 +128,13 @@ export const CRAWLER_ALLOW_RULE_DESCRIPTION =
   'boardsesh:allow-search-crawlers (managed by scripts/cloudflare-apply.ts)';
 export const CRAWLER_BLOCK_RULE_DESCRIPTION = 'boardsesh:block-seo-scrapers (managed by scripts/cloudflare-apply.ts)';
 
-/** Marker for the climb-view managed-challenge rule. Same never-rename contract as above. */
-export const CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION =
+/**
+ * Marker for the board-content managed-challenge rule. Same never-rename
+ * contract as above — the STRING still says `climb-view` because renaming it
+ * would orphan the live rule and create a second one beside it, even though the
+ * rule now also covers `/list` and `/setter/`.
+ */
+export const BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION =
   'boardsesh:climb-view-challenge (managed by scripts/cloudflare-apply.ts)';
 
 /** Marker for the climb-view rate-limit rule. Same never-rename contract as above. */
@@ -390,6 +395,14 @@ export const LIST_PAGE_PATH_SUFFIX = '/list';
 
 /** Path segment every climb-view URL shape shares, in both trees and all four locales. */
 export const CLIMB_VIEW_PATH_SEGMENT = '/view/';
+
+/**
+ * Setter front doors. A `contains` rather than a `starts_with` so the `/de`,
+ * `/es` and `/fr` twins are covered by the same clause — Cloudflare cannot
+ * strip a locale prefix, and enumerating the cross product here would drift
+ * from the locale list.
+ */
+export const SETTER_PATH_SEGMENT = '/setter/';
 
 /**
  * The substring shared by every name the NextAuth session cookie can carry.
@@ -656,8 +669,27 @@ export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = CLIMB_VIEW_SURFACE_EXPRESSION;
  * WAF can only test that a cookie NAME is present, so `Cookie:
  * <session-name>=anything` would be a one-line bypass for the scraper. The
  * clearance cookie already keeps a logged-in climber from being re-challenged.
+ *
+ * **Broadened from `/view/` alone to `/view/` + `/list` + `/setter/` three
+ * hours after it shipped, because the farm did not leave — it moved.** Same
+ * nine rotating strings, measured 2026-09-11 08:34-08:53 UTC (n=501): zero
+ * climb-view requests, and instead 102 `/setter/` and 67 `/list`, 81% of what
+ * it still sends. `/list` is the expensive half at 395 ms average against
+ * `/setter/`'s 167 ms.
+ *
+ * The homepage is deliberately still NOT challenged. The farm hit it 8 times
+ * in that window, and it is the one page a real first-time visitor is most
+ * likely to land on before any clearance cookie exists.
+ *
+ * `/setter/` is a `contains`, not a `starts_with`, so the `/de`, `/es` and
+ * `/fr` twins come along; Cloudflare cannot strip a locale prefix. `/list`
+ * keeps `ends_with` to match the cache rule's definition of the same surface.
  */
-export const CLIMB_VIEW_CHALLENGE_EXPRESSION = CLIMB_VIEW_SURFACE_EXPRESSION;
+export const BOARD_CONTENT_CHALLENGE_EXPRESSION =
+  `(http.host eq "${WWW_HOSTNAME}"` +
+  ` and (http.request.uri.path contains "${CLIMB_VIEW_PATH_SEGMENT}"` +
+  ` or ends_with(http.request.uri.path, "${LIST_PAGE_PATH_SUFFIX}")` +
+  ` or http.request.uri.path contains "${SETTER_PATH_SEGMENT}"))`;
 
 /**
  * The apex, and only the apex. `http.host` is the request's Host header, so this
@@ -851,8 +883,8 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     // browser string, so every agent we have an opinion about — allowed or
     // blocked — has to be judged before it.
     {
-      description: CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION,
-      expression: CLIMB_VIEW_CHALLENGE_EXPRESSION,
+      description: BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
+      expression: BOARD_CONTENT_CHALLENGE_EXPRESSION,
       action: 'managed_challenge',
       enabled: true,
     },
