@@ -96,6 +96,8 @@ import { InstallReferrerTracker } from '../src/components/analytics/InstallRefer
 import { KeychainNamespaceMigration } from '../src/components/KeychainNamespaceMigration';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
+import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRuntime';
+import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
 import { SendRecoveryGate } from '../src/components/offline/SendRecoveryGate';
@@ -844,11 +846,24 @@ function RootLayout() {
                                                                   </ThemedNavigation>
                                                                   <PersistentQueueBar />
                                                                   <OfflineSyncBridge />
+                                                                  {/* Rest timer runtime (#5378): renders nothing, and mounts
+                                                            its queue/session subscriptions only once the flag is on
+                                                            AND a climber has armed the timer. Sits inside
+                                                            QueueProvider so it can advance the queue. */}
+                                                                  <RestTimerRuntime />
                                                                   {/* One-time tip floating above the tab bar / accessory bar,
                                                             mounted next to PersistentQueueBar so it watches climb
                                                             presence globally and overlays both the native (iOS 26) and
                                                             JS bottom-bar variants. */}
                                                                   <AccessoryOnboardingTip />
+                                                                  {/* The rest-timer pill (#5378): a root overlay pinned at
+                                                            bottomChrome.restTimerBottom, the anchor the bottom-chrome
+                                                            reserve is computed against. A sibling of the tip above for
+                                                            the same reason — it must float over BOTH the iOS 26 UIKit
+                                                            platter and the JS queue bar. It brings its own sheet; the
+                                                            play drawer mounts a second copy so that sheet can present
+                                                            above the /play modal. */}
+                                                                  <RootRestTimerPillHost />
                                                                   {/* The one app-wide "we can't reach the server"
                                                             banner (#4862). A root sibling like the tip above so
                                                             it survives navigation and floats over every route;

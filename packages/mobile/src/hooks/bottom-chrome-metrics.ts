@@ -7,6 +7,7 @@ import {
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
   MATERIAL_TAB_BAR_HEIGHT,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT,
+  REST_TIMER_RESERVE,
   TAB_BAR_HEIGHT,
   TOOLBAR_GAP_ABOVE_TABBAR,
   TOOLBAR_RESERVE,
@@ -121,6 +122,21 @@ export type BottomChromeInputs = {
    * It anchors to {@link BottomChromeMetrics.connectivityBannerBottom} instead.
    */
   connectivityBannerHeight?: number;
+  /**
+   * Whether the floating rest-timer pill (issue #5378) is on screen — i.e. the
+   * climber has armed the timer. Read from `rest-timer-store`, which only ever
+   * arms behind the feature flag, so no flag plumbing reaches this arithmetic.
+   * `false` (the default) leaves every existing call site byte-identical.
+   *
+   * A boolean rather than a measured height, unlike
+   * {@link connectivityBannerHeight}: the pill is one row of fixed height, so the
+   * reserve is the `REST_TIMER_RESERVE` constant and no `onLayout` publish loop
+   * is needed. See the constant's doc in `theme/layout`.
+   *
+   * Like the banner, the pill must NOT position against the outputs that clear
+   * it — it anchors to {@link BottomChromeMetrics.restTimerBottom}.
+   */
+  restTimerArmed?: boolean;
 };
 
 export type BottomChromeMetrics = {
@@ -148,6 +164,17 @@ export type BottomChromeMetrics = {
   scrollBottomPadding: number;
   /** Bottom offset for floating controls (FABs, snackbar) so they clear all chrome. */
   floatingControlBottom: number;
+  /**
+   * Where the rest-timer pill itself sits: the bottom chrome clearance as it was
+   * BEFORE the pill's own reserve was folded in — the same fixed-point trap
+   * {@link connectivityBannerBottom} documents. A pill anchored to
+   * `connectivityBannerBottom` (or `floatingControlBottom`) would re-read a value
+   * that already contains the pill's own height and climb the screen one layout
+   * pass at a time, so it gets its own reserve-free anchor. Everything above it
+   * in the stack — the banner, then the floating controls — adds the reserve and
+   * therefore clears the pill.
+   */
+  restTimerBottom: number;
   /**
    * Where the connectivity banner itself sits: `floatingControlBottom` as it was
    * BEFORE its own height was folded in. A banner anchored to
@@ -212,6 +239,22 @@ export type BottomChromeMetrics = {
  * it occludes floating controls and the tail of a scroll view but nothing that
  * is docked in flow. `connectivityBannerBottom` is the banner's own anchor and
  * therefore excludes it.
+ *
+ * ## The floating stack, bottom-up
+ *
+ * Everything that floats over content is stacked in this order, and each output
+ * below clears exactly the part of it that sits underneath that surface:
+ *
+ *   tab bar → queue bar / native platter → rest pill → connectivity banner
+ *   → floating controls (FABs, snackbars, toasts)
+ *
+ * The rest pill (issue #5378) differs from the banner in one way that matters
+ * here: it is PERSISTENT while armed, not transient, so it genuinely reserves —
+ * a docked footer and the last row of a list must clear it, which the banner
+ * (an ephemeral, self-dismissing card) deliberately does not require. Hence
+ * `restTimerReserve` reaches `fixedFooterBottom` and the two session bottoms as
+ * well as the two overlay offsets, while `connectivityBannerHeight` reaches only
+ * the latter.
  */
 export function computeBottomChromeMetrics({
   uiVariant,
@@ -225,6 +268,7 @@ export function computeBottomChromeMetrics({
   detailPaneOwnsQueue = usesSidebar,
   measuredTabContentInsetBottom = null,
   connectivityBannerHeight = 0,
+  restTimerArmed = false,
 }: BottomChromeInputs): BottomChromeMetrics {
   // Regular-width iPad with the detail pane mounted: the left sidebar replaces
   // the bottom tab bar and the selected-climb pane replaces the floating queue
@@ -248,6 +292,13 @@ export function computeBottomChromeMetrics({
       // be cleared here even though every other reserve collapses to the inset.
       scrollBottomPadding: insetsBottom + connectivityBannerHeight,
       floatingControlBottom: insetsBottom + connectivityBannerHeight,
+      // The rest pill does NOT render on the sidebar shell: it rides above the
+      // queue chrome, and here the detail pane owns that chrome instead. So its
+      // reserve is zero and its own anchor collapses to the raw inset like every
+      // other offset in this branch. A deliberate degradation (the iPad pane
+      // surfaces the timer itself), not an oversight — do not "fix" it by
+      // folding a reserve in here for a pill that is not on screen.
+      restTimerBottom: insetsBottom,
       connectivityBannerBottom: insetsBottom,
       fixedFooterBottom: insetsBottom,
       inSessionListBottom: insetsBottom,
@@ -316,8 +367,25 @@ export function computeBottomChromeMetrics({
   // (a capsule following the minimizing bar is correct).
   const scrollTabBarBottom = tabBarOverlaysContent ? Math.max(tabBarBottom, nativeChromeFallback) : tabBarBottom;
   const activeQueueChromeReserve = Math.max(jsQueueReserve, nativeAccessoryReserve);
+  // The rest-timer pill is a root-level floating overlay pinned just above the
+  // queue chrome, so it exists exactly where that chrome does: inside the tabs,
+  // off the sidebar shell (which returned above). A fixed reserve, not a
+  // measured one — see REST_TIMER_RESERVE in theme/layout for why the pill is
+  // not another publish-and-measure store.
+  const restTimerReserve = restTimerArmed && insideTabs && !usesSidebar ? REST_TIMER_RESERVE : 0;
+  // The pill's own anchor: the chrome clearance BEFORE its reserve is folded in.
+  // On the native-overlay path `tabBarBottom` is the measured in-tab inset, which
+  // already contains the 49pt bar and the 56pt platter, so the pill clears UIKit
+  // chrome exactly once — adding NATIVE_BOTTOM_ACCESSORY_HEIGHT here would double
+  // count it (#4089's failure shape).
+  const restTimerBottom = tabBarBottom + activeQueueChromeReserve;
   const contentInsetBottom = tabBarOverlaysContent || !insideTabs ? tabBarBottom : 0;
-  const fixedFooterBottom = contentInsetBottom + activeQueueChromeReserve;
+  // A fixed footer docks exactly where the pill floats (on the native-overlay
+  // path `contentInsetBottom + activeQueueChromeReserve` IS `restTimerBottom`;
+  // on the in-flow JS bar the screen floor makes up the difference), so it has to
+  // clear it. This is where the pill parts company with the connectivity banner,
+  // which is transient and deliberately left out of the docked offsets.
+  const fixedFooterBottom = contentInsetBottom + activeQueueChromeReserve + restTimerReserve;
 
   return {
     hasCurrentClimb,
@@ -329,11 +397,14 @@ export function computeBottomChromeMetrics({
     tabBarBottom,
     jsQueueReserve,
     nativeAccessoryReserve,
-    scrollBottomPadding: scrollTabBarBottom + jsQueueReserve + connectivityBannerHeight,
-    floatingControlBottom: tabBarBottom + activeQueueChromeReserve + connectivityBannerHeight,
-    // Deliberately the pre-banner value — see the field doc. `activeQueueChromeReserve`
-    // is the same Math.max the floating offset used inline before the banner existed.
-    connectivityBannerBottom: tabBarBottom + activeQueueChromeReserve,
+    scrollBottomPadding: scrollTabBarBottom + jsQueueReserve + restTimerReserve + connectivityBannerHeight,
+    floatingControlBottom: restTimerBottom + restTimerReserve + connectivityBannerHeight,
+    // Deliberately the pre-pill, pre-banner value — see the field doc. It is the
+    // same Math.max the floating offset used inline before either existed.
+    restTimerBottom,
+    // Above the pill, below the floating controls: the banner's own anchor still
+    // excludes only its OWN height, so it must include the pill's reserve.
+    connectivityBannerBottom: restTimerBottom + restTimerReserve,
     fixedFooterBottom,
     // selectByVariant (vs a raw ternary) keeps these exhaustive: a new UiVariant is
     // a compile error here, since this file is outside the components/ guard scope.
@@ -342,16 +413,20 @@ export function computeBottomChromeMetrics({
     // fallback where the bar is a JS overlay handled by `jsQueueReserve` (#3967).
     // The ROOT inset alone is never correct under the native bar — it excludes
     // the 49pt bar, which is exactly how the Start capsule sank beneath it.
+    // `restTimerReserve` appears only on the liquidGlass branch: the material
+    // branch routes through `fixedFooterBottom`, which already folded it in, and
+    // adding it twice would leave a 54pt dead band under every Material session.
     inSessionListBottom: selectByVariant(uiVariant, {
       material: fixedFooterBottom,
-      liquidGlass: (tabBarOverlaysContent ? tabBarBottom : insetsBottom) + jsQueueReserve,
+      liquidGlass: (tabBarOverlaysContent ? tabBarBottom : insetsBottom) + jsQueueReserve + restTimerReserve,
     }),
     // Keep this branch identical to `inSessionListBottom`: the JS queue tray is an
     // overlay outside the safe area, so the Start capsule only clears it when the
-    // reserve is added explicitly (#3967).
+    // reserve is added explicitly (#3967). The same lockstep rule now covers the
+    // rest pill — it floats over both surfaces, so both clear it or neither does.
     preSessionFooterBottom: selectByVariant(uiVariant, {
       material: fixedFooterBottom,
-      liquidGlass: (tabBarOverlaysContent ? tabBarBottom : insetsBottom) + jsQueueReserve,
+      liquidGlass: (tabBarOverlaysContent ? tabBarBottom : insetsBottom) + jsQueueReserve + restTimerReserve,
     }),
   };
 }

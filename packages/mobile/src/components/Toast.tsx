@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Snackbar } from 'react-native-paper';
@@ -12,6 +12,7 @@ import { borderRadius, spacing } from '../theme/tokens';
 import {
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
   MATERIAL_TAB_BAR_HEIGHT,
+  REST_TIMER_RESERVE,
   TAB_BAR_HEIGHT,
   TOOLBAR_RESERVE,
 } from '../theme/layout';
@@ -19,6 +20,7 @@ import type { UiVariant } from '../theme/resolve-ui-variant';
 import { isTabsRoute, isTopLevelTabRoute } from '../lib/route-segments';
 import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
 import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-store';
+import { getRestTimerState, subscribeRestTimer } from '../lib/rest-timer-store';
 import { useTheme } from '../providers/theme-provider';
 import { createVariantComponent, selectByVariant } from '../theme/variants';
 import { isBottomAccessoryAvailable, useNativeTabBar } from '../hooks/use-bottom-accessory';
@@ -54,6 +56,12 @@ const VARIANT_CONFIG: Record<ToastVariant, { icon: IconName; colorKey: 'success'
  * is identical for both, so ToastProvider never changes.
  */
 export const Toast = createVariantComponent('Toast', { liquidGlass: ToastGlass, material: ToastMaterial });
+
+// Same selector-hoisting as use-bottom-chrome-metrics: one stable snapshot
+// getter so a toast subscribes once and re-renders only when `armed` flips,
+// never on the pill's 1 Hz countdown.
+const getRestTimerArmed = () => getRestTimerState().armed;
+const getRestTimerArmedServerSnapshot = () => false;
 
 /**
  * On JS-tab screens, reserve the worst-case queue toolbar height so a toast never
@@ -97,14 +105,28 @@ function useToastBottomOffset(uiVariant: UiVariant) {
   // store rather than useBottomChromeMetrics for the same reason as the in-tab
   // inset above: ToastProvider sits above BottomChromeMetricsProvider.
   const connectivityBannerHeight = useConnectivityBannerHeight();
+  // The rest-timer pill (issue #5378) floats between the queue chrome and the
+  // banner while the timer is armed, and it is PERSISTENT — a toast landing on
+  // top of a running countdown covers the one control the climber is watching.
+  // Same reserve term and same gating as computeBottomChromeMetrics (armed AND
+  // inside the tabs), read from the module store because ToastProvider sits above
+  // BottomChromeMetricsProvider. A fixed constant, so unlike the banner there is
+  // nothing to measure. This hook has no sidebar awareness (it already reserves
+  // the JS tab bar on iPad too), so the iPad shell over-reserves by 54pt while
+  // armed — the same conservative direction as the rest of this function.
+  const restTimerArmed = useSyncExternalStore(subscribeRestTimer, getRestTimerArmed, getRestTimerArmedServerSnapshot);
+  const restTimerReserve = restTimerArmed ? REST_TIMER_RESERVE : 0;
   const tabBarHeight = selectByVariant(uiVariant, { material: MATERIAL_TAB_BAR_HEIGHT, liquidGlass: TAB_BAR_HEIGHT });
+  // Off-tab routes reserve nothing for the pill, matching the `insideTabs` gate
+  // in computeBottomChromeMetrics: the pill rides the queue chrome, which is not
+  // on screen here.
   if (!isTabsRoute(segments)) return insets.bottom + spacing[3] + connectivityBannerHeight;
   if (usesNativeTabBar) {
     const jsQueueReserve = !nativeBottomAccessoryAvailable && isTopLevelTabRoute(segments) ? toolbarReserve : 0;
     const nativeChromeBottom = measuredTabContentInsetBottom ?? insets.bottom + TAB_BAR_HEIGHT;
-    return nativeChromeBottom + jsQueueReserve + spacing[2] + connectivityBannerHeight;
+    return nativeChromeBottom + jsQueueReserve + restTimerReserve + spacing[2] + connectivityBannerHeight;
   }
-  return insets.bottom + tabBarHeight + toolbarReserve + spacing[2] + connectivityBannerHeight;
+  return insets.bottom + tabBarHeight + toolbarReserve + restTimerReserve + spacing[2] + connectivityBannerHeight;
 }
 
 function ToastMaterial({ toast, onDismiss }: ToastProps) {

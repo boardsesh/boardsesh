@@ -123,6 +123,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Emergency kill switch: hides the Report climb action, the More-tab Moderation row and the community moderation status. Unresolved reads as enabled (kill switches invert the default; see docs/feature-flags.md).',
   },
+  {
+    key: 'rest-timer',
+    label: 'Rest timer',
+    description:
+      'Count-up rest timer armed from the Record tab, with an optional target interval and auto-advance to the next climb. Off hides the arming control and the timer entirely.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -283,6 +289,20 @@ export function useInteractiveRequestDeadlineEnabled(): boolean {
  */
 export function useSharedSessionBrowseEnabled(): boolean {
   return useFeatureFlag('shared-session-browse') === true;
+}
+
+/**
+ * Rest timer (#5378): the pill, the arming control on the Record tab, and the
+ * auto-advance scheduler.
+ *
+ * A POSITIVE rollout flag, read as `=== true`, because the shipped default is
+ * "there is no timer". Unresolved and off therefore render the same pixels, so a
+ * cold open never flashes a timer in and back out. It gates the runtime as well
+ * as the arming control, so pulling the rollout stops an armed timer rather than
+ * leaving it driving someone's wall.
+ */
+export function useRestTimerEnabled(): boolean {
+  return useFeatureFlag('rest-timer') === true;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {

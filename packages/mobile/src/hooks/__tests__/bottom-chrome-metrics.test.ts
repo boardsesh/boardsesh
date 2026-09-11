@@ -4,6 +4,8 @@ import {
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
   MATERIAL_TAB_BAR_HEIGHT,
   NATIVE_BOTTOM_ACCESSORY_HEIGHT,
+  REST_TIMER_PILL_HEIGHT,
+  REST_TIMER_RESERVE,
   TAB_BAR_HEIGHT,
   TOOLBAR_RESERVE,
   floatingContextBarBottom,
@@ -846,6 +848,280 @@ describe('computeBottomChromeMetrics', () => {
       expect(metrics.floatingControlBottom).toBe(20 + BANNER_HEIGHT);
       expect(metrics.connectivityBannerBottom).toBe(20);
       expect(metrics.fixedFooterBottom).toBe(20);
+    });
+  });
+
+  describe('rest-timer pill reserve (issue #5378)', () => {
+    // REST_TIMER_PILL_HEIGHT / REST_TIMER_RESERVE carry no DEVICE_VERIFIED /
+    // INFERRED label because they are neither: they are design tokens off the
+    // `glassSize` ladder, not readings of UIKit-owned chrome. Imported rather
+    // than restated so a ladder retune moves the guards with the pill.
+    const SYNTHETIC_BANNER_HEIGHT = 96;
+
+    // iOS 26 native tab bar, no platter, a climb set → the JS queue tray is up.
+    const nativeBarInputs = {
+      uiVariant: 'liquidGlass',
+      usesNativeTabBar: true,
+      insetsBottom: ROOT_WINDOW_INSET,
+      insideTabs: true,
+      onAccessorySurface: true,
+      hasCurrentClimb: true,
+      nativeAccessoryPresented: false,
+      measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
+    } as const;
+
+    // iOS 26 native tab bar WITH the UIKit platter presented: the platter is
+    // already folded into the measured in-tab inset, which is what the
+    // double-counting guard below is about.
+    const nativeAccessoryInputs = {
+      ...nativeBarInputs,
+      nativeAccessoryPresented: true,
+      measuredTabContentInsetBottom: IN_TAB_MEASURED_ACCESSORY_INSET,
+    } as const;
+
+    // iOS < 26 / non-glass-capable iPhone / Android on glass: the JS MaterialTabBar
+    // is in flow and the floating PersistentQueueBar rides above it.
+    const jsBarFallbackInputs = {
+      uiVariant: 'liquidGlass',
+      usesNativeTabBar: false,
+      insetsBottom: ROOT_WINDOW_INSET,
+      insideTabs: true,
+      onAccessorySurface: true,
+      hasCurrentClimb: true,
+      nativeAccessoryPresented: false,
+    } as const;
+
+    it('leaves every output byte-identical while disarmed (the whole-object guard)', () => {
+      // The single most important case: an unarmed timer — i.e. every install
+      // that never turns the feature on — must not move one pixel of chrome.
+      // Compared as whole objects, not field by field, so a new output that
+      // silently drifts is caught too.
+      const drifted = [];
+      for (const uiVariant of ['liquidGlass', 'material'] as const) {
+        for (const usesNativeTabBar of [true, false]) {
+          for (const insideTabs of [true, false]) {
+            for (const hasCurrentClimb of [true, false]) {
+              for (const nativeAccessoryPresented of [true, false]) {
+                for (const usesSidebar of [true, false]) {
+                  for (const measuredTabContentInsetBottom of [null, IN_TAB_MEASURED_ACCESSORY_INSET]) {
+                    for (const connectivityBannerHeight of [0, SYNTHETIC_BANNER_HEIGHT]) {
+                      const inputs = {
+                        uiVariant,
+                        usesNativeTabBar,
+                        insetsBottom: ROOT_WINDOW_INSET,
+                        insideTabs,
+                        onAccessorySurface: true,
+                        hasCurrentClimb,
+                        nativeAccessoryPresented,
+                        usesSidebar,
+                        measuredTabContentInsetBottom,
+                        connectivityBannerHeight,
+                      };
+                      const omitted = computeBottomChromeMetrics(inputs);
+                      const explicitlyDisarmed = computeBottomChromeMetrics({ ...inputs, restTimerArmed: false });
+                      if (JSON.stringify(omitted) !== JSON.stringify(explicitlyDisarmed)) {
+                        drifted.push({ inputs, omitted, explicitlyDisarmed });
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      expect(drifted).toEqual([]);
+    });
+
+    it('defaults to disarmed, so the pill anchor collapses onto the banner anchor', () => {
+      const disarmed = computeBottomChromeMetrics(nativeBarInputs);
+      // With no pill, the two anchors are the same point: nothing sits between
+      // the queue chrome and the banner.
+      expect(disarmed.restTimerBottom).toBe(disarmed.connectivityBannerBottom);
+      expect(disarmed.restTimerBottom).toBe(IN_TAB_INFERRED_BAR_INSET + TOOLBAR_RESERVE);
+    });
+
+    it('grows scroll padding by exactly the reserve, so the last row clears the pill', () => {
+      const armed = computeBottomChromeMetrics({ ...nativeBarInputs, restTimerArmed: true });
+      const disarmed = computeBottomChromeMetrics(nativeBarInputs);
+
+      expect(armed.scrollBottomPadding).toBe(disarmed.scrollBottomPadding + REST_TIMER_RESERVE);
+      // Not a restatement of the line above: the last row must end above the
+      // pill's TOP edge, rebuilt from the pill's own anchor plus its height.
+      expect(armed.scrollBottomPadding).toBeGreaterThanOrEqual(armed.restTimerBottom + REST_TIMER_PILL_HEIGHT);
+    });
+
+    it('excludes the reserve from the pill’s own anchor (the fixed-point guard)', () => {
+      const armed = computeBottomChromeMetrics({ ...nativeBarInputs, restTimerArmed: true });
+      const disarmed = computeBottomChromeMetrics(nativeBarInputs);
+
+      // Arming must not move where the pill is drawn — that is the trap
+      // `connectivityBannerBottom` already documents: an anchor containing its
+      // own height walks up the screen one layout pass at a time.
+      expect(armed.restTimerBottom).toBe(disarmed.restTimerBottom);
+      expect(armed.restTimerBottom).toBe(IN_TAB_INFERRED_BAR_INSET + TOOLBAR_RESERVE);
+      expect(armed.restTimerBottom).toBeLessThan(armed.connectivityBannerBottom);
+    });
+
+    it('stacks the banner above the pill and the floating controls above both', () => {
+      const armed = computeBottomChromeMetrics({
+        ...nativeBarInputs,
+        restTimerArmed: true,
+        connectivityBannerHeight: SYNTHETIC_BANNER_HEIGHT,
+      });
+
+      // tab bar → queue tray → pill → banner → floating controls.
+      expect(armed.connectivityBannerBottom).toBe(armed.restTimerBottom + REST_TIMER_RESERVE);
+      expect(armed.floatingControlBottom).toBe(armed.connectivityBannerBottom + SYNTHETIC_BANNER_HEIGHT);
+      // The banner still clears the pill's top edge, and the FAB clears the banner.
+      expect(armed.connectivityBannerBottom).toBeGreaterThanOrEqual(armed.restTimerBottom + REST_TIMER_PILL_HEIGHT);
+      expect(armed.floatingControlBottom).toBeGreaterThan(armed.connectivityBannerBottom);
+    });
+
+    it('clears the UIKit platter exactly once on the iOS 26 native-accessory path', () => {
+      // The platter is already folded into the measured in-tab inset (139 = 34 +
+      // 49 + 56), so the pill anchors ON that measurement and adds nothing for
+      // chrome UIKit already insetted — adding NATIVE_BOTTOM_ACCESSORY_HEIGHT
+      // again is the #4089 double-count.
+      const armed = computeBottomChromeMetrics({ ...nativeAccessoryInputs, restTimerArmed: true });
+
+      expect(armed.nativeAccessoryVisible).toBe(true);
+      expect(armed.jsQueueReserve).toBe(0);
+      expect(armed.nativeAccessoryReserve).toBe(0);
+      expect(armed.restTimerBottom).toBe(IN_TAB_MEASURED_ACCESSORY_INSET);
+      expect(armed.scrollBottomPadding).toBe(IN_TAB_MEASURED_ACCESSORY_INSET + REST_TIMER_RESERVE);
+      expect(armed.fixedFooterBottom).toBe(IN_TAB_MEASURED_ACCESSORY_INSET + REST_TIMER_RESERVE);
+      // The whole delta over the unarmed platter case is one reserve, no more.
+      const disarmed = computeBottomChromeMetrics(nativeAccessoryInputs);
+      expect(armed.restTimerBottom - disarmed.restTimerBottom).toBe(0);
+      expect(armed.floatingControlBottom - disarmed.floatingControlBottom).toBe(REST_TIMER_RESERVE);
+    });
+
+    it('keeps the session list and the Start capsule in lockstep on both glass paths (#3967)', () => {
+      // The #3967 lockstep rule, re-armed for the pill: it floats over the
+      // in-session list AND the pre-session footer, so both clear it or neither
+      // does. Checked on the native bar and on the JS-bar fallback, because the
+      // liquidGlass branch anchors to a different base on each.
+      const nativeArmed = computeBottomChromeMetrics({ ...nativeBarInputs, restTimerArmed: true });
+      expect(nativeArmed.inSessionListBottom).toBe(nativeArmed.preSessionFooterBottom);
+      expect(nativeArmed.inSessionListBottom).toBe(IN_TAB_INFERRED_BAR_INSET + TOOLBAR_RESERVE + REST_TIMER_RESERVE);
+
+      const fallbackArmed = computeBottomChromeMetrics({ ...jsBarFallbackInputs, restTimerArmed: true });
+      expect(fallbackArmed.inSessionListBottom).toBe(fallbackArmed.preSessionFooterBottom);
+      expect(fallbackArmed.inSessionListBottom).toBe(ROOT_WINDOW_INSET + TOOLBAR_RESERVE + REST_TIMER_RESERVE);
+    });
+
+    it('holds the lockstep across the whole armed input matrix', () => {
+      const drifted = [];
+      for (const uiVariant of ['liquidGlass', 'material'] as const) {
+        for (const usesNativeTabBar of [true, false]) {
+          for (const insideTabs of [true, false]) {
+            for (const onAccessorySurface of [true, false]) {
+              for (const hasCurrentClimb of [true, false]) {
+                for (const nativeAccessoryPresented of [true, false]) {
+                  for (const usesSidebar of [true, false]) {
+                    for (const detailPaneOwnsQueue of [true, false]) {
+                      for (const measuredTabContentInsetBottom of [null, IN_TAB_MEASURED_ACCESSORY_INSET]) {
+                        const metrics = computeBottomChromeMetrics({
+                          uiVariant,
+                          usesNativeTabBar,
+                          insetsBottom: ROOT_WINDOW_INSET,
+                          insideTabs,
+                          onAccessorySurface,
+                          hasCurrentClimb,
+                          nativeAccessoryPresented,
+                          usesSidebar,
+                          detailPaneOwnsQueue,
+                          measuredTabContentInsetBottom,
+                          restTimerArmed: true,
+                        });
+                        if (metrics.preSessionFooterBottom !== metrics.inSessionListBottom) {
+                          drifted.push({ uiVariant, usesNativeTabBar, insideTabs, metrics });
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      expect(drifted).toEqual([]);
+    });
+
+    it('adds the reserve exactly once on Material, where the session bottoms route through the footer', () => {
+      // The material branch of the two session bottoms IS `fixedFooterBottom`,
+      // which already folded the reserve in. Adding it to both would leave a
+      // second 54pt dead band under every Material session screen.
+      const armed = computeBottomChromeMetrics({
+        uiVariant: 'material',
+        usesNativeTabBar: false,
+        insetsBottom: ROOT_WINDOW_INSET,
+        insideTabs: true,
+        onAccessorySurface: true,
+        hasCurrentClimb: true,
+        nativeAccessoryPresented: false,
+        restTimerArmed: true,
+      });
+
+      expect(armed.fixedFooterBottom).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT + REST_TIMER_RESERVE);
+      expect(armed.inSessionListBottom).toBe(armed.fixedFooterBottom);
+      expect(armed.preSessionFooterBottom).toBe(armed.fixedFooterBottom);
+    });
+
+    it('collapses every offset to the raw inset on the iPad sidebar shell', () => {
+      // The detail pane owns the queue chrome there, so no pill renders and the
+      // reserve must stay out of the early-return branch entirely.
+      const armed = computeBottomChromeMetrics({
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: false,
+        insetsBottom: 20,
+        insideTabs: true,
+        onAccessorySurface: true,
+        hasCurrentClimb: true,
+        nativeAccessoryPresented: true,
+        usesSidebar: true,
+        detailPaneOwnsQueue: true,
+        restTimerArmed: true,
+      });
+
+      expect(armed.restTimerBottom).toBe(20);
+      expect(armed.scrollBottomPadding).toBe(20);
+      expect(armed.floatingControlBottom).toBe(20);
+      expect(armed.connectivityBannerBottom).toBe(20);
+      expect(armed.fixedFooterBottom).toBe(20);
+      expect(armed.inSessionListBottom).toBe(20);
+      expect(armed.preSessionFooterBottom).toBe(20);
+    });
+
+    it('reserves nothing outside the tabs group, where no queue chrome hosts the pill', () => {
+      const inputs = {
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: false,
+        insetsBottom: ROOT_WINDOW_INSET,
+        insideTabs: false,
+        onAccessorySurface: false,
+        hasCurrentClimb: true,
+        nativeAccessoryPresented: false,
+      } as const;
+
+      expect(computeBottomChromeMetrics({ ...inputs, restTimerArmed: true })).toEqual(
+        computeBottomChromeMetrics(inputs),
+      );
+    });
+
+    it('keeps the Start capsule above the pill band on the JS-bar fallback', () => {
+      // The same shape as the #3967 tray guard: rebuild the pill's band from its
+      // own anchor (window coordinates) and convert to screen-local, rather than
+      // restating `preSessionFooterBottom`. The in-flow JS tab bar puts the
+      // screen floor `tabBarBottom` above the window bottom.
+      const metrics = computeBottomChromeMetrics({ ...jsBarFallbackInputs, restTimerArmed: true });
+      const pillTopAboveScreenFloor = metrics.restTimerBottom + REST_TIMER_PILL_HEIGHT - metrics.tabBarBottom;
+
+      expect(metrics.jsQueueToolbarVisible).toBe(true);
+      expect(metrics.preSessionFooterBottom).toBeGreaterThanOrEqual(pillTopAboveScreenFloor);
+      expect(metrics.inSessionListBottom).toBeGreaterThanOrEqual(pillTopAboveScreenFloor);
     });
   });
 });

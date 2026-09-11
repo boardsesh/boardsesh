@@ -89,6 +89,27 @@ export const TOOLBAR_GAP_ABOVE_TABBAR = 10;
  *  — the hero log-ascent tick (`glassSize.hero`) — so nothing hides under it. */
 export const TOOLBAR_RESERVE = glassSize.hero + TOOLBAR_GAP_ABOVE_TABBAR;
 
+/** Height of the floating rest-timer pill (#5378). The `capsule` rung of the
+ *  ladder above — the "standalone floating capsule" tier, one step under the
+ *  flanking FABs so the countdown reads as context rather than an action. */
+export const REST_TIMER_PILL_HEIGHT = glassSize.capsule;
+
+/**
+ * Bottom reserve for the rest-timer pill: its own height plus the same lift
+ * every other floating island leaves above the chrome beneath it.
+ *
+ * Deliberately a FIXED constant, not a measured height published through a
+ * module store the way the connectivity banner's is. The banner needs measuring
+ * because it grows with Dynamic Type and has one, two or three lines of copy;
+ * the pill is a single row of fixed height (an mm:ss readout plus its controls),
+ * so there is nothing an `onLayout` publish loop could discover that this
+ * constant does not already say — and a measured height would re-render every
+ * bottom-chrome consumer on each layout pass to learn the same number. Keep it
+ * fixed; if the pill ever grows a second line, that is the moment to reconsider,
+ * not before.
+ */
+export const REST_TIMER_RESERVE = REST_TIMER_PILL_HEIGHT + TOOLBAR_GAP_ABOVE_TABBAR;
+
 /**
  * Window-coordinate `bottom` of the floating (Liquid Glass) active-context bar —
  * the tray that holds the climb capsule and the log-ascent tick.

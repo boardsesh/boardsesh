@@ -77,6 +77,7 @@ import { ClimbActionsSheet } from '../ClimbActionsSheet';
 import { AddBetaVideoSheet } from '../AddBetaVideoSheet';
 import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
+import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
 import { Icon } from '../Icon';
 import {
   usePlaylistSuggestionSource,
@@ -1735,6 +1736,13 @@ export function PlayDrawer({
                             </Pressable>
                           </>
                         ) : null}
+                        {/* The rest timer, mirrored across the grabber from the close
+                          chevron (#5378). Its own host — and so its own sheet — because
+                          a root-level sheet would present UNDER this transparent modal.
+                          The grabber stays centred: both flanks are absolute. */}
+                        <View style={styles.restTimerSlot}>
+                          <RestTimerPillHost compact />
+                        </View>
                       </View>
 
                       {/* Title + grade swipe with the board: same translateX, same
@@ -2127,6 +2135,16 @@ const styles = StyleSheet.create({
   topRow: {
     height: 44,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Mirrors closeButton across the grabber. Absolute so the grabber stays
+  // centred on the row no matter how wide the pill's digits run.
+  restTimerSlot: {
+    position: 'absolute',
+    top: 0,
+    right: spacing[2],
+    height: 44,
+    zIndex: 2,
     justifyContent: 'center',
   },
   closeButton: {
