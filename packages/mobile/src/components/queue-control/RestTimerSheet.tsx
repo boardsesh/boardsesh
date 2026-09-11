@@ -9,9 +9,8 @@
 //
 // Reading order is the order a climber reaches for things: the clock they came
 // to look at, the rest length they change most, what happens when it runs out,
-// the cadence they set once (folded away), and the transport last — at the
-// bottom, in the thumb zone, because it is the only part you press without
-// reading.
+// the cadence they set once, and the transport last — at the bottom, in the
+// thumb zone, because it is the only part you press without reading.
 
 import { useCallback, useMemo } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
@@ -21,11 +20,10 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { SwitchRow } from '../SwitchRow';
 import { SectionHeader } from '../SectionHeader';
-import { CollapsibleSection } from '../CollapsibleSection';
 import { SegmentedControl } from '../SegmentedControl';
 import type { SegmentOption } from '../SegmentedControl.types';
 import { TickDestructiveRow } from '../tick/TickDestructiveRow';
-import { TICK_GUTTER, TICK_RAIL_ROW_HEIGHT, tickActionHeight } from '../tick/tick-sheet-metrics';
+import { TICK_GUTTER, tickActionHeight } from '../tick/tick-sheet-metrics';
 import { useTheme } from '../../providers/theme-provider';
 import { useQueueSessionId, useIsSharedSession } from '../../providers/queue-provider';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
@@ -43,21 +41,14 @@ import {
 } from '../../lib/rest-timer-store';
 import { spacing } from '../../theme/tokens';
 import { RestTimerHeroClock } from './RestTimerPill';
-import { RestLengthRail } from './RestLengthRail';
-import { hasRestLength } from './rest-length-rail.logic';
-
-/** Where the cadence section remembers whether it is open. */
-const CADENCE_SECTION_KEY = 'restTimer.cadence';
+import { RestLengthPicker } from './RestLengthPicker';
+import { hasRestLength } from './rest-length.logic';
 
 /**
- * Rest length: one horizontal rail, `Off` then every length from 0:15 to 1:00:00.
- * Exported because the Record tab's arm row mounts the same control inline — one
- * implementation, two mounts, so the two surfaces can never disagree about what
- * "3:00" means.
- *
- * The rail is FULL-BLEED rather than sitting in a `TickFormRow`: starting it at
- * the 84pt control seam leaves about four and a half chips visible on a 393pt
- * screen, which reads as a cramped list rather than a rail you scrub.
+ * Rest length: one pill that steps 30 s a tap, and the fine slider it reveals on
+ * a long press. Exported because the Record tab's arm row mounts the same
+ * control — one implementation, two mounts, so the two surfaces can never
+ * disagree about what "3:00" means.
  */
 export function RestTimerLengthControl({ inset = true }: { inset?: boolean } = {}) {
   const { t } = useTranslation('session');
@@ -65,18 +56,14 @@ export function RestTimerLengthControl({ inset = true }: { inset?: boolean } = {
   const [targetSeconds, setTargetSeconds] = useSetting('restTimerTargetSeconds');
 
   return (
-    // `inset={false}` is the Record tab's padded `Card`: the rail has to reach
-    // the card's edge, so the whole block pulls back out through the card's own
-    // 16pt padding and re-applies it as content padding (SectionHeader and the
-    // rail each already carry TICK_GUTTER).
+    // `inset={false}` is the Record tab's padded `Card`. SectionHeader carries
+    // its own 16pt gutter, so inside a card that already pads 16 the block pulls
+    // back out through the card's padding and every child re-applies the gutter
+    // itself — one seam on both surfaces rather than a 32pt indent on one.
     <View style={inset ? null : styles.cardBleed}>
       <SectionHeader title={t('mobile.restTimer.targetLabel')} />
-      <View style={styles.railRow}>
-        <RestLengthRail
-          value={targetSeconds}
-          onSelect={setTargetSeconds}
-          accessibilityLabel={t('mobile.restTimer.targetAria')}
-        />
+      <View style={styles.lengthRow}>
+        <RestLengthPicker value={targetSeconds} onChange={setTargetSeconds} />
       </View>
       {hasRestLength(targetSeconds) ? null : (
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.groupFootnote}>
@@ -140,10 +127,10 @@ export function RestTimerAutoAdvanceRow() {
 /**
  * Cadence: what the countdown anchors to.
  *
- * Folded away by default. It is a set-once choice (the arm row says as much by
- * leaving it out entirely), and changing it RE-ARMS the live timer — so it must
- * not sit one careless tap from the rail, which is the control on this sheet
- * people actually come back for.
+ * Inline, not folded away. It is a binary with two visible options and a one-line
+ * hint — a disclosure over that hides nothing worth hiding and costs a tap to
+ * read a choice you can already see. The arm row still leaves it out entirely:
+ * it is set once, and changing it RE-ARMS the live timer.
  */
 function RestTimerCadenceSection() {
   const { t } = useTranslation('session');
@@ -171,23 +158,20 @@ function RestTimerCadenceSection() {
     [armed, sessionId, setMode],
   );
 
-  const modeLabel = mode === 'afterTick' ? t('mobile.restTimer.modeAfterTick') : t('mobile.restTimer.modeOnTheMinute');
-
   return (
-    <View style={styles.cadenceBlock}>
-      <CollapsibleSection title={t('mobile.restTimer.modeLabel')} summary={modeLabel} persistKey={CADENCE_SECTION_KEY}>
-        <View style={styles.cadenceContent}>
-          <SegmentedControl
-            options={options}
-            selectedKey={mode}
-            onSelect={handleSelect}
-            accessibilityLabel={t('mobile.restTimer.modeAria')}
-          />
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {mode === 'afterTick' ? t('mobile.restTimer.modeAfterTickHint') : t('mobile.restTimer.modeOnTheMinuteHint')}
-          </Text>
-        </View>
-      </CollapsibleSection>
+    <View>
+      <SectionHeader title={t('mobile.restTimer.modeLabel')} />
+      <View style={styles.cadenceContent}>
+        <SegmentedControl
+          options={options}
+          selectedKey={mode}
+          onSelect={handleSelect}
+          accessibilityLabel={t('mobile.restTimer.modeAria')}
+        />
+        <Text variant="footnote" color={systemColors.secondaryLabel}>
+          {mode === 'afterTick' ? t('mobile.restTimer.modeAfterTickHint') : t('mobile.restTimer.modeOnTheMinuteHint')}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -231,15 +215,16 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
   }, [onClose]);
 
   return (
-    // Solid ground: this is a form, not chrome — reading a rail and a segmented
+    // Solid ground: this is a form, not chrome — reading a slider and a segmented
     // control through the board art behind it is unreadable. Sized to its
     // content, and deliberately WITHOUT `header` / `footer`: `enableDynamicSizing`
     // with sheet chrome but no `androidContentSized` gives the Android column
     // `flex: 1` under a `matchContents` host, which resolves to zero (#4720).
     <ModalSheet visible={visible} surface="solid" enableDynamicSizing onClose={onClose} enablePanDownToClose>
       {/* No container `gap`: each block owns its own rhythm (SectionHeader brings
-          its own top padding, the collapsible its own inset), and a blanket gap
-          on top of those produced the ladder of unequal seams the old sheet had. */}
+          the section's top padding, each control its own inset), and a blanket
+          gap on top of those produced the ladder of unequal seams the old sheet
+          had. */}
       <View style={styles.content}>
         {/* The rest keeps running while this is open, so the sheet shows it. Its
             own leaf — the 1 Hz tick stops here and never reaches this form. */}
@@ -305,14 +290,15 @@ const styles = StyleSheet.create({
   content: {
     paddingTop: spacing[2],
   },
-  // Pulls the block back out through the Record tab card's 16pt padding so the
-  // rail bleeds to the card edge; every child re-applies TICK_GUTTER itself.
+  // Pulls the block back out through the Record tab card's 16pt padding, so its
+  // SectionHeader lines up with the card's own content edge rather than indenting
+  // twice; every child re-applies TICK_GUTTER itself.
   cardBleed: {
     marginHorizontal: -spacing[4],
   },
-  railRow: {
-    height: TICK_RAIL_ROW_HEIGHT,
-    justifyContent: 'center',
+  lengthRow: {
+    paddingHorizontal: TICK_GUTTER,
+    paddingTop: spacing[1],
   },
   // Explanatory line under a group, aligned to the label seam the SwitchRow and
   // SectionHeader both use.
@@ -320,11 +306,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: TICK_GUTTER,
     paddingTop: spacing[1],
   },
-  cadenceBlock: {
-    marginHorizontal: TICK_GUTTER,
-    marginTop: spacing[6],
-  },
   cadenceContent: {
+    paddingHorizontal: TICK_GUTTER,
     gap: spacing[2],
   },
   transportRow: {

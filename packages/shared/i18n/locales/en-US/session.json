@@ -347,8 +347,8 @@
       "whenUpLabel": "When your rest is up",
       "autoAdvanceFootnote": "Only while Boardsesh is open.",
       "autoAdvanceNeedsLength": "Pick a rest length to move the queue automatically.",
-      "setLengthAria": "Set rest to {{time}}",
-      "offAria": "No rest length — count up instead"
+      "lengthPillAria": "Rest length, {{value}}",
+      "lengthPillHint": "Adds 30 seconds. Touch and hold to set any rest length."
     },
     "queueSheet": {
       "emptyQueue": "Your queue is empty",

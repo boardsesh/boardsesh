@@ -5,13 +5,13 @@
 // settings mock is stateful for the same reason: a picker that writes a value
 // nobody reads back would pass a marker-grep test and fail on a wall.
 //
-// The rest-length rail is rendered for real (only its chip is mocked), because
-// the whole point of replacing the segmented control + stepper was that the
-// domain and the selection now live in ONE control — a mocked rail would hide
-// exactly the disagreement that used to be the bug.
+// The rest-length pill and the slider it reveals are rendered for real (only
+// reanimated and gesture-handler are stubbed), because the whole point of the
+// control is that the value, the tap ladder and the slider are ONE thing — a
+// mocked picker would hide exactly the disagreement that used to be the bug.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/react';
-import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
+import { createElement, type ReactNode } from 'react';
 
 type SegmentedProps = {
   options: { key: string; label: string }[];
@@ -36,7 +36,26 @@ type ButtonProps = {
   variant?: string;
 };
 
-type LayoutEvent = { nativeEvent: { layout: { x: number; y: number; width: number; height: number } } };
+type ViewProps = {
+  children?: ReactNode;
+  testID?: string;
+  accessibilityRole?: string;
+  accessibilityLabel?: string;
+  accessibilityValue?: { text?: string; min?: number; max?: number; now?: number };
+  accessibilityActions?: readonly { name: string }[];
+  onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+};
+
+type PressableProps = {
+  children?: ReactNode;
+  testID?: string;
+  onPress?: () => void;
+  onLongPress?: () => void;
+  delayLongPress?: number;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  accessibilityState?: { expanded?: boolean };
+};
 
 const harness = vi.hoisted(() => ({
   nowMs: 0,
@@ -45,7 +64,7 @@ const harness = vi.hoisted(() => ({
   inAppBoardConnection: 'connectedByMe',
 }));
 
-const haptics = vi.hoisted(() => ({ medium: vi.fn(), selection: vi.fn() }));
+const haptics = vi.hoisted(() => ({ medium: vi.fn(), selection: vi.fn(), light: vi.fn() }));
 
 const settingsStore = vi.hoisted(() => ({
   values: {} as Record<string, unknown>,
@@ -53,22 +72,95 @@ const settingsStore = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-    createElement('div', { 'data-testid': testID }, children),
-  ScrollView: forwardRef(function MockScrollView(
-    props: { children?: ReactNode; accessibilityLabel?: string; testID?: string },
-    ref: unknown,
-  ) {
-    useImperativeHandle(ref as Parameters<typeof useImperativeHandle>[0], () => ({ scrollTo: vi.fn() }), []);
-    return createElement(
+  // The slider's adjustable node is a View, and its increment / decrement
+  // actions are the only way a VoiceOver user — or a test, which has no thumb
+  // either — moves it. A click stands in for increment, a right-click for
+  // decrement.
+  View: ({
+    children,
+    testID,
+    accessibilityRole,
+    accessibilityLabel,
+    accessibilityValue,
+    accessibilityActions,
+    onAccessibilityAction,
+  }: ViewProps) =>
+    createElement(
       'div',
-      { 'data-testid': props.testID, 'data-rail-label': props.accessibilityLabel },
-      props.children,
-    );
-  }),
+      {
+        'data-testid': testID,
+        'data-a11y-role': accessibilityRole,
+        'data-a11y-label': accessibilityLabel,
+        'data-a11y-value': accessibilityValue?.text,
+        'data-a11y-min': accessibilityValue?.min,
+        'data-a11y-max': accessibilityValue?.max,
+        'data-a11y-actions': accessibilityActions?.map((action) => action.name).join(','),
+        onClick: onAccessibilityAction
+          ? () => onAccessibilityAction({ nativeEvent: { actionName: 'increment' } })
+          : undefined,
+        onContextMenu: onAccessibilityAction
+          ? () => onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } })
+          : undefined,
+      },
+      children,
+    ),
+  Pressable: ({
+    children,
+    testID,
+    onPress,
+    onLongPress,
+    delayLongPress,
+    accessibilityLabel,
+    accessibilityHint,
+    accessibilityState,
+  }: PressableProps) =>
+    createElement(
+      'button',
+      {
+        'data-testid': testID,
+        'data-a11y-label': accessibilityLabel,
+        'data-a11y-hint': accessibilityHint,
+        'data-expanded': accessibilityState?.expanded == null ? undefined : String(accessibilityState.expanded),
+        'data-delay-long-press': delayLongPress,
+        onClick: onPress,
+        // jsdom has no long press; a right-click stands in for one.
+        onContextMenu: onLongPress,
+      },
+      children,
+    ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: 393, height: 852, scale: 3, fontScale: 1 }),
 }));
+
+vi.mock('react-native-reanimated', () => {
+  const AnimatedView = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
+  const fade = { duration: () => ({}) };
+  return {
+    default: {
+      View: AnimatedView,
+      // The press-scale and thumb-grow springs these drive are UI-thread
+      // decoration; what matters here is that the control renders and commits.
+      createAnimatedComponent: <P,>(Component: (props: P) => ReactNode) => Component,
+    },
+    FadeIn: fade,
+    FadeOut: fade,
+    useAnimatedStyle: () => ({}),
+    useSharedValue: (initial: number) => ({ value: initial, get: () => initial, set: () => {} }),
+    withSpring: (value: number) => value,
+    runOnJS: <A extends unknown[]>(fn: (...args: A) => void) => fn,
+  };
+});
+
+vi.mock('react-native-gesture-handler', () => {
+  const chainable: Record<string, () => unknown> = {};
+  const gesture = new Proxy(chainable, { get: () => () => gesture });
+  return {
+    Gesture: { Pan: () => gesture, Tap: () => gesture, Race: () => gesture },
+    GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  };
+});
+
+vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -102,14 +194,25 @@ vi.mock('../../../lib/clock', () => ({ nowMs: () => harness.nowMs }));
 vi.mock('../../../lib/haptics', () => ({
   hapticMedium: haptics.medium,
   hapticSelection: haptics.selection,
+  hapticLight: haptics.light,
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { label: '#111111', secondaryLabel: '#666666', tertiaryLabel: '#AAAAAA', separator: '#DDDDDD' },
+    systemColors: {
+      label: '#111111',
+      secondaryLabel: '#666666',
+      tertiaryLabel: '#AAAAAA',
+      separator: '#DDDDDD',
+      fill: '#78788033',
+    },
     brandColors: { error: '#C81E1E', primary: '#7C3AED' },
   }),
 }));
+
+vi.mock('../../../theme/colors', () => ({ brandColors: { primary: '#6D28D9' } }));
+vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#FFFFFF' } }));
+vi.mock('../../../theme/animations', () => ({ springs: { snappy: {} }, timing: { instant: 50, fast: 150 } }));
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: harness.sessionId }),
@@ -120,7 +223,10 @@ vi.mock('../../ble/use-board-connection-state', () => ({
   useBoardConnectionState: () => ({ inAppBoardConnection: harness.inAppBoardConnection }),
 }));
 
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 } }));
+vi.mock('../../../theme/tokens', () => ({
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
+  borderRadius: { full: 9999 },
+}));
 
 vi.mock('../RestTimerPill', () => ({
   RestTimerHeroClock: () => createElement('span', { 'data-testid': 'sheet-hero-clock' }),
@@ -169,28 +275,6 @@ vi.mock('../../SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('h2', { 'data-section': title }, title),
 }));
 
-// Always renders its children: the cadence controls are what the tests drive,
-// and the section's own open/closed state is CollapsibleSection's business
-// (covered by its own specs), not this sheet's.
-vi.mock('../../CollapsibleSection', () => ({
-  CollapsibleSection: ({
-    title,
-    summary,
-    persistKey,
-    children,
-  }: {
-    title: string;
-    summary?: string | null;
-    persistKey?: string;
-    children?: ReactNode;
-  }) =>
-    createElement(
-      'section',
-      { 'data-collapsible': title, 'data-summary': summary ?? '', 'data-persist-key': persistKey ?? '' },
-      children,
-    ),
-}));
-
 vi.mock('../../SegmentedControl', () => ({
   SegmentedControl: ({ options, selectedKey, onSelect, accessibilityLabel }: SegmentedProps) =>
     createElement(
@@ -216,49 +300,20 @@ vi.mock('../../tick/TickDestructiveRow', () => ({
     createElement('button', { 'data-destructive': label, 'data-icon': icon ?? 'delete', onClick: onPress }, label),
 }));
 
-// The chip's own painting is GradeChip's business; here it only has to report
-// what the rail handed it.
-vi.mock('../../tick/TickChip', () => ({
-  TickChip: ({
-    label,
-    tone,
-    onPress,
-    accessibilityLabel,
-    accessibilityState,
-  }: {
-    label: string;
-    tone?: string;
-    onPress: () => void;
-    accessibilityLabel: string;
-    accessibilityState?: { selected?: boolean };
-    onLayout?: (event: LayoutEvent) => void;
-  }) =>
-    createElement(
-      'button',
-      {
-        'data-chip': label,
-        'data-a11y-label': accessibilityLabel,
-        'data-tone': tone ?? 'neutral',
-        'data-selected': accessibilityState?.selected ? 'true' : 'false',
-        onClick: onPress,
-      },
-      label,
-    ),
-}));
-
 import {
   armRestTimer,
   getRestTimerState,
   noteRestTimerTick,
   resetRestTimerStoreForTests,
 } from '../../../lib/rest-timer-store';
-import { REST_LENGTH_RAIL_SECONDS } from '../rest-length-rail.logic';
 import { RestTimerSheet } from '../RestTimerSheet';
 
 const NOW_MS = Date.parse('2026-09-11T10:00:00.000Z');
 const PAUSE_BUTTON = '[data-button="mobile.restTimer.pause"]';
 const RESET_BUTTON = '[data-button="mobile.restTimer.reset"]';
 const AUTO_ADVANCE_ROW = '[data-switch="mobile.restTimer.autoAdvance"]';
+const LENGTH_PILL = '[data-testid="rest-length-pill"]';
+const LENGTH_SLIDER = '[data-testid="rest-length-slider"]';
 
 function renderSheet(onClose = vi.fn()) {
   return { onClose, ...render(<RestTimerSheet visible onClose={onClose} />) };
@@ -269,8 +324,14 @@ function logFirstTick() {
   noteRestTimerTick(new Date(NOW_MS).toISOString(), 'afterTick', NOW_MS);
 }
 
-function chipLabels(container: HTMLElement): string[] {
-  return [...container.querySelectorAll('[data-chip]')].map((chip) => chip.getAttribute('data-chip') ?? '');
+/** The rest the pill is currently showing. */
+function pillLabel(container: HTMLElement): string {
+  return container.querySelector(LENGTH_PILL)?.textContent ?? '';
+}
+
+/** Long-press: the only way to the fine slider, here and on a wall. */
+function holdPill(container: HTMLElement) {
+  fireEvent.contextMenu(container.querySelector(LENGTH_PILL) as HTMLElement);
 }
 
 describe('RestTimerSheet', () => {
@@ -338,71 +399,105 @@ describe('RestTimerSheet', () => {
     expect(getRestTimerState().isRunning).toBe(true);
   });
 
-  it('renders one chip per rest length, plus Off, in one notation', () => {
+  it('shows the rest on ONE pill, in one notation, with no rail to scroll', () => {
     const { container } = renderSheet();
-    const labels = chipLabels(container);
 
-    expect(labels).toHaveLength(REST_LENGTH_RAIL_SECONDS.length + 1);
-    expect(labels[0]).toBe('mobile.restTimer.off');
-    expect(labels[1]).toBe('0:15');
-    expect(labels).toContain('2:00');
-    expect(labels[labels.length - 1]).toBe('1:00:00');
-    // The old control's second notation ("2m" beside "1:15") is gone.
-    expect(labels.some((label) => label.endsWith('m'))).toBe(false);
+    expect(pillLabel(container)).toBe('2:00');
+    // The old control's second notation ("2m" beside "1:15") is gone, and so is
+    // the 27-chip rail that hid 2:00 and 3:00 behind a horizontal scroll.
+    expect(container.querySelectorAll(LENGTH_PILL)).toHaveLength(1);
   });
 
-  it('writes the rest length from a single chip tap and marks it selected', () => {
+  it('steps the rest 30 seconds a tap, and says so before you tap it', () => {
     const { container } = renderSheet();
+    const pill = container.querySelector(LENGTH_PILL) as HTMLElement;
 
-    fireEvent.click(container.querySelector('[data-chip="3:00"]') as HTMLElement);
+    expect(pill.getAttribute('data-a11y-label')).toBe('mobile.restTimer.lengthPillAria:2:00');
+    expect(pill.getAttribute('data-a11y-hint')).toBe('mobile.restTimer.lengthPillHint');
 
-    expect(settingsStore.values.restTimerTargetSeconds).toBe(180);
-    expect(container.querySelector('[data-chip="3:00"]')?.getAttribute('data-selected')).toBe('true');
-    expect(container.querySelector('[data-chip="2:00"]')?.getAttribute('data-selected')).toBe('false');
+    fireEvent.click(pill);
+
+    expect(settingsStore.values.restTimerTargetSeconds).toBe(150);
+    expect(pillLabel(container)).toBe('2:30');
     expect(haptics.selection).toHaveBeenCalledTimes(1);
   });
 
-  it('names each chip by the rest it sets, so a screen reader can jump to one', () => {
+  it('wraps to Off past the top of the ladder, so Off is one tap and not a scroll', () => {
+    settingsStore.values.restTimerTargetSeconds = 600;
     const { container } = renderSheet();
 
-    expect(container.querySelector('[data-chip="1:30"]')?.getAttribute('data-a11y-label')).toBe(
-      'mobile.restTimer.setLengthAria:1:30',
-    );
-    expect(container.querySelector('[data-chip="mobile.restTimer.off"]')?.getAttribute('data-a11y-label')).toBe(
-      'mobile.restTimer.offAria',
-    );
-  });
-
-  it('turns the rest length off from the head chip', () => {
-    const { container } = renderSheet();
-
-    fireEvent.click(container.querySelector('[data-chip="mobile.restTimer.off"]') as HTMLElement);
+    fireEvent.click(container.querySelector(LENGTH_PILL) as HTMLElement);
 
     expect(settingsStore.values.restTimerTargetSeconds).toBeNull();
-    expect(container.querySelector('[data-chip="mobile.restTimer.off"]')?.getAttribute('data-selected')).toBe('true');
+    expect(pillLabel(container)).toBe('mobile.restTimer.off');
   });
 
-  it('splices a persisted off-rail rest length in rather than snapping it away', () => {
+  it('honours a persisted off-ladder rest, and never rewrites it on mount', () => {
     // What someone who used the old 15-second stepper could be carrying.
     settingsStore.values.restTimerTargetSeconds = 100;
     const { container } = renderSheet();
-    const labels = chipLabels(container);
 
-    expect(labels).toContain('1:40');
-    expect(container.querySelector('[data-chip="1:40"]')?.getAttribute('data-selected')).toBe('true');
-    // Spliced at its sorted position, between 1:30 and 1:45.
-    expect(labels.indexOf('1:40')).toBe(labels.indexOf('1:30') + 1);
-    expect(labels[labels.indexOf('1:40') + 1]).toBe('1:45');
-    // And nothing rewrote the setting behind the climber's back.
+    expect(pillLabel(container)).toBe('1:40');
     expect(settingsStore.values.restTimerTargetSeconds).toBe(100);
+
+    // The first tap puts them back on the ladder rather than carrying the odd
+    // offset up it.
+    fireEvent.click(container.querySelector(LENGTH_PILL) as HTMLElement);
+    expect(settingsStore.values.restTimerTargetSeconds).toBe(120);
   });
 
-  it('folds cadence away behind a collapsible that remembers its state', () => {
+  it('reveals the fine slider on a long press, and folds it away again', () => {
     const { container } = renderSheet();
-    const section = container.querySelector('[data-collapsible="mobile.restTimer.modeLabel"]') as HTMLElement;
 
-    expect(section.getAttribute('data-persist-key')).toBe('restTimer.cadence');
-    expect(section.getAttribute('data-summary')).toBe('mobile.restTimer.modeAfterTick');
+    expect(container.querySelector(LENGTH_SLIDER)).toBeNull();
+    expect(container.querySelector(LENGTH_PILL)?.getAttribute('data-delay-long-press')).toBe('300');
+
+    holdPill(container);
+    expect(container.querySelector(LENGTH_SLIDER)).not.toBeNull();
+    expect(container.querySelector(LENGTH_PILL)?.getAttribute('data-expanded')).toBe('true');
+
+    holdPill(container);
+    expect(container.querySelector(LENGTH_SLIDER)).toBeNull();
+    expect(container.querySelector(LENGTH_PILL)?.getAttribute('data-expanded')).toBe('false');
+  });
+
+  it('publishes the slider as one adjustable node over the whole duration range', () => {
+    const { container } = renderSheet();
+    holdPill(container);
+    const slider = container.querySelector(LENGTH_SLIDER) as HTMLElement;
+
+    expect(slider.getAttribute('data-a11y-role')).toBe('adjustable');
+    expect(slider.getAttribute('data-a11y-label')).toBe('mobile.restTimer.targetAria');
+    expect(slider.getAttribute('data-a11y-value')).toBe('2:00');
+    expect(slider.getAttribute('data-a11y-min')).toBe('15');
+    expect(slider.getAttribute('data-a11y-max')).toBe('3600');
+    expect(slider.getAttribute('data-a11y-actions')).toBe('increment,decrement');
+  });
+
+  it('sets a rest without a gesture, for the climber driving it by voice', () => {
+    // A pan is invisible to VoiceOver, so increment / decrement are the only way
+    // in — and from Off they have to reach a real duration, not stay at Off.
+    settingsStore.values.restTimerTargetSeconds = null;
+    const { container } = renderSheet();
+    holdPill(container);
+
+    fireEvent.click(container.querySelector(LENGTH_SLIDER) as HTMLElement);
+    expect(settingsStore.values.restTimerTargetSeconds).toBe(90);
+    expect(pillLabel(container)).toBe('1:30');
+
+    fireEvent.contextMenu(container.querySelector(LENGTH_SLIDER) as HTMLElement);
+    expect(settingsStore.values.restTimerTargetSeconds).toBe(60);
+  });
+
+  it('puts cadence inline — a binary with one other option is not a disclosure', () => {
+    const { container } = renderSheet();
+
+    expect(container.querySelector('[data-collapsible]')).toBeNull();
+    expect(container.querySelector('[data-segmented="mobile.restTimer.modeAria"]')).not.toBeNull();
+    expect(container.querySelector('[data-section="mobile.restTimer.modeLabel"]')).not.toBeNull();
+    // Both options AND the hint for the live one are readable without a tap.
+    expect(container.querySelector('[data-segment="mobile.restTimer.modeAria:onTheMinute"]')).not.toBeNull();
+    expect(container.textContent).toContain('mobile.restTimer.modeAfterTickHint');
   });
 
   it('re-arms cleanly when the cadence changes, rather than leaving a half-converted anchor', () => {
@@ -446,9 +541,9 @@ describe('RestTimerSheet', () => {
     settingsStore.values.restTimerTargetSeconds = null;
     const { container } = renderSheet();
 
-    fireEvent.click(container.querySelector('[data-chip="1:00"]') as HTMLElement);
+    fireEvent.click(container.querySelector(LENGTH_PILL) as HTMLElement);
 
-    expect(settingsStore.values.restTimerTargetSeconds).toBe(60);
+    expect(settingsStore.values.restTimerTargetSeconds).toBe(30);
     expect(container.querySelector(AUTO_ADVANCE_ROW)?.getAttribute('data-disabled')).toBe('false');
   });
 

@@ -347,8 +347,8 @@
       "whenUpLabel": "Cuando se acabe tu descanso",
       "autoAdvanceFootnote": "Solo con Boardsesh abierto.",
       "autoAdvanceNeedsLength": "Elige una duración de descanso para mover la cola automáticamente.",
-      "setLengthAria": "Poner el descanso en {{time}}",
-      "offAria": "Sin duración de descanso: cuenta hacia arriba"
+      "lengthPillAria": "Duración del descanso, {{value}}",
+      "lengthPillHint": "Añade 30 segundos. Mantén pulsado para elegir cualquier duración."
     },
     "queueSheet": {
       "emptyQueue": "Tu cola está vacía",

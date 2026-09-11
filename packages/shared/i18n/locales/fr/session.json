@@ -347,8 +347,8 @@
       "whenUpLabel": "Quand ton repos est écoulé",
       "autoAdvanceFootnote": "Seulement avec Boardsesh ouvert.",
       "autoAdvanceNeedsLength": "Choisis une durée de repos pour faire avancer la file automatiquement.",
-      "setLengthAria": "Mettre le repos sur {{time}}",
-      "offAria": "Pas de durée de repos : compte le temps écoulé"
+      "lengthPillAria": "Durée du repos, {{value}}",
+      "lengthPillHint": "Ajoute 30 secondes. Appui long pour choisir n’importe quelle durée."
     },
     "queueSheet": {
       "emptyQueue": "Votre file est vide",
