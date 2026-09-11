@@ -10,13 +10,7 @@
 // mode freezes it, so a capture of a running timer is byte-identical run to run.
 
 import { useCallback, useEffect, useState } from 'react';
-import {
-  StyleSheet,
-  View,
-  type AccessibilityActionEvent,
-  type AccessibilityActionInfo,
-  type ColorValue,
-} from 'react-native';
+import { StyleSheet, type AccessibilityActionEvent, type AccessibilityActionInfo, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -80,7 +74,6 @@ export type RestTimerDisplay = {
   phase: RestTimerPhase;
   elapsedSeconds: number;
   targetSeconds: number | null;
-  autoAdvance: boolean;
   /** The counting number, `m:ss` (widening to `h:mm:ss` past an hour). */
   elapsedLabel: string;
   /** Compact target, e.g. `2m` / `1:30`. `null` when the rest length is Off. */
@@ -96,7 +89,6 @@ export function useRestTimerDisplay(): RestTimerDisplay {
   const { armed, anchorMs, isRunning, pausedElapsedSeconds, queueEnded } = useRestTimerState();
   const [targetSeconds] = useSetting('restTimerTargetSeconds');
   const [mode] = useSetting('restTimerMode');
-  const [autoAdvance] = useSetting('restTimerAutoAdvance');
 
   // Only a running timer with something to count from needs a heartbeat.
   const ticking = armed && isRunning && anchorMs !== null;
@@ -129,7 +121,6 @@ export function useRestTimerDisplay(): RestTimerDisplay {
     phase,
     elapsedSeconds,
     targetSeconds,
-    autoAdvance,
     // Waiting has no elapsed to show, so the number IS the target — a false
     // 0:00 would read as "your rest already started".
     elapsedLabel:
@@ -215,7 +206,7 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const reduceMotion = useReduceMotion();
-  const { armed, isRunning, phase, elapsedLabel, targetLabel, autoAdvance } = useRestTimerDisplay();
+  const { armed, isRunning, phase, elapsedLabel, targetLabel } = useRestTimerDisplay();
 
   const handleLongPress = useCallback(() => {
     hapticMedium();
@@ -294,13 +285,6 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
             {secondaryLabel}
           </Text>
         ) : null}
-        {/* The one-glance answer to "is my phone about to move the wall on me".
-            Present whenever auto-advance is on, in both tiers. */}
-        {autoAdvance ? (
-          <View testID="rest-timer-pill-auto-advance" style={styles.autoAdvanceGlyph}>
-            <Icon name="skip.next" size={glyphSize} color={brandColors.primary} />
-          </View>
-        ) : null}
       </PressableSurface>
     </AccessoryBarSurface>
   );
@@ -339,8 +323,5 @@ const styles = StyleSheet.create({
   },
   secondary: {
     flexShrink: 1,
-  },
-  autoAdvanceGlyph: {
-    justifyContent: 'center',
   },
 });

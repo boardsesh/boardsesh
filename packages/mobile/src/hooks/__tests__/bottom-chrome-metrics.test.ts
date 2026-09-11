@@ -7,6 +7,7 @@ import {
   REST_TIMER_PILL_HEIGHT,
   REST_TIMER_RESERVE,
   TAB_BAR_HEIGHT,
+  TOOLBAR_GAP_ABOVE_TABBAR,
   TOOLBAR_RESERVE,
   floatingContextBarBottom,
   glassSize,
@@ -951,16 +952,24 @@ describe('computeBottomChromeMetrics', () => {
       expect(armed.scrollBottomPadding).toBeGreaterThanOrEqual(armed.restTimerBottom + REST_TIMER_PILL_HEIGHT);
     });
 
-    it('excludes the reserve from the pill’s own anchor (the fixed-point guard)', () => {
+    it('excludes its own HEIGHT from the pill’s anchor (the fixed-point guard)', () => {
       const armed = computeBottomChromeMetrics({ ...nativeBarInputs, restTimerArmed: true });
-      const disarmed = computeBottomChromeMetrics(nativeBarInputs);
 
-      // Arming must not move where the pill is drawn — that is the trap
-      // `connectivityBannerBottom` already documents: an anchor containing its
-      // own height walks up the screen one layout pass at a time.
-      expect(armed.restTimerBottom).toBe(disarmed.restTimerBottom);
-      expect(armed.restTimerBottom).toBe(IN_TAB_INFERRED_BAR_INSET + TOOLBAR_RESERVE);
+      // The anchor carries the gap that lifts the pill off the queue chrome, and
+      // nothing else. An anchor containing its own height walks up the screen one
+      // layout pass at a time — the trap `connectivityBannerBottom` documents.
+      expect(armed.restTimerBottom).toBe(IN_TAB_INFERRED_BAR_INSET + TOOLBAR_RESERVE + TOOLBAR_GAP_ABOVE_TABBAR);
       expect(armed.restTimerBottom).toBeLessThan(armed.connectivityBannerBottom);
+      // And the banner lands exactly on the pill's top edge: gap + height is the
+      // whole reserve, with no slack and no overlap.
+      expect(armed.restTimerBottom + REST_TIMER_PILL_HEIGHT).toBe(armed.connectivityBannerBottom);
+    });
+
+    it('leaves the pill flush against the chrome only when the timer is off', () => {
+      // Disarmed, the anchor must not carry the gap either — `connectivityBannerBottom`
+      // reads it, so a stray 10pt here would move the banner for everyone.
+      const disarmed = computeBottomChromeMetrics(nativeBarInputs);
+      expect(disarmed.restTimerBottom).toBe(IN_TAB_INFERRED_BAR_INSET + TOOLBAR_RESERVE);
     });
 
     it('stacks the banner above the pill and the floating controls above both', () => {
@@ -970,8 +979,11 @@ describe('computeBottomChromeMetrics', () => {
         connectivityBannerHeight: SYNTHETIC_BANNER_HEIGHT,
       });
 
-      // tab bar → queue tray → pill → banner → floating controls.
-      expect(armed.connectivityBannerBottom).toBe(armed.restTimerBottom + REST_TIMER_RESERVE);
+      // tab bar → queue tray → pill → banner → floating controls. The banner sits
+      // on the pill's TOP EDGE: the reserve is gap + height, and the pill's anchor
+      // already spent the gap, so adding the whole reserve to that anchor would
+      // count the gap twice.
+      expect(armed.connectivityBannerBottom).toBe(armed.restTimerBottom + REST_TIMER_PILL_HEIGHT);
       expect(armed.floatingControlBottom).toBe(armed.connectivityBannerBottom + SYNTHETIC_BANNER_HEIGHT);
       // The banner still clears the pill's top edge, and the FAB clears the banner.
       expect(armed.connectivityBannerBottom).toBeGreaterThanOrEqual(armed.restTimerBottom + REST_TIMER_PILL_HEIGHT);
@@ -988,12 +1000,15 @@ describe('computeBottomChromeMetrics', () => {
       expect(armed.nativeAccessoryVisible).toBe(true);
       expect(armed.jsQueueReserve).toBe(0);
       expect(armed.nativeAccessoryReserve).toBe(0);
-      expect(armed.restTimerBottom).toBe(IN_TAB_MEASURED_ACCESSORY_INSET);
+      // One gap above the platter, so the pill reads as a stack rather than
+      // sitting on the platter's rounded edge — the same gap UIKit leaves between
+      // that platter and the tab bar.
+      expect(armed.restTimerBottom).toBe(IN_TAB_MEASURED_ACCESSORY_INSET + TOOLBAR_GAP_ABOVE_TABBAR);
       expect(armed.scrollBottomPadding).toBe(IN_TAB_MEASURED_ACCESSORY_INSET + REST_TIMER_RESERVE);
       expect(armed.fixedFooterBottom).toBe(IN_TAB_MEASURED_ACCESSORY_INSET + REST_TIMER_RESERVE);
       // The whole delta over the unarmed platter case is one reserve, no more.
       const disarmed = computeBottomChromeMetrics(nativeAccessoryInputs);
-      expect(armed.restTimerBottom - disarmed.restTimerBottom).toBe(0);
+      expect(armed.restTimerBottom - disarmed.restTimerBottom).toBe(TOOLBAR_GAP_ABOVE_TABBAR);
       expect(armed.floatingControlBottom - disarmed.floatingControlBottom).toBe(REST_TIMER_RESERVE);
     });
 
