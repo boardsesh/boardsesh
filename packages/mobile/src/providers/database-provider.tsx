@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { SQLiteProvider, useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
 import { DATABASE_NAME, initializeDatabase, releaseDatabaseHandle } from '../db';
 import { retainDatabaseConnection } from '../db/connection-retention';
+import { pinDatabase } from '../db/connection-pin';
 
 function handleDatabaseError(error: Error): void {
   if (__DEV__) {
@@ -34,7 +35,15 @@ function handleDatabaseError(error: Error): void {
  */
 function DatabaseHandleLifecycle() {
   const database = useSQLiteContext();
-  useEffect(() => () => releaseDatabaseHandle(database), [database]);
+  // Pin here as well as in `onInit`. Today `SQLiteProvider` cannot publish a context
+  // value `onInit` never saw, but that is an undocumented internal of a file whose
+  // suspense path serves a cached promise — and if it ever changes, the un-pinned
+  // wrapper's collection kills the live connection (#5410) with nothing to show for
+  // it. Pin where we OBSERVE a connection, not only where we initialize one.
+  useEffect(() => {
+    pinDatabase(database);
+    return () => releaseDatabaseHandle(database);
+  }, [database]);
   return null;
 }
 
@@ -74,6 +83,11 @@ function DatabaseHandleLifecycle() {
  * which is the exact churn this file exists to survive.
  */
 function initializeAndRetainDatabase(db: SQLiteDatabase): Promise<void> {
+  // First statement, before anything can await: this is the earliest point the
+  // connection exists in JS, and an un-pinned wrapper is collectable from the moment
+  // the provider drops it (#5410). Synchronous, so it does not push the retraction
+  // inside `initializeDatabase` a microtask later.
+  pinDatabase(db);
   const initialization = initializeDatabase(db);
   return Promise.all([initialization, retainDatabaseConnection()]).then(() => undefined);
 }

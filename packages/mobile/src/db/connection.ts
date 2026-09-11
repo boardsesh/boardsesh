@@ -26,10 +26,14 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
 import { setSchemaReady } from './schema-ready';
+import { pinDatabase } from './connection-pin';
 import { markStartup } from '../lib/profiling/startup-profile';
 import { measureDatabaseBytes } from './storage-usage';
 
-export const DATABASE_NAME = 'boardsesh.db';
+// Defined in its own leaf module so `connection-pin.ts` can read it without an
+// import cycle back through this file. Re-exported here so every existing import
+// site keeps working.
+export { DATABASE_NAME } from './database-name';
 
 // Tables that hold the signed-in user's own data. Cleared on sign-out so the
 // next account on the device never sees the previous user's ticks, playlists,
@@ -303,6 +307,12 @@ async function readJournalMode(db: SQLiteDatabase): Promise<string> {
  */
 export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   const replacesTheOneInFlight = latestDatabase !== null && latestDatabase !== db;
+  // Pin before the overwrite below. Reassigning `latestDatabase` is what makes the
+  // PREVIOUS wrapper collectable, and on Android collecting any wrapper for this file
+  // frees the native handle the live connection is still using (#5410). Pinning both
+  // the outgoing and incoming wrapper is what makes that overwrite safe.
+  pinDatabase(latestDatabase);
+  pinDatabase(db);
   // Recorded on EVERY call, including the remount that only gets the shared promise
   // back, so the in-flight chain can retarget onto the live connection.
   latestDatabase = db;

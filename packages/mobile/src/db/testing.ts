@@ -5,6 +5,9 @@
 // state lives; this barrel exists so the sanctioned import path for it is visibly a
 // test path, and so the production barrel (./index.ts) can stay free of it.
 export { resetDatabaseInitializationForTests } from './connection';
+// `connection-pin` imports expo-sqlite for TYPES only, so unlike the retention reset
+// below it erases at build time and is safe to route through this barrel.
+export { resetDatabasePinsForTests } from './connection-pin';
 // `resetConnectionRetentionForTests` deliberately does NOT come through here.
 // ./connection-retention imports expo-sqlite for real, whose entry reaches
 // react-native's Flow source — unparseable by Rolldown's collection-time scan — so

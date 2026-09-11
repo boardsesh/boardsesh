@@ -47,7 +47,8 @@
 
 import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { reportError } from '../lib/error-reporting';
-import { DATABASE_NAME } from './connection';
+import { DATABASE_NAME } from './database-name';
+import { pinDatabase } from './connection-pin';
 
 /**
  * The single retain, kept as its promise so concurrent callers share one open and a
@@ -69,7 +70,15 @@ let retention: Promise<SQLiteDatabase | null> | null = null;
  */
 export function retainDatabaseConnection(): Promise<SQLiteDatabase | null> {
   retention ??= openDatabaseAsync(DATABASE_NAME).then(
-    (connection) => connection,
+    (connection) => {
+      // Redundant while the `retention` promise holds it, and kept anyway so that
+      // "every wrapper for this file goes through `pinDatabase`" is one enforceable
+      // rule rather than four separate arguments. Note that
+      // `resetConnectionRetentionForTests` nulling `retention` is exactly the shape
+      // of code that would otherwise create a collectable wrapper (#5410).
+      pinDatabase(connection);
+      return connection;
+    },
     (error: unknown) => {
       retention = null;
       reportError(error, { tags: { source: 'offline-sync', kind: 'sqlite-retain' } });

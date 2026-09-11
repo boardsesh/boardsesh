@@ -13,6 +13,7 @@
 // runs at import time.
 
 import { openDatabaseAsync } from 'expo-sqlite';
+import { pinDatabase } from '../../db/connection-pin';
 import { DATABASE_NAME } from '../../db';
 
 /** Key of the throwaway row the hold writes; never read by anything else. */
@@ -38,6 +39,13 @@ export function isHoldingWriteLock(): boolean {
  */
 export async function holdWriteLock(durationMs: number): Promise<void> {
   const connection = await openDatabaseAsync(DATABASE_NAME);
+  // This opens `boardsesh.db` a SECOND time with default options, so Android hands
+  // back the same native instance under a new shared-object id. Without this pin the
+  // wrapper below becomes collectable the moment this function returns, and
+  // collecting it frees the native handle the whole app is still using (#5410) —
+  // which makes this dev tool a reliable way to reproduce BOARDSESH-G1 rather than a
+  // way to reproduce lock contention.
+  pinDatabase(connection);
   holdingUntil = Date.now() + durationMs;
   try {
     await connection.withExclusiveTransactionAsync(async (txn) => {
