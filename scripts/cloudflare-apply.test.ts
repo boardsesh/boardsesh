@@ -13,11 +13,11 @@ import {
   ASSETS_HOSTNAME,
   desiredR2Buckets,
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
+  BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
   BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   CACHE_RULE_DESCRIPTION,
   CRAWLER_ALLOW_RULE_DESCRIPTION,
   CRAWLER_ALLOW_TOKENS,
-  CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION,
   CRAWLER_BLOCK_RULE_DESCRIPTION,
   CRAWLER_BLOCK_TOKENS,
   CLIMB_VIEW_PATH_SEGMENT,
@@ -816,12 +816,66 @@ describe('www cost-control rules (#4650)', () => {
     }
   });
 
+  it('challenges every surface the farm moved to, and not the homepage', () => {
+    // Parses the SHIPPED expression rather than restating its logic. A helper
+    // that re-implemented the three clauses would pass no matter what the rule
+    // actually said, which is the failure mode worth guarding against here.
+    const expression = desired.wafRules.find(
+      (rule) => rule.description === BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
+    )!.expression;
+
+    const containsTokens = [...expression.matchAll(/http\.request\.uri\.path contains "([^"]+)"/g)].map(
+      ([, token]) => token,
+    );
+    const endsWithTokens = [...expression.matchAll(/ends_with\(http\.request\.uri\.path, "([^"]+)"\)/g)].map(
+      ([, token]) => token,
+    );
+    // If the expression ever stops using these two forms this test would start
+    // passing vacuously, so assert it still parses into something.
+    expect(containsTokens.length + endsWithTokens.length).toBeGreaterThan(0);
+
+    const challenged = (path: string): boolean =>
+      containsTokens.some((token) => path.includes(token)) || endsWithTokens.some((token) => path.endsWith(token));
+
+    // What the farm actually fetched in the 2026-09-11 08:34-08:53 window,
+    // after the /view/-only rule pushed it off climb pages: 102 /setter/,
+    // 67 /list.
+    for (const path of [
+      '/kilter/original/12x12-square/screw_bolt/40/view/some-climb',
+      '/de/tension/two-mirror/12-high-x-12-wide/wood_plastic/50/list',
+      '/kilter/original/12x12-square/screw_bolt/40/list',
+      '/setter/someclimber',
+      '/fr/setter/someclimber',
+    ]) {
+      expect(challenged(path), `${path} must be challenged`).toBe(true);
+    }
+
+    // The homepage stays open on purpose — it is where a real first-time
+    // visitor lands before any clearance cookie exists, and the farm hit it
+    // 8 times against 169 for the surfaces above.
+    for (const path of ['/', '/about', '/legal', '/gyms']) {
+      expect(challenged(path), `${path} must stay open`).toBe(false);
+    }
+  });
+
+  it('balances its parentheses', () => {
+    // A stray paren installs nothing and the deploy still goes green.
+    const expression = desired.wafRules.find(
+      (rule) => rule.description === BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
+    )!.expression;
+    const opens = expression.split('(').length - 1;
+    const closes = expression.split(')').length - 1;
+    expect(opens).toBe(closes);
+  });
+
   it('challenges the climb-view surface, and does it last', () => {
     // The scraper this exists for rotates ordinary Chrome/Edge/Safari strings,
     // so no token list reaches it. What separates it from a person is that it
     // executes no JavaScript — 350 climb pages and zero `/_next/static` chunks
     // in a 2026-09-11 sample — and a managed challenge is exactly that test.
-    const challengeRule = desired.wafRules.find((rule) => rule.description === CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION);
+    const challengeRule = desired.wafRules.find(
+      (rule) => rule.description === BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
+    );
     expect(challengeRule?.action).toBe('managed_challenge');
     expect(challengeRule?.expression).toContain('/view/');
     expect(challengeRule?.expression).toContain(`http.host eq "${WWW_HOSTNAME}"`);
@@ -838,7 +892,7 @@ describe('www cost-control rules (#4650)', () => {
     // Qwant had to be added: they were passing by default, which stops working
     // the moment an unlisted agent gets challenged.
     const challengeIndex = desired.wafRules.findIndex(
-      (rule) => rule.description === CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION,
+      (rule) => rule.description === BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
     );
     expect(desired.wafRules.indexOf(allowRule!)).toBeLessThan(challengeIndex);
     expect(allowRule?.action).toBe('skip');
@@ -882,7 +936,7 @@ describe('managed rule ordering and foreign-rule safety', () => {
       CRAWLER_BLOCK_RULE_DESCRIPTION,
       // Last on purpose: it is the only rule that can catch an ordinary browser
       // string, so both UA verdicts must be reached first.
-      CLIMB_VIEW_CHALLENGE_RULE_DESCRIPTION,
+      BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
     ]);
     // The pre-existing rule keeps its Cloudflare-assigned id rather than being
     // recreated, so its analytics and history survive.
