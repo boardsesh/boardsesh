@@ -76,6 +76,9 @@ function VisibilityChoice({ sectionTitle, description, selected, disabled, onSel
               onPress={disabled ? undefined : () => onSelect(value)}
               accessibilityLabel={optionLabel(t, value)}
               accessibilityHint={optionSubtitle(t, value)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isSelected, disabled }}
+              accessibilityValue={{ text: `${index + 1} / ${VISIBILITY_OPTIONS.length}` }}
             />
           );
         })}

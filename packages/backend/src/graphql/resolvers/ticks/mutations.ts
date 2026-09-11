@@ -152,6 +152,12 @@ export async function lockCanonicalTickBoardId(
 // call site for how this number was chosen and why a burst drain survives it.
 const SAVE_TICK_RATE_LIMIT_PER_MINUTE = 120;
 
+// Edits get the same ceiling as creates. `climbedAt` is editable, so an edit can
+// move an old tick into the current rolling window — the same capability a
+// create has, and pointless to bound on one path only. Same headroom: an offline
+// outbox drain replays edits alongside creates.
+const UPDATE_TICK_RATE_LIMIT_PER_MINUTE = 120;
+
 // Beta links are only attached on successful ascents (flash / send), never
 // on `attempt`. Returns the URL to attach, or null if the tick shouldn't
 // carry one. Typed against the shared TickStatus enum so adding a new
@@ -1371,6 +1377,7 @@ export const tickMutations = {
     ctx: ConnectionContext,
   ): Promise<unknown> => {
     requireAuthenticated(ctx);
+    await applyRateLimit(ctx, UPDATE_TICK_RATE_LIMIT_PER_MINUTE, 'updateTick');
     const userId = ctx.userId!;
 
     const validatedInput = validateInput(UpdateTickInputSchema, input, 'input');
