@@ -644,7 +644,7 @@ function PaceSlider({
         accessibilityRole="adjustable"
         accessibilityLabel={t('playView.pace')}
         accessibilityValue={{
-          text: t('playView.paceValueA11y', { seconds: roundPaceSeconds(value) }),
+          text: t('playView.paceValueA11y', { count: roundPaceSeconds(value) }),
           min: MIN_PACE_SECONDS,
           max: MAX_PACE_SECONDS,
           now: value,
@@ -900,8 +900,10 @@ export function PlaybackControls({
             active={showSlider}
             onCycle={cycleValue}
             onToggleSlider={toggleSlider}
+            // "Seconds per frame, 0.8 seconds" — the value is the duration
+            // alone, so the unit isn't announced twice.
             accessibilityLabel={`${t('playView.pace')}, ${t('playView.paceValueA11y', {
-              seconds: roundPaceSeconds(liveValue),
+              count: roundPaceSeconds(liveValue),
             })}`}
             accessibilityHint={t('playView.paceHint')}
           />

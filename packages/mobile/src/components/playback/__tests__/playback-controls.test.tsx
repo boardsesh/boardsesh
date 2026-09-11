@@ -100,9 +100,11 @@ vi.mock('react-i18next', () => ({
     // Interpolating (rather than the usual identity `t`) so the per-frame chip
     // labels are distinguishable — they all share one key. The pace label is the
     // one key that interpolates something else, so it gets its own shape.
-    t: (key: string, options?: { index?: number; total?: number; seconds?: number }) => {
+    t: (key: string, options?: { index?: number; total?: number; count?: number }) => {
       if (!options) return key;
-      if (options.seconds !== undefined) return `${key}:${options.seconds}`;
+      // `count` drives i18next pluralisation, so the real `t` resolves a
+      // `_one`/`_other` sibling; the shape below is enough to assert the value.
+      if (options.count !== undefined) return `${key}:${options.count}`;
       return `${key}:${options.index}/${options.total}`;
     },
   }),
@@ -347,8 +349,7 @@ describe('PlaybackControls — creator frame strip', () => {
 });
 
 describe('PlaybackControls — seconds-per-frame pill', () => {
-  const labelFor = (paceSeconds: number) =>
-    renderControls({ paceSeconds }).pill?.textContent;
+  const labelFor = (paceSeconds: number) => renderControls({ paceSeconds }).pill?.textContent;
 
   it('renders the pace, trimming a trailing zero', () => {
     expect(labelFor(0.8)).toBe('0.8s');
