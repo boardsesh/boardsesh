@@ -69,6 +69,10 @@ Read it like this:
 
 Locally it is the only way in: the browser PostHog client refuses to initialise off a production hostname, so on localhost there is no person and nothing to evaluate against.
 
+**Crawlers are in the same position, on purpose.** Since 2026-09-11 the client also refuses to initialise for a crawler user agent (`isAutomatedCrawlerUserAgent`, the same predicate the Sentry gate uses), so a crawler fetches no flags and every client flag reads as its shipped default. That is the intended answer for a crawler — it should see what an unflagged visitor sees — but it means "Googlebot renders the default UI" is correct behaviour, not a flag bug. Server flags are unaffected: `getPosthogDistinctId` returns `null` for anyone not signed in, so a crawler never had a person to evaluate against there either.
+
+The gate exists because crawlers were not a rounding error in this project. Applebot executes our JavaScript and holds no cookies, so every page load minted a fresh anonymous person and it parsed as "Safari / Mac OS X" — on 2026-09-10 that was 917 "people" against 29 real web visitors, roughly 90% of web product analytics. See the comment on `getPosthog()` in `packages/web/app/lib/analytics.ts` for the full measurement.
+
 In production it is the kill switch and the "I need this reachable now" lever — set it in the Vercel production environment and redeploy. It short-circuits before any network call, so it also keeps a flagged surface up during a PostHog outage. It outranks the dashboard silently, which is why the diagnostics endpoint always reports it.
 
 ## Adding a server flag

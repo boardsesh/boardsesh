@@ -3,6 +3,7 @@ import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
 import { analyticsPathname, isAdminAnalyticsUrl } from './analytics-paths';
 import { getBackendHttpUrl } from './backend-url';
+import { isAutomatedCrawlerUserAgent } from './is-crawler';
 import { isProductionHost } from './production-hosts';
 
 // The property values a tracked event may carry. `undefined` is accepted at the
@@ -29,6 +30,11 @@ function getPosthog(): PostHog | null {
   // would pass a naive `.includes()` check, leaking preview sessions into the
   // prod PostHog project (#3814).
   if (!isProductionHost(window.location.hostname)) return null;
+
+  // Crawlers that execute our JS boot this SDK and, holding no cookies, mint a
+  // fresh person per page load: Applebot was 917 of the 946 web "users" on 2026-09-10.
+  // Not isCrawlerUserAgent — that one counts real YandexSearch users as bots. docs/feature-flags.md.
+  if (isAutomatedCrawlerUserAgent(navigator.userAgent)) return null;
 
   const apiKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
   if (!apiKey) {
