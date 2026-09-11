@@ -293,11 +293,12 @@ describe('target reached with auto-advance off', () => {
 });
 
 describe('backgrounding', () => {
-  it('re-anchors instead of advancing for an interval nobody watched', () => {
+  it('re-anchors instead of advancing when AppState wins the race on resume', () => {
     armWithTick();
     render(<RestTimerAutoAdvanceScheduler />);
 
-    // Simulate the JS timers being frozen: jump the clock without running them.
+    // The JS timer queue was frozen: jump the clock, tell the app it woke, and
+    // only then let the overdue timeout flush.
     act(() => {
       currentNowMs += 600_000;
       appStateListener?.('active');
@@ -305,6 +306,93 @@ describe('backgrounding', () => {
 
     expect(nextClimb).not.toHaveBeenCalled();
     expect(getRestTimerState().anchorMs).toBe(currentNowMs);
+
+    // And the rest simply restarts rather than the timer going dead.
+    advance(60_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an overdue timeout that flushes BEFORE AppState reports the resume', () => {
+    // Nothing orders the AppState listener ahead of the timer queue on resume —
+    // both ride the same UIApplicationDidBecomeActive. This is the ordering the
+    // guard has to survive, and the one a clock-only test silently skips.
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    act(() => {
+      currentNowMs += 600_000;
+      vi.advanceTimersByTime(600_000);
+    });
+
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(hapticMedium).not.toHaveBeenCalled();
+
+    // And the resume that follows still leaves the timer usable, not wedged.
+    act(() => appStateListener?.('active'));
+    expect(getRestTimerState().anchorMs).toBe(currentNowMs);
+  });
+
+  it('still advances a deadline that came due while the app was awake', () => {
+    // The grace window must not swallow an ordinary, on-time advance.
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(60_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a back-dated tick', () => {
+  it('never moves the wall, and does not wedge the timer holding the screen awake', () => {
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    // The tick sheet's date picker, moved back five minutes.
+    act(() => {
+      noteRestTimerTick(new Date(currentNowMs - 300_000).toISOString(), 'afterTick', currentNowMs);
+    });
+
+    advance(600_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    // Nothing is pending, so the wake lock is released rather than held forever.
+    expect(keepAwakeCalls.at(-1)).toEqual({ active: false, tag: 'rest-timer' });
+  });
+});
+
+describe('the target buzz', () => {
+  it('buzzes again at the new mark when the rest is lengthened mid-cycle', () => {
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    const { rerender } = render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(60_000);
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+
+    // Same cycle, longer rest: a cycle-only latch would swallow this silently.
+    settings = { ...settings, restTimerTargetSeconds: 300 };
+    rerender(<RestTimerAutoAdvanceScheduler />);
+    advance(240_000);
+    expect(hapticSuccess).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a refilled queue', () => {
+  it('picks the beat back up without waiting for the next tick', () => {
+    canNext = false;
+    armWithTick();
+    const { rerender } = render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(60_000);
+    expect(getRestTimerState().queueEnded).toBe(true);
+    expect(nextClimb).not.toHaveBeenCalled();
+
+    // Someone adds climbs. The latch must clear on its own.
+    canNext = true;
+    act(() => rerender(<RestTimerAutoAdvanceScheduler />));
+    expect(getRestTimerState().queueEnded).toBe(false);
+
+    advance(60_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
   });
 });
 

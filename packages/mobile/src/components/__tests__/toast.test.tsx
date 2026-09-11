@@ -112,6 +112,8 @@ vi.mock('../../theme/layout', () => ({
   TAB_BAR_HEIGHT: 49,
   // Production semantics: glassSize.hero(56) + TOOLBAR_GAP_ABOVE_TABBAR(10).
   TOOLBAR_RESERVE: 66,
+  // Production semantics: glassSize.capsule(44) + TOOLBAR_GAP_ABOVE_TABBAR(10).
+  REST_TIMER_RESERVE: 54,
 }));
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => {
@@ -139,8 +141,9 @@ vi.mock('../../providers/theme-provider', () => ({
 }));
 
 import { Toast } from '../Toast';
-import { TAB_BAR_HEIGHT, TOOLBAR_RESERVE } from '../../theme/layout';
+import { REST_TIMER_RESERVE, TAB_BAR_HEIGHT, TOOLBAR_RESERVE } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
+import { armRestTimer, resetRestTimerStoreForTests } from '../../lib/rest-timer-store';
 
 const toast = { id: 't1', message: 'Saved tick', variant: 'success' as const, duration: 3000 };
 // The IN-TAB inset without BottomAccessory (root 34 + bar 49), as published by
@@ -174,6 +177,14 @@ function contrastRatio(firstColor: string, secondColor: string): number {
   return (lighterLuminance + 0.05) / (darkerLuminance + 0.05);
 }
 
+/** The `bottom` the snackbar wrapper resolved to, as a number. */
+function readWrapperBottom(container: HTMLElement): number {
+  const style = container.querySelector('[data-paper-snackbar]')?.getAttribute('data-wrapper-style') ?? '';
+  const match = /"bottom":(-?\d+(?:\.\d+)?)/.exec(style);
+  if (!match) throw new Error(`no bottom in wrapper style: ${style}`);
+  return Number(match[1]);
+}
+
 describe('Toast', () => {
   beforeEach(() => {
     ctrl.variant = 'material';
@@ -183,6 +194,7 @@ describe('Toast', () => {
     ctrl.insetsBottom = 34;
     ctrl.measuredTabContentInsetBottom = null;
     ctrl.segments = ['(tabs)', 'climbs'];
+    resetRestTimerStoreForTests();
   });
 
   it('renders a Paper Snackbar on the Material variant', () => {
@@ -202,6 +214,33 @@ describe('Toast', () => {
     expect(container.querySelector('[data-view][data-role="alert"]')).not.toBeNull();
     // The glass animated pill must not render on Material.
     expect(container.querySelector('[data-animated]')).toBeNull();
+  });
+
+  it('lifts a Material toast clear of the rest-timer pill while it is armed', () => {
+    // The toast reconstructs its own offset (ToastProvider sits above the
+    // bottom-chrome provider), so the rest-timer reserve has to be added here
+    // too — otherwise a toast lands on top of the running countdown, which is
+    // the one control the climber is watching.
+    ctrl.variant = 'material';
+    const disarmed = render(<Toast toast={toast} onDismiss={() => {}} />);
+    const disarmedBottom = readWrapperBottom(disarmed.container);
+
+    armRestTimer('afterTick', Date.parse('2026-09-11T10:00:00.000Z'), 'session-1');
+    const armed = render(<Toast toast={toast} onDismiss={() => {}} />);
+
+    expect(readWrapperBottom(armed.container)).toBe(disarmedBottom + REST_TIMER_RESERVE);
+  });
+
+  it('reserves nothing for the pill off the tabs, where no pill renders', () => {
+    ctrl.variant = 'material';
+    ctrl.segments = ['gym', '123'];
+    const disarmed = render(<Toast toast={toast} onDismiss={() => {}} />);
+    const disarmedBottom = readWrapperBottom(disarmed.container);
+
+    armRestTimer('afterTick', Date.parse('2026-09-11T10:00:00.000Z'), 'session-1');
+    const armed = render(<Toast toast={toast} onDismiss={() => {}} />);
+
+    expect(readWrapperBottom(armed.container)).toBe(disarmedBottom);
   });
 
   it('positions Material toasts above the docked climb bar and tab bar', () => {

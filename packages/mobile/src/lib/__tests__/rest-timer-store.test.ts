@@ -136,7 +136,7 @@ describe('auto-advance bookkeeping', () => {
     noteRestTimerTick(tickAt(0), 'afterTick', T0);
     const { cycleId } = getRestTimerState();
 
-    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 60_000)).toBe(true);
+    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 60_000, T0 + 60_000)).toBe(true);
     expect(getRestTimerState().anchorMs).toBe(T0 + 60_000);
     expect(getRestTimerState().cycleId).not.toBe(cycleId);
   });
@@ -146,14 +146,14 @@ describe('auto-advance bookkeeping', () => {
     noteRestTimerTick(tickAt(0), 'afterTick', T0);
     const { cycleId } = getRestTimerState();
 
-    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 60_000)).toBe(true);
-    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 60_001)).toBe(false);
+    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 60_000, T0 + 60_000)).toBe(true);
+    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 60_001, T0 + 60_000)).toBe(false);
   });
 
   it('keeps the on-the-minute anchor when it fires, so the beat does not drift', () => {
     armRestTimer('onTheMinute', T0, null);
     const { cycleId } = getRestTimerState();
-    noteRestTimerAutoAdvanceFired(cycleId, 'onTheMinute', T0 + 60_000);
+    noteRestTimerAutoAdvanceFired(cycleId, 'onTheMinute', T0 + 60_000, T0 + 60_000);
     expect(getRestTimerState().anchorMs).toBe(T0);
   });
 
@@ -221,6 +221,6 @@ describe('disarming', () => {
     const { cycleId } = getRestTimerState();
     disarmRestTimer();
     armRestTimer('afterTick', T0 + 1000, null);
-    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 2000)).toBe(false);
+    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 2000, T0 + 2000)).toBe(false);
   });
 });
