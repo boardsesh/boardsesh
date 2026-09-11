@@ -28,11 +28,35 @@ export const AI_CRAWLER_TOKENS = [
  * reach it either — the Free plan caps the period at 10 s and Yandex ran ~34
  * requests/min, nowhere near the 60-per-10 s threshold.
  *
- * Both tokens are needed: `yandexrenderresourcesbot` does not contain
+ * Both Yandex tokens are needed: `yandexrenderresourcesbot` does not contain
  * `yandexbot` as a substring, and the renderer was 6% of the Yandex traffic in
  * the same sample.
+ *
+ * **Applebot** joined them on 2026-09-11 on the same test, applied to the
+ * question "which crawlers actually send people back". Thirty days of
+ * `$referring_domain` on real web visitors:
+ *
+ *   Google 237 · DuckDuckGo 25 · Baidu 7 · Bing 5 · Brave 4 · Ecosia 4 ·
+ *   Qwant 1 · **Apple 0**
+ *
+ * Google, DuckDuckGo, Bing, Brave, Baidu, Ecosia and Qwant all name themselves
+ * in a referrer. Apple never appears, while Applebot was 50.5% of www traffic
+ * before the Sentry and robots.txt gates and 9.4% after. It is the largest
+ * crawler we carry and the only large one that returns nothing measurable.
+ *
+ * The honest caveat, recorded because it is the reason to revisit this: Apple
+ * strips referrers aggressively, so "0 measurable" is not "0 actual". The
+ * largest referrer bucket is `(none)`. What the data supports is that Apple is
+ * invisible where seven other engines are visible.
+ *
+ * `applebot` also matches `Applebot-Extended` (Apple's AI-training crawler),
+ * which is already refused in robots.txt. Blocking both is the intent.
+ *
+ * Known cost, and the thing to weigh before merging: Apple generates link
+ * previews (iMessage, Safari shared links) by fetching the shared URL, and a
+ * blocked fetch means no preview card. Reverting is one token.
  */
-export const COST_BLOCKED_CRAWLER_TOKENS = ['yandexbot', 'yandexrenderresourcesbot'] as const;
+export const COST_BLOCKED_CRAWLER_TOKENS = ['yandexbot', 'yandexrenderresourcesbot', 'applebot'] as const;
 
 /**
  * Every crawler we refuse, whatever the reason. This is the single list behind

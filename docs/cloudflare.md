@@ -346,10 +346,40 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
      MJ12, DotBot, BLEXBot, Barkrowler, serpstat, Seznam, Zoominfo, Screaming
      Frog). Each was verified reaching our origin on 2026-08-24. They sell
      backlink data and send Boardsesh no traffic. The same rule also blocks
-     automated AI training and search crawlers and **Yandex**, using the shared
-     tokens in `packages/web/app/lib/crawler-policy.ts`. Google, Bing, Apple,
-     Brave and share-card unfurlers remain allowed. Human-triggered AI fetchers
-     are not added to this automated-crawler list.
+     automated AI training and search crawlers, **Yandex** and **Apple**, using
+     the shared tokens in `packages/web/app/lib/crawler-policy.ts`. Google,
+     Bing, DuckDuckGo, Brave and share-card unfurlers remain allowed.
+     Human-triggered AI fetchers are not added to this automated-crawler list.
+
+  **The allow list is now "engines that send people back", and it is measured.**
+  Thirty days of `$referring_domain` on real web visitors, 2026-09-11:
+
+  | Source | Real people sent |
+  |---|---|
+  | Google (all properties) | 237 |
+  | DuckDuckGo | 25 |
+  | Baidu | 7 |
+  | Bing | 5 |
+  | Brave, Ecosia, Qwant | 9 |
+  | Apple | 0 |
+
+  Re-run that query before adding or removing a token. Two notes on reading it:
+  DuckDuckGo and Ecosia mostly resell Bing's index, so Bingbot earns its place
+  through them rather than through `bing.com` directly; and Baidu is not in
+  either list — it passes by default, which is consistent with the policy since
+  it does send people. Social referrers (Reddit 20, Instagram 10, Facebook 10)
+  are why the share-card unfurlers stay even though they are not search: they
+  deliver more traffic than Bing does, and blocking them breaks link previews
+  rather than saving a crawl.
+
+  **Applebot moved to the block list on 2026-09-11.** It was the largest
+  crawler we carried — 50.5% of www traffic before the Sentry and robots.txt
+  gates, 9.4% after — and the only large one absent from the referrer table
+  above. The honest caveat, and the reason to revisit: Apple strips referrers
+  aggressively, so "0 measurable" is not "0 actual". What the data supports is
+  that Apple is invisible where seven other engines name themselves. The known
+  cost is that Apple builds link previews (iMessage, Safari shared links) by
+  fetching the shared URL, and a blocked fetch means no preview card.
 
   **Yandex moved from the allow list to the block list on 2026-09-11.** It was
   added to the allow list four days earlier, in the AI-crawler commit, with no

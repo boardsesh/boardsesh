@@ -22,6 +22,10 @@ describe('blocked crawler origin rejection', () => {
     // SSR path. See COST_BLOCKED_CRAWLER_TOKENS in app/lib/crawler-policy.ts.
     'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
     'Mozilla/5.0 (compatible; YandexRenderResourcesBot/1.0; +http://yandex.com/bots)',
+    // Blocked on the same test, applied to "does it send anyone back": 30 days
+    // of referrers show Google 237, DuckDuckGo 25, Baidu 7, Bing 5, Brave 4,
+    // Apple 0, while Applebot was the largest crawler we carried.
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)',
   ])('rejects %s before rendering', (userAgent) => {
     const response = middleware(
       new NextRequest('https://boardsesh-web-production.up.railway.app/fr/setter/test', {
@@ -36,7 +40,6 @@ describe('blocked crawler origin rejection', () => {
   it.each([
     'Googlebot/2.1',
     'bingbot/2.0',
-    'Applebot/0.1',
     'facebookexternalhit/1.1',
     'ChatGPT-User/1.0',
     'Claude-User/1.0',

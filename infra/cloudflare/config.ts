@@ -496,7 +496,6 @@ export const CRAWLER_ALLOW_TOKENS = [
   'duckduckbot',
   'brave-search',
   'bravebot',
-  'applebot',
   // Share-card unfurlers. Blocking these breaks link previews, not crawling.
   'twitterbot',
   'facebookexternalhit',

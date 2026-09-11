@@ -777,6 +777,7 @@ describe('www cost-control rules (#4650)', () => {
       'Screaming Frog SEO Spider/21.4',
       'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
       'Mozilla/5.0 (compatible; YandexRenderResourcesBot/1.0; +http://yandex.com/bots)',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)',
     ];
     for (const userAgent of blockedUserAgents) {
       const matched = CRAWLER_BLOCK_TOKENS.some((token) => userAgent.toLowerCase().includes(token));
