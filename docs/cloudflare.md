@@ -384,7 +384,15 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
     first. The file is `deploy/app-subdomain/robots.txt`, copied into the
     published export by `production-deploy.yml`.
   - `ws.boardsesh.com` had no route at all. It is served by
-    `packages/backend/src/handlers/robots.ts`.
+    `packages/backend/src/handlers/robots.ts`, and it is a **deny-list**
+    (`/graphql`, `/api/`, `/health`, `/board-credentials/`) rather than
+    `Disallow: /` with carve-outs. That host is mostly an image CDN: `/og/climb`
+    is every climb page's `og:image`, `/render/board` its LCP image, and
+    `/static/*` serves avatars, gym logos, gym photos and beta thumbnails — all
+    of which a blanket block would have taken out by omission. Naming what to
+    refuse means a new image route is crawlable by default and only a new API
+    route needs a line. The render paths are edge-cached here anyway, so crawler
+    traffic to them is largely absorbed before it reaches the origin.
 
   Both matter because the browser app issues GraphQL against `ws`, so a crawler
   rendering the SPA turns one page fetch into a backend query: a 3-minute sample

@@ -87,12 +87,22 @@ describe('Sentry client gate', () => {
     expect((await initOptions()).enabled).toBe(false);
   });
 
-  it('keeps a real Yandex Browser user reporting', async () => {
-    // `yandex` as a bare substring would take out real people. The crawler
-    // tokens are spelled out in full precisely so this case stays enabled.
-    setUserAgent(
+  it.each([
+    [
+      'Yandex Browser',
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 YaBrowser/23.9.1.962 Yowser/2.5 Safari/537.36',
-    );
+    ],
+    [
+      // The reason this file uses isAutomatedCrawlerUserAgent rather than the
+      // locale gates' isCrawlerUserAgent: the in-app browser spells itself
+      // `YandexSearch`, which contains Next's `yandex` token. Costing this
+      // visitor a default-locale page is acceptable; silently dropping their
+      // error reports is not.
+      'Yandex Search in-app browser',
+      'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/106.0.0.0 Mobile Safari/537.36 YandexSearch/1.0',
+    ],
+  ])('keeps a real %s user reporting', async (_label, userAgent) => {
+    setUserAgent(userAgent);
     expect((await initOptions()).enabled).toBe(true);
   });
 });

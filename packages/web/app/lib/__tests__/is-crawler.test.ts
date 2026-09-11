@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vite-plus/test';
 // are still a superset of it. Production code never takes this path — see the
 // header of `is-crawler.ts`.
 import { isBot } from 'next/dist/server/web/spec-extension/user-agent';
-import { CRAWLER_USER_AGENT_PATTERN, isCrawlerUserAgent } from '@/app/lib/is-crawler';
+import { CRAWLER_USER_AGENT_PATTERN, isAutomatedCrawlerUserAgent, isCrawlerUserAgent } from '@/app/lib/is-crawler';
 
 /**
  * Pull the alternatives out of the installed Next's `isBot` source rather than
@@ -88,36 +88,38 @@ describe('isCrawlerUserAgent covers the scrapers Next omits', () => {
   });
 });
 
+/** Real people, shared by both predicates: neither may ever classify these as a crawler. */
+const BROWSER_UAS: [string, string][] = [
+  [
+    'Chrome on Windows',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+  ],
+  ['Firefox on Linux', 'Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0'],
+  [
+    'Safari on iOS',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1',
+  ],
+  [
+    'Edge on Windows',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.2739.42',
+  ],
+  [
+    'Samsung Internet',
+    'Mozilla/5.0 (Linux; Android 14; SAMSUNG SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36',
+  ],
+  [
+    'Yandex Browser desktop',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 YaBrowser/23.9.1.962 Yowser/2.5 Safari/537.36',
+  ],
+  [
+    'Yandex Browser Android',
+    'Mozilla/5.0 (Linux; arm_64; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 YaBrowser/22.11.3.104.00 SA/3 Mobile Safari/537.36',
+  ],
+];
+
 describe('isCrawlerUserAgent leaves real browsers alone', () => {
   // A false positive costs a real visitor their sticky locale, so these are the
   // cases that must never regress.
-  const BROWSER_UAS: [string, string][] = [
-    [
-      'Chrome on Windows',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-    ],
-    ['Firefox on Linux', 'Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0'],
-    [
-      'Safari on iOS',
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1',
-    ],
-    [
-      'Edge on Windows',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.2739.42',
-    ],
-    [
-      'Samsung Internet',
-      'Mozilla/5.0 (Linux; Android 14; SAMSUNG SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36',
-    ],
-    [
-      'Yandex Browser desktop',
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 YaBrowser/23.9.1.962 Yowser/2.5 Safari/537.36',
-    ],
-    [
-      'Yandex Browser Android',
-      'Mozilla/5.0 (Linux; arm_64; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 YaBrowser/22.11.3.104.00 SA/3 Mobile Safari/537.36',
-    ],
-  ];
 
   it.each(BROWSER_UAS)('does not classify %s as a crawler', (_label, userAgentHeader) => {
     expect(isCrawlerUserAgent(userAgentHeader)).toBe(false);
@@ -133,6 +135,41 @@ describe('isCrawlerUserAgent leaves real browsers alone', () => {
       'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/106.0.0.0 Mobile Safari/537.36 YandexSearch/1.0';
     expect(isBot(yandexSearchInAppUa)).toBe(true);
     expect(isCrawlerUserAgent(yandexSearchInAppUa)).toBe(true);
+  });
+});
+
+describe('isAutomatedCrawlerUserAgent', () => {
+  it('drops the one false positive isCrawlerUserAgent knowingly carries', () => {
+    // Both predicates exist because the cost of a false positive differs. The
+    // locale gates can afford one (the visitor gets the URL they asked for);
+    // telemetry cannot (we lose a real session's errors and never know).
+    const yandexSearchInAppUa =
+      'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/106.0.0.0 Mobile Safari/537.36 YandexSearch/1.0';
+    expect(isCrawlerUserAgent(yandexSearchInAppUa)).toBe(true);
+    expect(isAutomatedCrawlerUserAgent(yandexSearchInAppUa)).toBe(false);
+  });
+
+  it.each([
+    ['YandexBot', 'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)'],
+    [
+      'Applebot',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)',
+    ],
+    [
+      'Googlebot',
+      'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.8010.36 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    ],
+  ])('still catches %s', (_label, userAgentHeader) => {
+    expect(isAutomatedCrawlerUserAgent(userAgentHeader)).toBe(true);
+  });
+
+  it.each(BROWSER_UAS)('does not classify %s as a crawler', (_label, userAgentHeader) => {
+    expect(isAutomatedCrawlerUserAgent(userAgentHeader)).toBe(false);
+  });
+
+  it('returns false for a missing header', () => {
+    expect(isAutomatedCrawlerUserAgent(null)).toBe(false);
+    expect(isAutomatedCrawlerUserAgent(undefined)).toBe(false);
   });
 });
 
