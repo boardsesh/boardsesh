@@ -215,7 +215,7 @@ function FilterChipRowComponent({
   const { brandColors, colorScheme } = useTheme();
   const chipColors = filterChipBrandColors(brandColors);
   // Built once per render (and only when Sort is actually pinned), reused for the
-  // resting label + all 7 menu items.
+  // resting label + every menu item.
   const sortLabelFor = pinnedChips.includes('sort') ? buildSortLabel(t) : null;
 
   // Angle rides as the first chip: it re-grades the whole list, so it belongs with

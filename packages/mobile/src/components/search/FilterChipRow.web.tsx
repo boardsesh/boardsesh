@@ -114,7 +114,7 @@ function FilterChipRowComponent({
       ? t('mobile.search.chips.filtersWithCount', { count: activeFilterCount })
       : t('mobile.filter.title');
   // Built once per render (and only when Sort is actually pinned), reused for the
-  // resting label + all 7 menu items.
+  // resting label + every menu item.
   const sortLabelFor = pinnedChips.includes('sort') ? buildSortLabel(t) : null;
 
   return (

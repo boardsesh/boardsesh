@@ -313,6 +313,7 @@ export function ClimbFilterSheet({
       ascents: t('mobile.filter.sort.ascents'),
       quality: t('mobile.filter.sort.quality'),
       difficulty: t('mobile.filter.sort.difficulty'),
+      userGrade: t('mobile.filter.sort.userGrade'),
       name: t('mobile.filter.sort.name'),
       popular: t('mobile.filter.sort.popular'),
       creation: t('mobile.filter.sort.creation'),

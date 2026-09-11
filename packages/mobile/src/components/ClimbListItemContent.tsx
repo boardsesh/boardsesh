@@ -50,6 +50,9 @@ export type ClimbListItemClimb = {
   is_no_match?: boolean | null;
   benchmark_difficulty?: string | null;
   characteristics?: string[] | null;
+  /** board_climb_stats.difficulty_average − display_difficulty, for the
+   *  "stiff/soft" grade-discrepancy badge. See resolveGradeErrorBadge. */
+  difficulty_error?: string | number | null;
   // Boardsesh grade (data-science difficulty + confidence), carried on every climb
   // from PR #3554. Optional + permissive so both the web-schema `Climb` and the
   // `@boardsesh/queue` `Climb` satisfy this shape; `resolveGrade` renders the
@@ -387,6 +390,8 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             benchmarkDifficulty={climb.benchmark_difficulty}
             characteristics={climb.characteristics}
             isNoMatch={climb.is_no_match}
+            difficultyError={climb.difficulty_error}
+            ascensionistCount={climb.ascensionist_count}
           />
           {climb.is_hidden ? <HiddenChip /> : null}
         </View>

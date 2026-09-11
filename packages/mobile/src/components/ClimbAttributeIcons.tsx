@@ -10,6 +10,7 @@ import {
   isNoKickboard,
   isNoMatch,
 } from '@boardsesh/shared-schema';
+import { resolveGradeErrorBadge } from '@boardsesh/logbook';
 import { Icon } from './Icon';
 import { useTheme } from '../providers/theme-provider';
 
@@ -26,6 +27,12 @@ type ClimbAttributeIconsProps = {
    * (e.g. session-tick rows). Ignored when `characteristics` is provided.
    */
   isNoMatch?: boolean | null;
+  /** board_climb_stats.difficulty_average − display_difficulty, for the
+   *  "stiff/soft" grade-discrepancy badge. See resolveGradeErrorBadge. */
+  difficultyError?: string | number | null;
+  /** Ascent count backing `difficultyError` — gates the badge off for climbs
+   *  with too few grade opinions to trust the average. */
+  ascensionistCount?: number | null;
   /** Glyph size; defaults to 14 to sit beside body-sized climb names. */
   size?: number;
 };
@@ -66,6 +73,22 @@ function extraCharacteristicLabels(characteristics: string[] | null | undefined,
 }
 
 /**
+ * The "stiff/soft" grade-discrepancy badge label, or null when the crowd
+ * average doesn't notably disagree with the display grade (or there aren't
+ * enough ascents to trust it yet). Web parity: resolveGradeErrorLabel in
+ * packages/web/app/lib/climb-method.ts — same shared resolveGradeErrorBadge.
+ */
+function gradeErrorLabel(
+  difficultyError: string | number | null | undefined,
+  ascensionistCount: number | null | undefined,
+  t: TFunction<'climbs'>,
+): string | null {
+  const badge = resolveGradeErrorBadge(difficultyError, ascensionistCount);
+  if (!badge) return null;
+  return badge.direction === 'stiff' ? t('mobile.climbRow.gradeError.stiff') : t('mobile.climbRow.gradeError.soft');
+}
+
+/**
  * Grey glyph cluster for a climb's intrinsic attributes, rendered inline after a
  * climb name (web parity: `packages/web/.../climb-card/climb-icons.tsx`).
  * Order matches web — © benchmark/classic, then ⊘ no-match. Monochrome so it
@@ -76,6 +99,8 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
   benchmarkDifficulty,
   characteristics,
   isNoMatch: isNoMatchFallback,
+  difficultyError,
+  ascensionistCount,
   size = 14,
 }: ClimbAttributeIconsProps) {
   const { t } = useTranslation('climbs');
@@ -88,6 +113,8 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
   const isNoMatchClimb = characteristics != null ? isNoMatch(characteristics) : (isNoMatchFallback ?? false);
   const method = methodLabel(characteristics, t);
   const extraLabels = extraCharacteristicLabels(characteristics, t);
+  const gradeError = gradeErrorLabel(difficultyError, ascensionistCount, t);
+  if (gradeError) extraLabels.push(gradeError);
 
   if (!isBenchmark && !isNoMatchClimb && !method && extraLabels.length === 0) return null;
 
