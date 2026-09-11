@@ -310,7 +310,6 @@
       "endSessionFailedLeft": "No se pudo terminar la sesión: has salido de ella."
     },
     "restTimer": {
-      "title": "Temporizador de descanso",
       "armLabel": "Temporizador de descanso",
       "armDescription": "Cronometra tu descanso tras cada encadene y pasa al siguiente bloque cuando se acabe.",
       "waitingForTick": "Registra un bloque para empezar",
@@ -344,7 +343,6 @@
       "clockCaptionPaused": "En pausa",
       "clockCaptionOver": "Te pasaste del descanso",
       "lengthOffFootnote": "Cuenta hacia arriba desde tu último bloque. Nada se mueve solo.",
-      "whenUpLabel": "Cuando se acabe tu descanso",
       "autoAdvanceFootnote": "Solo con Boardsesh abierto.",
       "autoAdvanceNeedsLength": "Elige una duración de descanso para mover la cola automáticamente.",
       "lengthPillAria": "Duración del descanso, {{value}}",

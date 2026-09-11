@@ -129,7 +129,7 @@ describe('RestTimerArmRow', () => {
     expect(getRestTimerState().armed).toBe(false);
   });
 
-  it('reveals the length + auto-advance controls and the live clock only once armed', () => {
+  it('reveals the length + auto-advance controls only once armed', () => {
     const { container, queryByTestId } = render(<RestTimerArmRow />);
     expect(queryByTestId('length-control')).toBeNull();
     expect(queryByTestId('auto-advance-row')).toBeNull();
@@ -138,7 +138,14 @@ describe('RestTimerArmRow', () => {
 
     expect(queryByTestId('length-control')).not.toBeNull();
     expect(queryByTestId('auto-advance-row')).not.toBeNull();
-    expect(queryByTestId('arm-row-clock')).not.toBeNull();
+  });
+
+  it('never puts a running clock above its own on/off switch', () => {
+    // The count belongs to the pill floating over every tab. A second copy
+    // sitting on top of the switch that turns it on competed with it.
+    armRestTimer('afterTick', NOW_MS, 'session-1');
+    const { queryByTestId } = render(<RestTimerArmRow />);
+    expect(queryByTestId('arm-row-clock')).toBeNull();
   });
 
   it('drops the sheet gutter on the length control, which already sits in a padded card', () => {

@@ -310,7 +310,6 @@
       "endSessionFailedLeft": "Die Session konnte nicht beendet werden — du hast sie stattdessen verlassen."
     },
     "restTimer": {
-      "title": "Pausen-Timer",
       "armLabel": "Pausen-Timer",
       "armDescription": "Stoppt deine Pause nach jeder Begehung und schaltet zum nächsten Boulder, wenn sie um ist.",
       "waitingForTick": "Trag eine Begehung ein",
@@ -344,7 +343,6 @@
       "clockCaptionPaused": "Angehalten",
       "clockCaptionOver": "Pause überzogen",
       "lengthOffFootnote": "Zählt ab deinem letzten Boulder hoch. Von allein passiert nichts.",
-      "whenUpLabel": "Wenn deine Pause um ist",
       "autoAdvanceFootnote": "Nur solange Boardsesh offen ist.",
       "autoAdvanceNeedsLength": "Wähl eine Pausenlänge, damit die Warteschlange automatisch weiterschaltet.",
       "lengthPillAria": "Länge der Pause, {{value}}",

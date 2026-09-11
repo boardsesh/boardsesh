@@ -310,7 +310,6 @@
       "endSessionFailedLeft": "Impossible de terminer la session — tu l'as quittée."
     },
     "restTimer": {
-      "title": "Minuteur de repos",
       "armLabel": "Minuteur de repos",
       "armDescription": "Chronomètre ton repos après chaque croix et passe au bloc suivant quand il est écoulé.",
       "waitingForTick": "Enregistre un bloc pour démarrer",
@@ -344,7 +343,6 @@
       "clockCaptionPaused": "En pause",
       "clockCaptionOver": "Repos dépassé",
       "lengthOffFootnote": "Compte depuis ton dernier bloc. Rien ne bouge tout seul.",
-      "whenUpLabel": "Quand ton repos est écoulé",
       "autoAdvanceFootnote": "Seulement avec Boardsesh ouvert.",
       "autoAdvanceNeedsLength": "Choisis une durée de repos pour faire avancer la file automatiquement.",
       "lengthPillAria": "Durée du repos, {{value}}",
