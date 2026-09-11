@@ -347,8 +347,8 @@
       "whenUpLabel": "Wenn deine Pause um ist",
       "autoAdvanceFootnote": "Nur solange Boardsesh offen ist.",
       "autoAdvanceNeedsLength": "Wähl eine Pausenlänge, damit die Warteschlange automatisch weiterschaltet.",
-      "setLengthAria": "Pause auf {{time}} setzen",
-      "offAria": "Keine Pausenlänge – zählt stattdessen hoch"
+      "lengthPillAria": "Länge der Pause, {{value}}",
+      "lengthPillHint": "Fügt 30 Sekunden hinzu. Lang drücken, um jede Pausenlänge zu wählen."
     },
     "queueSheet": {
       "emptyQueue": "Deine Warteschlange ist leer",
