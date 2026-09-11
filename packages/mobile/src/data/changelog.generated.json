@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-11T09:29:20.897Z",
+  "generatedAt": "2026-09-11T23:22:25.946Z",
   "entries": [
+    {
+      "prNumber": 5406,
+      "category": "fixed",
+      "title": "Every setter for your board now shows up in the setter filter, whatever angle you're on",
+      "mergedAt": "2026-09-11T23:20:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5406"
+    },
     {
       "prNumber": 5386,
       "category": "new",

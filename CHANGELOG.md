@@ -15,6 +15,10 @@ manual changes). See docs/mobile-ota-updates.md.
 - Route playback now reads in seconds a frame instead of `1×` / `1.5×`, so a pace means the same thing on every route. ([#5387](https://github.com/boardsesh/boardsesh/pull/5387))
   Slow a route right down to a minute a frame for endurance laps — in the play drawer and the creator alike.
 
+### Fixed
+
+- Every setter for your board now shows up in the setter filter, whatever angle you're on ([#5406](https://github.com/boardsesh/boardsesh/pull/5406))
+
 ## 2026-09-09
 
 ### Fixed
