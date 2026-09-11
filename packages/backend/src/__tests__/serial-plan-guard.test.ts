@@ -139,9 +139,11 @@ describe('withSerialPlan', () => {
 
 describe('getSetterStats guard (#4105)', () => {
   it('issues the guard before the board_climbs aggregate', async () => {
-    // This query hash-joins board_climbs x board_climb_stats over a whole layout
-    // and groups by setter. It fires from the same search drawer as searchClimbs,
-    // so it kept exhausting /dev/shm after #3856 guarded the search paths.
+    // This query scans board_climbs over a whole layout and groups by setter.
+    // It fires from the same search drawer as searchClimbs, so it kept exhausting
+    // /dev/shm after #3856 guarded the search paths. It no longer joins
+    // board_climb_stats (#5404), but a seq scan feeding a HashAggregate is still a
+    // shape the planner parallelizes, so the guard stays.
     const { fakeDb, callOrder, executedStatements, queries } = createFakeDb();
 
     await getSetterStats(fakeDb as unknown as DbInstance, {

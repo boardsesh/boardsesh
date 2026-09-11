@@ -191,7 +191,7 @@ registry.registerPath({
   path: '/api/v1/{board_name}/{layout_id}/{size_id}/{set_ids}/{angle}/setters',
   summary: 'Get setters for a board configuration',
   description:
-    'Returns a list of climb setters for the specified board configuration, ordered by number of climbs set.',
+    'Returns a list of climb setters for the specified board configuration, ordered by number of climbs set. The result is the same at every angle.',
   tags: ['Climbs'],
   request: {
     params: z.object({
@@ -199,7 +199,7 @@ registry.registerPath({
       layout_id: z.string().describe('Layout ID'),
       size_id: z.string().describe('Size ID'),
       set_ids: z.string().describe('Comma-separated set IDs'),
-      angle: z.string().describe('Board angle in degrees'),
+      angle: z.string().describe('Board angle in degrees. Accepted and ignored: setters are not angle-scoped.'),
     }),
   },
   responses: {
