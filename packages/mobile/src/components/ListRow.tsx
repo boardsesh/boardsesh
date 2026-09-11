@@ -1,5 +1,12 @@
 import { type ReactNode } from 'react';
-import { View, StyleSheet, type ViewStyle } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  type ViewStyle,
+  type AccessibilityRole,
+  type AccessibilityState,
+  type AccessibilityValue,
+} from 'react-native';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { PressableSurface } from './PressableSurface';
@@ -20,6 +27,12 @@ type ListRowProps = {
   style?: ViewStyle;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  /** Defaults to 'button'. A row acting as one choice among several is 'radio'. */
+  accessibilityRole?: AccessibilityRole;
+  /** A checkmark is invisible to VoiceOver / TalkBack — `selected` is what carries it. */
+  accessibilityState?: AccessibilityState;
+  /** Position among siblings, e.g. "2 of 3" on a radio row. */
+  accessibilityValue?: AccessibilityValue;
 };
 
 export function ListRow({
@@ -35,6 +48,9 @@ export function ListRow({
   style,
   accessibilityLabel,
   accessibilityHint,
+  accessibilityRole = 'button',
+  accessibilityState,
+  accessibilityValue,
 }: ListRowProps) {
   const { systemColors } = useTheme();
 
@@ -81,9 +97,11 @@ export function ListRow({
         onPress={handlePress}
         feedback="opacity"
         opacityTo={0.7}
-        accessibilityRole="button"
+        accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibilityLabel ?? title}
         accessibilityHint={accessibilityHint}
+        accessibilityState={accessibilityState}
+        accessibilityValue={accessibilityValue}
         style={[styles.container, style]}
       >
         {content}

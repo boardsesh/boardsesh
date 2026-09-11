@@ -14,6 +14,13 @@ export const users = pgTable('users', {
   // Test, demo and system accounts. Excluded from every ranked surface.
   // A regex over the email domain inside a ranking query is not a control —
   // `testanother` carries 1,183 ticks and would otherwise rank #101 all-time.
+  //
+  // NOT BACKFILLED. Every account ships `false`. Flagging is a manual, named
+  // decision per account: `testingkerry@gmail.com` has 20 real ticks and
+  // `rick@pentester.com` is a real person, so any automated predicate over the
+  // address erases climbers it should leave alone. The 18 unambiguous accounts
+  // are listed on the PR and get flagged in Phase 1, against fresh data, when a
+  // ranked surface first makes the exclusion observable.
   isInternal: boolean('is_internal').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
