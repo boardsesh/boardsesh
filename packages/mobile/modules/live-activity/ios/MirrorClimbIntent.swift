@@ -44,10 +44,11 @@ struct MirrorClimbIntent: LiveActivityIntent {
             return
         }
 
-        // Wake the main app on every exit path, as this intent has always done:
-        // even a refused tap usually means the shared snapshot drifted, and the
-        // handler resyncs. Registered after the diagnostics `defer` so it runs
-        // first and the recorded stage still reflects the post.
+        // Wake the main app on every exit path, where the pre-PR code posted
+        // only after a 200. A refused tap usually means the shared snapshot
+        // drifted, and the handler resyncs; the retryable path needs the wake-up
+        // to hand its parked request over. Registered after the diagnostics
+        // `defer` so it runs first and the recorded stage still reflects it.
         defer {
             postQueueNavigateDarwinNotification()
             #if !WIDGET_EXTENSION
@@ -117,10 +118,18 @@ struct MirrorClimbIntent: LiveActivityIntent {
         }
         #if !WIDGET_EXTENSION
         diagnosticRun.mark(.activityKitUpdated)
-        diagnosticRun.mark(.bleStarted)
-        let succeeded = await LiveActivityBleBridge.writeBoardForIntent(items: updatedItems, currentIndex: index, mirrorReceipt: receipt)
-        diagnosticRun.mark(succeeded ? .bleFinishedSuccess : .bleFinishedFailure)
-        if !succeeded { completionClass = .bleFailure }
+        // Only the current slot is on the wall, so the board is rewritten only
+        // when the mirrored item IS that slot. Matching the slot by uuid means
+        // `index` no longer has to hold the receipt's item, and writing it
+        // regardless would relight whatever climb the queue moved on to. The
+        // freshness gate inside `writeBoardForIntent` validates the live current
+        // slot against this same receipt, so the two now always name one item.
+        if item.uuid == receipt.queueItemUuid {
+            diagnosticRun.mark(.bleStarted)
+            let succeeded = await LiveActivityBleBridge.writeBoardForIntent(items: updatedItems, currentIndex: index, mirrorReceipt: receipt)
+            diagnosticRun.mark(succeeded ? .bleFinishedSuccess : .bleFinishedFailure)
+            if !succeeded { completionClass = .bleFailure }
+        }
         #endif
     }
 

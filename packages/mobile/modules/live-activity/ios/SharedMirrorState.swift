@@ -21,9 +21,27 @@ struct SharedMirrorConfirmation: Codable, Equatable, Sendable {
 /// A tap whose server request never got an authoritative answer, kept so the
 /// main app can replay it. Carries no sequence: nothing was committed yet.
 struct SharedMirrorRequest: Codable, Equatable, Sendable {
+    /// How long a parked tap stays replayable. Long enough to survive a cold
+    /// launch and a Bluetooth reconnect, short enough that a tap the climber
+    /// has forgotten about cannot flip a climb under them later in the session.
+    static let timeToLive: TimeInterval = 10 * 60
+
     let sessionId: String
     let queueItemUuid: String
     let mirrored: Bool
+    let createdAt: Date
+
+    init(sessionId: String, queueItemUuid: String, mirrored: Bool, createdAt: Date = Date()) {
+        self.sessionId = sessionId
+        self.queueItemUuid = queueItemUuid
+        self.mirrored = mirrored
+        self.createdAt = createdAt
+    }
+
+    func isFresh(at now: Date = Date()) -> Bool {
+        let age = now.timeIntervalSince(createdAt)
+        return age >= -60 && age <= Self.timeToLive
+    }
 
     var eventBody: [String: Any] {
         ["kind": "request", "sessionId": sessionId, "queueItemUuid": queueItemUuid, "mirrored": mirrored]
@@ -41,10 +59,17 @@ enum SharedMirrorState {
         defaults.set(bytes, forKey: SharedConstants.pendingMirrorRequestKey)
     }
 
-    static func pendingRequest(in defaults: UserDefaults) -> SharedMirrorRequest? {
+    /// The parked tap, if one is still worth replaying. An expired or
+    /// wrong-session record is dropped on read, so nothing accumulates.
+    static func pendingRequest(in defaults: UserDefaults, at now: Date = Date()) -> SharedMirrorRequest? {
         guard let bytes = defaults.data(forKey: SharedConstants.pendingMirrorRequestKey),
               let request = try? JSONDecoder().decode(SharedMirrorRequest.self, from: bytes),
-              request.sessionId == defaults.string(forKey: SharedConstants.sessionIdKey) else { return nil }
+              request.sessionId == defaults.string(forKey: SharedConstants.sessionIdKey)
+        else { return nil }
+        guard request.isFresh(at: now) else {
+            clearRequest(in: defaults)
+            return nil
+        }
         return request
     }
 

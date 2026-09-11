@@ -111,6 +111,11 @@ final class LiveActivityWidgetTests: XCTestCase {
         SharedMirrorState.saveRequest(request, in: defaults)
         XCTAssertEqual(SharedMirrorState.pendingRequest(in: defaults), request)
 
+        // Survives repeated handovers: only an explicit acknowledgement retires it,
+        // so a replay that lands before the board link is back does not lose the tap.
+        XCTAssertNotNil(SharedMirrorState.pendingRequest(in: defaults))
+        XCTAssertNotNil(SharedMirrorState.pendingRequest(in: defaults))
+
         // Scoped to the session it was tapped in.
         defaults.set("other", forKey: SharedConstants.sessionIdKey)
         XCTAssertNil(SharedMirrorState.pendingRequest(in: defaults))
@@ -119,6 +124,31 @@ final class LiveActivityWidgetTests: XCTestCase {
 
         SharedMirrorState.clearRequest(in: defaults)
         XCTAssertNil(SharedMirrorState.pendingRequest(in: defaults))
+    }
+
+    func testParkedMirrorRequestExpiresAndIsDroppedOnRead() {
+        prepareMirror()
+        let stale = Date().addingTimeInterval(-(SharedMirrorRequest.timeToLive + 60))
+        SharedMirrorState.saveRequest(
+            SharedMirrorRequest(sessionId: "session", queueItemUuid: "queue-1", mirrored: true, createdAt: stale),
+            in: defaults
+        )
+        XCTAssertNil(SharedMirrorState.pendingRequest(in: defaults))
+        // Dropped from storage, not just filtered on read.
+        XCTAssertNil(defaults.data(forKey: SharedConstants.pendingMirrorRequestKey))
+    }
+
+    func testMirroredSlotThatIsNoLongerCurrentDoesNotPassTheBoardWriteGate() {
+        prepareMirror()
+        SharedQueueState.save(
+            items: [makeQueueItem(uuid: "queue-1"), makeQueueItem(uuid: "queue-2", climbUuid: "climb-2")],
+            currentIndex: 1,
+            to: defaults
+        )
+        let receipt = SharedMirrorConfirmation(sessionId: "session", queueItemUuid: "queue-1", mirrored: true, sequence: 9, stateHash: "hash", stateHashOrdered: nil)
+        XCTAssertNotNil(SharedMirrorState.apply(receipt, in: defaults))
+        // queue-2 is on the wall, so the mirrored slot must not be written there.
+        XCTAssertFalse(SharedMirrorState.isCurrent(receipt, in: defaults))
     }
 
     func testBufferedSocketSnapshotCannotUndoAcceptedMirror() {

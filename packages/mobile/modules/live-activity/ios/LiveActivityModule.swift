@@ -108,6 +108,14 @@ public class LiveActivityModule: Module {
             guard let defaults = SharedConstants.sharedDefaults else { return }
             SharedMirrorState.acknowledge(sessionId: sessionId, sequence: sequence, in: defaults)
         }
+        /// JS acted on a parked tap — it either replayed it or decided the slot
+        /// had moved on. Anything it merely could not act on yet (no board link,
+        /// no session) leaves the record alone for the next handover.
+        AsyncFunction("acknowledgeMirrorRequest") { (sessionId: String) in
+            guard let defaults = SharedConstants.sharedDefaults,
+                  SharedMirrorState.pendingRequest(in: defaults)?.sessionId == sessionId else { return }
+            SharedMirrorState.clearRequest(in: defaults)
+        }
 
         AsyncFunction("isAvailable") { () -> [String: Any] in
             if #available(iOS 17.0, *) {
@@ -353,19 +361,15 @@ public class LiveActivityModule: Module {
         // the same mutation the Android notification button uses, then the
         // confirmed receipt comes back down the normal path.
         //
-        // Only handed over once a listener is attached, so it is cleared at the
-        // moment it will actually be delivered rather than buffered. Mirroring
-        // is an absolute write, so a request left parked would re-fire on every
-        // foreground and could undo a later in-app flip; `OnStartObserving`
-        // calls back into here, so nothing is lost by waiting.
-        if hasAttachedListener(), let request = SharedMirrorState.pendingRequest(in: defaults) {
-            SharedMirrorState.clearRequest(in: defaults)
+        // Kept until JS says it acted on it, never cleared on emit: the first
+        // replay after a lock-screen outage can land before the socket or the
+        // board link is back, and dropping it there would lose the tap for
+        // good. Re-emission is safe — mirroring is an absolute write and the
+        // queue provider is single-flight — and the record's own TTL, not this
+        // handover, is what stops a forgotten tap flipping a climb later.
+        if let request = SharedMirrorState.pendingRequest(in: defaults) {
             emitOrBuffer(name: "queueMirror", body: request.eventBody)
         }
-    }
-
-    private func hasAttachedListener() -> Bool {
-        bufferQueue.sync { hasListener }
     }
 
     private func handleQueueNavigateFromWidget() {

@@ -121,4 +121,14 @@ export async function acknowledgeWidgetMirror(sessionId: string, sequence: numbe
   await liveActivityNative?.acknowledgeMirror?.(sessionId, sequence);
 }
 
+/**
+ * Retires a parked tap that never reached the server. Call it only once this
+ * side has acted — replayed it, or judged the slot moved on. Leaving it unacked
+ * is what keeps a tap alive across an outage or a cold launch, so never
+ * acknowledge one that was merely not actionable yet.
+ */
+export async function acknowledgeWidgetMirrorRequest(sessionId: string): Promise<void> {
+  await liveActivityNative?.acknowledgeMirrorRequest?.(sessionId);
+}
+
 export type { WidgetMirrorEvent };
