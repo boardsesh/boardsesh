@@ -100,7 +100,11 @@
       "footlessKickboard": "Sin pies + KB",
       "noKickboard": "Sin KB"
     },
-    "anyFeet": "Pies libres"
+    "anyFeet": "Pies libres",
+    "gradeError": {
+      "stiff": "Duro",
+      "soft": "Suave"
+    }
   },
   "boardseshGrade": {
     "title": "Grado Boardsesh",
@@ -549,6 +553,10 @@
         "footless": "Sin pies",
         "footlessKickboard": "Sin pies + KB",
         "noKickboard": "Sin KB"
+      },
+      "gradeError": {
+        "stiff": "Duro",
+        "soft": "Suave"
       }
     },
     "climbRules": {

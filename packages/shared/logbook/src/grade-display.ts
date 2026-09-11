@@ -127,3 +127,48 @@ export function consensusDeltaDirection(
   if (loggedDifficulty === consensusDifficulty) return null;
   return loggedDifficulty > consensusDifficulty ? 'up' : 'down';
 }
+
+/**
+ * Minimum ascents before a climb's crowd-average grade is trusted enough to
+ * carry a "stiff/soft" badge — a couple of outlier votes on a fresh climb
+ * shouldn't flicker a grade-discrepancy badge on.
+ */
+export const MIN_ASCENTS_FOR_GRADE_ERROR_BADGE = 5;
+
+/**
+ * Minimum |difficulty_error| (difficulty-id units, the same ordinal scale
+ * minGrade/maxGrade use) before the gap reads as a real discrepancy rather
+ * than noise.
+ */
+export const GRADE_ERROR_BADGE_THRESHOLD = 0.5;
+
+export type GradeErrorBadge = { direction: 'stiff' | 'soft'; amount: number };
+
+/**
+ * Whether a climb's card should show a "stiff/soft" badge, and which way,
+ * from `difficulty_error` — `board_climb_stats.difficulty_average −
+ * display_difficulty`, computed server-side and already carried on every
+ * climb row (search results, GraphQL `Climb`, the offline SQLite mapping).
+ * Positive means the crowd's actual grade opinions run harder than the
+ * displayed grade ("stiff"); negative means they run easier ("soft") — the
+ * same higher-id-is-harder convention as `consensusDeltaDirection` above,
+ * just at the climb level (crowd average vs. display) instead of the ascent
+ * level (one climber's log vs. consensus).
+ *
+ * Pure and platform-agnostic on purpose: works for any board, including
+ * MoonBoard, where `difficulty_error` is populated the same way but the
+ * Boardsesh grade model (`board_climb_grades`) is deliberately unavailable.
+ *
+ * Accepts `difficulty_error` as the string the wire format carries it as, or
+ * a number for callers that already parsed it.
+ */
+export function resolveGradeErrorBadge(
+  difficultyError: string | number | null | undefined,
+  ascensionistCount: number | null | undefined,
+): GradeErrorBadge | null {
+  const parsed = typeof difficultyError === 'string' ? Number(difficultyError) : difficultyError;
+  if (parsed == null || !Number.isFinite(parsed)) return null;
+  if ((ascensionistCount ?? 0) < MIN_ASCENTS_FOR_GRADE_ERROR_BADGE) return null;
+  if (Math.abs(parsed) < GRADE_ERROR_BADGE_THRESHOLD) return null;
+  return { direction: parsed > 0 ? 'stiff' : 'soft', amount: Math.abs(parsed) };
+}

@@ -100,7 +100,11 @@
       "footlessKickboard": "Ohne Füße + KB",
       "noKickboard": "Ohne KB"
     },
-    "anyFeet": "Freie Füße"
+    "anyFeet": "Freie Füße",
+    "gradeError": {
+      "stiff": "Hart",
+      "soft": "Weich"
+    }
   },
   "boardseshGrade": {
     "title": "Boardsesh-Grad",
@@ -549,6 +553,10 @@
         "footless": "Ohne Füße",
         "footlessKickboard": "Ohne Füße + KB",
         "noKickboard": "Ohne KB"
+      },
+      "gradeError": {
+        "stiff": "Hart",
+        "soft": "Weich"
       }
     },
     "climbRules": {
