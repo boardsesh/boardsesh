@@ -313,7 +313,6 @@
       "title": "Minuteur de repos",
       "armLabel": "Minuteur de repos",
       "armDescription": "Chronomètre ton repos après chaque croix et passe au bloc suivant quand il est écoulé.",
-      "pillLabel": "Repos · {{target}}",
       "waitingForTick": "Enregistre un bloc pour démarrer",
       "targetLabel": "Repos",
       "targetAria": "Durée du repos",
@@ -337,7 +336,9 @@
       "queueEnded": "File vide",
       "queueEndedToast": "Il n'y a plus rien dans la file.",
       "openHint": "Ouvre les options du minuteur",
-      "runningAria": "Minuteur de repos, {{time}} depuis ton dernier bloc, objectif {{target}}",
+      "runningAria": "Minuteur de repos, {{time}} depuis ton dernier bloc",
+      "countdownAria": "Minuteur de repos, il reste {{time}}",
+      "overrunAria": "Minuteur de repos, {{time}} de dépassement",
       "noTickAria": "Minuteur de repos activé, objectif {{target}}, démarre quand tu enregistres un bloc",
       "pausedAria": "Minuteur de repos en pause à {{time}}"
     },

@@ -48,6 +48,18 @@ export function formatRestTimerTarget(targetSeconds: number): string {
   return formatRestTimerElapsed(totalSeconds);
 }
 
+/**
+ * The same `m:ss` clock, signed, for a countdown that is allowed to run past
+ * zero. `-0:12` reads as "twelve seconds over your rest" — which is exactly what
+ * a climber wants to know once the beat has gone, and why the countdown does not
+ * stop at zero.
+ */
+export function formatRestTimerSigned(seconds: number): string {
+  const whole = Math.trunc(seconds);
+  const label = formatRestTimerElapsed(Math.abs(whole));
+  return whole < 0 ? `-${label}` : label;
+}
+
 /** `m:ss`, widening to `h:mm:ss` only once an hour has passed. */
 export function formatRestTimerElapsed(elapsedSeconds: number): string {
   const totalSeconds = Math.max(0, Math.floor(elapsedSeconds));
