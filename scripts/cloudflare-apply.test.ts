@@ -722,11 +722,18 @@ describe('www cost-control rules (#4650)', () => {
     // Cloudflare's `contains` is CASE-SENSITIVE. Without lower(), the rule installs
     // cleanly and matches nothing — the worst kind of failure, because it looks done.
     for (const rule of desired.wafRules) {
-      const comparisons = rule.expression.split(' or ');
+      const comparisons = [...rule.expression.matchAll(/lower\(http\.user_agent\) contains "([^"]*)"/g)];
       expect(comparisons.length).toBeGreaterThan(0);
-      for (const comparison of comparisons) {
-        expect(comparison).toMatch(/^lower\(http\.user_agent\) contains "[^A-Z]*"$/);
+      for (const [, token] of comparisons) {
+        expect(token).toBe(token.toLowerCase());
       }
+      // Every read of the header must be a lowered one. Counting occurrences
+      // rather than splitting on ' or ' is what makes this hold when an
+      // expression is wrapped — the allow rule gates its alternation on
+      // http.request.method, and a split would leave the first and last
+      // fragments carrying the wrapper.
+      const headerReads = rule.expression.split('http.user_agent').length - 1;
+      expect(headerReads).toBe(comparisons.length);
     }
   });
 
@@ -742,6 +749,11 @@ describe('www cost-control rules (#4650)', () => {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
       'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
       'Twitterbot/1.0',
+      // Real people on Yandex's browser and in-app search. They share the
+      // `yandex` substring with the crawler and are the reason
+      // COST_BLOCKED_CRAWLER_TOKENS spells out the two bot tokens in full.
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 YaBrowser/23.9.1.962 Yowser/2.5 Safari/537.36',
+      'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/106.0.0.0 Mobile Safari/537.36 YandexSearch/1.0',
     ];
     for (const userAgent of allowedUserAgents) {
       for (const token of CRAWLER_BLOCK_TOKENS) {
@@ -763,6 +775,8 @@ describe('www cost-control rules (#4650)', () => {
       'Mozilla/5.0 (compatible; MJ12bot/v1.4.8; http://mj12bot.com/)',
       'Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot;)',
       'Screaming Frog SEO Spider/21.4',
+      'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
+      'Mozilla/5.0 (compatible; YandexRenderResourcesBot/1.0; +http://yandex.com/bots)',
     ];
     for (const userAgent of blockedUserAgents) {
       const matched = CRAWLER_BLOCK_TOKENS.some((token) => userAgent.toLowerCase().includes(token));
@@ -775,6 +789,19 @@ describe('www cost-control rules (#4650)', () => {
       for (const allowToken of CRAWLER_ALLOW_TOKENS) {
         expect(blockToken.includes(allowToken) || allowToken.includes(blockToken)).toBe(false);
       }
+    }
+  });
+
+  it('skips the ruleset only for GET, so a bot POST stays governable', () => {
+    // `skip` with `ruleset: current` takes an allow-listed agent past every
+    // later rule in the ruleset. Scoping it to GET keeps that protection for
+    // reads while leaving writes reachable — Applebot executes our JavaScript
+    // and was measured POSTing 190 of its 253 www requests to the Sentry
+    // tunnel on 2026-09-10.
+    expect(allowRule?.expression.startsWith('(http.request.method eq "GET" and (')).toBe(true);
+    expect(allowRule?.expression.endsWith('))')).toBe(true);
+    for (const token of CRAWLER_ALLOW_TOKENS) {
+      expect(allowRule?.expression).toContain(`lower(http.user_agent) contains "${token}"`);
     }
   });
 

@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { AI_CRAWLER_TOKENS } from '../../packages/web/app/lib/crawler-policy';
+import { BLOCKED_CRAWLER_TOKENS } from '../../packages/web/app/lib/crawler-policy';
 
 // Declarative desired-state for the Cloudflare-managed boardsesh.com zone. This
 // is plain typed data — no side effects, no API calls. scripts/cloudflare-apply.ts
@@ -497,7 +497,6 @@ export const CRAWLER_ALLOW_TOKENS = [
   'brave-search',
   'bravebot',
   'applebot',
-  'yandexbot',
   // Share-card unfurlers. Blocking these breaks link previews, not crawling.
   'twitterbot',
   'facebookexternalhit',
@@ -517,6 +516,10 @@ export const CRAWLER_ALLOW_TOKENS = [
  * `dotbot/` keeps its slash because the bare token is short enough to collide with
  * an unrelated UA; the rest are distinctive on their own.
  *
+ * Yandex is here rather than in the allow list: 2026-09-10 origin logs put it at
+ * 36% of www requests against 3.6% for real browsers, on the most expensive SSR
+ * path we have. See COST_BLOCKED_CRAWLER_TOKENS in crawler-policy.ts.
+ *
  * AI training/search crawlers are explicit too: September 7 origin logs showed
  * Claude-SearchBot on www and GPTBot bypassing Cloudflare via the Railway domain,
  * despite synthetic probes receiving 403. The shared list also drives robots.txt
@@ -527,7 +530,7 @@ export const CRAWLER_ALLOW_TOKENS = [
  *   it is low volume, and excluding it is a values call rather than a cost one.
  */
 export const CRAWLER_BLOCK_TOKENS = [
-  ...AI_CRAWLER_TOKENS,
+  ...BLOCKED_CRAWLER_TOKENS,
   'ahrefsbot',
   'ahrefssiteaudit',
   'semrushbot',
@@ -551,7 +554,29 @@ export function buildUserAgentExpression(tokens: readonly string[]): string {
   return tokens.map((token) => `lower(http.user_agent) contains "${token}"`).join(' or ');
 }
 
-export const CRAWLER_ALLOW_EXPRESSION = buildUserAgentExpression(CRAWLER_ALLOW_TOKENS);
+/**
+ * Scoped to GET on purpose.
+ *
+ * The allow rule's action is `skip` with `ruleset: 'current'`, so an agent that
+ * matches it walks past every later rule in the WAF custom ruleset. That is the
+ * intent for reads — a search engine must never be caught by a rule aimed at
+ * scrapers — but it also meant an allow-listed agent could never be constrained
+ * on a write, and no rule added after this one would apply to it.
+ *
+ * A crawler has no legitimate POST. Applebot has one: it executes our
+ * JavaScript, and a 2026-09-10 sample of boardsesh-web caught it sending 190 of
+ * its 253 requests as `POST /monitoring` (the Sentry tunnel from
+ * next.config.mjs). The origin-side fix for that ships in
+ * instrumentation-client.ts; this gate is what keeps the ruleset composable, so
+ * the next rule aimed at bot writes is actually reachable.
+ *
+ * HEAD is not included: crawlers that HEAD a URL before fetching it are doing a
+ * read, but nothing in this ruleset blocks them today, so widening the skip
+ * would buy nothing.
+ */
+export const CRAWLER_ALLOW_EXPRESSION = `(http.request.method eq "GET" and (${buildUserAgentExpression(
+  CRAWLER_ALLOW_TOKENS,
+)}))`;
 export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_TOKENS);
 
 /**

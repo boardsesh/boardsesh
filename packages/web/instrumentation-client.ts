@@ -3,6 +3,7 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from '@sentry/nextjs';
+import { isCrawlerUserAgent } from './app/lib/is-crawler';
 import { isProductionHost } from './app/lib/production-hosts';
 
 // Only enable Sentry on the production boardsesh.com hosts. Exact-host match
@@ -14,11 +15,29 @@ import { isProductionHost } from './app/lib/production-hosts';
 // analytics.ts's PostHog gate so the two production-checks can't drift apart.
 const isProductionDomain = typeof window !== 'undefined' && isProductionHost(window.location.hostname);
 
+// Crawlers that execute our JavaScript boot this SDK like any browser would, and
+// every event they generate is tunnelled back through `/monitoring` (tunnelRoute
+// in next.config.mjs), which is a POST to our own origin before it is a request
+// to Sentry.
+//
+// That is not hypothetical. A 5-minute sample of production boardsesh-web logs
+// on 2026-09-10 caught Applebot sending 190 of its 253 requests as
+// `POST /monitoring` — the single most-requested path on the service, ahead of
+// every climb page. Applebot alone was 50% of www traffic that window against
+// 3.6% for real browsers.
+//
+// Bot sessions have no user to be affected by an error and no session to replay,
+// so the events are worthless as well as expensive: they burn origin CPU, egress
+// and Sentry quota. `isCrawlerUserAgent` is the same superset the locale gates in
+// `middleware.ts` use, so a crawler is classified identically on both sides.
+const isCrawler = typeof navigator !== 'undefined' && isCrawlerUserAgent(navigator.userAgent);
+
 Sentry.init({
   dsn: 'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400',
 
-  // Only send errors when running on the production boardsesh.com hosts
-  enabled: isProductionDomain,
+  // Only send errors when running on the production boardsesh.com hosts, and
+  // never for a crawler executing the page (see isCrawler above).
+  enabled: isProductionDomain && !isCrawler,
 
   // Sentry only initializes here on a production host (see the gate above), so
   // tag events accordingly for the environment:production filter.

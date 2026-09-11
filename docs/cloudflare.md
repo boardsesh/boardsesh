@@ -335,22 +335,61 @@ back because GraphQL, WebSockets, and `/og` share that hostname.
 - **Crawler rules** — two rules in `http_request_firewall_custom`, in this order:
   1. `skip` (all remaining custom rules) for search engines and share-card
      unfurlers. Brave runs its **own** index rather than reselling Bing or
-     Google, so it is allowlisted explicitly.
+     Google, so it is allowlisted explicitly. **Scoped to `GET`.** `skip` with
+     `ruleset: current` walks an agent past every later rule in the ruleset,
+     which is what a search engine needs for reads and what nothing needs for a
+     write. Applebot executes our JavaScript and was measured on 2026-09-10
+     sending 190 of its 253 www requests as `POST /monitoring` (the Sentry
+     tunnel); the method gate is what keeps the ruleset composable so a rule
+     aimed at bot writes can still reach it.
   2. `block` for commercial SEO/backlink crawlers (Ahrefs, Semrush, DataForSEO,
      MJ12, DotBot, BLEXBot, Barkrowler, serpstat, Seznam, Zoominfo, Screaming
      Frog). Each was verified reaching our origin on 2026-08-24. They sell
      backlink data and send Boardsesh no traffic. The same rule also blocks
-     automated AI training and search crawlers, using the shared tokens in
-     `packages/web/app/lib/crawler-policy.ts`. Google, Bing, Yandex, Brave and
-     share-card unfurlers remain allowed. Human-triggered AI fetchers are not
-     added to this automated-crawler list.
+     automated AI training and search crawlers and **Yandex**, using the shared
+     tokens in `packages/web/app/lib/crawler-policy.ts`. Google, Bing, Apple,
+     Brave and share-card unfurlers remain allowed. Human-triggered AI fetchers
+     are not added to this automated-crawler list.
 
-  Web middleware rejects those AI agents before page rendering, including on
+  **Yandex moved from the allow list to the block list on 2026-09-11.** It was
+  added to the allow list four days earlier, in the AI-crawler commit, with no
+  stated reason. Production HTTP logs made the case against it: in a 5-minute
+  sample of `boardsesh-web` (2026-09-10 14:25 UTC, n=501) YandexBot was **36%**
+  of all requests against **3.6%** for real browsers, 171 of its 181 requests
+  were climb-view pages, and it averaged 510 ms per request against Applebot's
+  222 ms — the costliest crawler we carried, per page fetched. Boardsesh is an
+  English-language climbing site and Yandex returns no measurable traffic
+  against that. The rate limit could not reach it either: the Free plan caps the
+  period at 10 s and Yandex ran ~34 requests/min, nowhere near 60-per-10 s.
+
+  `COST_BLOCKED_CRAWLER_TOKENS` spells out `yandexbot` and
+  `yandexrenderresourcesbot` rather than a bare `yandex` on purpose. Yandex
+  Browser (`YaBrowser/…`) and Yandex's in-app search (`YandexSearch/…`) are real
+  people, and a substring match would block every one of them. Tests in
+  `scripts/cloudflare-apply.test.ts` and `packages/web/app/__tests__/middleware.test.ts`
+  pin both directions.
+
+  Web middleware rejects every blocked agent before page rendering, including on
   the direct Railway hostname. Robots.txt publishes the same opt-out plus
   `Google-Extended` (a robots-only token). Production logs on 2026-09-07 showed
   GPTBot using the Railway hostname and Claude-SearchBot reaching www despite
   synthetic Cloudflare probes returning 403; the managed AI block alone is
   insufficient. UA rules only catch agents that identify themselves.
+
+  **The other two hosts serve a robots.txt of their own now.** Until 2026-09-11
+  neither did, and Cloudflare's managed preamble carries no `Disallow`, so both
+  read as "crawl everything":
+  - `app.boardsesh.com` answered `/robots.txt` with the app shell, because
+    `_redirects` ends in an SPA catch-all and no real file existed to match
+    first. The file is `deploy/app-subdomain/robots.txt`, copied into the
+    published export by `production-deploy.yml`.
+  - `ws.boardsesh.com` had no route at all. It is served by
+    `packages/backend/src/handlers/robots.ts`.
+
+  Both matter because the browser app issues GraphQL against `ws`, so a crawler
+  rendering the SPA turns one page fetch into a backend query: a 3-minute sample
+  of `boardsesh-backend` on 2026-09-10 had Applebot issuing 173 of the 436
+  `/graphql` requests on the service.
 
   **Order is load-bearing and enforced by the tool.** `upsertCacheRule` rewrites
   our rules as one contiguous group in declared order, because a rule-by-rule

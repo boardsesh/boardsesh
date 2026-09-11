@@ -889,6 +889,10 @@ jobs:
           set -euo pipefail
           cp deploy/app-subdomain/_redirects   "$RUNNER_TEMP/app-standalone/_redirects"
           cp deploy/app-subdomain/_headers     "$RUNNER_TEMP/app-standalone/_headers"
+          # robots.txt must be a real file: _redirects' SPA catch-all would
+          # otherwise answer /robots.txt with index.html and crawlers would read
+          # no rules. See the file's own header.
+          cp deploy/app-subdomain/robots.txt   "$RUNNER_TEMP/app-standalone/robots.txt"
           # _routes.json scopes the Function below to the three asset prefixes,
           # so the shell and every SPA route stay pure static assets.
           cp deploy/app-subdomain/_routes.json "$RUNNER_TEMP/app-standalone/_routes.json"
