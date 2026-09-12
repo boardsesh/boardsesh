@@ -3,6 +3,13 @@ import type { DbInstance } from '../../client/postgres';
 import { boardClimbs, boardClimbStats, boardClimbGrades } from '../../schema/index';
 import { withSerialPlan } from '../util/serial-plan';
 import { createClimbFilters } from './create-climb-filters';
+import {
+  boardClimbStatsAtSetAngle,
+  effectiveStatsColumn,
+  gradeJoinAngleSql,
+  resolveCrossAngleStats,
+  resolvedStatsAngleSql,
+} from './effective-stats';
 import { getClimbStars } from './climb-stars';
 import { getGradeLabel } from './grade-lookup';
 import { toConfidenceTier } from '../grade-model/constants';
@@ -29,6 +36,7 @@ type RawSelectResult = {
   is_draft: boolean | null;
   is_hidden: boolean | null;
   angle: number | null;
+  stats_angle: number | null;
   ascensionist_count: string | null;
   difficulty_id: number | string | null;
   quality_average: number | string | null;
@@ -70,6 +78,10 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams):
     boardType: params.board_name,
     layoutId: params.layout_id,
     angle: params.angle,
+    // Display only, and deliberately NOT folded into `angle` above: the queue's BLE
+    // spill guard and the tick writers key on `angle` being the browsed one, and a
+    // row whose `angle` moved would re-anchor and refetch on every render.
+    statsAngle: result.stats_angle ?? null,
     ascensionist_count: Number(result.ascensionist_count || 0),
     difficulty: getGradeLabel(toIntegerOrNull(result.difficulty_id)),
     quality_average: result.quality_average?.toString() || '0',
@@ -137,7 +149,9 @@ export const searchClimbs = async (
   const page = clampSearchPage(searchParams.page);
   const pageSize = searchParams.pageSize ?? 20;
 
-  const filters = createClimbFilters(params, searchParams, userId);
+  const filters = createClimbFilters(params, searchParams, userId, {
+    crossAngleStats: resolveCrossAngleStats(params, searchParams),
+  });
   // Derive from the filter builder's unified predicate (onlyDrafts AND a userId),
   // not `!!searchParams.onlyDrafts` — otherwise onlyDrafts-without-userId makes this
   // skip the size/stats filters and force creation sort while the filters still
@@ -156,6 +170,7 @@ export const searchClimbs = async (
 
   const path = chooseSearchPath({
     statsDrivenSort,
+    crossAngle: filters.isCrossAngleStats,
     isDraftsQuery,
     projectsOnly: !!searchParams.projectsOnly,
     // Routes-only (frames_count > 1, boulders off) — see chooseSearchPath.
@@ -224,6 +239,9 @@ export type SearchPath = 'standard-only' | 'stats-driven-only' | 'stats-driven-w
  *
  * Decision tree:
  *   - non-indexed sort      → standard-only
+ *   - cross-angle stats     → standard-only (the stats-driven INNER JOIN at the browsed
+ *                             angle is precisely what hides the climbs cross-angle exists
+ *                             to surface, so the whole fast path is bypassed — issue #5405)
  *   - drafts query          → standard-only (drafts have no stats rows)
  *   - projectsOnly          → standard-only (the user explicitly wants stats-less climbs)
  *   - routesOnly            → standard-only (routes are few + often unclimbed; the stats path drops them)
@@ -233,12 +251,19 @@ export type SearchPath = 'standard-only' | 'stats-driven-only' | 'stats-driven-w
  */
 export function chooseSearchPath(input: {
   statsDrivenSort: StatsDrivenSort | null;
+  crossAngle: boolean;
   isDraftsQuery: boolean;
   projectsOnly: boolean;
   routesOnly: boolean;
   hasStatsFilters: boolean;
 }): SearchPath {
   if (!input.statsDrivenSort) return 'standard-only';
+  // Before every other branch, and in particular before the hasStatsFilters one
+  // below: a grade or ascent filter under cross-angle is evaluated against the
+  // effective row, which only the LEFT JOIN path can see. Routing it to
+  // stats-driven-only would keep the bug alive behind exactly the filters a
+  // climber reaches for when the unfiltered list looks too short.
+  if (input.crossAngle) return 'standard-only';
   if (input.isDraftsQuery) return 'standard-only';
   if (input.projectsOnly) return 'standard-only';
   // Routes (frames_count > 1) are a small, frequently-unclimbed set. The
@@ -309,6 +334,9 @@ async function runStatsDrivenSearch(
     // needs to know which one it is looking at.
     is_hidden: boardClimbs.isHidden,
     angle: boardClimbStats.angle,
+    // Always the browsed angle here: this path INNER JOINs stats at it, and
+    // `chooseSearchPath` never routes a cross-angle search through it.
+    stats_angle: boardClimbStats.angle,
     ascensionist_count: boardClimbStats.ascensionistCount,
     // ROUND(::numeric) returns text over the wire (see RawSelectResult).
     difficulty_id: sql<number | string | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
@@ -461,11 +489,18 @@ async function runStandardSearch(
           .as('popular_counts')
       : null;
 
+  // Built once from the same value the filter predicates were built from, so the
+  // ORDER BY, the WHERE and the SELECT cannot disagree about which row is effective.
+  const crossAngle = filters.isCrossAngleStats;
+  const statsCol = (key: Parameters<typeof effectiveStatsColumn>[0]) => effectiveStatsColumn(key, crossAngle);
+
   const allowedSortColumns: Record<string, ReturnType<typeof sql>> = {
-    ascents: sql`${boardClimbStats.ascensionistCount}`,
-    difficulty: sql`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
+    // `popular` is untouched: it already sums ascents across every angle, so it was
+    // never angle-blind in the way this fix addresses.
+    ascents: sql`${statsCol('ascensionistCount')}`,
+    difficulty: sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`,
     name: sql`${boardClimbs.name}`,
-    quality: sql`${boardClimbStats.qualityAverage}`,
+    quality: sql`${statsCol('qualityAverage')}`,
     creation: sql`${boardClimbs.createdAt}`,
     ...(popularCountsSubquery ? { popular: sql`${popularCountsSubquery.totalAscensionistCount}` } : {}),
   };
@@ -508,14 +543,19 @@ async function runStandardSearch(
     // needs to know which one it is looking at.
     is_hidden: boardClimbs.isHidden,
     angle: boardClimbStats.angle,
-    ascensionist_count: boardClimbStats.ascensionistCount,
+    // The angle the stats below were actually read from — see ./effective-stats.
+    stats_angle: resolvedStatsAngleSql(crossAngle),
+    ascensionist_count: sql<string | null>`${statsCol('ascensionistCount')}`,
     // ROUND(::numeric) returns text over the wire (see RawSelectResult).
-    difficulty_id: sql<number | string | null>`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0)`,
-    quality_average: sql<number | string | null>`ROUND(${boardClimbStats.qualityAverage}::numeric, 2)`,
+    difficulty_id: sql<number | string | null>`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`,
+    quality_average: sql<number | string | null>`ROUND(${statsCol('qualityAverage')}::numeric, 2)`,
+    // Two stats columns in one expression: both go through `statsCol`, which shares
+    // one row-presence probe, so the subtraction can never mix a browsed-angle
+    // display difficulty with a set-angle average.
     difficulty_error: sql<
       number | string | null
-    >`ROUND(${boardClimbStats.difficultyAverage}::numeric - ${boardClimbStats.displayDifficulty}::numeric, 2)`,
-    benchmark_difficulty: boardClimbStats.benchmarkDifficulty,
+    >`ROUND(${statsCol('difficultyAverage')}::numeric - ${statsCol('displayDifficulty')}::numeric, 2)`,
+    benchmark_difficulty: sql<number | null>`${statsCol('benchmarkDifficulty')}`,
     description: boardClimbs.description,
     characteristics: boardClimbs.characteristics,
     created_at: boardClimbs.createdAt,
@@ -558,20 +598,31 @@ async function runStandardSearch(
   ];
 
   // LEFT JOIN preserves climbs without stats (they get NULL stats columns).
-  const coreQuery = db
+  const withStatsJoin = db
     .select(selectFields)
     .from(boardClimbs)
-    .leftJoin(boardClimbStats, and(...filters.getClimbStatsJoinConditions()))
-    // Boardsesh grade at the searched angle (params.angle). LEFT JOIN so stats-less
-    // climbs still return; the grade fields are NULL when no grade row exists.
-    .leftJoin(
-      boardClimbGrades,
-      and(
-        eq(boardClimbGrades.boardType, params.board_name),
-        eq(boardClimbGrades.climbUuid, boardClimbs.uuid),
-        eq(boardClimbGrades.angle, params.angle),
-      ),
-    );
+    .leftJoin(boardClimbStats, and(...filters.getClimbStatsJoinConditions()));
+
+  // The climb's own set-angle row, joined only under cross-angle. Must come before
+  // the grades join: that join's ON clause reads the resolved angle, which names
+  // both stats aliases.
+  const withSetAngleJoin = crossAngle
+    ? withStatsJoin.leftJoin(boardClimbStatsAtSetAngle, and(...filters.getSetAngleStatsJoinConditions()))
+    : withStatsJoin;
+
+  // Boardsesh grade at the angle the stats came from, so the two grades a row shows
+  // describe the same climb at the same angle — a toggle swaps one for the other, and
+  // a 40° community difficulty beside a 30° Boardsesh grade would be a silent lie.
+  // Without cross-angle this is the browsed angle, exactly as before. LEFT JOIN so
+  // stats-less climbs still return; the grade fields are NULL when no row exists.
+  const coreQuery = withSetAngleJoin.leftJoin(
+    boardClimbGrades,
+    and(
+      eq(boardClimbGrades.boardType, params.board_name),
+      eq(boardClimbGrades.climbUuid, boardClimbs.uuid),
+      sql`${boardClimbGrades.angle} = ${gradeJoinAngleSql(params.angle, crossAngle)}`,
+    ),
+  );
 
   const queryWithJoins = popularCountsSubquery
     ? coreQuery.leftJoin(popularCountsSubquery, eq(popularCountsSubquery.climbUuid, boardClimbs.uuid))

@@ -194,6 +194,9 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       compatibleSizeIds: row.compatible_size_ids ?? null,
       characteristics: row.characteristics ?? null,
       angle,
+      // The angle the stats row resolved to. It can differ from `angle` above,
+      // which a caller-supplied wall angle overrides with the live board angle.
+      statsAngle: row.statsAngle ?? null,
       ascensionist_count: Number(row.ascensionist_count || 0),
       difficulty: getGradeLabel(row.difficulty_id),
       quality_average: row.quality_average?.toString() || '0',

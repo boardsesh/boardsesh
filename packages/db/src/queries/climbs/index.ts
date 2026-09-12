@@ -1,6 +1,15 @@
 export { searchClimbs, MAX_SEARCH_PAGE, clampSearchPage } from './search-climbs';
 export { mergeCatalogCharacteristicsSql } from './catalog-characteristics';
 export { createClimbFilters, hiddenClimbCondition } from './create-climb-filters';
+export {
+  boardClimbStatsAtSetAngle,
+  effectiveStatsColumn,
+  gradeJoinAngleSql,
+  resolveCrossAngleStats,
+  resolvedStatsAngleSql,
+  setAngleStatsJoinConditions,
+  type StatsColumnKey,
+} from './effective-stats';
 export { getClimbStars } from './climb-stars';
 export { resolveMoonBoardTickAngle, type MoonBoardTickAngleInput } from './moonboard-tick-angle';
 export { getGradeLabel } from './grade-lookup';

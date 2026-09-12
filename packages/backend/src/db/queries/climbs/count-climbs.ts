@@ -2,7 +2,9 @@ import { sql, and } from 'drizzle-orm';
 import { dbRead } from '../../client';
 import { boardClimbs, boardClimbStats } from '@boardsesh/db/schema';
 import {
+  boardClimbStatsAtSetAngle,
   createClimbFilters,
+  resolveCrossAngleStats,
   withSerialPlan,
   type BoardRouteParams,
   type ClimbSearchParams,
@@ -25,7 +27,11 @@ export const countClimbs = async (
   searchParams: ClimbSearchParams,
   userId?: string,
 ): Promise<number> => {
-  const filters = createClimbFilters(params, searchParams, userId);
+  // Same derivation searchClimbs uses, from the same helper, so the count can never
+  // describe a different universe than the list it labels.
+  const filters = createClimbFilters(params, searchParams, userId, {
+    crossAngleStats: resolveCrossAngleStats(params, searchParams),
+  });
 
   // Same unified drafts predicate searchClimbs uses (onlyDrafts AND a userId), so the
   // size/stats filters are skipped here only when they're skipped there.
@@ -47,14 +53,19 @@ export const countClimbs = async (
   // prod: a bare board_climbs aggregate raised "could not resize shared memory
   // segment". The unused board_climb_stats join is left in place — Postgres already
   // eliminates it via the stats PK when no condition references stats columns
-  // (verified by the EXPLAIN harness), so there's nothing to hand-optimize.
+  // (verified by the EXPLAIN harness), so there's nothing to hand-optimize. That
+  // elimination stops applying under cross-angle with a stats filter active: both
+  // joins are then referenced by the WHERE and neither can be dropped.
   try {
     return await withSerialPlan(dbRead, async (tx) => {
-      const result = await tx
+      const base = tx
         .select({ count: sql<number>`count(*)` })
         .from(boardClimbs)
-        .leftJoin(boardClimbStats, and(...filters.getClimbStatsJoinConditions()))
-        .where(and(...whereConditions));
+        .leftJoin(boardClimbStats, and(...filters.getClimbStatsJoinConditions()));
+      const withSetAngle = filters.isCrossAngleStats
+        ? base.leftJoin(boardClimbStatsAtSetAngle, and(...filters.getSetAngleStatsJoinConditions()))
+        : base;
+      const result = await withSetAngle.where(and(...whereConditions));
       return Number(result[0]?.count ?? 0);
     });
   } catch (error) {
