@@ -3,6 +3,14 @@ import { SQLiteProvider, useSQLiteContext, type SQLiteDatabase } from 'expo-sqli
 import { DATABASE_NAME, initializeDatabase, releaseDatabaseHandle } from '../db';
 import { retainDatabaseConnection } from '../db/connection-retention';
 import { pinDatabase } from '../db/connection-pin';
+import { registerReplacementOpener } from '../db/connection';
+import { openReplacementDatabase } from '../db/reopen';
+
+// Wired here rather than imported by `connection.ts`, which node-env suites load and
+// which therefore must not reach expo-sqlite's runtime entry (see the note in
+// `db/testing.ts`). This module already depends on expo-sqlite, so it is the natural
+// place to hand the re-opener over (#5410).
+registerReplacementOpener(openReplacementDatabase);
 
 function handleDatabaseError(error: Error): void {
   if (__DEV__) {

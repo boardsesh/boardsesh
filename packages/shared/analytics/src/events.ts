@@ -737,6 +737,18 @@ export const SHARED_EVENTS = {
   // identical. `elapsedMs` is the contention-duration measurement — its
   // distribution is what sizes the retry window, which today is a guess.
   OfflineSqliteInitRecovered: 'Offline SQLite Init Recovered',
+  // Offline sync — the native SQLite handle was destroyed under us (#5410) and a
+  // replacement connection came up, so the session was saved instead of staying
+  // dead until the climber force-quit. Props: { shape: 'dead-native-handle' |
+  // 'closed', origin, recoveries, elapsedMs, recovered }.
+  //
+  // Deliberately NOT folded into OfflineSqliteInitRecovered: that one measures
+  // launch-time LOCK contention and its `elapsedMs` distribution is what sizes the
+  // retry window. A dead handle is not contention, happens mid-session, and mixing
+  // the two would corrupt the measurement this repo already depends on. This is the
+  // "how many sessions did we save" number; the `phase: 'failed'` Sentry reports are
+  // the ones we did not.
+  OfflineSqliteHandleRecovered: 'Offline SQLite Handle Recovered',
   // Offline sync — someone read climb data from the on-device database. THE
   // north-star signal for offline mode (issue #4317): weekly unique users firing
   // this with `lane in ('offline_local', 'network_error_local')`.

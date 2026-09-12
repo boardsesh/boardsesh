@@ -40,7 +40,10 @@ import {
   INIT_LOCK_RETRY_DELAYS_MS,
   setDatabaseHandle,
   releaseDatabaseHandle,
+  registerReplacementOpener,
+  resetDeadHandleRecoveryForTests,
 } from '../connection';
+import { noteDatabaseHandleFailure } from '../dead-handle';
 import { isSchemaReady } from '../schema-ready';
 import { resetDatabaseInitializationForTests } from '../testing';
 import {
@@ -1172,5 +1175,169 @@ describe('initializeDatabase lock contention (#4104)', () => {
 
     expect(getDatabaseHandle()).toBeNull();
     expect(isSchemaReady()).toBe(false);
+  });
+
+  // #5410: a collected JS wrapper frees the native binding the live connection is
+  // still using. Prevention lives in `connection-pin.ts`; this is the safety net,
+  // and the thing it must get right is that a plain re-open is served the SAME dead
+  // instance, so the replacement has to be opened with `useNewConnection: true`.
+  describe('dead native handle recovery', () => {
+    const DEAD_HANDLE_MESSAGE =
+      "Call to function 'NativeDatabase.prepareAsync' has been rejected.\n→ Caused by: java.lang.NullPointerException: java.lang.NullPointerException";
+
+    /** A connection whose every call hits the freed pointer. */
+    function createDeadDatabase(): SQLiteDatabase {
+      const fail = async (): Promise<never> => {
+        throw new Error(DEAD_HANDLE_MESSAGE);
+      };
+      return {
+        execAsync: fail,
+        getFirstAsync: fail,
+        runAsync: fail,
+        withExclusiveTransactionAsync: fail,
+      } as unknown as SQLiteDatabase;
+    }
+
+    /** A live replacement over the real test database, plus the opener that yields it. */
+    function createReplacement() {
+      const calls: ({ useNewConnection?: boolean } | undefined)[] = [];
+      const replacement = {
+        execAsync: (source: string) => realDb.execAsync(source),
+        getFirstAsync: <T>(source: string, ...params: unknown[]) =>
+          realDb.getFirstAsync<T>(source, ...(params as never[])),
+        runAsync: (source: string, ...params: unknown[]) => realDb.runAsync(source, ...(params as never[])),
+        withExclusiveTransactionAsync: (task: (txn: unknown) => Promise<void>) =>
+          realDb.withExclusiveTransactionAsync(task as never),
+        options: { useNewConnection: true },
+        databasePath: 'boardsesh.db',
+      } as unknown as SQLiteDatabase;
+      const opener = vi.fn(async () => {
+        calls.push({ useNewConnection: true });
+        return replacement;
+      });
+      return { replacement, opener, calls };
+    }
+
+    beforeEach(() => {
+      resetDeadHandleRecoveryForTests();
+    });
+
+    afterEach(() => {
+      resetDeadHandleRecoveryForTests();
+    });
+
+    it('retracts the handle synchronously, before the re-open has resolved', () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+      setDatabaseHandle(createDeadDatabase());
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+
+      // This alone stops the storm: every reader re-reads per call, so they fall back
+      // to the network instead of throwing again — worth it even if the re-open fails.
+      expect(getDatabaseHandle()).toBeNull();
+      expect(isSchemaReady()).toBe(false);
+    });
+
+    it('opens the replacement with useNewConnection, which is the whole escape', async () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).not.toBeNull();
+      });
+
+      // Without this flag the constructor is served the dead instance from
+      // `cachedDatabases` — its refcount never reached zero, so nothing evicted it.
+      expect(opener).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs the migrations on the replacement rather than publishing a bare connection', async () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      await vi.waitFor(() => {
+        expect(isSchemaReady()).toBe(true);
+      });
+
+      await expect(realDb.getFirstAsync('SELECT COUNT(*) AS n FROM pending_mutations')).resolves.toEqual({ n: 0 });
+    });
+
+    it('opens one connection however many consumers hit the dead handle at once', async () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+
+      for (let consumer = 0; consumer < 10; consumer += 1) {
+        noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      }
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).not.toBeNull();
+      });
+
+      expect(opener).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops at the cap instead of re-opening forever when the replacement is dead too', async () => {
+      const opener = vi.fn(async () => createDeadDatabase());
+      registerReplacementOpener(opener);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+        await vi.waitFor(() => {
+          expect(opener).toHaveBeenCalled();
+        });
+      }
+
+      // One per process here: the 30s interval gate holds the second attempt back.
+      expect(opener.mock.calls.length).toBeLessThanOrEqual(2);
+      expect(getDatabaseHandle()).toBeNull();
+    });
+
+    it('keeps the replacement when a later provider connection arrives', async () => {
+      const { opener, replacement } = createReplacement();
+      registerReplacementOpener(opener);
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).toBe(replacement);
+      });
+
+      // A remount's `openDatabaseAsync` is still served the dead native instance from
+      // the cache, so retargeting onto it would publish a dead handle as ready.
+      await initializeDatabase(createDeadDatabase());
+      expect(getDatabaseHandle()).toBe(replacement);
+      expect(isSchemaReady()).toBe(true);
+    });
+
+    it('reports the detection and the recovery under their own kind', async () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).not.toBeNull();
+      });
+
+      const kinds = reportErrorMock.mock.calls.map(([, context]) => context?.tags?.kind);
+      expect(kinds.filter((kind) => kind === 'sqlite-dead-handle')).toHaveLength(2);
+      expect(trackMock).toHaveBeenCalledWith(
+        SHARED_EVENTS.OfflineSqliteHandleRecovered,
+        expect.objectContaining({ shape: 'dead-native-handle', origin: 'report', recovered: true }),
+      );
+    });
+
+    it('does not recover from a lock, which the existing ladder already handles', async () => {
+      const { opener } = createReplacement();
+      registerReplacementOpener(opener);
+      const live = createDeadDatabase();
+      setDatabaseHandle(live);
+
+      expect(noteDatabaseHandleFailure(new Error(LOCK_ERROR_MESSAGE), 'report')).toBe(false);
+
+      expect(opener).not.toHaveBeenCalled();
+      expect(getDatabaseHandle()).toBe(live);
+    });
   });
 });
