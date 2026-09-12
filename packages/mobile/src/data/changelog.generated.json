@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-11T23:22:25.946Z",
+  "generatedAt": "2026-09-12T00:07:58.161Z",
   "entries": [
+    {
+      "prNumber": 5409,
+      "category": "fixed",
+      "title": "Swiping stays on the list you are browsing, so you stop landing on climbs you filtered out",
+      "mergedAt": "2026-09-12T00:06:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5409",
+      "body": "The climb counter now matches the climbs you can actually swipe to"
+    },
     {
       "prNumber": 5406,
       "category": "fixed",

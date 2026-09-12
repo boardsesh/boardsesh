@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-12
+
+### Fixed
+
+- Swiping stays on the list you are browsing, so you stop landing on climbs you filtered out ([#5409](https://github.com/boardsesh/boardsesh/pull/5409))
+  The climb counter now matches the climbs you can actually swipe to
+
 ## 2026-09-11
 
 ### New
