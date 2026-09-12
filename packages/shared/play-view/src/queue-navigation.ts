@@ -1,10 +1,6 @@
 import type { Climb, ClimbQueueItem, ClimbQueue, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { getPlaylistSuggestedClimbs, getPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
-import {
-  classifyClimbBoardCompatibility,
-  findNextCompatibleQueueItem,
-  type ActiveBoardForCompatibility,
-} from '@boardsesh/board-config';
+import { findNextCompatibleQueueItem, type ActiveBoardForCompatibility } from '@boardsesh/board-config';
 import type { NavigationState } from './types';
 
 /**
@@ -281,33 +277,82 @@ export function findPreviousQueueItemWithSuggestions(
 }
 
 /**
- * How many climbs after `currentIndex` a forward swipe can actually visit.
- *
- * The queue keeps cross-board climbs (they stay tappable in the queue sheet),
- * but a swipe walks past them, so counting them would over-report "N left" —
- * the climber would be promised swipes that never happen. With no `activeConfig`
- * nothing classifies as incompatible and this is the plain remaining count.
+ * Ceiling on the forward walk behind `remainingCount`. The action bar shows a
+ * small number and a climber never reads past a couple of dozen, so counting
+ * every reachable climb in a long queue would cost a full walk to tell two
+ * indistinguishable answers apart.
  */
-function countDrawableAfter(
-  queue: ClimbQueue,
-  currentIndex: number,
-  activeConfig: ActiveBoardForCompatibility | undefined,
-): number {
-  let count = 0;
-  for (let index = currentIndex >= 0 ? currentIndex + 1 : 0; index < queue.length; index++) {
-    if (classifyClimbBoardCompatibility(activeConfig, queue[index].climb) !== 'incompatible') count++;
-  }
-  return count;
+const REMAINING_COUNT_CAP = 99;
+
+/**
+ * Which suggestion source, if any, steers next/prev for what is on screen.
+ *
+ * A source belongs to exactly one lineage. The provider's source describes the
+ * COMMITTED climb's track. A pinned PREVIEW is a different lineage: it navigates
+ * the track it was opened with, or no track at all. A preview never borrows,
+ * inherits, or captures the committed track — issue #5403, where a list tap that
+ * opened as a source-less preview inherited the track from an earlier activation
+ * on a different list, and swiping walked climbs the climber had filtered out.
+ *
+ * The committed track is usable only while it still anchors the committed climb.
+ * That predicate lives here, evaluated during render at the point of use, rather
+ * than in an effect beside whoever wrote the current climb: roughly eight call
+ * sites write it without going through the activation helper, and an effect
+ * leaves one render in which navigation is computed against the old track.
+ */
+export function resolveNavigationSuggestionSource({
+  previewItem,
+  previewSource,
+  committedItem,
+  committedSource,
+}: {
+  previewItem: ClimbQueueItem | null;
+  previewSource: PlaylistSuggestionSource | null;
+  committedItem: ClimbQueueItem | null;
+  committedSource: PlaylistSuggestionSource | null;
+}): PlaylistSuggestionSource | null {
+  if (previewItem) return previewSource;
+  return anchoredSuggestionSource(committedSource, committedItem);
+}
+
+/**
+ * The committed half of {@link resolveNavigationSuggestionSource}: a source is
+ * only usable while its ordered list still contains the climb being navigated
+ * from. Off the list, next/prev fall back to the queue.
+ *
+ * Exported so the queue provider can derive its own navigation source through
+ * the same predicate instead of keeping a second copy of the rule — its
+ * `nextClimb` / `previousClimb` read the source directly and never see the
+ * drawer's resolver call.
+ *
+ * With nothing to navigate from — no item, or a still-thin peer climb with no
+ * uuid — the source is kept: it outlives an empty queue, and forward navigation
+ * seeds the first pass from it.
+ */
+export function anchoredSuggestionSource(
+  source: PlaylistSuggestionSource | null,
+  item: ClimbQueueItem | null,
+): PlaylistSuggestionSource | null {
+  const climbUuid = item?.climb?.uuid;
+  if (!source || !climbUuid) return source;
+  return source.climbs.some(({ uuid }) => uuid === climbUuid) ? source : null;
 }
 
 /**
  * computeNavigationState over the list-first swipe rules: canNext/nextItem and
  * canPrevious/prevItem come from the active suggestion source's ordered list
  * whenever the current climb is on it (in either direction), and from the queue
- * otherwise. remainingCount stays queue-based to match web's action-bar
- * remaining count.
+ * otherwise.
  *
- * `activeConfig` is forwarded to the forward scan and to `remainingCount`, so
+ * `remainingCount` counts the forward WALK, not the queue tail: it is the number
+ * of climbs a climber could actually reach by swiping, capped at
+ * {@link REMAINING_COUNT_CAP}. Counting the tail instead let the bar read "N
+ * left" beside a dead Next button at the end of a list (issue #5403), which is
+ * the opposite of what the number is for. It is also what makes the dead end
+ * self-explanatory without a message: "0 left" beside a disabled Next says the
+ * list ended, and the list ended where the climber's own filter says it does.
+ *
+ * `activeConfig` is forwarded to the forward scan and through the walk, so
  * `canNext`, the header peek and "N left" all agree with the climb a swipe
  * actually lands on. Backward navigation is deliberately
  * left alone: swiping back should return you where you came from, and a
@@ -322,8 +367,13 @@ export function computeNavigationStateWithSuggestions(
   const nextItem = selectNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source, activeConfig).item;
   const prevItem = findPreviousQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
 
-  const currentIndex = currentClimbQueueItem ? queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid) : -1;
-  const remainingCount = countDrawableAfter(queue, currentIndex, activeConfig);
+  const remainingCount = findUpcomingQueueItemsWithSuggestions(
+    queue,
+    currentClimbQueueItem,
+    source,
+    REMAINING_COUNT_CAP,
+    activeConfig,
+  ).length;
 
   return {
     canNext: nextItem !== null,

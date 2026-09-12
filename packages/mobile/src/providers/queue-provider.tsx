@@ -56,6 +56,7 @@ import {
 import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import {
+  anchoredSuggestionSource,
   findPreviousQueueItemWithSuggestions,
   selectNextQueueItemWithSuggestions,
   shouldDefaultToBrowse,
@@ -106,7 +107,6 @@ import {
   createBoardFeedSuggestionSource,
   normalizeBoardSuggestionSource,
 } from '../lib/playlists/board-feed-suggestion-source';
-import { useBoardContinuationFeed } from './queue/use-board-continuation-feed';
 import { useCrossBoardAddGate } from './queue/use-cross-board-add-gate';
 import { useQueueRegrade } from './queue/use-queue-regrade';
 import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
@@ -333,16 +333,31 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // call site rather than the one activation helper, and an unknown active board
   // fails open.
   //
-  // Masked rather than cleared, so switching straight back before the re-anchor
-  // lands returns the climber to the list they were browsing. Only until then:
-  // the re-anchor below REPLACES the stale source, so a round trip that waits
-  // for the feed comes back to the board's popular list, not the original
-  // browse. One slot, one source — holding a source per board would need state
-  // that outlives the snapshot we persist.
-  const currentClimbForSource = state.currentClimbQueueItem?.climb;
+  // Masked rather than cleared, so switching straight back returns the climber
+  // to the list they were browsing. One slot, one source — holding a source per
+  // board would need state that outlives the snapshot we persist.
+  //
+  // Masking is the whole of it. A board switch used to REPLACE the masked source
+  // with the board's popular-by-ascents feed so a swipe had somewhere to go; that
+  // fed climbers climbs they had filtered out and never asked for (issue #5403).
+  // A swipe now stops at the end of the climber's own list instead.
+  //
+  // The mask is also where the source stops steering swipes once the climber
+  // moves off its list. Plenty of paths move the current climb without going
+  // through `setCurrentClimb` — a crew member's CurrentClimbChanged, a widget
+  // Next/Previous tap, joining a session already parked on a climb — and a
+  // source that no longer holds the current climb would keep aiming next/prev at
+  // a list nobody is on. `anchoredSuggestionSource` is the same predicate the
+  // play drawer resolves with, applied here during render so it holds for every
+  // writer at once. It used to be an effect, which left one render in which a
+  // swipe walked the stale list (issue #5403). The state is left alone: return
+  // to a climb on the list and the track is live again.
+  const currentClimbItemForSource = state.currentClimbQueueItem;
+  const currentClimbForSource = currentClimbItemForSource?.climb;
   const playlistSuggestionSource = useMemo(() => {
-    if (!rawPlaylistSuggestionSource || !activeBoard || activeBoardKey == null) return rawPlaylistSuggestionSource;
-    if (rawPlaylistSuggestionSource.boardKey !== activeBoardKey) return null;
+    const anchored = anchoredSuggestionSource(rawPlaylistSuggestionSource, currentClimbItemForSource);
+    if (!anchored || !activeBoard || activeBoardKey == null) return anchored;
+    if (anchored.boardKey !== activeBoardKey) return null;
     const target = getPlaylistRenderBoardTarget({
       boardName: activeBoard.boardType,
       layoutId: activeBoard.layoutId,
@@ -350,18 +365,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       setIds: activeBoard.setIds,
       angle: activeBoard.angle,
     });
-    const normalized = normalizeBoardSuggestionSource(
-      rawPlaylistSuggestionSource,
-      (climb) => canAddClimbToBoard(climb, target).ok,
-    );
+    const normalized = normalizeBoardSuggestionSource(anchored, (climb) => canAddClimbToBoard(climb, target).ok);
     // Old mixed snapshots can also have a foreign current climb. Preserve its
     // position as an anchor, never as a successor, so the surviving list is reachable.
     if (
       currentClimbForSource &&
-      normalized !== rawPlaylistSuggestionSource &&
-      rawPlaylistSuggestionSource.climbs.some(({ uuid }) => uuid === currentClimbForSource.uuid) &&
+      normalized !== anchored &&
+      anchored.climbs.some(({ uuid }) => uuid === currentClimbForSource.uuid) &&
       !normalized.climbs.some(({ uuid }) => uuid === currentClimbForSource.uuid)
     ) {
+      // Despite the helper's name, the climbs here are `normalized.climbs` —
+      // the climber's OWN source masked down to this board, never a popular
+      // feed. Nothing outside their list can enter through this call.
       return createBoardFeedSuggestionSource({
         anchorClimb: currentClimbForSource,
         feedClimbs: normalized.climbs,
@@ -369,7 +384,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       });
     }
     return normalized;
-  }, [rawPlaylistSuggestionSource, activeBoard, activeBoardKey, currentClimbForSource]);
+  }, [rawPlaylistSuggestionSource, activeBoard, activeBoardKey, currentClimbItemForSource, currentClimbForSource]);
   const playlistSuggestionSourceRef = useRef<PlaylistSuggestionSource | null>(null);
   playlistSuggestionSourceRef.current = playlistSuggestionSource;
   const { showToast } = useToast();
@@ -377,57 +392,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const { t } = useTranslation('session');
   // The cross-board strings live beside the BLE spill-skip notice they mirror.
   const { t: tSettings } = useTranslation('settings');
-
-  // Re-anchor, don't dead-end. Once the held source is masked out there is
-  // nothing for a forward swipe to follow, so pull the board's own popular list
-  // and rebuild the source against it. Armed ONLY while a source is held that
-  // belongs to another board — a one-shot per board switch — because the
-  // provider is mounted for the whole session and an ungated feed would keep
-  // fetching. It is the same hook, input and cache entry the queue sheet's
-  // suggestion list uses, so the swipe and the sheet can't disagree.
-  const suggestionSourceIsOffBoard = rawPlaylistSuggestionSource !== null && playlistSuggestionSource === null;
-  // Carries `angle`, while `activeBoardKey` above deliberately does not. The two
-  // answer different questions and the difference is load-bearing both ways:
-  // masking asks "is this feed for this WALL", which a tilt does not change (so
-  // tilting mid-session must not retire the feed), while the search input asks
-  // "which climbs, at which grades", which a tilt does change — grades are
-  // stored per angle. It also has to match what `QueueItemRowBoard` carries,
-  // since the queue sheet passes that same shape to this hook and the shared
-  // `['searchClimbs', input]` entry is the reason the second reader is free.
-  const activeBoardSearchConfig = useMemo(
-    () =>
-      activeBoard
-        ? {
-            boardName: activeBoard.boardType,
-            layoutId: activeBoard.layoutId,
-            sizeId: activeBoard.sizeId,
-            setIds: activeBoard.setIds,
-            angle: activeBoard.angle,
-          }
-        : null,
-    [activeBoard],
-  );
-  const { climbs: boardContinuationClimbs, isSettled: boardContinuationIsSettled } = useBoardContinuationFeed(
-    activeBoardSearchConfig,
-    suggestionSourceIsOffBoard,
-  );
-  const anchorClimbForReanchor = state.currentClimbQueueItem?.climb ?? null;
-  const pendingReanchoredSource = useMemo(() => {
-    if (!suggestionSourceIsOffBoard || activeBoardKey == null || !anchorClimbForReanchor) return null;
-    return createBoardFeedSuggestionSource({
-      anchorClimb: anchorClimbForReanchor,
-      feedClimbs: boardContinuationClimbs,
-      boardKey: activeBoardKey,
-    });
-  }, [suggestionSourceIsOffBoard, activeBoardKey, anchorClimbForReanchor, boardContinuationClimbs]);
-  useEffect(() => {
-    if (!pendingReanchoredSource) return;
-    // Replace only the exact rejected source. A matching key may still contain
-    // no usable climbs, while a newer activation or explicit clear must win.
-    setPlaylistSuggestionSourceState((current) =>
-      current === rawPlaylistSuggestionSource ? pendingReanchoredSource : current,
-    );
-  }, [pendingReanchoredSource, rawPlaylistSuggestionSource]);
 
   // The signed-in user's display name + avatar (undefined while signed out or
   // still loading). Sent with JOIN_SESSION so the backend roster shows real
@@ -1666,9 +1630,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // exactly the dead end that most needs explaining. So report the STATE here
   // rather than the action that cannot happen.
   //
-  // Once per board (re-armed the moment forward navigation works again), and
-  // never before the continuation feed has settled, or this announces a dead end
-  // during the re-anchor fetch and contradicts itself a beat later.
+  // Once per board, re-armed the moment forward navigation works again.
+  //
+  // Only when climbs were actually SKIPPED. Simply reaching the end of the
+  // climber's own list is not a dead end worth a message: nothing vanished, and
+  // a notice there would fire on every list end to explain a rule the climber
+  // wrote themselves (issue #5403). "0 left" beside a disabled Next says it.
   const deadEndReportedBoardKeyRef = useRef<string | null>(null);
   const forwardSelection = useMemo(
     () =>
@@ -1686,9 +1653,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       deadEndReportedBoardKeyRef.current = null;
       return;
     }
-    // A settled feed can already have a usable source waiting for its state commit.
-    if (!boardContinuationIsSettled || pendingReanchoredSource || deadEndReportedBoardKeyRef.current === activeBoardKey)
-      return;
+    if (deadEndReportedBoardKeyRef.current === activeBoardKey) return;
     deadEndReportedBoardKeyRef.current = activeBoardKey;
     // A swipe from here can add nothing to this; don't let it repeat the news.
     skipRunReportedForCurrentRef.current = true;
@@ -1700,15 +1665,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       }),
       'info',
     );
-  }, [
-    forwardSelection,
-    boardContinuationIsSettled,
-    pendingReanchoredSource,
-    activeBoardKey,
-    showToast,
-    tSettings,
-    trackClimbsSkippedOnBoard,
-  ]);
+  }, [forwardSelection, activeBoardKey, showToast, tSettings, trackClimbsSkippedOnBoard]);
 
   const nextClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;
@@ -1826,35 +1783,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   // Moving off the list hands swipes back to the queue. Swipes are list-first
   // (issue #4829): while the current climb is in `playlistSuggestionSource.climbs`
-  // next/previous walk that ordered list. But plenty of things move the current
-  // climb without going through `setCurrentClimb` — a crew member's
-  // CurrentClimbChanged, a widget Next/Previous tap (dispatchWidgetNavigation),
-  // or joining a session that's already parked on a climb. If any of them lands
-  // on a climb outside the list, a stale source would keep steering swipes into
-  // a list the climber isn't on, so drop it and fall back to plain queue
-  // navigation.
+  // next/previous walk that ordered list. Plenty of things move the current climb
+  // without going through `setCurrentClimb` — a crew member's CurrentClimbChanged,
+  // a widget Next/Previous tap, or joining a session already parked on a climb.
   //
-  // Local paths that legitimately keep the source all land on a climb that IS in
-  // the list — activation, a committed peek, a snapshot restore, setQueue with a
-  // matching source — so they're untouched. A null current (or a still-thin peer
-  // climb with no uuid) is a no-op: the source outlives an empty queue.
-  //
-  // This works on the provider's useState copy, which is the only one mobile
-  // reads; the reducer's SET_PLAYLIST_SUGGESTION_SOURCE field is written for
-  // persistence but never read back for navigation.
-  //
-  // Effect, not synchronous: between a peer's CurrentClimbChanged landing in the
-  // reducer and this effect running after the next render,
-  // `playlistSuggestionSourceRef` still holds the old list. A swipe inside that
-  // single render window walks the stale list one more step. It needs a swipe
-  // and a peer event in the same frame, so it is accepted rather than plumbed
-  // through the reducer.
-  const currentListClimbUuid = state.currentClimbQueueItem?.climb?.uuid;
-  useEffect(() => {
-    if (!playlistSuggestionSource || !currentListClimbUuid) return;
-    if (playlistSuggestionSource.climbs.some(({ uuid }) => uuid === currentListClimbUuid)) return;
-    setPlaylistSuggestionSourceState(null);
-  }, [currentListClimbUuid, playlistSuggestionSource]);
+  // That guard used to live here as an effect, which left one render in which a
+  // swipe walked the stale list. It now lives in
+  // `resolveNavigationSuggestionSource` (@boardsesh/play-view), evaluated during
+  // render at the point of use, so it holds for every writer at once and needs no
+  // render window (issue #5403). The source is left in place; navigation simply
+  // stops consulting it while it does not anchor the current climb.
 
   const publishPlaybackState = useCallback(
     (input: PublishPlaybackStateInput) => mutations.publishPlaybackState(input),
