@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-12T00:07:58.161Z",
+  "generatedAt": "2026-09-12T01:12:26.881Z",
   "entries": [
+    {
+      "prNumber": 5408,
+      "category": "fixed",
+      "title": "Swiping between climbs now stays on the list you picked from, even after you log a send.",
+      "mergedAt": "2026-09-12T01:10:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5408"
+    },
     {
       "prNumber": 5409,
       "category": "fixed",

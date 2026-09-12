@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Swiping between climbs now stays on the list you picked from, even after you log a send. ([#5408](https://github.com/boardsesh/boardsesh/pull/5408))
 - Swiping stays on the list you are browsing, so you stop landing on climbs you filtered out ([#5409](https://github.com/boardsesh/boardsesh/pull/5409))
   The climb counter now matches the climbs you can actually swipe to
 
