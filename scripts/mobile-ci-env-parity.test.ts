@@ -566,6 +566,55 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(preview).toContain("['branch', `/api/apps/${appId}/branches/${encoded}`]");
   });
 
+  it('resets only when a revision can shrink the published platform set', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+
+    // The reset takes a live preview offline for the length of a publish. It is worth
+    // that only when a platform can go native-only mid-PR, which needs a fingerprint
+    // path. A JS-only revision republishes in place.
+    expect(preview).toContain('const affectsNativeFingerprint = (path) =>');
+    expect(preview).toContain('needsReset = files.some((file) => affectsNativeFingerprint(file.filename));');
+    expect(preview).toMatch(
+      /^  reset:\n\s+needs: gate\n\s+if: needs\.gate\.outputs\.action == 'publish' && needs\.gate\.outputs\.needs_reset == 'true'$/m,
+    );
+    expect(preview).toContain('needs_reset: ${{ steps.decide.outputs.needs_reset }}');
+    expect(preview).toContain("core.setOutput('needs_reset', String(needsReset));");
+
+    // An unresolved file list must keep the old unconditional reset: the declaration
+    // starts true and only a completed scan can clear it.
+    expect(preview).toContain('let needsReset = true;');
+
+    // A skipped reset skips its dependents unless the condition uses a status
+    // function, so publish must tolerate 'skipped' while still blocking on 'failure'.
+    const publishCondition = preview.match(/^  publish:\n[\s\S]*?\n    runs-on:/m)?.[0] ?? '';
+    expect(publishCondition).toContain('!cancelled()');
+    expect(publishCondition).toContain("needs.reset.result != 'failure'");
+    expect(preview).toMatch(/^  announce:\n\s+needs: \[gate, reset, publish\]\n\s+if: \$\{\{ !cancelled\(\)/m);
+  });
+
+  it('warns on the PR before a reset takes the preview offline', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+
+    // Without notice, a reset reads as "the preview is gone" and invites a manual
+    // re-dispatch, which resets the branch a second time.
+    const notifyOffset = preview.indexOf('\n  notify:');
+    expect(notifyOffset).toBeGreaterThan(0);
+    expect(notifyOffset).toBeLessThan(preview.indexOf('\n  reset:'));
+    expect(preview).toMatch(
+      /^  notify:\n\s+needs: gate\n\s+if: needs\.gate\.outputs\.action == 'publish' && needs\.gate\.outputs\.needs_reset == 'true'$/m,
+    );
+    // Trusted job: it must never hold an OTA credential.
+    const notifyJob = preview.slice(notifyOffset, preview.indexOf('\n  reset:'));
+    expect(notifyJob).not.toContain('EOO_TOKEN');
+    expect(notifyJob).not.toContain('OTA_ADMIN_PASSWORD');
+    expect(notifyJob).not.toContain('environment:');
+    expect(notifyJob).not.toContain('actions/checkout');
+    // It edits the same sticky comment announce owns, and never creates a new one.
+    expect(notifyJob).toContain("const marker = '<!-- mobile-ota-preview -->';");
+    expect(notifyJob).toContain('github.rest.issues.updateComment');
+    expect(notifyJob).not.toContain('github.rest.issues.createComment');
+  });
+
   it('authorizes comments before dispatching them into the trusted PR lifecycle lane', () => {
     const preview = readWorkflow(OTA_PREVIEW);
     expect(preview).toContain('github.rest.repos.getCollaboratorPermissionLevel');

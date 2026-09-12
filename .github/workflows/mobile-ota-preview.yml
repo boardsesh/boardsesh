@@ -155,6 +155,10 @@ jobs:
       branch: ${{ steps.decide.outputs.branch }}
       fork_skip: ${{ steps.decide.outputs.fork_skip }}
       cleanup_reason: ${{ steps.decide.outputs.cleanup_reason }}
+      # Whether this revision can shrink the set of platforms the preview branch
+      # serves — the only thing the pre-publish reset exists to reconcile. See the
+      # native-fingerprint predicate below.
+      needs_reset: ${{ steps.decide.outputs.needs_reset }}
       # The head SHA captured HERE, in the secret-free gate, is the exact commit the
       # publish job checks out — pinning it closes the TOCTOU where a fork could push
       # after the maintainer gate but before the publish checkout of the moving
@@ -171,6 +175,9 @@ jobs:
             let prNumber = '';
             let forkSkip = false;
             let cleanupReason = '';
+            // Default to the old unconditional reset. Only a resolved file list that
+            // provably cannot move the native fingerprint clears it.
+            let needsReset = true;
             // The exact commit the publish job will check out (pinned at gate time, no
             // secrets in scope). For pull_request we take the triggering commit
             // directly; for comment / dispatch we resolve it via the API below.
@@ -190,6 +197,30 @@ jobs:
               path === 'scripts/lib/eoas.ts' ||
               path === '.github/workflows/mobile-ota-preview.yml';
 
+            // Paths that can move the native fingerprint, and therefore turn a
+            // platform native-only mid-PR. Mirrors the native-input globs the
+            // screenshot app cache is keyed on in mobile-screenshots-ios.yml.
+            const affectsNativeFingerprint = (path) =>
+              path === 'packages/mobile/app.config.ts' ||
+              path === 'packages/mobile/package.json' ||
+              path.startsWith('packages/mobile/plugins/') ||
+              path.startsWith('packages/mobile/modules/') ||
+              path.startsWith('packages/mobile/locales/') ||
+              path.startsWith('packages/mobile/ios/') ||
+              path.startsWith('packages/mobile/android/') ||
+              path.startsWith('patches/') ||
+              path === 'package.json' ||
+              path === 'pnpm-lock.yaml' ||
+              path === 'pnpm-workspace.yaml';
+
+            // Also decides whether the preview branch has to be reset before this
+            // revision publishes. The reset exists for ONE case: a revision that turns
+            // native-only stops publishing a platform, leaving that platform's previous
+            // update surfable and stale. A revision that cannot move the fingerprint
+            // always republishes every platform the last one did, so its new update
+            // simply supersedes the old — deleting the branch first would only take a
+            // live preview away from whoever is testing it for the length of a publish
+            // (~13 minutes). Anything unresolved keeps the old unconditional reset.
             const hasMobileChanges = async (number) => {
               const files = await github.paginate(github.rest.pulls.listFiles, {
                 owner: context.repo.owner,
@@ -197,6 +228,7 @@ jobs:
                 pull_number: Number(number),
                 per_page: 100,
               });
+              needsReset = files.some((file) => affectsNativeFingerprint(file.filename));
               return files.some((file) => affectsMobilePreview(file.filename));
             };
 
@@ -291,21 +323,89 @@ jobs:
             }
 
             const branch = prNumber ? `pr-${prNumber}` : '';
-            core.info(`event=${context.eventName} action=${action} branch=${branch || '(none)'} head_sha=${headSha || '(none)'} fork_skip=${forkSkip}`);
+            core.info(`event=${context.eventName} action=${action} branch=${branch || '(none)'} head_sha=${headSha || '(none)'} fork_skip=${forkSkip} needs_reset=${needsReset}`);
             core.setOutput('action', action);
             core.setOutput('pr_number', String(prNumber));
             core.setOutput('branch', branch);
             core.setOutput('fork_skip', String(forkSkip));
             core.setOutput('cleanup_reason', cleanupReason);
+            core.setOutput('needs_reset', String(needsReset));
             core.setOutput('head_sha', headSha);
+
+  # ── Say so BEFORE the branch disappears. A reset takes the preview offline for the
+  # length of a publish (~13 min); with no notice that reads as "the preview is gone",
+  # and the usual reaction — re-dispatching the workflow by hand — only opens a second
+  # hole. Trusted job: no OTA secrets, no checkout, no PR-author code. It writes the
+  # same sticky marker `announce` owns, so the final result overwrites this notice.
+  notify:
+    needs: gate
+    if: needs.gate.outputs.action == 'publish' && needs.gate.outputs.needs_reset == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Note that the preview branch is rebuilding
+        uses: actions/github-script@v7
+        env:
+          BRANCH: ${{ needs.gate.outputs.branch }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+        with:
+          script: |
+            const branch = process.env.BRANCH;
+            const prNumber = Number(process.env.PR_NUMBER);
+            const sha = (process.env.HEAD_SHA || '').slice(0, 7);
+            const marker = '<!-- mobile-ota-preview -->';
+
+            // Only speak up where a preview already exists to lose. A first publish has
+            // no comment yet, and inventing one would promise a preview before the
+            // compatibility check has had its say.
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, per_page: 100,
+            });
+            const isActionsComment = (comment) =>
+              comment.user?.login === 'github-actions[bot]' && comment.user?.type === 'Bot';
+            const existing = comments.find(
+              (comment) => isActionsComment(comment) && comment.body?.includes(marker),
+            );
+            if (!existing) {
+              core.info('No preview comment to update — nothing is being taken offline.');
+              return;
+            }
+
+            const body = [
+              marker,
+              `### 📱 OTA preview — \`${branch}\``,
+              '',
+              `🔄 Rebuilding **\`${branch}\`** from commit \`${sha}\`. This commit changes native ` +
+                `configuration, so the branch is reset before republishing and is **unavailable for ` +
+                `roughly 12 minutes**.`,
+              '',
+              `It comes back on its own — don't re-run this workflow, which would start the wait over. ` +
+                `This comment is replaced with the result.`,
+            ].join('\n');
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
+            });
 
   # ── Reconcile the mutable pr-N branch before publishing this revision. The
   # management delete runs without a checkout, install, or PR-authored code and
   # completes before the token-bearing publisher starts. This removes stale
   # platform updates when a newer revision becomes native-only.
+  #
+  # It runs ONLY when the gate saw a path that can move the native fingerprint. A
+  # JS-only revision republishes every platform the previous one did, so the new
+  # update supersedes the old one in place and the branch never goes away — the
+  # delete would otherwise strand whoever is testing the preview for the length of
+  # a publish. The gate defaults needs_reset to true, so anything it could not
+  # resolve still resets.
   reset:
     needs: gate
-    if: needs.gate.outputs.action == 'publish'
+    if: needs.gate.outputs.action == 'publish' && needs.gate.outputs.needs_reset == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
@@ -390,7 +490,13 @@ jobs:
   # admin credentials are never in scope while PR-author code runs.
   publish:
     needs: [gate, reset]
-    if: needs.gate.outputs.action == 'publish'
+    # `reset` is skipped for a JS-only revision, and a skipped `needs` job would
+    # otherwise skip this one too. Keep the edge (publish must still queue behind an
+    # in-flight reset via the shared mutation lane) but accept 'skipped' alongside
+    # 'success'. A reset that FAILED still blocks: the branch state is then unknown.
+    if: >-
+      !cancelled() && needs.gate.outputs.action == 'publish' &&
+      needs.reset.result != 'failure'
     runs-on: ubuntu-latest
     # Each platform may perform six attempts with 34 minutes of backoff. The job
     # publishes iOS then Android, so leave room for both bounded retry sets — a
@@ -663,6 +769,9 @@ jobs:
           BASE_FINGERPRINT_IOS: ${{ needs.publish.outputs.base_fingerprint_ios }}
           BASE_FINGERPRINT_ANDROID: ${{ needs.publish.outputs.base_fingerprint_android }}
           BEHIND_MAIN: ${{ needs.publish.outputs.behind_main }}
+          # 'false' means the branch was NOT reset before this publish, so a revision
+          # that ships nothing leaves the previous revision's bundle in place.
+          NEEDS_RESET: ${{ needs.gate.outputs.needs_reset }}
         with:
           script: |
             const branch = process.env.BRANCH;
@@ -731,6 +840,13 @@ jobs:
             // nativeOnly: nothing shipped, nothing errored — the skip is a legitimate
             // native change, not a failure, so don't flag it red.
             const nativeOnly = !anyPublished && !anyFailed && nativeSkip;
+            // A JS-only revision skips the pre-publish reset, so when it ships nothing
+            // the branch keeps serving the last revision that did publish. Testers must
+            // not read an unchanged switcher entry as "this commit is live".
+            const staleNote =
+              !anyPublished && process.env.NEEDS_RESET === 'false'
+                ? ` **\`${branch}\` still serves the last revision that published**, not this commit.`
+                : '';
             let headline;
             let deployState;
             let deployDesc;
@@ -745,13 +861,14 @@ jobs:
                 `No \`${branch}\` preview was published: this PR is **behind a native change on \`main\`**, so ` +
                 `its bundle targets a fingerprint no current build runs. Rebase onto \`main\` and push. If this ` +
                 `PR adds no native code of its own, that republishes the preview against the fingerprint ` +
-                `testers are on; if it does, this check will then say so and it needs a TestFlight/Play build.`;
+                `testers are on; if it does, this check will then say so and it needs a TestFlight/Play build.` +
+                staleNote;
               deployState = 'inactive';
               deployDesc = `${branch}: behind a native change on main — rebase, then re-check`;
             } else if (nativeOnly) {
               headline =
                 `This PR is a **native change**, so it can't ride OTA — ship a TestFlight/Play build to test it. ` +
-                `No \`${branch}\` preview was published.`;
+                `No \`${branch}\` preview was published.` + staleNote;
               deployState = 'inactive';
               deployDesc = `${branch}: native change — no OTA preview`;
             } else {

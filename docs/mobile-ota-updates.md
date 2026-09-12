@@ -1148,12 +1148,26 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
 
 - **Reconcile, then publish.** Every same-repository PR synchronization runs, even after the last
   mobile file leaves the diff. A no-longer-mobile revision removes its preview. A mobile revision
-  first deletes the mutable `pr-<number>` branch, then runs `eoas publish --branch pr-<number>` for
-  each compatible platform. That reset prevents an older compatible update from remaining surfable
-  when a newer commit is native-only on one or both platforms. The production channel stays baked in
-  app config and no same-named channel or map job is created. Xprem exposes the branch through
-  `/branch_lists` when it matches the production channel's `pr-*` surfing pattern and the running
-  binary's exact runtimeVersion/platform.
+  runs `eoas publish --branch pr-<number>` for each compatible platform. The production channel stays
+  baked in app config and no same-named channel or map job is created. Xprem exposes the branch
+  through `/branch_lists` when it matches the production channel's `pr-*` surfing pattern and the
+  running binary's exact runtimeVersion/platform.
+- **The branch is reset only for a native change.** The reset exists to stop an older compatible
+  update staying surfable when a newer commit turns native-only on one or both platforms. Only a
+  revision that can move the native fingerprint can do that, so the gate scans the PR diff for
+  fingerprint paths (`packages/mobile/app.config.ts`, `plugins/`, `modules/`, `locales/`, `ios/`,
+  `android/`, `packages/mobile/package.json`, `patches/`, the root manifest and lockfile) and emits
+  `needs_reset`. A JS-only revision — a test-only commit, a copy fix — skips the reset entirely and
+  its new update supersedes the old one in place, so the preview never leaves the picker. A native
+  revision still resets, and the `notify` job says so on the PR before the branch goes away: the
+  publish takes roughly 12 minutes, and re-running the workflow by hand only starts that wait over.
+  `needs_reset` defaults to true, so anything the gate cannot resolve keeps the old behaviour.
+  Because a skipped job would otherwise skip its dependents, `publish` guards with `!cancelled()`
+  and blocks only on `needs.reset.result == 'failure'`.
+- **A revision that publishes nothing leaves the last good bundle up.** With no reset, a JS-only PR
+  that falls behind a native change on `main` publishes neither platform and `pr-<number>` keeps
+  serving the last revision that did publish — better for a tester than an empty branch, but the
+  sticky comment says which, so an unchanged picker entry is not read as "this commit is live".
 - **Source maps stay local to the runner.** The shared publisher generates external maps for these
   exports, but the preview workflow intentionally has no `SENTRY_AUTH_TOKEN` and never uploads them.
   It runs PR-authored code, so granting a Sentry upload credential would cross the preview security
@@ -1223,7 +1237,8 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close.
 - **Cleanup + storage.** The per-PR concurrency lane serializes reset/publish/close so a late upload
-  cannot recreate a branch after cleanup. On PR close, or whenever the current diff no longer affects
+  cannot recreate a branch after cleanup. `publish` keeps the `needs: [gate, reset]` edge even when
+  the reset is skipped, so it still queues behind an in-flight reset. On PR close, or whenever the current diff no longer affects
   mobile, `pr-<number>` is deleted via `scripts/ota-preview-cleanup.ts delete --branch pr-<number>`.
   The trusted fork follow-up performs the same reconciliation for fork pushes and closes. A daily
   sweep reaps preview branches whose PR is no longer open and fails red on an unavailable or
