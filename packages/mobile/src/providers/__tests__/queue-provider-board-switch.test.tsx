@@ -587,6 +587,82 @@ describe('QueueProvider board switch (#5099)', () => {
     await waitFor(() => expect(latest().state.queue.map((item) => item.uuid)).toEqual(['item-kilter-stored']));
     expect(latest().playlistSuggestionSource).toBeNull();
   });
+
+  // --- Swipe-track dormancy telemetry (#5402) ------------------------------
+  //
+  // The mask that stops a track steering swipes is a memo, evaluated every
+  // render. These pin the event to the TRANSITION rather than the state, and to
+  // the reason it actually went dormant.
+
+  const DORMANT = 'Queue Swipe Track Dormant';
+  const dormantCalls = () => analytics.track.mock.calls.filter(([name]) => name === DORMANT);
+
+  it('reports a track going dormant because the climber switched board', async () => {
+    await activateKilterBrowse();
+    expect(dormantCalls()).toHaveLength(0);
+
+    act(() => activeBoardStore.set(boards.tension));
+    await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
+
+    expect(dormantCalls()).toHaveLength(1);
+    expect(dormantCalls()[0][1]).toEqual(expect.objectContaining({ reason: 'board_switched', trackLength: 2 }));
+  });
+
+  it('reports one episode while the climber moves between off-list climbs', async () => {
+    // The guard this pins is the whole reason the event is affordable. The effect
+    // re-runs whenever the current climb changes, so without keying on the SOURCE
+    // every hop across an off-list climb would bill another event for one
+    // uninterrupted stretch of dormancy.
+    await activateKilterBrowse();
+
+    act(() => activeBoardStore.set(boards.tension));
+    await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
+    expect(dormantCalls()).toHaveLength(1);
+
+    // Two more current-climb changes, still dormant throughout. Each one changes
+    // the effect's dependencies, so each one re-evaluates the dormancy check.
+    for (const uuid of ['kilter-wander-a', 'kilter-wander-b']) {
+      act(() => latest().setCurrentClimb(makeItem(`item-${uuid}`, makeClimb(uuid, 'kilter', 1))));
+      await act(async () => {});
+      expect(latest().playlistSuggestionSource).toBeNull();
+    }
+
+    expect(dormantCalls()).toHaveLength(1);
+  });
+
+  it('reports the climber moving off the list on the same board, not a board switch', async () => {
+    const { nextKilterClimb } = await activateKilterBrowse();
+    const offListClimb = makeClimb('kilter-off-list', 'kilter', 1);
+    expect(nextKilterClimb.uuid).not.toBe(offListClimb.uuid);
+
+    // No options: a peer's CurrentClimbChanged, a widget tap and a session join
+    // all move the current climb WITHOUT rewriting the source.
+    act(() => latest().setCurrentClimb(makeItem('item-off-list', offListClimb)));
+    await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
+
+    expect(dormantCalls()).toHaveLength(1);
+    expect(dormantCalls()[0][1]).toEqual(
+      expect.objectContaining({ reason: 'current_climb_left_track', boardName: 'kilter' }),
+    );
+  });
+
+  it('counts a second episode after the track revives', async () => {
+    // #5403 made dormancy reversible, so the event counts episodes rather than
+    // climbers — a round trip has to produce two rows, not one.
+    await activateKilterBrowse();
+
+    act(() => activeBoardStore.set(boards.tension));
+    await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
+    expect(dormantCalls()).toHaveLength(1);
+
+    act(() => activeBoardStore.set(boards.kilter));
+    await waitFor(() => expect(latest().playlistSuggestionSource).not.toBeNull());
+
+    act(() => activeBoardStore.set(boards.tension));
+    await waitFor(() => expect(latest().playlistSuggestionSource).toBeNull());
+
+    expect(dormantCalls()).toHaveLength(2);
+  });
 });
 
 describe('QueueProvider cross-board swipe skip (#5099)', () => {

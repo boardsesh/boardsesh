@@ -43,6 +43,25 @@ export const SHARED_EVENTS = {
   // added, and `method` already encoded what its `source` re-encoded. Round-trip
   // success stays a separate question — see `Wall Confirmed` / `Wall Confirm Timeout`.
   QueueNavigation: 'Queue Navigation',
+  // A held swipe track stopped steering next/prev, so swipes fall back to the
+  // queue. The climber still HAS a track; it just no longer anchors the climb
+  // they are on, or they walked onto another board. Since #5403 this is
+  // reversible — swiping back onto the list revives it — so the event is
+  // edge-triggered on the source and COUNTS EPISODES, NOT CLIMBERS. Any query on
+  // it needs a uniq(person_id) or a session grouping, never a raw count.
+  //
+  // Deliberately NOT a per-swipe event. Swipes are the primary navigation
+  // gesture and instrumenting every one would add six figures of events a month
+  // to a project already past its included tier. This fires only on the anomaly,
+  // which is rare by construction, and it is the signal that was missing when
+  // #5402 came in with nothing to mine.
+  //
+  // Props: { reason, boardName, trackLength, msSinceSelection }. `reason` is one
+  // of 'board_switched' | 'current_climb_left_track' | 'nothing_drawable_on_board',
+  // kept apart rather than pooled — see #4737 for what pooling distinct causes
+  // into one bucket costs. Counts and a reason string, never climb identity;
+  // whether a tick preceded it is a session + timestamp join against `Tick Logged`.
+  QueueSwipeTrackDormant: 'Queue Swipe Track Dormant',
   SetActiveClimb: 'Set Active Climb',
   SessionStarted: 'Session Started',
   SessionEnded: 'Session Ended',
