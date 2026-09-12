@@ -71,7 +71,8 @@ function scheduleExport(delayMs: number) {
 
 export function markStartup(name: StartupMarkName, outcome?: StartupOutcome): void {
   if (!collector.mark(name, outcome)) return;
-  if (name === 'home.useful.commit' || name === 'sqlite.recovery.end') scheduleExport(1_000);
+  if (name === 'home.useful.commit' || name === 'sqlite.recovery.end' || name === 'sqlite.deadhandle.end')
+    scheduleExport(1_000);
 }
 
 if (STARTUP_PROFILING_ENABLED) {

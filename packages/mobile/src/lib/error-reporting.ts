@@ -1,7 +1,9 @@
 import { isBleWriteTimeoutError } from '@boardsesh/ble-protocol/connection-error';
 import { getErrorStatus, isNetworkError as isSharedNetworkError } from '@boardsesh/offline-sync/error-classification';
+import { isDeadDatabaseHandleError } from '@boardsesh/offline-sync';
 import { addBreadcrumbToSentry, captureToSentry, type ErrorReportContext } from './sentry';
 import { isBackendUnavailableError } from './connectivity/backend-unavailable-error';
+import { noteDatabaseHandleFailure } from '../db/dead-handle';
 import { captureToObserve } from './observe-runtime';
 import {
   isExpectedAuthError,
@@ -28,6 +30,12 @@ export type { ErrorReportContext };
  * Sentry cannot answer; Sentry keeps the triage detail.
  */
 export function reportError(error: unknown, context?: ErrorReportContext): void {
+  // Detection for #5410 hangs off this funnel because it is the one thing every
+  // SQLite consumer already reaches: react-query reads and mutations, the sync
+  // cycle, tick writes, and the init chain. Hooking `captureToSentry` instead would
+  // no-op without a DSN, which would make the whole recovery path untestable in
+  // development. Never throws, so it cannot turn a handled error into a crash.
+  noteDatabaseHandleFailure(error, 'report');
   captureToSentry(error, context);
   captureToObserve(error);
 }
@@ -174,6 +182,18 @@ export function reportHandledError(error: unknown, context?: ErrorReportContext)
       ...context,
       level: 'warning',
       tags: { ...context?.tags, network: true },
+    });
+    return;
+  }
+  // Tagged rather than given its own report, so BOARDSESH-G1 and its siblings stay
+  // ONE aggregate — which is what lets a before/after comparison work — while still
+  // being sliceable by `dead_handle:true`. Kept at the caller's level: a dead handle
+  // really is broken until the re-open lands, unlike the transient cases above.
+  if (isDeadDatabaseHandleError(error)) {
+    reportError(error, {
+      level: 'error',
+      ...context,
+      tags: { ...context?.tags, dead_handle: true },
     });
     return;
   }
