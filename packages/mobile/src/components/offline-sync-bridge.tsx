@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useOfflineDatabase } from '../db/use-offline-database';
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
@@ -53,7 +53,10 @@ export function OfflineEngineFlagSync() {
  * host app — offline sync is best-effort and must not take the UI down with it.
  */
 export function OfflineSyncBridge() {
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: a dead-handle recovery opens a REPLACEMENT
+  // connection without the provider ever re-rendering, so the context value would
+  // still be the wrapper around the dead native instance (#5410).
+  const db = useOfflineDatabase();
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
   const snapshotSource = useSnapshotSource();

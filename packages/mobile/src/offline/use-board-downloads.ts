@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useOfflineDatabase } from '../db/use-offline-database';
 import { useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { restoreBootstrapRetryBudget, type GraphQLFetch } from '@boardsesh/offline-sync';
@@ -41,7 +41,10 @@ const ARM_REACHABILITY_RETRY_DELAYS_MS = [750, 3_000] as const;
  * (`useOfflineBoardEnabled`, `getDownloadedScopeKeys`) stays with the UI.
  */
 export function useBoardDownloads() {
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: a dead-handle recovery opens a REPLACEMENT
+  // connection without the provider ever re-rendering, so the context value would
+  // still be the wrapper around the dead native instance (#5410).
+  const db = useOfflineDatabase();
   const queryClient = useQueryClient();
   const snapshotSource = useSnapshotSource();
   // The db from `useSQLiteContext()` is handed out as soon as the launch gate opens,

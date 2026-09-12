@@ -24,7 +24,9 @@ export type WriteFaultMode =
   | 'android-lock'
   | 'android-lock-no-code'
   | 'disk-full'
-  | 'commit-then-throw';
+  | 'commit-then-throw'
+  | 'android-dead-handle'
+  | 'closed-resource';
 
 export type WriteFaultPhase = 'before-task' | 'after-commit';
 
@@ -38,6 +40,15 @@ const ANDROID_LOCK_MESSAGE =
   ': database is locked';
 const ANDROID_LOCK_NO_CODE_MESSAGE =
   "Call to function 'NativeDatabase.prepareAsync' has been rejected.\n→ Caused by: Error code : database is locked";
+// #5410. Not a lock at all: a collected JS wrapper freed the native binding, so the
+// call sails past expo-sqlite's `isClosed` guard and dereferences a dead pointer.
+// `CodedException.kt` renders the cause as `localizedMessage ?: cause`, and
+// `toString()` on a message-less NullPointerException is the bare class name — which
+// is why there is nothing after the final colon to key on.
+const ANDROID_DEAD_HANDLE_MESSAGE =
+  "Call to function 'NativeDatabase.prepareAsync' has been rejected.\n→ Caused by: java.lang.NullPointerException: java.lang.NullPointerException";
+// The honest close, which expo-sqlite raises itself when `isClosed` really was set.
+const CLOSED_RESOURCE_MESSAGE = 'Access to closed resource';
 const DISK_FULL_MESSAGE =
   "FunctionCallException: Calling the 'runAsync' function has failed\n→ Caused by: SQLiteErrorException: Error code 13: database or disk is full";
 
@@ -49,7 +60,18 @@ const FAULT_MESSAGES: Record<Exclude<WriteFaultMode, 'off'>, string> = {
   // The lock shape matters here too: a commit-then-throw only retries when the
   // ladder classifies it as contention, which is the case being reproduced.
   'commit-then-throw': IOS_LOCK_MESSAGE,
+  'android-dead-handle': ANDROID_DEAD_HANDLE_MESSAGE,
+  'closed-resource': CLOSED_RESOURCE_MESSAGE,
 };
+
+/**
+ * The dead-handle message, exported so the dev screen can drive the FULL recovery
+ * loop — detect, re-open, republish, restart the scheduler — rather than only the
+ * classification on the tick path. A genuine kill is not reproducible on demand:
+ * Hermes exposes no forced garbage collection, which is exactly why this bug reads
+ * as background noise instead of something QA can find.
+ */
+export { ANDROID_DEAD_HANDLE_MESSAGE };
 
 type WriteFaultState = { mode: WriteFaultMode; remaining: number };
 

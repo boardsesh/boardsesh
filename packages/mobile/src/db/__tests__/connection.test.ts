@@ -42,6 +42,7 @@ import {
   releaseDatabaseHandle,
   registerReplacementOpener,
   resetDeadHandleRecoveryForTests,
+  MIN_RECOVERY_INTERVAL_MS,
 } from '../connection';
 import { noteDatabaseHandleFailure } from '../dead-handle';
 import { isSchemaReady } from '../schema-ready';
@@ -1201,8 +1202,15 @@ describe('initializeDatabase lock contention (#4104)', () => {
     /** A live replacement over the real test database, plus the opener that yields it. */
     function createReplacement() {
       const calls: ({ useNewConnection?: boolean } | undefined)[] = [];
+      // How many init chains reached this connection. The epoch guards exist to keep
+      // it at one: two chains running migrations against one file is the contention
+      // the ladder exists to survive, self-inflicted.
+      let queueTableDdl = 0;
       const replacement = {
-        execAsync: (source: string) => realDb.execAsync(source),
+        execAsync: (source: string) => {
+          if (/CREATE TABLE IF NOT EXISTS pending_mutations/i.test(source)) queueTableDdl += 1;
+          return realDb.execAsync(source);
+        },
         getFirstAsync: <T>(source: string, ...params: unknown[]) =>
           realDb.getFirstAsync<T>(source, ...(params as never[])),
         runAsync: (source: string, ...params: unknown[]) => realDb.runAsync(source, ...(params as never[])),
@@ -1215,7 +1223,7 @@ describe('initializeDatabase lock contention (#4104)', () => {
         calls.push({ useNewConnection: true });
         return replacement;
       });
-      return { replacement, opener, calls };
+      return { replacement, opener, calls, queueTableDdl: () => queueTableDdl };
     }
 
     beforeEach(() => {
@@ -1327,6 +1335,98 @@ describe('initializeDatabase lock contention (#4104)', () => {
         expect.objectContaining({ shape: 'dead-native-handle', origin: 'report', recovered: true }),
       );
     });
+
+    it('opens one connection even once the interval gate would allow another', async () => {
+      // The cap and the 30s gate alone would hide a missing single-flight for a
+      // same-tick burst. Hold the opener open, step past the gate, and fire again:
+      // only `activeRecovery` can stop the second one.
+      let releaseOpen: (db: SQLiteDatabase) => void = () => {};
+      const pending = new Promise<SQLiteDatabase>((resolve) => {
+        releaseOpen = resolve;
+      });
+      const { replacement } = createReplacement();
+      const opener = vi.fn(() => pending);
+      registerReplacementOpener(opener);
+
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      expect(opener).toHaveBeenCalledTimes(1);
+
+      vi.useFakeTimers();
+      vi.setSystemTime(Date.now() + MIN_RECOVERY_INTERVAL_MS + 1_000);
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      expect(opener).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+
+      releaseOpen(replacement);
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).not.toBeNull();
+      });
+    });
+
+    it('stops the in-flight init chain instead of migrating the replacement twice', async () => {
+      // A chain parked in a retry gap must not wake up and run a second migration
+      // against the connection the recovery just published.
+      vi.useFakeTimers();
+      const contended = createContendedDatabase();
+      void initializeDatabase(contended.db);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getDatabaseHandle()).toBeNull();
+
+      vi.useRealTimers();
+      const { opener, replacement } = createReplacement();
+      registerReplacementOpener(opener);
+      noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).toBe(replacement);
+      });
+
+      // The old chain's target becomes healthy and its backoff elapses. It must stay
+      // stopped: the epoch moved on when the recovery retargeted the lifecycle.
+      contended.unlock();
+      vi.useFakeTimers();
+      await vi.advanceTimersByTimeAsync(INIT_RETRY_DELAYS_MS[0] + INIT_RETRY_DELAYS_MS[1] + 1_000);
+      vi.useRealTimers();
+
+      expect(getDatabaseHandle()).toBe(replacement);
+    });
+
+    it('stops a chain whose recovery landed mid-attempt, not only mid-backoff', async () => {
+      // The production case: the attempt is slow BECAUSE the file is contended, so
+      // the recovery lands while it is in flight rather than during a retry gap. The
+      // guard after the sleep cannot catch that one — the chain is already past it.
+      const { opener, replacement, queueTableDdl } = createReplacement();
+      let recoveryFired = false;
+      const contended = createContendedDatabase({
+        onFailure: () => {
+          if (recoveryFired) return;
+          recoveryFired = true;
+          registerReplacementOpener(opener);
+          noteDatabaseHandleFailure(new Error(DEAD_HANDLE_MESSAGE), 'report');
+        },
+      });
+
+      await initializeDatabase(contended.db);
+      await vi.waitFor(() => {
+        expect(getDatabaseHandle()).toBe(replacement);
+      });
+
+      // The superseded chain must not come back and publish its own target.
+      contended.unlock();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(getDatabaseHandle()).toBe(replacement);
+      // Both chains publish the same object, so the handle alone cannot tell them
+      // apart. The migration count can: the superseded chain must never have
+      // retargeted onto the replacement and run the DDL a second time.
+      expect(queueTableDdl()).toBe(1);
+    });
+
+    // NOT COVERED: the epoch guard that runs straight after an attempt, as opposed to
+    // the one after the sleep (covered above). It only matters when a SUPERSEDED
+    // attempt SUCCEEDS — the supersede branch would then refund and retarget onto the
+    // replacement, running the DDL a second time against a file the recovery may still
+    // be writing. Three attempts to drive that through this harness deadlocked on the
+    // launch gate rather than reproducing it, so the guard ships on its reasoning
+    // alone. Worth revisiting with a harness that can hold an attempt open.
 
     it('does not recover from a lock, which the existing ladder already handles', async () => {
       const { opener } = createReplacement();

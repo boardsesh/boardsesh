@@ -10,7 +10,7 @@
 // every progress frame and would churn the virtualised screens).
 
 import { useQuery } from '@tanstack/react-query';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useOfflineDatabase } from '../db/use-offline-database';
 import { getDownloadedScopeKeys } from '@boardsesh/offline-sync';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 
@@ -25,7 +25,10 @@ export const DOWNLOADED_SCOPE_KEYS_QUERY_KEY = ['downloadedScopeKeys'] as const;
  * must not be stranded.
  */
 export function useDownloadedScopeKeys() {
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: a dead-handle recovery opens a REPLACEMENT
+  // connection without the provider ever re-rendering, so the context value would
+  // still be the wrapper around the dead native instance (#5410).
+  const db = useOfflineDatabase();
   // Schema readiness is a KEY member, not an `enabled` gate. On a contended launch
   // this connection has no tables yet, and the read lands in `isError` — the empty
   // state, which is already the right answer. Gating instead would spin forever

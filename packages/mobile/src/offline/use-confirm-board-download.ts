@@ -14,7 +14,7 @@
 
 import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useOfflineDatabase } from '../db/use-offline-database';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import {
   estimateScopeDownload,
@@ -34,7 +34,10 @@ import { notifyBootstrapMetadataChanged } from '../sync';
 
 export function useConfirmBoardDownload() {
   const { t, i18n } = useTranslation('boards');
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: a dead-handle recovery opens a REPLACEMENT
+  // connection without the provider ever re-rendering, so the context value would
+  // still be the wrapper around the dead native instance (#5410).
+  const db = useOfflineDatabase();
   const confirm = useConfirm();
   const { enableBoardsOffline, armBoardsOffline } = useBoardDownloads();
   // A ref, not a dep: the manifest arrives asynchronously and must not rebuild
