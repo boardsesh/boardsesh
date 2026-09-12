@@ -548,7 +548,9 @@
         "footless": "Footless",
         "footlessKickboard": "Footless + KB",
         "noKickboard": "No KB"
-      }
+      },
+      "setAngleMarker": "{{angle}}°",
+      "setAngleMarkerAria": "Grade and sends are from {{angle}} degrees"
     },
     "climbRules": {
       "matchingAllowed": "Matching allowed",

@@ -34,6 +34,42 @@ export type BoardCapabilities = {
    */
   crowdGrade: boolean;
   /**
+   * A climb on this board carries its grade and its ascents at the ONE angle it
+   * was set at, so browsing any other angle finds no stats row for it, and search
+   * should fall back to the climb's own set angle
+   * (`packages/db/src/queries/climbs/search-climbs.ts`, issue #5405).
+   *
+   * **True on Woods only, and the reason is cost, not shape.** On Woods the effect
+   * is total: 5,392 listed climbs share 5,398 stats rows between them, so browsing
+   * 30° finds a row for 653 of them and the other 88% sank below every climb set at
+   * 30° and rendered a blank grade with a "Project" subtitle.
+   *
+   * MoonBoard has exactly the same shape — 4,832 of 38,642 climbs on the 2016
+   * layout have a row at 25° — and is nonetheless FALSE here. The fallback makes the
+   * sort key a conditional over two joined rows, which no index can be stored in, so
+   * the query loses the early termination that
+   * `board_climb_stats_ascents_covering_v2_idx` gives it and has to rank the whole
+   * layout. Measured on production:
+   *
+   *   woods layout 1 @30°       63 ms  ->   122 ms   (5.4k climbs)
+   *   moonboard layout 2 @25°  6.8 ms  ->   729 ms   (92k climbs)
+   *   moonboard layout 2 @40°  1.0 ms  ->   936 ms   (92k climbs)
+   *   kilter layout 1 @40°     1.6 ms  -> 5,587 ms   (320k climbs)
+   *
+   * MoonBoard's own traffic settles it: 88% of its searches are at 40°, where
+   * coverage is already 99% and nothing was broken, so turning it on there would buy
+   * nothing and cost a second. Woods is small enough that doubling a 63 ms search is
+   * affordable, and it is the board the bug was reported on.
+   *
+   * Turning the other boards on needs the query to regain early termination — two
+   * index-ordered streams merged at the page boundary, which needs a new
+   * `(board_type, ascensionist_count DESC, climb_uuid)` index because every existing
+   * ascent/quality index is prefixed `(board_type, angle, …)`. Until that lands,
+   * `ClimbSearchInput.crossAngleStats` opts a request in and the mobile flag behind
+   * it MUST stay at 0%. Tracked in issue #5412.
+   */
+  angleBoundClimbs: boolean;
+  /**
    * New climbs can be set on the board from inside Boardsesh (create / fork /
    * edit).
    *
@@ -113,6 +149,7 @@ export type BoardCapabilities = {
  */
 const AURORA_CAPABILITIES: BoardCapabilities = {
   crowdGrade: true,
+  angleBoundClimbs: false,
   climbCreation: true,
   explicitClimbRules: false,
   multiFrameClimbs: true,
@@ -128,6 +165,8 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
  */
 const MOONBOARD_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
+  // Same angle-bound shape as Woods, held off on cost alone — see the field's doc.
+  angleBoundClimbs: false,
   climbCreation: true,
   explicitClimbRules: false,
   multiFrameClimbs: true,
@@ -144,6 +183,7 @@ const MOONBOARD_CAPABILITIES: BoardCapabilities = {
  */
 const WOODS_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
+  angleBoundClimbs: true,
   climbCreation: true,
   explicitClimbRules: true,
   multiFrameClimbs: false,

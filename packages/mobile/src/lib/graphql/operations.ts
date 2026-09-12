@@ -89,6 +89,7 @@ const CLIMB_SEARCH_FIELDS = `
   description
   frames
   angle
+  statsAngle
   ascensionist_count
   difficulty
   quality_average
@@ -120,6 +121,7 @@ const CLIMB_DETAIL_FIELDS = `
   description
   frames
   angle
+  statsAngle
   ascensionist_count
   difficulty
   quality_average

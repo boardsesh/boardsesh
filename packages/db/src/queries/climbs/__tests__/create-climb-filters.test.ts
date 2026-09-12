@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { createClimbFilters, hiddenClimbCondition } from '../create-climb-filters';
 import type { BoardRouteParams, ClimbSearchParams } from '../types';
@@ -720,5 +721,77 @@ void describe('createClimbFilters: community-hidden climbs', () => {
       .map(sqlToString)
       .join(' || ');
     assert.match(drafts, /is_hidden/);
+  });
+});
+
+// Issue #5405. Under cross-angle every stats predicate reads the EFFECTIVE row
+// (the browsed-angle row when there is one, else the climb's own set-angle row)
+// instead of the browsed-angle row alone.
+void describe('cross-angle stats conditions', () => {
+  const woodsParams: BoardRouteParams = { ...params, board_name: 'woods' };
+  const crossAngle = { crossAngleStats: true };
+
+  // `sqlToString` above renders a column chunk as its bare name, which cannot tell
+  // the two stats aliases apart. These assertions are about exactly that
+  // distinction, so they go through the real dialect and read qualified SQL.
+  const dialect = new PgDialect();
+  const render = (fragments: SQL[]) => fragments.map((fragment) => dialect.sqlToQuery(fragment).sql).join(' AND ');
+
+  function renderStatsConditions(search: ClimbSearchParams, options?: { crossAngleStats?: boolean }): string {
+    return render(createClimbFilters(woodsParams, search, undefined, options).getClimbStatsConditions());
+  }
+
+  void it('reads each stats predicate through the effective row', () => {
+    const search: ClimbSearchParams = {
+      minAscents: 5,
+      minGrade: 10,
+      maxGrade: 20,
+      minRating: 4,
+      onlyBenchmarks: true,
+    };
+    const rendered = renderStatsConditions(search, crossAngle);
+    assert.match(rendered, /stats_set_angle/);
+    assert.match(rendered, /CASE WHEN/);
+  });
+
+  void it('leaves the predicates untouched without the opt-in', () => {
+    const search: ClimbSearchParams = { minAscents: 5, minGrade: 10, maxGrade: 20, minRating: 4 };
+    const rendered = renderStatsConditions(search);
+    assert.doesNotMatch(rendered, /stats_set_angle/);
+    assert.doesNotMatch(rendered, /CASE WHEN/);
+  });
+
+  // The guard for the correctness trap the design review caught: gradeAccuracy
+  // compares display_difficulty against difficulty_average in ONE predicate. Both
+  // must be selected by the same row-presence probe, or a browsed-angle row with a
+  // NULL average would silently borrow the set-angle row's average and compare it
+  // against the browsed angle's display difficulty.
+  void it('picks both grade-accuracy columns with one identical probe', () => {
+    const rendered = renderStatsConditions({ gradeAccuracy: 1 }, crossAngle);
+    const probes = rendered.match(/CASE WHEN .*? THEN/g) ?? [];
+    assert.equal(probes.length, 2, 'expected one probe per column');
+    assert.equal(probes[0], probes[1], 'the two columns must be selected by the same probe');
+  });
+
+  void it('resolves projectsOnly through the effective row so a climb with sends elsewhere is excluded', () => {
+    const rendered = render(
+      createClimbFilters(woodsParams, { projectsOnly: true }, undefined, crossAngle).getClimbWhereConditions(),
+    );
+    assert.match(rendered, /stats_set_angle/);
+  });
+
+  // The holds heatmap reuses these arrays from a query whose FROM is
+  // board_climb_holds, with no board_climbs to resolve a set angle against. It
+  // passes no options, so nothing it reads may ever mention the alias.
+  void it('emits no set-angle reference for a caller that passes no options', () => {
+    const filters = createClimbFilters(woodsParams, { minAscents: 5, projectsOnly: false });
+    const rendered = render([...filters.getClimbStatsConditions(), ...filters.getClimbWhereConditions()]);
+    assert.doesNotMatch(rendered, /stats_set_angle/);
+    assert.equal(filters.isCrossAngleStats, false);
+  });
+
+  void it('turns itself on for an angle-bound board without an explicit opt-in', () => {
+    assert.equal(createClimbFilters(woodsParams, {}, undefined, { crossAngleStats: true }).isCrossAngleStats, true);
+    assert.equal(createClimbFilters(params, {}, undefined, { crossAngleStats: false }).isCrossAngleStats, false);
   });
 });

@@ -156,6 +156,15 @@ vi.mock('../graphql/resolvers/playlists/helpers/enrichment', () => ({
 const REQUIRED_SELECT_KEYS = ['frames_count', 'frames_pace', 'compatible_size_ids', 'characteristics'] as const;
 
 /**
+ * Projection keys that are NOT board_climbs columns, so they are checked in the
+ * Drizzle projections only: the raw-SQL guard below asserts its columns against
+ * the `c.` / `owned_climbs.` spellings of the owned_climbs CTE, and `statsAngle`
+ * comes off the joined stats row instead (`best.angle AS stats_angle`), which
+ * that guard checks separately.
+ */
+const REQUIRED_STATS_SELECT_KEYS = ['statsAngle'] as const;
+
+/**
  * `Climb` fields every mapper must land those columns on, with the value
  * `rawClimbRow()` supplies. Asserted BY VALUE, not by key presence: a mapper
  * that reads the wrong row key still produces the key, just with `null` — which
@@ -166,6 +175,10 @@ const REQUIRED_CLIMB_FIELDS: Record<string, unknown> = {
   framesPace: 900,
   compatibleSizeIds: [2],
   characteristics: ['no_match'],
+  // Where the stats on this row were read from (issue #5405). On an angle-bound
+  // board it is not the browsed angle, and a list row that drops it leaves the
+  // play drawer unable to say the grade beside it belongs to another angle.
+  statsAngle: 40,
 };
 
 /**
@@ -352,6 +365,9 @@ for (const entryPoint of ENTRY_POINTS) {
 
         const statement = entryPoint.lastSqlText!();
         expect(statement).not.toBe('');
+        // `stats_angle` is aliased out of the best_angle CTE, not off board_climbs,
+        // so it gets its own spelling rather than the two-halves check below.
+        expect(statement).toContain('AS stats_angle');
         for (const column of REQUIRED_SELECT_KEYS) {
           // Both halves, because dropping either one is the bug: `c.<column>` is
           // where the owned_climbs CTE reads it off board_climbs, and
@@ -370,7 +386,9 @@ for (const entryPoint of ENTRY_POINTS) {
         const projection = mockDb.select.mock.calls[entryPoint.dataSelectCallIndex!]?.[0] as
           | Record<string, unknown>
           | undefined;
-        expect(Object.keys(projection ?? {})).toEqual(expect.arrayContaining([...REQUIRED_SELECT_KEYS]));
+        expect(Object.keys(projection ?? {})).toEqual(
+          expect.arrayContaining([...REQUIRED_SELECT_KEYS, ...REQUIRED_STATS_SELECT_KEYS]),
+        );
       });
     }
   });

@@ -4,6 +4,9 @@ import { getBoardCapabilities, type BoardCapabilities } from '../board-capabilit
 
 const AURORA_ROW: BoardCapabilities = {
   crowdGrade: true,
+  // Aurora grades every angle independently, so the browsed angle is the right
+  // one to read and search stays pinned to it unless a caller opts out (#5405).
+  angleBoundClimbs: false,
   climbCreation: true,
   explicitClimbRules: false,
   multiFrameClimbs: true,
@@ -22,6 +25,11 @@ const EXPECTED: Record<string, BoardCapabilities> = {
   soill: AURORA_ROW,
   moonboard: {
     crowdGrade: false,
+    // One grade per problem, at the angle it was set at — so the same shape as
+    // Woods, but held false because the fallback costs 1 ms -> 936 ms on its
+    // largest layout and 88% of its searches are at the angle that was never
+    // broken. See the field's doc comment for the production measurements.
+    angleBoundClimbs: false,
     climbCreation: true,
     explicitClimbRules: false,
     multiFrameClimbs: true,
@@ -30,6 +38,8 @@ const EXPECTED: Record<string, BoardCapabilities> = {
   },
   woods: {
     crowdGrade: false,
+    // 5,392 listed climbs share 5,398 stats rows — one per climb, at its set angle.
+    angleBoundClimbs: true,
     climbCreation: true,
     explicitClimbRules: true,
     multiFrameClimbs: false,

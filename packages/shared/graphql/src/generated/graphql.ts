@@ -956,7 +956,7 @@ export type ClearLocationSyncFreezeStatus = 'ALREADY_UNFROZEN' | 'CLEARED';
  */
 export type Climb = {
   __typename?: 'Climb';
-  /** Board angle in degrees when this climb was set */
+  /** The angle the climber is browsing at. Named for the set angle historically, but every producer stamps the browsed angle here, and ticks, the queue and the BLE spill guard all key on that. See statsAngle for where the numbers below came from. */
   angle: Scalars['Int']['output'];
   /** Number of people who have completed this climb */
   ascensionist_count: Scalars['Int']['output'];
@@ -1016,6 +1016,8 @@ export type Climb = {
   setter_username: Scalars['String']['output'];
   /** Star rating (0-5), rounded from quality_average */
   stars: Scalars['Float']['output'];
+  /** The angle the grade, ascents and quality on this climb were actually read from. Equals angle normally; differs when the browsed angle had no stats row and the climb own set angle supplied them, which is always the case on Woods and MoonBoard and opt-in elsewhere via ClimbSearchInput.crossAngleStats (issue #5405). Null when the climb has no stats at any angle, i.e. a genuine project. Display only: show it beside the grade when it differs, never key on it. Deliberately absent from ClimbInput, so a queued climb carries no set-angle marker, because adding a field there means changing four lists at once (see queue-climb-field-contract.test.ts) and the marker is not worth that. */
+  statsAngle?: Maybe<Scalars['Int']['output']>;
   /** Number of times the current user has sent this climb */
   userAscents?: Maybe<Scalars['Int']['output']>;
   /** Number of times the current user has attempted this climb */
@@ -1162,6 +1164,8 @@ export type ClimbSearchInput = {
   boardName: Scalars['String']['input'];
   /** Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only. */
   boulders?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Ignored — always on — for boards whose climbs are angle-bound by nature, Woods and MoonBoard. Elsewhere it is opt-in, because an Aurora catalogue grades every angle independently and the browsed angle is usually the right one to read. */
+  crossAngleStats?: InputMaybe<Scalars['Boolean']['input']>;
   /** Grade accuracy filter ('tight', 'moderate', 'loose') */
   gradeAccuracy?: InputMaybe<Scalars['String']['input']>;
   /** Hide climbs the user has attempted (requires auth) */

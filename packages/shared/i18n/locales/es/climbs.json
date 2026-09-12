@@ -548,7 +548,9 @@
         "footless": "Sin pies",
         "footlessKickboard": "Sin pies + KB",
         "noKickboard": "Sin KB"
-      }
+      },
+      "setAngleMarker": "{{angle}}°",
+      "setAngleMarkerAria": "La dificultad y las repeticiones son de {{angle}} grados"
     },
     "climbRules": {
       "matchingAllowed": "Se puede igualar",

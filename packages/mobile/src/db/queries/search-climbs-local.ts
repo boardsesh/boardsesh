@@ -1,7 +1,7 @@
 import { getLocalUserId, type OfflineDatabase } from '@boardsesh/offline-sync';
 import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
-import { isSizeScopedBoard } from '@boardsesh/board-config';
+import { getBoardCapabilities, isSizeScopedBoard } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
 
@@ -176,6 +176,39 @@ function ownedTicks(alias: string): string {
   return `(${alias}.user_id = ? OR ${alias}.user_id IS NULL)`;
 }
 
+/**
+ * Cross-angle stats resolution, mirroring
+ * packages/db/src/queries/climbs/effective-stats.ts. The server decides this per
+ * request; the local mirror has to reach the same answer from the same two inputs,
+ * or a downloaded board would show a different list than the network does.
+ */
+export type StatsColumn =
+  | 'ascensionist_count'
+  | 'display_difficulty'
+  | 'difficulty_average'
+  | 'quality_average'
+  | 'benchmark_difficulty'
+  | 'angle';
+
+export function isCrossAngleStats(input: Pick<ClimbSearchInput, 'boardName' | 'crossAngleStats'>): boolean {
+  return getBoardCapabilities(input.boardName).angleBoundClimbs || input.crossAngleStats === true;
+}
+
+/**
+ * Reads one stats column from the effective row: the browsed-angle row when the
+ * join found one, otherwise the set-angle row.
+ *
+ * CASE on row presence, never COALESCE per column. The grade-accuracy filter
+ * compares display_difficulty against difficulty_average in one predicate, and a
+ * per-column COALESCE would let those two come from different rows whenever the
+ * browsed-angle row carries a NULL. Every caller shares the one probe below, so a
+ * multi-column expression always describes one real row.
+ */
+export function effectiveStatsSql(column: StatsColumn, crossAngle: boolean): string {
+  if (!crossAngle) return `s.${column}`;
+  return `CASE WHEN s.climb_uuid IS NOT NULL THEN s.${column} ELSE s_set.${column} END`;
+}
+
 function ticksExists(negated: boolean, statusSql: string): string {
   return `${negated ? 'NOT EXISTS' : 'EXISTS'} (SELECT 1 FROM boardsesh_ticks t
     WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')} AND ${statusSql})`;
@@ -189,12 +222,29 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
   const setIds = parseSetIds(input.setIds);
   const isMoonboard = boardType === 'moonboard';
 
+  const crossAngle = isCrossAngleStats(input);
+  const eff = (column: StatsColumn) => effectiveStatsSql(column, crossAngle);
+
   // Stats drive grade/quality/ascents; grades add the Boardsesh grade + confidence
   // for the requested angle (mirrors the server's board_climb_grades LEFT JOIN). Both
   // are LEFT JOINs on (climb_uuid, board_type, angle) — one row each via their PK — so
   // they never multiply the result set, and a climb with no grade row reads null.
-  const joinBinds: Bind[] = [boardType, angle, boardType, angle];
-  const joinSql = `LEFT JOIN board_climb_stats s
+  //
+  // Under cross-angle a second stats join lands between them, on the climb's OWN set
+  // angle, and the grades join follows whichever stats row won. Mirrors
+  // packages/db/src/queries/climbs/effective-stats.ts — read that file before changing
+  // anything here, in particular why the column reader is a CASE and never a COALESCE.
+  const joinBinds: Bind[] = crossAngle
+    ? [boardType, angle, boardType, boardType, angle]
+    : [boardType, angle, boardType, angle];
+  const joinSql = crossAngle
+    ? `LEFT JOIN board_climb_stats s
+    ON s.climb_uuid = c.uuid AND s.board_type = ? AND s.angle = ?
+    LEFT JOIN board_climb_stats s_set
+    ON s_set.climb_uuid = c.uuid AND s_set.board_type = ? AND s_set.angle = c.angle
+    LEFT JOIN board_climb_grades g
+    ON g.climb_uuid = c.uuid AND g.board_type = ? AND g.angle = COALESCE(s.angle, s_set.angle, ?)`
+    : `LEFT JOIN board_climb_stats s
     ON s.climb_uuid = c.uuid AND s.board_type = ? AND s.angle = ?
     LEFT JOIN board_climb_grades g
     ON g.climb_uuid = c.uuid AND g.board_type = ? AND g.angle = ?`;
@@ -263,11 +313,11 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
 
   // Min ascents (mutually exclusive with projectsOnly).
   if (input.minAscents && !input.projectsOnly) {
-    push('s.ascensionist_count >= ?', input.minAscents);
+    push(`${eff('ascensionist_count')} >= ?`, input.minAscents);
   }
 
   // Grade range on the rounded display difficulty (integer grade ids).
-  const roundedGrade = 'CAST(ROUND(s.display_difficulty) AS INTEGER)';
+  const roundedGrade = `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
   if (input.minGrade && input.maxGrade) {
     push(`${roundedGrade} BETWEEN ? AND ?`, input.minGrade, input.maxGrade);
   } else if (input.minGrade) {
@@ -278,7 +328,7 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
 
   // Min rating (quality_average is canonical 1-5).
   if (input.minRating) {
-    push('s.quality_average >= ?', input.minRating);
+    push(`${eff('quality_average')} >= ?`, input.minRating);
   }
 
   // Grade accuracy: |rounded display - difficulty_average| <= accuracy.
@@ -288,17 +338,17 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
   // malformed deep-link values.
   const gradeAccuracy = input.gradeAccuracy ? parseFloat(String(input.gradeAccuracy)) : NaN;
   if (Number.isFinite(gradeAccuracy)) {
-    push(`ABS(${roundedGrade} - s.difficulty_average) <= ?`, gradeAccuracy);
+    push(`ABS(${roundedGrade} - ${eff('difficulty_average')}) <= ?`, gradeAccuracy);
   }
 
   // Benchmarks only.
   if (input.onlyBenchmarks) {
-    push('s.benchmark_difficulty > 0');
+    push(`${eff('benchmark_difficulty')} > 0`);
   }
 
   // Projects only: 0 ascents or no stats row.
   if (input.projectsOnly) {
-    push('COALESCE(s.ascensionist_count, 0) = 0');
+    push(`COALESCE(${eff('ascensionist_count')}, 0) = 0`);
   }
 
   // Present-hold filters via the anchored frames token (ANY / NOT-present).
@@ -379,19 +429,20 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
   return { joinSql, whereSql: conditions.join(' AND '), joinBinds, whereBinds };
 }
 
-function sortColumnSql(sortBy: string): string {
+function sortColumnSql(sortBy: string, crossAngle: boolean): string {
+  const eff = (column: StatsColumn) => effectiveStatsSql(column, crossAngle);
   switch (sortBy) {
     case 'ascents':
-      return 's.ascensionist_count';
+      return eff('ascensionist_count');
     case 'difficulty':
-      return 'CAST(ROUND(s.display_difficulty) AS INTEGER)';
+      return `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
     case 'name':
       // NOCASE so 'apple' sorts before 'Zebra', matching Postgres's locale
       // collation (SQLite's default BINARY puts all uppercase first). ASCII
       // names dominate the catalogs, so ASCII-only NOCASE is close enough.
       return 'c.name COLLATE NOCASE';
     case 'quality':
-      return 's.quality_average';
+      return eff('quality_average');
     case 'popular':
       return 'popular_total';
     case 'creation':
@@ -421,6 +472,9 @@ export type LocalClimbRow = {
   frames_count: number | null;
   frames_pace: number | null;
   ascensionist_count: number | null;
+  /** The angle the stats on this row came from; null when the climb has none at
+   *  either the browsed or its own set angle. */
+  stats_angle: number | null;
   display_difficulty: number | null;
   difficulty_average: number | null;
   quality_average: number | null;
@@ -486,7 +540,10 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     name: row.name ?? '',
     description: row.description ?? '',
     frames: row.frames ?? '',
+    // The browsed angle, matching the server mapper. Ticks, the queue and the BLE
+    // spill guard key on it; `statsAngle` says where the numbers came from.
     angle,
+    statsAngle: row.stats_angle ?? null,
     ascensionist_count: Number(row.ascensionist_count ?? 0),
     difficulty: getGradeLabel(difficultyId),
     quality_average: row.quality_average !== null ? String(roundTo(row.quality_average, 2)) : '0',
@@ -527,6 +584,11 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
 
   const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId);
 
+  // Re-derived from the same two inputs buildJoinAndWhere used, so the SELECT and
+  // the ORDER BY read the same row the WHERE filtered on.
+  const crossAngle = isCrossAngleStats(input);
+  const eff = (column: StatsColumn) => effectiveStatsSql(column, crossAngle);
+
   // SELECT-clause binds come first textually: the two per-climb tick counts
   // (board, angle, owner each), then the optional popular-total subquery.
   const selectBinds: Bind[] = [boardType, angle, ownerUserId, boardType, angle, ownerUserId];
@@ -553,15 +615,19 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const randomSeedBind = input.sortSeed && Number.isFinite(seedInt) ? Math.trunc(seedInt) : 1;
   const orderBy = isRandom
     ? `${RANDOM_ORDER_EXPR} ASC, c.uuid DESC`
-    : `${sortColumnSql(sortBy)} ${sortOrder}, c.uuid DESC`;
+    : `${sortColumnSql(sortBy, crossAngle)} ${sortOrder}, c.uuid DESC`;
 
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
       c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
-      s.ascensionist_count, s.display_difficulty, s.difficulty_average, s.quality_average,
-      s.benchmark_difficulty,
+      ${eff('ascensionist_count')} AS ascensionist_count,
+      ${eff('display_difficulty')} AS display_difficulty,
+      ${eff('difficulty_average')} AS difficulty_average,
+      ${eff('quality_average')} AS quality_average,
+      ${eff('benchmark_difficulty')} AS benchmark_difficulty,
+      ${eff('angle')} AS stats_angle,
       COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,
       g.confidence AS boardsesh_confidence,
       ${userAscentsSelect},

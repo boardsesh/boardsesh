@@ -8,6 +8,7 @@ import type { DbInstance } from '../../../client/postgres';
 
 const baseInput = {
   statsDrivenSort: 'ascents' as const,
+  crossAngle: false,
   isDraftsQuery: false,
   projectsOnly: false,
   routesOnly: false,
@@ -87,6 +88,27 @@ void describe('chooseSearchPath', () => {
     });
   });
 
+  void describe('cross-angle stats (issue #5405)', () => {
+    void it('uses standard-only for ascents — the stats-driven INNER JOIN is what hides the climbs', () => {
+      assert.equal(chooseSearchPath({ ...baseInput, crossAngle: true }), 'standard-only');
+    });
+
+    void it('uses standard-only for quality too', () => {
+      assert.equal(chooseSearchPath({ ...baseInput, crossAngle: true, statsDrivenSort: 'quality' }), 'standard-only');
+    });
+
+    // The one input that returns stats-driven-only without cross-angle. A grade or
+    // ascent filter is exactly what a climber reaches for when the list looks short,
+    // so routing it back to the INNER JOIN would keep the bug alive behind a filter.
+    void it('uses standard-only even with stats filters active', () => {
+      assert.equal(chooseSearchPath({ ...baseInput, crossAngle: true, hasStatsFilters: true }), 'standard-only');
+    });
+
+    void it('leaves the path alone when cross-angle is off', () => {
+      assert.equal(chooseSearchPath({ ...baseInput, crossAngle: false }), 'stats-driven-with-fallback');
+    });
+  });
+
   void describe('precedence', () => {
     void it('projectsOnly trumps the hot path', () => {
       assert.equal(chooseSearchPath({ ...baseInput, projectsOnly: true, hasStatsFilters: false }), 'standard-only');
@@ -160,6 +182,7 @@ function fakeRow(uuid: string): Record<string, unknown> {
     is_draft: false,
     is_hidden: false,
     angle: 40,
+    stats_angle: 40,
     ascensionist_count: null,
     difficulty_id: null,
     quality_average: null,
@@ -177,7 +200,7 @@ function fakeRow(uuid: string): Record<string, unknown> {
 }
 
 /** What one SELECT the code under test issued looked like. */
-type RecordedQuery = { table: string | null; orderBy: string[] };
+type RecordedQuery = { table: string | null; orderBy: string[]; joins: string[] };
 
 // Fake SearchDb: a minimal stand-in for a top-level Drizzle instance. Every
 // select chain method returns the same builder object, and awaiting it (via a
@@ -198,10 +221,18 @@ function createFakeSearchDb(scriptedRows: Record<string, unknown>[][] = []) {
   const whereClauses: string[] = [];
 
   const makeSelectBuilder = () => {
-    const recorded: RecordedQuery = { table: null, orderBy: [] };
+    const recorded: RecordedQuery = { table: null, orderBy: [], joins: [] };
     const builder: Record<string, unknown> = {};
-    for (const method of ['innerJoin', 'leftJoin', 'limit', 'offset', 'groupBy']) {
+    for (const method of ['limit', 'offset', 'groupBy']) {
       builder[method] = () => builder;
+    }
+    // Joined tables by their SQL name, so an ALIASED table (the set-angle stats
+    // row, #5405) is distinguishable from the unaliased one it aliases.
+    for (const method of ['innerJoin', 'leftJoin']) {
+      builder[method] = (source: unknown) => {
+        if (is(source, Table)) recorded.joins.push(getTableName(source));
+        return builder;
+      };
     }
     builder.from = (source: unknown) => {
       recorded.table = is(source, Table) ? getTableName(source) : null;
@@ -481,5 +512,89 @@ void describe('community-hidden climbs (#5049)', () => {
     assert.match(popularCountsWhere, /"board_climbs"\."is_hidden" = false/);
     // ...while the page itself still answers the name search.
     assert.doesNotMatch(pageWhere, /is_hidden/);
+  });
+});
+
+// Issue #5405. A Woods climb has exactly one stats row, at its set angle, so the
+// stats-driven INNER JOIN at the browsed angle returned only the climbs set there
+// — 653 of 5,392 at 30° — and the fallback's stats-presence key would have kept
+// them ahead anyway. Cross-angle drops both mechanisms.
+void describe('cross-angle stats (issue #5405)', () => {
+  const WOODS_PARAMS: BoardRouteParams = { ...SEARCH_PARAMS, board_name: 'woods', size_id: 1, set_ids: [1] };
+
+  void it('issues one LEFT-JOIN query with no stats-driven pass, on an angle-bound board', async () => {
+    const { fakeDb, queries } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, WOODS_PARAMS, {
+      page: 2,
+      pageSize: 2,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+    });
+
+    assert.equal(queries.length, 1, 'cross-angle must not run the stats-driven pass at all');
+    assert.equal(queries[0].table, 'board_climbs');
+    assert.ok(
+      queries[0].joins.includes('stats_set_angle'),
+      `expected the set-angle stats join; saw: ${queries[0].joins.join(', ')}`,
+    );
+    // The key exists to pin stats-having climbs ahead of stats-less ones. Under
+    // cross-angle that is exactly the ordering the bug was made of.
+    assert.ok(
+      !queries[0].orderBy.some((fragment) => STATS_PRESENCE_KEY_PATTERN.test(fragment)),
+      `cross-angle must not carry the stats-presence key; saw: ${queries[0].orderBy.join(' | ')}`,
+    );
+  });
+
+  void it('keeps the stats-driven path and the second join off an Aurora board', async () => {
+    const { fakeDb, queries } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 2,
+      pageSize: 2,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+    });
+
+    assert.equal(queries.length, 2, 'Aurora keeps the stats-driven pass plus its fallback');
+    assert.ok(
+      !queries.some((query) => query.joins.includes('stats_set_angle')),
+      'an Aurora search without the opt-in must emit no set-angle join',
+    );
+  });
+
+  void it('takes the opt-in on an Aurora board', async () => {
+    const { fakeDb, queries } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 0,
+      pageSize: 2,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+      crossAngleStats: true,
+    });
+
+    assert.equal(queries.length, 1);
+    assert.ok(queries[0].joins.includes('stats_set_angle'));
+  });
+
+  // A grade or ascent filter is what a climber reaches for when the list looks
+  // short, and it is the one input that routed to stats-driven-only. It must not
+  // send a cross-angle search back through the INNER JOIN.
+  void it('stays on the LEFT-JOIN path with a grade filter active', async () => {
+    const { fakeDb, queries } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, WOODS_PARAMS, {
+      page: 0,
+      pageSize: 2,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+      minGrade: 10,
+      maxGrade: 20,
+    });
+
+    assert.equal(queries.length, 1);
+    assert.equal(queries[0].table, 'board_climbs');
+    assert.ok(queries[0].joins.includes('stats_set_angle'));
   });
 });
