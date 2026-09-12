@@ -69,6 +69,11 @@ vi.mock('@boardsesh/offline-sync', () => ({
 // only needs the wipe callback, so stub the module rather than the world.
 vi.mock('../../db/connection', () => ({
   clearUserData: (...args: unknown[]) => clearUserDataMock(...args),
+  // `useOfflineDatabase` subscribes to handle swaps so a dead-handle recovery's
+  // replacement reaches the scheduler (#5410). Nothing here swaps one, so the
+  // subscription is inert and the hook falls back to the provider's connection.
+  getDatabaseHandle: () => null,
+  subscribeDatabaseHandle: () => () => {},
 }));
 
 // use-current-user-id reads the JWT out of SecureStore via lib/auth-store, whose

@@ -55,13 +55,32 @@ const USER_DATA_TABLES_TO_CLEAR = [
 
 let databaseHandle: SQLiteDatabase | null = null;
 
+const handleListeners = new Set<() => void>();
+
+/**
+ * Subscribe to handle CHANGES, including a non-null to non-null swap.
+ *
+ * `subscribeSchemaReady` cannot serve this: it only fires when readiness flips, so a
+ * dead-handle recovery replacing one live connection with another is invisible to
+ * it — and the consumers that take their database from `useSQLiteContext()` would
+ * keep writing through the dead one (#5410).
+ */
+export function subscribeDatabaseHandle(listener: () => void): () => void {
+  handleListeners.add(listener);
+  return () => {
+    handleListeners.delete(listener);
+  };
+}
+
 export function setDatabaseHandle(db: SQLiteDatabase | null): void {
+  const changed = databaseHandle !== db;
   databaseHandle = db;
   // The handle is only ever published once migrations have run, so it doubles as
   // the schema-readiness signal for the `useSQLiteContext()` consumers that can't
   // see this handle at all. Driving the store from here — rather than letting
   // callers poke it — keeps the two from ever disagreeing.
   setSchemaReady(db !== null);
+  if (changed) for (const listener of handleListeners) listener();
 }
 
 export function getDatabaseHandle(): SQLiteDatabase | null {
@@ -657,7 +676,9 @@ let lastRecoveryStartedAt = 0;
  * because a third attempt would be wrong.
  */
 const MAX_DEAD_HANDLE_RECOVERIES = 2;
-const MIN_RECOVERY_INTERVAL_MS = 30_000;
+/** Exported so the single-flight test steps past the gate by the real interval
+ * rather than mirroring the number in a literal that silently drifts from it. */
+export const MIN_RECOVERY_INTERVAL_MS = 30_000;
 
 /**
  * Bumped by a recovery so a chain parked in a retry gap cannot wake up and run a

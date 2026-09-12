@@ -43,6 +43,8 @@ const FAULT_MODES: { mode: WriteFaultMode; label: string }[] = [
   { mode: 'android-lock-no-code', label: 'Android lock (no code)' },
   { mode: 'disk-full', label: 'Disk full (not retryable)' },
   { mode: 'commit-then-throw', label: 'Commit, then throw' },
+  { mode: 'android-dead-handle', label: 'Dead native handle (#5410)' },
+  { mode: 'closed-resource', label: 'Access to closed resource' },
 ];
 
 const FAIL_ATTEMPT_CHOICES = [1, 99];

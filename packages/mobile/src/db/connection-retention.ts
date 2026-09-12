@@ -29,9 +29,17 @@
 // and `closeAsync` reaches `exsqlite3_close` only when `removeCachedDatabase` sees the
 // refcount fall to zero. Holding one extra handle and never closing it pins the count
 // at >= 1, so every `SQLiteProvider` teardown still runs and still decrements but can
-// no longer free anything under an in-flight query. The connection stays valid
+// no longer free anything under an in-flight query. The connection stays OPEN
 // (`isClosed` is only set inside the branch that actually closes), so the provider's
 // next mount gets the same live connection back instead of reopening the file.
+//
+// WHAT THIS DOES NOT BUY, AND ONCE READ AS IF IT DID (#5410). Open is not the same as
+// usable. The extra handle is a SECOND JS wrapper over one native object, and on
+// Android expo-modules-core registers that object a second time with its own C++
+// `NativeState` — so collecting EITHER wrapper destroys the native binding while
+// `isClosed` stays false and the refcount stays >= 1. Pinning the refcount says
+// nothing about reachability. `connection-pin.ts` is what covers that, and this
+// handle is pinned there like every other.
 //
 // WHAT IT COSTS. Nothing that would otherwise have been reclaimed: the app has exactly
 // one database and needs it for the whole process, and the SQLite module's own

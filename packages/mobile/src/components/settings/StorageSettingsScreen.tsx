@@ -15,7 +15,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useFocusEffect } from 'expo-router';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useOfflineDatabase } from '../../db/use-offline-database';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getDownloadedScopeKeys,
@@ -77,7 +77,10 @@ export function StorageSettingsScreen() {
   const { systemColors } = useTheme();
   const confirm = useConfirm();
   const { showToast } = useToast();
-  const db = useSQLiteContext();
+  // Not `useSQLiteContext()` directly: a dead-handle recovery opens a REPLACEMENT
+  // connection without the provider ever re-rendering, so the context value would
+  // still be the wrapper around the dead native instance (#5410).
+  const db = useOfflineDatabase();
   // Live as soon as the launch gate opens — after the first init attempt, whatever
   // it did — so on a contended launch this connection has no tables yet. Folded into
   // the query KEY below rather than gating the query: a failed measurement renders
