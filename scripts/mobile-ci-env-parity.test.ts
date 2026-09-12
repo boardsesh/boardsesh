@@ -573,6 +573,23 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // that only when a platform can go native-only mid-PR, which needs a fingerprint
     // path. A JS-only revision republishes in place.
     expect(preview).toContain('const affectsNativeFingerprint = (path) =>');
+    // Every declared fingerprint input in packages/mobile/fingerprint.config.js must
+    // be covered, or a native revision skips the reset and strands a stale platform.
+    for (const nativePath of [
+      "path === 'packages/mobile/app.config.ts'",
+      "path === 'packages/mobile/package.json'",
+      "path === 'packages/mobile/fingerprint.config.js'",
+      "path.startsWith('packages/mobile/targets/')",
+      "path.startsWith('packages/mobile/plugins/')",
+      "path.startsWith('packages/mobile/modules/')",
+      "path.startsWith('packages/mobile/locales/')",
+      "path.startsWith('packages/mobile/ios/')",
+      "path.startsWith('packages/mobile/android/')",
+      "path.startsWith('patches/')",
+      "path === 'pnpm-lock.yaml'",
+    ]) {
+      expect(preview).toContain(nativePath);
+    }
     expect(preview).toContain('needsReset = files.some((file) => affectsNativeFingerprint(file.filename));');
     expect(preview).toMatch(
       /^  reset:\n\s+needs: gate\n\s+if: needs\.gate\.outputs\.action == 'publish' && needs\.gate\.outputs\.needs_reset == 'true'$/m,

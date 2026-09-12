@@ -1155,8 +1155,9 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
 - **The branch is reset only for a native change.** The reset exists to stop an older compatible
   update staying surfable when a newer commit turns native-only on one or both platforms. Only a
   revision that can move the native fingerprint can do that, so the gate scans the PR diff for
-  fingerprint paths (`packages/mobile/app.config.ts`, `plugins/`, `modules/`, `locales/`, `ios/`,
-  `android/`, `packages/mobile/package.json`, `patches/`, the root manifest and lockfile) and emits
+  fingerprint paths (`packages/mobile/app.config.ts`, `fingerprint.config.js`, `plugins/`, `modules/`,
+  `locales/`, `targets/`, `ios/`, `android/`, `packages/mobile/package.json`, `patches/`, the root
+  manifest and lockfile — every extra source `packages/mobile/fingerprint.config.js` declares) and emits
   `needs_reset`. A JS-only revision — a test-only commit, a copy fix — skips the reset entirely and
   its new update supersedes the old one in place, so the preview never leaves the picker. A native
   revision still resets, and the `notify` job says so on the PR before the branch goes away: the

@@ -203,6 +203,12 @@ jobs:
             const affectsNativeFingerprint = (path) =>
               path === 'packages/mobile/app.config.ts' ||
               path === 'packages/mobile/package.json' ||
+              // Declares the extra fingerprint sources and the autolinking hook, and
+              // hashes itself, so editing it moves runtimeVersion on its own.
+              path === 'packages/mobile/fingerprint.config.js' ||
+              // @bacons/apple-targets Xcode extensions (the widget) — native by
+              // definition, and prebuilt into the iOS project.
+              path.startsWith('packages/mobile/targets/') ||
               path.startsWith('packages/mobile/plugins/') ||
               path.startsWith('packages/mobile/modules/') ||
               path.startsWith('packages/mobile/locales/') ||
