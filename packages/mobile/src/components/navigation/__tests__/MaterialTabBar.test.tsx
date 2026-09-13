@@ -7,6 +7,9 @@ const ctrl = vi.hoisted(() => ({
   os: 'ios' as string,
 }));
 
+// Shared with the theme-provider mock below, so the assertion can't drift from it.
+const { FOCUSED_INDICATOR_COLOR } = vi.hoisted(() => ({ FOCUSED_INDICATOR_COLOR: '#4A4458' }));
+
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {
@@ -106,7 +109,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       onSecondaryContainer: '#E8DEF8',
       onSurface: '#E6E1E5',
       onSurfaceVariant: '#CAC4D0',
-      secondaryContainer: '#4A4458',
+      secondaryContainer: FOCUSED_INDICATOR_COLOR,
     },
   }),
 }));
@@ -262,7 +265,7 @@ describe('MaterialTabBar', () => {
       );
       const indicators = getAllByTestId('indicator');
       const style = indicators[0].getAttribute('data-style');
-      expect(style).not.toContain('"backgroundColor":"transparent"');
+      expect(style).toContain(`"backgroundColor":"${FOCUSED_INDICATOR_COLOR}"`);
     });
   });
 
