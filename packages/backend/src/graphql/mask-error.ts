@@ -1,4 +1,4 @@
-import { GraphQLError } from 'graphql';
+import { GraphQLError, Kind } from 'graphql';
 import * as Sentry from '@sentry/node';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 import { markErrorReported, wasErrorReported } from '../utils/sentry-dedupe';
@@ -41,15 +41,54 @@ export function isDatabaseLeakError(error: unknown): boolean {
 }
 
 /**
- * The GraphQL field path of a located error ("searchClimbs", "user.ticks"), or
- * undefined for an error that never reached graphql-js. This is what names the
- * offending resolver on an otherwise anonymous driver error.
+ * The RESPONSE path of a located error ("searchClimbs", "myAlias.ticks.3.climb"),
+ * or undefined for an error that never reached graphql-js.
+ *
+ * Every segment here is a response key, which is the client's alias when it gave
+ * one — so this names the shape of the response, NOT the resolver. Use
+ * `getSchemaFieldName` for resolver identity, and never key anything bounded on
+ * this value.
  */
-function getGraphqlPath(error: unknown): string | undefined {
+function getResponsePath(error: unknown): string | undefined {
   if (error && typeof error === 'object' && 'path' in error) {
     const { path } = error as { path?: unknown };
     if (Array.isArray(path) && path.length > 0) {
       return path.join('.');
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The schema field name of the field that failed — `board`, `ticks` — read from
+ * the error's AST node rather than its path.
+ *
+ * `GraphQLError.path` holds **response keys**, which are client-chosen aliases:
+ * `query { zzArbitrary: gym }` produces the path `zzArbitrary` while the field
+ * is still `gym`. Anything bounded that keys on the path is therefore
+ * client-controlled — a client rotating aliases could mint unlimited distinct
+ * values. The `FieldNode` on `error.nodes` keeps the real schema name in
+ * `name.value` and the alias separately in `alias`, so it is stable per field
+ * and bounded by the schema. Verified against graphql-js: an aliased failure
+ * gives `path === ['zzArbitrary']` but `nodes[0].name.value === 'gym'`.
+ *
+ * Only the leaf field is available. The mask runs in graphql-yoga's `maskError`,
+ * which is handed the error alone — there is no `info`, so `parentType.name`
+ * cannot be included and two same-named fields on different types share one
+ * identity. That is a bounded, deliberate imprecision; a client-controlled key
+ * is not an acceptable alternative.
+ */
+function getSchemaFieldName(error: unknown): string | undefined {
+  for (const candidate of [error, getOriginalError(error)]) {
+    if (!candidate || typeof candidate !== 'object' || !('nodes' in candidate)) continue;
+    const { nodes } = candidate as { nodes?: unknown };
+    if (!Array.isArray(nodes)) continue;
+    for (const node of nodes) {
+      if (!node || typeof node !== 'object') continue;
+      const fieldNode = node as { kind?: unknown; name?: { value?: unknown } };
+      if (fieldNode.kind !== Kind.FIELD) continue;
+      const fieldName = fieldNode.name?.value;
+      if (typeof fieldName === 'string' && fieldName.length > 0) return fieldName;
     }
   }
   return undefined;
@@ -67,6 +106,40 @@ function getFailedQuery(error: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * The Sentry grouping key for a masked database failure: the SQLSTATE (or driver
+ * code) plus the schema field that failed.
+ *
+ * Sentry's default grouping fingerprints on the captured exception's type and
+ * stack. Every error here is a `PostgresError` thrown from the same two frames
+ * inside postgres.js, so the default collapses *every* database failure in the
+ * service into one issue — BOARDSESH-AK, which by 2026-09 pooled 34 distinct
+ * (code, field) pairs behind whichever sample event Sentry chose as the title.
+ * That is not merely untidy: issue #4737 was filed as a P2 "presence_seq column
+ * missing, 32 users" against a bucket whose 32 users were really 53100 disk-full
+ * failures, while the six 42703 events that supplied the title came from one
+ * developer's local backend. A bucket that mixes causes reports every cause's
+ * impact as every other cause's impact.
+ *
+ * **Both inputs must be bounded and server-controlled**, because a fingerprint
+ * is how many Sentry issues exist. Two things are deliberately kept out:
+ *
+ * - **The response path.** It is built from client-chosen aliases, so keying on
+ *   it would let anyone who can send a query create unlimited issues by rotating
+ *   aliases — fragmentation worse than the single bucket this replaces. Callers
+ *   pass `getSchemaFieldName`, which reads the schema name off the AST node.
+ * - **The message.** It carries per-event noise — the segment id and byte count
+ *   in `could not resize shared memory segment "/PostgreSQL.523119486" to
+ *   1048576 bytes` differ every occurrence — so grouping on it would trade one
+ *   giant issue for thousands of singletons.
+ *
+ * What is left is stable across occurrences of one cause, distinct across
+ * causes, and enumerable from the schema — which is what a fingerprint has to be.
+ */
+export function databaseErrorFingerprint(pgCode: string | undefined, schemaFieldName: string | undefined): string[] {
+  return ['graphql-yoga-mask', pgCode ?? 'unknown', schemaFieldName || 'unknown'];
 }
 
 function unwrapCause(error: unknown): unknown {
@@ -133,21 +206,33 @@ export function maskDatabaseError(error: unknown): Error {
     // so the response status below can tell an outage from a bad statement.
     const pgCode = getPostgresErrorCode(getOriginalError(error) ?? error);
     if (!wasErrorReported(error)) {
-      // We still capture the unwrapped driver error, so Sentry's fingerprint (and
-      // therefore the existing issue's history) is unchanged — tags and extra do
-      // not affect grouping. But reporting the cause alone is what made
-      // BOARDSESH-AK an anonymous bucket that every resolver's DB failures fell
-      // into, with no way to tell which query blew up (#4105). Attach the field
-      // path and the SQL as event context. This is server-side only; the client
+      // We still capture the unwrapped driver error so the event carries the real
+      // pg cause. #4105 attached the field path and the SQL as context, which made
+      // an individual event readable but left grouping alone — and tags and extra
+      // do not affect grouping, so every resolver's DB failures stayed in one
+      // anonymous bucket. `fingerprint` is the half that was missing (#4737): it
+      // splits that bucket by cause, so an issue's title and its impact count
+      // finally describe the same failure. This is server-side only; the client
       // still gets the generic message below, so #3183's info-leak fix holds.
-      const graphqlPath = getGraphqlPath(error);
+      const schemaFieldName = getSchemaFieldName(error);
+      const responsePath = getResponsePath(error);
       const failedQuery = getFailedQuery(error);
       Sentry.captureException(unwrapCause(error), {
+        // Two different questions, so two tags. `graphqlField` is the schema
+        // field — the resolver that failed, identical however the client aliased
+        // it, and the only one safe to group on. `graphqlResponsePath` is the
+        // alias-bearing path, kept because it locates the exact row in a list
+        // ("ticks.3.climb") when reading one event. The old `graphqlPath` name is
+        // gone deliberately: it read as a resolver name while carrying whatever
+        // the client called the field, which would mislead the triage this
+        // fingerprint exists to enable.
         tags: {
           source: 'graphql-yoga-mask',
           pgCode: pgCode ?? 'unknown',
-          ...(graphqlPath ? { graphqlPath } : {}),
+          ...(schemaFieldName ? { graphqlField: schemaFieldName } : {}),
+          ...(responsePath ? { graphqlResponsePath: responsePath } : {}),
         },
+        fingerprint: databaseErrorFingerprint(pgCode, schemaFieldName),
         ...(failedQuery ? { extra: { failedQuery } } : {}),
       });
       markErrorReported(error);
