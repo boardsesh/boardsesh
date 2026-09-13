@@ -247,25 +247,37 @@ describe('MaterialTabBar', () => {
   });
 
   describe('active indicator', () => {
-    // #5422: an omitted (not merely transparent) backgroundColor on mount is what made Android drop the borderRadius clip on the first focus update.
-    it('sets an explicit transparent background on unfocused tabs, not an absent one', () => {
+    // Toggling color instead of opacity made Android drop the borderRadius clip on focus.
+    it('gives every indicator the same tonal color, focused or not', () => {
+      const props = makeProps({ activeIndex: 0 });
+      const { getAllByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const indicators = getAllByTestId('indicator');
+      for (const indicator of indicators) {
+        const style = indicator.getAttribute('data-style');
+        expect(style).toContain(`"backgroundColor":"${FOCUSED_INDICATOR_COLOR}"`);
+      }
+    });
+
+    it('hides the fill via opacity on unfocused tabs', () => {
       const props = makeProps({ activeIndex: 0 });
       const { getAllByTestId } = render(
         <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
       );
       const indicators = getAllByTestId('indicator');
       const style = indicators[1].getAttribute('data-style');
-      expect(style).toContain('"backgroundColor":"transparent"');
+      expect(style).toContain('"opacity":0');
     });
 
-    it('sets the tonal color on the focused tab', () => {
+    it('shows the fill via opacity on the focused tab', () => {
       const props = makeProps({ activeIndex: 0 });
       const { getAllByTestId } = render(
         <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
       );
       const indicators = getAllByTestId('indicator');
       const style = indicators[0].getAttribute('data-style');
-      expect(style).toContain(`"backgroundColor":"${FOCUSED_INDICATOR_COLOR}"`);
+      expect(style).toContain('"opacity":1');
     });
   });
 

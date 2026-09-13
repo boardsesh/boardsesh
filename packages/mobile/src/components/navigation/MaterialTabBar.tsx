@@ -88,11 +88,12 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
             accessibilityLabel={label}
             style={styles.item}
           >
-            {/* Always set backgroundColor — adding it post-mount can lose the Android borderRadius clip. */}
-            <View
-              testID="indicator"
-              style={[styles.indicator, { backgroundColor: focused ? indicatorColor : 'transparent' }]}
-            >
+            <View style={styles.indicator}>
+              {/* Opacity toggle, not a color swap — Android needs radius+color set together from mount. */}
+              <View
+                testID="indicator"
+                style={[styles.indicatorFill, { backgroundColor: indicatorColor, opacity: focused ? 1 : 0 }]}
+              />
               {options.tabBarIcon?.({ focused, color: iconColor, size: 24 })}
               {options.tabBarBadge != null ? (
                 <View
@@ -142,13 +143,21 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     gap: 4,
   },
-  // Active-indicator circle — fixed size, tonal fill only when focused.
+  // Active-indicator circle — fixed size, centers the icon over the fill layer below.
   indicator: {
     width: material.navBar.activeIndicatorWidth,
     height: material.navBar.activeIndicatorHeight,
-    borderRadius: material.navBar.activeIndicatorRadius,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // The tonal fill itself — color is constant, only opacity toggles with focus.
+  indicatorFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: material.navBar.activeIndicatorRadius,
   },
   badge: {
     position: 'absolute',
