@@ -86,7 +86,13 @@ export type SerialPlanOutcome =
   /** `ALTER DATABASE ... SET` ran and the catalog now reports the target value. */
   | { status: 'applied'; reading: SerialPlanReading }
   /** The connection does not own the database. Never swallowed — see `isSerialPlanFailure`. */
-  | { status: 'not-permitted'; reading: SerialPlanReading; detail: string };
+  | { status: 'not-permitted'; reading: SerialPlanReading; detail: string }
+  /**
+   * The connection is to a different database than the application's (say an
+   * `ADMIN_DATABASE_URL` ending in `/postgres`). No statement was issued: an
+   * ALTER here would change an unrelated database and leave the real one unfixed.
+   */
+  | { status: 'wrong-database'; reading: SerialPlanReading; expectedDatabaseName: string };
 
 /**
  * One statement, three facts. `current_setting` is what the session sees;
@@ -167,9 +173,20 @@ function describeError(error: unknown): string {
  * caller decides what to do with it, and `isSerialPlanFailure` says it is a
  * failure. Any other error propagates — misreading, say, a connection drop as
  * "the role cannot do this" is how a no-op reports success.
+ *
+ * `applicationDatabaseName` is the database the application's own sessions
+ * connect to (`current_database()` on an application connection). The ALTER
+ * targets `current_database()` of THIS session, so a connection to any other
+ * database is refused before a single statement is issued.
  */
-export async function applySerialPlanDatabaseDefault(client: SerialPlanClient): Promise<SerialPlanOutcome> {
+export async function applySerialPlanDatabaseDefault(
+  client: SerialPlanClient,
+  applicationDatabaseName: string,
+): Promise<SerialPlanOutcome> {
   const reading = await readSerialPlanState(client);
+  if (reading.databaseName !== applicationDatabaseName) {
+    return { status: 'wrong-database', reading, expectedDatabaseName: applicationDatabaseName };
+  }
   if (reading.databaseDefault === SERIAL_PLAN_TARGET_VALUE) {
     return { status: 'already-applied', reading };
   }
@@ -198,8 +215,8 @@ export async function applySerialPlanDatabaseDefault(client: SerialPlanClient): 
 
 export function isSerialPlanFailure(
   outcome: SerialPlanOutcome,
-): outcome is Extract<SerialPlanOutcome, { status: 'not-permitted' }> {
-  return outcome.status === 'not-permitted';
+): outcome is Extract<SerialPlanOutcome, { status: 'not-permitted' | 'wrong-database' }> {
+  return outcome.status === 'not-permitted' || outcome.status === 'wrong-database';
 }
 
 /**
@@ -274,9 +291,20 @@ export async function runSerialPlanVerification(ports: SerialPlanVerificationPor
     return reportSerialPlanFailure(ports, reading.databaseName);
   }
 
-  const outcome = await withConnection(ports.openAdminClient, applySerialPlanDatabaseDefault);
+  const outcome = await withConnection(ports.openAdminClient, (client) =>
+    applySerialPlanDatabaseDefault(client, reading.databaseName),
+  );
 
-  if (isSerialPlanFailure(outcome)) {
+  if (outcome.status === 'wrong-database') {
+    ports.warn(
+      `[serial-plan] ADMIN_DATABASE_URL connects to database ${outcome.reading.databaseName}, but the ` +
+        `application connects to ${outcome.expectedDatabaseName}. Refusing to issue ALTER DATABASE against ` +
+        `the wrong database — point ADMIN_DATABASE_URL at ${outcome.expectedDatabaseName}.`,
+    );
+    return reportSerialPlanFailure(ports, outcome.expectedDatabaseName);
+  }
+
+  if (outcome.status === 'not-permitted') {
     ports.warn(`[serial-plan] ADMIN_DATABASE_URL does not own ${outcome.reading.databaseName}: ${outcome.detail}`);
     return reportSerialPlanFailure(ports, outcome.reading.databaseName);
   }
