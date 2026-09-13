@@ -67,6 +67,136 @@ describe('classifyClimbBoardCompatibility', () => {
     });
   });
 
+  // Issue #5109. Kilter product sizes: 7 is the 12 x 14 commercial wall, 10 the
+  // 12 x 12 with kickboard. A climb set on the 12 x 14 uses placements the
+  // smaller wall doesn't have, so writing it lights a partial climb and buzzes
+  // success. Only callers that know the PHYSICAL wall name a size — the BLE
+  // auto-sender does, the add gate and the swipe navigator don't.
+  describe('connected-wall size', () => {
+    const KILTER_L1_12X12: ActiveBoardForCompatibility = { boardName: 'kilter', layoutId: 1, sizeId: 10 };
+
+    it('flags a climb set on a bigger wall of the same layout', () => {
+      expect(
+        classifyClimbBoardCompatibility(KILTER_L1_12X12, { boardType: 'kilter', layoutId: 1, compatibleSizeIds: [7] }),
+      ).toBe('incompatible');
+    });
+
+    it('keeps a climb that fits the connected size compatible', () => {
+      expect(
+        classifyClimbBoardCompatibility(KILTER_L1_12X12, {
+          boardType: 'kilter',
+          layoutId: 1,
+          compatibleSizeIds: [7, 10],
+        }),
+      ).toBe('compatible');
+    });
+
+    it('leaves the answer untouched when the caller names no wall size', () => {
+      expect(
+        classifyClimbBoardCompatibility(KILTER_L1, { boardType: 'kilter', layoutId: 1, compatibleSizeIds: [7] }),
+      ).toBe('compatible');
+    });
+
+    it('treats missing and empty size metadata as no signal, not a mismatch', () => {
+      // Legacy rows, party-synced climbs and `?? []` fetch paths all land here;
+      // turning any of them into 'incompatible' would skip climbs that light fine.
+      expect(classifyClimbBoardCompatibility(KILTER_L1_12X12, { boardType: 'kilter', layoutId: 1 })).toBe('compatible');
+      expect(
+        classifyClimbBoardCompatibility(KILTER_L1_12X12, { boardType: 'kilter', layoutId: 1, compatibleSizeIds: null }),
+      ).toBe('compatible');
+      expect(
+        classifyClimbBoardCompatibility(KILTER_L1_12X12, { boardType: 'kilter', layoutId: 1, compatibleSizeIds: [] }),
+      ).toBe('compatible');
+    });
+
+    it('stays unknown for a climb that names sizes but no board or layout', () => {
+      // Sizes alone can't be judged: size ids only mean something once we know
+      // which board the climb is from.
+      expect(classifyClimbBoardCompatibility(KILTER_L1_12X12, { compatibleSizeIds: [7] })).toBe('unknown');
+    });
+
+    it('skips an upsized climb in the queue scan when the wall names its size', () => {
+      const queue = [
+        makeItem('twelve-by-fourteen', { boardType: 'kilter', layoutId: 1, compatibleSizeIds: [7] }),
+        makeItem('fits', { boardType: 'kilter', layoutId: 1, compatibleSizeIds: [7, 10] }),
+      ];
+      expect(findNextCompatibleQueueItem(queue, 'twelve-by-fourteen', KILTER_L1_12X12)).toMatchObject({
+        item: { uuid: 'fits' },
+        skippedCount: 1,
+      });
+      // The same queue on a caller that only knows the board model (the swipe
+      // navigator) still stops on the first item — behaviour there is unchanged.
+      expect(findNextCompatibleQueueItem(queue, 'twelve-by-fourteen', KILTER_L1)).toMatchObject({
+        item: { uuid: 'twelve-by-fourteen' },
+        skippedCount: 0,
+      });
+    });
+  });
+
+  // MoonBoard 2024 (layout 3): cell 1 belongs to Hold Set D (set 5), cells 2 and
+  // 17 to the wooden sets (8 and 10). The grid is the full grid whichever sets
+  // are bolted on, so the cell-to-set map is the only thing that can tell a
+  // wooden-set climb from a base-set one before it reaches the wall.
+  describe('connected-wall hold sets', () => {
+    const WOODEN_SET_FRAMES = 'p1r42p2r43p17r44';
+    const BASE_SET_FRAMES = 'p1r42p9r43';
+    const baseOnlyWall: ActiveBoardForCompatibility = { boardName: 'moonboard', layoutId: 3, setIds: '5' };
+
+    it('flags a wooden-set climb on a wall built without the wooden sets', () => {
+      expect(
+        classifyClimbBoardCompatibility(baseOnlyWall, {
+          boardType: 'moonboard',
+          layoutId: 3,
+          frames: WOODEN_SET_FRAMES,
+        }),
+      ).toBe('incompatible');
+    });
+
+    it('accepts the same climb once the wooden sets are installed', () => {
+      expect(
+        classifyClimbBoardCompatibility(
+          { boardName: 'moonboard', layoutId: 3, setIds: [5, 8, 10] },
+          { boardType: 'moonboard', layoutId: 3, frames: WOODEN_SET_FRAMES },
+        ),
+      ).toBe('compatible');
+    });
+
+    it('accepts a base-set climb on a base-only wall', () => {
+      expect(
+        classifyClimbBoardCompatibility(baseOnlyWall, { boardType: 'moonboard', layoutId: 3, frames: BASE_SET_FRAMES }),
+      ).toBe('compatible');
+    });
+
+    it('skips the check when the wall names no sets or the climb has no frames', () => {
+      expect(
+        classifyClimbBoardCompatibility(
+          { boardName: 'moonboard', layoutId: 3 },
+          { boardType: 'moonboard', layoutId: 3, frames: WOODEN_SET_FRAMES },
+        ),
+      ).toBe('compatible');
+      expect(classifyClimbBoardCompatibility(baseOnlyWall, { boardType: 'moonboard', layoutId: 3 })).toBe('compatible');
+      expect(
+        classifyClimbBoardCompatibility(
+          { boardName: 'moonboard', layoutId: 3, setIds: '' },
+          { boardType: 'moonboard', layoutId: 3, frames: WOODEN_SET_FRAMES },
+        ),
+      ).toBe('compatible');
+    });
+
+    it('does not apply the MoonBoard cell-set map to Aurora boards', () => {
+      // Aurora placements are per-set, so an uninstalled set's holds are absent
+      // from the wall's placement map — caught by hold-id containment at send
+      // time. Running the MoonBoard map over Kilter frames would reject on hold
+      // ids that mean something else entirely.
+      expect(
+        classifyClimbBoardCompatibility(
+          { boardName: 'kilter', layoutId: 3, setIds: '1' },
+          { boardType: 'kilter', layoutId: 3, frames: WOODEN_SET_FRAMES },
+        ),
+      ).toBe('compatible');
+    });
+  });
+
   // Production repros from issue #3193 (Sentry BOARDSESH-39 / BOARDSESH-6P):
   // kilter layout-1 climbs sent while the app was on a Homewall or MoonBoard config.
   it('flags a kilter original climb as incompatible with a kilter Homewall board (BOARDSESH-39)', () => {
