@@ -506,7 +506,11 @@ after `migrate`:
 3. Otherwise applies the database default when `ADMIN_DATABASE_URL` names a
    connection that owns the database, then re-checks on a **new** application
    connection (`ALTER DATABASE ... SET` never changes the session that issued
-   it, so re-reading the same session would be a vacuous check).
+   it, so re-reading the same session would be a vacuous check). The ALTER
+   targets the admin session's `current_database()`, so the step refuses before
+   any DDL unless that equals the application session's database — an
+   `ADMIN_DATABASE_URL` ending in `/postgres` fails the job instead of changing
+   the maintenance database.
 4. Otherwise **exits 1**, printing the one statement an operator runs once.
 
 A **fresh database still gets the default from migrations**: 0225 applies
