@@ -139,10 +139,7 @@ export const material = {
   disabledContentOpacity: 0.38,
   disabledContainerOpacity: 0.12,
   navBar: {
-    /** Tonal indicator behind the focused tab's icon — a fully-rounded circle
-     *  hugging the 24px icon (8px of breathing room per side) rather than the
-     *  M3-spec 64×32 pill, which read as a long rounded rectangle at our tab
-     *  widths instead of a soft, obviously-circular highlight. */
+    /** Tonal circle behind the focused tab's icon (40×40, 20px radius). */
     activeIndicatorWidth: 40,
     activeIndicatorHeight: 40,
     activeIndicatorRadius: 20,
