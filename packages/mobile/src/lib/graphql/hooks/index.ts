@@ -929,7 +929,7 @@ export function useSearchClimbsCount(input: ClimbSearchInput, enabled = true) {
 export function useSetterStats(input: SetterStatsInput, enabled = true) {
   return useQuery({
     queryKey: ['setterStats', input],
-    queryFn: () => getHttpClient().request<GetSetterStatsQueryResponse>(GET_SETTER_STATS, { input }),
+    queryFn: () => offlineAwareRequest<GetSetterStatsQueryResponse>(GET_SETTER_STATS, { input }),
     select: (data) => data.setterStats,
     enabled,
     staleTime: 5 * 60 * 1000,

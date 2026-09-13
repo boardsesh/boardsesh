@@ -770,7 +770,7 @@ export const SHARED_EVENTS = {
   //
   // Props: { lane: 'offline_local' | 'backend_unreachable_local' |
   //   'offline_mode_local' | 'network_error_local' | 'online_local',
-  //   surface: 'search' | 'climb_detail' | 'grade', boardName, readCount }.
+  //   surface: 'search' | 'climb_detail' | 'grade' | 'setter_stats', boardName, readCount }.
   // `lane` is the source: served while offline, served after the network threw
   // (a lying connection — real offline value), or the online flag-on latency
   // short-circuit (NOT offline usage; excluded from the north-star).
@@ -797,7 +797,7 @@ export const SHARED_EVENTS = {
   // #4318 (discovery nudges) and #4002 (unsupported filters) exist to shrink.
   // Same rollup contract and same readCount semantics as Offline Read Served.
   // Props: { reason: 'board_not_downloaded' | 'filter_unsupported' |
-  //   'local_db_unavailable', surface: 'search' | 'climb_detail' | 'grade',
+  //   'local_db_unavailable', surface: 'search' | 'climb_detail' | 'grade' | 'setter_stats',
   //   boardName, readCount }. `local_db_unavailable` means there was no database
   // handle to ask at all (init still retrying, or wedged — #4313 / #4314). The
   // board may well BE downloaded in that case, so it is deliberately NOT part of

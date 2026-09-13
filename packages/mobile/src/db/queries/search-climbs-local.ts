@@ -84,7 +84,7 @@ function normalizeSortBy(sortBy: string | null | undefined): string {
   return SORT_ALIASES[sortBy] ?? 'creation';
 }
 
-function parseSetIds(setIds: string | null | undefined): number[] {
+export function parseSetIds(setIds: string | null | undefined): number[] {
   if (!setIds) return [];
   return setIds
     .split(',')
@@ -95,7 +95,7 @@ function parseSetIds(setIds: string | null | undefined): number[] {
 // Escape LIKE metacharacters so a search for "50%" or "a_b" matches literally.
 // SQLite LIKE is case-insensitive for ASCII only (accented letters won't fold) —
 // an accepted offline limitation vs Postgres ILIKE.
-function escapeLike(input: string): string {
+export function escapeLike(input: string): string {
   return input.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
