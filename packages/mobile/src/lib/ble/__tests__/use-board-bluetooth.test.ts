@@ -2776,6 +2776,74 @@ describe('useBoardBluetooth config-switch teardown', () => {
     expect(result.current.isConnected).toBe(true);
   });
 
+  it('tears down when the board uuid changes and the rest of the config is identical', async () => {
+    // Two Kilter 12x12s on one gym's wall bank: same layout, size and sets, two
+    // saved boards. Keyed on the config alone the identity never moved, so the
+    // link stayed on wall A while the app rebound to wall B and climbs lit on A
+    // landed in B's presence feed.
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const onConnectionEnded = vi.fn();
+
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: {
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1,20',
+        boardUuid: 'wall-a-uuid',
+        onConnectionEnded,
+      },
+    });
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.isConnected).toBe(true);
+
+    // Re-rendering the same wall leaves the link alone — the uuid segment is
+    // stable, not a value that churns every render.
+    await act(async () => {
+      rerender({
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1,20',
+        boardUuid: 'wall-a-uuid',
+        onConnectionEnded,
+      });
+    });
+    expect(fakeAdapter.disconnect).not.toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(true);
+
+    await act(async () => {
+      rerender({
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1,20',
+        boardUuid: 'wall-b-uuid',
+        onConnectionEnded,
+      });
+    });
+
+    expect(fakeAdapter.disconnect).toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(false);
+    // Attribution still names the wall the connection actually ran on.
+    expect(onConnectionEnded).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'user',
+        disconnectTrigger: 'config_switch',
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1,20',
+      }),
+    );
+  });
+
   it('suppresses adoption after a config-switch teardown until the next deliberate connect', async () => {
     const firstAdapter = makeFakeAdapter();
     const adoptableSecond = {
