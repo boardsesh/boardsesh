@@ -83,9 +83,17 @@ const ANONYMOUS_SOCKET_PEER_RATE_LIMIT_MULTIPLIER = 5;
  * tune by hand; the floor keeps low-limit operations from getting an
  * unreasonably tight fleet-wide budget. Still finite: a backstop against a bug
  * in our own code looping against the backend, not a real abuse control.
+ *
+ * This fleet-wide bucket only applies when the caller passes no
+ * `internalServicePartition`. A single fixed key is globally exhaustible: one
+ * crawler the edge allows (~360 requests/min per IP, docs/cloudflare.md) walking
+ * distinct climbs produces one cache miss per page, drains it, and every other
+ * visitor's render loses the section. SSR-reachable operations must partition.
  */
 const INTERNAL_SERVICE_RATE_LIMIT_FLOOR = 300;
 const INTERNAL_SERVICE_RATE_LIMIT_MULTIPLIER = 10;
+// Bounds the key a partition can produce; real partitions are well under this.
+const INTERNAL_SERVICE_PARTITION_MAX_LENGTH = 200;
 // Keep every Redis tier for one operation on the same window; changing this
 // means changing the windowMs passed to both calls below together.
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -485,19 +493,41 @@ export async function isSessionMember(ctx: ConnectionContext, sessionId: string)
  * or WebSocket: `authenticateInternalServiceSecret` only runs on the HTTP
  * bearer path and clears `authResult` when it matches.
  *
+ * When the resolver passes `internalServicePartition` (the identity of the
+ * thing being read, e.g. board+layout+climb+angle), the internal-service
+ * bucket is keyed on it at the operation's normal `limit` instead. The web tier
+ * caches each such read (`unstable_cache`, 1 h), so one partition legitimately
+ * reaches the backend about once per web replica per hour: `limit`/min on a
+ * single partition only trips on a loop in our own code, while a crawler
+ * walking distinct climbs lands every miss in a separate bucket and cannot
+ * starve anyone else's render. The partition is client-shaped input, but it is
+ * only honoured behind the internal-service secret, so a public caller cannot
+ * use it to rotate out of its own per-IP bucket.
+ *
  * @param ctx - Connection context
  * @param limit - Optional custom limit (default: 60 requests per minute)
  * @param operation - Operation name for Redis key namespacing (default: 'default')
+ * @param options.internalServicePartition - Per-read bucket key, honoured only for `ctx.isInternalService`
  */
-export async function applyRateLimit(ctx: ConnectionContext, limit?: number, operation = 'default'): Promise<void> {
+export async function applyRateLimit(
+  ctx: ConnectionContext,
+  limit?: number,
+  operation = 'default',
+  options: { internalServicePartition?: string } = {},
+): Promise<void> {
   if (process.env.NODE_ENV === 'development') return;
 
   const maxRequests = limit ?? 60;
   const isInternalService = ctx.isInternalService === true;
-  const internalServiceMaxRequests = Math.max(
-    INTERNAL_SERVICE_RATE_LIMIT_FLOOR,
-    maxRequests * INTERNAL_SERVICE_RATE_LIMIT_MULTIPLIER,
-  );
+  const internalServicePartition = isInternalService
+    ? options.internalServicePartition?.slice(0, INTERNAL_SERVICE_PARTITION_MAX_LENGTH) || undefined
+    : undefined;
+  const internalServiceIdentity = internalServicePartition
+    ? `internal-service:${internalServicePartition}`
+    : 'internal-service';
+  const internalServiceMaxRequests = internalServicePartition
+    ? maxRequests
+    : Math.max(INTERNAL_SERVICE_RATE_LIMIT_FLOOR, maxRequests * INTERNAL_SERVICE_RATE_LIMIT_MULTIPLIER);
 
   // Tier 1: Synchronous in-memory rate limiting (fast path, per-instance)
   // Use the internal-service identity first, then userId for authenticated
@@ -506,7 +536,7 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
   let key: string;
   let effectiveMaxRequests: number;
   if (isInternalService) {
-    key = `internal-service:${operation}`;
+    key = `${internalServiceIdentity}:${operation}`;
     effectiveMaxRequests = internalServiceMaxRequests;
   } else if (ctx.isAuthenticated && ctx.userId) {
     key = `${ctx.userId}:${operation}`;
@@ -531,7 +561,7 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
     // Tier 2: Distributed Redis rate limiting. Tier 1 already ran, so Redis
     // failures must not increment the same in-memory bucket a second time.
     if (isInternalService) {
-      await checkRateLimitRedis('internal-service', operation, internalServiceMaxRequests, RATE_LIMIT_WINDOW_MS, {
+      await checkRateLimitRedis(internalServiceIdentity, operation, internalServiceMaxRequests, RATE_LIMIT_WINDOW_MS, {
         fallbackToMemory: false,
       });
     } else if (ctx.isAuthenticated && ctx.userId) {

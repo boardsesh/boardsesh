@@ -205,14 +205,15 @@ export const climbQueries = {
       throw new Error(`Invalid board name: ${validated.boardType}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
     }
     const boardType = validated.boardType as BoardName;
+    const internalServicePartition = validated.climbUuid
+      ? `${validated.boardType}:${validated.layoutId}:${validated.climbUuid}:${validated.angle ?? ''}`
+      : undefined;
 
     if (!(await hasCatalogQueryAccess(ctx, boardType))) {
-      // 600/min/IP on the index path. The read is one index lookup, and every
-      // web front-door render reaches here from the web server's single IP:
-      // crawlers walking climb pages put hundreds of requests a minute through
-      // that one key, which the 30/min live-path limit below turned into
-      // RATE_LIMITED errors and empty strips.
-      await applyRateLimit(ctx, 600, 'similar-climbs-index');
+      // Ordinary callers get 600/min/IP for this one index lookup. Trusted
+      // server-side renders use a per-read board/layout/climb/angle partition,
+      // so a crawler walking distinct climbs does not drain one shared bucket.
+      await applyRateLimit(ctx, 600, 'similar-climbs-index', { internalServicePartition });
       // Spray walls are private catalogues and never materialised; the app
       // answers them from the wall it has mirrored on the phone. Checked first
       // so a wall answers every non-admin the same way, frames or not.
@@ -237,13 +238,12 @@ export const climbQueries = {
       });
     }
 
-    // 30/min/IP on the live path only. The similar-climbs CTE scans
-    // board_climb_holds for the whole layout before the HAVING prune. React
-    // Query caches identical queries for 5 min but the play-drawer surface keys
-    // on climbUuid so rapid climb-switching generates fresh requests; 30/min
-    // stays well above any realistic interactive cadence while keeping a
-    // CGNAT'd shared IP from running the query at 1/s sustained.
-    await applyRateLimit(ctx, 30, 'similar-climbs');
+    // Ordinary callers get 30/min/IP on the live path. Trusted server-side
+    // renders use the same per-read partition as the index path above. The
+    // CTE scans board_climb_holds for the whole layout before the HAVING prune;
+    // React Query caches identical queries for 5 min, while interactive climb
+    // switching can still produce fresh requests.
+    await applyRateLimit(ctx, 30, 'similar-climbs', { internalServicePartition });
 
     // `climbUuid` is OPTIONAL here — a caller may pass a bare hold set — so this
     // needs no capability at all: posting `holds: [1..N]` with `threshold: 0`

@@ -18,6 +18,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { applyRateLimit } from '../graphql/resolvers/shared/helpers';
+import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
 vi.mock('../utils/redis-rate-limiter', () => ({
   checkRateLimitRedis: vi.fn().mockResolvedValue(undefined),
@@ -38,6 +39,63 @@ const CONCURRENT_SSR_RENDERS = 40;
 describe('similar-climbs rate limit: internal-service SSR identity (#5291)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  const internalServiceCtx = (index: number): ConnectionContext => ({
+    connectionId: `http-ssr-${index}`,
+    transport: 'http',
+    isAuthenticated: false,
+    isInternalService: true,
+    clientIp: '10.0.0.5',
+  });
+
+  it('a crawler walking more distinct climbs than any fixed ceiling cannot starve another visitor’s render', async () => {
+    const operation = `similar-climbs-crawl-${Date.now()}`;
+    // One allowed crawler IP gets ~360 requests/min past the edge, and every
+    // distinct climb is a separate web cache miss. 400 is above the 300/min
+    // fleet-wide internal-service bucket this partitioning replaces.
+    const crawl = Array.from({ length: 400 }, (_, index) =>
+      applyRateLimit(internalServiceCtx(index), SIMILAR_CLIMBS_LIMIT, operation, {
+        internalServicePartition: `kilter:1:crawled-climb-${index}:40`,
+      }),
+    );
+    await expect(Promise.all(crawl)).resolves.toBeDefined();
+
+    await expect(
+      applyRateLimit(internalServiceCtx(401), SIMILAR_CLIMBS_LIMIT, operation, {
+        internalServicePartition: 'kilter:1:real-visitor-climb:40',
+      }),
+    ).resolves.toBeUndefined();
+    expect(checkRateLimitRedis).toHaveBeenLastCalledWith(
+      'internal-service:kilter:1:real-visitor-climb:40',
+      operation,
+      SIMILAR_CLIMBS_LIMIT,
+      60_000,
+      { fallbackToMemory: false },
+    );
+  });
+
+  it('still throttles our own code looping on ONE climb at the operation limit', async () => {
+    const operation = `similar-climbs-loop-${Date.now()}`;
+    const loop = Array.from({ length: SIMILAR_CLIMBS_LIMIT + 1 }, (_, index) =>
+      applyRateLimit(internalServiceCtx(index), SIMILAR_CLIMBS_LIMIT, operation, {
+        internalServicePartition: 'kilter:1:same-climb:40',
+      }),
+    );
+    await expect(Promise.all(loop)).rejects.toThrow(/Rate limit exceeded/);
+  });
+
+  it('ignores the partition for a public caller, so rotating climb ids cannot escape the per-IP bucket', async () => {
+    const operation = `similar-climbs-public-rotate-${Date.now()}`;
+    const rotating = Array.from({ length: SIMILAR_CLIMBS_LIMIT + 1 }, (_, index) =>
+      applyRateLimit(
+        { connectionId: `http-public-${index}`, transport: 'http', isAuthenticated: false, clientIp: '203.0.113.9' },
+        SIMILAR_CLIMBS_LIMIT,
+        operation,
+        { internalServicePartition: `kilter:1:rotated-${index}:40` },
+      ),
+    );
+    await expect(Promise.all(rotating)).rejects.toThrow(/Rate limit exceeded/);
   });
 
   it('does not throttle concurrent SSR renders for different climbs/visitors once authenticated as internal-service', async () => {
