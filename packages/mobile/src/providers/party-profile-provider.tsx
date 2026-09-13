@@ -1,3 +1,4 @@
+import { memoryProfile } from '../lib/profiling/memory-profile';
 // PartyProfileProvider — mirrors web's
 // `packages/web/app/components/party-manager/party-profile-context.tsx`.
 // It keeps the shared party-profile UUID and PostHog identity reconciliation,
@@ -46,6 +47,10 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
   // so signed-out launches don't fire the query. Shared `['profile']` query key,
   // so this dedupes with the profile/discover screens that also read it.
   const { data: userProfile } = useProfile({ enabled: isAuthenticated });
+  const memoryAccountId = isAuthenticated && !isAuthLoading ? (userProfile?.id ?? null) : null;
+  useEffect(() => {
+    memoryProfile.account(memoryAccountId);
+  }, [memoryAccountId]);
   const { board: homeBoard } = useHomeBoard();
   const { data: integrationStatuses } = useIntegrationStatuses();
   const lastAnalyticsDistinctId = useRef<string | null>(null);

@@ -1,0 +1,351 @@
+{
+  "run": "carousel-ownership-replay-01",
+  "baseline": {
+    "nodes": 480081,
+    "allocatedBytes": 127508273,
+    "cycle": 0,
+    "graphSha256": "3024ef030ca45f68a65a4373c74acbddda579cd300f4b4c5216027566128462e",
+    "graphBytes": 9876604
+  },
+  "endpoint": {
+    "nodes": 472770,
+    "allocatedBytes": 117530081,
+    "cycle": 20,
+    "graphSha256": "d4d705ee4709287f0f1246ba013d5e47d8d224e8450a1723111ba1b11756e1c9",
+    "graphBytes": 10811435
+  },
+  "classes": [
+    {
+      "class": "std::__shared_ptr_emplace<worklets::Synchronizable>",
+      "kind": "C++",
+      "binary": "Boardsesh",
+      "beforeCount": 731,
+      "afterCount": 1580,
+      "countDelta": 849,
+      "beforeBytes": 233920,
+      "afterBytes": 505600,
+      "bytesDelta": 271680
+    },
+    {
+      "class": "std::__shared_ptr_emplace<worklets::Shareable>",
+      "kind": "C++",
+      "binary": "Boardsesh",
+      "beforeCount": 643,
+      "afterCount": 1241,
+      "countDelta": 598,
+      "beforeBytes": 144032,
+      "afterBytes": 277984,
+      "bytesDelta": 133952
+    },
+    {
+      "class": "std::__shared_ptr_emplace<worklets::SerializableJSRef>",
+      "kind": "C++",
+      "binary": "Boardsesh",
+      "beforeCount": 6150,
+      "afterCount": 7935,
+      "countDelta": 1785,
+      "beforeBytes": 295200,
+      "afterBytes": 380880,
+      "bytesDelta": 85680
+    },
+    {
+      "class": "std::__shared_ptr_emplace<facebook::react::ShadowNodeFamily>",
+      "kind": "C++",
+      "binary": "React",
+      "beforeCount": 3809,
+      "afterCount": 3895,
+      "countDelta": 86,
+      "beforeBytes": 1706432,
+      "afterBytes": 1744960,
+      "bytesDelta": 38528
+    },
+    {
+      "class": "std::__shared_ptr_emplace<facebook::react::ShadowNodeFamily>",
+      "kind": "C++",
+      "binary": "Boardsesh",
+      "beforeCount": 359,
+      "afterCount": 362,
+      "countDelta": 3,
+      "beforeBytes": 160832,
+      "afterBytes": 162176,
+      "bytesDelta": 1344
+    },
+    {
+      "class": "CGImage",
+      "kind": "CFType",
+      "binary": "CoreGraphics",
+      "beforeCount": 468,
+      "afterCount": 468,
+      "countDelta": 0,
+      "beforeBytes": 149760,
+      "afterBytes": 149760,
+      "bytesDelta": 0
+    },
+    {
+      "class": "ImageView",
+      "kind": "Swift",
+      "binary": "ExpoImage",
+      "beforeCount": 66,
+      "afterCount": 66,
+      "countDelta": 0,
+      "beforeBytes": 84480,
+      "afterBytes": 84480,
+      "bytesDelta": 0
+    },
+    {
+      "class": "RCTComponentViewRegistry",
+      "kind": "ObjC",
+      "binary": "React",
+      "beforeCount": 1,
+      "afterCount": 1,
+      "countDelta": 0,
+      "beforeBytes": 96,
+      "afterBytes": 96,
+      "bytesDelta": 0
+    },
+    {
+      "class": "RNSNavigationController",
+      "kind": "ObjC",
+      "binary": "Boardsesh",
+      "beforeCount": 6,
+      "afterCount": 6,
+      "countDelta": 0,
+      "beforeBytes": 9216,
+      "afterBytes": 9216,
+      "bytesDelta": 0
+    },
+    {
+      "class": "RNSScreen",
+      "kind": "ObjC",
+      "binary": "Boardsesh",
+      "beforeCount": 6,
+      "afterCount": 6,
+      "countDelta": 0,
+      "beforeBytes": 7680,
+      "afterBytes": 7680,
+      "bytesDelta": 0
+    },
+    {
+      "class": "RNSScreenStackView",
+      "kind": "ObjC",
+      "binary": "Boardsesh",
+      "beforeCount": 6,
+      "afterCount": 6,
+      "countDelta": 0,
+      "beforeBytes": 5376,
+      "afterBytes": 5376,
+      "bytesDelta": 0
+    },
+    {
+      "class": "RNSScreenView",
+      "kind": "ObjC",
+      "binary": "Boardsesh",
+      "beforeCount": 6,
+      "afterCount": 6,
+      "countDelta": 0,
+      "beforeBytes": 9216,
+      "afterBytes": 9216,
+      "bytesDelta": 0
+    },
+    {
+      "class": "RNSTabsHostComponentView",
+      "kind": "ObjC",
+      "binary": "Boardsesh",
+      "beforeCount": 1,
+      "afterCount": 1,
+      "countDelta": 0,
+      "beforeBytes": 896,
+      "afterBytes": 896,
+      "bytesDelta": 0
+    },
+    {
+      "class": "RNSTabsScreenViewController",
+      "kind": "ObjC",
+      "binary": "Boardsesh",
+      "beforeCount": 5,
+      "afterCount": 5,
+      "countDelta": 0,
+      "beforeBytes": 5120,
+      "afterBytes": 5120,
+      "bytesDelta": 0
+    },
+    {
+      "class": "SDAnimatedImageView",
+      "kind": "ObjC",
+      "binary": "SDWebImage",
+      "beforeCount": 66,
+      "afterCount": 66,
+      "countDelta": 0,
+      "beforeBytes": 42240,
+      "afterBytes": 42240,
+      "bytesDelta": 0
+    },
+    {
+      "class": "Swift._DictionaryStorage<Swift.Int, ExpoModulesCore.SharedObjectNativeState>",
+      "kind": "Swift",
+      "binary": "libswiftCore.dylib",
+      "beforeCount": 1,
+      "afterCount": 1,
+      "countDelta": 0,
+      "beforeBytes": 49152,
+      "afterBytes": 49152,
+      "bytesDelta": 0
+    },
+    {
+      "class": "UIImage",
+      "kind": "ObjC",
+      "binary": "UIKitCore",
+      "beforeCount": 299,
+      "afterCount": 299,
+      "countDelta": 0,
+      "beforeBytes": 47840,
+      "afterBytes": 47840,
+      "bytesDelta": 0
+    },
+    {
+      "class": "FileSystemFile",
+      "kind": "Swift",
+      "binary": "ExpoFileSystem",
+      "beforeCount": 22,
+      "afterCount": 10,
+      "countDelta": -12,
+      "beforeBytes": 1408,
+      "afterBytes": 640,
+      "bytesDelta": -768
+    },
+    {
+      "class": "FileSystemDirectory",
+      "kind": "Swift",
+      "binary": "ExpoFileSystem",
+      "beforeCount": 33,
+      "afterCount": 14,
+      "countDelta": -19,
+      "beforeBytes": 2112,
+      "afterBytes": 896,
+      "bytesDelta": -1216
+    },
+    {
+      "class": "SharedObjectNativeState",
+      "kind": "Swift",
+      "binary": "ExpoModulesCore",
+      "beforeCount": 125,
+      "afterCount": 61,
+      "countDelta": -64,
+      "beforeBytes": 12000,
+      "afterBytes": 5856,
+      "bytesDelta": -6144
+    },
+    {
+      "class": "std::__shared_ptr_emplace<facebook::react::ShadowNodeFamily>",
+      "kind": "C++",
+      "binary": "ExpoModulesCore",
+      "beforeCount": 450,
+      "afterCount": 436,
+      "countDelta": -14,
+      "beforeBytes": 201600,
+      "afterBytes": 195328,
+      "bytesDelta": -6272
+    },
+    {
+      "class": "std::__shared_ptr_emplace<facebook::react::RNSTabsHostShadowNode>",
+      "kind": "C++",
+      "binary": "Boardsesh",
+      "beforeCount": 27,
+      "afterCount": 10,
+      "countDelta": -17,
+      "beforeBytes": 34560,
+      "afterBytes": 12800,
+      "bytesDelta": -21760
+    },
+    {
+      "class": "std::__shared_ptr_emplace<facebook::react::ShadowNodeWrapper>",
+      "kind": "C++",
+      "binary": "React",
+      "beforeCount": 6461,
+      "afterCount": 5110,
+      "countDelta": -1351,
+      "beforeBytes": 310128,
+      "afterBytes": 245280,
+      "bytesDelta": -64848
+    },
+    {
+      "class": "std::__shared_ptr_emplace<facebook::react::RNSScreenShadowNode>",
+      "kind": "C++",
+      "binary": "Boardsesh",
+      "beforeCount": 90,
+      "afterCount": 29,
+      "countDelta": -61,
+      "beforeBytes": 115200,
+      "afterBytes": 37120,
+      "bytesDelta": -78080
+    },
+    {
+      "class": "std::__shared_ptr_emplace<facebook::react::ViewShadowNode>",
+      "kind": "C++",
+      "binary": "React",
+      "beforeCount": 6188,
+      "afterCount": 3817,
+      "countDelta": -2371,
+      "beforeBytes": 7920640,
+      "afterBytes": 4885760,
+      "bytesDelta": -3034880
+    }
+  ],
+  "addressClassIntersections": {
+    "Synchronizable": {
+      "before": 731,
+      "after": 1580,
+      "sameAddressAndClass": 637,
+      "endpointOnly": 943,
+      "baselineOnly": 94
+    },
+    "Shareable": {
+      "before": 643,
+      "after": 1241,
+      "sameAddressAndClass": 605,
+      "endpointOnly": 636,
+      "baselineOnly": 38
+    },
+    "ImageView": {
+      "before": 66,
+      "after": 66,
+      "sameAddressAndClass": 56,
+      "endpointOnly": 10,
+      "baselineOnly": 10
+    },
+    "FileSystemFile": {
+      "before": 22,
+      "after": 10,
+      "sameAddressAndClass": 0,
+      "endpointOnly": 10,
+      "baselineOnly": 22
+    }
+  },
+  "limitations": [
+    "Allocated blocks are not resident footprint or JavaScript live-object counts.",
+    "Same address and class does not prove uninterrupted object lifetime.",
+    "Native SerializableJSRef references were observed; application JavaScript roots were not identified."
+  ],
+  "surface": "carousel",
+  "workload": "replay",
+  "runtimeId": "1788920958584-m609f7zi",
+  "referenceFindings": [
+    "Two sampled Synchronizable and two sampled Shareable endpoint allocations have direct typed SerializableJSRef owners, then untyped 16-byte blocks and VM_ALLOCATE. The graph does not identify an application closure or live JS root.",
+    "Address intersections do not prove continuous object lifetime because allocator addresses may be reused."
+  ],
+  "nativeUnreachableLeakScan": {
+    "checkpoints": [
+      {
+        "cycle": 0,
+        "unreachableLeaks": 0,
+        "leakedBytes": 0
+      },
+      {
+        "cycle": 20,
+        "unreachableLeaks": 0,
+        "leakedBytes": 0
+      }
+    ],
+    "limitation": "Conservative native scanning does not establish absence of JS retention or collectable garbage."
+  }
+}

@@ -1,3 +1,4 @@
+import { validateMemoryMeasurements, validateOwnershipMeasurements } from './ios-memory-profile';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -85,6 +86,14 @@ export function validateCaptureFiles(measurements: unknown, validity: unknown): 
     throw new Error(
       'Capture did not explicitly report a completed matching configuration; retain artifacts as incomplete.',
     );
+  }
+  if (recorded.scenario === 'ownership') {
+    validateOwnershipMeasurements(recorded);
+    return;
+  }
+  if (recorded.scenario === 'memory') {
+    validateMemoryMeasurements(recorded);
+    return;
   }
   if (recorded.configuration === 'Release') {
     if (

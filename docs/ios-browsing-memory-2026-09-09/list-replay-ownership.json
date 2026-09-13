@@ -1,0 +1,244 @@
+{
+  "run": "list-ownership-replay-01",
+  "surface": "list",
+  "workload": "replay",
+  "runtimeId": "1788905783904-o2httwv9",
+  "baseline": {
+    "cycle": 0,
+    "nodes": 427282,
+    "bytes": 107807543,
+    "graphSha256": "426f1436289eaf6bb39632e74d2f8ed51ffd12a86cd448cf9d27eb61e640f99b",
+    "graphBytes": 8983453
+  },
+  "endpoint": {
+    "cycle": 20,
+    "nodes": 537387,
+    "bytes": 146918237,
+    "graphSha256": "42a8eb0392d9ea532ee43db77e9ecde22514055e302c7ce1447ea1df440c6188",
+    "graphBytes": 10758595
+  },
+  "limitations": [
+    "Native class summaries are not a Hermes JS object census.",
+    "Counts and byte deltas do not establish surviving references or a leak.",
+    "Manual saved-graph reference inspection is required for ownership attribution.",
+    "This separate inspection process is excluded from ordinary footprint distributions."
+  ],
+  "process": {
+    "pid": 93869,
+    "startedAt": "Wed  9 Sep 08:16:22 2026"
+  },
+  "selection": "Selected native image/view classes, dominant shadow-node classes, and file/JS wrapper classes discussed in the report; not a complete heap census.",
+  "classes": [
+    {
+      "class": "std::__shared_ptr_emplace<facebook::react::ViewShadowNode>",
+      "kind": "C++",
+      "binary": "React",
+      "beforeCount": 2962,
+      "afterCount": 11783,
+      "countDelta": 8821,
+      "beforeBytes": 3791360,
+      "afterBytes": 15082240,
+      "bytesDelta": 11290880
+    },
+    {
+      "class": "std::__shared_ptr_emplace<expo::ExpoViewShadowNode<expo::ExpoViewProps, expo::ExpoViewState>>",
+      "kind": "C++",
+      "binary": "ExpoModulesCore",
+      "beforeCount": 458,
+      "afterCount": 1881,
+      "countDelta": 1423,
+      "beforeBytes": 586240,
+      "afterBytes": 2407680,
+      "bytesDelta": 1821440
+    },
+    {
+      "class": "std::__shared_ptr_emplace<facebook::react::ConcreteViewShadowNode<&facebook::react::RNSTabsScreenIOSComponentName, facebook::react::RNSTabsScreenIOSProps, facebook::react::RNSTabsScreenIOSEventEmitter, facebook::react::StateData>>",
+      "kind": "C++",
+      "binary": "Boardsesh",
+      "beforeCount": 45,
+      "afterCount": 560,
+      "countDelta": 515,
+      "beforeBytes": 57600,
+      "afterBytes": 716800,
+      "bytesDelta": 659200
+    },
+    {
+      "class": "std::__shared_ptr_emplace<facebook::react::ShadowNodeWrapper>",
+      "kind": "C++",
+      "binary": "React",
+      "beforeCount": 4499,
+      "afterCount": 9163,
+      "countDelta": 4664,
+      "beforeBytes": 215952,
+      "afterBytes": 439824,
+      "bytesDelta": 223872
+    },
+    {
+      "class": "CGImage",
+      "kind": "CFType",
+      "binary": "CoreGraphics",
+      "beforeCount": 472,
+      "afterCount": 473,
+      "countDelta": 1,
+      "beforeBytes": 151040,
+      "afterBytes": 151360,
+      "bytesDelta": 320
+    },
+    {
+      "class": "RCTComponentViewRegistry",
+      "kind": "ObjC",
+      "binary": "React",
+      "beforeCount": 1,
+      "afterCount": 1,
+      "countDelta": 0,
+      "beforeBytes": 96,
+      "afterBytes": 96,
+      "bytesDelta": 0
+    },
+    {
+      "class": "RCTViewComponentView",
+      "kind": "ObjC",
+      "binary": "React",
+      "beforeCount": 1688,
+      "afterCount": 1688,
+      "countDelta": 0,
+      "beforeBytes": 1296384,
+      "afterBytes": 1296384,
+      "bytesDelta": 0
+    },
+    {
+      "class": "SDAnimatedImageView",
+      "kind": "ObjC",
+      "binary": "SDWebImage",
+      "beforeCount": 66,
+      "afterCount": 66,
+      "countDelta": 0,
+      "beforeBytes": 42240,
+      "afterBytes": 42240,
+      "bytesDelta": 0
+    },
+    {
+      "class": "SDMemoryCache",
+      "kind": "ObjC",
+      "binary": "SDWebImage",
+      "beforeCount": 1,
+      "afterCount": 1,
+      "countDelta": 0,
+      "beforeBytes": 80,
+      "afterBytes": 80,
+      "bytesDelta": 0
+    },
+    {
+      "class": "Swift._DictionaryStorage<Swift.Int, ExpoModulesCore.SharedObjectNativeState>",
+      "kind": "Swift",
+      "binary": "libswiftCore.dylib",
+      "beforeCount": 1,
+      "afterCount": 1,
+      "countDelta": 0,
+      "beforeBytes": 20480,
+      "afterBytes": 20480,
+      "bytesDelta": 0
+    },
+    {
+      "class": "UIImage",
+      "kind": "ObjC",
+      "binary": "UIKitCore",
+      "beforeCount": 294,
+      "afterCount": 294,
+      "countDelta": 0,
+      "beforeBytes": 47040,
+      "afterBytes": 47040,
+      "bytesDelta": 0
+    },
+    {
+      "class": "UIImageView",
+      "kind": "ObjC",
+      "binary": "UIKitCore",
+      "beforeCount": 159,
+      "afterCount": 159,
+      "countDelta": 0,
+      "beforeBytes": 81408,
+      "afterBytes": 81408,
+      "bytesDelta": 0
+    },
+    {
+      "class": "facebook::react::ConcreteComponentDescriptor<facebook::react::ConcreteViewShadowNode<&facebook::react::RNSTabsScreenIOSComponentName, facebook::react::RNSTabsScreenIOSProps, facebook::react::RNSTabsScreenIOSEventEmitter, facebook::react::StateData>>",
+      "kind": "C++",
+      "binary": "Boardsesh",
+      "beforeCount": 1,
+      "afterCount": 1,
+      "countDelta": 0,
+      "beforeBytes": 160,
+      "afterBytes": 160,
+      "bytesDelta": 0
+    },
+    {
+      "class": "SharedObjectNativeState",
+      "kind": "Swift",
+      "binary": "ExpoModulesCore",
+      "beforeCount": 63,
+      "afterCount": 669,
+      "countDelta": 606,
+      "beforeBytes": 6048,
+      "afterBytes": 64224,
+      "bytesDelta": 58176
+    },
+    {
+      "class": "FileSystemFile",
+      "kind": "Swift",
+      "binary": "ExpoFileSystem",
+      "beforeCount": 8,
+      "afterCount": 436,
+      "countDelta": 428,
+      "beforeBytes": 512,
+      "afterBytes": 27904,
+      "bytesDelta": 27392
+    },
+    {
+      "class": "FileSystemDirectory",
+      "kind": "Swift",
+      "binary": "ExpoFileSystem",
+      "beforeCount": 10,
+      "afterCount": 70,
+      "countDelta": 60,
+      "beforeBytes": 640,
+      "afterBytes": 4480,
+      "bytesDelta": 3840
+    },
+    {
+      "class": "ImageView",
+      "kind": "Swift",
+      "binary": "ExpoImage",
+      "beforeCount": 66,
+      "afterCount": 66,
+      "countDelta": 0,
+      "beforeBytes": 84480,
+      "afterBytes": 84480,
+      "bytesDelta": 0
+    }
+  ],
+  "referenceFindings": [
+    {
+      "target": "ViewShadowNode",
+      "nativeOwner": "ShadowNodeWrapper",
+      "rootLimitation": "Path continues through unnamed allocation into VM storage; no concrete JavaScript root identified."
+    },
+    {
+      "target": "RNSTabsScreenIOS shadow nodes",
+      "nativeOwner": "Sampled reference paths through ShadowNodeWrapper, ancestor shadow nodes, or unnamed blocks and worklet serializable objects",
+      "rootLimitation": "JavaScript reachability and collection status unknown."
+    },
+    {
+      "target": "FileSystemFile",
+      "nativeOwner": "SharedObjectNativeState.native and Expo shared-object registry",
+      "rootLimitation": "Profiler polling creates wrappers; presence does not prove live JavaScript retention."
+    }
+  ],
+  "nativeUnreachableLeakScan": {
+    "baselineCount": 0,
+    "endpointCount": 0,
+    "baselineBytes": 0,
+    "endpointBytes": 0,
+    "limitation": "Conservative native scan does not establish absence of retained application objects or JavaScript garbage."
+  }
+}

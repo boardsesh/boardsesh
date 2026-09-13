@@ -1,0 +1,173 @@
+{
+  "reviewedSource": "c84dfacc80b43a70583e5ee7b56dba6fe2f47613",
+  "manifestSha256": "8bbaf609fcf2bb0ea75c29c758af655cfff4b46f20ed15e103b87ceba7d718cf",
+  "catalogueSha256": "bd7b3ce05dd609ad8555e0188f50ec7e53780efaa7e5f016db4c3eaafee1c68b",
+  "instrumentationHashes": {
+    "packages/mobile/app/(tabs)/climbs/index.tsx": "63c5a82f8a41fcd767c1b2c4b4c716ff46ee0fbada546260a367eee0eedf655b",
+    "packages/mobile/app/_layout.tsx": "ac509ea9f322356ecbfcd3e977b162bbe7df29bb4f5334b1fff371018cced039",
+    "packages/mobile/src/components/ClimbListRow.tsx": "0f2091d23421e5381393d8e9936b534d21e0d710a9bbe25b94c84f25f63ecc2b",
+    "packages/mobile/src/components/LayeredClimbImage.tsx": "bc5951b6c4bcee241ae29f20ec5f22bfaf3cd15fe4db99ce9b5fb59d30f6ea34",
+    "packages/mobile/src/components/play-drawer/PlayDrawer.tsx": "675af8bbcfca2013144a9c9d92f84e01d24545e807eb6e89d2c535aed0f25825",
+    "packages/mobile/src/hooks/use-image-cache-memory-management.ts": "c19e9562c9666b0483e2fac6a31e1dfc50422ad1c25e2c2d8f223f547c665bb4",
+    "packages/mobile/src/hooks/use-native-climb-render.ts": "f2305c1a0f505b4fff76cfab02972ed039cfc3e9508ff886c9206d63c5c11b43",
+    "packages/mobile/src/lib/board-render/render-scheduler.ts": "22c0ee43ca1c220e51a8e2679beaa97c4205ef16cbe3245a14702ddfa0e69864",
+    "packages/mobile/src/lib/overlay-index.ts": "62ebf4bb2fcd477e0c65d0452633b2830dc0879bb1362ba0559e1262408b42af",
+    "packages/mobile/src/lib/profiling/__tests__/memory-collector.test.ts": "30c02ceea24832d79b6f2328a1f6cf28d24eb0a70512f700b9ee44187dffa21a",
+    "packages/mobile/src/lib/profiling/memory-collector.ts": "ada80e03eb5858eca81fe02f2afc2e09fc19a3d6f3ed5920409a68810e35a6be",
+    "packages/mobile/src/lib/profiling/memory-control.ts": "4d1b7d1f93c4f018651c8f45392cc42ed651c2fa61a82b77c7495ed400510336",
+    "packages/mobile/src/lib/profiling/memory-profile.ts": "bed3ce9322ef4f15d6a6f2cf847baac97fa1decd268201a28b106c14845e7477",
+    "packages/mobile/src/lib/profiling/use-memory-list-viewability.ts": "541e6b6841de418fe9811223bc54759ea564871d0c388d249e276dc6d20c2876",
+    "packages/mobile/src/lib/profiling/use-memory-observation.ts": "080016d3313a7020b65af1e1fab38b194552f1c55ce4157653e0ad821309dcd9",
+    "packages/mobile/src/lib/profiling/use-memory-profile.ts": "6f52dfe1b1d5ae39f86a19ec7f85a02ff8dfff9cf7c93e0674907484c2e1be8c",
+    "packages/mobile/src/providers/party-profile-provider.tsx": "d8edffc6170bd8b04edb95990bfeccb4909a5ea089b799da7425aa111aef38f6",
+    "packages/mobile/src/lib/profiling/__tests__/memory-control.test.tsx": "69cd02999e26286aa95c8721d7acacb5874cf4d09ba6e36a71bcf125b2a2984c",
+    "packages/mobile/src/lib/profiling/__tests__/use-memory-list-viewability.test.tsx": "9b0bc9ef814d356b8aa1d9311c775bfee34c93c1f5e01826a45a338d8a8844a2",
+    "packages/mobile/src/lib/profiling/__tests__/use-memory-profile.test.tsx": "7595f53dfa8dc9b6c0eb9a178d7a4cb7d05864fcfcd92012cf79a54ac1caadd6",
+    "packages/mobile/src/providers/drawer-host-provider.tsx": "fef671b278fc976d5cd046fa345bc359928327648d09ab60bfba8544ab02ecfe"
+  },
+  "nativeFingerprint": "2bba2c60ae36f3d914afe10e996460d0aefa6c91",
+  "runs": [
+    {
+      "name": "list-replay-03",
+      "hostRunId": "415bf016-a266-49ad-b7cd-ce3ff0186e89",
+      "runtimeId": "1788901724680-o6vzduk0",
+      "pid": 32415,
+      "processStartedAt": "Wed  9 Sep 07:08:43 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "list-idle-replay-01",
+      "hostRunId": "ed5a527a-9838-4858-a9a2-2a3bee95ba46",
+      "runtimeId": "1788903961852-nc351v62",
+      "pid": 89583,
+      "processStartedAt": "Wed  9 Sep 07:46:00 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "list-expanding-01",
+      "hostRunId": "d57d18e5-1d4d-4f36-a0f9-c21fca734f30",
+      "runtimeId": "1788908582032-vzs70r7l",
+      "pid": 58780,
+      "processStartedAt": "Wed  9 Sep 09:03:00 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "list-idle-expanding-01",
+      "hostRunId": "2435e363-ad02-4285-818d-dbaa351c5e91",
+      "runtimeId": "1788911425898-l4y378zs",
+      "pid": 11711,
+      "processStartedAt": "Wed  9 Sep 09:50:24 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "carousel-replay-01",
+      "hostRunId": "c41d692f-779d-4c79-97d5-9961a798acbe",
+      "runtimeId": "1788913306987-c3cvxbc5",
+      "pid": 84435,
+      "processStartedAt": "Wed  9 Sep 10:21:45 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "carousel-replay-02",
+      "hostRunId": "24a386ce-d89e-452d-b0c9-880abcfde78f",
+      "runtimeId": "1788916070526-cccdjy5i",
+      "pid": 37109,
+      "processStartedAt": "Wed  9 Sep 11:07:49 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "carousel-idle-replay-02",
+      "hostRunId": "74f97fd9-7b1b-464c-9273-d8dfbfae82d4",
+      "runtimeId": "1788918543818-srwh6iou",
+      "pid": 64669,
+      "processStartedAt": "Wed  9 Sep 11:49:02 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true
+    },
+    {
+      "name": "carousel-expanding-02",
+      "hostRunId": "6825eda9-52ce-43d3-879a-b5f0f67caa83",
+      "runtimeId": "1788926293383-nhmjqqfe",
+      "pid": 10215,
+      "processStartedAt": "Wed  9 Sep 13:58:12 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true,
+      "memoryFlowTimeoutMs": 90000,
+      "runnerCommit": "718d43a10"
+    },
+    {
+      "name": "carousel-expanding-03",
+      "hostRunId": "c878d72c-7741-4ff2-bf2b-c34a1051cbf5",
+      "runtimeId": "1788933938172-tnkvrbau",
+      "pid": 38268,
+      "processStartedAt": "Wed  9 Sep 16:05:36 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true,
+      "memoryFlowTimeoutMs": 90000
+    },
+    {
+      "name": "carousel-expanding-06",
+      "hostRunId": "66b8c10a-e5bb-4c61-8929-51301441b3ab",
+      "runtimeId": "1788947272842-luhvbx5i",
+      "pid": 80440,
+      "processStartedAt": "Wed  9 Sep 19:47:51 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true,
+      "memoryFlowTimeoutMs": 120000,
+      "runnerCommit": "25e78e5e1"
+    },
+    {
+      "name": "carousel-idle-expanding-03",
+      "hostRunId": "f7203ff4-f608-4643-90ff-5a997b46ae66",
+      "runtimeId": "1788954112850-a8tarfqn",
+      "pid": 17218,
+      "processStartedAt": "Wed  9 Sep 21:41:51 2026",
+      "samples": 88,
+      "warmupCycles": 2,
+      "measuredCycles": 20,
+      "valid": true,
+      "memoryFlowTimeoutMs": 120000,
+      "runnerCommit": "25e78e5e1"
+    }
+  ],
+  "appIdentity": {
+    "bundleIdentifier": "com.boardsesh.app",
+    "executableUuid": "F4F60E96-B015-3C10-9988-D774246B73D2 (arm64)",
+    "executableSha256": "530692605a0d8174e514ba93e95d15ebbbd90bd2116ff6e2a515d63158dabdaf",
+    "embeddedBundleSha256": "7d4b4556810773d2a325a6127a181477cbaed52a4e71dbbf7a214d5f9a373ce3"
+  },
+  "otaProvenance": {
+    "updatesEnabled": true,
+    "embeddedUpdateId": "1dfd87a5-5a8d-4490-abba-0c0a3c999006",
+    "embeddedRuntimeVersion": "296198af47a24bec0c7baa75f938038a8cc3bb70",
+    "audit": "Read-only database inventory contained only embedded updates. Current entry matches embedded manifest; native launcher resolves embedded status to binary main.jsbundle. Launch checks fail HTTP 400 because no channel is configured. Snapshots do not directly export per-launch update ID.",
+    "finalAuditPath": "ota-provenance.json",
+    "capturedAt": "2026-09-09T12:47:25.979687+00:00"
+  }
+}

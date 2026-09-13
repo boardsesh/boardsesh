@@ -1,3 +1,4 @@
+import { useMemoryClimbObservation } from '../lib/profiling/use-memory-observation';
 import React, { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import {
   View,
@@ -243,6 +244,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   showMoreButton = false,
   testID = 'climb-row',
 }: ClimbListRowProps) {
+  useMemoryClimbObservation(climb.uuid, 'list');
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors: brand } = useTheme();
   // Active-row highlight colours, derived from the scheme-aware brand so the wash
