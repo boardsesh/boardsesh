@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const hapticSelectionMock = vi.hoisted(() => vi.fn());
 const composeSwitchProps = vi.hoisted(() => ({ last: null as null | Record<string, unknown> }));
 const rowToggle = vi.hoisted(() => ({ last: null as null | (() => void) }));
+const composeTextColors = vi.hoisted(() => ({ seen: [] as Array<unknown> }));
 
 vi.mock('../../lib/haptics', () => ({ hapticSelection: hapticSelectionMock }));
 vi.mock('react-native', () => ({ StyleSheet: { create: <Styles,>(styles: Styles) => styles } }));
@@ -15,7 +16,10 @@ vi.mock('@expo/ui', () => ({
 vi.mock('@expo/ui/jetpack-compose', () => ({
   Row: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Column: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: unknown }) => {
+    composeTextColors.seen.push(color);
+    return createElement('span', null, children);
+  },
   Switch: (props: Record<string, unknown>) => {
     composeSwitchProps.last = props;
     const onCheckedChange = props.onCheckedChange as ((next: boolean) => void) | undefined;
@@ -35,7 +39,11 @@ vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
   alpha: () => ({ kind: 'alpha' }),
 }));
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ brandColors: { primary: '#6D28D9' }, colorScheme: 'light' }),
+  useTheme: () => ({
+    brandColors: { primary: '#6D28D9' },
+    colorScheme: 'light',
+    systemColors: { label: '#111111', secondaryLabel: '#222222' },
+  }),
 }));
 vi.mock('../../theme/expo-ui-modifiers', () => ({ switchBrandColors: () => ({}) }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8, 4: 16 } }));
@@ -46,6 +54,7 @@ beforeEach(() => {
   hapticSelectionMock.mockReset();
   composeSwitchProps.last = null;
   rowToggle.last = null;
+  composeTextColors.seen = [];
 });
 
 describe('Android SwitchRow', () => {
@@ -84,5 +93,14 @@ describe('Android SwitchRow', () => {
     expect(composeSwitchProps.last?.enabled).toBe(false);
     expect(hapticSelectionMock).not.toHaveBeenCalled();
     expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it('gives the label and description an explicit colour instead of relying on M3 defaults', () => {
+    // This Row sits directly in the Host, not inside a Card, so Compose gives
+    // its Text nodes no on-surface content colour and renders them black
+    // regardless of colorScheme unless one is set explicitly (issue #5332).
+    render(<SwitchRow label="Public board" description="Visible to everyone" value={false} onValueChange={vi.fn()} />);
+
+    expect(composeTextColors.seen).toEqual(['#111111', '#222222']);
   });
 });
