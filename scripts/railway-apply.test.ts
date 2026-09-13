@@ -872,8 +872,21 @@ describe('diffServiceVars', () => {
     );
   });
 
+  it('reports a missing web INTERNAL_SERVICE_SECRET (#5291)', () => {
+    const variables = convergedVariables();
+    const { INTERNAL_SERVICE_SECRET: _omitted, ...webWithoutSecret } = variables[WEB_SERVICE_NAME];
+    variables[WEB_SERVICE_NAME] = webWithoutSecret;
+    const live = liveState({ variables });
+
+    expect(diffServiceVars(WEB, live, PLAN_OPTIONS).map((change) => change.summary)).toEqual([
+      expect.stringContaining('INTERNAL_SERVICE_SECRET is absent'),
+    ]);
+  });
+
   it('allows an absent BOARDSESH_WEB override', () => {
-    expect(diffServiceVars(WEB, liveState(), PLAN_OPTIONS)).toEqual([]);
+    const variables = convergedVariables();
+    delete variables[WEB_SERVICE_NAME].BOARDSESH_WEB;
+    expect(diffServiceVars(WEB, liveState({ variables }), PLAN_OPTIONS)).toEqual([]);
   });
 
   it('reports a non-one BOARDSESH_WEB override without printing it', () => {
