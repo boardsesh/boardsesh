@@ -262,6 +262,16 @@ vi.mock('../queue-snackbar-provider', () => ({
   }),
 }));
 
+// The board hop pulls in board adoption (follow mutation + offline download
+// confirm) and the per-board angle store, none of which this harness mounts.
+// Its own behaviour is covered by lib/boards/__tests__/use-switch-board.test.tsx.
+vi.mock('../../lib/boards/use-switch-board', () => ({
+  useSwitchBoard: () => vi.fn(async () => 'switched' as const),
+}));
+vi.mock('../../lib/boards/use-set-board-angle', () => ({
+  useSetBoardAngle: () => vi.fn(async () => {}),
+}));
+
 vi.mock('../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: activeBoard.stored }),
   useSetActiveBoard: () => activeBoard.setActiveBoard,

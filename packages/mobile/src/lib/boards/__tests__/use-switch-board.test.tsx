@@ -9,12 +9,15 @@ const resolveBoardAngleMock = vi.hoisted(() => vi.fn());
 const hapticMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const reportErrorMock = vi.hoisted(() => vi.fn());
+const showToastMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoardMock }));
 vi.mock('../../board-discovery/use-adopt-found-board', () => ({ useAdoptFoundBoard: () => adoptFoundBoardMock }));
 vi.mock('../board-angle-store', () => ({ resolveBoardAngle: resolveBoardAngleMock }));
 vi.mock('../../haptics', () => ({ hapticSelection: hapticMock }));
 vi.mock('../../analytics', () => ({ track: trackMock }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
 vi.mock('../../error-reporting', () => ({ reportError: reportErrorMock }));
 
 import { useSwitchBoard, type SwitchBoardOptions } from '../use-switch-board';

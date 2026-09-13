@@ -433,6 +433,25 @@
         "previewTag": "Aperçu",
         "backToLive": "Revenir au mur",
         "browseHistory": "Voir l'historique"
+      },
+      "gymWalls": {
+        "header": "Autres boards à {{gym}}",
+        "headerNoGym": "Autres boards ici",
+        "detail": "{{config}} · {{angle}}°",
+        "detailNoLeds": "{{config}} · {{angle}}° · sans LED",
+        "detailFixed": "{{config}} · fixe à {{angle}}°",
+        "sameClimbs": "Les mêmes blocs que cette board",
+        "rowAria": "Passer à {{board}}",
+        "showAll": "Voir les {{count}} boards",
+        "allBoards": "Toutes les boards",
+        "switchFailed": "Impossible de passer à {{board}}. Réessaie."
+      },
+      "moveToWall": {
+        "title": "Le prochain est sur {{board}}",
+        "body": "Va là-bas, on s'occupe du reste.",
+        "cta": "Passer à {{board}}",
+        "skip": "Passer",
+        "skipAria": "Passer ce bloc et rester sur {{board}}"
       }
     },
     "toast": {

@@ -39,14 +39,18 @@ describe('boardPlaceLabel', () => {
     expect(boardPlaceLabel({ ...kilter, gymName: '   ', locationName: 'Bergen' })).toBe('Bergen');
   });
 
-  it('reads the wall label, never the gym, within one gym', () => {
-    const board = { ...kilter, gymName: 'Bergen Klatresenter', locationName: 'Main wall' };
-    expect(boardPlaceLabel(board, { scope: 'within-gym' })).toBe('Main wall');
+  // Both candidates are gym-level, not wall-level: gymName is shared by every
+  // row, and the wall crawl writes locationName as the gym's "<city>, <country>"
+  // for every wall it imports. Leading with either collides every row.
+  it('has no place label within one gym', () => {
+    const board = { ...kilter, gymName: 'Bergen Klatresenter', locationName: 'Bergen, Norway' };
+    expect(boardPlaceLabel(board, { scope: 'within-gym' })).toBeNull();
   });
 
-  it('has no place within a gym when the wall is unnamed', () => {
-    const board = { ...kilter, gymName: 'Bergen Klatresenter' };
-    expect(boardPlaceLabel(board, { scope: 'within-gym' })).toBeNull();
+  it('still reads the gym, then the city, globally', () => {
+    const board = { ...kilter, gymName: 'Bergen Klatresenter', locationName: 'Bergen, Norway' };
+    expect(boardPlaceLabel(board)).toBe('Bergen Klatresenter');
+    expect(boardPlaceLabel({ ...kilter, locationName: 'Bergen, Norway' })).toBe('Bergen, Norway');
   });
 });
 
@@ -196,77 +200,76 @@ describe('disambiguateBoardSubtitles', () => {
 });
 
 describe('disambiguateBoardSubtitles, scope within-gym', () => {
-  // Every board in one gym's list carries the same gymName, so the gym is what
-  // has to be dropped rather than what leads â otherwise all three rows read
-  // "Bergen Klatresenter" before a single facet has been tried. Sharing a wall
-  // label on top of that is the worst case: the base subtitle collides too.
-  const mainWall = { ...kilter, gymName: 'Bergen Klatresenter', locationName: 'Main wall' };
+  // Neither candidate place label is worth leading with inside one gym. The gym
+  // name is shared by every row by definition, and locationName is written by
+  // the wall crawl as "<city>, <country>" for every wall at the gym — so both
+  // put identical words on every row and collide them all before a single facet
+  // has been tried. What the board IS leads instead.
+  const atOneGym = { ...kilter, gymName: 'Bergen Klatresenter', locationName: 'Bergen, Norway' };
 
-  it('leads with the wall label instead of the gym', () => {
-    const boards: BoardLabelSource[] = [mainWall, { ...mainWall, locationName: 'Training room' }];
-    expect(disambiguateBoardSubtitles(boards, { scope: 'within-gym' })).toEqual(['Main wall', 'Training room']);
+  it('leads with what the board is, never the gym or its city', () => {
+    const subtitles = disambiguateBoardSubtitles([atOneGym], { scope: 'within-gym' });
+    expect(subtitles[0]).not.toContain('Bergen Klatresenter');
+    expect(subtitles[0]).not.toContain('Bergen, Norway');
+    expect(subtitles[0]).toBe('Original 12×14');
   });
 
-  it('separates three boards sharing a wall on size', () => {
-    // Kilter sizes 7/8/13 are 12x14, 8x12 and 10x10.
+  it('separates three boards at one gym on size', () => {
+    // Kilter sizes 7/8/13 are 12x14, 8x12 and 10x10, so the config label alone
+    // already tells them apart — no facet needed.
     const boards: BoardLabelSource[] = [
-      { ...mainWall, sizeId: 7 },
-      { ...mainWall, sizeId: 8 },
-      { ...mainWall, sizeId: 13 },
+      { ...atOneGym, sizeId: 7 },
+      { ...atOneGym, sizeId: 8 },
+      { ...atOneGym, sizeId: 13 },
     ];
     expect(disambiguateBoardSubtitles(boards, { scope: 'within-gym' })).toEqual([
-      'Main wall · 12×14',
-      'Main wall · 8×12',
-      'Main wall · 10×10',
+      'Original 12×14',
+      'Original 8×12',
+      'Original 10×10',
     ]);
   });
 
-  it('separates three boards sharing a wall on layout', () => {
-    // Tension layouts 9/10/11 on the one size 6: identical dimensions, so the
-    // size facet splits nothing and the layout is what tells them apart.
-    const tensionAtMainWall = {
-      boardType: 'tension',
-      sizeId: 6,
-      gymName: 'Bergen Klatresenter',
-      locationName: 'Main wall',
-      angle: 40,
-    };
+  it('separates three boards sharing a config on angle', () => {
     const boards: BoardLabelSource[] = [
-      { ...tensionAtMainWall, layoutId: 9 },
-      { ...tensionAtMainWall, layoutId: 10 },
-      { ...tensionAtMainWall, layoutId: 11 },
+      { ...atOneGym, angle: 25 },
+      { ...atOneGym, angle: 40 },
+      { ...atOneGym, angle: 55 },
     ];
     expect(disambiguateBoardSubtitles(boards, { scope: 'within-gym' })).toEqual([
-      'Main wall · Original',
-      'Main wall · Mirror',
-      'Main wall · Spray',
+      'Original 12×14 · 25°',
+      'Original 12×14 · 40°',
+      'Original 12×14 · 55°',
     ]);
   });
 
-  it('separates three boards sharing a wall and a config on angle', () => {
+  // The #5272 case: two walls the crawl named identically, same board, same
+  // angle. The serial is the last thing that can tell them apart, and it is
+  // printed on the controller box so a climber can check it.
+  it('falls through to the serial for two identically configured walls', () => {
     const boards: BoardLabelSource[] = [
-      { ...mainWall, angle: 25 },
-      { ...mainWall, angle: 40 },
-      { ...mainWall, angle: 55 },
+      { ...atOneGym, serialNumber: 'KB-0000A3F1' },
+      { ...atOneGym, serialNumber: 'KB-00007C09' },
     ];
-    expect(disambiguateBoardSubtitles(boards, { scope: 'within-gym' })).toEqual([
-      'Main wall · 25°',
-      'Main wall · 40°',
-      'Main wall · 55°',
-    ]);
+    const subtitles = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
+    expect(subtitles[0]).not.toBe(subtitles[1]);
+    expect(subtitles[0]).toContain('A3F1');
+    expect(subtitles[1]).toContain('7C09');
   });
 
   it('leaves two boards identical on every facet alone', () => {
-    const boards: BoardLabelSource[] = [mainWall, { ...mainWall }];
-    expect(disambiguateBoardSubtitles(boards, { scope: 'within-gym' })).toEqual(['Main wall', 'Main wall']);
+    const boards: BoardLabelSource[] = [atOneGym, { ...atOneGym }];
+    const subtitles = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
+    expect(subtitles[0]).toBe(subtitles[1]);
   });
 
-  it('matches global exactly when no board carries a gym', () => {
+  it('never leaks the gym city that global would have used', () => {
     const boards: BoardLabelSource[] = [
-      { ...kilter, locationName: 'Danmarksplass', sizeId: 7 },
-      { ...kilter, locationName: 'Danmarksplass', sizeId: 8 },
+      { ...kilter, locationName: 'Bergen, Norway', sizeId: 7 },
+      { ...kilter, locationName: 'Bergen, Norway', sizeId: 8 },
     ];
-    expect(disambiguateBoardSubtitles(boards, { scope: 'within-gym' })).toEqual(disambiguateBoardSubtitles(boards));
+    const withinGym = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
+    expect(withinGym.every((subtitle) => !subtitle.includes('Bergen'))).toBe(true);
+    expect(disambiguateBoardSubtitles(boards)[0]).toContain('Bergen');
   });
 });
 

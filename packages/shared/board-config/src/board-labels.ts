@@ -59,12 +59,19 @@ function present(value: string | null | undefined): string | null {
  * Where the board is: the linked gym, else the free-text location. Matches the
  * ordering BoardDisambiguationSheet and the board-detail sheet already use.
  *
- * Within one gym's list the gym name says nothing — every row shares it — so
- * that scope reads the wall label only, and falls through to what the board is
- * when the wall is unnamed.
+ * Within one gym's list there is no place worth leading with. Both candidates
+ * are gym-level, not wall-level: `gymName` is shared by every row by
+ * definition, and `locationName` is written by the wall crawl as
+ * "<city>, <country>" for every wall at the gym
+ * (`formatLocationName` in packages/aurora-sync/src/sync/locations-sync.ts),
+ * while user-created boards prompt for "Home, gym name, or city". Leading with
+ * either puts the same words on every row and collides them all before
+ * disambiguation starts — the failure this scope exists to prevent. So that
+ * scope has no place label at all and leads with what the board IS; the wall's
+ * own label lives in `name`, which `stripGymNamePrefix` surfaces.
  */
 export function boardPlaceLabel(board: BoardLabelSource, options?: BoardLabelOptions): string | null {
-  if (options?.scope === 'within-gym') return present(board.locationName);
+  if (options?.scope === 'within-gym') return null;
   return present(board.gymName) ?? present(board.locationName);
 }
 
@@ -141,9 +148,8 @@ export function boardRowSubtitle(board: BoardLabelSource, options?: BoardLabelOp
 
 /**
  * Facets tried, in order, when two boards in the same list land on the same
- * subtitle. Place first (a different wall in the same gym), then the physical
- * config, then how it is set up, then the serial as the last resort — two boards
- * can share everything else but never a serial.
+ * subtitle: the physical config, then how it is set up, then the serial as the
+ * last resort — two boards can share everything else but never a serial.
  *
  * The gym is deliberately absent: it is either already the base subtitle
  * (`global`) or dropped as redundant (`within-gym`), so it can never be the

@@ -81,6 +81,13 @@ type ClimbListRowMockProps = {
   onOpenActions?: (climb?: { uuid?: string; name?: string }) => void;
   [key: string]: unknown;
 };
+// The footer's label asks whether this gym has other boards. That is a React
+// Query hook and these harnesses mount no QueryClient; an empty roster is the
+// single-board gym, which is what these tests describe.
+vi.mock('../../../lib/graphql/hooks/use-gym-boards', () => ({
+  useGymBoards: () => ({ data: undefined }),
+}));
+
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },

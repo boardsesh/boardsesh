@@ -30,6 +30,8 @@ import { BoardSheet, type BoardSheetClimbAction, type BoardSheetHandle } from '.
 import type { QueueItemRowBoard } from '../components/QueueItemRow';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { useSetBoardAngle } from '../lib/boards/use-set-board-angle';
+import type { UserBoard } from '@boardsesh/shared-schema';
+import { useSwitchBoard } from '../lib/boards/use-switch-board';
 import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
 import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu';
@@ -764,6 +766,36 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     dismissQueueSheetAndWait,
   });
 
+  // Hop to another board at the same gym, from the sheet's own list.
+  //
+  // The sheet deliberately stays open: it is "now on the wall", and after the
+  // hop it is showing the other board's feed, which is the answer the climber
+  // tapped for. Dismissing would make them re-open it to confirm anything
+  // happened, and it would put this through the sheet-presentation coordinator
+  // for no reason.
+  const switchBoard = useSwitchBoard({
+    source: 'presence_sheet_sibling',
+    // A deliberate hop outranks a pinned foreign climb. Left live, every drawer
+    // surface would keep rendering the board they just walked away from.
+    onSwitched: () => setBoardConfigOverride(null),
+    // Peers keep whatever board the session was created on unless told
+    // otherwise, so a silent hop leaves the crew lighting an empty wall. The
+    // NAMED path, never the positional tuple: the tuple mints every later
+    // joiner a private board row.
+    broadcastBoardPath: (board) => {
+      if (sessionId === null) return;
+      void setSessionBoardPath(buildSessionBoardPath(board));
+    },
+    inSession: sessionId !== null,
+  });
+
+  const handleSelectGymWall = useCallback(
+    (board: UserBoard) => {
+      void switchBoard(board, activeBoard ?? null);
+    },
+    [switchBoard, activeBoard],
+  );
+
   // Switch-board control inside the board sheet: dismiss the sheet, then open
   // the existing board switcher (today's board-glyph destination).
   const handleSwitchBoardFromSheet = useCallback(() => {
@@ -1098,6 +1130,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             boardConfig={storedActiveBoardConfig}
             onClose={requestCloseBoardSheet}
             onSwitchBoard={handleSwitchBoardFromSheet}
+            activeBoard={activeBoard ?? null}
+            onSelectGymWall={handleSelectGymWall}
             onClimbPress={handleBoardSheetClimbPress}
             onAddToQueue={handleBoardSheetAddToQueue}
             onOpenPlaylist={handleBoardSheetOpenPlaylist}

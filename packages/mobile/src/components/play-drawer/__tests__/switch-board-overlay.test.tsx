@@ -78,3 +78,58 @@ describe('SwitchBoardOverlay', () => {
     expect(onSwitchBoard).toHaveBeenCalledTimes(1);
   });
 });
+
+// The same fact — this climb is on another board — told as an invitation when
+// that board is across the room rather than across the country.
+describe('SwitchBoardOverlay, move variant', () => {
+  const moveProps = { boardLabel: 'Tension 2', variant: 'move' as const };
+
+  it('invites instead of refusing', () => {
+    const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard: vi.fn() }));
+
+    expect(container.textContent).toContain('mobile.boardPresence.moveToWall.title:Tension 2');
+    expect(container.textContent).toContain('mobile.boardPresence.moveToWall.body');
+    expect(container.textContent).not.toContain('boardMismatch.title');
+  });
+
+  // The scrim's a11y trap is what blocks the queue, tick and favourite controls.
+  // A board the climber can walk to must not block any of them.
+  it('does not trap a11y focus or show the lock', () => {
+    const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard: vi.fn() }));
+
+    expect(container.querySelector('[data-modal="true"]')).toBeNull();
+    expect(container.querySelector('[data-icon="lock"]')).toBeNull();
+  });
+
+  it('offers going there and skipping it as separate actions', () => {
+    const onSwitchBoard = vi.fn();
+    const onSkip = vi.fn();
+    const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard, onSkip }));
+    const buttons = [...container.querySelectorAll('button')];
+
+    const move = buttons.find(
+      (button) => button.textContent === 'mobile.boardPresence.moveToWall.cta:Tension 2',
+    ) as HTMLButtonElement;
+    const skip = buttons.find(
+      (button) => button.textContent === 'mobile.boardPresence.moveToWall.skip',
+    ) as HTMLButtonElement;
+    expect(move).toBeTruthy();
+    expect(skip).toBeTruthy();
+
+    move.click();
+    skip.click();
+
+    expect(onSwitchBoard).toHaveBeenCalledTimes(1);
+    expect(onSkip).toHaveBeenCalledTimes(1);
+  });
+
+  // Nothing to skip to when the caller has no queue to advance — the invitation
+  // still stands, it just has one way out.
+  it('omits skip when no skip handler is given', () => {
+    const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard: vi.fn() }));
+
+    expect([...container.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
+      'mobile.boardPresence.moveToWall.cta:Tension 2',
+    ]);
+  });
+});

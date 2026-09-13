@@ -1662,7 +1662,7 @@ export function BluetoothProvider({
     // new board props into this provider yet. Wait for the matching config so we
     // don't auto-connect against the LED placement map we're switching away from.
     if (!boardName || layoutId === undefined || sizeId === undefined) return;
-    if (boardConfigKey(boardName, layoutId, sizeId) !== pendingAutoConnect.configKey) return;
+    if (boardConfigKey(boardName, layoutId, sizeId, boardUuid) !== pendingAutoConnect.configKey) return;
     // The old cancelled connect may still be settling. connect() bails while
     // connectInFlightRef is set (which tracks `loading`), so a new connect fired
     // now would be silently swallowed — wait for it to clear first.
@@ -1707,7 +1707,12 @@ export function BluetoothProvider({
         pickerStateRef.current?.handleCancel();
         setPendingAutoConnect({
           serial: decision.serial,
-          configKey: boardConfigKey(decision.config.boardName, decision.config.layoutId, decision.config.sizeId),
+          configKey: boardConfigKey(
+            decision.config.boardName,
+            decision.config.layoutId,
+            decision.config.sizeId,
+            board.uuid,
+          ),
           armUndoToast: armUndoToastAfterSwitch,
         });
       } catch (error) {

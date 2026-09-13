@@ -18,7 +18,7 @@
 // in-memory `lastConnectedBoard` semantics in use-board-bluetooth.ts. Only an
 // involuntary drop or a config switch keeps the memory alive.
 //
-// The stored `configKey` is `boardConfigKey(boardName, layoutId, sizeId)`. The
+// The stored `configKey` is `boardConfigKey(boardName, layoutId, sizeId, boardUuid)`. The
 // caller only rehydrates when it matches the board currently in view, so a
 // handle recorded against a different board is never offered as a reconnect
 // target for the wrong config.

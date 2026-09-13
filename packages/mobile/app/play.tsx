@@ -18,6 +18,8 @@ import { useQueueActions, useQueueSessionControls } from '../src/providers/queue
 import { useTheme } from '../src/providers/theme-provider';
 import { playDrawerMaterialTint } from '../src/theme/colors';
 import { usePlayerDismissAndWait } from '../src/components/create-climb/use-player-dismiss-and-wait';
+import { useActiveBoard } from '../src/lib/graphql/use-active-board';
+import { useReachableBoardKeys } from '../src/providers/queue/use-reachable-board-keys';
 import { usePlaySwipeDismiss } from '../src/components/play-drawer/use-play-swipe-dismiss';
 import type { Climb } from '@boardsesh/shared-schema';
 import { dismissManagedSheetAndWait, type DismissAndWaitResult } from '../src/providers/sheet-presentation-provider';
@@ -58,6 +60,11 @@ export default function PlayScreen() {
     playTarget,
   } = usePlayDrawerRoute();
   const { boardConfig: storedBoardConfig, openPlayDrawer, openClimbActions, openLogAscent } = useDrawerHost();
+  // Read here rather than threaded through the route context: the roster is a
+  // cached query keyed on the gym, so a second reader costs one memo, while
+  // widening the context value would re-render every drawer-host consumer.
+  const { data: activeBoard } = useActiveBoard();
+  const reachableBoardKeys = useReachableBoardKeys(activeBoard);
   const { setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const { systemColors, colorScheme } = useTheme();
@@ -170,6 +177,7 @@ export default function PlayScreen() {
             isAngleAdjustable={isAngleAdjustable}
             onOpenQueue={presentQueue}
             boardMismatch={boardMismatch}
+            reachableBoardKeys={reachableBoardKeys}
             mismatchBoardLabel={mismatchBoardLabel}
             onSwitchBoard={onSwitchBoard}
             onOpenClimbActions={openPlayerClimbActions}

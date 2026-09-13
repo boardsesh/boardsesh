@@ -36,7 +36,6 @@ import { getTallWideScope } from '@boardsesh/board-constants';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
-import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { Button } from '../../../src/components/Button';
@@ -1576,21 +1575,19 @@ function ClimbListInner() {
     );
   }
 
-  if (isBoardResolving) {
-    return (
-      <>
-        <Stack.Screen options={stackOptions} />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" />
-        </View>
-      </>
-    );
-  }
-
+  // Deliberately NOT an early return to a full-screen spinner. Board resolution
+  // now happens on a one-tap hop between two boards at one gym, and blanking the
+  // whole screen — including the chrome the climber just tapped — reads as the
+  // app falling over rather than as a list reloading. The chrome and the search
+  // header stay mounted and the rows become skeletons instead
+  // (`showInitialSkeletons`).
+  //
   // Placeholder data reports a settled (non-loading) query, so it is excluded
   // explicitly: an empty previous result must not flash "no climbs" for the new
-  // filters while they load.
-  const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading && !isPlaceholderData;
+  // filters while they load. Board resolution is excluded for the same reason —
+  // with the search query gated off, nothing is loading and nothing has arrived,
+  // which is indistinguishable from an empty result unless you ask.
+  const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading && !isPlaceholderData && !isBoardResolving;
   // A failed search counts as no connection, the same test the boards picker
   // makes (`isLocalOnly`, app/boards/index.tsx): on a captive portal or gym wifi
   // with a dead upstream `useIsOffline()` reads ONLINE, and offlineAwareRequest
@@ -1873,11 +1870,6 @@ const styles = StyleSheet.create({
     left: spacing[4],
     right: spacing[4],
     zIndex: 25,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   emptyContainer: {
     flex: 1,

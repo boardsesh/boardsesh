@@ -12,6 +12,16 @@ const player = vi.hoisted(() => ({ swipeDismiss: null as SwipeDismissAnimation |
 const surface = vi.hoisted(() => ({ onLayout: null as ((event: LayoutChangeEvent) => void) | null }));
 const boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 };
 
+// The play route now asks which boards stand at this gym, to decide whether a
+// foreign climb blocks or invites. Both are React Query hooks this harness does
+// not mount; an empty set means "nothing else in reach", i.e. today's behaviour.
+vi.mock('../../src/providers/queue/use-reachable-board-keys', () => ({
+  useReachableBoardKeys: () => new Set<string>(),
+}));
+vi.mock('../../src/lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: null }),
+}));
+
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-testid': 'backing' }, children),
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },

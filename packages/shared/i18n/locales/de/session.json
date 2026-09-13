@@ -433,6 +433,25 @@
         "previewTag": "Vorschau",
         "backToLive": "Zurück zu live",
         "browseHistory": "Historie durchstöbern"
+      },
+      "gymWalls": {
+        "header": "Andere Boards in {{gym}}",
+        "headerNoGym": "Andere Boards hier",
+        "detail": "{{config}} · {{angle}}°",
+        "detailNoLeds": "{{config}} · {{angle}}° · ohne Licht",
+        "detailFixed": "{{config}} · fest auf {{angle}}°",
+        "sameClimbs": "Dieselben Boulder wie dieses Board",
+        "rowAria": "Zu {{board}} wechseln",
+        "showAll": "Alle {{count}} Boards anzeigen",
+        "allBoards": "Alle Boards",
+        "switchFailed": "Wechsel zu {{board}} hat nicht geklappt. Versuch es nochmal."
+      },
+      "moveToWall": {
+        "title": "Der nächste ist an {{board}}",
+        "body": "Geh rüber, wir wechseln für dich.",
+        "cta": "Zu {{board}} wechseln",
+        "skip": "Überspringen",
+        "skipAria": "Diesen Boulder überspringen und an {{board}} bleiben"
       }
     },
     "toast": {

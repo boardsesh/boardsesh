@@ -256,10 +256,25 @@ export type PickerState = {
 };
 
 // Identity of a board pairing: the silent-reconnect and adoption guards only
-// trust a remembered/native connection while the active config still matches.
+// trust a remembered/native connection while the active board still matches.
 // Deliberately excludes set_ids — see the reconnectSerialForCurrentBoard note.
-export function boardConfigKey(boardName: string, layoutId: number, sizeId: number): string {
-  return `${boardName}::${layoutId}::${sizeId}`;
+//
+// The board uuid IS included, for a different reason than sets. Sets are about
+// which encoding the wall needs; the uuid is about WHICH BOX. A gym can run two
+// identically-configured walls, and without the uuid a serial remembered against
+// one of them is silently offered as the reconnect target for the other — the
+// lightbulb lights the wall the climber just walked away from. A missing uuid
+// contributes an empty segment, which is stable and matches the old key shape.
+//
+// Records persisted under the old key simply stop matching after an upgrade and
+// fall back to the device picker, so no migration is needed.
+export function boardConfigKey(
+  boardName: string,
+  layoutId: number,
+  sizeId: number,
+  boardUuid: string | undefined,
+): string {
+  return `${boardName}::${layoutId}::${sizeId}::${boardUuid ?? ''}`;
 }
 
 /**
@@ -1578,7 +1593,7 @@ export function useBoardBluetooth({
         // Without a full config there is no usable key (the reconnect comparison
         // against currentConfigKey could never match).
         if (layoutId !== undefined && sizeId !== undefined) {
-          const configKey = boardConfigKey(boardName, layoutId, sizeId);
+          const configKey = boardConfigKey(boardName, layoutId, sizeId, boardUuid);
           if (parsedSerial) {
             rememberConnectedBoard({ configKey, serial: parsedSerial });
           } else if (boardName === 'moonboard') {
@@ -1928,7 +1943,7 @@ export function useBoardBluetooth({
       // restoration paths that can become write-ready without a fresh
       // advertisement name.
       const adoptedBoardType = parseAnyBoardTypeFromDeviceName(deviceName);
-      const currentConfigKey = boardConfigKey(boardName, layoutId, sizeId);
+      const currentConfigKey = boardConfigKey(boardName, layoutId, sizeId, boardUuid);
       const currentConnectionConfig = { boardName, layoutId, sizeId, setIds };
       const currentConnectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
       const rememberedBoard = lastConnectedBoardRef.current;
@@ -2101,7 +2116,9 @@ export function useBoardBluetooth({
   // same physical controller and the LED placement map keys on layout+size; the
   // lifetime still ends on a set-only route switch so attribution cannot bleed.
   const currentConfigKey =
-    boardName && layoutId !== undefined && sizeId !== undefined ? boardConfigKey(boardName, layoutId, sizeId) : null;
+    boardName && layoutId !== undefined && sizeId !== undefined
+      ? boardConfigKey(boardName, layoutId, sizeId, boardUuid)
+      : null;
   // The remembered board only counts while the route still points at the same
   // config; a stored handle for a different board is never offered as a target.
   const rememberedForCurrentBoard =

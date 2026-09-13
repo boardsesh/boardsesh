@@ -36,6 +36,9 @@ import {
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardName, BoardPresenceClimb, BoardPresenceHardestSend, Climb } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
+import type { UserBoard } from '@boardsesh/shared-schema';
+import { GymWallSwitcher } from './GymWallSwitcher';
+import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow, type ClimbListRowRenderContentArgs } from '../ClimbListRow';
@@ -159,6 +162,17 @@ export type NowOnTheWallPanelProps = {
   onClose?: () => void;
   /** Open the existing board switcher from the footer control. */
   onSwitchBoard: () => void;
+  /**
+   * The board the climber is on. Sheet variant only: it is what names the gym
+   * whose other boards the switcher lists.
+   */
+  activeBoard?: UserBoard | null;
+  /**
+   * Hop to another board at the same gym. Sheet variant only — the same panel
+   * renders the iPad wall kiosk, and a board switcher on a display mounted to a
+   * wall lets a passer-by repoint the gym's screen with no way back.
+   */
+  onSelectGymWall?: (board: UserBoard) => void;
   /** Activate/open a climb from the wall feed. The panel closes itself after this (sheet). */
   onClimbPress?: (action: BoardSheetClimbAction) => void;
   /** Swipe action: append this wall-feed climb to the queue. */
@@ -176,6 +190,8 @@ function NowOnTheWallPanelComponent(
     boardConfig,
     onClose,
     onSwitchBoard,
+    activeBoard,
+    onSelectGymWall,
     onClimbPress,
     onAddToQueue,
     onOpenPlaylist,
@@ -184,6 +200,13 @@ function NowOnTheWallPanelComponent(
   ref: Ref<NowOnTheWallPanelHandle>,
 ) {
   const { t } = useTranslation('session');
+  // Same cached roster the switcher above reads — a second subscriber, not a
+  // second request. Null for the column variant so the iPad kiosk never fetches
+  // a list it is not allowed to show.
+  const { data: gymBoardsForFooter } = useGymBoards(
+    variant === 'sheet' && onSelectGymWall ? (activeBoard?.gymUuid ?? null) : null,
+  );
+  const hasGymSiblings = (gymBoardsForFooter ?? []).some((board) => board.uuid !== activeBoard?.uuid);
   const insets = useSafeAreaInsets();
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
@@ -587,6 +610,9 @@ function NowOnTheWallPanelComponent(
             gradeColor={heroGrade.color}
           />
         )}
+        {variant === 'sheet' && onSelectGymWall ? (
+          <GymWallSwitcher activeBoard={activeBoard ?? null} onSelectBoard={onSelectGymWall} />
+        ) : null}
         {stats ? (
           // testID anchors the store-screenshot flow: the stats only exist once the
           // wall history has landed, and this block is on screen at the top of the
@@ -663,6 +689,9 @@ function NowOnTheWallPanelComponent(
     handleInteractiveOpenActions,
     heroActionLoading,
     onClimbPress,
+    variant,
+    activeBoard,
+    onSelectGymWall,
   ]);
 
   const listEmpty = useMemo(
@@ -798,7 +827,9 @@ function NowOnTheWallPanelComponent(
         </View>
         <View style={styles.footerText}>
           <Text variant="body" color={systemColors.label}>
-            {t('mobile.boardPresence.switchBoard')}
+            {/* Once the gym's own boards are listed above, this control is no
+                longer "switch board" — it is the way out to everything else. */}
+            {hasGymSiblings ? t('mobile.boardPresence.gymWalls.allBoards') : t('mobile.boardPresence.switchBoard')}
           </Text>
           {boardLabel ? (
             <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>

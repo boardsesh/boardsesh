@@ -433,6 +433,25 @@
         "previewTag": "Preview",
         "backToLive": "Back to live",
         "browseHistory": "Browse history"
+      },
+      "gymWalls": {
+        "header": "Other boards at {{gym}}",
+        "headerNoGym": "Other boards here",
+        "detail": "{{config}} · {{angle}}°",
+        "detailNoLeds": "{{config}} · {{angle}}° · no lights",
+        "detailFixed": "{{config}} · fixed at {{angle}}°",
+        "sameClimbs": "Same climbs as this board",
+        "rowAria": "Move to {{board}}",
+        "showAll": "Show all {{count}} boards",
+        "allBoards": "All boards",
+        "switchFailed": "Couldn't move to {{board}}. Try again."
+      },
+      "moveToWall": {
+        "title": "Next one's on {{board}}",
+        "body": "Walk over and we'll switch you.",
+        "cta": "Move to {{board}}",
+        "skip": "Skip it",
+        "skipAria": "Skip this climb and stay on {{board}}"
       }
     },
     "toast": {

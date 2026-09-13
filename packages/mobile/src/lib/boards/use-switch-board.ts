@@ -12,6 +12,7 @@
 // be rewritten in terms of it; that is not this change.
 
 import { useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useSetActiveBoard } from '../graphql/use-active-board';
@@ -20,6 +21,7 @@ import { resolveBoardAngle } from './board-angle-store';
 import { hapticSelection } from '../haptics';
 import { reportError } from '../error-reporting';
 import { track } from '../analytics';
+import { useToast } from '../../providers/toast-provider';
 
 /** Why the board changed — carried into analytics so a spike is attributable. */
 export type BoardSwitchSource = 'presence_sheet_sibling' | 'move_to_wall_callout';
@@ -86,6 +88,8 @@ export function useSwitchBoard({
 }: SwitchBoardOptions) {
   const setActiveBoard = useSetActiveBoard();
   const adoptFoundBoard = useAdoptFoundBoard();
+  const { showToast } = useToast();
+  const { t } = useTranslation('session');
   // Single-flight. The active-board write queue already resolves two racing
   // taps to the last one, but everything *after* the await — adoption, the
   // party broadcast, the board-art prewarm the climbs screen runs on a board
@@ -119,6 +123,10 @@ export function useSwitchBoard({
             toBoardUuid: target.uuid,
             reason: 'write_failed',
           });
+          // Success says nothing: the surface the climber tapped from visibly
+          // becomes the other board. A failure has nothing to show, so it says so
+          // — otherwise the tap reads as ignored and they tap again.
+          showToast(t('mobile.boardPresence.gymWalls.switchFailed', { board: target.name }), 'error');
           return 'failed';
         }
 
@@ -154,6 +162,8 @@ export function useSwitchBoard({
     [
       setActiveBoard,
       adoptFoundBoard,
+      showToast,
+      t,
       onSwitched,
       broadcastBoardPath,
       source,

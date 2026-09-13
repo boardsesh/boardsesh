@@ -2973,7 +2973,7 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
     expect(result.current.reconnectSerialForCurrentBoard).toBe('123');
     expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenCalledWith({
       serial: '123',
-      configKey: 'kilter::1::1',
+      configKey: 'kilter::1::1::',
     });
   });
 
@@ -3002,7 +3002,7 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
     // A board remembered for kilter/2/1 in a previous session (cold start).
     mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValueOnce({
       serial: '999',
-      configKey: 'kilter::2::1',
+      configKey: 'kilter::2::1::',
     });
     const fakeAdapter = makeFakeAdapter();
     vi.mocked(createBluetoothAdapter).mockReturnValue(
@@ -3025,6 +3025,36 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
       rerender({ boardName: 'kilter', layoutId: 2, sizeId: 1 });
     });
     await waitFor(() => expect(result.current.reconnectSerialForCurrentBoard).toBe('999'));
+  });
+
+  // Two walls at one gym, configured identically, told apart only by uuid. Before
+  // the uuid was part of the key, the serial remembered against wall A was
+  // offered as wall B's silent reconnect target — so the lightbulb lit the wall
+  // the climber had just walked away from, with nothing on screen to say so.
+  it('does not offer a serial remembered for an identically configured wall', async () => {
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValueOnce({
+      serial: '555',
+      configKey: 'kilter::1::1::wall-a-uuid',
+    });
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: { boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid: 'wall-b-uuid' },
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
+
+    // The wall it really was remembered for still gets the one-tap reconnect.
+    await act(async () => {
+      rerender({ boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid: 'wall-a-uuid' });
+    });
+    await waitFor(() => expect(result.current.reconnectSerialForCurrentBoard).toBe('555'));
   });
 });
 

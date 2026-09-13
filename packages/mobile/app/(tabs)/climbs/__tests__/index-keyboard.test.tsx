@@ -695,6 +695,22 @@ describe('ClimbList board switch', () => {
     expect(queryByText('mobile.emptyState.noClimbs.title')).toBeNull();
   });
 
+  // The screen used to early-return a full-screen spinner here, which took the
+  // chrome and the search header down with it. On a one-tap hop between two
+  // boards in one room that reads as the app falling over, so the list stays
+  // mounted and the rows become skeletons.
+  it('keeps the list mounted and shows skeleton rows while the board resolves', async () => {
+    mocks.getLastSearch.mockReturnValue(new Promise(() => {}));
+
+    const { container } = render(<ClimbList />);
+
+    await waitFor(() => expect(mocks.getLastSearch).toHaveBeenCalled());
+    // Skeleton rows come from the list's own empty component, so their presence
+    // is also the proof that the list itself is still mounted rather than
+    // replaced wholesale by a spinner.
+    expect(container.querySelectorAll('[data-skeleton-row]').length).toBeGreaterThan(0);
+  });
+
   // The risk the resolving window introduces at the other end: with no board
   // bound there is nothing to resolve, and a climber parked on skeletons forever
   // would never reach the button that binds one.

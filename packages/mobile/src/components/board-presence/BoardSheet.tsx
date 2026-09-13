@@ -36,6 +36,7 @@ import { useTheme } from '../../providers/theme-provider';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import { NowOnTheWallPanel } from './NowOnTheWallPanel';
 import type { BoardSheetClimbAction, NowOnTheWallPanelHandle } from './NowOnTheWallPanel';
 
@@ -69,6 +70,10 @@ type BoardSheetProps = {
   onDismissed?: () => void;
   /** Open the existing board switcher from the footer control. */
   onSwitchBoard: () => void;
+  /** The board the climber is on — names the gym whose other boards we list. */
+  activeBoard?: UserBoard | null;
+  /** Hop to another board at the same gym, without closing the sheet. */
+  onSelectGymWall?: (board: UserBoard) => void;
   /** Activate/open a climb from the wall feed. BoardSheet closes itself after this. */
   onClimbPress?: (action: BoardSheetClimbAction) => void;
   /** Swipe action: append this wall-feed climb to the queue. */
@@ -86,6 +91,8 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
     onClose,
     onDismissed,
     onSwitchBoard,
+    activeBoard,
+    onSelectGymWall,
     onClimbPress,
     onAddToQueue,
     onOpenPlaylist,
@@ -224,6 +231,8 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
           boardConfig={boardConfig}
           onClose={onClose}
           onSwitchBoard={onSwitchBoard}
+          activeBoard={activeBoard}
+          onSelectGymWall={onSelectGymWall}
           onClimbPress={onClimbPress}
           onAddToQueue={onAddToQueue}
           onOpenPlaylist={onOpenPlaylist}

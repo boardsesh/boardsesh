@@ -25,7 +25,7 @@ import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
-import { reanchorPlaylistSuggestionSource } from '@boardsesh/queue';
+import { reanchorPlaylistSuggestionSource, configKey } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { randomUUID } from 'expo-crypto';
 import {
@@ -180,6 +180,12 @@ type PlayDrawerProps = {
   /** When true, the displayed climb belongs to a board other than the user's
    *  active board — render the switch-board overlay over the controls. */
   boardMismatch?: boolean;
+  /**
+   * Board models standing at the same gym as the active board. A climb on one of
+   * them gets the "move to that board" invitation instead of the lock scrim.
+   * Omit it and every board-foreign climb keeps blocking, exactly as before.
+   */
+  reachableBoardKeys?: ReadonlySet<string>;
   /** Human-readable name of the climb's board, shown in the overlay message. */
   mismatchBoardLabel?: string;
   /** Switch to the climb's board (one-tap if owned, else the board picker). The
@@ -281,6 +287,7 @@ export function PlayDrawer({
   isAngleAdjustable = true,
   onOpenQueue,
   boardMismatch = false,
+  reachableBoardKeys,
   mismatchBoardLabel,
   onSwitchBoard,
   onOpenClimbActions,
@@ -537,7 +544,19 @@ export function PlayDrawer({
   // "switch" to the board the climber is already on and never clear. Playlist
   // rows already draw those on the upsized board without a prompt; so do we.
   const climbBoardMismatch = renderBoardResolution?.fit === 'incompatible';
-  const showBoardMismatch = boardMismatch || climbBoardMismatch;
+  // ...but on another board at the gym the climber is standing in, which is a
+  // walk rather than a wall. Queue navigation already treats those as targets
+  // rather than skipping them, so a swipe lands here routinely now — and meeting
+  // a lock scrim that says "switch boards to queue it" for a climb they queued on
+  // purpose, twenty metres from the board that draws it, is the wrong answer.
+  const climbBoardReachable =
+    climbBoardMismatch &&
+    reachableBoardKeys != null &&
+    reachableBoardKeys.has(configKey({ boardName: renderBoardConfig.boardName, layoutId: renderBoardConfig.layoutId }));
+  // Only the genuinely-elsewhere case blocks. Everything gated on this — the
+  // a11y trap, the preview relay, the auto-activate — keeps its old meaning,
+  // because a reachable climb is one the controls underneath can still act on.
+  const showBoardMismatch = (boardMismatch || climbBoardMismatch) && !climbBoardReachable;
   const switchBoardLabel = climbBoardMismatch ? formatRenderBoardLabel(renderBoardConfig) : mismatchBoardLabel;
   // The host resolves an explicit override on its own; when the mismatch came
   // from the climb there is no override to read, so hand it the board we
@@ -1923,8 +1942,13 @@ export function PlayDrawer({
                           />
                         </View>
 
-                        {showBoardMismatch && onSwitchBoard ? (
-                          <SwitchBoardOverlay boardLabel={switchBoardLabel ?? ''} onSwitchBoard={handleSwitchBoard} />
+                        {(showBoardMismatch || climbBoardReachable) && onSwitchBoard ? (
+                          <SwitchBoardOverlay
+                            boardLabel={switchBoardLabel ?? ''}
+                            onSwitchBoard={handleSwitchBoard}
+                            variant={climbBoardReachable ? 'move' : 'lock'}
+                            onSkip={climbBoardReachable ? nextClimb : undefined}
+                          />
                         ) : null}
                       </View>
                     </View>

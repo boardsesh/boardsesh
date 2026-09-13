@@ -433,6 +433,25 @@
         "previewTag": "Vista previa",
         "backToLive": "Volver al muro",
         "browseHistory": "Ver historial"
+      },
+      "gymWalls": {
+        "header": "Otros plafones en {{gym}}",
+        "headerNoGym": "Otros plafones aquí",
+        "detail": "{{config}} · {{angle}}°",
+        "detailNoLeds": "{{config}} · {{angle}}° · sin luces",
+        "detailFixed": "{{config}} · fijo a {{angle}}°",
+        "sameClimbs": "Los mismos bloques que este plafón",
+        "rowAria": "Cambiar a {{board}}",
+        "showAll": "Ver los {{count}} plafones",
+        "allBoards": "Todos los plafones",
+        "switchFailed": "No se pudo cambiar a {{board}}. Inténtalo de nuevo."
+      },
+      "moveToWall": {
+        "title": "El siguiente está en {{board}}",
+        "body": "Acércate y te cambiamos.",
+        "cta": "Cambiar a {{board}}",
+        "skip": "Saltarlo",
+        "skipAria": "Saltar este bloque y quedarte en {{board}}"
       }
     },
     "toast": {
