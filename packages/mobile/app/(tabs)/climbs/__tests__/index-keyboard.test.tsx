@@ -38,6 +38,10 @@ const mocks = vi.hoisted(() => ({
   activateClimb: vi.fn(),
   activationOptions: undefined as { previewOnly?: boolean } | undefined,
   openPlayDrawer: vi.fn(),
+  // Row actions, hoisted so tests can assert a stale row never reaches them.
+  addToQueue: vi.fn(),
+  openClimbActions: vi.fn(),
+  openAddToPlaylist: vi.fn(),
   // Mutable per-test: whether another climber is in the session.
   isSharedSession: false,
   setSetting: vi.fn(),
@@ -190,20 +194,36 @@ vi.mock('../../../../src/components/ClimbListRow', () => ({
   // `selected` is surfaced, not swallowed: the row highlight is the only feedback
   // a climber gets that a tap landed, and a mock that dropped it would let the
   // highlight break with every case in this file still green.
+  // The queue / actions / playlist buttons stand in for the row's swipe and
+  // long-press affordances, so the stale-row guards on each can be exercised.
   ClimbListRow: ({
     climb: rowClimb,
     onPress,
+    onAddToQueue,
+    onOpenActions,
+    onOpenPlaylist,
     selected,
   }: {
     climb: Climb;
     onPress?: (pressedClimb: Climb) => void;
+    onAddToQueue?: (queuedClimb: Climb) => void;
+    onOpenActions?: (actionsClimb: Climb) => void;
+    onOpenPlaylist?: (playlistClimb: Climb) => void;
     selected?: boolean;
-  }) =>
+  }) => [
     createElement(
       'button',
-      { onClick: () => onPress?.(rowClimb), 'data-selected': selected ? 'true' : 'false' },
+      { key: 'row', onClick: () => onPress?.(rowClimb), 'data-selected': selected ? 'true' : 'false' },
       rowClimb.name,
     ),
+    createElement('button', { key: 'queue', onClick: () => onAddToQueue?.(rowClimb) }, `queue:${rowClimb.name}`),
+    createElement('button', { key: 'actions', onClick: () => onOpenActions?.(rowClimb) }, `actions:${rowClimb.name}`),
+    createElement(
+      'button',
+      { key: 'playlist', onClick: () => onOpenPlaylist?.(rowClimb) },
+      `playlist:${rowClimb.name}`,
+    ),
+  ],
 }));
 
 vi.mock('../../../../src/components/ClimbListRowSkeleton', () => ({
@@ -246,8 +266,8 @@ vi.mock('../../../../src/components/grade', () => ({ GradeRangeRail: () => null 
 
 vi.mock('../../../../src/providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
-    openClimbActions: vi.fn(),
-    openAddToPlaylist: vi.fn(),
+    openClimbActions: mocks.openClimbActions,
+    openAddToPlaylist: mocks.openAddToPlaylist,
     openBoardSheet: vi.fn(),
     openPlayDrawer: mocks.openPlayDrawer,
   }),
@@ -275,7 +295,7 @@ vi.mock('../../../../src/theme/variants', () => ({
 vi.mock('../../../../src/providers/queue-provider', () => ({
   useActiveClimbUuid: () => mocks.activeClimbUuid(),
   useIsSharedSession: () => mocks.isSharedSession,
-  useQueueActions: () => ({ addToQueue: vi.fn() }),
+  useQueueActions: () => ({ addToQueue: mocks.addToQueue }),
 }));
 
 vi.mock('../../../../src/settings', () => ({
@@ -477,6 +497,39 @@ describe('ClimbList previous results standing in for a loading search', () => {
 
     expect(mocks.activateClimb).not.toHaveBeenCalled();
     expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  it('ignores queue, actions and playlist on a stale row', async () => {
+    mocks.isPlaceholderData = true;
+    mocks.addToQueue.mockClear();
+    mocks.openClimbActions.mockClear();
+    mocks.openAddToPlaylist.mockClear();
+    const { findByText, getByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('queue:Moonage'));
+    fireEvent.click(getByText('actions:Moonage'));
+    fireEvent.click(getByText('playlist:Moonage'));
+
+    expect(mocks.addToQueue).not.toHaveBeenCalled();
+    expect(mocks.openClimbActions).not.toHaveBeenCalled();
+    expect(mocks.openAddToPlaylist).not.toHaveBeenCalled();
+  });
+
+  it('runs queue, actions and playlist on a fresh row', async () => {
+    mocks.addToQueue.mockClear();
+    mocks.openClimbActions.mockClear();
+    mocks.openAddToPlaylist.mockClear();
+    const { findByText, getByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('queue:Moonage'));
+    fireEvent.click(getByText('actions:Moonage'));
+    fireEvent.click(getByText('playlist:Moonage'));
+
+    expect(mocks.addToQueue).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-1' }) }),
+    );
+    expect(mocks.openClimbActions).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }));
+    expect(mocks.openAddToPlaylist).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }));
   });
 });
 
