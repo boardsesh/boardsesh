@@ -68,7 +68,8 @@ export default function ClimbsLayout() {
             // Setter search/multi-select for the climb filter. A pushed route (not a
             // stacked sheet) because native sheets can't stack above the filter sheet.
             // Native header (title + back chevron), opaque so the search bar sits below
-            // the bar; headerRight "Clear all" set per-screen.
+            // the bar; headerRight "Clear all" set per-screen. The screen's pinned
+            // "Show N climbs" footer applies; back keeps the picks as a sheet draft.
             title: t('mobile.nav.setters'),
             headerTransparent: false,
           }}

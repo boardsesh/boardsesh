@@ -427,8 +427,10 @@ describe('ClimbFilterSheet sub-pickers', () => {
     expect(createBoardHoldsMocks.prewarmCreateBoardHolds).not.toHaveBeenCalled();
   });
 
-  it('pushes the setters route with the current selection and suspends the sheet', () => {
-    const { getByLabelText } = renderFilterSheet();
+  it('pushes the setters route with the current selection and count input, and suspends the sheet', () => {
+    // Echo the draft into the built input so the serialized param shows what it was built from.
+    searchInputMocks.toClimbSearchInput.mockImplementation((draftFilters: unknown) => ({ draftFilters }));
+    const { getByLabelText } = renderFilterSheet({ searchName: 'crimp' });
 
     fireEvent.click(getByLabelText('mobile.filter.setters'));
 
@@ -441,9 +443,74 @@ describe('ClimbFilterSheet sub-pickers', () => {
         setIds: '1,2',
         angle: '40',
         setters: JSON.stringify(['draft-setter']),
+        countInput: JSON.stringify({ draftFilters: currentFilters }),
       },
     });
+    // Same count input the sheet's own "Show N" uses: page 0, one row, the name.
+    expect(searchInputMocks.toClimbSearchInput).toHaveBeenLastCalledWith(
+      currentFilters,
+      boardConfig,
+      { page: 0, pageSize: 1 },
+      { name: 'crimp' },
+    );
     expect(managedSheetProps.latest?.open).toBe(false);
+  });
+
+  it('applies straight from an apply handoff with the latest draft, without re-presenting', () => {
+    const onApply = vi.fn();
+    const { getByLabelText, getByTestId } = renderFilterSheet({ onApply });
+
+    // A draft edit made before opening the picker must ride along.
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    act(() => {
+      emitSetterFilterSelection(['route-setter'], { apply: true });
+    });
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledWith(
+      { ...currentFilters, onlyRatedByMe: true, setter: ['route-setter'] },
+      currentBoardFilters,
+    );
+
+    // The pop then refocuses the climbs screen. Even if the parent hasn't
+    // unmounted the sheet yet, that refocus must not re-present it.
+    simulateScreenRefocus();
+
+    expect(managedSheetProps.latest?.open).toBe(false);
+    expect(bottomSheetModalProps.mountCount).toBe(1);
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies an empty apply handoff as no setter filter', () => {
+    const onApply = vi.fn();
+    const { getByLabelText } = renderFilterSheet({ onApply });
+
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    act(() => {
+      emitSetterFilterSelection([], { apply: true });
+    });
+
+    expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: undefined }, currentBoardFilters);
+  });
+
+  it('feeds a plain setter handoff into the count input without waiting out the debounce', () => {
+    vi.useFakeTimers();
+    try {
+      const { getByLabelText } = renderFilterSheet();
+      fireEvent.click(getByLabelText('mobile.filter.setters'));
+      searchInputMocks.toClimbSearchInput.mockClear();
+
+      act(() => {
+        emitSetterFilterSelection(['route-setter']);
+      });
+
+      // No timer advanced: the count input already carries the handed-back picks.
+      const lastCall = searchInputMocks.toClimbSearchInput.mock.calls.at(-1);
+      expect(lastCall?.[0]).toEqual({ ...currentFilters, setter: ['route-setter'] });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('merges the setters handed back from the route, re-presents on focus, and applies them', () => {

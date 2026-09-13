@@ -10,7 +10,18 @@ describe('setter-filter-handoff', () => {
     emitSetterFilterSelection(setters);
 
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith(setters);
+    // No options given → an empty options object, so listeners never null-check.
+    expect(listener).toHaveBeenCalledWith(setters, {});
+    unsubscribe();
+  });
+
+  it('passes the apply option through to the subscriber', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeToSetterFilterSelection(listener);
+
+    emitSetterFilterSelection(['alice'], { apply: true });
+
+    expect(listener).toHaveBeenCalledWith(['alice'], { apply: true });
     unsubscribe();
   });
 
@@ -31,10 +42,10 @@ describe('setter-filter-handoff', () => {
     const unsubSecond = subscribeToSetterFilterSelection(second);
 
     const setters = ['dave'];
-    emitSetterFilterSelection(setters);
+    emitSetterFilterSelection(setters, { apply: true });
 
-    expect(first).toHaveBeenCalledWith(setters);
-    expect(second).toHaveBeenCalledWith(setters);
+    expect(first).toHaveBeenCalledWith(setters, { apply: true });
+    expect(second).toHaveBeenCalledWith(setters, { apply: true });
     unsubFirst();
     unsubSecond();
   });

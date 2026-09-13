@@ -30,6 +30,10 @@ const mocks = vi.hoisted(() => ({
   // failed, and what the active board's catalog looks like on this device.
   isOffline: false,
   searchFailed: false,
+  // The previous search's rows standing in while a new one loads, and whether
+  // the list query reports a background refetch.
+  isPlaceholderData: false,
+  isRefetching: false,
   offlineCatalog: null as 'missing' | 'queued' | null,
   activateClimb: vi.fn(),
   activationOptions: undefined as { previewOnly?: boolean } | undefined,
@@ -59,13 +63,15 @@ type FlashListProps<Item> = {
   ListHeaderComponent?: ReactNode;
   ListFooterComponent?: ReactNode;
   ListEmptyComponent?: ReactNode;
+  refreshControl?: ReactNode;
 };
 
 vi.mock('react-native', () => ({
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('div', testID ? { 'data-testid': testID } : null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
-  RefreshControl: () => createElement('div', { 'data-refresh-control': 'true' }),
+  RefreshControl: ({ refreshing }: { refreshing?: boolean }) =>
+    createElement('div', { 'data-refresh-control': 'true', 'data-refreshing': String(!!refreshing) }),
   Keyboard: { dismiss: mocks.dismissKeyboard },
   // No `Image.prefetch` should ever fire for board art (#3191 — the native
   // Android image loader gets a 403 from the CDN/WAF for direct board-art
@@ -88,10 +94,12 @@ vi.mock('@shopify/flash-list', () => ({
     ListHeaderComponent,
     ListFooterComponent,
     ListEmptyComponent,
+    refreshControl,
   }: FlashListProps<Item>) =>
     createElement(
       'div',
       { 'data-testid': 'flash-list' },
+      refreshControl,
       ListHeaderComponent,
       data.length > 0
         ? data.map((item, index) => createElement('div', { key: index }, renderItem?.({ item, index })))
@@ -310,7 +318,8 @@ vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
     isLoading: false,
     isError: mocks.searchFailed,
     isFetchingNextPage: false,
-    isRefetching: false,
+    isRefetching: mocks.isRefetching,
+    isPlaceholderData: mocks.isPlaceholderData,
     fetchNextPage: vi.fn(),
     hasNextPage: false,
     refetch: vi.fn(),
@@ -433,6 +442,42 @@ beforeEach(() => {
   mocks.searchParams = {};
   mocks.isSharedSession = false;
   mocks.activationOptions = undefined;
+  mocks.isPlaceholderData = false;
+  mocks.isRefetching = false;
+});
+
+// While a new search loads, the previous search's rows stay up as placeholder
+// data (#5414). They are stale: no pull-to-refresh spinner for that fetch, and a
+// tap must not open or seed a swipe track from the old results.
+describe('ClimbList previous results standing in for a loading search', () => {
+  it('shows no pull-to-refresh spinner for the placeholder fetch', async () => {
+    mocks.isPlaceholderData = true;
+    mocks.isRefetching = true;
+    const { container, findByText } = render(<ClimbList />);
+
+    await findByText('Moonage');
+
+    expect(container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('false');
+  });
+
+  it('still shows the spinner for a real pull-to-refresh', async () => {
+    mocks.isRefetching = true;
+    const { container, findByText } = render(<ClimbList />);
+
+    await findByText('Moonage');
+
+    expect(container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('true');
+  });
+
+  it('ignores a tap on a stale row', async () => {
+    mocks.isPlaceholderData = true;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    expect(mocks.activateClimb).not.toHaveBeenCalled();
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+  });
 });
 
 // The dead end this branch exists to remove, and the one it nearly reintroduced:

@@ -18,8 +18,6 @@ import {
   hasActiveBoardFilters,
   applyStatusChange,
   normalizeRetiredStatus,
-  toClimbSearchInput,
-  mergeBoardFilters,
   formatMinAscentsFilterCount,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   countFilteredHolds,
@@ -57,7 +55,8 @@ import { buildFilterLabels, formatSettersLabel, progressFilterLabel } from '../l
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../lib/create-board-holds';
 import { subscribeToHoldsFilterSelection } from '../lib/hold-filter-handoff';
 import { subscribeToZoneFilterSelection, type ZoneFilterSelection } from '../lib/zone-filter-handoff';
-import { subscribeToSetterFilterSelection } from '../lib/setter-filter-handoff';
+import { subscribeToSetterFilterSelection, type SetterFilterHandoffOptions } from '../lib/setter-filter-handoff';
+import { buildCountPreviewInput } from '../lib/climb-count-preview-input';
 import { visibleSearchTextNeedsSync } from '../lib/search-name';
 import { useAuth } from '../providers/auth-provider';
 import { hapticSelection } from '../lib/haptics';
@@ -211,6 +210,12 @@ export function ClimbFilterSheet({
   // shape as the parent's top-bar sync effect, which reads visibleSearchTextRef.
   const nameDraftRef = useRef(nameDraft);
   nameDraftRef.current = nameDraft;
+  // Latest-draft snapshots for the setter handoff's apply path, which runs from a
+  // pub/sub listener and must apply the draft as it is now, not as of subscribe.
+  const localFiltersRef = useRef(localFilters);
+  localFiltersRef.current = localFilters;
+  const localBoardFiltersRef = useRef(localBoardFilters);
+  localBoardFiltersRef.current = localBoardFilters;
 
   // Resync the field from an external `searchName` change (board switch, recent
   // pill, cancel) — but ignore a trim-only difference, exactly like the parent's
@@ -289,18 +294,29 @@ export function ClimbFilterSheet({
     boardFilters: localBoardFilters,
     name: nameDraft,
   });
+  // Set by the sub-picker handoffs (setters / holds / zone). A handed-back result
+  // is one discrete change, not a burst of taps, so the count input takes it at
+  // once and the count is already loading (or cached) when the sheet re-presents.
+  const flushPreviewRef = useRef(false);
   useEffect(() => {
-    const handle = setTimeout(
-      () => setDebouncedEdits({ filters: localFilters, boardFilters: localBoardFilters, name: nameDraft }),
-      250,
-    );
+    const nextEdits = { filters: localFilters, boardFilters: localBoardFilters, name: nameDraft };
+    if (flushPreviewRef.current) {
+      flushPreviewRef.current = false;
+      setDebouncedEdits(nextEdits);
+      return;
+    }
+    const handle = setTimeout(() => setDebouncedEdits(nextEdits), 250);
     return () => clearTimeout(handle);
   }, [localFilters, localBoardFilters, nameDraft]);
+  // Built with the same helper the setters route uses for its own count, so both
+  // screens share one React Query key for the same picks.
   const previewInput = useMemo(() => {
     if (!boardConfig) return null;
-    return mergeBoardFilters(
-      toClimbSearchInput(debouncedEdits.filters, boardConfig, { page: 0, pageSize: 1 }, { name: debouncedEdits.name }),
+    return buildCountPreviewInput(
+      debouncedEdits.filters,
       debouncedEdits.boardFilters,
+      boardConfig,
+      debouncedEdits.name,
     );
   }, [boardConfig, debouncedEdits]);
   const { data: previewCount } = useSearchClimbsCount(
@@ -576,10 +592,22 @@ export function ClimbFilterSheet({
         sizeId: String(boardConfig.sizeId),
         setIds: boardConfig.setIds,
         angle: String(boardConfig.angle),
-        setters: JSON.stringify(localFilters.setter ?? []),
+        setters: JSON.stringify(localFiltersRef.current.setter ?? []),
+        // The draft's count input, so the route's "Show N climbs" button counts
+        // the same search this sheet would apply, with its own picks swapped in.
+        // Read from the latest-draft refs so this callback stays stable across
+        // name keystrokes and filter edits.
+        countInput: JSON.stringify(
+          buildCountPreviewInput(
+            localFiltersRef.current,
+            localBoardFiltersRef.current,
+            boardConfig,
+            nameDraftRef.current,
+          ),
+        ),
       },
     });
-  }, [beginSubPickerSuspend, boardConfig, localFilters.setter, router]);
+  }, [beginSubPickerSuspend, boardConfig, router]);
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
@@ -633,9 +661,11 @@ export function ClimbFilterSheet({
     router,
   ]);
 
-  // Re-present after a sub-picker route pops (Done button OR swipe-back both
+  // Re-present after a sub-picker route pops (back chevron OR swipe-back both
   // re-focus this screen). On initial mount the screen is already focused with no
   // pending resume, so this is a no-op until a sub-route has actually been pushed.
+  // The setters route's "Show N climbs" button never gets here: its apply handoff
+  // makes the parent unmount this sheet while it is still suspended.
   useFocusEffect(
     useCallback(() => {
       if (pendingResumeRef.current) {
@@ -648,17 +678,28 @@ export function ClimbFilterSheet({
   );
 
   const handleSelectedSettersChange = useCallback(
-    (selectedSetters: string[]) => {
-      updateLocalFilters((previous) => ({
-        ...previous,
-        setter: selectedSetters.length > 0 ? selectedSetters : undefined,
-      }));
+    (selectedSetters: string[], options: SetterFilterHandoffOptions) => {
+      const setter = selectedSetters.length > 0 ? selectedSetters : undefined;
+      if (options.apply) {
+        // "Show N climbs" on the setters route: apply the latest draft with the
+        // picks merged, exactly as the sheet's own Apply would. The parent's
+        // onApply closes the filters, unmounting this suspended sheet, so there
+        // is nothing to dismiss and no re-present to wait for. Clearing the
+        // pending resume makes sure the pop's refocus can't re-present it either.
+        hasLocalDraftEditsRef.current = false;
+        pendingResumeRef.current = false;
+        onApply({ ...localFiltersRef.current, setter }, localBoardFiltersRef.current);
+        return;
+      }
+      flushPreviewRef.current = true;
+      updateLocalFilters((previous) => ({ ...previous, setter }));
     },
-    [updateLocalFilters],
+    [onApply, updateLocalFilters],
   );
 
   const handleHoldsFilterChange = useCallback(
     (holdsFilter: HoldsFilter) => {
+      flushPreviewRef.current = true;
       updateLocalBoardFilters((previous) => ({
         ...previous,
         holdsFilter: Object.keys(holdsFilter).length > 0 ? holdsFilter : undefined,
@@ -669,6 +710,7 @@ export function ClimbFilterSheet({
 
   const handleZoneFilterChange = useCallback(
     (selection: ZoneFilterSelection) => {
+      flushPreviewRef.current = true;
       updateLocalBoardFilters((previous) => {
         const nextBoardFilters: ClimbBoardFilterState = {
           ...previous,
@@ -687,8 +729,10 @@ export function ClimbFilterSheet({
 
   // The setter / hold / zone sub-pickers are pushed routes; each hands its result
   // back through these handoffs when it pops (focus-cleanup), merging into the
-  // draft below. Kept subscribed for the lifetime of the (suspended-but-mounted)
-  // sheet so the result lands even while the route is on top.
+  // draft below. The setters route can also hand back with `apply` from its
+  // footer button, which applies instead of merging. Kept subscribed for the
+  // lifetime of the (suspended-but-mounted) sheet so the result lands even while
+  // the route is on top.
   useEffect(() => {
     const unsubscribeSetters = subscribeToSetterFilterSelection(handleSelectedSettersChange);
     const unsubscribeHolds = subscribeToHoldsFilterSelection(handleHoldsFilterChange);

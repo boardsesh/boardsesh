@@ -12,7 +12,7 @@ vi.mock('../../client', () => ({
   getHttpClient: () => ({ request: requestMock }),
 }));
 
-import { useInfiniteSearchClimbs } from '../use-infinite-search-climbs';
+import { keepSameBoardSearchResults, useInfiniteSearchClimbs } from '../use-infinite-search-climbs';
 
 const baseInput: ClimbSearchInput = {
   boardName: 'kilter',
@@ -79,5 +79,75 @@ describe('useInfiniteSearchClimbs', () => {
     await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
     expect(lastInput()).toMatchObject({ page: 1, pageSize: 30, name: 'Moonage' });
     expect(result.current.hasNextPage).toBe(false);
+  });
+
+  describe('keepPreviousResults', () => {
+    beforeEach(() => {
+      // Only the first search resolves; every later one stays in flight, so the
+      // assertions read the state a climber sees while the new search loads.
+      requestMock.mockImplementation((_query: unknown, variables: { input: ClimbSearchInput }) =>
+        variables.input.name === 'Moonage'
+          ? Promise.resolve(makeResponse(variables.input.page ?? 0))
+          : new Promise<SearchClimbsQueryResponse>(() => {}),
+      );
+    });
+
+    it('keeps the previous results for a new search on the same board, and drops them on a board change', async () => {
+      const { result, rerender } = renderHook(
+        ({ input }: { input: ClimbSearchInput }) => useInfiniteSearchClimbs(input, true, { keepPreviousResults: true }),
+        { initialProps: { input: baseInput }, wrapper: wrapper() },
+      );
+      await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+
+      rerender({ input: { ...baseInput, name: 'Zenith' } });
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+      expect(result.current.isPlaceholderData).toBe(true);
+      // Still the selected shape (`pages[i].climbs`), not the raw response.
+      expect(result.current.data?.pages[0]).toEqual({ climbs: [], hasMore: true });
+
+      // A different size is a different board: skeletons, not the old climbs.
+      rerender({ input: { ...baseInput, name: 'Zenith', sizeId: 7 } });
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(3));
+      expect(result.current.data).toBeUndefined();
+      expect(result.current.isPlaceholderData).toBe(false);
+    });
+
+    it('drops to no data on a new search when the option is off', async () => {
+      const { result, rerender } = renderHook(
+        ({ input }: { input: ClimbSearchInput }) => useInfiniteSearchClimbs(input),
+        { initialProps: { input: baseInput }, wrapper: wrapper() },
+      );
+      await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+
+      rerender({ input: { ...baseInput, name: 'Zenith' } });
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(2));
+      expect(result.current.data).toBeUndefined();
+      expect(result.current.isPlaceholderData).toBe(false);
+    });
+  });
+});
+
+describe('keepSameBoardSearchResults', () => {
+  const boardScope = { boardName: 'kilter', layoutId: 1, sizeId: 2, setIds: '3' };
+  const previousResults = { pages: ['previous'] };
+  const previousKey = ['infiniteSearchClimbs', { ...boardScope, angle: 40, name: 'Moonage', pageSize: 30 }];
+
+  it('keeps the previous data when the previous search used the same board', () => {
+    expect(keepSameBoardSearchResults(boardScope, previousResults, previousKey)).toBe(previousResults);
+  });
+
+  it.each([
+    ['board name', { boardName: 'tension' }],
+    ['layout', { layoutId: 9 }],
+    ['size', { sizeId: 9 }],
+    ['sets', { setIds: '3,4' }],
+  ])('drops the previous data when the %s changed', (_label, boardChange) => {
+    expect(keepSameBoardSearchResults({ ...boardScope, ...boardChange }, previousResults, previousKey)).toBeUndefined();
+  });
+
+  it('drops the previous data with no previous query, no data, or a foreign key', () => {
+    expect(keepSameBoardSearchResults(boardScope, previousResults, undefined)).toBeUndefined();
+    expect(keepSameBoardSearchResults(boardScope, undefined, previousKey)).toBeUndefined();
+    expect(keepSameBoardSearchResults(boardScope, previousResults, ['searchClimbsCount', boardScope])).toBeUndefined();
   });
 });
