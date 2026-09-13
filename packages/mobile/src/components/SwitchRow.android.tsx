@@ -60,6 +60,10 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
             {label}
           </Text>
           {description ? (
+            // No `alpha()` modifier here: unlike the old default-colour text,
+            // `secondaryLabel` is already opaque and chosen to clear WCAG AA
+            // on its own (see colors.ts) — compositing it down again would
+            // undo that.
             <Text style={{ typography: 'bodySmall' }} color={systemColors.secondaryLabel as string}>
               {description}
             </Text>

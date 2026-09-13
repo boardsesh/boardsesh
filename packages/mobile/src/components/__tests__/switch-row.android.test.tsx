@@ -38,13 +38,20 @@ vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
   defaultMinSize: () => ({ kind: 'defaultMinSize' }),
   alpha: () => ({ kind: 'alpha' }),
 }));
-vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({
-    brandColors: { primary: '#6D28D9' },
-    colorScheme: 'light',
-    systemColors: { label: '#111111', secondaryLabel: '#222222' },
-  }),
-}));
+const useThemeMock = vi.hoisted(() =>
+  vi.fn(
+    (): {
+      brandColors: { primary: string };
+      colorScheme: 'light' | 'dark';
+      systemColors: { label: string; secondaryLabel: string };
+    } => ({
+      brandColors: { primary: '#6D28D9' },
+      colorScheme: 'light',
+      systemColors: { label: '#111111', secondaryLabel: '#222222' },
+    }),
+  ),
+);
+vi.mock('../../providers/theme-provider', () => ({ useTheme: useThemeMock }));
 vi.mock('../../theme/expo-ui-modifiers', () => ({ switchBrandColors: () => ({}) }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8, 4: 16 } }));
 
@@ -55,6 +62,11 @@ beforeEach(() => {
   composeSwitchProps.last = null;
   rowToggle.last = null;
   composeTextColors.seen = [];
+  useThemeMock.mockReturnValue({
+    brandColors: { primary: '#6D28D9' },
+    colorScheme: 'light',
+    systemColors: { label: '#111111', secondaryLabel: '#222222' },
+  });
 });
 
 describe('Android SwitchRow', () => {
@@ -102,5 +114,19 @@ describe('Android SwitchRow', () => {
     render(<SwitchRow label="Public board" description="Visible to everyone" value={false} onValueChange={vi.fn()} />);
 
     expect(composeTextColors.seen).toEqual(['#111111', '#222222']);
+  });
+
+  it('forwards the dark-mode system colours too, not just light', () => {
+    // The bug (#5332) only shows up in dark mode: Compose's black default sits
+    // on a dark background. Confirm the fix isn't accidentally light-only.
+    useThemeMock.mockReturnValue({
+      brandColors: { primary: '#6D28D9' },
+      colorScheme: 'dark',
+      systemColors: { label: '#F5F2FB', secondaryLabel: '#A9A2B6' },
+    });
+
+    render(<SwitchRow label="Public board" description="Visible to everyone" value={false} onValueChange={vi.fn()} />);
+
+    expect(composeTextColors.seen).toEqual(['#F5F2FB', '#A9A2B6']);
   });
 });
