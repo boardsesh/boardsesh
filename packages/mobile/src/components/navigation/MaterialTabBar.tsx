@@ -88,7 +88,7 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
             accessibilityLabel={label}
             style={styles.item}
           >
-            {/* Explicit color always (Android can drop borderRadius if added later, not at mount). */}
+            {/* Always set backgroundColor — adding it post-mount can lose the Android borderRadius clip. */}
             <View
               testID="indicator"
               style={[styles.indicator, { backgroundColor: focused ? indicatorColor : 'transparent' }]}
