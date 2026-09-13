@@ -139,10 +139,13 @@ export const material = {
   disabledContentOpacity: 0.38,
   disabledContainerOpacity: 0.12,
   navBar: {
-    /** Tonal pill behind the focused tab's icon (M3 spec: 64×32). */
-    activeIndicatorWidth: 64,
-    activeIndicatorHeight: 32,
-    activeIndicatorRadius: 16,
+    /** Tonal indicator behind the focused tab's icon — a fully-rounded circle
+     *  hugging the 24px icon (8px of breathing room per side) rather than the
+     *  M3-spec 64×32 pill, which read as a long rounded rectangle at our tab
+     *  widths instead of a soft, obviously-circular highlight. */
+    activeIndicatorWidth: 40,
+    activeIndicatorHeight: 40,
+    activeIndicatorRadius: 20,
     /** Resting elevation of the solid Android nav surface (M3 nav bar = level 2). */
     surfaceElevation: 2,
   },

@@ -14,14 +14,15 @@ import { isLiveTabBadge } from './tab-badge';
  * Material 3 bottom navigation bar — the JS tab bar for the Material UI variant
  * (the Liquid Glass variant uses the native `NativeTabs` instead). Built from the
  * existing design tokens so it reads as the same product: an opaque elevated
- * surface, a tonal active-indicator pill behind the focused icon, label below,
- * and a status dot for the Record tab. Icons/labels/badges come from each
- * screen's React Navigation options, so this stays a generic custom tab bar.
+ * surface, a tonal circular active indicator behind the focused icon, label
+ * below, and a status dot for the Record tab. Icons/labels/badges come from
+ * each screen's React Navigation options, so this stays a generic custom tab
+ * bar.
  */
 export function MaterialTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
   const { systemColors, brandColors, m3 } = useTheme();
   // M3 navigation bar roles: the focused destination's icon sits on a
-  // secondaryContainer active-indicator pill (onSecondaryContainer glyph), its
+  // secondaryContainer active-indicator circle (onSecondaryContainer glyph), its
   // label lifts to onSurface, and inactive destinations use onSurfaceVariant for
   // both icon and label. These read correctly on the tonal M3 surface in both
   // schemes (the Paper palette resolves per scheme) — no manual alpha tinting.
@@ -137,7 +138,7 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     gap: 4,
   },
-  // M3 active-indicator pill — fixed size, tonal fill only when focused.
+  // Active-indicator circle — fixed size, tonal fill only when focused.
   indicator: {
     width: material.navBar.activeIndicatorWidth,
     height: material.navBar.activeIndicatorHeight,
