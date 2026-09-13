@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-12T01:12:26.881Z",
+  "generatedAt": "2026-09-13T10:59:59.229Z",
   "entries": [
+    {
+      "prNumber": 5376,
+      "category": "improved",
+      "title": "[x] This change is internal-only and needs no release note.",
+      "mergedAt": "2026-09-13T10:59:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5376"
+    },
+    {
+      "prNumber": 5416,
+      "category": "fixed",
+      "title": "Fixed a shrunken, off-centre spinner on Android loading buttons (like \"Check for updates\" on What's New).",
+      "mergedAt": "2026-09-13T10:58:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5416"
+    },
     {
       "prNumber": 5408,
       "category": "fixed",

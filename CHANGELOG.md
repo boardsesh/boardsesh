@@ -4,6 +4,16 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-13
+
+### Improved
+
+- [x] This change is internal-only and needs no release note. ([#5376](https://github.com/boardsesh/boardsesh/pull/5376))
+
+### Fixed
+
+- Fixed a shrunken, off-centre spinner on Android loading buttons (like "Check for updates" on What's New). ([#5416](https://github.com/boardsesh/boardsesh/pull/5416))
+
 ## 2026-09-12
 
 ### Fixed
