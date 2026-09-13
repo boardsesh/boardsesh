@@ -1609,6 +1609,8 @@ function ClimbListInner() {
       <FlashList
         ref={climbListRef}
         testID="climb-list"
+        // Screen readers skip the tint, so announce the stale rows as loading.
+        accessibilityState={{ busy: isPlaceholderData }}
         data={visibleClimbs}
         renderItem={renderClimbItem}
         keyExtractor={keyExtractor}
