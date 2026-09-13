@@ -183,3 +183,64 @@ describe('decideAdd', () => {
     ).toEqual({ kind: 'add', reason: 'unknown' });
   });
 });
+
+// --- Walls at the same gym ---------------------------------------------------
+//
+// The prompt exists to stop a foreign climb landing by accident. At a gym with
+// two walls, queueing from the wall beside you is the deliberate act, so the
+// prompt is friction at exactly the wrong moment.
+
+describe('decideAdd reachable walls', () => {
+  const KILTER_ACTIVE = { boardName: 'kilter' as const, layoutId: 1 };
+  const TENSION_CLIMB = { boardType: 'tension', layoutId: 8 };
+  const alwaysIncompatible = () => 'incompatible' as const;
+
+  it('adds without prompting when the climb is on another wall at this gym', () => {
+    const decision = decideAdd({
+      climb: TENSION_CLIMB,
+      activeConfig: KILTER_ACTIVE,
+      acceptedConfigKeys: new Set(['kilter:1']),
+      reachableConfigKeys: new Set(['tension:8']),
+      classify: alwaysIncompatible,
+    });
+
+    expect(decision).toEqual({ kind: 'add', reason: 'same-gym' });
+  });
+
+  it('still prompts for a board that is not at this gym', () => {
+    const decision = decideAdd({
+      climb: TENSION_CLIMB,
+      activeConfig: KILTER_ACTIVE,
+      acceptedConfigKeys: new Set(['kilter:1']),
+      reachableConfigKeys: new Set(['moonboard:6']),
+      classify: alwaysIncompatible,
+    });
+
+    expect(decision.kind).toBe('confirm');
+  });
+
+  it('behaves exactly as before when no reachable set is supplied', () => {
+    const decision = decideAdd({
+      climb: TENSION_CLIMB,
+      activeConfig: KILTER_ACTIVE,
+      acceptedConfigKeys: new Set(['kilter:1']),
+      classify: alwaysIncompatible,
+    });
+
+    expect(decision.kind).toBe('confirm');
+  });
+
+  // A board already in the queue short-circuits first, so the reason stays the
+  // one that explains itself: they said yes to this board already.
+  it('reports already-mixed ahead of same-gym', () => {
+    const decision = decideAdd({
+      climb: TENSION_CLIMB,
+      activeConfig: KILTER_ACTIVE,
+      acceptedConfigKeys: new Set(['kilter:1', 'tension:8']),
+      reachableConfigKeys: new Set(['tension:8']),
+      classify: alwaysIncompatible,
+    });
+
+    expect(decision).toEqual({ kind: 'add', reason: 'already-mixed' });
+  });
+});
