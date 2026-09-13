@@ -121,9 +121,9 @@ vi.mock('../../../theme/tokens', () => ({
   material: {
     navBar: {
       surfaceElevation: 3,
-      activeIndicatorWidth: 64,
-      activeIndicatorHeight: 32,
-      activeIndicatorRadius: 16,
+      activeIndicatorWidth: 40,
+      activeIndicatorHeight: 40,
+      activeIndicatorRadius: 20,
     },
   },
 }));
