@@ -48,6 +48,24 @@ describe('findBlockingSchemaChanges', () => {
     expect(findBlockingSchemaChanges(BASE_SDL, headSdl).map((change) => change.type)).toContain('TYPE_REMOVED');
   });
 
+  it('reports a newly required argument', () => {
+    const headSdl = BASE_SDL.replace('board(uuid: ID!, angle: Int)', 'board(uuid: ID!, angle: Int, layoutId: Int!)');
+    expect(findBlockingSchemaChanges(BASE_SDL, headSdl).map((change) => change.type)).toEqual(['REQUIRED_ARG_ADDED']);
+  });
+
+  it('reports a newly required input field', () => {
+    const baseWithInput = `${BASE_SDL}\ninput BoardFilter {\n  name: String\n}\n\ntype Mutation {\n  filter(input: BoardFilter): Int\n}\n`;
+    const headSdl = baseWithInput.replace('  name: String\n}', '  name: String\n  layoutId: Int!\n}');
+    expect(findBlockingSchemaChanges(baseWithInput, headSdl).map((change) => change.type)).toEqual([
+      'REQUIRED_INPUT_FIELD_ADDED',
+    ]);
+  });
+
+  it('reports a field whose type changed kind', () => {
+    const headSdl = BASE_SDL.replace('  layoutId: Int\n', '  layoutId: String\n');
+    expect(findBlockingSchemaChanges(BASE_SDL, headSdl).map((change) => change.type)).toEqual(['FIELD_CHANGED_KIND']);
+  });
+
   it('is clean when a field is only added', () => {
     const headSdl = BASE_SDL.replace('  layoutId: Int\n', '  layoutId: Int\n  sizeId: Int\n');
     expect(findBlockingSchemaChanges(BASE_SDL, headSdl)).toEqual([]);

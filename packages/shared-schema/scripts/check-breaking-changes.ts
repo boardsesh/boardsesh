@@ -65,7 +65,18 @@ export function main(argv: string[]): number {
 
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
   const headSdl = readFileSync(join(repoRoot, SCHEMA_SDL_PATH), 'utf8');
-  const changes = findBlockingSchemaChanges(readBaseSdl(baseRef), headSdl);
+  let baseSdl: string;
+  try {
+    baseSdl = readBaseSdl(baseRef);
+  } catch (error) {
+    console.error(
+      `[schema-breaking] Could not read ${SCHEMA_SDL_PATH} at ${baseRef}. ` +
+        'If the generated SDL moved, update SCHEMA_SDL_PATH in this script.',
+    );
+    console.error(String(error));
+    return 2;
+  }
+  const changes = findBlockingSchemaChanges(baseSdl, headSdl);
 
   if (changes.length === 0) {
     console.log(`[schema-breaking] No client-breaking schema changes against ${baseRef}.`);
