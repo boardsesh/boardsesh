@@ -27,6 +27,21 @@ describe('GraphQL error extraction', () => {
     expect(readGraphqlValidationFailedMessage(error)).toBe('Unknown argument "layoutId" on field "Query.board".');
   });
 
+  it('reads the message from every shape the predicate matches', () => {
+    const message = 'Cannot query field "layoutId" on type "Board".';
+    const clientError = { response: { errors: [{ message, extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] } };
+    const shapes = [
+      { cause: clientError },
+      { errors: [{ message, extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] },
+      Object.assign(new Error(message), { extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }),
+    ];
+
+    for (const shape of shapes) {
+      expect(isGraphqlValidationFailedError(shape)).toBe(true);
+      expect(readGraphqlValidationFailedMessage(shape)).toBe(message);
+    }
+  });
+
   it('does not treat other GraphQL codes as validation failures', () => {
     const error = { response: { errors: [{ message: 'nope', extensions: { code: 'BAD_USER_INPUT' } }] } };
 

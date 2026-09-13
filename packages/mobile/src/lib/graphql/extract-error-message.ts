@@ -57,13 +57,41 @@ export function isGraphqlValidationFailedError(error: unknown): boolean {
   return hasGraphqlErrorCode(error, GRAPHQL_VALIDATION_FAILED);
 }
 
+const MAX_CAUSE_DEPTH = 5;
+
+// Walks the same shapes `hasGraphqlErrorCode` accepts (a bounded `.cause`
+// chain, a top-level `errors` array, graphql-request's `response.errors`, and a
+// re-thrown GraphQLError carrying `extensions` itself), so an error the
+// predicate matches never reads back as 'unknown'.
+function findValidationFailedMessage(error: unknown, depth: number): string | null {
+  if (!error || typeof error !== 'object') return null;
+  const record = error as { errors?: unknown; extensions?: GraphqlErrorLike['extensions']; message?: unknown };
+
+  const candidates = [
+    ...(Array.isArray(record.errors) ? (record.errors as GraphqlErrorLike[]) : []),
+    ...getGraphqlErrors(error),
+  ];
+  const validationError = candidates.find(
+    (graphqlError) => graphqlError?.extensions?.code === GRAPHQL_VALIDATION_FAILED,
+  );
+  if (typeof validationError?.message === 'string' && validationError.message.length > 0)
+    return validationError.message;
+
+  if (record.extensions?.code === GRAPHQL_VALIDATION_FAILED && typeof record.message === 'string' && record.message) {
+    return record.message;
+  }
+
+  const cause = (error as { cause?: unknown }).cause;
+  if (depth < MAX_CAUSE_DEPTH && cause !== undefined && cause !== error) {
+    return findValidationFailedMessage(cause, depth + 1);
+  }
+  return null;
+}
+
 /** The first validation message, bounded for use as a Sentry fingerprint. */
 export function readGraphqlValidationFailedMessage(error: unknown): string {
-  const validationError = getGraphqlErrors(error).find(
-    (graphqlError) => graphqlError.extensions?.code === GRAPHQL_VALIDATION_FAILED,
-  );
-  const message = validationError?.message;
-  if (typeof message !== 'string' || message.length === 0) return 'unknown';
+  const message = findValidationFailedMessage(error, 0);
+  if (!message) return 'unknown';
   return message.slice(0, MAX_VALIDATION_MESSAGE_LENGTH);
 }
 
