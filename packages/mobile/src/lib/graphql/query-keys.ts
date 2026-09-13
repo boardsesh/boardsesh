@@ -19,6 +19,19 @@ import type { MyBoardsInput } from '@boardsesh/shared-schema';
 export const myBoardsQueryKey = (input?: MyBoardsInput) => ['myBoards', input] as const;
 
 /**
+ * The boards linked to one gym, and the root every gym's list hangs off.
+ *
+ * Both live here because two modules that never import each other have to agree
+ * on them: `useGymBoards` writes under `gymBoardsQueryKey(gymUuid)`, while
+ * `useLinkBoardToGym` invalidates the root once a board joins or leaves a gym —
+ * that mutation doesn't know which gym's list is cached, so it drops all of
+ * them. A key change on one side only would leave the board switcher listing a
+ * board that has since moved.
+ */
+export const GYM_BOARDS_QUERY_KEY = ['gymBoards'] as const;
+export const gymBoardsQueryKey = (gymUuid: string | null) => [...GYM_BOARDS_QUERY_KEY, gymUuid] as const;
+
+/**
  * Root keys for the climb reads a moderation verdict changes.
  *
  * `useClimb`, `useSearchClimbs`, `useSearchClimbsCount` and

@@ -256,6 +256,46 @@ export const GET_GYM_BOARDS = gql`
   }
 `;
 
+/**
+ * The same boards, but every one of them ready to become the mobile app's ACTIVE
+ * board. The gym board switcher activates a row on tap, and the app persists the
+ * whole board object to storage, so a row has to be a structurally complete
+ * `UserBoard` — not the projection the manage-gym pickers render.
+ *
+ * `GYM_BOARD_FIELDS` leaves nine fields out that `UserBoard` declares as
+ * required, and two of the gaps fail silently rather than loudly:
+ * `isOwned`/`isFollowedByMe` read `undefined`, so the follow-on-activate logic
+ * treats every board as new and re-follows it on each switch, and an omitted
+ * `timerName` unpairs the board's Rogue timer the moment it's stored.
+ *
+ * It's a second document instead of a wider fragment because the anonymous
+ * leaderboard embed selects `GYM_BOARD_FIELDS` too — owner counts, follow state
+ * and a controller serial have no business in an unauthenticated payload.
+ *
+ * `layoutName` / `sizeName` / `sizeDescription` / `setNames` stay out on purpose:
+ * `enrichBoards` hard-codes all four to null for every board it returns, so
+ * asking for them buys a bigger response and nothing else.
+ */
+export const GET_GYM_BOARDS_FOR_SWITCHER = gql`
+  query GetGymBoardsForSwitcher($gymUuid: ID!) {
+    gymBoards(gymUuid: $gymUuid) {
+      ${GYM_BOARD_FIELDS}
+      hideLocation
+      isOwned
+      createdAt
+      totalAscents
+      uniqueClimbers
+      followerCount
+      commentCount
+      isFollowedByMe
+      isPinnedByMe
+      gymName
+      serialNumber
+      timerName
+    }
+  }
+`;
+
 // Boards that probably belong to the gym but aren't linked yet — merged-twin
 // leftovers and nearby unlinked/SYSTEM boards. Powers the "Boards that might be
 // yours" section on the manage-gym Boards tab. Requires gym edit access.
@@ -625,6 +665,36 @@ export type GetGymBoardsQueryVariables = {
 
 export type GetGymBoardsQueryResponse = {
   gymBoards: UserBoard[];
+};
+
+/**
+ * One row of `GET_GYM_BOARDS_FOR_SWITCHER`. Narrower than `UserBoard` by exactly
+ * the fields that document doesn't select, so a consumer can't read `undefined`
+ * through a property TypeScript promised: the first four are hard-coded null by
+ * `enrichBoards`, and the rest no board-switcher surface renders. Everything a
+ * board needs to be activated and persisted is still here, so a value of this
+ * type remains assignable to `UserBoard`.
+ */
+export type GymBoardForSwitcher = Omit<
+  UserBoard,
+  | 'layoutName'
+  | 'sizeName'
+  | 'sizeDescription'
+  | 'setNames'
+  | 'description'
+  | 'latitude'
+  | 'longitude'
+  | 'ownerDisplayName'
+  | 'ownerAvatarUrl'
+  | 'distanceMeters'
+>;
+
+export type GetGymBoardsForSwitcherQueryVariables = {
+  gymUuid: string;
+};
+
+export type GetGymBoardsForSwitcherQueryResponse = {
+  gymBoards: GymBoardForSwitcher[];
 };
 
 export type StrayBoardsForGymQueryVariables = {
