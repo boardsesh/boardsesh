@@ -22,7 +22,7 @@ import {
   type GetGymKioskQueryResponse,
   type GymKioskOperationResult,
 } from '@boardsesh/graphql/operations';
-import { boardTypeLabel } from '@boardsesh/board-constants';
+import { disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
 import { parseGymQrLanding } from '@boardsesh/analytics';
 import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
@@ -196,6 +196,13 @@ export default async function GymPage(props: GymRouteProps) {
   const locale = await getLocale();
   const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
   const [kiosk, boards] = await Promise.all([fetchDefaultKiosk(gym_slug, token), fetchGymBoards(gym.uuid, token)]);
+
+  // Two boards run by the same gym used to read identically here — "Kilter ·
+  // 40°" twice, under two rows the setter had also named the same thing (issue
+  // #5272). The shared labels pull them apart on whatever actually differs
+  // (wall, size, layout, angle), scoped to this one gym: the heading above
+  // already says which gym this is, so the rows lead with the wall instead.
+  const boardSubtitles = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
 
   // Stored logo/photo paths are backend-relative; resolve for the browser (also
   // keeps the JSON-LD image absolute, as schema.org expects). The logo has NO
@@ -482,7 +489,7 @@ export default async function GymPage(props: GymRouteProps) {
           </Typography>
         ) : (
           <Box component="ul" sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {boards.map((board) => (
+            {boards.map((board, boardIndex) => (
               <Box component="li" key={board.uuid}>
                 <MuiLink
                   component={LocaleLink}
@@ -491,10 +498,10 @@ export default async function GymPage(props: GymRouteProps) {
                   sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
                 >
                   <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-                    {board.name}
+                    {stripGymNamePrefix(board.name, gym.name)}
                   </Typography>
                   <Typography component="span" variant="body2" color="text.secondary">
-                    {`${boardTypeLabel(board.boardType)} · ${board.angle}°`}
+                    {boardSubtitles[boardIndex]}
                   </Typography>
                 </MuiLink>
               </Box>

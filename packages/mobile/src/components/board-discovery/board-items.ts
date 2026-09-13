@@ -3,10 +3,9 @@
 // per-shape branching.
 
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
-import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
+import { boardRowSubtitle, disambiguateBoardSubtitles, normaliseSetIds, toBoardName } from '@boardsesh/board-config';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCard';
 import { boardTypeLabel } from './board-builder-labels';
-import { boardRowSubtitle, disambiguateBoardSubtitles } from './board-labels';
 import { boardIsOwnedBy } from './manage-items';
 import type { BoardDownloadState } from './board-offline-state';
 

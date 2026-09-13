@@ -1,5 +1,5 @@
 // Subtitles for every surface that lists boards (the Boards-tab carousels, My
-// Boards, the gym directory, the Bluetooth quickstart sheet).
+// Boards, the gym directory, the Bluetooth quickstart sheet, the www gym page).
 //
 // The server sends `layoutName`, `sizeName`, `sizeDescription` and `setNames` as
 // null on every UserBoard (see enrichBoard in
@@ -9,15 +9,17 @@
 // already on the wire (gym, location, layout/size ids, angle, serial) and the
 // layout/size name tables ship in @boardsesh/board-constants, so we resolve the
 // names on the device instead. Works offline, no round-trip.
+//
+// Lives here rather than in the mobile app because www's gym page renders the
+// same list off the same fields and hits the same collision (issue #5272).
 
-import { toBoardName } from '@boardsesh/board-config';
 import { getLayoutName, getProductSize } from '@boardsesh/board-constants';
-import { boardTypeLabel, cleanLayoutName, formatSizeDimensions } from './board-builder-labels';
+import { formatBoardDisplayName, toBoardName } from './board-name';
 
 /**
  * The board fields these labels read. Structural rather than `UserBoard` so a
- * partially-populated board (a BLE-resolved hit, an offline snapshot row) works
- * without casting.
+ * partially-populated board (a BLE-resolved hit, an offline snapshot row, the
+ * narrower field set www's `gymBoards` query asks for) works without casting.
  */
 export type BoardLabelSource = {
   boardType: string;
@@ -29,6 +31,24 @@ export type BoardLabelSource = {
   serialNumber?: string | null;
 };
 
+/**
+ * Which list the labels are being written for.
+ *
+ * - `global` — a list that can hold boards from anywhere (My Boards, Near you,
+ *   a Bluetooth scan). The gym is the most useful thing to lead with.
+ * - `within-gym` — one gym's own board list, where a heading already names the
+ *   gym. Leading with the gym there would put the same words on every row and
+ *   collide every board before disambiguation even starts, so the wall label
+ *   (`locationName`, e.g. "Main wall") leads instead and the gym name is
+ *   dropped entirely.
+ */
+export type BoardLabelScope = 'global' | 'within-gym';
+
+export type BoardLabelOptions = {
+  /** Defaults to `global`. */
+  scope?: BoardLabelScope;
+};
+
 /** Trimmed value, or null for null/undefined/blank. Blank strings come back from the API. */
 function present(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -38,9 +58,40 @@ function present(value: string | null | undefined): string | null {
 /**
  * Where the board is: the linked gym, else the free-text location. Matches the
  * ordering BoardDisambiguationSheet and the board-detail sheet already use.
+ *
+ * Within one gym's list the gym name says nothing — every row shares it — so
+ * that scope reads the wall label only, and falls through to what the board is
+ * when the wall is unnamed.
  */
-export function boardPlaceLabel(board: BoardLabelSource): string | null {
+export function boardPlaceLabel(board: BoardLabelSource, options?: BoardLabelOptions): string | null {
+  if (options?.scope === 'within-gym') return present(board.locationName);
   return present(board.gymName) ?? present(board.locationName);
+}
+
+// "Kilter Board Original" → "Original", "Tension Board 2 Mirror" → "Mirror".
+// Mirrors the builder's cleanLayoutName
+// (packages/mobile/src/components/board-discovery/board-builder-labels.ts);
+// that file keeps its own copy until the rest of the builder labels move here.
+function cleanLayoutName(rawName: string, boardName: string): string {
+  const brand = formatBoardDisplayName(boardName);
+  const cleaned = rawName
+    .replace(new RegExp(`\\b${brand}\\b`, 'gi'), '')
+    .replace(/\bBoard\b/gi, '')
+    .replace(/\bLayout\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^2\s+/, '');
+  return cleaned || rawName;
+}
+
+/** "12 x 14" → "12×14". Same cleanup the builder's formatSizeDimensions does. */
+function formatSizeDimensions(size: { name: string }): string {
+  return size.name
+    .replace(/\s*high\s*/gi, '')
+    .replace(/\s*wide\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\s*x\s*/i, '×');
 }
 
 /** The board's cleaned layout name ("Kilter Board Original" → "Original"), or null. */
@@ -84,8 +135,8 @@ export function boardConfigLabel(board: BoardLabelSource): string | null {
  * The one-line subtitle under a board's name: where it is, else what it is,
  * else the brand. Never the raw lowercase board type (CLAUDE.md trademark rule).
  */
-export function boardRowSubtitle(board: BoardLabelSource): string {
-  return boardPlaceLabel(board) ?? boardConfigLabel(board) ?? boardTypeLabel(board.boardType);
+export function boardRowSubtitle(board: BoardLabelSource, options?: BoardLabelOptions): string {
+  return boardPlaceLabel(board, options) ?? boardConfigLabel(board) ?? formatBoardDisplayName(board.boardType);
 }
 
 /**
@@ -93,6 +144,10 @@ export function boardRowSubtitle(board: BoardLabelSource): string {
  * subtitle. Place first (a different wall in the same gym), then the physical
  * config, then how it is set up, then the serial as the last resort — two boards
  * can share everything else but never a serial.
+ *
+ * The gym is deliberately absent: it is either already the base subtitle
+ * (`global`) or dropped as redundant (`within-gym`), so it can never be the
+ * thing that tells two rows apart.
  */
 const DISAMBIGUATION_FACETS: ((board: BoardLabelSource) => string | null)[] = [
   sizeFacet,
@@ -116,8 +171,8 @@ const DISAMBIGUATION_FACETS: ((board: BoardLabelSource) => string | null)[] = [
  * Runs once per list (call it from the list's `useMemo`, never from a row) and
  * is O(boards × facets).
  */
-export function disambiguateBoardSubtitles(boards: BoardLabelSource[]): string[] {
-  const subtitles = boards.map(boardRowSubtitle);
+export function disambiguateBoardSubtitles(boards: BoardLabelSource[], options?: BoardLabelOptions): string[] {
+  const subtitles = boards.map((board) => boardRowSubtitle(board, options));
 
   const indicesBySubtitle = new Map<string, number[]>();
   subtitles.forEach((subtitle, index) => {
@@ -155,4 +210,26 @@ export function disambiguateBoardSubtitles(boards: BoardLabelSource[]): string[]
   }
 
   return subtitles;
+}
+
+/** Escapes a gym name so it can be matched literally — "Klatring (Bergen)" has metacharacters. */
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The board's name with a redundant "<gym> - " prefix removed: setters often
+ * name a board "Bergen Klatresenter - Kilter", which reads as pure repetition
+ * under a heading that already says Bergen Klatresenter. Pairs with the
+ * `within-gym` scope above — the name loses the gym, the subtitle leads with the
+ * wall.
+ *
+ * Accepts a hyphen, en dash or em dash as the separator, and leaves the name
+ * untouched when the prefix is absent or stripping it would leave nothing.
+ */
+export function stripGymNamePrefix(boardName: string, gymName: string | null | undefined): string {
+  const gym = present(gymName);
+  if (gym === null) return boardName;
+  const stripped = boardName.replace(new RegExp(`^\\s*${escapeForRegExp(gym)}\\s*[-–—]\\s*`, 'i'), '').trim();
+  return stripped || boardName;
 }
