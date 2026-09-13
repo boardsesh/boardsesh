@@ -1073,4 +1073,85 @@ if url.scheme == "file" {
     expect(result.errors[0]).toContain('patch NOT applied');
     expect(result.errors[0]).toContain('hasAbsoluteFilePath');
   });
+
+  // Guards against the #5296 fix silently dropping on the next
+  // expo-modules-core bump, the same way the expo-image guard above does.
+  it('keeps the expo-modules-core Exception patch keyed to the pinned mobile version', () => {
+    const exceptionRule = REAL_RULES.find(
+      (rule) => rule.package === 'expo-modules-core' && rule.file === 'ios/Core/Exceptions/Exception.swift',
+    );
+    expect(exceptionRule).toBeDefined();
+
+    const mobilePackageJson = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../../packages/mobile/package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string> };
+    const pinnedVersion = mobilePackageJson.dependencies?.['expo-modules-core'];
+
+    expect(pinnedVersion, 'expo-modules-core must stay a direct packages/mobile dependency').toBeDefined();
+    expect(versionFromKey(exceptionRule?.patchedKey ?? '')).toBe(pinnedVersion);
+    expect(exceptionRule?.sentinels).toEqual(
+      expect.arrayContaining([
+        'boardsesh/boardsesh#5296',
+        'private let explicitReason: String?',
+        'explicitReason ?? "undefined reason"',
+      ]),
+    );
+  });
+
+  // The literal pre-#5296 upstream source at expo-modules-core@57.0.14, verified
+  // against both the installed node_modules copy and github.com/expo/expo's
+  // default branch, where `init(name:description:code:)` still never assigns
+  // `reason` (expo/expo#49677 was bot-closed for lacking a repro, not fixed).
+  // Every `promise.reject(code, description)` call — ours and expo-updates' own
+  // — reached JS as "<CODE>: undefined reason (...)". This is the "fails on
+  // today's code" proof: this exact text is what ships without the patch.
+  it('rejects the real pre-#5296 Exception.swift — every rejection loses its description', () => {
+    const exceptionRule = REAL_RULES.find(
+      (rule) => rule.package === 'expo-modules-core' && rule.file === 'ios/Core/Exceptions/Exception.swift',
+    );
+    if (!exceptionRule) throw new Error('no expo-modules-core Exception rule registered');
+
+    const unpatchedUpstreamSource = `
+// Copyright 2022-present 650 Industries. All rights reserved.
+
+open class Exception: CodedError, ChainableException, CustomStringConvertible, CustomDebugStringConvertible, JavaScriptThrowable, @unchecked Sendable {
+  open lazy var name: String = String(describing: Self.self)
+
+  /**
+   String describing the reason of the exception.
+   */
+  open var reason: String {
+    "undefined reason"
+  }
+
+  open var origin: ExceptionOrigin
+
+  let customCode: String?
+
+  public init(file: String = #fileID, line: UInt = #line, function: String = #function) {
+    self.origin = ExceptionOrigin(file: file, line: line, function: function)
+    self.customCode = nil
+  }
+
+  public init(name: String, description: String, code: String? = nil, file: String = #fileID, line: UInt = #line, function: String = #function) {
+    self.origin = ExceptionOrigin(file: file, line: line, function: function)
+    self.customCode = code
+    self.name = name
+    self.description = description
+  }
+}
+`;
+
+    const env = makeEnv({
+      patchedDependencies: { [exceptionRule.patchedKey]: 'patches/expo-modules-core@57.0.14.patch' },
+      versions: { [exceptionRule.package]: versionFromKey(exceptionRule.patchedKey) },
+      files: { [`${exceptionRule.package}::${exceptionRule.file}`]: unpatchedUpstreamSource },
+    });
+
+    const result = checkPatchesApplied([exceptionRule], env);
+
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('explicitReason');
+  });
 });

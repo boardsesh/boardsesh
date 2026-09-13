@@ -43,6 +43,14 @@
  * the only symptom is an OTA published mid-build silently losing to the binary
  * forever — months later, on devices, with a green publish in the log.
  *
+ * For expo-modules-core, the patch makes `Exception.reason` fall back to the
+ * description passed to `init(name:description:code:)` instead of a hardcoded
+ * "undefined reason" (#5296). Every native `promise.reject(code, description)`
+ * across the app goes through that initializer, so a dropped patch silently
+ * turns every native rejection message back into a fixed string with no
+ * diagnostic value — invisible to typecheck and the bundle, visible only in
+ * Sentry.
+ *
  * This check resolves the COPY packages/mobile actually uses (the same one
  * CocoaPods compiles) and asserts the patch's sentinel symbols are present in
  * the installed source. It fails the PR on a cheap Linux runner the instant a
@@ -290,6 +298,32 @@ export const RULES: readonly PatchRule[] = [
       'commitTime: resolveEmbeddedCommitTime(projectRoot),',
     ],
     patchedKey: 'expo-updates@57.0.19',
+  },
+  // `Exception.reason` is a hardcoded "undefined reason" that the
+  // `init(name:description:code:)` overload never assigns, so every
+  // `promise.reject(code, description)` across the app — BoardBleModule,
+  // HealthWorkoutsModule, LiveActivityModule, and expo-updates' own rejections —
+  // reached JS as "<CODE>: undefined reason (at ExpoModulesCore/Promise.swift:65)",
+  // dropping the description entirely (#5296). Upstream is unaware: their own
+  // internal workaround (ExpoRuntimeInstaller.swift's
+  // ReadOnlyExpoModulesPropertyException) overrides `reason` per-subclass rather
+  // than fixing the base initializer, and the tracking issue
+  // (github.com/expo/expo/issues/49677) was bot-closed for lacking a repro, not
+  // fixed. `explicitReason` is what nothing else can see: types are unchanged
+  // (still `String?`), the Metro bundle is unaffected, and the only symptom of a
+  // dropped patch is a Sentry message reading "undefined reason" again.
+  {
+    package: 'expo-modules-core',
+    file: 'ios/Core/Exceptions/Exception.swift',
+    sentinels: [
+      'boardsesh/boardsesh#5296',
+      'private let explicitReason: String?',
+      'explicitReason ?? "undefined reason"',
+      'self.explicitReason = nil',
+      'self.explicitReason = description',
+    ],
+    orderedSentinels: ['self.explicitReason = nil', 'self.explicitReason = description'],
+    patchedKey: 'expo-modules-core@57.0.14',
   },
 ];
 
