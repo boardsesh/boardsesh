@@ -87,9 +87,15 @@ export const climbQueries = {
     // 30/min stays well above any realistic interactive cadence while keeping
     // a CGNAT'd shared IP from running the query at 1/s sustained. The
     // website's front-door SSR read of this same resolver authenticates as a
-    // trusted internal-service caller instead and gets its own fleet-wide
-    // ceiling — see `applyRateLimit`'s `isInternalService` branch (#5291).
-    await applyRateLimit(ctx, 30, 'similar-climbs');
+    // trusted internal-service caller instead, bucketed per board+layout+climb
+    // +angle so a crawler walking distinct climbs cannot drain one shared
+    // bucket for every visitor — see `applyRateLimit`'s `isInternalService`
+    // branch (#5291). The partition is ignored for every other caller.
+    await applyRateLimit(ctx, 30, 'similar-climbs', {
+      internalServicePartition: input?.climbUuid
+        ? `${input.boardType}:${input.layoutId}:${input.climbUuid}:${input.angle ?? ''}`
+        : undefined,
+    });
     const validated = validateInput(SimilarClimbsInputSchema, input, 'input');
 
     if (!isValidBoardName(validated.boardType)) {
