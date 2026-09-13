@@ -28,7 +28,8 @@ it. A second `--apply` with nothing to do is a no-op.
   [Why services are not created](#why-services-are-not-created).
 - **Variables.** Asserts the declared variables are set and are not still an
   unfilled `<placeholder>`. It also checks public safe-value rules without
-  printing live values: `boardsesh-web` needs SMTP credentials, `BOARDSESH_WEB`
+  printing live values: `boardsesh-web` needs SMTP credentials and
+  `INTERNAL_SERVICE_SECRET` (see below), `BOARDSESH_WEB`
   must be absent or `1`, and `NEXTAUTH_URL` or `BASE_URL` must name the canonical
   `https://www.boardsesh.com` origin. `PostGIS - PG18` needs
   `PG_TLS_SERVER_CERT` and `PG_TLS_SERVER_KEY` — the certificate and key the
@@ -72,6 +73,27 @@ working DSN with a stale one.
 Values never reach a log line. `infra/railway/plan.ts` reduces every variable to
 `set` / `absent` / `placeholder` before it can appear in a `PlannedChange`, and one
 of the unit tests asserts a password cannot survive into the plan.
+
+### `INTERNAL_SERVICE_SECRET` (web and backend)
+
+The web tier's server-side GraphQL reads (`executeGraphQLInternal`) send it as
+`Authorization: Bearer …`. The backend checks it in
+`packages/backend/src/middleware/internal-service-auth.ts` and gives those reads
+their own rate-limit buckets instead of the anonymous per-IP one (#5291).
+
+- **Same value on both services.** Set it on `boardsesh-web` and on the backend
+  service. If the two values differ, the backend treats every SSR read as anonymous.
+- **Generate:** `openssl rand -hex 32`. Keep it distinct from `CRON_SECRET` and
+  `REVALIDATE_SECRET`, which gate different routes.
+- **Unset (or mismatched):** nothing breaks loudly. SSR falls back to the anonymous
+  path, where every climb-page render shares one 30/min `similar-climbs` bucket.
+  That is the #5291 bug: pages wrongly show "No similar climbs on this layout".
+- **Rotate:** set the new value on the backend first, then on web. Between the
+  two steps SSR reads run anonymous, which degrades the section but serves the page.
+
+Only `boardsesh-web` is declared in `infra/railway/config.ts`, so the nightly
+`drift` job reports it missing there. The backend service is not managed by this
+tool; set the backend copy by hand.
 
 ### Why placeholders are their own state
 

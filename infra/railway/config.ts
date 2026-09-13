@@ -303,6 +303,12 @@ export const desiredRailwayState: RailwayDesiredState = {
           name: 'SMTP_PASSWORD',
           reason: 'Required to authenticate the SMTP transport for credential-account emails.',
         },
+        {
+          name: 'INTERNAL_SERVICE_SECRET',
+          reason:
+            'Must equal the backend service value. Unset or mismatched, SSR GraphQL reads run anonymous and ' +
+            'every climb page shares one 30/min similar-climbs bucket (#5291). See docs/railway.md.',
+        },
       ],
       optionalConstrainedVars: [
         {
