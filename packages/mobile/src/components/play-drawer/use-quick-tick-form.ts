@@ -26,7 +26,10 @@ import {
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
+import { sameRenderBoard } from '../../lib/boards/climb-render-board';
 import { useGrades } from '../../lib/graphql/hooks';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
 import { getSetting } from '../../settings';
@@ -131,6 +134,49 @@ export function useQuickTickForm({
   const startTimerStopwatch = useOptionalRogueTimer()?.startStopwatch;
   const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
   const { data: grades } = useGrades(boardName);
+
+  // The board this tick belongs to, read off the form's own board fields. The
+  // play drawer hands down the CLIMB's resolved render board (see
+  // `resolveClimbRenderBoard`), so a queued climb that belongs to another wall
+  // arrives here carrying THAT wall's layout, size and sets — not the one the
+  // climber is standing at.
+  const tickBoardConfig = useMemo<BoardConfig | null>(() => {
+    if (layoutId == null || sizeId == null || !setIds) return null;
+    return { boardName, layoutId, sizeId, setIds, angle };
+  }, [boardName, layoutId, sizeId, setIds, angle]);
+
+  // The wall board presence is bound to. `board-presence-provider` binds it from
+  // the stored active board — its uuid, or the serial of the board the climber
+  // connected to — so the presence boardId names that board and no other.
+  const { data: activeBoard } = useActiveBoard();
+  const activeBoardConfig = useMemo<BoardConfig | null>(
+    () =>
+      activeBoard
+        ? {
+            boardName: activeBoard.boardType,
+            layoutId: activeBoard.layoutId,
+            sizeId: activeBoard.sizeId,
+            setIds: activeBoard.setIds,
+            angle: activeBoard.angle,
+          }
+        : null,
+    [activeBoard],
+  );
+
+  // Which board id the tick is attributed to. The presence binding is the active
+  // board's, so it is this tick's board id only while the tick is FOR that board.
+  // Log a climb from another wall and the old code still stamped the active one,
+  // putting a problem nobody climbed there into that wall's "Now on the wall"
+  // feed — other climbers' data, not just the logger's.
+  //
+  // A resolved render board is a `BoardConfig`, which carries no board id of its
+  // own, so a foreign board sends no boardId at all and lets the server resolve
+  // the board from the tick's layout/size/sets instead. Never a guess, and never
+  // the active board.
+  const tickBoardId =
+    boardPresenceEnabled && boardPresenceBoardId != null && sameRenderBoard(tickBoardConfig, activeBoardConfig)
+      ? boardPresenceBoardId
+      : null;
 
   // Mobile's `Climb.userAscents`/`userAttempts` GraphQL fields aren't
   // populated server-side, so we read the user's accumulated logbook
@@ -307,7 +353,7 @@ export function useQuickTickForm({
           ...(layoutId != null ? { layoutId } : {}),
           ...(sizeId != null ? { sizeId } : {}),
           ...(setIds ? { setIds } : {}),
-          ...(boardPresenceEnabled && boardPresenceBoardId != null ? { boardId: boardPresenceBoardId } : {}),
+          ...(tickBoardId != null ? { boardId: tickBoardId } : {}),
         },
         {
           onSuccess: () => {
@@ -380,8 +426,7 @@ export function useQuickTickForm({
       layoutId,
       sizeId,
       setIds,
-      boardPresenceEnabled,
-      boardPresenceBoardId,
+      tickBoardId,
       tickState,
       comment,
       climbedAt,
