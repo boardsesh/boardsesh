@@ -181,9 +181,10 @@ jobs:
       # source because it depends on ExpoModulesCore (precompiled_modules.rb
       # propagates `dependency_unavailable`), so assert its patched file as well:
       # if that cascade ever stops, the #3928 patch goes dead again silently.
-      # Match the per-file `SwiftCompile normal <arch> <path>` line — the batched
-      # "Compiling\ A.swift,\ B.swift" lines carry no package path, and @expo/ui
-      # has its own ImageView.swift.
+      # Match a `SwiftCompile normal <arch> ... <full path>` line. Swift batch mode
+      # may log a file only inside a batched "Compiling\ A.swift,\ B.swift <paths>"
+      # line (ExpoModulesCore's Exception.swift does), so anchor on the package
+      # path rather than the bare filename — @expo/ui has its own ImageView.swift.
       - name: Assert the patched native module really compiled
         run: |
           status=0
