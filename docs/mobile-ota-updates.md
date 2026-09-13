@@ -591,6 +591,47 @@ Resolve the current fingerprint locally to predict what the gate will see: `cd p
 vp exec expo-updates runtimeversion:resolve --platform ios` (add the Production env to match CI
 exactly — see the parity check above).
 
+## Publish ordering: an OTA must not outrun the backend schema
+
+A fingerprint says nothing about the **backend**. An OTA whose JS sends a new GraphQL argument or
+field only works once the live backend serves that schema. `mobile-ota-production.yml` and
+`production-deploy.yml` both run off the same push to `main`, and the OTA is usually faster. It
+happened on 2026-09-08 (#5370):
+
+| time (UTC) | event |
+| --- | --- |
+| 21:36 | #5283 (schema + client in one commit) OTA published |
+| 21:55 | backend with the new argument finishes deploying |
+
+For those 19 minutes updated phones got `GRAPHQL_VALIDATION_FAILED`.
+
+The `await-backend-schema` job now runs before `publish`. Every 60 seconds it:
+
+1. Takes `need`, the last commit at or before the OTA's commit that touched
+   `packages/shared-schema/src/schema`.
+2. Fetches `origin/main` and reads `release` from `https://ws.boardsesh.com/health`. A 503 still
+   carries `release`; an unstamped build reports `development`, which never passes.
+3. **Passes** when `release` is a full SHA that contains `need` (`git merge-base --is-ancestor`), or
+   when `git diff release OTA-commit -- packages/shared-schema/src/schema` is empty. The second rule
+   covers a deploy hold or a rollback where the backend is behind but its schema is the same.
+4. **Keeps waiting** only while `production-deploy.yml` has a queued, in-progress or waiting run on
+   `main`, for at most 60 minutes. For the first 3 minutes it also waits when no deploy is listed,
+   because GitHub can register the deploy run a little after the OTA run.
+
+The decision is the pure function in `scripts/mobile-ota-backend-gate.ts`, unit-tested in
+`scripts/mobile-ota-backend-gate.test.ts`.
+
+**It fails open.** On the 60-minute cap, with no deploy running, or if the gate job itself breaks,
+the OTA publishes anyway: the job writes a `::warning::`, a line in the run summary, and a Discord
+post to the deploy channel, and `publish` runs with `if: !cancelled()`. Holding mobile back behind a
+wedged backend deploy (see `docs/production-deploy.md`) would be worse than the window it closes.
+A republish dispatched by a native build (`expect_fingerprint` set) skips the wait; its JS was
+already gated when the push to `main` published it.
+
+The gate job has no `environment:`, so it adds no approval step, and it adds no workflow-level env
+(that block is locked by `scripts/mobile-ci-env-parity.test.ts`). It narrows the window. Schema
+changes still have to stay backward-compatible for the store fleet.
+
 ## Backporting a JS fix to an approved release (release anchors)
 
 The gating above delivers a JS fix to binaries whose fingerprint still matches `main`. Once native
