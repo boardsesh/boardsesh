@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 /**
  * The claim in #5352's fix that no unit test can make: against a real Postgres
  * wearing the production role shape, `ALTER DATABASE ... SET` is refused, and
@@ -145,7 +147,7 @@ void describe('serial-plan database default against a real Postgres', { skip: !s
   void it('surfaces the refusal rather than swallowing it', async () => {
     const session = await migrationShapedSession();
     try {
-      const outcome = await applySerialPlanDatabaseDefault(session.client);
+      const outcome = await applySerialPlanDatabaseDefault(session.client, databaseName);
       assert.equal(outcome.status, 'not-permitted');
       assert.equal(isSerialPlanFailure(outcome), true);
       assert.match(outcome.status === 'not-permitted' ? outcome.detail : '', /must be owner of database/);

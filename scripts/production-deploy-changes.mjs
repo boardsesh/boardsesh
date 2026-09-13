@@ -59,6 +59,7 @@ function isProductionDeployWatchdogFile(filePath) {
 function isProductionDeployTestFile(filePath) {
   return (
     filePath === 'scripts/__tests__/docker-build-release-stamp.test.ts' ||
+    filePath === 'scripts/__tests__/production-deploy-serial-plan.test.ts' ||
     filePath === 'scripts/production-backend-smoke.test.mjs' ||
     filePath === 'scripts/production-deploy-changes.test.mjs' ||
     filePath === 'scripts/production-web-deploy-targets.test.mjs' ||

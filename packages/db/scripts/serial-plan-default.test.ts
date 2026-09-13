@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 /**
  * Round 5b of the DSM saga (#5352).
  *
@@ -94,7 +96,7 @@ void test('reads the session value and the database default apart', async () => 
 void test('applies the database default when the session can own the database', async () => {
   const client = fakeClient(OFF);
 
-  const outcome = await applySerialPlanDatabaseDefault(client);
+  const outcome = await applySerialPlanDatabaseDefault(client, 'railway');
 
   assert.equal(outcome.status, 'applied');
   assert.equal(isSerialPlanFailure(outcome), false);
@@ -108,7 +110,7 @@ void test('applies the database default when the session can own the database', 
 void test('issues nothing when the database already carries the default', async () => {
   const client = fakeClient(ON);
 
-  const outcome = await applySerialPlanDatabaseDefault(client);
+  const outcome = await applySerialPlanDatabaseDefault(client, 'railway');
 
   assert.equal(outcome.status, 'already-applied');
   assert.equal(
@@ -122,7 +124,7 @@ void test('surfaces a privilege refusal instead of swallowing it', async () => {
   // The whole bug. 0225 caught this SQLSTATE and turned it into a warning.
   const client = fakeClient(OFF, { alterError: privilegeError() });
 
-  const outcome = await applySerialPlanDatabaseDefault(client);
+  const outcome = await applySerialPlanDatabaseDefault(client, 'railway');
 
   assert.equal(outcome.status, 'not-permitted');
   assert.equal(isSerialPlanFailure(outcome), true);
@@ -134,13 +136,13 @@ void test('does not misread an unrelated error as a privilege refusal', async ()
   // silent no-op with a different label.
   const client = fakeClient(OFF, { alterError: Object.assign(new Error('connection terminated'), { code: '57P01' }) });
 
-  await assert.rejects(() => applySerialPlanDatabaseDefault(client), /connection terminated/);
+  await assert.rejects(() => applySerialPlanDatabaseDefault(client, 'railway'), /connection terminated/);
 });
 
 void test('refuses to report success when the catalog did not change', async () => {
   const client = fakeClient(OFF, { alterIsNoOp: true });
 
-  await assert.rejects(() => applySerialPlanDatabaseDefault(client), /reported success but/);
+  await assert.rejects(() => applySerialPlanDatabaseDefault(client, 'railway'), /reported success but/);
 });
 
 void test('the remediation names the exact statement an operator must run', () => {
@@ -200,6 +202,42 @@ void test('an admin credential that does not own the database still fails the ru
   });
 
   assert.equal(exitCode, 1);
+});
+
+void test('refuses to ALTER a database other than the application database', async () => {
+  // ADMIN_DATABASE_URL pointed at a maintenance database (`/postgres`) with a
+  // superuser: the ALTER would succeed — on the wrong database.
+  const maintenance = fakeClient({ databaseName: 'postgres', effectiveValue: '2', databaseDefault: null });
+
+  const outcome = await applySerialPlanDatabaseDefault(maintenance, 'railway');
+
+  assert.equal(outcome.status, 'wrong-database');
+  assert.equal(isSerialPlanFailure(outcome), true);
+  assert.equal(
+    maintenance.statements.filter((statement) => statement.startsWith('ALTER DATABASE')).length,
+    0,
+    'no DDL may reach a database the application does not use',
+  );
+});
+
+void test('an admin credential on a different database fails the run without touching it', async () => {
+  const maintenance = fakeClient({ databaseName: 'postgres', effectiveValue: '2', databaseDefault: null });
+  const warnings: string[] = [];
+
+  const exitCode = await runSerialPlanVerification({
+    openApplicationClient: connectionTo(fakeClient(OFF)),
+    openAdminClient: connectionTo(maintenance),
+    log: () => {},
+    warn: (message) => warnings.push(message),
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(maintenance.statements.filter((statement) => statement.startsWith('ALTER DATABASE')).length, 0);
+  assert.equal(maintenance.state.databaseDefault, null);
+  assert.ok(
+    warnings.some((line) => line.includes('ALTER DATABASE "railway" SET max_parallel_workers_per_gather = 0')),
+    'the remediation must name the application database, not the admin one',
+  );
 });
 
 void test('an owning admin credential applies the default and re-checks on a NEW session', async () => {
