@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { useActiveBoard, useSetActiveBoard } from '../../lib/graphql/use-active-board';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { useSetBoardAngle } from '../../lib/boards/use-set-board-angle';
 import { hapticLight } from '../../lib/haptics';
 
 /**
@@ -14,7 +15,7 @@ import { hapticLight } from '../../lib/haptics';
  */
 export function useMaterialAngleControl() {
   const { data: activeBoard } = useActiveBoard();
-  const setActiveBoard = useSetActiveBoard();
+  const setBoardAngle = useSetBoardAngle();
   const [visible, setVisible] = useState(false);
 
   const canAdjust = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
@@ -27,9 +28,9 @@ export function useMaterialAngleControl() {
   const change = useCallback(
     (newAngle: number) => {
       if (!activeBoard || activeBoard.isAngleAdjustable === false || newAngle === activeBoard.angle) return;
-      void setActiveBoard({ ...activeBoard, angle: newAngle });
+      void setBoardAngle(activeBoard, newAngle);
     },
-    [activeBoard, setActiveBoard],
+    [activeBoard, setBoardAngle],
   );
 
   return { activeBoard, canAdjust, visible, open, close, change };

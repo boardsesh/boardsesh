@@ -29,6 +29,7 @@ import { UndoWallChangeSnackbar } from '../components/board-presence/UndoWallCha
 import { BoardSheet, type BoardSheetClimbAction, type BoardSheetHandle } from '../components/board-presence/BoardSheet';
 import type { QueueItemRowBoard } from '../components/QueueItemRow';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
+import { useSetBoardAngle } from '../lib/boards/use-set-board-angle';
 import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
 import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu';
@@ -431,6 +432,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const setActiveBoard = useSetActiveBoard();
+  const setBoardAngle = useSetBoardAngle();
   const {
     visible: snackbarVisible,
     nonce: snackbarNonce,
@@ -591,7 +593,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         // ['activeBoard'] cache re-grades the climb list (its search key includes
         // the angle) and triggers the queue re-grade effect in QueueProvider.
         if (activeBoard && newAngle !== activeBoard.angle) {
-          void setActiveBoard({ ...activeBoard, angle: newAngle });
+          void setBoardAngle(activeBoard, newAngle);
         }
       }
 
@@ -620,7 +622,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         );
       }
     },
-    [activeBoard, boardConfigOverride, sessionId, setActiveBoard, setSessionBoardPath],
+    [activeBoard, boardConfigOverride, sessionId, setBoardAngle, setSessionBoardPath],
   );
 
   const openLogAscent = openLogAscentSheet;
