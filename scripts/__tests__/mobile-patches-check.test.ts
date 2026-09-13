@@ -1149,8 +1149,101 @@ runtimeScheduler_->scheduleRenderingUpdate(
 
     const result = checkPatchesApplied([schedulerRule], env);
 
-    expect(result.errors).toHaveLength(1);
+    expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]).toContain('patch NOT applied');
     expect(result.errors[0]).toContain('delegateInvalidated_');
+  });
+
+  // The guard text is identical at both queue sites and both flips, so a plain
+  // presence check stays green when only ONE copy is lost. Each site is counted.
+  describe('counts every guard site independently', () => {
+    const flipInDestructor = `Scheduler::~Scheduler() {
+  if (ReactNativeFeatureFlags::enableSchedulerDelegateInvalidation()) {
+    *delegateInvalidated_ = true;
+  }
+}`;
+    const flipInSetDelegate = `void Scheduler::setDelegate(SchedulerDelegate* delegate) {
+  if (ReactNativeFeatureFlags::enableSchedulerDelegateInvalidation() && delegate_ != delegate) {
+    *delegateInvalidated_ = true;
+    delegateInvalidated_ = std::make_shared<std::atomic<bool>>(false);
+  }
+  delegate_ = delegate;
+}`;
+    const transactionSite = `void Scheduler::uiManagerDidFinishTransaction() {
+  runtimeScheduler_->scheduleRenderingUpdate(
+      surfaceId,
+      [delegate = delegate_,
+       invalidated = delegateInvalidated_,
+       guardEnabled,
+       mountingCoordinator = std::move(mountingCoordinator)]() {
+        if (guardEnabled && *invalidated) {
+          return;
+        }
+        delegate->schedulerShouldRenderTransactions(mountingCoordinator);
+      });
+}`;
+    const commandSite = `void Scheduler::uiManagerDidDispatchCommand() {
+  runtimeScheduler_->scheduleRenderingUpdate(
+      shadowNode->getSurfaceId(),
+      [delegate = delegate_,
+       invalidated = delegateInvalidated_,
+       guardEnabled,
+       shadowView = std::move(shadowView)]() {
+        if (guardEnabled && *invalidated) {
+          return;
+        }
+        delegate->schedulerDidDispatchCommand(shadowView, commandName, args);
+      });
+}`;
+    const unguardedCommandSite = `void Scheduler::uiManagerDidDispatchCommand() {
+  runtimeScheduler_->scheduleRenderingUpdate(
+      shadowNode->getSurfaceId(),
+      [delegate = delegate_, shadowView = std::move(shadowView)]() {
+        delegate->schedulerDidDispatchCommand(shadowView, commandName, args);
+      });
+}`;
+    const unguardedTransactionSite = `void Scheduler::uiManagerDidFinishTransaction() {
+  runtimeScheduler_->scheduleRenderingUpdate(
+      surfaceId,
+      [delegate = delegate_, mountingCoordinator = std::move(mountingCoordinator)]() {
+        delegate->schedulerShouldRenderTransactions(mountingCoordinator);
+      });
+}`;
+    const destructorWithoutFlip = `Scheduler::~Scheduler() {
+}`;
+
+    function check(parts: string[]) {
+      if (!schedulerRule) throw new Error('no react-native Scheduler.cpp rule registered');
+      const env = makeEnv({
+        patchedDependencies: { [schedulerRule.patchedKey]: 'patches/react-native@0.86.3.patch' },
+        versions: { [schedulerRule.package]: versionFromKey(schedulerRule.patchedKey) },
+        files: { [`${schedulerRule.package}::${schedulerRule.file}`]: parts.join('\n\n') },
+      });
+      return checkPatchesApplied([schedulerRule], env);
+    }
+
+    it('passes on the shipped two-site shape', () => {
+      expect(check([flipInDestructor, flipInSetDelegate, transactionSite, commandSite]).errors).toEqual([]);
+    });
+
+    it('goes red when only the dispatch-command queue site loses its guard', () => {
+      const { errors } = check([flipInDestructor, flipInSetDelegate, transactionSite, unguardedCommandSite]);
+      expect(errors).toHaveLength(2);
+      expect(errors.join('\n')).toContain('"invalidated = delegateInvalidated_," 1 time(s), expected exactly 2');
+      expect(errors.join('\n')).toContain('"if (guardEnabled && *invalidated) {" 1 time(s), expected exactly 2');
+    });
+
+    it('goes red when only the finish-transaction queue site loses its guard', () => {
+      const { errors } = check([flipInDestructor, flipInSetDelegate, unguardedTransactionSite, commandSite]);
+      expect(errors).toHaveLength(2);
+      expect(errors.join('\n')).toContain('expected exactly 2');
+    });
+
+    it('goes red when only the destructor stops flipping the token', () => {
+      const { errors } = check([destructorWithoutFlip, flipInSetDelegate, transactionSite, commandSite]);
+      expect(errors).toEqual([
+        expect.stringContaining('"*delegateInvalidated_ = true;" 1 time(s), expected exactly 2'),
+      ]);
+    });
   });
 });
