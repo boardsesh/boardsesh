@@ -7,7 +7,9 @@ import {
   isExpectedAuthError,
   isExpectedBetaValidationError,
   isGraphqlRateLimitedError,
+  isGraphqlValidationFailedError,
   readDuplicateBoardError,
+  readGraphqlValidationFailedMessage,
 } from './graphql/extract-error-message';
 
 // Re-exported so the public reporting surface (`{ ErrorReportContext }` from
@@ -136,6 +138,10 @@ function isExpectedDuplicateBoardError(error: unknown): boolean {
  *     linked, rate-limited) are dropped entirely — already surfaced as a toast,
  *   - duplicate-board create refusals are dropped entirely — the rejection names
  *     the existing board and the caller uses it,
+ *   - GraphQL validation failures (GRAPHQL_VALIDATION_FAILED: this bundle asked
+ *     for a field the backend does not have) are downgraded to `warning`, tagged
+ *     `schema_mismatch`, and fingerprinted by message so each mismatch is its
+ *     own Sentry issue instead of one catch-all on the client frame (#5370),
  *   - GraphQL rate-limit rejections (RATE_LIMITED) are downgraded to `warning`
  *     and tagged `rate_limited` — expected backpressure from typing/panning
  *     discovery searches too fast, not a bug (#3285),
@@ -161,6 +167,19 @@ export function reportHandledError(error: unknown, context?: ErrorReportContext)
   if (isExpectedBetaValidationError(error)) return;
   if (isExpectedBoardAccountError(error)) return;
   if (isExpectedDuplicateBoardError(error)) return;
+  if (isGraphqlValidationFailedError(error)) {
+    // Every GraphQL request throws from the same client frame, so Sentry's
+    // stack grouping lumps each schema mismatch into one catch-all issue. The
+    // fingerprint gives each mismatch its own issue. The OTA channel that
+    // shipped the query is already a global scope tag (setOtaSentryTags).
+    reportError(error, {
+      ...context,
+      level: 'warning',
+      tags: { ...context?.tags, schema_mismatch: true },
+      fingerprint: ['graphql-validation-failed', readGraphqlValidationFailedMessage(error)],
+    });
+    return;
+  }
   if (isGraphqlRateLimitedError(error)) {
     reportError(error, {
       ...context,

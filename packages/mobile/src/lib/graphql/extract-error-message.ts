@@ -1,3 +1,5 @@
+import { hasGraphqlErrorCode } from '@boardsesh/offline-sync/error-classification';
+
 // graphql-request throws ClientError-shaped errors carrying response.errors[].
 // Surface the first server message when present so backend guidance reaches the
 // user verbatim (e.g. "This Instagram post isn't available", "already attached
@@ -34,6 +36,35 @@ export function isGraphqlRateLimitedError(error: unknown): boolean {
   if (directExtensions?.code === 'RATE_LIMITED') return true;
 
   return getGraphqlErrors(error).some((graphqlError) => graphqlError.extensions?.code === 'RATE_LIMITED');
+}
+
+const GRAPHQL_VALIDATION_FAILED = 'GRAPHQL_VALIDATION_FAILED';
+
+// Sentry fingerprint entries must stay short. Validation messages are built by
+// graphql-js from the schema and our own static query documents ('Cannot query
+// field "x" on type "Y".'), never from variables, but a "Did you mean" list can
+// run long, so cap it.
+const MAX_VALIDATION_MESSAGE_LENGTH = 200;
+
+/**
+ * The backend rejected the request document itself: it asks for a field,
+ * argument or type the running schema does not have. This is a schema mismatch
+ * between this bundle and the backend (an OTA that shipped before its backend
+ * change, or a field removed while installed builds still query it). Retrying
+ * cannot help, and Yoga tags every such error GRAPHQL_VALIDATION_FAILED.
+ */
+export function isGraphqlValidationFailedError(error: unknown): boolean {
+  return hasGraphqlErrorCode(error, GRAPHQL_VALIDATION_FAILED);
+}
+
+/** The first validation message, bounded for use as a Sentry fingerprint. */
+export function readGraphqlValidationFailedMessage(error: unknown): string {
+  const validationError = getGraphqlErrors(error).find(
+    (graphqlError) => graphqlError.extensions?.code === GRAPHQL_VALIDATION_FAILED,
+  );
+  const message = validationError?.message;
+  if (typeof message !== 'string' || message.length === 0) return 'unknown';
+  return message.slice(0, MAX_VALIDATION_MESSAGE_LENGTH);
 }
 
 // The backend's `requireAuthenticated` guard throws this exact message (a plain

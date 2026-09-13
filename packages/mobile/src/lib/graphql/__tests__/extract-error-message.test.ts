@@ -4,9 +4,36 @@ import {
   isExpectedAuthError,
   isExpectedBetaValidationError,
   isGraphqlRateLimitedError,
+  isGraphqlValidationFailedError,
+  readGraphqlValidationFailedMessage,
 } from '../extract-error-message';
 
 describe('GraphQL error extraction', () => {
+  it('detects GRAPHQL_VALIDATION_FAILED and reads its message', () => {
+    const error = {
+      response: {
+        status: 400,
+        errors: [
+          { message: 'Some other error' },
+          {
+            message: 'Unknown argument "layoutId" on field "Query.board".',
+            extensions: { code: 'GRAPHQL_VALIDATION_FAILED' },
+          },
+        ],
+      },
+    };
+
+    expect(isGraphqlValidationFailedError(error)).toBe(true);
+    expect(readGraphqlValidationFailedMessage(error)).toBe('Unknown argument "layoutId" on field "Query.board".');
+  });
+
+  it('does not treat other GraphQL codes as validation failures', () => {
+    const error = { response: { errors: [{ message: 'nope', extensions: { code: 'BAD_USER_INPUT' } }] } };
+
+    expect(isGraphqlValidationFailedError(error)).toBe(false);
+    expect(isGraphqlValidationFailedError(new Error('boom'))).toBe(false);
+  });
+
   it('extracts the first graphql-request response message', () => {
     const error = {
       response: {
