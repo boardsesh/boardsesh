@@ -62,17 +62,22 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
     }
   }, []);
 
+  // True from a failed save until the next successful one. Tracked apart from
+  // `updateSession.isError` on purpose: editing a field after the failure calls
+  // `reset()` to clear the banner, which also clears `isError` — so keying the
+  // reseed below off `isError` threw away a draft the climber had corrected.
+  const unsavedDraftRef = useRef(false);
+
   // Seed both fields from the server values on each closed→open transition —
   // UNLESS the last save attempt failed. The sheet stays mounted (only its
   // `visible` prop toggles) while its owner keeps editing, so a climber who
   // closes it after a failed save and reopens to retry must see what they
-  // typed, not the unchanged server values. `updateSession.isError` is checked
-  // before `reset()` clears it, so a reopen after a failure keeps both the
-  // draft and the error banner until either a successful save or a fresh open.
+  // typed (including any correction made after the error), not the unchanged
+  // server values.
   const wasVisibleRef = useRef(false);
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
-      if (!updateSession.isError) {
+      if (!unsavedDraftRef.current) {
         setName(currentName ?? '');
         setRecap(currentNotes ?? '');
         updateSession.reset();
@@ -122,7 +127,11 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
     updateSession.mutate(
       { input },
       {
+        onError: () => {
+          unsavedDraftRef.current = true;
+        },
         onSuccess: () => {
+          unsavedDraftRef.current = false;
           hapticSuccess();
           if (nameChanged) {
             track(SHARED_EVENTS.SessionRenamed, {
