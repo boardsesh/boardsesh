@@ -396,6 +396,65 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run mobile-store-metadata.yml --ref main -f platform=ios
 
+      # Screenshots have the same ordering problem the listing text has, one step
+      # further out: the capture workflow finishes long before App Store Connect
+      # has processed the build, so its own upload finds no editable version and
+      # skips cleanly (the `screenshots` lane says so and exits 0). The draft step
+      # above just created that version, so attach the last published baseline —
+      # the exact set the probe gate in mobile-screenshots-ios.yml compares
+      # against — to it now. deliver runs with sync_screenshots, so repeating this
+      # against an already-populated version replaces rather than appends.
+      - uses: voidzero-dev/setup-vp@v1
+        if: steps.draft.outcome == 'success'
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install screenshot tooling
+        if: steps.draft.outcome == 'success'
+        run: vp install --frozen-lockfile --ignore-scripts
+
+      - name: Fetch screenshot baseline
+        id: baseline
+        if: steps.draft.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: vp run screenshot:baseline -- fetch --platform ios --all --out app-stores/apple/screenshots
+
+      - name: Attach baseline screenshots to the draft
+        id: attach_screenshots
+        # Gate on the fetch script's own `found` output, not just its exit code —
+        # `vp run screenshot:baseline -- fetch` exits 0 with found=false whenever
+        # no baseline has been published yet (first run, or a pruned prerelease),
+        # and attaching an empty screenshots directory would otherwise run anyway.
+        if: steps.draft.outcome == 'success' && steps.baseline.outputs.found == 'true'
+        continue-on-error: true
+        working-directory: fastlane
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_ANIMATION: '1'
+          # deliver's sync_screenshots is still a beta feature and hard-errors
+          # without this acknowledgement (same as mobile-screenshots-ios.yml).
+          FASTLANE_ENABLE_BETA_DELIVER_SYNC_SCREENSHOTS: 'true'
+        run: |
+          set -euo pipefail
+          [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] || { echo "::error::Missing APP_STORE_CONNECT_ISSUER_ID."; exit 1; }
+          bundle exec fastlane ios screenshots
+
+      - name: Warn if no screenshot baseline has been published yet
+        if: steps.draft.outcome == 'success' && steps.baseline.outputs.found != 'true'
+        # Block scalar (not a one-line plain string): "publish_baseline: true"
+        # contains a literal ": ", which a plain YAML scalar can't carry safely.
+        run: |
+          echo "::warning::No screenshot baseline published yet — dispatch Mobile Screenshots (iOS) with publish_baseline: true, or attach screenshots by hand in App Store Connect."
+
+      - name: Warn if attaching screenshots failed
+        if: steps.attach_screenshots.outcome == 'failure'
+        run: echo "::warning::Could not attach baseline screenshots to the App Store draft. Best-effort — re-run after resolving, or attach them by hand in App Store Connect."
+
       - name: Warn if the App Store draft step failed
         if: steps.draft.outcome == 'failure'
         run: echo "::warning::App Store draft submission failed (see the step above). Best-effort — re-run after resolving, or prepare the draft manually in App Store Connect."

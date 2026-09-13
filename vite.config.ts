@@ -1048,6 +1048,34 @@ export default defineConfig({
         command: 'tsx scripts/assert-screenshot-dimensions.ts',
         cache: false,
       },
+      // Content gate run right after the dimension gate in ios-finalize, before the
+      // automatic App Store Connect upload: an absolute byte floor plus a ratio
+      // against the last published baseline (scripts/assert-screenshot-content.ts),
+      // mirroring the blank/mid-load checks the Android capture job already has.
+      'screenshot:assert-content': {
+        command: 'tsx scripts/assert-screenshot-content.ts',
+        cache: false,
+      },
+      // Probe gate for the iOS screenshot fan-out: compares one freshly captured
+      // shard against the stored baseline (scripts/compare-screenshots.ts).
+      'screenshot:compare': {
+        command: 'tsx scripts/compare-screenshots.ts',
+        cache: false,
+      },
+      // Packs / publishes / fetches the `screenshots-baseline` prerelease assets
+      // the compare above reads (scripts/screenshot-baseline.ts).
+      'screenshot:baseline': {
+        command: 'tsx scripts/screenshot-baseline.ts',
+        cache: false,
+      },
+      // Decides whether the probe's single pixel-compared shard should be
+      // overridden and the full 12-shard capture forced anyway, based on
+      // changed-file paths the probe shard itself can't see (locale-only or
+      // iPad-only changes). See scripts/screenshot-probe-scope.ts.
+      'screenshot:probe-scope': {
+        command: 'tsx scripts/screenshot-probe-scope.ts',
+        cache: false,
+      },
       'mobile:publish': {
         command: 'tsx scripts/mobile-publish.ts',
         cache: false,

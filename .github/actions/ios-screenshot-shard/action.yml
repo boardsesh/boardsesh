@@ -1,0 +1,188 @@
+name: iOS screenshot shard
+description: >
+  Capture one (locale, device) screenshot shard on a macOS runner and upload it
+  as `ios-screenshots-<locale>-<device-slug>`. Extracted from the ios-capture job
+  in mobile-screenshots-ios.yml so the probe job and the fan-out matrix run the
+  BYTE-IDENTICAL capture — a probe that captured differently from the fan-out
+  would compare against a baseline it can never match.
+
+# The caller must `actions/checkout` first (this action reads the repo) and set
+# the capture env at the job level: composite `run` steps inherit the job's
+# environment, so EXPO_PUBLIC_*, SCREENSHOT_USER_* and MAESTRO_DRIVER_STARTUP_TIMEOUT
+# stay in the workflow next to the job they belong to rather than being threaded
+# through as inputs.
+inputs:
+  locale:
+    description: 'App locale to capture (en-US | es | fr | de). `es` writes both es-ES and es-MX.'
+    required: true
+  device-name:
+    description: 'Simulator device name, e.g. "iPhone 16 Pro Max".'
+    required: true
+  device-slug:
+    description: 'Device folder slug, e.g. "iphone-16-pro-max". Names the artifact.'
+    required: true
+  flow:
+    description: 'Maestro flow to run (app-store | onboarding).'
+    required: false
+    default: app-store
+  render-mode:
+    description: 'Board drawing to shoot. Empty = the app default (Aura).'
+    required: false
+    default: ''
+  boards:
+    description: 'Walls the board-backed shots sit on, "|"-separated in slot order. Empty = the app default.'
+    required: false
+    default: ''
+  app-cache-key:
+    description: 'actions/cache key of the prebuilt simulator .app (from the ios-build job).'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: voidzero-dev/setup-vp@v1
+      with:
+        node-version: '22.x'
+        cache: true
+
+    - name: Install Node.js dependencies
+      shell: bash
+      run: vp install --frozen-lockfile
+
+    # Restore the .app ios-build produced — read-only (never save) and
+    # fail-on-cache-miss so a shard can NEVER silently cold-build. ios-build
+    # populates the cache before these shards start (needs: + cache saves at job
+    # end), so this restore is a guaranteed hit.
+    - name: Restore prebuilt simulator app
+      uses: actions/cache/restore@v4
+      with:
+        path: packages/mobile/.app-cache
+        key: ${{ inputs.app-cache-key }}
+        fail-on-cache-miss: true
+
+    - name: Install Maestro
+      # Pinned to a specific GitHub Releases asset and verified against a
+      # checksum committed in this repo — NOT `curl … get.maestro.mobile.dev | bash`,
+      # whose redirect target isn't pinned and would run arbitrary code on the
+      # runner if compromised. Because MAESTRO_SHA256 lives in version control,
+      # a swapped release asset fails the checksum gate here. Bump the version +
+      # hash together (from the release's checksums_sha256.txt) after
+      # re-validating the flow locally.
+      shell: bash
+      env:
+        MAESTRO_VERSION: 2.6.1
+        MAESTRO_SHA256: 3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b
+      run: |
+        set -euo pipefail
+        url="https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+        curl -fsSL --retry 5 --retry-all-errors "$url" -o maestro.zip
+        echo "${MAESTRO_SHA256}  maestro.zip" | shasum -a 256 -c -
+        unzip -q maestro.zip -d "$HOME/.maestro-dist"
+        echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
+
+    - name: Capture screenshots (${{ inputs.locale }} · ${{ inputs.device-slug }})
+      # Installs the prebuilt .app, starts Metro with the screenshot env for this
+      # locale, and runs Maestro for this ONE device — no native build on this
+      # path. Always against prod (signed in as the test user); no
+      # EXPO_PUBLIC_BACKEND_URL override, so the bundle uses the app's production
+      # backend defaults. --locales is a single value: `es` expands to both es-ES
+      # and es-MX for this device, so the shards together produce all five App
+      # Store locales × 3 devices. --shutdown is belt-and-suspenders (a shard only
+      # boots this one sim, so there's nothing to accumulate).
+      #
+      # Bounded shard-level retry: the simulator/Maestro capture is flaky — a leg
+      # intermittently never reaches the home screen ("app did not reach the home
+      # screen") and one failed leg reds the whole run (it leaves a locale short,
+      # failing ios-finalize's dimension gate). The script already relaunches the
+      # app 3× within one boot; when that isn't enough the fix is a *fresh* boot.
+      # Each `vp run mobile:screenshots` invocation boots its own sim + Metro, so we
+      # shut down all sims between attempts and re-run once. --shutdown keeps a
+      # failed attempt from leaving a booted sim behind.
+      #
+      # Every caller-supplied value arrives through env, not `${{ }}` inside the
+      # script: a board name is free text and would otherwise be pasted straight
+      # into the shell.
+      shell: bash
+      env:
+        SHARD_LOCALE: ${{ inputs.locale }}
+        SHARD_DEVICE_NAME: ${{ inputs.device-name }}
+        SHARD_DEVICE_SLUG: ${{ inputs.device-slug }}
+        SHARD_FLOW: ${{ inputs.flow }}
+        RENDER_MODE_INPUT: ${{ inputs.render-mode }}
+        BOARDS_INPUT: ${{ inputs.boards }}
+      run: |
+        set -euo pipefail
+        # Empty inputs mean "whatever the app pins" — Aura, and the store walls
+        # from screenshot-mode.ts — so these flags only appear when a run
+        # deliberately retargets. An array, because a board list has spaces in it.
+        retarget=()
+        if [ -n "$RENDER_MODE_INPUT" ]; then
+          retarget+=(--render-mode "$RENDER_MODE_INPUT")
+        fi
+        if [ -n "$BOARDS_INPUT" ]; then
+          retarget+=(--boards "$BOARDS_INPUT")
+        fi
+        attempts=2
+        for attempt in $(seq 1 "$attempts"); do
+          echo "::group::Capture attempt $attempt/$attempts ($SHARD_LOCALE · $SHARD_DEVICE_SLUG)"
+          if vp run mobile:screenshots -- \
+            --platform ios \
+            --flow "$SHARD_FLOW" \
+            --backend prod \
+            --device "$SHARD_DEVICE_NAME" \
+            --locales "$SHARD_LOCALE" \
+            --shutdown \
+            ${retarget[@]+"${retarget[@]}"} \
+            --app-path packages/mobile/.app-cache/Boardsesh.app; then
+            echo "::endgroup::"
+            exit 0
+          fi
+          echo "::endgroup::"
+          echo "Capture attempt $attempt/$attempts failed."
+          if [ "$attempt" -lt "$attempts" ]; then
+            echo "Shutting down all simulators before a fresh-boot retry..."
+            xcrun simctl shutdown all 2>/dev/null || true
+            sleep 5
+          fi
+        done
+        echo "All $attempts capture attempts failed for $SHARD_LOCALE · $SHARD_DEVICE_SLUG."
+        exit 1
+
+    # On a capture failure, save Maestro's debug output (the failure screenshot +
+    # view hierarchy) and the simulator's Boardsesh logs, so we can see what was
+    # on screen and whether the dev-client/JS loaded. Best-effort — never fails
+    # the job. The Maestro tests dir is under $HOME (actions/upload-artifact
+    # doesn't expand ~), so copy it into the workspace first.
+    - name: Collect capture debug artifacts
+      if: failure()
+      shell: bash
+      run: |
+        mkdir -p capture-debug
+        cp -R "$HOME/.maestro/tests" capture-debug/maestro-tests 2>/dev/null || echo "no maestro tests dir"
+        xcrun simctl spawn booted log show --last 10m --predicate 'process == "Boardsesh"' \
+          > capture-debug/device-boardsesh.log 2>&1 || echo "device log capture skipped"
+
+    - name: Upload capture debug artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        # Per-shard name: upload-artifact@v4 rejects two uploads with the same
+        # name in one run.
+        name: capture-debug-${{ inputs.locale }}-${{ inputs.device-slug }}
+        path: capture-debug/**
+        if-no-files-found: warn
+        retention-days: 14
+
+    # Hand this shard's PNGs to ios-finalize. The artifact's internal layout is
+    # <app-store-locale>/<device>/NN-name.png (upper paths stripped to the
+    # non-wildcard prefix); (locale, device) pairs are disjoint across shards, so
+    # the merge in ios-finalize has no collisions. Short retention — it's an
+    # intermediate; the combined tree is re-uploaded by ios-finalize.
+    - name: Upload shard screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ios-screenshots-${{ inputs.locale }}-${{ inputs.device-slug }}
+        path: app-stores/apple/screenshots/**
+        if-no-files-found: warn
+        retention-days: 1
