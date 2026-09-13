@@ -88,7 +88,11 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
             accessibilityLabel={label}
             style={styles.item}
           >
-            <View style={[styles.indicator, focused && { backgroundColor: indicatorColor }]}>
+            {/* Always set a color (transparent when unfocused) — Android can lose the borderRadius clip when a color is added later instead of present at mount. */}
+            <View
+              testID="indicator"
+              style={[styles.indicator, { backgroundColor: focused ? indicatorColor : 'transparent' }]}
+            >
               {options.tabBarIcon?.({ focused, color: iconColor, size: 24 })}
               {options.tabBarBadge != null ? (
                 <View

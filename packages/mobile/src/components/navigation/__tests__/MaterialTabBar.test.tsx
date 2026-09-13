@@ -243,6 +243,29 @@ describe('MaterialTabBar', () => {
     });
   });
 
+  describe('active indicator', () => {
+    // #5422: an omitted (not merely transparent) backgroundColor on mount is what made Android drop the borderRadius clip on the first focus update.
+    it('sets an explicit transparent background on unfocused tabs, not an absent one', () => {
+      const props = makeProps({ activeIndex: 0 });
+      const { getAllByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const indicators = getAllByTestId('indicator');
+      const style = indicators[1].getAttribute('data-style');
+      expect(style).toContain('"backgroundColor":"transparent"');
+    });
+
+    it('sets the tonal color on the focused tab', () => {
+      const props = makeProps({ activeIndex: 0 });
+      const { getAllByTestId } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      const indicators = getAllByTestId('indicator');
+      const style = indicators[0].getAttribute('data-style');
+      expect(style).toContain('"backgroundColor":"#4A4458"');
+    });
+  });
+
   describe('navigation callbacks', () => {
     it('emits tabPress and navigates when an inactive tab is pressed', () => {
       const props = makeProps({ activeIndex: 0 });
