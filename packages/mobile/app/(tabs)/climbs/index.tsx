@@ -1,6 +1,6 @@
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import { View, StyleSheet, RefreshControl, Keyboard, InteractionManager, Pressable } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
@@ -643,8 +643,35 @@ function ClimbListInner() {
     fetchNextPage,
     hasNextPage,
     refetch,
-  } = useInfiniteSearchClimbs(searchInput, searchReady);
+    isPlaceholderData,
+    // Keeps the previous search's rows up (tinted below) while a new search on
+    // the same board loads, instead of swapping the list to skeleton rows.
+  } = useInfiniteSearchClimbs(searchInput, searchReady, { keepPreviousResults: true });
   const isLoadingMoreRef = useRef(false);
+  // Read by the row handlers: a stale row belongs to the previous search, so a
+  // tap on it must not open, queue or seed a swipe track from the old results.
+  // A ref keeps those handlers (and so renderClimbItem) stable across the flip.
+  const isPlaceholderDataRef = useRef(isPlaceholderData);
+  isPlaceholderDataRef.current = isPlaceholderData;
+
+  // A new search starts at the top. The list used to reset there implicitly when
+  // its data emptied; with the previous rows kept up it has to be told. Keyed on
+  // the search itself (the query key's input, without `page`) rather than the
+  // input object's identity, so a rebuilt but identical input never scrolls.
+  // Skips the first run so mounting never scrolls.
+  const climbListRef = useRef<FlashListRef<Climb>>(null);
+  const searchScrollKey = useMemo(() => {
+    const { page: _page, ...queryInput } = searchInput;
+    return JSON.stringify(queryInput);
+  }, [searchInput]);
+  const hasSeenSearchKeyRef = useRef(false);
+  useEffect(() => {
+    if (!hasSeenSearchKeyRef.current) {
+      hasSeenSearchKeyRef.current = true;
+      return;
+    }
+    climbListRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [searchScrollKey]);
 
   // Dedup across pages: the same climb can repeat when a page boundary shifts
   // between fetches.
@@ -674,7 +701,10 @@ function ClimbListInner() {
   // set lands — not on every keystroke (debounced upstream) or paginated page.
   const lastSearchTrackKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!firstSearchPage) return;
+    // Placeholder rows are the PREVIOUS search's results. Tracking them would log
+    // the old result count under the new filters and burn the track key, so the
+    // real result for these filters would never be logged.
+    if (!firstSearchPage || isPlaceholderData) return;
     // Skip the default state (no search text, no active filters): the initial
     // tab-mount load is not a user search/apply, and web suppresses it the same
     // way (only fires when at least one filter/term is active).
@@ -738,7 +768,19 @@ function ClimbListInner() {
         zeroResultHasSetterIdFilter: boardFilters.setterId != null,
       }),
     });
-  }, [firstSearchPage, visibleClimbs, name, filters, boardFilters, boardName, layoutId, sizeId, setIds, angle]);
+  }, [
+    firstSearchPage,
+    isPlaceholderData,
+    visibleClimbs,
+    name,
+    filters,
+    boardFilters,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    angle,
+  ]);
 
   // Feed the visible climb UUIDs into the shared logbook so the ascent badge
   // can render flash/send/attempt without baking per-user counts into the
@@ -777,13 +819,22 @@ function ClimbListInner() {
   }, [refetch]);
 
   const handleEndReached = useCallback(() => {
-    if (hasNextPage && !isClimbsLoading && !isFetchingNextPage && !isRefetching && !isLoadingMoreRef.current) {
+    // No paging off placeholder rows: their `hasNextPage` belongs to the previous
+    // search, and the new search has no first page to page from yet.
+    if (
+      hasNextPage &&
+      !isPlaceholderData &&
+      !isClimbsLoading &&
+      !isFetchingNextPage &&
+      !isRefetching &&
+      !isLoadingMoreRef.current
+    ) {
       isLoadingMoreRef.current = true;
       void fetchNextPage().finally(() => {
         isLoadingMoreRef.current = false;
       });
     }
-  }, [fetchNextPage, hasNextPage, isClimbsLoading, isFetchingNextPage, isRefetching]);
+  }, [fetchNextPage, hasNextPage, isPlaceholderData, isClimbsLoading, isFetchingNextPage, isRefetching]);
 
   // The search the swipe track pages against, frozen at selection (issue #5402).
   // See `useFrozenSearchBasis` for why it must not follow the live filters.
@@ -833,6 +884,7 @@ function ClimbListInner() {
 
   const handleClimbPress = useCallback(
     (climb: Climb) => {
+      if (isPlaceholderDataRef.current) return;
       blurSearchInputs();
       // This tap IS the selection, so it is the one moment the swipe track may be
       // re-derived. Capture before either branch: the view-only branch seeds a
@@ -983,11 +1035,29 @@ function ClimbListInner() {
     openPlayDrawer,
   ]);
 
+  // Row actions ignore stale placeholder rows, same as handleClimbPress.
   const handleAddToQueue = useCallback(
     (climb: Climb) => {
+      if (isPlaceholderDataRef.current) return;
       void addToQueue({ uuid: randomUUID(), climb });
     },
     [addToQueue],
+  );
+
+  const handleOpenClimbActions = useCallback(
+    (climb: Climb) => {
+      if (isPlaceholderDataRef.current) return;
+      openClimbActions(climb);
+    },
+    [openClimbActions],
+  );
+
+  const handleOpenAddToPlaylist = useCallback(
+    (climb: Climb) => {
+      if (isPlaceholderDataRef.current) return;
+      openAddToPlaylist(climb);
+    },
+    [openAddToPlaylist],
   );
 
   const handleApplyFilters = useCallback(
@@ -1074,7 +1144,9 @@ function ClimbListInner() {
   // Show the spinner (not a premature "no climbs" empty state) while a board is
   // resolving or its per-board restore hasn't landed yet.
   const isBoardResolving = isBoardLoading || (hasBoardConfig && !searchReady);
-  const showInitialSkeletons = isClimbsLoading && visibleClimbs.length === 0;
+  // A placeholder with no rows (the previous search came up empty) is still a
+  // load in progress, so it shows skeletons rather than the old empty state.
+  const showInitialSkeletons = (isClimbsLoading || isPlaceholderData) && visibleClimbs.length === 0;
 
   const gradeBound = useMemo<GradeBound>(
     () => ({ minGradeId: filters.minGrade, maxGradeId: filters.maxGrade }),
@@ -1431,8 +1503,8 @@ function ClimbListInner() {
         setIds={setIds}
         angle={angle}
         onPress={handleClimbPress}
-        onOpenActions={openClimbActions}
-        onOpenPlaylist={openAddToPlaylist}
+        onOpenActions={handleOpenClimbActions}
+        onOpenPlaylist={handleOpenAddToPlaylist}
         onAddToQueue={handleAddToQueue}
         showPlaylistChips
         showFavorite
@@ -1446,8 +1518,8 @@ function ClimbListInner() {
       setIds,
       angle,
       handleClimbPress,
-      openClimbActions,
-      openAddToPlaylist,
+      handleOpenClimbActions,
+      handleOpenAddToPlaylist,
       handleAddToQueue,
       quickActionsButtonEnabled,
     ],
@@ -1495,7 +1567,10 @@ function ClimbListInner() {
     );
   }
 
-  const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading;
+  // Placeholder data reports a settled (non-loading) query, so it is excluded
+  // explicitly: an empty previous result must not flash "no climbs" for the new
+  // filters while they load.
+  const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading && !isPlaceholderData;
   // A failed search counts as no connection, the same test the boards picker
   // makes (`isLocalOnly`, app/boards/index.tsx): on a captive portal or gym wifi
   // with a dead upstream `useIsOffline()` reads ONLINE, and offlineAwareRequest
@@ -1530,6 +1605,7 @@ function ClimbListInner() {
     <View testID="climbs-screen" style={[styles.container, { backgroundColor: systemColors.background }]}>
       <Stack.Screen options={stackOptions} />
       <FlashList
+        ref={climbListRef}
         testID="climb-list"
         data={visibleClimbs}
         renderItem={renderClimbItem}
@@ -1545,7 +1621,12 @@ function ClimbListInner() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={handleRefresh} tintColor={brandColors.primary} />
+          // A placeholder fetch reads as a refetch; only a real pull shows the spinner.
+          <RefreshControl
+            refreshing={isRefetching && !isPlaceholderData}
+            onRefresh={handleRefresh}
+            tintColor={brandColors.primary}
+          />
         }
         ListHeaderComponent={listHeader}
         ListFooterComponent={listFooter}
@@ -1555,15 +1636,15 @@ function ClimbListInner() {
           ) : offlineFilterUnavailable ? (
             <View style={styles.emptyContainer}>
               {/* The glyph carries the same blame as the title: a wifi-slash over
-                  "needs our server" would contradict itself. */}
+                "needs our server" would contradict itself. */}
               <Icon
                 name={offlineFilterReason === 'backend_unreachable' ? 'server.unreachable' : 'offline.unavailable'}
                 size={48}
                 color={iosSystemColors.systemGray4}
               />
               {/* "Needs a signal" is a lie when the phone has four bars and we
-                  are the ones who are down, or when the climber chose Offline
-                  mode. Literal keys — the i18n linter rejects a computed one. */}
+                are the ones who are down, or when the climber chose Offline
+                mode. Literal keys — the i18n linter rejects a computed one. */}
               <Text variant="headline" style={styles.emptyTitle}>
                 {offlineFilterReason === 'backend_unreachable'
                   ? t('mobile.emptyState.offlineFilter.titleServer')
@@ -1617,6 +1698,18 @@ function ClimbListInner() {
           ) : null
         }
       />
+
+      {/* Previous results standing in for a loading search read as loading under
+          a background-coloured tint. A tint rather than opacity on a wrapper:
+          group opacity over a scrolling list renders it offscreen every frame.
+          Touch-transparent so the list still scrolls (stale-row taps are ignored
+          in the row handlers), and placed before the chrome so it sits under it. */}
+      {isPlaceholderData ? (
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, styles.placeholderTint, { backgroundColor: systemColors.background }]}
+        />
+      ) : null}
 
       <ClimbTopChrome
         searchMode={useNativeSearch ? 'native' : 'custom'}
@@ -1709,6 +1802,10 @@ function ClimbListSkeletonRows({ count }: { count: number }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  // Background colour is themed at the call site; 0.4 of it dims the stale rows.
+  placeholderTint: {
+    opacity: 0.4,
   },
   // Top-anchored grade rail for the persistent chip row (the FAB's bottom rail
   // is suppressed when chips are on). The dismiss layer sits below the rail so a
