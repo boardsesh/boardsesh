@@ -129,7 +129,8 @@
       "buildFromSource": [
         "react-native-screens",
         "@expo/ui",
-        "expo-dev-launcher"
+        "expo-dev-launcher",
+        "expo-modules-core"
       ]
     },
     "install": {

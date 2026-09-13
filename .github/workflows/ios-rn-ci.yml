@@ -173,14 +173,33 @@ jobs:
       # TestFlight build links the prebuilt too, shipping without it. So assert on
       # a file the patch actually touches. `buildFromSource` in
       # packages/mobile/package.json is the belt to this braces.
+      #
+      # ExpoModulesCore is the case that already bit (#5296): it DOES ship a
+      # prebuild, so the Exception.swift patch applied to node_modules, the build
+      # went green, and the log never compiled the file — the binary linked the
+      # unpatched xcframework. ExpoImage is precompiled too and only builds from
+      # source because it depends on ExpoModulesCore (precompiled_modules.rb
+      # propagates `dependency_unavailable`), so assert its patched file as well:
+      # if that cascade ever stops, the #3928 patch goes dead again silently.
+      # Match the per-file `SwiftCompile normal <arch> <path>` line — the batched
+      # "Compiling\ A.swift,\ B.swift" lines carry no package path, and @expo/ui
+      # has its own ImageView.swift.
       - name: Assert the patched native module really compiled
         run: |
-          if ! grep -q 'RNSScrollViewFinder' build.log; then
-            echo "::error::No RNScreens source compiled — the patch was not exercised." \
-                 "Check whether a prebuilt xcframework replaced the pod."
-            exit 1
-          fi
-          echo "RNScreens compiled from source — patch exercised."
+          status=0
+          check() {
+            if grep -Eq "$2" build.log; then
+              echo "$1 compiled from source — patch exercised."
+            else
+              echo "::error::$1 was not compiled — the patch was not exercised." \
+                   "Check whether a prebuilt xcframework replaced the pod (buildFromSource in packages/mobile/package.json)."
+              status=1
+            fi
+          }
+          check 'RNScreens RNSScrollViewFinder.mm' 'RNSScrollViewFinder'
+          check 'ExpoModulesCore Exception.swift' 'SwiftCompile normal [a-z0-9_]+ .*/expo-modules-core/ios/Core/Exceptions/Exception\.swift'
+          check 'ExpoImage ImageView.swift' 'SwiftCompile normal [a-z0-9_]+ .*/expo-image/ios/ImageView\.swift'
+          exit $status
 
       # Same species as the assertion above: a green build is not proof of a
       # correct binary. Expo's precompiled modules mean ExpoModulesCore ships as
