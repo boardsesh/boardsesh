@@ -26,10 +26,16 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
 import { setSchemaReady } from './schema-ready';
+import { pinDatabase } from './connection-pin';
+import { registerDeadHandleRecovery, type DeadHandleOrigin } from './dead-handle';
+import type { SqliteHandleFailure } from '@boardsesh/offline-sync';
 import { markStartup } from '../lib/profiling/startup-profile';
 import { measureDatabaseBytes } from './storage-usage';
 
-export const DATABASE_NAME = 'boardsesh.db';
+// Defined in its own leaf module so `connection-pin.ts` can read it without an
+// import cycle back through this file. Re-exported here so every existing import
+// site keeps working.
+export { DATABASE_NAME } from './database-name';
 
 // Tables that hold the signed-in user's own data. Cleared on sign-out so the
 // next account on the device never sees the previous user's ticks, playlists,
@@ -49,13 +55,32 @@ const USER_DATA_TABLES_TO_CLEAR = [
 
 let databaseHandle: SQLiteDatabase | null = null;
 
+const handleListeners = new Set<() => void>();
+
+/**
+ * Subscribe to handle CHANGES, including a non-null to non-null swap.
+ *
+ * `subscribeSchemaReady` cannot serve this: it only fires when readiness flips, so a
+ * dead-handle recovery replacing one live connection with another is invisible to
+ * it — and the consumers that take their database from `useSQLiteContext()` would
+ * keep writing through the dead one (#5410).
+ */
+export function subscribeDatabaseHandle(listener: () => void): () => void {
+  handleListeners.add(listener);
+  return () => {
+    handleListeners.delete(listener);
+  };
+}
+
 export function setDatabaseHandle(db: SQLiteDatabase | null): void {
+  const changed = databaseHandle !== db;
   databaseHandle = db;
   // The handle is only ever published once migrations have run, so it doubles as
   // the schema-readiness signal for the `useSQLiteContext()` consumers that can't
   // see this handle at all. Driving the store from here — rather than letting
   // callers poke it — keeps the two from ever disagreeing.
   setSchemaReady(db !== null);
+  if (changed) for (const listener of handleListeners) listener();
 }
 
 export function getDatabaseHandle(): SQLiteDatabase | null {
@@ -303,6 +328,26 @@ async function readJournalMode(db: SQLiteDatabase): Promise<string> {
  */
 export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   const replacesTheOneInFlight = latestDatabase !== null && latestDatabase !== db;
+  // Once a replacement is live, a later provider connection is a wrapper around the
+  // SAME DEAD NATIVE INSTANCE — `openDatabaseAsync` is still served it from the cache
+  // — so retargeting onto it would publish a dead handle as ready. Pin it (its
+  // collection would free the dead binding a second time) and leave the replacement
+  // in place (#5410).
+  if (recoveredDatabase !== null) {
+    pinDatabase(db);
+    return activeInitialization ?? Promise.resolve();
+  }
+  // Reassigning `latestDatabase` below is what makes the PREVIOUS wrapper collectable,
+  // and on Android collecting any wrapper for this file frees the native handle the
+  // live connection is still using (#5410). The outgoing one was pinned by its own
+  // call to this function, so only the incoming one needs pinning here.
+  //
+  // Deliberately overlapping with the two pins in `database-provider.tsx`: today
+  // `onInit` is this function's only caller, so removing any ONE of the three leaves
+  // every wrapper pinned and the suite green. That redundancy is the point — this is
+  // the module that owns the overwrite hazard, and `initializeDatabase` is a public
+  // export, so a second caller must not have to remember the provider's pin.
+  pinDatabase(db);
   // Recorded on EVERY call, including the remount that only gets the shared promise
   // back, so the in-flight chain can retarget onto the live connection.
   latestDatabase = db;
@@ -367,6 +412,11 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
   });
 
   void (async () => {
+    // A dead-handle recovery retargets the whole lifecycle onto a replacement
+    // connection and starts its own chain. This chain must then stop, even if it is
+    // parked in a 60s retry gap — two chains running migrations against one file is
+    // the contention the ladder exists to survive, self-inflicted (#5410).
+    const epoch = chainEpoch;
     const startedAt = Date.now();
     const deadline = startedAt + MAX_INIT_WINDOW_MS;
     // What the last failed attempt tripped over, so a recovery can say which step
@@ -387,6 +437,10 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       // handle was cleared outright.
       const target = latestDatabase ?? db;
       const outcome = await attemptInitialization(target);
+      if (epoch !== chainEpoch) {
+        releaseLaunch();
+        return;
+      }
       attempts += 1;
 
       // Unblock the provider once, whatever the first attempt did.
@@ -533,6 +587,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
 
       markStartup('sqlite.recovery.start');
       await sleepUntilRetry(retryDelayMs);
+      if (epoch !== chainEpoch) return;
     }
   })();
 
@@ -581,6 +636,128 @@ function reportSupersededExhaustion(details: { attempts: number; elapsedMs: numb
     tags: { source: 'offline-sync', kind: 'sqlite-init-superseded' },
     extra: details,
   });
+}
+
+/**
+ * Dead-handle recovery (#5410).
+ *
+ * A collected JS wrapper can free the native binding of the connection everything
+ * else is still using. `connection-pin.ts` is what stops that happening; this is the
+ * safety net for a path it misses, because the alternative is a climber whose
+ * offline storage is dead until they force-quit.
+ */
+
+/**
+ * The replacement, once one exists. Never cleared and never closed — a wrapper we
+ * dropped would be collectable, which is the bug we are recovering from.
+ */
+let recoveredDatabase: SQLiteDatabase | null = null;
+
+/**
+ * How the replacement is opened. Injected rather than imported, because `./reopen`
+ * imports expo-sqlite for REAL and this module is loaded by node-env suites that
+ * cannot parse react-native's Flow source (see the note in `./testing`).
+ */
+let openReplacement: (() => Promise<SQLiteDatabase>) | null = null;
+
+/** Wired from `database-provider.tsx`, which already depends on expo-sqlite. */
+export function registerReplacementOpener(opener: () => Promise<SQLiteDatabase>): void {
+  openReplacement = opener;
+}
+
+/** Single-flight: ten consumers hitting the dead handle at once must open one connection. */
+let activeRecovery: Promise<void> | null = null;
+let recoveryCount = 0;
+let lastRecoveryStartedAt = 0;
+
+/**
+ * Two attempts per process, 30s apart. Same shape as `MAX_SUPERSEDED_RESTARTS`: the
+ * cap exists so a misclassified error cannot put the app in a re-open loop, not
+ * because a third attempt would be wrong.
+ */
+const MAX_DEAD_HANDLE_RECOVERIES = 2;
+/** Exported so the single-flight test steps past the gate by the real interval
+ * rather than mirroring the number in a literal that silently drifts from it. */
+export const MIN_RECOVERY_INTERVAL_MS = 30_000;
+
+/**
+ * Bumped by a recovery so a chain parked in a retry gap cannot wake up and run a
+ * second migration against the replacement.
+ */
+let chainEpoch = 0;
+
+function recoverDeadDatabaseHandle(shape: Exclude<SqliteHandleFailure, null>, origin: DeadHandleOrigin): void {
+  // FIRST, and synchronously. Every `getDatabaseHandle()` reader re-reads per call,
+  // so this alone stops the storm: they fall back to the network instead of throwing
+  // again, and `setSchemaReady(false)` stops the scheduler and the drainer. It is
+  // worth doing even if the re-open below never succeeds.
+  setDatabaseHandle(null);
+
+  if (activeRecovery !== null) return;
+  if (recoveryCount >= MAX_DEAD_HANDLE_RECOVERIES) return;
+  if (lastRecoveryStartedAt !== 0 && Date.now() - lastRecoveryStartedAt < MIN_RECOVERY_INTERVAL_MS) return;
+  const opener = openReplacement;
+  if (opener === null) return;
+
+  recoveryCount += 1;
+  lastRecoveryStartedAt = Date.now();
+  const startedAt = Date.now();
+  markStartup('sqlite.deadhandle.start');
+  reportError(new Error(`SQLite native handle lost (${shape})`), {
+    tags: { source: 'offline-sync', kind: 'sqlite-dead-handle', phase: 'detected', shape, origin },
+    extra: { recoveries: recoveryCount },
+  });
+
+  activeRecovery = (async () => {
+    try {
+      const replacement = await opener();
+      pinDatabase(replacement);
+      recoveredDatabase = replacement;
+      // Retarget the ladder rather than inventing a second one: this gets WAL, the
+      // busy timeout, the queue table, migrations, the lock backoff — and the SINGLE
+      // publish site, so `retractSupersededHandle`'s invariant still holds.
+      chainEpoch += 1;
+      activeInitialization = null;
+      latestDatabase = replacement;
+      wakeFromBackoff?.();
+      activeInitialization = beginInitialization(replacement);
+      await activeInitialization;
+      markStartup('sqlite.deadhandle.end', 'ready');
+      reportError(new Error('SQLite native handle recovered'), {
+        tags: { source: 'offline-sync', kind: 'sqlite-dead-handle', phase: 'reopened', shape, origin },
+        extra: { recoveries: recoveryCount, elapsedMs: Date.now() - startedAt },
+      });
+      track(SHARED_EVENTS.OfflineSqliteHandleRecovered, {
+        shape,
+        origin,
+        recoveries: recoveryCount,
+        elapsedMs: Date.now() - startedAt,
+        recovered: getDatabaseHandle() !== null,
+      });
+    } catch (error) {
+      markStartup('sqlite.deadhandle.end', 'error');
+      reportError(error, {
+        tags: { source: 'offline-sync', kind: 'sqlite-dead-handle', phase: 'failed', shape, origin },
+        extra: { recoveries: recoveryCount, elapsedMs: Date.now() - startedAt },
+      });
+    } finally {
+      activeRecovery = null;
+    }
+  })();
+}
+
+// Registered on module load so the wiring cannot be forgotten by a caller, and
+// cannot arrive after the first failure.
+registerDeadHandleRecovery(recoverDeadDatabaseHandle);
+
+/** Test-only. Drops the recovery state so a suite can drive it more than once. */
+export function resetDeadHandleRecoveryForTests(): void {
+  recoveredDatabase = null;
+  openReplacement = null;
+  activeRecovery = null;
+  recoveryCount = 0;
+  lastRecoveryStartedAt = 0;
+  chainEpoch = 0;
 }
 
 /**

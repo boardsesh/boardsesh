@@ -9,6 +9,11 @@ export type StartupMarkName =
   | 'sqlite.initial.gate'
   | 'sqlite.recovery.start'
   | 'sqlite.recovery.end'
+  // Mid-session, not launch: the native handle died under us and a replacement
+  // connection was opened (#5410). Kept apart from `sqlite.recovery.*`, which
+  // measures launch-time lock contention.
+  | 'sqlite.deadhandle.start'
+  | 'sqlite.deadhandle.end'
   | 'auth.initial.start'
   | 'auth.initial.ready'
   | 'splash.hide.request'

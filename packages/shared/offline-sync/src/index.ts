@@ -300,6 +300,13 @@ export type { LocalWriteRetryOptions, LocalWriteRetryOutcome } from './db/write-
 export { isDatabaseLockedError, classifySqliteLockError } from './db/lock-errors';
 export type { SqliteLockClassification } from './db/lock-errors';
 
+// The other way a SQLite call fails: the native handle behind it is gone, not
+// busy (#5410). Deliberately a separate predicate from the lock one — a dead
+// handle carries no lock marker, so retrying the same connection can never win
+// and only a re-open recovers it.
+export { classifySqliteHandleError, isDeadDatabaseHandleError } from './db/handle-errors';
+export type { SqliteHandleFailure } from './db/handle-errors';
+
 // --- Offline-usage telemetry (issue #4317) ---------------------------------------
 // The rollup gate that turns "this read was served from the local DB" into a
 // low-volume, chartable signal. `emit` is injected so the package keeps zero

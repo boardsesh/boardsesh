@@ -1039,6 +1039,79 @@ close: expo-sqlite enters `closeAsync()` synchronously from the parent's cleanup
 React runs before this child's. What it buys is the window after the unmount commit —
 queries already in flight are carried by the process-lifetime reference (#5300).
 
+### When the native handle dies under us (#5410)
+
+Everything above is about a connection that is LOCKED, or one the provider CLOSED.
+There is a third failure, and on Android it was the largest of the three:
+BOARDSESH-G1, 239 users and 2593 events over 30 days, every SQLite consumer dead at
+once until the climber force-quits.
+
+**The mechanism.** Opening `boardsesh.db` a second time with equal options does not
+open a second connection. Android's constructor finds the cached `NativeDatabase` and
+hands the same instance back:
+
+```kotlin
+findCachedDatabase { it.databasePath == databasePath && it.openOptions == options
+                     && !options.useNewConnection }?.let { it.addRef(); return@Constructor it }
+```
+
+expo-modules-core's `SharedObjectRegistry.add()` then registers that one native object
+again under a fresh id, minting an independent C++ `NativeState` for the new JS
+wrapper. `~NativeState` runs the releaser, so garbage-collecting **any** wrapper calls
+`sharedObjectDidRelease()` → `ref.close()` → `mHybridData.resetNative()` on the
+connection every other wrapper is still using. `NativeDatabase.kt` neither consults its
+refcount nor sets `isClosed` there, so `maybeThrowForClosedDatabase` still waves the
+next call through and `sqlite3_prepare_v2` dereferences a freed pointer.
+
+Refcounting does not protect against this. #5300's retention pin keeps `sqlite3_close`
+from running; it has nothing to say about reachability. iOS is unaffected —
+`SharedObjectRegistry.swift` reuses the id and native state for a second registration,
+and the iOS `NativeDatabase` does not override `sharedObjectDidRelease` — so this is an
+Android-only parity gap, filed upstream. It is not patchable here: `patches/` is hashed
+into the native fingerprint, so a patched fix could not reach the affected users by OTA.
+
+**Prevention.** `db/connection-pin.ts` holds every wrapper for this file strongly for
+the life of the process, so none can ever be collected. Four funnels feed it: the
+provider's `onInit`, `DatabaseHandleLifecycle`'s effect, `initializeDatabase` (where
+reassigning `latestDatabase` is what makes the previous wrapper collectable), and the
+dev lock holder. Transaction connections are refused — `useNewConnection` bypasses the
+cache, so their release is already correct and pinning them would leak one object per
+offline write. The set is strong and never evicted on purpose; a weak container is the
+bug, and the entry you evict may be the one whose collection kills the live connection.
+
+This is ORTHOGONAL to the retraction machinery above. That is about liveness (never
+hand a reader a closed connection); this is about reachability (never let a wrapper be
+collected). Both are needed.
+
+**Recovery.** `classifySqliteHandleError` (`@boardsesh/offline-sync`) tells the dead
+shape apart from a lock — conjunctively, needing the expo-sqlite rejection frame AND
+the `NullPointerException`, because a bare NPE is the most common native error there
+is. Detection hangs off `reportError` via `db/dead-handle.ts`, a registration seam that
+exists because error-reporting → connection → error-reporting would be a cycle.
+
+Recovery retracts the handle synchronously first, which alone stops the storm, then
+opens a replacement and retargets the existing init ladder onto it — so migrations, the
+lock backoff and the single publish site are all reused. A chain epoch stops a ladder
+parked in a retry gap from waking up and migrating the replacement a second time.
+
+The replacement MUST be opened with `useNewConnection: true`. A plain re-open is served
+the same dead instance: nothing closed it, so its refcount never reached zero and
+`removeCachedDatabase` never evicted it. Draining the refcount by repeated `closeAsync`
+was rejected — JS cannot read the count, so the stopping rule would be "call it until it
+throws", and the throw is the bug being recovered from.
+
+Because the provider never re-renders during a recovery, its context value still points
+at the dead instance. Consumers that take their database from `useSQLiteContext()` must
+therefore go through `useOfflineDatabase()` instead, which prefers the published handle
+and falls back to the provider's. Writers still gate on `useOfflineSchemaReady()`; that
+hook decides WHICH connection, not WHETHER.
+
+Bounded at two recoveries per process, 30s apart. Telemetry: Sentry
+`kind: 'sqlite-dead-handle'` with `phase: detected | reopened | failed`, and
+`Offline SQLite Handle Recovered` in PostHog. Deliberately kept out of the
+`sqlite-init` aggregate, whose `elapsedMs` distribution sizes the retry window and
+would be corrupted by a mid-session failure that is not contention at all.
+
 ## What stays the same
 
 | Component             | Status                                                                                                        |
