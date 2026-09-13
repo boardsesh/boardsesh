@@ -1,7 +1,7 @@
 import type { OfflineDatabase } from '@boardsesh/offline-sync';
 import type { SetterStat, SetterStatsInput } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
-import { parseSetIds, escapeLike } from './search-climbs-local';
+import { parseSetIds } from './search-climbs-local';
 
 /**
  * On-device twin of `getSetterStats` (packages/db/src/queries/climbs/setter-stats.ts):
@@ -66,12 +66,17 @@ export async function getSetterStatsLocal(db: OfflineDatabase, input: SetterStat
 
   push(`c.setter_username IS NOT NULL AND c.setter_username != ''`);
 
-  // Case-insensitive substring filter (autocomplete), mirroring the server's ilike.
-  // SQLite LIKE is ASCII case-insensitive by default — the same accepted limitation
-  // documented in search-climbs-local.ts for the name filter.
+  // Case-insensitive substring filter (autocomplete), mirroring the server's
+  // `ilike(setterUsername, '%term%')` byte for byte — including its unescaped
+  // `%`/`_` wildcards. This local branch serves while online too (a downloaded
+  // board is local-first), so escaping here the way search-climbs-local.ts
+  // escapes its `name` filter would make a search containing `%`/`_` return
+  // different setters depending only on whether the board happens to be
+  // downloaded. SQLite LIKE is ASCII case-insensitive by default, same as the
+  // name-filter caveat in search-climbs-local.ts.
   const search = input.search?.trim();
   if (search) {
-    push(`c.setter_username LIKE ? ESCAPE '\\'`, `%${escapeLike(search)}%`);
+    push('c.setter_username LIKE ?', `%${search}%`);
   }
 
   const query = `

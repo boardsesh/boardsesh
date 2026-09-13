@@ -147,6 +147,20 @@ describe('getSetterStatsLocal', () => {
     expect(unmatched).toEqual([]);
   });
 
+  it('treats `%`/`_` in the search term as SQL wildcards, matching the server ILIKE unescaped', async () => {
+    await insertClimb(db, { uuid: 'c1', setterUsername: 'axb' });
+    await insertClimb(db, { uuid: 'c2', setterUsername: 'a_b' });
+
+    // '_' is a single-character wildcard in both SQLite LIKE and Postgres ILIKE,
+    // so an unescaped search term must match both rows, not just the literal one.
+    const result = await getSetterStatsLocal(db, makeInput({ search: 'a_b' }));
+
+    expect(result).toEqual([
+      { setterUsername: 'a_b', climbCount: 1 },
+      { setterUsername: 'axb', climbCount: 1 },
+    ]);
+  });
+
   it('orders by climb count descending, then setter username ascending', async () => {
     await insertClimb(db, { uuid: 'c1', setterUsername: 'zzz' });
     await insertClimb(db, { uuid: 'c2', setterUsername: 'zzz' });

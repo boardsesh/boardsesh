@@ -95,7 +95,7 @@ export function parseSetIds(setIds: string | null | undefined): number[] {
 // Escape LIKE metacharacters so a search for "50%" or "a_b" matches literally.
 // SQLite LIKE is case-insensitive for ASCII only (accented letters won't fold) —
 // an accepted offline limitation vs Postgres ILIKE.
-export function escapeLike(input: string): string {
+function escapeLike(input: string): string {
   return input.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
