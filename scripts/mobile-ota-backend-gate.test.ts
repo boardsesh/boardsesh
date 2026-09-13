@@ -43,9 +43,12 @@ describe('decideBackendGate', () => {
   });
 
   it('never passes an unstamped `development` release, even if git agrees', () => {
-    const verdict = gate({ release: 'development', isAncestor: true, schemaDiffEmpty: true, deployRunning: true });
-    expect(verdict.decision).toBe('wait');
-    expect(gate({ release: '', isAncestor: true, schemaDiffEmpty: true, deployRunning: true }).decision).toBe('wait');
+    // No deploy running and past the grace, so only the SHA guard stands between
+    // these inputs and a `pass`: without it, both git flags would pass them.
+    for (const release of ['development', '']) {
+      const verdict = gate({ release, isAncestor: true, schemaDiffEmpty: true, deployRunning: false });
+      expect(verdict.decision, `release ${JSON.stringify(release)}`).toBe('timeout-publish');
+    }
   });
 
   it('waits while a production deploy is running', () => {
