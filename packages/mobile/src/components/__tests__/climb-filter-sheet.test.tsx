@@ -83,6 +83,8 @@ const createBoardHoldsMocks = vi.hoisted(() => ({
 // type and `lastCall?.[3]` fails to typecheck (TS2493).
 const searchInputMocks = vi.hoisted(() => ({
   toClimbSearchInput: vi.fn((..._args: unknown[]) => ({})),
+  // A pass-through spy, so tests can read the board filters the count input carries.
+  mergeBoardFilters: vi.fn((input: unknown, _boardFilters?: unknown) => input),
 }));
 
 const currentFilters: ClimbFilters = {
@@ -245,7 +247,7 @@ vi.mock('@boardsesh/climb-filters', () => ({
   normalizeRetiredStatus: (filters: unknown) => filters,
   toClimbSearchInput: searchInputMocks.toClimbSearchInput,
   newSortSeed: () => '424242',
-  mergeBoardFilters: (input: unknown) => input,
+  mergeBoardFilters: searchInputMocks.mergeBoardFilters,
   formatMinAscentsFilterCount: (count: number) => String(count),
   countFilteredHolds: (holdsFilter?: Record<string, unknown>) => Object.keys(holdsFilter ?? {}).length,
   // "Your progress" selector (PRIMARY card single-select).
@@ -508,6 +510,54 @@ describe('ClimbFilterSheet sub-pickers', () => {
       // No timer advanced: the count input already carries the handed-back picks.
       const lastCall = searchInputMocks.toClimbSearchInput.mock.calls.at(-1);
       expect(lastCall?.[0]).toEqual({ ...currentFilters, setter: ['route-setter'] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('feeds a holds handoff into the count input without waiting out the debounce', () => {
+    vi.useFakeTimers();
+    try {
+      const { getByLabelText } = renderFilterSheet();
+      fireEvent.click(getByLabelText('mobile.holdFilter.title'));
+      searchInputMocks.mergeBoardFilters.mockClear();
+
+      act(() => {
+        emitHoldsFilterSelection({ '99': { HAND: 'include' } });
+      });
+
+      // No timer advanced: the count input already carries the handed-back holds.
+      expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual({
+        ...currentBoardFilters,
+        holdsFilter: { '99': { HAND: 'include' } },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('feeds a zone handoff into the count input without waiting out the debounce', () => {
+    vi.useFakeTimers();
+    try {
+      const { getByLabelText } = renderFilterSheet();
+      fireEvent.click(getByLabelText('mobile.zoneFilter.title'));
+      searchInputMocks.mergeBoardFilters.mockClear();
+
+      act(() => {
+        emitZoneFilterSelection({
+          zoneBox: { edgeLeft: 1, edgeRight: 9, edgeBottom: 2, edgeTop: 8 },
+          zoneMode: 'allHolds',
+          holdsFilter: { '77': { FOOT: 'include' } },
+        });
+      });
+
+      // No timer advanced: the count input already carries the handed-back zone.
+      expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual({
+        ...currentBoardFilters,
+        holdsFilter: { '77': { FOOT: 'include' } },
+        zoneBox: { edgeLeft: 1, edgeRight: 9, edgeBottom: 2, edgeTop: 8 },
+        zoneMode: 'allHolds',
+      });
     } finally {
       vi.useRealTimers();
     }
