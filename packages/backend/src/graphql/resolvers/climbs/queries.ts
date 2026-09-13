@@ -78,12 +78,15 @@ export const climbQueries = {
     { input }: { input: SimilarClimbsInput },
     ctx: ConnectionContext,
   ): Promise<SimilarClimb[]> => {
-    // 30/min/IP. The similar-climbs CTE scans board_climb_holds for the
-    // whole layout before the HAVING prune. React Query caches identical
-    // queries for 5 min but the play-drawer surface keys on climbUuid so
-    // rapid climb-switching generates fresh requests; 30/min stays well
-    // above any realistic interactive cadence while keeping a CGNAT'd
-    // shared IP from running the query at 1/s sustained.
+    // 30/min/IP for real clients. The similar-climbs CTE scans
+    // board_climb_holds for the whole layout before the HAVING prune. React
+    // Query caches identical queries for 5 min but the play-drawer surface
+    // keys on climbUuid so rapid climb-switching generates fresh requests;
+    // 30/min stays well above any realistic interactive cadence while keeping
+    // a CGNAT'd shared IP from running the query at 1/s sustained. The
+    // website's front-door SSR read of this same resolver authenticates as a
+    // trusted internal-service caller instead and gets its own fleet-wide
+    // ceiling — see `applyRateLimit`'s `isInternalService` branch (#5291).
     await applyRateLimit(ctx, 30, 'similar-climbs');
     const validated = validateInput(SimilarClimbsInputSchema, input, 'input');
 
