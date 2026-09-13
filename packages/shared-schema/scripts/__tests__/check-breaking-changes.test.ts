@@ -1,8 +1,29 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
-import { findBlockingSchemaChanges } from '../check-breaking-changes';
+import { describe, expect, it, vi } from 'vitest';
+import { findBlockingSchemaChanges, main } from '../check-breaking-changes';
+
+describe('main', () => {
+  it('exits 2 without --base-ref', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(main([])).toBe(2);
+    consoleError.mockRestore();
+  });
+
+  it('exits 2 with a clear message when the base SDL cannot be read', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(main(['--base-ref', 'refs/heads/no-such-branch-5370'])).toBe(2);
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('Could not read'));
+    consoleError.mockRestore();
+  });
+
+  it('exits 0 when the base SDL matches the working tree', () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(main(['--base-ref', 'HEAD'])).toBe(0);
+    consoleLog.mockRestore();
+  });
+});
 
 const BASE_SDL = `
 type Board {
@@ -64,6 +85,11 @@ describe('findBlockingSchemaChanges', () => {
   it('reports a field whose type changed kind', () => {
     const headSdl = BASE_SDL.replace('  layoutId: Int\n', '  layoutId: String\n');
     expect(findBlockingSchemaChanges(BASE_SDL, headSdl).map((change) => change.type)).toEqual(['FIELD_CHANGED_KIND']);
+  });
+
+  it('reports an argument whose type changed kind', () => {
+    const headSdl = BASE_SDL.replace('board(uuid: ID!, angle: Int)', 'board(uuid: ID!, angle: String)');
+    expect(findBlockingSchemaChanges(BASE_SDL, headSdl).map((change) => change.type)).toEqual(['ARG_CHANGED_KIND']);
   });
 
   it('is clean when a field is only added', () => {

@@ -455,7 +455,10 @@ production, keeps sending the queries it shipped with. Two rules follow (#5370):
 - **Backend first.** Deploy a new field before the OTA that queries it. An OTA that lands first
   fails those requests until the backend catches up.
 - **Never remove what installed builds still query.** Mark the field `@deprecated` and remove it
-  only after those builds are gone. CI's `codegen-drift` job runs
+  only after those builds are gone: the store release that stopped querying it has been out for a
+  full adoption cycle, and PostHog's `OTA Update Status` event, grouped by `runtimeVersion` (see
+  [OTA observability](#ota-observability-adoption--funnel)), shows no meaningful traffic on older
+  fingerprints. After the removal, watch Sentry for `schema_mismatch:true` events naming the field. CI's `codegen-drift` job runs
   `packages/shared-schema/scripts/check-breaking-changes.ts`, which fails a PR whose generated SDL
   removes a field, argument, type or enum value (or adds a required argument / input field)
   against the base branch. A deliberate removal opts out with the `schema-breaking-ok` label;
