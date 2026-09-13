@@ -60,11 +60,7 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
             {label}
           </Text>
           {description ? (
-            <Text
-              style={{ typography: 'bodySmall' }}
-              color={systemColors.secondaryLabel as string}
-              modifiers={[alpha(0.6)]}
-            >
+            <Text style={{ typography: 'bodySmall' }} color={systemColors.secondaryLabel as string}>
               {description}
             </Text>
           ) : null}
