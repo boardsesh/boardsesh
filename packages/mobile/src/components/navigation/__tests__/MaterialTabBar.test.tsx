@@ -123,7 +123,7 @@ vi.mock('../../../theme/colors', () => ({
 vi.mock('../../../theme/tokens', () => ({
   material: {
     navBar: {
-      surfaceElevation: 3,
+      surfaceElevation: 2,
       activeIndicatorWidth: 40,
       activeIndicatorHeight: 40,
       activeIndicatorRadius: 20,
