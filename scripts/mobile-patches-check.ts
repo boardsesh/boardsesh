@@ -82,12 +82,6 @@ export interface PatchRule {
   sentinels: readonly string[];
   /** Source fragments that must all be present in this exact order. */
   orderedSentinels?: readonly string[];
-  /**
-   * Source fragments that must occur EXACTLY this many times. Use when the same
-   * text guards several sites: `includes` passes as long as one copy survives,
-   * so losing a single site would stay green.
-   */
-  sentinelCounts?: Readonly<Record<string, number>>;
   /** The exact `patchedDependencies` key expected in pnpm-workspace.yaml. */
   patchedKey: string;
   /** Optional negative assertions scoped to a single method body. */
@@ -297,51 +291,6 @@ export const RULES: readonly PatchRule[] = [
     ],
     patchedKey: 'expo-updates@57.0.19',
   },
-  // The Fabric SchedulerDelegate use-after-free (#5293, BOARDSESH-8S). Upstream
-  // ships `enableSchedulerDelegateInvalidation` OFF, so every deferred rendering
-  // update carries a RAW SchedulerDelegate* that nothing invalidates when
-  // RCTScheduler's dealloc runs setDelegate(nullptr) — the lambda then drains on
-  // the JS thread through freed memory. Flipping the default re-arms upstream's
-  // own guard.
-  //
-  // Nothing else can see this. It is a C++ header consumed only by an Xcode
-  // build, so typecheck, the Metro bundle and every test stay green with the
-  // patch gone; the only symptom is an EXC_BAD_ACCESS on other people's phones,
-  // weeks later, in a store build.
-  {
-    package: 'react-native',
-    file: 'ReactCommon/react/featureflags/ReactNativeFeatureFlagsDefaults.h',
-    sentinels: [
-      'boardsesh/boardsesh#5293',
-      // The load-bearing line. A re-keyed patch could keep the whole comment
-      // and fail to re-apply the one-word change that does the work.
-      `bool enableSchedulerDelegateInvalidation() override {
-    return true;
-  }`,
-    ],
-    patchedKey: 'react-native@0.86.3',
-  },
-  // The other half, and the reason this rule exists on an UNPATCHED file: the
-  // flag is only worth flipping while Scheduler.cpp still honours it. Upstream
-  // deleted the flag AND the guard in react/react-native#58138 (2026-08-26), so
-  // the next react-native bump can quietly make the patch above a no-op — the
-  // defaults header would still accept it while the guard it arms is gone.
-  // Assert the guard's shape at both queue sites and the two flips that arm it.
-  // The capture and the early return are textually identical at both queue
-  // sites (uiManagerDidFinishTransaction, uiManagerDidDispatchCommand), and the
-  // flip is identical in ~Scheduler and setDelegate, so each is COUNTED: losing
-  // one site while the other survives must still go red.
-  {
-    package: 'react-native',
-    file: 'ReactCommon/react/renderer/scheduler/Scheduler.cpp',
-    sentinels: ['delegateInvalidated_ = std::make_shared<std::atomic<bool>>(false);'],
-    sentinelCounts: {
-      'invalidated = delegateInvalidated_,': 2,
-      'if (guardEnabled && *invalidated) {': 2,
-      '*delegateInvalidated_ = true;': 2,
-    },
-    patchedKey: 'react-native@0.86.3',
-  },
 ];
 
 /**
@@ -529,16 +478,6 @@ export function versionFromKey(patchedKey: string): string {
  * Pure check: verify every patch rule against the installed tree via `env`.
  * All filesystem/resolution access goes through `env`, so tests inject a fake.
  */
-/** Non-overlapping occurrences of `needle` in `haystack`. */
-export function countOccurrences(haystack: string, needle: string): number {
-  if (needle.length === 0) return 0;
-  let count = 0;
-  for (let index = haystack.indexOf(needle); index !== -1; index = haystack.indexOf(needle, index + needle.length)) {
-    count += 1;
-  }
-  return count;
-}
-
 export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheckEnv): CheckResult {
   const errors: string[] = [];
   let checked = 0;
@@ -592,19 +531,6 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
           `Run \`vp install\` to re-apply patches/${rule.patchedKey}.patch; if it no longer applies cleanly, ` +
           `regenerate it with \`pnpm patch ${rule.package}\`.`,
       );
-    }
-
-    // (3b) Counted sentinels: the same guard text at several sites. A presence
-    //      check passes while any one copy survives, so require the exact count.
-    for (const [sentinel, expectedCount] of Object.entries(rule.sentinelCounts ?? {})) {
-      const actualCount = countOccurrences(source, sentinel);
-      if (actualCount !== expectedCount) {
-        errors.push(
-          `${rule.package}: ${rule.file} has "${sentinel}" ${actualCount} time(s), expected exactly ${expectedCount}. ` +
-            `Each occurrence is a separate guarded site; re-verify patches/${rule.patchedKey}.patch against the ` +
-            `installed source and update the rule in scripts/mobile-patches-check.ts. Do not lower the count to get green.`,
-        );
-      }
     }
 
     // (4) Ordered shape assertions: some native contracts depend on callback

@@ -721,6 +721,11 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // entitlement-merge ordering concern like the share-intent dedup above —
       // it sets its own distinct keys.
       './plugins/with-healthkit',
+      // #5293 (BOARDSESH-8S): calls modules/react-flag-overrides from the
+      // generated AppDelegate.swift, between the React Native factory init and
+      // startReactNative, to turn on the SchedulerDelegate invalidation guard.
+      // iOS-only mod. Throws at prebuild if the Expo template's anchors move.
+      './plugins/with-scheduler-delegate-invalidation',
       // AppCheckCore (pulled in by Google Sign-In) is a Swift pod that depends
       // on GoogleUtilities and RecaptchaInterop, which don't define modules by
       // default. Without this fix CocoaPods refuses to link them as static
