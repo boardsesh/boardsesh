@@ -2,6 +2,8 @@ import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { GeneratorOptions, PlannedClimbSlot } from '@boardsesh/playlist-generator';
 import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
+import { screenshotModeRandom } from '../../../lib/screenshot-mode';
+import type { RandomSource } from '../../../lib/seeded-random';
 
 /**
  * Pure climb-pool bookkeeping for the live workout preview. No GraphQL, no React
@@ -40,10 +42,17 @@ export type WorkoutPreviewData = {
   usedUuids: Set<string>;
 };
 
-/** Fisher–Yates in place. Randomized across calls so two builds at the same grade differ. */
-export function shuffleInPlace<T>(items: T[]): T[] {
+/**
+ * Fisher–Yates in place. Randomized across calls so two builds at the same grade
+ * differ.
+ *
+ * `random` is injected so screenshot mode can hand in a seeded generator and get
+ * the same order every capture — see `screenshotModeRandom`. Everything else
+ * takes the default and stays genuinely random.
+ */
+export function shuffleInPlace<T>(items: T[], random: RandomSource = Math.random): T[] {
   for (let i = items.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     [items[i], items[j]] = [items[j], items[i]];
   }
   return items;
@@ -59,10 +68,14 @@ export function pickUnused(pool: readonly Climb[], used: ReadonlySet<string>): C
  * by refresh so re-rolling the same row reaches across the whole grade pool
  * instead of toggling between the lowest-index climbs `pickUnused` would return.
  */
-export function pickRandomUnused(pool: readonly Climb[], used: ReadonlySet<string>): Climb | null {
+export function pickRandomUnused(
+  pool: readonly Climb[],
+  used: ReadonlySet<string>,
+  random: RandomSource = Math.random,
+): Climb | null {
   const candidates = pool.filter((climb) => !used.has(climb.uuid));
   if (candidates.length === 0) return null;
-  return candidates[Math.floor(Math.random() * candidates.length)];
+  return candidates[Math.floor(random() * candidates.length)];
 }
 
 /**
@@ -80,7 +93,7 @@ export async function buildPools(
     grades.map(async (grade) => {
       const climbs = await fetchPool(grade, ctx);
       // Shuffle here (not in the fetcher) so a refetch-on-refresh reshuffles.
-      pools.set(grade, shuffleInPlace(climbs.slice()));
+      pools.set(grade, shuffleInPlace(climbs.slice(), screenshotModeRandom()));
     }),
   );
   return pools;
@@ -135,14 +148,14 @@ export async function refreshSlotInState(
   const cachedPool = pools.get(grade) ?? [];
   // Exclude every climb currently shown (including this row's own) so the refresh
   // lands on a genuinely different climb that isn't already on screen elsewhere.
-  let nextClimb = pickRandomUnused(cachedPool, state.usedUuids);
+  let nextClimb = pickRandomUnused(cachedPool, state.usedUuids, screenshotModeRandom());
   let refreshedPool: Climb[] | null = null;
 
   // 1) Cache exhausted of unused climbs → refetch + reshuffle this grade once.
   if (!nextClimb) {
-    refreshedPool = shuffleInPlace((await fetchPool(grade, ctx)).slice());
+    refreshedPool = shuffleInPlace((await fetchPool(grade, ctx)).slice(), screenshotModeRandom());
     pools.set(grade, refreshedPool);
-    nextClimb = pickRandomUnused(refreshedPool, state.usedUuids);
+    nextClimb = pickRandomUnused(refreshedPool, state.usedUuids, screenshotModeRandom());
   }
 
   // 2) Tiny catalog: everything at this grade is already shown somewhere. Accept

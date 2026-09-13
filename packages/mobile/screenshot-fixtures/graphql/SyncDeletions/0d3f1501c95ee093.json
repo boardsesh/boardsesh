@@ -1,0 +1,2530 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncDeletions",
+  "documentHash": "3a0d1e44f7fbc9278005f98727b7b8a161099add7805180f4676f3ad3b5aabbd",
+  "variablesHash": "0d3f1501c95ee09385e908d2fd1f89f384d9fa71fb284deb68edffa3e221b485",
+  "query": "\n  query SyncDeletions($cursor: SyncCursorInput, $limit: Int! = 500) {\n    syncDeletions(cursor: $cursor, limit: $limit) {\n      deletions {\n        tableName\n        recordId\n        deletedAt\n      }\n      cursor {\n        updatedAt\n        syncSeq\n      }\n      hasMore\n    }\n  }\n",
+  "variables": {
+    "cursor": {
+      "updatedAt": "2026-08-13T09:18:19.145512Z",
+      "syncSeq": "82758"
+    },
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncDeletions": {
+        "deletions": [
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:85ae72fd-c7c6-5d4c-bb15-9aab204c48a4:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:dc3ada64-773e-553a-a108-013d1e73020d:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:314e8aaa-241a-56e6-8209-fc04794c45f9:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:449cad44-9f0b-5490-bc2e-f5afb5664340:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:543ea90b-accf-5393-904e-5f67c6862f69:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:73b2bf20-d69b-5095-97d9-4f114ef8c7e1:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7f070093-88ce-592a-9116-d4a426d030f1:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f3c3b6a2-e20a-5dd7-aa0e-a1a4a0d42333:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9c6a7dcf-b90a-5c53-afde-678479117668:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:71b340f9-52ab-5009-98a8-1c02a15be738:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4c7a3b7a-4eed-5505-be34-f98437200654:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ca928fcc-35e6-5590-830e-0688bccf7cf0:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e6ec8dff-74dc-58d5-9a6f-b90b624b76ea:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:498cf536-bf5d-51ca-b9e9-7b4ac53f1e5d:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9ad5a86a-4c3d-525c-a5e6-227e4880101a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4fdb6b34-9858-57a1-b227-a0b8f01a1035:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6a30a26b-fe0d-58be-9a61-a4a0241ef229:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:09475c07-c704-5310-b24e-aa6049f8a1ef:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:26d10a9f-aed7-591b-931b-66fc835f1b31:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:fa7cb560-6b50-5f6d-bdb2-4f0c1646f699:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e06a8a32-d66c-5601-a6f7-35a63c563015:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:43f0b888-d243-587d-83d3-5b425b14d5f7:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:dbb96589-b34d-5c52-9e07-3f83e6c1fb46:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:473b9ed4-202d-5feb-8674-0610e134286b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:966a7106-9d70-543c-a0b4-ba559017ca2c:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a225d921-8f22-56c0-86e3-78cbceb10383:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:07425a2f-9463-5e79-9a61-a0728892ae88:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:643d9669-a4b8-56e2-9488-0a02f84dba2c:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:85e29110-41b4-5dc0-8bef-05b21d9fbd20:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:84cc3a7d-e824-50e2-b434-fc9a24351530:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e8dd40ae-a15e-59ba-95c5-f79daf3464bb:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:465881fe-d9ba-544b-ac57-8874079d8b6c:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0ac1fca4-583a-5646-bb46-c0e6a03f29fa:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d76a2771-39a8-5a41-89f2-7f219b3b0bc0:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c3ab397e-71cf-50c7-af5c-55c4fae94347:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:47b82c81-7dee-5746-a71a-29e7418146f1:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b521ccbe-c705-5cd4-9894-91cb165820cc:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:bcf2785f-b44f-5517-abca-b16e13fd32fa:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d93a7c55-2612-5d9b-b3bb-bd25883f0368:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:eac46e26-fdcf-54f0-8ce4-cf5ff98fa17b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ee340432-dd64-56e5-9cb7-36849fbb2871:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:cbc11a9f-997d-5e28-a7e6-346f44abee14:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5d9705f7-b2c7-503f-aad4-1e5729b00962:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:619f195e-686d-5b96-8e86-e3df9e6f4752:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:36e9e50a-0614-527b-ad79-e9982ee6bee4:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f9e19d0d-cecb-5af5-9a50-2c8dda78d108:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ea47c09e-0777-55f5-85b3-77009698628b:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5cd002b8-1d87-5e17-a546-3f6abbec2089:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1e1d219c-206b-5078-9bed-25471690c1fe:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:cd0f4251-fedf-5e76-95bf-e77a49c4d090:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1f95093e-dff0-52a3-be22-eb4018d99808:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0535d6b1-07c5-50c9-b109-35beef9510a5:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5cb6dbea-1a14-50a7-b97d-e5b335be1567:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:22df8c67-70a2-5ec2-94a2-e985a32b51b3:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f581eabb-ad26-59d7-942f-798af0659416:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9c789258-8f1c-58f4-8ff0-08d127290d2b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f9e6c34d-667e-5f43-bc8f-071235189ddf:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0a8ec3a8-1ca6-5083-ab3c-6d2036af3aef:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ee39a14d-eaf1-5344-bc89-4ea636c1be22:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:93d71dc6-6419-5a75-9ffd-0e74d6bf5767:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1c3d1775-62de-562d-ba46-4067aca2c848:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:257689a2-312f-545f-b273-b270c0e0fccd:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:14ceff65-902d-58fe-8cc2-06ecf39b3f01:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0ca6d969-ea20-5343-a7b0-59bd99c7e65f:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:458d6bbe-e113-54a1-afbe-bd5465698d35:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8fd84123-ad49-584b-be0a-80498fb447e4:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:490cd536-59c6-5608-b86d-22a348a7c81e:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:35f1a175-ef13-5ae4-a58b-c1c4de879443:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3d33f80f-f528-5cfb-ae1d-530726e08e9b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6a368237-f466-5c18-bdcd-915f063d8c4b:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8af5e276-7330-5254-af09-f54bb7f2f61a:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:48aa45a9-60d1-5470-b312-512b9a17590c:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e5f4fbad-8f1a-5367-bedf-ee0afb8ec791:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:34462fa9-39fe-5a29-a0ac-4d330e2dd811:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7c576be2-19df-5b1f-82fa-f36af34354f0:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:fc4d97ae-2c59-5a0b-9133-a3984d2e5cc0:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9916a0d3-89ce-52d7-bd27-60099a657f89:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:95511e32-3889-5740-bd57-e6ca5dee01c8:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:63e748d0-6116-594c-b79c-2814cc2b35f1:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b691c7e9-d3c8-5ef7-905f-116d181902f4:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ef8ca6a1-0597-57ef-bf69-53621fe718c0:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:54761418-335f-51b6-a49e-fecb924e96e7:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f9e9e6cf-3a2e-57ce-9dc6-3476bbb08d04:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f13e2b18-607c-5518-88f7-6dbed465bf1b:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:fa20653b-1991-5605-90a9-def761ce98d4:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:83e9d94d-acbd-5a35-89c6-0336eaef3d8e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8adaafda-407b-55a9-87f5-5e23c2802a0d:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:aea53eb9-14cb-55bc-839a-f514d4940223:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0f339e9b-c0ae-51ac-991d-3f70508b7f2e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3e247067-09ac-52b8-90b1-2664e33eba58:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:75e9034a-16eb-51d1-bc06-2ca6429d32fc:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0bb810d2-7b8c-5a0e-ae05-9d47270fae4d:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:bc8c48aa-d78e-5179-9015-c452e9af4700:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0311d5ad-9db4-5a00-90c4-f301f8ba40b9:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9fcf4c9e-f277-514f-9e55-5cfd84a2017f:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:216c46b2-af5c-5e03-82af-f28fc02662cd:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8b07978b-caa6-5e4c-a655-08a3db3cbf55:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:64c32a1b-a50a-55b1-bbb9-bae4c7be1b56:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:83ea9684-7832-5b38-8300-94af7cbe698b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1d94e1eb-1750-5cdb-a352-8cc953d9e40b:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9ec01d7e-9d9b-5e50-96d7-73d4abe4590e:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:620902af-c7b6-53b0-abb5-a0732a753891:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6b2adc69-8b5c-5bee-91b5-6aff893d5501:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:74f7c830-70f4-57f2-9e6c-f807de9d13c4:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:07d3f4c5-7a48-5e6c-a7e9-637e64241ed3:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ec627d38-808c-5061-8c5c-336940ee206b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b0989c35-9a99-5e84-a5f8-bc912725fe13:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:482844fa-e04f-55ce-a44e-a7dc06a43b17:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:2be95765-e3dc-5d90-8291-257eda24e056:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5917f8ef-4b23-5b06-8e53-6ad1b2a27e1c:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:310cbffc-9e86-5004-8582-d5aa75a54438:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:153be716-60d0-561f-b6cc-fe4ef4173e0d:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:868b780f-ee20-5951-8386-251ae4003392:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:cbfb773a-db70-5bdd-880e-73eab91330f1:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9e805fe0-927d-59b7-a539-750ec0c33a3c:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:20c5fc86-c369-5936-8a0a-907e2c0044ef:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:659f173e-c34b-5535-8297-63b0a43c2e57:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:28a95315-a31d-50bf-b1d8-24b7dbc91e68:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1ae9142b-38d8-5c58-b57a-67b1f249fe67:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3a757a76-bf2c-58fe-b3a7-33d62381399f:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:858ee435-4d10-5b18-bd7e-d1e10ea4859b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9ddf9a8d-b5eb-55f7-92ed-dde29079bc6a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6c935407-a064-533f-bb62-fb80f88b5dcb:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a5d56df5-20ca-59b3-b10c-dca24f2b8544:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:361eeb70-80bb-5070-b25b-d8431f2b8a25:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a96b86bd-0f6b-58f5-9146-e5d2c962f6c4:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d592a8ec-cdef-53e1-b163-0da4d7ae38a1:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a1f2ba09-b722-5bfb-ac9b-b6af9dc5f7b4:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8048909a-778e-56d6-8084-015b57987c6c:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:36f9f9f1-4052-5e14-a621-5b01b069cb5b:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:236e6ad7-486f-55d4-880b-9584c72614d0:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:469ea59e-9dee-5950-bd57-4f0dac8f6ccd:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:68b0d1f1-2724-515f-924b-81a807b13168:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e73164db-ec63-57f2-8c1e-35e14d6813a2:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3e89b1b9-7ce2-5a9c-b78d-f586dacc9aad:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9a81b064-d2d0-5b32-a323-6aed0159b08b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0b487690-11cc-5ff1-a2e8-3f41a2d1535f:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a28432f2-86d4-5db7-9c0f-0b18d9959aa8:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:71ad88c9-7e11-5e2c-9393-cc2fe416afee:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:be81b800-2382-55e9-937a-1317f520d0c3:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5c5cb7d9-63f6-55ab-9b87-5466abddbd98:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7f3239d4-987d-51a6-a726-885c9cde8183:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0f4026bb-9445-56bc-b65b-eb88bee5b47a:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9df2b654-5dd2-5ebe-99ef-b1ea906385fc:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c40ea6d4-a15b-5112-80e2-b52f2ba2365f:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ac79e4b5-140b-5c34-bdf9-0e47808bf1f9:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b67ba265-5bfc-5716-a6e3-4b6d8eee8fde:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8142952c-932e-5328-a607-462134c4d5ca:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7237c881-7fb3-5edf-95c4-8686c1b41c93:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:415369b8-2ceb-564c-81bb-c60b7e3abfc5:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e0feefe6-39b5-58ec-9568-5a3afed9a21c:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:24e05a6f-dfd2-52ad-88b6-9d1695996bf0:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e9d254f1-a1ee-5c6e-9856-012d2ef07771:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:fca4ca7a-000c-52ed-903a-691343f0a6e8:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0bf89a97-50b2-59d7-908e-baec5c306370:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7e66651c-6b42-5553-85e0-5db6600b0a4a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4e77e959-f7a8-5271-b2e1-9493c282c456:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a1e103f5-0c6f-5480-8416-cbce88699723:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c3993762-986e-5009-a541-59fa3cc07ce2:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0dfc6142-fcc6-5e96-b267-0ed340cf71c6:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:abb6d2a2-44dd-511c-8922-50b5e6081e81:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:88e78f04-261f-5b8a-a228-88c18aa6d4be:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e8412896-2686-5781-9751-1a66cc509992:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f29f6e3f-2a45-50ef-b6be-da4db9640b6e:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3015fa56-5f3f-5e84-b77a-bc08972d2715:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:780d9a68-62f7-5137-9a12-0f1f84f6795f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6f449988-6819-5920-8d4f-b70818f3eb04:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a56f92ff-e16b-52dc-9c1c-1557f774aefe:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7e950f72-073f-565e-aaaf-39d3a7b18948:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:55851dcd-66d7-57f7-8872-2be7e92b983e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:35e17635-95b5-57c7-979c-879c50312271:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:37ca582f-97fc-55c1-8858-9ee73bf4ef96:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e94853d5-e25a-5b52-b748-b0532cc887ba:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7567cecd-84db-5f08-b869-cf099b9af003:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ecb8fb2d-ed8b-54c9-8037-f2c5e28ecab1:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4431deae-8363-5334-bd53-a842d3e1661f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4f150c1b-09a7-5132-9661-a89c2e6a94fb:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4a34423d-2709-5e9d-93aa-643ee4983f09:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:72bbd94d-3c63-55f6-ab22-b53ae876d7d1:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:faa3ddc2-68cb-560c-bd4f-771daa6e6696:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d1e861a3-f46f-5022-b915-52c595aa04fc:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:22b11505-f391-59b2-aac2-d839acf465ea:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4d87abdd-fda6-52aa-8f1a-7dc7bda26937:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d4d6850c-47d1-5640-98ed-3df4153919bc:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9141ff5f-71bd-5eec-8981-e94fb0bafbc5:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:150a4e95-8ac0-5aaf-a725-517e281c3b2b:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e503122e-220b-5cb4-924b-afe011620c93:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:31fc02cb-d351-5915-8df7-efa51658b164:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:47c1fce0-ca27-502f-885e-b62e0e071d08:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:147ef880-9ab2-5813-88a7-83ee12b4f757:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:779e50c6-f460-55c8-9695-d646bfd13d95:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e1a95520-bc1d-5186-9318-de2272af1e51:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6734bb8b-1ce3-5f42-8894-604d676d3e43:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:265ce8ba-c5e2-5ba2-a60b-336aa9140aa1:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1772812d-75ad-577c-b4c3-7b65387c065d:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:2fc4ef32-19c5-516b-9ade-d2c63a81907e:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0bcaf3cc-94b9-5803-a443-83637a165934:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:38852943-1985-5241-8254-4b36df0571bf:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:60436c2e-742f-584f-ace0-ee9a0a090430:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:920bdd36-c8ea-581e-a45e-1076c416613b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f9dd53c5-6805-5a03-9224-3b645b1d68d8:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:89c4a9c4-40fc-5c92-9dd4-e703fa7d330a:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8b20135c-df83-5e9f-9e6b-535e24d3dc24:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9e666d06-2f39-5fe8-83db-a64bca72e51c:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:2b5c72a3-c1dd-51cb-b96c-342b7cdd381f:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:afd59b8a-35c2-548e-ac15-6eb75e3ae023:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c099eb5d-ae60-59d4-8b8e-32a70a844dec:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9a5ab7bc-cfe9-5328-9339-a9db30464583:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6bb138c7-bc51-56d8-9ecf-e59558cce1cb:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:2efd85ba-525b-5146-b663-ea180d159c82:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d4833132-e3ca-50d4-95f2-480d89cbe8c0:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:03dbd6c5-e8d5-5997-b18c-3443d232b330:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7322d0db-001e-5725-bac8-dba52de77398:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e0898530-3194-5d01-a5b8-b1a24ec1fd7b:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:923bda22-9250-5f18-87fa-0cbeb96d8780:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8247b454-6b42-5288-a7dc-d66f9eb22af8:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:33a653f0-99b8-5a18-b4dc-49b63104ad47:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:19a83ce5-d0d9-5f72-b01d-3c5446bde77c:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:53f5bdb4-d0fa-5be7-9a3a-8ed796adc97a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:021a9392-f93b-5aab-aa89-8e51a4a2a094:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:52b2ad6b-0067-59fe-b828-81ddbc00b878:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:33c7dabc-442c-5018-b4e5-c379868d1e20:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7309e325-c14a-5ce7-9766-35598cf90f6d:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:bc7cc3fa-008e-5d45-abcc-83749d51a154:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a8beb782-f9e6-593e-8924-74a27eb50428:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3f2273e5-60d5-5d87-9d41-c935d3524fac:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:cfd56c73-e2ef-5ea1-9142-fe19fcff5f3c:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:39f09899-3f34-5870-ba89-867fc3f82c96:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7d8fd8d0-d61e-5cbf-b110-4a48dcc6cb35:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d0c8a26b-089e-5404-b28a-7de65e8cbf7b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c3587a1e-9539-562f-aa84-ae562a1291e5:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d0ccc358-c462-5d11-bdd3-19659ef325ec:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b4852acc-16a3-5ee6-853e-97c44afcc1cc:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8894d4b9-1d55-5fb2-a11c-a7eb3f6a87e8:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1a9a2f9e-8a3d-5902-820a-cb4b4a159269:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:71c334bc-6d47-5d75-9d10-673a84c13308:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f479169a-550e-5388-8efe-20cb35d5ddf4:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a76b89c0-61d2-5850-88ee-9545a1b5eb66:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e297a3c0-d586-5915-9470-02f01036d5b7:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:315e5556-eb7a-50b0-bd1d-ad172705db11:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1e5c5713-0317-5353-baad-c526c5495ce5:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a5d29e17-8592-5cff-ad61-21ea695adfb3:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5972b400-26e8-5213-ba5c-4c3edd3887f9:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e45c9195-6467-5f6b-bcfd-ff1c18f44b2a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:eed70a90-b91c-525b-9ffe-d9b0bd35c9ae:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:948e80af-18fe-5cd8-b17b-77f5edc6a125:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c839d2ae-c446-53a3-972d-900fd6992416:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3bd241ef-57fa-50f9-aa6c-1666cc1e61fa:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:77e7cd2b-8ace-5830-91a4-804276c02e2d:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:087728a5-3fb2-5f3e-98ef-ce67e89c9ef5:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b6728d3c-096e-5264-b192-dd20b9d1bc5d:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b4d74846-2692-569a-ab04-71f98e844085:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:cbbf3c51-be64-5def-9d7b-fe24dfcf1fe3:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ddc99e3d-9aaf-5047-b95f-7d45f012cf41:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a6ed93e6-d763-5e51-93ef-122a6c4f8ee3:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9f504d61-037b-5251-87a9-652d912bd711:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4f06a6f8-4212-5abb-bc26-aba6aa38bf11:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4f9bb62f-8e53-56f3-be4f-705a12266f20:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d3368609-4319-5457-b4c5-0a3489a20307:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ad4e8be3-3522-527f-a3f7-c32d07e1816a:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5a57e9b3-3932-51d0-8ec7-796c989b7b1d:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1e77a084-3493-50a9-9c59-20d30ab27663:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f9afa527-e63d-51f0-b238-676a6f0d1089:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0d16701f-8757-5c09-b3ca-4c93bea1dddf:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7c4baa89-bda2-5bd2-8a47-3c6e348f304e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e5ef9093-a873-5aed-8ca6-77b35b95c848:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0bb09160-7420-53d8-9706-07165ba4ccd9:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5bbaf43c-b47b-5e34-ade4-f7d35cc192eb:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7ed247cb-61f8-5b8d-b96a-ac4dede68ee8:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5c0be875-a99a-547c-8cf4-794fdb13c244:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:443cc5db-20c9-5fc2-ab2b-b25c0d0131d5:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:44d23e27-9517-5fb6-bbc0-23d58185c864:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8eb3c590-2f4d-53e2-a7be-1c95b93b912a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:42766107-316a-5a41-8376-d52c86183a7f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d581bced-6fc1-53a1-985c-fc222ecc4973:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7fcdef73-f173-5b07-bc51-0af2e6104a05:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:fdca186d-3a66-51b0-888c-36e66b77bf19:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:95f19861-3616-5d08-87e8-2b5e4102f5be:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1871408b-0042-533c-9999-dfe6d5e50a8f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1d05dc1f-fe16-5aff-88f5-2bf26be0e8db:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:754fed77-bfcd-56c0-9d75-3c5e616e0375:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6a488e25-b53f-5bfe-bf2e-a68f756ecd07:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f3fdebd4-0288-5f27-840e-ebdcc05bf896:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:82fa62d9-ac26-5340-bb5e-182c593c34b0:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:bf45e65d-ac25-582d-86ed-1090310b655f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a132148f-ff42-5714-8d09-7d9b4e422be1:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:15292f8d-df53-53ff-aff0-fa573eaf1109:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f00ca70d-c19d-59f5-9ad9-25e921adfb06:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d4447c2c-24e9-51e1-8226-2260d3174788:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:14755b3f-d983-5f44-b8bc-915050d68214:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c5ac4524-9c4c-5fe2-8727-c003a744b313:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9a031ffb-14f0-586d-8ec4-91a393ded312:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ac3df994-7b2b-5c2f-a09a-e85551e17fab:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f01d04ca-00ee-5860-b354-edf8a0f245bd:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9a1d9ea7-d82e-59ff-b059-3e45d9b1d186:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7cc586fa-f3e9-5062-9ecf-729ac68ff3d9:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:884d5929-c56c-56b2-978a-274a77d9e037:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:557abdf0-1b5f-5304-86a1-c7429d21e655:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:89aeca3e-1a38-5218-82ee-cd4abc7206b4:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:cd73dfd2-5274-5800-8d13-b9bd5c678f23:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8cf48612-9e07-5084-a164-3663213ade6e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:48e9ecd2-9e5b-50af-9aa6-ee778cdaec39:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d3e39b79-7b15-5d28-81bc-a6fff95abc0a:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:00fae870-4d2e-55eb-b52d-65cf1341ac25:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b9643043-38b1-5bcf-af0e-7a820322cd2a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:44371bc4-866c-5854-9605-92a54ad907d7:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:fb3b1221-637c-50ae-97c5-cbbf5f4f29db:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f246120d-d825-5a04-a4ab-07b734ec3950:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1d66b1af-306b-51fb-8433-ae36e4a9408f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:904cfb17-b852-5f7a-ac03-e25b677f6831:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:bc03480a-889e-5ac3-a2d6-32be63338624:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a9c69537-a316-5a1d-a26f-5f20ae623185:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8b5b48fa-04d4-5a4c-b991-c941f20e8ea2:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:19825546-e44d-5d8a-af2b-6f493f407c2c:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3d07f470-6100-5b9a-a4b3-4d5ad93776fd:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5bd8a3e5-b473-59a8-8f0c-2bc94dd9198e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b995e348-89a0-55c6-b220-d7c74d7b276a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3fe65f99-878b-5bcc-af7b-1b7cd64e05fe:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e74689b3-bc6f-5172-8cf9-cdf948464d40:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d56acd38-03bd-54e7-bc43-4660867702af:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4e767b5e-23a0-525e-a8a4-cf0c00f51b15:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:053b236e-c548-5d01-a6db-f565606caefa:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:603ab0a4-3a6b-587e-91ae-64b07868536a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:41a8cd3e-ae2a-5a80-949e-78d449ec200b:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4848a64e-b6d2-58d2-9cfc-7301029a001c:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e4c52afd-a1c7-5cd6-aec5-273ff2622c4d:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:700c8eb0-b80c-5f69-a2ad-5e550135106e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c67855b6-c535-58ae-989d-b1dc2bcfed0f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:395a8d94-f42e-58db-9a8c-39917b2cc105:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1ee1deb1-7d24-5f70-ac0d-fd6bc73d5bf4:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:53cc4f59-c82a-58ab-8d61-6ac104fecdca:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:351ee72b-5433-5aac-865a-0140ee7b0fc8:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0f53db9b-7c15-57e0-b920-f3fd099ea4a1:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3b4dae74-a97d-5d65-be22-c93007b00d3d:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:25ee16a0-afa7-5f51-8e8c-263835cf368f:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:afe6dada-ea85-5553-8a3b-e084bd242cee:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:213e47f2-6620-533b-a316-d5e03e728286:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:39aaf1ca-9c9f-5b2f-9f3f-e8988dbbbdda:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e7c45144-a5aa-53a5-9cbc-3d78926a8f02:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ea7b072b-faeb-5395-bce0-51ee3789b08a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a52e7a70-86db-574c-8c69-62cc6e72e968:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:2daa2933-8a7b-5dfd-97a2-c5a51a9c4740:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1b59b2b8-8459-545d-a07a-e2e19d1f8a18:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b50c15a2-9d53-565f-853e-8dc71210a2d8:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c9ac5b08-f4a4-56c0-8c0c-282b16d7fbbd:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c6408ade-4ee0-5ce8-89f9-a42420cbe9b9:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:df111a0d-a68e-58ef-8cc5-6b5e1dc42b01:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6362ce4e-b2e8-5b89-a3a6-b0524e4c2dec:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:df8e73a9-a446-592d-8beb-42503a865e1b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:98607500-05fa-5a39-90f6-c11cc7a1e2f4:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9d97e2cc-36e9-5287-997e-ead4d839734c:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c792d7ac-d5c2-505a-a84a-8f7c5d5d7a1b:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a511b429-d8a1-5190-9f04-f780210acacc:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d5dae15a-1f1d-541e-8765-6a6c21fdd2f3:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b916cde2-5b0d-52cf-82f1-cac598bd837a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b3171f4f-bebc-51a7-b1dd-3327a1204bb7:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4f702881-4ffe-5a1c-ae38-848fd4aaa8d3:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9eb40f15-beea-5c12-901c-f8a223330194:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a3cc6777-5a37-565e-b46d-c4420e560ff1:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:af72577f-c457-5ce4-8075-4909ae705bc1:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:111057db-c4ad-5859-b8fa-bee14f4ccede:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:47a60880-f60c-5012-ba84-e7cbe7727239:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4e971abe-604f-5c86-a7b8-cd1e67fd9097:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a5f83733-3481-5413-b379-a19d1d9035ea:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4752be9c-c7ec-5bd7-9422-81fa28a8517e:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5c7f2e2f-4a60-54d4-aae9-312d15ef7412:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:003f3d72-4acf-58b2-a322-eca4709a3980:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5487e9d9-1efc-5cae-9805-e3d2bd314742:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:72a70068-64a3-5b2c-b42b-b65d1171ce61:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:895a2b64-c29a-50e5-8886-a97e42e03e7e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7fa17de1-f4c9-501b-a979-d9603feb1edf:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:99aac600-fa0f-51bc-8781-5fc88a424d25:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6a8b6ba0-58df-542a-b208-fa11ea11f860:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:bd6c1c7a-2839-53cc-bee7-ab1ecf9a0e02:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c9722f81-2e71-5093-ad99-01453f1aa24c:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7b9dd959-e4d2-5391-b19b-b49a932f69b5:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e7492e90-1074-5f62-accf-d2af93522d93:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e5a35a82-e744-5d2a-918a-6bb4ca01a084:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:21751072-167a-56c3-afa6-3577113a9ae4:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:eab48289-1e1e-5a50-92f8-e0913158cdd2:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e84a20be-4d24-58f8-9f13-4ffb4bc7d1ad:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f9e23d6e-f3bb-5b70-8a2a-89fcf881ecaa:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:2d157034-e4af-5357-8d09-386b8a2a2195:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:043a049f-431a-561c-8a24-c50c7f36c264:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6a25afe0-286a-548e-b74b-cb1a3ddca67b:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:429fa26f-ce0d-5574-9f57-78a04123ae6e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:30177d3c-8f6c-5881-a43c-f765c318c59c:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4c013ec0-69b9-5bbd-a50c-6365238d6552:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7e68745f-69d1-5eca-a8f5-04e0a2abfa57:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a6dd92fc-ce27-5c9b-be34-47167f171efc:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b01e3349-7a47-5fe0-a471-786bf6b004fd:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:bc54cef8-cef9-5da7-a79b-1cfd2163f8c5:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e2de1c17-3789-5e1d-bdc8-3bc260868eed:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:dff347ee-21d7-5661-aeeb-89f6f2439bc0:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0c87c6c0-af15-5a9a-9e72-ffb98f4aedaf:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9ab72c26-eb5a-5aab-989a-83bbc8bcdd79:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:36d0bbda-6956-5bdd-98f3-deee2e0bb6c8:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c8cf4bd4-7747-5bba-8a18-7a1d7cc09398:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:263934f4-9038-53ca-a1a4-1ba2a4c5039b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3da2ab27-1e30-5d92-9428-9423fe49e8ab:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:faa8be9e-92cb-52ce-920f-c11509db5883:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b2162724-3941-5196-9fa3-e3d59816e968:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8bbfd29b-c598-5b10-b845-a800f04bd5bc:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a993784d-e229-5053-a9e1-f7191fba5415:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c41f6ca6-76b0-54dd-a4f8-acd961deafa9:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6dd6d77e-9877-5780-819c-6671230a2f55:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:da21ca76-63ea-5252-8b50-d8cbe79ff211:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e7e675f9-f31f-56d5-abde-edfe618cc2d0:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:eba09426-9c75-5212-a60b-3e5cdaffc51f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d1695461-a548-5866-8db3-2b41c9d3919c:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:39a4f230-cbe0-512f-8a74-8e779ec591ea:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:cb509389-67b8-579f-8e0d-389e38293326:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:164ae398-0b43-5f35-ac0b-e06ea3a77bab:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:18eee289-1012-567c-8b87-6c65c7478c31:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9be46367-1ebd-59ad-b455-ae8f961b933b:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:90fb65af-cd1b-532e-924e-3c80ea36fbc7:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7688c508-ac87-5a45-99c7-efc939ee9ab0:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:88f62451-91e4-5b64-8941-7da2a4ea0d1f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:25993282-efcc-5194-9a91-ffe8a9f18b18:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:11fa2827-8343-5947-b314-d4ab5daf7be5:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0a916952-168d-58f0-91bb-36d758b0edb2:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:22e488f0-0b3d-5d77-8e74-3e71f2ace80a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:29bd350b-4fdd-5b48-8d27-afe56da49d57:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:16084e6f-9b7f-5ebb-85a6-6f2a8a7328d4:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:19fb5be9-6406-5d13-b1bc-b7e5779d3488:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:06850e93-25ed-5226-b756-5a978c6d0fd2:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a45b8bfa-5ff1-50ae-99cf-1b43f5ebc40f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:62e0274c-0f12-5201-9bfc-d4f25e01b28e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:753f50fe-441a-5883-a0cc-bd8788caadff:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:26159872-2ba9-5d2a-8cc9-8eb9147a4d13:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:595e3b36-abac-569a-9f7c-194f19c9eef8:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f7ef6260-7a06-5ca4-b816-24e8a15b2062:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:492e61ff-2ce3-5dfb-b4cb-8535d32bea94:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:4c79b0da-c40d-5e4b-aef0-20a94e98e730:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:2503abb4-54f1-52c8-87e3-7372a9eac2cb:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:898e2cdf-e026-58b1-bffd-a853e3db92e3:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:2d1d9acb-a253-5b58-8cd8-1dd2367b1b23:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3023c465-3c52-53ee-b8ce-5a40ff9a5b93:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:24b106a1-1bf3-5529-b711-c374f6f883ae:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:60ebf823-e01f-558e-abd3-cfa182c3d3a2:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b6947c33-36ad-51e4-bee4-58c28c3225ba:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9bf444bb-3405-5084-966c-88a7a8ef82ab:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d2d6e931-c448-50d0-a8a6-d92fc53791c2:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b23c40f6-0435-5978-9570-18d536a90df9:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:588b2b0c-378a-57d8-a49b-98462c07b675:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:78df9029-1b7a-5f56-8576-1ebfc182817a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5ee22a3b-0390-58dc-9a6c-e93b15a57b38:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3f9455da-108e-58ad-b148-de4858bc4e98:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:51c0b2dd-43a2-591f-a36c-6657e4c83f98:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:68ff72f0-5d59-591c-80f7-bb44d06139d5:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:8998b5d7-5b1f-53e0-8a11-a04794ee742e:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:782b46e2-058e-5b59-836a-9fdf3ff64018:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:61a6327c-357a-5e7d-a7ee-27e0406599ff:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:97c5e255-15f4-51a9-b741-07327ef6e71f:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c6a709aa-dc0f-5d75-8f72-54d53334c0d9:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:5814e833-9ee6-5fe8-a285-db413939ba1e:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9d801782-dd50-57f4-9b92-4eb9c5dd2fa7:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b788c75c-c36e-5da3-89f0-163ea77196ab:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c67d2da2-d82c-53fe-80cc-d0a0b83efc0f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:42303a7f-a8a1-5a4e-a42c-5db8f5f9c46c:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:76dbeb91-c2a4-53a0-9a3d-697d522270f3:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:be72d0d5-6744-5014-a8f0-2861b946c96c:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ac1a190d-fc9f-5d48-998f-78c41d988d9f:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:dae9f04c-4492-5331-8f76-4aca52493546:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:51fa5c3f-99d9-5c5d-8716-05c66f4b3506:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:843f52dd-abd6-5b84-8db8-94c268faf33a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:62731f1b-381b-514d-9941-ab404de3dc76:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:88733849-ff49-5f4e-89a9-2853b929e19c:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:51c0edac-a77e-5bee-8293-f77203c0820e:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a5992a70-87a3-5876-a8f8-1c1318c7b667:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:2f13c6f8-908b-5d59-b05c-4b6ce8f2dfc8:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:9b4d5f05-e6be-50f1-9eaa-6654b00d2d86:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:71161b4d-78f7-5b3b-8ff3-885ffc6375e1:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:16196da0-3bdb-592f-9e03-7a4a37d4e728:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ca721977-b0c3-5cf5-aa44-2ed6f7cef943:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:c60737f3-e381-52a5-91e5-8496f2f7c3ac:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:7b7cc8e3-a60e-5a96-ad1b-3567606b7b80:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:517b5461-f8e3-5514-9952-fc96b3c2b84a:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:6126e012-e209-506b-9345-f00f3d8a2c0a:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:3654e6ad-2c94-540f-a04a-8f7e923dfabf:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e0c75ba2-3fc5-54cb-8e9f-5212af4f7fa4:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:10cc4f3b-f522-5b9b-a42a-efb4437d7dd7:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:aa597314-0935-56ad-83b6-78b87bbdc5d7:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:1298df91-ed90-5183-a57a-12cc805b021a:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:cbd42b39-01fa-569f-8ada-5487a5eb3453:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:09d6f0fd-6efa-58b2-aa2c-2ff26c562ad8:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:01fca6c1-5a16-514c-8d08-d2a27dda10a1:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:e7a4449d-19bf-5a47-a351-9d025715af75:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:958a19c3-33f2-534d-8296-e08c0cdb5741:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0fc64329-3d46-516e-9b97-419a2695c1d6:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:0bc0eb4e-468d-5eec-a34b-639dd0a1ccca:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:199a11f3-ccf1-5c7e-8ed3-2e3486025986:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d69b1dbf-ead4-542b-a1b9-fc0808693d6f:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:ce87298c-da48-5314-9427-cb99f52791d6:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a88c010c-0d8c-549b-bc7a-c79aa0b477b1:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:b9b0b4ad-d7ce-53ac-9f76-5e7f20b3a848:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:f6b08705-b679-5395-98be-7a5b61a415be:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:addc2ad3-b568-504b-9b0c-761bbf6e7efb:40",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:d92c9dfd-b34a-584b-90a5-e483e66a0e67:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          },
+          {
+            "tableName": "board_climb_stats",
+            "recordId": "moonboard:a22862a4-b94b-54e0-8c74-aef94e0d6933:25",
+            "deletedAt": "2026-08-13T09:18:19.145512Z"
+          }
+        ],
+        "cursor": {
+          "updatedAt": "2026-08-13T09:18:19.145512Z",
+          "syncSeq": "83258"
+        },
+        "hasMore": true
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T22:58:50.827Z",
+  "upstream": "https://ws.boardsesh.com"
+}

@@ -17,6 +17,7 @@ import {
   materialSurfaceContainers,
   type MaterialSurfaceContainers,
 } from '../theme/colors';
+import { iosDarkColors, iosLightColors } from '../theme/ios-colors';
 import { textStylesByVariant, type TextVariant, type TypeStyle } from '../theme/typography';
 import { buildPaperTheme } from '../theme/paper-theme';
 import type { MD3Theme } from 'react-native-paper';
@@ -44,7 +45,11 @@ import {
 import { variantFeatures, type VariantFeatures } from '../theme/variants/variant-features';
 import { secureStorePreferences } from '../lib/preferences/secure-store-adapter';
 import { assertNever } from '../lib/assert-never';
-import { SCREENSHOT_THEME_OVERRIDE, SCREENSHOT_VARIANT_PREFERENCE } from '../lib/screenshot-mode';
+import {
+  SCREENSHOT_THEME_OVERRIDE,
+  SCREENSHOT_VARIANT_PREFERENCE,
+  screenshotModeStaticColor,
+} from '../lib/screenshot-mode';
 import { syncDocumentAppearance } from '../lib/theme/document-appearance';
 
 type ColorScheme = 'light' | 'dark';
@@ -204,8 +209,20 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
       return { ...materialSurfaces[colorScheme] };
     case 'liquidGlass': {
       if (Platform.OS === 'ios' && iosSystemColors) {
-        // PlatformColor values adapt automatically on iOS — return as-is.
-        return iosSystemColors as ResolvedSystemColors;
+        // PlatformColor values adapt automatically on iOS — return as-is,
+        // except `separator`: it's a translucent native tone that composites
+        // against whatever paints behind it, and resolves against the native
+        // trait collection ThemeProvider only syncs from a post-mount effect
+        // (see `screenshotModeStaticColor`'s docstring). Screenshot mode
+        // swaps it for the opaque static hairline so it can't still be
+        // settling on the very first captured frame.
+        return {
+          ...(iosSystemColors as ResolvedSystemColors),
+          separator: screenshotModeStaticColor<string | OpaqueColorValue>(
+            iosSystemColors.separator,
+            colorScheme === 'dark' ? iosDarkColors.separator : iosLightColors.separator,
+          ),
+        };
       }
       // Android: resolve from the single source of truth for fallback colors.
       const fallback = colorScheme === 'dark' ? androidFallbackColors.dark : androidFallbackColors.light;

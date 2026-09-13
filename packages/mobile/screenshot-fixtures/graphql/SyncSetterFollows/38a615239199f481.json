@@ -1,0 +1,32 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncSetterFollows",
+  "documentHash": "4a02276cdecc9e278e47987aabd7741538b9540803b4b5632c902c9f5e65f525",
+  "variablesHash": "38a615239199f48192aa8fea4c431c0e349aee8012a6533a15a67331e88b5a73",
+  "query": "\n    query SyncSetterFollows($cursor: SyncCursorInput, $limit: Int! = 500) {\n      syncSetterFollows(cursor: $cursor, limit: $limit) {\n        documents\n        cursor {\n          updatedAt\n          syncSeq\n        }\n        hasMore\n      }\n    }\n  ",
+  "variables": {
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncSetterFollows": {
+        "documents": [
+          {
+            "setter_username": "The Pates",
+            "follower_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-04-05T11:54:32.423992Z",
+            "updated_at": "2026-04-05T11:54:32.423992Z"
+          }
+        ],
+        "cursor": {
+          "updatedAt": "2026-04-05T11:54:32.423992Z",
+          "syncSeq": "9"
+        },
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T22:58:54.957Z",
+  "upstream": "https://ws.boardsesh.com"
+}

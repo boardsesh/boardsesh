@@ -58,6 +58,18 @@ on:
         description: 'Which walls the board-backed shots sit on, "|"-separated, in slot order (slot 0 = every board-backed shot). Empty = the app default. Each entry matches a board name or a layout name.'
         type: string
         default: ''
+      fixtures:
+        description: '"replay" (the default) serves the committed fixture set, so captures are deterministic. "record" proxies PROD and uploads the recorded fixtures as an artifact, to be merged with the iOS shards and committed. "live" talks straight to PROD with no fixtures — the old direct-to-PROD path, kept for debugging.'
+        type: choice
+        default: replay
+        options:
+          - replay
+          - record
+          - live
+      frozen_now:
+        description: 'Record only: ISO instant to freeze "now" at (e.g. 2026-09-08T12:00:00Z). Empty mints one from the current time. Optional even when recording alongside the iOS shards on the same run — the merge takes the max frozenNow across every shard regardless.'
+        type: string
+        default: ''
       commit_to_main:
         description: 'Commit the captured screenshots back to main (mobile-store-metadata.yml then uploads them to Google Play). Requires the app-store flow.'
         type: boolean
@@ -103,8 +115,6 @@ jobs:
       # calls as production during capture.
       EXPO_PUBLIC_USE_RN_FETCH: '1'
       SENTRY_DISABLE_AUTO_UPLOAD: 'true'
-      SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com' }}
-      SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD || 'test' }}
 
     steps:
       # Committing screenshots to main feeds them straight to the live Play
@@ -272,7 +282,13 @@ jobs:
           # give the emulator room and a bigger app heap.
           ram-size: 4096M
           heap-size: 1024M
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          # -timezone UTC pins the guest clock's zone, so the app's local-date
+          # derivations (day dividers, the activity heatmap's today cell) land on
+          # the same calendar day here as they do from the same frozen instant on
+          # a developer's machine. The iOS side pins the same thing per launch
+          # with SIMCTL_CHILD_TZ; the local emulator gets it in
+          # scripts/lib/android-emulator.ts.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -timezone UTC
           disable-animations: true
           script: bash "$GITHUB_WORKSPACE/scripts/ci-android-screenshot-capture.sh"
         env:
@@ -287,6 +303,23 @@ jobs:
           # retarget needs both sides to agree.
           SCREENSHOT_RENDER_MODE: ${{ inputs.render_mode || '' }}
           SCREENSHOT_BOARDS: ${{ inputs.boards || '' }}
+          # replay | record | live. `replay` (the default) and `record` are threaded
+          # through to --fixtures by ci-android-screenshot-capture.sh; `live` passes
+          # no --fixtures flag at all, so the capture talks straight to PROD exactly
+          # as it did before fixtures existed.
+          SCREENSHOT_FIXTURES: ${{ inputs.fixtures || 'replay' }}
+          # Record only: threaded through to --frozen-now by
+          # ci-android-screenshot-capture.sh. Empty = the orchestrator mints one.
+          SCREENSHOT_FROZEN_NOW: ${{ inputs.frozen_now || '' }}
+          # Scoped to THIS step, not the job: a replay run never signs in
+          # (the backend hands out a synthetic session for the recorded
+          # account), so it has no business seeing the credential at all — and
+          # a job-level secret is handed to every step, including the ones that
+          # push to main. Empty on replay; the real value on record/live, where
+          # the Maestro flow does sign in against PROD. The orchestrator falls
+          # back to its own defaults when these are empty.
+          SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com') || '' }}
+          SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_PASSWORD || 'test') || '' }}
 
       # Hard backstop against a blank capture (the play-drawer modal occasionally
       # didn't composite into adb screencap — a blank board-view hero even reached
@@ -303,6 +336,42 @@ jobs:
       # so the floor passed while the shots were wrong. The relative check below
       # catches that: a shot under 40% of the committed size for the same filename
       # fails the run even when it clears the absolute floor.
+      # Stash the freshly recorded fixture set outside the work tree the moment
+      # the capture ends, exactly as the commit step below stages the PNGs: that
+      # step's `git reset --hard origin/main` discards working-tree changes, so
+      # it would restore the COMMITTED fixture set over this run's `--fresh`
+      # recording and the artifact would silently be a union of the two.
+      - name: Stage recorded fixtures
+        if: ${{ always() && inputs.fixtures == 'record' }}
+        run: |
+          set -euo pipefail
+          staged="$RUNNER_TEMP/screenshot-fixtures"
+          rm -rf "$staged"
+          if [ ! -d packages/mobile/screenshot-fixtures ]; then
+            echo "::warning::no packages/mobile/screenshot-fixtures to stage — the capture recorded nothing."
+            exit 0
+          fi
+          cp -R packages/mobile/screenshot-fixtures "$staged"
+          echo "Staged $(find "$staged" -type f | wc -l) recorded file(s) in $staged."
+
+      # The Android half of a recording run. Merged with the iOS shard artifacts
+      # via `vp run mobile:screenshot-fixtures-merge` and committed — see
+      # docs/mobile-screenshot-fixtures.md.
+      #
+      # Uploaded from a copy OUTSIDE the work tree, for the same reason the PNGs
+      # are staged: with commit_to_main the commit step below runs `git reset --hard
+      # origin/main`, which restores the COMMITTED fixture set over this run's
+      # `--fresh` recording. Uploading the work tree after that silently ships a
+      # union of the new recording and the old set, with the old manifest.
+      - name: Upload recorded fixtures
+        if: ${{ always() && inputs.fixtures == 'record' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-fixtures-android
+          path: ${{ runner.temp }}/screenshot-fixtures/**
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Assert screenshots are not blank
         if: ${{ inputs.flow != 'onboarding' }}
         run: |

@@ -1,0 +1,58 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetBoard",
+  "documentHash": "eef27e3fea10ae82fd4107aa5b79a7348719c4afa1bf4635d6a9c360f5b75f36",
+  "variablesHash": "0feba5725c2153d33f3167419ca103b05bed38493b6782f38fe3e88ffa0cfef8",
+  "query": "\n  query GetBoard($boardUuid: ID!) {\n    board(boardUuid: $boardUuid) {\n      \n  uuid\n  slug\n  ownerId\n  ownerDisplayName\n  ownerAvatarUrl\n  boardType\n  layoutId\n  sizeId\n  setIds\n  name\n  description\n  locationName\n  latitude\n  longitude\n  isPublic\n  isUnlisted\n  hideLocation\n  isOwned\n  angle\n  isAngleAdjustable\n  hasLeds\n  createdAt\n  layoutName\n  sizeName\n  sizeDescription\n  setNames\n  totalAscents\n  uniqueClimbers\n  followerCount\n  commentCount\n  isFollowedByMe\n  gymId\n  gymUuid\n  gymName\n  distanceMeters\n  serialNumber\n  timerName\n  canEdit\n  isPinnedByMe\n\n    }\n  }\n",
+  "variables": {
+    "boardUuid": "dcb443be-aaea-4637-8bf8-b20cbe031192"
+  },
+  "response": {
+    "data": {
+      "board": {
+        "uuid": "dcb443be-aaea-4637-8bf8-b20cbe031192",
+        "slug": "marco-s-board",
+        "ownerId": "3fa79140-3e0a-4c27-9f80-a3313685a45a",
+        "ownerDisplayName": "Marco",
+        "ownerAvatarUrl": "https://ws.boardsesh.com/static/avatars/3fa79140-3e0a-4c27-9f80-a3313685a45a.jpg",
+        "boardType": "kilter",
+        "layoutId": 8,
+        "sizeId": 25,
+        "setIds": "26,27,28,29",
+        "name": "Marco's Board",
+        "description": null,
+        "locationName": null,
+        "latitude": -33.635273,
+        "longitude": 150.280137,
+        "isPublic": true,
+        "isUnlisted": false,
+        "hideLocation": false,
+        "isOwned": true,
+        "angle": 35,
+        "isAngleAdjustable": false,
+        "hasLeds": true,
+        "createdAt": "2026-02-25T10:56:31.983Z",
+        "layoutName": null,
+        "sizeName": null,
+        "sizeDescription": null,
+        "setNames": null,
+        "totalAscents": 880,
+        "uniqueClimbers": 8,
+        "followerCount": 1,
+        "commentCount": 0,
+        "isFollowedByMe": true,
+        "gymId": 2,
+        "gymUuid": "176a4c25-6f8e-4601-97c9-3dab515871fd",
+        "gymName": "Marco's Board",
+        "distanceMeters": null,
+        "serialNumber": "751737",
+        "timerName": "Rogue Home Timer 2.0",
+        "canEdit": false,
+        "isPinnedByMe": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T22:58:33.359Z",
+  "upstream": "https://ws.boardsesh.com"
+}

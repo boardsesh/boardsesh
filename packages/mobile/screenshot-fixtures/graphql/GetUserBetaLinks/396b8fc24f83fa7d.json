@@ -1,0 +1,20 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetUserBetaLinks",
+  "documentHash": "2f0015e753007b624718cc481d1bf2ddad4aa581ff5b212fef10bc15663ce931",
+  "variablesHash": "396b8fc24f83fa7dea9e486ddda8cf6aa17d92bc3fae2581e84a2fc90753704a",
+  "query": "\n  query GetUserBetaLinks($userId: String!, $limit: Int, $offset: Int) {\n    userBetaLinks(userId: $userId, limit: $limit, offset: $offset) {\n      climbName\n      boardType\n      layoutId\n      betaLink {\n        climbUuid\n        link\n        foreignUsername\n        angle\n        thumbnail\n        isListed\n        createdAt\n        tickUuid\n        boardId\n      }\n    }\n  }\n",
+  "variables": {
+    "userId": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+    "limit": 20,
+    "offset": 0
+  },
+  "response": {
+    "data": {
+      "userBetaLinks": []
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T22:58:39.886Z",
+  "upstream": "https://ws.boardsesh.com"
+}

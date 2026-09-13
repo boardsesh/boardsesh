@@ -1,0 +1,46 @@
+{
+  "formatVersion": 1,
+  "operationName": "ClimbStatsForClimbs",
+  "documentHash": "5c7177cb26524b06c9f79cc81bf74bda694a17768194756d49dd8de80143a764",
+  "variablesHash": "4f7a14d86c138765a3f9420b61e0f1fec22a8ba2199c30d5ba8b57e2ee447467",
+  "query": "\n  query ClimbStatsForClimbs($boardName: String!, $climbUuids: [ID!]!) {\n    climbStatsForClimbs(boardName: $boardName, climbUuids: $climbUuids) {\n      climbUuid\n      angle\n      ascensionistCount\n      qualityAverage\n      difficultyAverage\n      displayDifficulty\n      difficulty\n      faUsername\n      faAt\n      syncSeq\n    }\n  }\n",
+  "variables": {
+    "boardName": "moonboard",
+    "climbUuids": [
+      "597462c7-a684-5b65-a989-6b2f718d32c9"
+    ]
+  },
+  "response": {
+    "data": {
+      "climbStatsForClimbs": [
+        {
+          "climbUuid": "597462c7-a684-5b65-a989-6b2f718d32c9",
+          "angle": 25,
+          "ascensionistCount": 820,
+          "qualityAverage": 4,
+          "difficultyAverage": 18,
+          "displayDifficulty": 18,
+          "difficulty": "6b/V4",
+          "faUsername": null,
+          "faAt": null,
+          "syncSeq": "303087378"
+        },
+        {
+          "climbUuid": "597462c7-a684-5b65-a989-6b2f718d32c9",
+          "angle": 40,
+          "ascensionistCount": 107817,
+          "qualityAverage": 4.000260034547447,
+          "difficultyAverage": 19,
+          "displayDifficulty": 19,
+          "difficulty": "6b+/V4",
+          "faUsername": null,
+          "faAt": null,
+          "syncSeq": "309272018"
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T23:04:50.350Z",
+  "upstream": "https://ws.boardsesh.com"
+}

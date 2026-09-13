@@ -3,6 +3,7 @@ import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { offlineAwareRequest } from '../offline-request';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
 import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
+import { screenshotModeNextPageParam } from '../../screenshot-mode';
 
 // Map the raw pages down to their `searchClimbs` payload so consumers keep
 // seeing `pages[i].climbs`. Module scope (stable identity) so React Query's
@@ -30,7 +31,8 @@ export function useInfiniteSearchClimbs(
     queryFn: ({ pageParam }) =>
       offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: { ...input, page: pageParam } }),
     // getNextPageParam receives RAW pre-select pages in React Query v5.
-    getNextPageParam: (lastPage, allPages) => (lastPage.searchClimbs.hasMore ? allPages.length : undefined),
+    getNextPageParam: (lastPage, allPages) =>
+      screenshotModeNextPageParam(lastPage.searchClimbs.hasMore ? allPages.length : undefined, allPages.length),
     select: selectSearchClimbPages,
     enabled,
     staleTime: options?.staleTime,

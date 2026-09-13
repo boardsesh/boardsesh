@@ -1,0 +1,49 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetMySmartPlaylistCounts",
+  "documentHash": "879b219758f7495014e1fdffe5c135ac3ebed04b8add9c397dc5959892586a47",
+  "variablesHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "query": "\n  query GetMySmartPlaylistCounts {\n    mySmartPlaylistCounts {\n      type\n      count\n    }\n  }\n",
+  "variables": {},
+  "response": {
+    "data": {
+      "mySmartPlaylistCounts": [
+        {
+          "type": "FIVE_STARS",
+          "count": 4
+        },
+        {
+          "type": "MOST_REPEATED",
+          "count": 52
+        },
+        {
+          "type": "PROJECTS",
+          "count": 12
+        },
+        {
+          "type": "LIKED_CLIMBS",
+          "count": 22
+        },
+        {
+          "type": "RECOMMENDED_CROWD_FAVORITES",
+          "count": 262
+        },
+        {
+          "type": "RECOMMENDED_HIDDEN_GEMS",
+          "count": 1154
+        },
+        {
+          "type": "RECOMMENDED_AT_LEVEL",
+          "count": 225
+        },
+        {
+          "type": "RECOMMENDED_FRESH",
+          "count": 40735
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T23:01:35.607Z",
+  "upstream": "https://ws.boardsesh.com"
+}

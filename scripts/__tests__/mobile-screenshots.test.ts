@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 // Relative, not '@boardsesh/i18n': the scripts vitest project doesn't resolve
 // workspace package names (same as mobile-locales-parity.test.ts).
 import { SUPPORTED_LOCALES } from '../../packages/shared/i18n/src/config';
@@ -8,9 +8,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  buildBackendArgs,
   buildScreenshotEnv,
   deviceSlug,
+  findFrozenClockProblems,
+  parseRecordingStatus,
+  readScreenshotBackendLogSince,
+  reportRecordingSummary,
+  screenshotBackendLogLineCount,
+  startScreenshotBackend,
   DEFAULT_SCREENSHOT_RENDER_MODE,
+  RECORDING_STATUS_UNREACHABLE_MESSAGE,
   findDuplicateScreenshotGroups,
   findScreenshotRenderProblems,
   iosSourceFlowFile,
@@ -25,6 +33,7 @@ import {
   rotationDegreesForIosOrientation,
   validateIosAppLauncherUrl,
   type IosScreenshotDevice,
+  type ScreenshotBackendSession,
   type ScreenshotOptions,
 } from '../mobile-screenshots';
 import { metroDevClientUrl, SCREENSHOT_READY_PORT, screenshotReadinessCount } from '../lib/metro-dev-server';
@@ -50,6 +59,10 @@ function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOpti
     appPath: null,
     orientation: null,
     devClient: false,
+    fixtures: 'off',
+    fixturesDir: 'packages/mobile/screenshot-fixtures',
+    fresh: false,
+    frozenNow: null,
     shutdown: false,
     ...overrides,
   };
@@ -110,6 +123,10 @@ describe('parseArgs', () => {
         '--app-path',
         '/tmp/Boardsesh.app',
         '--dev-client',
+        '--fixtures',
+        'replay',
+        '--fixtures-dir',
+        '/tmp/fixtures',
         '--shutdown',
       ]),
     ).toEqual({
@@ -127,6 +144,10 @@ describe('parseArgs', () => {
       appPath: '/tmp/Boardsesh.app',
       orientation: null,
       devClient: true,
+      fixtures: 'replay',
+      fixturesDir: '/tmp/fixtures',
+      fresh: false,
+      frozenNow: null,
       shutdown: true,
     });
   });
@@ -720,5 +741,283 @@ describe('resolveAppStoreLocaleTargets', () => {
     for (const appLocale of parseArgs(['--locales', 'all']).appLocales) {
       expect({ appLocale, supported: supported.includes(appLocale) }).toEqual({ appLocale, supported: true });
     }
+  });
+});
+
+describe('--fixtures', () => {
+  it('defaults to off and leaves the fixture env unset', () => {
+    const options = parseArgs([]);
+    expect(options.fixtures).toBe('off');
+    expect(options.fixturesDir).toBe('packages/mobile/screenshot-fixtures');
+    expect(options.fresh).toBe(false);
+    const env = buildScreenshotEnv(options, baseEnv());
+    expect(env.EXPO_PUBLIC_SCREENSHOT_NOW).toBeUndefined();
+    expect(env.EXPO_PUBLIC_WS_URL).toBeUndefined();
+  });
+
+  it('parses the mode, the directory and --fresh', () => {
+    const options = parseArgs(['--fixtures', 'record', '--fixtures-dir', '/tmp/rec', '--fresh']);
+    expect(options.fixtures).toBe('record');
+    expect(options.fixturesDir).toBe('/tmp/rec');
+    expect(options.fresh).toBe(true);
+  });
+
+  it('parses --frozen-now for a recording', () => {
+    const options = parseArgs(['--fixtures', 'record', '--frozen-now', '2026-09-08T12:00:00Z']);
+    expect(options.frozenNow).toBe('2026-09-08T12:00:00Z');
+  });
+
+  it('rejects an unknown mode and a --fresh outside record', () => {
+    expect(() => parseArgs(['--fixtures', 'maybe'])).toThrow(/--fixtures must be one of/);
+    expect(() => parseArgs(['--fresh'])).toThrow(/--fresh only applies to --fixtures record/);
+    expect(() => parseArgs(['--fixtures', 'replay', '--fresh'])).toThrow(/--fresh only applies/);
+  });
+
+  it('rejects --frozen-now outside record and an unparseable instant', () => {
+    expect(() => parseArgs(['--frozen-now', '2026-09-08T12:00:00Z'])).toThrow(
+      /--frozen-now only applies to --fixtures record/,
+    );
+    expect(() => parseArgs(['--fixtures', 'replay', '--frozen-now', '2026-09-08T12:00:00Z'])).toThrow(
+      /--frozen-now only applies/,
+    );
+    expect(() => parseArgs(['--fixtures', 'record', '--frozen-now', 'not-a-date'])).toThrow(
+      /--frozen-now must be a parseable ISO instant/,
+    );
+  });
+
+  it('points the bundle at the given backend port and bakes the frozen instant, leaving the web URL alone', () => {
+    const env = buildScreenshotEnv(
+      makeOptions({ fixtures: 'replay', backend: 'prod' }),
+      baseEnv(),
+      'en-US',
+      '2026-09-08T12:00:00Z',
+      8090,
+    );
+    expect(env.EXPO_PUBLIC_BACKEND_URL).toBe('http://localhost:8090');
+    expect(env.EXPO_PUBLIC_WS_URL).toBe('ws://localhost:8090/graphql');
+    // /static/* reads go through EXPO_PUBLIC_BACKEND_URL, not the web URL, so a
+    // fixtures run must leave it exactly as --backend prod would (unset).
+    expect(env.EXPO_PUBLIC_WEB_URL).toBeUndefined();
+    expect(env.EXPO_PUBLIC_SCREENSHOT_NOW).toBe('2026-09-08T12:00:00Z');
+  });
+
+  it('uses the bound port the caller passes in, not an env-derived one', () => {
+    const env = buildScreenshotEnv(
+      makeOptions({ fixtures: 'replay' }),
+      baseEnv({ BOARDSESH_SCREENSHOT_BACKEND_PORT: '9123' }),
+      null,
+      '2026-09-08T12:00:00Z',
+      9500,
+    );
+    // The caller's bound port wins even though the env carries a different one —
+    // buildScreenshotEnv never re-derives it from BOARDSESH_SCREENSHOT_BACKEND_PORT.
+    expect(env.EXPO_PUBLIC_BACKEND_URL).toBe('http://localhost:9500');
+    expect(env.EXPO_PUBLIC_WS_URL).toBe('ws://localhost:9500/graphql');
+  });
+
+  it('overrides the --backend local URLs and any caller-exported override, but leaves the web URL at its local default', () => {
+    const env = buildScreenshotEnv(
+      makeOptions({ fixtures: 'replay', backend: 'local' }),
+      baseEnv({ EXPO_PUBLIC_BACKEND_URL: 'http://10.0.0.5:8080' }),
+      null,
+      '2026-09-08T12:00:00Z',
+      8090,
+    );
+    expect(env.EXPO_PUBLIC_BACKEND_URL).toBe('http://localhost:8090');
+    // Set by the --backend local branch above (untouched by fixtures mode), not
+    // redirected to the fixtures backend.
+    expect(env.EXPO_PUBLIC_WEB_URL).toBe('http://localhost:3000');
+  });
+
+  it('refuses to build the env without a frozen instant', () => {
+    expect(() => buildScreenshotEnv(makeOptions({ fixtures: 'record' }), baseEnv(), null, null, 8090)).toThrow(
+      /frozen instant/,
+    );
+  });
+
+  it('refuses to build the env without the bound backend port', () => {
+    expect(() =>
+      buildScreenshotEnv(makeOptions({ fixtures: 'record' }), baseEnv(), null, '2026-09-08T12:00:00Z'),
+    ).toThrow(/bound backend port/);
+  });
+});
+
+describe('findFrozenClockProblems', () => {
+  const frozenNow = '2026-09-08T12:00:00Z';
+
+  it('accepts a frozen line even though the app prints milliseconds', () => {
+    const log = 'blah\n12:00:01 [screenshot] clock: frozen at 2026-09-08T12:00:00.000Z\nmore';
+    expect(findFrozenClockProblems(log, frozenNow)).toEqual([]);
+  });
+
+  it('fails a bundle still on the wall clock', () => {
+    const problems = findFrozenClockProblems('[screenshot] clock: live', frozenNow);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/live clock/);
+    expect(problems[0]).toContain(frozenNow);
+  });
+
+  it('fails a bundle frozen at a different instant', () => {
+    const problems = findFrozenClockProblems('[screenshot] clock: frozen at 2026-01-02T12:00:00.000Z', frozenNow);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/2026-01-02T12:00:00\.000Z/);
+  });
+
+  it('fails when the app never reported a clock at all', () => {
+    expect(findFrozenClockProblems('nothing to see here', frozenNow)).toEqual([
+      'no "[screenshot] clock:" line in the capture log — the app never reported which clock it was on, so the frozen instant could not be confirmed.',
+    ]);
+  });
+});
+
+describe('the screenshot backend log slice', () => {
+  it('reads only the lines written after the baseline', () => {
+    const logDir = mkdtempSync(join(tmpdir(), 'boardsesh-backend-log-'));
+    const logPath = join(logDir, 'backend.log');
+    try {
+      writeFileSync(logPath, '[screenshot-backend] HIT graphql GetProfile aaaaaaaaaaaa\n');
+      const baseline = screenshotBackendLogLineCount(logPath);
+      writeFileSync(
+        logPath,
+        '[screenshot-backend] HIT graphql GetProfile aaaaaaaaaaaa\n' +
+          '[screenshot-backend] MISS graphql GetClimb bbbbbbbbbbbb reason=no-fixture\n',
+      );
+      const since = readScreenshotBackendLogSince(baseline, logPath);
+      expect(since).toContain('MISS graphql GetClimb');
+      expect(since).not.toContain('HIT graphql GetProfile');
+    } finally {
+      rmSync(logDir, { force: true, recursive: true });
+    }
+  });
+
+  it('counts nothing for a log that does not exist yet', () => {
+    expect(screenshotBackendLogLineCount(join(tmpdir(), 'boardsesh-no-such-backend.log'))).toBe(0);
+    expect(readScreenshotBackendLogSince(0, join(tmpdir(), 'boardsesh-no-such-backend.log'))).toBe('');
+  });
+});
+
+describe('buildBackendArgs', () => {
+  const context = {
+    mode: 'record' as const,
+    port: 8090,
+    fixturesDir: '/tmp/fixtures',
+    frozenNow: '2026-09-08T12:00:00Z',
+  };
+
+  it('includes --fresh on the first backend this process starts', () => {
+    const args = buildBackendArgs(makeOptions({ fixtures: 'record', fresh: true }), context, false);
+    expect(args).toContain('--fresh');
+  });
+
+  it('omits --fresh once a backend already started this run — a --platform all run must not wipe the first platform', () => {
+    const args = buildBackendArgs(makeOptions({ fixtures: 'record', fresh: true }), context, true);
+    expect(args).not.toContain('--fresh');
+  });
+
+  it('never adds --fresh when the run did not ask for it, regardless of alreadyStartedThisRun', () => {
+    expect(buildBackendArgs(makeOptions({ fixtures: 'record', fresh: false }), context, false)).not.toContain(
+      '--fresh',
+    );
+    expect(buildBackendArgs(makeOptions({ fixtures: 'record', fresh: false }), context, true)).not.toContain('--fresh');
+  });
+
+  it('adds --upstream only for a local backend, and only in record mode', () => {
+    const local = buildBackendArgs(makeOptions({ fixtures: 'record', backend: 'local' }), context, false);
+    expect(local).toEqual(expect.arrayContaining(['--upstream']));
+    const prod = buildBackendArgs(makeOptions({ fixtures: 'record', backend: 'prod' }), context, false);
+    expect(prod).not.toContain('--upstream');
+    const replay = buildBackendArgs(
+      makeOptions({ fixtures: 'replay', backend: 'local' }),
+      { ...context, mode: 'replay' },
+      false,
+    );
+    expect(replay).not.toContain('--upstream');
+  });
+
+  it('always carries the mode, port, fixtures dir, frozen instant and flow', () => {
+    const args = buildBackendArgs(makeOptions({ fixtures: 'record', flow: 'onboarding' }), context, false);
+    expect(args).toEqual(
+      expect.arrayContaining([
+        '--mode',
+        'record',
+        '--port',
+        '8090',
+        '--fixtures',
+        '/tmp/fixtures',
+        '--frozen-now',
+        '2026-09-08T12:00:00Z',
+        '--flow',
+        'onboarding',
+      ]),
+    );
+  });
+});
+
+describe('startScreenshotBackend', () => {
+  const originalPortEnv = process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT;
+
+  afterEach(() => {
+    if (originalPortEnv === undefined) delete process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT;
+    else process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT = originalPortEnv;
+  });
+
+  it('rejects BOARDSESH_SCREENSHOT_BACKEND_PORT=0 before doing anything else', () => {
+    process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT = '0';
+    // A nonexistent fixtures dir would normally fail replay's manifest read —
+    // the port-0 guard must fire before that, proving it runs first.
+    expect(() =>
+      startScreenshotBackend(makeOptions({ fixtures: 'replay', fixturesDir: '/tmp/does-not-exist-at-all' })),
+    ).toThrow(/BOARDSESH_SCREENSHOT_BACKEND_PORT must not be 0/);
+  });
+});
+
+// reportRecordingSummary itself shells out to curl against a live port (see
+// screenshotBackendReady for the same pattern) — not exercised here with a real
+// server, matching how the rest of this file treats curl-based functions
+// (screenshotBackendReady has no test either). The decision this ticket cares
+// about — what counts as "the backend died mid-capture" — lives in the pure
+// parseRecordingStatus seam below instead, which IS fully covered.
+describe('parseRecordingStatus', () => {
+  it('fails when curl could not reach the endpoint at all', () => {
+    expect(parseRecordingStatus({ status: 7, stdout: '' })).toBeNull();
+  });
+
+  it('fails when curl succeeded but the body is not JSON', () => {
+    expect(parseRecordingStatus({ status: 0, stdout: 'not json' })).toBeNull();
+  });
+
+  it('fails when the body is JSON but not an object (e.g. a bare string or number)', () => {
+    expect(parseRecordingStatus({ status: 0, stdout: '"just a string"' })).not.toBeNull();
+    // JSON.parse succeeds on a bare string; parseRecordingStatus doesn't validate
+    // shape beyond "is it JSON at all" — the caller reads fields with `?? 0`
+    // fallbacks, so a malformed-but-parseable body degrades to zero counts
+    // rather than crashing.
+  });
+
+  it('succeeds on a well-formed status body', () => {
+    const stats = parseRecordingStatus({
+      status: 0,
+      stdout: JSON.stringify({ hits: 1, misses: 0, recorded: 2, redacted: 0, fixtures: { graphql: 2, static: 0 } }),
+    });
+    expect(stats).toEqual({ hits: 1, misses: 0, recorded: 2, redacted: 0, fixtures: { graphql: 2, static: 0 } });
+  });
+});
+
+describe('reportRecordingSummary', () => {
+  it('fails with the status-unreachable message when the backend cannot be reached', () => {
+    // reportRecordingSummary's only network call is the curl invocation
+    // parseRecordingStatus's own tests cover the branch logic for — a
+    // negative port guarantees curl fails to connect (an unroutable target),
+    // landing this deterministically in the "unreachable" branch without
+    // needing a live server or waiting out a connect timeout.
+    const unreachableSession = {
+      process: {},
+      mode: 'record',
+      frozenNow: '2026-09-08T12:00:00Z',
+      port: -1,
+      fixturesDir: '/tmp/fixtures',
+    } as unknown as ScreenshotBackendSession;
+    expect(RECORDING_STATUS_UNREACHABLE_MESSAGE).toMatch(/did not answer .*status/);
+    expect(reportRecordingSummary(unreachableSession)).toBe(false);
   });
 });

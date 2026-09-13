@@ -1,0 +1,115 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetGrades",
+  "documentHash": "ffd3010033d1ba9bc6d328cf91b9d14cd6ab7cfb2c301daf13cb7e9a0106df7d",
+  "variablesHash": "c1267db2e2f108e6483ac92e3c9accd2e59b998eb2b9a5d2c5ec0d345cdc7a01",
+  "query": "\n  query GetGrades($boardName: String!) {\n    grades(boardName: $boardName) {\n      difficultyId\n      name\n    }\n  }\n",
+  "variables": {
+    "boardName": "tension"
+  },
+  "response": {
+    "data": {
+      "grades": [
+        {
+          "difficultyId": 10,
+          "name": "4a/V0"
+        },
+        {
+          "difficultyId": 11,
+          "name": "4b/V0"
+        },
+        {
+          "difficultyId": 12,
+          "name": "4c/V0"
+        },
+        {
+          "difficultyId": 13,
+          "name": "5a/V1"
+        },
+        {
+          "difficultyId": 14,
+          "name": "5b/V1"
+        },
+        {
+          "difficultyId": 15,
+          "name": "5c/V2"
+        },
+        {
+          "difficultyId": 16,
+          "name": "6a/V3"
+        },
+        {
+          "difficultyId": 17,
+          "name": "6a+/V3"
+        },
+        {
+          "difficultyId": 18,
+          "name": "6b/V4"
+        },
+        {
+          "difficultyId": 19,
+          "name": "6b+/V4"
+        },
+        {
+          "difficultyId": 20,
+          "name": "6c/V5"
+        },
+        {
+          "difficultyId": 21,
+          "name": "6c+/V5"
+        },
+        {
+          "difficultyId": 22,
+          "name": "7a/V6"
+        },
+        {
+          "difficultyId": 23,
+          "name": "7a+/V7"
+        },
+        {
+          "difficultyId": 24,
+          "name": "7b/V8"
+        },
+        {
+          "difficultyId": 25,
+          "name": "7b+/V8"
+        },
+        {
+          "difficultyId": 26,
+          "name": "7c/V9"
+        },
+        {
+          "difficultyId": 27,
+          "name": "7c+/V10"
+        },
+        {
+          "difficultyId": 28,
+          "name": "8a/V11"
+        },
+        {
+          "difficultyId": 29,
+          "name": "8a+/V12"
+        },
+        {
+          "difficultyId": 30,
+          "name": "8b/V13"
+        },
+        {
+          "difficultyId": 31,
+          "name": "8b+/V14"
+        },
+        {
+          "difficultyId": 32,
+          "name": "8c/V15"
+        },
+        {
+          "difficultyId": 33,
+          "name": "8c+/V16"
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T23:06:19.058Z",
+  "upstream": "https://ws.boardsesh.com"
+}

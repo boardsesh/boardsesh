@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "operationName": "Favorites",
+  "documentHash": "98993d2c1b0635e1131c9a63ea2512578bc58a6bd5849c5ea7960f59a3e9e972",
+  "variablesHash": "c97cd4aedfe09b537d50648aad695791bb5bacee1d5c1c17864d06de30acb1d2",
+  "query": "\n  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n  }\n",
+  "variables": {
+    "boardName": "kilter",
+    "climbUuids": [
+      "A6E04278AE294E03AD9DD2A8E0CDE31F"
+    ],
+    "angle": 35
+  },
+  "response": {
+    "data": {
+      "favorites": []
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T23:05:55.484Z",
+  "upstream": "https://ws.boardsesh.com"
+}

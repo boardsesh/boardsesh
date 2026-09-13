@@ -41,6 +41,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { commandExists, runCapture, runInherit, sleepSeconds } from './lib/exec';
+import { DEFAULT_SCREENSHOT_FIXTURES_DIR } from './lib/screenshot-fixtures';
 import { adbPath, androidEnv, ensureAndroidSdk, resolveAndroidHome } from './lib/android-sdk';
 import { bootEmulator, resolveRunningEmulator, shutdownEmulator } from './lib/android-emulator';
 import { ANDROID_DEV_PACKAGE, ANDROID_SCHEME } from './lib/android-app';
@@ -325,6 +326,12 @@ function screenshotEnvOptions(options: ShotsOptions): ScreenshotOptions {
     appPath: null,
     // This whole flow is the dev-client + Metro path.
     devClient: true,
+    // Ad-hoc dev shots always talk to a real backend: fixtures exist for the
+    // store capture's determinism, and a one-off shot wants live data.
+    fixtures: 'off',
+    fixturesDir: DEFAULT_SCREENSHOT_FIXTURES_DIR,
+    fresh: false,
+    frozenNow: null,
     shutdown: false,
     orientation: null,
   };

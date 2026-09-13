@@ -1,0 +1,34 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncPlaylistClimbs",
+  "documentHash": "2db1710d6a3569db48d6a54a4cc62f0d3e786ee524108f08ccd7a89cd6a2cbc0",
+  "variablesHash": "38a615239199f48192aa8fea4c431c0e349aee8012a6533a15a67331e88b5a73",
+  "query": "\n    query SyncPlaylistClimbs($cursor: SyncCursorInput, $limit: Int! = 500) {\n      syncPlaylistClimbs(cursor: $cursor, limit: $limit) {\n        documents\n        cursor {\n          updatedAt\n          syncSeq\n        }\n        hasMore\n      }\n    }\n  ",
+  "variables": {
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncPlaylistClimbs": {
+        "documents": [
+          {
+            "playlist_uuid": "c5163ceb-ea14-4bc7-8ae5-d695c8fba316",
+            "climb_uuid": "2657B92D24E541098E27963FFE5B5B0C",
+            "angle": 40,
+            "position": 0,
+            "added_at": "2026-07-04T08:57:58.941Z",
+            "updated_at": "2026-07-04T08:57:58.941Z"
+          }
+        ],
+        "cursor": {
+          "updatedAt": "2026-07-04T08:57:58.941Z",
+          "syncSeq": "184447"
+        },
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T22:58:53.735Z",
+  "upstream": "https://ws.boardsesh.com"
+}

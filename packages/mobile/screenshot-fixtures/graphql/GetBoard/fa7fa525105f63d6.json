@@ -1,0 +1,58 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetBoard",
+  "documentHash": "eef27e3fea10ae82fd4107aa5b79a7348719c4afa1bf4635d6a9c360f5b75f36",
+  "variablesHash": "fa7fa525105f63d61a780767af6f3320939c62b3b26f26a8e7f0dc30be29b3c0",
+  "query": "\n  query GetBoard($boardUuid: ID!) {\n    board(boardUuid: $boardUuid) {\n      \n  uuid\n  slug\n  ownerId\n  ownerDisplayName\n  ownerAvatarUrl\n  boardType\n  layoutId\n  sizeId\n  setIds\n  name\n  description\n  locationName\n  latitude\n  longitude\n  isPublic\n  isUnlisted\n  hideLocation\n  isOwned\n  angle\n  isAngleAdjustable\n  hasLeds\n  createdAt\n  layoutName\n  sizeName\n  sizeDescription\n  setNames\n  totalAscents\n  uniqueClimbers\n  followerCount\n  commentCount\n  isFollowedByMe\n  gymId\n  gymUuid\n  gymName\n  distanceMeters\n  serialNumber\n  timerName\n  canEdit\n  isPinnedByMe\n\n    }\n  }\n",
+  "variables": {
+    "boardUuid": "78ade769-09b5-4675-b30d-2b7394c9259f"
+  },
+  "response": {
+    "data": {
+      "board": {
+        "uuid": "78ade769-09b5-4675-b30d-2b7394c9259f",
+        "slug": "high-point-climbing-orlando-tension-94c9259f",
+        "ownerId": "00000000-0000-0000-0000-000000000000",
+        "ownerDisplayName": "Boardsesh",
+        "ownerAvatarUrl": null,
+        "boardType": "tension",
+        "layoutId": 10,
+        "sizeId": 6,
+        "setIds": "12,13",
+        "name": "High Point Climbing Orlando - Tension Board",
+        "description": null,
+        "locationName": "Orlando, USA",
+        "latitude": 28.56808,
+        "longitude": -81.40843,
+        "isPublic": true,
+        "isUnlisted": false,
+        "hideLocation": false,
+        "isOwned": false,
+        "angle": 40,
+        "isAngleAdjustable": true,
+        "hasLeds": true,
+        "createdAt": "2026-04-07T01:14:02.983Z",
+        "layoutName": null,
+        "sizeName": null,
+        "sizeDescription": null,
+        "setNames": null,
+        "totalAscents": 63,
+        "uniqueClimbers": 3,
+        "followerCount": 4,
+        "commentCount": 0,
+        "isFollowedByMe": true,
+        "gymId": 580,
+        "gymUuid": "e6860393-2ee4-4c23-8e86-d8c972811abd",
+        "gymName": "High Point Climbing Orlando",
+        "distanceMeters": null,
+        "serialNumber": "841053",
+        "timerName": null,
+        "canEdit": false,
+        "isPinnedByMe": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T23:06:19.482Z",
+  "upstream": "https://ws.boardsesh.com"
+}

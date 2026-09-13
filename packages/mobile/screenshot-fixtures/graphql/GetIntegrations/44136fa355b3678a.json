@@ -1,0 +1,26 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetIntegrations",
+  "documentHash": "10b9da86cf360a9f456312f002882cf4d2fb50ce300614de01991cb2d828997b",
+  "variablesHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "query": "\n  query GetIntegrations {\n    integrations {\n      \n  provider\n  connected\n  externalAccountName\n  autoSyncEnabled\n  status\n  lastSyncAt\n  lastError\n\n    }\n  }\n",
+  "variables": {},
+  "response": {
+    "data": {
+      "integrations": [
+        {
+          "provider": "STRAVA",
+          "connected": false,
+          "externalAccountName": null,
+          "autoSyncEnabled": true,
+          "status": null,
+          "lastSyncAt": null,
+          "lastError": null
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T22:58:31.526Z",
+  "upstream": "https://ws.boardsesh.com"
+}

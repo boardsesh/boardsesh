@@ -1,0 +1,43 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetTicks",
+  "documentHash": "d3de914be024d0be1e519b6e8669f9cd2f2d4c9432954968d3bc33e17ca6d18b",
+  "variablesHash": "2ccaf42cccf9334ac8feb2223bd7e1eb936f2cabd21cdafaa026327a99349faf",
+  "query": "\n  query GetTicks($input: GetTicksInput!) {\n    ticks(input: $input) {\n      uuid\n      climbUuid\n      angle\n      isMirror\n      status\n      attemptCount\n      quality\n      effectiveQuality\n      difficulty\n      boardseshDifficulty\n      boardseshConfidence\n      isBenchmark\n      comment\n      climbedAt\n      upvotes\n      downvotes\n      commentCount\n    }\n  }\n",
+  "variables": {
+    "input": {
+      "boardType": "kilter",
+      "climbUuids": [
+        "A6E04278AE294E03AD9DD2A8E0CDE31F"
+      ]
+    }
+  },
+  "response": {
+    "data": {
+      "ticks": [
+        {
+          "uuid": "94aabc33-6066-49f5-ba5c-7c5a637f50bb",
+          "climbUuid": "A6E04278AE294E03AD9DD2A8E0CDE31F",
+          "angle": 35,
+          "isMirror": false,
+          "status": "flash",
+          "attemptCount": 1,
+          "quality": null,
+          "effectiveQuality": null,
+          "difficulty": null,
+          "boardseshDifficulty": 16.88677350687821,
+          "boardseshConfidence": "confirmed",
+          "isBenchmark": false,
+          "comment": "",
+          "climbedAt": "2026-06-12 20:59:03.916",
+          "upvotes": 0,
+          "downvotes": 0,
+          "commentCount": 0
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T23:05:55.793Z",
+  "upstream": "https://ws.boardsesh.com"
+}

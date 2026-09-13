@@ -160,6 +160,10 @@ vi.mock('@boardsesh/climb-filters', () => ({
 
 vi.mock('@boardsesh/board-react', () => ({
   useBoardActions: () => ({ getLogbook: mocks.getLogbook }),
+  // The screen's screenshot-mode whole-list stats prefetch reads the adapter.
+  // It no-ops outside screenshot mode; these keep the module resolvable.
+  useBoardAdapter: () => ({ isAuthenticated: false }),
+  prefetchClimbStatsForClimbs: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Reads mocks.searchState (mutated per-test) instead of the real reducer, so a

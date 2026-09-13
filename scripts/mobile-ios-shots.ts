@@ -41,6 +41,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { commandExists, runCapture, runInherit, sleepSeconds } from './lib/exec';
+import { DEFAULT_SCREENSHOT_FIXTURES_DIR } from './lib/screenshot-fixtures';
 import {
   METRO_PORT,
   homeReadyMarkerCount,
@@ -403,6 +404,12 @@ function screenshotEnvOptions(options: ShotsOptions): ScreenshotOptions {
     appPath: options.appPath,
     // iOS is always a dev-client; the flag is Android-only (see mobile-screenshots.ts).
     devClient: false,
+    // Ad-hoc dev shots always talk to a real backend: fixtures exist for the
+    // store capture's determinism, and a one-off shot wants live data.
+    fixtures: 'off',
+    fixturesDir: DEFAULT_SCREENSHOT_FIXTURES_DIR,
+    fresh: false,
+    frozenNow: null,
     shutdown: false,
     orientation: null,
   };

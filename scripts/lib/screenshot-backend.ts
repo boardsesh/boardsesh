@@ -35,11 +35,20 @@ import {
   SCREENSHOT_FIXTURE_FORMAT_VERSION,
   STATIC_KEY_LENGTH,
   VARIANT_COUNT_NOTE_THRESHOLD,
+  batchRequestIds,
+  batchScopeKey,
+  batchedOperationSpec,
+  cappedUnrecordedIds,
+  collectBatchItems,
+  composeBatchedResponse,
   emptyManifest,
   findSensitiveVariableKeys,
+  finalizeRecordingFrozenNow,
   fixtureSizeNote,
+  formatMissVariables,
   formatScreenshotBackendLine,
   graphqlFixtureKey,
+  indexBatchItemsById,
   redactIgnoredVariablePaths,
   resolveOperationName,
   sortManifestEntries,
@@ -47,8 +56,10 @@ import {
   staticFixtureKey,
   validateScreenshotFixtureManifest,
   variantCountNote,
+  type BatchedOperationSpec,
   type GraphqlFixtureFile,
   type GraphqlManifestEntry,
+  type GraphqlMissReason,
   type ScreenshotBackendLogLine,
   type ScreenshotBackendMode,
   type ScreenshotFixtureManifest,
@@ -60,7 +71,16 @@ export type ScreenshotBackendServerOptions = {
   fixturesDir: string;
   /** The backend to record from. Always null in replay mode — replay makes no outbound request. */
   upstreamUrl: string | null;
-  /** The instant the capture pretends it is. Recorded into the manifest, echoed in READY. */
+  /**
+   * The instant the capture pretends it is, echoed in READY. In replay this is
+   * exactly what the persisted manifest carries. In record mode it is only the
+   * START floor: the app runs on this value for the whole session, but
+   * `rewriteManifest` bumps the PERSISTED manifest's `frozenNow` past the
+   * newest response actually recorded, so a long recording never ships a
+   * fixture that would replay as being in the future — see
+   * `finalizeRecordingFrozenNow`.
+   */
+
   frozenNow: string;
   log: (line: string) => void;
   /** Record only: throw away the existing fixture set instead of extending it. */
@@ -345,6 +365,15 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
   let redacted = 0;
 
   /**
+   * `recordedAt` of every fixture written THIS session (record mode only). A
+   * capture can run 20+ minutes, so the instant minted at startup (`frozenNow`
+   * above) can end up earlier than a response recorded near the end —
+   * `rewriteManifest` uses this list to keep the persisted `frozenNow` from
+   * ever landing before something it is supposed to be "now" relative to.
+   */
+  const recordedAtInstants: string[] = [];
+
+  /**
    * Replay only: `entry.file` -> its response, already serialized. A hot
    * fixture (e.g. SearchClimbs, requested on every keystroke) is read and
    * JSON.parsed once per process, not once per request. Nothing ever
@@ -354,6 +383,20 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
   const replayResponseCache = new Map<string, string>();
 
   const rewriteManifest = (): void => {
+    // Record only (the only mode that ever calls this): keep the persisted
+    // frozenNow trailing the newest response this session has written so far —
+    // see finalizeRecordingFrozenNow. The app itself keeps running on the
+    // start instant for the rest of this recording; only the FILE (which
+    // replay reads) carries the finalized value.
+    if (isRecording) {
+      manifest.frozenNow = finalizeRecordingFrozenNow(frozenNow, recordedAtInstants);
+      // `recordedAt` describes the SET, so it tracks the newest fixture in it
+      // rather than the instant the recorder booted — a capture runs long
+      // enough that a start stamp reads as older than most of what it names.
+      for (const instant of recordedAtInstants) {
+        if (Date.parse(instant) > Date.parse(manifest.recordedAt)) manifest.recordedAt = instant;
+      }
+    }
     writeJsonFile(join(fixturesDir, MANIFEST_FILENAME), sortManifestEntries(manifest));
   };
 
@@ -492,6 +535,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     };
     manifest.graphql.push(entry);
     graphqlIndex.set(indexKey, entry);
+    recordedAtInstants.push(fixture.recordedAt);
     recorded += 1;
     emit({
       event: 'recorded',
@@ -509,6 +553,124 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     rewriteManifest();
   };
 
+  /**
+   * One batch scope's recorded fixtures, decomposed: every id the recording
+   * ever asked for under these non-id variables, mapped to the items recorded
+   * for it, plus one recorded body to reshape a composed answer into.
+   */
+  type BatchedScopeIndex = { itemsById: Map<string, unknown[]>; templateResponse: unknown };
+
+  /**
+   * Replay only: `operationName` -> (`documentHash + non-id variables`) -> that
+   * scope's decomposed fixtures. Built lazily, once per operation, on the first
+   * request of a batched operation that misses its exact key — a set with no
+   * batched traffic never reads a fixture twice, and one with it pays the read
+   * once instead of per request.
+   */
+  const batchedIndexes = new Map<string, Map<string, BatchedScopeIndex>>();
+
+  const batchedIndexFor = (operationName: string, spec: BatchedOperationSpec): Map<string, BatchedScopeIndex> => {
+    const cached = batchedIndexes.get(operationName);
+    if (cached) return cached;
+    const scopes = new Map<string, BatchedScopeIndex>();
+    for (const entry of manifest.graphql) {
+      if (entry.operationName !== operationName) continue;
+      if (!isFixtureFileWithinDirectory(fixturesDir, entry.file)) continue;
+      let fixture: GraphqlFixtureFile;
+      try {
+        fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
+      } catch {
+        // The startup check already refuses to serve a set with an unreadable
+        // fixture, so this only happens to a file that went missing mid-run —
+        // reported by the request that asks for it directly.
+        continue;
+      }
+      const recordedIds = batchRequestIds(spec, fixture.variables);
+      if (!recordedIds) continue;
+      const itemsById = indexBatchItemsById(spec, recordedIds, fixture.response);
+      if (!itemsById) continue;
+      // The document hash is part of the scope: a fixture recorded against an
+      // older selection set must not compose an answer to today's query.
+      const scopeKey = `${entry.documentHash}\n${batchScopeKey(operationName, spec, fixture.variables)}`;
+      const scope = scopes.get(scopeKey);
+      if (!scope) {
+        scopes.set(scopeKey, { itemsById, templateResponse: fixture.response });
+        continue;
+      }
+      // FIRST RECORDING WINS per id, matching the recorder's own duplicate
+      // rule, so which fixture answers an id does not depend on manifest order
+      // changing under a re-record.
+      for (const [id, items] of itemsById) if (!scope.itemsById.has(id)) scope.itemsById.set(id, items);
+    }
+    batchedIndexes.set(operationName, scopes);
+    return scopes;
+  };
+
+  /**
+   * Answer a batched operation by MEMBERSHIP when its exact id list was never
+   * recorded: the items for the ids it asked for, in request order, inside a
+   * recorded response's own envelope.
+   *
+   * UNCOVERED IDS ARE TOLERATED, and that is the load-bearing decision here.
+   * The read coordinator eventually asks for stats for every row that mounts,
+   * so every row VISIBLE during the recording had its id in some recorded
+   * batch. A replay shows the same viewport over the same data, so an id the
+   * recorded set does not know can only come from a row the recording never
+   * mounted — one drawn past the fold, or picked by something the capture does
+   * not pin (the workout generator shuffles its grade pool, so run 34259455408
+   * asked for a different set on every attempt). Such a row is not in the
+   * frame, and even if it were, `useEffectiveClimbStats` falls back to the
+   * search payload's own counts when there is no canonical row, so it renders
+   * the same numbers the list already showed. Answering with items for the
+   * covered ids and nothing for the rest is a shape the real server produces
+   * too — a climb with no stats simply has no row.
+   *
+   * The one thing that still misses is a batch where NOT ONE id was covered:
+   * that is not draw distance, it is a screen the recording never reached.
+   *
+   * Returns true when it answered (composed, or a miss), false when this
+   * request is not composable at all and belongs on the ordinary miss path.
+   */
+  const replayComposedBatch = (
+    response: ServerResponse,
+    operationName: string,
+    documentHash: string,
+    hash12: string,
+    variables: unknown,
+    missGraphql: (loggedName: string, reason: GraphqlMissReason, unrecordedIds?: readonly string[]) => void,
+  ): boolean => {
+    const spec = batchedOperationSpec(operationName);
+    if (!spec) return false;
+    const requestedIds = batchRequestIds(spec, variables);
+    if (!requestedIds) return false;
+    const scopeKey = `${documentHash}\n${batchScopeKey(operationName, spec, variables)}`;
+    const scope = batchedIndexFor(operationName, spec).get(scopeKey);
+    // Nothing was recorded under these non-id variables (another board, another
+    // entity type). That is an ordinary "nobody recorded this", not a partial
+    // batch — composing across scopes would answer with the wrong board's rows.
+    if (!scope) return false;
+
+    const { items, unrecordedIds, answeredIds } = collectBatchItems(scope.itemsById, requestedIds);
+    if (answeredIds.length === 0) {
+      missGraphql(operationName, 'unrecorded-ids', cappedUnrecordedIds(unrecordedIds));
+      return true;
+    }
+    const composed = composeBatchedResponse(spec, scope.templateResponse, items);
+    if (!composed.ok) return false;
+    hits += 1;
+    emit({
+      event: 'hit',
+      kind: 'graphql',
+      operationName,
+      hash12,
+      composed: answeredIds.length,
+      uncoveredCount: unrecordedIds.length,
+      uncoveredIds: cappedUnrecordedIds(unrecordedIds),
+    });
+    sendJson(response, 200, composed.response);
+    return true;
+  };
+
   const replayGraphql = (response: ServerResponse, parsedBody: Record<string, unknown>): void => {
     const operationName = resolveOperationName(parsedBody);
     const query = typeof parsedBody.query === 'string' ? parsedBody.query : '';
@@ -517,25 +679,46 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       sha256Hex,
     );
     const hash12 = shortHash(key.variablesHash);
+    const loggedVariables = formatMissVariables(operationName ?? '', parsedBody.variables);
+
+    /** Every graphql miss answers 200 + `errors`, never a 5xx — see `handleGraphql`. */
+    const missGraphql = (
+      loggedName: string,
+      reason: GraphqlMissReason,
+      unrecordedIds: readonly string[] = [],
+    ): void => {
+      misses += 1;
+      emit({
+        event: 'miss',
+        kind: 'graphql',
+        operationName: loggedName,
+        hash12,
+        reason,
+        unrecordedIds,
+        variables: loggedVariables,
+      });
+      sendJson(response, 200, fixtureMissBody(loggedName, hash12));
+    };
 
     if (!operationName) {
-      misses += 1;
-      emit({ event: 'miss', kind: 'graphql', operationName: 'anonymous', hash12, reason: 'anonymous-operation' });
-      sendJson(response, 200, fixtureMissBody('anonymous', hash12));
+      missGraphql('anonymous', 'anonymous-operation');
       return;
     }
 
     const entry = graphqlIndex.get(`${operationName}\n${key.variablesHash}`);
     if (!entry) {
-      misses += 1;
-      emit({ event: 'miss', kind: 'graphql', operationName, hash12, reason: 'no-fixture' });
-      sendJson(response, 200, fixtureMissBody(operationName, hash12));
+      // EXACT KEY FIRST, always: a batch that was recorded verbatim replays its
+      // own recorded bytes. Only a batch nobody recorded as a whole is composed
+      // out of the recorded ones — see `BATCHED_OPERATIONS` for why membership,
+      // not the exact id list, is the stable key for these.
+      if (replayComposedBatch(response, operationName, key.documentHash, hash12, parsedBody.variables, missGraphql)) {
+        return;
+      }
+      missGraphql(operationName, 'no-fixture');
       return;
     }
     if (entry.documentHash !== key.documentHash) {
-      misses += 1;
-      emit({ event: 'miss', kind: 'graphql', operationName, hash12, reason: 'document-changed' });
-      sendJson(response, 200, fixtureMissBody(operationName, hash12));
+      missGraphql(operationName, 'document-changed');
       return;
     }
     if (!isFixtureFileWithinDirectory(fixturesDir, entry.file)) {
@@ -543,9 +726,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       // entry shaped like this, so reaching here means something wrote past
       // that check. Answer exactly like a fixture that was never recorded —
       // never follow the path.
-      misses += 1;
-      emit({ event: 'miss', kind: 'graphql', operationName, hash12, reason: 'no-fixture' });
-      sendJson(response, 200, fixtureMissBody(operationName, hash12));
+      missGraphql(operationName, 'no-fixture');
       return;
     }
 
@@ -561,15 +742,13 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         // missing or was truncated DURING the run. Answer exactly like any
         // other miss — a 500 here would flip the app into "backend
         // unreachable" and bury the problem under a connectivity banner.
-        misses += 1;
-        emit({ event: 'miss', kind: 'graphql', operationName, hash12, reason: 'unreadable-fixture' });
-        sendJson(response, 200, fixtureMissBody(operationName, hash12));
+        missGraphql(operationName, 'unreadable-fixture');
         return;
       }
       replayResponseCache.set(entry.file, serializedResponse);
     }
     hits += 1;
-    emit({ event: 'hit', kind: 'graphql', operationName, hash12 });
+    emit({ event: 'hit', kind: 'graphql', operationName, hash12, composed: null, uncoveredCount: 0, uncoveredIds: [] });
     sendRawJson(response, 200, serializedResponse);
   };
 
@@ -716,6 +895,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     const entry: StaticManifestEntry = { path: pathname, query, file: relativeFile, contentType, bytes: bytes.length };
     manifest.static.push(entry);
     staticIndex.set(subject, entry);
+    recordedAtInstants.push(new Date().toISOString());
     recorded += 1;
     emit({ event: 'recorded', kind: 'static', subject, file: relativeFile });
     rewriteManifest();

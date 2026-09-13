@@ -1,0 +1,19 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetUserTicks",
+  "documentHash": "cc44dba7867fe833858f968d878fbf6823939393b0148d79bf93f5cc0d19a4d9",
+  "variablesHash": "afa1ed8b69c00d300a9bffbbad4e1fe42db7e28bebd2a2b18e5087d4828fc1d5",
+  "query": "\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n",
+  "variables": {
+    "userId": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+    "boardType": "woods"
+  },
+  "response": {
+    "data": {
+      "userTicks": []
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T22:58:35.688Z",
+  "upstream": "https://ws.boardsesh.com"
+}

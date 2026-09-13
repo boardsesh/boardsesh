@@ -1,0 +1,27 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetAllUserPlaylists",
+  "documentHash": "d11d28af3e6842c94e44355fc55f4de24155b365838b1a89f8909fddc9d33cf9",
+  "variablesHash": "a157bca9acbe6ca581478c02f98e41805d0f0608be1065a2487d60792940b3ca",
+  "query": "\n  \n  fragment PlaylistFields on Playlist {\n    id\n    uuid\n    boardType\n    layoutId\n    name\n    description\n    isPublic\n    color\n    icon\n    createdAt\n    updatedAt\n    lastAccessedAt\n    climbCount\n    userRole\n    followerCount\n    isFollowedByMe\n    isPinnedByMe\n  }\n\n  query GetAllUserPlaylists($input: GetAllUserPlaylistsInput!) {\n    allUserPlaylists(input: $input) {\n      playlists {\n        ...PlaylistFields\n      }\n      totalCount\n      hasMore\n    }\n  }\n",
+  "variables": {
+    "input": {
+      "boardType": "tension",
+      "layoutId": 10,
+      "page": 0,
+      "pageSize": 20
+    }
+  },
+  "response": {
+    "data": {
+      "allUserPlaylists": {
+        "playlists": [],
+        "totalCount": 0,
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T23:06:18.642Z",
+  "upstream": "https://ws.boardsesh.com"
+}

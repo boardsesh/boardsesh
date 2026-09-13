@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncUserFollows",
+  "documentHash": "30d58e9dae1190f99a58d588a66a6b46ccced97c3d7029728683293fcf0a5b27",
+  "variablesHash": "38a615239199f48192aa8fea4c431c0e349aee8012a6533a15a67331e88b5a73",
+  "query": "\n    query SyncUserFollows($cursor: SyncCursorInput, $limit: Int! = 500) {\n      syncUserFollows(cursor: $cursor, limit: $limit) {\n        documents\n        cursor {\n          updatedAt\n          syncSeq\n        }\n        hasMore\n      }\n    }\n  ",
+  "variables": {
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncUserFollows": {
+        "documents": [
+          {
+            "following_id": "f8a634e9-659b-4e43-b94d-3d11196b3a5a",
+            "follower_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-06-15T04:07:09.115207Z",
+            "updated_at": "2026-06-15T04:07:09.115207Z"
+          },
+          {
+            "following_id": "d3f768b9-1cca-4544-ab31-4a9f71e6eb28",
+            "follower_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-06-15T04:07:10.199934Z",
+            "updated_at": "2026-06-15T04:07:10.199934Z"
+          },
+          {
+            "following_id": "3fa79140-3e0a-4c27-9f80-a3313685a45a",
+            "follower_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-08-31T06:27:50.085186Z",
+            "updated_at": "2026-08-31T06:27:50.085186Z"
+          }
+        ],
+        "cursor": {
+          "updatedAt": "2026-08-31T06:27:50.085186Z",
+          "syncSeq": "10537"
+        },
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T22:58:54.691Z",
+  "upstream": "https://ws.boardsesh.com"
+}

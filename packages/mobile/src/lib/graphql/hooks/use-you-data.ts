@@ -24,6 +24,7 @@ import {
 import { BOARD_TYPES, type LogbookEntry } from '@boardsesh/profile-stats';
 import type { ActivityFeedInput } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
+import { screenshotModeNextPageParam } from '../../screenshot-mode';
 
 const PROFILE_STALE_TIME_MS = 30 * 1000;
 const FEED_PAGE_SIZE = 20;
@@ -139,8 +140,11 @@ export function useUserAscentsFeed(
     // Offset from pageParam arithmetic, NOT from summing cached item counts:
     // the optimistic delete strip shrinks cached pages, and a count-derived
     // offset would then re-request (and re-receive) rows the list already has.
-    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
-      lastPage.userAscentsFeed.hasMore ? lastPageParam + FEED_PAGE_SIZE : undefined,
+    getNextPageParam: (lastPage, allPages, lastPageParam) =>
+      screenshotModeNextPageParam(
+        lastPage.userAscentsFeed.hasMore ? lastPageParam + FEED_PAGE_SIZE : undefined,
+        allPages.length,
+      ),
     enabled: !!userId && (options?.enabled ?? true),
   });
 }
@@ -168,8 +172,11 @@ export function useUserGroupedAscentsFeed(
       }),
     // Same pageParam arithmetic as the flat feed: group-strips must not shift
     // the server offset (see the note on useUserAscentsFeed).
-    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
-      lastPage.userGroupedAscentsFeed.hasMore ? lastPageParam + FEED_PAGE_SIZE : undefined,
+    getNextPageParam: (lastPage, allPages, lastPageParam) =>
+      screenshotModeNextPageParam(
+        lastPage.userGroupedAscentsFeed.hasMore ? lastPageParam + FEED_PAGE_SIZE : undefined,
+        allPages.length,
+      ),
     enabled: !!userId && (options?.enabled ?? true),
   });
 }
@@ -206,8 +213,11 @@ export function useSessionGroupedFeed(input?: ActivityFeedInput, enabled = true)
       getHttpClient().request<GetSessionGroupedFeedQueryResponse>(GET_SESSION_GROUPED_FEED, {
         input: { limit: FEED_PAGE_SIZE, ...input, cursor: pageParam },
       }),
-    getNextPageParam: (lastPage) =>
-      lastPage.sessionGroupedFeed.hasMore ? (lastPage.sessionGroupedFeed.cursor ?? undefined) : undefined,
+    getNextPageParam: (lastPage, allPages) =>
+      screenshotModeNextPageParam(
+        lastPage.sessionGroupedFeed.hasMore ? (lastPage.sessionGroupedFeed.cursor ?? undefined) : undefined,
+        allPages.length,
+      ),
     enabled,
   });
 }
@@ -221,8 +231,11 @@ export function useActivityFeed(input?: ActivityFeedInput, enabled = true) {
       getHttpClient().request<GetActivityFeedQueryResponse>(GET_ACTIVITY_FEED, {
         input: { limit: FEED_PAGE_SIZE, ...input, cursor: pageParam },
       }),
-    getNextPageParam: (lastPage) =>
-      lastPage.activityFeed.hasMore ? (lastPage.activityFeed.cursor ?? undefined) : undefined,
+    getNextPageParam: (lastPage, allPages) =>
+      screenshotModeNextPageParam(
+        lastPage.activityFeed.hasMore ? (lastPage.activityFeed.cursor ?? undefined) : undefined,
+        allPages.length,
+      ),
     enabled,
   });
 }

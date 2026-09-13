@@ -1,0 +1,202 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncFavorites",
+  "documentHash": "a2d83dd77b731d225ef3d88183b9284828f228cc896bc53481149e51210b0ba9",
+  "variablesHash": "38a615239199f48192aa8fea4c431c0e349aee8012a6533a15a67331e88b5a73",
+  "query": "\n    query SyncFavorites($cursor: SyncCursorInput, $limit: Int! = 500) {\n      syncFavorites(cursor: $cursor, limit: $limit) {\n        documents\n        cursor {\n          updatedAt\n          syncSeq\n        }\n        hasMore\n      }\n    }\n  ",
+  "variables": {
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncFavorites": {
+        "documents": [
+          {
+            "board_name": "kilter",
+            "climb_uuid": "57F29CB4D99B47ABA21F0DE9911CA46E",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-04-05T12:59:41.172951Z",
+            "updated_at": "2026-04-05T12:59:41.172951Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "28c385726d0d4163bd5b283a2539c0b7",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-04-05T13:03:54.067788Z",
+            "updated_at": "2026-04-05T13:03:54.067788Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "4D781AC7471944B2AB13CDECC88C83BF",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-04-05T13:04:01.275246Z",
+            "updated_at": "2026-04-05T13:04:01.275246Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "6448D03D8BDE4F6496B1BC9260AE7503",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-04-05T13:06:42.021184Z",
+            "updated_at": "2026-04-05T13:06:42.021184Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "C33ED6A6503548F39847C8F6FDD6CCA4",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-24T09:47:54.952436Z",
+            "updated_at": "2026-05-24T09:47:54.952436Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "FB4885AAD1764002B7110794CF115645",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-24T09:47:57.116018Z",
+            "updated_at": "2026-05-24T09:47:57.116018Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "310DC5E20D6F4D7EA96E179794BD6677",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-24T09:47:58.880727Z",
+            "updated_at": "2026-05-24T09:47:58.880727Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "92AFC1DE7F6347D68639585D34B67D3F",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-24T11:47:22.566034Z",
+            "updated_at": "2026-05-24T11:47:22.566034Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "596642730FD044AB92951D5E24241178",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-24T11:47:25.95112Z",
+            "updated_at": "2026-05-24T11:47:25.95112Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "0034faec87954c9fb62c643f8383ae84",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-24T11:47:27.375384Z",
+            "updated_at": "2026-05-24T11:47:27.375384Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "ED76B2C0552B4EB9A9BD5C978C4395E5",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-24T11:49:02.093833Z",
+            "updated_at": "2026-05-24T11:49:02.093833Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "F191374E4E2D4EFB920CC6B89B10D3DE",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-24T11:49:10.713062Z",
+            "updated_at": "2026-05-24T11:49:10.713062Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "7496DC678FB947519BB6829F5A405771",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-24T11:50:32.164843Z",
+            "updated_at": "2026-05-24T11:50:32.164843Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "ED575A2468F640B2B758361B887A4B3E",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-25T08:10:52.033111Z",
+            "updated_at": "2026-05-25T08:10:52.033111Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "B640A6174BD640B6B14C81CAB43AE236",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-05-26T22:38:24.363855Z",
+            "updated_at": "2026-05-26T22:38:24.363855Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "8ECD9738FC0A4F549DCDFE288B12522A",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-06-02T02:10:26.763917Z",
+            "updated_at": "2026-06-02T02:10:26.763917Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "18E42F9F59524734889438D751AED6D0",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-06-02T02:10:51.517206Z",
+            "updated_at": "2026-06-02T02:10:51.517206Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "4B23FA2DA1034EB0AF4AC49C218433F8",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-06-02T02:10:56.297043Z",
+            "updated_at": "2026-06-02T02:10:56.297043Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "924B12046EC644C596B6D1C8708B4BF3",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-06-10T07:07:04.719297Z",
+            "updated_at": "2026-06-10T07:07:04.719297Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "81C97F5CBB7B4690A265F4218AB5EB2E",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-06-18T04:35:23.81546Z",
+            "updated_at": "2026-06-18T04:35:23.81546Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "2657B92D24E541098E27963FFE5B5B0C",
+            "angle": 40,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-07-05T02:17:24.973263Z",
+            "updated_at": "2026-07-05T02:17:24.973263Z"
+          },
+          {
+            "board_name": "kilter",
+            "climb_uuid": "02184e5f6f8a41379117e6f45acdb931",
+            "angle": 35,
+            "user_id": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+            "created_at": "2026-08-06T04:18:41.766129Z",
+            "updated_at": "2026-08-06T04:18:41.766129Z"
+          }
+        ],
+        "cursor": {
+          "updatedAt": "2026-08-06T04:18:41.766129Z",
+          "syncSeq": "18185"
+        },
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T22:58:54.580Z",
+  "upstream": "https://ws.boardsesh.com"
+}

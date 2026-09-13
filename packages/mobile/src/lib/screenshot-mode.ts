@@ -1,3 +1,4 @@
+import { mulberry32, type RandomSource } from './seeded-random';
 import {
   isThemeOverride,
   isUiVariantPreference,
@@ -50,10 +51,10 @@ import { isSupportedLocale, type Locale } from '@boardsesh/i18n';
  * `Date.now()`/`new Date()` directly. `SCREENSHOT_NOW_MS` is read by
  * `lib/clock.ts` and the boot log in `screenshot-board-auto-activator.tsx`.
  *
- * `EXPO_PUBLIC_SCREENSHOT_NOW` isn't wired up yet: it will be set by the
- * orchestrator (`scripts/mobile-screenshots.ts`) once the replay backend
- * lands, from the recorded fixture set's `frozenNow`. Unset today, so
- * captures still run on the live clock.
+ * The orchestrator (`scripts/mobile-screenshots.ts`) sets
+ * `EXPO_PUBLIC_SCREENSHOT_NOW` whenever `--fixtures` is on, from the fixture
+ * set's `frozenNow`. A capture without fixtures leaves it unset and runs on the
+ * live clock.
  */
 
 /**
@@ -77,14 +78,17 @@ export const SCREENSHOT_LOCALE_OVERRIDE: Locale | null =
  * clock — see `lib/clock.ts` and the boot log in
  * `screenshot-board-auto-activator.tsx`, its two readers.
  *
- * Not wired up yet: this will be set by the orchestrator
- * (`scripts/mobile-screenshots.ts`, into Metro's env on both platforms) once
- * the replay backend lands, from the recorded fixture set's `frozenNow`.
- * Unset today, so captures still run on the live clock.
+ * Set by the orchestrator (`scripts/mobile-screenshots.ts`, into Metro's env on
+ * both platforms) from the recorded fixture set's `frozenNow` whenever
+ * `--fixtures` is on; unset for a capture that talks to a live backend, which
+ * then runs on the real clock.
  *
- * When it is wired up, the value must be mid-day UTC (e.g. `…T12:00:00Z`) —
- * local-date derivations (day dividers, the heatmap's today cell) need to
- * land on the same calendar day in every simulator timezone.
+ * What makes local-date derivations (day dividers, the heatmap's today cell)
+ * agree between a developer's machine and CI is the timezone pin, not the value
+ * itself: every capture runs the app in UTC (`SIMCTL_CHILD_TZ` on iOS,
+ * `-timezone UTC` on the emulator). The recorded instant is the true recording
+ * time to the second, so nothing in the recorded data can read as being in the
+ * future.
  */
 const screenshotNowEnv = process.env.EXPO_PUBLIC_SCREENSHOT_NOW;
 const screenshotNowParsedMs = Date.parse(screenshotNowEnv ?? '');
@@ -190,3 +194,142 @@ const screenshotBoardsEnv = (process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS ?? '')
   .filter(Boolean);
 export const SCREENSHOT_BOARDS: string[] =
   screenshotBoardsEnv.length > 0 ? screenshotBoardsEnv : DEFAULT_SCREENSHOT_BOARDS;
+
+/**
+ * A `useInfiniteQuery`'s next page param, capped to ONE page in screenshot mode.
+ *
+ * Infinite lists page a timing-dependent distance: against a live backend the
+ * app moves on before the list has prefetched much, but a replay backend
+ * answers instantly, so the same flow scrolls further and asks for pages the
+ * recording never reached. Screenshot run 34240391447 failed exactly there —
+ * the session feed asked for page 5 (`cursor {"o":80}`) against a set that
+ * stopped at page 4.
+ *
+ * A store screenshot never shows page two, so the cap costs nothing and makes
+ * the paging depth a property of the flow instead of the machine's timing. For
+ * a query this feeds, `hasNextPage` goes false with the param, so its own
+ * `onEndReached` handlers stop firing too — but ONLY for those queries. A list
+ * whose pager this helper does not reach (the two `@boardsesh/playlists-react`
+ * hooks behind `PlaylistDetailView`, the hand-rolled `loadMore` pagers) still
+ * reports more pages; those are capped at the consumer, with
+ * `screenshotModeLoadMore` or an early return in the handler.
+ *
+ * Pass the param the query would otherwise use and the number of pages already
+ * loaded (React Query hands `getNextPageParam` `allPages`, so that is
+ * `allPages.length`). The inline `process.env.EXPO_PUBLIC_SCREENSHOT_MODE`
+ * comparison is deliberate — see the note at the top of this module.
+ */
+export function screenshotModeNextPageParam<TPageParam>(
+  nextParam: TPageParam,
+  pagesLoaded: number,
+): TPageParam | undefined {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && pagesLoaded >= 1) return undefined;
+  return nextParam;
+}
+
+/**
+ * A hand-rolled pager's `loadMore`, turned into a no-op in screenshot mode.
+ *
+ * `screenshotModeNextPageParam` only reaches a `useInfiniteQuery`. Several
+ * lists page themselves instead — `useDiscoverPlaylists`, `useUserPlaylists`
+ * and `useUserBetaLinks` each expose a `loadMore` a list's `onEndReached`
+ * calls — and they drift for exactly the same reason: a replay backend answers
+ * instantly, the list reaches its end sooner, and the capture asks for a page
+ * the recording never took. All six recorded `DiscoverPlaylists` fixtures are
+ * `page: 0` with `hasMore: true`, and Discover is a store shot.
+ *
+ * Wrap the pager at the call site, not inside the shared hook: those hooks live
+ * in `@boardsesh/playlists-react`, which web consumes and which must not read a
+ * mobile build flag.
+ */
+export function screenshotModeLoadMore(loadMore: () => void): () => void {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return NO_MORE_PAGES;
+  return loadMore;
+}
+
+/**
+ * One shared no-op, so a wrapped pager keeps a stable identity across renders —
+ * a fresh closure per render would defeat the `React.memo` on every list that
+ * takes `loadMore` as a prop.
+ */
+const NO_MORE_PAGES = (): void => {};
+
+/**
+ * Drops a Reanimated `entering` (or `exiting`) animation in screenshot mode so
+ * the element is already in its resting state on the very first frame.
+ * Maestro snaps a shot the instant a testID becomes visible, so any element
+ * still mid-`entering` at that moment renders whatever the animation's
+ * in-progress frame happens to be — a real pixel race, not a data problem.
+ *
+ * Pass the animation builder straight through at the call site:
+ * `entering={screenshotModeEntering(FadeIn.duration(180))}`. Outside
+ * screenshot mode this hands back the same animation untouched.
+ */
+export function screenshotModeEntering<TAnimation>(animation: TAnimation): TAnimation | undefined {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return undefined;
+  return animation;
+}
+
+/**
+ * Swaps a value that only settles to its final rendered form after the first
+ * frame for one that is already there — the color analogue of
+ * `screenshotModeEntering` for a case that isn't a Reanimated animation at
+ * all.
+ *
+ * The concrete case this exists for: iOS's `PlatformColor('separator')` is
+ * Apple's translucent hairline tone (see `theme/colors.ts`) — it composites
+ * against whatever is painted behind it rather than being a fixed RGB value,
+ * and it resolves against the app window's NATIVE trait collection, which
+ * `ThemeProvider` only pushes to match the pinned screenshot scheme from a
+ * post-mount effect (`Appearance.setColorScheme`, one commit later than the
+ * JS `colorScheme` it is meant to track). Two replay captures of the same
+ * frozen, seeded home feed differed only along the 1px hairline border of the
+ * visible `SessionFeedCard`s — (56, 56, 59) in one capture, (32, 32, 34) in
+ * the other, everything else byte-identical — a translucent hairline still
+ * settling, not a light/dark flip (that would have changed everything, not
+ * just a 1px line). Screenshot mode swaps the translucent native tone for its
+ * opaque static equivalent (`theme/ios-colors.ts`) so every consumer paints a
+ * byte-stable hairline from the first frame: `Card`'s border, the divider
+ * inside `SessionFeedCard`, `HomeTopChrome`'s bottom rule, and anywhere else
+ * that reads `systemColors.separator`.
+ *
+ * Generic (not separator-specific) since the same first-frame-determinism
+ * need applies to any dynamic-vs-static color pair, not just this one.
+ */
+export function screenshotModeStaticColor<TColor>(dynamicColor: TColor, staticColor: TColor): TColor {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return staticColor;
+  return dynamicColor;
+}
+
+/**
+ * The seed screenshot mode draws its "random" numbers from.
+ *
+ * Arbitrary — the only property that matters is that it NEVER CHANGES. A
+ * recording and every later replay both run on this value, so they walk the
+ * same sequence and pick the same climbs; move it and the committed fixture set
+ * stops matching what the app asks for.
+ */
+export const SCREENSHOT_RANDOM_SEED = 0x600d5eed;
+
+/**
+ * The randomness source for anything whose output reaches the pixels.
+ *
+ * The workout generator shuffles its candidate pool per grade and re-rolls a
+ * row from it, so on `Math.random` the preview shows different climbs every
+ * run — the shot is not byte-stable, and (worse) the app asks the replay
+ * backend for stats on climbs the recording never fetched, which is how
+ * Android run 34259455408 came to miss a different id set on each attempt.
+ *
+ * In screenshot mode this hands back a FRESH generator seeded from
+ * `SCREENSHOT_RANDOM_SEED`; everywhere else it is `Math.random` itself, so a
+ * shipped build keeps real randomness and the branch dead-strips with the rest
+ * of screenshot mode (see the note at the top of this module).
+ *
+ * Fresh per call, deliberately: a shared generator would make each draw depend
+ * on how many draws happened before it, and replay reorders work relative to a
+ * live recording. Independent sequences are what stay equal across runs.
+ */
+export function screenshotModeRandom(): RandomSource {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return mulberry32(SCREENSHOT_RANDOM_SEED);
+  return Math.random;
+}

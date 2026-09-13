@@ -24,6 +24,9 @@ import {
 } from '../lib/screenshot-backend';
 import {
   FIXTURE_SIZE_NOTE_BYTES,
+  RE_RECORD_COMMAND,
+  findScreenshotBackendNotes,
+  findScreenshotBackendProblems,
   fixtureSizeNote,
   validateScreenshotFixtureManifest,
 } from '../lib/screenshot-fixtures';
@@ -229,7 +232,16 @@ describe('screenshot backend', () => {
       expect(manifest?.accountEmail).toBe(ACCOUNT_EMAIL);
       // The id out of the live jwt, never the jwt itself.
       expect(manifest?.accountUserId).toBe(ACCOUNT_USER_ID);
-      expect(manifest?.frozenNow).toBe(FROZEN_NOW);
+      // frozenNow is a FLOOR: rewriteManifest bumps it past any response
+      // recorded after it. This fixture's own recordedAt is the real wall
+      // clock (new Date().toISOString()), always later than the fixed
+      // FROZEN_NOW test constant above — so assert the invariant the feature
+      // actually guarantees, not an exact value that would race the clock.
+      const recordedFixture = JSON.parse(readFileSync(join(fixturesDir, manifest?.graphql[0].file ?? ''), 'utf8')) as {
+        recordedAt: string;
+      };
+      expect(Date.parse(manifest?.frozenNow ?? '')).toBeGreaterThanOrEqual(Date.parse(FROZEN_NOW));
+      expect(Date.parse(manifest?.frozenNow ?? '')).toBeGreaterThan(Date.parse(recordedFixture.recordedAt));
       expect(manifest?.graphql).toHaveLength(1);
       expect(manifest?.graphql[0].operationName).toBe('SyncTicks');
       // Keyed by the ORIGINAL path + sorted query, not the CDN URL it followed.
@@ -720,6 +732,123 @@ describe('screenshot backend', () => {
           socket.on('close', () => resolve());
         }),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // A viewport batch's id list is assembled from whatever rows had mounted when
+  // the batch flushed, so replay (which is instant) asks for subsets the
+  // recording never sent. These are the composed answers that fix it — see
+  // BATCHED_OPERATIONS in scripts/lib/screenshot-fixtures.ts.
+  describe('batched replay', () => {
+    const CLIMB_STATS_QUERY =
+      'query ClimbStatsForClimbs($boardName: String!, $climbUuids: [ID!]!) {\n' +
+      '  climbStatsForClimbs(boardName: $boardName, climbUuids: $climbUuids) {\n' +
+      '    climbUuid\n    angle\n  }\n}';
+
+    type StatsRow = { climbUuid: string; angle: number };
+    const statsRow = (climbUuid: string, angle: number): StatsRow => ({ climbUuid, angle });
+
+    const recordBatch = async (boardName: string, climbUuids: string[], rows: StatsRow[]): Promise<void> => {
+      upstream.nextGraphqlResponse = { status: 200, body: { data: { climbStatsForClimbs: rows } } };
+      await postGraphql({
+        operationName: 'ClimbStatsForClimbs',
+        query: CLIMB_STATS_QUERY,
+        variables: { boardName, climbUuids },
+      });
+    };
+
+    const replayBatch = (boardName: string, climbUuids: string[]): Promise<Response> =>
+      postGraphql({
+        operationName: 'ClimbStatsForClimbs',
+        query: CLIMB_STATS_QUERY,
+        variables: { boardName, climbUuids },
+      });
+
+    const rowsOf = async (response: Response): Promise<StatsRow[]> =>
+      ((await response.json()) as { data: { climbStatsForClimbs: StatsRow[] } }).data.climbStatsForClimbs;
+
+    beforeEach(async () => {
+      await start({ mode: 'record', fresh: true });
+      // One climb yields a row PER ANGLE, so an id maps to many items.
+      await recordBatch(
+        'kilter',
+        ['climb-a', 'climb-b'],
+        [statsRow('climb-a', 0), statsRow('climb-a', 20), statsRow('climb-b', 40)],
+      );
+      // Recorded, and the backend genuinely had nothing for it. That is a fact,
+      // not a gap: it must compose to an empty list, never a miss.
+      await recordBatch('kilter', ['climb-c'], []);
+      // Same climb, other board. Its rows must never answer a kilter request.
+      await recordBatch('tension', ['climb-a'], [statsRow('climb-a', 10)]);
+      await stop();
+      await start({ mode: 'replay' });
+    });
+
+    it('composes an unrecorded id subset, in request order, and logs it as a hit', async () => {
+      const response = await replayBatch('kilter', ['climb-b', 'climb-a']);
+      expect(response.status).toBe(200);
+      // Request order, and every angle row for each id.
+      expect(await rowsOf(response)).toEqual([
+        statsRow('climb-b', 40),
+        statsRow('climb-a', 0),
+        statsRow('climb-a', 20),
+      ]);
+      expect(hasLine('HIT graphql ClimbStatsForClimbs')).toBe(true);
+      expect(hasLine('composed=2')).toBe(true);
+      expect(backend?.stats().hits).toBeGreaterThan(0);
+    });
+
+    it('treats an id recorded with no rows as recorded, contributing nothing rather than missing', async () => {
+      // climb-c was asked for and the backend had nothing for it. Composed
+      // alongside an id that does have rows, it must simply contribute none —
+      // if it counted as unrecorded, that climb would miss forever however
+      // often the set is re-recorded.
+      const response = await replayBatch('kilter', ['climb-a', 'climb-c']);
+      expect(await rowsOf(response)).toEqual([statsRow('climb-a', 0), statsRow('climb-a', 20)]);
+      expect(hasLine('composed=2')).toBe(true);
+    });
+
+    it('never composes across the non-id variables: a kilter recording cannot answer a tension request', async () => {
+      // climb-b exists in the recorded set, but only under boardName kilter, so
+      // it stays uncovered here — and tension's own climb-a still answers.
+      expect(await rowsOf(await replayBatch('tension', ['climb-a', 'climb-b']))).toEqual([statsRow('climb-a', 10)]);
+      expect(hasLine('uncovered=1 ids=climb-b')).toBe(true);
+
+      // The same id under tension answers with TENSION's row, never kilter's.
+      expect(await rowsOf(await replayBatch('tension', ['climb-a']))).toEqual([statsRow('climb-a', 10)]);
+    });
+
+    it('tolerates an id no recorded batch covers, answering with the rest', async () => {
+      // climb-z is a row the recording never mounted — draw distance, or a
+      // shuffled pool. Answering with no rows for it is a shape the real server
+      // produces too, and the list renders its own counts for that row.
+      const response = await replayBatch('kilter', ['climb-a', 'climb-z']);
+      expect(response.status).toBe(200);
+      expect(await rowsOf(response)).toEqual([statsRow('climb-a', 0), statsRow('climb-a', 20)]);
+      expect(hasLine('HIT graphql ClimbStatsForClimbs')).toBe(true);
+      expect(hasLine('composed=1 uncovered=1 ids=climb-z')).toBe(true);
+      // Worth saying, never worth failing on.
+      expect(findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' })).toEqual([]);
+      const [note] = findScreenshotBackendNotes(logLines.join('\n'));
+      expect(note).toContain('ClimbStatsForClimbs answered 1 batch(es) with 1 uncovered id(s)');
+    });
+
+    it('still misses when NOT ONE requested id was recorded — that is an uncaptured screen', async () => {
+      const response = await replayBatch('kilter', ['climb-y', 'climb-z']);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] });
+      expect(hasLine('reason=unrecorded-ids ids=climb-y,climb-z')).toBe(true);
+      const [problem] = findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' });
+      expect(problem).toContain('ClimbStatsForClimbs asked for a batch where NO id was recorded: climb-y, climb-z');
+      expect(problem).toContain('"boardName":"kilter"');
+      expect(problem).toContain(RE_RECORD_COMMAND);
+    });
+
+    it('counts a composed hit as a graphql hit for the problem scanner', async () => {
+      await replayBatch('kilter', ['climb-a']);
+      // A composed answer is the only graphql traffic here, so the "app never
+      // reached the replay backend" check must be satisfied by it alone.
+      expect(findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' })).toEqual([]);
     });
   });
 

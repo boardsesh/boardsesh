@@ -1,0 +1,29 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncTicks",
+  "documentHash": "61564137fa36d5f2a5302ac91e7f4d9ca21f5db3e9293679308ad173c3c4c0f0",
+  "variablesHash": "33e58ad85ccad232ffabe966be7955683841e7a6f5fec65358eb9b8a24439d3e",
+  "query": "\n    query SyncTicks($cursor: SyncCursorInput, $limit: Int! = 500) {\n      syncTicks(cursor: $cursor, limit: $limit) {\n        documents\n        cursor {\n          updatedAt\n          syncSeq\n        }\n        hasMore\n      }\n    }\n  ",
+  "variables": {
+    "cursor": {
+      "updatedAt": "2026-09-07T04:12:35.193338Z",
+      "syncSeq": "477769"
+    },
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncTicks": {
+        "documents": [],
+        "cursor": {
+          "updatedAt": "2026-09-07T04:12:35.193338Z",
+          "syncSeq": "477769"
+        },
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T23:02:50.715Z",
+  "upstream": "https://ws.boardsesh.com"
+}

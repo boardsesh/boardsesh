@@ -12,14 +12,19 @@ import { describe, expect, it } from 'vitest';
 import {
   FIXTURE_SIZE_NOTE_BYTES,
   IGNORED_VARIABLE_PATHS,
+  MISS_VARIABLES_LOG_LIMIT,
+  collectBatchItems,
+  findScreenshotBackendNotes,
   REDACTED_PER_RUN_VALUE,
   RE_RECORD_COMMAND,
   SCREENSHOT_BACKEND_LOG_PREFIX,
   canonicalJson,
   emptyManifest,
+  finalizeRecordingFrozenNow,
   findScreenshotBackendProblems,
   findSensitiveVariableKeys,
   fixtureSizeNote,
+  formatMissVariables,
   formatScreenshotBackendLine,
   graphqlFixtureKey,
   normalizeDocument,
@@ -66,6 +71,41 @@ function validManifest(): ScreenshotFixtureManifest {
     ],
   };
 }
+
+describe('finalizeRecordingFrozenNow', () => {
+  it('bumps the floor past the newest response, by at least a second', () => {
+    // A 20-minute-long shard: the floor was minted at the start, but the last
+    // response lands well after it.
+    const result = finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', [
+      '2026-09-08T13:10:00.000Z',
+      '2026-09-08T13:18:23.456Z',
+      '2026-09-08T13:12:00.000Z',
+    ]);
+    expect(Date.parse(result)).toBeGreaterThan(Date.parse('2026-09-08T13:18:24.456Z'));
+    // Whole seconds only, like every other frozenNow.
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+  });
+
+  it('keeps the floor unchanged when every response predates it', () => {
+    const result = finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', ['2026-09-08T13:00:00Z', '2026-09-08T13:07:49Z']);
+    expect(result).toBe('2026-09-08T13:07:50Z');
+  });
+
+  it('keeps the floor unchanged with no responses at all (record mode, nothing hit yet)', () => {
+    expect(finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', [])).toBe('2026-09-08T13:07:50Z');
+  });
+
+  it('keeps the floor unchanged when a response lands exactly on it', () => {
+    expect(finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', ['2026-09-08T13:07:50.000Z'])).toBe(
+      '2026-09-08T13:07:50Z',
+    );
+  });
+
+  it('guarantees at least a full second of margin even off a whole-second response', () => {
+    const result = finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', ['2026-09-08T13:09:00.000Z']);
+    expect(Date.parse(result) - Date.parse('2026-09-08T13:09:00.000Z')).toBeGreaterThanOrEqual(1000);
+  });
+});
 
 describe('normalizeDocument', () => {
   it('collapses every whitespace run to a single space and trims', () => {
@@ -482,7 +522,39 @@ describe('log grammar', () => {
     ],
     [
       'HIT graphql SyncTicks 0123456789ab',
-      { event: 'hit', kind: 'graphql', operationName: 'SyncTicks', hash12: '0123456789ab' },
+      {
+        event: 'hit',
+        kind: 'graphql',
+        operationName: 'SyncTicks',
+        hash12: '0123456789ab',
+        composed: null,
+        uncoveredCount: 0,
+        uncoveredIds: [],
+      },
+    ],
+    [
+      'HIT graphql ClimbStatsForClimbs 0123456789ab composed=4',
+      {
+        event: 'hit',
+        kind: 'graphql',
+        operationName: 'ClimbStatsForClimbs',
+        hash12: '0123456789ab',
+        composed: 4,
+        uncoveredCount: 0,
+        uncoveredIds: [],
+      },
+    ],
+    [
+      'HIT graphql ClimbStatsForClimbs 0123456789ab composed=4 uncovered=2 ids=climb-y,climb-z',
+      {
+        event: 'hit',
+        kind: 'graphql',
+        operationName: 'ClimbStatsForClimbs',
+        hash12: '0123456789ab',
+        composed: 4,
+        uncoveredCount: 2,
+        uncoveredIds: ['climb-y', 'climb-z'],
+      },
     ],
     [
       'HIT static /static/avatars/a.jpg?size=64',
@@ -491,37 +563,63 @@ describe('log grammar', () => {
     ['HIT auth credentials', { event: 'hit', kind: 'auth', route: 'credentials' }],
     ['HIT auth refresh', { event: 'hit', kind: 'auth', route: 'refresh' }],
     [
-      'MISS graphql SyncTicks 0123456789ab reason=no-fixture',
-      { event: 'miss', kind: 'graphql', operationName: 'SyncTicks', hash12: '0123456789ab', reason: 'no-fixture' },
+      'MISS graphql SyncTicks 0123456789ab reason=no-fixture variables={"cursor":null}',
+      {
+        event: 'miss',
+        kind: 'graphql',
+        operationName: 'SyncTicks',
+        hash12: '0123456789ab',
+        reason: 'no-fixture',
+        unrecordedIds: [],
+        variables: '{"cursor":null}',
+      },
     ],
     [
-      'MISS graphql SyncTicks 0123456789ab reason=document-changed',
+      'MISS graphql SyncTicks 0123456789ab reason=document-changed variables={}',
       {
         event: 'miss',
         kind: 'graphql',
         operationName: 'SyncTicks',
         hash12: '0123456789ab',
         reason: 'document-changed',
+        unrecordedIds: [],
+        variables: '{}',
       },
     ],
     [
-      'MISS graphql anonymous 0123456789ab reason=anonymous-operation',
+      'MISS graphql anonymous 0123456789ab reason=anonymous-operation variables={}',
       {
         event: 'miss',
         kind: 'graphql',
         operationName: 'anonymous',
         hash12: '0123456789ab',
         reason: 'anonymous-operation',
+        unrecordedIds: [],
+        variables: '{}',
       },
     ],
     [
-      'MISS graphql SyncTicks 0123456789ab reason=unreadable-fixture',
+      'MISS graphql SyncTicks 0123456789ab reason=unreadable-fixture variables={}',
       {
         event: 'miss',
         kind: 'graphql',
         operationName: 'SyncTicks',
         hash12: '0123456789ab',
         reason: 'unreadable-fixture',
+        unrecordedIds: [],
+        variables: '{}',
+      },
+    ],
+    [
+      'MISS graphql ClimbStatsForClimbs 0123456789ab reason=unrecorded-ids ids=climb-y,climb-z variables={"boardName":"kilter","climbUuids":["climb-y","climb-z"]}',
+      {
+        event: 'miss',
+        kind: 'graphql',
+        operationName: 'ClimbStatsForClimbs',
+        hash12: '0123456789ab',
+        reason: 'unrecorded-ids',
+        unrecordedIds: ['climb-y', 'climb-z'],
+        variables: '{"boardName":"kilter","climbUuids":["climb-y","climb-z"]}',
       },
     ],
     ['MISS static /static/avatars/a.jpg', { event: 'miss', kind: 'static', subject: '/static/avatars/a.jpg' }],
@@ -578,7 +676,47 @@ describe('log grammar', () => {
     const parsed = parseScreenshotBackendLogLine(
       `09-08 09:00:00.123 I ReactNative: ${SCREENSHOT_BACKEND_LOG_PREFIX} HIT graphql SyncTicks 0123456789ab`,
     );
-    expect(parsed).toEqual({ event: 'hit', kind: 'graphql', operationName: 'SyncTicks', hash12: '0123456789ab' });
+    expect(parsed).toEqual({
+      event: 'hit',
+      kind: 'graphql',
+      operationName: 'SyncTicks',
+      hash12: '0123456789ab',
+      composed: null,
+      uncoveredCount: 0,
+      uncoveredIds: [],
+    });
+  });
+
+  it('still parses a MISS line from a build that predates the variables field', () => {
+    // An unparsed MISS is an INVISIBLE miss: findScreenshotBackendProblems would
+    // skip it and pass a capture that shot an error placard.
+    expect(
+      parseScreenshotBackendLogLine(
+        `${SCREENSHOT_BACKEND_LOG_PREFIX} MISS graphql SyncTicks 0123456789ab reason=no-fixture`,
+      ),
+    ).toEqual({
+      event: 'miss',
+      kind: 'graphql',
+      operationName: 'SyncTicks',
+      hash12: '0123456789ab',
+      reason: 'no-fixture',
+      unrecordedIds: [],
+      variables: '',
+    });
+  });
+
+  it('elides a batch of variables too long to belong in a log line', () => {
+    const climbUuids = Array.from({ length: 60 }, (_, index) => `climb-${index}`);
+    const formatted = formatMissVariables('ClimbStatsForClimbs', { boardName: 'kilter', climbUuids });
+    expect(formatted).toHaveLength(MISS_VARIABLES_LOG_LIMIT + 1);
+    expect(formatted.endsWith('…')).toBe(true);
+    expect(formatted.startsWith('{"boardName":"kilter"')).toBe(true);
+  });
+
+  it('keeps the variables verbatim when they fit, ignored paths stripped', () => {
+    expect(formatMissVariables('SyncTicks', { cursor: null })).toBe('{"cursor":null}');
+    // The push token is hashed out of the key, so it must not reach the line either.
+    expect(formatMissVariables('RegisterToken', { token: 'apns-token', platform: 'ios' })).toBe('{"platform":"ios"}');
   });
 
   it('ignores lines that are not ours, and an unknown reason', () => {
@@ -612,12 +750,19 @@ describe('findScreenshotBackendProblems', () => {
     expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
   });
 
-  it('counts an auth hit toward the no-HIT-lines check, and does not treat a WS error as a problem', () => {
+  it('does not credit an auth-only hit toward the no-HIT-graphql check, and does not treat a WS error as a problem', () => {
     const log = [
       line('HIT auth credentials'),
       line('WS error RSV1 must be clear'),
       line('WS error RSV1 must be clear'),
     ].join('\n');
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([
+      'no HIT graphql lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
+    ]);
+  });
+
+  it('clears the no-HIT-graphql check once a single graphql hit lands, auth hit or not', () => {
+    const log = [line('HIT auth credentials'), line('HIT graphql Me 0000aaaa1111')].join('\n');
     expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
   });
 
@@ -636,6 +781,49 @@ describe('findScreenshotBackendProblems', () => {
     expect(problems[0].endsWith('`.')).toBe(true);
   });
 
+  it('prints the variables of the first occurrence, so a miss is diagnosable from the artifact alone', () => {
+    const log = [
+      line('HIT graphql Me 0000aaaa1111'),
+      line(
+        'MISS graphql GetSessionGroupedFeed 0123456789ab reason=no-fixture variables={"input":{"cursor":"eyJvIjo4MH0"}}',
+      ),
+      line(
+        'MISS graphql GetSessionGroupedFeed 0123456789ab reason=no-fixture variables={"input":{"cursor":"eyJvIjo4MH0"}}',
+      ),
+    ].join('\n');
+    const problems = findScreenshotBackendProblems(log, { mode: 'replay' });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('variables 0123456789ab = {"input":{"cursor":"eyJvIjo4MH0"}}');
+    expect(problems[0]).toContain('×2');
+  });
+
+  it('fails a batch where NOT ONE id was covered — that is a screen nobody recorded', () => {
+    const log = [
+      line('HIT graphql Me 0000aaaa1111'),
+      line(
+        'MISS graphql ClimbStatsForClimbs 0123456789ab reason=unrecorded-ids ids=climb-y,climb-z variables={"boardName":"kilter"}',
+      ),
+    ].join('\n');
+    const [problem] = findScreenshotBackendProblems(log, { mode: 'replay' });
+    expect(problem).toContain('ClimbStatsForClimbs asked for a batch where NO id was recorded: climb-y, climb-z');
+    expect(problem).toContain('was never captured');
+    expect(problem).toContain(RE_RECORD_COMMAND);
+  });
+
+  it('does not fail a capture for a partly-covered batch', () => {
+    // Draw distance, a shuffled pool — routine, and it cannot blank a visible
+    // row (the list's own counts render when there is no canonical row).
+    const log = [line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=18 uncovered=2 ids=climb-y,climb-z')].join(
+      '\n',
+    );
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
+  });
+
+  it('counts a composed batch hit as a graphql hit', () => {
+    const log = [line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=6')].join('\n');
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
+  });
+
   it('names the drift when the document moved, not a missing fixture', () => {
     const log = [
       line('HIT graphql Me 0000aaaa1111'),
@@ -650,7 +838,7 @@ describe('findScreenshotBackendProblems', () => {
     const log = line('READY mode=replay port=8090 fixtures=/tmp/fx frozenNow=2026-09-08T09:00:00Z graphql=12 static=3');
     const problems = findScreenshotBackendProblems(log, { mode: 'replay' });
     expect(problems).toEqual([
-      'no HIT lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
+      'no HIT graphql lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
     ]);
   });
 
@@ -706,5 +894,83 @@ describe('findScreenshotBackendProblems', () => {
   it('does not demand HIT lines from a recording run', () => {
     const log = line('READY mode=record port=8090 fixtures=/tmp/fx frozenNow=2026-09-08T09:00:00Z graphql=0 static=0');
     expect(findScreenshotBackendProblems(log, { mode: 'record' })).toEqual([]);
+  });
+});
+
+describe('collectBatchItems', () => {
+  const itemsById = new Map<string, unknown[]>([
+    [
+      'climb-a',
+      [
+        { climbUuid: 'climb-a', angle: 0 },
+        { climbUuid: 'climb-a', angle: 20 },
+      ],
+    ],
+    ['climb-b', [{ climbUuid: 'climb-b', angle: 40 }]],
+    // Requested while recording, and the backend had nothing for it.
+    ['climb-c', []],
+  ]);
+
+  it("returns every id's rows in request order", () => {
+    const { items, unrecordedIds, answeredIds } = collectBatchItems(itemsById, ['climb-b', 'climb-a']);
+    expect(items).toEqual([
+      { climbUuid: 'climb-b', angle: 40 },
+      { climbUuid: 'climb-a', angle: 0 },
+      { climbUuid: 'climb-a', angle: 20 },
+    ]);
+    expect(unrecordedIds).toEqual([]);
+    expect(answeredIds).toEqual(['climb-b', 'climb-a']);
+  });
+
+  it('answers a repeated id once, so a duplicate cannot duplicate rows', () => {
+    // Nothing upstream promises the app's own chunk holds each id once, and no
+    // real backend would answer the same climb twice.
+    const { items, answeredIds } = collectBatchItems(itemsById, ['climb-a', 'climb-b', 'climb-a']);
+    expect(items).toEqual([
+      { climbUuid: 'climb-a', angle: 0 },
+      { climbUuid: 'climb-a', angle: 20 },
+      { climbUuid: 'climb-b', angle: 40 },
+    ]);
+    expect(answeredIds).toEqual(['climb-a', 'climb-b']);
+  });
+
+  it('reports an id nothing recorded once, however often it was asked for', () => {
+    const { unrecordedIds } = collectBatchItems(itemsById, ['climb-z', 'climb-a', 'climb-z']);
+    expect(unrecordedIds).toEqual(['climb-z']);
+  });
+
+  it('treats an id recorded with no rows as answered, not unrecorded', () => {
+    const { items, unrecordedIds, answeredIds } = collectBatchItems(itemsById, ['climb-c']);
+    expect(items).toEqual([]);
+    expect(unrecordedIds).toEqual([]);
+    expect(answeredIds).toEqual(['climb-c']);
+  });
+});
+
+describe('findScreenshotBackendNotes', () => {
+  const line = (body: string): string => `${SCREENSHOT_BACKEND_LOG_PREFIX} ${body}`;
+
+  it('is silent when every batch was fully covered', () => {
+    const log = [
+      line('HIT graphql SyncTicks 0123456789ab'),
+      line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=18'),
+    ].join('\n');
+    expect(findScreenshotBackendNotes(log)).toEqual([]);
+  });
+
+  it('counts the batches and the ids per operation', () => {
+    const log = [
+      line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=18 uncovered=2 ids=climb-y,climb-z'),
+      line('HIT graphql ClimbStatsForClimbs aaaabbbbcccc composed=9 uncovered=1 ids=climb-q'),
+      line('HIT graphql GetBulkVoteSummaries ddddeeeeffff composed=20 uncovered=3 ids=one,two,three'),
+      line('HIT graphql ClimbStatsForClimbs 111122223333 composed=4'),
+    ].join('\n');
+    const notes = findScreenshotBackendNotes(log);
+    expect(notes).toHaveLength(2);
+    expect(notes[0]).toBe(
+      'ClimbStatsForClimbs answered 2 batch(es) with 3 uncovered id(s) — rows mounted beyond the fold; ' +
+        're-record if a visible row shows blank stats.',
+    );
+    expect(notes[1]).toContain('GetBulkVoteSummaries answered 1 batch(es) with 3 uncovered id(s)');
   });
 });

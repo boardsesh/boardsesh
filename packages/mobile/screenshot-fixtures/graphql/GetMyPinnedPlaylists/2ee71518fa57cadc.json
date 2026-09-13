@@ -1,0 +1,18 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetMyPinnedPlaylists",
+  "documentHash": "e34da7a81d2b8236d95fd2fe46ae92ac8552720195212ee32ca586a14f427efe",
+  "variablesHash": "2ee71518fa57cadce964961f1cf04d9ffb68f7016ee332a6d2ba8d5b4f825d24",
+  "query": "\n  \n  fragment PlaylistFields on Playlist {\n    id\n    uuid\n    boardType\n    layoutId\n    name\n    description\n    isPublic\n    color\n    icon\n    createdAt\n    updatedAt\n    lastAccessedAt\n    climbCount\n    userRole\n    followerCount\n    isFollowedByMe\n    isPinnedByMe\n  }\n\n  query GetMyPinnedPlaylists($input: GetMyPinnedPlaylistsInput!) {\n    myPinnedPlaylists(input: $input) {\n      ...PlaylistFields\n    }\n  }\n",
+  "variables": {
+    "input": {}
+  },
+  "response": {
+    "data": {
+      "myPinnedPlaylists": []
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T22:58:32.028Z",
+  "upstream": "https://ws.boardsesh.com"
+}

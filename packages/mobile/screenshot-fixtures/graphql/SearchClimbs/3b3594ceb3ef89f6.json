@@ -1,0 +1,251 @@
+{
+  "formatVersion": 1,
+  "operationName": "SearchClimbs",
+  "documentHash": "267c21a3a24d1fd5649abbfc34bdd21a27f04864b8bb78a189c18edc050e541e",
+  "variablesHash": "3b3594ceb3ef89f66ec152915a96992e4f357f31d06a827e83772b1ae5568b8a",
+  "query": "\n  query SearchClimbs($input: ClimbSearchInput!) {\n    searchClimbs(input: $input) {\n      climbs {\n        \n  uuid\n  boardType\n  layoutId\n  setter_username\n  userId\n  name\n  description\n  frames\n  angle\n  ascensionist_count\n  difficulty\n  quality_average\n  stars\n  difficulty_error\n  benchmark_difficulty\n  is_draft\n  is_hidden\n  is_no_match\n  characteristics\n  published_at\n  created_at\n  userAscents\n  userAttempts\n  framesCount\n  framesPace\n  boardseshDifficulty\n  boardseshConfidence\n  compatibleSizeIds\n\n      }\n      hasMore\n    }\n  }\n",
+  "variables": {
+    "input": {
+      "boardName": "tension",
+      "layoutId": 10,
+      "sizeId": 6,
+      "setIds": "12,13",
+      "angle": 40,
+      "page": 0,
+      "pageSize": 6,
+      "sortBy": "ascents",
+      "sortOrder": "desc",
+      "boulders": true
+    }
+  },
+  "response": {
+    "data": {
+      "searchClimbs": {
+        "climbs": [
+          {
+            "uuid": "18E0834CBBB64952AE12BB7DD7F56E28",
+            "boardType": "tension",
+            "layoutId": 10,
+            "setter_username": "tensionclimbing",
+            "userId": null,
+            "name": "Masquerade",
+            "description": "No matching",
+            "frames": "p561r6p685r8p699r6p704r5p711r7p712r8p722r6p724r6p725r6p727r8p733r8p739r6",
+            "angle": 40,
+            "ascensionist_count": 16363,
+            "difficulty": "6a/V3",
+            "quality_average": "4.97",
+            "stars": 5,
+            "difficulty_error": "0.00",
+            "benchmark_difficulty": "16",
+            "is_draft": false,
+            "is_hidden": false,
+            "is_no_match": true,
+            "characteristics": [
+              "no_match"
+            ],
+            "published_at": "2022-08-19 23:25:31.319795",
+            "created_at": "2022-08-19 23:25:31.319795",
+            "userAscents": null,
+            "userAttempts": null,
+            "framesCount": 1,
+            "framesPace": 0,
+            "boardseshDifficulty": 16.002457493803508,
+            "boardseshConfidence": "confirmed",
+            "compatibleSizeIds": [
+              6,
+              8,
+              10
+            ]
+          },
+          {
+            "uuid": "BA608169C0114B8ABB0AD7E7BA0D27C1",
+            "boardType": "tension",
+            "layoutId": 10,
+            "setter_username": "tensionclimbing",
+            "userId": null,
+            "name": "Putty",
+            "description": "No matching",
+            "frames": "p348r8p436r8p454r8p462r6p466r8p480r6p484r8p485r8p490r7p502r6p559r5p681r5p690r8p722r6p736r6",
+            "angle": 40,
+            "ascensionist_count": 14358,
+            "difficulty": "5c/V2",
+            "quality_average": "4.97",
+            "stars": 5,
+            "difficulty_error": "0.00",
+            "benchmark_difficulty": "15",
+            "is_draft": false,
+            "is_hidden": false,
+            "is_no_match": true,
+            "characteristics": [
+              "no_match"
+            ],
+            "published_at": "2022-08-24 18:37:02.476646",
+            "created_at": "2022-08-24 18:37:02.476646",
+            "userAscents": null,
+            "userAttempts": null,
+            "framesCount": 1,
+            "framesPace": 0,
+            "boardseshDifficulty": 14.999777263369213,
+            "boardseshConfidence": "confirmed",
+            "compatibleSizeIds": [
+              6,
+              7,
+              8,
+              9,
+              10
+            ]
+          },
+          {
+            "uuid": "D6B81C3306C74A308E795CFCBADB78DB",
+            "boardType": "tension",
+            "layoutId": 10,
+            "setter_username": "tensionclimbing",
+            "userId": null,
+            "name": "Compliments To The Climber",
+            "description": "No Matching",
+            "frames": "p311r6p316r6p353r6p356r6p357r7p366r8p430r6p450r6p546r8p553r6p561r5p567r8p573r6p613r5p685r8p689r8p704r8",
+            "angle": 40,
+            "ascensionist_count": 13957,
+            "difficulty": "6b/V4",
+            "quality_average": "4.95",
+            "stars": 5,
+            "difficulty_error": "0.00",
+            "benchmark_difficulty": "18",
+            "is_draft": false,
+            "is_hidden": false,
+            "is_no_match": true,
+            "characteristics": [
+              "no_match"
+            ],
+            "published_at": "2022-08-23 19:17:03.576297",
+            "created_at": "2022-08-23 19:17:03.576297",
+            "userAscents": null,
+            "userAttempts": null,
+            "framesCount": 1,
+            "framesPace": 0,
+            "boardseshDifficulty": 17.9940253519285,
+            "boardseshConfidence": "confirmed",
+            "compatibleSizeIds": [
+              6,
+              8,
+              10
+            ]
+          },
+          {
+            "uuid": "9BB53A94CE2E4B15819D9469466F6914",
+            "boardType": "tension",
+            "layoutId": 10,
+            "setter_username": "bennykuttler1285",
+            "userId": null,
+            "name": "Drain from the Brain",
+            "description": "No matching",
+            "frames": "p304r8p310r8p380r5p465r6p480r6p552r6p561r6p758r7",
+            "angle": 40,
+            "ascensionist_count": 13678,
+            "difficulty": "6c/V5",
+            "quality_average": "4.98",
+            "stars": 5,
+            "difficulty_error": "0.00",
+            "benchmark_difficulty": "20",
+            "is_draft": false,
+            "is_hidden": false,
+            "is_no_match": true,
+            "characteristics": [
+              "no_match"
+            ],
+            "published_at": "2022-11-22 21:52:07.547299",
+            "created_at": "2022-11-22 21:52:07.547299",
+            "userAscents": null,
+            "userAttempts": null,
+            "framesCount": 1,
+            "framesPace": 0,
+            "boardseshDifficulty": 19.98805789422127,
+            "boardseshConfidence": "confirmed",
+            "compatibleSizeIds": [
+              6,
+              8,
+              10
+            ]
+          },
+          {
+            "uuid": "823A103296DA449C90C4B865B5031629",
+            "boardType": "tension",
+            "layoutId": 10,
+            "setter_username": "tensionclimbing",
+            "userId": null,
+            "name": "Propagation",
+            "description": "No matching",
+            "frames": "p343r5p348r8p466r8p484r8p485r8p547r8p681r5p690r8p697r6p711r7p724r6p725r6p754r6",
+            "angle": 40,
+            "ascensionist_count": 13049,
+            "difficulty": "6b/V4",
+            "quality_average": "4.98",
+            "stars": 5,
+            "difficulty_error": "0.00",
+            "benchmark_difficulty": "18",
+            "is_draft": false,
+            "is_hidden": false,
+            "is_no_match": true,
+            "characteristics": [
+              "no_match"
+            ],
+            "published_at": "2022-08-21 02:03:23.846586",
+            "created_at": "2022-08-21 02:03:23.846586",
+            "userAscents": null,
+            "userAttempts": null,
+            "framesCount": 1,
+            "framesPace": 0,
+            "boardseshDifficulty": 17.995734984482137,
+            "boardseshConfidence": "confirmed",
+            "compatibleSizeIds": [
+              6,
+              8,
+              10
+            ]
+          },
+          {
+            "uuid": "3533ADC025C64367921BAEEBB72310A2",
+            "boardType": "tension",
+            "layoutId": 10,
+            "setter_username": "tensionclimbing",
+            "userId": null,
+            "name": "You Look Great Today",
+            "description": "No matching",
+            "frames": "p304r8p317r8p327r8p437r8p466r8p472r8p474r6p484r8p490r6p492r7p552r6p683r5p721r5p722r6p724r6p739r6p741r8",
+            "angle": 40,
+            "ascensionist_count": 12772,
+            "difficulty": "6a/V3",
+            "quality_average": "4.97",
+            "stars": 5,
+            "difficulty_error": "0.00",
+            "benchmark_difficulty": "16",
+            "is_draft": false,
+            "is_hidden": false,
+            "is_no_match": true,
+            "characteristics": [
+              "no_match"
+            ],
+            "published_at": "2022-08-23 18:43:47.521158",
+            "created_at": "2022-08-23 18:43:47.521158",
+            "userAscents": null,
+            "userAttempts": null,
+            "framesCount": 1,
+            "framesPace": 0,
+            "boardseshDifficulty": 15.99419516584233,
+            "boardseshConfidence": "confirmed",
+            "compatibleSizeIds": [
+              6,
+              8,
+              10
+            ]
+          }
+        ],
+        "hasMore": true
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-08T23:06:19.733Z",
+  "upstream": "https://ws.boardsesh.com"
+}

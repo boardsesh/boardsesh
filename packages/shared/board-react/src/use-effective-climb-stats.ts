@@ -659,6 +659,51 @@ export function useClimbStatsLayoutSync(boardType: BoardName | null, layoutId: n
   }, [adapter, boardType, layoutId]);
 }
 
+/**
+ * Read canonical stats for an EXPLICIT list of climbs, whether or not their rows
+ * are mounted.
+ *
+ * The ordinary path is per row: `useEffectiveClimbStats` queues one read and the
+ * coordinator flushes whatever has queued by the end of the microtask, so a
+ * batch's id list is "the rows that happened to be mounted just then". That is
+ * fine for a person scrolling and fatal for a recorded capture, where the batch
+ * membership becomes the fixture key: a replay backend answers instantly, the
+ * list mounts further than the recording did, and the batch asks for ids no
+ * recording ever covered (Android run 34248313427).
+ *
+ * So a caller that knows the WHOLE loaded list can ask for it in one go. Each
+ * key is retained for the duration — `pruneUnusableQueuedReads` drops a read
+ * whose key has no mounted selector, which is exactly what would throw away the
+ * not-yet-mounted rows this exists to cover — and released once the reads
+ * settle. Ids are de-duplicated and sorted so the batches the coordinator cuts
+ * out of them do not depend on the order the caller assembled its list in.
+ *
+ * DELIBERATELY NOT env-aware: this package is renderer-agnostic and knows
+ * nothing about screenshot mode. The mobile app decides when to call it (see
+ * `useScreenshotClimbStatsPrefetch`).
+ */
+export function prefetchClimbStatsForClimbs(
+  adapter: BoardAdapter,
+  key: Omit<ClimbStatsKey, 'climbUuid'>,
+  climbUuids: readonly string[],
+): Promise<void> {
+  if (!adapter.fetchClimbStatsForClimbs || !adapter.isAuthenticated) return Promise.resolve();
+  const releaseRetentions: Array<() => void> = [];
+  const reads: Array<Promise<void>> = [];
+  for (const climbUuid of [...new Set(climbUuids)].sort()) {
+    const readKeyForClimb: ClimbStatsKey = { ...key, climbUuid };
+    // An empty listener: this subscription exists only for its refCount, which
+    // is what `isClimbStatsReadRetained` reads.
+    releaseRetentions.push(subscribeClimbStats(readKeyForClimb, () => {}));
+    reads.push(readCanonicalClimbStats(adapter, readKeyForClimb));
+  }
+  return Promise.all(reads)
+    .then(() => undefined)
+    .finally(() => {
+      for (const releaseRetention of releaseRetentions) releaseRetention();
+    });
+}
+
 /** Schedule the post-ack safety read that covers a lost Redis publish. */
 export function scheduleAcknowledgedClimbStatsRead(
   adapter: BoardAdapter,
