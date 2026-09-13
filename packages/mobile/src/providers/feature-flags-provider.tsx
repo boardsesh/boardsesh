@@ -64,6 +64,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: 'Emergency kill switch: fall back to flat logbook entries if day-scoped repeat grouping misbehaves.',
   },
   {
+    key: 'cross-angle-stats',
+    label: 'Cross-angle climb stats',
+    description:
+      "Show climbs whose grade and sends live at a different angle, ranked on that angle's real send count and marked with it, instead of burying them under every climb set at the angle you are browsing. Woods always does this. KEEP THIS AT 0%: on a large catalogue the query loses its index-ordered early exit and costs ~0.9 s on MoonBoard and ~5.6 s on Kilter, measured on production. It is here to test the behaviour on one device, not to roll out.",
+  },
+  {
     key: 'garmin-watch',
     label: 'Garmin watch',
     description: 'Show the "Pair a Garmin watch" row in More. Off until the Connect IQ watch app ships.',

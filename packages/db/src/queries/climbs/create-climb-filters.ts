@@ -1,4 +1,4 @@
-import { type SQL, eq, gt, gte, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
+import { type SQL, eq, gt, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
 import { getMoonBoardGeometryByLayoutId, woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
 import {
@@ -12,6 +12,7 @@ import {
 } from '../../schema/index';
 import type { BoardRouteParams, ClimbSearchParams } from './types';
 import { climbHoldPlacementMatchSql } from './placement-match';
+import { effectiveStatsColumn, setAngleStatsJoinConditions, type StatsColumnKey } from './effective-stats';
 
 // Escape LIKE/ILIKE metacharacters so user-supplied search text is matched
 // literally. Postgres' default escape character is backslash, so `\%`, `\_`,
@@ -76,8 +77,26 @@ function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: 
  * @param params Board route parameters (board_name, layout_id, etc.)
  * @param searchParams Search/filter parameters
  * @param userId Optional user ID for personal progress filters
+ * @param options.crossAngleStats Resolve stats through the climb's set angle when
+ *   the browsed angle has none (issue #5405). It is an explicit OPT-IN, never
+ *   derived here, because the holds heatmap
+ *   (packages/web/app/lib/db/queries/climbs/holds-heatmap.ts) reuses these same
+ *   condition arrays from a query that drives off `board_climb_holds` and has no
+ *   `board_climbs` in its FROM at all. A set-angle reference baked in on the
+ *   board's behalf would make that query fail to plan on exactly the boards the
+ *   fix is for. The heatmap passes nothing and its SQL is unchanged.
  */
-export const createClimbFilters = (params: BoardRouteParams, searchParams: ClimbSearchParams, userId?: string) => {
+export const createClimbFilters = (
+  params: BoardRouteParams,
+  searchParams: ClimbSearchParams,
+  userId?: string,
+  options?: { crossAngleStats?: boolean },
+) => {
+  const crossAngle = options?.crossAngleStats === true;
+  // Reads one stats column from the effective row. Every call shares one
+  // row-presence probe, which is what lets a multi-column predicate below
+  // (gradeAccuracy) be sure both of its columns describe the same real row.
+  const statsCol = (key: StatsColumnKey) => effectiveStatsColumn(key, crossAngle);
   // holdsFilter shape: Record<holdId, Partial<Record<HoldFilterType, 'include' | 'exclude'>>>.
   // ANY means "hold present in any state" (the wildcard); STARTING / HAND /
   // FOOT / FINISH require / forbid the hold appearing with that specific
@@ -173,7 +192,7 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
   // Must live outside climbStatsConditions so it doesn't trigger the stats-driven
   // INNER JOIN path (which would exclude no-stats climbs).
   const projectsOnlyConditions: SQL[] = searchParams.projectsOnly
-    ? [sql`COALESCE(${boardClimbStats.ascensionistCount}, 0) = 0`]
+    ? [sql`COALESCE(${statsCol('ascensionistCount')}, 0) = 0`]
     : [];
 
   // Conditions for climb stats
@@ -182,17 +201,17 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
   // Skip minAscents when projectsOnly is active (they're mutually exclusive in the UI,
   // but guard here too so a stale query param can't produce a contradictory filter).
   if (searchParams.minAscents && !searchParams.projectsOnly) {
-    climbStatsConditions.push(gte(boardClimbStats.ascensionistCount, searchParams.minAscents));
+    climbStatsConditions.push(sql`${statsCol('ascensionistCount')} >= ${searchParams.minAscents}`);
   }
 
   if (searchParams.minGrade && searchParams.maxGrade) {
     climbStatsConditions.push(
-      sql`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0) BETWEEN ${searchParams.minGrade} AND ${searchParams.maxGrade}`,
+      sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0) BETWEEN ${searchParams.minGrade} AND ${searchParams.maxGrade}`,
     );
   } else if (searchParams.minGrade) {
-    climbStatsConditions.push(sql`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0) >= ${searchParams.minGrade}`);
+    climbStatsConditions.push(sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0) >= ${searchParams.minGrade}`);
   } else if (searchParams.maxGrade) {
-    climbStatsConditions.push(sql`ROUND(${boardClimbStats.displayDifficulty}::numeric, 0) <= ${searchParams.maxGrade}`);
+    climbStatsConditions.push(sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0) <= ${searchParams.maxGrade}`);
   }
 
   if (searchParams.minRating) {
@@ -201,19 +220,23 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     // 1-5, so compare directly. The old `/5` divisor assumed a 0-1 scale and made the
     // filter a near no-op — minRating=4 became threshold 0.8, which kept ~every rated
     // climb (verified on prod: 348014/348014 kilter rows passed).
-    climbStatsConditions.push(sql`${boardClimbStats.qualityAverage} >= ${searchParams.minRating}`);
+    climbStatsConditions.push(sql`${statsCol('qualityAverage')} >= ${searchParams.minRating}`);
   }
 
   if (searchParams.gradeAccuracy) {
+    // Two stats columns in one predicate. Under cross-angle both go through
+    // `statsCol`, which shares a single row-presence probe, so they can never end
+    // up describing different rows — a per-column COALESCE would allow exactly
+    // that whenever the browsed-angle row carries a NULL difficulty_average.
     climbStatsConditions.push(
-      sql`ABS(ROUND(${boardClimbStats.displayDifficulty}::numeric, 0) - ${boardClimbStats.difficultyAverage}::numeric) <= ${searchParams.gradeAccuracy}`,
+      sql`ABS(ROUND(${statsCol('displayDifficulty')}::numeric, 0) - ${statsCol('difficultyAverage')}::numeric) <= ${searchParams.gradeAccuracy}`,
     );
   }
 
   // Benchmark/classic-only: imported board feeds mark these climbs with a
   // positive benchmark_difficulty. Zero and NULL both mean "not flagged".
   if (searchParams.onlyBenchmarks) {
-    climbStatsConditions.push(sql`${boardClimbStats.benchmarkDifficulty} > 0`);
+    climbStatsConditions.push(sql`${statsCol('benchmarkDifficulty')} > 0`);
   }
 
   // Name search condition. Escape LIKE metacharacters so a search for "50%" or
@@ -708,6 +731,12 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
       eq(boardClimbStats.boardType, params.board_name),
       eq(boardClimbStats.angle, params.angle),
     ],
+    /** The second stats join used only under cross-angle — see ./effective-stats. */
+    getSetAngleStatsJoinConditions: () => setAngleStatsJoinConditions(params.board_name),
+    /** Whether the conditions above were built to read the effective row. Callers
+     *  route off this rather than re-deriving it, so the search and the count can
+     *  never describe different universes. */
+    isCrossAngleStats: crossAngle,
     getHoldHeatmapClimbStatsConditions: () => [
       eq(boardClimbStats.climbUuid, boardClimbHolds.climbUuid),
       eq(boardClimbStats.boardType, params.board_name),

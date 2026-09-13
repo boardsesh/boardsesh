@@ -44,6 +44,10 @@ export type ClimbListItemClimb = {
    *  own `Climb` type doesn't carry it — a queued row simply shows no chip. */
   is_hidden?: boolean | null;
   ascensionist_count?: number | null;
+  /** The angle the grade and send count above were read from. Present only on rows
+   *  that came through a cross-angle search (issue #5405); the queue's own `Climb`
+   *  does not carry it, so a queued row simply shows no marker. */
+  statsAngle?: number | null;
   quality_average: string;
   setter_username?: string | null;
   // Intrinsic climb attributes shown as grey glyphs after the name.
@@ -276,6 +280,7 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
 }) {
   const { resolveGrade } = useDisplayGrade();
   const { systemColors } = useTheme();
+  const { t } = useTranslation('climbs');
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
     ascensionistCount: climb.ascensionist_count,
     qualityAverage: climb.quality_average,
@@ -307,6 +312,27 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
             {consensusGrade}
           </Text>
         </View>
+      ) : null}
+      {/* The grade and the send count above came from a different angle than the one
+          on the wall — say so next to the number they qualify, not in the subtitle.
+          Deliberately uncoloured: in this row colour carries grade and nothing else.
+
+          `statsAngle` rides the search payload, while `liveStats` overlays the store
+          keyed on the BROWSED angle. Those only disagree after the climber logs the
+          first ever tick at the browsed angle on a climb whose numbers came from
+          another one: a canonical row appears at the browsed angle and the count
+          switches to it while this marker still names the old angle, until the next
+          search refetch resolves tier 1 and drops it. Narrow, self-correcting, and
+          not worth widening the shared hook's return to pre-empt. */}
+      {climb.statsAngle != null && climb.statsAngle !== angle ? (
+        <Text
+          variant="caption2"
+          numberOfLines={1}
+          accessibilityLabel={t('mobile.climbRow.setAngleMarkerAria', { angle: climb.statsAngle })}
+          style={[styles.consensusText, { color: systemColors.secondaryLabel }]}
+        >
+          {t('mobile.climbRow.setAngleMarker', { angle: climb.statsAngle })}
+        </Text>
       ) : null}
     </View>
   );

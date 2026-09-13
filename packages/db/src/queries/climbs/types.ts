@@ -68,6 +68,10 @@ export type ClimbSearchParams = {
   onlyRatedByMe?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
+  // Resolve each climb's stats through its own set angle when the browsed angle
+  // has no row (issue #5405). Ignored — always on — for boards whose climbs are
+  // angle-bound; see `resolveCrossAngleStats` in ./effective-stats.
+  crossAngleStats?: boolean;
   // Climb-type toggles. Default to undefined (treated as both selected → no
   // SQL filter on frames_count). Set boulders=true to constrain to single-
   // frame climbs, routes=true to constrain to multi-frame climbs. Both true
@@ -116,6 +120,7 @@ export type ClimbSearchInputLike = {
   onlyRatedByMe?: boolean | null;
   onlyDrafts?: boolean | null;
   projectsOnly?: boolean | null;
+  crossAngleStats?: boolean | null;
   boulders?: boolean | null;
   routes?: boolean | null;
   zoneBox?: ZoneBox | null;
@@ -189,6 +194,7 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     onlyRatedByMe: input.onlyRatedByMe ?? undefined,
     onlyDrafts: input.onlyDrafts ?? undefined,
     projectsOnly: input.projectsOnly ?? undefined,
+    crossAngleStats: input.crossAngleStats ?? undefined,
     boulders: input.boulders ?? undefined,
     routes: input.routes ?? undefined,
     zoneBox: input.zoneBox || undefined,
@@ -220,6 +226,13 @@ export type ClimbRow = {
   boardType: string;
   layoutId: number;
   angle: number;
+  /** The angle the grade, ascents and quality on this row were actually read from.
+   *  Equals `angle` normally; differs when the browsed angle had no stats row and
+   *  the climb's own set angle supplied them (Woods and MoonBoard always, Aurora
+   *  behind `crossAngleStats`). Null when the climb has no stats at any angle — a
+   *  genuine project. Display only: `angle` stays the BROWSED angle, which is what
+   *  ticks, the queue and the BLE spill guard key on. See ./effective-stats. */
+  statsAngle: number | null;
   ascensionist_count: number;
   difficulty: string;
   quality_average: string;

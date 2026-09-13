@@ -25,7 +25,13 @@ export type Climb = {
   name: string;
   description?: string | null;
   frames: string;
+  // The BROWSED angle, despite the name — ticks, the queue and the BLE spill
+  // guard all key on it. `statsAngle` says where the numbers below came from.
   angle: number;
+  // The angle the grade, ascents and quality were actually read from. Differs
+  // from `angle` when the browsed angle had no stats row and the climb's own set
+  // angle supplied them (issue #5405); null when it has no stats anywhere.
+  statsAngle?: number | null;
   ascensionist_count: number;
   difficulty: string;
   quality_average: string;
@@ -176,6 +182,9 @@ export type ClimbSearchInput = {
   onlyRatedByMe?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
+  // Resolve stats through the climb's own set angle when the browsed angle has
+  // none. Always on for Woods and MoonBoard; opt-in elsewhere. See #5405.
+  crossAngleStats?: boolean;
   // Climb-type toggles. Both undefined / both true → no frames_count filter.
   // Boulders only → `frames_count = 1`. Routes only → `frames_count > 1`.
   boulders?: boolean;

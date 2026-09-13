@@ -6,6 +6,7 @@ import { and, sql } from 'drizzle-orm';
 import { searchClimbs } from '../search-climbs';
 import { createClimbFilters } from '../create-climb-filters';
 import { boardClimbs, boardClimbStats } from '../../../schema/index';
+import { boardClimbStatsAtSetAngle, resolveCrossAngleStats } from '../effective-stats';
 import type { DbInstance } from '../../../client/postgres';
 import type { BoardRouteParams, ClimbSearchParams } from '../types';
 
@@ -104,9 +105,9 @@ if (!EXPLAIN_DB_URL) {
     return collectNodes(planWrapper[0].Plan);
   }
 
-  async function runSearch(searchParams: ClimbSearchParams): Promise<Captured[]> {
+  async function runSearch(searchParams: ClimbSearchParams, params: BoardRouteParams = PARAMS): Promise<Captured[]> {
     captured.length = 0;
-    await searchClimbs(db, PARAMS, searchParams);
+    await searchClimbs(db, params, searchParams);
     return [...captured];
   }
 
@@ -116,19 +117,23 @@ if (!EXPLAIN_DB_URL) {
     searchParams: ClimbSearchParams,
     params: BoardRouteParams = PARAMS,
   ): { text: string; params: unknown[] } {
-    const filters = createClimbFilters(params, searchParams, undefined);
+    const filters = createClimbFilters(params, searchParams, undefined, {
+      crossAngleStats: resolveCrossAngleStats(params, searchParams),
+    });
     const isDraftsQuery = filters.isOnlyDrafts;
     const whereConditions = [
       ...filters.getClimbWhereConditions(),
       ...(isDraftsQuery ? [] : filters.getSizeConditions()),
       ...(isDraftsQuery ? [] : filters.getClimbStatsConditions()),
     ];
-    const built = db
+    const base = db
       .select({ count: sql<number>`count(*)` })
       .from(boardClimbs)
-      .leftJoin(boardClimbStats, and(...filters.getClimbStatsJoinConditions()))
-      .where(and(...whereConditions))
-      .toSQL();
+      .leftJoin(boardClimbStats, and(...filters.getClimbStatsJoinConditions()));
+    const withSetAngle = filters.isCrossAngleStats
+      ? base.leftJoin(boardClimbStatsAtSetAngle, and(...filters.getSetAngleStatsJoinConditions()))
+      : base;
+    const built = withSetAngle.where(and(...whereConditions)).toSQL();
     return { text: built.sql, params: built.params };
   }
 
@@ -387,6 +392,94 @@ if (!EXPLAIN_DB_URL) {
         false,
         'the countClimbs SET LOCAL guard must eliminate the parallel Gather that exhausted /dev/shm in #2378',
       );
+    });
+
+    // Issue #5405. Cross-angle routes to the LEFT-JOIN standard path, which gives up
+    // the index-ordered `ascents_covering_v2` scan: the sort key becomes a CASE over
+    // two joined rows, which no index satisfies. These cases measure that, per board,
+    // because the answer decides which boards may have it on.
+    void describe('cross-angle stats (issue #5405)', () => {
+      const CROSS_ANGLE: ClimbSearchParams = {
+        page: 0,
+        pageSize: 20,
+        sortBy: 'ascents',
+        sortOrder: 'desc',
+        crossAngleStats: true,
+      };
+
+      // The two boards that get cross-angle from their capability, with no flag to
+      // turn it off. Their plans are the ones that must actually be affordable.
+      const WOODS: BoardRouteParams = { board_name: 'woods', layout_id: 1, size_id: 2, set_ids: [1], angle: 30 };
+      const MOONBOARD: BoardRouteParams = {
+        board_name: 'moonboard',
+        layout_id: 2,
+        size_id: 17,
+        set_ids: [],
+        angle: 25,
+      };
+
+      async function explainOnlySelect(searchParams: ClimbSearchParams, params: BoardRouteParams) {
+        const selects = tableSelects(await runSearch(searchParams, params));
+        assert.equal(selects.length, 1, 'cross-angle must issue exactly one SELECT (no stats-driven pass)');
+        return { capture: selects[0], nodes: await explainNodes(selects[0].query, selects[0].params, GUARD) };
+      }
+
+      void it('keeps Woods serial and off a sequential scan', async () => {
+        const { capture, nodes } = await explainOnlySelect(
+          { page: 0, pageSize: 20, sortBy: 'ascents', sortOrder: 'desc' },
+          WOODS,
+        );
+        assert.equal(hasSeqScanOnBoardTable(nodes), false, 'Woods must not seq-scan a board table');
+        assert.equal(hasGatherNode(nodes), false, 'the SET LOCAL guard must keep the Woods plan serial');
+        await logTiming('woods layout 1 @30 page 0 (default on)', capture);
+      });
+
+      void it('keeps MoonBoard serial on its largest layout at its quiet angle', async () => {
+        const { capture, nodes } = await explainOnlySelect(
+          { page: 0, pageSize: 20, sortBy: 'ascents', sortOrder: 'desc' },
+          MOONBOARD,
+        );
+        assert.equal(hasGatherNode(nodes), false, 'the SET LOCAL guard must keep the MoonBoard plan serial');
+        await logTiming('moonboard layout 2 @25 page 0 (default on, 92k climbs)', capture);
+      });
+
+      // Aurora is the expensive case and the reason the flag exists. Measured on the
+      // dev DB: page 0 on kilter layout 1 (320k climbs) takes ~2.8 s against ~0.6 ms
+      // for the same search without the opt-in, and it DOES fall to a sequential scan
+      // — a LEFT JOIN over the whole layout cannot use the covering index the
+      // stats-driven path reads in order. So this asserts only the guard that keeps it
+      // serial, and the numbers below are what a rollout decision should start from.
+      // Do not enable the Aurora flag above 0% on this evidence.
+      void it('stays serial on an Aurora board under the opt-in, expensively', async () => {
+        const { capture, nodes } = await explainOnlySelect(CROSS_ANGLE, PARAMS);
+        assert.equal(hasGatherNode(nodes), false, 'the SET LOCAL guard must hold under cross-angle');
+        await logTiming('kilter layout 1 @40 page 0 (flagged, expensive)', capture);
+      });
+
+      void it('logs the Aurora deep-page timing on the broadest filter', async () => {
+        const selects = tableSelects(await runSearch({ ...CROSS_ANGLE, page: 3 }, BROAD_PARAMS));
+        assert.equal(selects.length, 1);
+        await logTiming('kilter layout 1 page 3, no set-id restriction (flagged)', selects[0]);
+      });
+
+      void it('keeps the count serial with a stats filter forcing both joins', async () => {
+        // With cross-angle AND a stats predicate, both joins are referenced by the
+        // WHERE, so neither can be eliminated — the shape the count comment warns about.
+        const { text, params } = buildCountSql({ ...CROSS_ANGLE, minAscents: 1 }, BROAD_PARAMS);
+        const guarded = await explainNodes(text, params, GUARD);
+        assert.equal(hasGatherNode(guarded), false, 'the countClimbs guard must hold under cross-angle too');
+      });
+
+      void it('leaves the hot path untouched without the opt-in', async () => {
+        const selects = tableSelects(await runSearch({ page: 0, pageSize: 20, sortBy: 'ascents', sortOrder: 'desc' }));
+        const nodes = await explainNodes(selects[0].query, selects[0].params);
+        assert.ok(
+          indexNames(nodes).some((n) => /ascents_covering_v2/.test(n)),
+          `the off-path must still use the v2 covering index; saw: ${indexNames(nodes).join(', ')}`,
+        );
+        assert.equal(hasSortNode(nodes), false, 'the off-path must still need no sort');
+        await logTiming('baseline hot path (no cross-angle)', selects[0]);
+      });
     });
 
     void it('closes the pool', async () => {
