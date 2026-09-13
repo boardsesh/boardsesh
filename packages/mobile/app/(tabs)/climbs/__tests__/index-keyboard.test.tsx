@@ -21,6 +21,14 @@ const mocks = vi.hoisted(() => ({
   // at call time (render), so a test can set these before rendering to exercise
   // a different search/filter state without a separate mock scaffold file.
   searchClimbs: [] as unknown as Climb[],
+  // The board this screen is bound to, and whether its stored choice is still
+  // being read. Mutable so a test can render the two states the settled default
+  // hides: no board bound at all, and a board switch mid-flight.
+  activeBoard: null as { boardType: string; layoutId: number; sizeId: number; setIds: string; angle: number } | null,
+  isBoardLoading: false,
+  // Whether the climb search is fetching its first page — the other half of the
+  // initial-skeleton gate.
+  isClimbsLoading: false,
   searchState: {
     filters: {} as Record<string, unknown>,
     boardFilters: {} as Record<string, unknown>,
@@ -333,9 +341,12 @@ vi.mock('../../../../src/hooks/use-last-used-grade', () => ({
 }));
 
 vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
-  useInfiniteSearchClimbs: () => ({
-    data: { pages: [{ climbs: mocks.searchClimbs, hasMore: false }] },
-    isLoading: false,
+  // Honours `enabled` the way React Query does: a disabled query — the per-board
+  // restore still in flight — has no data and is not loading either, so the
+  // previous board's rows cannot leak into the render through this mock.
+  useInfiniteSearchClimbs: (_input: unknown, enabled = true) => ({
+    data: enabled ? { pages: [{ climbs: mocks.searchClimbs, hasMore: false }] } : undefined,
+    isLoading: enabled && mocks.isClimbsLoading,
     isError: mocks.searchFailed,
     isFetchingNextPage: false,
     isRefetching: mocks.isRefetching,
@@ -392,10 +403,9 @@ vi.mock('../../../../src/lib/create-board-holds', () => ({
 }));
 
 vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
-  useActiveBoard: () => ({
-    data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 },
-    isLoading: false,
-  }),
+  // Reads the fixture by reference (never rebuilds the object) so the board-keyed
+  // effects in the screen see a stable identity across re-renders.
+  useActiveBoard: () => ({ data: mocks.activeBoard, isLoading: mocks.isBoardLoading }),
   useSetActiveBoard: () => async () => {},
 }));
 
@@ -455,6 +465,9 @@ beforeEach(() => {
   mocks.ensureBackgroundsCached.mockClear();
   mocks.imagePrefetch.mockClear();
   mocks.searchClimbs = [mocks.climb, mocks.secondClimb];
+  mocks.activeBoard = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 };
+  mocks.isBoardLoading = false;
+  mocks.isClimbsLoading = false;
   mocks.searchState = { filters: {}, boardFilters: {}, name: '' };
   mocks.isOffline = false;
   mocks.searchFailed = false;
@@ -659,6 +672,40 @@ describe('ClimbList offline catalog empty states', () => {
 
     expect(await findByText('mobile.emptyState.noClimbs.title')).toBeTruthy();
     expect(queryByText('mobile.emptyState.offlineNoCatalog.title')).toBeNull();
+  });
+});
+
+// A board switch renames the screen the instant the choice commits, and the new
+// gym board switcher makes that a one-tap action. Whatever is left over from the
+// board before it then reads as the new board's climbs, so the resolving window
+// has to show placeholders, never rows.
+describe('ClimbList board switch', () => {
+  it('shows no climb rows while a per-board restore is still in flight', async () => {
+    // A restore that never lands: the screen does not yet know which climbs
+    // belong to this board, so it must not keep showing the ones it had.
+    mocks.getLastSearch.mockReturnValue(new Promise(() => {}));
+
+    const { queryByText } = render(<ClimbList />);
+
+    await waitFor(() => expect(mocks.getLastSearch).toHaveBeenCalled());
+    expect(queryByText('Moonage')).toBeNull();
+    expect(queryByText('Zenith')).toBeNull();
+    // ...and not the premature "no climbs" placard either: a board mid-restore
+    // has not searched yet, so it has found nothing to report.
+    expect(queryByText('mobile.emptyState.noClimbs.title')).toBeNull();
+  });
+
+  // The risk the resolving window introduces at the other end: with no board
+  // bound there is nothing to resolve, and a climber parked on skeletons forever
+  // would never reach the button that binds one.
+  it('lands on the no-board empty state instead of skeletons when no board is bound', async () => {
+    mocks.activeBoard = null;
+    mocks.searchClimbs = [];
+
+    const { findByText, container } = render(<ClimbList />);
+
+    expect(await findByText('mobile.emptyState.noBoard.title')).toBeTruthy();
+    expect(container.querySelectorAll('[data-skeleton-row]')).toHaveLength(0);
   });
 });
 

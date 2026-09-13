@@ -1158,7 +1158,15 @@ function ClimbListInner() {
   const isBoardResolving = isBoardLoading || (hasBoardConfig && !searchReady);
   // A placeholder with no rows (the previous search came up empty) is still a
   // load in progress, so it shows skeletons rather than the old empty state.
-  const showInitialSkeletons = (isClimbsLoading || isPlaceholderData) && visibleClimbs.length === 0;
+  //
+  // Board resolution counts too. Switching board renames the screen the instant
+  // the choice commits, so anything left over from the board before it reads as
+  // the new board's climbs — the one thing a one-tap switcher must never do.
+  // With no board bound `isBoardResolving` collapses to `isBoardLoading`, and
+  // the no-board empty state returns before the list either way, so this cannot
+  // strand anyone on a permanent skeleton.
+  const showInitialSkeletons =
+    (isClimbsLoading || isPlaceholderData || isBoardResolving) && visibleClimbs.length === 0;
 
   const gradeBound = useMemo<GradeBound>(
     () => ({ minGradeId: filters.minGrade, maxGradeId: filters.maxGrade }),
