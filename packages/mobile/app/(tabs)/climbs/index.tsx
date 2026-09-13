@@ -1,6 +1,7 @@
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import { View, StyleSheet, RefreshControl, Keyboard, InteractionManager, Pressable } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { hashKey } from '@tanstack/react-query';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
@@ -658,11 +659,12 @@ function ClimbListInner() {
   // its data emptied; with the previous rows kept up it has to be told. Keyed on
   // the search itself (the query key's input, without `page`) rather than the
   // input object's identity, so a rebuilt but identical input never scrolls.
-  // Skips the first run so mounting never scrolls.
+  // React Query's own hashKey sorts object keys, so property order can't fake a
+  // change. Skips the first run so mounting never scrolls.
   const climbListRef = useRef<FlashListRef<Climb>>(null);
   const searchScrollKey = useMemo(() => {
     const { page: _page, ...queryInput } = searchInput;
-    return JSON.stringify(queryInput);
+    return hashKey([queryInput]);
   }, [searchInput]);
   const hasSeenSearchKeyRef = useRef(false);
   useEffect(() => {
