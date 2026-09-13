@@ -12,11 +12,28 @@ export const GRADE_MODEL_VERSION = 'v2.1'; // v2.1: zero-evidence cross-angle pr
 
 /**
  * Boards whose upstream `difficulty_average` is a live crowd mean (fractional,
- * moves with ascents). MoonBoard is deliberately absent: its feed carries only
- * integer labels (average == display == benchmark byte-for-byte), so there is
- * no crowd signal to model — the UI shows "not standardized yet" instead.
+ * moves with ascents). MoonBoard is normally deliberately absent: its feed
+ * carries only integer labels (average == display == benchmark byte-for-byte),
+ * so there is no crowd signal to model — the UI shows "not standardized yet"
+ * instead.
+ *
+ * EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade): MoonBoard is
+ * temporarily included here to test the gate/pipeline mechanics against a
+ * `difficulty_average` sourced from the catalog's `userGrade` field instead of
+ * the setter's `grade` — see moonboard-catalog-helpers.ts's userDifficultyId.
+ * NOT for merge to main as-is; see docs/boardsesh-grade.md §5/§7 for why a real
+ * MoonBoard grade still needs much more (tick history, angle coverage, bridge
+ * coverage) than this one field.
  */
-export const CROWD_MEAN_BOARDS = ['kilter', 'tension', 'grasshopper', 'decoy', 'soill', 'touchstone'] as const;
+export const CROWD_MEAN_BOARDS = [
+  'kilter',
+  'tension',
+  'grasshopper',
+  'decoy',
+  'soill',
+  'touchstone',
+  'moonboard',
+] as const;
 
 /**
  * Boards that get a cross-board `universal_grade`. Tension is the anchor
