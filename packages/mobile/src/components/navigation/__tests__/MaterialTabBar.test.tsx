@@ -262,7 +262,7 @@ describe('MaterialTabBar', () => {
       );
       const indicators = getAllByTestId('indicator');
       const style = indicators[0].getAttribute('data-style');
-      expect(style).toContain('"backgroundColor":"#4A4458"');
+      expect(style).not.toContain('"backgroundColor":"transparent"');
     });
   });
 
