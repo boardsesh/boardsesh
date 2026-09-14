@@ -1955,14 +1955,8 @@ export function PlayDrawer({
                           />
                         </View>
 
-                        {(showBoardMismatch || climbBoardReachable) && onSwitchBoard ? (
-                          <SwitchBoardOverlay
-                            boardLabel={switchBoardLabel ?? ''}
-                            onSwitchBoard={handleSwitchBoard}
-                            variant={climbBoardReachable ? 'move' : 'lock'}
-                            onPrevious={climbBoardReachable ? handlePrev : undefined}
-                            onNext={climbBoardReachable ? handleNext : undefined}
-                          />
+                        {showBoardMismatch && onSwitchBoard ? (
+                          <SwitchBoardOverlay boardLabel={switchBoardLabel ?? ''} onSwitchBoard={handleSwitchBoard} />
                         ) : null}
                       </View>
                     </View>

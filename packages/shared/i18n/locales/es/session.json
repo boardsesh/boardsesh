@@ -447,11 +447,6 @@
         "headerSwitcherAria": "Estás en {{board}}. Toca para cambiar a otro plafón de aquí.",
         "headerSwitcherHintOpen": "Muestra los otros plafones de este rocódromo",
         "headerSwitcherHintClose": "Oculta los otros plafones"
-      },
-      "moveToWall": {
-        "title": "El siguiente está en {{board}}",
-        "body": "Acércate y te cambiamos.",
-        "cta": "Cambiar a {{board}}"
       }
     },
     "toast": {

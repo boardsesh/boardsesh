@@ -1643,7 +1643,12 @@ export function BluetoothProvider({
   // that produced it, so a second request can only come from a newer flow whose
   // intent supersedes the first.
   const [pendingAutoConnect, setPendingAutoConnect] = useState<{
-    serial: string;
+    /**
+     * Silent auto-select target. Absent for a deliberate hop to another board at
+     * this gym: nothing is remembered for a board the climber has not connected
+     * to before, so `connect` opens the picker as it would from a cold tap.
+     */
+    serial?: string;
     configKey: string;
     armUndoToast: boolean;
   } | null>(null);

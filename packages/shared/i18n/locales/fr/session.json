@@ -447,11 +447,6 @@
         "headerSwitcherAria": "Tu es sur {{board}}. Touche pour passer à une autre board ici.",
         "headerSwitcherHintOpen": "Affiche les autres boards de cette salle",
         "headerSwitcherHintClose": "Masque les autres boards"
-      },
-      "moveToWall": {
-        "title": "Le prochain est sur {{board}}",
-        "body": "Va là-bas, on s'occupe du reste.",
-        "cta": "Passer à {{board}}"
       }
     },
     "toast": {

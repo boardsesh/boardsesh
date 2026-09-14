@@ -447,11 +447,6 @@
         "headerSwitcherAria": "You're on {{board}}. Tap to move to another board here.",
         "headerSwitcherHintOpen": "Shows the other boards at this gym",
         "headerSwitcherHintClose": "Hides the other boards"
-      },
-      "moveToWall": {
-        "title": "Next one's on {{board}}",
-        "body": "Walk over and we'll switch you.",
-        "cta": "Move to {{board}}"
       }
     },
     "toast": {

@@ -447,11 +447,6 @@
         "headerSwitcherAria": "Du bist an {{board}}. Tippe, um zu einem anderen Board hier zu wechseln.",
         "headerSwitcherHintOpen": "Zeigt die anderen Boards in dieser Halle",
         "headerSwitcherHintClose": "Blendet die anderen Boards aus"
-      },
-      "moveToWall": {
-        "title": "Der nächste ist an {{board}}",
-        "body": "Geh rüber, wir wechseln für dich.",
-        "cta": "Zu {{board}} wechseln"
       }
     },
     "toast": {

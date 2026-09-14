@@ -98,65 +98,16 @@ describe('SwitchBoardOverlay', () => {
 
 // The same fact — this climb is on another board — told as an invitation when
 // that board is across the room rather than across the country.
-describe('SwitchBoardOverlay, move variant', () => {
-  const moveProps = { boardLabel: 'Tension 2', variant: 'move' as const };
 
-  it('invites instead of refusing', () => {
-    const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard: vi.fn() }));
+// A climb on a board at THIS gym gets no overlay at all — it renders on its own
+// board with every control live. Only a board somewhere else raises the scrim.
+describe('SwitchBoardOverlay presentation', () => {
+  it('puts the message on a glass card rather than straight on the scrim', () => {
+    const { container } = render(createElement(SwitchBoardOverlay, { boardLabel: 'Woods', onSwitchBoard: vi.fn() }));
 
-    expect(container.textContent).toContain('mobile.boardPresence.moveToWall.title:Tension 2');
-    expect(container.textContent).toContain('mobile.boardPresence.moveToWall.body');
-    expect(container.textContent).not.toContain('boardMismatch.title');
-  });
-
-  // The scrim's a11y trap is what blocks the queue, tick and favourite controls.
-  // A board the climber can walk to must not block any of them.
-  // QA: "should be like a glass surface over the normal controls". A flat scrim
-  // let the controls bleed through it crisply; glass recesses them instead.
-  it('draws on a glass surface, not a flat scrim', () => {
-    const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard: vi.fn() }));
-
+    // The scrim alone is a 60% fill, so the controls it covers read right
+    // through words laid directly on it. The card is what makes them recede.
     expect(container.querySelector('[data-glass]')).toBeTruthy();
-  });
-
-  it('does not trap a11y focus or show the lock', () => {
-    const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard: vi.fn() }));
-
-    expect(container.querySelector('[data-modal="true"]')).toBeNull();
-    expect(container.querySelector('[data-icon="lock"]')).toBeNull();
-  });
-
-  // Moving along the queue is still just moving along the queue, so it uses the
-  // drawer's own transport glyphs rather than inventing a "skip" of its own.
-  it('flanks the move button with the drawer transport controls', () => {
-    const onSwitchBoard = vi.fn();
-    const onPrevious = vi.fn();
-    const onNext = vi.fn();
-    const { container } = render(
-      createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard, onPrevious, onNext }),
-    );
-    const buttons = [...container.querySelectorAll('button')];
-
-    // Previous to the left of the move button, next to its right.
-    expect(buttons.map((button) => button.getAttribute('data-icon'))).toEqual(['skip.previous', null, 'skip.next']);
-    expect(buttons[1].textContent).toBe('mobile.boardPresence.moveToWall.cta:Tension 2');
-
-    buttons[0].click();
-    buttons[1].click();
-    buttons[2].click();
-
-    expect(onPrevious).toHaveBeenCalledTimes(1);
-    expect(onSwitchBoard).toHaveBeenCalledTimes(1);
-    expect(onNext).toHaveBeenCalledTimes(1);
-  });
-
-  // Nothing to skip to when the caller has no queue to advance — the invitation
-  // still stands, it just has one way out.
-  it('omits skip when no skip handler is given', () => {
-    const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard: vi.fn() }));
-
-    expect([...container.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
-      'mobile.boardPresence.moveToWall.cta:Tension 2',
-    ]);
+    expect(container.querySelector('[data-modal="true"]')).toBeTruthy();
   });
 });
