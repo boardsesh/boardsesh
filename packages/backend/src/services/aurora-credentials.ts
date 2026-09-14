@@ -1,5 +1,5 @@
 import { and, count, eq, isNull, ne, sql } from 'drizzle-orm';
-import { AuroraClimbingClient } from '@boardsesh/aurora-sync/api';
+import { AuroraClimbingClient, assertAuroraBoardName } from '@boardsesh/aurora-sync/api';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import { auroraCredentials, boardClimbs, boardseshTicks, userBoardMappings } from '@boardsesh/db/schema';
 import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
@@ -311,33 +311,17 @@ export async function getAuroraUnsyncedCounts(userId: string): Promise<UnsyncedC
   return unsyncedCounts;
 }
 
-/**
- * The last line before a username and a password leave the process.
- *
- * `HOST_BASES` and friends are `Record<AuroraBoardName, string>`, so a board type
- * that is not an Aurora board indexes them to `undefined` and
- * `AuroraClimbingClient` builds its base URL as `undefined.com` — a real,
- * registered domain that would then receive the submitted credentials over the
- * wire. The type says `AuroraBoardName`, but the value arrives from a GraphQL
- * input and every caller reaches it through a cast, so the type is a claim and
- * this is the check.
- *
- * Belt to `AuroraBoardNameSchema`'s braces: the schema stops a bad value at the
- * edge, this stops one that reaches the service by any other route.
- */
-function assertAuroraBoard(boardType: string): asserts boardType is AuroraBoardName {
-  if ((AURORA_BOARDS as readonly string[]).includes(boardType)) return;
-  throw new Error(`"${boardType}" is not an Aurora board; it has no account to link.`);
-}
-
 export async function saveAuroraCredential(input: {
   userId: string;
   boardType: AuroraBoardName;
   username: string;
   password: string;
 }): Promise<AuroraCredentialStatus> {
-  // Before ANY network call — see assertAuroraBoard.
-  assertAuroraBoard(input.boardType);
+  // Before ANY network call. `assertAuroraBoardName` lives next to `HOST_BASES`
+  // in @boardsesh/aurora-sync, so the GraphQL edge and the sync runner share one
+  // definition. Belt to `AuroraBoardNameSchema`'s braces: the schema stops a bad
+  // value at the edge, this stops one that reaches the service another way.
+  assertAuroraBoardName(input.boardType);
 
   if (input.boardType === KILTER_BOARD_TYPE) {
     throw new Error('Kilter accounts use OAuth');

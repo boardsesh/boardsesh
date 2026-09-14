@@ -21,7 +21,10 @@ process.env.AURORA_CREDENTIALS_SECRET = process.env.AURORA_CREDENTIALS_SECRET ??
 const clientConstructed = vi.fn();
 const signInMock = vi.fn();
 
-vi.mock('@boardsesh/aurora-sync/api', () => ({
+vi.mock('@boardsesh/aurora-sync/api', async (importOriginal) => ({
+  // The guard under test comes from the real module — mocking it would test the
+  // mock. Only the client is replaced, so "was it constructed?" stays meaningful.
+  ...(await importOriginal<typeof import('@boardsesh/aurora-sync/api')>()),
   AuroraClimbingClient: class {
     constructor(options: unknown) {
       clientConstructed(options);
