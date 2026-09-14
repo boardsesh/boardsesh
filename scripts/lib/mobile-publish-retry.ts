@@ -9,7 +9,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { SURFABILITY_PROBE_BUDGET_MINUTES } from './ota-branch-probe';
+import { SURFABILITY_CONFIRM_BUDGET_MINUTES, SURFABILITY_PROBE_BUDGET_MINUTES } from './ota-branch-probe';
 
 /**
  * Backoff ladder for one platform, in wait order: 34 minutes total, sized to
@@ -49,7 +49,7 @@ export const SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES = 2.5;
  * floors for time they cannot spend.
  */
 export const SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES =
-  SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES + SURFABILITY_PROBE_BUDGET_MINUTES;
+  SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES + SURFABILITY_CONFIRM_BUDGET_MINUTES;
 
 const SELF_HOSTED_PUBLISH_LADDER_MINUTES =
   SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS.reduce((total, delayMs) => total + delayMs, 0) / 60_000;
@@ -58,9 +58,15 @@ const SELF_HOSTED_PUBLISH_LADDER_MINUTES =
 export const SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM =
   SELF_HOSTED_PUBLISH_LADDER_MINUTES + SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES;
 
-/** The same, for a preview publish, which also probes the branch on a finalize 524. */
+/**
+ * The same, for a preview publish: every attempt may confirm a 524, and the whole
+ * platform is verified once more at the end on the longer, propagation-tolerant
+ * schedule.
+ */
 export const SELF_HOSTED_PREVIEW_WORST_CASE_MINUTES_PER_PLATFORM =
-  SELF_HOSTED_PUBLISH_LADDER_MINUTES + SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES;
+  SELF_HOSTED_PUBLISH_LADDER_MINUTES +
+  SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES +
+  SURFABILITY_PROBE_BUDGET_MINUTES;
 
 /**
  * Everything a publish job does around the publish steps themselves. Dominated

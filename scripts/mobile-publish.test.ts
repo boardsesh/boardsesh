@@ -419,4 +419,32 @@ describe('preview branch surfability check', () => {
 
     expect(surfable).toBe(true);
   });
+
+  it('checks each platform against its own runtimeVersion, and skips only the one that has none', async () => {
+    // The asymmetry is the whole point: GOOGLE_MAPS_API_KEY is an Android-only
+    // fingerprint input, so one platform resolving while the other does not is the
+    // ORDINARY mixed case, not an exotic one — and getting it wrong is what failed
+    // run 34796068541. iOS is checked and listed; Android has no hash, so it is
+    // skipped rather than judged against the iOS list it does not appear in.
+    const probed: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init: { headers: Record<string, string> }) => {
+      probed.push(`${init.headers['expo-platform']}@${init.headers['expo-runtime-version']}`);
+      return new Response(JSON.stringify({ branches: [{ name: 'pr-5417' }], total: 1 }), { status: 200 });
+    });
+
+    const platforms: OtaPublishPlatform[] = ['ios', 'android'];
+    const results = await Promise.all(
+      platforms.map((platform) =>
+        previewBranchPassesSurfabilityCheck('pr-5417', [deduplicated(platform)], SERVER, {
+          ...NO_WAIT,
+          runtimeVersion: platform === 'ios' ? IOS_HASH : null,
+          fetchImpl: fetchImpl as unknown as typeof fetch,
+        }),
+      ),
+    );
+
+    expect(results).toEqual([true, true]);
+    // Android never reached the server; iOS asked about its own hash and nothing else.
+    expect(probed).toEqual([`ios@${IOS_HASH}`]);
+  });
 });
