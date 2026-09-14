@@ -1872,6 +1872,18 @@ export function PlayDrawer({
                     is iOS-only); the overlay itself stays a sibling so its
                     "Switch board" action remains focusable. */}
                       <View style={styles.controlsRegion}>
+                        {/* In flow, above the controls — NOT over them. The lock
+                            scrim below is absolute because blocking is its whole
+                            job; this one leaves every control usable, so drawing
+                            it on top only collides with them. */}
+                        {climbBoardReachable && onSwitchBoard ? (
+                          <SwitchBoardOverlay
+                            boardLabel={switchBoardLabel ?? ''}
+                            onSwitchBoard={handleSwitchBoard}
+                            variant="move"
+                            onSkip={nextClimb}
+                          />
+                        ) : null}
                         <View
                           accessibilityElementsHidden={showBoardMismatch}
                           importantForAccessibility={showBoardMismatch ? 'no-hide-descendants' : 'auto'}
@@ -1955,13 +1967,8 @@ export function PlayDrawer({
                           />
                         </View>
 
-                        {(showBoardMismatch || climbBoardReachable) && onSwitchBoard ? (
-                          <SwitchBoardOverlay
-                            boardLabel={switchBoardLabel ?? ''}
-                            onSwitchBoard={handleSwitchBoard}
-                            variant={climbBoardReachable ? 'move' : 'lock'}
-                            onSkip={climbBoardReachable ? nextClimb : undefined}
-                          />
+                        {showBoardMismatch && onSwitchBoard ? (
+                          <SwitchBoardOverlay boardLabel={switchBoardLabel ?? ''} onSwitchBoard={handleSwitchBoard} />
                         ) : null}
                       </View>
                     </View>

@@ -122,11 +122,10 @@ function MoveToWallCallout({
 
 const styles = StyleSheet.create({
   callout: {
-    position: 'absolute',
-    left: spacing[3],
-    right: spacing[3],
-    bottom: spacing[3],
-    zIndex: 3,
+    // Normal flow: this sits ABOVE the controls and leaves them all usable, so
+    // it takes its own height rather than covering theirs.
+    marginHorizontal: spacing[3],
+    marginBottom: spacing[2],
     gap: spacing[2],
     padding: spacing[3],
     borderRadius: borderRadius.lg,

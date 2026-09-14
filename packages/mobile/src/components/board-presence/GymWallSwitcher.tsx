@@ -4,9 +4,14 @@ import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardConfigLabel, disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
 import { Text } from '../Text';
+import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
+import { useBoardRecentClimb } from '../../lib/graphql/hooks/use-board-recent-climb';
 import { useTheme } from '../../providers/theme-provider';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
 import { spacing, borderRadius } from '../../theme/tokens';
+
+/** Board art beside each row — small enough not to set the row's height floor. */
+const THUMBNAIL_SIZE = 36;
 
 /** Rows shown before the list collapses behind "Show all N boards". */
 const COLLAPSED_ROW_COUNT = 2;
@@ -133,6 +138,32 @@ const GymWallRow = memo(function GymWallRow({
 
   const handlePress = useCallback(() => onSelectBoard(board), [board, onSelectBoard]);
 
+  // Board art for THIS board, lit with whatever was last put up on it. A board
+  // with history reads at a glance — you recognise the wall you were on and what
+  // is on it now — where the generic glyph this replaces was the same picture on
+  // every row. A board nobody has lit yet still renders its own art, just bare.
+  const recentClimb = useBoardRecentClimb(board.boardId);
+  const thumbnailBoardConfig = useMemo(
+    () => ({
+      boardName: board.boardType,
+      layoutId: board.layoutId,
+      sizeId: board.sizeId,
+      setIds: board.setIds,
+      angle: board.angle,
+    }),
+    [board.boardType, board.layoutId, board.sizeId, board.setIds, board.angle],
+  );
+  const thumbnailClimb = useMemo(
+    () => ({
+      boardType: board.boardType,
+      layoutId: board.layoutId,
+      angle: recentClimb?.angle ?? board.angle,
+      frames: recentClimb?.frames ?? '',
+      compatibleSizeIds: null,
+    }),
+    [board.boardType, board.layoutId, board.angle, recentClimb?.angle, recentClimb?.frames],
+  );
+
   // The gym already names itself in the section heading, and the wall crawl
   // prefixes every imported board with it — repeating it here spends the row's
   // whole width before reaching the part that tells two boards apart.
@@ -166,6 +197,7 @@ const GymWallRow = memo(function GymWallRow({
       accessibilityLabel={t('mobile.boardPresence.gymWalls.rowAria', { board: title })}
       style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
     >
+      <AccessoryClimbThumbnail climb={thumbnailClimb} boardConfig={thumbnailBoardConfig} size={THUMBNAIL_SIZE} />
       <View style={styles.rowText}>
         <Text variant="subheadline" color={systemColors.label} numberOfLines={1}>
           {title}

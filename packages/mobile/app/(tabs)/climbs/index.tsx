@@ -1164,8 +1164,7 @@ function ClimbListInner() {
   // With no board bound `isBoardResolving` collapses to `isBoardLoading`, and
   // the no-board empty state returns before the list either way, so this cannot
   // strand anyone on a permanent skeleton.
-  const showInitialSkeletons =
-    (isClimbsLoading || isPlaceholderData || isBoardResolving) && visibleClimbs.length === 0;
+  const showInitialSkeletons = (isClimbsLoading || isPlaceholderData || isBoardResolving) && visibleClimbs.length === 0;
 
   const gradeBound = useMemo<GradeBound>(
     () => ({ minGradeId: filters.minGrade, maxGradeId: filters.maxGrade }),

@@ -5,6 +5,7 @@ import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const gymBoards = vi.hoisted(() => ({ data: undefined as UserBoard[] | undefined }));
+const recentClimb = vi.hoisted(() => ({ value: null as { frames: string; angle: number } | null }));
 
 type PressableMockProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
 vi.mock('react-native', () => ({
@@ -40,6 +41,14 @@ vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
   borderRadius: { sm: 8, md: 12, lg: 16 },
 }));
+// The row's board art and the query behind it have their own homes; here we only
+// care that a row renders one.
+vi.mock('../../queue-control/AccessoryClimbThumbnail', () => ({
+  AccessoryClimbThumbnail: () => createElement('div', { 'data-board-thumbnail': 'true' }),
+}));
+vi.mock('../../../lib/graphql/hooks/use-board-recent-climb', () => ({
+  useBoardRecentClimb: () => recentClimb.value,
+}));
 vi.mock('../../../lib/graphql/hooks/use-gym-boards', () => ({ useGymBoards: () => gymBoards }));
 
 import { GymWallSwitcher } from '../GymWallSwitcher';
@@ -66,6 +75,7 @@ const ACTIVE = board({ uuid: 'active-board' });
 describe('GymWallSwitcher', () => {
   beforeEach(() => {
     gymBoards.data = undefined;
+    recentClimb.value = null;
     vi.clearAllMocks();
   });
 
@@ -186,5 +196,25 @@ describe('GymWallSwitcher', () => {
     const { container } = render(createElement(GymWallSwitcher, { activeBoard: ACTIVE, onSelectBoard: vi.fn() }));
 
     expect(container.textContent).not.toContain('gymWalls.sameClimbs');
+  });
+
+  // QA asked for the board itself in the row, lit with what is on it — the
+  // generic glyph this replaces was the same picture on every row.
+  it('shows board art for each board', () => {
+    gymBoards.data = [ACTIVE, board({ uuid: 'tension', name: 'Tension', boardType: 'tension' })];
+
+    const { container } = render(createElement(GymWallSwitcher, { activeBoard: ACTIVE, onSelectBoard: vi.fn() }));
+
+    expect(container.querySelectorAll('[data-board-thumbnail]')).toHaveLength(1);
+  });
+
+  // A board nobody has lit yet still gets its own art, just bare.
+  it('shows board art even with no history to light it with', () => {
+    recentClimb.value = null;
+    gymBoards.data = [ACTIVE, board({ uuid: 'tension', name: 'Tension', boardType: 'tension' })];
+
+    const { container } = render(createElement(GymWallSwitcher, { activeBoard: ACTIVE, onSelectBoard: vi.fn() }));
+
+    expect(container.querySelector('[data-board-thumbnail]')).toBeTruthy();
   });
 });
