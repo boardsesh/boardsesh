@@ -19,6 +19,7 @@ export {
 export { difficultyMapping, getDifficultyMapping, sortGrades } from './grade-mapping';
 export {
   BOARD_TYPES,
+  BOARD_FILTER_TYPES,
   LAYOUT_ORDER,
   getLayoutKey,
   getLayoutDisplayName,

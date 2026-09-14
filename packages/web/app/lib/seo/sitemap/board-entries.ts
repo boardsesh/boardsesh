@@ -1,4 +1,5 @@
 import { ANGLES, toBoardName } from '@boardsesh/board-config';
+import { isIndexableBoardType } from './indexable-boards';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { popularConfigListUrl } from '@/app/lib/url-utils';
 import type { SitemapItem } from './entries';
@@ -56,6 +57,9 @@ export function boardConfigsToItems(configs: readonly PopularBoardConfig[]): Sit
   for (const config of configs) {
     const boardName = toBoardName(config.boardType);
     if (!boardName) continue;
+
+    // Never submit a private board type for crawling (see `isIndexableBoardType`).
+    if (!isIndexableBoardType(config.boardType)) continue;
 
     // A config with no listed climbs is a thin page — it spends crawl budget the
     // climb shards (W-23) need and offers nothing to rank.

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BoardNameSchema } from './primitives';
+import { AuroraBoardNameSchema } from './primitives';
 
 /**
  * Update profile input validation schema
@@ -10,10 +10,14 @@ export const UpdateProfileInputSchema = z.object({
 });
 
 /**
- * Save Aurora credential input validation schema
+ * Save Aurora credential input validation schema.
+ *
+ * `AuroraBoardNameSchema`, not the app-wide `BoardNameSchema`: this input is a
+ * username and a password on their way to an Aurora host, and a non-Aurora board
+ * type resolves that host to `https://undefined.com`. See the schema's own note.
  */
 export const SaveAuroraCredentialInputSchema = z.object({
-  boardType: BoardNameSchema,
+  boardType: AuroraBoardNameSchema,
   username: z.string().min(1, 'Username cannot be empty').max(100),
   password: z.string().min(1, 'Password cannot be empty').max(100),
 });

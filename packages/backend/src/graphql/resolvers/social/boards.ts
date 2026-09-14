@@ -744,6 +744,10 @@ const BOARD_TYPE_LABELS: Record<string, string> = {
   grasshopper: 'Grasshopper',
   soill: 'So iLL',
   woods: 'Woods',
+  // Only ever a lookup here — `formatDisplayName` reads it for one board type.
+  // Spray configs never reach this map anyway: `runPopularConfigsQuery` drops
+  // them (see EXCLUDED_POPULAR_CONFIG_BOARD_TYPES).
+  spray: 'Spray wall',
 };
 
 const GENERIC_SETS = new Set(['bolt ons', 'screw ons', 'foot set', 'plastic', 'wood']);
@@ -853,6 +857,33 @@ async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
   return singleFlight(POPULAR_CONFIGS_FLIGHT_KEY, runPopularConfigsQuery);
 }
 
+/**
+ * Board types that never appear in the popular-config list.
+ *
+ * This list is the www homepage board rail (`popular-board-rail.tsx`) and the
+ * mobile Boards tab (`usePopularBoardConfigs`), so a row here is a board offered
+ * to every visitor. A spray wall is one climber's own wall — private by default,
+ * created through the add-a-wall flow — so it is not a board anyone browses to.
+ *
+ * The display-filter `SUPPORTED_BOARDS` in `@boardsesh/board-config` makes the
+ * same exclusion for the pickers, but it is not the right list to import here:
+ * it also gates MoonBoard on a feature flag, and flipping that flag must not
+ * silently empty the rail of MoonBoard configs.
+ *
+ * SW-04 (#5437) must also create spray catalogue rows with `is_listed = false`
+ * on `board_layouts`, `board_product_sizes` and
+ * `board_product_sizes_layouts_sets`, so the query below never builds the
+ * expensive LATERAL for a wall in the first place. This filter is the belt to
+ * that suspenders: a single mis-seeded row must not put someone's wall on the
+ * homepage.
+ */
+const EXCLUDED_POPULAR_CONFIG_BOARD_TYPES: ReadonlySet<string> = new Set(['spray']);
+
+/** Whether one raw popular-config row may be published to the rail. */
+export function isPopularConfigRow(row: { board_type?: unknown }): boolean {
+  return !EXCLUDED_POPULAR_CONFIG_BOARD_TYPES.has(String(row.board_type));
+}
+
 async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
   const generationAtStart = fallbackGeneration;
 
@@ -898,6 +929,10 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
       FROM board_product_sizes_layouts_sets psls
       JOIN board_sets bs ON bs.board_type = psls.board_type AND bs.id = psls.set_id
       WHERE psls.is_listed = true
+        -- A spray wall is one climber's own wall, never a board on the rail.
+        -- Dropped here so the LATERAL climb count below is never built for one;
+        -- isPopularConfigRow repeats it on the way out.
+        AND psls.board_type <> 'spray'
       GROUP BY psls.board_type, psls.layout_id, psls.product_size_id
     ) configs
     JOIN board_layouts bl ON bl.board_type = configs.board_type AND bl.id = configs.layout_id
@@ -953,7 +988,7 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
 
   const rows = rowsFromResult<Record<string, unknown>>(result);
 
-  const configs: CachedPopularConfig[] = rows.map((row) => {
+  const configs: CachedPopularConfig[] = rows.filter(isPopularConfigRow).map((row) => {
     const boardType = row.board_type as string;
     const layoutName = (row.layout_name as string) ?? null;
     const sizeName = (row.size_name as string) ?? null;

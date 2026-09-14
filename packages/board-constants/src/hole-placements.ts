@@ -125,7 +125,7 @@ export function getBoardHolePlacements(boardName: BoardName): BoardHolePlacement
  * mobile hot path (`getBoardHolePlacements`) never forces the other boards.
  *
  * Membership comes from `SUPPORTED_BOARDS` — the schema's own list, which already
- * covers the code-driven boards (moonboard, woods) whose shards don't exist and
+ * covers the code-driven boards (moonboard, woods, spray) whose shards don't exist and
  * resolve to an empty record. Enumeration comes from `BOARD_DISPLAY_ORDER`: the
  * same set, but `ownKeys` is the one trap whose ORDER is observable
  * (`Object.keys` / `Object.entries`), and that order was Aurora-boards-first

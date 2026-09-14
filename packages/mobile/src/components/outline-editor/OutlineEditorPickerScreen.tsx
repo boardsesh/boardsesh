@@ -1,9 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { BOARD_DISPLAY_ORDER, type BoardName } from '@boardsesh/shared-schema';
+import { type BoardName } from '@boardsesh/shared-schema';
 import { boardTypeLabel } from '@boardsesh/board-constants';
-import { outlineEditorLayouts, outlineEditorSetIds, outlineEditorSizes } from './board-configs';
+import { OUTLINE_EDITOR_BOARDS, outlineEditorLayouts, outlineEditorSetIds, outlineEditorSizes } from './board-configs';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
@@ -38,7 +38,7 @@ export function OutlineEditorPickerScreen() {
 
   const boardRows = useMemo<PickerRow[]>(
     () =>
-      BOARD_DISPLAY_ORDER.map((name) => ({
+      OUTLINE_EDITOR_BOARDS.map((name) => ({
         key: name,
         id: 0,
         label: boardTypeLabel(name),

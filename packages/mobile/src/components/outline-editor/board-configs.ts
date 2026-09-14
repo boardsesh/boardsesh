@@ -20,7 +20,20 @@ import {
   type MoonBoardLayoutKey,
 } from '@boardsesh/board-config';
 import { getAllLayouts, getSetsForLayoutAndSize, getSizesForLayoutId } from '@boardsesh/board-constants/product-sizes';
-import type { BoardName } from '@boardsesh/shared-schema';
+import { BOARD_DISPLAY_ORDER, type BoardName } from '@boardsesh/shared-schema';
+
+/**
+ * The boards the picker may offer.
+ *
+ * Every board in `BOARD_DISPLAY_ORDER` except `spray`. A spray wall's holds are
+ * per-wall data captured from the climber's own photo, not a bundled catalogue
+ * shard anyone could trace here, so `outlineEditorLayouts('spray')` has nothing
+ * to return and the row would open a picker with no layouts in it. The wall hold
+ * editor (SW-08, #5441) is the spray side of this editor.
+ */
+export const OUTLINE_EDITOR_BOARDS: readonly BoardName[] = BOARD_DISPLAY_ORDER.filter(
+  (boardName) => boardName !== 'spray',
+);
 
 export type OutlineEditorLayout = { id: number; name: string };
 export type OutlineEditorSize = { id: number; name: string; description: string };

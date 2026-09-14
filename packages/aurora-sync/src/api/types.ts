@@ -86,6 +86,29 @@ export const HOST_BASES: Record<AuroraBoardName, string> = {
   soill: 'soillboardapp',
 };
 
+/**
+ * Whether a loose board string is one of the six boards with an Aurora account.
+ *
+ * The maps above are `Record<AuroraBoardName, string>`, so a board type that is
+ * not an Aurora board indexes them to `undefined` and `AuroraClimbingClient`
+ * builds its base URL as `undefined.com` — a real, registered domain that would
+ * then receive the credentials it was about to sign in with. Every path to the
+ * client casts a loose string to `AuroraBoardName`, so the type is a claim and
+ * this is the check.
+ *
+ * Lives here, next to the maps it protects, so the backend's GraphQL edge and
+ * the sync runner share one definition instead of each carrying their own.
+ */
+export function isAuroraBoardName(boardType: string): boardType is AuroraBoardName {
+  return (AURORA_BOARDS as readonly string[]).includes(boardType);
+}
+
+/** Throwing form of {@link isAuroraBoardName}, for use before any network call. */
+export function assertAuroraBoardName(boardType: string): asserts boardType is AuroraBoardName {
+  if (isAuroraBoardName(boardType)) return;
+  throw new Error(`"${boardType}" is not an Aurora board; it has no account to link.`);
+}
+
 export const API_HOSTS: Record<AuroraBoardName, string> = Object.fromEntries(
   Object.entries(HOST_BASES).map(([board, hostBase]) => [board, `https://api.${hostBase}.com`]),
 ) as Record<AuroraBoardName, string>;

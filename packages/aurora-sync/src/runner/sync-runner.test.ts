@@ -152,6 +152,72 @@ describe('SyncRunner login failure handling', () => {
     expect(updateCredentialStatus).not.toHaveBeenCalled();
   });
 
+  it.each(['spray', 'woods', 'moonboard'])('skips a "%s" credential row without ever signing in', async (boardType) => {
+    // `aurora_credentials.board_type` is plain text and the GraphQL edge that
+    // writes it accepted every BoardName until #5453, so a row naming a board
+    // with no HOST_BASES entry can already exist. Unguarded, the client would
+    // build `undefined.com` — a real registered host — and POST this user's
+    // decrypted password to it on every scheduled cycle.
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+
+    await expect(runnerPrivates.syncSingleCredential(createCredential({ boardType }))).rejects.toThrow(
+      /is not an Aurora board/,
+    );
+
+    // The whole point: no sign-in, so no host resolution and no request.
+    expect(mockSignIn).not.toHaveBeenCalled();
+    // And it never decrypts the password it would have sent.
+    expect(mockDecrypt).not.toHaveBeenCalled();
+    expect(updateCredentialStatus).toHaveBeenCalledWith(
+      'user-123',
+      boardType,
+      'expired',
+      expect.stringMatching(/is not an Aurora board/),
+    );
+  });
+
+  it('quarantines the bad row so the run continues instead of retrying forever', async () => {
+    // Skip-and-log, not crash: both callers catch CredentialSyncError, record the
+    // failure and move to the next credential. Quarantined because the row can
+    // never succeed — the board type is wrong, not the password.
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+    const updateStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+
+    const error = await runnerPrivates
+      .syncSingleCredential(createCredential({ boardType: 'spray' }))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CredentialSyncError);
+    // 'expired' is the only status syncableCredentialsFilter leaves out of the
+    // pool; 'error' would be re-claimed every backoff interval, forever.
+    expect((error as CredentialSyncError).syncStatus).toBe('expired');
+    expect((error as CredentialSyncError).quarantined).toBe(true);
+    expect(updateStatus).toHaveBeenCalledWith(
+      expect.any(String),
+      'spray',
+      'expired',
+      expect.stringContaining('not an Aurora board'),
+    );
+  });
+
+  it('still signs in for a real Aurora board', async () => {
+    // Guards the guard: a check that rejected everything would pass the cases
+    // above for the wrong reason.
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+    vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'updateStoredToken').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'maybeRunSharedSync').mockResolvedValue(undefined);
+    mockSignIn.mockResolvedValue({ token: 'fresh-token', user_id: 42 });
+
+    await runnerPrivates.syncSingleCredential(createCredential({ boardType: 'decoy' }));
+
+    expect(mockSignIn).toHaveBeenCalled();
+  });
+
   it('marks the first invalid credential failure as an error', async () => {
     const runner = new SyncRunner();
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;

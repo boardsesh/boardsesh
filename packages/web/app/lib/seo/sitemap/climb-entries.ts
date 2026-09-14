@@ -3,6 +3,7 @@ import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { tryConstructSlugViewUrl } from '@/app/lib/url-utils';
 import type { SitemapItem } from './entries';
+import { isIndexableBoardType } from './indexable-boards';
 
 /**
  * The board configuration a climb's sitemap URL is built from.
@@ -77,6 +78,8 @@ export function resolveClimbSitemapGroups(configs: readonly PopularBoardConfig[]
 
   for (const config of configs) {
     if (!toBoardName(config.boardType)) continue;
+    // Never submit a private board type for crawling (see `isIndexableBoardType`).
+    if (!isIndexableBoardType(config.boardType)) continue;
     if (config.climbCount <= 0) continue;
 
     const key = groupKey(config.boardType, config.layoutId);

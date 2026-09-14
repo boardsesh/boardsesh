@@ -9,7 +9,11 @@ process.env.AURORA_CREDENTIALS_SECRET = process.env.AURORA_CREDENTIALS_SECRET ??
 // against the real per-worker test DB. saveKilterCredential does no network I/O.
 const signInMock = vi.fn();
 
-vi.mock('@boardsesh/aurora-sync/api', () => ({
+vi.mock('@boardsesh/aurora-sync/api', async (importOriginal) => ({
+  // `assertAuroraBoardName` comes through from the real module rather than being
+  // restated here: it is the guard that stops a non-Aurora board type reaching
+  // `HOST_BASES`, and a hand-written copy in a mock would drift from it silently.
+  ...(await importOriginal<typeof import('@boardsesh/aurora-sync/api')>()),
   AuroraClimbingClient: class {
     signIn = signInMock;
   },

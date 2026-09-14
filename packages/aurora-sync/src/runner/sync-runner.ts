@@ -36,7 +36,7 @@ import { AuroraClimbingClient } from '../api/aurora-client';
 import { isAuroraRequestError, isTransientAuroraError, isTransientSharedSyncAuroraError } from '../api/errors';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import type { LocationSyncSummary } from '@boardsesh/location-sync';
-import type { AuroraBoardName } from '../api/types';
+import { isAuroraBoardName, type AuroraBoardName } from '../api/types';
 import {
   DaemonLease,
   formatSyncHealthSummary as formatSharedSyncHealthSummary,
@@ -499,7 +499,28 @@ export class SyncRunner {
       throw new Error('Missing credentials or user ID');
     }
 
-    const boardType = cred.boardType as AuroraBoardName;
+    // `aurora_credentials.board_type` is plain text, and the GraphQL edge that
+    // writes it accepted every `BoardName` until #5453 — so a row written before
+    // that fix can name a board with no `HOST_BASES` entry, and the cast below
+    // would let `AuroraClimbingClient` build `undefined.com` and sign in against
+    // it with this user's decrypted password, on every scheduled cycle.
+    //
+    // A CredentialSyncError rather than a bare throw: both callers catch it,
+    // record the failure and move to the next credential, so one unsyncable row
+    // is skipped and logged instead of ending the run. Quarantined because it can
+    // never succeed — retrying it forever only re-attempts the same request. That
+    // means `expired`, the one status `syncableCredentialsFilter` leaves out of the
+    // pool; `error` would be re-claimed every backoff interval indefinitely.
+    if (!isAuroraBoardName(cred.boardType)) {
+      const errorMessage = `"${cred.boardType}" is not an Aurora board; it has no account to sync.`;
+      this.log(
+        `[SyncRunner] ✗ CREDENTIAL QUARANTINED user=${cred.userId} board=${cred.boardType} ` +
+          `reason=not_aurora_board — excluded from sync until the row is removed`,
+      );
+      await this.updateCredentialStatus(cred.userId, cred.boardType, 'expired', errorMessage);
+      throw new CredentialSyncError(errorMessage, { syncStatus: 'expired', quarantined: true });
+    }
+    const boardType: AuroraBoardName = cred.boardType;
 
     let username: string;
     let password: string;

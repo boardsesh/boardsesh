@@ -1,9 +1,39 @@
-import { SUPPORTED_BOARDS, MOONBOARD_LAYOUTS, formatBoardDisplayName } from '@boardsesh/board-config';
+import { MOONBOARD_LAYOUTS, formatBoardDisplayName, SUPPORTED_BOARDS as PICKER_BOARDS } from '@boardsesh/board-config';
 import { getLayout, ORPHANED_KILTER_LAYOUT_DEFAULTS } from '@boardsesh/board-constants/product-sizes';
-import type { BoardName } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 
-/** Board types charted on the profile (= every supported board). */
-export const BOARD_TYPES = SUPPORTED_BOARDS;
+/**
+ * Board types charted on the profile — the SCHEMA list, every board that can
+ * carry a tick.
+ *
+ * Deliberately NOT `@boardsesh/board-config`'s display-filter `SUPPORTED_BOARDS`,
+ * which this used to import. That list answers "may a board picker offer this?"
+ * and is the wrong question here: the profile hooks (`useAllBoardsTicks` on
+ * mobile, its web twin) issue one `userTicks` request per entry, so a board
+ * missing from the list is a board whose ascents are never fetched and silently
+ * vanish from the logbook, the charts and the totals.
+ *
+ * The MoonBoard flag is the case that makes the difference concrete: a climber's
+ * MoonBoard ticks exist in the database whether or not the picker currently
+ * offers MoonBoard, and turning the flag off must hide the picker entry, not
+ * erase their history. Same for `spray`, which is excluded from the picker
+ * permanently — a wall is created, not picked — while its ticks are ordinary
+ * ticks that belong on the profile like any other.
+ */
+export const BOARD_TYPES: readonly BoardName[] = SUPPORTED_BOARDS;
+
+/**
+ * Board types the profile's board FILTER offers — a different question from
+ * {@link BOARD_TYPES}.
+ *
+ * `BOARD_TYPES` is what we FETCH: every board that can carry a tick, so no
+ * ascent is silently dropped. This is what we OFFER as a filter row, and a row
+ * for a board the climber can never have is a dead control. `spray` is exactly
+ * that today — a wall is created, not picked, and climb writes to the spray
+ * partition are gated until SW-05 — so it is fetched and charted but not listed
+ * here. SW-11 (#5444) gives the filter a real spray story.
+ */
+export const BOARD_FILTER_TYPES: readonly BoardName[] = PICKER_BOARDS;
 
 /** Stable ordering for layout series/legends across charts. */
 export const LAYOUT_ORDER = [

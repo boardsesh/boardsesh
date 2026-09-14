@@ -1,5 +1,5 @@
 import { and, count, eq, isNull, ne, sql } from 'drizzle-orm';
-import { AuroraClimbingClient } from '@boardsesh/aurora-sync/api';
+import { AuroraClimbingClient, assertAuroraBoardName } from '@boardsesh/aurora-sync/api';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import { auroraCredentials, boardClimbs, boardseshTicks, userBoardMappings } from '@boardsesh/db/schema';
 import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
@@ -317,6 +317,12 @@ export async function saveAuroraCredential(input: {
   username: string;
   password: string;
 }): Promise<AuroraCredentialStatus> {
+  // Before ANY network call. `assertAuroraBoardName` lives next to `HOST_BASES`
+  // in @boardsesh/aurora-sync, so the GraphQL edge and the sync runner share one
+  // definition. Belt to `AuroraBoardNameSchema`'s braces: the schema stops a bad
+  // value at the edge, this stops one that reaches the service another way.
+  assertAuroraBoardName(input.boardType);
+
   if (input.boardType === KILTER_BOARD_TYPE) {
     throw new Error('Kilter accounts use OAuth');
   }

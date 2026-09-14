@@ -10,5 +10,6 @@ export * from './moonboard-config';
 export * from './resolve-render-board';
 export * from './moonboard-cell-sets';
 export * from './woods-config';
+export * from './spray-config';
 export type { Angle, SetIdList, ClimbCompatibilityInput, BoardCompatibilityTarget } from './types';
 export * from './board-mirroring';

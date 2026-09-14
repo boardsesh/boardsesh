@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import type { BoardName } from '@boardsesh/shared-schema';
+import { BOARD_DISPLAY_ORDER, SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 
 /**
  * Proof that hole placements load one board at a time.
@@ -95,7 +95,10 @@ describe('HOLE_PLACEMENTS backwards-compatible proxy', () => {
   it('enumerates every board key like the old eager record', async () => {
     const { HOLE_PLACEMENTS } = await import('../hole-placements');
     const keys = Object.keys(HOLE_PLACEMENTS) as BoardName[];
-    expect(keys).toEqual(['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill', 'moonboard', 'woods']);
+    // `ownKeys` enumerates in BOARD_DISPLAY_ORDER (Aurora boards first), which
+    // is the observable order. Derived rather than restated, so adding a board
+    // is one edit in shared-schema and not a red test here.
+    expect(keys).toEqual([...BOARD_DISPLAY_ORDER]);
   });
 
   it('resolves the same data via the proxy as via getBoardHolePlacements', async () => {
@@ -107,7 +110,7 @@ describe('HOLE_PLACEMENTS backwards-compatible proxy', () => {
   it('supports Object.entries iteration used by Node-side consumers', async () => {
     const { HOLE_PLACEMENTS } = await import('../hole-placements');
     const entries = Object.entries(HOLE_PLACEMENTS);
-    expect(entries.length).toBe(8);
+    expect(entries.length).toBe(SUPPORTED_BOARDS.length);
     const kilterEntry = entries.find(([board]) => board === 'kilter');
     expect(kilterEntry).toBeDefined();
     expect(Object.keys(kilterEntry![1]).length).toBeGreaterThan(0);

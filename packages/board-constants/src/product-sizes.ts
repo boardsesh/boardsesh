@@ -244,6 +244,7 @@ export const getBoardSelectorOptions = () => {
     grasshopper: [],
     soill: [],
     woods: [],
+    spray: [],
   };
   const sizes: Record<string, { id: number; name: string; description: string }[]> = {};
   const sets: Record<string, { id: number; name: string }[]> = {};

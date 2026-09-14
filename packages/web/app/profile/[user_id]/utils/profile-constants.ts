@@ -2,6 +2,7 @@ import { getGradeColor } from '@/app/lib/grade-colors';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import {
   BOARD_TYPES,
+  BOARD_FILTER_TYPES,
   difficultyMapping,
   getDifficultyMapping,
   sortGrades,
@@ -94,9 +95,11 @@ export const getGradeChartColor = (grade: string): string => {
   return `hsla(${hDeg}, ${sMuted}%, ${lMuted}%, 0.75)`;
 };
 
+// BOARD_FILTER_TYPES, not BOARD_TYPES: the wider list is what the profile
+// FETCHES so no ascent is dropped, this is what the filter OFFERS.
 export const boardOptions = [
   { label: 'All', value: 'all' },
-  ...BOARD_TYPES.map((boardType) => ({
+  ...BOARD_FILTER_TYPES.map((boardType) => ({
     label: formatBoardDisplayName(boardType),
     value: boardType,
   })),

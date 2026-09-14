@@ -151,6 +151,32 @@ const WOODS_CAPABILITIES: BoardCapabilities = {
   auroraAppLink: false,
 };
 
+/**
+ * Spray walls: a climber's own wall, photographed rather than catalogued. Its
+ * holds live in `spray_wall_holds` and its catalogue layout is created at
+ * runtime, so it is the first board whose geometry is per-wall data.
+ *
+ * `climbCreation` is the whole point — a wall with no climbs on it is a photo.
+ * Everything else is false: there is no hardware (`nativeBoardControl` — no
+ * LEDs, no firmware, nothing to encode), no vendor site to deep-link to
+ * (`auroraAppLink`), no crowd grade model (`crowdGrade` — the setter's grade is
+ * required on publish instead), and no multi-frame climbs. `explicitClimbRules`
+ * stays false so a spray climb reads like a Kilter one: only the departures from
+ * the default are printed.
+ *
+ * Mirroring is off too, but that is `boardSupportsMirroring`'s answer, not a row
+ * here: a spray wall is a photograph of one physical wall and has no mirror
+ * geometry to reflect holds through.
+ */
+const SPRAY_CAPABILITIES: BoardCapabilities = {
+  crowdGrade: false,
+  climbCreation: true,
+  explicitClimbRules: false,
+  multiFrameClimbs: false,
+  nativeBoardControl: false,
+  auroraAppLink: false,
+};
+
 // Typed as a total Record over BoardName, so adding a board to SUPPORTED_BOARDS
 // without deciding what it can do is a compile error rather than a silent
 // fallthrough to the Aurora defaults.
@@ -163,6 +189,7 @@ const CAPABILITIES_BY_BOARD: Record<BoardName, BoardCapabilities> = {
   soill: AURORA_CAPABILITIES,
   moonboard: MOONBOARD_CAPABILITIES,
   woods: WOODS_CAPABILITIES,
+  spray: SPRAY_CAPABILITIES,
 };
 
 /**
