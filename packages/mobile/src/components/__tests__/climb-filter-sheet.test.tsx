@@ -633,6 +633,26 @@ describe('ClimbFilterSheet sub-pickers', () => {
     expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: undefined }, currentBoardFilters);
   });
 
+  it('applies a setter handoff through the latest onApply and onDismiss after the parent re-renders them', () => {
+    const staleOnApply = vi.fn();
+    const staleOnDismiss = vi.fn();
+    const rendered = renderFilterSheet({ onApply: staleOnApply, onDismiss: staleOnDismiss });
+
+    fireEvent.click(rendered.getByLabelText('mobile.filter.setters'));
+    // The parent's onApply changes identity on every search keystroke.
+    const latestOnApply = vi.fn();
+    const latestOnDismiss = vi.fn();
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} onApply={latestOnApply} onDismiss={latestOnDismiss} />);
+    act(() => {
+      emitSetterFilterSelection(['route-setter'], { apply: true });
+    });
+
+    expect(latestOnApply).toHaveBeenCalledTimes(1);
+    expect(latestOnDismiss).toHaveBeenCalledTimes(1);
+    expect(staleOnApply).not.toHaveBeenCalled();
+    expect(staleOnDismiss).not.toHaveBeenCalled();
+  });
+
   it('feeds a plain setter handoff into the count input without waiting out the debounce', () => {
     vi.useFakeTimers();
     try {
