@@ -312,6 +312,11 @@ export const setterFollowQueries = {
           compatible_size_ids: tables.climbs.compatibleSizeIds,
           // Structured climb rules — see the note in hydrate-climbs.ts (#5214).
           characteristics: tables.climbs.characteristics,
+          // The angle the stats row was joined at. Pinned to `angle` here, so it
+          // only ever repeats that value or comes back NULL when the climb has no
+          // stats at it — but the play drawer reads it on every Climb, so the
+          // specific-board mode has to state it rather than leave it undefined.
+          statsAngle: tables.climbStats.angle,
           ascensionist_count: tables.climbStats.ascensionistCount,
           difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
           quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
@@ -364,6 +369,7 @@ export const setterFollowQueries = {
         compatibleSizeIds: result.compatible_size_ids ?? null,
         characteristics: result.characteristics ?? null,
         angle,
+        statsAngle: result.statsAngle ?? null,
         ascensionist_count: Number(result.ascensionist_count || 0),
         difficulty: getGradeLabel(result.difficulty_id),
         quality_average: result.quality_average?.toString() || '0',
@@ -487,6 +493,7 @@ export const setterFollowQueries = {
           compatibleSizeIds: result.compatible_size_ids ?? null,
           characteristics: result.characteristics ?? null,
           angle: result.statsAngle ?? DEFAULT_ANGLE,
+          statsAngle: result.statsAngle ?? null,
           ascensionist_count: Number(result.ascensionist_count || 0),
           difficulty: getGradeLabel(result.difficulty_id),
           quality_average: result.quality_average?.toString() || '0',
@@ -700,6 +707,7 @@ export const setterFollowQueries = {
         characteristics: result.characteristics ?? null,
         is_hidden: result.is_hidden ?? false,
         angle: result.stats_angle ?? DEFAULT_ANGLE,
+        statsAngle: result.stats_angle ?? null,
         ascensionist_count: Number(result.ascensionist_count || 0),
         difficulty: getGradeLabel(result.difficulty_id),
         quality_average: result.quality_average?.toString() || '0',

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useInfiniteQuery, type InfiniteData, type QueryKey } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
+import { useFeatureFlag } from '../../../providers/feature-flags-provider';
 import { offlineAwareRequest } from '../offline-request';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
 import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
@@ -79,11 +80,28 @@ export function useInfiniteSearchClimbs(
     ) => keepSameBoardSearchResults(boardScope, previousData, previousQuery?.queryKey);
   }, [keepPreviousResults, boardName, layoutId, sizeId, setIds]);
 
+  // Injected here rather than at the call sites: this is the one choke point both
+  // the climbs tab and the board preview go through, it rides `offlineAwareRequest`
+  // into the on-device search for free, and putting it on the input means the query
+  // key rotates by itself when the flag flips. `toClimbSearchInput` is a pure
+  // function and cannot read a hook, which is why it does not live there.
+  //
+  // Unresolved reads as off, which is the shipped behaviour for every board this
+  // flag can move — nothing to invert. Woods ignores the value entirely: the server
+  // turns cross-angle on for it from the board capability (resolveCrossAngleStats).
+  //
+  // It is deliberately NOT part of the placeholder's board scope above: flipping the
+  // flag keeps the previous rows on screen while the re-ranked page loads, which is
+  // the same board and the right behaviour.
+  const crossAngleStats = useFeatureFlag('cross-angle-stats') === true;
+  const searchInput: ClimbSearchInput = { ...input, crossAngleStats };
   return useInfiniteQuery({
-    queryKey: getSearchClimbsQueryKey(input),
+    queryKey: getSearchClimbsQueryKey(searchInput),
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
-      offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: { ...input, page: pageParam } }),
+      offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
+        input: { ...searchInput, page: pageParam },
+      }),
     // getNextPageParam receives RAW pre-select pages in React Query v5.
     getNextPageParam: (lastPage, allPages) => (lastPage.searchClimbs.hasMore ? allPages.length : undefined),
     select: selectSearchClimbPages,

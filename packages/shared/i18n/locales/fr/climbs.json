@@ -548,7 +548,9 @@
         "footless": "Sans pieds",
         "footlessKickboard": "Sans pieds + KB",
         "noKickboard": "Sans KB"
-      }
+      },
+      "setAngleMarker": "{{angle}}°",
+      "setAngleMarkerAria": "La cotation et les croix sont à {{angle}} degrés"
     },
     "climbRules": {
       "matchingAllowed": "Deux mains par prise autorisées",

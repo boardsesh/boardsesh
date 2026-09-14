@@ -225,6 +225,7 @@ export const ClimbSearchInputSchema = z.object({
   onlyRatedByMe: z.boolean().optional(),
   onlyDrafts: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
+  crossAngleStats: z.boolean().optional(),
   // No default here on purpose: omitted means "no climb-type constraint"
   // (both boulders and routes match), not "boulders-only". searchClimbs (see
   // packages/backend/src/graphql/resolvers/climbs/queries.ts) now uses the

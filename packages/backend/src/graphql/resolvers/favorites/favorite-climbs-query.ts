@@ -68,6 +68,12 @@ export const favoriteClimbsQuery = {
         // prints "rule not recorded" on Woods (issue #5214).
         characteristics: tables.climbs.characteristics,
         // Stats data
+        // The angle the stats row was joined at — input.angle when a row exists,
+        // NULL when the climb has none there. The favorites list pins the join to
+        // the browsed angle, so this is never a different angle; it is carried so
+        // the row the play drawer opens with says where its numbers came from
+        // rather than leaving the client to assume.
+        statsAngle: tables.climbStats.angle,
         ascensionist_count: tables.climbStats.ascensionistCount,
         difficulty_id: sql<number | null>`ROUND(${tables.climbStats.displayDifficulty}::numeric, 0)`,
         quality_average: sql<number>`ROUND(${tables.climbStats.qualityAverage}::numeric, 2)`,
@@ -124,6 +130,7 @@ export const favoriteClimbsQuery = {
       // MoonBoard climb whose prose just happens to mention matching.
       boardType: boardName,
       angle: input.angle,
+      statsAngle: result.statsAngle ?? null,
       ascensionist_count: Number(result.ascensionist_count || 0),
       difficulty: getGradeLabel(result.difficulty_id),
       quality_average: result.quality_average?.toString() || '0',

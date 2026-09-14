@@ -23,6 +23,7 @@ const CLIMB_SEARCH_FIELDS = `
   boardType
   layoutId
   angle
+  statsAngle
   ascensionist_count
   difficulty
   quality_average
@@ -53,6 +54,7 @@ const CLIMB_DETAIL_FIELDS = `
   boardType
   layoutId
   angle
+  statsAngle
   ascensionist_count
   difficulty
   quality_average
