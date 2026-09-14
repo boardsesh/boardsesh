@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-13T10:59:59.229Z",
+  "generatedAt": "2026-09-14T05:09:47.345Z",
   "entries": [
+    {
+      "prNumber": 5419,
+      "category": "fixed",
+      "title": "See who's setting on your board while you're offline — the setter filter now works without a signal, same as the rest of climb search.",
+      "mergedAt": "2026-09-14T05:08:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5419"
+    },
+    {
+      "prNumber": 5421,
+      "category": "fixed",
+      "title": "Pick setters and jump straight to their climbs with one tap",
+      "mergedAt": "2026-09-14T05:08:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5421",
+      "body": "Changing filters keeps your climb list on screen while new results load"
+    },
     {
       "prNumber": 5376,
       "category": "improved",

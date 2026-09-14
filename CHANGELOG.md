@@ -4,6 +4,14 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-14
+
+### Fixed
+
+- See who's setting on your board while you're offline — the setter filter now works without a signal, same as the rest of climb search. ([#5419](https://github.com/boardsesh/boardsesh/pull/5419))
+- Pick setters and jump straight to their climbs with one tap ([#5421](https://github.com/boardsesh/boardsesh/pull/5421))
+  Changing filters keeps your climb list on screen while new results load
+
 ## 2026-09-13
 
 ### Improved
