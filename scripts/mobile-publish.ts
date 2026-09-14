@@ -222,25 +222,45 @@ export type SurfabilityProbeOptions = {
   fetchImpl?: typeof fetch;
   sleeper?: (delayMs: number) => Promise<void>;
   delaysMs?: readonly number[];
-  env?: Record<string, string | undefined>;
+  /** The runtimeVersion the publish targeted; null or absent means "cannot check". */
+  runtimeVersion?: string | null;
 };
 
 /**
- * The runtimeVersion a device must be on to be offered this branch, per platform.
+ * The runtimeVersion this platform's publish actually targeted.
  *
- * Supplied by the preview workflow from the compatibility check that already
- * resolved both fingerprints, rather than resolved here: @expo/fingerprint is not
- * deterministic across macOS and Linux, so a local resolve would probe with a hash
- * no binary runs and report a false "not surfable". Absent — a local publish — the
- * check is skipped rather than guessed.
+ * Resolved HERE, in the publishing process, with the very env that platform's
+ * `eoas publish` ran under — which is the only way to get the right answer. The
+ * obvious-looking alternative, reading the compatibility check's resolved hashes
+ * off the workflow, is WRONG for Android: `mobile-ota-compat-check.ts` runs
+ * without GOOGLE_MAPS_API_KEY (the key is scoped to the publish step), and it says
+ * so in its own header — a missing key "shifts BOTH sides of the comparison by the
+ * same constant", so its verdict survives while its absolute hashes do not. The
+ * Android publish runs WITH the key, so the two differ, and probing with the
+ * compat hash asked the server about a runtimeVersion nothing was ever published
+ * under: run 34796068541 failed a healthy publish exactly that way.
+ *
+ * Null when the resolve fails, which is a skip, never a verdict.
  */
-export function previewRuntimeVersionFor(
+export function resolvePublishedRuntimeVersion(
   platform: OtaPublishPlatform,
-  env: Record<string, string | undefined> = process.env,
+  env: NodeJS.ProcessEnv,
+  runner: typeof execFileSync = execFileSync,
 ): string | null {
-  const supplied = platform === 'ios' ? env.OTA_PREVIEW_RUNTIME_VERSION_IOS : env.OTA_PREVIEW_RUNTIME_VERSION_ANDROID;
-  const trimmed = supplied?.trim() ?? '';
-  return trimmed.length === 0 ? null : trimmed;
+  try {
+    const stdout = runner('vp', ['exec', 'expo-updates', 'runtimeversion:resolve', '--platform', platform], {
+      cwd: MOBILE_DIR,
+      env,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    // The CLI prints the hash on its own line, sometimes after other chatter.
+    const match = /\b[0-9a-f]{40}\b/.exec(String(stdout));
+    return match?.[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -269,7 +289,7 @@ export async function isPreviewBranchSurfable(
   options: SurfabilityProbeOptions = {},
 ): Promise<{ surfable: boolean; detail: string; attempts: number } | null> {
   if (!PREVIEW_BRANCH_PATTERN.test(branchName)) return null;
-  const runtimeVersion = previewRuntimeVersionFor(platform, options.env);
+  const runtimeVersion = options.runtimeVersion ?? null;
   if (runtimeVersion === null) return null;
 
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -309,12 +329,12 @@ export async function isPreviewBranchSurfable(
  */
 export async function previewBranchPassesSurfabilityCheck(
   branchName: string,
-  platforms: readonly OtaPublishPlatform[],
+  outcomes: readonly PlatformPublishOutcome[],
   serverUrl: string,
   options: SurfabilityProbeOptions = {},
 ): Promise<boolean> {
   try {
-    return await verifyPreviewBranchIsSurfable(branchName, platforms, serverUrl, options);
+    return await verifyPreviewBranchIsSurfable(branchName, outcomes, serverUrl, options);
   } catch (error) {
     console.error(
       `[mobile:publish] Could not complete the surfability check: ${error instanceof Error ? error.message : String(error)}`,
@@ -382,18 +402,42 @@ async function publishToSelfHostedBranch(
     return 1;
   }
 
+  // Each platform's env, built once: the surfability probe must resolve the
+  // runtimeVersion under exactly the env that platform published with, or it asks
+  // the server about a hash nothing was published under (GOOGLE_MAPS_API_KEY is an
+  // Android-only fingerprint input).
+  const platformEnvFor = (target: OtaPublishPlatform): NodeJS.ProcessEnv => {
+    const platformEnv = { ...eoasEnv };
+    if (target === 'ios') delete platformEnv.GOOGLE_MAPS_API_KEY;
+    return platformEnv;
+  };
+
+  // Resolved lazily and once per platform: it costs a ~10s CLI call, and it is
+  // only ever needed for a `pr-<n>` publish in CI. A local publish resolves a hash
+  // no shipped binary runs (@expo/fingerprint is not deterministic across macOS and
+  // Linux), so the check is skipped there rather than answered wrongly.
+  const verifiable = PREVIEW_BRANCH_PATTERN.test(branchName) && shouldAllowDirtyTree();
+  const runtimeVersions = new Map<OtaPublishPlatform, string | null>();
+  const runtimeVersionFor = (target: OtaPublishPlatform): string | null => {
+    if (!verifiable) return null;
+    if (!runtimeVersions.has(target)) {
+      runtimeVersions.set(target, resolvePublishedRuntimeVersion(target, platformEnvFor(target)));
+    }
+    return runtimeVersions.get(target) ?? null;
+  };
+
   // Answers the retry wrapper's "did that 524 actually land?" question. Same probe
   // as the post-publish verification below, so the two can never disagree; null
   // (nothing to probe with) reads as "not confirmed" and the ordinary ladder runs.
   const confirmPublished: PublishConfirmation = async (confirmedPlatform) => {
-    const result = await isPreviewBranchSurfable(branchName, confirmedPlatform, serverUrl);
+    const result = await isPreviewBranchSurfable(branchName, confirmedPlatform, serverUrl, {
+      runtimeVersion: runtimeVersionFor(confirmedPlatform),
+    });
     return result?.surfable ?? false;
   };
 
   const platforms = requestedSelfHostedPlatforms(platform);
   const outcomes = await publishPlatformsSequentially(platforms, async (requestedPlatform) => {
-    const platformEnv = { ...eoasEnv };
-    if (requestedPlatform === 'ios') delete platformEnv.GOOGLE_MAPS_API_KEY;
     const eoasArgs = buildSelfHostedEoasArgs(branchName, requestedPlatform, updateMessage, {
       allowDirtyTree: shouldAllowDirtyTree(),
     });
@@ -406,7 +450,7 @@ async function publishToSelfHostedBranch(
         command: 'vp',
         args: ['dlx', ...eoasArgs],
         cwd: MOBILE_DIR,
-        env: platformEnv,
+        env: platformEnvFor(requestedPlatform),
       },
       { confirmPublished },
     );
@@ -421,7 +465,12 @@ async function publishToSelfHostedBranch(
 
   // Only now, with every requested platform reporting success, is it worth asking
   // whether the server agrees. A failed publish has its own louder verdict above.
-  if (!(await previewBranchPassesSurfabilityCheck(branchName, platforms, serverUrl))) return 1;
+  for (const outcome of outcomes) {
+    const passed = await previewBranchPassesSurfabilityCheck(branchName, [outcome], serverUrl, {
+      runtimeVersion: runtimeVersionFor(outcome.platform),
+    });
+    if (!passed) return 1;
+  }
 
   for (const line of selfHostedPublishSuccessMessages(branchName)) console.log(line);
   return 0;
@@ -437,12 +486,13 @@ async function publishToSelfHostedBranch(
  */
 export async function verifyPreviewBranchIsSurfable(
   branchName: string,
-  platforms: readonly OtaPublishPlatform[],
+  outcomes: readonly PlatformPublishOutcome[],
   serverUrl: string,
   options: SurfabilityProbeOptions = {},
 ): Promise<boolean> {
   let allSurfable = true;
-  for (const platform of platforms) {
+  for (const outcome of outcomes) {
+    const platform = outcome.platform;
     const result = await isPreviewBranchSurfable(branchName, platform, serverUrl, options);
     if (result === null) continue;
     if (result.surfable) {
@@ -452,15 +502,24 @@ export async function verifyPreviewBranchIsSurfable(
       );
       continue;
     }
-    allSurfable = false;
-    console.error(
-      `[mobile:publish] ${platform}: the publish reported success but "${branchName}" is NOT offered to ` +
-        `runtimeVersion ${previewRuntimeVersionFor(platform, options.env) ?? '(unknown)'} (${result.detail}).`,
+    // Two independent signals are required to fail, and this is the second one.
+    // A fresh update was definitely created ("Update ready for <platform>"), so the
+    // branch HAS it and a probe that disagrees is far more likely to be measuring
+    // the wrong thing — a stale or mis-resolved runtimeVersion — than to have found
+    // a real hole. Failing on the probe alone is how run 34796068541 red-X'd a
+    // perfectly good publish. `no-change` is the other signal: nothing was created,
+    // so "not listed" means there is genuinely nothing on the branch for this
+    // platform. That pairing is the #5417 signature exactly.
+    const fatal = outcome.noChange;
+    console[fatal ? 'error' : 'warn'](
+      `[mobile:publish] ${platform}: the publish reported ${outcome.noChange ? 'no-change' : 'success'} but ` +
+        `"${branchName}" is NOT offered to runtimeVersion ${options.runtimeVersion ?? '(unknown)'} (${result.detail}).`,
     );
-    console.error(
-      `[mobile:publish] Nothing would load in the in-app picker on ${platform}. Diagnose with: ` +
-        `vp run mobile:ota-surf-doctor -- --platform ${platform} --runtime-version ${previewRuntimeVersionFor(platform, options.env) ?? '<hash>'}`,
+    console[fatal ? 'error' : 'warn'](
+      `[mobile:publish] ${fatal ? `Nothing would load in the in-app picker on ${platform}.` : 'A fresh update WAS created, so this is more likely a probe reading the wrong runtimeVersion.'} ` +
+        `Diagnose with: vp run mobile:ota-surf-doctor -- --platform ${platform} --runtime-version ${options.runtimeVersion ?? '<hash>'}`,
     );
+    if (fatal) allSurfable = false;
   }
   return allSurfable;
 }

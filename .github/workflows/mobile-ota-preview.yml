@@ -683,20 +683,19 @@ jobs:
       # Maps), Android WITH it — the per-platform split that keeps each published
       # fingerprint equal to its shipped binary (matches mobile-ota-production.yml). A
       # native-change platform is skipped.
-      # OTA_PREVIEW_RUNTIME_VERSION_* is the FULL fingerprint the compat step already
-      # resolved for this commit, and it is what makes the publish self-checking: with
-      # it the publisher re-asks `/branch_lists` — the same unauthenticated question the
-      # in-app picker asks — and fails if the branch it just uploaded is not being
-      # offered to that runtimeVersion. Without it the step still publishes; it just
-      # can't verify, which is the right behaviour for a local run. It is NOT a
-      # fingerprint input (nothing reads it at config time), so it stays out of the
-      # workflow-level env that scripts/mobile-ci-env-parity.test.ts pins.
+      # `mobile:publish` verifies its own work for a `pr-<n>` branch: it re-asks
+      # `/branch_lists` — the same unauthenticated question the in-app picker asks —
+      # and fails when the branch it just uploaded is not being offered. It resolves
+      # the runtimeVersion to probe with ITSELF, inside the step, because only the
+      # step's own env produces the right hash: GOOGLE_MAPS_API_KEY below is an
+      # Android-only fingerprint input, so the compat step (which has no key) resolves
+      # a DIFFERENT Android hash. Passing that one in failed a healthy publish in run
+      # 34796068541. Nothing new is needed here.
       - name: Publish iOS OTA
         id: publish_ios
         if: steps.compat.outputs.verdict_ios != 'native-change-required'
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
-          OTA_PREVIEW_RUNTIME_VERSION_IOS: ${{ steps.compat.outputs.fingerprint_ios_full }}
         run: vp run mobile:publish -- --channel "$BRANCH" --platform ios
 
       - name: Publish Android OTA
@@ -705,7 +704,6 @@ jobs:
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-          OTA_PREVIEW_RUNTIME_VERSION_ANDROID: ${{ steps.compat.outputs.fingerprint_android_full }}
         run: vp run mobile:publish -- --channel "$BRANCH" --platform android
 
       # Record authoritative full-SHA state before this job releases the shared
