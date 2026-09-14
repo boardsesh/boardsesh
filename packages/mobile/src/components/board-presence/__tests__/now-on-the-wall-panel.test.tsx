@@ -67,6 +67,17 @@ type ClimbListRowMockProps = {
   onOpenActions?: () => void;
 };
 
+// The gym roster is a React Query hook and this harness mounts no QueryClient.
+// Undefined is the single-board gym, which is what most of these tests describe.
+const gymRoster = vi.hoisted(() => ({ boards: undefined as unknown[] | undefined }));
+vi.mock('../../../lib/graphql/hooks/use-gym-boards', () => ({
+  useGymBoards: () => ({ data: gymRoster.boards }),
+}));
+// The list itself has its own suite; here we only care whether it is on screen.
+vi.mock('../GymWallSwitcher', () => ({
+  GymWallSwitcher: () => createElement('div', { 'data-gym-wall-switcher': 'true' }),
+}));
+
 vi.mock('react-native', () => {
   const flattenStyle = (style: unknown): Record<string, unknown> => {
     if (Array.isArray(style)) {
@@ -434,5 +445,68 @@ describe('NowOnTheWallPanel', () => {
         size: 34,
       }),
     );
+  });
+});
+
+// QA declined the first cut because the gym's boards were always on screen: on
+// an iPhone 17 Pro the list was most of what a climber could see at the first
+// detent, so the sheet opened on a board switcher instead of on the wall feed it
+// exists for. It is a disclosure now, and the sheet's own title opens it.
+describe('NowOnTheWallPanel gym board disclosure', () => {
+  const sibling = {
+    uuid: 'tension',
+    boardType: 'tension',
+    layoutId: 8,
+    sizeId: 7,
+    setIds: '5,6',
+    angle: 25,
+    gymUuid: 'gym-1',
+  };
+
+  function headerTitle(container: HTMLElement): HTMLElement | null {
+    return container.querySelector('[aria-label^="mobile.boardPresence.gymWalls.headerSwitcherAria"]');
+  }
+
+  it('stays collapsed when the sheet opens', () => {
+    gymRoster.boards = [sibling];
+
+    const { container } = render(panelElement({ onSelectGymWall: noop }));
+
+    expect(headerTitle(container)).toBeTruthy();
+    expect(container.querySelector('[data-gym-wall-switcher]')).toBeNull();
+  });
+
+  it('opens the list from the header title, and closes it again', () => {
+    gymRoster.boards = [sibling];
+
+    const { container } = render(panelElement({ onSelectGymWall: noop }));
+    const title = headerTitle(container) as HTMLElement;
+
+    fireEvent.click(title);
+    expect(container.querySelector('[data-gym-wall-switcher]')).toBeTruthy();
+
+    fireEvent.click(headerTitle(container) as HTMLElement);
+    expect(container.querySelector('[data-gym-wall-switcher]')).toBeNull();
+  });
+
+  // One board at the gym: the title is plain text again, exactly as before this
+  // feature existed.
+  it('leaves the title inert when there is nothing to switch to', () => {
+    gymRoster.boards = [];
+
+    const { container } = render(panelElement({ onSelectGymWall: noop }));
+
+    expect(headerTitle(container)).toBeNull();
+  });
+
+  // The same panel draws the iPad wall kiosk. A board switcher on a display
+  // mounted to a wall lets a passer-by repoint the gym's screen with no way back.
+  it('never offers the switch on the inline kiosk column', () => {
+    gymRoster.boards = [sibling];
+
+    const { container } = render(panelElement({ variant: 'column', onSelectGymWall: noop }));
+
+    expect(headerTitle(container)).toBeNull();
+    expect(container.querySelector('[data-gym-wall-switcher]')).toBeNull();
   });
 });

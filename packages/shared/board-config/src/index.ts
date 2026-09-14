@@ -3,6 +3,7 @@ export * from './board-capabilities';
 export * from './board-compatibility';
 export * from './board-path';
 export * from './board-name';
+export * from './board-labels';
 export * from './board-search';
 export * from './set-ids';
 export * from './moonboard-config';

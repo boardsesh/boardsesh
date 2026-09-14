@@ -51,6 +51,7 @@ export default function PlayScreen() {
     isAngleAdjustable,
     boardMismatch,
     mismatchBoardLabel,
+    reachableBoardKeys,
     onAngleChange,
     onSwitchBoard,
     onPlayDrawerClosed,
@@ -170,6 +171,7 @@ export default function PlayScreen() {
             isAngleAdjustable={isAngleAdjustable}
             onOpenQueue={presentQueue}
             boardMismatch={boardMismatch}
+            reachableBoardKeys={reachableBoardKeys}
             mismatchBoardLabel={mismatchBoardLabel}
             onSwitchBoard={onSwitchBoard}
             onOpenClimbActions={openPlayerClimbActions}

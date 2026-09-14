@@ -2,6 +2,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 
 import { toBoardName } from './board-name';
 import { requiredSetIdsForMoonBoard } from './moonboard-cell-sets';
+import { parseSetIds } from './set-ids';
 import type { ClimbCompatibilityInput, BoardCompatibilityTarget } from './types';
 
 /**
@@ -116,34 +117,107 @@ export function canAddClimbToBoard(
 
 export type ClimbBoardCompatibility = 'compatible' | 'incompatible' | 'unknown';
 
-/** The active-board fields needed to judge whether a climb belongs to this board. */
+/**
+ * The active-board fields needed to judge whether a climb belongs to this board.
+ *
+ * `boardName` + `layoutId` are the board MODEL, which every caller knows.
+ * `sizeId` and `setIds` describe the PHYSICAL wall, and only the callers that
+ * know the connected wall pass them: the BLE auto-sender does, while the queue
+ * add gate and the swipe navigator deliberately don't — a same-layout
+ * different-size climb still renders on its own board there, so neither should
+ * act on it.
+ */
 export type ActiveBoardForCompatibility = {
   boardName: BoardName;
   layoutId: number;
+  /** The product size bolted on the wall. Omit it and the size check is skipped. */
   sizeId?: number;
+  /**
+   * The hold sets bolted on the wall, either already parsed or in the
+   * comma-separated form the board config carries end to end (`'1,20'`). Omit it
+   * and the set check is skipped.
+   */
+  setIds?: readonly number[] | string | null;
 };
 
-/** The climb fields that carry board identity. Both are optional in most fetch paths. */
+/** The climb fields that carry board identity. All optional in most fetch paths. */
 export type ClimbBoardIdentity = {
   boardType?: string | null;
   layoutId?: number | null;
+  /**
+   * `board_climbs.compatible_size_ids` — every product size the climb's bounding
+   * box fits inside. Null/undefined (legacy row, or a fetch path that doesn't
+   * project it) and `[]` (what a `?? []` fetch path emits) both read as "no size
+   * signal" and constrain nothing.
+   */
   compatibleSizeIds?: readonly number[] | null;
+  /** Read only to derive the hold sets a MoonBoard climb needs. */
+  frames?: string | null;
 };
+
+/** The sets bolted on the wall, normalised, or null when the caller named none. */
+function installedWallSetIds(activeConfig: ActiveBoardForCompatibility): number[] | null {
+  const { setIds } = activeConfig;
+  if (setIds == null) return null;
+  const parsedSetIds = typeof setIds === 'string' ? parseSetIds(setIds) : [...setIds];
+  return parsedSetIds.length > 0 ? parsedSetIds : null;
+}
+
+/**
+ * Whether the connected wall's size is one the climb was measured to fit. Both
+ * halves have to be known — a wall that names no size, or a climb with no
+ * measured sizes, leaves the verdict to the other checks.
+ */
+function climbFitsWallSize(activeConfig: ActiveBoardForCompatibility, climb: ClimbBoardIdentity): boolean {
+  if (activeConfig.sizeId == null) return true;
+  if (!climb.compatibleSizeIds?.length) return true;
+  return climb.compatibleSizeIds.includes(activeConfig.sizeId);
+}
+
+/**
+ * Whether every hold set a MoonBoard climb needs is bolted on the connected
+ * wall. MoonBoard only, for the same reason as `canAddClimbToBoard` rule 4:
+ * Aurora placements are per-set, so an uninstalled set's holds are absent from
+ * the wall's placement map and hold-id containment catches them at send time — a
+ * check that needs render data this identity-only classifier doesn't have.
+ * MoonBoard's grid is the full grid whatever is bolted on, so the cell-to-set
+ * map is the only signal, and it needs nothing but the frames.
+ */
+function climbFitsWallSets(activeConfig: ActiveBoardForCompatibility, climb: ClimbBoardIdentity): boolean {
+  if (activeConfig.boardName !== 'moonboard') return true;
+  if (!climb.frames) return true;
+  const wallSetIds = installedWallSetIds(activeConfig);
+  if (!wallSetIds) return true;
+  const installedSetIds = new Set(wallSetIds);
+  return requiredSetIdsForMoonBoard(activeConfig.layoutId, climb.frames).every((setId) => installedSetIds.has(setId));
+}
 
 /**
  * Decide whether a queued climb can be lit on the connected board.
  *
  * - `unknown` — the climb carries no board metadata (older items, or party-synced
  *   items from before the metadata round-trip). Never block on this; send as today.
- * - `incompatible` — a KNOWN `boardType` or `layoutId` clearly differs from the
- *   active board. A "spill" climb (party peer on another board, or a queue left
- *   over from a board switch) — skip it instead of dark-firing the wall.
+ * - `incompatible` — a KNOWN climb field clearly differs from the active board:
+ *   its `boardType`, its `layoutId`, the wall's size, or a MoonBoard hold set the
+ *   wall doesn't have. A "spill" climb (party peer on another board, a queue left
+ *   over from a board switch, or a climb set on a bigger wall) — skip it instead
+ *   of writing a partial climb the wall cannot show.
  * - `compatible` — the known metadata matches the active board.
  *
+ * Every check is opt-in from BOTH sides: a caller that names no wall size/sets,
+ * or a climb carrying none, keeps exactly the verdict it had before those checks
+ * existed. That asymmetry is the point — missing metadata must never become
+ * `incompatible`, or a queue starts skipping climbs that light fine today.
+ *
+ * Size was checked for Woods alone until #5109, on the grounds that its two
+ * boards number their holds from their own origins. The same failure is just
+ * quieter elsewhere: a Kilter Original 12x14 climb on a connected 12x12 has
+ * placements the smaller wall doesn't have, so the wall lights the part it can
+ * and buzzes success — a complete-looking climb that is the wrong climb. The
+ * check is general now; only the callers that know the physical wall feel it.
+ *
  * An unrecognised `boardType` string is treated as no board signal (we can't
- * judge it), falling through to the layout check. Woods physical size is part of identity; hold-ID
- * containment for other boards stays in `canAddClimbToBoard` so same-layout different-size
- * climbs keep their partial-light behaviour at send time.
+ * judge it), falling through to the layout check.
  */
 export function classifyClimbBoardCompatibility(
   activeConfig: ActiveBoardForCompatibility | undefined,
@@ -155,15 +229,8 @@ export function classifyClimbBoardCompatibility(
   if (climbBoardName == null && !hasLayoutSignal) return 'unknown';
   if (climbBoardName != null && climbBoardName !== activeConfig.boardName) return 'incompatible';
   if (hasLayoutSignal && climb.layoutId !== activeConfig.layoutId) return 'incompatible';
-  // Woods ids are local to each physical wall, so a size mismatch lights different holds.
-  if (
-    activeConfig.boardName === 'woods' &&
-    activeConfig.sizeId != null &&
-    climb.compatibleSizeIds?.length &&
-    !climb.compatibleSizeIds.includes(activeConfig.sizeId)
-  ) {
-    return 'incompatible';
-  }
+  if (!climbFitsWallSize(activeConfig, climb)) return 'incompatible';
+  if (!climbFitsWallSets(activeConfig, climb)) return 'incompatible';
   return 'compatible';
 }
 

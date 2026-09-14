@@ -16,7 +16,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useWindowDimensions } from 'react-native';
 import { router, useSegments } from 'expo-router';
 import { tabsActiveSegment } from '../lib/route-segments';
-import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -29,6 +29,10 @@ import { UndoWallChangeSnackbar } from '../components/board-presence/UndoWallCha
 import { BoardSheet, type BoardSheetClimbAction, type BoardSheetHandle } from '../components/board-presence/BoardSheet';
 import type { QueueItemRowBoard } from '../components/QueueItemRow';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
+import { useSetBoardAngle } from '../lib/boards/use-set-board-angle';
+import { useSwitchBoard } from '../lib/boards/use-switch-board';
+import { useGymBoards } from '../lib/graphql/hooks/use-gym-boards';
+import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
 import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu';
@@ -140,6 +144,9 @@ export type PlayDrawerPaneProps = {
   onOpenQueue: () => void;
   boardMismatch: boolean;
   mismatchBoardLabel: string | undefined;
+  /** Board models standing at this gym. A climb on one of them invites the walk
+   *  instead of raising the blocking scrim. */
+  reachableBoardKeys: ReadonlySet<string>;
   onSwitchBoard: (climbBoardConfig?: BoardConfig) => void;
   onOpenClimbActions: (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => void;
   /** The climb to show in the pane, with a bumped nonce per selection so the pane
@@ -259,6 +266,9 @@ type PlayDrawerRouteValue = {
   isAngleAdjustable: boolean;
   boardMismatch: boolean;
   mismatchBoardLabel?: string;
+  /** Board models standing at this gym. A climb on one of them invites the walk
+   *  instead of raising the blocking scrim. */
+  reachableBoardKeys: ReadonlySet<string>;
   onAngleChange: (angle: number) => void;
   onSwitchBoard: (climbBoardConfig?: BoardConfig) => void;
   /** Run from the route's unmount cleanup: clears the board override + open
@@ -431,6 +441,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const setActiveBoard = useSetActiveBoard();
+  const setBoardAngle = useSetBoardAngle();
   const {
     visible: snackbarVisible,
     nonce: snackbarNonce,
@@ -591,7 +602,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         // ['activeBoard'] cache re-grades the climb list (its search key includes
         // the angle) and triggers the queue re-grade effect in QueueProvider.
         if (activeBoard && newAngle !== activeBoard.angle) {
-          void setActiveBoard({ ...activeBoard, angle: newAngle });
+          void setBoardAngle(activeBoard, newAngle);
         }
       }
 
@@ -620,7 +631,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         );
       }
     },
-    [activeBoard, boardConfigOverride, sessionId, setActiveBoard, setSessionBoardPath],
+    [activeBoard, boardConfigOverride, sessionId, setBoardAngle, setSessionBoardPath],
   );
 
   const openLogAscent = openLogAscentSheet;
@@ -762,6 +773,65 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     dismissQueueSheetAndWait,
   });
 
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+  const broadcastSwitchedBoardPath = useCallback(
+    (board: UserBoard) => {
+      if (sessionIdRef.current === null) return;
+      void setSessionBoardPath(buildSessionBoardPath(board));
+    },
+    [setSessionBoardPath],
+  );
+
+  // Hop to another board at the same gym, from the sheet's own list.
+  //
+  // The sheet deliberately stays open: it is "now on the wall", and after the
+  // hop it is showing the other board's feed, which is the answer the climber
+  // tapped for. Dismissing would make them re-open it to confirm anything
+  // happened, and it would put this through the sheet-presentation coordinator
+  // for no reason.
+  const switchBoard = useSwitchBoard({
+    source: 'presence_sheet_sibling',
+    // A deliberate hop outranks a pinned foreign climb. Left live, every drawer
+    // surface would keep rendering the board they just walked away from.
+    onSwitched: () => setBoardConfigOverride(null),
+    // Peers keep whatever board the session was created on unless told
+    // otherwise, so a silent hop leaves the crew lighting an empty wall. The
+    // NAMED path, never the positional tuple: the tuple mints every later
+    // joiner a private board row.
+    //
+    // Reads the session through a ref rather than closing over it, so this keeps
+    // one identity — and so does `switchBoard`. An inline arrow here would mint a
+    // new `switchBoard` every render, which is exactly how a handler that lists
+    // it as a dependency ends up holding a stale one.
+    broadcastBoardPath: broadcastSwitchedBoardPath,
+    inSession: sessionId !== null,
+    // Reported, not inferred: a hop made with a live link is a different event
+    // from one made cold, and the default made every swap look cold.
+    hasBleLink: bluetooth?.isConnected ?? false,
+  });
+
+  // The gym's roster, for resolving a climb's board to a real UserBoard. Same
+  // cached query the sheet's switcher reads — a second subscriber, not a second
+  // request.
+  const { data: gymBoards } = useGymBoards(activeBoard?.gymUuid ?? null);
+  const gymBoardsRef = useRef(gymBoards);
+  gymBoardsRef.current = gymBoards;
+  const activeBoardRef = useRef(activeBoard);
+  activeBoardRef.current = activeBoard;
+  // Handed to both player surfaces so a climb on a board at this gym invites the
+  // walk instead of raising the blocking scrim. The iPad pane renders its own
+  // PlayDrawer from `playDrawerPaneProps`, so computing this only in the phone
+  // route would leave the pane on the old lock overlay.
+  const reachableBoardKeys = useReachableBoardKeys(activeBoard);
+
+  const handleSelectGymWall = useCallback(
+    (board: UserBoard) => {
+      void switchBoard(board, activeBoard ?? null);
+    },
+    [switchBoard, activeBoard],
+  );
+
   // Switch-board control inside the board sheet: dismiss the sheet, then open
   // the existing board switcher (today's board-glyph destination).
   const handleSwitchBoardFromSheet = useCallback(() => {
@@ -784,6 +854,22 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // mentioned (#5099).
       const override = climbBoardConfig ?? boardConfigOverrideRef.current;
       if (!override) return;
+
+      // A board at this gym goes through the real switch first. The legacy path
+      // below only writes the active board, so a move made during a party
+      // session left every peer bound to the board the climber walked away from
+      // — and board presence with them. `switchBoard` broadcasts the session
+      // board path, clears the override and adopts the board's own angle.
+      const gymSibling = gymBoardsRef.current?.find(
+        (board) =>
+          board.uuid !== activeBoardRef.current?.uuid &&
+          boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),
+      );
+      if (gymSibling) {
+        void switchBoard(gymSibling, activeBoardRef.current ?? null, 'move_to_wall_callout');
+        return;
+      }
+
       const owned = myBoardsRef.current?.boards.find((board) =>
         boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),
       );
@@ -815,7 +901,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       router.dismiss();
       router.push({ pathname: '/boards', params: { returnTo: '/(tabs)/home' } });
     },
-    [setActiveBoard],
+    [setActiveBoard, switchBoard],
   );
 
   // The switch-board gate fires only when the drawer is showing a climb from a
@@ -910,6 +996,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onOpenQueue: openQueueSheet,
             boardMismatch,
             mismatchBoardLabel,
+            reachableBoardKeys,
             onSwitchBoard: handleSwitchBoardFromDrawer,
             onOpenClimbActions: openClimbActions,
             openTarget: paneTarget,
@@ -922,6 +1009,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       openQueueSheet,
       boardMismatch,
       mismatchBoardLabel,
+      reachableBoardKeys,
       handleSwitchBoardFromDrawer,
       openClimbActions,
       paneTarget,
@@ -999,6 +1087,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       isAngleAdjustable,
       boardMismatch,
       mismatchBoardLabel,
+      reachableBoardKeys,
       onAngleChange: handleAngleChange,
       onSwitchBoard: handleSwitchBoardFromDrawer,
       onPlayDrawerClosed,
@@ -1010,6 +1099,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       isAngleAdjustable,
       boardMismatch,
       mismatchBoardLabel,
+      reachableBoardKeys,
       handleAngleChange,
       handleSwitchBoardFromDrawer,
       onPlayDrawerClosed,
@@ -1096,6 +1186,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             boardConfig={storedActiveBoardConfig}
             onClose={requestCloseBoardSheet}
             onSwitchBoard={handleSwitchBoardFromSheet}
+            activeBoard={activeBoard ?? null}
+            onSelectGymWall={handleSelectGymWall}
             onClimbPress={handleBoardSheetClimbPress}
             onAddToQueue={handleBoardSheetAddToQueue}
             onOpenPlaylist={handleBoardSheetOpenPlaylist}

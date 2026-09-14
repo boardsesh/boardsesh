@@ -159,6 +159,14 @@ vi.mock('../party-profile-provider', () => ({
 // by queue-provider-board-switch.test.tsx.
 vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFeed: () => ({ climbs: [] }) }));
 
+// The gym-sibling roster is a React Query hook and this harness mounts no
+// QueryClient. An empty set means "no other wall in reach", which is exactly the
+// pre-existing behaviour these tests were written against; the reachable-wall
+// rule has its own coverage in queue-provider-reachable-walls.test.tsx.
+vi.mock('../queue/use-reachable-board-keys', () => ({
+  useReachableBoardKeys: () => new Set<string>(),
+}));
+
 import { QueueProvider, usePlaylistSuggestionSource, useQueue } from '../queue-provider';
 
 type Snapshot = {

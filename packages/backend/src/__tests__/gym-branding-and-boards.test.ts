@@ -69,14 +69,17 @@ const insertBoard = async (opts: {
   name: string;
   isPublic: boolean;
   isUnlisted?: boolean;
+  // Pinned creation timestamp for the tiebreak tests; defaults to now().
+  createdAt?: string;
 }): Promise<{ id: number; uuid: string }> => {
-  const { gymId, ownerId, name, isPublic, isUnlisted = false } = opts;
+  const { gymId, ownerId, name, isPublic, isUnlisted = false, createdAt } = opts;
   const uuid = uuidv4();
   const sizeId = 10 + boardConfigCounter++;
+  const createdAtValue = createdAt ? sql`${createdAt}::timestamp` : sql`now()`;
   const result = await db.execute(sql`
     INSERT INTO user_boards
       (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, gym_id, is_public, is_unlisted, created_at, updated_at)
-    VALUES (${uuid}, ${uuid}, ${ownerId}, 'kilter', 1, ${sizeId}, '1,2', ${name}, ${gymId}, ${isPublic}, ${isUnlisted}, now(), now())
+    VALUES (${uuid}, ${uuid}, ${ownerId}, 'kilter', 1, ${sizeId}, '1,2', ${name}, ${gymId}, ${isPublic}, ${isUnlisted}, ${createdAtValue}, now())
     RETURNING id
   `);
   return { id: Number(Array.from(result as Iterable<{ id: number }>)[0].id), uuid };
@@ -92,6 +95,7 @@ const insertGymMember = (gymId: number, userId: string, role: string) =>
 // public, one private, one public-but-unlisted. Plus a private gym (owned by
 // OWNER) with a single public board.
 let publicGymUuid: string;
+let publicGymId: number;
 let privateGymUuid: string;
 let pubBoard: { id: number; uuid: string };
 let privBoard: { id: number; uuid: string };
@@ -109,6 +113,7 @@ beforeEach(async () => {
 
   const publicGym = await insertGym({ ownerId: OWNER, name: 'Public Gym' });
   publicGymUuid = publicGym.uuid;
+  publicGymId = publicGym.id;
   await insertGymMember(publicGym.id, EDITOR, 'editor');
   pubBoard = await insertBoard({ gymId: publicGym.id, ownerId: OWNER, name: 'A Public Wall', isPublic: true });
   privBoard = await insertBoard({ gymId: publicGym.id, ownerId: OWNER, name: 'B Private Wall', isPublic: false });
@@ -247,6 +252,52 @@ describe('gymBoards visibility', () => {
   it('orders boards by name', async () => {
     const boards = await socialBoardQueries.gymBoards(null, { gymUuid: publicGymUuid }, authCtx(OWNER));
     expect(boards.map((b) => b.name)).toEqual(['A Public Wall', 'B Private Wall', 'C Unlisted Wall']);
+  });
+
+  // Name is not unique per gym: the Aurora wall crawl builds every unnamed wall
+  // of one vendor as the same `${gymName} - ${...}` string (#5272), so the sort
+  // has to fall through to createdAt and then uuid, or Postgres is free to hand
+  // tied rows back in a different order each request.
+  it('puts the older wall first when two boards share a name', async () => {
+    const olderTwin = await insertBoard({
+      gymId: publicGymId,
+      ownerId: OWNER,
+      name: 'A Public Wall',
+      isPublic: true,
+      createdAt: '2024-01-01 00:00:00',
+    });
+    const newerTwin = await insertBoard({
+      gymId: publicGymId,
+      ownerId: OWNER,
+      name: 'A Public Wall',
+      isPublic: true,
+      createdAt: '2024-06-01 00:00:00',
+    });
+
+    const boards = await socialBoardQueries.gymBoards(null, { gymUuid: publicGymUuid }, anonCtx());
+
+    // The seeded 'A Public Wall' was created with now(), so it trails both twins.
+    expect(boards.map((b) => b.uuid)).toEqual([olderTwin.uuid, newerTwin.uuid, pubBoard.uuid]);
+  });
+
+  it('falls through to uuid when name and createdAt are both tied', async () => {
+    const sameMoment = '2024-02-02 12:00:00';
+    const twinOptions = {
+      gymId: publicGymId,
+      ownerId: OWNER,
+      name: 'A Public Wall',
+      isPublic: true,
+      createdAt: sameMoment,
+    };
+    await insertBoard(twinOptions);
+    await insertBoard(twinOptions);
+
+    const first = await socialBoardQueries.gymBoards(null, { gymUuid: publicGymUuid }, anonCtx());
+    const second = await socialBoardQueries.gymBoards(null, { gymUuid: publicGymUuid }, anonCtx());
+    const tiedUuids = first.filter((board) => board.uuid !== pubBoard.uuid).map((board) => board.uuid);
+
+    expect(tiedUuids).toEqual([...tiedUuids].sort());
+    expect(second.map((board) => board.uuid)).toEqual(first.map((board) => board.uuid));
   });
 
   it('masks a private gym as NOT_FOUND for anonymous viewers', async () => {

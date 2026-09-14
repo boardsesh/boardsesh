@@ -43,6 +43,7 @@ import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { useBoardAdapter } from '@boardsesh/board-react';
 import {
   myBoardsQueryKey,
+  GYM_BOARDS_QUERY_KEY,
   CLIMB_QUERY_KEY,
   SEARCH_CLIMBS_QUERY_KEY,
   INFINITE_SEARCH_CLIMBS_QUERY_KEY,
@@ -268,6 +269,10 @@ export async function fetchBoardByUuid(boardUuid: string): Promise<UserBoard | n
 // source, which Rolldown's scan refuses; see the `hooks-dual-write` exclusion in
 // packages/mobile/vite.config.ts). Re-exported so callers keep one import path.
 export { fetchAllMyBoards } from './fetch-all-my-boards';
+
+// `useGymBoards` is split out for that same reason — it has its own suite —
+// and re-exported here so gym callers keep one import path.
+export { useGymBoards } from './use-gym-boards';
 
 /**
  * A single gym by uuid, including the viewer's `canEdit` flag. Backs the
@@ -601,7 +606,7 @@ export function useLinkBoardToGym() {
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
-      void queryClient.invalidateQueries({ queryKey: ['gymBoards'] });
+      void queryClient.invalidateQueries({ queryKey: GYM_BOARDS_QUERY_KEY });
     },
   });
 }

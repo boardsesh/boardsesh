@@ -20,7 +20,7 @@ type BluetoothCtx = {
 const ctrl = vi.hoisted(() => ({
   board: null as BoardLabelFields | null,
   bluetooth: null as BluetoothCtx,
-  setActiveBoard: vi.fn(),
+  setBoardAngle: vi.fn(),
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   wallClimb: null as { climbUuid: string; name: string } | null,
 }));
@@ -162,7 +162,12 @@ vi.mock('../../../providers/theme-provider', () => ({
 
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: ctrl.board }),
-  useSetActiveBoard: () => ctrl.setActiveBoard,
+}));
+
+// The angle write goes through useSetBoardAngle, which also records the angle
+// against the board so it survives a hop to another wall and back.
+vi.mock('../../../lib/boards/use-set-board-angle', () => ({
+  useSetBoardAngle: () => ctrl.setBoardAngle,
 }));
 
 vi.mock('../../../providers/bluetooth-provider', () => ({
@@ -403,7 +408,7 @@ describe('ClimbTopChrome', () => {
     ctrl.bluetooth = null;
     ctrl.variant = 'liquidGlass';
     ctrl.wallClimb = null;
-    ctrl.setActiveBoard.mockClear();
+    ctrl.setBoardAngle.mockClear();
     haptics.light.mockClear();
     haptics.selection.mockClear();
   });
@@ -488,7 +493,7 @@ describe('ClimbTopChrome', () => {
     expect(haptics.light).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-angle-selector]')?.getAttribute('data-angle-selector')).toBe('kilter:1:40');
     fireEvent.click(container.querySelector('[data-angle-selector]') as HTMLButtonElement);
-    expect(ctrl.setActiveBoard).toHaveBeenCalledWith({ ...typedBoard, angle: 45 });
+    expect(ctrl.setBoardAngle).toHaveBeenCalledWith(typedBoard, 45);
   });
 
   it('fires onOpenBoardDetail with haptic when the board capsule is pressed', () => {

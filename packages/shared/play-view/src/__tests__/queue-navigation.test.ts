@@ -821,3 +821,157 @@ describe("the end of the climber's own list (#5403)", () => {
     expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], track, 5)).toEqual([]);
   });
 });
+
+// --- Reachable walls at the same gym ----------------------------------------
+//
+// The #5099 skip was written for a queue tail from a board somewhere else. At a
+// gym with two walls the same rule deletes half a deliberately mixed session, so
+// a climb the climber can walk to is a navigation target instead.
+
+describe('selectNextQueueItemWithSuggestions reachable walls', () => {
+  const kilterIsReachable = (climb: Climb) => climb.boardType === 'kilter';
+
+  it('stops on a climb from another wall at this gym instead of skipping it', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(selection.item?.uuid).toBe('item-kilter-1');
+    expect(selection.skippedItems).toEqual([]);
+  });
+
+  it('still skips a climb from a board that is not at this gym', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('moon-1', 'moonboard', 6),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(selection.item?.uuid).toBe('item-tension-2');
+    expect(selection.skippedItems.map((item) => item.uuid)).toEqual(['item-moon-1']);
+  });
+
+  // Order is the climber's, not ours: a wall they can walk to that comes first
+  // wins over something drawable here that comes later.
+  it('prefers an earlier reachable climb over a later compatible one', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+      queueItemOnBoard('kilter-2', 'kilter', 1),
+    ];
+
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(selection.item?.uuid).toBe('item-kilter-1');
+  });
+
+  it('walks past unreachable climbs to a reachable one further along', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('moon-1', 'moonboard', 6),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+    ];
+
+    const selection = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(selection.item?.uuid).toBe('item-kilter-1');
+    expect(selection.skippedItems.map((item) => item.uuid)).toEqual(['item-moon-1']);
+  });
+
+  // The predicate is additive: without it the #5099 behaviour must be unchanged,
+  // which is what keeps every existing caller safe.
+  it('behaves exactly as before when no predicate is supplied', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+
+    const withoutPredicate = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD);
+    const withNothingReachable = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, () => false);
+
+    expect(withoutPredicate.item?.uuid).toBe('item-tension-2');
+    expect(withNothingReachable.item?.uuid).toBe('item-tension-2');
+    expect(withNothingReachable.skippedItems.map((item) => item.uuid)).toEqual(['item-kilter-1']);
+  });
+
+  // The forward/backward disagreement that mattered: a climb the climber could
+  // walk to was skipped going forward but landed on going back.
+  it('reaches the same-gym climb in both directions', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+
+    const forward = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+    const backward = findPreviousQueueItemWithSuggestions(queue, queue[2], null);
+
+    expect(forward.item?.uuid).toBe('item-kilter-1');
+    expect(backward?.uuid).toBe('item-kilter-1');
+  });
+});
+
+// The drawer's Next affordance, its peek and its "N left" are computed here, and
+// they have to describe the swipe that `nextClimb` actually performs. Before the
+// predicate reached these, a queue whose only remaining climb was on the board
+// across the room reported canNext:false — so the gesture was disabled and the
+// climb this feature exists to reach could not be reached forward at all.
+describe('computeNavigationStateWithSuggestions reachable walls', () => {
+  const kilterIsReachable = (climb: Climb) => climb.boardType === 'kilter';
+
+  it('can advance onto a climb at another board in this gym', () => {
+    const queue = [queueItemOnBoard('current', 'tension', 8), queueItemOnBoard('kilter-1', 'kilter', 1)];
+
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(state.canNext).toBe(true);
+    expect(state.nextItem?.uuid).toBe('item-kilter-1');
+  });
+
+  it('still cannot advance onto a board that is not at this gym', () => {
+    const queue = [queueItemOnBoard('current', 'tension', 8), queueItemOnBoard('moon-1', 'moonboard', 6)];
+
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(state.canNext).toBe(false);
+  });
+
+  // The peek names the climb the swipe lands on. Disagreement here is how a
+  // climber is shown one climb and handed another.
+  it('peeks the climb the swipe will actually land on', () => {
+    const queue = [
+      queueItemOnBoard('current', 'tension', 8),
+      queueItemOnBoard('kilter-1', 'kilter', 1),
+      queueItemOnBoard('tension-2', 'tension', 8),
+    ];
+
+    const state = computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+    const landed = selectNextQueueItemWithSuggestions(queue, queue[0], null, TENSION_BOARD, kilterIsReachable);
+
+    expect(state.nextItem?.uuid).toBe(landed.item?.uuid);
+  });
+
+  it('counts a reachable climb in what is left', () => {
+    const queue = [queueItemOnBoard('current', 'tension', 8), queueItemOnBoard('kilter-1', 'kilter', 1)];
+
+    const withPredicate = computeNavigationStateWithSuggestions(
+      queue,
+      queue[0],
+      null,
+      TENSION_BOARD,
+      kilterIsReachable,
+    );
+    const without = computeNavigationStateWithSuggestions(queue, queue[0], null, TENSION_BOARD);
+
+    expect(withPredicate.remainingCount).toBe(1);
+    expect(without.remainingCount).toBe(0);
+  });
+});

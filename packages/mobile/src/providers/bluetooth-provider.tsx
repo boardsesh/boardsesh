@@ -4,6 +4,7 @@ import { Alert, AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import { isClimbOnReachableBoard } from '@boardsesh/queue';
 import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
 import {
   classifyClimbBoardCompatibility,
@@ -740,6 +741,13 @@ type BluetoothProviderProps = {
   setIds?: string;
   boardUuid?: string;
   /**
+   * Board models at the same gym as the active board. The auto-sender still
+   * refuses to write a climb this board can't draw, but a climb on one of these
+   * is somewhere the climber can walk to, so the queue must not be advanced past
+   * it on their behalf.
+   */
+  reachableBoardKeys?: ReadonlySet<string>;
+  /**
    * Whether the active board has an LED light kit. Optional on purpose — see the
    * `ledless` note on BluetoothContextValue. Only an explicit `false` changes
    * behaviour.
@@ -754,6 +762,7 @@ export function BluetoothProvider({
   sizeId,
   setIds,
   boardUuid,
+  reachableBoardKeys,
   hasLeds,
   children,
 }: BluetoothProviderProps) {
@@ -860,6 +869,8 @@ export function BluetoothProvider({
   restampBoardMembershipByUuidRef.current = restampBoardMembershipByUuid;
   const boardUuidRef = useRef(boardUuid);
   boardUuidRef.current = boardUuid;
+  const reachableBoardKeysRef = useRef(reachableBoardKeys);
+  reachableBoardKeysRef.current = reachableBoardKeys;
   // One membership re-stamp per report signature. An anonymous emitter is keyed
   // `conn:{connectionId}` and loses membership on every socket reconnect, so the
   // first rejection is worth one retry — a second would just hammer.
@@ -1632,7 +1643,12 @@ export function BluetoothProvider({
   // that produced it, so a second request can only come from a newer flow whose
   // intent supersedes the first.
   const [pendingAutoConnect, setPendingAutoConnect] = useState<{
-    serial: string;
+    /**
+     * Silent auto-select target. Absent for a deliberate hop to another board at
+     * this gym: nothing is remembered for a board the climber has not connected
+     * to before, so `connect` opens the picker as it would from a cold tap.
+     */
+    serial?: string;
     configKey: string;
     armUndoToast: boolean;
   } | null>(null);
@@ -1662,7 +1678,7 @@ export function BluetoothProvider({
     // new board props into this provider yet. Wait for the matching config so we
     // don't auto-connect against the LED placement map we're switching away from.
     if (!boardName || layoutId === undefined || sizeId === undefined) return;
-    if (boardConfigKey(boardName, layoutId, sizeId) !== pendingAutoConnect.configKey) return;
+    if (boardConfigKey(boardName, layoutId, sizeId, boardUuid) !== pendingAutoConnect.configKey) return;
     // The old cancelled connect may still be settling. connect() bails while
     // connectInFlightRef is set (which tracks `loading`), so a new connect fired
     // now would be silently swallowed — wait for it to clear first.
@@ -1707,7 +1723,12 @@ export function BluetoothProvider({
         pickerStateRef.current?.handleCancel();
         setPendingAutoConnect({
           serial: decision.serial,
-          configKey: boardConfigKey(decision.config.boardName, decision.config.layoutId, decision.config.sizeId),
+          configKey: boardConfigKey(
+            decision.config.boardName,
+            decision.config.layoutId,
+            decision.config.sizeId,
+            board.uuid,
+          ),
           armUndoToast: armUndoToastAfterSwitch,
         });
       } catch (error) {
@@ -1929,6 +1950,21 @@ export function BluetoothProvider({
       next: ClimbQueueItem | null;
       skippedCount: number;
     }) => {
+      // A climb on a board at this gym is not a spill. The climber swiped onto
+      // it deliberately — queue navigation treats it as a target rather than
+      // walking past it — and the drawer is already offering to move them to the
+      // board that draws it. Advancing here would snap them forward off the climb
+      // they just chose, with a toast calling their own navigation a skip.
+      //
+      // The write is still refused: this wall cannot draw it. Clear the wall so
+      // it stops showing the previous climb, and say nothing — the callout on
+      // screen is the explanation, and counting this as a skip would poison the
+      // spill metric with deliberate moves.
+      if (isClimbOnReachableBoard(skipped.climb, reachableBoardKeysRef.current)) {
+        void sendFramesToBoard('');
+        return;
+      }
+
       // The wall is cleared (rather than advanced to a compatible climb) in a
       // party session — never hijack shared state — or when nothing compatible
       // remains. First-class so the silent clear is filterable in analytics; the

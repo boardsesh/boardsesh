@@ -414,6 +414,15 @@ export const SHARED_EVENTS = {
   // Props: { boardId?, historyCount }.
   BoardSwapTapped: 'Board Swap Tapped',
   BoardSwapInvokedFromSheet: 'Board Swap Invoked From Sheet',
+  // Closes the pair above: the swap actually landed (or didn't). Nine different
+  // code paths write the active board and, until these existed, none of them
+  // emitted anything — so "my board changed on its own" and "switching did
+  // nothing" were equally unfalsifiable. `source` is what drove the write, so a
+  // spike from one surface is attributable. Props:
+  // { source, toBoardUuid?, sameGym, sameConfig, hadBleLink, inSession }.
+  BoardSwapCompleted: 'Board Swap Completed',
+  // Props: { source, toBoardUuid?, reason }.
+  BoardSwapFailed: 'Board Swap Failed',
   // Fired each time "load older" resolves a page of durable history (past the
   // live feed's in-memory HISTORY_CAP window). Props:
   // { boardId?, pageSize: number, returnedCount: number }. `returnedCount <

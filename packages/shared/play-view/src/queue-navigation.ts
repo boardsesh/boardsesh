@@ -4,6 +4,16 @@ import { findNextCompatibleQueueItem, type ActiveBoardForCompatibility } from '@
 import type { NavigationState } from './types';
 
 /**
+ * Is a queued climb the active board cannot draw still somewhere the climber can
+ * get to — another wall in the same room, rather than a board in another city?
+ *
+ * Injected, never imported: knowing which walls stand at this gym needs a
+ * network round trip and a gym identity, and this package is pure. Omit it and
+ * every board-foreign climb is skipped exactly as before (issue #5099).
+ */
+export type ReachableClimbPredicate = (climb: Climb) => boolean;
+
+/**
  * Find the next item in the queue relative to the current climb.
  * Returns null if there is no next item.
  */
@@ -134,9 +144,25 @@ export type NextQueueItemSelection = {
 function scanForFirstCompatible(
   items: ClimbQueue,
   activeConfig: ActiveBoardForCompatibility | undefined,
+  isReachable?: ReachableClimbPredicate,
 ): NextQueueItemSelection {
   const { item, skippedCount } = findNextCompatibleQueueItem(items, null, activeConfig);
-  return { item, skippedItems: items.slice(0, skippedCount) };
+  if (!isReachable) return { item, skippedItems: items.slice(0, skippedCount) };
+
+  // A reachable climb earlier in the queue outranks a compatible one further
+  // along: the climber asked for the wall twenty metres away, so walking past it
+  // to reach something drawable here is the wrong answer. Composed around
+  // `findNextCompatibleQueueItem` rather than folded into it, because that
+  // helper also answers the BLE senders' question — "can this wall physically
+  // draw it" — where reachability is meaningless.
+  const reachableIndex = items.findIndex(({ climb }) => climb != null && isReachable(climb));
+  if (reachableIndex < 0) return { item, skippedItems: items.slice(0, skippedCount) };
+
+  const compatibleIndex = item ? items.findIndex(({ uuid }) => uuid === item.uuid) : -1;
+  if (compatibleIndex >= 0 && compatibleIndex <= reachableIndex) {
+    return { item, skippedItems: items.slice(0, skippedCount) };
+  }
+  return { item: items[reachableIndex], skippedItems: items.slice(0, reachableIndex) };
 }
 
 /**
@@ -183,6 +209,13 @@ function scanForFirstCompatible(
  * Omit `activeConfig`, or leave a climb without board metadata, and nothing is
  * skipped — this fails open by design.
  *
+ * `isReachable` re-opens that skip for the climbs it should never have covered.
+ * At a gym with more than one wall a climber deliberately queues from both, and
+ * skipping past the Tension climbs because they are standing at the Kilter
+ * silently deletes half their session. A climb on a wall in the same room is a
+ * navigation target: the drawer offers to move them to it. A climb on a board in
+ * another city stays skipped, which is what #5099 was actually about.
+ *
  * The SUGGESTION branch is deliberately left board-blind: the play drawer feeds
  * it a source that is sometimes bound to another board on purpose (the
  * wrong-board view-only preview). Staleness of the provider's own source is
@@ -193,6 +226,7 @@ export function selectNextQueueItemWithSuggestions(
   currentClimbQueueItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
   activeConfig?: ActiveBoardForCompatibility,
+  isReachable?: ReachableClimbPredicate,
 ): NextQueueItemSelection {
   if (currentClimbQueueItem) {
     const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
@@ -205,14 +239,14 @@ export function selectNextQueueItemWithSuggestions(
         };
       }
       // The active list wins; board filtering applies when falling back to queue history.
-      return scanForFirstCompatible(queue.slice(currentIndex + 1), activeConfig);
+      return scanForFirstCompatible(queue.slice(currentIndex + 1), activeConfig, isReachable);
     }
     const nextClimb = getNextPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
     return { item: nextClimb ? toPeekItem(nextClimb) : null, skippedItems: [] };
   }
 
   if (queue.length > 0) {
-    const scanned = scanForFirstCompatible(queue, activeConfig);
+    const scanned = scanForFirstCompatible(queue, activeConfig, isReachable);
     if (scanned.item) return scanned;
     const firstSuggestionAfterQueue = getPlaylistSuggestedClimbs(source, queue)[0];
     return {
@@ -233,8 +267,9 @@ export function findNextQueueItemWithSuggestions(
   currentClimbQueueItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
   activeConfig?: ActiveBoardForCompatibility,
+  isReachable?: ReachableClimbPredicate,
 ): ClimbQueueItem | null {
-  return selectNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source, activeConfig).item;
+  return selectNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source, activeConfig, isReachable).item;
 }
 
 /**
@@ -357,14 +392,28 @@ export function anchoredSuggestionSource(
  * actually lands on. Backward navigation is deliberately
  * left alone: swiping back should return you where you came from, and a
  * cross-board climb reached that way is drawn on its own board.
+ *
+ * That asymmetry used to have a sharp edge — forward skipped a climb backward
+ * would still land on, so the two directions disagreed about the same queue.
+ * `isReachable` removes it for the case that mattered: a climb on another wall
+ * at this gym is now a forward target too, so both directions reach it. What
+ * remains asymmetric is a genuinely far-away board, where "return me where I
+ * came from" is still the right answer going back.
  */
 export function computeNavigationStateWithSuggestions(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
   activeConfig?: ActiveBoardForCompatibility,
+  isReachable?: ReachableClimbPredicate,
 ): NavigationState {
-  const nextItem = selectNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source, activeConfig).item;
+  const nextItem = selectNextQueueItemWithSuggestions(
+    queue,
+    currentClimbQueueItem,
+    source,
+    activeConfig,
+    isReachable,
+  ).item;
   const prevItem = findPreviousQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
 
   const remainingCount = findUpcomingQueueItemsWithSuggestions(
@@ -373,6 +422,7 @@ export function computeNavigationStateWithSuggestions(
     source,
     REMAINING_COUNT_CAP,
     activeConfig,
+    isReachable,
   ).length;
 
   return {
@@ -410,6 +460,7 @@ export function findUpcomingQueueItemsWithSuggestions(
   source: PlaylistSuggestionSource | null,
   count: number,
   activeConfig?: ActiveBoardForCompatibility,
+  isReachable?: ReachableClimbPredicate,
 ): ClimbQueueItem[] {
   const upcomingItems: ClimbQueueItem[] = [];
   if (count <= 0) return upcomingItems;
@@ -426,7 +477,7 @@ export function findUpcomingQueueItemsWithSuggestions(
   let stepsLeft = count + queue.length;
   while (upcomingItems.length < count && stepsLeft > 0) {
     stepsLeft -= 1;
-    const nextItem = findNextQueueItemWithSuggestions(queue, walkFrom, source, activeConfig);
+    const nextItem = findNextQueueItemWithSuggestions(queue, walkFrom, source, activeConfig, isReachable);
     if (!nextItem) break;
     if (seenItemUuids.has(nextItem.uuid)) break;
     seenItemUuids.add(nextItem.uuid);

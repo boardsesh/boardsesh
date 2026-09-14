@@ -4,6 +4,7 @@ import {
   boardConfigLabel,
   boardRowSubtitle,
   disambiguateBoardSubtitles,
+  stripGymNamePrefix,
   type BoardLabelSource,
 } from '../board-labels';
 
@@ -37,6 +38,20 @@ describe('boardPlaceLabel', () => {
   it('treats a blank string from the API as absent', () => {
     expect(boardPlaceLabel({ ...kilter, gymName: '   ', locationName: 'Bergen' })).toBe('Bergen');
   });
+
+  // Both candidates are gym-level, not wall-level: gymName is shared by every
+  // row, and the wall crawl writes locationName as the gym's "<city>, <country>"
+  // for every wall it imports. Leading with either collides every row.
+  it('has no place label within one gym', () => {
+    const board = { ...kilter, gymName: 'Bergen Klatresenter', locationName: 'Bergen, Norway' };
+    expect(boardPlaceLabel(board, { scope: 'within-gym' })).toBeNull();
+  });
+
+  it('still reads the gym, then the city, globally', () => {
+    const board = { ...kilter, gymName: 'Bergen Klatresenter', locationName: 'Bergen, Norway' };
+    expect(boardPlaceLabel(board)).toBe('Bergen Klatresenter');
+    expect(boardPlaceLabel({ ...kilter, locationName: 'Bergen, Norway' })).toBe('Bergen, Norway');
+  });
 });
 
 describe('boardConfigLabel', () => {
@@ -68,6 +83,11 @@ describe('boardRowSubtitle', () => {
 
   it('falls back to the brand name, never the raw lowercase board type', () => {
     expect(boardRowSubtitle({ ...kilter, layoutId: 99999, sizeId: 99999 })).toBe('Kilter');
+  });
+
+  it('shows what the board is instead of the gym within one gym', () => {
+    const board = { ...kilter, gymName: 'Bergen Klatresenter' };
+    expect(boardRowSubtitle(board, { scope: 'within-gym' })).toBe('Original 12×14');
   });
 });
 
@@ -176,5 +196,112 @@ describe('disambiguateBoardSubtitles', () => {
 
   it('handles an empty list', () => {
     expect(disambiguateBoardSubtitles([])).toEqual([]);
+  });
+});
+
+describe('disambiguateBoardSubtitles, scope within-gym', () => {
+  // Neither candidate place label is worth leading with inside one gym. The gym
+  // name is shared by every row by definition, and locationName is written by
+  // the wall crawl as "<city>, <country>" for every wall at the gym — so both
+  // put identical words on every row and collide them all before a single facet
+  // has been tried. What the board IS leads instead.
+  const atOneGym = { ...kilter, gymName: 'Bergen Klatresenter', locationName: 'Bergen, Norway' };
+
+  it('leads with what the board is, never the gym or its city', () => {
+    const subtitles = disambiguateBoardSubtitles([atOneGym], { scope: 'within-gym' });
+    expect(subtitles[0]).not.toContain('Bergen Klatresenter');
+    expect(subtitles[0]).not.toContain('Bergen, Norway');
+    expect(subtitles[0]).toBe('Original 12×14');
+  });
+
+  it('separates three boards at one gym on size', () => {
+    // Kilter sizes 7/8/13 are 12x14, 8x12 and 10x10, so the config label alone
+    // already tells them apart — no facet needed.
+    const boards: BoardLabelSource[] = [
+      { ...atOneGym, sizeId: 7 },
+      { ...atOneGym, sizeId: 8 },
+      { ...atOneGym, sizeId: 13 },
+    ];
+    expect(disambiguateBoardSubtitles(boards, { scope: 'within-gym' })).toEqual([
+      'Original 12×14',
+      'Original 8×12',
+      'Original 10×10',
+    ]);
+  });
+
+  it('separates three boards sharing a config on angle', () => {
+    const boards: BoardLabelSource[] = [
+      { ...atOneGym, angle: 25 },
+      { ...atOneGym, angle: 40 },
+      { ...atOneGym, angle: 55 },
+    ];
+    expect(disambiguateBoardSubtitles(boards, { scope: 'within-gym' })).toEqual([
+      'Original 12×14 · 25°',
+      'Original 12×14 · 40°',
+      'Original 12×14 · 55°',
+    ]);
+  });
+
+  // The #5272 case: two walls the crawl named identically, same board, same
+  // angle. The serial is the last thing that can tell them apart, and it is
+  // printed on the controller box so a climber can check it.
+  it('falls through to the serial for two identically configured walls', () => {
+    const boards: BoardLabelSource[] = [
+      { ...atOneGym, serialNumber: 'KB-0000A3F1' },
+      { ...atOneGym, serialNumber: 'KB-00007C09' },
+    ];
+    const subtitles = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
+    expect(subtitles[0]).not.toBe(subtitles[1]);
+    expect(subtitles[0]).toContain('A3F1');
+    expect(subtitles[1]).toContain('7C09');
+  });
+
+  it('leaves two boards identical on every facet alone', () => {
+    const boards: BoardLabelSource[] = [atOneGym, { ...atOneGym }];
+    const subtitles = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
+    expect(subtitles[0]).toBe(subtitles[1]);
+  });
+
+  it('never leaks the gym city that global would have used', () => {
+    const boards: BoardLabelSource[] = [
+      { ...kilter, locationName: 'Bergen, Norway', sizeId: 7 },
+      { ...kilter, locationName: 'Bergen, Norway', sizeId: 8 },
+    ];
+    const withinGym = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
+    expect(withinGym.every((subtitle) => !subtitle.includes('Bergen'))).toBe(true);
+    expect(disambiguateBoardSubtitles(boards)[0]).toContain('Bergen');
+  });
+});
+
+describe('stripGymNamePrefix', () => {
+  it('drops a hyphenated gym prefix', () => {
+    expect(stripGymNamePrefix('Bergen Klatresenter - Kilter', 'Bergen Klatresenter')).toBe('Kilter');
+  });
+
+  it('drops an en-dashed gym prefix', () => {
+    expect(stripGymNamePrefix('Bergen Klatresenter – Kilter', 'Bergen Klatresenter')).toBe('Kilter');
+  });
+
+  it('matches the gym name case-insensitively', () => {
+    expect(stripGymNamePrefix('BERGEN KLATRESENTER - Tension', 'Bergen Klatresenter')).toBe('Tension');
+  });
+
+  it('treats a gym name with regex metacharacters literally', () => {
+    expect(stripGymNamePrefix('Klatring (Bergen) - Kilter', 'Klatring (Bergen)')).toBe('Kilter');
+    expect(stripGymNamePrefix('Klatring xBergeny - Kilter', 'Klatring (Bergen)')).toBe('Klatring xBergeny - Kilter');
+  });
+
+  it('leaves a name that only mentions the gym mid-string alone', () => {
+    expect(stripGymNamePrefix('Kilter at Bergen Klatresenter', 'Bergen Klatresenter')).toBe(
+      'Kilter at Bergen Klatresenter',
+    );
+  });
+
+  it('leaves the name alone when stripping would empty it', () => {
+    expect(stripGymNamePrefix('Bergen Klatresenter -', 'Bergen Klatresenter')).toBe('Bergen Klatresenter -');
+  });
+
+  it('leaves the name alone when there is no gym', () => {
+    expect(stripGymNamePrefix('Bergen Klatresenter - Kilter', null)).toBe('Bergen Klatresenter - Kilter');
   });
 });

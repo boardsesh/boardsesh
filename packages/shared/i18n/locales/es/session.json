@@ -433,6 +433,20 @@
         "previewTag": "Vista previa",
         "backToLive": "Volver al muro",
         "browseHistory": "Ver historial"
+      },
+      "gymWalls": {
+        "header": "Otros plafones en {{gym}}",
+        "headerNoGym": "Otros plafones aquí",
+        "sameClimbs": "Los mismos bloques que este plafón",
+        "rowAria": "Cambiar a {{board}}",
+        "showAll": "Ver los {{count}} plafones",
+        "switchFailed": "No se pudo cambiar a {{board}}. Inténtalo de nuevo.",
+        "angle": "{{angle}}°",
+        "angleFixed": "fijo a {{angle}}°",
+        "noLights": "sin luces",
+        "headerSwitcherAria": "Estás en {{board}}. Toca para cambiar a otro plafón de aquí.",
+        "headerSwitcherHintOpen": "Muestra los otros plafones de este rocódromo",
+        "headerSwitcherHintClose": "Oculta los otros plafones"
       }
     },
     "toast": {

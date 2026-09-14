@@ -20,8 +20,10 @@ import {
   isPlaylistPeekQueueItemUuid,
   decideAdd,
   deriveAcceptedConfigs,
+  isClimbOnReachableBoard,
 } from '@boardsesh/queue';
 import type {
+  Climb,
   QueueSearchParams,
   ClimbQueueItem,
   PlaylistSuggestionSource,
@@ -62,6 +64,7 @@ import {
   shouldDefaultToBrowse,
 } from '@boardsesh/play-view';
 import { useSharedSessionBrowseEnabled } from './feature-flags-provider';
+import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { toClimbQueueItem } from '../lib/queue-conversion';
 import { getPlaylistRenderBoardTarget } from '../lib/playlists/playlist-climb-render-board';
 import { resolveCommittableQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
@@ -501,6 +504,23 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // callbacks on every board switch — mirror it into a ref the handlers read.
   const activeBoardRef = useRef(activeBoard);
   activeBoardRef.current = activeBoard;
+
+  // The other walls at this gym. A queued climb on one of them is somewhere the
+  // climber can walk to, so it stays a swipe target instead of being skipped
+  // past (#5099's skip was written for a board in another city) and it no longer
+  // raises the cross-board add prompt — mixing walls at a multi-wall gym is the
+  // deliberate act that prompt exists to catch the ACCIDENT of.
+  const reachableBoardKeys = useReachableBoardKeys(activeBoard);
+  // One stable identity per roster, because this feeds the forward-selection
+  // memo that decides the next swipe target.
+  const isReachableClimb = useMemo(() => {
+    if (reachableBoardKeys.size === 0) return undefined;
+    return (climb: Climb) => isClimbOnReachableBoard(climb, reachableBoardKeys);
+  }, [reachableBoardKeys]);
+  const isReachableClimbRef = useRef(isReachableClimb);
+  isReachableClimbRef.current = isReachableClimb;
+  const reachableBoardKeysRef = useRef(reachableBoardKeys);
+  reachableBoardKeysRef.current = reachableBoardKeys;
 
   // Board-render A/B telemetry (issue #2202). QueueProvider mounts once near
   // the app root, so this is the one place that registers `render_mode` /
@@ -1158,6 +1178,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         climb: rawItem.climb,
         activeConfig,
         acceptedConfigKeys: deriveAcceptedConfigs(stateRef.current.queue, activeConfig),
+        reachableConfigKeys: reachableBoardKeysRef.current,
         classify: classifyClimbBoardCompatibility,
       });
 
@@ -1682,8 +1703,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         state.currentClimbQueueItem,
         playlistSuggestionSource,
         toActiveBoardCompatibilityConfig(activeBoard),
+        isReachableClimb,
       ),
-    [state.queue, state.currentClimbQueueItem, playlistSuggestionSource, activeBoard],
+    [state.queue, state.currentClimbQueueItem, playlistSuggestionSource, activeBoard, isReachableClimb],
   );
   useEffect(() => {
     const { item, skippedItems } = forwardSelection;
@@ -1713,6 +1735,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       currentClimbQueueItem,
       playlistSuggestionSourceRef.current,
       activeConfig,
+      isReachableClimbRef.current,
     );
     // Reported before the bail-out: a swipe that skipped everything and landed
     // nowhere is exactly when the climber most needs to know why. (The gesture

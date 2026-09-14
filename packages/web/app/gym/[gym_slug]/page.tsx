@@ -15,14 +15,14 @@ import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
 import type { Gym, MyGymClaim, UserBoard } from '@boardsesh/shared-schema';
 import {
   GET_GYM_PENDING_CLAIM,
-  GET_GYM_BOARDS,
+  GET_GYM_BOARDS_FOR_LISTING,
   GET_GYM_KIOSK,
   type GetGymPendingClaimQueryResponse,
   type GetGymBoardsQueryResponse,
   type GetGymKioskQueryResponse,
   type GymKioskOperationResult,
 } from '@boardsesh/graphql/operations';
-import { boardTypeLabel } from '@boardsesh/board-constants';
+import { disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
 import { parseGymQrLanding } from '@boardsesh/analytics';
 import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
@@ -100,7 +100,11 @@ async function fetchDefaultKiosk(gymSlug: string, token: string | undefined): Pr
 
 async function fetchGymBoards(gymUuid: string, token: string | undefined): Promise<UserBoard[]> {
   try {
-    const response = await executeAuthenticatedGraphQL<GetGymBoardsQueryResponse>(GET_GYM_BOARDS, { gymUuid }, token);
+    const response = await executeAuthenticatedGraphQL<GetGymBoardsQueryResponse>(
+      GET_GYM_BOARDS_FOR_LISTING,
+      { gymUuid },
+      token,
+    );
     return response.gymBoards ?? [];
   } catch (error) {
     console.error('fetchGymBoards failed:', error);
@@ -196,6 +200,13 @@ export default async function GymPage(props: GymRouteProps) {
   const locale = await getLocale();
   const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
   const [kiosk, boards] = await Promise.all([fetchDefaultKiosk(gym_slug, token), fetchGymBoards(gym.uuid, token)]);
+
+  // Two boards run by the same gym used to read identically here — "Kilter ·
+  // 40°" twice, under two rows the setter had also named the same thing (issue
+  // #5272). The shared labels pull them apart on whatever actually differs
+  // (wall, size, layout, angle), scoped to this one gym: the heading above
+  // already says which gym this is, so the rows lead with the wall instead.
+  const boardSubtitles = disambiguateBoardSubtitles(boards, { scope: 'within-gym' });
 
   // Stored logo/photo paths are backend-relative; resolve for the browser (also
   // keeps the JSON-LD image absolute, as schema.org expects). The logo has NO
@@ -482,7 +493,7 @@ export default async function GymPage(props: GymRouteProps) {
           </Typography>
         ) : (
           <Box component="ul" sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {boards.map((board) => (
+            {boards.map((board, boardIndex) => (
               <Box component="li" key={board.uuid}>
                 <MuiLink
                   component={LocaleLink}
@@ -491,10 +502,10 @@ export default async function GymPage(props: GymRouteProps) {
                   sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
                 >
                   <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-                    {board.name}
+                    {stripGymNamePrefix(board.name, gym.name)}
                   </Typography>
                   <Typography component="span" variant="body2" color="text.secondary">
-                    {`${boardTypeLabel(board.boardType)} · ${board.angle}°`}
+                    {boardSubtitles[boardIndex]}
                   </Typography>
                 </MuiLink>
               </Box>

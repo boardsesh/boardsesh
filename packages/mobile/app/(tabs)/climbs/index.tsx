@@ -36,7 +36,6 @@ import { getTallWideScope } from '@boardsesh/board-constants';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
-import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { Button } from '../../../src/components/Button';
@@ -1158,7 +1157,14 @@ function ClimbListInner() {
   const isBoardResolving = isBoardLoading || (hasBoardConfig && !searchReady);
   // A placeholder with no rows (the previous search came up empty) is still a
   // load in progress, so it shows skeletons rather than the old empty state.
-  const showInitialSkeletons = (isClimbsLoading || isPlaceholderData) && visibleClimbs.length === 0;
+  //
+  // Board resolution counts too. Switching board renames the screen the instant
+  // the choice commits, so anything left over from the board before it reads as
+  // the new board's climbs — the one thing a one-tap switcher must never do.
+  // With no board bound `isBoardResolving` collapses to `isBoardLoading`, and
+  // the no-board empty state returns before the list either way, so this cannot
+  // strand anyone on a permanent skeleton.
+  const showInitialSkeletons = (isClimbsLoading || isPlaceholderData || isBoardResolving) && visibleClimbs.length === 0;
 
   const gradeBound = useMemo<GradeBound>(
     () => ({ minGradeId: filters.minGrade, maxGradeId: filters.maxGrade }),
@@ -1568,21 +1574,19 @@ function ClimbListInner() {
     );
   }
 
-  if (isBoardResolving) {
-    return (
-      <>
-        <Stack.Screen options={stackOptions} />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" />
-        </View>
-      </>
-    );
-  }
-
+  // Deliberately NOT an early return to a full-screen spinner. Board resolution
+  // now happens on a one-tap hop between two boards at one gym, and blanking the
+  // whole screen — including the chrome the climber just tapped — reads as the
+  // app falling over rather than as a list reloading. The chrome and the search
+  // header stay mounted and the rows become skeletons instead
+  // (`showInitialSkeletons`).
+  //
   // Placeholder data reports a settled (non-loading) query, so it is excluded
   // explicitly: an empty previous result must not flash "no climbs" for the new
-  // filters while they load.
-  const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading && !isPlaceholderData;
+  // filters while they load. Board resolution is excluded for the same reason —
+  // with the search query gated off, nothing is loading and nothing has arrived,
+  // which is indistinguishable from an empty result unless you ask.
+  const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading && !isPlaceholderData && !isBoardResolving;
   // A failed search counts as no connection, the same test the boards picker
   // makes (`isLocalOnly`, app/boards/index.tsx): on a captive portal or gym wifi
   // with a dead upstream `useIsOffline()` reads ONLINE, and offlineAwareRequest
@@ -1865,11 +1869,6 @@ const styles = StyleSheet.create({
     left: spacing[4],
     right: spacing[4],
     zIndex: 25,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   emptyContainer: {
     flex: 1,

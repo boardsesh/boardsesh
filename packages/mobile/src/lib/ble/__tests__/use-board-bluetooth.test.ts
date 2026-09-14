@@ -2776,6 +2776,74 @@ describe('useBoardBluetooth config-switch teardown', () => {
     expect(result.current.isConnected).toBe(true);
   });
 
+  it('tears down when the board uuid changes and the rest of the config is identical', async () => {
+    // Two Kilter 12x12s on one gym's wall bank: same layout, size and sets, two
+    // saved boards. Keyed on the config alone the identity never moved, so the
+    // link stayed on wall A while the app rebound to wall B and climbs lit on A
+    // landed in B's presence feed.
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const onConnectionEnded = vi.fn();
+
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: {
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1,20',
+        boardUuid: 'wall-a-uuid',
+        onConnectionEnded,
+      },
+    });
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.isConnected).toBe(true);
+
+    // Re-rendering the same wall leaves the link alone — the uuid segment is
+    // stable, not a value that churns every render.
+    await act(async () => {
+      rerender({
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1,20',
+        boardUuid: 'wall-a-uuid',
+        onConnectionEnded,
+      });
+    });
+    expect(fakeAdapter.disconnect).not.toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(true);
+
+    await act(async () => {
+      rerender({
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1,20',
+        boardUuid: 'wall-b-uuid',
+        onConnectionEnded,
+      });
+    });
+
+    expect(fakeAdapter.disconnect).toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(false);
+    // Attribution still names the wall the connection actually ran on.
+    expect(onConnectionEnded).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'user',
+        disconnectTrigger: 'config_switch',
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1,20',
+      }),
+    );
+  });
+
   it('suppresses adoption after a config-switch teardown until the next deliberate connect', async () => {
     const firstAdapter = makeFakeAdapter();
     const adoptableSecond = {
@@ -2905,7 +2973,7 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
     expect(result.current.reconnectSerialForCurrentBoard).toBe('123');
     expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenCalledWith({
       serial: '123',
-      configKey: 'kilter::1::1',
+      configKey: 'kilter::1::1::',
     });
   });
 
@@ -2934,7 +3002,7 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
     // A board remembered for kilter/2/1 in a previous session (cold start).
     mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValueOnce({
       serial: '999',
-      configKey: 'kilter::2::1',
+      configKey: 'kilter::2::1::',
     });
     const fakeAdapter = makeFakeAdapter();
     vi.mocked(createBluetoothAdapter).mockReturnValue(
@@ -2957,6 +3025,36 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
       rerender({ boardName: 'kilter', layoutId: 2, sizeId: 1 });
     });
     await waitFor(() => expect(result.current.reconnectSerialForCurrentBoard).toBe('999'));
+  });
+
+  // Two walls at one gym, configured identically, told apart only by uuid. Before
+  // the uuid was part of the key, the serial remembered against wall A was
+  // offered as wall B's silent reconnect target — so the lightbulb lit the wall
+  // the climber had just walked away from, with nothing on screen to say so.
+  it('does not offer a serial remembered for an identically configured wall', async () => {
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValueOnce({
+      serial: '555',
+      configKey: 'kilter::1::1::wall-a-uuid',
+    });
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: { boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid: 'wall-b-uuid' },
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
+
+    // The wall it really was remembered for still gets the one-tap reconnect.
+    await act(async () => {
+      rerender({ boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid: 'wall-a-uuid' });
+    });
+    await waitFor(() => expect(result.current.reconnectSerialForCurrentBoard).toBe('555'));
   });
 });
 

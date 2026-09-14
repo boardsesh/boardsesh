@@ -1092,8 +1092,10 @@ export const socialBoardQueries = {
    * convention: unlisted = link-only, never enumerated). A missing gym, or a
    * private gym seen by a non-editor, is masked as NOT_FOUND. Auth-optional and
    * rate-limited like the other anon board reads; the leaderboard embed reuses
-   * it without any auth. Boards are ordered by name. Populates each board's
-   * `boardId` (presence channel) via the shared enrichBoards visibility rule.
+   * it without any auth. Boards are ordered by name, then createdAt and uuid, so
+   * the walls a gym names identically keep a fixed position between refetches.
+   * Populates each board's `boardId` (presence channel) via the shared
+   * enrichBoards visibility rule.
    */
   gymBoards: async (_: unknown, { gymUuid }: { gymUuid: string }, ctx: ConnectionContext) => {
     // 30/min matches the board-presence anon family this query feeds
@@ -1138,7 +1140,19 @@ export const socialBoardQueries = {
       .select()
       .from(dbSchema.userBoards)
       .where(and(...conditions))
-      .orderBy(asc(dbSchema.userBoards.name));
+      .orderBy(
+        asc(dbSchema.userBoards.name),
+        // Name alone is a PARTIAL order here. Walls at one gym routinely share a
+        // name: the Aurora wall crawl builds them as
+        // `${gymName} - ${wall.name || formatLocationBoardName(board)}`, so every
+        // unnamed wall of the same vendor collapses to one string (#5272). With
+        // ties, Postgres may return those rows in a different order per request,
+        // and the board switcher lists them as tappable rows — a row that moves
+        // between refetches is a mistap. Oldest wall first, then uuid, which is
+        // unique and so guarantees a total order.
+        asc(dbSchema.userBoards.createdAt),
+        asc(dbSchema.userBoards.uuid),
+      );
 
     return enrichBoards(
       boards.map((board) => ({ board })),

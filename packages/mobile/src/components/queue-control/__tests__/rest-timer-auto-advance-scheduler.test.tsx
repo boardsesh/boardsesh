@@ -16,6 +16,13 @@ let settings: Record<string, unknown> = {};
 let currentNowMs = Date.parse('2026-09-11T10:00:00.000Z');
 let appStateListener: ((state: string) => void) | null = null;
 
+// The gym roster behind this is a React Query hook reaching the GraphQL client,
+// which pulls react-native's Flow source into a harness that mocks it narrowly.
+// An empty set is "no other board in reach" — the behaviour these tests describe.
+vi.mock('../../../providers/queue/use-reachable-board-keys', () => ({
+  useReachableBoardKeys: () => new Set<string>(),
+}));
+
 vi.mock('react-native', () => ({
   AppState: {
     addEventListener: (_event: string, listener: (state: string) => void) => {

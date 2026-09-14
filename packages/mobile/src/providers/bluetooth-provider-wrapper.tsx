@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { BluetoothProvider } from './bluetooth-provider';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
+import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { LiveActivityBridge } from '../lib/live-activity/live-activity-bridge';
 
 /**
@@ -25,9 +26,15 @@ import { LiveActivityBridge } from '../lib/live-activity/live-activity-bridge';
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
   const { data: activeBoard } = useActiveBoard();
+  // The auto-sender must not treat a climb on the board across the room the same
+  // way it treats one on a board in another city. It still refuses to WRITE
+  // either — this wall can't draw them — but it may not advance the queue past
+  // the first, because the climber navigated there on purpose.
+  const reachableBoardKeys = useReachableBoardKeys(activeBoard);
 
   return (
     <BluetoothProvider
+      reachableBoardKeys={reachableBoardKeys}
       boardName={activeBoard?.boardType}
       layoutId={activeBoard?.layoutId}
       sizeId={activeBoard?.sizeId}

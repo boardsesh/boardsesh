@@ -42,6 +42,23 @@ vi.mock('../../Button', () => ({
   Button: ({ title, onPress }: { title?: string; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, title),
 }));
+// The glass surface picks its rendering path from Platform + capability hooks,
+// none of which this harness mounts. Its own behaviour is covered by
+// GlassSurface's tests; here it is just the box the callout draws in.
+vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
+  ActionButton: ({
+    iconName,
+    onPress,
+    accessibilityLabel,
+  }: {
+    iconName?: string;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => createElement('button', { onClick: onPress, 'data-icon': iconName, 'aria-label': accessibilityLabel }),
+}));
+vi.mock('../../GlassSurface', () => ({
+  GlassSurface: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-glass': 'true' }, children),
+}));
 vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => color }));
 vi.mock('../../../theme/tokens', () => ({
   overlays: { scrim: '#0008', onScrim: '#FFFFFF' },
@@ -76,5 +93,21 @@ describe('SwitchBoardOverlay', () => {
     cta.click();
 
     expect(onSwitchBoard).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The same fact — this climb is on another board — told as an invitation when
+// that board is across the room rather than across the country.
+
+// A climb on a board at THIS gym gets no overlay at all — it renders on its own
+// board with every control live. Only a board somewhere else raises the scrim.
+describe('SwitchBoardOverlay presentation', () => {
+  it('puts the message on a glass card rather than straight on the scrim', () => {
+    const { container } = render(createElement(SwitchBoardOverlay, { boardLabel: 'Woods', onSwitchBoard: vi.fn() }));
+
+    // The scrim alone is a 60% fill, so the controls it covers read right
+    // through words laid directly on it. The card is what makes them recede.
+    expect(container.querySelector('[data-glass]')).toBeTruthy();
+    expect(container.querySelector('[data-modal="true"]')).toBeTruthy();
   });
 });

@@ -89,6 +89,10 @@ const activeBoard = vi.hoisted(() => {
 
 // Owned boards returned by useMyBoards. Empty by default; the switch-board tests
 // populate it with a board that loosely-matches an opened climb's override.
+const gymRoster = vi.hoisted(() => ({ boards: undefined as unknown[] | undefined }));
+const switchBoardMock = vi.hoisted(() =>
+  vi.fn(async (_target: { uuid: string }, _current: unknown) => 'switched' as const),
+);
 const myBoards = vi.hoisted(() => ({
   boards: [] as UserBoard[],
 }));
@@ -262,6 +266,22 @@ vi.mock('../queue-snackbar-provider', () => ({
   }),
 }));
 
+// The board hop pulls in board adoption (follow mutation + offline download
+// confirm) and the per-board angle store, none of which this harness mounts.
+// Its own behaviour is covered by lib/boards/__tests__/use-switch-board.test.tsx.
+// The gym roster and the reachable set are React Query hooks this harness does
+// not mount. An empty roster is the single-board gym, which is what these tests
+// describe.
+vi.mock('../../lib/graphql/hooks/use-gym-boards', () => ({ useGymBoards: () => ({ data: gymRoster.boards }) }));
+vi.mock('../queue/use-reachable-board-keys', () => ({ useReachableBoardKeys: () => new Set<string>() }));
+
+vi.mock('../../lib/boards/use-switch-board', () => ({
+  useSwitchBoard: () => switchBoardMock,
+}));
+vi.mock('../../lib/boards/use-set-board-angle', () => ({
+  useSetBoardAngle: () => vi.fn(async () => {}),
+}));
+
 vi.mock('../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: activeBoard.stored }),
   useSetActiveBoard: () => activeBoard.setActiveBoard,
@@ -347,6 +367,8 @@ beforeEach(() => {
   activeBoard.stored = { ...activeBoard.defaultStored };
   activeBoard.setActiveBoard.mockClear();
   myBoards.boards = [];
+  gymRoster.boards = undefined;
+  switchBoardMock.mockClear();
   analytics.track.mockClear();
   routerPush.mockClear();
   routerNavigate.mockClear();
@@ -989,6 +1011,46 @@ describe('DrawerHostProvider previewed-climb highlight', () => {
       createElement(DrawerHostProvider, null, createElement(Probe, { onHost: () => {}, onRoute: () => {} })),
     );
     expect(previewedClimbUuids.at(-1)).toBe('climb-a');
+  });
+});
+
+// Codex flagged this on the PR: the move callout ran the legacy drawer switch,
+// which only writes the active board. During a party session that left every
+// peer — and board presence — bound to the board the climber walked away from.
+describe('DrawerHostProvider switching to a board at this gym', () => {
+  it('routes a gym board through the session-aware switch, not the legacy path', async () => {
+    gymRoster.boards = [
+      { uuid: 'tension-at-gym', boardType: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 25 },
+    ];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      () => {},
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(routes.at(-1)).toBeDefined());
+
+    act(() => {
+      routes.at(-1)?.onSwitchBoard({ boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 });
+    });
+
+    await waitFor(() => expect(switchBoardMock).toHaveBeenCalledTimes(1));
+    expect(switchBoardMock.mock.calls[0]?.[0]).toMatchObject({ uuid: 'tension-at-gym' });
+  });
+
+  it('leaves a board that is not at this gym on the legacy path', async () => {
+    gymRoster.boards = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      () => {},
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(routes.at(-1)).toBeDefined());
+
+    act(() => {
+      routes.at(-1)?.onSwitchBoard({ boardName: 'moonboard', layoutId: 6, sizeId: 1, setIds: '24', angle: 40 });
+    });
+
+    expect(switchBoardMock).not.toHaveBeenCalled();
   });
 });
 
