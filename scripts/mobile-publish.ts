@@ -211,6 +211,30 @@ function summarizePlatformOutcome(outcome: PlatformPublishOutcome): string {
 const PREVIEW_BRANCH_PATTERN = /^pr-[1-9]\d*$/;
 
 /**
+ * How long to keep asking before believing a branch is absent, in wait order.
+ *
+ * The server does not reflect a freshly finished publish instantly — the preview
+ * workflow's own PR comment has told testers "the server may take up to 15 seconds
+ * to refresh the branch list after publishing" since this feature shipped. A
+ * single probe fired the moment `eoas` returns would therefore fail good
+ * publishes, which is worse than the bug this check exists to catch: a red X on a
+ * working preview teaches people to ignore the check.
+ *
+ * ~31s in total, comfortably past that 15s, and it costs nothing on the ordinary
+ * path — a branch that is listed is listed on the first probe and nothing sleeps.
+ */
+export const SURFABILITY_PROBE_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
+
+const sleep = (delayMs: number): Promise<void> => new Promise((done) => setTimeout(done, delayMs));
+
+/** Injection points for the probe, so the retry behaviour is testable without a server or a clock. */
+export type SurfabilityProbeOptions = {
+  fetchImpl?: typeof fetch;
+  sleeper?: (delayMs: number) => Promise<void>;
+  delaysMs?: readonly number[];
+};
+
+/**
  * The runtimeVersion a device must be on to be offered this branch, per platform.
  *
  * Supplied by the preview workflow from the compatibility check that already
@@ -219,9 +243,11 @@ const PREVIEW_BRANCH_PATTERN = /^pr-[1-9]\d*$/;
  * no binary runs and report a false "not surfable". Absent — a local publish — the
  * check is skipped rather than guessed.
  */
-function previewRuntimeVersionFor(platform: OtaPublishPlatform): string | null {
-  const supplied =
-    platform === 'ios' ? process.env.OTA_PREVIEW_RUNTIME_VERSION_IOS : process.env.OTA_PREVIEW_RUNTIME_VERSION_ANDROID;
+export function previewRuntimeVersionFor(
+  platform: OtaPublishPlatform,
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const supplied = platform === 'ios' ? env.OTA_PREVIEW_RUNTIME_VERSION_IOS : env.OTA_PREVIEW_RUNTIME_VERSION_ANDROID;
   const trimmed = supplied?.trim() ?? '';
   return trimmed.length === 0 ? null : trimmed;
 }
@@ -240,20 +266,33 @@ function previewRuntimeVersionFor(platform: OtaPublishPlatform): string | null {
  * Returns null when the check cannot run (no fingerprint supplied, not a preview
  * branch), which callers treat as "skip", never as "not surfable".
  */
-async function isPreviewBranchSurfable(
+export async function isPreviewBranchSurfable(
   branchName: string,
   platform: OtaPublishPlatform,
   serverUrl: string,
-): Promise<{ surfable: boolean; detail: string } | null> {
+  options: SurfabilityProbeOptions = {},
+): Promise<{ surfable: boolean; detail: string; attempts: number } | null> {
   if (!PREVIEW_BRANCH_PATTERN.test(branchName)) return null;
   const runtimeVersion = previewRuntimeVersionFor(platform);
   if (runtimeVersion === null) return null;
-  const outcome = await probeBranchList(fetch, stripManifestSuffix(serverUrl), runtimeVersion, platform);
-  const branch = findSurfableBranch(outcome, branchName);
-  return {
-    surfable: branch !== null,
-    detail: branch?.lastUpdateAt ? `${outcome.detail}, updated ${branch.lastUpdateAt}` : outcome.detail,
-  };
+
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const sleeper = options.sleeper ?? sleep;
+  const delaysMs = options.delaysMs ?? SURFABILITY_PROBE_DELAYS_MS;
+  const baseUrl = stripManifestSuffix(serverUrl);
+
+  // Re-probes only while the answer is "not there", so the cost lands on the case
+  // that is either a propagation delay or a real miss — never on a healthy publish.
+  let detail = 'no probe ran';
+  for (let attempt = 1; attempt <= delaysMs.length + 1; attempt++) {
+    const outcome = await probeBranchList(fetchImpl, baseUrl, runtimeVersion, platform);
+    const branch = findSurfableBranch(outcome, branchName);
+    detail = branch?.lastUpdateAt ? `${outcome.detail}, updated ${branch.lastUpdateAt}` : outcome.detail;
+    if (branch !== null) return { surfable: true, detail, attempts: attempt };
+    if (attempt > delaysMs.length) break;
+    await sleeper(delaysMs[attempt - 1]);
+  }
+  return { surfable: false, detail, attempts: delaysMs.length + 1 };
 }
 
 async function publishToSelfHostedBranch(
@@ -365,18 +404,20 @@ async function publishToSelfHostedBranch(
  * indistinguishable from no preview at all, and the workflow's sticky comment
  * would otherwise tell testers to go and select a branch that is not there.
  */
-async function verifyPreviewBranchIsSurfable(
+export async function verifyPreviewBranchIsSurfable(
   branchName: string,
   platforms: readonly OtaPublishPlatform[],
   serverUrl: string,
+  options: SurfabilityProbeOptions = {},
 ): Promise<boolean> {
   let allSurfable = true;
   for (const platform of platforms) {
-    const result = await isPreviewBranchSurfable(branchName, platform, serverUrl);
+    const result = await isPreviewBranchSurfable(branchName, platform, serverUrl, options);
     if (result === null) continue;
     if (result.surfable) {
+      const waited = result.attempts === 1 ? '' : ` after ${result.attempts} probes`;
       console.log(
-        `[mobile:publish] ${platform}: "${branchName}" is offered to this runtimeVersion (${result.detail}).`,
+        `[mobile:publish] ${platform}: "${branchName}" is offered to this runtimeVersion${waited} (${result.detail}).`,
       );
       continue;
     }

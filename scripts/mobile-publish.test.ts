@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { execFileSync } from 'node:child_process';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from './lib/eoas';
 import {
   buildEasUpdateArgs,
@@ -9,8 +9,11 @@ import {
   messageArgs,
   parseArgs,
   requestedSelfHostedPlatforms,
+  isPreviewBranchSurfable,
+  previewRuntimeVersionFor,
   resolveUpdateMessage,
   titleFromCommitMessage,
+  verifyPreviewBranchIsSurfable,
   selfHostedPublishModeLabel,
   selfHostedPublishSuccessMessages,
   shouldAllowDirtyTree,
@@ -21,6 +24,11 @@ import {
 function processEnv(values: Record<string, string | undefined>): NodeJS.ProcessEnv {
   return values as NodeJS.ProcessEnv;
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 describe('mobile publish argument routing', () => {
   it('maps the wrapper channel selector to an eoas branch without a deprecated channel flag', () => {
@@ -219,5 +227,106 @@ describe('mobile publish argument routing', () => {
   it('labels self-hosted production and preview modes accurately', () => {
     expect(selfHostedPublishModeLabel('production')).toBe('production (self-hosted expo-open-ota)');
     expect(selfHostedPublishModeLabel('pr-1234')).toBe('preview (self-hosted expo-open-ota)');
+  });
+});
+
+describe('preview branch surfability check', () => {
+  const SERVER = 'https://updates.boardsesh.com/manifest';
+  const IOS_HASH = 'b71bdb600c5a3e954d75c9ca673f056c62247ea9';
+
+  // No delays and no sleeping: the retry SCHEDULE is a constant worth reading in
+  // the source, not re-asserting here. What these cover is the decision it drives.
+  const NO_WAIT = { delaysMs: [0, 0], sleeper: async () => undefined };
+
+  function serverListing(...branchNames: string[]) {
+    return async () =>
+      new Response(JSON.stringify({ branches: branchNames.map((name) => ({ name })), total: branchNames.length }), {
+        status: 200,
+      });
+  }
+
+  it('reads the fingerprint for the platform being published, not the other one', () => {
+    const env = {
+      OTA_PREVIEW_RUNTIME_VERSION_IOS: IOS_HASH,
+      OTA_PREVIEW_RUNTIME_VERSION_ANDROID: '154bc941c504727afc914057aed2edff2c096576',
+    };
+
+    // iOS and Android resolve different fingerprints (GOOGLE_MAPS_API_KEY is an
+    // Android-only input), so crossing these probes with a hash no binary runs.
+    expect(previewRuntimeVersionFor('ios', env)).toBe(IOS_HASH);
+    expect(previewRuntimeVersionFor('android', env)).toBe('154bc941c504727afc914057aed2edff2c096576');
+  });
+
+  it('treats an unset or blank fingerprint as "cannot check", never as "not surfable"', async () => {
+    expect(previewRuntimeVersionFor('ios', {})).toBeNull();
+    // A workflow expression that resolved to nothing arrives as an empty string,
+    // which must not become a probe for runtimeVersion "".
+    expect(previewRuntimeVersionFor('ios', { OTA_PREVIEW_RUNTIME_VERSION_IOS: '   ' })).toBeNull();
+
+    const fetchImpl = vi.fn();
+    await expect(isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { fetchImpl })).resolves.toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('does not probe for the production branch', async () => {
+    vi.stubEnv('OTA_PREVIEW_RUNTIME_VERSION_IOS', IOS_HASH);
+    const fetchImpl = vi.fn();
+
+    await expect(isPreviewBranchSurfable('production', 'ios', SERVER, { fetchImpl })).resolves.toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('accepts a listed branch on the first probe without waiting', async () => {
+    vi.stubEnv('OTA_PREVIEW_RUNTIME_VERSION_IOS', IOS_HASH);
+    const sleeper = vi.fn(async () => undefined);
+
+    const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, {
+      fetchImpl: serverListing('pr-5422', 'pr-5417'),
+      sleeper,
+      delaysMs: [1000],
+    });
+
+    expect(result).toMatchObject({ surfable: true, attempts: 1 });
+    expect(sleeper).not.toHaveBeenCalled();
+  });
+
+  it('re-probes before calling a branch absent, since the list lags a publish by up to 15s', async () => {
+    vi.stubEnv('OTA_PREVIEW_RUNTIME_VERSION_IOS', IOS_HASH);
+    const empty = serverListing();
+    const listed = serverListing('pr-5417');
+    const fetchImpl = vi.fn().mockImplementationOnce(empty).mockImplementationOnce(empty).mockImplementation(listed);
+
+    const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { ...NO_WAIT, fetchImpl });
+
+    // Without this the check would red-X a perfectly good publish, which is worse
+    // than the bug it exists to catch.
+    expect(result?.surfable).toBe(true);
+    expect(result?.attempts).toBe(3);
+  });
+
+  it('fails the publish for a branch the server never offers this platform', async () => {
+    vi.stubEnv('OTA_PREVIEW_RUNTIME_VERSION_ANDROID', '154bc941c504727afc914057aed2edff2c096576');
+
+    // Exactly #5417: the Android list is healthy and full of other previews —
+    // pr-5417 is simply not in it, because its only update was for iOS.
+    const surfable = await verifyPreviewBranchIsSurfable('pr-5417', ['android'], SERVER, {
+      ...NO_WAIT,
+      fetchImpl: serverListing('pr-5422', 'pr-5424', 'pr-5419'),
+    });
+
+    expect(surfable).toBe(false);
+  });
+
+  it('passes a platform whose fingerprint was never supplied rather than failing it', async () => {
+    // Only iOS is supplied; the Android publish still ran, but nothing can be
+    // said about it. Silence is the honest answer, not a red X.
+    vi.stubEnv('OTA_PREVIEW_RUNTIME_VERSION_IOS', IOS_HASH);
+
+    const surfable = await verifyPreviewBranchIsSurfable('pr-5417', ['ios', 'android'], SERVER, {
+      ...NO_WAIT,
+      fetchImpl: serverListing('pr-5417'),
+    });
+
+    expect(surfable).toBe(true);
   });
 });
