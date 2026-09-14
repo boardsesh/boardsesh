@@ -1617,105 +1617,128 @@ function ClimbListInner() {
   const offlineCatalogMissing = offlineNoCatalog && offlineCatalog === 'missing';
   const offlineCatalogQueued = offlineNoCatalog && offlineCatalog === 'queued';
 
+  // The list-clip wrapper's style (see the render below): full-bleed on Liquid
+  // Glass, clipped below the measured chrome on Material. Memoized so Android
+  // doesn't allocate a new style array on every render of this screen.
+  const listClipStyle = useMemo(
+    () => (filterInTopChrome ? [styles.listClip, { top: searchBarHeight }] : styles.listClip),
+    [filterInTopChrome, searchBarHeight],
+  );
+
   return (
     <View testID="climbs-screen" style={[styles.container, { backgroundColor: systemColors.background }]}>
       <Stack.Screen options={stackOptions} />
-      <FlashList
-        ref={climbListRef}
-        testID="climb-list"
-        // Screen readers skip the tint, so announce the stale rows as loading.
-        accessibilityState={{ busy: isPlaceholderData }}
-        data={visibleClimbs}
-        renderItem={renderClimbItem}
-        keyExtractor={keyExtractor}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        // The header is transparent on every path now, so the chrome owns the top
-        // inset and the list pads manually by the measured chrome height. Leaving
-        // this 'automatic' would double-inset under the (invisible) native header.
-        contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={{ paddingTop: searchBarHeight }}
-        scrollIndicatorInsets={{ top: searchBarHeight }}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        refreshControl={
-          // A placeholder fetch reads as a refetch; only a real pull shows the spinner.
-          <RefreshControl
-            refreshing={isRefetching && !isPlaceholderData}
-            onRefresh={handleRefresh}
-            tintColor={brandColors.primary}
-          />
-        }
-        ListHeaderComponent={listHeader}
-        ListFooterComponent={listFooter}
-        ListEmptyComponent={
-          showInitialSkeletons ? (
-            <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
-          ) : offlineFilterUnavailable ? (
-            <View style={styles.emptyContainer}>
-              {/* The glyph carries the same blame as the title: a wifi-slash over
+      <View
+        // `scrollIndicatorInsets` (used below to keep the scrollbar clear of the
+        // floating chrome) is iOS-only — on Android it's silently ignored, so the
+        // list's native scrollbar thumb starts at y=0 and gets drawn *underneath*
+        // the opaque Material app bar (which sits above it via zIndex), making it
+        // look like the scrollbar vanishes into the filter chrome. Fixed on
+        // Material by actually clipping the list's frame below the measured chrome
+        // height instead of relying on the (non-functional) inset. On Liquid Glass
+        // this wrapper is still a full-bleed absolute fill (top: 0) — the same area
+        // a flex:1 child of `styles.container` would cover — so the frame + inset
+        // still let the list visibly scroll underneath the blurred header, which
+        // iOS honours.
+        style={listClipStyle}
+      >
+        <FlashList
+          ref={climbListRef}
+          testID="climb-list"
+          // Screen readers skip the tint, so announce the stale rows as loading.
+          accessibilityState={{ busy: isPlaceholderData }}
+          data={visibleClimbs}
+          renderItem={renderClimbItem}
+          keyExtractor={keyExtractor}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          // The header is transparent on every path now, so the chrome owns the top
+          // inset and the list pads manually by the measured chrome height. Leaving
+          // this 'automatic' would double-inset under the (invisible) native header.
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={filterInTopChrome ? undefined : { paddingTop: searchBarHeight }}
+          scrollIndicatorInsets={filterInTopChrome ? undefined : { top: searchBarHeight }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          refreshControl={
+            // A placeholder fetch reads as a refetch; only a real pull shows the spinner.
+            <RefreshControl
+              refreshing={isRefetching && !isPlaceholderData}
+              onRefresh={handleRefresh}
+              tintColor={brandColors.primary}
+            />
+          }
+          ListHeaderComponent={listHeader}
+          ListFooterComponent={listFooter}
+          ListEmptyComponent={
+            showInitialSkeletons ? (
+              <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
+            ) : offlineFilterUnavailable ? (
+              <View style={styles.emptyContainer}>
+                {/* The glyph carries the same blame as the title: a wifi-slash over
                 "needs our server" would contradict itself. */}
-              <Icon
-                name={offlineFilterReason === 'backend_unreachable' ? 'server.unreachable' : 'offline.unavailable'}
-                size={48}
-                color={iosSystemColors.systemGray4}
-              />
-              {/* "Needs a signal" is a lie when the phone has four bars and we
+                <Icon
+                  name={offlineFilterReason === 'backend_unreachable' ? 'server.unreachable' : 'offline.unavailable'}
+                  size={48}
+                  color={iosSystemColors.systemGray4}
+                />
+                {/* "Needs a signal" is a lie when the phone has four bars and we
                 are the ones who are down, or when the climber chose Offline
                 mode. Literal keys — the i18n linter rejects a computed one. */}
-              <Text variant="headline" style={styles.emptyTitle}>
-                {offlineFilterReason === 'backend_unreachable'
-                  ? t('mobile.emptyState.offlineFilter.titleServer')
-                  : offlineFilterReason === 'offline_mode'
-                    ? t('mobile.emptyState.offlineFilter.titleOfflineMode')
-                    : t('mobile.emptyState.offlineFilter.title')}
-              </Text>
-              <Text variant="subheadline" style={styles.emptySubtitle}>
-                {t('mobile.emptyState.offlineFilter.subtitle')}
-              </Text>
-              <Button
-                title={t('mobile.emptyState.offlineFilter.cta')}
-                variant="outlined"
-                onPress={handleClearNonGradeFilters}
-                style={styles.emptyCta}
-              />
-            </View>
-          ) : offlineCatalogMissing ? (
-            <View style={styles.emptyContainer}>
-              <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {t('mobile.emptyState.offlineNoCatalog.title')}
-              </Text>
-              <Text variant="subheadline" style={styles.emptySubtitle}>
-                {t('mobile.emptyState.offlineNoCatalog.subtitle')}
-              </Text>
-              <OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />
-            </View>
-          ) : offlineCatalogQueued ? (
-            <View style={styles.emptyContainer}>
-              <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {t('mobile.emptyState.offlineCatalogQueued.title')}
-              </Text>
-              <Text variant="subheadline" style={styles.emptySubtitle}>
-                {t('mobile.emptyState.offlineCatalogQueued.subtitle', { name: activeBoard?.name ?? '' })}
-              </Text>
-            </View>
-          ) : isEmpty ? (
-            <View style={styles.emptyContainer}>
-              <Icon name="search" size={48} color={iosSystemColors.systemGray4} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {name.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.emptyState.noClimbs.title')}
-              </Text>
-              <Text variant="subheadline" style={styles.emptySubtitle}>
-                {name.length > 0
-                  ? t('mobile.emptyState.noMatches.description', { query: name })
-                  : t('mobile.emptyState.noClimbs.subtitle')}
-              </Text>
-            </View>
-          ) : null
-        }
-      />
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {offlineFilterReason === 'backend_unreachable'
+                    ? t('mobile.emptyState.offlineFilter.titleServer')
+                    : offlineFilterReason === 'offline_mode'
+                      ? t('mobile.emptyState.offlineFilter.titleOfflineMode')
+                      : t('mobile.emptyState.offlineFilter.title')}
+                </Text>
+                <Text variant="subheadline" style={styles.emptySubtitle}>
+                  {t('mobile.emptyState.offlineFilter.subtitle')}
+                </Text>
+                <Button
+                  title={t('mobile.emptyState.offlineFilter.cta')}
+                  variant="outlined"
+                  onPress={handleClearNonGradeFilters}
+                  style={styles.emptyCta}
+                />
+              </View>
+            ) : offlineCatalogMissing ? (
+              <View style={styles.emptyContainer}>
+                <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {t('mobile.emptyState.offlineNoCatalog.title')}
+                </Text>
+                <Text variant="subheadline" style={styles.emptySubtitle}>
+                  {t('mobile.emptyState.offlineNoCatalog.subtitle')}
+                </Text>
+                <OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />
+              </View>
+            ) : offlineCatalogQueued ? (
+              <View style={styles.emptyContainer}>
+                <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {t('mobile.emptyState.offlineCatalogQueued.title')}
+                </Text>
+                <Text variant="subheadline" style={styles.emptySubtitle}>
+                  {t('mobile.emptyState.offlineCatalogQueued.subtitle', { name: activeBoard?.name ?? '' })}
+                </Text>
+              </View>
+            ) : isEmpty ? (
+              <View style={styles.emptyContainer}>
+                <Icon name="search" size={48} color={iosSystemColors.systemGray4} />
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {name.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.emptyState.noClimbs.title')}
+                </Text>
+                <Text variant="subheadline" style={styles.emptySubtitle}>
+                  {name.length > 0
+                    ? t('mobile.emptyState.noMatches.description', { query: name })
+                    : t('mobile.emptyState.noClimbs.subtitle')}
+                </Text>
+              </View>
+            ) : null
+          }
+        />
+      </View>
 
       {/* Placed before the chrome so the tint sits under it. See PlaceholderTint. */}
       <PlaceholderTint active={isPlaceholderData} color={systemColors.background} />
@@ -1848,6 +1871,17 @@ function ClimbListSkeletonRows({ count }: { count: number }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  // Fills the screen behind the floating top chrome. On Material (Android) its
+  // `top` is overridden to the measured chrome height so the FlashList's actual
+  // frame — and so its native scrollbar — starts below the chrome instead of
+  // being drawn underneath it (see the comment at the call site).
+  listClip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   // Background colour is themed at the call site; 0.4 of it dims the stale rows.
   placeholderTint: {
