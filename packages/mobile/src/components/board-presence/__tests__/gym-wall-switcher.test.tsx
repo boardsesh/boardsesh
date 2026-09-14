@@ -144,6 +144,35 @@ describe('GymWallSwitcher', () => {
     expect(container.textContent).toContain('gymWalls.sameClimbs');
   });
 
+  // Straight from a QA screenshot: the row read "Original 12×12 with kickboard ·
+  // Original 12×12 with kickboard · 45°". The disambiguated subtitle already
+  // leads with what the board is, so the row must compose onto it, not describe
+  // the board a second time.
+  it('never prints what the board is twice', () => {
+    gymBoards.data = [ACTIVE, board({ uuid: 'other', name: 'Other', sizeId: 14 })];
+
+    const { container } = render(createElement(GymWallSwitcher, { activeBoard: ACTIVE, onSelectBoard: vi.fn() }));
+
+    const text = container.textContent ?? '';
+    const firstConfig = text.indexOf('Original');
+    expect(firstConfig).toBeGreaterThanOrEqual(0);
+    // The board's own name/config appears once per row, not twice.
+    expect(text.indexOf('Original', firstConfig + 1)).toBe(-1);
+  });
+
+  // ...and it must not print the angle twice either, which happens when two
+  // boards collide on everything but their angle and the disambiguator has
+  // already appended it.
+  it('does not repeat an angle the subtitle already carries', () => {
+    gymBoards.data = [ACTIVE, board({ uuid: 'a', name: 'A', angle: 25 }), board({ uuid: 'b', name: 'B', angle: 45 })];
+
+    const { container } = render(createElement(GymWallSwitcher, { activeBoard: ACTIVE, onSelectBoard: vi.fn() }));
+
+    const text = container.textContent ?? '';
+    expect(text).not.toContain('25° · 25°');
+    expect(text).not.toContain('45° · 45°');
+  });
+
   it('does not claim the same climbs for a different board', () => {
     gymBoards.data = [ACTIVE, board({ uuid: 'tension', name: 'Tension', boardType: 'tension', layoutId: 8 })];
 

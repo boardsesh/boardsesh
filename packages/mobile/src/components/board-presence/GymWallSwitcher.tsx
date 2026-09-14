@@ -138,15 +138,27 @@ const GymWallRow = memo(function GymWallRow({
   // prefixes every imported board with it — repeating it here spends the row's
   // whole width before reaching the part that tells two boards apart.
   const title = stripGymNamePrefix(board.name, board.gymName) || board.name;
-  const config = boardConfigLabel(board) ?? board.boardType;
+
+  // The subtitle already leads with what the board is, and the disambiguator
+  // appends a facet — which may itself be the angle — only when two boards
+  // collide. So this composes the remaining facts onto it rather than building a
+  // second description: printing the config again is how a row ended up reading
+  // "Original 12×12 with kickboard · Original 12×12 with kickboard · 45°".
+  //
   // The board's OWN angle, never the one the climber is on: carrying the current
-  // angle across is how someone ends up "on" a fixed wall at 40 degrees.
-  const detail =
+  // angle across is how someone ends up "on" a fixed board at 40 degrees.
+  const angleLabel =
     board.isAngleAdjustable === false
-      ? t('mobile.boardPresence.gymWalls.detailFixed', { config, angle: board.angle })
-      : board.hasLeds === false
-        ? t('mobile.boardPresence.gymWalls.detailNoLeds', { config, angle: board.angle })
-        : t('mobile.boardPresence.gymWalls.detail', { config, angle: board.angle });
+      ? t('mobile.boardPresence.gymWalls.angleFixed', { angle: board.angle })
+      : t('mobile.boardPresence.gymWalls.angle', { angle: board.angle });
+  const subtitleAlreadyNamesAngle = subtitle.endsWith(`${board.angle}°`);
+  const detail = [
+    subtitle || (boardConfigLabel(board) ?? board.boardType),
+    subtitleAlreadyNamesAngle ? null : angleLabel,
+    board.hasLeds === false ? t('mobile.boardPresence.gymWalls.noLights') : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <Pressable
@@ -163,7 +175,7 @@ const GymWallRow = memo(function GymWallRow({
           {title}
         </Text>
         <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-          {subtitle ? `${subtitle} · ${detail}` : detail}
+          {detail}
         </Text>
         {sharesClimbsWithActive ? (
           <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1}>

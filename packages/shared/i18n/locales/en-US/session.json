@@ -437,14 +437,14 @@
       "gymWalls": {
         "header": "Other boards at {{gym}}",
         "headerNoGym": "Other boards here",
-        "detail": "{{config}} · {{angle}}°",
-        "detailNoLeds": "{{config}} · {{angle}}° · no lights",
-        "detailFixed": "{{config}} · fixed at {{angle}}°",
         "sameClimbs": "Same climbs as this board",
         "rowAria": "Move to {{board}}",
         "showAll": "Show all {{count}} boards",
         "allBoards": "All boards",
-        "switchFailed": "Couldn't move to {{board}}. Try again."
+        "switchFailed": "Couldn't move to {{board}}. Try again.",
+        "angle": "{{angle}}°",
+        "angleFixed": "fixed at {{angle}}°",
+        "noLights": "no lights"
       },
       "moveToWall": {
         "title": "Next one's on {{board}}",

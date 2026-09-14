@@ -437,14 +437,14 @@
       "gymWalls": {
         "header": "Andere Boards in {{gym}}",
         "headerNoGym": "Andere Boards hier",
-        "detail": "{{config}} · {{angle}}°",
-        "detailNoLeds": "{{config}} · {{angle}}° · ohne Licht",
-        "detailFixed": "{{config}} · fest auf {{angle}}°",
         "sameClimbs": "Dieselben Boulder wie dieses Board",
         "rowAria": "Zu {{board}} wechseln",
         "showAll": "Alle {{count}} Boards anzeigen",
         "allBoards": "Alle Boards",
-        "switchFailed": "Wechsel zu {{board}} hat nicht geklappt. Versuch es nochmal."
+        "switchFailed": "Wechsel zu {{board}} hat nicht geklappt. Versuch es nochmal.",
+        "angle": "{{angle}}°",
+        "angleFixed": "fest auf {{angle}}°",
+        "noLights": "ohne Licht"
       },
       "moveToWall": {
         "title": "Der nächste ist an {{board}}",

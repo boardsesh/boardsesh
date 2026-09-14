@@ -32,6 +32,8 @@ import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-boa
 import { useSetBoardAngle } from '../lib/boards/use-set-board-angle';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useSwitchBoard } from '../lib/boards/use-switch-board';
+import { useGymBoards } from '../lib/graphql/hooks/use-gym-boards';
+import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
 import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu';
@@ -143,6 +145,9 @@ export type PlayDrawerPaneProps = {
   onOpenQueue: () => void;
   boardMismatch: boolean;
   mismatchBoardLabel: string | undefined;
+  /** Board models standing at this gym. A climb on one of them invites the walk
+   *  instead of raising the blocking scrim. */
+  reachableBoardKeys: ReadonlySet<string>;
   onSwitchBoard: (climbBoardConfig?: BoardConfig) => void;
   onOpenClimbActions: (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => void;
   /** The climb to show in the pane, with a bumped nonce per selection so the pane
@@ -262,6 +267,9 @@ type PlayDrawerRouteValue = {
   isAngleAdjustable: boolean;
   boardMismatch: boolean;
   mismatchBoardLabel?: string;
+  /** Board models standing at this gym. A climb on one of them invites the walk
+   *  instead of raising the blocking scrim. */
+  reachableBoardKeys: ReadonlySet<string>;
   onAngleChange: (angle: number) => void;
   onSwitchBoard: (climbBoardConfig?: BoardConfig) => void;
   /** Run from the route's unmount cleanup: clears the board override + open
@@ -789,6 +797,20 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     inSession: sessionId !== null,
   });
 
+  // The gym's roster, for resolving a climb's board to a real UserBoard. Same
+  // cached query the sheet's switcher reads — a second subscriber, not a second
+  // request.
+  const { data: gymBoards } = useGymBoards(activeBoard?.gymUuid ?? null);
+  const gymBoardsRef = useRef(gymBoards);
+  gymBoardsRef.current = gymBoards;
+  const activeBoardRef = useRef(activeBoard);
+  activeBoardRef.current = activeBoard;
+  // Handed to both player surfaces so a climb on a board at this gym invites the
+  // walk instead of raising the blocking scrim. The iPad pane renders its own
+  // PlayDrawer from `playDrawerPaneProps`, so computing this only in the phone
+  // route would leave the pane on the old lock overlay.
+  const reachableBoardKeys = useReachableBoardKeys(activeBoard);
+
   const handleSelectGymWall = useCallback(
     (board: UserBoard) => {
       void switchBoard(board, activeBoard ?? null);
@@ -818,6 +840,22 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // mentioned (#5099).
       const override = climbBoardConfig ?? boardConfigOverrideRef.current;
       if (!override) return;
+
+      // A board at this gym goes through the real switch first. The legacy path
+      // below only writes the active board, so a move made during a party
+      // session left every peer bound to the board the climber walked away from
+      // — and board presence with them. `switchBoard` broadcasts the session
+      // board path, clears the override and adopts the board's own angle.
+      const gymSibling = gymBoardsRef.current?.find(
+        (board) =>
+          board.uuid !== activeBoardRef.current?.uuid &&
+          boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),
+      );
+      if (gymSibling) {
+        void switchBoard(gymSibling, activeBoardRef.current ?? null);
+        return;
+      }
+
       const owned = myBoardsRef.current?.boards.find((board) =>
         boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),
       );
@@ -944,6 +982,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onOpenQueue: openQueueSheet,
             boardMismatch,
             mismatchBoardLabel,
+            reachableBoardKeys,
             onSwitchBoard: handleSwitchBoardFromDrawer,
             onOpenClimbActions: openClimbActions,
             openTarget: paneTarget,
@@ -956,6 +995,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       openQueueSheet,
       boardMismatch,
       mismatchBoardLabel,
+      reachableBoardKeys,
       handleSwitchBoardFromDrawer,
       openClimbActions,
       paneTarget,
@@ -1033,6 +1073,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       isAngleAdjustable,
       boardMismatch,
       mismatchBoardLabel,
+      reachableBoardKeys,
       onAngleChange: handleAngleChange,
       onSwitchBoard: handleSwitchBoardFromDrawer,
       onPlayDrawerClosed,
@@ -1044,6 +1085,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       isAngleAdjustable,
       boardMismatch,
       mismatchBoardLabel,
+      reachableBoardKeys,
       handleAngleChange,
       handleSwitchBoardFromDrawer,
       onPlayDrawerClosed,
