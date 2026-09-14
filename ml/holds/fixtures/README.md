@@ -33,11 +33,31 @@ the uploader's `metadata.json` from `POST /api/spray-wall-test-data`. Photos
 without that consent stay in the private bucket and never reach this directory.
 Scraped photos that are not CC-licensed never reach it either.
 
-## The model
+## The model — and why the parity fixture is not runnable yet
 
-The exported ONNX is **not committed** — RF-DETR nano is about 108 MB as fp32
-ONNX, far over this repo's 15 MB ceiling, and the app downloads weights from R2
-at runtime anyway (epic #5346). It is not published to R2 yet; SW-02 owns that.
+The exported ONNX is **not committed**, and no size trick gets it under the 15 MB
+ceiling:
+
+| Artifact | Size |
+| --- | --- |
+| fp32 | 107.6 MB |
+| fp16 | 54.1 MB |
+| **int8** (dynamic) | **28.7 MB** |
+
+int8 is the smallest that runs, and it is still nearly twice the ceiling. So the
+model this file's expectations came from **exists only on the machine that trained
+it**, which means a SW-06 parity test cannot run today.
+
+**Who unblocks it:** SW-02 (#5435) owns publishing weights to R2, at
+`models/hold-detector/<version>/model-int8.onnx` — the same path the app will
+download from at runtime, so the parity test and the app pull the same bytes.
+Until that publish happens, #5439 is blocked on it, and the note above is the
+whole reason.
+
+Anyone with this repo can regenerate an equivalent model with the commands below,
+but a CPU training run is not bit-reproducible, so the numbers will differ
+slightly. That is fine for judging the pipeline and useless for parity — which is
+exactly why the artifact needs publishing rather than re-deriving.
 
 Regenerate the exact artifact these expectations came from:
 

@@ -3,7 +3,8 @@
     "Evaluable hold-detector configurations. Apache-2.0 model families only",
     "(epic #5346 decision, 2026-09-14): RF-DETR, YOLOX, D-FINE, RT-DETR.",
     "Ultralytics code and weights are AGPL-3.0 and are forbidden in this repo.",
-    "RF-DETR input resolutions must be divisible by patch_size * num_windows (32 for the nano/small/medium detectors, 12 for seg-nano)."
+    "RF-DETR input resolutions must be divisible by patch_size * num_windows (32 for the nano/small/medium detectors, 12 for seg-nano).",
+    "num_classes=1 rebuilds the detection head for the single `hold` class instead of carrying RF-DETR's 90-class COCO head into the export, which is about half the file size."
   ],
   "configs": {
     "nano-tiled-1024": {
@@ -26,7 +27,8 @@
         "batch_size": 2,
         "grad_accum_steps": 4,
         "lr": 0.0001
-      }
+      },
+      "num_classes": 1
     },
     "nano-tiled-1024-classical-mask": {
       "family": "rfdetr",
@@ -48,7 +50,8 @@
         "batch_size": 2,
         "grad_accum_steps": 4,
         "lr": 0.0001
-      }
+      },
+      "num_classes": 1
     },
     "small-tiled-1024": {
       "family": "rfdetr",
@@ -70,7 +73,8 @@
         "batch_size": 2,
         "grad_accum_steps": 4,
         "lr": 0.0001
-      }
+      },
+      "num_classes": 1
     },
     "medium-untiled-1280": {
       "family": "rfdetr",
@@ -92,7 +96,8 @@
         "batch_size": 1,
         "grad_accum_steps": 8,
         "lr": 0.0001
-      }
+      },
+      "num_classes": 1
     },
     "seg-nano-tiled-1024": {
       "family": "rfdetr",
@@ -114,7 +119,8 @@
         "batch_size": 2,
         "grad_accum_steps": 4,
         "lr": 0.0001
-      }
+      },
+      "num_classes": 1
     }
   },
   "datasets": {

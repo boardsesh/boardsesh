@@ -64,6 +64,7 @@ class DetectorConfig:
     score_threshold: float
     nms_iou: float
     produces_masks: bool
+    num_classes: int = 1
     notes: str = ""
     train: dict[str, Any] = field(default_factory=dict)
 
@@ -91,6 +92,7 @@ def load_configs(path: Path | None = None) -> dict[str, DetectorConfig]:
             score_threshold=float(entry.get("score_threshold", 0.3)),
             nms_iou=float(entry.get("nms_iou", 0.5)),
             produces_masks=bool(entry.get("produces_masks", False)),
+            num_classes=int(entry.get("num_classes", 1)),
             notes=entry.get("notes", ""),
             train=entry.get("train", {}),
         )

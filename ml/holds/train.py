@@ -31,7 +31,7 @@ RFDETR_VARIANTS = {
 }
 
 
-def build_model(family: str, variant: str, resolution: int):
+def build_model(family: str, variant: str, resolution: int, num_classes: int = 1):
     if family != "rfdetr":
         raise SystemExit(
             f"family {family!r} is not wired up. Apache-2.0 families only: rfdetr, yolox, dfine, rtdetr."
@@ -40,7 +40,11 @@ def build_model(family: str, variant: str, resolution: int):
 
     if variant not in RFDETR_VARIANTS:
         raise SystemExit(f"unknown rfdetr variant {variant!r}; known: {', '.join(RFDETR_VARIANTS)}")
-    return getattr(rfdetr, RFDETR_VARIANTS[variant])(resolution=resolution)
+    # num_classes rebuilds the classification head rather than keeping RF-DETR's
+    # 90-class COCO one. There is one class here, `hold`, and the unused 89 are
+    # roughly half the exported file — which is the difference between a model a
+    # phone downloads on a gym connection and one it does not.
+    return getattr(rfdetr, RFDETR_VARIANTS[variant])(resolution=resolution, num_classes=num_classes)
 
 
 def cap_train_split(dataset_dir: Path, limit: int) -> Path:
@@ -132,11 +136,11 @@ def main() -> int:
     output_dir = config.checkpoint_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"config       {config.name} ({config.family}/{config.variant} @ {config.resolution}px)")
+    print(f"config       {config.name} ({config.family}/{config.variant} @ {config.resolution}px, {config.num_classes} class)")
     print(f"dataset      {dataset_dir}")
     print(f"train config {json.dumps(train_config)}")
 
-    model = build_model(config.family, config.variant, config.resolution)
+    model = build_model(config.family, config.variant, config.resolution, config.num_classes)
 
     started = time.time()
     model.train(

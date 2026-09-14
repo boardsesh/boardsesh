@@ -44,3 +44,8 @@ packages/mobile/.maestro/
 # Per the note in vite.config.ts, path forms the glob list misses are handled
 # here reliably — this is one of them.
 packages/web/board-controller/
+
+# ml/holds JSON is written by Python (json.dumps) and regenerated on every
+# eval run; formatting it would be undone immediately. Mirrors the fmt ignore
+# list in vite.config.ts.
+ml/holds/**/*.json

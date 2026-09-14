@@ -60,6 +60,20 @@
       "url": null,
       "format": "coco",
       "notes": "Real spray-wall photos uploaded through POST /api/spray-wall-test-data into the private R2 bucket under spray-wall-test-data/. Pull them down with the AWS CLI against the private bucket (see README) into .data/spraywall-discord/ and hand-label. This is the corpus the gate is meant to be decided on; the public sources below only bootstrap the harness."
+    },
+    "spraywalls-web": {
+      "kind": "manual",
+      "licence": "not stated / all rights reserved (per photo, verbatim in .data/spraywalls/sources.csv)",
+      "redistributable": false,
+      "url": null,
+      "format": "coco",
+      "notes": "61 home and gym spray-wall photos collected from the open web (Climbing Business Journal 'Home Wall of the Week', climbing blogs and build write-ups, Flickr public feeds). The primary EVALUATION corpus. Evaluation only: never committed, never redistributed, never training data, never a fixture. 41 of 61 are all-rights-reserved editorial photography and 11 state no licence, so `fetch.py` will not download them and they are not listed with a usable licence \u2014 collection is deliberately a separate, manual act.",
+      "steps": [
+        "python data/scrape_spraywalls.py --limit 120   # Flickr feeds; Reddit returns 403 from most hosts",
+        "Fill the rest by hand from blog and gym pages; record every row in .data/spraywalls/sources.csv",
+        "Hand-label with data/label_tool.py; flag any photo you could only label in part with \"partial\": true",
+        "python data/label_tool.py merge --corpus .data/spraywalls --out .data/spraywall-coco --halves"
+      ]
     }
   },
   "_rejected": {

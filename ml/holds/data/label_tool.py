@@ -89,8 +89,6 @@ def command_merge(args) -> int:
     images_dir = corpus / "images"
     labels_dir = corpus / "labels"
     out_dir = Path(args.out)
-    split_dir = out_dir / args.split
-    split_dir.mkdir(parents=True, exist_ok=True)
 
     attribution: dict[str, dict] = {}
     sources_path = corpus / "sources.csv"
@@ -101,6 +99,7 @@ def command_merge(args) -> int:
 
     images: list[dict] = []
     annotations: list[dict] = []
+    pending: list[tuple[str, Path]] = []
     skipped = 0
     for label_path in sorted(labels_dir.glob("*.json")):
         label = json.loads(label_path.read_text())
@@ -124,9 +123,9 @@ def command_merge(args) -> int:
             continue
         with Image.open(source_image) as handle:
             width, height = handle.size
-        (split_dir / file_name).write_bytes(source_image.read_bytes())
         row = attribution.get(file_name, {})
         image_id = len(images) + 1
+        pending.append((file_name, source_image))
         images.append(
             {
                 "id": image_id,
@@ -152,27 +151,49 @@ def command_merge(args) -> int:
                 }
             )
 
-    (split_dir / "_annotations.coco.json").write_text(
-        json.dumps(
-            {
-                "info": {
-                    "description": "Boardsesh real-wall hold-detection evaluation corpus (SW-01)",
-                    "attribution": "Wikimedia Commons; per-image licence and author in each image record and in sources.csv.",
+    # Optionally cut the corpus in half by photo. The point is the score
+    # threshold: picking it on the same photos the F1 is reported on flatters the
+    # number, so `tune` is where the sweep runs and `eval` is what gets published.
+    if args.halves:
+        assignments = [("tune" if index % 2 == 0 else "eval") for index in range(len(images))]
+    else:
+        assignments = [args.split] * len(images)
+
+    written: dict[str, tuple[list[dict], list[dict]]] = {}
+    for image, assignment, (file_name, source_image) in zip(images, assignments, pending):
+        split_images, split_annotations = written.setdefault(assignment, ([], []))
+        new_id = len(split_images) + 1
+        split_images.append({**image, "id": new_id})
+        for annotation in annotations:
+            if annotation["image_id"] != image["id"]:
+                continue
+            split_annotations.append({**annotation, "id": len(split_annotations) + 1, "image_id": new_id})
+        (out_dir / assignment).mkdir(parents=True, exist_ok=True)
+        (out_dir / assignment / file_name).write_bytes(source_image.read_bytes())
+
+    for split_name, (split_images, split_annotations) in written.items():
+        (out_dir / split_name / "_annotations.coco.json").write_text(
+            json.dumps(
+                {
+                    "info": {
+                        "description": "Boardsesh real-wall hold-detection evaluation corpus (SW-01)",
+                        "attribution": "Per-image licence, author and source page in each image record and in sources.csv.",
+                    },
+                    "licenses": [],
+                    "categories": [{"id": 1, "name": "hold", "supercategory": "hold"}],
+                    "images": split_images,
+                    "annotations": split_annotations,
                 },
-                "licenses": [],
-                "categories": [{"id": 1, "name": "hold", "supercategory": "hold"}],
-                "images": images,
-                "annotations": annotations,
-            },
-            indent=2,
+                indent=2,
+            )
         )
-    )
-    tags: dict[str, int] = {}
-    for image in images:
-        for tag in image["tags"]:
-            tags[tag] = tags.get(tag, 0) + 1
-    print(f"{len(images)} photos, {len(annotations)} holds -> {split_dir} ({skipped} skipped as unusable)")
-    print("tags:", ", ".join(f"{tag}={count}" for tag, count in sorted(tags.items())) or "none")
+        tags: dict[str, int] = {}
+        for image in split_images:
+            for tag in image.get("tags", []):
+                tags[tag] = tags.get(tag, 0) + 1
+        print(f"{split_name}: {len(split_images)} photos, {len(split_annotations)} holds -> {out_dir / split_name}")
+        print("  tags:", ", ".join(f"{tag}={count}" for tag, count in sorted(tags.items())) or "none")
+    print(f"{skipped} skipped as unusable or partial")
     return 0
 
 
@@ -196,6 +217,11 @@ def main() -> int:
     merge.add_argument("--corpus", default=str(HOLDS_DIR / ".data" / "realwall"))
     merge.add_argument("--out", default=str(HOLDS_DIR / ".data" / "realwall-coco"))
     merge.add_argument("--split", default="valid")
+    merge.add_argument(
+        "--halves",
+        action="store_true",
+        help="write `tune` and `eval` splits instead of one: sweep the threshold on tune, report on eval",
+    )
     merge.add_argument(
         "--include-partial",
         action="store_true",

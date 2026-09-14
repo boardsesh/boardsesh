@@ -25,7 +25,16 @@ HOLDS_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = HOLDS_DIR / ".data"
 SOURCES_PATH = Path(__file__).resolve().parent / "sources.json"
 
-FORBIDDEN_LICENCE_MARKERS = ("nc", "non-commercial", "noncommercial", "unknown", "unspecified", "none")
+FORBIDDEN_LICENCE_MARKERS = (
+    "nc",
+    "non-commercial",
+    "noncommercial",
+    "unknown",
+    "unspecified",
+    "none",
+    "not stated",
+    "all rights reserved",
+)
 
 
 def licence_is_acceptable(licence: str | None) -> tuple[bool, str]:
@@ -56,10 +65,13 @@ def unpack(archive: Path, target: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as zf:
-            zf.extractall(target)
+            # filter="data" refuses members with absolute paths or `..` segments,
+            # which is the difference between unpacking a dataset and letting one
+            # write wherever it likes.
+            zf.extractall(target, filter="data")
     elif archive.suffixes[-2:] in ([".tar", ".gz"], [".tar", ".xz"]) or archive.suffix in (".tgz", ".tar"):
         with tarfile.open(archive) as tf:
-            tf.extractall(target)
+            tf.extractall(target, filter="data")
     else:
         raise SystemExit(f"do not know how to unpack {archive}")
 

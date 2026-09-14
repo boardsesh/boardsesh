@@ -10,8 +10,15 @@ What it measures, per config:
   * the same at mask IoU 0.5 when both sides have masks
   * per-photo CPU latency (p50 / p95) at the config's resolution and tiling
   * peak resident memory of the process
-  * "corrections": false positives plus misses as a share of the real holds,
-    which is what a user actually has to fix by hand in the hold editor
+  * "corrections": false positives plus misses as a share of the real holds —
+    what a user has to fix by hand in the hold editor. A box that is present but
+    badly placed is NOT counted: at IoU 0.5 it is already a false positive plus a
+    miss, and a hold the user only has to nudge is not counted at all. So the
+    number is a proxy for effort, not a count of taps.
+
+    Both a micro rate (all corrections over all holds, which is what the reported
+    tables quote) and a macro mean over photos are written out; they differ
+    whenever photos carry very different hold counts.
 
 Matching is class-agnostic: there is one class, `hold`.
 """
@@ -246,10 +253,12 @@ def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: 
                         claimed[best_index] = True
                         mask_tp += 1
                 mask_totals["tp"] += mask_tp
-                mask_totals["fp"] += len(boxes) - mask_tp
+                # Only masks that were actually produced can be wrong. A detection
+                # the segmenter declined to mask is not a mask false positive.
+                mask_totals["fp"] += sum(1 for mask in predicted_masks if mask is not None) - mask_tp
                 mask_totals["fn"] += sum(1 for gt_index, gt in enumerate(gt_masks) if gt is not None and not claimed[gt_index])
 
-        corrections = fp + fn
+        corrections = fp + fn  # a misplaced box is already one of each
         per_photo.append(
             {
                 "file_name": image["file_name"],
@@ -276,6 +285,7 @@ def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: 
 
     precision, recall, f1 = prf(totals["tp"], totals["fp"], totals["fn"])
     rates = [entry["correction_rate"] for entry in per_photo if entry["correction_rate"] is not None]
+    total_holds = sum(entry["holds"] for entry in per_photo)
 
     results = {
         "config": config.name,
@@ -297,7 +307,10 @@ def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: 
             "mean": round(float(np.mean(latencies)) if latencies else 0.0, 3),
         },
         "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
-        "correction_rate_mean": round(float(np.mean(rates)), 4) if rates else None,
+        # Micro: every correction over every hold. This is the one the reports quote.
+        "correction_rate_micro": round((totals["fp"] + totals["fn"]) / total_holds, 4) if total_holds else None,
+        # Macro: the mean of the per-photo rates, which a photo with three holds can swing.
+        "correction_rate_macro": round(float(np.mean(rates)), 4) if rates else None,
         "score_threshold": config.score_threshold,
         "threads": threads,
         "per_photo": per_photo,

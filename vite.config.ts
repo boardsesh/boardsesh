@@ -35,7 +35,10 @@ export default defineConfig({
     // has content the formatter can get wrong, so `.md` is out of scope —
     // mirrored in .prettierignore because a full-repo `vp check` only honours
     // that file for some path forms.
-    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md', '**/*.md'],
+    // ml/holds writes its JSON artefacts from Python (`json.dumps(indent=2)` in
+    // eval.py and the data/ scripts), so a formatted copy would be undone by the
+    // next regeneration and re-red CI. Mirrored in .prettierignore.
+    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md', '**/*.md', 'ml/holds/**/*.json'],
   },
   lint: {
     // Keep this list in lock-step with `ignorePatterns` in .oxlintrc.json.
