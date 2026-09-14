@@ -1420,13 +1420,24 @@ describe('initializeDatabase lock contention (#4104)', () => {
       expect(queueTableDdl()).toBe(1);
     });
 
-    // NOT COVERED: the epoch guard that runs straight after an attempt, as opposed to
-    // the one after the sleep (covered above). It only matters when a SUPERSEDED
-    // attempt SUCCEEDS — the supersede branch would then refund and retarget onto the
-    // replacement, running the DDL a second time against a file the recovery may still
-    // be writing. Three attempts to drive that through this harness deadlocked on the
-    // launch gate rather than reproducing it, so the guard ships on its reasoning
-    // alone. Worth revisiting with a harness that can hold an attempt open.
+    // NOT COVERED, and the one branch in this file that is not: an init attempt that
+    // is ALREADY IN FLIGHT when a recovery starts, and that then SUCCEEDS while the
+    // re-open is still resolving.
+    //
+    // It is not merely unexercised — instrumenting it found a real bug. The epoch used
+    // to be bumped inside the recovery's async body, after `await opener()`, so a chain
+    // completing in that window read the old epoch, found `latestDatabase` had not moved
+    // either, concluded it was not superseded, and published the connection we had just
+    // declared dead — overwriting the replacement a moment later. `getDatabaseHandle()`
+    // was measured as NOT the replacement. The bump is now synchronous, and the same
+    // instrumentation then showed the guard firing and the replacement published.
+    //
+    // So this branch is fixed and verified by hand, but it has no automated test. Five
+    // attempts to express it here all hang the event loop before the assertions, and
+    // three separate theories for why — the launch gate, leaked fake timers, and two
+    // overlapping migration chains sharing one node:sqlite handle — were each ruled out
+    // by measurement. The blocker is structural in this harness and still unidentified.
+    // Anyone touching the epoch logic should re-run that instrumentation by hand.
 
     it('does not recover from a lock, which the existing ladder already handles', async () => {
       const { opener } = createReplacement();
