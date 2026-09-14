@@ -1249,6 +1249,32 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   that falls behind a native change on `main` publishes neither platform and `pr-<number>` keeps
   serving the last revision that did publish — better for a tester than an empty branch, but the
   sticky comment says which, so an unchanged picker entry is not read as "this commit is live".
+- **An identical export is skipped, and the publish says so.** Xprem refuses to create an update whose
+  bundle matches one already in storage (`There is no change in the update for android, ignored` /
+  `No changes found in the update, nothing to deploy`) and `eoas` exits **0** either way. Ordinarily
+  that is right — the identical update is still on the branch. It is only dangerous next to a reset,
+  which is how #5417 lost its Android preview: a comment-only commit left the Android bundle
+  unchanged, the reset had already deleted `pr-5417`, and the skipped publish never recreated it. The
+  branch was iOS-only from then on and the row simply was not in the Android picker — not greyed out,
+  absent, because `/branch_lists` is filtered per platform. `mobile:publish` now scans for that notice
+  and reports `android=no-change` instead of `android=success`. Since `needs_reset` (above) this pairing
+  can no longer arise from a JS-only push.
+- **The publish verifies its own work.** After every platform reports success, `mobile:publish` asks
+  `/branch_lists` — the same unauthenticated question the in-app picker asks — whether `pr-<number>` is
+  actually offered to that platform's fingerprint, and **fails the job** when it is not. It probes with
+  `OTA_PREVIEW_RUNTIME_VERSION_IOS` / `_ANDROID`, the full hashes the compatibility step already
+  resolved (`fingerprint_ios_full` / `fingerprint_android_full`); with neither set — a local publish —
+  it prints nothing and skips, since a locally resolved fingerprint is not the one any binary runs.
+  Shared with `vp run mobile:ota-surf-doctor` through `scripts/lib/ota-branch-probe.ts`, so the
+  diagnostic and the publisher can never disagree about what "surfable" means.
+- **A finalize 524 is confirmed, not re-exported.** `markUpdateAsUploaded` regularly outlives
+  Cloudflare's 100 s origin cap on `updates.boardsesh.com`, and the proxy answers 524 after the assets
+  are already uploaded — the update has usually landed. The retry wrapper recognises that one endpoint
+  and probes the branch before spending another attempt: if it is live, the publish is recorded as
+  published on that attempt. #5422 burned **2h09m over six attempts** re-bundling ~5300 modules to
+  reach the same timeout, which the in-app picker showed as "building" for the whole time (the chip
+  reads the `pr-preview` deployment, which the publish job holds open). Any other 5xx, and a 524 seen
+  next to permanent-error evidence, still walk the full backoff ladder.
 - **Source maps stay local to the runner.** The shared publisher generates external maps for these
   exports, but the preview workflow intentionally has no `SENTRY_AUTH_TOKEN` and never uploads them.
   It runs PR-authored code, so granting a Sentry upload credential would cross the preview security

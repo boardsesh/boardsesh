@@ -31,7 +31,9 @@ import {
   publishSelfHostedPlatformWithRetry,
   type OtaPublishPlatform,
   type PlatformPublishOutcome,
+  type PublishConfirmation,
 } from './lib/mobile-publish-retry';
+import { findSurfableBranch, probeBranchList, stripManifestSuffix } from './lib/ota-branch-probe';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -196,9 +198,62 @@ export function requestedSelfHostedPlatforms(platform: string): OtaPublishPlatfo
 }
 
 function summarizePlatformOutcome(outcome: PlatformPublishOutcome): string {
-  if (outcome.success)
-    return `${outcome.platform}=success (${outcome.attempts} attempt${outcome.attempts === 1 ? '' : 's'})`;
-  return `${outcome.platform}=failed (${outcome.attempts} attempt${outcome.attempts === 1 ? '' : 's'}, ${outcome.failureKind ?? 'unknown'})`;
+  const attempts = `${outcome.attempts} attempt${outcome.attempts === 1 ? '' : 's'}`;
+  // `no-change` is a success the server declined to act on. Naming it separately
+  // is the difference between "we published" and "an identical update was already
+  // there" — the two look the same in eoas's exit code and mean very different
+  // things once the branch has been reset.
+  if (outcome.success) return `${outcome.platform}=${outcome.noChange ? 'no-change' : 'success'} (${attempts})`;
+  return `${outcome.platform}=failed (${attempts}, ${outcome.failureKind ?? 'unknown'})`;
+}
+
+/** The mutable per-PR preview branches, the only ones this script verifies. */
+const PREVIEW_BRANCH_PATTERN = /^pr-[1-9]\d*$/;
+
+/**
+ * The runtimeVersion a device must be on to be offered this branch, per platform.
+ *
+ * Supplied by the preview workflow from the compatibility check that already
+ * resolved both fingerprints, rather than resolved here: @expo/fingerprint is not
+ * deterministic across macOS and Linux, so a local resolve would probe with a hash
+ * no binary runs and report a false "not surfable". Absent — a local publish — the
+ * check is skipped rather than guessed.
+ */
+function previewRuntimeVersionFor(platform: OtaPublishPlatform): string | null {
+  const supplied =
+    platform === 'ios' ? process.env.OTA_PREVIEW_RUNTIME_VERSION_IOS : process.env.OTA_PREVIEW_RUNTIME_VERSION_ANDROID;
+  const trimmed = supplied?.trim() ?? '';
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+/**
+ * Ask the update server whether `branchName` is actually being offered to this
+ * platform — the same `/branch_lists` question the in-app picker asks.
+ *
+ * This exists because "the publish command exited 0" is not the same claim. xprem
+ * skips an export identical to one already in storage, and the preview workflow
+ * may have deleted the branch moments earlier, so a platform can end up with no
+ * update on the branch while every log line says success. That is exactly how
+ * #5417 shipped an iOS-only preview and disappeared from the Android picker with
+ * nothing said anywhere.
+ *
+ * Returns null when the check cannot run (no fingerprint supplied, not a preview
+ * branch), which callers treat as "skip", never as "not surfable".
+ */
+async function isPreviewBranchSurfable(
+  branchName: string,
+  platform: OtaPublishPlatform,
+  serverUrl: string,
+): Promise<{ surfable: boolean; detail: string } | null> {
+  if (!PREVIEW_BRANCH_PATTERN.test(branchName)) return null;
+  const runtimeVersion = previewRuntimeVersionFor(platform);
+  if (runtimeVersion === null) return null;
+  const outcome = await probeBranchList(fetch, stripManifestSuffix(serverUrl), runtimeVersion, platform);
+  const branch = findSurfableBranch(outcome, branchName);
+  return {
+    surfable: branch !== null,
+    detail: branch?.lastUpdateAt ? `${outcome.detail}, updated ${branch.lastUpdateAt}` : outcome.detail,
+  };
 }
 
 async function publishToSelfHostedBranch(
@@ -257,6 +312,14 @@ async function publishToSelfHostedBranch(
     return 1;
   }
 
+  // Answers the retry wrapper's "did that 524 actually land?" question. Same probe
+  // as the post-publish verification below, so the two can never disagree; null
+  // (nothing to probe with) reads as "not confirmed" and the ordinary ladder runs.
+  const confirmPublished: PublishConfirmation = async (confirmedPlatform) => {
+    const result = await isPreviewBranchSurfable(branchName, confirmedPlatform, serverUrl);
+    return result?.surfable ?? false;
+  };
+
   const platforms = requestedSelfHostedPlatforms(platform);
   const outcomes = await publishPlatformsSequentially(platforms, async (requestedPlatform) => {
     const platformEnv = { ...eoasEnv };
@@ -267,13 +330,16 @@ async function publishToSelfHostedBranch(
     console.log('');
     console.log(`[mobile:publish] Running ${requestedPlatform}: vp dlx ${eoasArgs.join(' ')}`);
     console.log('');
-    return publishSelfHostedPlatformWithRetry({
-      platform: requestedPlatform,
-      command: 'vp',
-      args: ['dlx', ...eoasArgs],
-      cwd: MOBILE_DIR,
-      env: platformEnv,
-    });
+    return publishSelfHostedPlatformWithRetry(
+      {
+        platform: requestedPlatform,
+        command: 'vp',
+        args: ['dlx', ...eoasArgs],
+        cwd: MOBILE_DIR,
+        env: platformEnv,
+      },
+      { confirmPublished },
+    );
   });
 
   console.log('');
@@ -283,8 +349,48 @@ async function publishToSelfHostedBranch(
     return 1;
   }
 
+  // Only now, with every requested platform reporting success, is it worth asking
+  // whether the server agrees. A failed publish has its own louder verdict above.
+  if (!(await verifyPreviewBranchIsSurfable(branchName, platforms, serverUrl))) return 1;
+
   for (const line of selfHostedPublishSuccessMessages(branchName)) console.log(line);
   return 0;
+}
+
+/**
+ * The last word on a preview publish: does a device on this fingerprint get
+ * offered the branch?
+ *
+ * Failing here rather than warning is deliberate. A preview nobody can load is
+ * indistinguishable from no preview at all, and the workflow's sticky comment
+ * would otherwise tell testers to go and select a branch that is not there.
+ */
+async function verifyPreviewBranchIsSurfable(
+  branchName: string,
+  platforms: readonly OtaPublishPlatform[],
+  serverUrl: string,
+): Promise<boolean> {
+  let allSurfable = true;
+  for (const platform of platforms) {
+    const result = await isPreviewBranchSurfable(branchName, platform, serverUrl);
+    if (result === null) continue;
+    if (result.surfable) {
+      console.log(
+        `[mobile:publish] ${platform}: "${branchName}" is offered to this runtimeVersion (${result.detail}).`,
+      );
+      continue;
+    }
+    allSurfable = false;
+    console.error(
+      `[mobile:publish] ${platform}: the publish reported success but "${branchName}" is NOT offered to ` +
+        `runtimeVersion ${previewRuntimeVersionFor(platform) ?? '(unknown)'} (${result.detail}).`,
+    );
+    console.error(
+      `[mobile:publish] Nothing would load in the in-app picker on ${platform}. Diagnose with: ` +
+        `vp run mobile:ota-surf-doctor -- --platform ${platform} --runtime-version ${previewRuntimeVersionFor(platform) ?? '<hash>'}`,
+    );
+  }
+  return allSurfable;
 }
 
 export function selfHostedPublishSuccessMessages(branchName: string): string[] {

@@ -125,6 +125,7 @@ describe('self-hosted publish retries', () => {
       success: true,
       attempts: SELF_HOSTED_PUBLISH_MAX_ATTEMPTS,
       failureKind: null,
+      noChange: false,
     });
     expect(attempts).toHaveLength(SELF_HOSTED_PUBLISH_MAX_ATTEMPTS);
     expect(sleeper.mock.calls.map(([delayMs]) => delayMs)).toEqual([...SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS]);
@@ -144,7 +145,13 @@ describe('self-hosted publish retries', () => {
       { runner, sleeper, stdout: outputCollector().output, stderr: stderr.output },
     );
 
-    expect(outcome).toEqual({ platform: 'android', success: false, attempts: 1, failureKind: 'permanent' });
+    expect(outcome).toEqual({
+      platform: 'android',
+      success: false,
+      attempts: 1,
+      failureKind: 'permanent',
+      noChange: false,
+    });
     expect(runner).toHaveBeenCalledTimes(1);
     expect(sleeper).not.toHaveBeenCalled();
   });
@@ -164,7 +171,13 @@ describe('self-hosted publish retries', () => {
       { runner, sleeper, stdout: outputCollector().output, stderr: stderr.output },
     );
 
-    expect(outcome).toEqual({ platform: 'ios', success: false, attempts: 1, failureKind: 'http-5xx' });
+    expect(outcome).toEqual({
+      platform: 'ios',
+      success: false,
+      attempts: 1,
+      failureKind: 'http-5xx',
+      noChange: false,
+    });
     expect(runner).toHaveBeenCalledOnce();
     expect(sleeper).toHaveBeenCalledOnce();
     expect(sleeper).toHaveBeenCalledWith(SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS[0]);
@@ -200,13 +213,14 @@ describe('platform aggregation', () => {
         success: platform === 'android',
         attempts: 1,
         failureKind: platform === 'ios' ? 'unknown' : null,
+        noChange: false,
       };
     });
 
     expect(calls).toEqual(['ios', 'android']);
     expect(outcomes).toEqual([
-      { platform: 'ios', success: false, attempts: 1, failureKind: 'unknown' },
-      { platform: 'android', success: true, attempts: 1, failureKind: null },
+      { platform: 'ios', success: false, attempts: 1, failureKind: 'unknown', noChange: false },
+      { platform: 'android', success: true, attempts: 1, failureKind: null, noChange: false },
     ]);
   });
 
@@ -215,13 +229,169 @@ describe('platform aggregation', () => {
     const outcomes = await publishPlatformsSequentially(['ios', 'android'], async (platform) => {
       calls.push(platform);
       if (platform === 'ios') throw new Error('fixture callback failure');
-      return { platform, success: true, attempts: 1, failureKind: null };
+      return { platform, success: true, attempts: 1, failureKind: null, noChange: false };
     });
 
     expect(calls).toEqual(['ios', 'android']);
     expect(outcomes).toEqual([
-      { platform: 'ios', success: false, attempts: 0, failureKind: 'unknown' },
-      { platform: 'android', success: true, attempts: 1, failureKind: null },
+      { platform: 'ios', success: false, attempts: 0, failureKind: 'unknown', noChange: false },
+      { platform: 'android', success: true, attempts: 1, failureKind: null, noChange: false },
     ]);
+  });
+});
+
+// The real thing, from run 34775177168 (#5422): every asset uploaded, then the
+// finalize call outlived Cloudflare's 100s origin cap.
+const FINALIZE_524 =
+  '▲  Retry 0 after HTTP 524 from https://updates.boardsesh.com/007e6fd7-f200-448c-9449-8d48ba5d51fc/markUpdateAsUploaded/pr-5422\n';
+
+// The real thing, from run 34755541101 (#5417): the Android bundle came out
+// identical to the previous publish, so xprem declined to create an update —
+// and eoas exited 0 regardless.
+const NO_CHANGE_OUTPUT = [
+  '●  ⚠️ There is no change in the update for android, ignored...',
+  '▲  ⚠️ No changes found in the update, nothing to deploy',
+  '',
+].join('\n');
+
+function runnerEmitting(chunk: string, exitCode: number): PublishCommandRunner {
+  return async (request) => {
+    request.onStdout(chunk);
+    return { exitCode };
+  };
+}
+
+const SILENT = { write: () => undefined };
+
+function invocation() {
+  return {
+    platform: 'ios' as const,
+    command: 'vp',
+    args: ['dlx', 'eoas@3.1.2', 'publish'],
+    cwd: '/repo/packages/mobile',
+    env: {} as NodeJS.ProcessEnv,
+  };
+}
+
+describe('finalize gateway timeouts', () => {
+  it('still classifies a finalize 524 as a retryable 5xx', () => {
+    // The short-circuit below is an optimisation layered on top; if the probe is
+    // unavailable the ladder must still treat this as transient.
+    expect(classifyPublishFailure(FINALIZE_524)).toBe('http-5xx');
+  });
+
+  it('tells a finalize timeout apart from any other 5xx', () => {
+    const finalize = new PublishFailureEvidenceScanner();
+    finalize.push(FINALIZE_524);
+    expect(finalize.sawFinalizeTimeout()).toBe(true);
+
+    // A 503 mid-upload says nothing about whether an update was recorded, so it
+    // must not trigger a "did it land anyway?" probe.
+    const upload = new PublishFailureEvidenceScanner();
+    upload.push('HTTP 503 from https://updates.boardsesh.com/.../uploadLocalFile\n');
+    expect(upload.sawFinalizeTimeout()).toBe(false);
+  });
+
+  it('refuses to read a 524 as "probably landed" when a permanent error is also present', () => {
+    const scanner = new PublishFailureEvidenceScanner();
+    scanner.push(FINALIZE_524);
+    scanner.push('authentication failed\n');
+    expect(scanner.sawFinalizeTimeout()).toBe(false);
+  });
+
+  it('accepts a confirmed 524 as published instead of re-exporting the bundle', async () => {
+    const sleeper = vi.fn(async () => undefined);
+    const confirmPublished = vi.fn(async () => true);
+    const runner = vi.fn(runnerEmitting(FINALIZE_524, 1));
+
+    const outcome = await publishSelfHostedPlatformWithRetry(invocation(), {
+      runner,
+      sleeper,
+      confirmPublished,
+      stdout: SILENT,
+      stderr: SILENT,
+    });
+
+    expect(outcome).toEqual({ platform: 'ios', success: true, attempts: 1, failureKind: null, noChange: false });
+    // The whole point: one export, no backoff. #5422 spent 2h09m doing this six times.
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(sleeper).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the retry ladder when the server says the update did not land', async () => {
+    const sleeper = vi.fn(async () => undefined);
+    const confirmPublished = vi.fn(async () => false);
+    const runner = vi.fn(runnerEmitting(FINALIZE_524, 1));
+
+    const outcome = await publishSelfHostedPlatformWithRetry(invocation(), {
+      runner,
+      sleeper,
+      confirmPublished,
+      stdout: SILENT,
+      stderr: SILENT,
+    });
+
+    expect(outcome.success).toBe(false);
+    expect(outcome.attempts).toBe(6);
+    expect(sleeper).toHaveBeenCalledTimes(5);
+  });
+
+  it('treats a probe that throws as no evidence rather than a failure of its own', async () => {
+    const confirmPublished = vi.fn(async () => {
+      throw new Error('DNS went away');
+    });
+
+    const outcome = await publishSelfHostedPlatformWithRetry(invocation(), {
+      runner: runnerEmitting(FINALIZE_524, 1),
+      sleeper: async () => undefined,
+      confirmPublished,
+      stdout: SILENT,
+      stderr: SILENT,
+    });
+
+    expect(outcome.success).toBe(false);
+    expect(outcome.failureKind).toBe('http-5xx');
+  });
+
+  it('leaves publishes without a confirmation hook exactly as they were', async () => {
+    const sleeper = vi.fn(async () => undefined);
+
+    const outcome = await publishSelfHostedPlatformWithRetry(invocation(), {
+      runner: runnerEmitting(FINALIZE_524, 1),
+      sleeper,
+      stdout: SILENT,
+      stderr: SILENT,
+    });
+
+    expect(outcome.success).toBe(false);
+    expect(sleeper).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe('deduplicated exports', () => {
+  it('reports a skipped publish as no-change rather than a plain success', async () => {
+    const outcome = await publishSelfHostedPlatformWithRetry(invocation(), {
+      runner: runnerEmitting(NO_CHANGE_OUTPUT, 0),
+      sleeper: async () => undefined,
+      stdout: SILENT,
+      stderr: SILENT,
+    });
+
+    // Still a success — the command did what it was asked. But the caller can now
+    // tell "we published" from "an identical update was already there", which is
+    // the distinction #5417 needed and nothing recorded.
+    expect(outcome.success).toBe(true);
+    expect(outcome.noChange).toBe(true);
+  });
+
+  it('does not flag an ordinary publish as no-change', async () => {
+    const outcome = await publishSelfHostedPlatformWithRetry(invocation(), {
+      runner: runnerEmitting('●  ✅ Update ready for ios\n', 0),
+      sleeper: async () => undefined,
+      stdout: SILENT,
+      stderr: SILENT,
+    });
+
+    expect(outcome.noChange).toBe(false);
   });
 });

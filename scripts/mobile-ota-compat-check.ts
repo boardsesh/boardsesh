@@ -522,6 +522,13 @@ function emitGithubOutputs(result: OtaCompatResult, ctx: CommentContext): void {
       const entry = result.results.find((candidate) => candidate.platform === platform);
       return shortHash((side === 'pr' ? entry?.prFingerprint : entry?.baseFingerprint) ?? null);
     };
+    // The same hash unabbreviated. `/branch_lists` filters on an EXACT
+    // runtimeVersion, so the preview publish needs the whole thing to ask the
+    // server whether what it just uploaded is actually being offered
+    // (scripts/mobile-publish.ts). Empty, not `—`, when unresolved: the publisher
+    // skips the check on a blank value rather than probing with a placeholder.
+    const fullFingerprintFor = (platform: Platform): string =>
+      result.results.find((candidate) => candidate.platform === platform)?.prFingerprint ?? '';
     const commentB64 = Buffer.from(renderComment(result, ctx), 'utf8').toString('base64');
     appendFileSync(
       outputPath,
@@ -535,6 +542,8 @@ function emitGithubOutputs(result: OtaCompatResult, ctx: CommentContext): void {
         `base_fingerprint_android=${fingerprintFor('android', 'base')}`,
         `base_branch=${ctx.baseBranch}`,
         `check_conclusion=${deriveCheckConclusion(enforcement)}`,
+        `fingerprint_ios_full=${fullFingerprintFor('ios')}`,
+        `fingerprint_android_full=${fullFingerprintFor('android')}`,
         `check_title=${checkTitle(enforcement)}`,
         `comment_b64=${commentB64}`,
         '',
