@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-14T09:54:19.570Z",
+  "generatedAt": "2026-09-14T12:54:14.109Z",
   "entries": [
+    {
+      "prNumber": 5424,
+      "category": "new",
+      "title": "Your gym's other boards now sit right in the wall sheet — tap one and your climbs, grades and queue follow you across the room.",
+      "mergedAt": "2026-09-14T12:52:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5424",
+      "body": "Queue climbs from both boards at once. When the next one is on the other board, Boardsesh offers to move you instead of skipping it.\nTwo boards at one gym no longer show up under the same name.\nFixed: lit holds could be wrong when your queue mixed boards of different sizes.\nOne-off after this update: the first Bluetooth connect to a board goes through the device picker again, then remembers it as usual."
+    },
     {
       "prNumber": 5422,
       "category": "fixed",

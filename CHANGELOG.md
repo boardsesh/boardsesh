@@ -6,6 +6,14 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-09-14
 
+### New
+
+- Your gym's other boards now sit right in the wall sheet — tap one and your climbs, grades and queue follow you across the room. ([#5424](https://github.com/boardsesh/boardsesh/pull/5424))
+  Queue climbs from both boards at once. When the next one is on the other board, Boardsesh offers to move you instead of skipping it.
+  Two boards at one gym no longer show up under the same name.
+  Fixed: lit holds could be wrong when your queue mixed boards of different sizes.
+  One-off after this update: the first Bluetooth connect to a board goes through the device picker again, then remembers it as usual.
+
 ### Fixed
 
 - Smoother, rounder highlight behind your selected tab on Android. ([#5422](https://github.com/boardsesh/boardsesh/pull/5422))
