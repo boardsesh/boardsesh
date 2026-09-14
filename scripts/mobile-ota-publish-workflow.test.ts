@@ -224,7 +224,7 @@ describe('production OTA workflow reliability', () => {
   it('gives the preview publish job enough time for bounded platform retries', () => {
     const timeout = Number(jobBlock(preview, 'publish').match(/timeout-minutes: (\d+)/)?.[1]);
     // Same shape as production: one job publishes both platforms sequentially.
-    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2));
+    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2, true));
   });
 });
 

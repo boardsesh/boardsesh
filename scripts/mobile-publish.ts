@@ -301,22 +301,27 @@ export async function isPreviewBranchSurfable(
   // that is either a propagation delay or a real miss — never on a healthy publish.
   // A server that could not be reached is retried too: it may be a blip, and if it
   // is not, the loop ends in "cannot check" rather than in a verdict.
+  // Cumulative, not last-write-wins: ANY probe that got a real answer saw the
+  // branch absent (a probe that finds it returns immediately), so a late blip must
+  // not erase five clear readings and downgrade the run to "cannot check".
+  let lastAnsweredDetail: string | null = null;
   let detail = 'no probe ran';
-  let answered = false;
   for (let attempt = 1; attempt <= delaysMs.length + 1; attempt++) {
     const outcome = await probeBranchList(fetchImpl, baseUrl, runtimeVersion, platform);
     const branch = findSurfableBranch(outcome, branchName);
-    answered = outcome.state === 'branches' || outcome.state === 'no-branches';
     detail = branch?.lastUpdateAt ? `${outcome.detail}, updated ${branch.lastUpdateAt}` : outcome.detail;
     if (branch !== null) return { surfable: true, detail, attempts: attempt };
+    if (outcome.state === 'branches' || outcome.state === 'no-branches') lastAnsweredDetail = detail;
     if (attempt > delaysMs.length) break;
     await sleeper(delaysMs[attempt - 1]);
   }
-  if (!answered) {
+  if (lastAnsweredDetail === null) {
     console.error(`[mobile:publish] ${platform}: could not check whether "${branchName}" is surfable (${detail}).`);
     return null;
   }
-  return { surfable: false, detail, attempts: delaysMs.length + 1 };
+  // Reports the last answer the server actually gave, not a trailing "request
+  // failed" that says nothing about the branch.
+  return { surfable: false, detail: lastAnsweredDetail, attempts: delaysMs.length + 1 };
 }
 
 /**

@@ -39,18 +39,28 @@ export const SELF_HOSTED_PUBLISH_MAX_ATTEMPTS = SELF_HOSTED_PUBLISH_RETRY_DELAYS
 export const SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES = 2.5;
 
 /**
- * What one attempt can cost in total, including the branch probe a finalize 524
- * triggers before the ladder sleeps. The probe is what turns #5422's six blind
- * re-exports into one confirmation, so its budget belongs in the floor rather
- * than in the slack between the floor and a job's actual `timeout-minutes`.
+ * What one attempt of a PREVIEW publish can cost, including the branch probe a
+ * finalize 524 triggers before the ladder sleeps. The probe is what turns #5422's
+ * six blind re-exports into one confirmation, so its budget belongs in the floor
+ * rather than in the slack between the floor and a job's `timeout-minutes`.
+ *
+ * Preview only: `production` and the backport branches are never probed (the
+ * check is scoped to `pr-<n>`), so charging their jobs for it would inflate their
+ * floors for time they cannot spend.
  */
 export const SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES =
   SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES + SURFABILITY_PROBE_BUDGET_MINUTES;
 
+const SELF_HOSTED_PUBLISH_LADDER_MINUTES =
+  SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS.reduce((total, delayMs) => total + delayMs, 0) / 60_000;
+
 /** Every wait plus the failed attempt that precedes each one. */
 export const SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM =
-  SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS.reduce((total, delayMs) => total + delayMs, 0) / 60_000 +
-  SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES;
+  SELF_HOSTED_PUBLISH_LADDER_MINUTES + SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES;
+
+/** The same, for a preview publish, which also probes the branch on a finalize 524. */
+export const SELF_HOSTED_PREVIEW_WORST_CASE_MINUTES_PER_PLATFORM =
+  SELF_HOSTED_PUBLISH_LADDER_MINUTES + SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES;
 
 /**
  * Everything a publish job does around the publish steps themselves. Dominated
@@ -68,11 +78,11 @@ export const SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES = 30;
  * and preview do iOS then Android in a single job, backport fans out one
  * platform per matrix job.
  */
-export function minimumPublishJobTimeoutMinutes(platforms: number): number {
-  return (
-    Math.ceil(platforms * SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM) +
-    SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES
-  );
+export function minimumPublishJobTimeoutMinutes(platforms: number, probesBranch = false): number {
+  const perPlatform = probesBranch
+    ? SELF_HOSTED_PREVIEW_WORST_CASE_MINUTES_PER_PLATFORM
+    : SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM;
+  return Math.ceil(platforms * perPlatform) + SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES;
 }
 
 export type OtaPublishPlatform = 'ios' | 'android';

@@ -92,9 +92,16 @@ export const PROBE_TIMEOUT_MS = 15_000;
  */
 export const SURFABILITY_PROBE_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 
-/** The same budget in minutes, for the publish job's timeout floor. */
+/**
+ * Worst case for one full round of probing, in minutes: every sleep, PLUS every
+ * request sitting out its own `PROBE_TIMEOUT_MS` cap. Counting only the sleeps
+ * would understate it by the larger half — six capped requests are 90s against
+ * 31s of waiting — and the publish job's timeout floor is derived from this.
+ */
 export const SURFABILITY_PROBE_BUDGET_MINUTES =
-  SURFABILITY_PROBE_DELAYS_MS.reduce((total, delayMs) => total + delayMs, 0) / 60_000;
+  (SURFABILITY_PROBE_DELAYS_MS.reduce((total, delayMs) => total + delayMs, 0) +
+    (SURFABILITY_PROBE_DELAYS_MS.length + 1) * PROBE_TIMEOUT_MS) /
+  60_000;
 
 /** PURE: strip an EXPO_UPDATES_URL's trailing `/manifest` to the server base URL. */
 export function stripManifestSuffix(url: string): string {
