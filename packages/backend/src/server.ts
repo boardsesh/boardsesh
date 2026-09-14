@@ -29,6 +29,7 @@ import { handleBoardGeometry, isBoardGeometryPath } from './handlers/board-geome
 import { initBoardRenderer } from './services/board-render';
 import { parseSizeParam } from './lib/image-resize';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
+import { handleSprayWallTestDataUpload } from './handlers/spray-wall-test-data';
 import { handlePosthogProxy } from './handlers/posthog';
 import { handleUserDataExport, handleUserDataExportDownload } from './handlers/user-data-export';
 import { pruneSyncDeletions } from './services/sync-deletions-prune';
@@ -434,6 +435,12 @@ export async function startServer(): Promise<ServerResources> {
         return;
       }
 
+      // Spray-wall hold-detection corpus upload (handle OPTIONS for CORS preflight)
+      if (pathname === '/api/spray-wall-test-data' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleSprayWallTestDataUpload(req, res);
+        return;
+      }
+
       // PostHog analytics reverse proxy — forwards /api/posthog/* to https://us.i.posthog.com/*
       // so ad-blockers that target *.posthog.com don't drop our events.
       if (pathname.startsWith('/api/posthog/') && (req.method === 'POST' || req.method === 'OPTIONS')) {
@@ -764,6 +771,7 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  Gym photo upload: ${httpScheme}://0.0.0.0:${PORT}/api/gym-photos`);
     logger.info(`  Gym photo files: ${httpScheme}://0.0.0.0:${PORT}/static/gym-photos/`);
     logger.info(`  OCR test data: ${httpScheme}://0.0.0.0:${PORT}/api/ocr-test-data`);
+    logger.info(`  Spray wall test data: ${httpScheme}://0.0.0.0:${PORT}/api/spray-wall-test-data`);
     logger.info(`  PostHog proxy: ${httpScheme}://0.0.0.0:${PORT}/api/posthog/*`);
     logger.info(`  User data export: ${httpScheme}://0.0.0.0:${PORT}/api/user-data-export`);
     logger.info(`  Aurora credentials: ${httpScheme}://0.0.0.0:${PORT}/api/aurora-credentials`);

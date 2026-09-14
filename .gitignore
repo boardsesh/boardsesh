@@ -154,6 +154,10 @@ packages/db/data/
 ml/climb2vec/data/
 ml/climb2vec/.venv/
 ml/climb2vec/artifacts/
+ml/holds/.data/
+ml/holds/.venv/
+ml/holds/output/
+ml/holds/**/__pycache__/
 
 # Python bytecode
 __pycache__/

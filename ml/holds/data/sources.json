@@ -1,0 +1,72 @@
+{
+  "_comment": [
+    "Corpus registry. Every entry must carry an explicit licence.",
+    "Epic #5346 excludes CC BY-NC and anything whose licence is unstated:",
+    "`fetch.py` refuses to download those, it does not merely warn.",
+    "CC BY / CC BY-SA sources must be credited on the app licences screen.",
+    "Sources marked kind=manual need a free account or a bespoke fetch; `fetch.py --list` prints the steps."
+  ],
+  "sources": {
+    "wayup": {
+      "kind": "manual",
+      "licence": "CC BY 4.0",
+      "redistributable": true,
+      "url": "https://zenodo.org/records/15196867",
+      "doi": "10.5281/zenodo.15196867",
+      "format": "wayup",
+      "notes": "The Way Up. 22 clips at 720x1280 of ONE indoor route wall, two routes (22 and 31 holds), reshot by eleven participants. 583 boxes, about 53 distinct physical holds. Boxes are per clip: p1/green's boxes are not valid for p2a/green. A harness bootstrap, not a spray-wall corpus.",
+      "steps": [
+        "The release is one 20.9 GB zip; the small clips are about 530 MB of it. Zenodo serves HTTP range requests, so pull only the entries you need rather than the whole zip.",
+        "curl -sIL https://zenodo.org/api/records/15196867/files/dataset.zip/content   # confirm 200 + content-length",
+        "Read the zip64 central directory over range requests, then inflate the per-entry byte ranges for <participant>/<route>.mp4 (NEVER <route>_large.mp4, which is 4K and 0.6-2.4 GB per clip) plus every <route>_routeAnnotation.json.",
+        "Verify each extracted file against the central directory's uncompressed size; a short range response is silent corruption.",
+        "Run ONE downloader at a time. Two concurrent range readers collapse Zenodo throughput to roughly a twelfth, not a half.",
+        "Then: python data/wayup.py --root <extracted tree> --out .data/coco --holdout-participants p10"
+      ]
+    },
+    "cs152-ssl-labels": {
+      "kind": "manual",
+      "licence": "CC BY 4.0",
+      "redistributable": true,
+      "url": "https://github.com/ianli18/CS152-SSL",
+      "format": "coco",
+      "notes": "3,876 images and 120,528 hold boxes, single class, no masks. LABELS ONLY: curl -sL -o cs152_ann.json https://raw.githubusercontent.com/ianli18/CS152-SSL/HEAD/_annotations.coco.json works with no key, but the matching IMAGES live on Roboflow and need an account. The repo's notebook contains a committed Roboflow API key; do not use it, get your own.",
+      "steps": [
+        "Create a free account at https://app.roboflow.com/login",
+        "Workspace Settings -> API Keys -> copy the Private API Key",
+        "pip install roboflow",
+        "rf = Roboflow(api_key=...); rf.workspace('blackcreed-xpgxh').project('climbing-holds-and-volumes').version(14).download('coco')  # 1,717 images, CC BY 4.0",
+        "Second CC BY 4.0 project used by the same notebook: shane-robertson-9azgn/climbingholddetection v15",
+        "Then: python data/to_coco.py --source roboflow-holds:.data/roboflow-holds:coco"
+      ]
+    },
+    "xiaoxiae-gym-masks": {
+      "kind": "manual",
+      "licence": "CC BY-SA 4.0",
+      "redistributable": true,
+      "url": "https://www.kaggle.com/datasets/tomasslama/indoor-climbing-gym-hold-segmentation",
+      "format": "via-polygons",
+      "notes": "The only per-hold MASK source found: 1,487 hand-drawn polygons over 19 labelled images (plus ~49k model pre-labels, which are not ground truth). Annotations are keyless from the GitHub repo; the 12.08 GB of images need a Kaggle token. CC BY-SA, so attribution is required and the share-alike term applies to the annotations, not to model weights.",
+      "steps": [
+        "kaggle.com -> Settings -> API -> Create New Token -> ~/.kaggle/kaggle.json (chmod 600)",
+        "pip install kaggle",
+        "kaggle datasets download -d tomasslama/indoor-climbing-gym-hold-segmentation"
+      ]
+    },
+    "spraywall-discord": {
+      "kind": "private",
+      "licence": "owner-collected, uploader consent recorded per photo",
+      "redistributable": false,
+      "url": null,
+      "format": "coco",
+      "notes": "Real spray-wall photos uploaded through POST /api/spray-wall-test-data into the private R2 bucket under spray-wall-test-data/. Pull them down with the AWS CLI against the private bucket (see README) into .data/spraywall-discord/ and hand-label. This is the corpus the gate is meant to be decided on; the public sources below only bootstrap the harness."
+    }
+  },
+  "_rejected": {
+    "ZhizhenChen/Bouldering-Beta-Generator": "COCO licences block says \"Unknown\" \u2014 excluded, licence unstated.",
+    "Butros55/boulder_ai, cbrentas/holddetection, PaoloLanaro/IFSCH, RockSolidProject, Smittyxc": "No LICENSE file \u2014 excluded.",
+    "Open Images v7 class /m/02vw0q_ 'Climbing hold'": "Image-level tag only; absent from the boxable and segmentation class lists, so there are no boxes to use.",
+    "Hugging Face climbing datasets": "setrsoft/climbing-holds is 3D hold models, rlogh/climbing-holds-v2 is zarr robot telemetry with no licence, AMead10/climbing-images is unannotated. None usable.",
+    "Anything AGPL (Ultralytics YOLOv8/v11 code or weights)": "Forbidden in this repo by the epic #5346 licence decision. An MIT LICENSE file on a repo does not launder a .pt produced by ultralytics \u2014 the obligation rides with the weights."
+  }
+}
