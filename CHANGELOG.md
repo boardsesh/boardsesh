@@ -16,6 +16,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Offline storage no longer stops working mid-session on Android. Your ticks, saved climbs and downloaded boards keep loading instead of going blank until you force-quit. ([#5411](https://github.com/boardsesh/boardsesh/pull/5411))
+- The climb list's scrollbar now stays visible on Android instead of vanishing behind the filter bar while you scroll. ([#5455](https://github.com/boardsesh/boardsesh/pull/5455))
+- Every Woods climb shows up in the list now, whatever angle it was set at. One graded at a different angle shows that grade with the angle beside it, instead of a blank. ([#5413](https://github.com/boardsesh/boardsesh/pull/5413))
 - Smoother, rounder highlight behind your selected tab on Android. ([#5422](https://github.com/boardsesh/boardsesh/pull/5422))
 - Fixed unreadable switch labels in dark mode when creating a route or board on Android ([#5417](https://github.com/boardsesh/boardsesh/pull/5417))
 - See who's setting on your board while you're offline — the setter filter now works without a signal, same as the rest of climb search. ([#5419](https://github.com/boardsesh/boardsesh/pull/5419))

@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-09-14T12:54:14.109Z",
+  "generatedAt": "2026-09-14T22:42:06.548Z",
   "entries": [
+    {
+      "prNumber": 5411,
+      "category": "fixed",
+      "title": "Offline storage no longer stops working mid-session on Android. Your ticks, saved climbs and downloaded boards keep loading instead of going blank until you force-quit.",
+      "mergedAt": "2026-09-14T22:41:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5411"
+    },
+    {
+      "prNumber": 5455,
+      "category": "fixed",
+      "title": "The climb list's scrollbar now stays visible on Android instead of vanishing behind the filter bar while you scroll.",
+      "mergedAt": "2026-09-14T22:40:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5455"
+    },
+    {
+      "prNumber": 5413,
+      "category": "fixed",
+      "title": "Every Woods climb shows up in the list now, whatever angle it was set at. One graded at a different angle shows that grade with the angle beside it, instead of a blank.",
+      "mergedAt": "2026-09-14T22:39:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5413"
+    },
     {
       "prNumber": 5424,
       "category": "new",
