@@ -9,6 +9,12 @@ import {
   SPRAY_SET,
   spraySizeIdForLayout,
 } from '@boardsesh/board-config';
+// `aliveHolds` is ALWAYS called with an explicit version number here, never in
+// its no-version form. The no-version form means "alive at the wall's
+// `current_version_id`", which is the right answer for a climber and the wrong one
+// for the hold editor: a draft's own additions and removals are invisible to it
+// until `publishSprayWallVersion`. Passing the version number makes each read say
+// which generation it means, so neither reading is accidental.
 import { allocateHoldIds, allocateWallIds, aliveHolds, createSprayWallCatalogueRows } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
@@ -780,7 +786,11 @@ export const sprayWallMutations = {
     const { wall } = await loadEditableWall(ctx, validated.wallUuid);
     const version = await loadDraftVersion(wall.id, validated.versionId);
 
-    const existing = await aliveHolds(db, wall.id);
+    // The wall as THIS DRAFT sees it: holds installed at or before the draft's own
+    // version number and not removed by it. That includes the holds this same
+    // draft added, which is what lets an editing session correct a hold it drew a
+    // moment ago, and excludes the ones it has already taken off.
+    const existing = await aliveHolds(db, wall.id, version.versionNumber);
     const aliveById = new Map(existing.map((hold) => [hold.holdId, hold]));
 
     // Every named id has to be alive on the wall. A hold that came off in an
@@ -906,7 +916,8 @@ export const sprayWallMutations = {
     const { wall } = await loadEditableWall(ctx, validated.wallUuid);
     const version = await loadDraftVersion(wall.id, validated.versionId);
 
-    const existing = await aliveHolds(db, wall.id);
+    // The draft's own view of the wall — see `upsertSprayWallHolds`.
+    const existing = await aliveHolds(db, wall.id, version.versionNumber);
     const aliveById = new Map(existing.map((hold) => [hold.holdId, hold]));
 
     const unknownId = validated.holdIds.find((holdId) => !aliveById.has(holdId));
@@ -1012,16 +1023,15 @@ export const sprayWallMutations = {
         .where(eq(dbSchema.sprayWallVersions.id, found.version.id))
         .returning();
 
-      const [{ alive }] = await tx
-        .select({ alive: count() })
-        .from(dbSchema.sprayWallHolds)
-        .where(
-          and(eq(dbSchema.sprayWallHolds.wallId, found.wall.id), isNull(dbSchema.sprayWallHolds.removedVersionId)),
-        );
+      // Counted AS OF the version being published, not as `removed_version_id IS
+      // NULL`. A wall can carry more than one draft at a time, and a raw
+      // still-alive count would fold another draft's unpublished additions into
+      // the number climbers see.
+      const alive = (await aliveHolds(tx, found.wall.id, row.versionNumber)).length;
 
       await tx
         .update(dbSchema.sprayWalls)
-        .set({ currentVersionId: row.id, holdCount: Number(alive), updatedAt: new Date() })
+        .set({ currentVersionId: row.id, holdCount: alive, updatedAt: new Date() })
         .where(eq(dbSchema.sprayWalls.id, found.wall.id));
 
       // The catalogue's join row carries the image filename every board reader

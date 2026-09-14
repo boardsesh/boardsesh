@@ -280,7 +280,7 @@ export const climbMutations = {
       if (sprayTarget) {
         await assertSprayHoldsAreAlive(
           tx,
-          sprayTarget.wallId,
+          sprayTarget,
           holdEntries.map((entry) => entry.holdId),
         );
       }
@@ -959,7 +959,7 @@ export const climbMutations = {
       if (sprayTarget) {
         await assertSprayHoldsAreAlive(
           tx,
-          sprayTarget.wallId,
+          sprayTarget,
           nextHoldEntries.map((entry) => entry.holdId),
         );
       }

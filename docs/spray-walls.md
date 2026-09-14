@@ -352,6 +352,18 @@ Removal splits two ways, and the split is what keeps history honest:
   never deleted, because a climb set on it has to stay findable and
   `missing_hold_count` has to stay countable.
 
+Every hold read names the generation it means. `aliveHolds(wallId)` with no
+version is "alive at the wall's `current_version_id`" — the climber's view, which
+does not include what an unpublished draft has drawn — so the backend always passes
+a version number instead:
+
+| Read | Version it asks for |
+| --- | --- |
+| `sprayWallRenderData` | the published one, or the one the caller named |
+| `upsertSprayWallHolds` / `removeSprayWallHolds` | the **draft's own** number, so an editing session can correct a hold it drew a moment ago |
+| `publishSprayWallVersion`'s hold count | the version being published, so another draft's additions never land in the number climbers see |
+| `saveClimb` / `updateClimb` | the **published** one (see below) |
+
 ### Authorization
 
 Two rules, and they are deliberately different:
@@ -436,9 +448,14 @@ four rules there are what the gate was standing in for:
    because `updateClimb`'s publish-time seed has no grade source to reconstruct
    from — and `updateClimb` refuses to publish a spray draft whose stats row has
    no grade, so draft → publish is not a way around rule 2.
-3. **Every hold has to be alive on the current version**, checked inside the write
-   transaction so a reset committing mid-write cannot let a climb through on a
-   hold that just came off. `updateClimb` runs the same check on every spray edit.
+3. **Every hold has to be alive on the PUBLISHED version**, checked inside the
+   write transaction so a reset committing mid-write cannot let a climb through on
+   a hold that just came off. `updateClimb` runs the same check on every spray
+   edit. Deliberately the published set rather than "every row whose
+   `removed_version_id` is NULL": that would also count holds an unpublished draft
+   has drawn, so an owner mid-reset could publish a climb on holds nobody has put
+   on the wall yet. A wall with nothing published therefore takes no climbs at
+   all — the honest outcome for a wall the owner has not finished setting up.
 4. **The denormalised columns are authoritative at write time**:
    `compatible_size_ids = [layoutId]`, `required_set_ids = [1]`,
    `missing_hold_count = 0`, and `hold_fingerprint` written here because a wall

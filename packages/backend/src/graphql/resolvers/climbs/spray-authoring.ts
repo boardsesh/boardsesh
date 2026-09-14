@@ -2,6 +2,7 @@ import { GraphQLError } from 'graphql';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { SPRAY_SET, spraySizeIdForLayout } from '@boardsesh/board-config';
+import { aliveHolds } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { viewerCanSeeSprayWall } from '../board/spray-walls';
@@ -55,6 +56,15 @@ export type SprayClimbTarget = {
   /** Always `[1]` — the one synthetic "Holds" set every wall carries. */
   requiredSetIds: number[];
   /**
+   * The PUBLISHED version's number, or null when the wall has nothing published.
+   *
+   * This is the generation a climb is set against, and it is what the alive-holds
+   * check reads. A wall with nothing published has no holds a climber can reach,
+   * so every climb write against it is refused hold by hold — which is the honest
+   * outcome: the owner has not finished setting the wall up.
+   */
+  publishedVersionNumber: number | null;
+  /**
    * Whether a `climb.created` feed event may be published for this climb.
    *
    * PUBLIC walls only (epic decision 2026-09-14: private-wall ticks are the
@@ -74,9 +84,16 @@ export type SprayClimbTarget = {
  */
 export async function requireVisibleSprayWall(layoutId: number, userId: string): Promise<SprayClimbTarget> {
   const [row] = await db
-    .select({ wall: dbSchema.sprayWalls, board: dbSchema.userBoards })
+    .select({
+      wall: dbSchema.sprayWalls,
+      board: dbSchema.userBoards,
+      publishedVersionNumber: dbSchema.sprayWallVersions.versionNumber,
+    })
     .from(dbSchema.sprayWalls)
     .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
+    // LEFT, not INNER: a wall with nothing published still exists, and the caller
+    // has to get "that hold is not on this wall" rather than "no such wall".
+    .leftJoin(dbSchema.sprayWallVersions, eq(dbSchema.sprayWallVersions.id, dbSchema.sprayWalls.currentVersionId))
     .where(
       and(
         eq(dbSchema.sprayWalls.layoutId, layoutId),
@@ -97,6 +114,7 @@ export async function requireVisibleSprayWall(layoutId: number, userId: string):
     layoutId: row.wall.layoutId,
     compatibleSizeIds: [spraySizeIdForLayout(row.wall.layoutId)],
     requiredSetIds: [SPRAY_SET.id],
+    publishedVersionNumber: row.publishedVersionNumber ?? null,
     publishesFeedEvents: row.board.isPublic,
   };
 }
@@ -121,9 +139,15 @@ export function assertSprayGradeOnPublish(isDraft: boolean, userGrade: string | 
  *
  * Reads `spray_wall_holds` rather than `board_placements`: the catalogue rows are
  * immutable identity and outlive a hold's removal on purpose, so a placement id
- * existing says nothing about whether the hold is still screwed to the wall. The
- * alive set is `removed_version_id IS NULL`, which is the same predicate the
- * render path and the integrity recompute use.
+ * existing says nothing about whether the hold is still screwed to the wall.
+ *
+ * The set it reads is the wall as of its **PUBLISHED** version, which is the
+ * generation a climb is set against. Deliberately not "every row whose
+ * `removed_version_id` is NULL": that would also include holds an unpublished
+ * DRAFT has drawn, so an owner mid-way through a reset could publish climbs on
+ * holds nobody has put on the wall yet. A wall with nothing published has no
+ * reachable holds at all and every hold is refused — the honest outcome for a
+ * wall the owner has not finished setting up.
  *
  * Runs inside the caller's transaction so the check and the insert see one
  * snapshot — a reset committing between them would otherwise let a climb through
@@ -131,15 +155,15 @@ export function assertSprayGradeOnPublish(isDraft: boolean, userGrade: string | 
  */
 export async function assertSprayHoldsAreAlive(
   executor: DrizzleExecutor,
-  wallId: number,
+  target: Pick<SprayClimbTarget, 'wallId' | 'publishedVersionNumber'>,
   holdIds: number[],
 ): Promise<void> {
   if (holdIds.length === 0) return;
 
-  const alive = await executor
-    .select({ holdId: dbSchema.sprayWallHolds.holdId })
-    .from(dbSchema.sprayWallHolds)
-    .where(and(eq(dbSchema.sprayWallHolds.wallId, wallId), isNull(dbSchema.sprayWallHolds.removedVersionId)));
+  const alive =
+    target.publishedVersionNumber == null
+      ? []
+      : await aliveHolds(executor, target.wallId, target.publishedVersionNumber);
 
   const aliveIds = new Set(alive.map((row) => row.holdId));
   const missing = [...new Set(holdIds)].filter((holdId) => !aliveIds.has(holdId));

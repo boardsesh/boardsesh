@@ -680,6 +680,62 @@ describe('saveClimb on a spray wall', () => {
     ).resolves.toMatchObject({ uuid: expect.any(String) });
   });
 
+  it('refuses a hold that only an unpublished DRAFT has drawn', async () => {
+    // The published version is the generation a climb is set against. A hold the
+    // owner drew mid-reset is not on the real wall yet, so publishing a climb on
+    // it would make a climb nobody can do — and the check reads the published set
+    // rather than "removed_version_id IS NULL" precisely to catch this.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    const [draftOnlyHold] = (await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: draft.id, holds: [{ cx: 640, cy: 300, r: 26 }] } },
+      ctxFor(OWNER),
+    )) as Array<{ id: number }>;
+
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'spray',
+            layoutId: wall.layoutId,
+            name: 'Uses an unpublished hold',
+            isDraft: false,
+            frames: framesFor([holdIds[0], draftOnlyHold.id]),
+            angle: 40,
+            userGrade: '6b/V4',
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(new RegExp(`Hold ${draftOnlyHold.id} is not on this wall`, 'i'));
+
+    // And the climber-facing render payload does not show it either: version 1 is
+    // still the published one.
+    const renderData = (await sprayWallQueries.sprayWallRenderData({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
+      versionNumber: number;
+      holds: Array<{ id: number }>;
+    };
+    expect(renderData.versionNumber).toBe(1);
+    expect(renderData.holds.map((hold) => hold.id)).not.toContain(draftOnlyHold.id);
+
+    // The editor, reading the draft explicitly, does see it — otherwise the
+    // hold editor could not correct a hold it had just drawn.
+    const draftRender = (await sprayWallQueries.sprayWallRenderData(
+      {},
+      { uuid: wall.uuid, version: 2 },
+      ctxFor(OWNER),
+    )) as { holds: Array<{ id: number }> };
+    expect(draftRender.holds.map((hold) => hold.id)).toContain(draftOnlyHold.id);
+  });
+
   it('refuses a climb on a wall the caller cannot see', async () => {
     const { wall, holdIds } = await createPublishedWall(OWNER);
 
@@ -702,6 +758,39 @@ describe('saveClimb on a spray wall', () => {
         ctxFor(STRANGER),
       ),
     ).rejects.toThrow(/could not be found/i);
+  });
+
+  it('takes no climbs at all on a wall with nothing published', async () => {
+    const wall = await createWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    const [hold] = (await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: draft.id, holds: [{ cx: 50, cy: 50, r: 20 }] } },
+      ctxFor(OWNER),
+    )) as Array<{ id: number }>;
+
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'spray',
+            layoutId: wall.layoutId,
+            name: 'Too early',
+            isDraft: false,
+            frames: framesFor([hold.id]),
+            angle: 40,
+            userGrade: '4a/V0',
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/not on this wall/i);
   });
 
   it('announces to the feed for a public wall and stays silent for a private one', async () => {
