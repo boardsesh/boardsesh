@@ -509,7 +509,7 @@ jobs:
     # job killed mid-backoff dies by timeout instead of reporting `s3-slowdown`.
     # Derived and enforced in mobile-ota-publish-workflow.test.ts from the ladder
     # in scripts/lib/mobile-publish-retry.ts.
-    timeout-minutes: 150
+    timeout-minutes: 165
     concurrency:
       group: mobile-ota-preview-mutation-${{ needs.gate.outputs.pr_number }}
       cancel-in-progress: false

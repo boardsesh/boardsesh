@@ -3,7 +3,11 @@
 import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from './lib/eoas';
-import type { OtaPublishPlatform, PlatformPublishOutcome } from './lib/mobile-publish-retry';
+import {
+  publishSelfHostedPlatformWithRetry,
+  type OtaPublishPlatform,
+  type PlatformPublishOutcome,
+} from './lib/mobile-publish-retry';
 import {
   buildEasUpdateArgs,
   buildSelfHostedEoasArgs,
@@ -335,6 +339,59 @@ describe('preview branch surfability check', () => {
     });
 
     expect(surfable).toBe(true);
+  });
+
+  it('keeps a definitive "not listed" answer when a later probe cannot reach the server', async () => {
+    // A probe that FINDS the branch returns immediately, so any real answer during
+    // the loop is an answer of "absent". A trailing blip must not erase it and
+    // downgrade a genuine finding to "cannot check".
+    const answered = serverListing('pr-5422');
+    const blip = () => {
+      throw new Error('connect ETIMEDOUT');
+    };
+    const fetchImpl = vi.fn().mockImplementationOnce(answered).mockImplementation(blip);
+
+    const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { ...NO_WAIT, ...ON_IOS, fetchImpl });
+
+    expect(result?.surfable).toBe(false);
+    // …and the message quotes the answer the server gave, not the blip.
+    expect(result?.detail).toContain('1 branch');
+  });
+
+  it('replays #5417 end to end: a deduplicated publish whose branch has nothing for this platform', async () => {
+    // The integration seam, driven through the real retry wrapper rather than a
+    // hand-made outcome: eoas exits 0 printing the skip notice, the wrapper reports
+    // `no-change`, and the probe finds a healthy list without our branch in it.
+    const outcome = await publishSelfHostedPlatformWithRetry(
+      {
+        platform: 'android',
+        command: 'vp',
+        args: ['dlx', 'eoas@3.1.2', 'publish'],
+        cwd: '/repo/packages/mobile',
+        env: {} as NodeJS.ProcessEnv,
+      },
+      {
+        runner: async (request) => {
+          request.onStdout('●  ⚠️ There is no change in the update for android, ignored...\n');
+          request.onStdout('▲  ⚠️ No changes found in the update, nothing to deploy\n');
+          return { exitCode: 0 };
+        },
+        stdout: { write: () => undefined },
+        stderr: { write: () => undefined },
+      },
+    );
+
+    expect(outcome).toMatchObject({ success: true, noChange: true });
+
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', [outcome], SERVER, {
+      ...NO_WAIT,
+      runtimeVersion: '154bc941c504727afc914057aed2edff2c096576',
+      fetchImpl: serverListing('pr-5422', 'pr-5424', 'pr-5419'),
+    });
+
+    // Under the old code this shipped as "✅ published" and vanished from the
+    // Android picker with nothing said anywhere.
+    expect(surfable).toBe(false);
   });
 
   it('lets the publish stand when the check itself throws', async () => {
