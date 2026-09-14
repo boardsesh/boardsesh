@@ -340,10 +340,11 @@ describe('finalize gateway timeouts', () => {
     const confirmPublished = vi.fn(async () => {
       throw new Error('DNS went away');
     });
+    const sleeper = vi.fn(async () => undefined);
 
     const outcome = await publishSelfHostedPlatformWithRetry(invocation(), {
       runner: runnerEmitting(FINALIZE_524, 1),
-      sleeper: async () => undefined,
+      sleeper,
       confirmPublished,
       stdout: SILENT,
       stderr: SILENT,
@@ -351,6 +352,11 @@ describe('finalize gateway timeouts', () => {
 
     expect(outcome.success).toBe(false);
     expect(outcome.failureKind).toBe('http-5xx');
+    // A broken probe must fall through to the ORDINARY ladder, not quietly cut it
+    // short — the 524 is still a retryable failure whatever the probe could not say.
+    expect(outcome.attempts).toBe(SELF_HOSTED_PUBLISH_MAX_ATTEMPTS);
+    expect(sleeper).toHaveBeenCalledTimes(SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS.length);
+    expect(confirmPublished).toHaveBeenCalledTimes(SELF_HOSTED_PUBLISH_MAX_ATTEMPTS);
   });
 
   it('leaves publishes without a confirmation hook exactly as they were', async () => {

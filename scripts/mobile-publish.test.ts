@@ -16,7 +16,9 @@ import {
   requestedSelfHostedPlatforms,
   isPreviewBranchSurfable,
   previewBranchPassesSurfabilityCheck,
+  resolvePublishedRuntimeVersion,
   resolveUpdateMessage,
+  runsInGithubActions,
   titleFromCommitMessage,
   verifyPreviewBranchIsSurfable,
   selfHostedPublishModeLabel,
@@ -234,6 +236,50 @@ describe('mobile publish argument routing', () => {
   });
 });
 
+describe('resolving the runtimeVersion a publish targeted', () => {
+  // The critical input to the whole probe: get this wrong and the check asks the
+  // server about a branch nobody published under, which is precisely how run
+  // 34796068541 failed a healthy publish.
+  const env = {} as NodeJS.ProcessEnv;
+
+  it('reads the fingerprint out of the CLI output', () => {
+    const runner = vi.fn(() => 'Runtime version: b71bdb600c5a3e954d75c9ca673f056c62247ea9\n') as never;
+
+    expect(resolvePublishedRuntimeVersion('ios', env, runner)).toBe('b71bdb600c5a3e954d75c9ca673f056c62247ea9');
+  });
+
+  it('finds it among surrounding chatter', () => {
+    // The CLI is free to print progress lines first; the hash is what matters.
+    const runner = vi.fn(() => '› Resolving…\nfbc79fa47dc82e393350702a3a3b0d7fe869b164\n› done\n') as never;
+
+    expect(resolvePublishedRuntimeVersion('android', env, runner)).toBe('fbc79fa47dc82e393350702a3a3b0d7fe869b164');
+  });
+
+  it('returns null rather than a partial match when no fingerprint is printed', () => {
+    // A 39-character string is not a fingerprint, and half a hash would probe a
+    // runtimeVersion nothing was published under — worse than not probing.
+    const runner = vi.fn(() => 'error: could not resolve\ndeadbeef\n') as never;
+
+    expect(resolvePublishedRuntimeVersion('ios', env, runner)).toBeNull();
+  });
+
+  it('returns null when the CLI fails outright', () => {
+    const runner = vi.fn(() => {
+      throw new Error('vp exec failed');
+    }) as never;
+
+    expect(resolvePublishedRuntimeVersion('ios', env, runner)).toBeNull();
+  });
+
+  it('gates the check on GitHub Actions specifically, not a generic CI flag', () => {
+    // `CI=1` in a local shell is not "resolved on the runner the binaries are built
+    // on", which is the property the probe actually depends on.
+    expect(runsInGithubActions({ GITHUB_ACTIONS: 'true' })).toBe(true);
+    expect(runsInGithubActions({ CI: '1' })).toBe(false);
+    expect(runsInGithubActions({})).toBe(false);
+  });
+});
+
 describe('preview branch surfability check', () => {
   const SERVER = 'https://updates.boardsesh.com/manifest';
   const IOS_HASH = 'b71bdb600c5a3e954d75c9ca673f056c62247ea9';
@@ -284,7 +330,7 @@ describe('preview branch surfability check', () => {
       delaysMs: [1000],
     });
 
-    expect(result).toMatchObject({ surfable: true, attempts: 1 });
+    expect(result).toMatchObject({ kind: 'surfable', attempts: 1 });
     expect(sleeper).not.toHaveBeenCalled();
   });
 
@@ -297,8 +343,7 @@ describe('preview branch surfability check', () => {
 
     // Without this the check would red-X a perfectly good publish, which is worse
     // than the bug it exists to catch.
-    expect(result?.surfable).toBe(true);
-    expect(result?.attempts).toBe(3);
+    expect(result).toMatchObject({ kind: 'surfable', attempts: 3 });
   });
 
   it('reports "cannot check" rather than a verdict when the server never answers', async () => {
@@ -311,14 +356,14 @@ describe('preview branch surfability check', () => {
     });
 
     // An unreachable server is a fact about the server, not about this publish.
-    expect(result).toBeNull();
+    expect(result?.kind).toBe('cannot-check');
   });
 
   it('fails a deduplicated publish whose branch the server does not list', async () => {
     // Exactly #5417: nothing was created for this platform AND the branch carries
     // nothing for it, so there is genuinely no preview to load. The Android list is
     // otherwise healthy and full of other previews.
-    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', [deduplicated('android')], SERVER, {
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', deduplicated('android'), SERVER, {
       ...NO_WAIT,
       runtimeVersion: '154bc941c504727afc914057aed2edff2c096576',
       fetchImpl: serverListing('pr-5422', 'pr-5424', 'pr-5419'),
@@ -332,7 +377,7 @@ describe('preview branch surfability check', () => {
     // disagrees is far more likely measuring the wrong runtimeVersion than finding a
     // real hole. Failing on the probe alone is how run 34796068541 red-X'd a healthy
     // publish. Two independent signals are required, and this is only one.
-    const surfable = await previewBranchPassesSurfabilityCheck('pr-5427', [published('android')], SERVER, {
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5427', published('android'), SERVER, {
       ...NO_WAIT,
       runtimeVersion: 'fbc79fa47dc82e393350702a3a3b0d7fe869b164',
       fetchImpl: serverListing(),
@@ -353,7 +398,7 @@ describe('preview branch surfability check', () => {
 
     const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { ...NO_WAIT, ...ON_IOS, fetchImpl });
 
-    expect(result?.surfable).toBe(false);
+    expect(result?.kind).toBe('not-listed');
     // …and the message quotes the answer the server gave, not the blip.
     expect(result?.detail).toContain('1 branch');
   });
@@ -383,7 +428,7 @@ describe('preview branch surfability check', () => {
 
     expect(outcome).toMatchObject({ success: true, noChange: true });
 
-    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', [outcome], SERVER, {
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', outcome, SERVER, {
       ...NO_WAIT,
       runtimeVersion: '154bc941c504727afc914057aed2edff2c096576',
       fetchImpl: serverListing('pr-5422', 'pr-5424', 'pr-5419'),
@@ -398,7 +443,7 @@ describe('preview branch surfability check', () => {
     // `probeBranchList` swallows transport errors, so the only way out is a throw
     // from the retry machinery. It must not escape as an unhandled rejection and
     // lose the publish's own result.
-    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', [deduplicated('ios')], SERVER, {
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', deduplicated('ios'), SERVER, {
       ...ON_IOS,
       delaysMs: [1],
       sleeper: () => {
@@ -411,7 +456,7 @@ describe('preview branch surfability check', () => {
   });
 
   it('passes a platform whose runtimeVersion could not be resolved rather than failing it', async () => {
-    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', [deduplicated('android')], SERVER, {
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', deduplicated('android'), SERVER, {
       ...NO_WAIT,
       runtimeVersion: null,
       fetchImpl: serverListing('pr-5417'),
@@ -435,7 +480,7 @@ describe('preview branch surfability check', () => {
     const platforms: OtaPublishPlatform[] = ['ios', 'android'];
     const results = await Promise.all(
       platforms.map((platform) =>
-        previewBranchPassesSurfabilityCheck('pr-5417', [deduplicated(platform)], SERVER, {
+        previewBranchPassesSurfabilityCheck('pr-5417', deduplicated(platform), SERVER, {
           ...NO_WAIT,
           runtimeVersion: platform === 'ios' ? IOS_HASH : null,
           fetchImpl: fetchImpl as unknown as typeof fetch,
