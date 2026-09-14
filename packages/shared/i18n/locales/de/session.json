@@ -451,9 +451,7 @@
       "moveToWall": {
         "title": "Der nächste ist an {{board}}",
         "body": "Geh rüber, wir wechseln für dich.",
-        "cta": "Zu {{board}} wechseln",
-        "skip": "Überspringen",
-        "skipAria": "Diesen Boulder überspringen und an {{board}} bleiben"
+        "cta": "Zu {{board}} wechseln"
       }
     },
     "toast": {

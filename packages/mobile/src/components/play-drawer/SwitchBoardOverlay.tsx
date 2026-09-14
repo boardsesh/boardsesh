@@ -5,6 +5,7 @@ import { ButtonSurfaceProvider } from '../Button.surface';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { GlassSurface } from '../GlassSurface';
+import { ActionButton } from '../drawer-action-bar/DrawerActionBar';
 import { withAlpha } from '../../theme/colors';
 import { borderRadius, overlays, spacing } from '../../theme/tokens';
 
@@ -23,8 +24,10 @@ type SwitchBoardOverlayProps = {
    * scrim, no lock, and the controls underneath stay live.
    */
   variant?: 'lock' | 'move';
-  /** `move` only: advance past this climb without switching boards. */
-  onSkip?: () => void;
+  /** `move` only: step back through the queue without switching boards. */
+  onPrevious?: () => void;
+  /** `move` only: step forward past this climb without switching boards. */
+  onNext?: () => void;
 };
 
 /**
@@ -37,10 +40,23 @@ type SwitchBoardOverlayProps = {
  * Uses climb-scoped `session.boardMismatch.*` copy (the playlist-detail screen
  * has its own banner with playlist-worded copy).
  */
-export function SwitchBoardOverlay({ boardLabel, onSwitchBoard, variant = 'lock', onSkip }: SwitchBoardOverlayProps) {
+export function SwitchBoardOverlay({
+  boardLabel,
+  onSwitchBoard,
+  variant = 'lock',
+  onPrevious,
+  onNext,
+}: SwitchBoardOverlayProps) {
   const { t } = useTranslation('session');
   if (variant === 'move') {
-    return <MoveToWallCallout boardLabel={boardLabel} onSwitchBoard={onSwitchBoard} onSkip={onSkip} />;
+    return (
+      <MoveToWallCallout
+        boardLabel={boardLabel}
+        onSwitchBoard={onSwitchBoard}
+        onPrevious={onPrevious}
+        onNext={onNext}
+      />
+    );
   }
   return (
     <View style={styles.scrim} accessibilityViewIsModal>
@@ -83,8 +99,9 @@ export function SwitchBoardOverlay({ boardLabel, onSwitchBoard, variant = 'lock'
 function MoveToWallCallout({
   boardLabel,
   onSwitchBoard,
-  onSkip,
-}: Pick<SwitchBoardOverlayProps, 'boardLabel' | 'onSwitchBoard' | 'onSkip'>) {
+  onPrevious,
+  onNext,
+}: Pick<SwitchBoardOverlayProps, 'boardLabel' | 'onSwitchBoard' | 'onPrevious' | 'onNext'>) {
   const { t } = useTranslation('session');
   // Static tokens, like the scrim above, rather than the theme provider: the
   // callout sits over board art and needs the same on-scrim treatment either
@@ -99,7 +116,19 @@ function MoveToWallCallout({
           {t('mobile.boardPresence.moveToWall.body')}
         </Text>
       </View>
+      {/* Stepping past this climb uses the drawer's own transport glyphs, in its
+          own button style, so the gesture reads the same here as it does in the
+          control row underneath. Walking to the other board is the offer; moving
+          along the queue is still just moving along the queue. */}
       <View style={styles.calloutActions}>
+        {onPrevious ? (
+          <ActionButton
+            size="sm"
+            iconName="skip.previous"
+            onPress={onPrevious}
+            accessibilityLabel={t('playView.actionBar.previousAria')}
+          />
+        ) : null}
         <Button
           title={t('mobile.boardPresence.moveToWall.cta', { board: boardLabel })}
           icon="transfer"
@@ -107,13 +136,12 @@ function MoveToWallCallout({
           size="small"
           onPress={onSwitchBoard}
         />
-        {onSkip ? (
-          <Button
-            title={t('mobile.boardPresence.moveToWall.skip')}
-            accessibilityLabel={t('mobile.boardPresence.moveToWall.skipAria', { board: boardLabel })}
-            variant="text"
-            size="small"
-            onPress={onSkip}
+        {onNext ? (
+          <ActionButton
+            size="sm"
+            iconName="skip.next"
+            onPress={onNext}
+            accessibilityLabel={t('playView.actionBar.nextAria')}
           />
         ) : null}
       </View>

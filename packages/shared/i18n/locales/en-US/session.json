@@ -451,9 +451,7 @@
       "moveToWall": {
         "title": "Next one's on {{board}}",
         "body": "Walk over and we'll switch you.",
-        "cta": "Move to {{board}}",
-        "skip": "Skip it",
-        "skipAria": "Skip this climb and stay on {{board}}"
+        "cta": "Move to {{board}}"
       }
     },
     "toast": {

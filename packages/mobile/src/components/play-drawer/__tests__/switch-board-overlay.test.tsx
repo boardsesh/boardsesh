@@ -45,6 +45,17 @@ vi.mock('../../Button', () => ({
 // The glass surface picks its rendering path from Platform + capability hooks,
 // none of which this harness mounts. Its own behaviour is covered by
 // GlassSurface's tests; here it is just the box the callout draws in.
+vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
+  ActionButton: ({
+    iconName,
+    onPress,
+    accessibilityLabel,
+  }: {
+    iconName?: string;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => createElement('button', { onClick: onPress, 'data-icon': iconName, 'aria-label': accessibilityLabel }),
+}));
 vi.mock('../../GlassSurface', () => ({
   GlassSurface: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-glass': 'true' }, children),
 }));
@@ -115,26 +126,28 @@ describe('SwitchBoardOverlay, move variant', () => {
     expect(container.querySelector('[data-icon="lock"]')).toBeNull();
   });
 
-  it('offers going there and skipping it as separate actions', () => {
+  // Moving along the queue is still just moving along the queue, so it uses the
+  // drawer's own transport glyphs rather than inventing a "skip" of its own.
+  it('flanks the move button with the drawer transport controls', () => {
     const onSwitchBoard = vi.fn();
-    const onSkip = vi.fn();
-    const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard, onSkip }));
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    const { container } = render(
+      createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard, onPrevious, onNext }),
+    );
     const buttons = [...container.querySelectorAll('button')];
 
-    const move = buttons.find(
-      (button) => button.textContent === 'mobile.boardPresence.moveToWall.cta:Tension 2',
-    ) as HTMLButtonElement;
-    const skip = buttons.find(
-      (button) => button.textContent === 'mobile.boardPresence.moveToWall.skip',
-    ) as HTMLButtonElement;
-    expect(move).toBeTruthy();
-    expect(skip).toBeTruthy();
+    // Previous to the left of the move button, next to its right.
+    expect(buttons.map((button) => button.getAttribute('data-icon'))).toEqual(['skip.previous', null, 'skip.next']);
+    expect(buttons[1].textContent).toBe('mobile.boardPresence.moveToWall.cta:Tension 2');
 
-    move.click();
-    skip.click();
+    buttons[0].click();
+    buttons[1].click();
+    buttons[2].click();
 
+    expect(onPrevious).toHaveBeenCalledTimes(1);
     expect(onSwitchBoard).toHaveBeenCalledTimes(1);
-    expect(onSkip).toHaveBeenCalledTimes(1);
+    expect(onNext).toHaveBeenCalledTimes(1);
   });
 
   // Nothing to skip to when the caller has no queue to advance — the invitation

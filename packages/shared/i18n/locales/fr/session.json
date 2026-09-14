@@ -451,9 +451,7 @@
       "moveToWall": {
         "title": "Le prochain est sur {{board}}",
         "body": "Va là-bas, on s'occupe du reste.",
-        "cta": "Passer à {{board}}",
-        "skip": "Passer",
-        "skipAria": "Passer ce bloc et rester sur {{board}}"
+        "cta": "Passer à {{board}}"
       }
     },
     "toast": {

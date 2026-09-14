@@ -1960,7 +1960,8 @@ export function PlayDrawer({
                             boardLabel={switchBoardLabel ?? ''}
                             onSwitchBoard={handleSwitchBoard}
                             variant={climbBoardReachable ? 'move' : 'lock'}
-                            onSkip={climbBoardReachable ? nextClimb : undefined}
+                            onPrevious={climbBoardReachable ? handlePrev : undefined}
+                            onNext={climbBoardReachable ? handleNext : undefined}
                           />
                         ) : null}
                       </View>
