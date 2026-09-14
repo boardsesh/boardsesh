@@ -1617,6 +1617,14 @@ function ClimbListInner() {
   const offlineCatalogMissing = offlineNoCatalog && offlineCatalog === 'missing';
   const offlineCatalogQueued = offlineNoCatalog && offlineCatalog === 'queued';
 
+  // The list-clip wrapper's style (see the render below): full-bleed on Liquid
+  // Glass, clipped below the measured chrome on Material. Memoized so Android
+  // doesn't allocate a new style array on every render of this screen.
+  const listClipStyle = useMemo(
+    () => (filterInTopChrome ? [styles.listClip, { top: searchBarHeight }] : styles.listClip),
+    [filterInTopChrome, searchBarHeight],
+  );
+
   return (
     <View testID="climbs-screen" style={[styles.container, { backgroundColor: systemColors.background }]}>
       <Stack.Screen options={stackOptions} />
@@ -1627,10 +1635,12 @@ function ClimbListInner() {
         // the opaque Material app bar (which sits above it via zIndex), making it
         // look like the scrollbar vanishes into the filter chrome. Fixed on
         // Material by actually clipping the list's frame below the measured chrome
-        // height instead of relying on the (non-functional) inset — the Liquid
-        // Glass path keeps the full-bleed frame + inset since its blurred chrome
-        // wants the list to visibly scroll underneath it and iOS honours the inset.
-        style={filterInTopChrome ? [styles.listClip, { top: searchBarHeight }] : styles.listClip}
+        // height instead of relying on the (non-functional) inset. On Liquid Glass
+        // this wrapper is still a full-bleed absolute fill (top: 0) — the same area
+        // a flex:1 child of `styles.container` would cover — so the frame + inset
+        // still let the list visibly scroll underneath the blurred header, which
+        // iOS honours.
+        style={listClipStyle}
       >
         <FlashList
           ref={climbListRef}
