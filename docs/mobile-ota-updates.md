@@ -1186,7 +1186,11 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   resolved (`fingerprint_ios_full` / `fingerprint_android_full`); with neither set — a local publish —
   it prints nothing and skips, since a locally resolved fingerprint is not the one any binary runs.
   Shared with `vp run mobile:ota-surf-doctor` through `scripts/lib/ota-branch-probe.ts`, so the
-  diagnostic and the publisher can never disagree about what "surfable" means.
+  diagnostic and the publisher can never disagree about what "surfable" means. The probe re-asks on a
+  miss (~31 s across five waits) before failing: the branch list lags a finished publish by up to the
+  15 s the sticky comment already warns testers about, and a red X on a working preview would teach
+  people to ignore the check. A branch that is listed is listed on the first probe, so a healthy
+  publish never waits.
 - **A finalize 524 is confirmed, not re-exported.** `markUpdateAsUploaded` regularly outlives
   Cloudflare's 100 s origin cap on `updates.boardsesh.com`, and the proxy answers 524 after the assets
   are already uploaded — the update has usually landed. The retry wrapper recognises that one endpoint
