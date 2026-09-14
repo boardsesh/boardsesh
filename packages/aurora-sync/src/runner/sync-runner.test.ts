@@ -173,7 +173,7 @@ describe('SyncRunner login failure handling', () => {
     expect(updateCredentialStatus).toHaveBeenCalledWith(
       'user-123',
       boardType,
-      'error',
+      'expired',
       expect.stringMatching(/is not an Aurora board/),
     );
   });
@@ -184,15 +184,23 @@ describe('SyncRunner login failure handling', () => {
     // never succeed — the board type is wrong, not the password.
     const runner = new SyncRunner();
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
-    vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+    const updateStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
 
     const error = await runnerPrivates
       .syncSingleCredential(createCredential({ boardType: 'spray' }))
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(CredentialSyncError);
-    expect((error as CredentialSyncError).syncStatus).toBe('error');
+    // 'expired' is the only status syncableCredentialsFilter leaves out of the
+    // pool; 'error' would be re-claimed every backoff interval, forever.
+    expect((error as CredentialSyncError).syncStatus).toBe('expired');
     expect((error as CredentialSyncError).quarantined).toBe(true);
+    expect(updateStatus).toHaveBeenCalledWith(
+      expect.any(String),
+      'spray',
+      'expired',
+      expect.stringContaining('not an Aurora board'),
+    );
   });
 
   it('still signs in for a real Aurora board', async () => {

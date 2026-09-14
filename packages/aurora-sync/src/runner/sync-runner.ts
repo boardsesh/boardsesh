@@ -508,12 +508,17 @@ export class SyncRunner {
     // A CredentialSyncError rather than a bare throw: both callers catch it,
     // record the failure and move to the next credential, so one unsyncable row
     // is skipped and logged instead of ending the run. Quarantined because it can
-    // never succeed — retrying it forever only re-attempts the same request.
+    // never succeed — retrying it forever only re-attempts the same request. That
+    // means `expired`, the one status `syncableCredentialsFilter` leaves out of the
+    // pool; `error` would be re-claimed every backoff interval indefinitely.
     if (!isAuroraBoardName(cred.boardType)) {
       const errorMessage = `"${cred.boardType}" is not an Aurora board; it has no account to sync.`;
-      this.log(`[SyncRunner] ✗ Skipping user ${cred.userId}: ${errorMessage}`);
-      await this.updateCredentialStatus(cred.userId, cred.boardType, 'error', errorMessage);
-      throw new CredentialSyncError(errorMessage, { syncStatus: 'error', quarantined: true });
+      this.log(
+        `[SyncRunner] ✗ CREDENTIAL QUARANTINED user=${cred.userId} board=${cred.boardType} ` +
+          `reason=not_aurora_board — excluded from sync until the row is removed`,
+      );
+      await this.updateCredentialStatus(cred.userId, cred.boardType, 'expired', errorMessage);
+      throw new CredentialSyncError(errorMessage, { syncStatus: 'expired', quarantined: true });
     }
     const boardType: AuroraBoardName = cred.boardType;
 
