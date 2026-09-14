@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Smoother, rounder highlight behind your selected tab on Android. ([#5422](https://github.com/boardsesh/boardsesh/pull/5422))
+- Fixed unreadable switch labels in dark mode when creating a route or board on Android ([#5417](https://github.com/boardsesh/boardsesh/pull/5417))
 - See who's setting on your board while you're offline — the setter filter now works without a signal, same as the rest of climb search. ([#5419](https://github.com/boardsesh/boardsesh/pull/5419))
 - Pick setters and jump straight to their climbs with one tap ([#5421](https://github.com/boardsesh/boardsesh/pull/5421))
   Changing filters keeps your climb list on screen while new results load
