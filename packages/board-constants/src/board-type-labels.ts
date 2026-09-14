@@ -28,9 +28,27 @@ export const BOARD_TYPE_LABELS: Record<string, string> = {
  * picker. Derivations that enumerate board types read this; lookups that map one
  * type to its name read `boardTypeLabel`.
  */
-export const CATALOGUE_BOARD_TYPES: readonly string[] = Object.keys(BOARD_TYPE_LABELS).filter(
-  (boardType) => boardType !== 'spray',
+const NON_CATALOGUE_BOARD_TYPES: ReadonlySet<string> = new Set(['spray']);
+
+export const CATALOGUE_BOARD_TYPES: readonly string[] = Object.keys(BOARD_TYPE_LABELS).filter((boardType) =>
+  isCatalogueBoardType(boardType),
 );
+
+/**
+ * Whether a board type is a catalogue board — the predicate form of
+ * {@link CATALOGUE_BOARD_TYPES}, for filtering values that did not come from
+ * this module.
+ *
+ * Fails OPEN: a board type this file has never heard of answers `true`. The two
+ * questions are genuinely different. `CATALOGUE_BOARD_TYPES` is an ALLOW LIST
+ * for a value arriving from a URL (`?boardType=`), where an unknown value is
+ * noise and must be dropped. This is a DENY check on a value that came from our
+ * own database, where an unknown value is a board someone added without touching
+ * this file — and silently hiding its gym chips would be a bug, not a guard.
+ */
+export function isCatalogueBoardType(boardType: string): boolean {
+  return !NON_CATALOGUE_BOARD_TYPES.has(boardType);
+}
 
 /** Display label for a board type, falling back to the raw type string. */
 export function boardTypeLabel(boardType: string): string {

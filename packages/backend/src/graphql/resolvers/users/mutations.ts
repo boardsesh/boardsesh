@@ -18,7 +18,7 @@ import { getPostgresErrorCode } from '../../../utils/postgres-errors';
 import {
   UpdateProfileInputSchema,
   SaveAuroraCredentialInputSchema,
-  BoardNameSchema,
+  AuroraBoardNameSchema,
   DeleteAccountInputSchema,
 } from '../../../validation/schemas';
 import {
@@ -193,7 +193,10 @@ export const userMutations = {
     ctx: ConnectionContext,
   ): Promise<boolean> => {
     requireAuthenticated(ctx);
-    validateInput(BoardNameSchema, boardType, 'boardType');
+    // Aurora-only, matching saveAuroraCredential: a non-Aurora board has no
+    // Aurora credential row to delete, and the cast below would otherwise claim
+    // a type the value does not have.
+    validateInput(AuroraBoardNameSchema, boardType, 'boardType');
 
     const result = await deleteAuroraCredential(ctx.userId!, boardType as AuroraBoardName);
 
