@@ -192,6 +192,15 @@ def mask_iou(a: np.ndarray, b: np.ndarray) -> float:
 # --------------------------------------------------------------------------- #
 
 
+def _portable_model_path(model_path: Path) -> str:
+    """Record the model relative to ml/holds when it lives there, so a committed
+    fixture never carries one machine's checkout layout."""
+    try:
+        return str(model_path.resolve().relative_to(HOLDS_DIR))
+    except ValueError:
+        return model_path.name
+
+
 def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: Path, threads: int, limit: int | None):
     annotations_path = dataset_dir / split / "_annotations.coco.json"
     if not annotations_path.exists():
@@ -289,7 +298,7 @@ def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: 
 
     results = {
         "config": config.name,
-        "model": str(model_path),
+        "model": _portable_model_path(model_path),
         "model_bytes": model_path.stat().st_size,
         "dataset": str(dataset_dir),
         "split": split,

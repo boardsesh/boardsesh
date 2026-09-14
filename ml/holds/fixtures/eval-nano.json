@@ -1,6 +1,6 @@
 {
   "config": "nano-tiled-1024",
-  "model": "/home/developer/projects/boardsesh/.bare/.claude/worktrees/sw01-spike/ml/holds/.data/artifacts/nano-tiled-1024/model.onnx",
+  "model": ".data/artifacts/nano-tiled-1024/model.onnx",
   "model_bytes": 107642365,
   "dataset": "fixtures",
   "split": "images",

@@ -4,7 +4,7 @@
     "(epic #5346 decision, 2026-09-14): RF-DETR, YOLOX, D-FINE, RT-DETR.",
     "Ultralytics code and weights are AGPL-3.0 and are forbidden in this repo.",
     "RF-DETR input resolutions must be divisible by patch_size * num_windows (32 for the nano/small/medium detectors, 12 for seg-nano).",
-    "num_classes=1 rebuilds the detection head for the single `hold` class instead of carrying RF-DETR's 90-class COCO head into the export, which is about half the file size."
+    "num_classes=1 rebuilds the detection head for the single `hold` class instead of carrying RF-DETR's 90-class COCO head into the export, which buys no file size (class-dimension tensors are negligible) but drops 89 dead logits per inference."
   ],
   "configs": {
     "nano-tiled-1024": {
