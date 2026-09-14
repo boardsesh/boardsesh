@@ -73,6 +73,14 @@ export function resolveCrossAngleStats(
  */
 const browsedAngleRowExists = sql`${boardClimbStats.climbUuid} IS NOT NULL`;
 
+// The offline mirror of this probe lives in
+// packages/mobile/src/db/queries/search-climbs-local.ts (`effectiveStatsSql`) and
+// must agree, or a downloaded board ranks and grades its list differently from the
+// network. It is hand-written SQL there rather than shared code because that path
+// speaks SQLite, so a change to the predicate above has to be made twice on
+// purpose — the same contract `hiddenClimbCondition` carries in
+// ./create-climb-filters.
+
 /**
  * The stats columns search reads. Keyed by drizzle property name rather than by
  * `PgColumn`, because the aliased table's twin has to be looked up by the same key
