@@ -5,9 +5,11 @@
 //
 // Two layers guard it and both are deliberate: the SQL drops spray before the
 // expensive per-config LATERAL climb count is built, and `isPopularConfigRow`
-// drops it again on the way out. This file pins the second (the first is a SQL
-// predicate exercised against the real DB by the resolver's own suite), plus the
-// two display names spray needed so a wall is never called "spray Board".
+// drops it again on the way out. This file pins the second; the SQL predicate is
+// NOT covered by any test (the only other popular-configs suite mocks `db.execute`)
+// and is a cost optimisation on top of `isPopularConfigRow`, not the privacy guard.
+// Also pinned: the two display names spray needed so a wall is never called
+// "spray Board".
 
 import { describe, it, expect } from 'vite-plus/test';
 import { boardTypeLabel, CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
