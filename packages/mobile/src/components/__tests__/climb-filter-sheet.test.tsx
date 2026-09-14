@@ -450,6 +450,26 @@ describe('ClimbFilterSheet Apply waits for the native close', () => {
     expect(onApply.mock.invocationCallOrder[0]).toBeLessThan(onDismiss.mock.invocationCallOrder[0]);
   });
 
+  it('commits through the latest onApply and onDismiss when the parent re-renders during the slide-down', () => {
+    const staleOnApply = vi.fn();
+    const staleOnDismiss = vi.fn();
+    const rendered = renderFilterSheet({ onApply: staleOnApply, onDismiss: staleOnDismiss });
+
+    fireEvent.click(rendered.getByText('mobile.filter.showCount12'));
+    // The parent's onApply changes identity on every search keystroke.
+    const latestOnApply = vi.fn();
+    const latestOnDismiss = vi.fn();
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} onApply={latestOnApply} onDismiss={latestOnDismiss} />);
+    simulateNativeClose();
+
+    expect(latestOnApply).toHaveBeenCalledTimes(1);
+    expect(latestOnApply).toHaveBeenCalledWith(currentFilters, currentBoardFilters);
+    expect(latestOnDismiss).toHaveBeenCalledTimes(1);
+    expect(latestOnApply.mock.invocationCallOrder[0]).toBeLessThan(latestOnDismiss.mock.invocationCallOrder[0]);
+    expect(staleOnApply).not.toHaveBeenCalled();
+    expect(staleOnDismiss).not.toHaveBeenCalled();
+  });
+
   it('drops the draft on a pan-down close without Apply', () => {
     const onApply = vi.fn();
     const onDismiss = vi.fn();

@@ -1809,9 +1809,13 @@ const PLACEHOLDER_TINT_DELAY_MS = 500;
  */
 const PlaceholderTint = memo(function PlaceholderTint({ active, color }: { active: boolean; color: ColorValue }) {
   const [isDelayElapsed, setIsDelayElapsed] = useState(false);
+  // Read by the effect so a fast search (never tinted, so still false) schedules
+  // no state update on the way out, without re-running the effect on the flip.
+  const isDelayElapsedRef = useRef(isDelayElapsed);
+  isDelayElapsedRef.current = isDelayElapsed;
   useEffect(() => {
     if (!active) {
-      setIsDelayElapsed(false);
+      if (isDelayElapsedRef.current) setIsDelayElapsed(false);
       return;
     }
     const handle = setTimeout(() => setIsDelayElapsed(true), PLACEHOLDER_TINT_DELAY_MS);
