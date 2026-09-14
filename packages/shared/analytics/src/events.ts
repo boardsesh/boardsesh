@@ -419,7 +419,7 @@ export const SHARED_EVENTS = {
   // emitted anything — so "my board changed on its own" and "switching did
   // nothing" were equally unfalsifiable. `source` is what drove the write, so a
   // spike from one surface is attributable. Props:
-  // { source, toBoardUuid?, sameGym, sameConfig, queueSize, hadBleLink, inSession }.
+  // { source, toBoardUuid?, sameGym, sameConfig, hadBleLink, inSession }.
   BoardSwapCompleted: 'Board Swap Completed',
   // Props: { source, toBoardUuid?, reason }.
   BoardSwapFailed: 'Board Swap Failed',

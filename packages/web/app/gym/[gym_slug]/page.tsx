@@ -15,7 +15,7 @@ import ScheduleOutlined from '@mui/icons-material/ScheduleOutlined';
 import type { Gym, MyGymClaim, UserBoard } from '@boardsesh/shared-schema';
 import {
   GET_GYM_PENDING_CLAIM,
-  GET_GYM_BOARDS,
+  GET_GYM_BOARDS_FOR_LISTING,
   GET_GYM_KIOSK,
   type GetGymPendingClaimQueryResponse,
   type GetGymBoardsQueryResponse,
@@ -100,7 +100,11 @@ async function fetchDefaultKiosk(gymSlug: string, token: string | undefined): Pr
 
 async function fetchGymBoards(gymUuid: string, token: string | undefined): Promise<UserBoard[]> {
   try {
-    const response = await executeAuthenticatedGraphQL<GetGymBoardsQueryResponse>(GET_GYM_BOARDS, { gymUuid }, token);
+    const response = await executeAuthenticatedGraphQL<GetGymBoardsQueryResponse>(
+      GET_GYM_BOARDS_FOR_LISTING,
+      { gymUuid },
+      token,
+    );
     return response.gymBoards ?? [];
   } catch (error) {
     console.error('fetchGymBoards failed:', error);

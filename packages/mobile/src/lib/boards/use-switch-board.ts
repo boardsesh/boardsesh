@@ -29,6 +29,7 @@ export type BoardSwitchSource = 'presence_sheet_sibling' | 'move_to_wall_callout
 export type SwitchBoardOutcome = 'switched' | 'noop' | 'failed';
 
 export type SwitchBoardOptions = {
+  /** Default for calls that don't name one. */
   source: BoardSwitchSource;
   /**
    * The board list came from on-device data rather than the network, so skip
@@ -56,8 +57,6 @@ export type SwitchBoardOptions = {
   broadcastBoardPath?: (board: UserBoard) => void;
   /** Whether a BLE link is live, for analytics only. The teardown is automatic. */
   hasBleLink?: boolean;
-  /** Queue length at switch time, for analytics only. */
-  queueSize?: number;
   /** Whether the climber is in a party session, for analytics only. */
   inSession?: boolean;
 };
@@ -83,7 +82,6 @@ export function useSwitchBoard({
   onSwitched,
   broadcastBoardPath,
   hasBleLink = false,
-  queueSize = 0,
   inSession = false,
 }: SwitchBoardOptions) {
   const setActiveBoard = useSetActiveBoard();
@@ -98,7 +96,15 @@ export function useSwitchBoard({
   const switchInFlightRef = useRef(false);
 
   return useCallback(
-    async (target: UserBoard, currentBoard: UserBoard | null): Promise<SwitchBoardOutcome> => {
+    async (
+      target: UserBoard,
+      currentBoard: UserBoard | null,
+      // One hook instance serves both the sheet's rows and the play drawer's
+      // "move to that board" card. Without this the callout reported itself as a
+      // sheet tap and the two were indistinguishable in the event log — which is
+      // the one thing the events exist to tell apart.
+      callSource: BoardSwitchSource = source,
+    ): Promise<SwitchBoardOutcome> => {
       // A "switch" to the board you are already on must not report success: the
       // prompt that sent you here would clear as though something happened, and
       // nothing did.
@@ -119,7 +125,7 @@ export function useSwitchBoard({
         } catch (error: unknown) {
           reportError(error);
           track(SHARED_EVENTS.BoardSwapFailed, {
-            source,
+            source: callSource,
             toBoardUuid: target.uuid,
             reason: 'write_failed',
           });
@@ -133,7 +139,7 @@ export function useSwitchBoard({
         onSwitched?.(target);
 
         track(SHARED_EVENTS.BoardSwapCompleted, {
-          source,
+          source: callSource,
           toBoardUuid: target.uuid,
           sameGym: currentBoard?.gymUuid != null && currentBoard.gymUuid === target.gymUuid,
           sameConfig:
@@ -142,7 +148,6 @@ export function useSwitchBoard({
             currentBoard.layoutId === target.layoutId &&
             currentBoard.sizeId === target.sizeId &&
             currentBoard.setIds === target.setIds,
-          queueSize,
           hadBleLink: hasBleLink,
           inSession,
         });
@@ -169,7 +174,6 @@ export function useSwitchBoard({
       source,
       isLocalOnly,
       hasBleLink,
-      queueSize,
       inSession,
     ],
   );

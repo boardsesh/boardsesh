@@ -257,6 +257,29 @@ export const GET_GYM_BOARDS = gql`
 `;
 
 /**
+ * The gym's boards for a page that RENDERS them as a list a human has to tell
+ * apart — the public gym page.
+ *
+ * The only addition is `serialNumber`, and it is load-bearing rather than
+ * decorative: `disambiguateBoardSubtitles` falls back to the last four of the
+ * serial when two boards at one gym share a name, a layout, a size AND an angle,
+ * which is exactly the state #5272 was reported from. Without it those two rows
+ * stay identical and the fix is only half a fix.
+ *
+ * Deliberately not folded into `GYM_BOARD_FIELDS`: the anonymous leaderboard
+ * embed selects that fragment too, and a serial is the BLE pairing identity.
+ * Only the last four are ever rendered, and only from a server component.
+ */
+export const GET_GYM_BOARDS_FOR_LISTING = gql`
+  query GetGymBoardsForListing($gymUuid: ID!) {
+    gymBoards(gymUuid: $gymUuid) {
+      ${GYM_BOARD_FIELDS}
+      serialNumber
+    }
+  }
+`;
+
+/**
  * The same boards, but every one of them ready to become the mobile app's ACTIVE
  * board. The gym board switcher activates a row on tap, and the app persists the
  * whole board object to storage, so a row has to be a structurally complete

@@ -34,9 +34,14 @@ import {
   useBoardPresenceFeed,
 } from '@boardsesh/board-presence-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import type { BoardName, BoardPresenceClimb, BoardPresenceHardestSend, Climb } from '@boardsesh/shared-schema';
+import type {
+  BoardName,
+  BoardPresenceClimb,
+  BoardPresenceHardestSend,
+  Climb,
+  UserBoard,
+} from '@boardsesh/shared-schema';
 import { Text } from '../Text';
-import type { UserBoard } from '@boardsesh/shared-schema';
 import { GymWallSwitcher } from './GymWallSwitcher';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
 import { Icon } from '../Icon';
@@ -786,12 +791,17 @@ function NowOnTheWallPanelComponent(
         ) : (
           <View pointerEvents="none" style={styles.headerAction} />
         )}
+        <Text variant="title3" color={systemColors.label} numberOfLines={1} style={styles.headerTitle}>
+          {boardLabel ?? t('mobile.boardPresence.title')}
+        </Text>
         {canSwitchGymWall ? (
-          // The board name was already the sheet's title and already says which
-          // board you are on. Making it the switch control costs no vertical
-          // space at all — the same pattern the Climbs app bar already uses.
+          // Mirrors the close control on the left, in the slot that was already
+          // a dead spacer holding the title centred — so the switch costs no
+          // vertical space at all. A transfer glyph, not a caret: this moves you
+          // to another board rather than revealing more of this one.
           <Pressable
             onPress={toggleGymWalls}
+            hitSlop={8}
             accessibilityRole="button"
             accessibilityState={{ expanded: gymWallsExpanded }}
             accessibilityLabel={t('mobile.boardPresence.gymWalls.headerSwitcherAria', {
@@ -802,23 +812,17 @@ function NowOnTheWallPanelComponent(
                 ? 'mobile.boardPresence.gymWalls.headerSwitcherHintClose'
                 : 'mobile.boardPresence.gymWalls.headerSwitcherHintOpen',
             )}
-            style={styles.headerTitlePress}
+            style={styles.headerAction}
           >
-            <Text variant="title3" color={systemColors.label} numberOfLines={1} style={styles.headerTitleText}>
-              {boardLabel ?? t('mobile.boardPresence.title')}
-            </Text>
             <Icon
-              name={gymWallsExpanded ? 'chevron.up' : 'chevron.down'}
-              size={14}
-              color={systemColors.secondaryLabel}
+              name="transfer"
+              size={20}
+              color={gymWallsExpanded ? brandColors.primary : systemColors.secondaryLabel}
             />
           </Pressable>
         ) : (
-          <Text variant="title3" color={systemColors.label} numberOfLines={1} style={styles.headerTitle}>
-            {boardLabel ?? t('mobile.boardPresence.title')}
-          </Text>
+          <View pointerEvents="none" style={styles.headerAction} />
         )}
-        <View pointerEvents="none" style={styles.headerAction} />
       </View>
 
       {variant === 'sheet' ? (
@@ -1381,17 +1385,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerTitlePress: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing[1],
-  },
-  headerTitleText: {
-    flexShrink: 1,
-    textAlign: 'center',
   },
   headerTitle: {
     flex: 1,

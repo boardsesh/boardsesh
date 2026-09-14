@@ -16,7 +16,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useWindowDimensions } from 'react-native';
 import { router, useSegments } from 'expo-router';
 import { tabsActiveSegment } from '../lib/route-segments';
-import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -30,7 +30,6 @@ import { BoardSheet, type BoardSheetClimbAction, type BoardSheetHandle } from '.
 import type { QueueItemRowBoard } from '../components/QueueItemRow';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { useSetBoardAngle } from '../lib/boards/use-set-board-angle';
-import type { UserBoard } from '@boardsesh/shared-schema';
 import { useSwitchBoard } from '../lib/boards/use-switch-board';
 import { useGymBoards } from '../lib/graphql/hooks/use-gym-boards';
 import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
@@ -774,6 +773,16 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     dismissQueueSheetAndWait,
   });
 
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+  const broadcastSwitchedBoardPath = useCallback(
+    (board: UserBoard) => {
+      if (sessionIdRef.current === null) return;
+      void setSessionBoardPath(buildSessionBoardPath(board));
+    },
+    [setSessionBoardPath],
+  );
+
   // Hop to another board at the same gym, from the sheet's own list.
   //
   // The sheet deliberately stays open: it is "now on the wall", and after the
@@ -790,11 +799,16 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     // otherwise, so a silent hop leaves the crew lighting an empty wall. The
     // NAMED path, never the positional tuple: the tuple mints every later
     // joiner a private board row.
-    broadcastBoardPath: (board) => {
-      if (sessionId === null) return;
-      void setSessionBoardPath(buildSessionBoardPath(board));
-    },
+    //
+    // Reads the session through a ref rather than closing over it, so this keeps
+    // one identity — and so does `switchBoard`. An inline arrow here would mint a
+    // new `switchBoard` every render, which is exactly how a handler that lists
+    // it as a dependency ends up holding a stale one.
+    broadcastBoardPath: broadcastSwitchedBoardPath,
     inSession: sessionId !== null,
+    // Reported, not inferred: a hop made with a live link is a different event
+    // from one made cold, and the default made every swap look cold.
+    hasBleLink: bluetooth?.isConnected ?? false,
   });
 
   // The gym's roster, for resolving a climb's board to a real UserBoard. Same
@@ -852,7 +866,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),
       );
       if (gymSibling) {
-        void switchBoard(gymSibling, activeBoardRef.current ?? null);
+        void switchBoard(gymSibling, activeBoardRef.current ?? null, 'move_to_wall_callout');
         return;
       }
 
@@ -887,7 +901,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       router.dismiss();
       router.push({ pathname: '/boards', params: { returnTo: '/(tabs)/home' } });
     },
-    [setActiveBoard],
+    [setActiveBoard, switchBoard],
   );
 
   // The switch-board gate fires only when the drawer is showing a climb from a

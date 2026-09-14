@@ -119,7 +119,7 @@ describe('useSwitchBoard', () => {
   });
 
   it('reports the hop as same-gym and different-config', async () => {
-    const result = switcher({ queueSize: 6, inSession: true, hasBleLink: true });
+    const result = switcher({ inSession: true, hasBleLink: true });
 
     await result.current(TENSION, KILTER);
 
@@ -130,7 +130,6 @@ describe('useSwitchBoard', () => {
         toBoardUuid: 'tension-1',
         sameGym: true,
         sameConfig: false,
-        queueSize: 6,
         inSession: true,
         hadBleLink: true,
       }),
@@ -153,5 +152,30 @@ describe('useSwitchBoard', () => {
 
     expect(outcome).toBe('switched');
     expect(trackMock).toHaveBeenCalledWith('Board Swap Completed', expect.objectContaining({ sameGym: false }));
+  });
+
+  // One hook instance serves the sheet's rows and the play drawer's callout, so
+  // the surface has to be named at the call or the two are indistinguishable in
+  // the event log.
+  it('reports the surface the hop was made from', async () => {
+    const result = switcher();
+
+    await result.current(TENSION, KILTER, 'move_to_wall_callout');
+
+    expect(trackMock).toHaveBeenCalledWith(
+      'Board Swap Completed',
+      expect.objectContaining({ source: 'move_to_wall_callout' }),
+    );
+  });
+
+  it('falls back to the hook default when no surface is named', async () => {
+    const result = switcher();
+
+    await result.current(TENSION, KILTER);
+
+    expect(trackMock).toHaveBeenCalledWith(
+      'Board Swap Completed',
+      expect.objectContaining({ source: 'presence_sheet_sibling' }),
+    );
   });
 });
