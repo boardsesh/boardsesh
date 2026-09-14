@@ -59,7 +59,9 @@ export const SPRAY_ROLE = {
  * in 5° steps as the Aurora boards, because that is the range a home wall is
  * actually built at.
  */
-export const SPRAY_ANGLES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70] as const satisfies readonly Angle[];
+export const SPRAY_ANGLES = [
+  0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70,
+] as const satisfies readonly Angle[];
 
 /**
  * How many walls one climber may own.
