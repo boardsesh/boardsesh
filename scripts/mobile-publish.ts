@@ -33,7 +33,12 @@ import {
   type PlatformPublishOutcome,
   type PublishConfirmation,
 } from './lib/mobile-publish-retry';
-import { findSurfableBranch, probeBranchList, stripManifestSuffix } from './lib/ota-branch-probe';
+import {
+  SURFABILITY_PROBE_DELAYS_MS,
+  findSurfableBranch,
+  probeBranchList,
+  stripManifestSuffix,
+} from './lib/ota-branch-probe';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -209,21 +214,6 @@ function summarizePlatformOutcome(outcome: PlatformPublishOutcome): string {
 
 /** The mutable per-PR preview branches, the only ones this script verifies. */
 const PREVIEW_BRANCH_PATTERN = /^pr-[1-9]\d*$/;
-
-/**
- * How long to keep asking before believing a branch is absent, in wait order.
- *
- * The server does not reflect a freshly finished publish instantly — the preview
- * workflow's own PR comment has told testers "the server may take up to 15 seconds
- * to refresh the branch list after publishing" since this feature shipped. A
- * single probe fired the moment `eoas` returns would therefore fail good
- * publishes, which is worse than the bug this check exists to catch: a red X on a
- * working preview teaches people to ignore the check.
- *
- * ~31s in total, comfortably past that 15s, and it costs nothing on the ordinary
- * path — a branch that is listed is listed on the first probe and nothing sleeps.
- */
-export const SURFABILITY_PROBE_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 
 const sleep = (delayMs: number): Promise<void> => new Promise((done) => setTimeout(done, delayMs));
 
