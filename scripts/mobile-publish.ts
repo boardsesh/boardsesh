@@ -232,6 +232,7 @@ export type SurfabilityProbeOptions = {
   fetchImpl?: typeof fetch;
   sleeper?: (delayMs: number) => Promise<void>;
   delaysMs?: readonly number[];
+  env?: Record<string, string | undefined>;
 };
 
 /**
@@ -273,7 +274,7 @@ export async function isPreviewBranchSurfable(
   options: SurfabilityProbeOptions = {},
 ): Promise<{ surfable: boolean; detail: string; attempts: number } | null> {
   if (!PREVIEW_BRANCH_PATTERN.test(branchName)) return null;
-  const runtimeVersion = previewRuntimeVersionFor(platform);
+  const runtimeVersion = previewRuntimeVersionFor(platform, options.env);
   if (runtimeVersion === null) return null;
 
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -390,7 +391,23 @@ async function publishToSelfHostedBranch(
 
   // Only now, with every requested platform reporting success, is it worth asking
   // whether the server agrees. A failed publish has its own louder verdict above.
-  if (!(await verifyPreviewBranchIsSurfable(branchName, platforms, serverUrl))) return 1;
+  //
+  // A throw from the check itself is NOT evidence against the publish — the upload
+  // already succeeded — so it is reported loudly and the publish stands, the same
+  // rule as "no fingerprint supplied means skip". Letting it escape would replace a
+  // clean verdict with an unhandled rejection and lose the publish's own result.
+  let surfable = true;
+  try {
+    surfable = await verifyPreviewBranchIsSurfable(branchName, platforms, serverUrl);
+  } catch (error) {
+    console.error(
+      `[mobile:publish] Could not complete the surfability check: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    console.error(
+      '[mobile:publish] The publish itself succeeded; verify by hand with `vp run mobile:ota-surf-doctor`.',
+    );
+  }
+  if (!surfable) return 1;
 
   for (const line of selfHostedPublishSuccessMessages(branchName)) console.log(line);
   return 0;
