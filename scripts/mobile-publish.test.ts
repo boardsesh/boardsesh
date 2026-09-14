@@ -26,7 +26,6 @@ function processEnv(values: Record<string, string | undefined>): NodeJS.ProcessE
 }
 
 afterEach(() => {
-  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -237,6 +236,7 @@ describe('preview branch surfability check', () => {
   // No delays and no sleeping: the retry SCHEDULE is a constant worth reading in
   // the source, not re-asserting here. What these cover is the decision it drives.
   const NO_WAIT = { delaysMs: [0, 0], sleeper: async () => undefined };
+  const IOS_ENV = { env: { OTA_PREVIEW_RUNTIME_VERSION_IOS: IOS_HASH } };
 
   function serverListing(...branchNames: string[]) {
     return async () =>
@@ -264,23 +264,22 @@ describe('preview branch surfability check', () => {
     expect(previewRuntimeVersionFor('ios', { OTA_PREVIEW_RUNTIME_VERSION_IOS: '   ' })).toBeNull();
 
     const fetchImpl = vi.fn();
-    await expect(isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { fetchImpl })).resolves.toBeNull();
+    await expect(isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { fetchImpl, env: {} })).resolves.toBeNull();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('does not probe for the production branch', async () => {
-    vi.stubEnv('OTA_PREVIEW_RUNTIME_VERSION_IOS', IOS_HASH);
     const fetchImpl = vi.fn();
 
-    await expect(isPreviewBranchSurfable('production', 'ios', SERVER, { fetchImpl })).resolves.toBeNull();
+    await expect(isPreviewBranchSurfable('production', 'ios', SERVER, { fetchImpl, ...IOS_ENV })).resolves.toBeNull();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('accepts a listed branch on the first probe without waiting', async () => {
-    vi.stubEnv('OTA_PREVIEW_RUNTIME_VERSION_IOS', IOS_HASH);
     const sleeper = vi.fn(async () => undefined);
 
     const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, {
+      ...IOS_ENV,
       fetchImpl: serverListing('pr-5422', 'pr-5417'),
       sleeper,
       delaysMs: [1000],
@@ -291,12 +290,11 @@ describe('preview branch surfability check', () => {
   });
 
   it('re-probes before calling a branch absent, since the list lags a publish by up to 15s', async () => {
-    vi.stubEnv('OTA_PREVIEW_RUNTIME_VERSION_IOS', IOS_HASH);
     const empty = serverListing();
     const listed = serverListing('pr-5417');
     const fetchImpl = vi.fn().mockImplementationOnce(empty).mockImplementationOnce(empty).mockImplementation(listed);
 
-    const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { ...NO_WAIT, fetchImpl });
+    const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { ...NO_WAIT, ...IOS_ENV, fetchImpl });
 
     // Without this the check would red-X a perfectly good publish, which is worse
     // than the bug it exists to catch.
@@ -305,12 +303,11 @@ describe('preview branch surfability check', () => {
   });
 
   it('fails the publish for a branch the server never offers this platform', async () => {
-    vi.stubEnv('OTA_PREVIEW_RUNTIME_VERSION_ANDROID', '154bc941c504727afc914057aed2edff2c096576');
-
     // Exactly #5417: the Android list is healthy and full of other previews —
     // pr-5417 is simply not in it, because its only update was for iOS.
     const surfable = await verifyPreviewBranchIsSurfable('pr-5417', ['android'], SERVER, {
       ...NO_WAIT,
+      env: { OTA_PREVIEW_RUNTIME_VERSION_ANDROID: '154bc941c504727afc914057aed2edff2c096576' },
       fetchImpl: serverListing('pr-5422', 'pr-5424', 'pr-5419'),
     });
 
@@ -320,10 +317,9 @@ describe('preview branch surfability check', () => {
   it('passes a platform whose fingerprint was never supplied rather than failing it', async () => {
     // Only iOS is supplied; the Android publish still ran, but nothing can be
     // said about it. Silence is the honest answer, not a red X.
-    vi.stubEnv('OTA_PREVIEW_RUNTIME_VERSION_IOS', IOS_HASH);
-
     const surfable = await verifyPreviewBranchIsSurfable('pr-5417', ['ios', 'android'], SERVER, {
       ...NO_WAIT,
+      ...IOS_ENV,
       fetchImpl: serverListing('pr-5417'),
     });
 
