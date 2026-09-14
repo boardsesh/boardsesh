@@ -55,7 +55,13 @@ false — that is the whole board, and it is one row in
 - **No LEDs and no native control.** `nativeBoardControl: false`. There is no
   firmware to encode for and no packet to send; a wall is created with
   `has_leds = false` on its `user_boards` row, so the LED-less play path (#4585)
-  is the one it takes.
+  is the one it takes. **BLE suppression today is that per-row `has_leds` data,
+  not the board type** — `scanFamilyForBoard('spray')` would still answer
+  `'aurora'`, because every non-MoonBoard board falls through to it. So
+  `createSprayWall` (SW-05) must ALWAYS write `has_leds = false` and never accept
+  the flag from a client, and SW-09 must not show the "has LEDs" toggle on the
+  add-a-wall flow. Deriving the suppression from the capability instead of the
+  row is a follow-up; it touches the mobile BLE path, which needs its own review.
 - **No crowd grade.** `crowdGrade: false`. The setter's grade is required on
   publish instead.
 - **No mirroring.** `boardSupportsMirroring('spray', …)` is false: a wall is a
@@ -64,9 +70,21 @@ false — that is the whole board, and it is one row in
 - **No multi-frame climbs**, and `explicitClimbRules: false` so a spray climb
   reads like a Kilter one — only the departures from the default are printed.
 
+## Climb writes are closed until SW-05
+
+`saveClimb` and `updateClimb` reject `boardType: "spray"`
+(`assertClimbWriteBoardIsNotSpray`). `BoardNameSchema` accepts the value the
+moment SW-03 lands, and nothing downstream stops it —
+`populateDenormalizedColumns` matches zero `board_placements` rows for a spray
+layout and returns rather than throwing — so without the gate any authenticated
+caller could publish listed `board_climbs` rows into the spray partition at a
+`layoutId` of their choosing, and SW-04's per-wall layout sequence would later
+hand those ids to real walls. SW-05 (#5438) removes the gate together with wall
+ownership, the setter grade and the per-wall duplicate check.
+
 ## Where spray is excluded
 
-Three exclusions matter, and all three are about a wall being someone's private
+Five exclusions matter, and all five are about a wall being someone's private
 property rather than a catalogue:
 
 1. **Board pickers.** `SUPPORTED_BOARDS` in
@@ -74,11 +92,29 @@ property rather than a catalogue:
    not the schema's — drops `spray` outright. No generic picker, board builder or
    wall finder offers it; a wall is created through the add-a-wall flow (SW-09)
    and reached at its own `/b/{slug}`.
-2. **Public snapshots.** `discoverLayoutPairs` in
+2. **The popular-config rail.** `getPopularConfigs`
+   (`packages/backend/src/graphql/resolvers/social/boards.ts`) feeds the www
+   homepage board rail and the mobile Boards tab, and neither consults the
+   display list — so the exclusion is at the source, twice: the SQL drops
+   `board_type = 'spray'` before the expensive per-config LATERAL climb count is
+   built, and `isPopularConfigRow` drops it again on the way out.
+
+   **SW-04 must seed spray catalogue rows with `is_listed = false`** on
+   `board_layouts`, `board_product_sizes` AND
+   `board_product_sizes_layouts_sets`. That is the primary defence — the two
+   filters above exist so one mis-seeded row cannot put a climber's wall on the
+   homepage.
+3. **Gym directory facets.** `CATALOGUE_BOARD_TYPES`
+   (`packages/board-constants/src/board-type-labels.ts`) is every key of
+   `BOARD_TYPE_LABELS` except `spray`, and it is what `FILTERABLE_BOARD_TYPES`
+   and the gym card's `BOARD_TYPE_ORDER` derive from. Spray keeps its *label* —
+   a wall still has to be named on its own screens — but is never a facet, a
+   `?boardType=` value or a gym chip.
+4. **Public snapshots.** `discoverLayoutPairs` in
    `packages/backend/src/scripts/export-board-snapshots.ts` skips `spray`. The
    nightly snapshots go to a public bucket under guessable keys; a spray
    partition is one climber's wall.
-3. **Sitemaps.** `isIndexableBoardType` in
+5. **Sitemaps.** `isIndexableBoardType` in
    `packages/web/app/lib/seo/sitemap/indexable-boards.ts` keeps `spray` out of
    both the boards and the climbs shards. Per-wall visibility governs who may
    open a wall in the app; it is not consent to be crawled. SW-16 (#5449) decides

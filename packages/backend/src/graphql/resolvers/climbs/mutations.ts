@@ -25,6 +25,7 @@ import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdminOrLeader } from '../social/roles';
 import { deleteClimbDependentRows } from './climb-cleanup';
+import { assertClimbWriteBoardIsNotSpray } from './spray-write-gate';
 import {
   buildMoonBoardClimbHoldRows,
   buildMoonBoardDuplicateError,
@@ -128,6 +129,8 @@ export const climbMutations = {
         `Invalid board type: ${String(validated.boardType)}. Must be one of ${SUPPORTED_BOARDS.join(', ')}`,
       );
     }
+    // Removed by SW-05 (#5438) when wall ownership lands.
+    assertClimbWriteBoardIsNotSpray(validated.boardType);
     const boardType = validated.boardType as BoardName;
 
     // Woods is code-driven: no board_placements to validate a hold against and
@@ -551,6 +554,8 @@ export const climbMutations = {
         `Invalid board type: ${String(validated.boardType)}. Must be one of ${SUPPORTED_BOARDS.join(', ')}`,
       );
     }
+    // Removed by SW-05 (#5438) when wall ownership lands.
+    assertClimbWriteBoardIsNotSpray(validated.boardType);
     const boardType = validated.boardType as BoardName;
 
     // Load the existing row and verify ownership + edit window.

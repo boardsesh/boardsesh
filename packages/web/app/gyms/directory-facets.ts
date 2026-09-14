@@ -1,4 +1,4 @@
-import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
+import { CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
 
 /**
  * The four directory surfaces. `all` is `/gyms`; the other three are the only
@@ -56,8 +56,12 @@ const MAX_RADIUS_KM = 500;
  * soill, touchstone) are reachable ONLY this way — they get no standalone route
  * — and the three facets are here too so `/gyms?boardType=kilter` behaves
  * instead of silently dropping the filter.
+ *
+ * `CATALOGUE_BOARD_TYPES`, not every key of `BOARD_TYPE_LABELS`: `spray` has a
+ * label but is not a board model a gym is found by, so it must not become a
+ * directory facet or a `?boardType=` value.
  */
-export const FILTERABLE_BOARD_TYPES: readonly string[] = Object.keys(BOARD_TYPE_LABELS);
+export const FILTERABLE_BOARD_TYPES: readonly string[] = CATALOGUE_BOARD_TYPES;
 
 /** Next.js' `searchParams` shape: a repeated param arrives as an array. */
 export type DirectorySearchParams = Record<string, string | string[] | undefined>;

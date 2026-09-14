@@ -705,7 +705,18 @@ const BOARD_TYPE_LABELS: Record<string, string> = {
   woods: 'Woods',
 };
 
+/**
+ * Board types whose label is already the whole name, so the " Board" suffix
+ * below would read as a stutter. Only `spray`: "Spray wall Board" is not a
+ * thing, and neither is the "spray Board" the raw-type fallback produced.
+ */
+const SELF_NAMING_BOARD_TYPES: Record<string, string> = {
+  spray: 'Spray wall',
+};
+
 export function defaultBoardName(boardType: string): string {
+  const selfNaming = SELF_NAMING_BOARD_TYPES[boardType];
+  if (selfNaming) return selfNaming;
   return `${BOARD_TYPE_LABELS[boardType] ?? boardType} Board`;
 }
 

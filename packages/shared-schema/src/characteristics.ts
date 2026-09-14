@@ -129,6 +129,8 @@ export function findCharacteristicConflict(
   return conflict ? { token: CLIMB_CHARACTERISTICS.ANY_FEET, conflictsWith: conflict } : null;
 }
 
+const NON_AURORA_NO_MATCH_BOARD_TYPES: ReadonlySet<string> = new Set(['moonboard', 'woods', 'spray']);
+
 /**
  * Whether a board's `no_match` can still be carried by the description alone.
  *
@@ -143,8 +145,6 @@ export function findCharacteristicConflict(
  * `characteristics`, so a spray description beginning "no match" is the setter's
  * own words too.
  */
-const NON_AURORA_NO_MATCH_BOARD_TYPES: ReadonlySet<string> = new Set(['moonboard', 'woods', 'spray']);
-
 export function usesAuroraNoMatchDescription(boardType: string): boolean {
   return !NON_AURORA_NO_MATCH_BOARD_TYPES.has(boardType);
 }

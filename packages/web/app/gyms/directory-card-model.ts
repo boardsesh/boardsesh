@@ -1,5 +1,5 @@
 import type { GymBoardSummary } from '@boardsesh/shared-schema';
-import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
+import { CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
 import { distanceKm } from './directory-facets';
 
 /** One board chip: a board type and the angle that wall is set at. */
@@ -11,7 +11,9 @@ export type BoardChip = {
   angle: number;
 };
 
-const BOARD_TYPE_ORDER = Object.keys(BOARD_TYPE_LABELS);
+// Catalogue boards only. A gym card's chips name the boards a climber can turn
+// up and climb on; a spray wall is its owner's, not the gym's directory entry.
+const BOARD_TYPE_ORDER = CATALOGUE_BOARD_TYPES;
 
 /**
  * Collapse `boardSummaries` into the chips a card renders.
