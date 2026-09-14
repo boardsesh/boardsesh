@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-09-08T23:48:44.814Z",
+  "generatedAt": "2026-09-14T13:47:06.844Z",
   "contributors": [
     {
       "login": "marcodejongh",
       "name": "Marco de Jongh",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1107647?u=63993f18e3d652404c7a04ae91a5f7a505fdef5c&v=4",
       "htmlUrl": "https://github.com/marcodejongh",
-      "pullRequests": 3680,
-      "issues": 1143,
-      "contributions": 4823
+      "pullRequests": 3723,
+      "issues": 1191,
+      "contributions": 4914
     },
     {
       "login": "ES-Alexander",
@@ -16,8 +16,8 @@
       "avatarUrl": "https://avatars.githubusercontent.com/u/25898329?u=02154126eda9e5537b1cf9f1b139096031f8e57b&v=4",
       "htmlUrl": "https://github.com/ES-Alexander",
       "pullRequests": 2,
-      "issues": 106,
-      "contributions": 108
+      "issues": 108,
+      "contributions": 110
     },
     {
       "login": "azuttre",
@@ -33,18 +33,18 @@
       "name": "Jay Harris",
       "avatarUrl": "https://avatars.githubusercontent.com/u/7678024?v=4",
       "htmlUrl": "https://github.com/fallaciousreasoning",
-      "pullRequests": 24,
+      "pullRequests": 25,
       "issues": 1,
-      "contributions": 25
+      "contributions": 26
     },
     {
       "login": "alejandrosanchezcabana",
       "name": "Alex Sánchez",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10997544?u=41ac204494f58d9a5f32b3652af16a75c20869df&v=4",
       "htmlUrl": "https://github.com/alejandrosanchezcabana",
-      "pullRequests": 20,
+      "pullRequests": 23,
       "issues": 2,
-      "contributions": 22
+      "contributions": 25
     },
     {
       "login": "gardaholm",
