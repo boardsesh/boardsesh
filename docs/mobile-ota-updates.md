@@ -1270,7 +1270,10 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   miss (~31 s across five waits) before failing: the branch list lags a finished publish by up to the
   15 s the sticky comment already warns testers about, and a red X on a working preview would teach
   people to ignore the check. A branch that is listed is listed on the first probe, so a healthy
-  publish never waits.
+  publish never waits. It fails only on a server that ANSWERED about this exact
+  runtimeVersion and platform and did not list the branch; an unreachable server or a
+  channel with surfing switched off are facts about the server, not about this publish,
+  and degrade to "cannot check" alongside the missing-fingerprint case.
 - **A finalize 524 is confirmed, not re-exported.** `markUpdateAsUploaded` regularly outlives
   Cloudflare's 100 s origin cap on `updates.boardsesh.com`, and the proxy answers 524 after the assets
   are already uploaded — the update has usually landed. The retry wrapper recognises that one endpoint

@@ -10,6 +10,7 @@ import {
   parseArgs,
   requestedSelfHostedPlatforms,
   isPreviewBranchSurfable,
+  previewBranchPassesSurfabilityCheck,
   previewRuntimeVersionFor,
   resolveUpdateMessage,
   titleFromCommitMessage,
@@ -309,6 +310,62 @@ describe('preview branch surfability check', () => {
       ...NO_WAIT,
       env: { OTA_PREVIEW_RUNTIME_VERSION_ANDROID: '154bc941c504727afc914057aed2edff2c096576' },
       fetchImpl: serverListing('pr-5422', 'pr-5424', 'pr-5419'),
+    });
+
+    expect(surfable).toBe(false);
+  });
+
+  it('lets the publish stand when the server never answers', async () => {
+    // An unreachable server is a fact about the server, not about this publish —
+    // the upload already succeeded. Failing here would red-X a good preview for a
+    // reason the author cannot act on, which is the false-red the retry exists to
+    // avoid in the first place.
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', ['ios'], SERVER, {
+      ...NO_WAIT,
+      ...IOS_ENV,
+      fetchImpl: () => {
+        throw new Error('connect ECONNREFUSED');
+      },
+    });
+
+    expect(surfable).toBe(true);
+  });
+
+  it('lets the publish stand when surfing is switched off for the channel', async () => {
+    // Same reasoning: the channel refusing to surf says nothing about whether this
+    // branch got its update.
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', ['ios'], SERVER, {
+      ...NO_WAIT,
+      ...IOS_ENV,
+      fetchImpl: async () => new Response('', { status: 404, headers: { 'xprem-branch-surfing': 'off' } }),
+    });
+
+    expect(surfable).toBe(true);
+  });
+
+  it('lets the publish stand when the check itself throws', async () => {
+    // `probeBranchList` swallows transport errors, so the only way out is a throw
+    // from the retry machinery. It must not escape as an unhandled rejection and
+    // lose the publish's own result.
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', ['ios'], SERVER, {
+      ...IOS_ENV,
+      delaysMs: [1],
+      sleeper: () => {
+        throw new Error('clock blew up');
+      },
+      fetchImpl: serverListing('pr-5422'),
+    });
+
+    expect(surfable).toBe(true);
+  });
+
+  it('still fails the publish for a branch the server answers about and does not list', async () => {
+    // The other half of the case above: a check that RAN and said no is a verdict,
+    // and the guard must not swallow it along with the broken-check case.
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', ['ios'], SERVER, {
+      ...NO_WAIT,
+      ...IOS_ENV,
+      fetchImpl: serverListing('pr-5422'),
     });
 
     expect(surfable).toBe(false);

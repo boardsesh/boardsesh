@@ -254,8 +254,13 @@ export function previewRuntimeVersionFor(
  * #5417 shipped an iOS-only preview and disappeared from the Android picker with
  * nothing said anywhere.
  *
- * Returns null when the check cannot run (no fingerprint supplied, not a preview
- * branch), which callers treat as "skip", never as "not surfable".
+ * Returns null when the check cannot RUN — not a preview branch, no fingerprint
+ * supplied, or the server never gave a usable answer — which callers treat as
+ * "skip", never as "not surfable". Only a server that answered, about this exact
+ * runtimeVersion and platform, and did not list the branch is evidence of absence.
+ * An unreachable server and a channel with surfing switched off are facts about
+ * the server, not about this publish, and failing on them would red-X a good
+ * publish for a reason the author cannot act on.
  */
 export async function isPreviewBranchSurfable(
   branchName: string,
@@ -274,16 +279,51 @@ export async function isPreviewBranchSurfable(
 
   // Re-probes only while the answer is "not there", so the cost lands on the case
   // that is either a propagation delay or a real miss — never on a healthy publish.
+  // A server that could not be reached is retried too: it may be a blip, and if it
+  // is not, the loop ends in "cannot check" rather than in a verdict.
   let detail = 'no probe ran';
+  let answered = false;
   for (let attempt = 1; attempt <= delaysMs.length + 1; attempt++) {
     const outcome = await probeBranchList(fetchImpl, baseUrl, runtimeVersion, platform);
     const branch = findSurfableBranch(outcome, branchName);
+    answered = outcome.state === 'branches' || outcome.state === 'no-branches';
     detail = branch?.lastUpdateAt ? `${outcome.detail}, updated ${branch.lastUpdateAt}` : outcome.detail;
     if (branch !== null) return { surfable: true, detail, attempts: attempt };
     if (attempt > delaysMs.length) break;
     await sleeper(delaysMs[attempt - 1]);
   }
+  if (!answered) {
+    console.error(`[mobile:publish] ${platform}: could not check whether "${branchName}" is surfable (${detail}).`);
+    return null;
+  }
   return { surfable: false, detail, attempts: delaysMs.length + 1 };
+}
+
+/**
+ * `verifyPreviewBranchIsSurfable`, with a broken check treated as no verdict.
+ *
+ * A throw from the check is NOT evidence against the publish — the upload already
+ * succeeded — so it is reported loudly and the publish stands, the same rule the
+ * "no fingerprint supplied" path already follows. Letting it escape would replace
+ * a clean verdict with an unhandled rejection and lose the publish's own result.
+ */
+export async function previewBranchPassesSurfabilityCheck(
+  branchName: string,
+  platforms: readonly OtaPublishPlatform[],
+  serverUrl: string,
+  options: SurfabilityProbeOptions = {},
+): Promise<boolean> {
+  try {
+    return await verifyPreviewBranchIsSurfable(branchName, platforms, serverUrl, options);
+  } catch (error) {
+    console.error(
+      `[mobile:publish] Could not complete the surfability check: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    console.error(
+      '[mobile:publish] The publish itself succeeded; verify by hand with `vp run mobile:ota-surf-doctor`.',
+    );
+    return true;
+  }
 }
 
 async function publishToSelfHostedBranch(
@@ -381,23 +421,7 @@ async function publishToSelfHostedBranch(
 
   // Only now, with every requested platform reporting success, is it worth asking
   // whether the server agrees. A failed publish has its own louder verdict above.
-  //
-  // A throw from the check itself is NOT evidence against the publish — the upload
-  // already succeeded — so it is reported loudly and the publish stands, the same
-  // rule as "no fingerprint supplied means skip". Letting it escape would replace a
-  // clean verdict with an unhandled rejection and lose the publish's own result.
-  let surfable = true;
-  try {
-    surfable = await verifyPreviewBranchIsSurfable(branchName, platforms, serverUrl);
-  } catch (error) {
-    console.error(
-      `[mobile:publish] Could not complete the surfability check: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    console.error(
-      '[mobile:publish] The publish itself succeeded; verify by hand with `vp run mobile:ota-surf-doctor`.',
-    );
-  }
-  if (!surfable) return 1;
+  if (!(await previewBranchPassesSurfabilityCheck(branchName, platforms, serverUrl))) return 1;
 
   for (const line of selfHostedPublishSuccessMessages(branchName)) console.log(line);
   return 0;
@@ -431,11 +455,11 @@ export async function verifyPreviewBranchIsSurfable(
     allSurfable = false;
     console.error(
       `[mobile:publish] ${platform}: the publish reported success but "${branchName}" is NOT offered to ` +
-        `runtimeVersion ${previewRuntimeVersionFor(platform) ?? '(unknown)'} (${result.detail}).`,
+        `runtimeVersion ${previewRuntimeVersionFor(platform, options.env) ?? '(unknown)'} (${result.detail}).`,
     );
     console.error(
       `[mobile:publish] Nothing would load in the in-app picker on ${platform}. Diagnose with: ` +
-        `vp run mobile:ota-surf-doctor -- --platform ${platform} --runtime-version ${previewRuntimeVersionFor(platform) ?? '<hash>'}`,
+        `vp run mobile:ota-surf-doctor -- --platform ${platform} --runtime-version ${previewRuntimeVersionFor(platform, options.env) ?? '<hash>'}`,
     );
   }
   return allSurfable;
