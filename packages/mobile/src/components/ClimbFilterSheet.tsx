@@ -579,8 +579,13 @@ export function ClimbFilterSheet({
   // meant "apply", so commit it rather than silently dropping it. Skipped when the
   // board changed underneath (a board switch unmounts the sheet too): that draft's
   // setter, holds and zone filters belong to the old board.
+  // Latest callbacks for the unmount fallback and the setter handoff listener.
+  // The parent's onApply changes on every search keystroke; reading it through a
+  // ref keeps the handoff subscription from being torn down and redone each time.
   const onApplyRef = useRef(onApply);
   onApplyRef.current = onApply;
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -749,14 +754,14 @@ export function ClimbFilterSheet({
         // resume makes sure the pop's refocus can't re-present it either.
         hasLocalDraftEditsRef.current = false;
         pendingResumeRef.current = false;
-        onApply({ ...localFiltersRef.current, setter }, localBoardFiltersRef.current);
-        onDismiss();
+        onApplyRef.current({ ...localFiltersRef.current, setter }, localBoardFiltersRef.current);
+        onDismissRef.current();
         return;
       }
       flushPreviewRef.current = true;
       updateLocalFilters((previous) => ({ ...previous, setter }));
     },
-    [onApply, onDismiss, updateLocalFilters],
+    [updateLocalFilters],
   );
 
   const handleHoldsFilterChange = useCallback(

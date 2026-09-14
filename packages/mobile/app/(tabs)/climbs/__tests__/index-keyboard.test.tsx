@@ -469,6 +469,10 @@ beforeEach(() => {
 // While a new search loads, the previous search's rows stay up as placeholder
 // data (#5414). They are stale: no pull-to-refresh spinner for that fetch, and a
 // tap must not open or seed a swipe track from the old results.
+// Mirrors PLACEHOLDER_TINT_DELAY_MS in ../index.tsx. Kept local rather than
+// exported: an extra export from a route file costs it its Fast Refresh boundary.
+const PLACEHOLDER_TINT_DELAY_MS = 500;
+
 describe('ClimbList previous results standing in for a loading search', () => {
   it('shows no pull-to-refresh spinner for the placeholder fetch', async () => {
     mocks.isPlaceholderData = true;
@@ -480,9 +484,10 @@ describe('ClimbList previous results standing in for a loading search', () => {
     expect(container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('false');
   });
 
-  // The tint waits 300 ms so a fast (local) search swaps rows with no flash. The
-  // first render runs on real timers (findByText polls); fake timers start after
-  // it, so only the tint's timer is under test control.
+  // The tint waits PLACEHOLDER_TINT_DELAY_MS so a search that lands inside it
+  // swaps rows with no dim. The first render runs on real timers (findByText
+  // polls); fake timers start after it, so only the tint's timer is under test
+  // control.
   it('never tints a search that lands inside the delay', async () => {
     const { container, findByText, rerender } = render(<ClimbList />);
     await findByText('Moonage');
@@ -495,12 +500,12 @@ describe('ClimbList previous results standing in for a loading search', () => {
       expect(findTint()).toBeNull();
 
       act(() => {
-        vi.advanceTimersByTime(299);
+        vi.advanceTimersByTime(PLACEHOLDER_TINT_DELAY_MS - 1);
       });
       mocks.isPlaceholderData = false;
       rerender(<ClimbList />);
       act(() => {
-        vi.advanceTimersByTime(300);
+        vi.advanceTimersByTime(PLACEHOLDER_TINT_DELAY_MS);
       });
 
       expect(findTint()).toBeNull();
@@ -509,7 +514,7 @@ describe('ClimbList previous results standing in for a loading search', () => {
     }
   });
 
-  it('tints the stale rows once a slow search has stood in for 300 ms, and clears when it lands', async () => {
+  it('tints the stale rows once a slow search has stood in for the delay, and clears when it lands', async () => {
     const { container, findByText, rerender } = render(<ClimbList />);
     await findByText('Moonage');
     const findTint = () => container.querySelector('[data-testid="climb-list-placeholder-tint"]');
@@ -521,7 +526,12 @@ describe('ClimbList previous results standing in for a loading search', () => {
       expect(findTint()).toBeNull();
 
       act(() => {
-        vi.advanceTimersByTime(300);
+        vi.advanceTimersByTime(PLACEHOLDER_TINT_DELAY_MS - 1);
+      });
+      expect(findTint()).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(1);
       });
       expect(findTint()).not.toBeNull();
 

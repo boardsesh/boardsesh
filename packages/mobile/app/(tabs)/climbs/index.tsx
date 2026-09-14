@@ -1795,9 +1795,10 @@ function keyExtractor(item: Climb) {
 }
 
 // How long the previous search's rows must stand in before they are tinted. A
-// fast search (a local SQLite read) swaps rows well inside this, so it shows no
-// tint at all instead of a flash of one.
-const PLACEHOLDER_TINT_DELAY_MS = 300;
+// search that lands inside half a second (a local SQLite read, most server round
+// trips) swaps rows with no dim at all, so the dim never reads as a flash; only a
+// genuinely slow search gets it.
+const PLACEHOLDER_TINT_DELAY_MS = 500;
 
 /**
  * A background-coloured tint over the list while the previous search's rows
