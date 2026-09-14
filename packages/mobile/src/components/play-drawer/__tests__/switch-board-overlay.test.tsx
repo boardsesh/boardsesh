@@ -42,6 +42,12 @@ vi.mock('../../Button', () => ({
   Button: ({ title, onPress }: { title?: string; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, title),
 }));
+// The glass surface picks its rendering path from Platform + capability hooks,
+// none of which this harness mounts. Its own behaviour is covered by
+// GlassSurface's tests; here it is just the box the callout draws in.
+vi.mock('../../GlassSurface', () => ({
+  GlassSurface: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-glass': 'true' }, children),
+}));
 vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => color }));
 vi.mock('../../../theme/tokens', () => ({
   overlays: { scrim: '#0008', onScrim: '#FFFFFF' },
@@ -94,6 +100,14 @@ describe('SwitchBoardOverlay, move variant', () => {
 
   // The scrim's a11y trap is what blocks the queue, tick and favourite controls.
   // A board the climber can walk to must not block any of them.
+  // QA: "should be like a glass surface over the normal controls". A flat scrim
+  // let the controls bleed through it crisply; glass recesses them instead.
+  it('draws on a glass surface, not a flat scrim', () => {
+    const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard: vi.fn() }));
+
+    expect(container.querySelector('[data-glass]')).toBeTruthy();
+  });
+
   it('does not trap a11y focus or show the lock', () => {
     const { container } = render(createElement(SwitchBoardOverlay, { ...moveProps, onSwitchBoard: vi.fn() }));
 

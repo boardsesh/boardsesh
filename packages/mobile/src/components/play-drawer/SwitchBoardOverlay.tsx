@@ -4,6 +4,7 @@ import { Button } from '../Button';
 import { ButtonSurfaceProvider } from '../Button.surface';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
+import { GlassSurface } from '../GlassSurface';
 import { withAlpha } from '../../theme/colors';
 import { borderRadius, overlays, spacing } from '../../theme/tokens';
 
@@ -89,12 +90,12 @@ function MoveToWallCallout({
   // callout sits over board art and needs the same on-scrim treatment either
   // way, and this file is rendered by harnesses that mock react-native narrowly.
   return (
-    <View style={styles.callout}>
+    <GlassSurface style={styles.callout} borderRadius={borderRadius.lg} glassEffectStyle="regular">
       <View style={styles.calloutText}>
-        <Text variant="subheadline" color={overlays.onScrim}>
+        <Text variant="subheadline" color={overlays.onScrim} style={styles.calloutCentered}>
           {t('mobile.boardPresence.moveToWall.title', { board: boardLabel })}
         </Text>
-        <Text variant="caption1" color={withAlpha(overlays.onScrim, 0.82)}>
+        <Text variant="caption1" color={withAlpha(overlays.onScrim, 0.82)} style={styles.calloutCentered}>
           {t('mobile.boardPresence.moveToWall.body')}
         </Text>
       </View>
@@ -116,27 +117,36 @@ function MoveToWallCallout({
           />
         ) : null}
       </View>
-    </View>
+    </GlassSurface>
   );
 }
 
 const styles = StyleSheet.create({
   callout: {
-    // Normal flow: this sits ABOVE the controls and leaves them all usable, so
-    // it takes its own height rather than covering theirs.
-    marginHorizontal: spacing[3],
-    marginBottom: spacing[2],
+    // Glass laid over the controls rather than a panel pushing them down: the
+    // board art keeps its height, and the controls stay legible-but-recessed
+    // underneath instead of bleeding through a flat scrim.
+    position: 'absolute',
+    left: spacing[3],
+    right: spacing[3],
+    bottom: spacing[3],
+    zIndex: 3,
     gap: spacing[2],
-    padding: spacing[3],
-    borderRadius: borderRadius.lg,
-    backgroundColor: overlays.scrim,
+    paddingVertical: spacing[3],
+    paddingHorizontal: spacing[4],
+    alignItems: 'center',
   },
   calloutText: {
     gap: spacing[1] / 2,
+    alignItems: 'center',
+  },
+  calloutCentered: {
+    textAlign: 'center',
   },
   calloutActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing[2],
   },
   scrim: {
