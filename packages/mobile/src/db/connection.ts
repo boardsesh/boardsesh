@@ -702,6 +702,13 @@ function recoverDeadDatabaseHandle(shape: Exclude<SqliteHandleFailure, null>, or
   recoveryCount += 1;
   lastRecoveryStartedAt = Date.now();
   const startedAt = Date.now();
+  // Invalidate every in-flight chain HERE, synchronously, not after the re-open
+  // resolves. A chain whose attempt completes during the `await opener()` below would
+  // otherwise still read the old epoch, decide it was not superseded — `latestDatabase`
+  // has not moved yet either — and publish the connection we have just declared dead,
+  // overwriting the replacement a moment later. Bumping before the first await closes
+  // that window: from this point no chain started earlier can publish anything.
+  chainEpoch += 1;
   markStartup('sqlite.deadhandle.start');
   reportError(new Error(`SQLite native handle lost (${shape})`), {
     tags: { source: 'offline-sync', kind: 'sqlite-dead-handle', phase: 'detected', shape, origin },
@@ -715,8 +722,8 @@ function recoverDeadDatabaseHandle(shape: Exclude<SqliteHandleFailure, null>, or
       recoveredDatabase = replacement;
       // Retarget the ladder rather than inventing a second one: this gets WAL, the
       // busy timeout, the queue table, migrations, the lock backoff — and the SINGLE
-      // publish site, so `retractSupersededHandle`'s invariant still holds.
-      chainEpoch += 1;
+      // publish site, so `retractSupersededHandle`'s invariant still holds. The epoch
+      // was already bumped synchronously above, so nothing older can race this.
       activeInitialization = null;
       latestDatabase = replacement;
       wakeFromBackoff?.();
