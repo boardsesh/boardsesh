@@ -83,11 +83,21 @@ export const sprayWalls = pgTable(
   'spray_walls',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    /** The `user_boards` row that owns this wall (owner, name, angle, visibility). */
+    /**
+     * The `user_boards` row that owns this wall (owner, name, angle, visibility).
+     *
+     * `RESTRICT`, not `CASCADE`. `user_boards` rows are never hard-deleted — the
+     * table's own comment in `schema/boards/unified.ts` says so, and a wall is
+     * only ever soft-deleted through `deleted_at` — so a cascade would only ever
+     * fire on a path that is not supposed to exist, and it would take the wall,
+     * its versions and its whole hold history with it while every climb ever set
+     * on the wall stayed behind pointing at an empty layout. Refusing the delete
+     * surfaces the bug instead.
+     */
     boardUuid: text('board_uuid')
       .notNull()
       .unique()
-      .references(() => userBoards.uuid, { onDelete: 'cascade' }),
+      .references(() => userBoards.uuid, { onDelete: 'restrict' }),
     /**
      * The wall's `board_layouts.id`, which is also its `board_product_sizes.id`
      * (`spraySizeIdForLayout`). Unique because a layout is exactly one wall.
@@ -118,10 +128,16 @@ export const sprayWalls = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     /**
-     * Soft delete. The catalogue rows and every climb set on the wall stay
-     * behind — a deleted wall stops being reachable, it does not un-set the
-     * climbs. The `sync_deletions` trigger tombstones `layout_id`, which is the
-     * key the offline mirror knows a wall by.
+     * Soft delete, and the ONLY way a wall is ever deleted. The catalogue rows
+     * and every climb set on the wall stay behind — a deleted wall stops being
+     * reachable, it does not un-set the climbs.
+     *
+     * Stamping this is what tombstones the wall for offline clients: migration
+     * 0228 fires `log_deletion_spray_walls()` on the `NULL -> NOT NULL`
+     * transition, writing `layout_id` (the key the offline mirror knows a wall
+     * by) scoped to the owner. The same function is also wired to a hard DELETE,
+     * which should never happen, so that a wall removed by hand in psql still
+     * reaches the phones that have it.
      */
     deletedAt: timestamp('deleted_at'),
   },
@@ -210,9 +226,16 @@ export const sprayWallHolds = pgTable(
     installedVersionId: bigint('installed_version_id', { mode: 'number' })
       .notNull()
       .references(() => sprayWallVersions.id, { onDelete: 'cascade' }),
-    /** NULL = still on the wall. Set by the reset that took the hold off. */
+    /**
+     * NULL = still on the wall. Set by the reset that took the hold off.
+     *
+     * `RESTRICT`: NULL here means "alive", so nulling this on a version delete
+     * would resurrect every hold that version removed — silently making lost
+     * climbs whole again and zeroing their `missing_hold_count`. A version that
+     * still carries removals cannot be deleted; a wall's history is append-only.
+     */
     removedVersionId: bigint('removed_version_id', { mode: 'number' }).references(() => sprayWallVersions.id, {
-      onDelete: 'set null',
+      onDelete: 'restrict',
     }),
     /** The hold this one replaced, when the reset review linked a move. */
     movedFromHoldId: integer('moved_from_hold_id'),

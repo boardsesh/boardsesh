@@ -1,5 +1,5 @@
 {
-  "id": "f14189b5-e1ba-4f9b-85f4-1c15439363bc",
+  "id": "010ad849-fa7b-48c3-af17-24e619b32421",
   "prevId": "24f61f8c-e30e-45e8-aee0-4ff8f4777470",
   "version": "7",
   "dialect": "postgresql",
@@ -13506,7 +13506,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
@@ -13770,7 +13770,7 @@
           "columnsTo": [
             "uuid"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "spray_walls_current_version_id_spray_wall_versions_id_fk": {

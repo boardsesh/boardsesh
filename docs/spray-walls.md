@@ -77,7 +77,9 @@ spray columns, and would force a reset to rewrite catalogue rows that climb
 frames depend on. Keying side tables by the same ids — the
 `board_hold_features` / `hold_outline_overrides` precedent — keeps the catalogue
 frozen and the wall's history append-only. A reset therefore stamps a removal and
-appends rows; it never updates geometry in place and never deletes.
+appends rows; it never updates geometry in place and never deletes. **A moved
+hold is removed + added** — the review can link `moved_from_hold_id` so remix
+suggests the successor — rather than an update of the row that moved.
 
 ### Every per-wall catalogue row is `is_listed = false`
 

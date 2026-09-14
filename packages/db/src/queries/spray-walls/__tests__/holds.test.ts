@@ -30,11 +30,12 @@ void describe('recomputeMissingHoldCounts', () => {
     assert.equal(db.queries.length, 1, 'one statement rewrites the whole wall');
     const statement = db.queries[0];
     assert.match(statement, /UPDATE board_climbs/);
-    assert.match(statement, /JOIN spray_wall_holds s ON s\.hold_id = h\.hold_id/);
     assert.match(statement, /s\.removed_version_id IS NOT NULL/);
-    // Scoped to the wall on BOTH sides of the join: the side table by wall_id,
-    // board_climb_holds by board_type, so another board's hold id can never be
-    // counted into a spray climb.
+    // Scoped to the wall on BOTH sides of the join: the side table by wall_id —
+    // hold ids are per wall, so without this every OTHER wall's removed holds
+    // would be counted into this wall's climbs — and board_climb_holds by
+    // board_type. Asserted as one string so dropping either clause fails here.
+    assert.match(statement, /JOIN spray_wall_holds s ON s\.hold_id = h\.hold_id AND s\.wall_id = /);
     assert.match(statement, /h\.board_type = 'spray'/);
   });
 

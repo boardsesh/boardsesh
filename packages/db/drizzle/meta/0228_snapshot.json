@@ -1,6 +1,6 @@
 {
-  "id": "e3dd8eef-440e-46d8-849c-55ba7d78367a",
-  "prevId": "f34f872c-f1d1-46a0-a217-ec83e1c663eb",
+  "id": "7e777f88-5edb-4eb1-b643-442ed4247311",
+  "prevId": "5526fecf-6919-4a67-b59b-ab2f94e7bb0a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13507,7 +13507,7 @@
             "id"
           ],
           "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {
@@ -13771,7 +13771,7 @@
             "uuid"
           ],
           "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "restrict"
         },
         "spray_walls_current_version_id_spray_wall_versions_id_fk": {
           "name": "spray_walls_current_version_id_spray_wall_versions_id_fk",
