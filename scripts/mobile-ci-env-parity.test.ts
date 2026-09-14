@@ -823,7 +823,32 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
       shared,
     );
     expect(idFrom('scripts/mobile-ota-setup.ts', 'OTA_APP_ID'), 'mobile-ota-setup OTA_APP_ID').toBe(shared);
-    expect(idFrom('scripts/mobile-ota-surf-doctor.ts', 'OTA_APP_ID'), 'mobile-ota-surf-doctor OTA_APP_ID').toBe(shared);
+    // The surf doctor and the publisher's surfability check both read this one;
+    // the doctor re-exports it, so the literal lives here now.
+    expect(idFrom('scripts/lib/ota-branch-probe.ts', 'OTA_APP_ID'), 'ota-branch-probe OTA_APP_ID').toBe(shared);
+  });
+
+  it('hands each preview publish the full fingerprint it needs to verify its own work', () => {
+    // Without these the publish still succeeds — it just cannot check whether the
+    // branch it uploaded is being offered, which is the whole point of the check
+    // (#5417 published an iOS-only preview and said "✅ published" for Android).
+    // Pinned per platform because iOS and Android resolve DIFFERENT fingerprints:
+    // one value used for both would probe at least one platform with a hash no
+    // binary runs and report a false "not surfable".
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(preview).toContain('OTA_PREVIEW_RUNTIME_VERSION_IOS: ${{ steps.compat.outputs.fingerprint_ios_full }}');
+    expect(preview).toContain(
+      'OTA_PREVIEW_RUNTIME_VERSION_ANDROID: ${{ steps.compat.outputs.fingerprint_android_full }}',
+    );
+    // Step-level, never workflow-level: a fingerprint hash at workflow level would
+    // sit in the env block this file pins byte-identical across every mobile
+    // fingerprint workflow, where it is both wrong and unpinnable.
+    expect(workflowEnvValue(preview, 'OTA_PREVIEW_RUNTIME_VERSION_IOS')).toBeNull();
+    expect(workflowEnvValue(preview, 'OTA_PREVIEW_RUNTIME_VERSION_ANDROID')).toBeNull();
+    // And the compat check must actually emit them.
+    const compat = readFileSync(resolve(REPO_ROOT, 'scripts/mobile-ota-compat-check.ts'), 'utf8');
+    expect(compat).toContain('fingerprint_ios_full=');
+    expect(compat).toContain('fingerprint_android_full=');
   });
 
   it('uses pull_request (never pull_request_target) so fork jobs get no secrets', () => {

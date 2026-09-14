@@ -683,11 +683,20 @@ jobs:
       # Maps), Android WITH it — the per-platform split that keeps each published
       # fingerprint equal to its shipped binary (matches mobile-ota-production.yml). A
       # native-change platform is skipped.
+      # OTA_PREVIEW_RUNTIME_VERSION_* is the FULL fingerprint the compat step already
+      # resolved for this commit, and it is what makes the publish self-checking: with
+      # it the publisher re-asks `/branch_lists` — the same unauthenticated question the
+      # in-app picker asks — and fails if the branch it just uploaded is not being
+      # offered to that runtimeVersion. Without it the step still publishes; it just
+      # can't verify, which is the right behaviour for a local run. It is NOT a
+      # fingerprint input (nothing reads it at config time), so it stays out of the
+      # workflow-level env that scripts/mobile-ci-env-parity.test.ts pins.
       - name: Publish iOS OTA
         id: publish_ios
         if: steps.compat.outputs.verdict_ios != 'native-change-required'
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          OTA_PREVIEW_RUNTIME_VERSION_IOS: ${{ steps.compat.outputs.fingerprint_ios_full }}
         run: vp run mobile:publish -- --channel "$BRANCH" --platform ios
 
       - name: Publish Android OTA
@@ -696,6 +705,7 @@ jobs:
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          OTA_PREVIEW_RUNTIME_VERSION_ANDROID: ${{ steps.compat.outputs.fingerprint_android_full }}
         run: vp run mobile:publish -- --channel "$BRANCH" --platform android
 
       # Record authoritative full-SHA state before this job releases the shared
@@ -815,7 +825,11 @@ jobs:
                   ? '⚠️ behind a native change on `main` — rebase, then re-check'
                   : '⚠️ native change — needs a TestFlight/Play build';
               }
-              if (outcome === 'failure') return '❌ publish failed (see the run log)';
+              // A failing publish step now has a second cause worth naming: the upload
+              // succeeded but the server does not offer the branch to this
+              // runtimeVersion, so the picker would show nothing. The publisher prints
+              // which platform and hash it probed; keep the cell short and point at it.
+              if (outcome === 'failure') return '❌ publish failed or not surfable (see the run log)';
               return '—';
             };
             const iosCell = cell(process.env.OUTCOME_IOS, process.env.VERDICT_IOS);
