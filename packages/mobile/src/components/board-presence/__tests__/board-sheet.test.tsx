@@ -84,6 +84,11 @@ type ClimbListRowMockProps = {
 // The footer's label asks whether this gym has other boards. That is a React
 // Query hook and these harnesses mount no QueryClient; an empty roster is the
 // single-board gym, which is what these tests describe.
+const surface = vi.hoisted(() => ({ mode: 'glass' as 'glass' | 'blur' | 'material' | 'solid' }));
+vi.mock('../../../hooks/use-effective-surface-mode', () => ({
+  useEffectiveSurfaceMode: () => surface.mode,
+}));
+
 vi.mock('../../../lib/graphql/hooks/use-gym-boards', () => ({
   useGymBoards: () => ({ data: undefined }),
 }));
@@ -441,7 +446,12 @@ describe('BoardSheet', () => {
     expect(sheetModal.dismiss).toHaveBeenCalled();
   });
 
-  it('passes the opaque themed surface to the native sheet', () => {
+  // The sheet used to pass its colour unconditionally. That was meant to darken
+  // Android, where omitting it falls through to Compose's default container —
+  // but with no guard it painted iOS too, with the Android fallback palette, so
+  // an iPhone got a flat panel where iOS 26 draws Liquid Glass.
+  it('hands the background back to the native sheet so it draws its own material', () => {
+    surface.mode = 'glass';
     render(
       createElement(BoardSheet, {
         boardLabel: 'Garage Wall',
@@ -451,7 +461,24 @@ describe('BoardSheet', () => {
       }),
     );
 
-    expect(sheetModal.backgroundStyle).toEqual({ backgroundColor: '#191422' });
+    expect(sheetModal.backgroundStyle).toBeUndefined();
+  });
+
+  it('keeps the themed surface where the sheet will not draw one', () => {
+    for (const mode of ['material', 'solid'] as const) {
+      surface.mode = mode;
+      const { unmount } = render(
+        createElement(BoardSheet, {
+          boardLabel: 'Garage Wall',
+          onClose: noop,
+          boardConfig,
+          onSwitchBoard: noop,
+        }),
+      );
+
+      expect(sheetModal.backgroundStyle).toEqual({ backgroundColor: '#191422' });
+      unmount();
+    }
   });
 
   it('forwards dismissAndWait through the imperative ref', async () => {

@@ -207,6 +207,14 @@ function NowOnTheWallPanelComponent(
     variant === 'sheet' && onSelectGymWall ? (activeBoard?.gymUuid ?? null) : null,
   );
   const hasGymSiblings = (gymBoardsForFooter ?? []).some((board) => board.uuid !== activeBoard?.uuid);
+  // The gym's other boards are a disclosure, not a permanent block. Measured on
+  // an iPhone 17 Pro, the always-on list was 226-250pt of the ~305pt a climber
+  // can actually see at the first detent — so the sheet opened on a board
+  // switcher instead of on the wall feed it exists for. Collapsed on every
+  // presentation; the header title is what opens it.
+  const [gymWallsExpanded, setGymWallsExpanded] = useState(false);
+  const canSwitchGymWall = variant === 'sheet' && onSelectGymWall != null && hasGymSiblings;
+  const toggleGymWalls = useCallback(() => setGymWallsExpanded((open) => !open), []);
   const insets = useSafeAreaInsets();
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
@@ -581,6 +589,11 @@ function NowOnTheWallPanelComponent(
     const hardestSendGrade = resolveGrade({ difficulty: stats?.hardestSend?.grade ?? '' });
     return (
       <View>
+        {/* First in the header, above the hero: the disclosure opens directly
+            under the title that opened it. */}
+        {canSwitchGymWall && gymWallsExpanded && onSelectGymWall ? (
+          <GymWallSwitcher activeBoard={activeBoard ?? null} onSelectBoard={onSelectGymWall} />
+        ) : null}
         {canUseInteractiveRows && rowBoard && currentClimb ? (
           <InteractiveHeroRow
             climb={currentClimb}
@@ -610,9 +623,6 @@ function NowOnTheWallPanelComponent(
             gradeColor={heroGrade.color}
           />
         )}
-        {variant === 'sheet' && onSelectGymWall ? (
-          <GymWallSwitcher activeBoard={activeBoard ?? null} onSelectBoard={onSelectGymWall} />
-        ) : null}
         {stats ? (
           // testID anchors the store-screenshot flow: the stats only exist once the
           // wall history has landed, and this block is on screen at the top of the
@@ -692,6 +702,8 @@ function NowOnTheWallPanelComponent(
     variant,
     activeBoard,
     onSelectGymWall,
+    canSwitchGymWall,
+    gymWallsExpanded,
   ]);
 
   const listEmpty = useMemo(
@@ -699,7 +711,9 @@ function NowOnTheWallPanelComponent(
       <View>
         {currentClimb ? null : (
           <View style={styles.empty}>
-            <Icon name="lightbulb" size={36} color={systemColors.tertiaryLabel} />
+            {/* secondaryLabel, not tertiary: on a glass sheet this sits over the
+                blurred climb list, and tertiary is under the contrast floor. */}
+            <Icon name="lightbulb" size={36} color={systemColors.secondaryLabel} />
             <Text variant="headline" color={systemColors.label} style={styles.emptyTitle}>
               {t('mobile.boardPresence.emptyTitle')}
             </Text>
@@ -772,9 +786,38 @@ function NowOnTheWallPanelComponent(
         ) : (
           <View pointerEvents="none" style={styles.headerAction} />
         )}
-        <Text variant="title3" color={systemColors.label} numberOfLines={1} style={styles.headerTitle}>
-          {boardLabel ?? t('mobile.boardPresence.title')}
-        </Text>
+        {canSwitchGymWall ? (
+          // The board name was already the sheet's title and already says which
+          // board you are on. Making it the switch control costs no vertical
+          // space at all — the same pattern the Climbs app bar already uses.
+          <Pressable
+            onPress={toggleGymWalls}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: gymWallsExpanded }}
+            accessibilityLabel={t('mobile.boardPresence.gymWalls.headerSwitcherAria', {
+              board: boardLabel ?? '',
+            })}
+            accessibilityHint={t(
+              gymWallsExpanded
+                ? 'mobile.boardPresence.gymWalls.headerSwitcherHintClose'
+                : 'mobile.boardPresence.gymWalls.headerSwitcherHintOpen',
+            )}
+            style={styles.headerTitlePress}
+          >
+            <Text variant="title3" color={systemColors.label} numberOfLines={1} style={styles.headerTitleText}>
+              {boardLabel ?? t('mobile.boardPresence.title')}
+            </Text>
+            <Icon
+              name={gymWallsExpanded ? 'chevron.up' : 'chevron.down'}
+              size={14}
+              color={systemColors.secondaryLabel}
+            />
+          </Pressable>
+        ) : (
+          <Text variant="title3" color={systemColors.label} numberOfLines={1} style={styles.headerTitle}>
+            {boardLabel ?? t('mobile.boardPresence.title')}
+          </Text>
+        )}
         <View pointerEvents="none" style={styles.headerAction} />
       </View>
 
@@ -820,16 +863,27 @@ function NowOnTheWallPanelComponent(
         onPress={handleSwitchBoard}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.boardPresence.switchBoardAria')}
-        style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: footerBottomPadding }]}
+        style={[
+          styles.footer,
+          {
+            borderTopColor: systemColors.separator,
+            paddingBottom: footerBottomPadding,
+            // The sheet's ground is the native material now, so a pinned footer
+            // without a plate has the history list scrolling visibly under its
+            // text. Both shared sheet wrappers plate their pinned footers for
+            // this reason.
+            backgroundColor: systemColors.secondaryBackground,
+          },
+        ]}
       >
         <View style={[styles.footerIcon, { backgroundColor: systemColors.secondaryBackground }]}>
           <Icon name="transfer" size={20} color={systemColors.label} />
         </View>
         <View style={styles.footerText}>
           <Text variant="body" color={systemColors.label}>
-            {/* Once the gym's own boards are listed above, this control is no
-                longer "switch board" — it is the way out to everything else. */}
-            {hasGymSiblings ? t('mobile.boardPresence.gymWalls.allBoards') : t('mobile.boardPresence.switchBoard')}
+            {/* Stays "Switch board": the gym's own boards live behind the header
+                title now, so this is the way out to every board anywhere. */}
+            {t('mobile.boardPresence.switchBoard')}
           </Text>
           {boardLabel ? (
             <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
@@ -837,7 +891,7 @@ function NowOnTheWallPanelComponent(
             </Text>
           ) : null}
         </View>
-        <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+        <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
       </Pressable>
     </>
   );
@@ -1327,6 +1381,17 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerTitlePress: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[1],
+  },
+  headerTitleText: {
+    flexShrink: 1,
+    textAlign: 'center',
   },
   headerTitle: {
     flex: 1,

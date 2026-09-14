@@ -440,11 +440,13 @@
         "sameClimbs": "Dieselben Boulder wie dieses Board",
         "rowAria": "Zu {{board}} wechseln",
         "showAll": "Alle {{count}} Boards anzeigen",
-        "allBoards": "Alle Boards",
         "switchFailed": "Wechsel zu {{board}} hat nicht geklappt. Versuch es nochmal.",
         "angle": "{{angle}}°",
         "angleFixed": "fest auf {{angle}}°",
-        "noLights": "ohne Licht"
+        "noLights": "ohne Licht",
+        "headerSwitcherAria": "Du bist an {{board}}. Tippe, um zu einem anderen Board hier zu wechseln.",
+        "headerSwitcherHintOpen": "Zeigt die anderen Boards in dieser Halle",
+        "headerSwitcherHintClose": "Blendet die anderen Boards aus"
       },
       "moveToWall": {
         "title": "Der nächste ist an {{board}}",

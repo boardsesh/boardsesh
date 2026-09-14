@@ -440,11 +440,13 @@
         "sameClimbs": "Same climbs as this board",
         "rowAria": "Move to {{board}}",
         "showAll": "Show all {{count}} boards",
-        "allBoards": "All boards",
         "switchFailed": "Couldn't move to {{board}}. Try again.",
         "angle": "{{angle}}°",
         "angleFixed": "fixed at {{angle}}°",
-        "noLights": "no lights"
+        "noLights": "no lights",
+        "headerSwitcherAria": "You're on {{board}}. Tap to move to another board here.",
+        "headerSwitcherHintOpen": "Shows the other boards at this gym",
+        "headerSwitcherHintClose": "Hides the other boards"
       },
       "moveToWall": {
         "title": "Next one's on {{board}}",

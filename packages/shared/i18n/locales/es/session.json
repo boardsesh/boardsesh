@@ -440,11 +440,13 @@
         "sameClimbs": "Los mismos bloques que este plafón",
         "rowAria": "Cambiar a {{board}}",
         "showAll": "Ver los {{count}} plafones",
-        "allBoards": "Todos los plafones",
         "switchFailed": "No se pudo cambiar a {{board}}. Inténtalo de nuevo.",
         "angle": "{{angle}}°",
         "angleFixed": "fijo a {{angle}}°",
-        "noLights": "sin luces"
+        "noLights": "sin luces",
+        "headerSwitcherAria": "Estás en {{board}}. Toca para cambiar a otro plafón de aquí.",
+        "headerSwitcherHintOpen": "Muestra los otros plafones de este rocódromo",
+        "headerSwitcherHintClose": "Oculta los otros plafones"
       },
       "moveToWall": {
         "title": "El siguiente está en {{board}}",

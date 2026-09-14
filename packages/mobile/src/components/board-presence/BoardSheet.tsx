@@ -33,6 +33,7 @@ import { useManagedSheet, type DismissAndWaitResult } from '../../providers/shee
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useBoardPresenceCurrent, useBoardPresenceFeed } from '@boardsesh/board-presence-react';
 import { useTheme } from '../../providers/theme-provider';
+import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
@@ -146,7 +147,23 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   }, [isPresented, visibleHistory.length]);
 
   const snapPoints = useMemo(() => ['55%', '92%'], []);
-  const backgroundStyle = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
+  // Let the native sheet draw its own material wherever it can.
+  //
+  // This used to pass the colour unconditionally, which was meant to darken the
+  // sheet on ANDROID — where omitting it falls through to Compose's default
+  // container colour, not ours. With no guard it also painted iOS, and the
+  // colour it reaches for is the Android fallback palette, so an iPhone got a
+  // flat #181225 panel where iOS 26 should be drawing Liquid Glass.
+  //
+  // Keyed on the surface mode rather than the platform or the variant, per
+  // theme/variants/README: 'glass' and 'blur' hand the background back to
+  // SwiftUI, while 'material' keeps Android's intended solid and 'solid' keeps
+  // it for Reduce Transparency and for Android forced onto the glass variant.
+  const surfaceMode = useEffectiveSurfaceMode();
+  const backgroundStyle = useMemo(
+    () => (surfaceMode === 'glass' || surfaceMode === 'blur' ? undefined : { backgroundColor: sheetSurface }),
+    [surfaceMode, sheetSurface],
+  );
 
   const invalidatePanelActions = useCallback(() => {
     panelRef.current?.invalidatePendingActions();

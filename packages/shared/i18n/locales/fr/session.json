@@ -440,11 +440,13 @@
         "sameClimbs": "Les mêmes blocs que cette board",
         "rowAria": "Passer à {{board}}",
         "showAll": "Voir les {{count}} boards",
-        "allBoards": "Toutes les boards",
         "switchFailed": "Impossible de passer à {{board}}. Réessaie.",
         "angle": "{{angle}}°",
         "angleFixed": "fixe à {{angle}}°",
-        "noLights": "sans LED"
+        "noLights": "sans LED",
+        "headerSwitcherAria": "Tu es sur {{board}}. Touche pour passer à une autre board ici.",
+        "headerSwitcherHintOpen": "Affiche les autres boards de cette salle",
+        "headerSwitcherHintClose": "Masque les autres boards"
       },
       "moveToWall": {
         "title": "Le prochain est sur {{board}}",

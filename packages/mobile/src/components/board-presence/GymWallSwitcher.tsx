@@ -3,7 +3,6 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardConfigLabel, disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
-import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
@@ -11,8 +10,6 @@ import { spacing, borderRadius } from '../../theme/tokens';
 
 /** Rows shown before the list collapses behind "Show all N boards". */
 const COLLAPSED_ROW_COUNT = 2;
-
-const GLYPH_SIZE = 44;
 
 export type GymWallSwitcherProps = {
   /** The board the climber is on. Its gym is the roster we list. */
@@ -43,7 +40,7 @@ export type GymWallSwitcherProps = {
  */
 function GymWallSwitcherComponent({ activeBoard, onSelectBoard }: GymWallSwitcherProps) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { brandColors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const { data: gymBoards } = useGymBoards(activeBoard?.gymUuid ?? null);
 
@@ -67,13 +64,15 @@ function GymWallSwitcherComponent({ activeBoard, onSelectBoard }: GymWallSwitche
   const gymName = activeBoard?.gymName;
 
   return (
-    <View style={styles.section}>
-      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
-        {gymName
+    <View
+      accessibilityRole="list"
+      accessibilityLabel={
+        gymName
           ? t('mobile.boardPresence.gymWalls.header', { gym: gymName })
-          : t('mobile.boardPresence.gymWalls.headerNoGym')}
-      </Text>
-
+          : t('mobile.boardPresence.gymWalls.headerNoGym')
+      }
+      style={styles.section}
+    >
       {visibleSiblings.map((board, index) => (
         <GymWallRow
           key={board.uuid}
@@ -167,9 +166,6 @@ const GymWallRow = memo(function GymWallRow({
       accessibilityLabel={t('mobile.boardPresence.gymWalls.rowAria', { board: title })}
       style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
     >
-      <View style={[styles.glyph, { backgroundColor: systemColors.tertiaryBackground }]}>
-        <Icon name="boards" size={24} color={systemColors.secondaryLabel} />
-      </View>
       <View style={styles.rowText}>
         <Text variant="subheadline" color={systemColors.label} numberOfLines={1}>
           {title}
@@ -193,22 +189,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
   },
-  sectionHeader: {
-    textTransform: 'uppercase',
-  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[3],
     padding: spacing[3],
     borderRadius: borderRadius.md,
-  },
-  glyph: {
-    width: GLYPH_SIZE,
-    height: GLYPH_SIZE,
-    borderRadius: borderRadius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   rowText: {
     flex: 1,

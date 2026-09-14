@@ -8,7 +8,8 @@ const gymBoards = vi.hoisted(() => ({ data: undefined as UserBoard[] | undefined
 
 type PressableMockProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
+    createElement('div', { 'aria-label': accessibilityLabel }, children),
   Pressable: ({ children, onPress, accessibilityLabel }: PressableMockProps) =>
     createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
@@ -86,13 +87,19 @@ describe('GymWallSwitcher', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('lists the other boards under a heading naming the gym', () => {
+  // The gym's name is the region's accessible name, not visible copy: the sheet
+  // header already says which gym you are at, and the act of opening the list is
+  // its heading.
+  it('names the gym for screen readers without spending a line on it', () => {
     gymBoards.data = [ACTIVE, board({ uuid: 'tension', name: 'The Pump Station - Tension', boardType: 'tension' })];
 
     const { container } = render(createElement(GymWallSwitcher, { activeBoard: ACTIVE, onSelectBoard: vi.fn() }));
 
-    expect(container.textContent).toContain('gymWalls.header:The Pump Station');
-    // The gym prefix is stripped — the heading already said it.
+    expect(
+      container.querySelector('[aria-label="mobile.boardPresence.gymWalls.header:The Pump Station"]'),
+    ).toBeTruthy();
+    expect(container.textContent).not.toContain('gymWalls.header');
+    // The gym prefix is stripped from the row title — the sheet header said it.
     expect(container.textContent).toContain('Tension');
     expect(container.textContent).not.toContain('The Pump Station - Tension');
   });
