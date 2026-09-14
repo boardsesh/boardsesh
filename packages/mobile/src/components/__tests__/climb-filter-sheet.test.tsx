@@ -42,6 +42,10 @@ const bottomSheetModalProps = vi.hoisted(() => ({
   // `key`, so a remount (mountCount going 1 → 2) proves the host is torn down and
   // rebuilt — the fresh-first-present that fixes #3330.
   mountCount: 0,
+  // The raw ref's dismiss. A spy only: it does NOT fire onChange(-1), because the
+  // real native close arrives later (after the slide-down). Tests fire that close
+  // explicitly with simulateNativeClose().
+  dismiss: vi.fn(),
 }));
 
 // Captures the controlled `open` the sheet hands the coordinator, so tests can
@@ -170,7 +174,7 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     ref,
   ) {
     bottomSheetModalProps.latest = props;
-    useImperativeHandle(ref, () => ({ present: vi.fn(), dismiss: vi.fn() }), []);
+    useImperativeHandle(ref, () => ({ present: vi.fn(), dismiss: bottomSheetModalProps.dismiss }), []);
     useEffect(() => {
       bottomSheetModalProps.mountCount += 1;
     }, []);
@@ -396,6 +400,20 @@ function simulateScreenRefocus() {
   });
 }
 
+// Simulate the native close callback (iOS: after the slide-down; Android: after
+// hide() settles). It is the same onChange(-1) a pan-down fires.
+function simulateNativeClose() {
+  act(() => {
+    bottomSheetModalProps.latest?.onChange?.(-1);
+  });
+}
+
+// Tap Apply, then let the native close land, which is when Apply commits.
+function applyAndClose(applyButton: HTMLElement) {
+  fireEvent.click(applyButton);
+  simulateNativeClose();
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => false);
@@ -407,6 +425,119 @@ beforeEach(() => {
   managedSheetProps.latest = null;
   focusEffectHolder.cb = null;
   authMock.isAuthenticated = true;
+});
+
+// QA on #5414: committing on the tap made the parent unmount the sheet in the
+// same render as the dismiss, so the slide-down never played and the list swapped
+// under a vanishing sheet. Apply must commit only once the native close lands.
+describe('ClimbFilterSheet Apply waits for the native close', () => {
+  it('dismisses on the tap, then applies and closes, in that order, once the native close lands', () => {
+    const onApply = vi.fn();
+    const onDismiss = vi.fn();
+    const { getByText } = renderFilterSheet({ onApply, onDismiss });
+
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+
+    expect(bottomSheetModalProps.dismiss).toHaveBeenCalledTimes(1);
+    expect(onApply).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+
+    simulateNativeClose();
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledWith(currentFilters, currentBoardFilters);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onApply.mock.invocationCallOrder[0]).toBeLessThan(onDismiss.mock.invocationCallOrder[0]);
+  });
+
+  it('drops the draft on a pan-down close without Apply', () => {
+    const onApply = vi.fn();
+    const onDismiss = vi.fn();
+    const { getByTestId } = renderFilterSheet({ onApply, onDismiss });
+
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
+    simulateNativeClose();
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second Apply tap while the first is still closing the sheet', () => {
+    const onApply = vi.fn();
+    const { getByText } = renderFilterSheet({ onApply });
+
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+    simulateNativeClose();
+
+    expect(bottomSheetModalProps.dismiss).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores the sub-picker rows while an Apply is closing the sheet', () => {
+    const { getByText, getByLabelText } = renderFilterSheet();
+
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    fireEvent.click(getByLabelText('mobile.holdFilter.title'));
+    fireEvent.click(getByLabelText('mobile.zoneFilter.title'));
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(managedSheetProps.latest?.open).toBe(true);
+  });
+
+  it('still applies once if the parent unmounts the sheet before the native close lands', () => {
+    const onApply = vi.fn();
+    const onDismiss = vi.fn();
+    const { getByText, unmount } = renderFilterSheet({ onApply, onDismiss });
+
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+    unmount();
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledWith(currentFilters, currentBoardFilters);
+    // The parent already closed the filters; nothing else to close.
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('does not apply twice when the native close lands and the sheet then unmounts', () => {
+    const onApply = vi.fn();
+    const { getByText, unmount } = renderFilterSheet({ onApply });
+
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    unmount();
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a native close that arrives after the sheet was torn down mid-slide', () => {
+    const onApply = vi.fn();
+    const onDismiss = vi.fn();
+    const { getByText, unmount } = renderFilterSheet({ onApply, onDismiss });
+
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+    unmount();
+    expect(onApply).toHaveBeenCalledTimes(1);
+
+    // SwiftUI's onDismiss landing late, through the unmounted sheet's closure.
+    simulateNativeClose();
+
+    // No second apply, and no close of a Filters sheet the climber may have reopened.
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('drops a pending Apply when the board changes before the sheet unmounts', () => {
+    const onApply = vi.fn();
+    const rendered = renderFilterSheet({ onApply });
+
+    fireEvent.click(rendered.getByText('mobile.filter.showCount12'));
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} boardConfig={{ ...boardConfig, sizeId: 11 }} />);
+    rendered.unmount();
+
+    // The draft's setter, holds and zone filters belong to the old board.
+    expect(onApply).not.toHaveBeenCalled();
+  });
 });
 
 describe('ClimbFilterSheet sub-pickers', () => {
@@ -460,7 +591,8 @@ describe('ClimbFilterSheet sub-pickers', () => {
 
   it('applies straight from an apply handoff with the latest draft, without re-presenting', () => {
     const onApply = vi.fn();
-    const { getByLabelText, getByTestId } = renderFilterSheet({ onApply });
+    const onDismiss = vi.fn();
+    const { getByLabelText, getByTestId } = renderFilterSheet({ onApply, onDismiss });
 
     // A draft edit made before opening the picker must ride along.
     fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
@@ -474,6 +606,11 @@ describe('ClimbFilterSheet sub-pickers', () => {
       { ...currentFilters, onlyRatedByMe: true, setter: ['route-setter'] },
       currentBoardFilters,
     );
+    // The suspended sheet has no native close to wait for, so it closes itself,
+    // after committing the filters.
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onApply.mock.invocationCallOrder[0]).toBeLessThan(onDismiss.mock.invocationCallOrder[0]);
+    expect(bottomSheetModalProps.dismiss).not.toHaveBeenCalled();
 
     // The pop then refocuses the climbs screen. Even if the parent hasn't
     // unmounted the sheet yet, that refocus must not re-present it.
@@ -575,7 +712,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
 
     expect(managedSheetProps.latest?.open).toBe(true);
 
-    fireEvent.click(getByText('mobile.filter.showCount12'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
     expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: ['route-setter'] }, currentBoardFilters);
   });
 
@@ -596,7 +733,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
       />,
     );
     simulateScreenRefocus();
-    fireEvent.click(rendered.getByText('mobile.filter.showCount12'));
+    applyAndClose(rendered.getByText('mobile.filter.showCount12'));
 
     expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: ['route-setter'] }, currentBoardFilters);
   });
@@ -621,7 +758,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
         currentBoardFilters={{ ...currentBoardFilters, onlyBenchmarks: true }}
       />,
     );
-    fireEvent.click(rendered.getByText('mobile.filter.showCount12'));
+    applyAndClose(rendered.getByText('mobile.filter.showCount12'));
 
     expect(onApply).toHaveBeenCalledWith(
       { ...currentFilters, setter: ['parent-update'] },
@@ -649,7 +786,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
         currentBoardFilters={{ ...currentBoardFilters, onlyBenchmarks: true }}
       />,
     );
-    fireEvent.click(rendered.getByText('mobile.filter.showCount12'));
+    applyAndClose(rendered.getByText('mobile.filter.showCount12'));
 
     expect(onApply).toHaveBeenCalledWith(
       { ...currentFilters, setter: ['parent-update'] },
@@ -679,7 +816,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
       emitHoldsFilterSelection({ '99': { HAND: 'include' } });
     });
     simulateScreenRefocus();
-    fireEvent.click(getByText('mobile.filter.showCount12'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
 
     expect(onApply).toHaveBeenCalledWith(currentFilters, {
       ...currentBoardFilters,
@@ -715,7 +852,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
       });
     });
     simulateScreenRefocus();
-    fireEvent.click(getByText('mobile.filter.showCount12'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
 
     expect(onApply).toHaveBeenCalledWith(currentFilters, {
       holdsFilter: { '77': { FOOT: 'include' } },
@@ -851,7 +988,7 @@ describe('ClimbFilterSheet random sort', () => {
     });
 
     fireEvent.click(getByText('mobile.filter.sort.reshuffle'));
-    fireEvent.click(getByText('mobile.filter.showCount12'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
 
     const applied = onApply.mock.calls.at(-1)?.[0] as ClimbFilters;
     expect(applied.sortBy).toBe('random');
@@ -916,7 +1053,7 @@ describe('ClimbFilterSheet flat sections', () => {
     const { getByTestId, getByText } = renderFilterSheet({ onApply });
 
     fireEvent.click(getByTestId('switch-mobile.filter.onlyRatedByMe'));
-    fireEvent.click(getByText('mobile.filter.showCount12'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
 
     const applied = onApply.mock.calls.at(-1)?.[0] as ClimbFilters;
     expect(applied.onlyRatedByMe).toBe(true);
@@ -927,7 +1064,7 @@ describe('ClimbFilterSheet flat sections', () => {
     const { getByLabelText, getByText } = renderFilterSheet({ onApply });
 
     fireEvent.click(getByLabelText('mobile.filter.popularityUnrepeated'));
-    fireEvent.click(getByText('mobile.filter.showCount12'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
 
     const applied = onApply.mock.calls.at(-1)?.[0] as ClimbFilters;
     expect(applied.status).toBe('projects');
@@ -938,7 +1075,7 @@ describe('ClimbFilterSheet flat sections', () => {
     const { getByTestId, getByText } = renderFilterSheet({ onApply });
 
     fireEvent.click(getByTestId('segment-drafts'));
-    fireEvent.click(getByText('mobile.filter.showCount12'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
     expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).status).toBe('drafts');
   });
 
@@ -948,7 +1085,7 @@ describe('ClimbFilterSheet flat sections', () => {
 
     fireEvent.click(getByTestId('segment-drafts'));
     fireEvent.click(getByTestId('segment-benchmarks'));
-    fireEvent.click(getByText('mobile.filter.showCount12'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
     const call = onApply.mock.calls.at(-1);
     expect((call?.[0] as ClimbFilters).status).toBe('any');
     expect((call?.[1] as { onlyBenchmarks?: boolean }).onlyBenchmarks).toBe(true);
@@ -968,7 +1105,7 @@ describe('ClimbFilterSheet name field (#3606)', () => {
 
     // Guards against the wiring landing on the wrong button — a plausible
     // copy-paste inversion given Reset/Apply sit in the same header/footer.
-    fireEvent.click(getByText('mobile.filter.showCount12'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
     expect(onClearName).not.toHaveBeenCalled();
     expect(onApply).toHaveBeenCalledTimes(1);
 

@@ -221,10 +221,11 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    the draft survives), `router.push` the sub-route, and flip `open` back to `true` on a
    `useFocusEffect` when the screen re-focuses (covers the back chevron _and_ swipe-back). The
    sub-route hands its result back through a tiny pub/sub handoff. This is how `ClimbFilterSheet`
-   opens the `setters` / `holds` / `zone` filters. A sub-route can also commit directly: the
-   setters route's "Show N climbs" button sends its handoff with `apply: true`, so the sheet calls
-   `onApply` with its draft instead of merging, and the parent unmounts the still-suspended sheet
-   before the pop lands on the results.
+   opens the `setters` / `holds` / `zone` filters. The sheet's own Apply commits in its close
+   callback, which fires after the native slide-down, so the parent never unmounts the sheet
+   mid-animation. A sub-route can also commit directly: the setters route's "Show N climbs" button
+   sends its handoff with `apply: true`, and the sheet calls `onApply` then `onDismiss` itself,
+   because a suspended sheet has no native close to wait for.
 
 2. **Never `fullScreenModal` over the iOS 26 `NativeTabs`.** A `fullScreenModal` snapshots the
    presenting tab view controller for its transition; the native bottom-accessory glass platter

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -478,6 +478,59 @@ describe('ClimbList previous results standing in for a loading search', () => {
     await findByText('Moonage');
 
     expect(container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('false');
+  });
+
+  // The tint waits 300 ms so a fast (local) search swaps rows with no flash. The
+  // first render runs on real timers (findByText polls); fake timers start after
+  // it, so only the tint's timer is under test control.
+  it('never tints a search that lands inside the delay', async () => {
+    const { container, findByText, rerender } = render(<ClimbList />);
+    await findByText('Moonage');
+    const findTint = () => container.querySelector('[data-testid="climb-list-placeholder-tint"]');
+
+    vi.useFakeTimers();
+    try {
+      mocks.isPlaceholderData = true;
+      rerender(<ClimbList />);
+      expect(findTint()).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(299);
+      });
+      mocks.isPlaceholderData = false;
+      rerender(<ClimbList />);
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      expect(findTint()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('tints the stale rows once a slow search has stood in for 300 ms, and clears when it lands', async () => {
+    const { container, findByText, rerender } = render(<ClimbList />);
+    await findByText('Moonage');
+    const findTint = () => container.querySelector('[data-testid="climb-list-placeholder-tint"]');
+
+    vi.useFakeTimers();
+    try {
+      mocks.isPlaceholderData = true;
+      rerender(<ClimbList />);
+      expect(findTint()).toBeNull();
+
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(findTint()).not.toBeNull();
+
+      mocks.isPlaceholderData = false;
+      rerender(<ClimbList />);
+      expect(findTint()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('still shows the spinner for a real pull-to-refresh', async () => {

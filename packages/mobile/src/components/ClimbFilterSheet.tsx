@@ -157,6 +157,12 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
   );
 }
 
+// Identifies the wall a filter draft was built for. Setter, holds and zone
+// filters only mean something on that board, so a draft never outlives it.
+function boardKeyOf(config: BoardSearchConfig | null): string | null {
+  return config ? `${config.boardName}|${config.layoutId}|${config.sizeId}|${config.setIds}` : null;
+}
+
 export function hasActiveFilters(filters: ClimbFilters): boolean {
   return hasActiveClimbFilters(filters);
 }
@@ -193,6 +199,19 @@ export function ClimbFilterSheet({
   // onContentSizeChange one-shot per remount, not re-fire on later content growth.
   const restoredScrollEpochRef = useRef(0);
   const hasLocalDraftEditsRef = useRef(false);
+  // The draft Apply snapshotted, committed once the native close arrives (see
+  // handleApply). Non-null also blocks a second Apply and the sub-picker openers.
+  // `boardKey` is the board the draft was built for (see the unmount fallback).
+  const pendingApplyRef = useRef<{
+    filters: ClimbFilters;
+    boardFilters: ClimbBoardFilterState;
+    boardKey: string | null;
+  } | null>(null);
+  // Latest board, read by the unmount fallback after props are gone.
+  const boardConfigRef = useRef(boardConfig);
+  boardConfigRef.current = boardConfig;
+  // False once unmounted, so a close delivered late through a stale closure is ignored.
+  const isMountedRef = useRef(true);
   const boardName = boardConfig?.boardName ?? '';
   const { data: grades } = useGrades(boardName);
 
@@ -518,20 +537,61 @@ export function ClimbFilterSheet({
     [t],
   );
 
+  // Apply commits in the close callback, not on the tap. Committing on the tap
+  // made the parent unmount this sheet in the same render as the dismiss, so the
+  // native slide-down never played and the list swapped under a vanishing sheet.
+  // The draft is snapshotted here; the draft-edits guard stays set until the
+  // close so a parent re-sync can't revert the controls while the sheet slides.
   const handleApply = useCallback(() => {
-    hasLocalDraftEditsRef.current = false;
-    onApply(localFilters, localBoardFilters);
+    if (pendingApplyRef.current) return;
+    pendingApplyRef.current = {
+      filters: localFilters,
+      boardFilters: localBoardFilters,
+      boardKey: boardKeyOf(boardConfigRef.current),
+    };
     // Dismiss the raw native ref directly (not via the coordinator handle). This
     // is intentional and safe: the resulting native onChange(-1) routes back
-    // through managed.onChange → coordinator.notifyClosed, which opens the settle
-    // window. Keep it that way — don't assume the coordinator drove this close.
+    // through managed.onChange → onClose (handleSheetDismiss, which commits the
+    // snapshot) → coordinator.notifyClosed, which opens the settle window. Keep
+    // it that way — don't assume the coordinator drove this close.
     sheetRef.current?.dismiss();
-  }, [localFilters, localBoardFilters, onApply]);
+  }, [localFilters, localBoardFilters]);
 
+  // The native close: iOS fires it from SwiftUI's onDismiss after the slide-down,
+  // Android after hide() settles (the patched wrapper runs it even when the native
+  // call rejects), and a pan-down or a displacement takes the same path. A pending
+  // Apply commits first, then the parent closes; without one the draft is dropped.
   const handleSheetDismiss = useCallback(() => {
+    // SwiftUI can still deliver onDismiss after the parent tore the sheet down
+    // mid-slide. The unmount fallback already handled that Apply, and closing now
+    // would shut a Filters sheet the climber has since reopened.
+    if (!isMountedRef.current) return;
     hasLocalDraftEditsRef.current = false;
+    const pendingApply = pendingApplyRef.current;
+    pendingApplyRef.current = null;
+    if (pendingApply) onApply(pendingApply.filters, pendingApply.boardFilters);
     onDismiss();
-  }, [onDismiss]);
+  }, [onApply, onDismiss]);
+
+  // Fallback for a close that never arrives: the parent can tear the sheet down
+  // mid-slide (the grade chip or native search cancel flip its open state), and a
+  // SwiftUI host removed mid-animation never delivers onDismiss. The tap already
+  // meant "apply", so commit it rather than silently dropping it. Skipped when the
+  // board changed underneath (a board switch unmounts the sheet too): that draft's
+  // setter, holds and zone filters belong to the old board.
+  const onApplyRef = useRef(onApply);
+  onApplyRef.current = onApply;
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      // Marked first, so a late native close can't also act on this Apply.
+      isMountedRef.current = false;
+      const pendingApply = pendingApplyRef.current;
+      pendingApplyRef.current = null;
+      if (!pendingApply || pendingApply.boardKey !== boardKeyOf(boardConfigRef.current)) return;
+      onApplyRef.current(pendingApply.filters, pendingApply.boardFilters);
+    };
+  }, []);
 
   // The parent mounts this sheet only while it should be open, so present/dismiss
   // route through the coordinator (serialized, no overlapping native
@@ -582,7 +642,8 @@ export function ClimbFilterSheet({
   }, []);
 
   const openSetters = useCallback(() => {
-    if (!boardConfig || pendingResumeRef.current) return;
+    // Also ignored while an Apply is sliding the sheet closed.
+    if (!boardConfig || pendingResumeRef.current || pendingApplyRef.current) return;
     beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/setters',
@@ -622,7 +683,7 @@ export function ClimbFilterSheet({
   }, [presentEpoch]);
 
   const openHoldFilter = useCallback(() => {
-    if (!boardConfig || pendingResumeRef.current) return;
+    if (!boardConfig || pendingResumeRef.current || pendingApplyRef.current) return;
     beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/holds',
@@ -637,7 +698,7 @@ export function ClimbFilterSheet({
   }, [beginSubPickerSuspend, boardConfig, localBoardFilters.holdsFilter, router]);
 
   const openZoneFilter = useCallback(() => {
-    if (!boardConfig || pendingResumeRef.current) return;
+    if (!boardConfig || pendingResumeRef.current || pendingApplyRef.current) return;
     beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/zone',
@@ -665,7 +726,7 @@ export function ClimbFilterSheet({
   // re-focus this screen). On initial mount the screen is already focused with no
   // pending resume, so this is a no-op until a sub-route has actually been pushed.
   // The setters route's "Show N climbs" button never gets here: its apply handoff
-  // makes the parent unmount this sheet while it is still suspended.
+  // applies and closes, so the parent unmounts this sheet while still suspended.
   useFocusEffect(
     useCallback(() => {
       if (pendingResumeRef.current) {
@@ -682,19 +743,20 @@ export function ClimbFilterSheet({
       const setter = selectedSetters.length > 0 ? selectedSetters : undefined;
       if (options.apply) {
         // "Show N climbs" on the setters route: apply the latest draft with the
-        // picks merged, exactly as the sheet's own Apply would. The parent's
-        // onApply closes the filters, unmounting this suspended sheet, so there
-        // is nothing to dismiss and no re-present to wait for. Clearing the
-        // pending resume makes sure the pop's refocus can't re-present it either.
+        // picks merged. The sheet is suspended, so no native close will come to
+        // commit it (unlike the sheet's own Apply): apply, then close the filters
+        // directly, which unmounts this suspended sheet. Clearing the pending
+        // resume makes sure the pop's refocus can't re-present it either.
         hasLocalDraftEditsRef.current = false;
         pendingResumeRef.current = false;
         onApply({ ...localFiltersRef.current, setter }, localBoardFiltersRef.current);
+        onDismiss();
         return;
       }
       flushPreviewRef.current = true;
       updateLocalFilters((previous) => ({ ...previous, setter }));
     },
-    [onApply, updateLocalFilters],
+    [onApply, onDismiss, updateLocalFilters],
   );
 
   const handleHoldsFilterChange = useCallback(
