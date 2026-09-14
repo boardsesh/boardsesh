@@ -7,8 +7,11 @@
 // text. Expo UI always makes the nested Compose Switch interactive, even when
 // its JavaScript callback is omitted, so it uses the same handler for direct
 // thumb taps. Compose consumes that child gesture before it reaches the row.
-// We bridge only the brand on-track colour; M3 surface/label colours come from
-// the Compose Material theme the Host sets up.
+// We bridge the brand on-track colour, plus an explicit label/description
+// colour: this Row sits directly in the Host, not inside a Card, so unlike
+// carded row text it gets no M3 on-surface content colour from a surrounding
+// container and renders black regardless of colorScheme (same class of bug as
+// the MoreForm section titles — see that file's sectionTextColor).
 //
 // One Host per row is intentional for PR-1 (SwitchRow is used one-per-card
 // today). PR-2 consolidates whole settings screens into a single Compose list.
@@ -24,7 +27,7 @@ import { makeToggleHandler } from './SwitchRow.logic';
 import type { SwitchRowProps } from './SwitchRow.types';
 
 export function SwitchRow({ label, description, value, onValueChange, disabled = false, tint }: SwitchRowProps) {
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors, colorScheme, systemColors } = useTheme();
   const handleToggle = makeToggleHandler(onValueChange, disabled);
   // On-track colour: brand accent (purple) by default; the logbook passes amber.
   const switchColors = tint ? { checkedTrackColor: tint } : switchBrandColors(brandColors);
@@ -53,9 +56,15 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
     <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
       <Row horizontalArrangement="spaceBetween" verticalAlignment="center" modifiers={rowModifiers}>
         <Column modifiers={disabled ? [weight(1), alpha(0.4)] : [weight(1)]}>
-          <Text style={{ typography: 'bodyLarge' }}>{label}</Text>
+          <Text style={{ typography: 'bodyLarge' }} color={systemColors.label as string}>
+            {label}
+          </Text>
           {description ? (
-            <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+            // No `alpha()` modifier here: unlike the old default-colour text,
+            // `secondaryLabel` is already opaque and chosen to clear WCAG AA
+            // on its own (see colors.ts) — compositing it down again would
+            // undo that.
+            <Text style={{ typography: 'bodySmall' }} color={systemColors.secondaryLabel as string}>
               {description}
             </Text>
           ) : null}
