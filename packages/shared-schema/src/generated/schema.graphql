@@ -4827,6 +4827,8 @@ input SaveClimbInput {
   anyFeet: Boolean
   "Physical board size the climb is set on. Required on Woods (1 = 8x10, 2 = 12x12), where the two walls number their holds from their own origins. Ignored on boards that derive size compatibility from the hold bounding box."
   sizeId: Int
+  "The setter's own grade, seeded into board_climb_stats.display_difficulty. REQUIRED to publish on a spray wall, which has no crowd grade to fall back on; ignored elsewhere, where the grade comes from ticks or the Aurora sync."
+  userGrade: String
 }
 
 """
@@ -5398,6 +5400,199 @@ input DeleteHoldOutlineOverrideInput {
   placementId: Int!
   "Which boundary to drop. Defaults to SILHOUETTE — dropping one kind leaves the other standing."
   kind: HoldOutlineKind
+}
+
+"""
+Lifecycle of one wall photo.
+
+DRAFT is being edited and is invisible to climbers; PUBLISHED is the generation
+climbs are set against; SUPERSEDED is what the previous PUBLISHED becomes when a
+reset commits (SW-12).
+"""
+enum SprayWallVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+}
+
+"Where a hold's geometry came from: a detector run, or a human's hand."
+enum SprayHoldSource {
+  MANUAL
+  AUTO
+}
+
+"""
+A wall photo, behind short-lived presigned URLs.
+
+Spray-wall photos live in the PRIVATE bucket, never the public `media` one:
+the photograph is of somebody's home, and `media` is world-readable under
+guessable keys (`docs/user-media-storage.md`). So there is no stable URL to
+store on a row — every read mints a fresh signature, and `expiresAt` is when
+the one in hand stops working.
+"""
+type SprayWallPhoto {
+  "Presigned GET for the full-size photo. Valid until expiresAt; never cache it past that."
+  url: String!
+  "Presigned GET for the largest stored resize variant, for list rows and the compare view."
+  thumbUrl: String
+  "Pixel width of the stored photo, after sharp's EXIF-orientation rotate."
+  width: Int
+  "Pixel height of the stored photo, after sharp's EXIF-orientation rotate."
+  height: Int
+  "ISO 8601 expiry of the signatures above."
+  expiresAt: String!
+}
+
+"""
+One hold across its whole life. Coordinates are in the wall's canonical frame
+(`SprayWall.referenceWidth` / `referenceHeight`), which version 1 defines from
+its own photo — there are no real-world wall dimensions anywhere.
+"""
+type SprayWallHold {
+  "The wall's board_placements id AND its board_holes id — the number a climb's frames string carries."
+  id: Int!
+  cx: Int!
+  cy: Int!
+  r: Int!
+  "Flat implicitly-closed ring [x0, y0, x1, y1, ...] in units of this hold's own radius, relative to its centre. Null falls back to the circle (cx, cy, r) describes."
+  outline: [Float!]
+  "Version number that put this hold on the wall."
+  installedVersion: Int!
+  "Version number that took it off, or null while it is still there."
+  removedVersion: Int
+  "The hold this one replaced, when a reset review linked a move."
+  movedFromHoldId: Int
+  source: SprayHoldSource!
+  "Detector confidence 0-1 for AUTO holds; null when a human drew it."
+  confidence: Float
+}
+
+"One photograph of the wall, with the geometry that maps it onto the canonical frame."
+type SprayWallVersion {
+  id: ID!
+  "1-based and dense per wall."
+  number: Int!
+  status: SprayWallVersionStatus!
+  photo: SprayWallPhoto!
+  "The wall's four corners in THIS photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Null means the photo frame is the quad."
+  anchors: JSON
+  "Row-major 3x3 photo→canonical homography, nine floats. The identity matrix when the version has no anchors."
+  homography: [Float!]
+  "What changed in this reset, in the wall owner's own words."
+  notes: String
+  publishedAt: String
+  createdAt: String!
+  "Holds this version put on the wall."
+  addedHoldCount: Int!
+  "Holds this version took off the wall."
+  removedHoldCount: Int!
+}
+
+"""
+A climber's own wall: one runtime-created catalogue layout under the `spray`
+board type. Its owner, name, angle, visibility and gym live on the
+`user_boards` row `board` returns — nothing about a wall is stored twice.
+"""
+type SprayWall {
+  uuid: ID!
+  board: UserBoard!
+  "The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself."
+  layoutId: Int!
+  "Always equal to layoutId. Returned so a client never has to know the equality."
+  sizeId: Int!
+  "The canonical frame in pixels, derived from the version-1 photo. Null until the first photo lands."
+  referenceWidth: Int
+  referenceHeight: Int
+  "The published version climbers see. Null until the first publish."
+  currentVersion: SprayWallVersion
+  "Every version, newest first. Drafts are only visible to the owner."
+  versions: [SprayWallVersion!]!
+  "Holds alive on the current version."
+  holdCount: Int!
+  "Whether the viewer may edit this wall — i.e. whether they own it."
+  viewerCanEdit: Boolean!
+}
+
+"""
+Everything a renderer needs for one wall at one version: the photo, the
+geometry that maps it, and the holds alive at that version.
+
+No image is ever warped — the client maps holds through the INVERSE of
+`homography` at draw time.
+"""
+type SprayWallRenderData {
+  wall: SprayWall!
+  versionNumber: Int!
+  "The canonical frame's width, i.e. the coordinate space cx/cy/r live in."
+  boardWidth: Int!
+  "The canonical frame's height."
+  boardHeight: Int!
+  photo: SprayWallPhoto!
+  homography: [Float!]!
+  holds: [SprayWallHold!]!
+}
+
+input CreateSprayWallInput {
+  "What the climber calls the wall. Becomes the board name, the catalogue row names and the slug."
+  name: String!
+  "Fixed for the wall's life: stats are keyed by angle and a spray wall does not adjust."
+  angle: Int!
+  description: String
+  "Private by default. A public wall is listed; an unlisted one is reachable by uuid only."
+  isPublic: Boolean
+  isUnlisted: Boolean
+  "Attach the wall to a gym the caller may link boards to."
+  gymUuid: ID
+  locationName: String
+  latitude: Float
+  longitude: Float
+  hideLocation: Boolean
+}
+
+input CreateSprayWallVersionInput {
+  wallUuid: ID!
+  "photoId from POST /api/spray-wall-photos."
+  photoId: ID!
+  "The wall's four corners in this photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Omit to use the photo frame."
+  anchors: JSON
+  notes: String
+}
+
+"""
+One hold as the editor sends it. Coordinates are canonical-frame pixels.
+
+`id` names an existing hold on the wall (a geometry correction); omit it and
+the server allocates a new catalogue id. The server validates SHAPE only — the
+ring contract, the caps and that an id is alive on the version — and never
+re-runs detection: it is the owner's wall.
+"""
+input SprayWallHoldInput {
+  id: Int
+  cx: Int!
+  cy: Int!
+  r: Int!
+  "Flat implicitly-closed ring in radius units, 3-150 points, every coordinate within 4 radii."
+  outline: [Float!]
+  source: SprayHoldSource
+  confidence: Float
+  movedFromHoldId: Int
+}
+
+input UpsertSprayWallHoldsInput {
+  wallUuid: ID!
+  "The DRAFT version being edited. Published versions are immutable."
+  versionId: ID!
+  holds: [SprayWallHoldInput!]!
+}
+
+input RemoveSprayWallHoldsInput {
+  wallUuid: ID!
+  versionId: ID!
+  holdIds: [Int!]!
+}
+
+input PublishSprayWallVersionInput {
+  versionId: ID!
 }
 
 """
@@ -6107,6 +6302,39 @@ type Query {
   board). Read-only; the editor renders both and offers a revert.
   """
   holdOutlines(input: HoldOutlineConfigInput!): BoardHoldOutlines!
+
+  # ============================================
+  # Spray Wall Queries
+  # ============================================
+
+  """
+  One spray wall by uuid (the `user_boards` uuid it is keyed on).
+
+  Visible to the owner, to a member of the gym the wall is attached to, and to
+  anyone at all when the wall is public or unlisted — an unlisted wall is
+  reachable by uuid and nowhere else. Null when the wall does not exist, is
+  deleted, or the viewer may not see it: the three are deliberately
+  indistinguishable, so a private wall's existence does not leak.
+  """
+  sprayWall(uuid: ID!): SprayWall
+
+  """
+  The spray wall occupying a catalogue layout id, for a client holding only a
+  board config. Same visibility rules as `sprayWall`.
+  """
+  sprayWallByLayout(layoutId: Int!): SprayWall
+
+  """
+  Everything needed to render a wall at one version: the photo, the homography
+  and the holds alive at that version. Omit `version` for the published one.
+
+  A version the viewer may not see (a draft on somebody else's wall) is null,
+  as is a wall with nothing published yet.
+  """
+  sprayWallRenderData(uuid: ID!, version: Int): SprayWallRenderData
+
+  "Every wall the caller owns, newest first. Includes walls with no published version."
+  mySprayWalls: [SprayWall!]!
 
   # ============================================
   # Gym Kiosk Queries
@@ -6985,6 +7213,63 @@ type Mutation {
   nothing to remove.
   """
   deleteHoldOutlineOverride(input: DeleteHoldOutlineOverrideInput!): Boolean!
+
+  # ============================================
+  # Spray Wall Mutations
+  # ============================================
+
+  """
+  Create a spray wall: a `user_boards` row plus the three catalogue rows the
+  wall's own layout needs, all unlisted.
+
+  LEDs are never on a spray wall, and the flag is not accepted from the client:
+  there is no firmware to encode for, so the row is always written
+  `hasLeds: false` and the LED-less play path (#4585) is the one it takes.
+  The angle is fixed here for the wall's life. Capped at
+  `MAX_SPRAY_WALLS_PER_USER` walls per owner.
+  """
+  createSprayWall(input: CreateSprayWallInput!): SprayWall!
+
+  """
+  Attach a photo to the wall as a new DRAFT version, and compute its
+  photo→canonical homography from the anchors by 4-point DLT.
+
+  Version 1 defines the wall's canonical frame from the photo itself — the
+  anchor quad's bounding rectangle, or the photo's own pixel box when no
+  anchors were tapped. There are no user-entered wall dimensions. Owner only.
+  """
+  createSprayWallVersion(input: CreateSprayWallVersionInput!): SprayWallVersion!
+
+  """
+  Add or correct holds on a DRAFT version. A hold with no `id` is allocated a
+  new catalogue id (one `board_holes` + one `board_placements` row sharing
+  it); a hold with one has its geometry rewritten, and it must be alive on the
+  version. Owner only, and never on a published version.
+  """
+  upsertSprayWallHolds(input: UpsertSprayWallHoldsInput!): [SprayWallHold!]!
+
+  """
+  Take holds off the wall as of a DRAFT version.
+
+  A hold installed BY that draft is deleted outright — it was never on the real
+  wall. One installed earlier is stamped removed, never deleted: a climb set on
+  it has to stay findable and countable. Owner only.
+  """
+  removeSprayWallHolds(input: RemoveSprayWallHoldsInput!): Int!
+
+  """
+  Publish a draft version: it becomes the generation climbers set against, the
+  previous published version is superseded, and the wall's hold count and
+  catalogue image are refreshed. Owner only.
+  """
+  publishSprayWallVersion(input: PublishSprayWallVersionInput!): SprayWallVersion!
+
+  """
+  Soft-delete a wall. The catalogue rows and every climb ever set on it stay
+  behind — a deleted wall stops being reachable, it does not un-set the climbs.
+  Owner only.
+  """
+  deleteSprayWall(uuid: ID!): Boolean!
 
   """
   Report that two gym listings are the same gym (any signed-in user). Surfaces the

@@ -5,9 +5,12 @@ corrected by hand, then set and logged on like any other board. The epic is
 [#5346](https://github.com/boardsesh/boardsesh/issues/5346); this file grows with
 each child PR. Today it covers the identity mapping, which
 [SW-03 (#5436)](https://github.com/boardsesh/boardsesh/issues/5436) shipped as
-types with no rows and no UI behind them, and the tables
+types with no rows and no UI behind them, the tables
 [SW-04 (#5437)](https://github.com/boardsesh/boardsesh/issues/5437) added
-underneath it.
+underneath it, and the API
+[SW-05 (#5438)](https://github.com/boardsesh/boardsesh/issues/5438) put on top —
+which is where the first real rows come from. There is still no UI: the add-a-wall
+flow is SW-09 (#5442).
 
 ## Identity mapping
 
@@ -259,8 +262,8 @@ false — that is the whole board, and it is one row in
   is the one it takes. **BLE suppression today is that per-row `has_leds` data,
   not the board type** — `scanFamilyForBoard('spray')` would still answer
   `'aurora'`, because every non-MoonBoard board falls through to it. So
-  `createSprayWall` (SW-05) must ALWAYS write `has_leds = false` and never accept
-  the flag from a client, and SW-09 must not show the "has LEDs" toggle on the
+  `createSprayWall` ALWAYS writes `has_leds = false` and never accepts the flag
+  from a client (SW-05), and SW-09 must not show the "has LEDs" toggle on the
   add-a-wall flow. Deriving the suppression from the capability instead of the
   row is a follow-up; it touches the mobile BLE path, which needs its own review.
 - **No crowd grade.** `crowdGrade: false`. The setter's grade is required on
@@ -271,17 +274,190 @@ false — that is the whole board, and it is one row in
 - **No multi-frame climbs**, and `explicitClimbRules: false` so a spray climb
   reads like a Kilter one — only the departures from the default are printed.
 
-## Climb writes are closed until SW-05
+## The API
 
-`saveClimb` and `updateClimb` reject `boardType: "spray"`
-(`assertClimbWriteBoardIsNotSpray`). `BoardNameSchema` accepts the value the
-moment SW-03 lands, and nothing downstream stops it —
-`populateDenormalizedColumns` matches zero `board_placements` rows for a spray
-layout and returns rather than throwing — so without the gate any authenticated
-caller could publish listed `board_climbs` rows into the spray partition at a
-`layoutId` of their choosing, and SW-04's per-wall layout sequence would later
-hand those ids to real walls. SW-05 (#5438) removes the gate together with wall
-ownership, the setter grade and the per-wall duplicate check.
+Everything a wall needs is in `packages/shared-schema/src/schema/spray-walls.ts`
+(SDL) and `packages/backend/src/graphql/resolvers/board/spray-walls.ts`
+(resolvers), with the client documents in
+`packages/shared/graphql/src/operations/spray-walls.ts`.
+
+| Operation | What it does |
+| --- | --- |
+| `sprayWall(uuid)` | One wall by its `user_boards` uuid. |
+| `sprayWallByLayout(layoutId)` | The same wall, for a client holding only a board config. |
+| `sprayWallRenderData(uuid, version)` | The whole render payload in one round trip: the photo, the homography and the holds alive at that version. Omit `version` for the published one. |
+| `mySprayWalls` | Every wall the caller owns, drafts included. |
+| `createSprayWall(input)` | The `user_boards` row plus the three catalogue rows, all unlisted. |
+| `createSprayWallVersion(input)` | Adopts an uploaded photo as a new DRAFT version and solves its homography. |
+| `upsertSprayWallHolds(input)` | Adds or corrects holds on a draft. A hold with no `id` gets a new catalogue id; one with an `id` has its geometry rewritten. |
+| `removeSprayWallHolds(input)` | Takes holds off as of a draft. |
+| `publishSprayWallVersion(input)` | Makes a draft the generation climbers set against. |
+| `deleteSprayWall(uuid)` | Soft delete. Catalogue rows and climbs stay. |
+
+### What `createSprayWall` writes, and the two fields it never takes
+
+One `user_boards` row with `board_type = 'spray'`, `layout_id = size_id` from ONE
+`spray_wall_catalog_id_seq` value, `set_ids = '1'`, the angle the create flow
+chose, and a slug from `generateUniqueSlug` — the same slug rule as `createBoard`.
+Then `createSprayWallCatalogueRows` for the layout, the size and the join row.
+
+Two columns are written by the resolver and are **not in the input schema at all**,
+so a client cannot set them:
+
+- **`has_leds` is always `false`.** There is no firmware to encode for, and BLE
+  suppression today is this per-row data rather than the board type —
+  `scanFamilyForBoard('spray')` still answers `'aurora'`, because every
+  non-MoonBoard board falls through to it. A wall created with `has_leds = true`
+  would offer a climber a Bluetooth scan for a wall with no controller.
+- **`is_angle_adjustable` is always `false`.** Stats are keyed by angle and a
+  spray wall does not adjust.
+
+And one default is inverted from every other board type: **a wall is private
+unless the input says otherwise**. A wall is somebody's home.
+
+### Versions, anchors and the homography
+
+`createSprayWallVersion` takes the `photoId` the upload handler returned and
+adopts that object as a draft version. The photo's pixel dimensions come off the
+STORED object's metadata, never off the request — they define the canonical frame,
+and a client that lied about them would put every hold on the wall at the wrong
+place.
+
+Version 1 defines the frame: with anchors it is the anchor quad's bounding
+rectangle, without them it is the photo's own pixel box. Later versions **inherit**
+the frame, because every existing hold's coordinates are in it. There are no
+user-entered wall dimensions anywhere (owner decision 2026-09-14: we just render
+the photo).
+
+The homography is a 4-point DLT in pure TS
+(`packages/backend/src/lib/spray-wall-homography.ts`), nine row-major floats, and
+the identity matrix when a version has no anchors. A degenerate quad — anchors
+collinear or coincident — also falls back to the identity: a worse map than a
+correct one, and a far better outcome than a matrix of NaN that would render every
+hold at nowhere. No image is ever warped in v1; the client maps holds through the
+INVERSE at draw time. SW-06 (#5439) moves the module into
+`@boardsesh/spray-wall-geometry` unchanged.
+
+### Adding and removing holds
+
+Holds are only editable on a **draft** version. Published and superseded versions
+are immutable, because a climb set against a published generation reads its holds
+by id — rewriting that generation's geometry would silently move every climb on it.
+
+Removal splits two ways, and the split is what keeps history honest:
+
+- a hold the **same draft added** is deleted outright, catalogue rows included: it
+  was never on the real wall, the owner drew it and changed their mind;
+- a hold installed by an **earlier** version is stamped `removed_version_id` and
+  never deleted, because a climb set on it has to stay findable and
+  `missing_hold_count` has to stay countable.
+
+### Authorization
+
+Two rules, and they are deliberately different:
+
+| | Who |
+| --- | --- |
+| **View** a wall | The owner, a member of the gym it is attached to, or anybody at all when `is_public` or `is_unlisted` is set. |
+| **Edit** a wall | `requireBoardEditAccess`, **unchanged** — the owner, a gym owner/admin for an attached wall, a community admin/leader on a public one. |
+
+A gym **`editor`** can edit the gym's page and cannot touch a wall's holds
+(owner decision 2026-09-14: ownership grants editing; no gym-editor extension).
+Reusing `requireBoardEditAccess` rather than writing a wall-specific rule is what
+keeps that true without a second gate to keep in step.
+
+"Not visible" and "does not exist" are the same answer everywhere a wall is read.
+Telling a stranger that a uuid IS a wall they may not see is itself a leak.
+
+### The server validates shape, and never re-runs detection
+
+`packages/backend/src/validation/schemas/spray-walls.ts` checks the ring contract
+(`isValidOutlineRing` from `@boardsesh/board-art-geometry/ring` — the same
+implementation the outline editor uses, so a client can never draw a silhouette
+its own validator accepts and the backend refuses), the caps, and that a named
+hold id is alive on the version being edited. It never asks whether a hold "looks
+like" a hold. Owner decision 2026-09-14: it is the owner's wall, and trash in is
+their call.
+
+## Photo privacy
+
+Wall photos go to the **`private`** R2 bucket and are read through **15-minute
+presigned URLs** (`presignGetObject` in `packages/backend/src/storage/s3.ts`).
+`media` is world-readable under guessable keys (`docs/user-media-storage.md`), so
+one wall photo there is a picture of the inside of someone's home on the open
+internet. There is no URL safe to persist, which is why `SprayWallPhoto` carries
+`expiresAt` and why every read mints a fresh signature.
+
+`POST /api/spray-wall-photos`
+(`packages/backend/src/handlers/spray-wall-photos.ts`) is cloned from
+`createGymImageUploadHandler` and then narrowed three ways, all for the same
+reason:
+
+1. **No local-dev disk fallback.** The gym handlers write to `./gym-photos` and
+   serve it from `/static/...` when S3 is off. Doing that here would put a home
+   photo on an unauthenticated route, so with no `private` bucket configured this
+   endpoint answers **501 in every environment** — the `user-data-export`
+   precedent for the same bucket. Local spray-wall work needs `PRIVATE_*` set.
+2. **Every byte is re-encoded.** `sharp().rotate()` bakes in the EXIF orientation
+   and the re-encode drops the metadata block wholesale, GPS tags included — on a
+   home wall, that is the owner's street address. A test uploads a tagged fixture
+   and asserts the marker is nowhere in the stored bytes.
+3. **A narrower allowlist and a single stored format.** JPEG, PNG and WebP in
+   (no GIF — an animated spray wall is not a thing), always JPEG out. That makes
+   the object key a pure function of the photo id
+   (`spray-walls/<wallUuid>/<photoId>.jpg`), so `createSprayWallVersion` resolves
+   it without probing candidate extensions and a cleanup sweep can enumerate a
+   wall's objects by prefix.
+
+The cap is 10MB, `files: 1`, the magic bytes decide the format regardless of the
+declared Content-Type, and the caller must **own** the wall — not merely be able
+to edit it. Nobody uploads a photograph of a stranger's living room.
+
+An uploaded photo sits in the bucket unreferenced until `createSprayWallVersion`
+adopts it, so an abandoned upload is a stray object for the SW-17 (#5450) cleanup
+job rather than a row anyone can see.
+
+## Climb writes on a wall
+
+SW-03's blanket `assertClimbWriteBoardIsNotSpray` gate is gone. What replaced it
+is `packages/backend/src/graphql/resolvers/climbs/spray-authoring.ts`, and the
+four rules there are what the gate was standing in for:
+
+1. **The wall has to exist and the caller has to be able to see it.** A `layoutId`
+   alone is not authorization. Note it is VIEW access, not edit: setting a climb on
+   a gym's spray wall is what a gym member is there to do, and only the wall's
+   holds are the owner's alone.
+2. **A setter grade is required to publish.** `getBoardCapabilities('spray')`
+   answers `crowdGrade: false` — a home wall has a handful of climbers, so nothing
+   converges on a consensus grade and a published climb with no grade would stay
+   ungraded forever. `userGrade` is on `SaveClimbInput` for this, mirroring
+   `SaveMoonBoardClimbInput`, and it seeds
+   `board_climb_stats.display_difficulty`. A graded DRAFT gets the stats row too,
+   because `updateClimb`'s publish-time seed has no grade source to reconstruct
+   from — and `updateClimb` refuses to publish a spray draft whose stats row has
+   no grade, so draft → publish is not a way around rule 2.
+3. **Every hold has to be alive on the current version**, checked inside the write
+   transaction so a reset committing mid-write cannot let a climb through on a
+   hold that just came off. `updateClimb` runs the same check on every spray edit.
+4. **The denormalised columns are authoritative at write time**:
+   `compatible_size_ids = [layoutId]`, `required_set_ids = [1]`,
+   `missing_hold_count = 0`, and `hold_fingerprint` written here because a wall
+   has no Aurora sync to come back and fill it in.
+
+Rule 4 has one subtlety worth knowing before you touch it.
+`populateDenormalizedColumns` still runs for spray — its edge columns are worth
+having, and search's size filter reads them — but its step 3 derives
+`compatible_size_ids` by joining EVERY `board_product_sizes` row of the board type
+whose edge box contains the climb's, **with no layout scoping**. On spray every
+wall's size row IS an edge box, so a climb on one wall would come out "compatible"
+with any other wall whose frame happens to contain its holds. Both resolvers
+therefore re-assert the two columns immediately after the helper runs.
+
+And the feed: **`climb.created` is published for PUBLIC walls only** (owner
+decision 2026-09-14: private-wall ticks are the owner's logbook). A feed event
+carries the climb's name and its wall's layout id to every follower, so firing one
+for a private wall would announce the existence of somebody's home wall to people
+who cannot open it.
 
 ## Where spray is excluded
 
@@ -300,7 +476,7 @@ property rather than a catalogue:
    `board_type = 'spray'` before the expensive per-config LATERAL climb count is
    built, and `isPopularConfigRow` drops it again on the way out.
 
-   **SW-04 must seed spray catalogue rows with `is_listed = false`** on
+   **Every per-wall catalogue row is seeded `is_listed = false`** on
    `board_layouts`, `board_product_sizes` AND
    `board_product_sizes_layouts_sets`. That is the primary defence — the two
    filters above exist so one mis-seeded row cannot put a climber's wall on the

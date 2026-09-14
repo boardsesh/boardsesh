@@ -306,6 +306,13 @@ export const SaveClimbInputSchema = z
     noMatch: RuleFlagSchema,
     anyFeet: RuleFlagSchema,
     sizeId: ClimbSizeIdSchema,
+    // The setter's own grade, mirroring SaveMoonBoardClimbInputSchema. REQUIRED to
+    // publish on a spray wall — that board has `crowdGrade: false`, so nothing will
+    // ever converge on a consensus difficulty and this is the only grade the climb
+    // will have. Ignored on every other board, where the grade comes from ticks or
+    // the Aurora sync; the RESOLVER decides that, not this schema, because the
+    // requirement depends on the wall rather than on the shape of the input.
+    userGrade: z.string().max(20).optional(),
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,

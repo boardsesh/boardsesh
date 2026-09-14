@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",
+    "@aws-sdk/s3-request-presigner": "^3.1131.0",
     "@boardsesh/aurora-sync": "workspace:*",
     "@boardsesh/board-art-geometry": "workspace:*",
     "@boardsesh/board-config": "workspace:*",

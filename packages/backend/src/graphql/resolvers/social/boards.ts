@@ -287,8 +287,14 @@ function boardIsRoleEditable(board: { isPublic: boolean; ownerId: string }): boo
  * Authorize editing a board: the caller must be the board owner, a community
  * admin/leader for the board's type (public/catalog boards only), or the
  * owner/admin of the board's linked gym. Throws when none apply.
+ *
+ * Exported so the spray wall API uses this rule UNCHANGED rather than growing a
+ * second one (epic decision 2026-09-14: ownership grants editing a wall, with no
+ * gym-`editor` extension — a gym editor can edit the gym's page and not a wall's
+ * holds). Keep it that way: a wall-specific relaxation here would widen every
+ * board's edit gate at the same time.
  */
-async function requireBoardEditAccess(
+export async function requireBoardEditAccess(
   ctx: ConnectionContext,
   board: typeof dbSchema.userBoards.$inferSelect,
 ): Promise<void> {

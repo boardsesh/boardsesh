@@ -4,6 +4,7 @@ import GraphQLJSON from 'graphql-type-json';
 // Import domain resolvers
 import { boardQueries } from './board/queries';
 import { holdOutlineMutations, holdOutlineQueries } from './board/hold-outline-overrides';
+import { sprayWallMutations, sprayWallQueries } from './board/spray-walls';
 import { tickQueries } from './ticks/queries';
 import { tickMutations } from './ticks/mutations';
 import { climbStatsSubscriptions } from './ticks/climb-stats-subscriptions';
@@ -81,6 +82,7 @@ export const resolvers = {
     ...sessionQueries,
     ...boardQueries,
     ...holdOutlineQueries,
+    ...sprayWallQueries,
     ...climbQueries,
     ...tickQueries,
     ...userQueries,
@@ -123,6 +125,7 @@ export const resolvers = {
   Mutation: {
     ...sessionMutations,
     ...holdOutlineMutations,
+    ...sprayWallMutations,
     ...pushTokenMutations,
     ...queueMutations,
     ...tickMutations,

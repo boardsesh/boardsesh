@@ -1657,6 +1657,32 @@ export type CreateSessionInput = {
   name?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type CreateSprayWallInput = {
+  /** Fixed for the wall's life: stats are keyed by angle and a spray wall does not adjust. */
+  angle: Scalars['Int']['input'];
+  description?: InputMaybe<Scalars['String']['input']>;
+  /** Attach the wall to a gym the caller may link boards to. */
+  gymUuid?: InputMaybe<Scalars['ID']['input']>;
+  hideLocation?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Private by default. A public wall is listed; an unlisted one is reachable by uuid only. */
+  isPublic?: InputMaybe<Scalars['Boolean']['input']>;
+  isUnlisted?: InputMaybe<Scalars['Boolean']['input']>;
+  latitude?: InputMaybe<Scalars['Float']['input']>;
+  locationName?: InputMaybe<Scalars['String']['input']>;
+  longitude?: InputMaybe<Scalars['Float']['input']>;
+  /** What the climber calls the wall. Becomes the board name, the catalogue row names and the slug. */
+  name: Scalars['String']['input'];
+};
+
+export type CreateSprayWallVersionInput = {
+  /** The wall's four corners in this photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Omit to use the photo frame. */
+  anchors?: InputMaybe<Scalars['JSON']['input']>;
+  notes?: InputMaybe<Scalars['String']['input']>;
+  /** photoId from POST /api/spray-wall-photos. */
+  photoId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
 /** Event when the current climb changes. */
 export type CurrentClimbChanged = {
   __typename?: 'CurrentClimbChanged';
@@ -3378,6 +3404,26 @@ export type Mutation = {
   /** Create a new session with GPS coordinates for discovery. */
   createSession: Session;
   /**
+   * Create a spray wall: a `user_boards` row plus the three catalogue rows the
+   * wall's own layout needs, all unlisted.
+   *
+   * LEDs are never on a spray wall, and the flag is not accepted from the client:
+   * there is no firmware to encode for, so the row is always written
+   * `hasLeds: false` and the LED-less play path (#4585) is the one it takes.
+   * The angle is fixed here for the wall's life. Capped at
+   * `MAX_SPRAY_WALLS_PER_USER` walls per owner.
+   */
+  createSprayWall: SprayWall;
+  /**
+   * Attach a photo to the wall as a new DRAFT version, and compute its
+   * photo→canonical homography from the anchors by 4-point DLT.
+   *
+   * Version 1 defines the wall's canonical frame from the photo itself — the
+   * anchor quad's bounding rectangle, or the photo's own pixel box when no
+   * anchors were tapped. There are no user-entered wall dimensions. Owner only.
+   */
+  createSprayWallVersion: SprayWallVersion;
+  /**
    * Delete the current user's account.
    * Deletes draft climbs, optionally removes setter name from published climbs,
    * then deletes the user row (cascading all related data).
@@ -3410,6 +3456,12 @@ export type Mutation = {
   deletePlaylist: Scalars['Boolean']['output'];
   /** Delete an accepted proposal and revert its effects (admin/leader only). */
   deleteProposal: Scalars['Boolean']['output'];
+  /**
+   * Soft-delete a wall. The catalogue rows and every climb ever set on it stay
+   * behind — a deleted wall stops being reachable, it does not un-set the climbs.
+   * Owner only.
+   */
+  deleteSprayWall: Scalars['Boolean']['output'];
   /** Delete a tick (climb attempt record). Only the owner can delete. */
   deleteTick: Scalars['Boolean']['output'];
   /**
@@ -3517,6 +3569,12 @@ export type Mutation = {
    */
   publishPlaybackState: Scalars['Boolean']['output'];
   /**
+   * Publish a draft version: it becomes the generation climbers set against, the
+   * previous published version is superseded, and the wall's hold count and
+   * catalogue image are refreshed. Owner only.
+   */
+  publishSprayWallVersion: SprayWallVersion;
+  /**
    * Move a gym's ownership to another account (global admin only) — a sold gym,
    * a departed committee member, a claim approved to the wrong person. The
    * listing's human-curation freeze is left exactly as it was, the outgoing
@@ -3556,6 +3614,14 @@ export type Mutation = {
   removeGymMember: Scalars['Boolean']['output'];
   /** Remove a climb from the queue by its queue item UUID. */
   removeQueueItem: Scalars['Boolean']['output'];
+  /**
+   * Take holds off the wall as of a DRAFT version.
+   *
+   * A hold installed BY that draft is deleted outright — it was never on the real
+   * wall. One installed earlier is stamped removed, never deleted: a climb set on
+   * it has to stay findable and countable. Owner only.
+   */
+  removeSprayWallHolds: Scalars['Int']['output'];
   /** Reorder a climb within a playlist by moving it to a new index (owner only). */
   reorderPlaylistClimb: Scalars['Boolean']['output'];
   /** Move a queue item from one position to another. */
@@ -3830,6 +3896,13 @@ export type Mutation = {
    * revision history, so the note is the record of why.
    */
   upsertHoldOutlineOverride: HoldOutlineOverride;
+  /**
+   * Add or correct holds on a DRAFT version. A hold with no `id` is allocated a
+   * new catalogue id (one `board_holes` + one `board_placements` row sharing
+   * it); a hold with one has its geometry rewritten, and it must be alive on the
+   * version. Owner only, and never on a published version.
+   */
+  upsertSprayWallHolds: Array<SprayWallHold>;
   /** Vote on an entity. Same value toggles (removes vote). */
   vote: VoteSummary;
   /** Vote on an open proposal. */
@@ -3936,6 +4009,16 @@ export type MutationCreateSessionArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationCreateSprayWallArgs = {
+  input: CreateSprayWallInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCreateSprayWallVersionArgs = {
+  input: CreateSprayWallVersionInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationDeleteAccountArgs = {
   input: DeleteAccountInput;
 };
@@ -3989,6 +4072,11 @@ export type MutationDeletePlaylistArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteProposalArgs = {
   input: DeleteProposalInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeleteSprayWallArgs = {
+  uuid: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -4127,6 +4215,11 @@ export type MutationPublishPlaybackStateArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationPublishSprayWallVersionArgs = {
+  input: PublishSprayWallVersionInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationReassignGymOwnerArgs = {
   input: ReassignGymOwnerInput;
 };
@@ -4175,6 +4268,11 @@ export type MutationRemoveGymMemberArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRemoveQueueItemArgs = {
   uuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRemoveSprayWallHoldsArgs = {
+  input: RemoveSprayWallHoldsInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4490,6 +4588,11 @@ export type MutationUpdateUsernameArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpsertHoldOutlineOverrideArgs = {
   input: UpsertHoldOutlineOverrideInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpsertSprayWallHoldsArgs = {
+  input: UpsertSprayWallHoldsInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5052,6 +5155,10 @@ export type PublicUserProfile = {
   isFollowedByMe: Scalars['Boolean']['output'];
 };
 
+export type PublishSprayWallVersionInput = {
+  versionId: Scalars['ID']['input'];
+};
+
 /**
  * One GitHub label on the pull request, mirrored so the app can show the same
  * chips the PR page does. `color` is GitHub's six-digit hex, no leading `#`.
@@ -5509,6 +5616,8 @@ export type Query = {
    * Requires authentication.
    */
   mySmartPlaylistCounts: Array<SmartPlaylistCount>;
+  /** Every wall the caller owns, newest first. Includes walls with no published version. */
+  mySprayWalls: Array<SprayWall>;
   /**
    * Find discoverable sessions near a GPS location.
    * Default radius is 1000 meters.
@@ -5652,6 +5761,29 @@ export type Query = {
    * Public — no authentication required.
    */
   smartPlaylist: SmartPlaylistResult;
+  /**
+   * One spray wall by uuid (the `user_boards` uuid it is keyed on).
+   *
+   * Visible to the owner, to a member of the gym the wall is attached to, and to
+   * anyone at all when the wall is public or unlisted — an unlisted wall is
+   * reachable by uuid and nowhere else. Null when the wall does not exist, is
+   * deleted, or the viewer may not see it: the three are deliberately
+   * indistinguishable, so a private wall's existence does not leak.
+   */
+  sprayWall?: Maybe<SprayWall>;
+  /**
+   * The spray wall occupying a catalogue layout id, for a client holding only a
+   * board config. Same visibility rules as `sprayWall`.
+   */
+  sprayWallByLayout?: Maybe<SprayWall>;
+  /**
+   * Everything needed to render a wall at one version: the photo, the homography
+   * and the holds alive at that version. Omit `version` for the published one.
+   *
+   * A version the viewer may not see (a draft on somebody else's wall) is null,
+   * as is a wall with nothing published yet.
+   */
+  sprayWallRenderData?: Maybe<SprayWallRenderData>;
   /**
    * Boards that probably belong to a gym but aren't linked to it yet, for the
    * gym's Boards tab. Requires edit access to the gym. Returns two kinds of
@@ -6281,6 +6413,22 @@ export type QuerySmartPlaylistArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallArgs = {
+  uuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallByLayoutArgs = {
+  layoutId: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallRenderDataArgs = {
+  uuid: Scalars['ID']['input'];
+  version?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
 export type QueryStrayBoardsForGymArgs = {
   gymUuid: Scalars['ID']['input'];
 };
@@ -6643,6 +6791,12 @@ export type RemoveGymMemberInput = {
   userId: Scalars['ID']['input'];
 };
 
+export type RemoveSprayWallHoldsInput = {
+  holdIds: Array<Scalars['Int']['input']>;
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
 /**
  * The board configuration a logged climb should be drawn on, resolved server-side
  * against the climber's own boards: the board the ascent was logged against when
@@ -6827,6 +6981,8 @@ export type SaveClimbInput = {
   noMatch?: InputMaybe<Scalars['Boolean']['input']>;
   /** Physical board size the climb is set on. Required on Woods (1 = 8x10, 2 = 12x12), where the two walls number their holds from their own origins. Ignored on boards that derive size compatibility from the hold bounding box. */
   sizeId?: InputMaybe<Scalars['Int']['input']>;
+  /** The setter's own grade, seeded into board_climb_stats.display_difficulty. REQUIRED to publish on a spray wall, which has no crowd grade to fall back on; ignored elsewhere, where the grade comes from ticks or the Aurora sync. */
+  userGrade?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type SaveClimbResult = {
@@ -7829,6 +7985,154 @@ export type SocialEntityType =
 
 export type SortMode = 'controversial' | 'hot' | 'new' | 'top';
 
+/** Where a hold's geometry came from: a detector run, or a human's hand. */
+export type SprayHoldSource = 'AUTO' | 'MANUAL';
+
+/**
+ * A climber's own wall: one runtime-created catalogue layout under the `spray`
+ * board type. Its owner, name, angle, visibility and gym live on the
+ * `user_boards` row `board` returns — nothing about a wall is stored twice.
+ */
+export type SprayWall = {
+  __typename?: 'SprayWall';
+  board: UserBoard;
+  /** The published version climbers see. Null until the first publish. */
+  currentVersion?: Maybe<SprayWallVersion>;
+  /** Holds alive on the current version. */
+  holdCount: Scalars['Int']['output'];
+  /** The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself. */
+  layoutId: Scalars['Int']['output'];
+  referenceHeight?: Maybe<Scalars['Int']['output']>;
+  /** The canonical frame in pixels, derived from the version-1 photo. Null until the first photo lands. */
+  referenceWidth?: Maybe<Scalars['Int']['output']>;
+  /** Always equal to layoutId. Returned so a client never has to know the equality. */
+  sizeId: Scalars['Int']['output'];
+  uuid: Scalars['ID']['output'];
+  /** Every version, newest first. Drafts are only visible to the owner. */
+  versions: Array<SprayWallVersion>;
+  /** Whether the viewer may edit this wall — i.e. whether they own it. */
+  viewerCanEdit: Scalars['Boolean']['output'];
+};
+
+/**
+ * One hold across its whole life. Coordinates are in the wall's canonical frame
+ * (`SprayWall.referenceWidth` / `referenceHeight`), which version 1 defines from
+ * its own photo — there are no real-world wall dimensions anywhere.
+ */
+export type SprayWallHold = {
+  __typename?: 'SprayWallHold';
+  /** Detector confidence 0-1 for AUTO holds; null when a human drew it. */
+  confidence?: Maybe<Scalars['Float']['output']>;
+  cx: Scalars['Int']['output'];
+  cy: Scalars['Int']['output'];
+  /** The wall's board_placements id AND its board_holes id — the number a climb's frames string carries. */
+  id: Scalars['Int']['output'];
+  /** Version number that put this hold on the wall. */
+  installedVersion: Scalars['Int']['output'];
+  /** The hold this one replaced, when a reset review linked a move. */
+  movedFromHoldId?: Maybe<Scalars['Int']['output']>;
+  /** Flat implicitly-closed ring [x0, y0, x1, y1, ...] in units of this hold's own radius, relative to its centre. Null falls back to the circle (cx, cy, r) describes. */
+  outline?: Maybe<Array<Scalars['Float']['output']>>;
+  r: Scalars['Int']['output'];
+  /** Version number that took it off, or null while it is still there. */
+  removedVersion?: Maybe<Scalars['Int']['output']>;
+  source: SprayHoldSource;
+};
+
+/**
+ * One hold as the editor sends it. Coordinates are canonical-frame pixels.
+ *
+ * `id` names an existing hold on the wall (a geometry correction); omit it and
+ * the server allocates a new catalogue id. The server validates SHAPE only — the
+ * ring contract, the caps and that an id is alive on the version — and never
+ * re-runs detection: it is the owner's wall.
+ */
+export type SprayWallHoldInput = {
+  confidence?: InputMaybe<Scalars['Float']['input']>;
+  cx: Scalars['Int']['input'];
+  cy: Scalars['Int']['input'];
+  id?: InputMaybe<Scalars['Int']['input']>;
+  movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
+  /** Flat implicitly-closed ring in radius units, 3-150 points, every coordinate within 4 radii. */
+  outline?: InputMaybe<Array<Scalars['Float']['input']>>;
+  r: Scalars['Int']['input'];
+  source?: InputMaybe<SprayHoldSource>;
+};
+
+/**
+ * A wall photo, behind short-lived presigned URLs.
+ *
+ * Spray-wall photos live in the PRIVATE bucket, never the public `media` one:
+ * the photograph is of somebody's home, and `media` is world-readable under
+ * guessable keys (`docs/user-media-storage.md`). So there is no stable URL to
+ * store on a row — every read mints a fresh signature, and `expiresAt` is when
+ * the one in hand stops working.
+ */
+export type SprayWallPhoto = {
+  __typename?: 'SprayWallPhoto';
+  /** ISO 8601 expiry of the signatures above. */
+  expiresAt: Scalars['String']['output'];
+  /** Pixel height of the stored photo, after sharp's EXIF-orientation rotate. */
+  height?: Maybe<Scalars['Int']['output']>;
+  /** Presigned GET for the largest stored resize variant, for list rows and the compare view. */
+  thumbUrl?: Maybe<Scalars['String']['output']>;
+  /** Presigned GET for the full-size photo. Valid until expiresAt; never cache it past that. */
+  url: Scalars['String']['output'];
+  /** Pixel width of the stored photo, after sharp's EXIF-orientation rotate. */
+  width?: Maybe<Scalars['Int']['output']>;
+};
+
+/**
+ * Everything a renderer needs for one wall at one version: the photo, the
+ * geometry that maps it, and the holds alive at that version.
+ *
+ * No image is ever warped — the client maps holds through the INVERSE of
+ * `homography` at draw time.
+ */
+export type SprayWallRenderData = {
+  __typename?: 'SprayWallRenderData';
+  /** The canonical frame's height. */
+  boardHeight: Scalars['Int']['output'];
+  /** The canonical frame's width, i.e. the coordinate space cx/cy/r live in. */
+  boardWidth: Scalars['Int']['output'];
+  holds: Array<SprayWallHold>;
+  homography: Array<Scalars['Float']['output']>;
+  photo: SprayWallPhoto;
+  versionNumber: Scalars['Int']['output'];
+  wall: SprayWall;
+};
+
+/** One photograph of the wall, with the geometry that maps it onto the canonical frame. */
+export type SprayWallVersion = {
+  __typename?: 'SprayWallVersion';
+  /** Holds this version put on the wall. */
+  addedHoldCount: Scalars['Int']['output'];
+  /** The wall's four corners in THIS photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Null means the photo frame is the quad. */
+  anchors?: Maybe<Scalars['JSON']['output']>;
+  createdAt: Scalars['String']['output'];
+  /** Row-major 3x3 photo→canonical homography, nine floats. The identity matrix when the version has no anchors. */
+  homography?: Maybe<Array<Scalars['Float']['output']>>;
+  id: Scalars['ID']['output'];
+  /** What changed in this reset, in the wall owner's own words. */
+  notes?: Maybe<Scalars['String']['output']>;
+  /** 1-based and dense per wall. */
+  number: Scalars['Int']['output'];
+  photo: SprayWallPhoto;
+  publishedAt?: Maybe<Scalars['String']['output']>;
+  /** Holds this version took off the wall. */
+  removedHoldCount: Scalars['Int']['output'];
+  status: SprayWallVersionStatus;
+};
+
+/**
+ * Lifecycle of one wall photo.
+ *
+ * DRAFT is being edited and is invisible to climbers; PUBLISHED is the generation
+ * climbs are set against; SUPERSEDED is what the previous PUBLISHED becomes when a
+ * reset commits (SW-12).
+ */
+export type SprayWallVersionStatus = 'DRAFT' | 'PUBLISHED' | 'SUPERSEDED';
+
 /**
  * A board that probably belongs to a gym but isn't linked to it yet — either it
  * followed a listing that got merged into this gym, or it sits at the gym's
@@ -8445,6 +8749,13 @@ export type UpsertHoldOutlineOverrideInput = {
   sizeId: Scalars['Int']['input'];
 };
 
+export type UpsertSprayWallHoldsInput = {
+  holds: Array<SprayWallHoldInput>;
+  /** The DRAFT version being edited. Published versions are immutable. */
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
 /** A named physical board installation (board type + layout + size + hold sets). */
 export type UserBoard = {
   __typename?: 'UserBoard';
@@ -8915,6 +9226,8 @@ export type ResolversTypes = ResolversObject<{
   CreatePlaylistInput: CreatePlaylistInput;
   CreateProposalInput: CreateProposalInput;
   CreateSessionInput: CreateSessionInput;
+  CreateSprayWallInput: CreateSprayWallInput;
+  CreateSprayWallVersionInput: CreateSprayWallVersionInput;
   CurrentClimbChanged: ResolverTypeWrapper<CurrentClimbChanged>;
   DeleteAccountInfo: ResolverTypeWrapper<DeleteAccountInfo>;
   DeleteAccountInput: DeleteAccountInput;
@@ -9079,6 +9392,7 @@ export type ResolversTypes = ResolversObject<{
   ProposalType: ProposalType;
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
   PublicUserProfile: ResolverTypeWrapper<PublicUserProfile>;
+  PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: ResolverTypeWrapper<QaLabel>;
   QaOtaBuildState: QaOtaBuildState;
   QaPreview: ResolverTypeWrapper<QaPreview>;
@@ -9103,6 +9417,7 @@ export type ResolversTypes = ResolversObject<{
   RemoveClimbFromPlaylistInput: RemoveClimbFromPlaylistInput;
   RemoveFavoriteInput: RemoveFavoriteInput;
   RemoveGymMemberInput: RemoveGymMemberInput;
+  RemoveSprayWallHoldsInput: RemoveSprayWallHoldsInput;
   RenderBoardConfig: ResolverTypeWrapper<RenderBoardConfig>;
   ReorderPlaylistClimbInput: ReorderPlaylistClimbInput;
   ReportClimbInput: ReportClimbInput;
@@ -9177,6 +9492,14 @@ export type ResolversTypes = ResolversObject<{
   SmartPlaylistType: SmartPlaylistType;
   SocialEntityType: SocialEntityType;
   SortMode: SortMode;
+  SprayHoldSource: SprayHoldSource;
+  SprayWall: ResolverTypeWrapper<SprayWall>;
+  SprayWallHold: ResolverTypeWrapper<SprayWallHold>;
+  SprayWallHoldInput: SprayWallHoldInput;
+  SprayWallPhoto: ResolverTypeWrapper<SprayWallPhoto>;
+  SprayWallRenderData: ResolverTypeWrapper<SprayWallRenderData>;
+  SprayWallVersion: ResolverTypeWrapper<SprayWallVersion>;
+  SprayWallVersionStatus: SprayWallVersionStatus;
   StrayBoard: ResolverTypeWrapper<StrayBoard>;
   StrayBoardReason: StrayBoardReason;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
@@ -9208,6 +9531,7 @@ export type ResolversTypes = ResolversObject<{
   UpdateSessionResult: ResolverTypeWrapper<UpdateSessionResult>;
   UpdateTickInput: UpdateTickInput;
   UpsertHoldOutlineOverrideInput: UpsertHoldOutlineOverrideInput;
+  UpsertSprayWallHoldsInput: UpsertSprayWallHoldsInput;
   UserBoard: ResolverTypeWrapper<UserBoard>;
   UserBoardConnection: ResolverTypeWrapper<UserBoardConnection>;
   UserClimbPercentile: ResolverTypeWrapper<UserClimbPercentile>;
@@ -9316,6 +9640,8 @@ export type ResolversParentTypes = ResolversObject<{
   CreatePlaylistInput: CreatePlaylistInput;
   CreateProposalInput: CreateProposalInput;
   CreateSessionInput: CreateSessionInput;
+  CreateSprayWallInput: CreateSprayWallInput;
+  CreateSprayWallVersionInput: CreateSprayWallVersionInput;
   CurrentClimbChanged: CurrentClimbChanged;
   DeleteAccountInfo: DeleteAccountInfo;
   DeleteAccountInput: DeleteAccountInput;
@@ -9461,6 +9787,7 @@ export type ResolversParentTypes = ResolversObject<{
   ProposalConnection: ProposalConnection;
   ProposalVoteSummary: ProposalVoteSummary;
   PublicUserProfile: PublicUserProfile;
+  PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: QaLabel;
   QaPreview: QaPreview;
   QaVerdict: QaVerdict;
@@ -9483,6 +9810,7 @@ export type ResolversParentTypes = ResolversObject<{
   RemoveClimbFromPlaylistInput: RemoveClimbFromPlaylistInput;
   RemoveFavoriteInput: RemoveFavoriteInput;
   RemoveGymMemberInput: RemoveGymMemberInput;
+  RemoveSprayWallHoldsInput: RemoveSprayWallHoldsInput;
   RenderBoardConfig: RenderBoardConfig;
   ReorderPlaylistClimbInput: ReorderPlaylistClimbInput;
   ReportClimbInput: ReportClimbInput;
@@ -9549,6 +9877,12 @@ export type ResolversParentTypes = ResolversObject<{
   SmartPlaylistCount: SmartPlaylistCount;
   SmartPlaylistMeta: SmartPlaylistMeta;
   SmartPlaylistResult: SmartPlaylistResult;
+  SprayWall: SprayWall;
+  SprayWallHold: SprayWallHold;
+  SprayWallHoldInput: SprayWallHoldInput;
+  SprayWallPhoto: SprayWallPhoto;
+  SprayWallRenderData: SprayWallRenderData;
+  SprayWallVersion: SprayWallVersion;
   StrayBoard: StrayBoard;
   String: Scalars['String']['output'];
   SubmitAppFeedbackInput: SubmitAppFeedbackInput;
@@ -9577,6 +9911,7 @@ export type ResolversParentTypes = ResolversObject<{
   UpdateSessionResult: UpdateSessionResult;
   UpdateTickInput: UpdateTickInput;
   UpsertHoldOutlineOverrideInput: UpsertHoldOutlineOverrideInput;
+  UpsertSprayWallHoldsInput: UpsertSprayWallHoldsInput;
   UserBoard: UserBoard;
   UserBoardConnection: UserBoardConnection;
   UserClimbPercentile: UserClimbPercentile;
@@ -11365,6 +11700,18 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationCreateSessionArgs, 'input'>
   >;
+  createSprayWall?: Resolver<
+    ResolversTypes['SprayWall'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCreateSprayWallArgs, 'input'>
+  >;
+  createSprayWallVersion?: Resolver<
+    ResolversTypes['SprayWallVersion'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCreateSprayWallVersionArgs, 'input'>
+  >;
   deleteAccount?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -11430,6 +11777,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationDeleteProposalArgs, 'input'>
+  >;
+  deleteSprayWall?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationDeleteSprayWallArgs, 'uuid'>
   >;
   deleteTick?: Resolver<
     ResolversTypes['Boolean'],
@@ -11572,6 +11925,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationPublishPlaybackStateArgs, 'input'>
   >;
+  publishSprayWallVersion?: Resolver<
+    ResolversTypes['SprayWallVersion'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationPublishSprayWallVersionArgs, 'input'>
+  >;
   reassignGymOwner?: Resolver<
     ResolversTypes['ReassignGymOwnerResult'],
     ParentType,
@@ -11631,6 +11990,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationRemoveQueueItemArgs, 'uuid'>
+  >;
+  removeSprayWallHolds?: Resolver<
+    ResolversTypes['Int'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRemoveSprayWallHoldsArgs, 'input'>
   >;
   reorderPlaylistClimb?: Resolver<
     ResolversTypes['Boolean'],
@@ -11967,6 +12332,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationUpsertHoldOutlineOverrideArgs, 'input'>
+  >;
+  upsertSprayWallHolds?: Resolver<
+    Array<ResolversTypes['SprayWallHold']>,
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpsertSprayWallHoldsArgs, 'input'>
   >;
   vote?: Resolver<ResolversTypes['VoteSummary'], ParentType, ContextType, RequireFields<MutationVoteArgs, 'input'>>;
   voteOnProposal?: Resolver<
@@ -12723,6 +13094,7 @@ export type QueryResolvers<
   myRoles?: Resolver<Array<ResolversTypes['CommunityRoleAssignment']>, ParentType, ContextType>;
   mySessions?: Resolver<Array<ResolversTypes['DiscoverableSession']>, ParentType, ContextType>;
   mySmartPlaylistCounts?: Resolver<Array<ResolversTypes['SmartPlaylistCount']>, ParentType, ContextType>;
+  mySprayWalls?: Resolver<Array<ResolversTypes['SprayWall']>, ParentType, ContextType>;
   nearbySessions?: Resolver<
     Array<ResolversTypes['DiscoverableSession']>,
     ParentType,
@@ -12916,6 +13288,24 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QuerySmartPlaylistArgs, 'input'>
+  >;
+  sprayWall?: Resolver<
+    Maybe<ResolversTypes['SprayWall']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallArgs, 'uuid'>
+  >;
+  sprayWallByLayout?: Resolver<
+    Maybe<ResolversTypes['SprayWall']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallByLayoutArgs, 'layoutId'>
+  >;
+  sprayWallRenderData?: Resolver<
+    Maybe<ResolversTypes['SprayWallRenderData']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallRenderDataArgs, 'uuid'>
   >;
   strayBoardsForGym?: Resolver<
     Array<ResolversTypes['StrayBoard']>,
@@ -13800,6 +14190,84 @@ export type SmartPlaylistResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SprayWallResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWall'] = ResolversParentTypes['SprayWall'],
+> = ResolversObject<{
+  board?: Resolver<ResolversTypes['UserBoard'], ParentType, ContextType>;
+  currentVersion?: Resolver<Maybe<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;
+  holdCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  referenceHeight?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  referenceWidth?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  versions?: Resolver<Array<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;
+  viewerCanEdit?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallHoldResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallHold'] = ResolversParentTypes['SprayWallHold'],
+> = ResolversObject<{
+  confidence?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  cx?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  cy?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  installedVersion?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  movedFromHoldId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  outline?: Resolver<Maybe<Array<ResolversTypes['Float']>>, ParentType, ContextType>;
+  r?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  removedVersion?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  source?: Resolver<ResolversTypes['SprayHoldSource'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallPhotoResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallPhoto'] = ResolversParentTypes['SprayWallPhoto'],
+> = ResolversObject<{
+  expiresAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  height?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  thumbUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  url?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  width?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallRenderDataResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallRenderData'] = ResolversParentTypes['SprayWallRenderData'],
+> = ResolversObject<{
+  boardHeight?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardWidth?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holds?: Resolver<Array<ResolversTypes['SprayWallHold']>, ParentType, ContextType>;
+  homography?: Resolver<Array<ResolversTypes['Float']>, ParentType, ContextType>;
+  photo?: Resolver<ResolversTypes['SprayWallPhoto'], ParentType, ContextType>;
+  versionNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  wall?: Resolver<ResolversTypes['SprayWall'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallVersionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallVersion'] = ResolversParentTypes['SprayWallVersion'],
+> = ResolversObject<{
+  addedHoldCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  anchors?: Resolver<Maybe<ResolversTypes['JSON']>, ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  homography?: Resolver<Maybe<Array<ResolversTypes['Float']>>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  notes?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  number?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  photo?: Resolver<ResolversTypes['SprayWallPhoto'], ParentType, ContextType>;
+  publishedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  removedHoldCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['SprayWallVersionStatus'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type StrayBoardResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['StrayBoard'] = ResolversParentTypes['StrayBoard'],
@@ -14368,6 +14836,11 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SmartPlaylistCount?: SmartPlaylistCountResolvers<ContextType>;
   SmartPlaylistMeta?: SmartPlaylistMetaResolvers<ContextType>;
   SmartPlaylistResult?: SmartPlaylistResultResolvers<ContextType>;
+  SprayWall?: SprayWallResolvers<ContextType>;
+  SprayWallHold?: SprayWallHoldResolvers<ContextType>;
+  SprayWallPhoto?: SprayWallPhotoResolvers<ContextType>;
+  SprayWallRenderData?: SprayWallRenderDataResolvers<ContextType>;
+  SprayWallVersion?: SprayWallVersionResolvers<ContextType>;
   StrayBoard?: StrayBoardResolvers<ContextType>;
   Subscription?: SubscriptionResolvers<ContextType>;
   SyncCursor?: SyncCursorResolvers<ContextType>;

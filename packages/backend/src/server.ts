@@ -13,6 +13,7 @@ import { handleSessionJoin } from './handlers/join';
 import { handleAvatarUpload } from './handlers/avatars';
 import { handleGymLogoUpload } from './handlers/gym-logos';
 import { handleGymPhotoDelete, handleGymPhotoUpload } from './handlers/gym-photos';
+import { handleSprayWallPhotoUpload } from './handlers/spray-wall-photos';
 import { handleFeedbackScreenshotUpload } from './handlers/feedback-screenshots';
 import {
   handleStaticAvatar,
@@ -420,6 +421,14 @@ export async function startServer(): Promise<ServerResources> {
 
       if (pathname === '/api/gym-photos' && req.method === 'DELETE') {
         await handleGymPhotoDelete(req, res);
+        return;
+      }
+
+      // Spray wall photos go to the PRIVATE bucket behind presigned URLs, unlike
+      // the gym photos above — a wall photo is a picture of somebody's home.
+      // See handlers/spray-wall-photos.ts.
+      if (pathname === '/api/spray-wall-photos' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleSprayWallPhotoUpload(req, res);
         return;
       }
 
