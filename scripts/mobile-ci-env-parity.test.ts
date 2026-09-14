@@ -828,27 +828,16 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(idFrom('scripts/lib/ota-branch-probe.ts', 'OTA_APP_ID'), 'ota-branch-probe OTA_APP_ID').toBe(shared);
   });
 
-  it('hands each preview publish the full fingerprint it needs to verify its own work', () => {
-    // Without these the publish still succeeds — it just cannot check whether the
-    // branch it uploaded is being offered, which is the whole point of the check
-    // (#5417 published an iOS-only preview and said "✅ published" for Android).
-    // Pinned per platform because iOS and Android resolve DIFFERENT fingerprints:
-    // one value used for both would probe at least one platform with a hash no
-    // binary runs and report a false "not surfable".
+  it('keeps the Android maps key on the Android publish step, which the surfability probe depends on', () => {
+    // GOOGLE_MAPS_API_KEY is an Android-only fingerprint input, so `mobile:publish`
+    // resolves the runtimeVersion to probe with inside the step that has it. Moving
+    // the key (or resolving the hash anywhere else — the compat step has no key)
+    // makes the probe ask about a runtimeVersion nothing was published under, which
+    // failed a healthy publish in run 34796068541.
     const preview = readWorkflow(OTA_PREVIEW);
-    expect(preview).toContain('OTA_PREVIEW_RUNTIME_VERSION_IOS: ${{ steps.compat.outputs.fingerprint_ios_full }}');
-    expect(preview).toContain(
-      'OTA_PREVIEW_RUNTIME_VERSION_ANDROID: ${{ steps.compat.outputs.fingerprint_android_full }}',
-    );
-    // Step-level, never workflow-level: a fingerprint hash at workflow level would
-    // sit in the env block this file pins byte-identical across every mobile
-    // fingerprint workflow, where it is both wrong and unpinnable.
-    expect(workflowEnvValue(preview, 'OTA_PREVIEW_RUNTIME_VERSION_IOS')).toBeNull();
-    expect(workflowEnvValue(preview, 'OTA_PREVIEW_RUNTIME_VERSION_ANDROID')).toBeNull();
-    // And the compat check must actually emit them.
-    const compat = readFileSync(resolve(REPO_ROOT, 'scripts/mobile-ota-compat-check.ts'), 'utf8');
-    expect(compat).toContain('fingerprint_ios_full=');
-    expect(compat).toContain('fingerprint_android_full=');
+    const androidStep = otaStep(preview, 'Publish Android OTA');
+    expect(androidStep).toContain('GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}');
+    expect(otaStep(preview, 'Publish iOS OTA')).not.toContain('GOOGLE_MAPS_API_KEY');
   });
 
   it('uses pull_request (never pull_request_target) so fork jobs get no secrets', () => {

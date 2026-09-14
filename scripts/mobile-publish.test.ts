@@ -3,6 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from './lib/eoas';
+import type { OtaPublishPlatform, PlatformPublishOutcome } from './lib/mobile-publish-retry';
 import {
   buildEasUpdateArgs,
   buildSelfHostedEoasArgs,
@@ -11,7 +12,6 @@ import {
   requestedSelfHostedPlatforms,
   isPreviewBranchSurfable,
   previewBranchPassesSurfabilityCheck,
-  previewRuntimeVersionFor,
   resolveUpdateMessage,
   titleFromCommitMessage,
   verifyPreviewBranchIsSurfable,
@@ -237,7 +237,15 @@ describe('preview branch surfability check', () => {
   // No delays and no sleeping: the retry SCHEDULE is a constant worth reading in
   // the source, not re-asserting here. What these cover is the decision it drives.
   const NO_WAIT = { delaysMs: [0, 0], sleeper: async () => undefined };
-  const IOS_ENV = { env: { OTA_PREVIEW_RUNTIME_VERSION_IOS: IOS_HASH } };
+  const ON_IOS = { runtimeVersion: IOS_HASH };
+
+  /** What a platform's publish reported, which is half of the fail decision. */
+  function published(platform: OtaPublishPlatform): PlatformPublishOutcome {
+    return { platform, success: true, attempts: 1, failureKind: null, noChange: false };
+  }
+  function deduplicated(platform: OtaPublishPlatform): PlatformPublishOutcome {
+    return { platform, success: true, attempts: 1, failureKind: null, noChange: true };
+  }
 
   function serverListing(...branchNames: string[]) {
     return async () =>
@@ -246,33 +254,19 @@ describe('preview branch surfability check', () => {
       });
   }
 
-  it('reads the fingerprint for the platform being published, not the other one', () => {
-    const env = {
-      OTA_PREVIEW_RUNTIME_VERSION_IOS: IOS_HASH,
-      OTA_PREVIEW_RUNTIME_VERSION_ANDROID: '154bc941c504727afc914057aed2edff2c096576',
-    };
-
-    // iOS and Android resolve different fingerprints (GOOGLE_MAPS_API_KEY is an
-    // Android-only input), so crossing these probes with a hash no binary runs.
-    expect(previewRuntimeVersionFor('ios', env)).toBe(IOS_HASH);
-    expect(previewRuntimeVersionFor('android', env)).toBe('154bc941c504727afc914057aed2edff2c096576');
-  });
-
-  it('treats an unset or blank fingerprint as "cannot check", never as "not surfable"', async () => {
-    expect(previewRuntimeVersionFor('ios', {})).toBeNull();
-    // A workflow expression that resolved to nothing arrives as an empty string,
-    // which must not become a probe for runtimeVersion "".
-    expect(previewRuntimeVersionFor('ios', { OTA_PREVIEW_RUNTIME_VERSION_IOS: '   ' })).toBeNull();
-
+  it('treats a missing runtimeVersion as "cannot check", never as "not surfable"', async () => {
     const fetchImpl = vi.fn();
-    await expect(isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { fetchImpl, env: {} })).resolves.toBeNull();
+
+    // A local publish cannot resolve the hash a shipped binary runs, so it must not
+    // probe at all rather than probe with a guess.
+    await expect(isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { fetchImpl })).resolves.toBeNull();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('does not probe for the production branch', async () => {
     const fetchImpl = vi.fn();
 
-    await expect(isPreviewBranchSurfable('production', 'ios', SERVER, { fetchImpl, ...IOS_ENV })).resolves.toBeNull();
+    await expect(isPreviewBranchSurfable('production', 'ios', SERVER, { fetchImpl, ...ON_IOS })).resolves.toBeNull();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -280,7 +274,7 @@ describe('preview branch surfability check', () => {
     const sleeper = vi.fn(async () => undefined);
 
     const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, {
-      ...IOS_ENV,
+      ...ON_IOS,
       fetchImpl: serverListing('pr-5422', 'pr-5417'),
       sleeper,
       delaysMs: [1000],
@@ -295,7 +289,7 @@ describe('preview branch surfability check', () => {
     const listed = serverListing('pr-5417');
     const fetchImpl = vi.fn().mockImplementationOnce(empty).mockImplementationOnce(empty).mockImplementation(listed);
 
-    const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { ...NO_WAIT, ...IOS_ENV, fetchImpl });
+    const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, { ...NO_WAIT, ...ON_IOS, fetchImpl });
 
     // Without this the check would red-X a perfectly good publish, which is worse
     // than the bug it exists to catch.
@@ -303,41 +297,41 @@ describe('preview branch surfability check', () => {
     expect(result?.attempts).toBe(3);
   });
 
-  it('fails the publish for a branch the server never offers this platform', async () => {
-    // Exactly #5417: the Android list is healthy and full of other previews —
-    // pr-5417 is simply not in it, because its only update was for iOS.
-    const surfable = await verifyPreviewBranchIsSurfable('pr-5417', ['android'], SERVER, {
+  it('reports "cannot check" rather than a verdict when the server never answers', async () => {
+    const result = await isPreviewBranchSurfable('pr-5417', 'ios', SERVER, {
       ...NO_WAIT,
-      env: { OTA_PREVIEW_RUNTIME_VERSION_ANDROID: '154bc941c504727afc914057aed2edff2c096576' },
+      ...ON_IOS,
+      fetchImpl: () => {
+        throw new Error('connect ECONNREFUSED');
+      },
+    });
+
+    // An unreachable server is a fact about the server, not about this publish.
+    expect(result).toBeNull();
+  });
+
+  it('fails a deduplicated publish whose branch the server does not list', async () => {
+    // Exactly #5417: nothing was created for this platform AND the branch carries
+    // nothing for it, so there is genuinely no preview to load. The Android list is
+    // otherwise healthy and full of other previews.
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', [deduplicated('android')], SERVER, {
+      ...NO_WAIT,
+      runtimeVersion: '154bc941c504727afc914057aed2edff2c096576',
       fetchImpl: serverListing('pr-5422', 'pr-5424', 'pr-5419'),
     });
 
     expect(surfable).toBe(false);
   });
 
-  it('lets the publish stand when the server never answers', async () => {
-    // An unreachable server is a fact about the server, not about this publish —
-    // the upload already succeeded. Failing here would red-X a good preview for a
-    // reason the author cannot act on, which is the false-red the retry exists to
-    // avoid in the first place.
-    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', ['ios'], SERVER, {
+  it('only warns when a fresh update was created but the probe cannot find it', async () => {
+    // The publish said "Update ready", so the branch HAS the update and a probe that
+    // disagrees is far more likely measuring the wrong runtimeVersion than finding a
+    // real hole. Failing on the probe alone is how run 34796068541 red-X'd a healthy
+    // publish. Two independent signals are required, and this is only one.
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5427', [published('android')], SERVER, {
       ...NO_WAIT,
-      ...IOS_ENV,
-      fetchImpl: () => {
-        throw new Error('connect ECONNREFUSED');
-      },
-    });
-
-    expect(surfable).toBe(true);
-  });
-
-  it('lets the publish stand when surfing is switched off for the channel', async () => {
-    // Same reasoning: the channel refusing to surf says nothing about whether this
-    // branch got its update.
-    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', ['ios'], SERVER, {
-      ...NO_WAIT,
-      ...IOS_ENV,
-      fetchImpl: async () => new Response('', { status: 404, headers: { 'xprem-branch-surfing': 'off' } }),
+      runtimeVersion: 'fbc79fa47dc82e393350702a3a3b0d7fe869b164',
+      fetchImpl: serverListing(),
     });
 
     expect(surfable).toBe(true);
@@ -347,8 +341,8 @@ describe('preview branch surfability check', () => {
     // `probeBranchList` swallows transport errors, so the only way out is a throw
     // from the retry machinery. It must not escape as an unhandled rejection and
     // lose the publish's own result.
-    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', ['ios'], SERVER, {
-      ...IOS_ENV,
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', [deduplicated('ios')], SERVER, {
+      ...ON_IOS,
       delaysMs: [1],
       sleeper: () => {
         throw new Error('clock blew up');
@@ -359,24 +353,10 @@ describe('preview branch surfability check', () => {
     expect(surfable).toBe(true);
   });
 
-  it('still fails the publish for a branch the server answers about and does not list', async () => {
-    // The other half of the case above: a check that RAN and said no is a verdict,
-    // and the guard must not swallow it along with the broken-check case.
-    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', ['ios'], SERVER, {
+  it('passes a platform whose runtimeVersion could not be resolved rather than failing it', async () => {
+    const surfable = await previewBranchPassesSurfabilityCheck('pr-5417', [deduplicated('android')], SERVER, {
       ...NO_WAIT,
-      ...IOS_ENV,
-      fetchImpl: serverListing('pr-5422'),
-    });
-
-    expect(surfable).toBe(false);
-  });
-
-  it('passes a platform whose fingerprint was never supplied rather than failing it', async () => {
-    // Only iOS is supplied; the Android publish still ran, but nothing can be
-    // said about it. Silence is the honest answer, not a red X.
-    const surfable = await verifyPreviewBranchIsSurfable('pr-5417', ['ios', 'android'], SERVER, {
-      ...NO_WAIT,
-      ...IOS_ENV,
+      runtimeVersion: null,
       fetchImpl: serverListing('pr-5417'),
     });
 

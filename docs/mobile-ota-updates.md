@@ -1181,10 +1181,17 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   can no longer arise from a JS-only push.
 - **The publish verifies its own work.** After every platform reports success, `mobile:publish` asks
   `/branch_lists` — the same unauthenticated question the in-app picker asks — whether `pr-<number>` is
-  actually offered to that platform's fingerprint, and **fails the job** when it is not. It probes with
-  `OTA_PREVIEW_RUNTIME_VERSION_IOS` / `_ANDROID`, the full hashes the compatibility step already
-  resolved (`fingerprint_ios_full` / `fingerprint_android_full`); with neither set — a local publish —
-  it prints nothing and skips, since a locally resolved fingerprint is not the one any binary runs.
+  actually offered to that platform's fingerprint. **Two independent signals are required to fail the
+  job**: the platform reported `no-change` (nothing was created) AND the server answered and did not
+  list the branch. That pairing is the #5417 signature. A platform that DID create an update but whose
+  branch the probe cannot find only warns — the update exists, so the probe is far likelier to be
+  measuring the wrong thing than to have found a hole.
+  The runtimeVersion is resolved **inside the publish step, under that platform's own env**, and this
+  is the subtle part: `GOOGLE_MAPS_API_KEY` is an Android-only fingerprint input, so the compatibility
+  check — which has no key, and whose header says its absolute hashes are meaningless for exactly this
+  reason — resolves a *different* Android hash. Passing that one in failed a healthy publish in run
+  34796068541. Skipped entirely outside CI, where a locally resolved fingerprint is not the one any
+  binary runs.
   Shared with `vp run mobile:ota-surf-doctor` through `scripts/lib/ota-branch-probe.ts`, so the
   diagnostic and the publisher can never disagree about what "surfable" means. The probe re-asks on a
   miss (~31 s across five waits) before failing: the branch list lags a finished publish by up to the
