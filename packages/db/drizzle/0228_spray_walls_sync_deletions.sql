@@ -29,6 +29,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 --> statement-breakpoint
+-- Pin search_path like every other trigger function in this schema (0210): an
+-- unpinned one cannot resolve `sync_deletions` while pg_restore holds
+-- search_path at '', which aborts a --data-only restore (#4699).
+ALTER FUNCTION log_deletion_spray_walls() SET search_path = public, pg_catalog;--> statement-breakpoint
 
 -- THE path that actually fires. A wall is only ever SOFT-deleted: deleting the
 -- row would strand every climb ever set on it, so `spray_walls.deleted_at` is

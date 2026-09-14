@@ -209,6 +209,7 @@ export const schemaSQL = `
     "published_at" text,
     "hold_fingerprint" text,
     "characteristics" text[],
+    "missing_hold_count" integer,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "sync_seq" bigserial NOT NULL
   );
