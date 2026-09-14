@@ -557,10 +557,20 @@ export function ClimbFilterSheet({
     sheetRef.current?.dismiss();
   }, [localFilters, localBoardFilters]);
 
+  // Latest callbacks for the close handler, the unmount fallback and the setter
+  // handoff listener. The parent's onApply changes on every search keystroke;
+  // reading it through a ref keeps those stable instead of re-created each time.
+  const onApplyRef = useRef(onApply);
+  onApplyRef.current = onApply;
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
   // The native close: iOS fires it from SwiftUI's onDismiss after the slide-down,
   // Android after hide() settles (the patched wrapper runs it even when the native
   // call rejects), and a pan-down or a displacement takes the same path. A pending
   // Apply commits first, then the parent closes; without one the draft is dropped.
+  // Reads the callbacks at close time, so a parent re-render during the slide-down
+  // commits through the latest onApply.
   const handleSheetDismiss = useCallback(() => {
     // SwiftUI can still deliver onDismiss after the parent tore the sheet down
     // mid-slide. The unmount fallback already handled that Apply, and closing now
@@ -569,9 +579,9 @@ export function ClimbFilterSheet({
     hasLocalDraftEditsRef.current = false;
     const pendingApply = pendingApplyRef.current;
     pendingApplyRef.current = null;
-    if (pendingApply) onApply(pendingApply.filters, pendingApply.boardFilters);
-    onDismiss();
-  }, [onApply, onDismiss]);
+    if (pendingApply) onApplyRef.current(pendingApply.filters, pendingApply.boardFilters);
+    onDismissRef.current();
+  }, []);
 
   // Fallback for a close that never arrives: the parent can tear the sheet down
   // mid-slide (the grade chip or native search cancel flip its open state), and a
@@ -579,13 +589,6 @@ export function ClimbFilterSheet({
   // meant "apply", so commit it rather than silently dropping it. Skipped when the
   // board changed underneath (a board switch unmounts the sheet too): that draft's
   // setter, holds and zone filters belong to the old board.
-  // Latest callbacks for the unmount fallback and the setter handoff listener.
-  // The parent's onApply changes on every search keystroke; reading it through a
-  // ref keeps the handoff subscription from being torn down and redone each time.
-  const onApplyRef = useRef(onApply);
-  onApplyRef.current = onApply;
-  const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
