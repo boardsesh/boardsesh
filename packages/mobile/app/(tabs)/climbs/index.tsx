@@ -1,5 +1,13 @@
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
-import { View, StyleSheet, RefreshControl, Keyboard, InteractionManager, Pressable } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  RefreshControl,
+  Keyboard,
+  InteractionManager,
+  Pressable,
+  type ColorValue,
+} from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { hashKey } from '@tanstack/react-query';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -1062,11 +1070,13 @@ function ClimbListInner() {
     [openAddToPlaylist],
   );
 
+  // Commits the sheet's filters only. Closing belongs to handleDismissFilters: the
+  // sheet calls onApply from its native close callback (after the slide-down) and
+  // then onDismiss, so the list swaps after the sheet has left, never under it.
   const handleApplyFilters = useCallback(
     (newFilters: ClimbFilters, newBoardFilters: ClimbBoardFilterState) => {
       setFilters(newFilters);
       setBoardFilters(newBoardFilters);
-      setShowFilters(false);
 
       // Recent pills capture climb filters + name only (not board-renderer
       // filters), so we still gate on those for the pill.
@@ -1703,17 +1713,8 @@ function ClimbListInner() {
         }
       />
 
-      {/* Previous results standing in for a loading search read as loading under
-          a background-coloured tint. A tint rather than opacity on a wrapper:
-          group opacity over a scrolling list renders it offscreen every frame.
-          Touch-transparent so the list still scrolls (stale-row taps are ignored
-          in the row handlers), and placed before the chrome so it sits under it. */}
-      {isPlaceholderData ? (
-        <View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, styles.placeholderTint, { backgroundColor: systemColors.background }]}
-        />
-      ) : null}
+      {/* Placed before the chrome so the tint sits under it. See PlaceholderTint. */}
+      <PlaceholderTint active={isPlaceholderData} color={systemColors.background} />
 
       <ClimbTopChrome
         searchMode={useNativeSearch ? 'native' : 'custom'}
@@ -1792,6 +1793,38 @@ function ClimbListInner() {
 function keyExtractor(item: Climb) {
   return item.uuid;
 }
+
+// How long the previous search's rows must stand in before they are tinted. A
+// fast search (a local SQLite read) swaps rows well inside this, so it shows no
+// tint at all instead of a flash of one.
+const PLACEHOLDER_TINT_DELAY_MS = 300;
+
+/**
+ * A background-coloured tint over the list while the previous search's rows
+ * stand in for a slow one. A tint rather than opacity on a wrapper: group opacity
+ * over a scrolling list renders it offscreen every frame. Touch-transparent so
+ * the list still scrolls (stale-row taps are ignored in the row handlers). Owns
+ * its delay timer, so the timer re-renders only this view, never the list.
+ */
+const PlaceholderTint = memo(function PlaceholderTint({ active, color }: { active: boolean; color: ColorValue }) {
+  const [isDelayElapsed, setIsDelayElapsed] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setIsDelayElapsed(false);
+      return;
+    }
+    const handle = setTimeout(() => setIsDelayElapsed(true), PLACEHOLDER_TINT_DELAY_MS);
+    return () => clearTimeout(handle);
+  }, [active]);
+  if (!active || !isDelayElapsed) return null;
+  return (
+    <View
+      testID="climb-list-placeholder-tint"
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, styles.placeholderTint, { backgroundColor: color }]}
+    />
+  );
+});
 
 function ClimbListSkeletonRows({ count }: { count: number }) {
   return (
