@@ -100,7 +100,11 @@
       "footlessKickboard": "Footless + KB",
       "noKickboard": "No KB"
     },
-    "anyFeet": "Any feet"
+    "anyFeet": "Any feet",
+    "gradeError": {
+      "stiff": "Stiff",
+      "soft": "Soft"
+    }
   },
   "boardseshGrade": {
     "title": "Boardsesh grade",
@@ -435,6 +439,7 @@
         "ascents": "Ascents",
         "quality": "Quality",
         "difficulty": "Difficulty",
+        "userGrade": "User grade",
         "name": "Name",
         "popular": "Popular",
         "creation": "Newest",
@@ -548,6 +553,10 @@
         "footless": "Footless",
         "footlessKickboard": "Footless + KB",
         "noKickboard": "No KB"
+      },
+      "gradeError": {
+        "stiff": "Stiff",
+        "soft": "Soft"
       }
     },
     "climbRules": {

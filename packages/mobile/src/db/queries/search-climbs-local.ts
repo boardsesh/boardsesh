@@ -23,8 +23,10 @@ import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
  *    than the server's NOT NULL boolean, so the browse predicate COALESCEs the NULL
  *    of a pre-v5 row to "visible" instead of dropping it.
  *
- * SQLite's default NULL ordering (NULLs first on ASC, last on DESC) already matches
- * the server's explicit NULLS FIRST/LAST, so no explicit clause is needed. Personal
+ * SQLite's default NULL ordering (NULLs first on ASC, last on DESC) matches the
+ * server's default NULLS FIRST/LAST, so most sorts need no explicit clause — except
+ * the two grade sorts (difficulty, userGrade), which force NULLS LAST on ASC too
+ * (see the `nullsLastOnAsc` build below), mirroring the server's override. Personal
  * progress reads the local boardsesh_ticks (the device holds one user's ticks).
  *
  * Filters that need tables we don't sync (hold-state, zone, tall/wide, beta videos,
@@ -45,6 +47,7 @@ const DEFAULT_PAGE_SIZE = 20;
 const SORT_ALIASES: Record<string, string> = {
   ascents: 'ascents',
   difficulty: 'difficulty',
+  userGrade: 'userGrade',
   name: 'name',
   quality: 'quality',
   popular: 'popular',
@@ -385,6 +388,10 @@ function sortColumnSql(sortBy: string): string {
       return 's.ascensionist_count';
     case 'difficulty':
       return 'CAST(ROUND(s.display_difficulty) AS INTEGER)';
+    case 'userGrade':
+      // Raw mean of submitted grades — see the matching comment in the server's
+      // search-climbs.ts allowedSortColumns.
+      return 's.difficulty_average';
     case 'name':
       // NOCASE so 'apple' sorts before 'Zebra', matching Postgres's locale
       // collation (SQLite's default BINARY puts all uppercase first). ASCII
@@ -551,9 +558,15 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   // seed falls back to 1 rather than silently pinning every shuffle to seed 0.
   const seedInt = Number(input.sortSeed);
   const randomSeedBind = input.sortSeed && Number.isFinite(seedInt) ? Math.trunc(seedInt) : 1;
+  // Ungraded climbs (no stats row) sort to the bottom on either direction for the
+  // two grade sorts, matching the server's explicit NULLS LAST override — see the
+  // comment in search-climbs.ts's runStandardSearch. SQLite defaults to NULLS
+  // FIRST on ASC otherwise, which every other sort here still relies on.
+  const isGradeSort = sortBy === 'difficulty' || sortBy === 'userGrade';
+  const nullsLastOnAsc = isGradeSort && sortOrder === 'ASC' ? ' NULLS LAST' : '';
   const orderBy = isRandom
     ? `${RANDOM_ORDER_EXPR} ASC, c.uuid DESC`
-    : `${sortColumnSql(sortBy)} ${sortOrder}, c.uuid DESC`;
+    : `${sortColumnSql(sortBy)} ${sortOrder}${nullsLastOnAsc}, c.uuid DESC`;
 
   const query = `
     SELECT

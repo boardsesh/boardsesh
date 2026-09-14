@@ -11,7 +11,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { formatSends, formatQuality } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
-import { resolveAnyFeetLabel, resolveMoonBoardMethodLabel } from '@/app/lib/climb-method';
+import { resolveAnyFeetLabel, resolveMoonBoardMethodLabel, resolveGradeErrorLabel } from '@/app/lib/climb-method';
 import { getMoonBoardMethod, isAnyFeet, isCampus } from '@boardsesh/shared-schema';
 
 export type ClimbTitleData = {
@@ -26,6 +26,9 @@ export type ClimbTitleData = {
   communityGrade?: string | null;
   is_no_match?: boolean | null;
   characteristics?: string[] | null;
+  /** board_climb_stats.difficulty_average − display_difficulty, for the
+   *  "stiff/soft" grade-discrepancy badge. See resolveGradeErrorLabel. */
+  difficulty_error?: string | number | null;
 };
 
 export type ClimbTitleProps = {
@@ -261,6 +264,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
     const resolvedIsNoMatch = isNoMatch || Boolean(climb.is_no_match);
     const methodLabel = resolveMoonBoardMethodLabel(climb.characteristics, t);
     const anyFeetLabel = resolveAnyFeetLabel(climb.characteristics, t);
+    const gradeErrorLabel = resolveGradeErrorLabel(climb.difficulty_error, climb.ascensionist_count, t);
 
     const renderDifficultyText = () => {
       if (hasGrade) {
@@ -284,6 +288,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
             isNoMatch={resolvedIsNoMatch}
             methodLabel={methodLabel}
             anyFeetLabel={anyFeetLabel}
+            gradeErrorLabel={gradeErrorLabel}
           />
         </Typography>
       </MarqueeText>
@@ -473,6 +478,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       prevClimb.angle === nextClimb.angle &&
       prevClimb.setter_username === nextClimb.setter_username &&
       prevClimb.ascensionist_count === nextClimb.ascensionist_count &&
+      prevClimb.difficulty_error === nextClimb.difficulty_error &&
       prevClimb.is_draft === nextClimb.is_draft &&
       prevClimb.communityGrade === nextClimb.communityGrade &&
       prevClimb.is_no_match === nextClimb.is_no_match &&

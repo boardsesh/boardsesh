@@ -322,6 +322,24 @@ describe('searchClimbsLocal', () => {
     expect(page1.hasMore).toBe(false);
   });
 
+  // Mirrors the server's override in search-climbs.ts's runStandardSearch: an
+  // ungraded climb (no stats row at all) sorts to the bottom on either
+  // direction for the two grade sorts, unlike every other sort's SQLite
+  // default (NULLS FIRST on ASC).
+  it('sorts ungraded climbs to the bottom on ascending difficulty and userGrade', async () => {
+    await insertClimb(db, { uuid: 'soft' });
+    await insertClimb(db, { uuid: 'stiff' });
+    await insertClimb(db, { uuid: 'ungraded' });
+    await insertStat(db, { climbUuid: 'soft', displayDifficulty: 10, difficultyAverage: 10, ascensionistCount: 1 });
+    await insertStat(db, { climbUuid: 'stiff', displayDifficulty: 20, difficultyAverage: 20, ascensionistCount: 1 });
+
+    const byDifficultyAsc = await searchClimbsLocal(db, makeInput({ sortBy: 'difficulty', sortOrder: 'asc' }));
+    expect(uuids(byDifficultyAsc)).toEqual(['soft', 'stiff', 'ungraded']);
+
+    const byUserGradeAsc = await searchClimbsLocal(db, makeInput({ sortBy: 'userGrade', sortOrder: 'asc' }));
+    expect(uuids(byUserGradeAsc)).toEqual(['soft', 'stiff', 'ungraded']);
+  });
+
   it('supports name (case-insensitive), quality sort, and present-hold filters', async () => {
     await insertClimb(db, { uuid: 'crimpy', name: 'Crimpy Line', frames: 'p11r15p22r12' });
     await insertClimb(db, { uuid: 'juggy', name: 'JUGGY roof', frames: 'p33r15' });

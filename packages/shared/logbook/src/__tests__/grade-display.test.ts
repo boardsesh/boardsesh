@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveLogbookGradeDisplay, resolveCrowdDifficulty } from '../grade-display';
+import { deriveLogbookGradeDisplay, resolveCrowdDifficulty, resolveGradeErrorBadge } from '../grade-display';
 
 describe('deriveLogbookGradeDisplay', () => {
   it('shows no consensus secondary when the logged grade matches the consensus', () => {
@@ -90,5 +90,41 @@ describe('resolveCrowdDifficulty', () => {
     // surfaces the grade instead of being silently dropped. See the comment
     // on the guard in grade-display.ts.
     expect(resolveCrowdDifficulty({ boardseshDifficulty: 18, boardseshConfidence: undefined }, true)).toBe(18);
+  });
+});
+
+describe('resolveGradeErrorBadge', () => {
+  it('flags a climb as stiff when the crowd average runs harder than the display grade', () => {
+    expect(resolveGradeErrorBadge(0.7, 10)).toEqual({ direction: 'stiff', amount: 0.7 });
+  });
+
+  it('flags a climb as soft when the crowd average runs easier than the display grade', () => {
+    expect(resolveGradeErrorBadge(-0.6, 10)).toEqual({ direction: 'soft', amount: 0.6 });
+  });
+
+  it('parses a string difficulty_error, the shape the wire format carries', () => {
+    expect(resolveGradeErrorBadge('0.55', 10)).toEqual({ direction: 'stiff', amount: 0.55 });
+    expect(resolveGradeErrorBadge('-0.55', 10)).toEqual({ direction: 'soft', amount: 0.55 });
+  });
+
+  it('returns null below the notability threshold, even with plenty of ascents', () => {
+    expect(resolveGradeErrorBadge(0.2, 100)).toBeNull();
+    expect(resolveGradeErrorBadge(-0.49, 100)).toBeNull();
+  });
+
+  it('returns null below the minimum ascent count, even with a large gap', () => {
+    expect(resolveGradeErrorBadge(2.0, 4)).toBeNull();
+    expect(resolveGradeErrorBadge(2.0, 0)).toBeNull();
+    expect(resolveGradeErrorBadge(2.0, null)).toBeNull();
+  });
+
+  it('returns null for a missing or unparsable difficulty_error', () => {
+    expect(resolveGradeErrorBadge(null, 100)).toBeNull();
+    expect(resolveGradeErrorBadge(undefined, 100)).toBeNull();
+    expect(resolveGradeErrorBadge('not-a-number', 100)).toBeNull();
+  });
+
+  it('treats the threshold and ascent-count boundaries as inclusive', () => {
+    expect(resolveGradeErrorBadge(0.5, 5)).toEqual({ direction: 'stiff', amount: 0.5 });
   });
 });

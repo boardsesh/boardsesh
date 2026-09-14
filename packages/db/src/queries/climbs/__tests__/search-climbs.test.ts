@@ -483,3 +483,47 @@ void describe('community-hidden climbs (#5049)', () => {
     assert.doesNotMatch(pageWhere, /is_hidden/);
   });
 });
+
+void describe('ungraded climbs sort last on either direction, for grade sorts only', () => {
+  void it('forces NULLS LAST on ascending difficulty, unlike a non-grade sort', async () => {
+    const { fakeDb: gradeDb, queries: gradeQueries } = createFakeSearchDb();
+    await searchClimbs(gradeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 0,
+      pageSize: 20,
+      sortBy: 'difficulty',
+      sortOrder: 'asc',
+    });
+    assert.match(gradeQueries[0].orderBy[0] ?? '', /nulls last/i);
+
+    const { fakeDb: otherDb, queries: otherQueries } = createFakeSearchDb();
+    await searchClimbs(otherDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 0,
+      pageSize: 20,
+      sortBy: 'quality',
+      sortOrder: 'asc',
+    });
+    assert.match(otherQueries[0].orderBy[0] ?? '', /nulls first/i);
+  });
+
+  void it('forces NULLS LAST on ascending userGrade too', async () => {
+    const { fakeDb, queries } = createFakeSearchDb();
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 0,
+      pageSize: 20,
+      sortBy: 'userGrade',
+      sortOrder: 'asc',
+    });
+    assert.match(queries[0].orderBy[0] ?? '', /nulls last/i);
+  });
+
+  void it('keeps NULLS LAST on descending grade sorts (already the default)', async () => {
+    const { fakeDb, queries } = createFakeSearchDb();
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 0,
+      pageSize: 20,
+      sortBy: 'userGrade',
+      sortOrder: 'desc',
+    });
+    assert.match(queries[0].orderBy[0] ?? '', /nulls last/i);
+  });
+});
