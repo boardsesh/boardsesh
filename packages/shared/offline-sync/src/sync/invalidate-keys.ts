@@ -63,8 +63,10 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // (isFollowedByMe + followerCount on ['playlist', uuid]), not its own query.
   playlist_follows: [['playlist']],
 
-  // Board reference data: the list, the count, and the detail.
-  board_climbs: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb']],
+  // Board reference data: the list, the count, the detail, and the setter picker
+  // (#5407 made ['setterStats'] a local read too — a sync that adds/removes
+  // climbs changes who's set on the board, so it must refresh alongside search).
+  board_climbs: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb'], ['setterStats']],
   board_climb_stats: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb']],
   // The stats keys plus the two grade-specific keys the play-drawer grade
   // section and the by-angle chart read.

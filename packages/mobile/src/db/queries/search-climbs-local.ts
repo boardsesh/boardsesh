@@ -84,7 +84,7 @@ function normalizeSortBy(sortBy: string | null | undefined): string {
   return SORT_ALIASES[sortBy] ?? 'creation';
 }
 
-function parseSetIds(setIds: string | null | undefined): number[] {
+export function parseSetIds(setIds: string | null | undefined): number[] {
   if (!setIds) return [];
   return setIds
     .split(',')

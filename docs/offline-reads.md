@@ -14,7 +14,7 @@ Three buckets fall out of that, and every query key belongs to exactly one. The 
 
 Anything already in `TABLE_CONFIGS` (`packages/shared/offline-sync/src/sync/table-config.ts`): climbs, stats, grades, ticks/logbook, playlists and playlist climbs, favorites, follows.
 
-The expensive half of this shipped a year ago. `pullSync` syncs every `USER_DATA_TABLES` entry on each cycle for every authenticated user with the engine on — unconditionally, not gated on any board being downloaded (`pull-client.ts`, the `USER_DATA_TABLES` loop). The rows are on disk today. What is missing is **readers**: `offlineAwareRequest` (`packages/mobile/src/lib/graphql/offline-request.ts`) has five registrations, all of them board reference data.
+The expensive half of this shipped a year ago. `pullSync` syncs every `USER_DATA_TABLES` entry on each cycle for every authenticated user with the engine on — unconditionally, not gated on any board being downloaded (`pull-client.ts`, the `USER_DATA_TABLES` loop). The rows are on disk today. What is missing is **readers**: `offlineAwareRequest` (`packages/mobile/src/lib/graphql/offline-request.ts`) has six registrations, all of them board reference data.
 
 SQLite wins this bucket for a reason a cache can never match: it answers for data you have **never looked at**. A downloaded Kilter layout is roughly 40,000 climbs. A persisted query cache can only ever replay the handful you scrolled past, which is the opposite of what a board download is for.
 
@@ -38,6 +38,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | ---------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------ |
 | `['searchClimbs']`, `['infiniteSearchClimbs']`, `['searchClimbsCount']`                  | SQLite                      | Registered today                                                   |
 | `['climb', …]`                                                                           | SQLite                      | Registered today                                                   |
+| `['setterStats', …]`                                                                     | SQLite                      | Registered today (#5407)                                           |
 | `['boardseshGrade']`, `['boardseshGradesForAngles']`                                     | SQLite                      | Registered today                                                   |
 | `['logbook', board, …]`                                                                  | SQLite                      | `boardsesh_ticks`; reader missing                                  |
 | `['localTicks', …]`                                                                      | SQLite                      | Pending-write badge, reads local already                           |

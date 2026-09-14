@@ -6,6 +6,7 @@ import { isOfflineEngineEnabled } from '../offline-engine';
 import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '../../db/queries/search-climbs-local';
 import { getClimbLocal } from '../../db/queries/get-climb-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
+import { getSetterStatsLocal } from '../../db/queries/get-setter-stats-local';
 import { isBoardDownloadedLocally, isBoardTypeDownloadedLocally } from '../../db/queries/board-download-status';
 import { getHttpClient } from './client';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
@@ -23,11 +24,14 @@ import {
   SEARCH_CLIMBS,
   SEARCH_CLIMBS_COUNT,
   GET_CLIMB,
+  GET_SETTER_STATS,
   type SearchClimbsQueryVariables,
   type SearchClimbsQueryResponse,
   type SearchClimbsCountQueryResponse,
   type GetClimbQueryResponse,
   type GetClimbQueryVariables,
+  type GetSetterStatsQueryVariables,
+  type GetSetterStatsQueryResponse,
 } from './operations';
 
 /**
@@ -149,6 +153,19 @@ registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
   }),
   offlineFallback: () => ({ climb: null }),
   isLocalMiss: (response) => response.climb === null,
+});
+
+// Setter stats: who set on this board configuration (#5407). No filter-support
+// gate like search has — every predicate SetterStatsInput carries is expressible
+// locally — so this is local whenever the exact scope is downloaded. An empty
+// list is a real answer (a downloaded board with no matching setter), not a miss.
+registerOfflineOperation<GetSetterStatsQueryVariables, GetSetterStatsQueryResponse>({
+  document: GET_SETTER_STATS,
+  surface: 'setter_stats',
+  boardNameOf: ({ input }) => input.boardName,
+  canServeLocal: (db, { input }) => isBoardDownloadedLocally(db, scopeOf(input)),
+  resolveLocal: async (db, { input }) => ({ setterStats: await getSetterStatsLocal(db, input) }),
+  offlineFallback: () => ({ setterStats: [] }),
 });
 
 // Boardsesh grade reads. These carry only boardName (+ climbUuid + angle), no
