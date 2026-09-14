@@ -1,0 +1,23 @@
+# Offline hold-detection spike (issue #5434). CPU-only; nothing here ships.
+#
+# Licence discipline (epic #5346, 2026-09-14): Apache-2.0 model families only.
+# `ultralytics` is AGPL-3.0 — do not add it to this file or install it in this
+# repo. If an AGPL detector is ever needed it lives in the separate microservice
+# repo (#5451), never here.
+#
+# torch/torchvision come from the CPU wheel index, so install them first:
+#   python3 -m venv .venv && . .venv/bin/activate
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.0 torchvision==0.29.0
+#   pip install -r requirements.txt
+
+rfdetr[train]==1.10.1   # Apache-2.0, weights Apache-2.0 — the detector family.
+                        # The [train] extra (pytorch-lightning, accelerate, faster-coco-eval)
+                        # is what train.py needs; plain `rfdetr` exports and evaluates only.
+onnx==1.22.0            # Apache-2.0
+onnxruntime==1.30.0     # MIT — eval.py scores the exported ONNX through this
+pycocotools==2.0.11     # BSD-2 — COCO annotation and mask handling
+pillow==12.3.0          # MIT-CMU
+numpy==2.3.5            # BSD-3 — pinned down by rfdetr[train]
+scipy==1.18.1           # BSD-3 — connected components for the classical in-box mask
+onnxconverter-common==1.16.0  # MIT — fp16 conversion (RF-DETR's own fp16 export is a no-op)
+av==18.1.0              # BSD-3 — decodes The Way Up clips into frames, no ffmpeg binary needed

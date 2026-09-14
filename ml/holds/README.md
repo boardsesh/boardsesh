@@ -1,0 +1,433 @@
+# Hold detection — offline spike harness (SW-01, issue #5434)
+
+Finds climbing holds in a photo of a spray wall. Offline only: nothing in this
+directory ships. The app gets two things out of it — an exported model file it
+downloads from R2 at runtime, and the post-processing contract that SW-06
+re-implements in TypeScript and checks against `fixtures/expected-detections.json`.
+
+Read `RUNTIME.md` for the React Native side (which inference library builds on
+Expo SDK 57 / RN 0.86).
+
+## The rules this harness is built around
+
+- **Apache-2.0 model families only** (epic #5346, decided 2026-09-14): RF-DETR,
+  YOLOX, D-FINE, RT-DETR. Ultralytics code and weights are AGPL-3.0 and must
+  never be installed in this repo — not in `requirements.txt`, not ad hoc. If an
+  AGPL detector turns out to be the only thing that works, it lives in the
+  separate microservice repo (#5451) and only its results cross the wire.
+- **No CC BY-NC training data.** `data/fetch.py` refuses to download a source
+  whose licence is non-commercial, unstated or blank. CC BY / CC BY-SA sources
+  must be credited on the app's licences screen.
+- **The exported artifact is what gets scored.** `eval.py` loads ONNX through
+  onnxruntime and never touches the PyTorch weights, so the reported numbers
+  describe the file a phone runs, including whatever the exporter changed.
+- **Splits are by photo, never by hold.** Two holds off the same wall on opposite
+  sides of the split would inflate every number: the model has already seen that
+  wall, its lighting and its hold set.
+
+## Layout
+
+```
+ml/holds/
+  configs.json      the evaluable configurations (family, variant, resolution, tiling)
+  common.py         tiling, NMS, IoU matching, splits — shared by train/export/eval
+  data/sources.json    corpus registry; every entry carries an explicit licence
+  data/fetch.py        download the public sources (refuses NC / unlicensed ones)
+  data/scrape_commons.py   pull climbing-wall photos + licences from Wikimedia Commons
+  data/scrape_spraywalls.py pull spray-wall photos from Flickr feeds and the web
+  data/label_tool.py   grid / render / merge — the hand-labelling loop
+                       (`merge --halves` writes a `tune` and an `eval` split so the
+                       score threshold is chosen on photos the F1 is not reported on)
+  data/wayup.py        frame The Way Up videos into COCO, split by participant
+  data/make_fixtures.py promote labelled photos into the committed fixtures
+  data/to_coco.py      convert a labelled source into one COCO set, split by photo
+  data/tile_coco.py    cut a COCO set into the tiles a tiled config will see
+  train.py          one pipeline; the config picks the model family
+  export.py         ONNX (required), `--shrink fp16,int8`, TFLite if its extra is installed
+  eval.py           score the exported ONNX on the held-out photos
+  fixtures/         committed inputs + expected detections for the SW-06 Node tests
+  .data/            downloads, scraped photos, labels, checkpoints, exports —
+                    gitignored, never committed
+  .venv/            gitignored
+```
+
+## Setup
+
+```bash
+cd ml/holds
+python3 -m venv .venv && . .venv/bin/activate
+pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.0 torchvision==0.29.0
+pip install -r requirements.txt
+```
+
+This box has no GPU and has fallen over under concurrent heavy jobs. **Run one
+training or evaluation at a time** and keep the thread cap: every entry point
+honours `HOLDS_THREADS` (default 8) and pins OMP/MKL/torch to it.
+
+## Reproducing every number in the report
+
+```bash
+cd ml/holds && . .venv/bin/activate
+
+# 1. Corpus. --list prints the registry with each licence and whether it is usable;
+#    --only <name> prints the fetch steps for one source.
+python data/fetch.py --list
+python data/fetch.py --only wayup
+
+# 2a. The public bootstrap corpus (The Way Up). Splits by participant, so a
+#     held-out frame is a camera setup the model never trained on.
+python data/wayup.py --root <extracted Way Up tree> --out .data/coco \
+  --every 45 --frames-per-clip 24 --holdout-participants p10
+
+# 2b. Or a hand-labelled corpus (the Discord spray-wall photos), split by photo.
+python data/to_coco.py --source spraywall-discord:.data/spraywall-discord:coco
+
+# 3. Train. Tiled configs tile the dataset first (cached in .data/coco-tiles-*).
+#    --max-train-images keeps a CPU run inside a sane wall clock; it symlinks an
+#    evenly spaced subset rather than copying anything.
+python train.py --config nano-tiled-1024 --epochs 2 --max-train-images 400
+
+# 4. Export. ONNX is required; TFLite is attempted and the result recorded.
+python export.py --config nano-tiled-1024 --formats onnx,tflite
+
+# 5. Score the EXPORTED artifact on the held-out photos.
+python eval.py --config nano-tiled-1024 --split valid
+python eval.py --config medium-untiled-1280 --split valid
+```
+
+Every `eval.py` run writes `.data/artifacts/<config>/eval.json` with the
+per-photo breakdown behind the summary it prints.
+
+### The two-minute fixture check
+
+`eval.py` runs end to end on the committed fixtures in a few seconds. This is what
+a reviewer runs; it needs no dataset download and no training, only the exported
+ONNX (which is not committed — see `fixtures/README.md` for why, and for the two
+commands that regenerate it):
+
+```bash
+cd ml/holds && . .venv/bin/activate
+python eval.py --config nano-tiled-1024 --dataset fixtures --split images \
+  --score-threshold 0.05 --out /tmp/fixture-eval.json
+```
+
+Two things that command deliberately does **not** do. It does not run at the
+config's default 0.3 — that threshold scores 0.000 here and would read as a broken
+harness (see the sweep below). And it does not pass `--write-fixtures`, so a
+reviewer cannot overwrite the committed expectations with their own run.
+Regenerating those is a deliberate act, and `fixtures/README.md` has that command.
+
+Measured wall clock on the spike box: **2.6 s** for three photos, well inside the
+two-minute budget.
+
+## Measured so far
+
+Three corpora, in order of how much they should count.
+
+1. **Spray walls** — 61 photos collected from the open web, 54 labelled by hand.
+   The product's actual subject. The scored set is the **21 photos labelled
+   completely** (2,256 holds), split in half by photo: the score threshold is
+   chosen on `tune` (11 photos) and every number below is reported on `eval`
+   (10 photos, 964 holds), which the threshold never saw.
+2. **General climbing walls** — 28 Wikimedia Commons photos, 1,308 holds. Gym
+   lead walls and bouldering walls rather than spray walls.
+3. **The Way Up held-out split** — 48 video frames of the one wall both models
+   trained on, from an unseen camera setup.
+
+Both models were trained **only** on The Way Up. Neither has ever seen a spray
+wall in training, which is the single most important thing to know before reading
+any of these numbers.
+
+### Spray walls, held-out — the number that counts
+
+Threshold picked on `tune`, F1 reported on `eval`. int8 weights, because int8 is
+what would ship (see "Export size").
+
+| | `nano-tiled-1024` | `medium-untiled-1280` | Gate |
+| --- | --- | --- | --- |
+| Threshold (chosen on `tune`) | 0.05 | 0.08 | — |
+| Precision | 0.274 | 0.504 | — |
+| Recall | 0.461 | 0.533 | — |
+| **F1 @ box IoU 0.5** | 0.344 | **0.518** | ≥ 0.80 |
+| Gap to the larger config | 17.4 pts | — | ≤ 5 pts |
+| Corrections ÷ holds | 1.76 | **0.99** | ≤ 0.10 |
+| Latency p50 / p95, 8 CPU threads | 0.560 s / 0.596 s | 0.365 s / 0.398 s | ≤ 8 s p50 (device) |
+| Peak RSS | 392 MB | 546 MB | < 500 MB |
+| Artifact | 28.7 MB int8 | 32.8 MB int8 | — |
+
+Same runs in fp32, for reference: nano F1 0.345 (p50 0.858 s, 472 MB), medium F1
+0.513 (p50 0.512 s, 646 MB). **int8 costs nothing in accuracy** — medium is
+0.5 points *better* — while cutting latency by about a third and the file by 73 %.
+
+Secondary, all 54 labelled spray walls including the 33 labelled only in part:
+nano **0.220**, medium **0.372**. Those are precision *lower bounds*, not
+comparable to the table above: a detection in a region nobody labelled is charged
+as a false positive even when it is a real hold. They are here because they cover
+the dense walls the strict set has to leave out, and the strict set's optimism
+should be read against them.
+
+### General climbing walls (Commons), and The Way Up
+
+| | `nano-tiled-1024` | `medium-untiled-1280` |
+| --- | --- | --- |
+| Commons, 28 photos, best threshold 0.05 | 0.367 | **0.592** |
+| The Way Up held-out, best threshold 0.3 | **0.483** | 0.085 |
+
+The Commons threshold was picked on the same photos the F1 is reported on, so
+those two numbers are optimistic — that is exactly why the spray-wall corpus is
+split into `tune` and `eval`, and why the spray-wall table is the one to quote.
+
+The Way Up row is the trap worth keeping. There, tiling looks like everything and
+the bigger model looks broken. On both real-photo corpora the ranking **inverts**.
+The Way Up is portrait video of a narrow wall strip, so downscaling to one 576 px
+square throws its holds away; a real wall photo is framed on the wall and one
+untiled pass sees the holds fine. **Do not settle the tiling question on a video
+bootstrap corpus.**
+
+### Thresholds move F1 by tens of points
+
+`eval.py --score-threshold` exists because the first real-photo run scored **F1
+0.003** at the configs' default 0.3 and looked like total failure. It was
+calibration, not blindness: two epochs leaves a model under-confident.
+
+`nano-tiled-1024` on the spray-wall `tune` half:
+
+| Threshold | Precision | Recall | F1 |
+| --- | --- | --- | --- |
+| 0.02 | 0.156 | 0.615 | 0.249 |
+| **0.05** | 0.320 | 0.487 | **0.386** |
+| 0.08 | 0.427 | 0.331 | 0.373 |
+| 0.12 | 0.502 | 0.200 | 0.286 |
+| 0.20 | 0.571 | 0.074 | 0.132 |
+
+`medium-untiled-1280` on the same half peaks at 0.08 (F1 0.553) and still scores
+0.462 at 0.02 — it is the better-calibrated of the two as well as the better
+detector. And the best threshold is **not the same across corpora**: 0.05 on the
+Commons set, 0.3 on The Way Up, where 0.05 collapses precision to 0.077. A single
+shipped constant will be wrong for somebody's wall, which argues for the
+confidence slider already decided in #5441.
+
+### Export size
+
+| Artifact | `nano-tiled-1024` | `medium-untiled-1280` | Runs on the CPU provider? |
+| --- | --- | --- | --- |
+| fp32 ONNX | 107.6 MB | 120.6 MB | yes |
+| fp16 ONNX | 54.1 MB | 60.6 MB | **no** |
+| **int8 ONNX** (dynamic) | **28.7 MB** | **32.8 MB** | yes |
+
+Three things this corrects or establishes:
+
+- **The 90-class COCO head was never the problem.** An earlier note here guessed
+  it was about half the file. Measured against the graph, the tensors carrying
+  class dimensions are **0.000 MB**: RF-DETR nano is 30.1 M parameters because of
+  its DINOv2 ViT backbone, and 30.1 M × 4 bytes is the whole 107.6 MB.
+  `configs.json` now sets `num_classes: 1` anyway — it is correct modelling and it
+  drops 89 dead logits from every inference — but it buys **no** file size.
+- **RF-DETR's `quantization` argument is a no-op for `format="onnx"`.** Passing
+  `fp16` returns a byte-identical fp32 file. `export.py --shrink` therefore
+  converts the exported graph itself, with `onnxconverter-common` for fp16 and
+  `onnxruntime.quantization.quantize_dynamic` for int8.
+- **fp16 halves the file but will not load on ONNX Runtime's CPU provider**, with
+  or without `keep_io_types` (mixed float/float16 `Conv`). It targets a
+  float16-capable delegate — NNAPI, CoreML, GPU — so validating it needs a device,
+  which is SW-02's job. int8 is the one that runs everywhere today.
+
+Even int8 is 28.7 MB against a ~25 MB first-launch budget. Close, not under.
+
+Exports are **opset 17, IR version 8**, with no custom operators. ONNX Runtime
+Mobile has supported opset 17 since 1.13 and `.ort` conversion is optional — a
+plain `.onnx` loads — and the ONNX-to-ExecuTorch path accepts the same graph.
+Neither claim is device-verified here.
+
+### Training, and what was deliberately not trained on
+
+`nano-tiled-1024`: 400 tiles × 2 epochs, 21.6 min. `medium-untiled-1280`: 300
+photos × 1 epoch, 19.8 min. CPU only.
+
+**The spray-wall corpus was not used for training, on purpose, for two reasons.**
+It is the only held-out measurement of the thing we actually care about, and
+training on it would destroy that. And most of it is not licensed for it: 41 of
+the 61 photos are all-rights-reserved editorial photography. Evaluating a model
+against a copyrighted photo on one machine is a different act from baking it into
+weights that ship. The Commons set is CC and *could* be trained on, but it is the
+only other clean evaluation set there is.
+
+So the honest position is: there is still no corpus this model may both learn from
+and be judged on. The Roboflow ask below is what fixes that.
+
+Reproduce exactly:
+
+```bash
+python data/wayup.py --root <extracted Way Up tree> --out .data/coco \
+  --every 45 --frames-per-clip 24 --holdout-participants p10
+python train.py  --config nano-tiled-1024 --epochs 2 --max-train-images 400
+python export.py --config nano-tiled-1024 --formats onnx --shrink fp16,int8
+
+python data/scrape_spraywalls.py                       # or the manual collection below
+python data/label_tool.py merge --corpus .data/spraywalls --out .data/spraywall-coco --halves
+python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco --split tune \
+  --score-threshold 0.08                               # sweep here
+python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco --split eval \
+  --score-threshold 0.08 --model .data/artifacts/medium-untiled-1280/model-int8.onnx
+```
+
+Mask IoU is **not reported**: no corpus here has mask ground truth, so the
+box-plus-classical-segmentation config and the seg-nano config have nothing to be
+scored against. `eval.py` computes it as soon as one arrives.
+
+## The spray-wall evaluation corpus
+
+61 photos of home and gym spray walls, collected from the open web because no
+licensed one exists: Climbing Business Journal's "Home Wall of the Week" (39),
+climbing blogs, build write-ups and gym sites (14), Flickr public feeds (8).
+Reddit's JSON endpoints return 403 from this machine. Everything lands in the
+gitignored `.data/spraywalls/` with a `sources.csv` recording the image URL, the
+page it came from, the licence **exactly as stated** (`not stated` when there is
+none), and the fetch date.
+
+**These photos are evaluation only.** 41 of 61 are all-rights-reserved editorial
+photography, 11 state no licence, and exactly one (a Commons image) is CC BY 4.0.
+They are never committed, never redistributed, never used as training data, and
+every one is traceable to its page so any of it can be removed on request. Nothing
+from this corpus may enter `fixtures/`.
+
+Labelling outcome: 21 photos labelled completely (2,256 holds), 33 labelled in
+part and flagged `"partial": true` (2,093 holds), 7 rejected as unlabelable.
+Tags across the 54 usable: `spray-wall` 45, `overhang` 42, `dense` 40, `home-wall`
+37, `angled` 35, `bright` 29, `volumes` 22, `gym-wall` 17, `low-light` 16,
+`sparse` 14, `wood-on-wood` 13, `tape` 8.
+
+That 33-of-54 partial rate is the corpus's headline finding about itself. A spray
+wall photographed whole puts most of its holds at 6-20 px, and below about 15 px a
+drawn box covers the hold, so the check step stops telling you anything. Labellers
+excluded those regions and named the bounds rather than guess. Which means: **the
+hardest part of a spray wall is hard for a careful human at 1280 px too**, and a
+user photographing their wall should be told to shoot closer or in two halves.
+
+## The Commons evaluation corpus
+
+`data/scrape_commons.py` pulls climbing-wall photos from Wikimedia Commons —
+keyless, and the only large source whose per-file licence is machine readable, so
+every photo is traceable. Non-commercial and no-derivatives licences are refused,
+not warned about. Everything lands in the gitignored `.data/realwall/` with a
+`sources.csv` (file name, Commons title, file page URL, licence, author,
+dimensions, orientation, how it was found, fetch date). **Scraped photos are never
+committed**; only a CC-licensed one with its attribution recorded may be promoted
+into `fixtures/`, and the three committed fixtures come from here.
+
+103 candidates were fetched and triaged by hand; **28 were labelled completely**
+(1,308 holds) and 31 rejected. The rejects matter as much as the keeps: a photo
+where only half the holds can be enumerated is marked `usable: false`, because a
+partial label charges the detector for holds nobody labelled.
+
+Corpus at a glance: 28 photos, portrait and landscape, tagged `sparse` 20,
+`bright` 16, `angled` 15, `volumes` 8, `dense` 4, `tape` 4, `wood-on-wood` 4,
+`overhang` 4, `low-light` 3, `spray-wall` 1. That last number is why the
+spray-wall corpus above had to exist.
+
+```bash
+python data/scrape_commons.py --limit 110            # fetch + sources.csv
+python data/label_tool.py grid   --image .data/realwall/images/<name>.jpg
+#   ... write .data/realwall/labels/<name>.json ...
+python data/label_tool.py render --image .data/realwall/images/<name>.jpg \
+  --labels .data/realwall/labels/<name>.json         # look, fix, repeat
+python data/label_tool.py merge --split valid        # -> .data/realwall-coco/valid
+```
+
+### What hand-labelling could not do
+
+Holds between about 18 and 45 px can be boxed **and checked**: the box and the
+hold are both visible in the rendered overlay, which caught real mistakes. Below
+about 15 px the drawn outline covers the hold entirely and the check step stops
+telling you anything. Dense far-wall sections were therefore left out rather than
+guessed. Any future labelling pass on dense walls needs a verification render at
+4x or more with the index labels suppressed.
+
+## The public bootstrap corpus, and why it is not enough
+
+The only hold dataset that is **keyless, permissively licensed and box-annotated**
+is *The Way Up* (Zenodo 10.5281/zenodo.15196867, CC BY 4.0). What it actually
+contains, because the shape of it decides what its numbers mean:
+
+- 22 clips at 720×1280 of **one indoor route wall**, **two routes** (22 and 31
+  holds), re-shot by eleven participants from slightly different camera setups.
+- 583 boxes, about **53 distinct physical holds** in the whole release.
+- Boxes are per clip — the camera shifts between recordings, so one clip's
+  annotation is not valid for another's frames.
+- Climbers occlude the holds they are on. Those holds stay labelled, so some of
+  what looks like a miss is a hold behind a knee.
+
+So `data/wayup.py` splits **by participant**, which is the strongest split the
+source allows, and a held-out frame is still the same 53 holds from a new
+viewpoint. A number measured on it says "the pipeline runs and learns something",
+not "this will work on your garage wall". Treat it as a harness bootstrap.
+
+Everything larger is behind a login. `data/sources.json` records the exact
+unblock steps for each (a free Roboflow account reaches 120,528 CC BY 4.0 boxes;
+a Kaggle token reaches the only per-hold masks).
+
+## Corpus protocol
+
+The spike's public sources only bootstrap the harness. The corpus the gate should
+be decided on is **real spray-wall photos**, collected through
+`POST /api/spray-wall-test-data` (added in this PR) into the `private` R2 bucket
+under `spray-wall-test-data/<ISO-timestamp>-<uuid>/`, one folder per photo with
+`image.jpg` and `metadata.json`.
+
+What the corpus needs, per issue #5434:
+
+- at least 20 photos, and realistically many more before a number means anything
+- both portrait and landscape
+- mixed lighting: gym fluorescents, a garage bulb, daylight through a door
+- at least 3 hard cases: wood-on-wood holds, a dense section, volumes, tape
+
+`metadata.json` records the uploader's consent. Only a photo whose
+`consent.redistribute` is true may become a committed fixture; everything else
+stays in the private bucket.
+
+Pull the collected photos down for labelling with the AWS CLI against the private
+bucket (credentials as in `docs/user-media-storage.md`):
+
+```bash
+aws s3 sync s3://$R2_PRIVATE_BUCKET/spray-wall-test-data/ .data/spraywall-discord/ \
+  --endpoint-url "$R2_ENDPOINT"
+```
+
+Label every hold as a box (a mask is a bonus), export COCO, and put it through
+`data/to_coco.py`.
+
+## Licences
+
+See `data/sources.json` for the machine-readable registry — that file, not this
+table, is what `data/fetch.py` enforces.
+
+| Component | Licence | Where it ends up |
+| --- | --- | --- |
+| `rfdetr` (code and released weights) | Apache-2.0 | fine-tuned weights ship to the app |
+| `torch` / `torchvision` | BSD-3 + Apache-2.0 | offline only |
+| `onnxruntime` (Python) | MIT | offline only |
+| `pycocotools` | BSD-2 | offline only |
+| `scipy`, `numpy` | BSD-3 | offline only |
+| `pillow` | MIT-CMU | offline only |
+| `onnxconverter-common` | MIT | offline only — the fp16 conversion |
+| Spray-wall photos (the primary evaluation corpus) | 41 of 61 **all rights reserved**, 11 `not stated`, 1 CC BY 4.0 | evaluation only, gitignored, never redistributed, **never training data**, never a fixture |
+| Wikimedia Commons wall photos (the secondary evaluation corpus) | per file: CC BY-SA 4.0 / 3.0 / 2.0, CC BY 4.0 / 3.0 / 2.0, CC0, public domain — **no NC, no ND** | evaluation only, gitignored; a photo promoted to `fixtures/` carries its licence, author and file page in the COCO record |
+| The Way Up (Zenodo 10.5281/zenodo.15196867) | **CC BY 4.0** | training data + the committed fixtures — **must be credited on the app licences screen** if anything trained on it ships |
+| CS152-SSL label set | CC BY 4.0 | labels are keyless; the images need a free Roboflow account |
+| xiaoxiae gym masks | CC BY-SA 4.0 | the only per-hold masks found; images need a Kaggle token |
+| Spray-wall photos from Discord | uploader consent, per photo | private bucket; fixtures only with `consent.redistribute` |
+
+Nothing AGPL is installed, imported or vendored here.
+
+## Export formats
+
+| Format | RF-DETR | Result on this box |
+| --- | --- | --- |
+| ONNX | native (`format="onnx"`) | works, 2-4 s, 107.6 MB fp32 at 384 px |
+| TFLite fp16 | `format="tflite"` | **not produced** — needs the `rfdetr[tflite]` extra (onnx2tf + ai_edge_litert), which was not installed here. `export.py` records the failure and still writes the ONNX. |
+| ExecuTorch `.pte` | `format="executorch"`, a `backend=` is required | not attempted |
+| CoreML | `format="coreml"` | not attempted |
+
+Worth knowing for SW-02: RF-DETR's exporter has first-party TFLite, ExecuTorch
+and CoreML paths, so the model family does not lock us into one runtime. Sizes,
+the opset, and which precisions actually load are in **"Export size"** above.

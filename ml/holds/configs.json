@@ -1,0 +1,130 @@
+{
+  "_comment": [
+    "Evaluable hold-detector configurations. Apache-2.0 model families only",
+    "(epic #5346 decision, 2026-09-14): RF-DETR, YOLOX, D-FINE, RT-DETR.",
+    "Ultralytics code and weights are AGPL-3.0 and are forbidden in this repo.",
+    "RF-DETR input resolutions must be divisible by patch_size * num_windows (32 for the nano/small/medium detectors, 12 for seg-nano).",
+    "num_classes=1 rebuilds the detection head for the single `hold` class instead of carrying RF-DETR's 90-class COCO head into the export, which buys no file size (class-dimension tensors are negligible) but drops 89 dead logits per inference."
+  ],
+  "configs": {
+    "nano-tiled-1024": {
+      "family": "rfdetr",
+      "variant": "nano",
+      "resolution": 384,
+      "long_side": 1024,
+      "tiles": {
+        "rows": 2,
+        "cols": 2,
+        "overlap": 0.15
+      },
+      "score_threshold": 0.3,
+      "nms_iou": 0.5,
+      "produces_masks": false,
+      "mask_source": "none",
+      "notes": "The phone candidate. Smallest Apache-2.0 RF-DETR, four tiles per photo.",
+      "train": {
+        "epochs": 3,
+        "batch_size": 2,
+        "grad_accum_steps": 4,
+        "lr": 0.0001
+      },
+      "num_classes": 1
+    },
+    "nano-tiled-1024-classical-mask": {
+      "family": "rfdetr",
+      "variant": "nano",
+      "resolution": 384,
+      "long_side": 1024,
+      "tiles": {
+        "rows": 2,
+        "cols": 2,
+        "overlap": 0.15
+      },
+      "score_threshold": 0.3,
+      "nms_iou": 0.5,
+      "produces_masks": true,
+      "mask_source": "classical",
+      "notes": "Same weights as nano-tiled-1024, plus a classical in-box segmentation so the renderer gets an outline instead of a ring. Outlines are cosmetic, so this config exists to measure what a box-only detector costs at mask IoU.",
+      "train": {
+        "epochs": 3,
+        "batch_size": 2,
+        "grad_accum_steps": 4,
+        "lr": 0.0001
+      },
+      "num_classes": 1
+    },
+    "small-tiled-1024": {
+      "family": "rfdetr",
+      "variant": "small",
+      "resolution": 512,
+      "long_side": 1024,
+      "tiles": {
+        "rows": 2,
+        "cols": 2,
+        "overlap": 0.15
+      },
+      "score_threshold": 0.3,
+      "nms_iou": 0.5,
+      "produces_masks": false,
+      "mask_source": "none",
+      "notes": "Middle rung. Same tiling as nano so the two are comparable.",
+      "train": {
+        "epochs": 3,
+        "batch_size": 2,
+        "grad_accum_steps": 4,
+        "lr": 0.0001
+      },
+      "num_classes": 1
+    },
+    "medium-untiled-1280": {
+      "family": "rfdetr",
+      "variant": "medium",
+      "resolution": 576,
+      "long_side": 1280,
+      "tiles": {
+        "rows": 1,
+        "cols": 1,
+        "overlap": 0.0
+      },
+      "score_threshold": 0.3,
+      "nms_iou": 0.5,
+      "produces_masks": false,
+      "mask_source": "none",
+      "notes": "The quality ceiling the phone configs are judged against. One pass over the whole photo.",
+      "train": {
+        "epochs": 3,
+        "batch_size": 1,
+        "grad_accum_steps": 8,
+        "lr": 0.0001
+      },
+      "num_classes": 1
+    },
+    "seg-nano-tiled-1024": {
+      "family": "rfdetr",
+      "variant": "seg-nano",
+      "resolution": 312,
+      "long_side": 1024,
+      "tiles": {
+        "rows": 2,
+        "cols": 2,
+        "overlap": 0.15
+      },
+      "score_threshold": 0.3,
+      "nms_iou": 0.5,
+      "produces_masks": true,
+      "mask_source": "model",
+      "notes": "Real instance masks from the model. Heavier to train and to export; kept so the classical-mask config has something to be compared with.",
+      "train": {
+        "epochs": 3,
+        "batch_size": 2,
+        "grad_accum_steps": 4,
+        "lr": 0.0001
+      },
+      "num_classes": 1
+    }
+  },
+  "datasets": {
+    "holdout_fraction": 0.2,
+    "seed": 20260914
+  }
+}

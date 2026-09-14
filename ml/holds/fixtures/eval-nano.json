@@ -1,0 +1,59 @@
+{
+  "config": "nano-tiled-1024",
+  "model": ".data/artifacts/nano-tiled-1024/model.onnx",
+  "model_bytes": 107642365,
+  "dataset": "fixtures",
+  "split": "images",
+  "photos": 3,
+  "holds": 166,
+  "box": {
+    "precision": 0.3957,
+    "recall": 0.5602,
+    "f1": 0.4638,
+    "tp": 93,
+    "fp": 142,
+    "fn": 73
+  },
+  "latency_seconds": {
+    "p50": 0.86,
+    "p95": 0.868,
+    "mean": 0.858
+  },
+  "peak_rss_mb": 471.0,
+  "correction_rate_micro": 1.2952,
+  "correction_rate_macro": 1.9394,
+  "score_threshold": 0.05,
+  "threads": 8,
+  "per_photo": [
+    {
+      "file_name": "1.jpg",
+      "holds": 111,
+      "detections": 144,
+      "tp": 72,
+      "fp": 72,
+      "fn": 39,
+      "correction_rate": 1.0,
+      "seconds": 0.868
+    },
+    {
+      "file_name": "1035th-survey-and-design-detachment-soldier-creates-rock-climbing-wall.jpg",
+      "holds": 44,
+      "detections": 58,
+      "tp": 17,
+      "fp": 41,
+      "fn": 27,
+      "correction_rate": 1.5455,
+      "seconds": 0.86
+    },
+    {
+      "file_name": "2008-08-05-evan-daniel-climbing-at-vertical-edge.jpg",
+      "holds": 11,
+      "detections": 33,
+      "tp": 4,
+      "fp": 29,
+      "fn": 7,
+      "correction_rate": 3.2727,
+      "seconds": 0.846
+    }
+  ]
+}
