@@ -34,6 +34,7 @@ import {
   type PublishConfirmation,
 } from './lib/mobile-publish-retry';
 import {
+  SURFABILITY_CONFIRM_DELAYS_MS,
   SURFABILITY_PROBE_DELAYS_MS,
   findSurfableBranch,
   probeBranchList,
@@ -437,6 +438,11 @@ async function publishToSelfHostedBranch(
   const confirmPublished: PublishConfirmation = async (confirmedPlatform) => {
     const result = await isPreviewBranchSurfable(branchName, confirmedPlatform, serverUrl, {
       runtimeVersion: runtimeVersionFor(confirmedPlatform),
+      // The short schedule: this only asks whether THIS attempt's upload is live,
+      // and the retry ladder is behind it, so a wrong "no" costs one more attempt
+      // rather than a red X. The full propagation-tolerant schedule would spend a
+      // large share of the ~2.5-minute re-export it exists to avoid.
+      delaysMs: SURFABILITY_CONFIRM_DELAYS_MS,
     });
     return result?.surfable ?? false;
   };

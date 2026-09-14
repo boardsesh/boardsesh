@@ -93,15 +93,32 @@ export const PROBE_TIMEOUT_MS = 15_000;
 export const SURFABILITY_PROBE_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 
 /**
- * Worst case for one full round of probing, in minutes: every sleep, PLUS every
- * request sitting out its own `PROBE_TIMEOUT_MS` cap. Counting only the sleeps
- * would understate it by the larger half — six capped requests are 90s against
- * 31s of waiting — and the publish job's timeout floor is derived from this.
+ * The schedule for the mid-publish "did that 524 actually land?" confirmation,
+ * which is a different question and deserves a different budget.
+ *
+ * The verification above waits out propagation because its answer is final. This
+ * one only asks whether THIS attempt's upload is live, and it has the retry ladder
+ * behind it — a wrong "no" costs one more attempt, not a red X. Spending the full
+ * 31s-plus-six-capped-requests here on every 524 would eat a large share of the
+ * ~2.5-minute re-export the confirmation exists to avoid.
  */
-export const SURFABILITY_PROBE_BUDGET_MINUTES =
-  (SURFABILITY_PROBE_DELAYS_MS.reduce((total, delayMs) => total + delayMs, 0) +
-    (SURFABILITY_PROBE_DELAYS_MS.length + 1) * PROBE_TIMEOUT_MS) /
-  60_000;
+export const SURFABILITY_CONFIRM_DELAYS_MS = [1_000, 2_000] as const;
+
+/**
+ * Worst case for one round of probing, in minutes: every sleep, PLUS every request
+ * sitting out its own `PROBE_TIMEOUT_MS` cap. Counting only the sleeps understates
+ * it by the larger half — for the full schedule that is six capped requests (90s)
+ * against 31s of waiting — and the publish job's timeout floor is derived from it.
+ */
+function probeBudgetMinutes(delaysMs: readonly number[]): number {
+  return (delaysMs.reduce((total, delayMs) => total + delayMs, 0) + (delaysMs.length + 1) * PROBE_TIMEOUT_MS) / 60_000;
+}
+
+/** The final verification's budget: paid once per platform, after the publish. */
+export const SURFABILITY_PROBE_BUDGET_MINUTES = probeBudgetMinutes(SURFABILITY_PROBE_DELAYS_MS);
+
+/** The 524 confirmation's budget: paid at most once per publish ATTEMPT. */
+export const SURFABILITY_CONFIRM_BUDGET_MINUTES = probeBudgetMinutes(SURFABILITY_CONFIRM_DELAYS_MS);
 
 /** PURE: strip an EXPO_UPDATES_URL's trailing `/manifest` to the server base URL. */
 export function stripManifestSuffix(url: string): string {

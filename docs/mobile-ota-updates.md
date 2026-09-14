@@ -1285,7 +1285,10 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   Cloudflare's 100 s origin cap on `updates.boardsesh.com`, and the proxy answers 524 after the assets
   are already uploaded — the update has usually landed. The retry wrapper recognises that one endpoint
   and probes the branch before spending another attempt: if it is live, the publish is recorded as
-  published on that attempt. #5422 burned **2h09m over six attempts** re-bundling ~5300 modules to
+  published on that attempt. That probe runs a SHORT schedule (~3s of waits), not the verification's
+  propagation-tolerant one — it only asks whether this attempt's upload is live, and the ladder is
+  behind it, so a wrong "no" costs one more attempt rather than a red X.
+  #5422 burned **2h09m over six attempts** re-bundling ~5300 modules to
   reach the same timeout, which the in-app picker showed as "building" for the whole time (the chip
   reads the `pr-preview` deployment, which the publish job holds open). Any other 5xx, and a 524 seen
   next to permanent-error evidence, still walk the full backoff ladder.
