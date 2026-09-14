@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { isBoardRoutePath } from '../board-route-paths';
+import { boardHasDeepConfigRoute, isBoardRoutePath } from '../board-route-paths';
 
 describe('board-route-paths', () => {
   describe('isBoardRoutePath', () => {
@@ -32,5 +32,30 @@ describe('board-route-paths', () => {
       expect(isBoardRoutePath('/en-US/kilter/1/1/default/40/list')).toBe(false);
       expect(isBoardRoutePath('/es/playlists')).toBe(false);
     });
+  });
+});
+
+describe('boardHasDeepConfigRoute', () => {
+  it('refuses spray', () => {
+    // A spray wall's layout and size are created at runtime for one climber's
+    // wall, so `/spray/900/900/1/40/list` names no board model. It is reached at
+    // `/b/{slug}` like any other user board; SW-16 (#5449) decides whether www
+    // grows a public surface at all.
+    expect(boardHasDeepConfigRoute('spray')).toBe(false);
+  });
+
+  it('allows every catalogue board', () => {
+    for (const boardName of [
+      'kilter',
+      'tension',
+      'moonboard',
+      'woods',
+      'decoy',
+      'grasshopper',
+      'soill',
+      'touchstone',
+    ]) {
+      expect(boardHasDeepConfigRoute(boardName), boardName).toBe(true);
+    }
   });
 });

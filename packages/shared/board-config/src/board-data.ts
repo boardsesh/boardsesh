@@ -4,6 +4,7 @@ import type { Angle } from './types';
 import { MOONBOARD_ENABLED, MOONBOARD_ANGLES, MOONBOARD_WIDE_ANGLES } from './moonboard-config';
 import { WOODS_DIFFICULTY_IDS } from '@boardsesh/board-constants/woods';
 import { WOODS_ANGLES } from './woods-config';
+import { SPRAY_ANGLES } from './spray-config';
 
 type ImageDimensions = Record<
   string,
@@ -13,10 +14,19 @@ type ImageDimensions = Record<
   }
 >;
 
-// Conditionally include the non-Aurora boards based on their feature flags.
-// Aurora boards are always enabled; moonboard gates on its flag. Woods ships unflagged.
+// The boards a generic picker may LIST. Deliberately narrower than the schema's
+// `SUPPORTED_BOARDS`, which answers "is this a board?" — this one answers "may a
+// board picker offer it?".
+//
+// Aurora boards are always enabled; moonboard gates on its flag. Woods ships
+// unflagged. `spray` is excluded outright and not behind a flag: a spray wall is
+// not a board model you pick from a list, it is a wall a climber creates, so it
+// has no catalogue rows for the picker, the board builder or the wall finder to
+// build an option from. It is reached through its own `/b/{slug}` board and its
+// add-a-wall flow (SW-09).
 export const SUPPORTED_BOARDS: BoardName[] = [...ALL_SUPPORTED_BOARDS].filter((boardName) => {
   if (boardName === 'moonboard') return MOONBOARD_ENABLED;
+  if (boardName === 'spray') return false;
   return true;
 });
 
@@ -219,6 +229,10 @@ export const BOARD_IMAGE_DIMENSIONS: Record<BoardName, ImageDimensions> = {
     'woods-8x10-bg.png': { width: 720, height: 1000 },
     'woods-12x12-bg.png': { width: 1225, height: 1400 },
   },
+  // Empty by definition. A spray wall's "board art" is the climber's own photo,
+  // stored per wall version in the private bucket and sized at upload — there is
+  // no bundled image whose dimensions could be listed here.
+  spray: {},
 };
 
 export const ANGLES: Record<BoardName, Angle[]> = {
@@ -231,6 +245,9 @@ export const ANGLES: Record<BoardName, Angle[]> = {
   grasshopper: [-5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
   soill: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
   woods: [...WOODS_ANGLES],
+  // A wall's angle is fixed at creation; this is the list the create flow offers
+  // once, not a rail. See SPRAY_ANGLES.
+  spray: [...SPRAY_ANGLES],
 };
 
 // Module scope so every call returns the same array reference (a stable dep/memo key).

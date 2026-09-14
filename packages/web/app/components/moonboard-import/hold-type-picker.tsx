@@ -37,6 +37,9 @@ const PICKER_STATES_BY_BOARD: Record<BoardName, readonly SetterHoldState[]> = {
   soill: SETTER_STATE_ORDER,
   moonboard: ['STARTING', 'HAND', 'FINISH'],
   woods: SETTER_STATE_ORDER,
+  // Spray walls use all four setting roles. The row is here to keep the table
+  // total — www has no spray surface (SW-16 decides whether it ever does).
+  spray: SETTER_STATE_ORDER,
 };
 
 type PickerOption = {

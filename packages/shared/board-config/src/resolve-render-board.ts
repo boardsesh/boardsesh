@@ -39,6 +39,7 @@ import type { BoardName, RenderBoardConfig } from '@boardsesh/shared-schema';
 import { toBoardName } from './board-name';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from './moonboard-config';
 import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from './woods-config';
+import { SPRAY_SET_IDS, spraySizeIdForLayout } from './spray-config';
 
 /** Woods' one synthetic hold set — every Woods board and climb carries it. */
 const WOODS_SET_IDS: number[] = WOODS_SETS.map((woodsSet) => woodsSet.id);
@@ -142,6 +143,16 @@ export function getDefaultRenderBoard(
     const sets = MOONBOARD_SETS[layoutKey] ?? [];
     if (sets.length === 0) return null;
     return { layoutId, sizeId: MOONBOARD_SIZE.id, setIds: sets.map((set) => set.id) };
+  }
+
+  if (boardName === 'spray') {
+    // A spray wall's identity is the whole answer: one layout per wall, whose
+    // size id is the same number, and the one synthetic hold set. There is no
+    // ladder to walk — no size to choose between, no owner board that could make
+    // it render differently — so a climb with no layout id has no wall to draw
+    // on at all, and null is the honest answer rather than a guessed wall.
+    if (climbLayoutId == null) return null;
+    return { layoutId: climbLayoutId, sizeId: spraySizeIdForLayout(climbLayoutId), setIds: [...SPRAY_SET_IDS] };
   }
 
   if (boardName === 'woods') {
@@ -263,6 +274,9 @@ export function resolveRenderBoard(args: ResolveRenderBoardArgs): RenderBoardCon
   if (boardName === 'woods') {
     return resolveWoodsRenderBoard({ climbLayoutId, compatibleSizeIds, tickBoard, ownerBoards });
   }
+
+  // Spray has nothing to resolve — see `getDefaultRenderBoard`.
+  if (boardName === 'spray') return getDefaultRenderBoard(boardType, climbLayoutId);
 
   // 1. The board it was actually climbed on. A layout mismatch means the tick's
   //    board association is stale or cross-layout, and drawing the climb on it

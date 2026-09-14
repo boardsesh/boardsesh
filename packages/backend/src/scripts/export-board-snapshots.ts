@@ -238,7 +238,27 @@ export function boardSnapshotDdlStatements(
 
 // --- Postgres discovery + streaming ------------------------------------------
 
-/** Every (board_type, layout_id) pair that has at least one climb. */
+/**
+ * Board types this job must never publish a snapshot for.
+ *
+ * Snapshots go to a PUBLIC bucket under guessable keys
+ * (`<prefix>/<board>/<layout>/*.db`), and each one carries every climb of that
+ * `(board_type, layout_id)` partition. A spray wall's partition is one
+ * climber's private wall — an explicitly private-by-default surface whose photo
+ * is behind a 15-minute presigned URL — so publishing its climbs would hand out
+ * exactly the data the private bucket exists to withhold.
+ *
+ * This is an exclusion by board TYPE rather than a per-wall visibility check on
+ * purpose: `is_public` on a wall governs who may view it in the app, and a
+ * nightly dump of every public wall's climbs to an unauthenticated bucket is not
+ * something a climber opted into by sharing a link.
+ */
+const SNAPSHOT_EXCLUDED_BOARD_TYPES: ReadonlySet<string> = new Set(['spray']);
+
+/**
+ * Every (board_type, layout_id) pair that has at least one climb, minus the
+ * board types {@link SNAPSHOT_EXCLUDED_BOARD_TYPES} withholds.
+ */
 export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<LayoutPair>): Promise<LayoutPair[]> {
   const boardCondition = filter?.boardType ? sqlClient`board_type = ${filter.boardType}` : sqlClient`TRUE`;
   const layoutCondition = filter?.layoutId != null ? sqlClient`layout_id = ${filter.layoutId}` : sqlClient`TRUE`;
@@ -248,7 +268,11 @@ export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<Layou
     WHERE ${boardCondition} AND ${layoutCondition}
     ORDER BY board_type, layout_id
   `;
-  return rows.map((row) => ({ boardType: String(row.board_type), layoutId: Number(row.layout_id) }));
+  // Filtered here rather than in the SQL predicate so an explicit
+  // `--board-type spray` on the CLI is excluded too, not just a full sweep.
+  return rows
+    .map((row) => ({ boardType: String(row.board_type), layoutId: Number(row.layout_id) }))
+    .filter((pair) => !SNAPSHOT_EXCLUDED_BOARD_TYPES.has(pair.boardType));
 }
 
 function assertSafeColumns(columns: readonly string[]): void {

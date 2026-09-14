@@ -442,6 +442,7 @@ ${generateSizesTypeScript('grasshopper', boardData.grasshopper.sizes)},
 ${generateSizesTypeScript('soill', boardData.soill.sizes)},
   moonboard: {},
   woods: {},
+  spray: {},
 };
 
 export const LAYOUTS: Record<BoardName, Record<number, LayoutData>> = {
@@ -453,6 +454,7 @@ ${generateLayoutsTypeScript('grasshopper', boardData.grasshopper.layouts)},
 ${generateLayoutsTypeScript('soill', boardData.soill.layouts)},
   moonboard: {},
   woods: {},
+  spray: {},
 };
 
 export const SETS: Record<BoardName, Record<string, SetData[]>> = {
@@ -464,6 +466,7 @@ ${generateSetsTypeScript('grasshopper', boardData.grasshopper.sets)},
 ${generateSetsTypeScript('soill', boardData.soill.sets)},
   moonboard: {},
   woods: {},
+  spray: {},
 };
 
 export const IMAGE_FILENAMES: Record<BoardName, Record<string, string>> = {
@@ -475,6 +478,7 @@ ${generateImageFilenamesTypeScript('grasshopper', boardData.grasshopper.imageFil
 ${generateImageFilenamesTypeScript('soill', boardData.soill.imageFilenames)},
   moonboard: {},
   woods: {},
+  spray: {},
 };
 `;
 }
@@ -671,6 +675,7 @@ ${generateLedPlacementsTypeScript('grasshopper', boardData.grasshopper.ledPlacem
 ${generateLedPlacementsTypeScript('soill', boardData.soill.ledPlacements)},
   moonboard: {},
   woods: {},
+  spray: {},
 };
 `;
 }

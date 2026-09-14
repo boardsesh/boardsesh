@@ -60,5 +60,8 @@ export function isSizeScopedBoard(boardType: string): boolean {
 export function formatBoardDisplayName(boardType: string): string {
   if (boardType === 'moonboard') return 'MoonBoard';
   if (boardType === 'soill') return 'So iLL';
+  // Not "Spray": the board type names a kind of wall, not a brand, so the label
+  // has to say what it is. `SPRAY_DISPLAY_NAME` is the same string.
+  if (boardType === 'spray') return 'Spray wall';
   return boardType.charAt(0).toUpperCase() + boardType.slice(1);
 }

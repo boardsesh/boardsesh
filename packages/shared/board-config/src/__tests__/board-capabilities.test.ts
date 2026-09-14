@@ -38,6 +38,18 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     nativeBoardControl: true,
     auroraAppLink: false,
   },
+  spray: {
+    // A climber's own wall: the only thing it does is let climbs be set on it.
+    // No LEDs and no firmware (so nothing native to drive), no vendor site, no
+    // crowd grade (the setter's grade is required on publish instead), and one
+    // frame per climb.
+    crowdGrade: false,
+    climbCreation: true,
+    explicitClimbRules: false,
+    multiFrameClimbs: false,
+    nativeBoardControl: false,
+    auroraAppLink: false,
+  },
 };
 
 describe('getBoardCapabilities', () => {
@@ -71,12 +83,19 @@ describe('getBoardCapabilities', () => {
     expect(explicit).toEqual(['woods']);
   });
 
-  it('withholds multi-frame climbs from Woods only', () => {
+  it('withholds multi-frame climbs from Woods and spray', () => {
     // `getWoodsBluetoothPacket` throws WoodsMultiFrameError on the comma a second
     // frame introduces, so a multi-frame Woods climb would save and then refuse
-    // to light the wall.
+    // to light the wall. Spray is a product decision instead: a wall has no
+    // lights to step through, so a route/circuit has nothing to animate.
     const singleFrameOnly = SUPPORTED_BOARDS.filter((boardName) => !getBoardCapabilities(boardName).multiFrameClimbs);
-    expect(singleFrameOnly).toEqual(['woods']);
+    expect(singleFrameOnly.sort()).toEqual(['spray', 'woods']);
+  });
+
+  it('drives no board natively except through a Boardsesh binary, and never spray', () => {
+    // The one board with no hardware at all. A true here would route a wall with
+    // no LEDs to the Swift encoder and try to write a packet to nothing.
+    expect(getBoardCapabilities('spray').nativeBoardControl).toBe(false);
   });
 
   it('is case-insensitive', () => {
