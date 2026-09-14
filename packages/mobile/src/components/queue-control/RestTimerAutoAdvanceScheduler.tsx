@@ -6,10 +6,12 @@
 // "the wall changed under a climber", so each rule below is paired with a test
 // that asserts it does NOT fire.
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
+import { isClimbOnReachableBoard } from '@boardsesh/queue';
+import { useReachableBoardKeys } from '../../providers/queue/use-reachable-board-keys';
 import { toBoardName } from '@boardsesh/board-config';
 import {
   useQueueActions,
@@ -53,6 +55,18 @@ export function RestTimerAutoAdvanceScheduler() {
   const isSharedSession = useIsSharedSession();
   const { inAppBoardConnection } = useBoardConnectionState();
   const { data: activeBoard } = useActiveBoard();
+  // The beat has to agree with what a swipe would actually do: without this it
+  // announces "queue ended" while `nextClimb` would happily advance onto a climb
+  // at the other board in this gym.
+  const reachableBoardKeys = useReachableBoardKeys(activeBoard);
+  const isReachable = useMemo(() => {
+    if (reachableBoardKeys.size === 0) return undefined;
+    return (climb: { boardType?: string | null; layoutId?: number | null }) =>
+      isClimbOnReachableBoard(climb, reachableBoardKeys);
+  }, [reachableBoardKeys]);
+  // The scheduled callback fires long after the render that armed it.
+  const isReachableRef = useRef(isReachable);
+  isReachableRef.current = isReachable;
   const { showToast } = useToast();
 
   // In a crew, only the climber driving the wall may move the shared queue —
@@ -114,6 +128,7 @@ export function RestTimerAutoAdvanceScheduler() {
         inputs.currentClimbQueueItem,
         inputs.playlistSuggestionSource,
         activeConfig,
+        isReachableRef.current,
       );
 
       if (!canNext) {
@@ -224,9 +239,10 @@ export function RestTimerAutoAdvanceScheduler() {
       inputs.currentClimbQueueItem,
       inputs.playlistSuggestionSource,
       activeConfig,
+      isReachable,
     );
     if (canNext) clearRestTimerQueueEnded(nowMs(), mode);
-  }, [armed, mode, queue, currentClimbQueueItem, playlistSuggestionSource, activeBoard, queueEnded]);
+  }, [armed, mode, queue, currentClimbQueueItem, playlistSuggestionSource, activeBoard, queueEnded, isReachable]);
 
   // Coming back from the background, a deadline that passed while away was never
   // actionable. Re-anchor and start a fresh cycle rather than moving the wall for

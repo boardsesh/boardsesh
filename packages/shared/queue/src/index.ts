@@ -40,7 +40,7 @@ export type { QueueBoardKeyTarget } from './playlist-suggestions';
 
 // Cross-board queue decisions (board-model identity + the add/confirm call).
 // The compatibility classifier is injected so this package stays dependency-free.
-export { configKey, climbConfigKey, deriveAcceptedConfigs, decideAdd } from './cross-board';
+export { configKey, climbConfigKey, deriveAcceptedConfigs, decideAdd, isClimbOnReachableBoard } from './cross-board';
 export type {
   QueueBoardIdentity,
   ClimbBoardIdentityLike,

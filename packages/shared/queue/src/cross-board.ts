@@ -144,3 +144,24 @@ export function decideAdd<TBoard extends QueueBoardIdentity>({
 
   return { kind: 'confirm', climbConfigKey: key, climbBoardName, climbLayoutId };
 }
+
+/**
+ * Is this climb on a board the climber can walk to?
+ *
+ * The one definition, because four surfaces have to agree on it or the app
+ * contradicts itself: the queue navigates by it, the play drawer's peek and
+ * "N left" describe that navigation, the rest-timer beat decides whether the
+ * queue has ended, and the Bluetooth auto-sender decides whether a climb it
+ * cannot write is a spill to walk past or a deliberate move to hold on.
+ *
+ * A climb with no board metadata is never reachable — same fail-open stance as
+ * the compatibility classifier, which treats unknown as "don't act".
+ */
+export function isClimbOnReachableBoard(
+  climb: ClimbBoardIdentityLike,
+  reachableConfigKeys: ReadonlySet<string> | undefined,
+): boolean {
+  if (!reachableConfigKeys || reachableConfigKeys.size === 0) return false;
+  const key = climbConfigKey(climb);
+  return key != null && reachableConfigKeys.has(key);
+}

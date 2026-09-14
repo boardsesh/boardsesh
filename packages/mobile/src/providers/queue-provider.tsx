@@ -20,7 +20,7 @@ import {
   isPlaylistPeekQueueItemUuid,
   decideAdd,
   deriveAcceptedConfigs,
-  climbConfigKey,
+  isClimbOnReachableBoard,
 } from '@boardsesh/queue';
 import type {
   Climb,
@@ -515,10 +515,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // memo that decides the next swipe target.
   const isReachableClimb = useMemo(() => {
     if (reachableBoardKeys.size === 0) return undefined;
-    return (climb: Climb) => {
-      const key = climbConfigKey(climb);
-      return key != null && reachableBoardKeys.has(key);
-    };
+    return (climb: Climb) => isClimbOnReachableBoard(climb, reachableBoardKeys);
   }, [reachableBoardKeys]);
   const isReachableClimbRef = useRef(isReachableClimb);
   isReachableClimbRef.current = isReachableClimb;

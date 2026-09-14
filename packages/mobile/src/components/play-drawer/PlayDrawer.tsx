@@ -25,7 +25,7 @@ import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
-import { reanchorPlaylistSuggestionSource, configKey } from '@boardsesh/queue';
+import { reanchorPlaylistSuggestionSource, configKey, isClimbOnReachableBoard } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { randomUUID } from 'expo-crypto';
 import {
@@ -549,6 +549,17 @@ export function PlayDrawer({
   // rather than skipping them, so a swipe lands here routinely now — and meeting
   // a lock scrim that says "switch boards to queue it" for a climb they queued on
   // purpose, twenty metres from the board that draws it, is the wrong answer.
+  // The same predicate the queue provider navigates by. Without it here, the
+  // drawer's peek, "N left" and canNext are computed from a DIFFERENT rule than
+  // the swipe they describe — and with a reachable climb as the only thing left,
+  // canNext goes false and the swipe is disabled, so the climb this feature
+  // exists to reach cannot be reached forward at all.
+  const isReachableClimb = useMemo(() => {
+    if (!reachableBoardKeys || reachableBoardKeys.size === 0) return undefined;
+    return (climb: { boardType?: string | null; layoutId?: number | null }) =>
+      isClimbOnReachableBoard(climb, reachableBoardKeys);
+  }, [reachableBoardKeys]);
+
   const climbBoardReachable =
     climbBoardMismatch &&
     reachableBoardKeys != null &&
@@ -686,8 +697,9 @@ export function PlayDrawer({
         displayedQueueItem,
         navigationSuggestionSource,
         navigationBoardConfig,
+        isReachableClimb,
       ),
-    [queue, displayedQueueItem, navigationSuggestionSource, navigationBoardConfig],
+    [queue, displayedQueueItem, navigationSuggestionSource, navigationBoardConfig, isReachableClimb],
   );
 
   // The climb the header peek shows while swiping — the one being swiped toward.
@@ -729,6 +741,7 @@ export function PlayDrawer({
       navigationSuggestionSource,
       PREFETCH_AHEAD,
       navigationBoardConfig,
+      isReachableClimb,
     );
     const framesToWarm = new Set<string>();
     for (const item of upcomingItems) {

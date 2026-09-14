@@ -4,6 +4,7 @@ import {
   climbConfigKey,
   deriveAcceptedConfigs,
   decideAdd,
+  isClimbOnReachableBoard,
   type ClimbBoardCompatibility,
   type ClimbBoardIdentityLike,
 } from '../cross-board';
@@ -242,5 +243,33 @@ describe('decideAdd reachable walls', () => {
     });
 
     expect(decision).toEqual({ kind: 'add', reason: 'already-mixed' });
+  });
+});
+
+// Four surfaces navigate, describe, schedule and light by this answer. If they
+// disagree the app contradicts itself — the drawer promises a climb the sender
+// walks past, or the beat calls the queue ended while a swipe would advance.
+describe('isClimbOnReachableBoard', () => {
+  const reachable = new Set(['tension:8']);
+
+  it('is true for a climb on a board at this gym', () => {
+    expect(isClimbOnReachableBoard({ boardType: 'tension', layoutId: 8 }, reachable)).toBe(true);
+  });
+
+  it('is false for a climb on a board that is not', () => {
+    expect(isClimbOnReachableBoard({ boardType: 'moonboard', layoutId: 6 }, reachable)).toBe(false);
+  });
+
+  // Same fail-open stance as the compatibility classifier: unknown means don't
+  // act, never "act as though it's reachable".
+  it('is false for a climb carrying no board metadata', () => {
+    expect(isClimbOnReachableBoard({}, reachable)).toBe(false);
+    expect(isClimbOnReachableBoard({ boardType: 'tension' }, reachable)).toBe(false);
+    expect(isClimbOnReachableBoard({ layoutId: 8 }, reachable)).toBe(false);
+  });
+
+  it('is false when nothing is in reach', () => {
+    expect(isClimbOnReachableBoard({ boardType: 'tension', layoutId: 8 }, undefined)).toBe(false);
+    expect(isClimbOnReachableBoard({ boardType: 'tension', layoutId: 8 }, new Set())).toBe(false);
   });
 });
