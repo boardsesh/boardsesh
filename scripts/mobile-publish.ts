@@ -272,6 +272,9 @@ export type SurfabilityProbeOptions = {
  *
  * Null when the resolve fails, which is a skip, never a verdict.
  */
+/** Generous against a ~10s resolve, and short against a 165-minute job timeout. */
+const RUNTIME_VERSION_RESOLVE_TIMEOUT_MS = 60_000;
+
 export function resolvePublishedRuntimeVersion(
   platform: OtaPublishPlatform,
   env: NodeJS.ProcessEnv,
@@ -284,6 +287,11 @@ export function resolvePublishedRuntimeVersion(
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer: 32 * 1024 * 1024,
+      // A resolve takes ~10s. Without a cap, one that hangs parks the publish step
+      // until the job's own timeout — 165 minutes later, having already uploaded
+      // everything — and the only symptom would be a job that never finished. A
+      // timeout throws, which this catches and reports as "cannot check".
+      timeout: RUNTIME_VERSION_RESOLVE_TIMEOUT_MS,
     });
     // The CLI prints the hash on its own line, sometimes after other chatter.
     const match = /\b[0-9a-f]{40}\b/.exec(String(stdout));
