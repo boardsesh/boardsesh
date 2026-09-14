@@ -30,47 +30,53 @@ export type SprayWallCatalogueInput = {
  * reader of `board_layouts` / `board_product_sizes` relies on `is_listed`
  * alone, so a wall seeded listed would be a privacy bug, not a cosmetic one.
  *
- * Call inside the same transaction as the `spray_walls` insert: the layout id
- * comes from a sequence that never rolls back, so a half-written wall leaves a
- * gap in the id space (fine) rather than a catalogue row with no wall (not).
+ * The three rows are written in ONE transaction, here, rather than left to the
+ * caller to remember: a layout row with no size row is a wall the catalogue
+ * cannot render and nothing would ever repair. Called from inside the wall's own
+ * transaction — which is where it belongs, next to the `spray_walls` insert — this
+ * becomes a savepoint, so the outer work is unaffected. The layout id comes from a
+ * sequence that never rolls back, so a rollback leaves a gap in the id space
+ * (fine) rather than a catalogue row with no wall (not).
  */
 export async function createSprayWallCatalogueRows(db: DrizzleDb, input: SprayWallCatalogueInput): Promise<void> {
   const { layoutId, name, referenceWidth = null, referenceHeight = null } = input;
   const sizeId = spraySizeIdForLayout(layoutId);
 
-  await db.insert(boardLayouts).values({
-    boardType: SPRAY_BOARD_TYPE,
-    id: layoutId,
-    productId: SPRAY_PRODUCT_ID,
-    name,
-    isMirrored: false,
-    isListed: false,
-    createdAt: new Date().toISOString(),
-  });
+  await db.transaction(async (tx) => {
+    await tx.insert(boardLayouts).values({
+      boardType: SPRAY_BOARD_TYPE,
+      id: layoutId,
+      productId: SPRAY_PRODUCT_ID,
+      name,
+      isMirrored: false,
+      isListed: false,
+      createdAt: new Date().toISOString(),
+    });
 
-  await db.insert(boardProductSizes).values({
-    boardType: SPRAY_BOARD_TYPE,
-    id: sizeId,
-    productId: SPRAY_PRODUCT_ID,
-    name,
-    // The catalogue's edge box is the canonical frame, so the climb-search edge
-    // filter and `compatible_size_ids` behave on a wall exactly as on a board.
-    edgeLeft: 0,
-    edgeBottom: 0,
-    edgeRight: referenceWidth,
-    edgeTop: referenceHeight,
-    position: 1,
-    isListed: false,
-  });
+    await tx.insert(boardProductSizes).values({
+      boardType: SPRAY_BOARD_TYPE,
+      id: sizeId,
+      productId: SPRAY_PRODUCT_ID,
+      name,
+      // The catalogue's edge box is the canonical frame, so the climb-search edge
+      // filter and `compatible_size_ids` behave on a wall exactly as on a board.
+      edgeLeft: 0,
+      edgeBottom: 0,
+      edgeRight: referenceWidth,
+      edgeTop: referenceHeight,
+      position: 1,
+      isListed: false,
+    });
 
-  await db.insert(boardProductSizesLayoutsSets).values({
-    boardType: SPRAY_BOARD_TYPE,
-    // One join row per wall, so it can share the wall's id rather than need a
-    // third id space of its own.
-    id: layoutId,
-    productSizeId: sizeId,
-    layoutId,
-    setId: SPRAY_SET.id,
-    isListed: false,
+    await tx.insert(boardProductSizesLayoutsSets).values({
+      boardType: SPRAY_BOARD_TYPE,
+      // One join row per wall, so it can share the wall's id rather than need a
+      // third id space of its own.
+      id: layoutId,
+      productSizeId: sizeId,
+      layoutId,
+      setId: SPRAY_SET.id,
+      isListed: false,
+    });
   });
 }

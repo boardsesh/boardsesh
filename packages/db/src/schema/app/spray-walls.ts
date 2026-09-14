@@ -15,6 +15,7 @@ import {
   foreignKey,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { users } from '../auth/users';
 import { userBoards } from './boards';
 import { boardClimbs } from '../boards/unified';
@@ -49,17 +50,22 @@ import { boardClimbs } from '../boards/unified';
  * catalogue frozen and the wall's history append-only.
  */
 
+/**
+ * Both sequences stop at 2147483647 — `int4` max — because the columns they feed
+ * are `integer`: `board_layouts.id`, `board_product_sizes.id`, `board_holes.id`
+ * and `board_placements.id` all are, across every board type. A default bigint
+ * sequence would hand out a value those columns cannot store, and the failure
+ * would land on a climber creating a wall rather than on the sequence. Capped, it
+ * fails where the id is drawn, with `nextval: reached maximum value`. At the caps
+ * (10 walls per user, 1500 holds per wall) that ceiling is not a real bound.
+ */
+const CATALOGUE_ID_SEQUENCE_OPTIONS = { startWith: 1, increment: 1, maxValue: 2147483647 } as const;
+
 /** Catalogue id space for walls: one value is BOTH the layout id and the size id. */
-export const sprayWallCatalogIdSeq = pgSequence('spray_wall_catalog_id_seq', {
-  startWith: 1,
-  increment: 1,
-});
+export const sprayWallCatalogIdSeq = pgSequence('spray_wall_catalog_id_seq', CATALOGUE_ID_SEQUENCE_OPTIONS);
 
 /** Catalogue id space for holds: one value is BOTH the hole id and the placement id. */
-export const sprayHoldCatalogIdSeq = pgSequence('spray_hold_catalog_id_seq', {
-  startWith: 1,
-  increment: 1,
-});
+export const sprayHoldCatalogIdSeq = pgSequence('spray_hold_catalog_id_seq', CATALOGUE_ID_SEQUENCE_OPTIONS);
 
 /**
  * Lifecycle of one photo version.
@@ -250,6 +256,11 @@ export const sprayWallHolds = pgTable(
     // The alive-holds read: every render, every create-climb session and the
     // integrity recompute filter `wall_id = ? AND removed_version_id IS NULL`.
     aliveIdx: index('spray_wall_holds_alive_idx').on(table.wallId, table.removedVersionId),
+    // Remix walks the other way — "what replaced the hold this climb lost?" —
+    // and almost every row has no predecessor, so the index is partial.
+    movedFromIdx: index('spray_wall_holds_moved_from_idx')
+      .on(table.movedFromHoldId)
+      .where(sql`${table.movedFromHoldId} IS NOT NULL`),
   }),
 );
 
@@ -267,10 +278,17 @@ export const sprayClimbLineage = pgTable(
   {
     childUuid: text('child_uuid').primaryKey(),
     parentUuid: text('parent_uuid').notNull(),
-    /** The wall version the child was set against. */
+    /**
+     * The wall version the child was set against.
+     *
+     * `RESTRICT`, like the other two version FKs: cascading would delete the
+     * lineage row itself, silently erasing the link between a remix and the climb
+     * it came from — the one place a climber can still see the parent's ticks and
+     * grade history. A version's rows are never deleted.
+     */
     wallVersionId: bigint('wall_version_id', { mode: 'number' })
       .notNull()
-      .references(() => sprayWallVersions.id, { onDelete: 'cascade' }),
+      .references(() => sprayWallVersions.id, { onDelete: 'restrict' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => ({

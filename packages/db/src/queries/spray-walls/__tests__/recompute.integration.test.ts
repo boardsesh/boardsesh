@@ -69,6 +69,11 @@ if (!DB_URL) {
     return Number(version.id);
   }
 
+  async function publishVersion(wallId: number, versionId: number): Promise<void> {
+    await sql`UPDATE spray_walls SET current_version_id = ${versionId} WHERE id = ${wallId}`;
+    await sql`UPDATE spray_wall_versions SET status = 'published' WHERE id = ${versionId}`;
+  }
+
   async function countsByClimb(uuids: string[]): Promise<Map<string, number | null>> {
     const rows = await sql`SELECT uuid, missing_hold_count FROM board_climbs WHERE uuid = ANY(${uuids})`;
     return new Map(rows.map((row) => [row.uuid as string, row.missing_hold_count as number | null]));
@@ -96,6 +101,7 @@ if (!DB_URL) {
       const wallIdA = await insertWall(boardUuidA, layoutIdA);
       const versionOne = await insertVersion(wallIdA, 1, 'superseded');
       const versionTwo = await insertVersion(wallIdA, 2, 'published');
+      await publishVersion(wallIdA, versionTwo);
 
       // Wall A: holds 1-3 survive the reset; hold 4 came off in version 2.
       for (const holdId of [1, 2, 3]) {
@@ -112,6 +118,7 @@ if (!DB_URL) {
       const wallIdB = await insertWall(boardUuidB, layoutIdB);
       const versionOneB = await insertVersion(wallIdB, 1, 'superseded');
       const versionTwoB = await insertVersion(wallIdB, 2, 'published');
+      await publishVersion(wallIdB, versionTwoB);
       await sql`
         INSERT INTO spray_wall_holds (wall_id, hold_id, cx, cy, r, installed_version_id, removed_version_id)
         VALUES (${wallIdB}, 1, 100, 500, 40, ${versionOneB}, ${versionTwoB})`;
@@ -174,6 +181,54 @@ if (!DB_URL) {
         [1, 2, 3, 4],
         'but was still on the wall at version 1',
       );
+    });
+
+    void it('hides a DRAFT reset from climbers until it is published', async () => {
+      const [wall] = await sql`SELECT id, current_version_id FROM spray_walls WHERE layout_id = ${layoutIdA}`;
+      const wallId = Number(wall.id);
+      const publishedVersionId = Number(wall.current_version_id);
+
+      // A reset in progress: version 3 is a DRAFT that adds hold 5 and takes
+      // hold 2 off. Neither may reach a climber before it is published — the
+      // whole reason "alive" is resolved at the published version rather than
+      // read off `removed_version_id IS NULL`.
+      const draft = await insertVersion(wallId, 3, 'draft');
+      await sql`
+        INSERT INTO spray_wall_holds (wall_id, hold_id, cx, cy, r, installed_version_id)
+        VALUES (${wallId}, 5, 500, 500, 40, ${draft})`;
+      await sql`UPDATE spray_wall_holds SET removed_version_id = ${draft} WHERE wall_id = ${wallId} AND hold_id = 2`;
+
+      assert.deepEqual(
+        (await aliveHolds(db, wallId)).map((hold) => hold.holdId),
+        [1, 2, 3],
+        'the draft changes nothing for climbers',
+      );
+      assert.deepEqual(
+        (await aliveHolds(db, wallId, 3)).map((hold) => hold.holdId),
+        [1, 3, 5],
+        'but the owner can see the draft by naming its version',
+      );
+
+      await publishVersion(wallId, draft);
+      assert.deepEqual(
+        (await aliveHolds(db, wallId)).map((hold) => hold.holdId),
+        [1, 3, 5],
+        'publishing is what makes the reset visible',
+      );
+
+      // Put the wall back the way the later cases expect it.
+      await sql`UPDATE spray_wall_holds SET removed_version_id = NULL WHERE wall_id = ${wallId} AND hold_id = 2`;
+      await sql`DELETE FROM spray_wall_holds WHERE wall_id = ${wallId} AND hold_id = 5`;
+      await publishVersion(wallId, publishedVersionId);
+      await sql`DELETE FROM spray_wall_versions WHERE id = ${draft}`;
+    });
+
+    void it('returns no holds at all for a wall that has never published a version', async () => {
+      const [wall] = await sql`SELECT id, current_version_id FROM spray_walls WHERE layout_id = ${layoutIdA}`;
+      const wallId = Number(wall.id);
+      await sql`UPDATE spray_walls SET current_version_id = NULL WHERE id = ${wallId}`;
+      assert.deepEqual(await aliveHolds(db, wallId), [], 'an unpublished wall shows nothing');
+      await sql`UPDATE spray_walls SET current_version_id = ${wall.current_version_id} WHERE id = ${wallId}`;
     });
 
     void it('tombstones a SOFT-deleted wall by its layout id, scoped to the owner', async () => {
@@ -239,6 +294,24 @@ if (!DB_URL) {
       assert.equal(size.is_listed, false);
       assert.equal(join.is_listed, false);
       assert.equal(join.set_id, 1);
+    });
+
+    void it('rolls the layout and the size back when the join row fails', async () => {
+      const ids = await allocateWallIds(db);
+      // Occupy the join row's primary key so the THIRD insert is the one that
+      // fails, with the layout and size already written inside the transaction.
+      await sql`
+        INSERT INTO board_product_sizes_layouts_sets (board_type, id, product_size_id, layout_id, set_id, is_listed)
+        VALUES ('spray', ${ids.layoutId}, NULL, NULL, 1, false)`;
+
+      await assert.rejects(() => createSprayWallCatalogueRows(db, { layoutId: ids.layoutId, name: 'Doomed wall' }));
+
+      const layouts = await sql`SELECT id FROM board_layouts WHERE board_type = 'spray' AND id = ${ids.layoutId}`;
+      const sizes = await sql`SELECT id FROM board_product_sizes WHERE board_type = 'spray' AND id = ${ids.layoutId}`;
+      assert.equal(layouts.length, 0, 'no orphan layout row survives the failure');
+      assert.equal(sizes.length, 0, 'and no orphan size row either');
+
+      await sql`DELETE FROM board_product_sizes_layouts_sets WHERE board_type = 'spray' AND id = ${ids.layoutId}`;
     });
   });
 }

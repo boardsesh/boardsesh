@@ -1,5 +1,5 @@
 {
-  "id": "010ad849-fa7b-48c3-af17-24e619b32421",
+  "id": "ccddd839-3d91-41bc-8143-23cf572f1644",
   "prevId": "24f61f8c-e30e-45e8-aee0-4ff8f4777470",
   "version": "7",
   "dialect": "postgresql",
@@ -13336,7 +13336,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "spray_climb_lineage_child_fk": {
@@ -13464,6 +13464,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "spray_wall_holds_moved_from_idx": {
+          "name": "spray_wall_holds_moved_from_idx",
+          "columns": [
+            {
+              "expression": "moved_from_hold_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"spray_wall_holds\".\"moved_from_hold_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -14045,7 +14061,7 @@
       "increment": "1",
       "startWith": "1",
       "minValue": "1",
-      "maxValue": "9223372036854775807",
+      "maxValue": "2147483647",
       "cache": "1",
       "cycle": false
     },
@@ -14055,7 +14071,7 @@
       "increment": "1",
       "startWith": "1",
       "minValue": "1",
-      "maxValue": "9223372036854775807",
+      "maxValue": "2147483647",
       "cache": "1",
       "cycle": false
     }

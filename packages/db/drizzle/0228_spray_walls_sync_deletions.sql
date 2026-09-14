@@ -20,6 +20,12 @@ BEGIN
   WHERE ub.uuid = OLD.board_uuid
   LIMIT 1;
   IF owner_id IS NULL THEN
+    -- Loud, not silent: the only way here is a wall whose user_boards row is
+    -- already gone, which nothing is supposed to be able to do (board_uuid is
+    -- ON DELETE RESTRICT). Skipping the tombstone is still the right call — a
+    -- NULL-scoped one would publish a private wall's id to every client — but it
+    -- means a phone keeps a wall that no longer exists, so say so in the log.
+    RAISE WARNING 'spray_walls tombstone skipped: no owner for board %', OLD.board_uuid;
     RETURN OLD;
   END IF;
 

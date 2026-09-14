@@ -52,6 +52,14 @@ and two sequences.
 | `spray_wall_holds` | `(wall_id, hold_id)` | One hold across its whole life: centre, radius and silhouette in the canonical frame, the version that installed it, the version that removed it (NULL = still on the wall), and where it moved from. |
 | `spray_climb_lineage` | `child_uuid` | A remix and the climb it came from, plus the wall version it was rebuilt on. |
 
+What a climber sees is the wall at `spray_walls.current_version_id`, not "every
+hold whose `removed_version_id` is NULL": while a reset is still a draft, its
+added holds already have rows and its removals are only removals AT the draft, so
+the NULL test would leak an unpublished layout the moment the owner started
+editing. `aliveHolds(wallId)` resolves the published version; `aliveHolds(wallId,
+n)` reads the wall as it stood at version `n`, which is how a climb set two
+resets ago renders on the photo it was set against.
+
 `board_climbs.missing_hold_count` is the materialised integrity number: how many
 of a climb's holds have come off the wall. NULL on every other board type.
 `spray_wall_catalog_id_seq` hands out wall ids (one value is BOTH the layout id

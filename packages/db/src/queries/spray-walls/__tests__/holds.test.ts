@@ -43,8 +43,22 @@ void describe('recomputeMissingHoldCounts', () => {
     const db = makeDb();
     await recomputeMissingHoldCounts(db.handle, 12);
     const statement = db.queries[0];
-    assert.match(statement, /WHERE board_type = 'spray'/);
-    assert.match(statement, /layout_id = \(SELECT layout_id FROM spray_walls WHERE id = /);
+    assert.match(statement, /c\.board_type = 'spray'/);
+    assert.match(statement, /c\.layout_id = \(SELECT layout_id FROM spray_walls WHERE id = /);
+    // The UPDATE joins the derived table by uuid, so no climb outside that set
+    // can be reached however the outer WHERE evolves.
+    assert.match(statement, /WHERE board_climbs\.uuid = m\.uuid/);
+  });
+
+  void it('computes each climb\u2019s count ONCE, in a derived table', async () => {
+    // Written as two copies of the correlated subquery — one for the SET, one
+    // for the guard — Postgres evaluates it twice per row.
+    const db = makeDb();
+    await recomputeMissingHoldCounts(db.handle, 12);
+    const statement = db.queries[0];
+    assert.match(statement, /FROM \(\s*SELECT c\.uuid/);
+    assert.match(statement, /\) AS m/);
+    assert.equal(statement.match(/SELECT count\(\*\)/g)?.length, 1, 'exactly one count subquery');
   });
 
   void it('stamps updated_at so the offline sync cursor ships the change', async () => {

@@ -13,12 +13,17 @@ type CapturedInsert = { table: string; values: Record<string, unknown> };
  * What is under test is the CONTENT of the three catalogue rows — above all
  * `is_listed`, which is the wall's primary privacy defence (#5453 review).
  */
-function makeInsertDb() {
+function makeInsertDb(failOnInsertNumber?: number) {
   const inserts: CapturedInsert[] = [];
   const handle = {
+    // The helper opens its own transaction; a nested call becomes a savepoint.
+    transaction: (run: (tx: DrizzleDb) => Promise<void>) => run(handle as unknown as DrizzleDb),
     insert: (table: unknown) => ({
       values: (values: Record<string, unknown>) => {
         inserts.push({ table: getTableName(table as Parameters<typeof getTableName>[0]), values });
+        if (inserts.length === failOnInsertNumber) {
+          return Promise.reject(new Error('insert blew up'));
+        }
         return Promise.resolve([]);
       },
     }),
@@ -90,5 +95,41 @@ void describe('createSprayWallCatalogueRows', () => {
   void it('never mirrors a wall', async () => {
     const [layout] = await seedWall();
     assert.equal(layout.values.isMirrored, false);
+  });
+});
+
+void describe('createSprayWallCatalogueRows transaction', () => {
+  void it('runs the three inserts inside ONE transaction of its own', async () => {
+    // Not left to the caller to remember: a layout row with no size row is a
+    // wall the catalogue cannot render and nothing would ever repair.
+    const opened: string[] = [];
+    const inserts: string[] = [];
+    const handle = {
+      transaction: (run: (tx: unknown) => Promise<void>) => {
+        opened.push('transaction');
+        return run(handle);
+      },
+      insert: (table: unknown) => ({
+        values: () => {
+          inserts.push(getTableName(table as Parameters<typeof getTableName>[0]));
+          return Promise.resolve([]);
+        },
+      }),
+    };
+    await createSprayWallCatalogueRows(handle as unknown as DrizzleDb, { layoutId: 42, name: 'Fixture wall' });
+    assert.deepEqual(opened, ['transaction']);
+    assert.equal(inserts.length, 3);
+  });
+
+  void it('propagates a failure on the LAST insert, so the first two roll back with it', async () => {
+    // The rollback itself is Postgres’s job and is asserted against a real
+    // database in recompute.integration.test.ts; what has to hold here is that
+    // the error escapes the transaction callback rather than being swallowed.
+    const db = makeInsertDb(3);
+    await assert.rejects(
+      () => createSprayWallCatalogueRows(db.handle, { layoutId: 42, name: 'Fixture wall' }),
+      /insert blew up/,
+    );
+    assert.equal(db.inserts.length, 3, 'it failed on the join row, after the layout and the size');
   });
 });
