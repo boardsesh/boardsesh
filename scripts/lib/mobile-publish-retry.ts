@@ -9,6 +9,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { SURFABILITY_PROBE_BUDGET_MINUTES } from './ota-branch-probe';
 
 /**
  * Backoff ladder for one platform, in wait order: 34 minutes total, sized to
@@ -37,10 +38,19 @@ export const SELF_HOSTED_PUBLISH_MAX_ATTEMPTS = SELF_HOSTED_PUBLISH_RETRY_DELAYS
  */
 export const SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES = 2.5;
 
+/**
+ * What one attempt can cost in total, including the branch probe a finalize 524
+ * triggers before the ladder sleeps. The probe is what turns #5422's six blind
+ * re-exports into one confirmation, so its budget belongs in the floor rather
+ * than in the slack between the floor and a job's actual `timeout-minutes`.
+ */
+export const SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES =
+  SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES + SURFABILITY_PROBE_BUDGET_MINUTES;
+
 /** Every wait plus the failed attempt that precedes each one. */
 export const SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM =
   SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS.reduce((total, delayMs) => total + delayMs, 0) / 60_000 +
-  SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES;
+  SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES;
 
 /**
  * Everything a publish job does around the publish steps themselves. Dominated
