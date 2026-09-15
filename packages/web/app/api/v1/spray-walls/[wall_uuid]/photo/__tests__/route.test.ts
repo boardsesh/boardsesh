@@ -8,8 +8,9 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 vi.mock('server-only', () => ({}));
 
+const logError = vi.fn();
 vi.mock('@/app/lib/observability/request-logger', () => ({
-  createRequestLogger: () => ({ info: vi.fn(), error: vi.fn() }),
+  createRequestLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: logError }),
 }));
 
 vi.mock('@/app/lib/auth/rate-limiter', () => ({
@@ -17,10 +18,8 @@ vi.mock('@/app/lib/auth/rate-limiter', () => ({
   getClientIp: vi.fn(() => '203.0.113.7'),
 }));
 
-const fetchSprayWallPageData = vi.fn();
-vi.mock('@/app/lib/spray/spray-wall-render-data.server', () => ({
-  fetchSprayWallPageData: (...args: unknown[]) => fetchSprayWallPageData(...args),
-}));
+const fetchSprayWallPhotoUrl = vi.fn(async (_wallUuid: string): Promise<string | null> => null);
+vi.mock('@/app/lib/spray/spray-wall-render-data.server', () => ({ fetchSprayWallPhotoUrl }));
 
 const { GET } = await import('../route');
 
@@ -36,10 +35,7 @@ beforeEach(() => {
 
 describe('GET /api/v1/spray-walls/[wall_uuid]/photo', () => {
   it('redirects to the signature the backend just minted, uncached', async () => {
-    fetchSprayWallPageData.mockResolvedValue({
-      photo: { url: 'https://private.example/wall.jpg?sig=fresh' },
-      wall: { uuid: 'wall-1' },
-    });
+    fetchSprayWallPhotoUrl.mockResolvedValue('https://private.example/wall.jpg?sig=fresh');
 
     const response = await request('wall-1');
 
@@ -51,7 +47,7 @@ describe('GET /api/v1/spray-walls/[wall_uuid]/photo', () => {
   it('404s a wall this anonymous read may not see', async () => {
     // What the backend answers for a private wall, a soft-deleted one and a
     // uuid that was never a wall: all null, all the same 404 here.
-    fetchSprayWallPageData.mockResolvedValue(null);
+    fetchSprayWallPhotoUrl.mockResolvedValue(null);
 
     const response = await request('wall-1');
 
@@ -60,14 +56,14 @@ describe('GET /api/v1/spray-walls/[wall_uuid]/photo', () => {
   });
 
   it('502s a failed read rather than pinning a cacheable 404', async () => {
-    fetchSprayWallPageData.mockRejectedValue(new Error('backend is wedged'));
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchSprayWallPhotoUrl.mockRejectedValue(new Error('backend is wedged'));
 
     const response = await request('wall-1');
 
     expect(response.status).toBe(502);
     expect(response.headers.get('cache-control')).toBe('no-store');
-
-    consoleError.mockRestore();
+    // A server fault goes out at `error` level, or a dashboard that filters by
+    // level never sees the 502s this route is emitting.
+    expect(logError).toHaveBeenCalledWith('spray wall photo read failed', expect.objectContaining({ status: 502 }));
   });
 });

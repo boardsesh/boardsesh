@@ -277,6 +277,34 @@ describe('buildSprayOverlayMarks / buildSprayOverlaySvg', () => {
     expect(mark.points?.slice(0, 2)).toEqual([175, 325]);
   });
 
+  it('falls back to the decoded photo width when the version row has none', async () => {
+    // A version written before `photo_width` existed. The scale then comes off
+    // the decoded JPEG, so the mark has to land where the recorded width would
+    // have put it — 900 px wide resized into 1200x630 places at 472 px, i.e.
+    // photoToPlaced 0.525, and the p501 hold sits at canonical 200.
+    const photo = await makePhotoJpeg();
+    const withWidth = makeDeps({}, photo);
+    const withoutWidth = makeDeps(
+      { loadPublishedVersion: vi.fn(async () => ({ photoWidth: null, photoHeight: null, homography: null })) },
+      photo,
+    );
+
+    const frames = uniqueFrames('p501r1');
+    const recorded = await renderSprayOgCard({ layoutId: publicWall.layoutId, frames, format: 'jpeg' }, withWidth);
+    const decoded = await renderSprayOgCard(
+      { layoutId: publicWall.layoutId, frames: uniqueFrames('p501r1'), format: 'jpeg' },
+      withoutWidth,
+    );
+
+    expect(recorded.kind).toBe('card');
+    expect(decoded.kind).toBe('card');
+    if (recorded.kind !== 'card' || decoded.kind !== 'card') return;
+    // Same photograph either way, so the two cards have to be the same bytes.
+    expect(decoded.buffer.equals(recorded.buffer)).toBe(true);
+    // And the photo is decoded once per render, not twice.
+    expect(withoutWidth.fetchPhotoBytes).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a hold with an unknown role code out of the SVG markup', () => {
     // An unknown role falls back to plain white in HOLD_STATE_MAP; whatever the
     // colour is, it has to be a hex literal the rasteriser will accept and never

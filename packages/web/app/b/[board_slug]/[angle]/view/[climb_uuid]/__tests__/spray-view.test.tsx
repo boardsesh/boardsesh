@@ -144,6 +144,17 @@ describe('the spray climb page', () => {
     expect(getClimb).not.toHaveBeenCalled();
   });
 
+  it('404s when the wall is gone but the climb row is still there', async () => {
+    // The shape a soft-deleted wall takes after its links went out: the climb
+    // row survives (`deleteSprayWall` keeps the climbs) so `getClimb` answers,
+    // while the wall read returns null.
+    fetchSprayWallPageData.mockResolvedValue(null);
+
+    await expect(SprayViewPage({ board: boardFor('public'), parsedParams: PARSED_PARAMS })).rejects.toMatchObject({
+      digest: NOT_FOUND_DIGEST,
+    });
+  });
+
   it('404s a climb that is not on the wall', async () => {
     getClimb.mockResolvedValue(null);
 
