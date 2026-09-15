@@ -1,34 +1,37 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import { SPRAY_ANGLES } from '@boardsesh/board-config';
 import {
   DEFAULT_SPRAY_ANGLE,
+  SPRAY_ANGLE_OPTIONS,
   isValidSprayAngle,
-  parseSprayAngle,
   useSprayWallBuilder,
 } from '../use-spray-wall-builder';
 
-describe('parseSprayAngle', () => {
-  it('reads a plain angle', () => {
-    expect(parseSprayAngle('40')).toBe(40);
-    expect(parseSprayAngle(' 25 ')).toBe(25);
-    expect(parseSprayAngle('0')).toBe(0);
+describe('the angles a wall may be built at', () => {
+  it('offers the shared list, not a range of its own', () => {
+    // The server validates against SPRAY_ANGLES. A client that accepted every
+    // integer in between would let a climber type 37, walk the whole photo and
+    // corner flow, and only meet the refusal at the upload — with the wall
+    // already created.
+    expect(SPRAY_ANGLE_OPTIONS).toEqual([...SPRAY_ANGLES]);
   });
 
-  it('refuses anything that is not an angle a wall can be built at', () => {
-    // No clamping: the angle is frozen at the first publish, so a wall created
-    // at an angle nobody chose is permanent.
-    expect(parseSprayAngle('')).toBeNull();
-    expect(parseSprayAngle('-10')).toBeNull();
-    expect(parseSprayAngle('71')).toBeNull();
-    expect(parseSprayAngle('45.5')).toBeNull();
-    expect(parseSprayAngle('steep')).toBeNull();
+  it('accepts every angle on that list', () => {
+    for (const angle of SPRAY_ANGLE_OPTIONS) expect(isValidSprayAngle(angle)).toBe(true);
   });
 
-  it('agrees with isValidSprayAngle', () => {
-    expect(isValidSprayAngle(70)).toBe(true);
+  it('refuses a plausible angle that is not on it', () => {
+    expect(isValidSprayAngle(37)).toBe(false);
+    expect(isValidSprayAngle(42)).toBe(false);
     expect(isValidSprayAngle(71)).toBe(false);
+    expect(isValidSprayAngle(-5)).toBe(false);
     expect(isValidSprayAngle(12.5)).toBe(false);
+  });
+
+  it('opens on an angle the server accepts', () => {
+    expect(isValidSprayAngle(DEFAULT_SPRAY_ANGLE)).toBe(true);
   });
 });
 
@@ -50,18 +53,23 @@ describe('useSprayWallBuilder', () => {
     expect(result.current.canCreate).toBe(false);
   });
 
-  it('cannot create with an angle it could not read', () => {
+  it('cannot create at an angle the server would refuse', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
     act(() => result.current.setName('Garage wall'));
-    act(() => result.current.setAngleText('99'));
+    act(() => result.current.setAngle(37));
     expect(result.current.canCreate).toBe(false);
     expect(result.current.buildCreateInput()).toBeNull();
+  });
+
+  it('ignores a seeded angle that is not on the list', () => {
+    const { result } = renderHook(() => useSprayWallBuilder({ angle: 37 }));
+    expect(result.current.angle).toBe(DEFAULT_SPRAY_ANGLE);
   });
 
   it('builds the create input, trimming the name and dropping an empty location', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
     act(() => result.current.setName('  Garage wall  '));
-    act(() => result.current.setAngleText('25'));
+    act(() => result.current.setAngle(25));
 
     expect(result.current.buildCreateInput()).toEqual({
       name: 'Garage wall',
@@ -74,6 +82,32 @@ describe('useSprayWallBuilder', () => {
       longitude: undefined,
       gymUuid: undefined,
     });
+  });
+
+  it('creates the wall PRIVATE even when the climber chose public', () => {
+    const { result } = renderHook(() => useSprayWallBuilder());
+    act(() => result.current.setName('Garage wall'));
+    act(() => result.current.setIsPublic(true));
+
+    // The row exists before any version, photo or hold, and `searchBoards`
+    // filters on is_public / is_unlisted alone — so a wall created public is a
+    // listed, unusable board for as long as the flow takes, and forever if it is
+    // abandoned.
+    expect(result.current.buildCreateInput()).toMatchObject({ isPublic: false, isUnlisted: false });
+    // …and the choice is remembered, to be applied once there is something to see.
+    expect(result.current.pendingVisibility()).toEqual({ isPublic: true, isUnlisted: false });
+  });
+
+  it('has no second write to make for a wall left private', () => {
+    const { result } = renderHook(() => useSprayWallBuilder());
+    act(() => result.current.setName('Garage wall'));
+    expect(result.current.pendingVisibility()).toBeNull();
+  });
+
+  it('remembers an unlisted choice too', () => {
+    const { result } = renderHook(() => useSprayWallBuilder());
+    act(() => result.current.setIsUnlisted(true));
+    expect(result.current.pendingVisibility()).toEqual({ isPublic: false, isUnlisted: true });
   });
 
   it('never offers the two fields the resolver owns', () => {

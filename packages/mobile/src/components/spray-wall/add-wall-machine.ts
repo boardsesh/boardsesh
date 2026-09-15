@@ -134,7 +134,7 @@ export type AddWallAction =
   | { type: 'RESUME_CHECK_STARTED' }
   | { type: 'RESUME_DECLINED' }
   | { type: 'RESUMED_AT_PHOTO'; wall: CreatedWall }
-  | { type: 'RESUMED_AT_REVIEW'; draft: CreatedWallDraft }
+  | { type: 'RESUMED_AT_REVIEW'; draft: CreatedWallDraft; savedHoldCount?: number }
   | { type: 'META_DONE' }
   | { type: 'PHOTO_PICKED'; photo: PickedWallPhoto }
   | { type: 'PHOTO_CONFIRMED' }
@@ -219,6 +219,24 @@ export function hasUnfinishedWall(state: AddWallState): boolean {
   return state.wall != null && !state.published;
 }
 
+/**
+ * Whether leaving the flow needs to be confirmed first.
+ *
+ * The one predicate for every way out — the footer's Back, the header's back
+ * button, the iOS back gesture and Android's Back key. They all have to agree,
+ * because a climber who is asked before one and silently dropped by another has
+ * learned that the app does not mean it.
+ *
+ * Two reasons to ask. The flow is mid-request, where leaving strands a write
+ * nobody will hear the answer to; or a draft exists, where the wall is kept but
+ * the editor may hold holds it has not written yet — which only the editor
+ * knows, so this asks whenever there is a draft at all rather than pretending to
+ * know better.
+ */
+export function shouldConfirmLeave(state: AddWallState): boolean {
+  return isBusy(state) || leavingKeepsDraft(state);
+}
+
 /** Whether the flow is mid-request and a back gesture should be declined. */
 export function isBusy(state: AddWallState): boolean {
   return state.upload.running || state.detection.outcome === 'running' || state.publish.running;
@@ -240,11 +258,17 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       // nothing left to ask and the flow rejoins at the photo.
       return { ...state, step: 'photo', wall: action.wall, draft: null };
 
-    case 'RESUMED_AT_REVIEW':
+    case 'RESUMED_AT_REVIEW': {
       // A draft version with a photo: the holds are the only thing left. No
       // second detector run — the candidates from the first pass were either
       // ruled on or are gone, and re-suggesting over saved holds would draw
       // every one of them twice.
+      //
+      // Holds already on the draft ARE saved holds, and saying so is what
+      // unlocks Done. The editor loads them clean, so its Save is disabled
+      // (nothing dirty) — a Done still waiting for a save of its own would leave
+      // the climber unable to publish without a pointless edit.
+      const resumedHolds = Math.max(0, action.savedHoldCount ?? 0);
       return {
         ...state,
         step: 'review',
@@ -255,7 +279,10 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
         },
         draft: action.draft,
         detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
+        hasSavedHolds: state.hasSavedHolds || resumedHolds > 0,
+        savedHoldCount: resumedHolds,
       };
+    }
 
     case 'META_DONE':
       return { ...state, step: 'photo' };

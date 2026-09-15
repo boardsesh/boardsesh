@@ -39,6 +39,8 @@ export type ResumableVersion = {
   status: string;
   /** Present once a photo has been adopted onto the version. */
   photo?: { url?: string | null } | null;
+  /** Holds this version put on the wall. Non-zero means a previous sitting saved work. */
+  addedHoldCount?: number | null;
 };
 
 /**
@@ -64,7 +66,22 @@ export function findOpenDraft(versions: readonly ResumableVersion[]): ResumableV
   return versions.find((version) => version.status.toLowerCase() === 'draft') ?? null;
 }
 
-export type ResumeTarget = { at: 'review'; draft: CreatedWallDraft } | { at: 'photo'; wall: CreatedWall };
+export type ResumeTarget =
+  | {
+      at: 'review';
+      draft: CreatedWallDraft;
+      /**
+       * Holds already saved onto this draft.
+       *
+       * Load-bearing rather than informational: the editor loads persisted holds
+       * as CLEAN state, so its own Save is disabled (nothing is dirty) — and if
+       * the wizard's Done were still gated on "this session saved something", a
+       * climber who saved and walked away could never publish without making a
+       * pointless edit first. Holds on the draft ARE saved holds.
+       */
+      savedHoldCount: number;
+    }
+  | { at: 'photo'; wall: CreatedWall };
 
 /**
  * Where a resumed wall rejoins the flow.
@@ -86,6 +103,7 @@ export function resumeTargetFor(wall: ResumableWall, versions: readonly Resumabl
         versionId: draft.id,
         versionNumber: draft.number,
       },
+      savedHoldCount: Math.max(0, draft.addedHoldCount ?? 0),
     };
   }
   return {
