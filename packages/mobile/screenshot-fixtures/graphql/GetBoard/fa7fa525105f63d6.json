@@ -36,7 +36,7 @@
         "sizeName": null,
         "sizeDescription": null,
         "setNames": null,
-        "totalAscents": 63,
+        "totalAscents": 73,
         "uniqueClimbers": 3,
         "followerCount": 4,
         "commentCount": 0,
@@ -53,6 +53,6 @@
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T23:06:19.482Z",
+  "recordedAt": "2026-09-15T15:07:53.560Z",
   "upstream": "https://ws.boardsesh.com"
 }

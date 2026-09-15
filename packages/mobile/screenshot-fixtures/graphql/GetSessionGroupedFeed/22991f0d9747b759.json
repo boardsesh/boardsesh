@@ -455,7 +455,7 @@
               "attemptCount": 1,
               "difficulty": 27,
               "difficultyName": "7c+/V10",
-              "boardseshDifficulty": 26.953350663667333,
+              "boardseshDifficulty": 26.959953099584514,
               "boardseshConfidence": "confirmed",
               "quality": null,
               "isMirror": false,
@@ -530,7 +530,7 @@
               "attemptCount": 2,
               "difficulty": 13,
               "difficultyName": "5a/V1",
-              "boardseshDifficulty": 13.000648731155758,
+              "boardseshDifficulty": 13.001066928595119,
               "boardseshConfidence": "confirmed",
               "quality": null,
               "isMirror": false,
@@ -629,7 +629,7 @@
               "attemptCount": 1,
               "difficulty": 18,
               "difficultyName": "6b/V4",
-              "boardseshDifficulty": 17.99012258282817,
+              "boardseshDifficulty": 17.990112870094162,
               "boardseshConfidence": "confirmed",
               "quality": null,
               "isMirror": false,
@@ -1826,6 +1826,6 @@
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T23:04:46.473Z",
+  "recordedAt": "2026-09-15T15:06:49.007Z",
   "upstream": "https://ws.boardsesh.com"
 }

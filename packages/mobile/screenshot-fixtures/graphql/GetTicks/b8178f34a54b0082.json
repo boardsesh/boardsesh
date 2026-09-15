@@ -167,7 +167,7 @@
           "quality": null,
           "effectiveQuality": null,
           "difficulty": null,
-          "boardseshDifficulty": 18.580434075875164,
+          "boardseshDifficulty": 18.525142796360758,
           "boardseshConfidence": "confirmed",
           "isBenchmark": false,
           "comment": "",
@@ -186,7 +186,7 @@
           "quality": null,
           "effectiveQuality": null,
           "difficulty": null,
-          "boardseshDifficulty": 16.745449915337858,
+          "boardseshDifficulty": 16.73572600215129,
           "boardseshConfidence": "confirmed",
           "isBenchmark": false,
           "comment": "",
@@ -237,6 +237,6 @@
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T22:20:01.134Z",
+  "recordedAt": "2026-09-15T14:30:27.209Z",
   "upstream": "https://ws.boardsesh.com"
 }

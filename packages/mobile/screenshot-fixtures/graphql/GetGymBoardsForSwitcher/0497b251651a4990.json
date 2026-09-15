@@ -1,0 +1,83 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetGymBoardsForSwitcher",
+  "documentHash": "156f496fcfc32035de9c3a636b644aa4545f3e04f875dba4efda1a27500b9a14",
+  "variablesHash": "0497b251651a4990a71716e3568eabfe23af25eeb763c8482472d0357f943f84",
+  "query": "\n  query GetGymBoardsForSwitcher($gymUuid: ID!) {\n    gymBoards(gymUuid: $gymUuid) {\n      \n  uuid\n  slug\n  ownerId\n  name\n  boardType\n  layoutId\n  sizeId\n  setIds\n  angle\n  isAngleAdjustable\n  hasLeds\n  isPublic\n  isUnlisted\n  locationName\n  gymId\n  gymUuid\n  boardId\n  canEdit\n\n      hideLocation\n      isOwned\n      createdAt\n      totalAscents\n      uniqueClimbers\n      followerCount\n      commentCount\n      isFollowedByMe\n      isPinnedByMe\n      gymName\n      serialNumber\n      timerName\n    }\n  }\n",
+  "variables": {
+    "gymUuid": "e6860393-2ee4-4c23-8e86-d8c972811abd"
+  },
+  "response": {
+    "data": {
+      "gymBoards": [
+        {
+          "uuid": "c7acb9d3-46f0-4d21-933a-5d28dba1ca03",
+          "slug": "high-point-climbing-orlando-kilter-dba1ca03",
+          "ownerId": "00000000-0000-0000-0000-000000000000",
+          "name": "High Point Climbing Orlando - Kilter Board Original",
+          "boardType": "kilter",
+          "layoutId": 1,
+          "sizeId": 10,
+          "setIds": "1,20",
+          "angle": 40,
+          "isAngleAdjustable": true,
+          "hasLeds": true,
+          "isPublic": true,
+          "isUnlisted": false,
+          "locationName": "Orlando, USA",
+          "gymId": 580,
+          "gymUuid": "e6860393-2ee4-4c23-8e86-d8c972811abd",
+          "boardId": 633,
+          "canEdit": false,
+          "hideLocation": false,
+          "isOwned": false,
+          "createdAt": "2026-04-07T01:11:45.827Z",
+          "totalAscents": 8,
+          "uniqueClimbers": 1,
+          "followerCount": 2,
+          "commentCount": 0,
+          "isFollowedByMe": false,
+          "isPinnedByMe": false,
+          "gymName": "High Point Climbing Orlando",
+          "serialNumber": "751330",
+          "timerName": null
+        },
+        {
+          "uuid": "78ade769-09b5-4675-b30d-2b7394c9259f",
+          "slug": "high-point-climbing-orlando-tension-94c9259f",
+          "ownerId": "00000000-0000-0000-0000-000000000000",
+          "name": "High Point Climbing Orlando - Tension Board",
+          "boardType": "tension",
+          "layoutId": 10,
+          "sizeId": 6,
+          "setIds": "12,13",
+          "angle": 40,
+          "isAngleAdjustable": true,
+          "hasLeds": true,
+          "isPublic": true,
+          "isUnlisted": false,
+          "locationName": "Orlando, USA",
+          "gymId": 580,
+          "gymUuid": "e6860393-2ee4-4c23-8e86-d8c972811abd",
+          "boardId": 1411,
+          "canEdit": false,
+          "hideLocation": false,
+          "isOwned": false,
+          "createdAt": "2026-04-07T01:14:02.983Z",
+          "totalAscents": 73,
+          "uniqueClimbers": 3,
+          "followerCount": 4,
+          "commentCount": 0,
+          "isFollowedByMe": true,
+          "isPinnedByMe": false,
+          "gymName": "High Point Climbing Orlando",
+          "serialNumber": "841053",
+          "timerName": null
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-15T15:07:52.944Z",
+  "upstream": "https://ws.boardsesh.com"
+}

@@ -30,7 +30,7 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 14,
-          "boardseshDifficulty": 12.78915560134058,
+          "boardseshDifficulty": 12.738492531397275,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-19 12:38:18.408",
           "layoutId": 8
@@ -246,7 +246,7 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 20,
-          "boardseshDifficulty": 18.580434075875164,
+          "boardseshDifficulty": 18.525142796360758,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-08 03:34:43.733",
           "layoutId": 8
@@ -342,7 +342,7 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 18,
-          "boardseshDifficulty": 16.745449915337858,
+          "boardseshDifficulty": 16.73572600215129,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-04 05:40:10.279",
           "layoutId": 8
@@ -366,7 +366,7 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 20,
-          "boardseshDifficulty": 19.000192402323346,
+          "boardseshDifficulty": 18.99976846432305,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-04 05:03:20.669",
           "layoutId": 8
@@ -378,7 +378,7 @@
           "attemptCount": 2,
           "difficulty": null,
           "effectiveDifficulty": 14,
-          "boardseshDifficulty": 12.78915560134058,
+          "boardseshDifficulty": 12.738492531397275,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-04 05:03:16.132",
           "layoutId": 8
@@ -390,7 +390,7 @@
           "attemptCount": 2,
           "difficulty": null,
           "effectiveDifficulty": 16,
-          "boardseshDifficulty": 15.054904909736653,
+          "boardseshDifficulty": 15.063331463498148,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-04 05:03:12.015",
           "layoutId": 8
@@ -438,7 +438,7 @@
           "attemptCount": 2,
           "difficulty": null,
           "effectiveDifficulty": 14,
-          "boardseshDifficulty": 12.78915560134058,
+          "boardseshDifficulty": 12.738492531397275,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-02 09:45:04.058",
           "layoutId": 8
@@ -474,7 +474,7 @@
           "attemptCount": 2,
           "difficulty": 15,
           "effectiveDifficulty": 15,
-          "boardseshDifficulty": 12.78915560134058,
+          "boardseshDifficulty": 12.738492531397275,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-02 09:24:46.711",
           "layoutId": 8
@@ -486,7 +486,7 @@
           "attemptCount": 2,
           "difficulty": null,
           "effectiveDifficulty": 16,
-          "boardseshDifficulty": 15.054904909736653,
+          "boardseshDifficulty": 15.063331463498148,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-02 03:27:29.257",
           "layoutId": 8
@@ -510,7 +510,7 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 14,
-          "boardseshDifficulty": 12.78915560134058,
+          "boardseshDifficulty": 12.738492531397275,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-01 06:45:24.714",
           "layoutId": 8
@@ -522,7 +522,7 @@
           "attemptCount": 2,
           "difficulty": null,
           "effectiveDifficulty": 14,
-          "boardseshDifficulty": 12.78915560134058,
+          "boardseshDifficulty": 12.738492531397275,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-01 06:45:15.75",
           "layoutId": 8
@@ -534,7 +534,7 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 14,
-          "boardseshDifficulty": 12.78915560134058,
+          "boardseshDifficulty": 12.738492531397275,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-06-01 06:45:12.892",
           "layoutId": 8
@@ -594,8 +594,8 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 15,
-          "boardseshDifficulty": 13.783125804407414,
-          "boardseshConfidence": "confirmed",
+          "boardseshDifficulty": 13.760375065016468,
+          "boardseshConfidence": "provisional",
           "climbedAt": "2026-06-01 06:20:44.942039",
           "layoutId": 1
         },
@@ -666,7 +666,7 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 14,
-          "boardseshDifficulty": 12.78915560134058,
+          "boardseshDifficulty": 12.738492531397275,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-05-31 06:19:21.685",
           "layoutId": 8
@@ -798,7 +798,7 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 21,
-          "boardseshDifficulty": 20.148631345253154,
+          "boardseshDifficulty": 20.114899864242492,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-04-16 03:02:05.532",
           "layoutId": 1
@@ -834,7 +834,7 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 22,
-          "boardseshDifficulty": 20.721028961076232,
+          "boardseshDifficulty": 20.645923563063803,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-04-16 03:02:02.173",
           "layoutId": 1
@@ -966,7 +966,7 @@
           "attemptCount": 3,
           "difficulty": null,
           "effectiveDifficulty": 22,
-          "boardseshDifficulty": 20.948251493435826,
+          "boardseshDifficulty": 20.903005239567822,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-04-16 03:00:32.912",
           "layoutId": 1
@@ -990,7 +990,7 @@
           "attemptCount": 1,
           "difficulty": null,
           "effectiveDifficulty": 20,
-          "boardseshDifficulty": 19.02788060318229,
+          "boardseshDifficulty": 19.032178137358592,
           "boardseshConfidence": "confirmed",
           "climbedAt": "2026-04-16 03:00:27.046",
           "layoutId": 1
@@ -1059,6 +1059,6 @@
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T22:58:33.413Z",
+  "recordedAt": "2026-09-15T15:02:26.398Z",
   "upstream": "https://ws.boardsesh.com"
 }

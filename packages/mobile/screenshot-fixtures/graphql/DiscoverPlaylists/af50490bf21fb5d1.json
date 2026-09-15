@@ -19,6 +19,54 @@
       "discoverPlaylists": {
         "playlists": [
           {
+            "id": "30994",
+            "uuid": "B9570E17A9DC44F0874516EFD2B5FFC8",
+            "boardType": "tension",
+            "layoutId": null,
+            "name": "4x4s",
+            "description": "POWER",
+            "color": "#00CC00",
+            "icon": null,
+            "createdAt": "2026-09-13T23:02:05.685Z",
+            "updatedAt": "2026-09-13T23:08:27.402Z",
+            "climbCount": 6,
+            "creatorId": "631a6fef-9045-45f1-8166-d9847f4c83f7",
+            "creatorName": "Nick Blasey",
+            "isGeneratedRecommendation": false
+          },
+          {
+            "id": "30984",
+            "uuid": "7d15dbb0f13448eda6e896c3e64a163b",
+            "boardType": "tension",
+            "layoutId": null,
+            "name": "proj",
+            "description": null,
+            "color": "#808080",
+            "icon": null,
+            "createdAt": "2026-09-12T10:24:24.403Z",
+            "updatedAt": "2026-09-14T18:12:29.006Z",
+            "climbCount": 2,
+            "creatorId": "8b1bc16b-0ca2-4e7a-a840-d6ff6f087ef0",
+            "creatorName": "Rémi Boyer",
+            "isGeneratedRecommendation": false
+          },
+          {
+            "id": "29902",
+            "uuid": "FECA32C0A1B64809A21F6A4F29A913FB",
+            "boardType": "tension",
+            "layoutId": null,
+            "name": "Warm up",
+            "description": null,
+            "color": "#FF0000",
+            "icon": null,
+            "createdAt": "2026-09-09T12:12:30.365Z",
+            "updatedAt": "2026-09-09T13:29:07.604Z",
+            "climbCount": 2,
+            "creatorId": "9dc74b08-fb80-42dd-8522-b8ecdfb5bbaf",
+            "creatorName": "Ram Manoj Mendu",
+            "isGeneratedRecommendation": false
+          },
+          {
             "id": "29272",
             "uuid": "8dd3984bc2584b15b3e852207a287d2f",
             "boardType": "tension",
@@ -129,62 +177,14 @@
             "creatorId": "876c7817-3bad-4901-8e71-1d906df3a265",
             "creatorName": "Cdinh",
             "isGeneratedRecommendation": false
-          },
-          {
-            "id": "26093",
-            "uuid": "C430B0A1EA5D4147A0977E14D2596944",
-            "boardType": "tension",
-            "layoutId": null,
-            "name": "Warm ups at 40°",
-            "description": null,
-            "color": "#FF00FF",
-            "icon": null,
-            "createdAt": "2026-08-25T12:13:45.769Z",
-            "updatedAt": "2026-08-25T12:13:49.170Z",
-            "climbCount": 1,
-            "creatorId": "893f0bf1-afd9-42d2-b023-a93c16776869",
-            "creatorName": "Kim",
-            "isGeneratedRecommendation": false
-          },
-          {
-            "id": "25289",
-            "uuid": "3D8DABDA4DB145A088C6D7AC91F4E754",
-            "boardType": "tension",
-            "layoutId": null,
-            "name": "Warm ups for 50",
-            "description": null,
-            "color": "#FF00FF",
-            "icon": null,
-            "createdAt": "2026-08-22T12:32:02.820Z",
-            "updatedAt": "2026-08-25T11:28:34.307Z",
-            "climbCount": 2,
-            "creatorId": "893f0bf1-afd9-42d2-b023-a93c16776869",
-            "creatorName": "Kim",
-            "isGeneratedRecommendation": false
-          },
-          {
-            "id": "24528",
-            "uuid": "0cceb4d8da0f4c77bb2b623189b0f0b6",
-            "boardType": "tension",
-            "layoutId": null,
-            "name": "Sims",
-            "description": null,
-            "color": "#8000FF",
-            "icon": null,
-            "createdAt": "2026-08-19T11:52:29.073Z",
-            "updatedAt": "2026-08-19T11:52:33.961Z",
-            "climbCount": 1,
-            "creatorId": "0e07b2e1-cdd0-4663-a717-e63cc982b3ff",
-            "creatorName": "michael alberghini",
-            "isGeneratedRecommendation": false
           }
         ],
-        "totalCount": 456,
+        "totalCount": 461,
         "hasMore": true
       }
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T23:06:19.080Z",
+  "recordedAt": "2026-09-15T15:07:52.999Z",
   "upstream": "https://ws.boardsesh.com"
 }

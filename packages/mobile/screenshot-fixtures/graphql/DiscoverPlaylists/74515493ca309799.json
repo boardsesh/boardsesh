@@ -60,7 +60,7 @@
             "color": "#808080",
             "icon": null,
             "createdAt": "2026-08-24T22:19:33.202Z",
-            "updatedAt": "2026-09-08T09:43:59.565Z",
+            "updatedAt": "2026-09-14T07:41:37.709Z",
             "climbCount": 179,
             "creatorId": "e77f2794-f7fb-4f6f-bd11-22cf69d858b4",
             "creatorName": "Jordan Wood",
@@ -124,7 +124,7 @@
             "color": null,
             "icon": null,
             "createdAt": "2026-08-24T22:19:33.202Z",
-            "updatedAt": "2026-09-08T09:44:05.123Z",
+            "updatedAt": "2026-09-14T07:41:43.245Z",
             "climbCount": 108,
             "creatorId": "e77f2794-f7fb-4f6f-bd11-22cf69d858b4",
             "creatorName": "Jordan Wood",
@@ -140,7 +140,7 @@
             "color": "#0000FF",
             "icon": null,
             "createdAt": "2026-08-24T22:19:33.202Z",
-            "updatedAt": "2026-09-08T09:43:57.707Z",
+            "updatedAt": "2026-09-14T07:41:35.863Z",
             "climbCount": 106,
             "creatorId": "e77f2794-f7fb-4f6f-bd11-22cf69d858b4",
             "creatorName": "Jordan Wood",
@@ -172,19 +172,19 @@
             "color": "#FF8000",
             "icon": null,
             "createdAt": "2026-08-12T22:46:30.346Z",
-            "updatedAt": "2026-09-07T22:17:10.050Z",
+            "updatedAt": "2026-09-15T00:52:46.303Z",
             "climbCount": 74,
             "creatorId": "7236cf76-6702-409a-b749-4e09abde6a12",
             "creatorName": "Marek Sotola",
             "isGeneratedRecommendation": false
           }
         ],
-        "totalCount": 270,
+        "totalCount": 272,
         "hasMore": true
       }
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T22:58:33.456Z",
+  "recordedAt": "2026-09-15T15:02:26.630Z",
   "upstream": "https://ws.boardsesh.com"
 }

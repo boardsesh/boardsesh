@@ -11,12 +11,12 @@
     "data": {
       "userClimbPercentile": {
         "totalDistinctClimbs": 182,
-        "percentile": 87.4,
-        "totalActiveUsers": 2641
+        "percentile": 87.6,
+        "totalActiveUsers": 2813
       }
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T22:58:35.617Z",
+  "recordedAt": "2026-09-15T15:02:27.784Z",
   "upstream": "https://ws.boardsesh.com"
 }

@@ -1069,17 +1069,32 @@
             "tableName": "board_climb_stats",
             "recordId": "moonboard:bb149d82-421c-57d8-b4f4-2f1a32ff148b:40",
             "deletedAt": "2026-09-08T21:10:36.124909Z"
+          },
+          {
+            "tableName": "board_climbs",
+            "recordId": "EB33A976ECE44344A587C2E7B7CA2723",
+            "deletedAt": "2026-09-10T19:32:56.413726Z"
+          },
+          {
+            "tableName": "board_climbs",
+            "recordId": "7F594C7123724354808C67CBC516A61D",
+            "deletedAt": "2026-09-10T19:32:59.50895Z"
+          },
+          {
+            "tableName": "board_climbs",
+            "recordId": "08A13E639DB44C848267BAFAF457AEE5",
+            "deletedAt": "2026-09-13T11:39:58.92289Z"
           }
         ],
         "cursor": {
-          "updatedAt": "2026-09-08T21:10:36.124909Z",
-          "syncSeq": "137108"
+          "updatedAt": "2026-09-13T11:39:58.92289Z",
+          "syncSeq": "145844"
         },
         "hasMore": false
       }
     }
   },
   "status": 200,
-  "recordedAt": "2026-09-08T22:58:52.462Z",
+  "recordedAt": "2026-09-15T15:02:48.986Z",
   "upstream": "https://ws.boardsesh.com"
 }
