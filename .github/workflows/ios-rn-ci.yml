@@ -57,6 +57,8 @@ jobs:
         uses: ./.github/actions/mobile-native-gate
         with:
           platform: ios
+          # Empty on a branch push (no PR context); the action then defaults to main.
+          base-ref: ${{ github.base_ref }}
 
   build-and-test:
     needs: gate

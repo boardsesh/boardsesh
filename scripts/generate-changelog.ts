@@ -10,9 +10,14 @@
  * in its description (the copy the author wrote for users). Category is derived
  * from the PR title's Conventional-Commit type.
  *
- * Crawls merged PRs against `main` via paginated `gh api graphql` (public data,
- * works with the default Actions token). Bounded by a START date so history stays
- * small — only PRs merged on/after that date can carry Release Notes anyway.
+ * Crawls merged PRs against `main` AND `release/next` via paginated `gh api
+ * graphql` (public data, works with the default Actions token). Native work ships
+ * through the release train, so a main-only crawl would silently drop every
+ * native release note. Sync and merge-back PRs between the two branches are
+ * skipped — they carry no notes of their own, and their contents are already
+ * counted through the PR that originally merged them. Bounded by a START date so
+ * history stays small — only PRs merged on/after that date can carry Release
+ * Notes anyway.
  *
  * Degrades gracefully: if a fetch fails (offline, `gh` missing, unauthenticated)
  * the existing committed JSON is kept and the script still exits 0, so it never
@@ -117,11 +122,17 @@ function gatherFingerprintTags(): RawFingerprintTag[] {
   return tags;
 }
 
-// Merged PRs against main, newest-updated first so the crawl can stop early once
-// it pages past the cutoff. labels(first:20) covers the skip-changelog opt-out.
-const MERGED_PRS_QUERY = `query($owner: String!, $name: String!, $cursor: String) {
+// The branches a user-facing PR can merge into: regular work lands on main,
+// native store work on the release train (docs/mobile-store-release.md).
+const CHANGELOG_BASE_BRANCHES = ['main', 'release/next'] as const;
+
+// Merged PRs against one base branch, newest-updated first so the crawl can stop
+// early once it pages past the cutoff. labels(first:20) covers the
+// skip-changelog opt-out; headRefName identifies the sync / merge-back PRs
+// between main and the train, which are not entries of their own.
+const MERGED_PRS_QUERY = `query($owner: String!, $name: String!, $baseRefName: String!, $cursor: String) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: MERGED, baseRefName: "main", first: 100, after: $cursor, orderBy: { field: UPDATED_AT, direction: DESC }) {
+    pullRequests(states: MERGED, baseRefName: $baseRefName, first: 100, after: $cursor, orderBy: { field: UPDATED_AT, direction: DESC }) {
       pageInfo { hasNextPage endCursor }
       nodes {
         number
@@ -130,6 +141,7 @@ const MERGED_PRS_QUERY = `query($owner: String!, $name: String!, $cursor: String
         mergedAt
         updatedAt
         url
+        headRefName
         labels(first: 20) { nodes { name } }
       }
     }
@@ -143,6 +155,7 @@ type RawPrNode = {
   mergedAt: string | null;
   updatedAt: string | null;
   url: string;
+  headRefName?: string;
   labels?: { nodes?: { name?: string }[] };
 };
 type PrConnection = {
@@ -150,9 +163,40 @@ type PrConnection = {
   nodes?: RawPrNode[];
 };
 
+/**
+ * PURE: is this PR a branch-plumbing merge rather than a user-facing change? A
+ * sync (main → release/next) and a merge-back (release/next → main) both carry
+ * other people's commits, so counting them would duplicate every entry on the
+ * train.
+ */
+export function isBranchPlumbingPullRequest(headRefName: string | undefined): boolean {
+  return headRefName !== undefined && (CHANGELOG_BASE_BRANCHES as readonly string[]).includes(headRefName);
+}
+
 function fetchMergedPullRequests(): RawPullRequest[] | null {
   const cutoff = new Date(CRAWL_START_DATE).getTime();
   const pullRequests: RawPullRequest[] = [];
+  // A PR can be crawled once per base branch it is queried under; dedupe by
+  // number so a retarget can never produce two entries for one PR.
+  const seen = new Set<number>();
+  try {
+    for (const baseRefName of CHANGELOG_BASE_BRANCHES) {
+      if (!crawlBaseBranch(baseRefName, pullRequests, seen)) return null;
+    }
+  } catch (error) {
+    console.warn(`[changelog] PR fetch failed, keeping existing file: ${String(error)}`);
+    return null;
+  }
+
+  // Drop anything merged before the cutoff (a page can straddle it).
+  return pullRequests.filter(
+    (pullRequest) => pullRequest.mergedAt !== null && new Date(pullRequest.mergedAt).getTime() >= cutoff,
+  );
+}
+
+/** Crawl one base branch, appending to `collected`. Returns false on a fetch failure. */
+function crawlBaseBranch(baseRefName: string, collected: RawPullRequest[], seen: Set<number>): boolean {
+  const cutoff = new Date(CRAWL_START_DATE).getTime();
   let cursor: string | null = null;
   try {
     // Hard page cap so a pagination bug can never loop forever (matches
@@ -168,6 +212,8 @@ function fetchMergedPullRequests(): RawPullRequest[] | null {
         `owner=${REPO_OWNER}`,
         '-f',
         `name=${REPO_NAME}`,
+        '-f',
+        `baseRefName=${baseRefName}`,
       ];
       if (cursor) args.push('-f', `cursor=${cursor}`);
       const response = JSON.parse(gh(args)) as { data?: { repository?: { pullRequests?: PrConnection } } };
@@ -175,7 +221,10 @@ function fetchMergedPullRequests(): RawPullRequest[] | null {
       if (!connection) break;
 
       for (const node of connection.nodes ?? []) {
-        pullRequests.push({
+        if (isBranchPlumbingPullRequest(node.headRefName)) continue;
+        if (seen.has(node.number)) continue;
+        seen.add(node.number);
+        collected.push({
           number: node.number,
           title: node.title,
           body: node.body,
@@ -200,14 +249,10 @@ function fetchMergedPullRequests(): RawPullRequest[] | null {
       cursor = connection.pageInfo.endCursor;
     }
   } catch (error) {
-    console.warn(`[changelog] PR fetch failed, keeping existing file: ${String(error)}`);
-    return null;
+    console.warn(`[changelog] PR fetch failed for ${baseRefName}, keeping existing file: ${String(error)}`);
+    return false;
   }
-
-  // Drop anything merged before the cutoff (a page can straddle it).
-  return pullRequests.filter(
-    (pullRequest) => pullRequest.mergedAt !== null && new Date(pullRequest.mergedAt).getTime() >= cutoff,
-  );
+  return true;
 }
 
 function main(): void {

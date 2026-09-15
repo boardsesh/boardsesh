@@ -2,6 +2,7 @@ import { eq, and, sql, desc } from 'drizzle-orm';
 import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import { GetUserFavoriteClimbsInputSchema } from '../../../validation/schemas';
@@ -43,7 +44,26 @@ export const favoriteClimbsQuery = {
     const countResult = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(dbSchema.userFavorites)
-      .where(and(eq(dbSchema.userFavorites.userId, userId), eq(dbSchema.userFavorites.boardName, boardName)));
+      // The count joins the climb for the same reason the page does — otherwise it
+      // promises rows the page then withholds.
+      .innerJoin(
+        tables.climbs,
+        and(eq(tables.climbs.uuid, dbSchema.userFavorites.climbUuid), eq(tables.climbs.boardType, boardName)),
+      )
+      .where(
+        and(
+          eq(dbSchema.userFavorites.userId, userId),
+          eq(dbSchema.userFavorites.boardName, boardName),
+          // A favourite is a reference the user PERSISTED, so it outlives the
+          // wall's visibility: without this, a climb favourited while the wall was
+          // public keeps returning its name, description and frames after the owner
+          // makes the wall private again. A no-op on the other eight board types.
+          sprayClimbVisibilityCondition(
+            { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+            userId,
+          ),
+        ),
+      );
 
     const totalCount = countResult[0]?.count || 0;
 
@@ -106,7 +126,20 @@ export const favoriteClimbsQuery = {
           eq(dbSchema.boardClimbGrades.angle, input.angle),
         ),
       )
-      .where(and(eq(dbSchema.userFavorites.userId, userId), eq(dbSchema.userFavorites.boardName, boardName)))
+      .where(
+        and(
+          eq(dbSchema.userFavorites.userId, userId),
+          eq(dbSchema.userFavorites.boardName, boardName),
+          // A favourite is a reference the user PERSISTED, so it outlives the
+          // wall's visibility: without this, a climb favourited while the wall was
+          // public keeps returning its name, description and frames after the owner
+          // makes the wall private again. A no-op on the other eight board types.
+          sprayClimbVisibilityCondition(
+            { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+            userId,
+          ),
+        ),
+      )
       .orderBy(desc(dbSchema.userFavorites.createdAt))
       .limit(pageSize + 1)
       .offset(page * pageSize);

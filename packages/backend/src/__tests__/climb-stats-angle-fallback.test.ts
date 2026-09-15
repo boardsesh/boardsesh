@@ -1,3 +1,4 @@
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -40,9 +41,14 @@ async function cleanupClimbs() {
 }
 
 async function feedItemFor(uuid: string) {
-  const result = await newClimbSubscriptionResolvers.Query.newClimbFeed(null, {
-    input: { boardType: BOARD_TYPE, layoutId: LAYOUT_ID, limit: 50, offset: 0 },
-  });
+  const result = await newClimbSubscriptionResolvers.Query.newClimbFeed(
+    null,
+    { input: { boardType: BOARD_TYPE, layoutId: LAYOUT_ID, limit: 50, offset: 0 } },
+    // The resolver now takes a context so it can apply the spray wall visibility
+    // rule. This fixture is a catalogue board, where the rule is a no-op, so an
+    // anonymous caller is the honest reader to test as.
+    { connectionId: 'test', isAuthenticated: false, userId: null } as unknown as ConnectionContext,
+  );
   return result.items.find((item) => item.uuid === uuid);
 }
 

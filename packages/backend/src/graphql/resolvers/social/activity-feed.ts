@@ -2,6 +2,7 @@ import { eq, and, desc, sql, or, isNull } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
@@ -202,7 +203,7 @@ export const activityFeedQueries = {
    * Fan-out-on-read from boardsesh_ticks with JOINs (same pattern as globalAscentsFeed).
    * Returns cursor-based pagination using the ActivityFeedItem shape.
    */
-  trendingFeed: async (_: unknown, { input }: { input?: Record<string, unknown> }) => {
+  trendingFeed: async (_: unknown, { input }: { input?: Record<string, unknown> }, ctx: ConnectionContext) => {
     const validatedInput = validateInput(ActivityFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
 
@@ -235,6 +236,16 @@ export const activityFeedQueries = {
     if (layoutIdFilter !== null) {
       conditions.push(eq(dbSchema.boardClimbs.layoutId, layoutIdFilter));
     }
+
+    // This feed selects the climb's name and frames and is public, unauthenticated
+    // and rate-limit free, so a tick on somebody's PRIVATE spray wall would ride it
+    // to anyone. A no-op on the other eight board types.
+    conditions.push(
+      sprayClimbVisibilityCondition(
+        { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+        ctx?.userId,
+      ),
+    );
 
     // Keyset pagination for chronological sort
     if (validatedInput.cursor) {

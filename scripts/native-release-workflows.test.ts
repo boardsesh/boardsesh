@@ -4,13 +4,27 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
+import { ALLOW_NATIVE_ON_MAIN_LABEL, NATIVE_ON_MAIN_FAILURE } from './mobile-ota-compat-check';
+
 function workflow(name: string): string {
   return readFileSync(`.github/workflows/${name}`, 'utf8');
 }
 
-const removedReleaseBranch = ['release', 'next'].join('/');
+// The branch native store candidates are cut from. Assembled rather than
+// inlined so a bare `toContain('release/next')` elsewhere in the file can't be
+// satisfied by this constant's own definition.
+const releaseBranch = ['release', 'next'].join('/');
+// #4991 retired these two along with the previous train and they stay retired:
+// the restored train reuses the `Production` environment and the existing
+// "Boardsesh Android Beta" prerelease name.
 const retiredNativeEnvironment = ['Native', 'Release'].join(' ');
 const retiredAndroidPrereleaseName = ['Boardsesh', 'Next'].join(' ');
+
+// Accepts the train automatically and main only by hand — a dispatch from main is
+// the post-merge-back hotfix rebuild.
+const dispatchGate =
+  `github.ref == 'refs/heads/${releaseBranch}' || (github.event_name == 'workflow_dispatch' && ` +
+  `(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/${releaseBranch}'))`;
 
 describe('native release workflow contracts', () => {
   const ios = workflow('ios-testflight-rn.yml');
@@ -27,20 +41,64 @@ describe('native release workflow contracts', () => {
     expect(() => parse(source)).not.toThrow();
   });
 
-  it('automatically builds native releases only from main', () => {
+  // The train: a PR that moves the native fingerprint targets release/next, and
+  // merging it there is what starts a store build. main keeps every other change
+  // (and keeps publishing the store fleet's OTA). docs/mobile-store-release.md.
+  it('automatically builds native releases from the release train, never from main', () => {
     for (const source of [ios, android]) {
-      expect(source).toMatch(/push:\n\s+branches: \[main\]/);
-      expect(source).not.toContain(removedReleaseBranch);
+      expect(source).toMatch(new RegExp(`push:\\n\\s+#[^]*?\\n\\s+branches: \\[${releaseBranch}\\]`));
+      expect(source).not.toMatch(/push:\n(?:\s+#.*\n)*\s+branches: \[main\]/);
+      // Dispatch from main stays possible (hotfix rebuild after a merge-back).
+      expect(source).toContain(dispatchGate);
       expect(source).toContain('environment: Production');
       expect(source).not.toContain(`environment: ${retiredNativeEnvironment}`);
-      expect(source).toContain("github.ref == 'refs/heads/main'");
     }
     expect(ios).toContain('group: ios-testflight-rn');
     expect(android).toContain('group: android-apk-rn');
     expect(ios.match(/environment: Production/g)).toHaveLength(1);
     expect(android.match(/environment: Production/g)).toHaveLength(3);
-    expect(productionOta).toMatch(/push:\n\s+branches: \[main\]/);
-    expect(productionOta).not.toMatch(/push:\n\s+branches: \[release\/next\]/);
+  });
+
+  // The amendment to the train design: release/next publishes production OTAs
+  // too, so testers on the train binary are not stuck on the JS it was built
+  // with. main keeps publishing for the store fleet.
+  it('publishes production OTAs from both main and the release train', () => {
+    const triggers = parse(productionOta)['on'] as { push?: { branches?: string[] } };
+    expect(triggers.push?.branches).toEqual(['main', releaseBranch]);
+  });
+
+  // xprem serves the newest commitTime FOR A GIVEN runtimeVersion. While the
+  // train's fingerprint still equals main's, a publish from the train would be
+  // handed to the whole store fleet — so the train only publishes once a native
+  // change has moved it off main's runtimeVersion.
+  it('refuses to publish a train OTA onto a runtimeVersion main still owns', () => {
+    const steps = stepsOfJob(productionOta, 'publish');
+    const guard = steps.find((step) => step.name === 'Skip platforms whose runtimeVersion main still owns');
+    expect(guard, 'the production OTA workflow must carry the train fingerprint guard').toBeDefined();
+    expect(String(guard?.if ?? '')).toContain(`github.ref == 'refs/heads/${releaseBranch}'`);
+
+    // Fail closed: both platforms are written un-publishable BEFORE the compare,
+    // so a resolve that errors or flakes to `unknown` cannot publish.
+    const run = String(guard?.run ?? '');
+    expect(run).toContain("echo 'publish_ios=false'");
+    expect(run).toContain("echo 'publish_android=false'");
+    expect(run.indexOf('publish_ios=false')).toBeLessThan(run.indexOf('check:mobile-ota-compat'));
+
+    // The baseline it compares against is materialised from origin/main.
+    const baseline = steps.find((step) => step.name === 'Materialize origin/main to compare against the train');
+    expect(baseline, 'the guard needs an origin/main baseline worktree').toBeDefined();
+    expect(String(baseline?.if ?? '')).toContain(`github.ref == 'refs/heads/${releaseBranch}'`);
+
+    // Both publishes consume the verdict.
+    for (const [stepName, output] of [
+      ['Publish iOS OTA', 'publish_ios'],
+      ['Publish Android OTA', 'publish_android'],
+    ] as const) {
+      const publish = steps.find((step) => step.name === stepName);
+      expect(String(publish?.if ?? ''), `${stepName} must honour the train guard`).toContain(
+        `steps.train_guard.outputs.${output} != 'false'`,
+      );
+    }
   });
 
   it('keeps fingerprint gates and tags store uploads only after success', () => {
@@ -78,13 +136,13 @@ describe('native release workflow contracts', () => {
     expect(android).toContain('softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65');
     expect(android).toContain('boardsesh-android-beta-arm64-v8a.apk');
     expect(android).toContain('Boardsesh Android Beta');
-    expect(android).toContain('Signed Android beta from `main`');
+    expect(android).toContain(`Signed Android beta from \`${releaseBranch}\``);
     expect(android).not.toContain(retiredAndroidPrereleaseName);
     expect(android).toContain('token: ${{ steps.tag_token.outputs.token }}');
     expect(android).toContain('tag_name: ${{ env.ANDROID_BUILD_TAG }}');
     expect(android).toContain('target_commitish: ${{ github.sha }}');
     expect(android).not.toContain('GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}');
-    expect(android).toContain('if [ "$GITHUB_REF" != \'refs/heads/main\' ]');
+    expect(android).toContain(`if [ "$GITHUB_REF" != 'refs/heads/${releaseBranch}' ]`);
     expect(android).toContain('fail_on_unmatched_files: true');
     expect(android).toContain('draft: true');
     expect(android).toContain('prerelease: true');
@@ -108,17 +166,23 @@ describe('native release workflow contracts', () => {
     );
   });
 
-  it('prepares drafts only from a stable, fingerprint-matched main candidate', () => {
-    expect(draft).toContain('Resolve main');
+  it('prepares drafts only from a stable, fingerprint-matched release-train candidate', () => {
+    expect(draft).toContain('RELEASE_BRANCH: ' + releaseBranch);
+    expect(draft).toContain('Resolve the release branch');
     expect(draft).not.toContain('exists=false');
-    expect(draft).toContain('Select exact uploaded builds for main version');
+    expect(draft).toContain('Select exact uploaded builds for the release-branch version');
     expect(draft).toContain('version_pattern="${version//./\\\\.}"');
     expect(draft.match(/UPLOADED_ONLY=true/g)).toHaveLength(2);
     expect(draft).not.toContain('function highest(platform)');
-    expect(draft).toContain('Verify tagged builds match main native state');
-    expect(draft).toContain('Recheck main after fingerprint comparison');
-    expect(draft).toContain("git fetch --force --tags origin '+refs/heads/main:refs/remotes/origin/main'");
-    expect(draft).toContain('if [ "$(git rev-parse origin/main)" != "$EXPECTED_MAIN_SHA" ]');
+    expect(draft).toContain("Verify tagged builds match the release branch's native state");
+    expect(draft).toContain('Recheck the release branch after fingerprint comparison');
+    expect(draft).toContain(
+      'git fetch --force --tags origin "+refs/heads/${RELEASE_BRANCH}:refs/remotes/origin/${RELEASE_BRANCH}"',
+    );
+    expect(draft).toContain('if [ "$(git rev-parse "origin/${RELEASE_BRANCH}")" != "$EXPECTED_RELEASE_SHA" ]');
+    // Nothing may pin main: one stray hard-coded ref drafts a build off the
+    // wrong line, which is exactly what the RELEASE_BRANCH env exists to stop.
+    expect(draft).not.toContain('heads/main');
     expect(draft).toContain('are no longer the unique highest tags');
     expect(draft).toContain('uploaded_build=$build_fp');
     expect(draft).toContain('build_tag_fingerprint=$tagged_fp');
@@ -128,9 +192,9 @@ describe('native release workflow contracts', () => {
     expect(draft).toContain('compare_platform ios ios-build "$EXPECTED_IOS_TAG"');
     expect(draft).toContain('compare_platform android android-build "$EXPECTED_ANDROID_TAG"');
     expect(draft).toContain('vp install --frozen-lockfile --ignore-scripts');
-    expect(draft.match(/ref: \$\{\{ needs\.main-candidate\.outputs\.sha \}\}/g)).toHaveLength(2);
-    expect(draft.match(/Recheck pinned main and uploaded builds/g)).toHaveLength(2);
-    expect(draft.match(/assert_ref heads\/main "\$EXPECTED_MAIN_SHA"/g)).toHaveLength(2);
+    expect(draft.match(/ref: \$\{\{ needs\.release-candidate\.outputs\.sha \}\}/g)).toHaveLength(2);
+    expect(draft.match(/Recheck the pinned release branch and uploaded builds/g)).toHaveLength(2);
+    expect(draft.match(/assert_ref "heads\/\$\{RELEASE_BRANCH\}" "\$EXPECTED_RELEASE_SHA"/g)).toHaveLength(2);
     expect(draft.match(/assert_ref "tags\/\$EXPECTED_IOS_TAG" "\$EXPECTED_IOS_SHA"/g)).toHaveLength(2);
     expect(draft.match(/assert_ref "tags\/\$EXPECTED_ANDROID_TAG" "\$EXPECTED_ANDROID_SHA"/g)).toHaveLength(2);
     expect(draft).toContain('IOS_BUILD_NUMBER');
@@ -141,7 +205,6 @@ describe('native release workflow contracts', () => {
     expect(fastfile).not.toContain('version_code = latest_uploaded_version_code(json_key_data)');
     expect(draft.match(/environment: Production/g)).toHaveLength(3);
     expect(draft).not.toContain(`environment: ${retiredNativeEnvironment}`);
-    expect(draft).not.toContain(removedReleaseBranch);
   });
 
   it('drafts follow each completed native deploy instead of a schedule', () => {
@@ -154,7 +217,7 @@ describe('native release workflow contracts', () => {
       'Android Play Internal Deploy (React Native)',
     ]);
     expect(workflowRun.types).toEqual(['completed']);
-    expect(workflowRun.branches).toEqual(['main']);
+    expect(workflowRun.branches).toEqual([releaseBranch]);
     expect(triggers).toHaveProperty('workflow_dispatch');
     // No enable flag: the candidate gates are the protection, and the lanes only make drafts.
     expect(draft).not.toContain('ENABLE_STORE_DRAFT_SUBMISSION');
@@ -187,11 +250,15 @@ describe('native release workflow contracts', () => {
   it('pushes listing text automatically, and again once the draft has a version to write onto', () => {
     const metadata = workflow('mobile-store-metadata.yml');
     const metadataTriggers = parse(metadata)['on'] as { push?: { branches: string[]; paths: string[] } };
-    expect(metadataTriggers.push?.branches).toEqual(['main']);
+    // Both lines: from main it writes main's version, from the train the train's.
+    expect(metadataTriggers.push?.branches).toEqual(['main', releaseBranch]);
     expect(metadataTriggers.push?.paths).toContain('fastlane/metadata/**');
     // deliver skips iOS when no version is editable, so the draft workflow re-runs it for iOS
     // right after creating the version — and only when that draft step actually succeeded.
-    expect(draft).toContain('gh workflow run mobile-store-metadata.yml --ref main -f platform=ios');
+    // The train's ref, not main's: the metadata lane reads `version` from
+    // app.config.ts on whatever it checks out, and it must land on the drafted
+    // version, which is the train's.
+    expect(draft).toContain('gh workflow run mobile-store-metadata.yml --ref "${RELEASE_BRANCH}" -f platform=ios');
     expect(draft).toMatch(
       /if: steps\.draft\.outcome == 'success'\n\s+env:\n\s+GH_TOKEN: \$\{\{ github\.token \}\}\n\s+run: gh workflow run mobile-store-metadata\.yml/,
     );
@@ -209,6 +276,47 @@ describe('native release workflow contracts', () => {
     expect(otaCheck).toContain(
       'Moves the native fingerprint — current fleet misses main OTAs until replacement binaries ship',
     );
+  });
+
+  // The PR-side half of the train: the check compares against the branch the PR
+  // will actually merge into, and turns its check-run red for the one case the
+  // train exists to prevent — a fingerprint-moving PR landing on main, where no
+  // replacement binary will ever be built.
+  it('routes native PRs to the train and blocks them on main', () => {
+    // The message and the waiver label themselves are asserted, from the compiled
+    // constants, in mobile-ota-compat-check.test.ts; here only the wiring matters.
+    expect(NATIVE_ON_MAIN_FAILURE).toContain(`--base ${releaseBranch}`);
+    expect(ALLOW_NATIVE_ON_MAIN_LABEL).toBe('allow-native-on-main');
+
+    // The baseline is the PR's base branch, resolved from the PR lookup.
+    expect(otaCheck).toContain("core.setOutput('ref', pr?.base?.ref ?? 'main');");
+    expect(otaCheck).toContain('git worktree add "$RUNNER_TEMP/base-baseline" "origin/$BASE_REF"');
+    expect(otaCheck).toContain('--base-branch "$BASE_REF"');
+    expect(otaCheck).toContain('--allow-native-on-main');
+
+    // The verdict must actually reach the check-run: a hard-coded 'neutral' here
+    // would leave every unit test green while nothing was ever enforced.
+    expect(otaCheck).toContain('conclusion: process.env.CHECK_CONCLUSION,');
+    expect(otaCheck).not.toContain("conclusion: 'neutral',");
+
+    // The train owns its own pushes; the native workflows react to them.
+    const triggers = parse(otaCheck)['on'] as { push?: { 'branches-ignore'?: string[] } };
+    expect(triggers.push?.['branches-ignore']).toEqual(['main', releaseBranch]);
+  });
+
+  // The PR CI gate diffs head against the branch it will merge into. Diffing a
+  // train PR against main would report the train's existing native change as if
+  // this PR added it, and rebuild the world on every train PR.
+  it('diffs the PR native gate against the PR base branch', () => {
+    const gate = readFileSync('.github/actions/mobile-native-gate/action.yml', 'utf8');
+    expect(gate).toContain('base-ref:');
+    expect(gate).toContain("BASE_REF: ${{ inputs.base-ref || 'main' }}");
+    expect(gate).toContain('git fetch --no-tags --depth=1 origin "$BASE_REF"');
+    for (const caller of ['ios-rn-ci.yml', 'android-pr-rn.yml']) {
+      expect(workflow(caller), `${caller} must pass its PR base ref to the gate`).toContain(
+        'base-ref: ${{ github.base_ref }}',
+      );
+    }
   });
 
   // The ABI check reads the built binary — the only place an embedded-framework
@@ -279,9 +387,11 @@ describe('native release workflow contracts', () => {
       expect(String(steps[dispatch]?.if ?? '')).toContain(uploadGate);
 
       const run = String(steps[dispatch]?.run ?? '');
-      // --ref main, not github.ref: we publish what main holds now, not the
-      // (possibly stale) ref this build was cut from.
-      expect(run).toContain('--ref main');
+      // The branch that BUILT, not a literal main: a train binary's fingerprint
+      // only exists on the train, so `--ref main` could never publish an update
+      // it can receive.
+      expect(run).toContain('--ref "${{ github.ref_name }}"');
+      expect(run).not.toContain('--ref main');
       expect(run).toContain(`-f platform=${platform}`);
       expect(run).toContain('-f expect_fingerprint=');
     }

@@ -3,6 +3,10 @@ import { pubsub } from '../../../pubsub/index';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { applyRateLimit } from '../shared/helpers';
 import { requireAnonReadableBoard } from './shared';
+import { and, eq, isNull } from 'drizzle-orm';
+import * as dbSchema from '@boardsesh/db/schema';
+import { db } from '../../../db/client';
+import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 
 export const boardPresenceSubscriptions = {
   /**
@@ -32,6 +36,20 @@ export const boardPresenceSubscriptions = {
       // system-shared boards (not a private wall reached by enumerating ids);
       // logged-in callers are unbounded.
       await requireAnonReadableBoard(boardId, ctx.userId);
+      // …and the wall's own rule on top, because the line above waves through ANY
+      // authenticated caller and `boardId` is a small integer. The events on this
+      // channel carry the climb's name and frames (`reportBoardClimb`, and the
+      // hardest-send name in `publishBoardStats`), so without this a signed-in
+      // caller could walk the ids and watch a private spray wall live. The sibling
+      // QUERIES were patched for exactly this; the subscription was missed.
+      const [presenceBoard] = await db
+        .select({ boardType: dbSchema.userBoards.boardType, layoutId: dbSchema.userBoards.layoutId })
+        .from(dbSchema.userBoards)
+        .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
+        .limit(1);
+      if (presenceBoard) {
+        await assertSprayBoardIsReadable(presenceBoard, ctx.userId);
+      }
 
       const boardKey = String(boardId);
 

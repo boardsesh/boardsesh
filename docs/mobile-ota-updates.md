@@ -149,8 +149,25 @@ instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fu
 
 ## Publishing a production update
 
-**Automatic.** Every push to `main` that touches the mobile app runs
-`.github/workflows/mobile-ota-production.yml`, which publishes a production OTA. Because
+**Automatic.** Every push to `main` **or `release/next`** that touches the mobile
+app runs `.github/workflows/mobile-ota-production.yml`, which publishes a
+production OTA. `main` serves the store fleet; `release/next` (the release train,
+see `docs/mobile-store-release.md`) serves the testers running the train's
+TestFlight / Play-internal binary, so they get JS as fast as everyone else —
+including after a `main` → `release/next` sync.
+
+**The train's publish is fingerprint-guarded.** xprem serves whichever update has
+the newest `commitTime` *for a given runtimeVersion*. While the train's
+fingerprint still equals main's — that is, before any native change has landed on
+it — a publish from the train would be handed to the entire store fleet, silently
+replacing main's JS with the train's. So the train workflow resolves `origin/main`
+in a sibling worktree and skips any platform whose fingerprint still matches
+main's, with a `::warning::` saying so. It fails closed: an unresolvable or flaky
+comparison publishes nothing. The train therefore starts publishing only once it
+carries a native change, which is also exactly when it has its own fingerprint and
+its own binaries to serve. Everything else in that workflow stays main-only: the
+changelog regeneration and push-back, the Sentry release, the health probe and the
+Discord notification. Because
 runtimeVersion is a fingerprint, this is safe to run on every push: a native change publishes an
 OTA whose fingerprint no current binary has yet, so it only lands once the matching store build
 ships. Until the server is wired (no `EXPO_UPDATES_URL` variable or committed cert), the workflow
@@ -438,13 +455,24 @@ it can't silently drop out of one channel (which would revert that channel to th
 
 ## Native releases and build gating
 
-`main` owns both production OTA delivery and automatic native TestFlight and
-Play-internal builds. All mobile changes target `main`. A native change moves the
-fingerprint requested by production OTA, so installed binaries on the previous
-fingerprint stop receiving new bundles from `main` until users install the
-replacement store release. Prepare the version and localized release notes
-before the final native change, keep the release focused, and move both store
-builds through QA and review promptly. Keep backend changes compatible with the
+Two branches, two jobs. `main` owns production OTA delivery to the **store
+fleet**; `release/next` — the release train — owns the automatic native TestFlight
+and Play-internal builds, and publishes OTAs to the binaries it produces. Regular
+changes target `main`; every change that moves the native fingerprint targets
+`release/next`. The PR-time OTA compatibility check enforces that: a
+fingerprint-moving PR into `main` fails its check-run unless it carries the
+`allow-native-on-main` label, because main no longer builds a replacement binary
+for it. The train's fingerprint tags (`fingerprint-<platform>-<hash>`) therefore
+come from `release/next` builds. Full lifecycle, including the sync and merge-back
+commands: `docs/mobile-store-release.md`.
+
+A native change moves the fingerprint requested by production OTA, so installed
+binaries on the previous fingerprint stop receiving new bundles until users
+install the replacement store release. That gap closes at merge-back: once
+`release/next` merges into `main`, main's fingerprint equals the shipped binaries'
+again and main's publisher serves the new fleet. Prepare the version and localized
+release notes before the final native change, keep the release focused, and move
+both store builds through QA and review promptly. Keep backend changes compatible with the
 currently shipped app until the replacement has been adopted.
 
 The native builds (`ios-testflight-rn`, ~60 min on macOS;
@@ -600,8 +628,9 @@ native Android fingerprint input; iOS explicitly removes it. Both the pinned
 before drafting, it rechecks that `main` and the selected tags have not moved.
 
 **Fail-safe.** If the gate can't resolve the fingerprint, it builds. A manual
-`workflow_dispatch` from `main` can force a build. Automatic store uploads never
-run from an arbitrary feature branch.
+`workflow_dispatch` from `release/next` — or from `main`, which is the hotfix
+rebuild after a merge-back — can force a build. Automatic store uploads run only
+from `release/next`, and never from an arbitrary feature branch.
 
 **Manual overrides.**
 
@@ -609,7 +638,7 @@ run from an arbitrary feature branch.
   `mobile-ota-backport.yml` with the accepted release anchor and the JS-only fix
   commits. The workflow rejects a cherry-pick that moves the anchor fingerprint.
 - **Force a rebuild of a fingerprint that already has a tag.** Dispatch the
-  platform workflow from `main`.
+  platform workflow from `release/next` (or from `main` after a merge-back).
   Manual dispatch bypasses the fingerprint gate. The protected fingerprint tag
   stays at the first build that established it, while the successful rebuild gets
   a fresh build-number tag. Do not delete or move the fingerprint tag.

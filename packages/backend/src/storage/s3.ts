@@ -8,6 +8,7 @@ import {
   type ObjectCannedACL,
   type PutObjectCommandInput,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Readable } from 'stream';
 import { logger } from '../utils/logger';
 import { ALLOWED_IMAGE_SIZES, resizedVariantKey } from '../lib/image-resize';
@@ -171,6 +172,16 @@ export async function uploadToS3(
     // Sets the object's Content-Encoding (e.g. 'gzip' for a pre-compressed body
     // so a browser/CDN decompresses transparently). Omit for uncompressed bodies.
     contentEncoding?: string;
+    /**
+     * User metadata stored with the object (`x-amz-meta-*`), readable later
+     * through `getS3ObjectMetadata`.
+     *
+     * The spray-wall photo handler uses it to carry the decoded pixel
+     * dimensions, so `createSprayWallVersion` reads them off the stored object
+     * rather than trusting a client-supplied number. Keys and values must be
+     * ASCII — S3 header encoding, not ours.
+     */
+    metadata?: Record<string, string>;
   } = {},
 ): Promise<{ key: string }> {
   const client = getS3Client(bucket);
@@ -186,6 +197,10 @@ export async function uploadToS3(
 
   if (options.contentEncoding) {
     input.ContentEncoding = options.contentEncoding;
+  }
+
+  if (options.metadata && Object.keys(options.metadata).length > 0) {
+    input.Metadata = options.metadata;
   }
 
   const acl = options.acl === undefined ? config.defaultAcl : options.acl;
@@ -290,6 +305,8 @@ export async function getS3ObjectMetadata(
   contentType: string | undefined;
   contentLength: number | undefined;
   lastModified: Date | undefined;
+  /** User metadata written at upload time (`x-amz-meta-*`), lower-cased keys. */
+  metadata: Record<string, string> | undefined;
 } | null> {
   const client = getS3Client(bucket);
 
@@ -305,6 +322,7 @@ export async function getS3ObjectMetadata(
       contentType: response.ContentType,
       contentLength: response.ContentLength,
       lastModified: response.LastModified,
+      metadata: response.Metadata,
     };
   } catch {
     return null;
@@ -411,4 +429,48 @@ export async function deleteGymLogosFromS3(gymUuid: string, keepExt?: string): P
  */
 export async function deleteGymPhotosFromS3(gymUuid: string, keepExt?: string): Promise<void> {
   await deleteStaleMediaExtensions('gym-photos', gymUuid, 'gym photo', keepExt);
+}
+
+/**
+ * How long a presigned GET stays valid, in seconds.
+ *
+ * Fifteen minutes is the epic's decision, and the trade-off is narrow: long
+ * enough that a spray wall's photo does not expire mid-session on a slow phone,
+ * short enough that a leaked URL out of a screenshot, a log line or a shared
+ * debug payload stops working before it is useful to anyone. Photographs of
+ * someone's home live in the `private` bucket precisely because `media` is
+ * world-readable under guessable keys (`docs/user-media-storage.md`), so the
+ * signature IS the access control and its lifetime is the whole story.
+ */
+export const PRESIGNED_URL_TTL_SECONDS = 15 * 60;
+
+/** A signed URL and the moment it stops working. */
+export type PresignedObjectUrl = {
+  url: string;
+  /** ISO 8601. Callers hand this to clients so they can re-fetch rather than guess. */
+  expiresAt: string;
+};
+
+/**
+ * Mint a short-lived GET URL for a private object.
+ *
+ * SigV4 query signing, so the bytes are served by the bucket rather than proxied
+ * through this process — which is what keeps a 4MB wall photo off the backend's
+ * event loop. There is deliberately no "does this object exist" round-trip: a
+ * signature over a missing key is cheap to mint and 404s honestly, and the
+ * alternative would add a HEAD per hold-editor open.
+ *
+ * Only ever call this for a caller who has already passed the wall's visibility
+ * check. A presigned URL bypasses every other gate by design.
+ */
+export async function presignGetObject(
+  bucket: StorageBucket,
+  key: string,
+  ttlSeconds: number = PRESIGNED_URL_TTL_SECONDS,
+): Promise<PresignedObjectUrl> {
+  const client = getS3Client(bucket);
+  const url = await getSignedUrl(client, new GetObjectCommand({ Bucket: getConfig(bucket).bucketName, Key: key }), {
+    expiresIn: ttlSeconds,
+  });
+  return { url, expiresAt: new Date(Date.now() + ttlSeconds * 1000).toISOString() };
 }

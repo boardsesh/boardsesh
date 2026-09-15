@@ -642,6 +642,83 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     deleteHoldOutlineOverride(input: DeleteHoldOutlineOverrideInput!): Boolean!
 
+    # ============================================
+    # Spray Wall Mutations
+    # ============================================
+
+    """
+    Create a spray wall: a \`user_boards\` row plus the three catalogue rows the
+    wall's own layout needs, all unlisted.
+
+    LEDs are never on a spray wall, and the flag is not accepted from the client:
+    there is no firmware to encode for, so the row is always written
+    \`hasLeds: false\` and the LED-less play path (#4585) is the one it takes.
+    The angle is fixed here for the wall's life. Capped at
+    \`MAX_SPRAY_WALLS_PER_USER\` walls per owner.
+    """
+    createSprayWall(input: CreateSprayWallInput!): SprayWall!
+
+    """
+    Rename a wall, change its description, share it, attach it to a gym, or correct
+    its angle. Owner only (through the same gate as every other wall mutation).
+
+    Sharing is the point: without this a wall created private — which is the
+    default, because a wall is somebody's home — could never be shown to anybody.
+    """
+    updateSprayWall(input: UpdateSprayWallInput!): SprayWall!
+
+    """
+    Attach a photo to the wall as a new DRAFT version, and compute its
+    photo→canonical homography from the anchors by 4-point DLT.
+
+    Version 1 defines the wall's canonical frame from the photo itself — the
+    anchor quad's bounding rectangle, or the photo's own pixel box when no
+    anchors were tapped. There are no user-entered wall dimensions. Owner only.
+    """
+    createSprayWallVersion(input: CreateSprayWallVersionInput!): SprayWallVersion!
+
+    """
+    Add or correct holds on a DRAFT version. A hold with no \`id\` is allocated a
+    new catalogue id (one \`board_holes\` + one \`board_placements\` row sharing
+    it); a hold with one has its geometry rewritten, and it must be alive on the
+    version. Owner only, and never on a published version.
+    """
+    upsertSprayWallHolds(input: UpsertSprayWallHoldsInput!): [SprayWallHold!]!
+
+    """
+    Take holds off the wall as of a DRAFT version.
+
+    A hold installed BY that draft is deleted outright — it was never on the real
+    wall. One installed earlier is stamped removed, never deleted: a climb set on
+    it has to stay findable and countable. Owner only.
+    """
+    removeSprayWallHolds(input: RemoveSprayWallHoldsInput!): Int!
+
+    """
+    Publish a draft version: it becomes the generation climbers set against, the
+    previous published version is superseded, and the wall's hold count and
+    catalogue image are refreshed. Owner only.
+    """
+    publishSprayWallVersion(input: PublishSprayWallVersionInput!): SprayWallVersion!
+
+    """
+    Abandon a draft version, restoring the wall to the published generation.
+
+    A wall carries at most ONE open draft, so this is the other way out of one
+    besides publishing. The draft is DELETED rather than marked: its removals are
+    un-marked and the holds it added are dropped, catalogue rows included, which is
+    safe precisely because a draft has never been published and no climb can
+    reference its work. Owner only.
+    """
+    discardSprayWallVersion(input: PublishSprayWallVersionInput!): Boolean!
+
+    """
+    Soft-delete a wall. The catalogue rows and every climb ever set on it stay
+    behind — a deleted wall stops being reachable, it does not un-set the climbs.
+    Owner only.
+    """
+    deleteSprayWall(uuid: ID!): Boolean!
+
     """
     Report that two gym listings are the same gym (any signed-in user). Surfaces the
     pair to admins for review in the merge queue. Rate-limited and de-duplicated per

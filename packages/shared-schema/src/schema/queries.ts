@@ -708,6 +708,39 @@ export const queriesTypeDefs = /* GraphQL */ `
     holdOutlines(input: HoldOutlineConfigInput!): BoardHoldOutlines!
 
     # ============================================
+    # Spray Wall Queries
+    # ============================================
+
+    """
+    One spray wall by uuid (the \`user_boards\` uuid it is keyed on).
+
+    Visible to the owner, to a member of the gym the wall is attached to, and to
+    anyone at all when the wall is public or unlisted — an unlisted wall is
+    reachable by uuid and nowhere else. Null when the wall does not exist, is
+    deleted, or the viewer may not see it: the three are deliberately
+    indistinguishable, so a private wall's existence does not leak.
+    """
+    sprayWall(uuid: ID!): SprayWall
+
+    """
+    The spray wall occupying a catalogue layout id, for a client holding only a
+    board config. Same visibility rules as \`sprayWall\`.
+    """
+    sprayWallByLayout(layoutId: Int!): SprayWall
+
+    """
+    Everything needed to render a wall at one version: the photo, the homography
+    and the holds alive at that version. Omit \`version\` for the published one.
+
+    A version the viewer may not see (a draft on somebody else's wall) is null,
+    as is a wall with nothing published yet.
+    """
+    sprayWallRenderData(uuid: ID!, version: Int): SprayWallRenderData
+
+    "Every wall the caller owns, newest first. Includes walls with no published version."
+    mySprayWalls: [SprayWall!]!
+
+    # ============================================
     # Gym Kiosk Queries
     # ============================================
 

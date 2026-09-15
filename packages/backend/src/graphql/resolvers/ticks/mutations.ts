@@ -6,6 +6,7 @@ import { betaLinkIdentity, type ConnectionContext, type TickStatus } from '@boar
 import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { sessions } from '../../../db/schema';
 import { applyRateLimit, requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { getConsensusDifficultyName } from '../shared/sql-expressions';
@@ -238,14 +239,16 @@ export async function findInstagramShortcodeConflict(
   boardType: string,
   selectedClimbUuid: string,
   instagramUrl: string,
+  viewerUserId?: string | null,
 ): Promise<ShortcodeConflict> {
-  return findBetaLinkIdentityConflict(boardType, selectedClimbUuid, instagramUrl);
+  return findBetaLinkIdentityConflict(boardType, selectedClimbUuid, instagramUrl, viewerUserId);
 }
 
 export async function findBetaLinkIdentityConflict(
   boardType: string,
   selectedClimbUuid: string,
   videoUrl: string,
+  viewerUserId?: string | null,
 ): Promise<ShortcodeConflict> {
   const incomingVideoIdentity = betaLinkIdentity(videoUrl);
 
@@ -261,6 +264,14 @@ export async function findBetaLinkIdentityConflict(
       and(
         eq(dbSchema.boardClimbs.boardType, dbSchema.boardBetaLinks.boardType),
         eq(dbSchema.boardClimbs.uuid, dbSchema.boardBetaLinks.climbUuid),
+        // The conflict message names the climb the video is already on. Narrow —
+        // the caller must already hold that video URL — but a private wall's climb
+        // name is not ours to put in an error. Null here just makes the message
+        // generic.
+        sprayClimbVisibilityCondition(
+          { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+          viewerUserId,
+        ),
       ),
     )
     .where(eq(dbSchema.boardBetaLinks.videoIdentity, incomingVideoIdentity));
@@ -386,7 +397,7 @@ export async function validateAndEnrichBetaLinkInsert(
   // same-climb vs none) without consuming budget. See review of PR #1745.
   await applyRateLimit(ctx, 30, 'beta-link-validation');
 
-  const conflict = await findBetaLinkIdentityConflict(boardType, climbUuid, url);
+  const conflict = await findBetaLinkIdentityConflict(boardType, climbUuid, url, ctx.userId);
   if (conflict.kind === 'cross-climb') {
     const isCrossBoard = conflict.existingBoardType !== boardType;
     if (isCrossBoard && (options.onCrossBoardDup ?? 'throw') === 'skip') {
@@ -1584,6 +1595,31 @@ async function publishAscentEvent(
         .from(dbSchema.boardClimbs)
         .where(and(eq(dbSchema.boardClimbs.uuid, tick.climbUuid), eq(dbSchema.boardClimbs.boardType, tick.boardType)))
         .limit(1);
+
+      // A private spray wall's ticks are the owner's logbook alone (epic decision
+      // 2026-09-14). `saveClimb` already withholds `climb.created` for a non-public
+      // wall, but THIS event carries the same payload — climb name, setter, layout
+      // id, frames — and `events/index.ts` fans it to every follower, where
+      // `activityFeed` then serves it out of `feed_items`. So the wall's visibility
+      // has to gate the fan-out too, or the logbook leaks one tick at a time.
+      //
+      // Silently skipped rather than failed: the tick itself is saved and correct,
+      // and there is nothing for the climber to do about the feed.
+      if (tick.boardType === 'spray' && climbData?.layoutId != null) {
+        const [wallVisibility] = await db
+          .select({ isPublic: dbSchema.userBoards.isPublic })
+          .from(dbSchema.sprayWalls)
+          .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
+          .where(
+            and(
+              eq(dbSchema.sprayWalls.layoutId, climbData.layoutId),
+              isNull(dbSchema.sprayWalls.deletedAt),
+              isNull(dbSchema.userBoards.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!wallVisibility?.isPublic) return;
+      }
 
       const [userProfile] = await db
         .select({

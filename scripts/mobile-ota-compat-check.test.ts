@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ALLOW_NATIVE_ON_MAIN_LABEL,
   CHECK_TITLE,
+  NATIVE_ON_MAIN_FAILURE,
+  RELEASE_BRANCH,
   STICKY_MARKER,
+  checkTitle,
   confirmComparison,
+  deriveCheckConclusion,
+  enforcementNote,
   deriveOverall,
   deriveVerdict,
   parseArgs,
@@ -86,7 +92,7 @@ describe('deriveOverall precedence (native > unknown > compatible)', () => {
 });
 
 describe('renderComment', () => {
-  const ctx = { sha: 'deadbeefcafef00d', branch: 'feat/x' };
+  const ctx = { sha: 'deadbeefcafef00d', branch: 'feat/x', baseBranch: 'main', allowNativeOnMain: false };
 
   it('carries the sticky marker, branch, and short SHA', () => {
     const comment = renderComment(
@@ -105,7 +111,7 @@ describe('renderComment', () => {
     expect(comment).toContain('Ships over-the-air');
   });
 
-  it('shows pr → main hashes for a native change', () => {
+  it('shows pr → base hashes for a native change', () => {
     const comment = renderComment(
       {
         results: [
@@ -301,5 +307,78 @@ describe('parseRuntimeVersion', () => {
   it('returns null for empty or unparseable output', () => {
     expect(parseRuntimeVersion('')).toBeNull();
     expect(parseRuntimeVersion('not json at all')).toBeNull();
+  });
+});
+
+// The release train (docs/mobile-store-release.md): native store builds run from
+// `release/next`, so a fingerprint-moving PR that lands on `main` instead gets no
+// replacement binary at all — the store fleet's OTA just stops. That single case
+// is the only one this check blocks.
+describe('deriveCheckConclusion (native-on-main enforcement)', () => {
+  it('fails a native change merging into main without the label', () => {
+    expect(
+      deriveCheckConclusion({ overall: 'native-change-required', baseBranch: 'main', allowNativeOnMain: false }),
+    ).toBe('failure');
+  });
+
+  it('is waived by the allow-native-on-main label', () => {
+    expect(
+      deriveCheckConclusion({ overall: 'native-change-required', baseBranch: 'main', allowNativeOnMain: true }),
+    ).toBe('neutral');
+  });
+
+  it('stays neutral for a native change merging into the release train', () => {
+    expect(
+      deriveCheckConclusion({
+        overall: 'native-change-required',
+        baseBranch: RELEASE_BRANCH,
+        allowNativeOnMain: false,
+      }),
+    ).toBe('neutral');
+  });
+
+  it('never fails an unknown verdict — the resolver is ~5% flaky', () => {
+    expect(deriveCheckConclusion({ overall: 'unknown', baseBranch: 'main', allowNativeOnMain: false })).toBe('neutral');
+  });
+
+  it('stays neutral for an OTA-compatible PR into main', () => {
+    expect(deriveCheckConclusion({ overall: 'ota-compatible', baseBranch: 'main', allowNativeOnMain: false })).toBe(
+      'neutral',
+    );
+  });
+
+  it('names the retarget command and the waiver label in the failure title', () => {
+    const title = checkTitle({ overall: 'native-change-required', baseBranch: 'main', allowNativeOnMain: false });
+    expect(title).toBe(NATIVE_ON_MAIN_FAILURE);
+    expect(title).toContain(`--base ${RELEASE_BRANCH}`);
+    expect(title).toContain(ALLOW_NATIVE_ON_MAIN_LABEL);
+  });
+
+  it('keeps the plain verdict title when nothing is blocked', () => {
+    expect(
+      checkTitle({ overall: 'native-change-required', baseBranch: RELEASE_BRANCH, allowNativeOnMain: false }),
+    ).toBe(CHECK_TITLE['native-change-required']);
+  });
+});
+
+describe('enforcementNote', () => {
+  it('tells a main-targeting native PR to retarget', () => {
+    expect(
+      enforcementNote({ overall: 'native-change-required', baseBranch: 'main', allowNativeOnMain: false }),
+    ).toContain(NATIVE_ON_MAIN_FAILURE);
+  });
+
+  it('tells a train PR that this is where the store builds come from', () => {
+    const note = enforcementNote({
+      overall: 'native-change-required',
+      baseBranch: RELEASE_BRANCH,
+      allowNativeOnMain: false,
+    });
+    expect(note).toContain(RELEASE_BRANCH);
+    expect(note).not.toContain('retarget');
+  });
+
+  it('says nothing at all for an OTA-compatible PR', () => {
+    expect(enforcementNote({ overall: 'ota-compatible', baseBranch: 'main', allowNativeOnMain: false })).toBeNull();
   });
 });

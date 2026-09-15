@@ -1,6 +1,7 @@
 import { eq, and, sql, inArray, count, isNull } from 'drizzle-orm';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { resolveCommunitySetting, DEFAULTS } from '../community-settings';
 import { resolveClimbNoMatch } from '../../shared/helpers';
 
@@ -57,7 +58,18 @@ export async function enrichProposal(
       })
       .from(dbSchema.boardClimbs)
       .where(
-        and(eq(dbSchema.boardClimbs.uuid, proposal.climbUuid), eq(dbSchema.boardClimbs.boardType, proposal.boardType)),
+        and(
+          eq(dbSchema.boardClimbs.uuid, proposal.climbUuid),
+          eq(dbSchema.boardClimbs.boardType, proposal.boardType),
+          // `browseProposals` is auth-optional and takes `boardType` from the
+          // caller, and nothing stops a proposal being raised against a spray
+          // climb — so the enrichment would hand back a private wall's name,
+          // description and frames.
+          sprayClimbVisibilityCondition(
+            { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+            authenticatedUserId ?? null,
+          ),
+        ),
       )
       .limit(1),
 
@@ -277,7 +289,16 @@ export async function batchEnrichProposals(
       isHidden: dbSchema.boardClimbs.isHidden,
     })
     .from(dbSchema.boardClimbs)
-    .where(inArray(dbSchema.boardClimbs.uuid, uniqueClimbUuids));
+    .where(
+      and(
+        inArray(dbSchema.boardClimbs.uuid, uniqueClimbUuids),
+        // Same as the single-proposal path above.
+        sprayClimbVisibilityCondition(
+          { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+          authenticatedUserId ?? null,
+        ),
+      ),
+    );
 
   const climbMap = new Map(climbRows.map((c) => [`${c.uuid}:${c.boardType}`, c]));
 

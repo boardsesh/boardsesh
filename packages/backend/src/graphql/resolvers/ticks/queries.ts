@@ -9,6 +9,7 @@ import {
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
@@ -149,8 +150,17 @@ function buildAscentTickConditions(validated: AscentFeedFilterInput, userId: str
 }
 
 /** Conditions that need the canonical board_climbs join (layout + name search). */
-function buildAscentClimbConditions(validated: AscentFeedFilterInput) {
+function buildAscentClimbConditions(validated: AscentFeedFilterInput, viewerUserId: string | null | undefined) {
   return [
+    // These feeds are unauthenticated and take `boardTypes` / `layoutIds` from the
+    // caller, so without this anyone could read a climber's ticks on their own
+    // private spray wall — climb name, frames and the wall's layout id — which is
+    // exactly what the epic decided against ("private-wall ticks are the owner's
+    // logbook alone"). A no-op on the other eight board types.
+    sprayClimbVisibilityCondition(
+      { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+      viewerUserId,
+    ),
     ...(validated.layoutIds && validated.layoutIds.length > 0
       ? [inArray(dbSchema.boardClimbs.layoutId, validated.layoutIds)]
       : []),
@@ -618,7 +628,7 @@ export const tickQueries = {
       .leftJoin(dbSchema.boardClimbGrades, BOARDSESH_GRADE_TICK_JOIN);
 
     // Full conditions including climb name filter (requires JOIN)
-    const allConditions = [...tickConditions, ...buildAscentClimbConditions(validatedInput)];
+    const allConditions = [...tickConditions, ...buildAscentClimbConditions(validatedInput, ctx?.userId)];
 
     // Get total count
     const countQuery = db
@@ -903,7 +913,7 @@ export const tickQueries = {
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
     const tickConditions = buildAscentTickConditions(validatedInput, userId);
-    const climbConditions = buildAscentClimbConditions(validatedInput);
+    const climbConditions = buildAscentClimbConditions(validatedInput, ctx?.userId);
     const groupFilterConditions = [...tickConditions, ...climbConditions];
 
     // boardsesh_ticks.climbed_at is `timestamp without time zone` storing the

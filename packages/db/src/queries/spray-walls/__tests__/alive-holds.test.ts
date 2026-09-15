@@ -46,7 +46,9 @@ void describe('aliveHolds — the published-version path (no versionNumber)', ()
     assert.match(read.sql, /from "spray_wall_holds"/);
     assert.match(read.sql, /"installed_version"\."version_number" <= \$\d/);
     assert.match(read.sql, /"removed_version"\."version_number" > \$\d/);
-    assert.deepEqual(read.params, [7, 4, 4]);
+    // The wall id, then the version and the 'draft' status on each bound — see the
+    // landed-version test below for why the status is in there.
+    assert.deepEqual(read.params, [7, 4, 'draft', 4, 4, 'draft', 4]);
   });
 
   void it('returns nothing, and reads no holds, when the wall has never published', async () => {
@@ -74,7 +76,11 @@ void describe('aliveHolds — the historical path (explicit versionNumber)', () 
     assert.match(read.sql, /from "spray_wall_holds"/);
     assert.match(read.sql, /inner join "spray_wall_versions" "installed_version"/);
     assert.match(read.sql, /left join "spray_wall_versions" "removed_version"/);
-    assert.deepEqual(read.params, [7, 2, 2], 'the wall id, then the version on both bounds');
+    assert.deepEqual(
+      read.params,
+      [7, 2, 'draft', 2, 2, 'draft', 2],
+      'the wall id, then the version and the draft status on both bounds',
+    );
   });
 
   void it('scopes to the wall and orders by hold id', async () => {
@@ -90,6 +96,31 @@ void describe('aliveHolds — the historical path (explicit versionNumber)', () 
     const proxy = makeProxyDb(undefined);
     await aliveHolds(proxy.db, 7, 1);
     assert.equal(proxy.queries.length, 1);
-    assert.deepEqual(proxy.queries[0].params, [7, 1, 1]);
+    assert.deepEqual(proxy.queries[0].params, [7, 1, 'draft', 1, 1, 'draft', 1]);
+  });
+});
+
+void describe('aliveHolds — only generations that LANDED count', () => {
+  // Version numbers are handed out when a photo is uploaded, so an abandoned draft
+  // still owns one. Bounded on the number alone, that draft's holds come back as
+  // alive at every later version — holds nobody ever screwed to the wall, which
+  // climbs could then be set on — and its removals hide a hold that is still
+  // there. The behaviour is asserted against real Postgres in the backend's
+  // spray-wall-api test; this pins the predicate that produces it.
+  void it('requires the installing version to be published, or to BE the target', async () => {
+    const proxy = makeProxyDb(4);
+    await aliveHolds(proxy.db, 7, 2);
+    const [read] = proxy.queries;
+    // The second arm is what lets the hold editor see the draft it is editing
+    // while every other draft on the wall stays invisible.
+    assert.match(read.sql, /"installed_version"\."status" <> \$\d or "installed_version"\."version_number" = \$\d/);
+  });
+
+  void it('ignores a removal made by a draft that never landed', async () => {
+    const proxy = makeProxyDb(4);
+    await aliveHolds(proxy.db, 7, 2);
+    const [read] = proxy.queries;
+    // De Morgan of the same rule: still a draft AND not the target.
+    assert.match(read.sql, /"removed_version"\."status" = \$\d and "removed_version"\."version_number" <> \$\d/);
   });
 });

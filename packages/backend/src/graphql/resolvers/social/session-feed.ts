@@ -1,6 +1,7 @@
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
@@ -420,9 +421,9 @@ export const sessionFeedQueries = {
       fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions),
       fetchSessionMetaBatch(sessionIds),
       fetchBoardTypesBatch(sessionIds, filterOptions),
-      fetchHardestSendsBatch(sessionIds, filterOptions),
-      fetchTickHighlightsByUuid(dailyHighlightTickUuids),
-      fetchFeaturedBetaBatch(sessionIds, dailyHighlightKeys, filterOptions),
+      fetchHardestSendsBatch(sessionIds, filterOptions, ctx?.userId),
+      fetchTickHighlightsByUuid(dailyHighlightTickUuids, ctx?.userId),
+      fetchFeaturedBetaBatch(sessionIds, dailyHighlightKeys, filterOptions, ctx?.userId),
     ]);
 
     const sessions: SessionFeedItem[] = resultRows.map((row) => {
@@ -590,7 +591,18 @@ export const sessionFeedQueries = {
           aliases: 'board_climb_aliases',
         }),
       )
-      .where(tickWhere)
+      .where(
+        and(
+          tickWhere,
+          // The rows carry the climb's name and frames, and session access does not
+          // imply wall access — a session's participants are not the same set as a
+          // private wall's viewers.
+          sprayClimbVisibilityCondition(
+            { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+            ctx?.userId,
+          ),
+        ),
+      )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt));
 
     if (tickRows.length === 0) return null;
@@ -1264,7 +1276,10 @@ function tickHighlightSelectSql(groupIdExpression: SQL = sql`NULL::text`) {
   `;
 }
 
-async function fetchTickHighlightsByUuid(tickUuids: string[]): Promise<Map<string, SessionFeedTickHighlight>> {
+async function fetchTickHighlightsByUuid(
+  tickUuids: string[],
+  viewerUserId: string | null | undefined,
+): Promise<Map<string, SessionFeedTickHighlight>> {
   if (tickUuids.length === 0) return new Map();
 
   const result = await dbRead.execute(sql`
@@ -1275,6 +1290,10 @@ async function fetchTickHighlightsByUuid(tickUuids: string[]): Promise<Map<strin
     LEFT JOIN board_climbs cf
       ON cf.uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
       AND cf.board_type = t.board_type
+      -- In the ON, not the WHERE: a spray climb the viewer may not see then comes
+      -- back as NULL cf.* and the tick renders as "Unknown Climb" — the shape this
+      -- feed already supports — instead of the row vanishing and shorting the page.
+      AND ${sprayClimbVisibilityCondition({ boardType: sql`cf.board_type`, layoutId: sql`cf.layout_id` }, viewerUserId)}
     LEFT JOIN board_difficulty_grades bdg
       ON bdg.difficulty = t.difficulty
       AND bdg.board_type = t.board_type
@@ -1303,6 +1322,7 @@ async function fetchTickHighlightsByUuid(tickUuids: string[]): Promise<Map<strin
 async function fetchHardestSendsBatch(
   sessionIds: string[],
   { boardIdFilter, userIdFilter }: SessionFeedFilterOptions,
+  viewerUserId: string | null | undefined,
 ): Promise<Map<string, SessionFeedTickHighlight>> {
   if (sessionIds.length === 0) return new Map();
 
@@ -1340,6 +1360,10 @@ async function fetchHardestSendsBatch(
     LEFT JOIN board_climbs cf
       ON cf.uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
       AND cf.board_type = t.board_type
+      -- In the ON, not the WHERE: a spray climb the viewer may not see then comes
+      -- back as NULL cf.* and the tick renders as "Unknown Climb" — the shape this
+      -- feed already supports — instead of the row vanishing and shorting the page.
+      AND ${sprayClimbVisibilityCondition({ boardType: sql`cf.board_type`, layoutId: sql`cf.layout_id` }, viewerUserId)}
     LEFT JOIN board_difficulty_grades bdg
       ON bdg.difficulty = t.difficulty
       AND bdg.board_type = t.board_type
@@ -1507,6 +1531,7 @@ async function fetchFeaturedBetaBatch(
   sessionIds: string[],
   dailyHighlightKeys: DailyHighlightKey[],
   filterOptions: SessionFeedFilterOptions,
+  viewerUserId: string | null | undefined,
 ): Promise<Map<string, SessionFeedBetaHighlight>> {
   const [sessionBetaRows, dailyBetaRows] = await Promise.all([
     fetchSessionFeaturedBetaRows(sessionIds, filterOptions),
@@ -1515,7 +1540,10 @@ async function fetchFeaturedBetaBatch(
   const betaRows = [...sessionBetaRows, ...dailyBetaRows];
   if (betaRows.length === 0) return new Map();
 
-  const tickHighlights = await fetchTickHighlightsByUuid([...new Set(betaRows.map((row) => row.tickUuid))]);
+  const tickHighlights = await fetchTickHighlightsByUuid(
+    [...new Set(betaRows.map((row) => row.tickUuid))],
+    viewerUserId,
+  );
   const map = new Map<string, SessionFeedBetaHighlight>();
   for (const row of betaRows) {
     const tick = tickHighlights.get(row.tickUuid);

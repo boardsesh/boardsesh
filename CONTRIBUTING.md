@@ -105,13 +105,14 @@ After mobile changes, run the validation sequence:
 
 Read [docs/react-native-performance.md](./docs/react-native-performance.md) before touching any list, provider, gesture, or board-art code, and [docs/mobile-sheets-vs-routes.md](./docs/mobile-sheets-vs-routes.md) before adding a screen or sheet.
 
-### Mobile changes land on `main`
+### JS changes land on `main`, native changes on `release/next`
 
-- All mobile changes target `main`, including changes that move the Expo native fingerprint.
-- JavaScript-only changes keep shipping by OTA while `main` matches an accepted store binary.
-- A native change temporarily makes the current store fleet OTA-ineligible. Keep the native release focused, update the version and localized release notes before the final native change lands, and get matching TestFlight and Play-internal builds out quickly.
+- JavaScript-only changes target `main` and keep shipping by OTA while `main` matches an accepted store binary.
+- Changes that move the Expo native fingerprint target `release/next`, the release train: merging there is what starts the TestFlight and Play-internal builds. The OTA compatibility check on your PR tells you which kind you have, and fails a fingerprint-moving PR into `main` with the command to retarget it.
+- A native change temporarily makes the current store fleet OTA-ineligible. Keep the native release focused, update the version and localized release notes on the train before the final native change lands, and get matching TestFlight and Play-internal builds out quickly.
 - Split mixed backend/native work when useful so the backward-compatible backend or shared-schema foundation can ship first. Keep server behavior compatible with the currently shipped mobile app until the replacement store release has been adopted.
 - Urgent fixes for an older accepted fingerprint use the existing OTA backport workflow and immutable release anchor.
+- Maintainers close the train by merging `release/next` into `main` as a merge commit (never a squash) and resetting it. Runbook: [docs/mobile-store-release.md](./docs/mobile-store-release.md).
 
 ### Path A: small changes through xprem Branch Surfing
 
