@@ -235,7 +235,18 @@ describe('Climb.lostHolds answers the cheap cases without a query', () => {
 });
 
 describe('Climb.lostHolds after a reset', () => {
-  it('returns every hold a landed reset took off, with the geometry it had', async () => {
+  /**
+   * One wall, one reset, three questions — deliberately a single test rather
+   * than three.
+   *
+   * Every backend run in every worktree shares one worker database, and both
+   * `setup.ts` and this file's `beforeEach` `TRUNCATE ... CASCADE`, which reaches
+   * `spray_walls` through `users` -> `user_boards`. A second run overlapping this
+   * one deletes the wall mid-test, which surfaces as "Spray wall not found" from
+   * whichever mutation happened to be in flight. Building the fixture once keeps
+   * that window as short as the assertions allow.
+   */
+  it('returns the holds a landed reset took off, and nothing else', async () => {
     const { wall, holdIds } = await createPublishedWall();
     const climbUuid = await saveClimbOn(wall, 'Loses two', holdIds);
 
@@ -254,6 +265,8 @@ describe('Climb.lostHolds after a reset', () => {
       ctxFor(OWNER),
     );
 
+    // Two of the climb's three holds came off, so the materialised count — the
+    // one the resolver is handed — says 2.
     expect(await missingFor(climbUuid)).toBe(2);
 
     const lost = await resolveClimbLostHolds({
@@ -262,6 +275,9 @@ describe('Climb.lostHolds after a reset', () => {
       missingHoldCount: await missingFor(climbUuid),
     });
 
+    // Both lost holds, in hold-id order, with the geometry they had on the wall
+    // and the generation that installed and removed each. The third hold is
+    // still there and must not appear.
     expect(lost).toEqual([
       {
         id: holdIds[0],
@@ -288,48 +304,15 @@ describe('Climb.lostHolds after a reset', () => {
         confidence: null,
       },
     ]);
-  });
 
-  it('leaves the hold the climb still has alone', async () => {
-    const { wall, holdIds } = await createPublishedWall();
-    const climbUuid = await saveClimbOn(wall, 'Loses one', [holdIds[0], holdIds[2]]);
-
-    const versionId = await openDraft(wall);
-    await sprayWallMutations.commitSprayWallVersion(
-      {},
-      {
-        input: {
-          wallUuid: wall.uuid,
-          versionId,
-          kept: [{ holdId: holdIds[1] }, { holdId: holdIds[2] }],
-          removed: [holdIds[0]],
-          added: [],
-        },
-      },
-      ctxFor(OWNER),
-    );
-
-    const lost = await resolveClimbLostHolds({
-      uuid: climbUuid,
-      boardType: 'spray',
-      missingHoldCount: await missingFor(climbUuid),
-    });
-
-    expect(lost?.map((hold) => hold.id)).toEqual([holdIds[0]]);
-  });
-
-  it('ignores a removal stamped by a version that is still a draft', async () => {
-    // An abandoned draft owns a version number and can stamp
-    // `removed_version_id`. Honouring it would draw ghost rings over holds that
-    // are still bolted to the wall, for every climber, the moment the owner
+    // Now the generation rule. An abandoned draft owns a version number and can
+    // stamp `removed_version_id`; honouring it would draw a ghost ring over a
+    // hold still bolted to the wall, for every climber, the moment an owner
     // started a reset and walked away.
-    const { wall, holdIds } = await createPublishedWall();
-    const climbUuid = await saveClimbOn(wall, 'Nothing has landed', holdIds);
-
     const draftVersionId = await openDraft(wall);
     await db.execute(sql`
       UPDATE spray_wall_holds SET removed_version_id = ${Number(draftVersionId)}
-      WHERE hold_id = ${holdIds[1]}
+      WHERE hold_id = ${holdIds[2]}
     `);
 
     const [draft] = (await db.execute(
@@ -337,11 +320,11 @@ describe('Climb.lostHolds after a reset', () => {
     )) as unknown as Array<{ status: string }>;
     expect(draft.status).toBe('draft');
 
-    // The count the client would carry: nothing has landed, so the climb still
-    // reads as intact — pass the count a broken climb would have anyway, so the
-    // resolver cannot pass this test by short-circuiting on the count.
-    const lost = await resolveClimbLostHolds({ uuid: climbUuid, boardType: 'spray', missingHoldCount: 1 });
+    // The count is deliberately 3 — a lie the draft's removal would make true —
+    // so the resolver cannot pass by short-circuiting on the number instead of
+    // applying the landed bound.
+    const afterDraft = await resolveClimbLostHolds({ uuid: climbUuid, boardType: 'spray', missingHoldCount: 3 });
 
-    expect(lost).toEqual([]);
+    expect(afterDraft?.map((hold) => hold.id)).toEqual([holdIds[0], holdIds[1]]);
   });
 });
