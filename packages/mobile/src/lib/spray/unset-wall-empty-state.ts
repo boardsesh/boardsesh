@@ -8,6 +8,8 @@
 // an owner sees after photographing a wall — it has to offer the door forward
 // rather than blame a filter nobody set.
 
+import { toBoardName } from '@boardsesh/board-config';
+
 export type UnsetWallEmptyStateInput = {
   /** The active board's type. Anything but `spray` answers false. */
   boardType: string;
@@ -34,7 +36,12 @@ export function shouldShowUnsetWallEmptyState({
   activeFilterCount,
 }: UnsetWallEmptyStateInput): boolean {
   if (!isEmpty) return false;
-  if (boardType !== 'spray') return false;
-  if (query.length > 0) return false;
+  // Through `toBoardName` rather than a bare `=== 'spray'`, the way the owner-row
+  // gate reads it: one narrowing function decides what counts as a wall.
+  if (toBoardName(boardType) !== 'spray') return false;
+  // Trimmed, because a search box left holding a space is a climber who is not
+  // searching for anything — and showing them the generic "no matches" copy over
+  // a wall that really is empty would be the wrong half of this branch.
+  if (query.trim().length > 0) return false;
   return activeFilterCount === 0;
 }

@@ -44,7 +44,8 @@ vi.mock('../../lib/background-image-cache', () => ({
 vi.mock('../../lib/error-reporting', () => ({ reportError: vi.fn(), addErrorBreadcrumb: vi.fn() }));
 
 const { useNativeClimbRender, _resetWarmupForTests } = await import('../use-native-climb-render');
-const { clearSprayWallRegistry, registerSprayWall } = await import('../../lib/spray/spray-wall-registry');
+const { clearSprayWallRegistry, registerSprayWall, setSprayWallLoader } =
+  await import('../../lib/spray/spray-wall-registry');
 
 const LAYOUT_ID = 4200;
 const SPRAY_BOARD = {
@@ -129,6 +130,37 @@ describe('useNativeClimbRender reacts to the spray registry', () => {
     registerWall(2);
 
     await waitFor(() => expect(ensureBackgroundsCachedMock.mock.calls.length).toBeGreaterThan(callsBeforeReset));
+  });
+
+  // Subscribing is half the job; the other half is ASKING. Only the active board
+  // is asked for by name (`useSprayWall`), so without this every surface drawing
+  // a climb from another wall — a logbook row, a feed card, a shared ascent, a
+  // playlist thumbnail — mounts a subscription nothing will ever wake, and draws
+  // a placeholder for the rest of the session.
+  it('asks the loader for a wall it has never seen', async () => {
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+
+    renderHook(() => useNativeClimbRender(SPRAY_BOARD));
+
+    await waitFor(() => expect(loader).toHaveBeenCalledWith(LAYOUT_ID));
+  });
+
+  it('asks nothing of the loader for a catalogue board', async () => {
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    getBoardRenderDataMock.mockImplementation(() => ({
+      boardWidth: 1080,
+      boardHeight: 1920,
+      holdsData: [{ id: 1, mirroredHoldId: null, cx: 10, cy: 20, r: 5 }],
+    }));
+
+    renderHook(() =>
+      useNativeClimbRender({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '24,25', frames: 'p1r12' }),
+    );
+    await waitFor(() => expect(ensureBackgroundsCachedMock).toHaveBeenCalled());
+
+    expect(loader).not.toHaveBeenCalled();
   });
 
   it('does not re-render a catalogue board when a wall is registered', async () => {

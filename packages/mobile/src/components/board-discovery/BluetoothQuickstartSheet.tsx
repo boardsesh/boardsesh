@@ -4,6 +4,7 @@ import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardRowSubtitle } from '@boardsesh/board-config';
+import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { useBoardScan } from '../../lib/ble/use-board-scan';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
 import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
@@ -31,6 +32,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
   function BluetoothQuickstartSheet({ active, onClose, onSelect }, ref) {
     const { systemColors } = useTheme();
     const { t } = useTranslation(['boards', 'settings']);
+    const labelOptions = useSprayLabelOptions();
     const { status, serials, advertisedTypes, start, reset } = useBoardScan();
     // Scoped to what each controller announced. Aurora reuses a serial across
     // board apps, so unscoped this sheet would offer a stranger's Kilter board
@@ -99,7 +101,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                 <View style={styles.rowText}>
                   <Text variant="headline">{board.name}</Text>
                   <Text variant="subheadline" color={systemColors.secondaryLabel}>
-                    {boardRowSubtitle(board)}
+                    {boardRowSubtitle(board, labelOptions)}
                   </Text>
                 </View>
                 <Icon name="add" size={20} color={systemColors.tertiaryLabel} />

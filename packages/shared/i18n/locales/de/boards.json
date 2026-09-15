@@ -173,6 +173,7 @@
         "adjustable": "verstellbar"
       },
       "spray": {
+        "kind": "Spraywall",
         "editHolds": "Griffe bearbeiten",
         "editHoldsHint": "Füge Griffe hinzu, verschiebe oder lösche sie.",
         "newPhoto": "Neues Foto",

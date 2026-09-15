@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardConfigLabel, disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
+import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { Text } from '../Text';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
 import { useBoardRecentClimb } from '../../lib/graphql/hooks/use-board-recent-climb';
@@ -58,7 +59,8 @@ function GymWallSwitcherComponent({ activeBoard, onSelectBoard }: GymWallSwitche
   // to append by looking at which boards collide with which, so calling it per
   // row would give each one a different answer (and #5272 is precisely the case
   // where every row collides).
-  const subtitles = useMemo(() => disambiguateBoardSubtitles(siblings, { scope: 'within-gym' }), [siblings]);
+  const labelOptions = useSprayLabelOptions('within-gym');
+  const subtitles = useMemo(() => disambiguateBoardSubtitles(siblings, labelOptions), [siblings, labelOptions]);
 
   const handleExpand = useCallback(() => setExpanded(true), []);
 

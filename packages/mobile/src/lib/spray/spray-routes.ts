@@ -12,6 +12,22 @@
 // is what the spray API's `sprayWall(boardUuid:)` takes, and it survives a reset
 // unchanged.
 
+/**
+ * Whether the board-detail sheet renders the two wall rows at all.
+ *
+ * **False until both screens exist.** Neither path below resolves on this stack:
+ * SW-08's editor and SW-13's reset flow are built on a different branch, and
+ * `app/boards/spray/holds.tsx` has not been created by anybody yet. Expo Router
+ * sends a miss to `+not-found`, which redirects a prefix-less path to Home — so
+ * an owner tapping "Edit holds" today would be dumped on the Home tab with no
+ * explanation. A row that lands somewhere wrong is worse than no row.
+ *
+ * The gate itself (`sprayDetailRows`) ships now and is tested now, because it is
+ * the part with a rule in it. Flipping this constant is one line of the
+ * follow-up, #5491, which adds the routes and a test that they resolve.
+ */
+export const SPRAY_DETAIL_ROWS_ENABLED = false;
+
 /** The hold editor for one wall: add, move, resize and delete its holds (SW-08). */
 export const SPRAY_HOLD_EDITOR_PATH = '/boards/spray/holds';
 

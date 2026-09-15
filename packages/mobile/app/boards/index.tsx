@@ -28,6 +28,7 @@ import { BoardCarousel } from '../../src/components/board-discovery/BoardCarouse
 import { BoardModeCard, type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
 import { userBoardsToItems, popularConfigToItem } from '../../src/components/board-discovery/board-items';
+import { useSprayLabelOptions } from '../../src/lib/spray/use-spray-label-options';
 import {
   boardCardAction,
   hoistActiveBoard,
@@ -195,6 +196,10 @@ export default function BoardSelection() {
 
   // Only the user's OWN boards carry a download state.
   const boardOfflineState = useBoardOfflineState();
+  // The translated word a spray-wall row leads with. One object for every list
+  // on this screen, so none of their memos churn.
+  const labelOptions = useSprayLabelOptions();
+
   const myBoardItems = useMemo(
     // The server now orders these: pinned first, then by when you last opened
     // the board, then never-opened by when you added it (#4884). All this adds
@@ -208,16 +213,17 @@ export default function BoardSelection() {
         boardOfflineState,
         currentUserId,
         pinnedOverrides,
+        labelOptions,
       ),
-    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides],
+    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides, labelOptions],
   );
   const nearbyItems = useMemo(
-    () => userBoardsToItems(nearby?.boards ?? [], activeBoard?.uuid),
-    [nearby?.boards, activeBoard?.uuid],
+    () => userBoardsToItems(nearby?.boards ?? [], activeBoard?.uuid, undefined, undefined, undefined, labelOptions),
+    [nearby?.boards, activeBoard?.uuid, labelOptions],
   );
   const offlineItems = useMemo(
-    () => userBoardsToItems(offlineRows, activeBoard?.uuid),
-    [offlineRows, activeBoard?.uuid],
+    () => userBoardsToItems(offlineRows, activeBoard?.uuid, undefined, undefined, undefined, labelOptions),
+    [offlineRows, activeBoard?.uuid, labelOptions],
   );
   const popularItems = useMemo(
     () => (popular?.configs ?? []).map(popularConfigToItem).filter((item): item is DiscoveryBoardItem => item !== null),
