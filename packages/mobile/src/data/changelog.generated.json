@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-15T01:04:22.897Z",
+  "generatedAt": "2026-09-15T03:43:53.049Z",
   "entries": [
+    {
+      "prNumber": 5467,
+      "category": "improved",
+      "title": "The browser app opens far faster the first time, and shows the Boardsesh logo while it loads instead of a black screen.",
+      "mergedAt": "2026-09-15T03:39:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5467"
+    },
     {
       "prNumber": 5459,
       "category": "fixed",

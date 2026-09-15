@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-09-15
 
+### Improved
+
+- The browser app opens far faster the first time, and shows the Boardsesh logo while it loads instead of a black screen. ([#5467](https://github.com/boardsesh/boardsesh/pull/5467))
+
 ### Fixed
 
 - The Climbs tab no longer crashes when you pick a board ([#5459](https://github.com/boardsesh/boardsesh/pull/5459))
