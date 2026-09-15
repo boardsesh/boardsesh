@@ -226,7 +226,7 @@
       "intro": "Both apps have the same climbs. They just count them differently.",
       "item1": "Boardsesh counts each climb once and shows its grade and ascents at the angle you pick.",
       "item2": "Kilter's app counts a climb once for every angle it has been logged at, so a climb with ascents at 40° and 45° counts as two.",
-      "item3": "That's why the same board can show about twice as many climbs in Kilter's app."
+      "item3": "That's why the same board can show up to about twice as many climbs in Kilter's app."
     },
     "ask": {
       "title": "Still stuck?",

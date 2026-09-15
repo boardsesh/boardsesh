@@ -222,11 +222,11 @@
       "link": "Lire le guide de migration"
     },
     "climbCounts": {
-      "title": "Pourquoi l'app de Kilter affiche plus de blocs ?",
+      "title": "Pourquoi l'app Kilter affiche plus de blocs ?",
       "intro": "Les deux apps ont les mêmes blocs. Elles ne les comptent juste pas de la même façon.",
       "item1": "Boardsesh compte chaque bloc une seule fois et vous montre sa cotation et ses croix à l'angle que vous choisissez.",
-      "item2": "L'app de Kilter compte un bloc une fois pour chaque angle où il a été noté : un bloc avec des croix à 40° et à 45° compte pour deux.",
-      "item3": "C'est pour ça qu'une même board peut afficher environ deux fois plus de blocs dans l'app de Kilter."
+      "item2": "L'app Kilter compte un bloc une fois pour chaque angle où il a été noté : un bloc avec des croix à 40° et à 45° compte pour deux.",
+      "item3": "C'est pour ça qu'une même board peut afficher jusqu'à environ deux fois plus de blocs dans l'app Kilter."
     },
     "ask": {
       "title": "Toujours bloqué ?",
