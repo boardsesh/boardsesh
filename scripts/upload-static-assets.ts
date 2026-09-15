@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { desiredR2Buckets } from '../infra/cloudflare/config';
 import { STATIC_ASSET_OBJECT_KEYS, STATIC_ASSET_ORIGIN } from '../packages/shared/static-assets/src';
 import type { StaticAssetManifest, StaticAssetRecord } from '../packages/shared/static-assets/src';
 import {
@@ -130,8 +131,131 @@ async function validateRemoteAsset(
   });
 }
 
+/**
+ * How many objects get the Origin-less CORS probe below.
+ *
+ * Sampled rather than exhaustive: this is one extra round trip per object and
+ * the whole job runs inside a 10-minute bound. The header is set by a zone-wide
+ * rule, not per object, so a sample proves it as well as a sweep would.
+ */
+const CORS_PROBE_SAMPLE_SIZE = 5;
+
+/**
+ * Prove the CORS header is present on a request that carries NO `Origin`.
+ *
+ * This is the direct test of the failure that motivated the transform rule.
+ * Measured 2026-09-15: Tigris sends `access-control-allow-origin: *` on every
+ * response; R2 sends it only in reply to a request that carried `Origin`. The
+ * board art is loaded both ways — `<img src>` sends no Origin, while
+ * `ensureImagesPreloaded` in packages/web/app/lib/board-render-worker/worker-manager.ts
+ * does a real `fetch()` — and Cloudflare does not key its cache on `Vary` below
+ * Enterprise, so the header-less copy can be served to the `fetch()`. It fails
+ * CORS, the failure is swallowed as a `console.warn`, and the board renders with
+ * no background for as long as that colo holds the object: a year, given
+ * `immutable`, with no purge tooling on this token.
+ *
+ * The per-asset validation above deliberately sends `Origin`, so it cannot see
+ * this. This can.
+ */
+export async function assertCorsHeaderWithoutOrigin(
+  assets: readonly StaticAssetRecord[],
+  beforeRequest: RequestStartLimiter,
+  // Injected so the probe's contract is testable without a network: the whole
+  // point of it is the request shape (no Origin header) and the assertion, and
+  // both are worth pinning.
+  fetchImpl: typeof fetch = fetch,
+  origin: string = resolvePublicStaticAssetOrigin(),
+): Promise<void> {
+  for (const asset of assets.slice(0, CORS_PROBE_SAMPLE_SIZE)) {
+    // Same retry envelope as validatePublicAsset, and for the same reason: this
+    // runs inside sync-static-assets, which gates every downstream production
+    // job, so one transient 429 or 5xx from the edge must not reject an
+    // otherwise-valid deploy.
+    //
+    // The distinction that matters: a transport failure is retried, but a
+    // SUCCESSFUL response missing the header fails immediately. That is a
+    // configuration error, not a blip, and retrying it would only delay the
+    // message by the full backoff ladder.
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= PUBLIC_VALIDATION_ATTEMPTS; attempt += 1) {
+      try {
+        await beforeRequest();
+        const response = await fetchImpl(`${origin}/${asset.objectKey}`, {
+          signal: AbortSignal.timeout(PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+          const httpError = new Error(`CORS probe for ${asset.logicalPath} failed: HTTP ${response.status}`);
+          if (isNonRetryablePublicStatus(response.status)) throw Object.assign(httpError, { nonRetryable: true });
+          throw httpError;
+        }
+        // Drain rather than leak the socket; the body is not what is being checked.
+        await response.arrayBuffer();
+        if (response.headers.get('access-control-allow-origin') !== '*') {
+          throw Object.assign(
+            new Error(
+              `Public asset ${asset.logicalPath} answered a request with no Origin header and no ` +
+                'Access-Control-Allow-Origin. That response is cacheable, and the board-render worker fetches ' +
+                'these URLs cross-origin — it would fail CORS against the cached copy and boards would render ' +
+                'with no background. Check the assets CORS response-header rule in infra/cloudflare/config.ts.',
+            ),
+            { nonRetryable: true },
+          );
+        }
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (error && typeof error === 'object' && 'nonRetryable' in error) break;
+        if (attempt < PUBLIC_VALIDATION_ATTEMPTS) await delay(calculatePublicValidationDelay(attempt));
+      }
+    }
+    if (lastError) throw lastError;
+  }
+  console.log(
+    `CORS probe: ${Math.min(CORS_PROBE_SAMPLE_SIZE, assets.length)} object(s) send ACAO without an Origin header.`,
+  );
+}
+
+/**
+ * Where the public read validation points.
+ *
+ * Defaults to the baked catalogue origin. `STATIC_ASSETS_PUBLIC_BASE_URL`
+ * overrides it so the R2 bucket can be published and fully validated through a
+ * staging hostname — all 365 objects, signed HEAD and public GET, SHA-256, MIME,
+ * cache headers and CORS — while every reader is still on Tigris. That dry run
+ * is the gate on the cutover.
+ *
+ * `scripts/__tests__/static-asset-deploy-origin.test.ts` asserts the production
+ * workflow never sets it, so a staging value cannot leak into a real publish.
+ */
+export function resolvePublicStaticAssetOrigin(environment: Record<string, string | undefined> = process.env): string {
+  const override = environment.STATIC_ASSETS_PUBLIC_BASE_URL?.trim().replace(/\/+$/, '');
+  return override || STATIC_ASSET_ORIGIN;
+}
+
+/**
+ * Whether the public origin is expected to be served by Cloudflare.
+ *
+ * Derived from the desired R2 state rather than an env knob, so it is true for
+ * exactly the hostnames this repo has declared as R2 custom domains — and turns
+ * itself on for `assets.boardsesh.com` in the same commit that moves the bucket
+ * onto it. Today that hostname is still the DNS-only Tigris CNAME, where there
+ * is no `cf-ray` and asserting one would break every production publish.
+ */
+export function expectsCloudflareOrigin(origin: string): boolean {
+  const hostname = (() => {
+    try {
+      return new URL(origin).hostname;
+    } catch {
+      return '';
+    }
+  })();
+  return desiredR2Buckets.some((bucket) => bucket.customDomain === hostname);
+}
+
 async function validatePublicAsset(asset: StaticAssetRecord, beforeRequest: RequestStartLimiter): Promise<void> {
-  const url = `${STATIC_ASSET_ORIGIN}/${asset.objectKey}`;
+  const origin = resolvePublicStaticAssetOrigin();
+  const url = `${origin}/${asset.objectKey}`;
   let lastError: unknown;
   for (let attempt = 1; attempt <= PUBLIC_VALIDATION_ATTEMPTS; attempt += 1) {
     try {
@@ -148,7 +272,7 @@ async function validatePublicAsset(asset: StaticAssetRecord, beforeRequest: Requ
         if (isNonRetryablePublicStatus(response.status)) throw Object.assign(httpError, { nonRetryable: true });
         throw httpError;
       }
-      assertPublicStaticAssetHeaders(asset, response.headers);
+      assertPublicStaticAssetHeaders(asset, response.headers, { expectCloudflare: expectsCloudflareOrigin(origin) });
       const contents = await readResponseBodyWithinLimit(response, asset.bytes);
       if (contents.byteLength !== asset.bytes) {
         throw new Error(`Byte-length mismatch: expected ${asset.bytes}, received ${contents.byteLength}`);
@@ -253,13 +377,20 @@ async function main(): Promise<void> {
     await validateRemoteAsset(client, bucket, asset, beforeRequest);
     await validatePublicAsset(asset, beforeRequest);
   }
+  await assertCorsHeaderWithoutOrigin(validationAssets, beforeRequest);
   // Publication marker is deliberately last: seeing this audit catalog means
   // every newly referenced immutable object passed both S3 and public-CDN QA.
   await uploadAuditManifest(client, bucket, manifest, beforeRequest);
   console.log(`Static asset sync complete: ${uploadedCount} uploaded, ${remoteObjects.length} already stored.`);
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+// Guarded so the module can be imported for its pure helpers without running a
+// publish — same boundary as scripts/cloudflare-apply.ts. Without it, importing
+// this file from a test exits the whole vitest worker on the first missing
+// credential.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

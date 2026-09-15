@@ -39,7 +39,90 @@ Checked-in Expo public files retain their existing URLs for local and PR exports
 its shell and PWA manifest icons to cataloged CDN URLs only when `EXPO_PUBLIC_STATIC_ASSET_BASE_URL` is set, as it
 is in the production workflow.
 
-## Bucket setup
+## Moving to R2 (in progress)
+
+`assets.boardsesh.com` is the last public read path still on Tigris, and Tigris serves it badly. Measured from a
+Cloudflare `SYD` PoP on 2026-09-15:
+
+| Host | Store | Protocol | conn | TTFB | 119 KB webp |
+| --- | --- | --- | --- | --- | --- |
+| `media.boardsesh.com` | R2 | HTTP/2 | 22 ms | — | — |
+| `assets.boardsesh.com` | Tigris | **HTTP/1.1** | 183 ms | **614 ms** | **1.08 s** |
+
+`X-Tigris-Served-From: sjc1` on every response: one region, no edge cache — the custom domain is deliberately
+grey-clouded because Tigris cannot sit behind a TLS-terminating proxy. HTTP/1.1 compounds it, capping browsers at
+~6 connections to the host. 24 catalogued images at 6-way parallel measured **4.62 s**.
+
+### The CORS difference, which is the dangerous part
+
+Tigris and R2 do not answer CORS the same way, and Cloudflare's cache turns the difference into a silent bug.
+Measured the same day:
+
+```
+assets.boardsesh.com (Tigris)  access-control-allow-origin: *      # on EVERY response
+media.boardsesh.com  (R2)      (no ACAO header at all)             # R2 answers CORS only when the request has Origin
+```
+
+The catalogue is read both ways. A plain `<img src>` sends no `Origin`; `ensureImagesPreloaded` in
+`packages/web/app/lib/board-render-worker/worker-manager.ts` does a real `fetch()` for every board background. Those
+share one cache key, and Cloudflare does not key its cache on `Vary` below Enterprise — so the `<img>` response, with
+no ACAO, can be the copy served to the `fetch()`. That fails CORS, the failure is swallowed
+(`console.warn('Failed to preload background image')`), and the board renders with no background for as long as the
+colo holds the object: a year, given `immutable`, with no purge tooling and no `Zone.Cache Purge` scope on the token.
+
+Two things fix it, and both ship before the hostname moves:
+
+- the bucket's own CORS policy (`PUBLIC_IMAGE_CORS`, `GET`/`HEAD` from `*`), converged by `vp run cf:apply`;
+- a response-header transform rule setting `access-control-allow-origin: *` **unconditionally** at the edge, so no
+  cached copy can lack it whichever request shape populated it.
+
+`allowedOrigins` is `['*']` on purpose. An origin list would make R2's answer vary by request, and with `Vary`
+ignored, whichever copy won the race would be served to every origin.
+
+### Cutover
+
+The keys are `static/v1/<sha256>` — content-addressed, immutable, written only when missing, never deleted. Tigris
+and R2 can therefore hold the identical catalogue simultaneously, which is what makes every step reversible and the
+flip itself a non-event.
+
+1. **Dashboard.** Create an R2 API token scoped to `boardsesh-static-assets`. Add `Zone.Transform Rules Edit` to
+   `CLOUDFLARE_API_TOKEN`, re-adding every existing scope in the same edit — editing a token replaces all its policies.
+2. **Merge the prepare change** (this one). `cf:apply` creates the bucket. Note it creates and returns: the custom
+   domain attaches on the *next* run, which is why the flip is not repo-driven (see step 5).
+3. **Run `cf:apply` again** to attach `assets-r2.boardsesh.com` and converge CORS, the cache rule and the header rule.
+   Both rules cover the staging hostname as well as the production one, so the dry run in step 4 exercises the real
+   edge-cache and CORS behaviour rather than a fresh origin read every time.
+4. **Dual-publish and validate through staging** — the real gate:
+   ```sh
+   STATIC_ASSETS_PUBLIC_BASE_URL=https://assets-r2.boardsesh.com \
+   STATIC_ASSETS_S3_BUCKET_NAME=boardsesh-static-assets \
+   STATIC_ASSETS_AWS_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com \
+   STATIC_ASSETS_AWS_REGION=auto \
+   STATIC_ASSETS_AWS_ACCESS_KEY_ID=... STATIC_ASSETS_AWS_SECRET_ACCESS_KEY=... \
+     vp run upload:static-assets
+   ```
+   This uploads all 365 objects and puts every one through both the signed `HEAD` and the public `GET` — SHA-256,
+   MIME, immutable caching, CORS with an `Origin`, and the sampled CORS probe **without** one. It is also what proves
+   the two R2 behaviours this repo cannot assert from source: that `HeadObject` returns `ChecksumSHA256`
+   (`assertRemoteStaticAssetMetadata` throws without it) and that `PutObject` honours `If-None-Match: *`
+   (`putImmutableObjectIfMissing` maps the 412 to "already present"). Every reader is still on Tigris throughout.
+5. **The flip.** Attach `assets.boardsesh.com` to the bucket **in the dashboard**, then repoint the bucket's
+   `customDomain` in `infra/cloudflare/config.ts` and drop the record from `dnsRecords` so R2 owns it, as it already
+   does for `media.boardsesh.com`. Dashboard first because `applyR2Bucket` needs two passes, and the gap between them
+   would leave the hostname proxied at R2 with nothing attached — 404 on every board image.
+   Switch the five `STATIC_ASSETS_*` Production secrets to R2 in the same window, then dispatch Production Deploy to
+   force a full-catalogue `sync-static-assets` against the live hostname (the flip touches no static-asset path, so
+   the change detector would otherwise skip it).
+
+Repointing `customDomain` also turns on the `cf-ray` assertion in the publisher by itself — `expectsCloudflareOrigin`
+reads `desiredR2Buckets`, so there is no second switch to remember. That assertion is the replacement for the
+"is it proxied?" DNS check, which goes away with the record.
+
+**Rollback decays.** Before the flip, every step is "do nothing" or "detach in the dashboard". After it, reverting the
+DNS is good for roughly 60 days: Tigris renews the custom domain's certificate off the live CNAME, which will be
+pointing at Cloudflare, and renewal breaks within a couple of months.
+
+## Bucket setup (Tigris — current, until the cutover above completes)
 
 Create a dedicated public Tigris bucket for `assets.boardsesh.com`. Do not reuse the snapshot, OTA, or user-upload
 buckets. Configure it with:

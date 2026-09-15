@@ -15,6 +15,11 @@ token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 R2 is **account**-scoped, unlike everything else here, so managing it needs two things the zone work does not:
 
 - `CLOUDFLARE_ACCOUNT_ID` in the environment. Without it, R2 is skipped with a notice.
+- `Zone.Transform Rules Edit` on `CLOUDFLARE_API_TOKEN`, for the assets CORS
+  response-header rule (`http_response_headers_transform`). Without it the
+  earlier phases still apply and this one 403s — the same partial-convergence
+  shape as the WAF and rate-limit phases. **Editing a token replaces all of its
+  policies, so re-add every existing scope in the same edit.**
 - `Account.Workers R2 Storage:Edit` on `CLOUDFLARE_API_TOKEN`. Without it, the R2 read fails authorization and is skipped with a warning — the zone config still applies.
 
 Both degrade to "skip and say so" rather than failing, so the secret and the scope can be added in either order without a window where production deploys break. Attaching a custom domain needs **both** the R2 scope and zone access, because the call takes a `zoneId`: an R2-only token can create the bucket but cannot resolve the zone.
@@ -22,6 +27,15 @@ Both degrade to "skip and say so" rather than failing, so the secret and the sco
 > **Editing the token replaces ALL of its policies.** Re-add every existing scope in the same edit — the `Zone.*` list above and `Account.Cloudflare Pages Edit`. A rotation that granted only the zone scopes is what took `app.boardsesh.com` off the deploy train on 2026-08-25, and it presents as `Authentication error [code: 10000]` while `wrangler whoami` still succeeds.
 
 ## assets.boardsesh.com DNS-only Tigris domain
+
+> **Migrating.** This hostname is moving to an R2 custom domain, which will make
+> it proxied and take the DNS record out of `dnsRecords` entirely — R2 owns the
+> record, exactly as it already does for `media.boardsesh.com`. The bucket, its
+> CORS policy, the edge cache rule and the CORS response-header rule are already
+> declared and converge today against the staging hostname
+> `assets-r2.boardsesh.com`. Everything below describes the state until the flip.
+> The cutover, the measurements behind it, and the CORS/`Vary` hazard it has to
+> solve first are in [static-assets.md](./static-assets.md#moving-to-r2-in-progress).
 
 The public static-assets hostname is repo-managed DNS. `vp run cf:apply` creates
 and maintains this complete record (not just its proxy flag):

@@ -203,7 +203,27 @@ export function planStaticAssetUploads(
   return { missing, corrupt };
 }
 
-export function assertPublicStaticAssetHeaders(asset: StaticAssetRecord, headers: Headers): void {
+export interface PublicStaticAssetExpectations {
+  /**
+   * Require proof the response came through Cloudflare.
+   *
+   * This is the repo-side replacement for the DNS assertion that goes away when
+   * `assets.boardsesh.com` becomes an R2 custom domain: R2 attaches and owns
+   * that record, so `infra/cloudflare/` can no longer assert "proxied". A
+   * missing `cf-ray` then means the hostname was grey-clouded, detached, or
+   * pointed back at Tigris — each of which silently costs the edge cache and
+   * the unconditional CORS header, and each of which this fails the deploy on.
+   *
+   * False while the origin is still Tigris, which sends no `cf-ray`.
+   */
+  expectCloudflare: boolean;
+}
+
+export function assertPublicStaticAssetHeaders(
+  asset: StaticAssetRecord,
+  headers: Headers,
+  expectations: PublicStaticAssetExpectations = { expectCloudflare: false },
+): void {
   const contentType = headers.get('content-type')?.split(';')[0]?.trim();
   if (contentType !== asset.contentType) {
     throw new Error(`Public asset ${asset.logicalPath} has Content-Type ${contentType ?? '(missing)'}`);
@@ -220,5 +240,12 @@ export function assertPublicStaticAssetHeaders(asset: StaticAssetRecord, headers
   }
   if (headers.get('access-control-allow-origin') !== '*') {
     throw new Error(`Public asset ${asset.logicalPath} is missing Access-Control-Allow-Origin: *`);
+  }
+  if (expectations.expectCloudflare && !headers.get('cf-ray')) {
+    throw new Error(
+      `Public asset ${asset.logicalPath} was not served by Cloudflare (no cf-ray). ` +
+        'The hostname is declared as an R2 custom domain, so this means it is grey-clouded, detached, ' +
+        'or pointing somewhere else — the edge cache and the CORS transform rule are both gone.',
+    );
   }
 }

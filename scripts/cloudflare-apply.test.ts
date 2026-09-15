@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { diffR2Bucket } from '../infra/cloudflare/plan';
+import { diffR2Bucket, r2CorsHasUnmanagedRules } from '../infra/cloudflare/plan';
 import { CloudflareApiRequestError, isAuthorizationError } from './cloudflare-apply';
 import {
   APEX_HOSTNAME,
@@ -11,6 +11,7 @@ import {
   APEX_REDIRECT_RULE_DESCRIPTION,
   ASSETS_CNAME_TARGET,
   ASSETS_HOSTNAME,
+  ASSETS_STAGING_HOSTNAME,
   desiredR2Buckets,
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
@@ -38,7 +39,12 @@ import {
   buildWwwHtmlCachePathPrefixes,
   desiredCloudflareState,
 } from '../infra/cloudflare/config';
-import type { DnsRecordDesired, FullyManagedDnsRecordDesired } from '../infra/cloudflare/config';
+import type {
+  DnsRecordDesired,
+  FullyManagedDnsRecordDesired,
+  R2BucketDesired,
+  R2Cors,
+} from '../infra/cloudflare/config';
 import {
   MANAGED_RULE_PHASES,
   buildPlan,
@@ -518,9 +524,37 @@ describe('assets.boardsesh.com desired state', () => {
     });
   });
 
-  it('keeps DNS record identities unique and adds no assets cache rule', () => {
+  it('keeps DNS record identities unique', () => {
     expect(new Set(desired.dnsRecords.map((record) => record.name)).size).toBe(desired.dnsRecords.length);
-    expect(desired.cacheRules.every((rule) => !rule.expression.includes(ASSETS_HOSTNAME))).toBe(true);
+  });
+
+  it('now declares an assets cache rule, which the DNS-only record made pointless', () => {
+    // The inverse of this used to be asserted here, and was correct while the
+    // record was grey-clouded: traffic never reached Cloudflare's proxy, so a
+    // cache rule could not match. It becomes load-bearing at the flip, and is
+    // declared ahead of it so the rule is already converged when the hostname
+    // starts resolving to R2.
+    const assetsRule = desired.cacheRules.find((rule) => rule.expression.includes(ASSETS_HOSTNAME));
+    expect(assetsRule?.action_parameters.cache).toBe(true);
+    expect(assetsRule?.action_parameters.edge_ttl?.mode).toBe('bypass_by_default');
+    expect(assetsRule?.action_parameters.browser_ttl?.mode).toBe('respect_origin');
+  });
+
+  it('sets the CORS header unconditionally at the edge, on both hostnames', () => {
+    // The bug this prevents, measured 2026-09-15:
+    //   Tigris  → `access-control-allow-origin: *` on every response.
+    //   R2      → ACAO only when the request carried `Origin`.
+    // The same objects are loaded as <img> (no Origin) and via fetch() by the
+    // board-render worker. One cache key, and Cloudflare does not key on Vary
+    // below Enterprise, so the <img> copy can be served to the fetch() and fail
+    // CORS — silently, for a year, behind `immutable`.
+    const corsRule = desired.responseHeaderRules.find((rule) => rule.expression.includes(ASSETS_HOSTNAME));
+    expect(corsRule?.expression).toContain(ASSETS_STAGING_HOSTNAME);
+    expect(corsRule?.action_parameters.headers['access-control-allow-origin']).toEqual({
+      operation: 'set',
+      value: '*',
+    });
+    expect(corsRule?.enabled).toBe(true);
   });
 });
 
@@ -604,6 +638,7 @@ describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
       wafRules: [],
       rateLimitRules: [],
       redirectRules: [],
+      responseHeaderRules: [],
       ssl: desired.ssl,
     };
     const flattenedZone: LiveState = {
@@ -1771,7 +1806,9 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
 
   it('keeps the og rule first, so the older fixtures still address it by index', () => {
     expect(desired.cacheRules[0].description).toBe(CACHE_RULE_DESCRIPTION);
-    expect(desired.cacheRules.at(-1)?.description).toBe(WWW_HTML_CACHE_RULE_DESCRIPTION);
+    // Both rules are present; neither position is load-bearing beyond index 0,
+    // which the fixtures above depend on. A new rule goes on the end.
+    expect(desired.cacheRules.map((rule) => rule.description)).toContain(WWW_HTML_CACHE_RULE_DESCRIPTION);
   });
 
   it('still has an origin that sets the header this rule exists to honour', () => {
@@ -1785,12 +1822,42 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
   });
 });
 
+describe('a rule phase this token cannot read', () => {
+  it('is skipped rather than planned as empty', () => {
+    // The failure this prevents: a 403 read as "phase has no rules" makes the
+    // diff say "will create", the apply then PUTs into the same phase and 403s
+    // again — and `cf:apply --apply` runs on EVERY production deploy, so a
+    // missing scope would take www off the deploy train rather than print a
+    // warning. Same concession the R2 read already makes, for the same reason.
+    const live: LiveState = {
+      dnsRecords: inSyncDnsRecords(),
+      rules: emptyRules(),
+      sslMode: 'strict',
+      flattenAllCnames: false,
+      unavailableRulePhases: new Set(['response-header-rule' as const]),
+    };
+
+    const changes = buildPlan(desired, live, { allowZoneSsl: false });
+    expect(changes.some((change) => change.resource === 'response-header-rule')).toBe(false);
+    // Every other phase still plans normally — this is a per-phase concession,
+    // not a global one.
+    expect(changes.some((change) => change.resource === 'cache-rule')).toBe(true);
+  });
+
+  it('marks only the newly-added phase optional', () => {
+    // A phase that predates the scope it needs must still fail loudly when the
+    // scope is lost; only the one being rolled out is allowed to degrade.
+    const optional = MANAGED_RULE_PHASES.filter((phase) => phase.optional).map((phase) => phase.resource);
+    expect(optional).toEqual(['response-header-rule']);
+  });
+});
+
 describe('diffR2Bucket', () => {
   const MEDIA = { name: 'boardsesh-user-media', customDomain: 'media.boardsesh.com' } as const;
   const PRIVATE = { name: 'boardsesh-user-private', customDomain: null } as const;
 
-  function live(name: string, customDomains: string[] = []) {
-    return { name, exists: true, customDomains };
+  function live(name: string, customDomains: string[] = [], cors: R2Cors | null = null, corsRuleCount = cors ? 1 : 0) {
+    return { name, exists: true, customDomains, cors, corsRuleCount };
   }
 
   it('plans a create when the bucket is absent', () => {
@@ -1803,7 +1870,7 @@ describe('diffR2Bucket', () => {
 
   it('does not plan the domain in the same pass as the create', () => {
     // The domain call needs the bucket to exist; the next run attaches it.
-    expect(diffR2Bucket(MEDIA, { name: MEDIA.name, exists: false, customDomains: [] })).toHaveLength(1);
+    expect(diffR2Bucket(MEDIA, { name: MEDIA.name, exists: false, customDomains: [], cors: null })).toHaveLength(1);
   });
 
   it('attaches a missing custom domain to a public bucket', () => {
@@ -1831,6 +1898,71 @@ describe('diffR2Bucket', () => {
     expect(changes[0].detail).toContain('user data exports');
   });
 
+  const ASSETS = {
+    name: 'boardsesh-static-assets',
+    customDomain: 'assets-r2.boardsesh.com',
+    cors: { allowedOrigins: ['*'], allowedMethods: ['GET', 'HEAD'], maxAgeSeconds: 86_400 },
+  } as const satisfies R2BucketDesired;
+
+  it('plans CORS when the bucket has none', () => {
+    // The state a freshly created bucket is in. Without this the catalogue would
+    // move to a host that answers board-background fetches with no ACAO header.
+    const changes = diffR2Bucket(ASSETS, live(ASSETS.name, [ASSETS.customDomain]));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].summary).toContain('will set CORS');
+    expect(changes[0].detail).toContain('no CORS policy');
+  });
+
+  it('is a no-op once CORS matches, regardless of list order', () => {
+    const reordered = { allowedOrigins: ['*'], allowedMethods: ['HEAD', 'GET'], maxAgeSeconds: 86_400 } as const;
+    expect(diffR2Bucket(ASSETS, live(ASSETS.name, [ASSETS.customDomain], reordered))).toEqual([]);
+  });
+
+  it('plans CORS again when the live policy has drifted', () => {
+    const drifted = {
+      allowedOrigins: ['https://www.boardsesh.com'],
+      allowedMethods: ['GET', 'HEAD'],
+      maxAgeSeconds: 86_400,
+    } as const;
+    const changes = diffR2Bucket(ASSETS, live(ASSETS.name, [ASSETS.customDomain], drifted));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].detail).toContain('https://www.boardsesh.com');
+  });
+
+  it('BLOCKS rather than collapsing a multi-rule CORS policy', () => {
+    // The write is a whole-policy PUT. Comparing rules[0] and then writing one
+    // rule would delete every other rule the bucket carried, silently, on the
+    // first converge that saw a mismatch.
+    const first = { allowedOrigins: ['*'], allowedMethods: ['GET', 'HEAD'], maxAgeSeconds: 86_400 } as const;
+    const changes = diffR2Bucket(ASSETS, live(ASSETS.name, [ASSETS.customDomain], first, 3));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].blocked).toBe(true);
+    expect(changes[0].summary).toContain('has 3 CORS rules');
+  });
+
+  it('reports unmanaged CORS rules through one predicate the apply shares', () => {
+    // The apply re-derives what to do from (desired, live) rather than walking
+    // the plan, so a blocked CORS change alone does not stop the write: a
+    // NON-blocked change on the same bucket (an unattached custom domain) still
+    // routes through applyR2Bucket. Both callers ask this, so they cannot drift.
+    const policy = { allowedOrigins: ['*'], allowedMethods: ['GET', 'HEAD'], maxAgeSeconds: 86_400 } as const;
+    expect(r2CorsHasUnmanagedRules(ASSETS, live(ASSETS.name, [], policy, 3))).toBe(true);
+    expect(r2CorsHasUnmanagedRules(ASSETS, live(ASSETS.name, [], policy, 1))).toBe(false);
+    // Undeclared CORS is never "unmanaged rules" — there is nothing to overwrite.
+    expect(r2CorsHasUnmanagedRules(MEDIA, live(MEDIA.name, [], policy, 3))).toBe(false);
+  });
+
+  it('leaves an undeclared CORS policy alone', () => {
+    // `cors` omitted means "not managed here", not "no CORS". This tool must not
+    // be able to clear a policy something else set deliberately.
+    const someoneElses = {
+      allowedOrigins: ['https://example.com'],
+      allowedMethods: ['GET'],
+      maxAgeSeconds: 10,
+    } as const;
+    expect(diffR2Bucket(MEDIA, live(MEDIA.name, ['media.boardsesh.com'], someoneElses))).toEqual([]);
+  });
+
   it('never plans a delete, whatever the live state', () => {
     const everyState = [
       diffR2Bucket(MEDIA, null),
@@ -1850,9 +1982,34 @@ describe('desiredR2Buckets', () => {
     expect(exportsBucket?.customDomain).toBeNull();
   });
 
-  it('gives exactly one bucket a public domain', () => {
-    const publicBuckets = desiredR2Buckets.filter((bucket) => bucket.customDomain !== null);
-    expect(publicBuckets.map((bucket) => bucket.name)).toEqual(['boardsesh-user-media']);
+  it('never gives the private bucket a public domain', () => {
+    // The assertion that matters is about `boardsesh-user-private`, not about a
+    // count: R2 has no object ACLs, so a custom domain on that bucket would
+    // publish every user data export in it. Public buckets are expected to grow.
+    const byName = new Map(desiredR2Buckets.map((bucket) => [bucket.name, bucket]));
+    expect(byName.get('boardsesh-user-private')?.customDomain).toBeNull();
+    expect(byName.get('boardsesh-user-media')?.customDomain).toBe('media.boardsesh.com');
+  });
+
+  it('keeps the static-assets bucket on its staging hostname until the flip', () => {
+    // assets.boardsesh.com is still the Tigris CNAME. Declaring it here before
+    // the publisher has proved R2 would attach the live hostname to an empty
+    // bucket and 404 every board image.
+    const assets = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-static-assets');
+    expect(assets?.customDomain).toBe(ASSETS_STAGING_HOSTNAME);
+    expect(assets?.customDomain).not.toBe(ASSETS_HOSTNAME);
+  });
+
+  it('declares CORS on the bucket the board workers fetch from', () => {
+    // Measured 2026-09-15: Tigris returns `access-control-allow-origin: *` on
+    // every response; R2 returns no ACAO at all without a policy. Moving the
+    // catalogue without this would break every board background fetch.
+    const assets = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-static-assets');
+    expect(assets?.cors?.allowedMethods).toEqual(['GET', 'HEAD']);
+    // '*' rather than an origin list, deliberately — Cloudflare does not key its
+    // cache on Vary below Enterprise, so a per-origin answer would be served to
+    // whichever origin lost the race. See PUBLIC_IMAGE_CORS.
+    expect(assets?.cors?.allowedOrigins).toEqual(['*']);
   });
 });
 

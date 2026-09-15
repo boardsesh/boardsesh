@@ -22,6 +22,15 @@ describe('static asset production origin', () => {
     expect(workflow).toContain(`NEXT_PUBLIC_STATIC_ASSET_BASE_URL=${STATIC_ASSET_ORIGIN}`);
   });
 
+  it('never sets the staging public-base-URL override in the production workflow', () => {
+    // STATIC_ASSETS_PUBLIC_BASE_URL exists so the R2 bucket can be published and
+    // validated through a staging hostname before assets.boardsesh.com moves.
+    // If it ever leaked into this workflow, a production publish would validate
+    // the staging host and report green for a catalogue nobody is serving.
+    const workflow = readFileSync('.github/workflows/production-deploy.yml', 'utf8');
+    expect(workflow).not.toContain('STATIC_ASSETS_PUBLIC_BASE_URL');
+  });
+
   it('bounds the serialized static asset publication job', () => {
     const workflow = readFileSync('.github/workflows/production-deploy.yml', 'utf8');
     const jobStart = workflow.indexOf('\n  sync-static-assets:\n');
