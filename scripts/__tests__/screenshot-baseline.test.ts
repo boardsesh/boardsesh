@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { EXPECTED_APP_STORE_DEVICE_SLUGS, EXPECTED_APP_STORE_LOCALES } from '../assert-screenshot-dimensions';
@@ -354,6 +354,36 @@ describe('publishBaseline', () => {
     expect(ghCalls[2].args).toContain('--clobber');
     expect(ghCalls[3].args.some((argument) => argument.endsWith('ios-manifest.json'))).toBe(true);
     expect(ghCalls[3].args).toContain('--clobber');
+  });
+
+  it('removes the auto-created outDir when the caller does not pass --out', () => {
+    // No `outDir` passed — publishBaseline mkdtemps its own (mirroring
+    // fetchBaseline's downloadDir) and must clean it up afterward rather than
+    // leaking a temp directory per publish.
+    const tree = writeTree(join(workDir, 'tree'));
+    const runner = new FakeRunner((invocation) =>
+      invocation.command === 'gh' && invocation.args[1] === 'view' ? fail() : ok(),
+    );
+
+    const packed = publishBaseline({
+      platform: 'ios',
+      treeDir: tree,
+      commit: 'deadbeef',
+      runId: '7',
+      runner,
+    });
+
+    // Zips first, manifest last is still upheld even though outDir is gone by
+    // the time the caller reads this path back — packed.manifestFile is just
+    // the string this run wrote to, not a claim it still exists.
+    const ghCalls = runner.calls.filter((call) => call.command === 'gh');
+    expect(ghCalls.map((call) => call.args.slice(0, 2))).toEqual([
+      ['release', 'view'],
+      ['release', 'create'],
+      ['release', 'upload'],
+      ['release', 'upload'],
+    ]);
+    expect(existsSync(dirname(packed.manifestFile))).toBe(false);
   });
 });
 
@@ -763,6 +793,78 @@ describe('fetchBaseline', () => {
     const result = fetchBaseline({ platform: 'ios', outDir, asset: null, all: true, runner, downloadDir });
 
     expect(result).toEqual({ found: false, commit: '', unzipped: [] });
+    expect(existsSync(outDir)).toBe(false);
+  });
+
+  it('removes the auto-created download dir after a successful --all fetch', () => {
+    // No `downloadDir` passed here — fetchBaseline mkdtemps its own, and this
+    // pins that it cleans it up on the success path too, not just on failure.
+    // The FakeRunner reads the real `--dir` argument fetchBaseline resolved to
+    // (rather than a directory the test chose) and populates it there, since
+    // the path isn't known ahead of the call.
+    const fileBytes = 'listed shard bytes';
+    const manifest: BaselineManifest = {
+      platform: 'ios',
+      commit: 'cafebabe',
+      runId: '3',
+      capturedAt: 'now',
+      files: { 'en-US/iphone-16-pro-max/01-discover.png': createHash('sha256').update(fileBytes).digest('hex') },
+    };
+    let capturedDownloadDir = '';
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'gh' && invocation.args[1] === 'download') {
+        capturedDownloadDir = invocation.args[invocation.args.indexOf('--dir') + 1];
+        writeFileSync(join(capturedDownloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+        writeFileSync(join(capturedDownloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+        return ok();
+      }
+      if (invocation.command === 'unzip') {
+        const target = invocation.args.at(-1) as string;
+        mkdirSync(target, { recursive: true });
+        writeFileSync(join(target, '01-discover.png'), fileBytes);
+      }
+      return ok();
+    });
+    const outDir = join(workDir, 'baseline');
+
+    const result = fetchBaseline({ platform: 'ios', outDir, asset: null, all: true, runner });
+
+    expect(result.found).toBe(true);
+    expect(capturedDownloadDir).not.toBe('');
+    expect(existsSync(capturedDownloadDir)).toBe(false);
+    // The restored shard itself is untouched — only the scratch download dir goes.
+    expect(existsSync(join(outDir, 'en-US', 'iphone-16-pro-max', '01-discover.png'))).toBe(true);
+  });
+
+  it('removes both the auto-created download dir and outDir after a failed fetch', () => {
+    // No manifest written — a baseline that can't prove what it downloaded,
+    // pinned elsewhere as "reports found=false when the manifest is missing
+    // entirely". Here the focus is disk hygiene: both scratch directories
+    // must be gone afterward, not just outDir.
+    let capturedDownloadDir = '';
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'gh' && invocation.args[1] === 'download') {
+        capturedDownloadDir = invocation.args[invocation.args.indexOf('--dir') + 1];
+        writeFileSync(join(capturedDownloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+        return ok();
+      }
+      return ok();
+    });
+    const outDir = join(workDir, 'baseline');
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(join(outDir, 'leftover-from-a-prior-run.png'), 'stale');
+
+    const result = fetchBaseline({
+      platform: 'ios',
+      outDir,
+      asset: 'ios-en-US-iphone-16-pro-max.zip',
+      all: false,
+      runner,
+    });
+
+    expect(result).toEqual({ found: false, commit: '', unzipped: [] });
+    expect(capturedDownloadDir).not.toBe('');
+    expect(existsSync(capturedDownloadDir)).toBe(false);
     expect(existsSync(outDir)).toBe(false);
   });
 });

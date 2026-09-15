@@ -348,36 +348,46 @@ export interface PublishOptions extends Omit<PackOptions, 'outDir'> {
 
 export function publishBaseline(options: PublishOptions): PackResult {
   const runner = options.runner ?? systemCommandRunner;
+  // Only clean up an outDir this function created itself — a caller that
+  // passed its own `--out` owns that directory's lifecycle.
+  const isTempOutDir = options.outDir === undefined;
   const outDir = options.outDir ?? mkdtempSync(join(tmpdir(), 'screenshot-baseline-'));
-  const packed = packBaseline({ ...options, outDir, runner });
 
-  const existing = runner.run('gh', ['release', 'view', BASELINE_TAG]);
-  if (existing.status !== 0) {
-    runOrThrow(runner, 'gh', [
-      'release',
-      'create',
-      BASELINE_TAG,
-      '--prerelease',
-      '--title',
-      BASELINE_TITLE,
-      '--notes',
-      baselineNotes(packed.manifest),
-    ]);
-  } else {
-    // The release already exists: `gh release upload --clobber` below replaces
-    // the assets, but never touches the notes, so without this the release body
-    // would permanently show the commit/run from the very first publish. Edit
-    // it every time so the notes always name the source commit and run that
-    // most recently refreshed the baseline.
-    runOrThrow(runner, 'gh', ['release', 'edit', BASELINE_TAG, '--notes', baselineNotes(packed.manifest)]);
+  try {
+    const packed = packBaseline({ ...options, outDir, runner });
+
+    const existing = runner.run('gh', ['release', 'view', BASELINE_TAG]);
+    if (existing.status !== 0) {
+      runOrThrow(runner, 'gh', [
+        'release',
+        'create',
+        BASELINE_TAG,
+        '--prerelease',
+        '--title',
+        BASELINE_TITLE,
+        '--notes',
+        baselineNotes(packed.manifest),
+      ]);
+    } else {
+      // The release already exists: `gh release upload --clobber` below replaces
+      // the assets, but never touches the notes, so without this the release body
+      // would permanently show the commit/run from the very first publish. Edit
+      // it every time so the notes always name the source commit and run that
+      // most recently refreshed the baseline.
+      runOrThrow(runner, 'gh', ['release', 'edit', BASELINE_TAG, '--notes', baselineNotes(packed.manifest)]);
+    }
+
+    // Zips first, manifest last: a reader that sees the manifest is guaranteed to
+    // see every asset it lists.
+    runOrThrow(runner, 'gh', ['release', 'upload', BASELINE_TAG, ...packed.zipFiles, '--clobber']);
+    runOrThrow(runner, 'gh', ['release', 'upload', BASELINE_TAG, packed.manifestFile, '--clobber']);
+    console.log(`${LOG} published ${packed.zipFiles.length} shard zip(s) for ${options.commit} to ${BASELINE_TAG}.`);
+    return packed;
+  } finally {
+    if (isTempOutDir) {
+      rmSync(outDir, { recursive: true, force: true });
+    }
   }
-
-  // Zips first, manifest last: a reader that sees the manifest is guaranteed to
-  // see every asset it lists.
-  runOrThrow(runner, 'gh', ['release', 'upload', BASELINE_TAG, ...packed.zipFiles, '--clobber']);
-  runOrThrow(runner, 'gh', ['release', 'upload', BASELINE_TAG, packed.manifestFile, '--clobber']);
-  console.log(`${LOG} published ${packed.zipFiles.length} shard zip(s) for ${options.commit} to ${BASELINE_TAG}.`);
-  return packed;
 }
 
 export function baselineNotes(manifest: BaselineManifest): string {
@@ -421,12 +431,35 @@ function failFetch(outDir: string): FetchResult {
 export function fetchBaseline(options: FetchOptions): FetchResult {
   const runner = options.runner ?? systemCommandRunner;
   const outDir = resolve(options.outDir);
+  // Only clean up a download dir this function created itself — a caller
+  // (only tests do this today) that hands in its own directory owns its
+  // lifecycle, the same way publishBaseline treats a caller-supplied outDir.
+  const isTempDownloadDir = options.downloadDir === undefined;
   const downloadDir = options.downloadDir
     ? resolve(options.downloadDir)
     : mkdtempSync(join(tmpdir(), 'screenshot-baseline-download-'));
   mkdirSync(downloadDir, { recursive: true });
   mkdirSync(outDir, { recursive: true });
 
+  try {
+    return fetchBaselineInner(options, runner, outDir, downloadDir);
+  } finally {
+    // Every exit path — success, a `failFetch` early return, or a thrown
+    // error from runUnzip — must not orphan the download dir. `failFetch`
+    // only ever cleans up `outDir`; this is the one place responsible for
+    // `downloadDir`, so it runs regardless of which return path was taken.
+    if (isTempDownloadDir) {
+      rmSync(downloadDir, { recursive: true, force: true });
+    }
+  }
+}
+
+function fetchBaselineInner(
+  options: FetchOptions,
+  runner: CommandRunner,
+  outDir: string,
+  downloadDir: string,
+): FetchResult {
   const manifestName = manifestNameFor(options.platform);
   const pattern = options.all ? `${options.platform}-*.zip` : (options.asset ?? '');
   const download = runner.run('gh', [
