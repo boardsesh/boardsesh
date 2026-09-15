@@ -21,7 +21,10 @@ import {
   getUnfinishedDownloadScopeKeys,
   claimAbandonedDownloadTerminal,
   purgeNamespaceForScopeKey,
+  scopeSyncMetaKeys,
+  offlineBoardKey,
 } from '@boardsesh/offline-sync';
+import { spraySizeIdForLayout } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
@@ -813,17 +816,55 @@ export function resetDatabaseInitializationForTests(): void {
  * here along with their local rows — sign-out is an explicit "this account is done
  * on this device" signal, so dropping unsynced writes is the documented behaviour
  * rather than a data-loss bug.
+ *
+ * `spray_walls` is the exception the docblock above has to make room for (#5448):
+ * its rows ARE deleted, so the markers describing them cannot be kept. A cursor
+ * that outlived its row is worse than no cursor at all — `syncSprayWalls` pages
+ * on a strict `>`, so it would resume PAST the deleted wall and an unchanged
+ * wall would never be offered again. The wall would be missing until its owner
+ * next touched it on the server. So each deleted wall's whole scope goes with
+ * it, in the same transaction; the next sign-in re-downloads one wall, which is
+ * a page, not a catalogue.
+ *
+ * Returns the photo keys of the walls it removed, so the caller can delete the
+ * files. They are read in the same transaction as the DELETE because afterwards
+ * nothing on the device names them.
  */
-export async function clearUserData(db: SQLiteDatabase): Promise<void> {
+export async function clearUserData(db: SQLiteDatabase): Promise<string[]> {
+  const removedPhotoKeys: string[] = [];
   await db.withExclusiveTransactionAsync(async (txn) => {
     // Sign-out teardown runs on its own connection concurrently with in-flight sync
     // reads/writes; wait for the lock instead of failing instantly (BOARDSESH-A9).
     await applyBusyTimeout(txn);
+
+    // Read BEFORE the deletes: both the keys the caller needs and the scopes
+    // whose markers must not outlive their rows.
+    const walls = await txn.getAllAsync<{ layout_id: number; photo_key: string | null }>(
+      'SELECT layout_id, photo_key FROM spray_walls',
+    );
+
     for (const table of USER_DATA_TABLES_TO_CLEAR) {
       await txn.runAsync(`DELETE FROM ${table}`);
     }
     await deleteUserCheckpoints(txn);
+
+    for (const wall of walls) {
+      if (wall.photo_key) removedPhotoKeys.push(wall.photo_key);
+      // A wall's scope key is `spray:<layoutId>:<layoutId>` — a wall is its own
+      // size (`spraySizeIdForLayout`). `scopeSyncMetaKeys` is the same list
+      // `removeBoardScopeData` clears, so the two cannot drift: checkpoints for
+      // every per-board table, the refresh state, and every lifecycle marker.
+      const scopeKey = offlineBoardKey({
+        boardType: 'spray',
+        layoutId: wall.layout_id,
+        sizeId: spraySizeIdForLayout(wall.layout_id),
+      });
+      for (const key of scopeSyncMetaKeys(scopeKey)) {
+        await txn.runAsync('DELETE FROM sync_meta WHERE key = ?', [key]);
+      }
+    }
   });
+  return removedPhotoKeys;
 }
 
 /** What an explicit sign-out's wipe actually removed, for telemetry. */

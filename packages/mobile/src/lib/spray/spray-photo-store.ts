@@ -32,6 +32,13 @@ import { Directory, File, Paths } from 'expo-file-system';
 export const SPRAY_PHOTO_STORE_DIR_NAME = 'spray-wall-photos';
 
 /**
+ * Whether this platform has a durable store at all. True here; the browser twin
+ * says false, so the sink can tell "the download failed, retry it" apart from
+ * "there is nowhere to put bytes on this platform, stop asking".
+ */
+export const SPRAY_PHOTO_STORE_AVAILABLE = true;
+
+/**
  * A filesystem-safe name for an object key.
  *
  * Keys are server-generated (`sprayWallPhotoKey`) and look like

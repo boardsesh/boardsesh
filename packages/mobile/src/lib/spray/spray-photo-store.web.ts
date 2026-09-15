@@ -12,6 +12,15 @@
 
 export const SPRAY_PHOTO_STORE_DIR_NAME = 'spray-wall-photos';
 
+/**
+ * There is no durable store in a browser, so a failed "store" is not a failure
+ * to retry — it is the platform saying the question does not apply. The sink
+ * reads this before it records a photo as pending; without it, web would rewind
+ * the wall cursor on every cycle forever, re-pulling a row to fetch bytes it has
+ * nowhere to put.
+ */
+export const SPRAY_PHOTO_STORE_AVAILABLE = false;
+
 export function sprayPhotoStoreFileName(photoKey: string): string {
   return photoKey.replace(/[^A-Za-z0-9._-]/g, '_');
 }

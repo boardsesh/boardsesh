@@ -263,16 +263,19 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       } else {
         await clearUserData(localDb);
       }
-      // The wall photographs, wiped on BOTH branches. The rows in `spray_walls`
-      // name a file each; deleting the rows without the files would leave a
-      // picture of the previous account's garage decodable on a shared phone,
-      // with nothing left on disk that says whose it was (issue #5448).
-      clearStoredSprayPhotos();
     } catch (error) {
       if (__DEV__) {
         console.warn('[Auth] local offline data cleanup during sign-out failed:', error);
       }
     } finally {
+      // The wall photographs (#5448), in `finally` and NOT after the wipe above.
+      // The database cleanup is the one step here that is expected to fail — a
+      // locked database is the documented case — and a throw there used to jump
+      // straight past this, leaving the previous account's private garage photos
+      // in durable storage on a shared phone. The filesystem wipe does not need
+      // the database to have succeeded, and it is the half that cannot be
+      // recovered later: once `spray_walls` is gone, nothing names the files.
+      clearStoredSprayPhotos();
       setSigningOut(false);
     }
   }, []);

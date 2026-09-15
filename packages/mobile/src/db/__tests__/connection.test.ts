@@ -58,6 +58,7 @@ import {
   markScopeDownloadComplete,
   isScopeDownloadComplete,
   getDownloadedScopeKeys,
+  scopeSyncMetaKeys,
   BOARD_DATA_TABLES,
 } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
@@ -167,6 +168,35 @@ describe('clearUserData', () => {
     expect(await countRows('board_climb_stats')).toBe(1);
   });
 
+  // The cursor must never outlive the row it describes. `syncSprayWalls` pages on
+  // a strict `>`, so a checkpoint left behind for a wall this wipe deleted would
+  // resume PAST that wall: an unchanged wall is never offered again, and its
+  // holds and photograph stay missing until the owner edits it on the server.
+  it('clears each deleted wall\u2019s scope markers, and returns its photo key', async () => {
+    await db.runAsync(`INSERT INTO spray_walls (layout_id, board_uuid, photo_key) VALUES (?, ?, ?)`, [
+      4,
+      'board-4',
+      'spray-walls/wall-4/photo-2.jpg',
+    ]);
+    const wallScopeKeys = scopeSyncMetaKeys('spray:4:4');
+    for (const key of wallScopeKeys) {
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [key, '1']);
+    }
+    // A catalogue board's markers, which this wipe must still preserve.
+    await setCheckpoint(db, getCheckpointKey('board_climbs', 'kilter:1:1'), {
+      updatedAt: '2024-06-01T00:00:00Z',
+      syncSeq: '5',
+    });
+
+    const removedPhotoKeys = await clearUserData(db);
+
+    expect(removedPhotoKeys).toEqual(['spray-walls/wall-4/photo-2.jpg']);
+    for (const key of wallScopeKeys) {
+      const row = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key = ?', [key]);
+      expect(row, `${key} should be gone with the wall`).toBeNull();
+    }
+    expect(await getCheckpoint(db, getCheckpointKey('board_climbs', 'kilter:1:1'))).not.toBeNull();
+  });
   it('is a no-op on an already-empty database', async () => {
     await clearUserData(db);
 

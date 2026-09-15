@@ -28,6 +28,17 @@ export type TableSyncConfig = {
    * schema-drift event for a column the resolver is emitting on purpose.
    */
   transientColumns?: readonly string[];
+  /**
+   * Columns to read out of a row BEFORE a tombstone deletes it, handed to the
+   * `onRowsDeleted` sink afterwards.
+   *
+   * One user today: `spray_walls.photo_key`. The generic deletion processor
+   * deletes by primary key and knows nothing about files, so once the row is
+   * gone nothing on the device can say which JPEG belonged to it — not the board
+   * teardown (its row is missing) and not the photo sink (it only sees walls the
+   * device still has). Captured here, the platform can delete the bytes.
+   */
+  captureOnDelete?: readonly string[];
   /** Bump when existing reference rows need newly synced fields backfilled. */
   refreshRevision?: number;
   /** Cumulative fields that must be present before coverage can be stamped. */
@@ -273,6 +284,9 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     // The presigned photo URL rides along and is never written. See the field's
     // docblock on TableSyncConfig above.
     transientColumns: ['photo_url'],
+    // A wall tombstone has to take the photograph with it; the row is the only
+    // thing that names the file.
+    captureOnDelete: ['layout_id', 'photo_key'],
   },
 };
 
