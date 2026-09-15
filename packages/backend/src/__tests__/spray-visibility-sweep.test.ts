@@ -117,7 +117,6 @@ const { schema } = await import('../graphql/index');
 const { sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
-const { sprayWallQueries: sprayWallQueriesProbe } = await import('../graphql/resolvers/board/spray-walls');
 
 // ---------------------------------------------------------------------------
 // Sentinels
@@ -593,7 +592,6 @@ const NOT_APPLICABLE: Record<string, string> = {
   // goes private or is deleted AFTER the fan-out — is what matters here, and
   // spray-wall-api.test.ts drives it directly.
   'Query.activityFeed': 'reads materialised feed_items, which a private wall never writes',
-  'Query.trendingFeed': 'reads materialised feed_items, which a private wall never writes',
   'Query.sessionGroupedFeed': 'reads materialised feed_items, which a private wall never writes',
   'Query.followingClimbAscents': 'ascents by people the viewer follows, and the sweep seeds no follows',
 
@@ -608,7 +606,6 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.boardRecentClimbs': 'presence history is driven by live queue events, and the sweep publishes none',
   'Query.boardHistory': 'same: live queue events only',
   'Query.boardClimbRecentSenders': 'same: live queue events only',
-  'Query.boardPresenceStats': 'counts over presence events, which the sweep publishes none of',
   'Query.boardConnection': 'who holds the board connection right now; Redis state',
   'Query.boardQueuePreview': 'the live queue preview; Redis state',
   'Query.boardLeaderboard': 'senders and counts for the board uuid the caller sent; no climb is named',
@@ -629,7 +626,6 @@ const NOT_APPLICABLE: Record<string, string> = {
   // through a live outbound fetch that CI cannot answer; the unknown-platform
   // path serves only an already-cached thumbnail, so the row is dropped before
   // it is returned. The gates themselves are pinned by spray-wall-api.test.ts.
-  'Query.betaLinks': 'the seeded link has no cached thumbnail, so enrichment drops it before the resolver returns',
   'Query.recentBetaLinks': 'same — and the home slider reads only enriched rows',
   'Query.userBetaLinks': 'same',
 
@@ -729,7 +725,12 @@ async function runRow(row: SweepRow, ctx: ConnectionContext): Promise<Outcome> {
           iterator.next().then((step) => (step.done === true ? 'closed' : 'event')),
           new Promise<'open'>((resolve) => setTimeout(() => resolve('open'), SUBSCRIPTION_SETTLE_MS)),
         ]);
-        await iterator.return?.(undefined);
+        // NOT awaited. A resolver that gates by ending its stream is an async
+        // GENERATOR, and by now it is suspended inside its own `for await` on a
+        // pubsub push that this sweep never sends. `return()` on a generator in
+        // that state queues behind the pending `next()` and settles never — an
+        // `await` here hangs the whole sweep, which is how it was found.
+        void Promise.resolve(iterator.return?.(undefined)).catch(() => undefined);
         return { data: null, errorMessages: [], subscribed: first !== 'closed' };
       }
       return {
@@ -991,7 +992,6 @@ function isExercised(row: SweepRow): boolean {
   }
   return findSentinels(perViewer.owner.data, scannableSentinels(row.variables)).length > 0;
 }
-let seedTimeCounts: unknown = null;
 
 /**
  * Seed, retrying a couple of times.
@@ -1038,13 +1038,6 @@ beforeAll(async () => {
     { name: 'layout id', value: world.layoutId, kind: 'identifier' },
   ];
   rows = enumerateRows();
-  seedTimeCounts = JSON.parse(
-    JSON.stringify(
-      await db.execute(
-        sql`SELECT (SELECT count(*) FROM board_climbs) AS climbs, (SELECT count(*) FROM user_boards) AS boards, current_database() AS dbname, pg_backend_pid() AS pid`,
-      ),
-    ),
-  );
 
   for (const row of rows) {
     const perViewer = {} as Record<ViewerName, Outcome>;
@@ -1062,52 +1055,6 @@ afterAll(() => {
 describe('the spray-wall visibility sweep', () => {
   it('enumerates the climb readers from the schema', () => {
     expect(rows.length).toBeGreaterThan(30);
-  });
-
-  it('DEBUG probe', async () => {
-    const counts = await db.execute(
-      sql`SELECT (SELECT count(*) FROM board_climbs) AS climbs, (SELECT count(*) FROM spray_walls) AS walls, (SELECT count(*) FROM user_boards) AS boards, (SELECT count(*) FROM users) AS users, current_database() AS dbname, pg_backend_pid() AS pid`,
-    );
-    const direct = await sprayWallQueriesProbe.sprayWall({}, { uuid: world.wallUuid }, ctxFor(OWNER));
-    const viaGraphql = await runRow(
-      rows.find((r) => r.key === 'Query.sprayWall')!,
-      ctxFor(OWNER),
-    );
-    requireFromHere('node:fs').writeFileSync(
-      '/home/developer/.cache/claude-tmp/sweep-probe.json',
-      JSON.stringify(
-        { seedTimeCounts, counts: JSON.parse(JSON.stringify(counts)), world, direct, viaGraphql },
-        null,
-        2,
-      ),
-    );
-    expect(1).toBe(1);
-  });
-
-  it('DEBUG dump', () => {
-    const report = rows.map((row) => {
-      const perViewer = outcomes.get(row.key)!;
-      const scanFor = scannableSentinels(row.variables);
-      return {
-        key: row.key,
-        kinds: row.kinds,
-        vars: row.variables,
-        ownerFound: findSentinels(perViewer.owner.data, scanFor),
-        ownerErrors: perViewer.owner.errorMessages.slice(0, 3),
-        ownerData: JSON.stringify(perViewer.owner.data)?.slice(0, 600),
-        ownerSubscribed: perViewer.owner.subscribed,
-        strangerSubscribed: perViewer.stranger.subscribed,
-        anonSubscribed: perViewer.anonymous.subscribed,
-        strangerFound: findSentinels(perViewer.stranger.data, scanFor),
-        anonFound: findSentinels(perViewer.anonymous.data, scanFor),
-        doc: row.document.slice(0, 200),
-      };
-    });
-    requireFromHere('node:fs').writeFileSync(
-      '/home/developer/.cache/claude-tmp/sweep-report.json',
-      JSON.stringify(report, null, 2),
-    );
-    expect(report.length).toBeGreaterThan(0);
   });
 
   it('covers every enumerated field — exercised, or allow-listed with a reason', () => {
