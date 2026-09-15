@@ -209,7 +209,12 @@ vi.mock('../../../src/components/offline/OfflineCatalogCta', () => ({ OfflineCat
 vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: vi.fn(async () => true), armWithoutConfirm: vi.fn() }),
 }));
-vi.mock('../../../src/providers/feature-flags-provider', () => ({ useOfflineDownloadsEnabled: () => true }));
+vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useOfflineDownloadsEnabled: () => true,
+  // The spray-wall tile is behind its own flag (epic #5346, SW-09). Off here so
+  // these cases keep describing the board row they were written for.
+  useSprayWallsEnabled: () => false,
+}));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
 vi.mock('../../../src/offline/use-remember-downloaded-boards', () => ({ useRememberDownloadedBoards: vi.fn() }));

@@ -97,7 +97,8 @@
       "pinAria": "{{name}} anpinnen",
       "unpinAria": "{{name}} abpinnen",
       "pinnedBadgeAria": "Angepinnt",
-      "pinError": "Deine angepinnten Boards ließen sich nicht aktualisieren"
+      "pinError": "Deine angepinnten Boards ließen sich nicht aktualisieren",
+      "addWallTile": "Spraywand"
     },
     "create": {
       "screenTitle": "Richte dein Board ein",
@@ -749,6 +750,78 @@
     },
     "empty": {
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
+    }
+  },
+  "sprayWizard": {
+    "screenTitle": "Spraywand hinzufügen",
+    "stepCounter": "Schritt {{current}} von {{total}}",
+    "back": "Zurück",
+    "meta": {
+      "title": "Was ist das für eine Wand?",
+      "body": "Gib ihr einen Namen, sag wie steil sie ist, und wähle, wer sie sehen darf.",
+      "namePlaceholder": "Garagenwand",
+      "angle": "Winkel",
+      "angleHint": "Grad aus der Senkrechten, {{min}} bis {{max}}. Nach dem Veröffentlichen fest.",
+      "publicHint": "Aus bleiben die Wand und ihr Foto nur bei dir.",
+      "next": "Foto wählen"
+    },
+    "photo": {
+      "title": "Fotografiere die Wand",
+      "body": "Stell dich frontal hin, fotografiere bei 1x und hol die ganze Wand ins Bild. Jeder Griff, den du setzt, lebt auf diesen Pixeln.",
+      "library": "Foto wählen",
+      "camera": "Foto aufnehmen",
+      "pickAnother": "Anderes Foto wählen",
+      "next": "Weiter",
+      "libraryDenied": "Boardsesh braucht deine Mediathek, um eine Wand hinzuzufügen.",
+      "cameraDenied": "Boardsesh braucht deine Kamera, um eine Wand zu fotografieren.",
+      "failed": "Dieses Foto lässt sich nicht öffnen. Nimm ein anderes."
+    },
+    "anchors": {
+      "title": "Markiere die Ecken",
+      "body": "Zieh die vier Ringe auf die Ecken der Wand. Überspring das, wenn du frontal fotografiert hast.",
+      "hint": "Oben links, oben rechts, unten rechts, unten links.",
+      "crossed": "Diese Ecken kreuzen sich. Setz sie der Reihe nach um die Wand.",
+      "cornerTopLeft": "Ecke oben links",
+      "cornerTopRight": "Ecke oben rechts",
+      "cornerBottomRight": "Ecke unten rechts",
+      "cornerBottomLeft": "Ecke unten links",
+      "use": "Diese Ecken nehmen",
+      "skip": "Erstmal überspringen",
+      "clear": "Ecken neu setzen"
+    },
+    "upload": {
+      "title": "Dein Foto geht raus",
+      "working": "Dein Foto geht raus…",
+      "percent": "{{percent}} % gesendet",
+      "failed": "Das Foto ist nicht durchgekommen.",
+      "retry": "Nochmal versuchen"
+    },
+    "detect": {
+      "title": "Suche nach Griffen",
+      "working": "Suche nach Griffen…",
+      "tiles": "Durchgang {{done}} von {{total}}"
+    },
+    "review": {
+      "found": "{{value}} Griffe zum Prüfen",
+      "nothingFound": "Nichts gefunden. Zeichne die Griffe selbst.",
+      "manualOnly": "Diese Version kann keine Griffe vorschlagen. Zeichne sie selbst.",
+      "detectionFailed": "Die Griffsuche ist schiefgegangen. Zeichne sie selbst.",
+      "done": "Fertig"
+    },
+    "publish": {
+      "title": "Ab zu deinen Boards",
+      "body": "Deine Griffe sind gespeichert. Veröffentliche die Wand und du kannst schrauben.",
+      "cta": "Diese Wand hinzufügen",
+      "failed": "Die Wand konnte nicht veröffentlicht werden."
+    },
+    "done": {
+      "body": "Deine Wand wird eingerichtet…"
+    },
+    "leave": {
+      "title": "Diese Wand erstmal liegen lassen?",
+      "body": "Deine Wand und ihr Foto sind gespeichert. Mach weiter, wo du aufgehört hast.",
+      "stay": "Weitermachen",
+      "go": "Verlassen"
     }
   }
 }
