@@ -6,6 +6,7 @@ import {
 } from '@boardsesh/board-config';
 import { getProductSize, getSetsForLayoutAndSize, getSizesForLayoutId } from '@boardsesh/board-constants/product-sizes';
 import { getBoardRenderData } from '../board-details';
+import { sprayCacheToken } from '../spray/spray-wall-registry';
 import { getBoardConfigForClimb } from './board-details-for-playlist';
 import type { PlaylistRenderBoard } from './use-playlist-render-board';
 
@@ -53,7 +54,13 @@ const RENDER_BOARD_TARGET_CACHE_LIMIT = 32;
 const renderBoardTargetCache = new Map<string, BoardCompatibilityTarget>();
 
 export function getPlaylistRenderBoardTarget(renderBoard: PlaylistRenderBoard): BoardCompatibilityTarget {
-  const cacheKey = `${renderBoard.boardName}-${renderBoard.layoutId}-${renderBoard.sizeId}-${renderBoard.setIds}`;
+  // The spray token (empty for every catalogue board) carries the wall version.
+  // The cached target holds `holdsData`, which `canAddClimbToBoard` reads, so
+  // without it a row rendered before the wall registered would pin
+  // `holdsData: undefined` for the session, and a row rendered before a reset
+  // would keep matching against the hold ids that came off the wall.
+  const sprayToken = sprayCacheToken(renderBoard.boardName, renderBoard.layoutId);
+  const cacheKey = `${renderBoard.boardName}-${renderBoard.layoutId}-${renderBoard.sizeId}-${renderBoard.setIds}${sprayToken}`;
   const cached = renderBoardTargetCache.get(cacheKey);
   if (cached) return cached;
 

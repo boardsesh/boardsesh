@@ -47,3 +47,7 @@ export function ensureSprayPhotoCached(identity: SprayPhotoIdentity): Promise<st
 export function clearSprayPhotoPathCache(): void {
   // No memo to clear: the URL comes straight off the registry on every read.
 }
+
+export function resetSprayPhotoCacheForTests(): void {
+  // Same: nothing is memoised in a browser.
+}

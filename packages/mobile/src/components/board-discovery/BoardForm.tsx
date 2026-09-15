@@ -120,13 +120,12 @@ export function BoardForm({
 
   // Chip options — memoised so the per-snap angle re-render doesn't rebuild them
   // (they don't depend on angle), letting the memoised chip rows bail out.
-  // Spray is excluded: a wall is not a catalogue board you pick a layout and a
-  // size for, it is a photograph you take. It gets its own front door (SW-09),
-  // and offering it here would land the climber on a board type whose layout,
-  // size and set lists are all empty by definition.
+  // `SUPPORTED_BOARDS` already drops spray (`board-data.ts`): a wall is not a
+  // catalogue board you pick a layout and a size for, it is a photograph you
+  // take, and it gets its own front door in SW-09.
   const boardOptions = useMemo(
     () =>
-      SUPPORTED_BOARDS.filter((board) => board !== 'spray').map((board) => ({
+      SUPPORTED_BOARDS.map((board) => ({
         key: board,
         label: boardTypeLabel(board),
         value: board,
@@ -215,10 +214,10 @@ export function BoardForm({
           disabled={lockedConfig}
         />
 
-        {/* Gated the way the size and set rows below already are. A spray wall has
-            no catalogue layouts at all — its layout IS the wall — so without this
-            an existing wall opened for editing would show a "Layout" heading over
-            an empty row. */}
+        {/* Gated the way the size and set rows below already are. Spray cannot be
+            PICKED here, but an existing wall can still be opened for editing, and
+            a wall has no catalogue layouts at all — its layout IS the wall — so
+            without this it would show a "Layout" heading over an empty row. */}
         {builder.layouts.length > 0 ? (
           <>
             <SectionLabel>{t('mobile.custom.layout')}</SectionLabel>

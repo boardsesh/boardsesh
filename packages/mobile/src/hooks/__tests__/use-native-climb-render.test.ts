@@ -740,10 +740,14 @@ describe('the wall version in the render cache keys', () => {
   });
 
   it('leaves every catalogue board key byte-identical', () => {
+    // Pinned to literals, not to themselves: a self-comparison would pass even if
+    // the token leaked into every board's key.
+    const kilterKey = buildCacheKey('kilter', 1, 10, '24,25', 'p1r42p2r43');
     registerWall(7);
-    expect(buildCacheKey('kilter', 1, 10, '24,25', 'p1r42p2r43')).toBe(
-      buildCacheKey('kilter', 1, 10, '24,25', 'p1r42p2r43'),
-    );
+    expect(buildCacheKey('kilter', 1, 10, '24,25', 'p1r42p2r43')).toBe(kilterKey);
+    // Pinned to the shape, so a token leaking onto a catalogue key fails here
+    // even though the frames hash is not written out by hand.
+    expect(kilterKey).toMatch(/^v\d+_s_wfull_kilter_1_10_24,25_[0-9a-f]{8}$/);
     expect(buildBoardKey('kilter', 1, 10, '24,25')).toBe('kilter-1-10-24,25-full-light');
   });
 });

@@ -59,6 +59,31 @@ function photoFile(identity: SprayPhotoIdentity): File {
 }
 
 /**
+ * Where a download lands before it is complete.
+ *
+ * `File.downloadFileAsync` streams the response body STRAIGHT INTO the
+ * destination on Android, and its own docs say a partially written file may be
+ * left there when the request fails part-way. A truncated JPEG under the real
+ * name is worse than no file: `tryGetSprayPhotoPathSync` sees `exists`, hands it
+ * to the decoder, and keeps doing so for good — there is no checksum to catch it
+ * and the sync resolver never re-downloads. So the download goes to `.part` and
+ * only a completed one is moved into place. iOS already stages its own temp
+ * file; this makes the two platforms behave the same.
+ */
+function partialPhotoFile(identity: SprayPhotoIdentity): File {
+  return new File(new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME), `${sprayPhotoFileName(identity)}.part`);
+}
+
+/** Delete a file if it is there, swallowing the race where it is not. */
+function deleteQuietly(file: File): void {
+  try {
+    if (file.exists) file.delete();
+  } catch {
+    // A file we cannot remove is a file the next download overwrites.
+  }
+}
+
+/**
  * Strip the `file://` scheme, matching `toFilesystemPath` in
  * `background-image-cache.ts` — the native decoders behind the board renderer
  * want a path, not a URI.
@@ -123,26 +148,65 @@ async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Pr
   const wall = getSprayWall(identity.layoutId);
   if (!wall || wall.version !== identity.version) return null;
 
+  // A signature that has already expired cannot be fetched with, and retrying it
+  // would 403 on every pass for the rest of the session while the board showed a
+  // placeholder. The render query owns minting a fresh one; the honest answer
+  // here is "no photo yet", which is what a refetch then fixes.
+  if (isExpired(wall.photoExpiresAt)) return null;
+
+  const destination = photoFile(identity);
+  const partial = partialPhotoFile(identity);
   try {
     const directory = new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME);
     directory.create({ intermediates: true, idempotent: true });
 
-    const destination = photoFile(identity);
-    // A half-written file from a killed download would otherwise be handed
-    // straight to the decoder as a complete photo.
-    if (destination.exists) destination.delete();
+    // Leftovers from a download this process did not finish. Both are dead: a
+    // `.part` was never complete, and a destination we are about to replace is
+    // one `tryGetSprayPhotoPathSync` already declined.
+    deleteQuietly(partial);
+    deleteQuietly(destination);
 
-    const downloaded = await File.downloadFileAsync(wall.photoUrl, destination);
-    const path = toPath(downloaded.uri);
+    const downloaded = await File.downloadFileAsync(wall.photoUrl, partial, { idempotent: true });
+    downloaded.moveSync(destination);
+
+    const path = toPath(destination.uri);
     resolvedPaths.set(key, path);
     return path;
   } catch {
+    // Never leave a truncated body behind under either name.
+    deleteQuietly(partial);
+    deleteQuietly(destination);
     return null;
   }
 }
 
-/** Forget the resolved-path memo. Tests only; a path on disk does not change under a running app. */
+/**
+ * Whether a presigned signature has already lapsed.
+ *
+ * An unparseable stamp is treated as still valid: the server always sends an ISO
+ * string, so a failure to parse one means something we do not understand rather
+ * than a URL we know is dead, and refusing to fetch on that would blank a wall
+ * that would have loaded.
+ */
+function isExpired(expiresAt: string): boolean {
+  const expiryMs = Date.parse(expiresAt);
+  return Number.isFinite(expiryMs) && expiryMs <= Date.now();
+}
+
+/**
+ * Forget the resolved-path memo.
+ *
+ * Called by the cache sweeper as well as by tests: a swept photo's path is still
+ * in this map, and handing it out would point the decoder at a file that is no
+ * longer there. In-flight downloads are deliberately NOT dropped — one is about
+ * to write the file back.
+ */
 export function clearSprayPhotoPathCache(): void {
+  resolvedPaths.clear();
+}
+
+/** Forget both the memo and any in-flight download. Tests only. */
+export function resetSprayPhotoCacheForTests(): void {
   resolvedPaths.clear();
   pendingDownloads.clear();
 }

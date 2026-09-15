@@ -61,6 +61,37 @@ describe('mapCanonicalHoldsToPhoto', () => {
     }
   });
 
+  it('divides the outline by the MAPPED radius, not the stored one', () => {
+    // Two identical circular silhouettes, one where the map compresses and one
+    // where it does not. With the correct denominator BOTH come back at ~1 radius,
+    // because each is divided by the radius it was mapped TO. Divide by the
+    // stored radius instead and each ring comes back at its own local scale
+    // factor, so the two disagree — no magic number needed, and it is exactly the
+    // mutation the identity-matrix case above cannot see.
+    const circle: number[] = [];
+    for (let step = 0; step < 16; step++) {
+      const angle = (step / 16) * 2 * Math.PI;
+      circle.push(Math.cos(angle), Math.sin(angle));
+    }
+    const mapped = mapCanonicalHoldsToPhoto(PHOTO_TO_CANONICAL, [
+      { id: 1, cx: 60, cy: 400, r: 20, outline: circle },
+      { id: 2, cx: 940, cy: 400, r: 20, outline: circle },
+    ]);
+
+    // The two holds really are at different local scales, or this proves nothing.
+    expect(mapped![0].r).not.toBeCloseTo(mapped![1].r, 2);
+
+    const meanRingRadius = (outline: number[]) => {
+      let total = 0;
+      for (let index = 0; index + 1 < outline.length; index += 2) {
+        total += Math.hypot(outline[index], outline[index + 1]);
+      }
+      return total / (outline.length / 2);
+    };
+    expect(meanRingRadius(mapped![0].outline!)).toBeCloseTo(1, 1);
+    expect(meanRingRadius(mapped![1].outline!)).toBeCloseTo(1, 1);
+  });
+
   it('distorts a silhouette with the wall it sits on', () => {
     const outline = [1, 1, -1, 1, -1, -1, 1, -1];
     const mapped = mapCanonicalHoldsToPhoto(PHOTO_TO_CANONICAL, [{ id: 1, cx: 940, cy: 120, r: 24, outline }]);

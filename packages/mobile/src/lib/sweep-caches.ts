@@ -53,7 +53,7 @@ import {
 import { track } from './analytics';
 import { SNAPSHOT_DIR_NAME } from '../offline/snapshot-paths';
 import { SPRAY_PHOTO_CACHE_DIR_NAME } from './spray/spray-photo-keys';
-import { liveSprayPhotoFileNames } from './spray/spray-photo-cache';
+import { clearSprayPhotoPathCache, liveSprayPhotoFileNames } from './spray/spray-photo-cache';
 
 /** Must match the directory the native BoardRenderer modules write PNGs into. */
 export const OVERLAY_CACHE_DIR_NAME = 'board-thumbnails';
@@ -193,6 +193,10 @@ export async function sweepSprayPhotos(options?: { maxAgeMs?: number; nowMs?: nu
   }
 
   const deletedNames = deleteCacheDirEntries(SPRAY_PHOTO_CACHE_DIR_NAME, plan.deleteNames);
+  // The resolved-path memo still holds paths to what we just deleted, and it is
+  // consulted BEFORE the filesystem — handing one out would point the decoder at
+  // a file that is gone. Cheap to rebuild: one `stat` per wall on the next read.
+  clearSprayPhotoPathCache();
   invalidateCacheMeasurement(SPRAY_PHOTO_CACHE_DIR_NAME);
   return measureFreedBytes({ entries: walk.entries, deletedNames, countableNames: plan.deleteNames });
 }
@@ -317,7 +321,9 @@ export async function sweepBoardArtCache(params: {
 
   const walk = await walkCacheDir(OVERLAY_CACHE_DIR_NAME);
   if (walk === null) {
-    return sprayPhotoBytes > 0 ? { beforeBytes: 0, freedBytes: sprayPhotoBytes, filesDeleted: 0 } : EMPTY_SWEEP;
+    return sprayPhotoBytes > 0
+      ? { beforeBytes: sprayPhotoBytes, freedBytes: sprayPhotoBytes, filesDeleted: 0 }
+      : EMPTY_SWEEP;
   }
 
   const plan = planLruEviction({
@@ -330,7 +336,10 @@ export async function sweepBoardArtCache(params: {
   if (deleteNames.length === 0) {
     // The walk we just paid for is the measurement Manage Storage would take.
     recordCacheMeasurement(OVERLAY_CACHE_DIR_NAME, plan.beforeBytes, nowMs);
-    return { beforeBytes: plan.beforeBytes, freedBytes: sprayPhotoBytes, filesDeleted: 0 };
+    // The wall photos this sweep freed were part of what the caches held before
+    // it ran, so they count on both sides — otherwise `CachedImagesSwept` can
+    // report freeing more than there was.
+    return { beforeBytes: plan.beforeBytes + sprayPhotoBytes, freedBytes: sprayPhotoBytes, filesDeleted: 0 };
   }
 
   const deletedNames = deleteCacheDirEntries(OVERLAY_CACHE_DIR_NAME, deleteNames);
@@ -341,7 +350,8 @@ export async function sweepBoardArtCache(params: {
   // the delete pass couldn't remove leaves the cache above its cap, and saying
   // otherwise here would put the fiction straight into `CachedImagesSwept`.
   const result = {
-    beforeBytes: plan.beforeBytes,
+    // Spray photos counted on both sides — see the early return above.
+    beforeBytes: plan.beforeBytes + sprayPhotoBytes,
     freedBytes:
       sprayPhotoBytes + measureFreedBytes({ entries: walk.entries, deletedNames, countableNames: plan.evictNames }),
     filesDeleted: deletedNames.length,

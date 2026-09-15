@@ -28,7 +28,7 @@ import {
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
-import { sprayCacheToken } from '../lib/spray/spray-wall-registry';
+import { sprayCacheToken, subscribeToSprayWalls } from '../lib/spray/spray-wall-registry';
 import {
   ensureBackgroundsCached,
   tryGetBackgroundPathsSync,
@@ -1915,9 +1915,26 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     [effectiveOverrideSignature, boardRenderSignature],
   );
 
+  // The wall version for a spray board, `''` for every catalogue one.
+  //
+  // Subscribed rather than read, because it is the ONE builder input that is not
+  // a prop: `useSprayWall` writes it into a module-level registry, so nothing
+  // would re-render the surfaces that key off it. Without this a board mounted
+  // before the wall query landed keeps the `-sv0` key it computed — the effect
+  // below never re-runs and the wall stays blank for the life of the hook
+  // instance — and after a reset the memoised previous-version key survives,
+  // which is the stale overlay over the new photograph this whole slice exists
+  // to prevent. A primitive snapshot, so a re-render with no change is a no-op.
+  const sprayVersionToken = useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => sprayCacheToken(boardName, layoutId), [boardName, layoutId]),
+  );
+
   // Both keys feed cache lookups on every FlashList row recycle; buildCacheKey
   // runs an fnv1a char-loop over the frames string. Memoize on exactly the
   // builders' inputs — a stale key would collide two climbs' overlays.
+  // `sprayVersionToken` is in the deps for that reason: the builders read it out
+  // of the registry rather than off a prop.
   const currentCacheKey = useMemo(
     () =>
       buildCacheKey(
@@ -1930,11 +1947,21 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         renderWidth,
         effectiveRenderSignature,
       ),
-    [boardName, layoutId, sizeId, setIds, flatFrames, filledStyle, renderWidth, effectiveRenderSignature],
+    [
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      flatFrames,
+      filledStyle,
+      renderWidth,
+      effectiveRenderSignature,
+      sprayVersionToken,
+    ],
   );
   const currentBoardKey = useMemo(
     () => buildBoardKey(boardName, layoutId, sizeId, setIds, variant, colorScheme),
-    [boardName, layoutId, sizeId, setIds, variant, colorScheme],
+    [boardName, layoutId, sizeId, setIds, variant, colorScheme, sprayVersionToken],
   );
 
   // Parsed set ids, reused by the lazy background initializer and the

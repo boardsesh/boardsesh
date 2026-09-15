@@ -12,7 +12,7 @@
 // local copy on disk is keyed on `(layoutId, version)` instead — see
 // `spray-photo-cache.ts`.
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { GET_SPRAY_WALL_BY_LAYOUT, GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
@@ -55,28 +55,31 @@ function toCanonicalHolds(renderData: SprayWallRenderData): CanonicalSprayHold[]
 }
 
 /**
- * The photo's own pixel size, falling back to the canonical frame.
+ * The photo's own pixel size, or `null`.
  *
  * `SprayWallPhoto.width` / `height` are nullable — they come off the stored
- * object's metadata, and a row written by hand may have neither. The canonical
- * frame is the honest fallback for a wall whose photo IS its frame (the identity
- * homography case, which is every wall created without anchors), and it is the
- * right shape even when it is not exactly the photo's: a wrong aspect stretches
- * the picture, whereas a zero would make the render path report no board at all.
+ * object's metadata, and a row written by hand may have neither. There is no
+ * fallback, and the canonical frame is specifically NOT one: holds were mapped
+ * into PHOTO pixels, so drawing them against a frame of a different aspect does
+ * not stretch the picture, it slides every hold off the hold it belongs to. A
+ * wall whose photo will not say how big it is cannot be drawn, and the render
+ * path's placeholder is the honest answer.
  */
-function photoDimensions(renderData: SprayWallRenderData): { width: number; height: number } {
-  return {
-    width: renderData.photo.width ?? renderData.boardWidth,
-    height: renderData.photo.height ?? renderData.boardHeight,
-  };
+function photoDimensions(renderData: SprayWallRenderData): { width: number; height: number } | null {
+  const { width, height } = renderData.photo;
+  if (typeof width !== 'number' || typeof height !== 'number') return null;
+  if (!(width > 0) || !(height > 0)) return null;
+  return { width, height };
 }
 
 export type UseSprayWallResult = {
   /** True while either query is in flight and nothing is registered yet. */
   isLoading: boolean;
   /**
-   * The wall exists and is visible but cannot be drawn — a singular homography,
-   * or a photo with no usable dimensions. The board surface shows its placeholder.
+   * The wall resolved but cannot be drawn: no published version or no readable
+   * photo (the query answers null), a photo that will not say its pixel size, or
+   * a singular homography. The board surface shows its placeholder either way;
+   * this is the flag a screen would read to say so in words.
    */
   isUnrenderable: boolean;
 };
@@ -113,26 +116,32 @@ export function useSprayWall(layoutId: number | null): UseSprayWallResult {
 
   const renderData = render.data ?? null;
 
+  const [registered, setRegistered] = useState(false);
+
   useEffect(() => {
     if (layoutId == null || !renderData) return;
 
-    const { width, height } = photoDimensions(renderData);
+    const dimensions = photoDimensions(renderData);
     const holds = mapCanonicalHoldsToPhoto(renderData.homography, toCanonicalHolds(renderData));
     // A wall we cannot map is a wall we must not draw: registering it with
     // unmapped holds would paint every one at its canonical coordinate on top of
     // a photograph it does not belong to — plausible-looking and wrong.
-    if (!holds || !(width > 0) || !(height > 0)) return;
+    if (!holds || !dimensions) {
+      setRegistered(false);
+      return;
+    }
 
     registerSprayWall(layoutId, {
       wallUuid: renderData.wall.uuid,
       version: renderData.versionNumber,
-      photoWidth: width,
-      photoHeight: height,
+      photoWidth: dimensions.width,
+      photoHeight: dimensions.height,
       photoUrl: renderData.photo.url,
       photoThumbUrl: renderData.photo.thumbUrl ?? null,
       photoExpiresAt: renderData.photo.expiresAt,
       holds,
     });
+    setRegistered(true);
     // Deliberately NOT unregistered on unmount. The registry is session state, not
     // screen state: a queue thumbnail, a play drawer and a list row all draw the
     // same wall from it, and tearing it down when one of them unmounts would blank
@@ -150,6 +159,10 @@ export function useSprayWall(layoutId: number | null): UseSprayWallResult {
   const isLoading = identity.isPending || (wallUuid != null && render.isPending);
   return {
     isLoading,
-    isUnrenderable: !isLoading && identity.data != null && renderData == null && !render.isPending,
+    // The wall is there and the fetch is done, but nothing made it into the
+    // registry — which covers a null payload (no published version, no readable
+    // photo) and a payload we could not map, the two being indistinguishable to
+    // a surface that just needs to know whether to draw the placeholder.
+    isUnrenderable: !isLoading && identity.data != null && !registered,
   };
 }
