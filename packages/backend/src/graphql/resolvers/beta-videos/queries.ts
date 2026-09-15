@@ -1,6 +1,7 @@
 import { GraphQLError } from 'graphql';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { eq, and, desc, isNotNull, like, or, sql } from 'drizzle-orm';
 import { rowsFromResult } from '@boardsesh/db/client';
 import {
@@ -669,6 +670,7 @@ export const betaLinkQueries = {
   userBetaLinks: async (
     _: unknown,
     { userId, limit, offset }: { userId: string; limit?: number | null; offset?: number | null },
+    ctx: ConnectionContext,
   ): Promise<RecentBetaLinkResult[]> => {
     const cappedLimit = Math.min(Math.max(limit ?? USER_BETA_LINKS_DEFAULT_LIMIT, 1), USER_BETA_LINKS_MAX_LIMIT);
     // Offset paging: the client advances by `limit` per page and infers
@@ -699,6 +701,14 @@ export const betaLinkQueries = {
         and(
           eq(dbSchema.boardBetaLinks.boardType, dbSchema.boardClimbs.boardType),
           eq(dbSchema.boardBetaLinks.climbUuid, dbSchema.boardClimbs.uuid),
+          // This resolver is documented as intentionally public, including for
+          // unauthenticated callers, and returns the climb's NAME. Gated in the ON
+          // rather than the WHERE so the beta link itself still lists — only the
+          // private wall's climb name goes null.
+          sprayClimbVisibilityCondition(
+            { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+            ctx?.userId,
+          ),
         ),
       )
       .where(

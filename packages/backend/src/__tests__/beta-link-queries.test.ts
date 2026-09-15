@@ -536,7 +536,7 @@ describe('userBetaLinks resolver', () => {
         joinedRow({ link: 'https://www.instagram.com/p/MINE/', foreignUsername: 'someoneelse' }, 'Project'),
       ]);
 
-    const result = await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 });
+    const result = await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 }, ANON_CTX);
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ climbName: 'Project', betaLink: { foreignUsername: 'someoneelse' } });
@@ -547,7 +547,7 @@ describe('userBetaLinks resolver', () => {
       .mockReturnValueOnce([])
       .mockReturnValueOnce([joinedRow({ link: 'https://www.instagram.com/p/A/' })]);
 
-    const result = await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 });
+    const result = await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 }, ANON_CTX);
     expect(result).toHaveLength(1);
   });
 
@@ -556,7 +556,7 @@ describe('userBetaLinks resolver', () => {
       .mockReturnValueOnce([{ instagramUrl: 'https://www.instagram.com/marco/' }])
       .mockReturnValueOnce([joinedRow({ link: 'https://www.instagram.com/p/A/', foreignUsername: 'marco' })]);
 
-    const result = await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 });
+    const result = await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 }, ANON_CTX);
     expect(result).toHaveLength(1);
     expect(result[0]?.betaLink.foreignUsername).toBe('marco');
   });
@@ -569,7 +569,7 @@ describe('userBetaLinks resolver', () => {
         joinedRow({ link: 'https://www.instagram.com/p/A/' }, 'Real'),
       ]);
 
-    const result = await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 });
+    const result = await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 }, ANON_CTX);
     expect(result).toHaveLength(1);
     expect(result[0]?.climbName).toBe('Real');
   });
@@ -582,7 +582,7 @@ describe('userBetaLinks resolver', () => {
         joinedRow({ link: 'https://www.tiktok.com/@u/video/1' }),
       ]);
 
-    await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 });
+    await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 }, ANON_CTX);
 
     expect(fetchInstagramMetaMock).not.toHaveBeenCalled();
     expect(fetchTikTokMetaMock).not.toHaveBeenCalled();
@@ -593,7 +593,11 @@ describe('userBetaLinks resolver', () => {
       .mockReturnValueOnce([{ instagramUrl: null }])
       .mockReturnValueOnce([joinedRow({ link: 'https://www.instagram.com/p/PAGE2/' }, 'Page Two')]);
 
-    const result = await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 20, offset: 20 });
+    const result = await betaLinkQueries.userBetaLinks(
+      undefined,
+      { userId: 'user-1', limit: 20, offset: 20 },
+      ANON_CTX,
+    );
 
     expect(offsetSpy).toHaveBeenCalledWith(20);
     expect(result).toHaveLength(1);
@@ -605,7 +609,7 @@ describe('userBetaLinks resolver', () => {
       .mockReturnValueOnce([{ instagramUrl: null }])
       .mockReturnValueOnce([joinedRow({ link: 'https://www.instagram.com/p/A/' })]);
 
-    await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 });
+    await betaLinkQueries.userBetaLinks(undefined, { userId: 'user-1', limit: 50 }, ANON_CTX);
 
     expect(offsetSpy).toHaveBeenCalledWith(0);
   });
