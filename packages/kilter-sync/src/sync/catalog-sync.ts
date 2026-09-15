@@ -21,6 +21,7 @@ import {
   fetchLayoutClimbs,
   fetchLayoutClimbStats,
   fetchDeletedClimbUuids,
+  type KilterCatalogClimb,
   type KilterCatalogStat,
 } from '../api/kilter-rest';
 import { KilterApiError } from '../api/errors';
@@ -136,7 +137,7 @@ async function loadHoleToPlacement(db: DrizzleDb, layoutId: number): Promise<Map
   return map;
 }
 
-type GroupResult = {
+export type GroupResult = {
   climbsSeen: number;
   climbsUnmapped: number;
   canonicalsInserted: number;
@@ -152,6 +153,21 @@ type GroupResult = {
   /** Climbs that were in the backlog and ingested successfully this run. */
   resolvedSkipUuids: string[];
 };
+
+export function createGroupResult(): GroupResult {
+  return {
+    climbsSeen: 0,
+    climbsUnmapped: 0,
+    canonicalsInserted: 0,
+    aliasesUpserted: 0,
+    statsUpserted: 0,
+    selfAliasesBackfilled: 0,
+    canonicalsRelisted: 0,
+    newCanonicals: [],
+    skips: [],
+    resolvedSkipUuids: [],
+  };
+}
 
 /**
  * Decide whether an existing canonical should be re-listed because a currently
@@ -428,6 +444,305 @@ export async function flushKilterLayoutBatch(
   });
 }
 
+/** Listing, ownership and draft state of a climb already in board_climbs. */
+export type ExistingClimbMeta = { isListed: boolean | null; userId: string | null; isDraft: boolean | null };
+
+/** One board_climbs row as the layout index loads it. */
+export type LayoutCatalogClimbRow = ExistingClimbMeta & { uuid: string; fingerprint: string | null };
+
+/**
+ * One board layout's existing catalog, loaded once so dedup runs in memory.
+ * Staging mutates the uuid map, the fingerprint map and the self-alias set as it
+ * adds canonicals. The meta map only ever holds DB-resident rows, so a canonical
+ * created earlier in the same run is absent from it (already listed).
+ */
+export type LayoutCatalogIndex = {
+  layoutId: number;
+  /** lower(uuid) → uuid as stored. */
+  existingByLowerUuid: Map<string, string>;
+  /** hold_fingerprint → canonical uuid. The first row seen for a fingerprint wins. */
+  fingerprintToCanonical: Map<string, string>;
+  /** canonical uuid (as stored) → listing/ownership/draft state. */
+  existingCanonicalMeta: Map<string, ExistingClimbMeta>;
+  /** lower(uuid) of every canonical that already has its self-alias. */
+  existingSelfAliasLower: Set<string>;
+  /** hole_id → placement_id on this layout. */
+  holeToPlacement: Map<number, number>;
+};
+
+/**
+ * Build a layout index from already-loaded rows. Pure + exported so staging can
+ * be unit-tested against hand-built catalogs.
+ */
+export function buildLayoutCatalogIndex(input: {
+  layoutId: number;
+  climbRows: LayoutCatalogClimbRow[];
+  selfAliasUuids: string[];
+  holeToPlacement: Map<number, number>;
+}): LayoutCatalogIndex {
+  const existingByLowerUuid = new Map<string, string>();
+  const fingerprintToCanonical = new Map<string, string>();
+  const existingCanonicalMeta = new Map<string, ExistingClimbMeta>();
+  for (const row of input.climbRows) {
+    existingByLowerUuid.set(row.uuid.toLowerCase(), row.uuid);
+    existingCanonicalMeta.set(row.uuid, { isListed: row.isListed, userId: row.userId, isDraft: row.isDraft });
+    if (row.fingerprint && !fingerprintToCanonical.has(row.fingerprint)) {
+      fingerprintToCanonical.set(row.fingerprint, row.uuid);
+    }
+  }
+  const existingSelfAliasLower = new Set<string>();
+  for (const aliasUuid of input.selfAliasUuids) existingSelfAliasLower.add(aliasUuid.toLowerCase());
+  return {
+    layoutId: input.layoutId,
+    existingByLowerUuid,
+    fingerprintToCanonical,
+    existingCanonicalMeta,
+    existingSelfAliasLower,
+    holeToPlacement: input.holeToPlacement,
+  };
+}
+
+/**
+ * Load one board layout's existing catalog: uuid identity + fingerprint →
+ * canonical, carrying listing/ownership so the fold path can re-list a synced
+ * canonical an incoming listed alias proves is back on the wall (never a user
+ * climb).
+ */
+async function loadLayoutCatalogIndex(
+  db: DrizzleDb,
+  layoutId: number,
+  holeToPlacement: Map<number, number>,
+): Promise<LayoutCatalogIndex> {
+  const climbRows = await db
+    .select({
+      uuid: boardClimbs.uuid,
+      fingerprint: boardClimbs.holdFingerprint,
+      isListed: boardClimbs.isListed,
+      userId: boardClimbs.userId,
+      isDraft: boardClimbs.isDraft,
+    })
+    .from(boardClimbs)
+    .where(and(eq(boardClimbs.boardType, KILTER), eq(boardClimbs.layoutId, layoutId)));
+
+  // Existing self-aliases (alias_uuid = canonical_uuid) for this layout, so the
+  // identity path only writes the ones actually missing (~6k historical gap;
+  // steady-state 0) instead of re-upserting a self-alias for every known climb.
+  // Plain equality (not lower() = lower()): every self-alias writer — the
+  // identity/new-canonical paths here and the 0159 backfill — assigns the SAME
+  // string to both columns, so a self-alias can never differ by case only.
+  // Prod-verified 2026-07-08: 0 rows where lower(alias)=lower(canonical) but
+  // alias<>canonical, across 242k mixed-case kilter alias rows.
+  const selfAliasRows = await db
+    .select({ aliasUuid: boardClimbAliases.aliasUuid })
+    .from(boardClimbAliases)
+    .innerJoin(
+      boardClimbs,
+      and(eq(boardClimbs.uuid, boardClimbAliases.canonicalUuid), eq(boardClimbs.boardType, KILTER)),
+    )
+    .where(
+      and(
+        eq(boardClimbAliases.boardType, KILTER),
+        eq(boardClimbs.layoutId, layoutId),
+        eq(boardClimbAliases.aliasUuid, boardClimbAliases.canonicalUuid),
+      ),
+    );
+
+  return buildLayoutCatalogIndex({
+    layoutId,
+    climbRows,
+    selfAliasUuids: selfAliasRows.map((row) => row.aliasUuid),
+    holeToPlacement,
+  });
+}
+
+/** The rows one Grips layout stages before `flushKilterLayoutBatch` writes them. */
+export type CatalogStagingBatch = {
+  newClimbInserts: NewBoardClimb[];
+  newHoldRows: NewHoldRow[];
+  aliasRows: NewAliasRow[];
+};
+
+export function createStagingBatch(): CatalogStagingBatch {
+  return { newClimbInserts: [], newHoldRows: [], aliasRows: [] };
+}
+
+export type StageCatalogClimbContext = {
+  index: LayoutCatalogIndex;
+  /** Grips product_layout_uuid the climb was read from, for skip rows. */
+  sourceLayoutUuid: string;
+  /** lower(uuid) → uuid as stored, for backlog rows still open. */
+  openSkips: Map<string, string>;
+  batch: CatalogStagingBatch;
+  /** lower(source uuid) → canonical uuid, for routing stats. */
+  climbUuidToCanonical: Map<string, string>;
+  /** Synced canonicals to re-list once the batch is flushed. */
+  canonicalsToRelist: Set<string>;
+  result: GroupResult;
+  /** Clock the new-canonical notification age check runs against. */
+  now: Date;
+};
+
+export type StageCatalogClimbOutcome = 'identity' | 'skipped' | 'folded' | 'inserted';
+
+/**
+ * Stage one listed Grips climb against a layout's catalog: UUID identity, then
+ * decode + fingerprint dedup, then a new canonical. Synchronous and DB-free —
+ * the caller flushes `context.batch` afterwards. The caller also owns the
+ * listed/draft/deleted gate and the `climbsSeen` count. Exported for unit tests.
+ */
+export function stageCatalogClimb(
+  climb: KilterCatalogClimb,
+  context: StageCatalogClimbContext,
+): StageCatalogClimbOutcome {
+  const { index, batch, result, openSkips, climbUuidToCanonical, canonicalsToRelist } = context;
+  const lowerUuid = climb.climbUuid.toLowerCase();
+
+  // 1. UUID identity — the Grips catalog inherited Aurora's climb UUIDs, so
+  //    most incoming climbs already exist as their own canonical. Match on
+  //    UUID *before* parsing climb_concat: existing climbs keep their
+  //    backfilled holds + fingerprint (no need to re-derive), it skips
+  //    parsing for the ~80% UUID-matched majority. The fingerprint dedup
+  //    map is pre-seeded from the DB load, so nothing is lost by not
+  //    re-fingerprinting existing rows here.
+  const existingUuid = index.existingByLowerUuid.get(lowerUuid);
+  if (existingUuid) {
+    climbUuidToCanonical.set(lowerUuid, existingUuid);
+    const resolvedByIdentity = openSkips.get(lowerUuid);
+    if (resolvedByIdentity) result.resolvedSkipUuids.push(resolvedByIdentity);
+    // Self-heal the self-alias gap (~6k kilter climbs reached the catalog
+    // via a path that never wrote one, leaving them invisible to deletion
+    // reconciliation). Only write the missing ones so steady-state runs add
+    // zero alias churn. Idempotent — the flush's ON CONFLICT refreshes seen.
+    if (!index.existingSelfAliasLower.has(lowerUuid)) {
+      index.existingSelfAliasLower.add(lowerUuid);
+      batch.aliasRows.push({ boardType: KILTER, aliasUuid: existingUuid, canonicalUuid: existingUuid, source: KILTER });
+      result.selfAliasesBackfilled += 1;
+    }
+    return 'identity';
+  }
+
+  // New UUID — decode holds to fingerprint (and, if canonical, to insert).
+  // Handles both the single-frame form and the animated s{start}/e{end}
+  // form; anything else lands in the skips backlog with its raw payload
+  // rather than disappearing (issue #3523).
+  const decoded = decodeGripsClimbConcat(climb.climbConcat, index.holeToPlacement, climb.frameCount);
+  if (!decoded.ok) {
+    result.climbsUnmapped += 1;
+    result.skips.push(
+      buildSkipRow(climb, decoded, {
+        boardType: KILTER,
+        layoutId: index.layoutId,
+        sourceLayoutUuid: context.sourceLayoutUuid,
+      }),
+    );
+    return 'skipped';
+  }
+  const { frames, holds } = decoded;
+  const fingerprint = fingerprintFromHolds(holds);
+  const resolvedByDecode = openSkips.get(lowerUuid);
+  if (resolvedByDecode) result.resolvedSkipUuids.push(resolvedByDecode);
+
+  // 2. Fingerprint dedup — a new UUID whose holds match an existing (or
+  //    already-seen-this-run) canonical becomes an alias, not a new row.
+  const canonicalByFingerprint = index.fingerprintToCanonical.get(fingerprint);
+  if (canonicalByFingerprint) {
+    climbUuidToCanonical.set(lowerUuid, canonicalByFingerprint);
+    batch.aliasRows.push({
+      boardType: KILTER,
+      aliasUuid: climb.climbUuid,
+      canonicalUuid: canonicalByFingerprint,
+      source: KILTER,
+    });
+    // A listed Grips climb folded onto this canonical → if it's a synced
+    // canonical we'd previously unlisted, re-list it (it exists again).
+    if (shouldRelistFoldedCanonical(index.existingCanonicalMeta.get(canonicalByFingerprint))) {
+      canonicalsToRelist.add(canonicalByFingerprint);
+    }
+    return 'folded';
+  }
+
+  // 3. Genuinely new canonical.
+  index.fingerprintToCanonical.set(fingerprint, climb.climbUuid);
+  index.existingByLowerUuid.set(lowerUuid, climb.climbUuid);
+  climbUuidToCanonical.set(lowerUuid, climb.climbUuid);
+  batch.newClimbInserts.push({
+    uuid: climb.climbUuid,
+    boardType: KILTER,
+    layoutId: index.layoutId,
+    setterId: null,
+    setterUsername: climb.username,
+    name: climb.name,
+    description: climb.description ?? '',
+    // Derive the structured no_match characteristic from the Aurora "No match"
+    // description convention (carried through the Kilter Grips catalog too).
+    characteristics: isNoMatchClimb(climb.description) ? [CLIMB_CHARACTERISTICS.NO_MATCH] : null,
+    edgeLeft: climb.edgeLeft,
+    edgeRight: climb.edgeRight,
+    edgeBottom: climb.edgeBottom,
+    edgeTop: climb.edgeTop,
+    framesCount: climb.frameCount,
+    framesPace: climb.framesPace,
+    frames,
+    isDraft: climb.isDraft,
+    isListed: climb.isListed,
+    createdAt: climb.createdAt,
+    holdFingerprint: fingerprint,
+  });
+  for (const hold of holds) {
+    batch.newHoldRows.push({
+      boardType: KILTER,
+      climbUuid: climb.climbUuid,
+      holdId: hold.holdId,
+      frameNumber: hold.frameNumber,
+      holdState: hold.holdState,
+    });
+  }
+  batch.aliasRows.push({
+    boardType: KILTER,
+    aliasUuid: climb.climbUuid,
+    canonicalUuid: climb.climbUuid,
+    source: KILTER,
+  });
+  // Only genuinely-new upstream climbs notify followers — an ingest that
+  // recovers a backlog of older climbs must not present them as new.
+  if (shouldNotifyForNewCanonical(climb.createdAt, context.now)) {
+    result.newCanonicals.push({
+      uuid: climb.climbUuid,
+      setterUsername: climb.username,
+      layoutId: index.layoutId,
+      name: climb.name,
+    });
+  }
+  return 'inserted';
+}
+
+/**
+ * Re-list synced canonicals that the current catalog pull proves are on the
+ * wall. The isNull(userId) + is_listed guards belt-and-suspenders the
+ * classifier, so a user-authored or already-listed row is never touched.
+ * Returns how many canonicals were requested.
+ */
+async function relistCanonicals(db: DrizzleDb, canonicalUuids: string[]): Promise<number> {
+  await processBatches(canonicalUuids, async (chunk) => {
+    await db
+      .update(boardClimbs)
+      .set({ isListed: true })
+      .where(
+        and(
+          eq(boardClimbs.boardType, KILTER),
+          isNull(boardClimbs.userId),
+          // IS NOT TRUE, not `= false`: is_listed is nullable and search filters
+          // on `is_listed = true`, so a NULL row is just as invisible as a false
+          // one. shouldRelistFoldedCanonical classifies NULL as re-listable; a
+          // strict `= false` here would silently skip those rows.
+          sql`${boardClimbs.isListed} IS NOT TRUE`,
+          inArray(boardClimbs.uuid, chunk),
+        ),
+      );
+  });
+  return canonicalUuids.length;
+}
+
 /**
  * Sync every Grips layout that maps to one board_layouts.id. Existing climbs
  * for the layout are loaded once (uuid identity + fingerprint maps) so dedup is
@@ -442,208 +757,37 @@ async function syncBoardLayoutGroup(
   openSkips: Map<string, string>,
   log: (message: string) => void,
 ): Promise<GroupResult> {
-  const result: GroupResult = {
-    climbsSeen: 0,
-    climbsUnmapped: 0,
-    canonicalsInserted: 0,
-    aliasesUpserted: 0,
-    statsUpserted: 0,
-    selfAliasesBackfilled: 0,
-    canonicalsRelisted: 0,
-    newCanonicals: [],
-    skips: [],
-    resolvedSkipUuids: [],
-  };
+  const result = createGroupResult();
   // Stamped once per group so every climb in it is aged against the same clock.
   const groupStartedAt = new Date();
 
-  // Existing catalog for this layout: uuid identity + fingerprint → canonical,
-  // carrying listing/ownership so the fold path can re-list a synced canonical
-  // an incoming listed alias proves is back on the wall (never a user climb).
-  const existingRows = await db
-    .select({
-      uuid: boardClimbs.uuid,
-      fingerprint: boardClimbs.holdFingerprint,
-      isListed: boardClimbs.isListed,
-      userId: boardClimbs.userId,
-    })
-    .from(boardClimbs)
-    .where(and(eq(boardClimbs.boardType, KILTER), eq(boardClimbs.layoutId, boardLayoutId)));
-  const existingByLowerUuid = new Map<string, string>();
-  const fingerprintToCanonical = new Map<string, string>();
-  // canonicalUuid → {isListed, userId} for DB-resident canonicals only. New
-  // canonicals created this run are absent (already listed → never re-listed).
-  const existingCanonicalMeta = new Map<string, { isListed: boolean | null; userId: string | null }>();
-  for (const row of existingRows) {
-    existingByLowerUuid.set(row.uuid.toLowerCase(), row.uuid);
-    existingCanonicalMeta.set(row.uuid, { isListed: row.isListed, userId: row.userId });
-    if (row.fingerprint && !fingerprintToCanonical.has(row.fingerprint)) {
-      fingerprintToCanonical.set(row.fingerprint, row.uuid);
-    }
-  }
-
-  // Existing self-aliases (alias_uuid = canonical_uuid) for this layout, so the
-  // identity path only writes the ones actually missing (~6k historical gap;
-  // steady-state 0) instead of re-upserting a self-alias for every known climb.
-  // Plain equality (not lower() = lower()): every self-alias writer — the
-  // identity/new-canonical paths here and the 0159 backfill — assigns the SAME
-  // string to both columns, so a self-alias can never differ by case only.
-  // Prod-verified 2026-07-08: 0 rows where lower(alias)=lower(canonical) but
-  // alias<>canonical, across 242k mixed-case kilter alias rows.
-  const existingSelfAliasRows = await db
-    .select({ aliasUuid: boardClimbAliases.aliasUuid })
-    .from(boardClimbAliases)
-    .innerJoin(
-      boardClimbs,
-      and(eq(boardClimbs.uuid, boardClimbAliases.canonicalUuid), eq(boardClimbs.boardType, KILTER)),
-    )
-    .where(
-      and(
-        eq(boardClimbAliases.boardType, KILTER),
-        eq(boardClimbs.layoutId, boardLayoutId),
-        eq(boardClimbAliases.aliasUuid, boardClimbAliases.canonicalUuid),
-      ),
-    );
-  const existingSelfAliasLower = new Set<string>();
-  for (const row of existingSelfAliasRows) existingSelfAliasLower.add(row.aliasUuid.toLowerCase());
+  const holeToPlacement = await loadHoleToPlacement(db, boardLayoutId);
+  const index = await loadLayoutCatalogIndex(db, boardLayoutId, holeToPlacement);
 
   // Canonicals to re-list this group (a listed Grips climb folded onto a synced
   // unlisted canonical). Deduped across the group's Grips layouts.
   const canonicalsToRelist = new Set<string>();
-
-  const holeToPlacement = await loadHoleToPlacement(db, boardLayoutId);
 
   // lower(sourceUuid) → canonicalUuid, for routing stats. Spans the whole group.
   const climbUuidToCanonical = new Map<string, string>();
   for (const gripsLayoutUuid of gripsLayoutUuids) {
     const climbs = await withToken(state, (token) => fetchLayoutClimbs(token, gripsLayoutUuid));
 
-    const newClimbInserts: NewBoardClimb[] = [];
-    const newHoldRows: Array<{
-      boardType: string;
-      climbUuid: string;
-      holdId: number;
-      frameNumber: number;
-      holdState: string;
-    }> = [];
-    const aliasRows: Array<{ boardType: string; aliasUuid: string; canonicalUuid: string; source: string }> = [];
-
+    const batch = createStagingBatch();
+    const context: StageCatalogClimbContext = {
+      index,
+      sourceLayoutUuid: gripsLayoutUuid,
+      openSkips,
+      batch,
+      climbUuidToCanonical,
+      canonicalsToRelist,
+      result,
+      now: groupStartedAt,
+    };
     for (const climb of climbs) {
       if (!climb.isListed || climb.isDraft || climb.isDeleted) continue;
       result.climbsSeen += 1;
-      const lowerUuid = climb.climbUuid.toLowerCase();
-
-      // 1. UUID identity — the Grips catalog inherited Aurora's climb UUIDs, so
-      //    most incoming climbs already exist as their own canonical. Match on
-      //    UUID *before* parsing climb_concat: existing climbs keep their
-      //    backfilled holds + fingerprint (no need to re-derive), it skips
-      //    parsing for the ~80% UUID-matched majority. The fingerprint dedup
-      //    map is pre-seeded from the DB load below, so nothing is lost by not
-      //    re-fingerprinting existing rows here.
-      const existingUuid = existingByLowerUuid.get(lowerUuid);
-      if (existingUuid) {
-        climbUuidToCanonical.set(lowerUuid, existingUuid);
-        const resolvedByIdentity = openSkips.get(lowerUuid);
-        if (resolvedByIdentity) result.resolvedSkipUuids.push(resolvedByIdentity);
-        // Self-heal the self-alias gap (~6k kilter climbs reached the catalog
-        // via a path that never wrote one, leaving them invisible to deletion
-        // reconciliation). Only write the missing ones so steady-state runs add
-        // zero alias churn. Idempotent — the ON CONFLICT below refreshes seen.
-        if (!existingSelfAliasLower.has(lowerUuid)) {
-          existingSelfAliasLower.add(lowerUuid);
-          aliasRows.push({ boardType: KILTER, aliasUuid: existingUuid, canonicalUuid: existingUuid, source: KILTER });
-          result.selfAliasesBackfilled += 1;
-        }
-        continue;
-      }
-
-      // New UUID — decode holds to fingerprint (and, if canonical, to insert).
-      // Handles both the single-frame form and the animated s{start}/e{end}
-      // form; anything else lands in the skips backlog with its raw payload
-      // rather than disappearing (issue #3523).
-      const decoded = decodeGripsClimbConcat(climb.climbConcat, holeToPlacement, climb.frameCount);
-      if (!decoded.ok) {
-        result.climbsUnmapped += 1;
-        result.skips.push(
-          buildSkipRow(climb, decoded, {
-            boardType: KILTER,
-            layoutId: boardLayoutId,
-            sourceLayoutUuid: gripsLayoutUuid,
-          }),
-        );
-        continue;
-      }
-      const { frames, holds } = decoded;
-      const fingerprint = fingerprintFromHolds(holds);
-      const resolvedByDecode = openSkips.get(lowerUuid);
-      if (resolvedByDecode) result.resolvedSkipUuids.push(resolvedByDecode);
-
-      // 2. Fingerprint dedup — a new UUID whose holds match an existing (or
-      //    already-seen-this-run) canonical becomes an alias, not a new row.
-      const canonicalByFingerprint = fingerprintToCanonical.get(fingerprint);
-      if (canonicalByFingerprint) {
-        climbUuidToCanonical.set(lowerUuid, canonicalByFingerprint);
-        aliasRows.push({
-          boardType: KILTER,
-          aliasUuid: climb.climbUuid,
-          canonicalUuid: canonicalByFingerprint,
-          source: KILTER,
-        });
-        // A listed Grips climb folded onto this canonical → if it's a synced
-        // canonical we'd previously unlisted, re-list it (it exists again).
-        if (shouldRelistFoldedCanonical(existingCanonicalMeta.get(canonicalByFingerprint))) {
-          canonicalsToRelist.add(canonicalByFingerprint);
-        }
-        continue;
-      }
-
-      // 3. Genuinely new canonical.
-      fingerprintToCanonical.set(fingerprint, climb.climbUuid);
-      existingByLowerUuid.set(lowerUuid, climb.climbUuid);
-      climbUuidToCanonical.set(lowerUuid, climb.climbUuid);
-      newClimbInserts.push({
-        uuid: climb.climbUuid,
-        boardType: KILTER,
-        layoutId: boardLayoutId,
-        setterId: null,
-        setterUsername: climb.username,
-        name: climb.name,
-        description: climb.description ?? '',
-        // Derive the structured no_match characteristic from the Aurora "No match"
-        // description convention (carried through the Kilter Grips catalog too).
-        characteristics: isNoMatchClimb(climb.description) ? [CLIMB_CHARACTERISTICS.NO_MATCH] : null,
-        edgeLeft: climb.edgeLeft,
-        edgeRight: climb.edgeRight,
-        edgeBottom: climb.edgeBottom,
-        edgeTop: climb.edgeTop,
-        framesCount: climb.frameCount,
-        framesPace: climb.framesPace,
-        frames,
-        isDraft: climb.isDraft,
-        isListed: climb.isListed,
-        createdAt: climb.createdAt,
-        holdFingerprint: fingerprint,
-      });
-      for (const hold of holds) {
-        newHoldRows.push({
-          boardType: KILTER,
-          climbUuid: climb.climbUuid,
-          holdId: hold.holdId,
-          frameNumber: hold.frameNumber,
-          holdState: hold.holdState,
-        });
-      }
-      aliasRows.push({ boardType: KILTER, aliasUuid: climb.climbUuid, canonicalUuid: climb.climbUuid, source: KILTER });
-      // Only genuinely-new upstream climbs notify followers — an ingest that
-      // recovers a backlog of older climbs must not present them as new.
-      if (shouldNotifyForNewCanonical(climb.createdAt, groupStartedAt)) {
-        result.newCanonicals.push({
-          uuid: climb.climbUuid,
-          setterUsername: climb.username,
-          layoutId: boardLayoutId,
-          name: climb.name,
-        });
-      }
+      stageCatalogClimb(climb, context);
     }
 
     // Flush this Grips layout. Order matters: climbs before holds (FK) before
@@ -652,17 +796,15 @@ async function syncBoardLayoutGroup(
     // must never leave a canonical committed without its holds/aliases/denorm
     // columns (see #3538: a stranded climb matches on UUID identity on every
     // later run and never gets its holds re-derived).
-    await flushKilterLayoutBatch(db, newClimbInserts, newHoldRows, aliasRows);
-    result.canonicalsInserted += newClimbInserts.length;
-    result.aliasesUpserted += aliasRows.length;
+    await flushKilterLayoutBatch(db, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows);
+    result.canonicalsInserted += batch.newClimbInserts.length;
+    result.aliasesUpserted += batch.aliasRows.length;
     log(
-      `[kilter-catalog] layout ${gripsLayoutUuid}: ${climbs.length} climbs, +${newClimbInserts.length} canonical, +${aliasRows.length} aliases`,
+      `[kilter-catalog] layout ${gripsLayoutUuid}: ${climbs.length} climbs, +${batch.newClimbInserts.length} canonical, +${batch.aliasRows.length} aliases`,
     );
   }
 
-  // Re-list synced canonicals a listed Grips climb folded back onto. The
-  // isNull(userId) + is_listed guards belt-and-suspenders the classifier above,
-  // so a user-authored or already-listed row is never touched.
+  // Re-list synced canonicals a listed Grips climb folded back onto.
   //
   // Ordering vs deletions: reconcileDeletions runs LAST in syncKilterCatalog
   // (after every layout group), so it is the authority within a cycle. This
@@ -675,26 +817,9 @@ async function syncBoardLayoutGroup(
   // A genuinely-dead canonical (no live folded alias) is never reached here, so
   // the fold cannot resurrect a truly-deleted climb.
   if (canonicalsToRelist.size > 0) {
-    const relistUuids = [...canonicalsToRelist];
-    await processBatches(relistUuids, async (chunk) => {
-      await db
-        .update(boardClimbs)
-        .set({ isListed: true })
-        .where(
-          and(
-            eq(boardClimbs.boardType, KILTER),
-            isNull(boardClimbs.userId),
-            // IS NOT TRUE, not `= false`: is_listed is nullable and search filters
-            // on `is_listed = true`, so a NULL row is just as invisible as a false
-            // one. shouldRelistFoldedCanonical classifies NULL as re-listable; a
-            // strict `= false` here would silently skip those rows.
-            sql`${boardClimbs.isListed} IS NOT TRUE`,
-            inArray(boardClimbs.uuid, chunk),
-          ),
-        );
-    });
-    result.canonicalsRelisted += relistUuids.length;
-    log(`[kilter-catalog] layout group ${boardLayoutId}: re-listed ${relistUuids.length} folded canonical(s)`);
+    const relistedCount = await relistCanonicals(db, [...canonicalsToRelist]);
+    result.canonicalsRelisted += relistedCount;
+    log(`[kilter-catalog] layout group ${boardLayoutId}: re-listed ${relistedCount} folded canonical(s)`);
   }
 
   // Stats for the whole group (after every climb is in climbUuidToCanonical).
@@ -708,7 +833,16 @@ async function syncBoardLayoutGroup(
       foldCatalogStatOnce(statsByCanonicalAngle, seenSourceStats, stat, canonicalUuid);
     }
   }
+  result.statsUpserted += await upsertCatalogStats(db, statsByCanonicalAngle);
 
+  return result;
+}
+
+/**
+ * Write the per-(canonical, angle) accumulators to board_climb_stats. Returns
+ * the number of rows written (empty accumulators are skipped).
+ */
+async function upsertCatalogStats(db: DrizzleDb, statsByCanonicalAngle: Map<string, StatAccum>): Promise<number> {
   const statValues = [...statsByCanonicalAngle.values()]
     .filter((accum) => !shouldSkipEmptyCatalogStat(accum))
     .map((accum) => ({
@@ -779,10 +913,29 @@ async function syncBoardLayoutGroup(
           },
         });
     });
-    result.statsUpserted += statValues.length;
   }
+  return statValues.length;
+}
 
-  return result;
+/** Everything the per-run summary collects from each group besides counters. */
+type CollectedGroupOutputs = {
+  newCanonicals: NewClimbInfo[];
+  skips: ClimbIngestSkip[];
+  resolvedSkipUuids: string[];
+};
+
+/** Fold one group's result into the run summary. `gripsLayoutsProcessed` stays with the caller. */
+function addGroupResult(summary: KilterCatalogSummary, collected: CollectedGroupOutputs, groupResult: GroupResult) {
+  summary.climbsSeen += groupResult.climbsSeen;
+  summary.climbsUnmapped += groupResult.climbsUnmapped;
+  summary.canonicalsInserted += groupResult.canonicalsInserted;
+  summary.aliasesUpserted += groupResult.aliasesUpserted;
+  summary.statsUpserted += groupResult.statsUpserted;
+  summary.selfAliasesBackfilled += groupResult.selfAliasesBackfilled;
+  summary.canonicalsRelisted += groupResult.canonicalsRelisted;
+  collected.newCanonicals.push(...groupResult.newCanonicals);
+  collected.skips.push(...groupResult.skips);
+  collected.resolvedSkipUuids.push(...groupResult.resolvedSkipUuids);
 }
 
 export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<KilterCatalogSummary> {
@@ -843,9 +996,10 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
       refused: false,
     },
   };
-  const allNewCanonicals: NewClimbInfo[] = [];
-  const allSkips: ClimbIngestSkip[] = [];
-  const allResolvedSkipUuids: string[] = [];
+  const collected: CollectedGroupOutputs = { newCanonicals: [], skips: [], resolvedSkipUuids: [] };
+  const allNewCanonicals = collected.newCanonicals;
+  const allSkips = collected.skips;
+  const allResolvedSkipUuids = collected.resolvedSkipUuids;
 
   // The climbs already sitting unresolved in the backlog, so a run that finally
   // ingests one can stamp it resolved without scanning every climb it saw.
@@ -854,16 +1008,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   for (const [boardLayoutId, gripsLayoutUuids] of byBoardLayout) {
     const groupResult = await syncBoardLayoutGroup(args.db, state, boardLayoutId, gripsLayoutUuids, openSkips, log);
     summary.gripsLayoutsProcessed += gripsLayoutUuids.length;
-    summary.climbsSeen += groupResult.climbsSeen;
-    summary.climbsUnmapped += groupResult.climbsUnmapped;
-    summary.canonicalsInserted += groupResult.canonicalsInserted;
-    summary.aliasesUpserted += groupResult.aliasesUpserted;
-    summary.statsUpserted += groupResult.statsUpserted;
-    summary.selfAliasesBackfilled += groupResult.selfAliasesBackfilled;
-    summary.canonicalsRelisted += groupResult.canonicalsRelisted;
-    allNewCanonicals.push(...groupResult.newCanonicals);
-    allSkips.push(...groupResult.skips);
-    allResolvedSkipUuids.push(...groupResult.resolvedSkipUuids);
+    addGroupResult(summary, collected, groupResult);
   }
 
   // Persist the backlog. A skipped climb used to leave nothing behind but a
