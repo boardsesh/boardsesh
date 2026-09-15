@@ -6,8 +6,12 @@ name: Mobile Screenshots (Android)
 # cron.
 #
 # WHEN IT RUNS — two ways, and only these two:
-#   * automatically, after an Android Play internal deploy on main that actually
-#     SHIPPED a binary (the `workflow_run` trigger plus the `gate` job below);
+#   * automatically, after an Android Play internal deploy on the release train
+#     (`release/next`) that actually SHIPPED a binary (the `workflow_run` trigger
+#     plus the `gate` job below). Native store candidates are built from the
+#     train, never from main (#5477, docs/mobile-store-release.md §1-2), so the
+#     trigger follows the train and the checkout pins the deploy's own `head_sha`
+#     — the train commit the binary was built from;
 #   * on a manual `workflow_dispatch`, from any branch, with the inputs below.
 #
 # THE SHIPPED GATE. `conclusion == 'success'` is NOT proof a binary shipped: a
@@ -15,9 +19,17 @@ name: Mobile Screenshots (Android)
 # fingerprint gate saw that fingerprint already shipped) and the run still
 # concludes `success`. What proves it is the `fingerprint-android-<hash>` tag
 # android-apk-rn.yml forces onto its own $GITHUB_SHA right after a successful
-# Play upload. The `gate` job asks the API whether such a tag points at the
-# triggering commit; `android` needs it. A dispatch bypasses the gate — asking
-# for a capture by hand IS the request. Known gap: a forced rebuild of an
+# Play upload. Verified against android-apk-rn.yml as it stands on main after
+# #5477: "Tag the uploaded Android build and fingerprint" still tags
+# `$GITHUB_SHA`, and its `record-candidate` job still runs only when
+# `build-and-release` succeeded with `candidate_ready == 'true'` (i.e. the Play
+# upload landed). That job hangs off `build-and-release`, whose gate now admits
+# BOTH a `release/next` push AND a `workflow_dispatch` from main (the
+# post-merge-back hotfix rebuild) — so a dispatched rebuild tags its own commit
+# exactly the same way, and this gate reads it the same way. The `gate` job asks
+# the API whether such a tag points at the triggering commit; `android` needs it.
+# A dispatch bypasses the gate — asking for a capture by hand IS the request.
+# Known gap: a forced rebuild of an
 # already-shipped fingerprint preserves the existing tag (it keeps pointing at
 # the first commit that shipped it), so that run reads as not-shipped. Dispatch
 # by hand when you want those pixels.
@@ -79,7 +91,12 @@ on:
     workflows:
       - Android Play Internal Deploy (React Native)
     types: [completed]
-    branches: [main]
+    # The release train is the only branch that builds a store candidate; main
+    # no longer deploys native at all. Kept in sync with the deploy workflows'
+    # own `push.branches` by scripts/__tests__/mobile-screenshots-workflows.test.ts,
+    # which reads that value rather than hard-coding one. Mirrors RELEASE_BRANCH
+    # below — `on:` cannot read `env`, so the literal lives in both places.
+    branches: [release/next]
   workflow_dispatch:
     inputs:
       flow:
@@ -142,6 +159,14 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # The branch that carries the store candidate, mirroring mobile-store-draft.yml.
+  # The `workflow_run` filter in `on:` above must match it; the contract test
+  # checks both against the deploy workflow. Note this is NOT where the captured
+  # screenshots are committed — `commit_to_main` pushes to main, where
+  # mobile-store-metadata.yml reads them from.
+  RELEASE_BRANCH: release/next
+
 jobs:
   # One API call on a cheap ubuntu runner, deciding whether the emulator job
   # below is worth booting at all. See the SHIPPED GATE note in the header for
@@ -149,7 +174,7 @@ jobs:
   gate:
     # workflow_run fires on every completion; a failed or cancelled deploy has
     # nothing to capture. Dispatch runs are always allowed. Same guard, same
-    # reasoning, as mobile-store-draft.yml's main-candidate job.
+    # reasoning, as mobile-store-draft.yml's release-candidate job.
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -238,7 +263,12 @@ jobs:
       # The commit (path app-stores/google/screenshots/**) re-triggers
       # mobile-store-metadata.yml, which uploads to Google Play. A capture-only
       # dispatch leaves this false so non-deterministic captures don't churn the
-      # live listing.
+      # live listing. The leading `github.event_name == 'workflow_dispatch'` is
+      # what makes an automatic run incapable of pushing: on `workflow_run` the
+      # whole expression short-circuits to the literal `false` (the `inputs`
+      # context is null there and is never even reached), so COMMIT_RUN is
+      # 'false' and the commit step's `if` cannot pass. Pinned by the contract
+      # test.
       COMMIT_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_to_main }}
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
       EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
@@ -279,8 +309,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Capture the commit that shipped the binary, not whatever main has
-          # moved on to since the deploy finished.
+          # Capture the commit that shipped the binary, not whatever the release
+          # train has moved on to since the deploy finished.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           # Full history so the screenshot push-back can reset onto the latest main.
           fetch-depth: 0
@@ -337,9 +367,12 @@ jobs:
       # (android-apk-dev-client.yml) — no bundled JS, so no Gradle build on the
       # common path. It's used when the release's native tree provably matches
       # this commit: either the release was built from an ancestor of it with no
-      # native-input change since, or the release is a newer commit (every
-      # native deploy to main publishes a fresh release) with no native-input
-      # change between the two — see devApkFreshness. Otherwise (or if there's
+      # native-input change since, or the release is a newer commit (every push
+      # to main with a native-input change publishes a fresh one —
+      # android-apk-dev-client.yml still builds from main) with no native-input
+      # change between the two — see devApkFreshness. A train commit carrying a
+      # native change main has not taken yet therefore has no matching
+      # prerelease, and this step falls back to the local build below. Otherwise (or if there's
       # no release / download fails), the script warns and falls back to a
       # local `assembleDebug` build — that's why Java + the SDK stay installed
       # above. Writes `apk_path` / `apk_source` outputs. Checkout already uses

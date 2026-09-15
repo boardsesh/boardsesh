@@ -5,8 +5,12 @@ name: Mobile Screenshots (iOS)
 # gates PRs. There is no cron.
 #
 # WHEN IT RUNS — two ways, and only these two:
-#   * automatically, after an iOS TestFlight deploy on main that actually SHIPPED
-#     a binary (the `workflow_run` trigger plus the shipped gate below);
+#   * automatically, after an iOS TestFlight deploy on the release train
+#     (`release/next`) that actually SHIPPED a binary (the `workflow_run` trigger
+#     plus the shipped gate below). Native store candidates are built from the
+#     train, never from main (#5477, docs/mobile-store-release.md §1-2), so the
+#     trigger follows the train and every ref below pins the deploy's own
+#     `head_sha` — the train commit the binary was built from;
 #   * on a manual `workflow_dispatch`, from any branch, with the inputs below.
 #
 # THE SHIPPED GATE. `conclusion == 'success'` is NOT proof a binary shipped: a
@@ -14,9 +18,16 @@ name: Mobile Screenshots (iOS)
 # fingerprint gate saw that fingerprint already shipped) and the run still
 # concludes `success`. What proves it is the `fingerprint-ios-<hash>` tag
 # ios-testflight-rn.yml forces onto its own $GITHUB_SHA right after a successful
-# TestFlight upload. So `setup` asks the API whether such a tag points at the
-# triggering commit and publishes `shipped`; every job below requires it. A
-# dispatch bypasses the gate — asking for a capture by hand IS the request.
+# TestFlight upload. Verified against ios-testflight-rn.yml as it stands on main
+# after #5477: "Tag the uploaded iOS build and fingerprint" still tags
+# `$GITHUB_SHA`, still runs only when `steps.testflight_upload.outcome ==
+# 'success'` (through `tag_token`), and sits in `build-and-upload`, whose `if`
+# now admits BOTH a `release/next` push AND a `workflow_dispatch` from main (the
+# post-merge-back hotfix rebuild) — so a dispatched rebuild tags its own commit
+# exactly the same way, and this gate reads it the same way. So `setup` asks the
+# API whether such a tag points at the triggering commit and publishes `shipped`;
+# every job below requires it. A dispatch bypasses the gate — asking for a
+# capture by hand IS the request.
 # Known gap: a forced rebuild of an already-shipped fingerprint preserves the
 # existing tag (it keeps pointing at the first commit that shipped it), so that
 # run reads as not-shipped. Dispatch by hand when you want those pixels.
@@ -133,7 +144,12 @@ on:
     workflows:
       - iOS TestFlight Deploy (React Native)
     types: [completed]
-    branches: [main]
+    # The release train is the only branch that builds a store candidate; main
+    # no longer deploys native at all. Kept in sync with the deploy workflows'
+    # own `push.branches` by scripts/__tests__/mobile-screenshots-workflows.test.ts,
+    # which reads that value rather than hard-coding one. Mirrors RELEASE_BRANCH
+    # below — `on:` cannot read `env`, so the literal lives in both places.
+    branches: [release/next]
   workflow_dispatch:
     inputs:
       flow:
@@ -209,6 +225,13 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # The branch that carries the store candidate, mirroring mobile-store-draft.yml.
+  # Every reference to "the train" in a summary or notice below reads from here,
+  # so a rename lands in one place. The `workflow_run` filter in `on:` above must
+  # match it; the contract test checks both against the deploy workflow.
+  RELEASE_BRANCH: release/next
+
 jobs:
   # Decide whether this run has anything to capture, then resolve the locale
   # list, the capture matrix and the gate — once, on a cheap ubuntu runner, so
@@ -218,14 +241,15 @@ jobs:
   setup:
     # workflow_run fires on every completion; a failed or cancelled deploy has
     # nothing to capture. Dispatch runs are always allowed. Same guard, same
-    # reasoning, as mobile-store-draft.yml's main-candidate job.
+    # reasoning, as mobile-store-draft.yml's release-candidate job.
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       # The commit the captured pixels belong to: the deploy run's head commit on
-      # an automatic run, this run's own SHA on a dispatch. Every checkout below
-      # pins the same expression, so the capture is of the shipped commit rather
-      # than of whatever main happens to be by the time the shards start.
+      # an automatic run (a commit on the release train — that is what the deploy
+      # built), this run's own SHA on a dispatch. Every checkout below pins the
+      # same expression, so the capture is of the shipped commit rather than of
+      # whatever the train has moved on to by the time the shards start.
       SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
       EVENT_NAME: ${{ github.event_name }}
     outputs:
@@ -423,8 +447,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Capture the commit that shipped the binary, not whatever main has
-          # moved on to since the deploy finished.
+          # Capture the commit that shipped the binary, not whatever the release
+          # train has moved on to since the deploy finished.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: voidzero-dev/setup-vp@v1
@@ -514,8 +538,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Capture the commit that shipped the binary, not whatever main has
-          # moved on to since the deploy finished.
+          # Capture the commit that shipped the binary, not whatever the release
+          # train has moved on to since the deploy finished.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
@@ -667,8 +691,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Capture the commit that shipped the binary, not whatever main has
-          # moved on to since the deploy finished.
+          # Capture the commit that shipped the binary, not whatever the release
+          # train has moved on to since the deploy finished.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Capture shard
@@ -704,7 +728,11 @@ jobs:
     # (no environment) and never waits on a future required reviewer — see the
     # conditional-vs-bare note at android-apk-rn.yml (gate job). The workflow_run arm
     # covers the automatic trigger; it is deliberately narrowed to a run that
-    # actually captured, so an unchanged probe needs no environment.
+    # actually captured, so an unchanged probe needs no environment. A
+    # train-triggered run resolves Production because #5477 added release/next to
+    # that environment's deployment-branch policy (a one-time owner action, noted
+    # in docs/mobile-store-release.md); without it every automatic upload would
+    # fail with a branch-policy rejection instead of a missing secret.
     environment: >-
       ${{ ((github.event_name == 'workflow_dispatch' && inputs.upload) ||
            (github.event_name == 'workflow_run' && needs.ios-capture.result == 'success'))
@@ -747,8 +775,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Capture the commit that shipped the binary, not whatever main has
-          # moved on to since the deploy finished.
+          # Capture the commit that shipped the binary, not whatever the release
+          # train has moved on to since the deploy finished.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: voidzero-dev/setup-vp@v1
