@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { createRequestLogger } from '@/app/lib/observability/request-logger';
-import { fetchSprayWallPageData } from '@/app/lib/spray/spray-wall-render-data.server';
+import { fetchSprayWallPhotoUrl } from '@/app/lib/spray/spray-wall-render-data.server';
 
 /**
  * The photograph of an UNLISTED spray wall, behind a redirect that is minted on
@@ -52,8 +52,7 @@ export async function GET(req: Request, props: { params: Promise<{ wall_uuid: st
   const { wall_uuid: wallUuid } = await props.params;
 
   try {
-    const wallData = await fetchSprayWallPageData(wallUuid);
-    const photoUrl = wallData?.photo.url;
+    const photoUrl = await fetchSprayWallPhotoUrl(wallUuid);
     if (!photoUrl) {
       // Same answer for a wall that does not exist, a wall this anonymous read
       // may not see, and a wall whose photo could not be signed. Distinguishing
@@ -65,8 +64,16 @@ export async function GET(req: Request, props: { params: Promise<{ wall_uuid: st
   } catch (error) {
     // A failed read is a 502, never a 404: the page linking here is CDN-cached
     // for a day, and a cacheable 404 would outlive the brownout that caused it.
-    log.info('spray wall photo read failed', { status: 502, wallUuid });
-    console.error('[spray] wall photo redirect failed:', error);
+    //
+    // `error`, not `info`: this is a server fault, and a dashboard filtering by
+    // level would otherwise never see it. One line through the request logger
+    // rather than a second `console.error` beside it, so the route, method and
+    // Railway request id ride along.
+    log.error('spray wall photo read failed', {
+      status: 502,
+      wallUuid,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json({ error: 'Upstream read failed' }, { status: 502, headers: NO_STORE });
   }
 }

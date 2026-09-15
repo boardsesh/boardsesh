@@ -1,6 +1,6 @@
 import 'server-only';
 import { cache } from 'react';
-import { GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations';
+import { GET_SPRAY_WALL, GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import type { SprayWallHoldGeometry } from './spray-climb-view';
@@ -72,6 +72,38 @@ type SprayWallRenderDataResponse = {
 };
 
 /**
+ * One anonymous read against the wall API, with the deadline and the cache
+ * window both callers below want.
+ *
+ * Five minutes on the fetch cache: the presigned photo URL inside lives fifteen,
+ * so this keeps the read cheap under a crawl burst and still hands every reader a
+ * signature with time left on it.
+ */
+async function readSprayWallQuery<TData>(query: string, wallUuid: string, operation: string): Promise<TData | null> {
+  const response = await fetch(getGraphQLHttpUrl(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables: { uuid: wallUuid } }),
+    signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
+    next: { revalidate: 300 },
+  });
+
+  if (!response.ok) {
+    throw new Error(`[spray] ${operation} for "${wallUuid}" failed with HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { data?: TData | null; errors?: unknown[] };
+
+  // A 200 carrying `errors` is what a backend read deadline looks like, and
+  // `data` is null beside it — indistinguishable from a real miss without this.
+  if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+    throw new Error(`[spray] ${operation} for "${wallUuid}" returned GraphQL errors`);
+  }
+
+  return payload.data ?? null;
+}
+
+/**
  * `null` means one thing only: the backend answered cleanly and there is no
  * wall to render — no such wall, soft-deleted, or nothing published yet. Every
  * failure throws, so the route answers 5xx and a crawler keeps the page.
@@ -81,30 +113,12 @@ type SprayWallRenderDataResponse = {
  * status CDNs cache while a 5xx is not.
  */
 export const fetchSprayWallPageData = cache(async (wallUuid: string): Promise<SprayWallPageData | null> => {
-  const response = await fetch(getGraphQLHttpUrl(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: GET_SPRAY_WALL_RENDER_DATA, variables: { uuid: wallUuid } }),
-    signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
-    // The photo URL inside is a 15-minute presigned signature, so a cached
-    // response outlives the link it carries. Five minutes keeps the SSR read
-    // cheap under a crawl burst and still hands every reader a live signature.
-    next: { revalidate: 300 },
-  });
-
-  if (!response.ok) {
-    throw new Error(`[spray] sprayWallRenderData for "${wallUuid}" failed with HTTP ${response.status}`);
-  }
-
-  const payload = (await response.json()) as { data?: SprayWallRenderDataResponse | null; errors?: unknown[] };
-
-  // A 200 carrying `errors` is what a backend read deadline looks like, and
-  // `data` is null beside it — indistinguishable from a real miss without this.
-  if (Array.isArray(payload.errors) && payload.errors.length > 0) {
-    throw new Error(`[spray] sprayWallRenderData for "${wallUuid}" returned GraphQL errors`);
-  }
-
-  const renderData = payload.data?.sprayWallRenderData;
+  const data = await readSprayWallQuery<SprayWallRenderDataResponse>(
+    GET_SPRAY_WALL_RENDER_DATA,
+    wallUuid,
+    'sprayWallRenderData',
+  );
+  const renderData = data?.sprayWallRenderData;
   if (!renderData) return null;
 
   return {
@@ -152,4 +166,24 @@ export function resolveSprayPhotoUrl(pageData: SprayWallPageData, isPublicWall: 
   if (isPublicWall) return pageData.wall.publicPhotoUrl;
   if (!pageData.photo.url) return null;
   return `/api/v1/spray-walls/${encodeURIComponent(pageData.wall.uuid)}/photo`;
+}
+
+type SprayWallPhotoResponse = {
+  sprayWall: { currentVersion: { photo: { url: string } | null } | null } | null;
+};
+
+/**
+ * Just the presigned photo URL of a wall's published version.
+ *
+ * `sprayWall` rather than `sprayWallRenderData`, because the photo redirect route
+ * runs once per image fetch and needs nothing else: the render payload carries
+ * every alive hold, which is up to 1,500 rows of geometry per request for a
+ * caller that is about to throw all of it away.
+ *
+ * Same gate either way — both resolvers apply the wall view rule, and this read
+ * is anonymous, so a private wall comes back null and the route 404s.
+ */
+export async function fetchSprayWallPhotoUrl(wallUuid: string): Promise<string | null> {
+  const data = await readSprayWallQuery<SprayWallPhotoResponse>(GET_SPRAY_WALL, wallUuid, 'sprayWall');
+  return data?.sprayWall?.currentVersion?.photo?.url ?? null;
 }

@@ -837,7 +837,7 @@
   },
   "spray": {
     "unknownGrade": "Ohne Bewertung",
-    "unknownSetter": "einer*einem unbekannten Routenbauer*in",
+    "unknownSetter": "unbekannter Hand",
     "heading": "{{climbName}} — {{grade}}",
     "summary": "An {{wallName}}, einer Spraywall mit {{angle}}° und {{holdCount}} Griffen.",
     "setterLine": "Geschraubt von {{setter}}. {{ascents}} Begehungen erfasst.",

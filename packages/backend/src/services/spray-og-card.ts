@@ -38,6 +38,13 @@ const HALO_EXTRA_STROKE = 2.5;
 /** Low enough that the photograph stays readable under the mark. */
 const MARK_FILL_OPACITY = 0.22;
 
+/**
+ * Wall-clock bound on the object read, and the ceiling on what it may hand back.
+ * See `fetchPhotoBytes` in `createSprayOgCardDeps` for why each one is here.
+ */
+const PHOTO_FETCH_TIMEOUT_MS = 8_000;
+const MAX_PHOTO_BYTES = 12 * 1024 * 1024;
+
 const JPEG_OPTIONS: sharp.JpegOptions = { quality: 85, chromaSubsampling: '4:4:4', mozjpeg: true };
 const PNG_OPTIONS: sharp.PngOptions = { compressionLevel: 9, adaptiveFiltering: true };
 const WEBP_OPTIONS: sharp.WebpOptions = { quality: 80 };
@@ -316,15 +323,26 @@ export async function renderSprayOgCard(
   // `fit: 'inside'` and a centred placement: a spray wall is photographed at
   // whatever aspect ratio the climber's phone produced, and cropping to 1200x630
   // would cut the top or the bottom off the wall the card is supposed to show.
-  const placed = await sharp(photoBytes)
-    .resize({ width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, fit: 'inside' })
-    .toBuffer({ resolveWithObject: true });
+  //
+  // One `sharp` instance for both the resize and the source dimensions. The
+  // fallback below needs the photo's own width when the version row has none,
+  // and asking a second instance for it would decode the same JPEG twice.
+  const source = sharp(photoBytes);
+  const [sourceMetadata, placed] = await Promise.all([
+    source.metadata(),
+    source.clone().resize({ width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, fit: 'inside' }).toBuffer({
+      resolveWithObject: true,
+    }),
+  ]);
   const placedWidth = placed.info.width;
   const placedHeight = placed.info.height;
   const left = Math.round((OG_IMAGE_WIDTH - placedWidth) / 2);
   const top = Math.round((OG_IMAGE_HEIGHT - placedHeight) / 2);
 
-  const photoWidth = version.photoWidth ?? (await sharp(photoBytes).metadata()).width ?? placedWidth;
+  // The version row is the source of truth: it records the dimensions of the
+  // object as stored, after sharp baked the EXIF rotation in. The decoded
+  // metadata is the fallback for a row written before that column existed.
+  const photoWidth = version.photoWidth ?? sourceMetadata.width ?? placedWidth;
   const photoToPlaced = photoWidth > 0 ? placedWidth / photoWidth : 1;
 
   const overlaySvg = buildOverlayForWall({
@@ -441,12 +459,34 @@ export function createSprayOgCardDeps(): SprayOgCardDeps {
       }));
     },
 
+    // Two bounds, and both are about this endpoint rather than about the bucket.
+    //
+    // A deadline, because an unfurler is waiting: a stalled object read would
+    // otherwise hold a render slot for as long as the socket stayed open, and
+    // one unique `(layoutId, frames)` per stall is enough to wedge the endpoint.
+    // Every other outbound fetch in the tree carries one for the same reason.
+    //
+    // A byte ceiling, because what comes back is a photograph somebody uploaded
+    // and the upload cap is not a promise about the object that is there now.
+    // `Content-Length` is a claim, so it is checked first as a cheap refusal and
+    // the decoded length is checked again afterwards, which is the one that
+    // binds. 12MB leaves room above the 10MB upload cap for the JPEG re-encode.
     fetchPhotoBytes: async (photoUrl) => {
-      const response = await fetch(photoUrl);
+      const response = await fetch(photoUrl, { signal: AbortSignal.timeout(PHOTO_FETCH_TIMEOUT_MS) });
       if (!response.ok) {
         throw new Error(`spray wall photo fetch failed with ${response.status}`);
       }
-      return Buffer.from(await response.arrayBuffer());
+
+      const declaredLength = Number(response.headers.get('content-length'));
+      if (Number.isFinite(declaredLength) && declaredLength > MAX_PHOTO_BYTES) {
+        throw new Error(`spray wall photo declares ${declaredLength} bytes, over the ${MAX_PHOTO_BYTES} ceiling`);
+      }
+
+      const photoBytes = Buffer.from(await response.arrayBuffer());
+      if (photoBytes.length > MAX_PHOTO_BYTES) {
+        throw new Error(`spray wall photo is ${photoBytes.length} bytes, over the ${MAX_PHOTO_BYTES} ceiling`);
+      }
+      return photoBytes;
     },
 
     // Never presigned. An unfurler cannot hold a 15-minute signature and the card
