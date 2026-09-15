@@ -88,6 +88,24 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   const [state, dispatch] = useReducer(resetWallReducer, undefined, initialResetWallState);
   const [pickerBusy, setPickerBusy] = useState(false);
 
+  /**
+   * Whether the climber has started work this session — a photo picked, or
+   * anything after it.
+   *
+   * Latched against the open-draft screen below, and that is the whole point.
+   * `useSprayWallWithVersions` refetches in the background (a remount, a window
+   * focus, the query going stale), and an upload that LANDED but lost its
+   * response leaves a draft on the wall this session does not know about. The
+   * next refetch would then swap a climber who is mid-flow — photo chosen,
+   * corners marked — onto "there's a reset half done", throwing both away for a
+   * draft the retry is about to adopt anyway (`runUpload` reconciles).
+   *
+   * So the in-progress state stays authoritative until the climber acts. The
+   * open-draft screen is for arriving at a blocked wall, not for being moved to
+   * one.
+   */
+  const hasStartedWork = state.photo != null || state.draft != null;
+
   // The camera is a property of the BINARY, not of this bundle: SW-02 put the
   // usage description in 2.6.0 and this slice rides an OTA into older ones too.
   const cameraAvailable = useMemo(() => canPhotographWall(), []);
@@ -359,10 +377,11 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     );
   }
 
-  // An abandoned draft from an earlier session blocks this one. Only while the
-  // flow has not created its own — once `state.draft` exists, the open draft IS
-  // this flow's.
-  if (openDraft && !state.draft) {
+  // An abandoned draft from an earlier session blocks this one — but only on
+  // ARRIVAL. Once the climber has picked a photo, a background refetch must not
+  // take the screen off them (see `hasStartedWork`), and once `state.draft`
+  // exists the open draft IS this flow's.
+  if (openDraft && !hasStartedWork) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Text variant="title3" style={styles.centeredText}>

@@ -52,9 +52,11 @@ import {
   buildResetCommitDecisions,
   buildResetDetections,
   canPairMove,
+  buildResetRingTargets,
   climbsAffectedIsStale,
   emptyResetReviewState,
   holdRingRole,
+  resetCompareView,
   resetReviewCounts,
   resetReviewReducer,
   type ResetRingFilter,
@@ -186,19 +188,10 @@ export function SprayResetCompareScreen({
    * Hold ids come from a catalogue sequence and are always positive, so the two
    * ranges cannot collide.
    */
-  const holdTargets = useMemo<BoardHoldTarget[]>(() => {
-    if (!wall || !effective) return [];
-    const targets: BoardHoldTarget[] = wall.holds.map((hold) => ({
-      id: hold.id,
-      cx: hold.cx,
-      cy: hold.cy,
-      r: hold.r,
-    }));
-    detections.forEach((detection, index) => {
-      targets.push({ id: -(index + 1), cx: detection.photo.cx, cy: detection.photo.cy, r: detection.photo.r });
-    });
-    return targets;
-  }, [wall, effective, detections]);
+  const holdTargets = useMemo<BoardHoldTarget[]>(
+    () => (wall && effective ? buildResetRingTargets(wall.holds, detections, effective) : []),
+    [wall, effective, detections],
+  );
 
   const handleRingTap = useCallback(
     (key: number) => {
@@ -261,7 +254,28 @@ export function SprayResetCompareScreen({
     [wall, effective, detections, selectedKey, boardRender.width, boardRender.height],
   );
 
-  if (!hasDetections) {
+  // One decision, taken in `resetCompareView`, so the ordering that matters —
+  // loading before "nothing found" — is a unit test rather than the order of
+  // four `if`s in a render.
+  const view = resetCompareView({
+    draftLoading,
+    proposalPending: proposalQuery.isPending,
+    candidateCount: candidates.length,
+    ready: wall != null && !isUnavailable && homography != null && effective != null && counts != null,
+  });
+
+  if (view === 'loading') {
+    return (
+      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+        <ActivityIndicator size="large" />
+        <Text variant="subheadline" color={systemColors.secondaryLabel}>
+          {t('sprayReset.compare.working')}
+        </Text>
+      </View>
+    );
+  }
+
+  if (view === 'no-detections') {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Text variant="title3" style={styles.centeredText}>
@@ -274,18 +288,7 @@ export function SprayResetCompareScreen({
     );
   }
 
-  if (draftLoading || proposalQuery.isPending) {
-    return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
-        <ActivityIndicator size="large" />
-        <Text variant="subheadline" color={systemColors.secondaryLabel}>
-          {t('sprayReset.compare.working')}
-        </Text>
-      </View>
-    );
-  }
-
-  if (!wall || isUnavailable || !homography || !effective || !counts) {
+  if (view === 'unavailable' || !wall || !effective || !counts) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Text variant="headline" style={styles.centeredText}>

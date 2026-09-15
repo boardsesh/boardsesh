@@ -36,6 +36,7 @@ import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
+import { getSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 import {
   loadDraft,
   saveDraft,
@@ -286,6 +287,32 @@ export function useCreateClimbScreen({
     [],
   );
 
+  /**
+   * The holds that are on the board right now — spray walls only.
+   *
+   * A catalogue board gets `undefined`, which means "every hold in the seed is
+   * real": Kilter's holds are bolted on at the factory. A WALL's are not, and a
+   * reset takes some off. Remix seeds the editor from the parent's frames, which
+   * still name every hold the climb was set on, so without this the editor opens
+   * with the lost ones painted — invisible (no placement, so no ring), untappable
+   * (no target), and still counted by `startingCount` / `finishCount` /
+   * `isValid`. Save would then publish a climb born broken, on the one flow whose
+   * whole purpose is repairing one.
+   *
+   * Read once, with the frames, from the SW-07 registry: the wall under the
+   * editor does not change mid-session, and re-reading it later would silently
+   * erase a hold the climber had just painted if a reset landed on another device.
+   *
+   * eslint-disable-next-line react-hooks/exhaustive-deps — deliberately seeded
+   * once, exactly like `initialFrames` above.
+   */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const availableHoldIds = useMemo(() => {
+    if (board.boardName !== SPRAY_BOARD_NAME) return undefined;
+    const wall = getSprayWall(board.layoutId);
+    return wall ? new Set(wall.holds.map((hold) => hold.id)) : undefined;
+  }, []);
+
   const {
     litUpHoldsMap,
     frames,
@@ -308,7 +335,7 @@ export function useCreateClimbScreen({
     redo,
     canUndo,
     canRedo,
-  } = useCreateClimb(board.boardName, { initialFrames });
+  } = useCreateClimb(board.boardName, { initialFrames, availableHoldIds });
 
   const [selectedBrush, setSelectedBrush] = useState<BrushRole>('HAND');
   const [name, setName] = useState(isForking && forkName ? `${forkName} remix` : '');

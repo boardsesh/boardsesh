@@ -112,6 +112,16 @@ export type ResetReviewState = {
   lowConfidenceHoldIds: readonly number[];
   /** Kept hold id → the detection whose silhouette would refresh it. */
   keptDetectionByHoldId: Readonly<Record<number, number>>;
+  /**
+   * Detection indices the matcher paired with a hold that is already on the wall.
+   *
+   * These are not proposals about anything — they are today's holds, seen again
+   * in the new photograph — so they are not drawn, not tappable and not
+   * toggleable. Drawing them would put a second ring on top of every kept hold
+   * (a hundred grey rings on a hundred-hold wall where nothing changed), and
+   * accepting one would bolt a brand new hold on top of the hold it IS.
+   */
+  matchedDetectionIndices: ReadonlySet<number>;
   /** What the matcher suggested, kept so "use the suggestion" can be offered per ring. */
   suggestedMoveByDetection: Readonly<Record<number, number>>;
   /** The proposal's own removal set, for {@link climbsAffectedIsStale}. */
@@ -162,10 +172,13 @@ export function initialResetReviewState(
   for (const holdId of proposal.removed) holdVerdicts[holdId] = 'removed';
 
   const added = new Set(proposal.added);
+  // Every detection the matcher tied to a hold already on the wall. Those are
+  // that hold seen again, so they are neither an addition nor something to
+  // reject — they are excluded from the review entirely (see
+  // `matchedDetectionIndices`).
+  const matchedDetectionIndices = new Set(proposal.kept.map((kept) => kept.detectionIndex));
   const detectionVerdicts: DetectionVerdict[] = [];
   for (let index = 0; index < detectionCount; index += 1) {
-    // A detection the matcher paired with an existing hold is that hold, seen
-    // again — not a new one. Only the leftovers are proposed as additions.
     detectionVerdicts.push(added.has(index) ? 'added' : 'rejected');
   }
 
@@ -184,6 +197,7 @@ export function initialResetReviewState(
     moves: {},
     lowConfidenceHoldIds: [...proposal.lowConfidence],
     keptDetectionByHoldId,
+    matchedDetectionIndices,
     suggestedMoveByDetection,
     proposedRemovedIds: [...proposal.removed],
     climbsAffected: proposal.climbsAffected,
@@ -223,6 +237,7 @@ export function emptyResetReviewState(): ResetReviewState {
     moves: {},
     lowConfidenceHoldIds: [],
     keptDetectionByHoldId: {},
+    matchedDetectionIndices: new Set<number>(),
     suggestedMoveByDetection: {},
     proposedRemovedIds: [],
     climbsAffected: 0,
@@ -255,6 +270,10 @@ export function resetReviewReducer(state: ResetReviewState, action: ResetReviewA
     case 'TOGGLE_DETECTION': {
       const current = state.detectionVerdicts[action.index];
       if (!current) return state;
+      // A detection that IS a hold on the wall has no verdict to give. Accepting
+      // it would add a second hold at the same place; rejecting it would say
+      // nothing, since it was never going to be written either way.
+      if (state.matchedDetectionIndices.has(action.index)) return state;
       const next: DetectionVerdict = current === 'added' ? 'rejected' : 'added';
       const verdicts = [...state.detectionVerdicts];
       verdicts[action.index] = next;
@@ -366,7 +385,20 @@ export function holdPassesFilter(state: ResetReviewState, holdId: number): boole
   return role === state.filter;
 }
 
+/**
+ * Is this detection part of the review at all?
+ *
+ * A detection the matcher tied to a hold that is already on the wall is that
+ * hold, so the kept ring is the only thing that should be drawn for it. THE
+ * gate — every consumer (the SVG buckets, the tap targets, the filter) reads
+ * this rather than re-deciding it.
+ */
+export function detectionIsReviewable(state: ResetReviewState, index: number): boolean {
+  return !state.matchedDetectionIndices.has(index);
+}
+
 export function detectionPassesFilter(state: ResetReviewState, index: number): boolean {
+  if (!detectionIsReviewable(state, index)) return false;
   if (state.filter === 'all') return true;
   if (state.filter !== 'new') return false;
   return state.detectionVerdicts[index] === 'added';
@@ -458,4 +490,66 @@ export function buildResetCommitDecisions(
   kept.sort((left, right) => left.holdId - right.holdId);
 
   return { kept, removed, added };
+}
+
+// ---------------------------------------------------------------------------
+// What the compare screen shows, and what it lets a finger reach. Both are pure
+// so the two mistakes they exist to prevent — telling a climber their phone
+// found nothing while the wall is still loading, and putting a tap target on a
+// ring the filter has hidden — are unit tests rather than something you can only
+// see by standing in front of a wall.
+// ---------------------------------------------------------------------------
+
+export type ResetCompareView = 'loading' | 'no-detections' | 'unavailable' | 'ready';
+
+/**
+ * Which of the compare screen's four states is showing.
+ *
+ * Order matters and is the whole reason this is a function. `detections` is
+ * empty until the draft's homography arrives, so "this phone found no holds" and
+ * "the wall has not loaded yet" look identical from the inside — and answering
+ * the first while the second is true told every climber their reset could not be
+ * reviewed, seconds before showing them a hundred rings. Loading wins, and
+ * `candidateCount` (what the DETECTOR found, which is known before any of this
+ * loads) is what decides the empty state rather than the mapped detections.
+ */
+export function resetCompareView(input: {
+  draftLoading: boolean;
+  proposalPending: boolean;
+  /** Detector output, before the canonical mapping. Known from the moment the flow hands over. */
+  candidateCount: number;
+  ready: boolean;
+}): ResetCompareView {
+  if (input.draftLoading) return 'loading';
+  if (input.candidateCount === 0) return 'no-detections';
+  if (input.proposalPending) return 'loading';
+  return input.ready ? 'ready' : 'unavailable';
+}
+
+/** One tappable ring: a positive hold id, or `-(detectionIndex + 1)`. */
+export type ResetRingTarget = { id: number; cx: number; cy: number; r: number };
+
+/**
+ * Every ring a finger may reach, at the current filter.
+ *
+ * The SAME predicates the SVG layer draws through, because a target the filter
+ * has hidden is a tap on bare photograph that opens the panel for a ring nobody
+ * can see: under "Gone", an empty patch of wall would select a kept hold that is
+ * not on screen.
+ */
+export function buildResetRingTargets(
+  holds: readonly { id: number; cx: number; cy: number; r: number }[],
+  detections: readonly ResetDetection[],
+  state: ResetReviewState,
+): ResetRingTarget[] {
+  const targets: ResetRingTarget[] = [];
+  for (const hold of holds) {
+    if (!holdPassesFilter(state, hold.id)) continue;
+    targets.push({ id: hold.id, cx: hold.cx, cy: hold.cy, r: hold.r });
+  }
+  detections.forEach((detection, index) => {
+    if (!detectionPassesFilter(state, index)) return;
+    targets.push({ id: -(index + 1), cx: detection.photo.cx, cy: detection.photo.cy, r: detection.photo.r });
+  });
+  return targets;
 }

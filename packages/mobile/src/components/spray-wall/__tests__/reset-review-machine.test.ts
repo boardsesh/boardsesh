@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   buildResetCommitDecisions,
   buildResetDetections,
+  buildResetRingTargets,
   canPairMove,
   climbsAffectedIsStale,
+  detectionIsReviewable,
   detectionPassesFilter,
   emptyResetReviewState,
   holdPassesFilter,
   holdRingRole,
   initialResetReviewState,
+  resetCompareView,
   resetReviewCounts,
   resetReviewReducer,
   type ResetDetection,
@@ -103,6 +106,30 @@ describe('initialResetReviewState', () => {
     expect(seeded().detectionVerdicts).toEqual(['rejected', 'rejected', 'added']);
   });
 
+  // The verdict on a matched detection is bookkeeping, not a proposal: detections
+  // 0 and 1 ARE holds 11 and 12, seen again in the new photograph. Nothing in the
+  // review may draw them, target them or toggle them, or a wall where nothing
+  // changed shows a grey ring on top of every green one.
+  it('leaves a detection that IS an existing hold out of the review', () => {
+    const state = seeded();
+    expect(state.matchedDetectionIndices).toEqual(new Set([0, 1]));
+    expect(detectionIsReviewable(state, 0)).toBe(false);
+    expect(detectionIsReviewable(state, 1)).toBe(false);
+    expect(detectionIsReviewable(state, 2)).toBe(true);
+  });
+
+  it('never draws a matched detection, at any filter', () => {
+    const state = seeded();
+    expect(detectionPassesFilter(state, 0)).toBe(false);
+    expect(detectionPassesFilter(run(state, { type: 'SET_FILTER', filter: 'new' }), 0)).toBe(false);
+    expect(detectionPassesFilter(state, 2)).toBe(true);
+  });
+
+  it('refuses to toggle a matched detection — it is the hold, not a hold to add', () => {
+    const state = seeded();
+    expect(run(state, { type: 'TOGGLE_DETECTION', index: 0 })).toBe(state);
+  });
+
   it('records the suggested moves without applying any of them', () => {
     const state = seeded();
     expect(state.suggestedMoveByDetection).toEqual({ 2: 13 });
@@ -126,10 +153,15 @@ describe('resetReviewReducer — verdicts', () => {
     expect(run(state, { type: 'TOGGLE_HOLD', holdId: 404 })).toBe(state);
   });
 
-  it('toggles a detection between added and rejected', () => {
-    const once = run(seeded(), { type: 'TOGGLE_DETECTION', index: 0 });
-    expect(once.detectionVerdicts[0]).toBe('added');
-    expect(run(once, { type: 'TOGGLE_DETECTION', index: 0 }).detectionVerdicts[0]).toBe('rejected');
+  it('toggles a reviewable detection between added and rejected', () => {
+    // Index 3 is a detection the matcher tied to nothing and did not propose —
+    // the only kind with a verdict to give. Indices 0 and 1 ARE holds 11 and 12
+    // (see the matched-detection tests above) and index 2 is the proposed
+    // addition.
+    const start = initialResetReviewState(PROPOSAL, ALIVE, 4);
+    const once = run(start, { type: 'TOGGLE_DETECTION', index: 3 });
+    expect(once.detectionVerdicts[3]).toBe('added');
+    expect(run(once, { type: 'TOGGLE_DETECTION', index: 3 }).detectionVerdicts[3]).toBe('rejected');
   });
 
   it('counts what the wall would look like', () => {
@@ -267,5 +299,62 @@ describe('buildResetCommitDecisions', () => {
   it('is stable: the same review sends the same bytes twice', () => {
     const state = seeded();
     expect(buildResetCommitDecisions(state, detections(3))).toEqual(buildResetCommitDecisions(state, detections(3)));
+  });
+});
+
+describe('resetCompareView', () => {
+  const base = { draftLoading: false, proposalPending: false, candidateCount: 12, ready: true };
+
+  it('shows the spinner while the wall is loading, even with nothing detected yet', () => {
+    // THE regression. `detections` is empty until the draft's homography lands,
+    // so an empty-state test that ran first told every climber their phone had
+    // found no holds, seconds before showing them a hundred rings.
+    expect(resetCompareView({ ...base, draftLoading: true, candidateCount: 0, ready: false })).toBe('loading');
+  });
+
+  it('says nothing was found only when the DETECTOR found nothing', () => {
+    expect(resetCompareView({ ...base, candidateCount: 0 })).toBe('no-detections');
+  });
+
+  it('shows the spinner while the proposal is in flight', () => {
+    expect(resetCompareView({ ...base, proposalPending: true })).toBe('loading');
+  });
+
+  it('falls back to unavailable when the wall resolved but cannot be drawn', () => {
+    expect(resetCompareView({ ...base, ready: false })).toBe('unavailable');
+  });
+
+  it('is ready when the wall, the photo and the proposal have all landed', () => {
+    expect(resetCompareView(base)).toBe('ready');
+  });
+});
+
+describe('buildResetRingTargets', () => {
+  const HOLDS = [
+    { id: 11, cx: 10, cy: 10, r: 5 },
+    { id: 12, cx: 20, cy: 20, r: 5 },
+    { id: 13, cx: 30, cy: 30, r: 5 },
+  ];
+
+  it('offers every ring at the All filter, minus the ones that are existing holds', () => {
+    const ids = buildResetRingTargets(HOLDS, detections(3), seeded()).map((target) => target.id);
+    // Holds 11/12/13, plus detection 2 as `-(2 + 1)`. Detections 0 and 1 ARE
+    // holds 11 and 12, so they are not separately tappable.
+    expect(ids).toEqual([11, 12, 13, -3]);
+  });
+
+  it('offers nothing the filter has hidden', () => {
+    // THE regression: an unfiltered target under "Gone" made a tap on bare
+    // photograph select a kept hold that was not on screen.
+    const removedOnly = run(seeded(), { type: 'SET_FILTER', filter: 'removed' });
+    expect(buildResetRingTargets(HOLDS, detections(3), removedOnly).map((target) => target.id)).toEqual([13]);
+
+    const newOnly = run(seeded(), { type: 'SET_FILTER', filter: 'new' });
+    expect(buildResetRingTargets(HOLDS, detections(3), newOnly).map((target) => target.id)).toEqual([-3]);
+  });
+
+  it('follows a hold across a verdict change', () => {
+    const putBack = run(seeded(), { type: 'TOGGLE_HOLD', holdId: 13 }, { type: 'SET_FILTER', filter: 'removed' });
+    expect(buildResetRingTargets(HOLDS, detections(3), putBack)).toEqual([]);
   });
 });

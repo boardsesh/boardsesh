@@ -440,9 +440,13 @@ export const SHARED_EVENTS = {
   // pairings were confirmed — the only thing that makes remix able to suggest a
   // successor months later.
   SprayWallResetApplied: 'Spray Wall Reset Applied',
-  // Props: { lostHoldCount, suggestedHoldCount, source: 'play_drawer' }. Fired
-  // when a climber takes the remix offer on a climb that lost holds — the one
-  // number that says whether a broken climb is a dead end or a starting point.
+  // Props: { lostHoldCount, source: 'play_drawer' }. Fired when a climber takes
+  // the remix offer on a climb that lost holds — the one number that says
+  // whether a broken climb is a dead end or a starting point. No successor
+  // count: `remixClimb`'s suggestions are not read on this path (see
+  // `use-spray-wall-reset.ts`), and a property that is always absent is worse
+  // than no property at all — it reads as "no successors were offered" rather
+  // than "nobody asked".
   ClimbRemixedFromBroken: 'Climb Remixed From Broken',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an

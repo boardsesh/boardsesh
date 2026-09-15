@@ -11,7 +11,14 @@
 //    automatically: a reset that appears to have failed may have landed, and a
 //    silent second attempt would be re-validated against a wall it has already
 //    changed.
-//  - `remixClimb` writes nothing either. It hands back a starting point.
+//
+// `remixClimb` is deliberately NOT here. It answers with successor suggestions
+// for a climb's lost holds, and nothing on this branch consumes them: remix
+// seeds the editor from the parent's frames, sanitised against the wall's live
+// holds (`availableHoldIds` in `useCreateClimb`), which is what stops a remix
+// being born broken. Pre-painting the successors is its own piece of work and
+// rides with the ghost rings in #5493, where the query goes in next to its
+// first reader rather than sitting here unused.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -19,12 +26,10 @@ import {
   DISCARD_SPRAY_WALL_VERSION,
   GET_SPRAY_WALL_WITH_VERSIONS,
   PROPOSE_SPRAY_WALL_RESET,
-  REMIX_CLIMB,
 } from '@boardsesh/graphql/operations/spray-walls';
 import type {
   CommitSprayWallVersionInput,
   ProposeSprayWallResetInput,
-  SprayRemixSeed,
   SprayWall,
   SprayWallResetProposal,
   SprayWallResetResult,
@@ -35,7 +40,6 @@ import { mySprayWallsQueryKey } from './use-create-spray-wall';
 
 type ProposeResponse = { proposeSprayWallReset: SprayWallResetProposal | null };
 type CommitResponse = { commitSprayWallVersion: SprayWallResetResult };
-type RemixResponse = { remixClimb: SprayRemixSeed | null };
 type WallWithVersionsResponse = { sprayWall: SprayWall | null };
 type DiscardResponse = { discardSprayWallVersion: boolean };
 
@@ -104,32 +108,6 @@ export function useCommitSprayWallVersion(layoutId: number) {
       await queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
       await queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
     },
-  });
-}
-
-export const remixSeedQueryKey = (parentUuid: string | null) => ['remixClimb', parentUuid] as const;
-
-/**
- * The parent climb with its lost holds stripped out, and what replaced them.
- *
- * `sprayWallUuid` carries the share-link capability: a crew holding an unlisted
- * wall's link may set climbs on it, so they may remix one too. Send it whenever
- * the viewer reached the wall by uuid rather than by owning it; it is ignored
- * when the caller is already a principal.
- */
-export function useRemixSeed(parentUuid: string | null, sprayWallUuid?: string | null, enabled = true) {
-  return useQuery({
-    queryKey: remixSeedQueryKey(parentUuid),
-    queryFn: async (): Promise<SprayRemixSeed | null> => {
-      if (!parentUuid) return null;
-      const response = await getHttpClient().request<RemixResponse>(REMIX_CLIMB, {
-        parentUuid,
-        sprayWallUuid: sprayWallUuid ?? null,
-      });
-      return response.remixClimb;
-    },
-    enabled: enabled && parentUuid != null,
-    retry: false,
   });
 }
 

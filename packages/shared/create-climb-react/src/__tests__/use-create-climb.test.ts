@@ -429,6 +429,62 @@ describe('useCreateClimb', () => {
     });
   });
 
+  // A spray wall's holds come off it. A remix is seeded from the parent's frames,
+  // which still name every hold the climb was set on, so the ids that a reset
+  // removed have to be dropped here — the editor cannot draw them (no placement,
+  // so no ring) or let anyone tap them off (no target), yet they would count
+  // toward `startingCount`, `finishCount` and `isValid`, and Save would publish a
+  // climb born broken.
+  describe('availableHoldIds', () => {
+    const PARENT_FRAMES: LitUpHoldsMap[] = [
+      {
+        100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
+        200: { state: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
+        300: { state: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
+        400: { state: 'FINISH', color: '#FF00FF', displayColor: '#FF00FF' },
+      },
+    ];
+
+    it('drops seeded holds that are no longer on the wall', () => {
+      // 200 and 300 came off in a reset.
+      const { result } = renderHook(() =>
+        useCreateClimb('kilter', { initialFrames: PARENT_FRAMES, availableHoldIds: new Set([100, 400]) }),
+      );
+
+      expect(Object.keys(result.current.litUpHoldsMap).sort()).toEqual(['100', '400']);
+      expect(result.current.totalHolds).toBe(2);
+      expect(result.current.startingCount).toBe(1);
+      expect(result.current.finishCount).toBe(1);
+    });
+
+    it('leaves a catalogue-board fork untouched when no set is given', () => {
+      // The whole reason this is opt-in: a Kilter hold is bolted on at the
+      // factory, so "which ids exist" has no answer worth asking and every
+      // seeded hold is real.
+      const { result } = renderHook(() => useCreateClimb('kilter', { initialFrames: PARENT_FRAMES }));
+
+      expect(Object.keys(result.current.litUpHoldsMap).sort()).toEqual(['100', '200', '300', '400']);
+      expect(result.current.totalHolds).toBe(4);
+    });
+
+    it('applies across every frame of a multi-frame seed', () => {
+      const frames: LitUpHoldsMap[] = [
+        { 100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' } },
+        { 300: { state: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' } },
+      ];
+
+      const { result } = renderHook(() =>
+        useCreateClimb('kilter', { initialFrames: frames, availableHoldIds: new Set([100]) }),
+      );
+
+      expect(result.current.frameCount).toBe(2);
+      act(() => {
+        result.current.nextFrame();
+      });
+      expect(result.current.litUpHoldsMap).toEqual({});
+    });
+  });
+
   describe('initialFrames', () => {
     it('works with a single initial frame', () => {
       const initialFrames = [
