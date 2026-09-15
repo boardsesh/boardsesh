@@ -119,3 +119,61 @@ runbook all live in **`docs/cloudflare.md`**.
 - Web points `og:image` here via `buildOgBoardRenderUrl`
   (`packages/web/app/components/board-renderer/util.ts`), which derives the
   backend origin from `NEXT_PUBLIC_WS_URL`.
+
+## Spray walls (`board_name=spray`)
+
+A spray-wall card is the one response on this endpoint the query string does not
+determine. Every catalogue board's backdrop ships in the repo and its hold
+positions come from generated constants; a wall has neither. Its background is a
+photograph in object storage and its holds live in `spray_wall_holds`, so
+`GET /og/climb?board_name=spray&layout_id=…&frames=…` is answered from the
+database — `packages/backend/src/services/spray-og-card.ts`, reached from a
+branch in `handlers/og-climb.ts` that runs before the WASM availability check
+(no WASM is involved, so a renderer that failed to boot must not 503 it).
+
+**Public walls only.** A wall that is private, unlisted, soft-deleted, has never
+published a version, or has no `public_photo_key` gets a 404, and every one of
+those answers is the same 404 with the same body. The gates all run before a
+single photo byte is read. Unlisted is not an exception: an unlisted wall is
+reachable by uuid inside the app because the uuid is a capability the reader
+holds, and a crawler fetching an OG image holds nothing — "hard to guess" would
+be the whole access control.
+
+**404, never 403.** Layout ids are sequential and this URL is guessable, so any
+answer other than "there is nothing here" — a 403, a generic board card, a
+different error shape — tells a stranger which ids are somebody's home wall.
+A private wall and a nonexistent one are indistinguishable from outside.
+
+**The 404 is never cached** (`Cache-Control: no-store`). A wall its owner makes
+public tomorrow must not stay a 404 at the edge, and a cached negative on a
+shareable URL is exactly the failure this document and the sitemap doctrine both
+warn about.
+
+**The 200 is daily, not `immutable`.** Every other card here carries a year of
+`immutable` because its bytes follow from the query. A wall's do not: a reset
+re-points the photograph and rewrites the holds under an unchanged `layout_id` +
+`frames`, so an immutable header would pin last year's wall at the edge with no
+URL left to change. `createOgImageHeaders({ version: null, unversionedTier:
+'daily' })` gives it a day of freshness and a week of stale-while-revalidate.
+The in-process byte cache is keyed on the wall's published version AND its photo
+key, because a reset moves the version while the key may not and a
+demote-then-re-promote mints a new random key while the version does not.
+
+**The photo is the public copy, never a presigned URL.** Wall photos live in the
+`private` bucket behind 15-minute signatures (`docs/spray-walls.md`, "Photo
+privacy"). An unfurler cannot hold a signature and this card is cached for a day,
+so the only thing this path will fetch is the world-readable `media` copy SW-14
+writes when a wall is promoted to public.
+
+**The drawing is sharp + SVG, not the WASM overlay.** The shared pipeline's image
+resolver is synchronous and reads the local filesystem, which a photograph
+fetched over HTTP can never satisfy, and its overlay draws a catalogue board's
+fixed geometry. So this path resizes the photo `fit: 'inside'` into the 1200×630
+field (`#181225`, the same play field), centres it, and composites one SVG mark
+per lit hold: the hold's traced silhouette as a polygon when
+`spray_wall_holds.outline` has one, a circle at its mapped radius when it does
+not — the same ring fallback the rest of the render path uses. Canonical
+coordinates reach photo pixels through `invert()` of the version's stored
+homography; a matrix that turns out singular logs at `warn` and renders the photo
+with no overlay, because a card with no holds is a worse card and a 500 on a link
+somebody already posted is a broken one.
