@@ -1,19 +1,20 @@
 import { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import {
-  getBoardCapabilities,
-  SUPPORTED_BOARDS,
-  WOODS_ANGLES,
-  WOODS_LAYOUTS,
-  woodsSizeIdToDimension,
-} from '@boardsesh/board-config';
-import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
+import { getBoardCapabilities, WOODS_ANGLES, WOODS_LAYOUTS, woodsSizeIdToDimension } from '@boardsesh/board-config';
+// The SCHEMA's list, deliberately — it answers "is this a board?". The
+// board-config export of the same name answers "may a board picker OFFER it?",
+// and it excludes `spray` on purpose: a wall is not a board model you pick from a
+// list. Asking the picker list here made the editor unreachable for a wall — a
+// remix or the FAB hands this route `boardName=spray`, the name read as a typo,
+// and the route fell back to the active board or span on a spinner for ever.
+import { SUPPORTED_BOARDS, type BoardName, type UserBoard } from '@boardsesh/shared-schema';
 import { CreateClimbScreen } from '../../../src/components/create-climb/CreateClimbScreen';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { createClimbScreenKey } from '../../../src/lib/create-climb-screen-key';
 import { useUnsupportedBoardExit } from '../../../src/lib/routing/use-unsupported-board-exit';
+import { useSprayWallToken } from '../../../src/lib/spray/use-spray-wall-token';
 
 type CreateClimbParams = {
   boardName?: string;
@@ -25,6 +26,8 @@ type CreateClimbParams = {
   forkName?: string;
   forkDescription?: string;
   forkCharacteristics?: string;
+  /** The source climb's grade, as a name on the shared scale ("6c/V5"). */
+  forkDifficulty?: string;
   editClimbUuid?: string;
 };
 
@@ -41,7 +44,8 @@ type EditorBoard = {
  *
  * `useLocalSearchParams` is untrusted input on this route: the app's
  * universal-link entry is a wildcard, so `…/climbs/create?boardName=<anything>`
- * can open it cold from outside the app. The value used to be cast straight to
+ * can open it cold from outside the app. Narrowed against the SCHEMA's board
+ * list, not the picker's — see the import. The value used to be cast straight to
  * `BoardName` and indexed into `STATE_TO_PRIMARY_CODE`, which throws during
  * render on the remix/edit path (#3804). Treating an unsupported value as absent
  * makes it fall back to the active board, exactly like a missing param.
@@ -123,6 +127,16 @@ export default function CreateClimbRoute() {
 
   const resolvedBoard = useMemo(() => resolveEditorBoard(params, activeBoard), [params, activeBoard]);
 
+  // `createClimbScreenKey` folds the spray wall's VERSION in, but it reads that
+  // out of a module-level registry — and on a cold spray entry (a share link, a
+  // remix of somebody else's wall climb) the wall lands after this route has
+  // already rendered. Nothing here would re-render, so the screen would keep the
+  // `-sv0` key: its editor never remounts, never re-runs the version-keyed draft
+  // restore, and autosaves into a slot the loader's superseded-draft sweep has
+  // been and gone past. Subscribing here is what makes the key move when the wall
+  // arrives. `''` for every catalogue board.
+  useSprayWallToken(resolvedBoard?.boardName, resolvedBoard?.layoutId);
+
   // A board config the editor can't open has nowhere to land: it cannot paint
   // the holds, and silently swapping in a different board would set the climb on
   // the wrong wall. Leave the route rather than render a spinner that never
@@ -164,6 +178,7 @@ export default function CreateClimbRoute() {
       forkName={params.forkName}
       forkDescription={params.forkDescription}
       forkCharacteristics={params.forkCharacteristics}
+      forkDifficulty={params.forkDifficulty}
       editClimbUuid={params.editClimbUuid}
     />
   );
