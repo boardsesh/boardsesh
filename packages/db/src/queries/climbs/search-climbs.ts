@@ -163,7 +163,7 @@ export const searchClimbs = async (
   const sortOrder = searchParams.sortOrder === 'asc' ? 'asc' : 'desc';
   const statsDrivenSort = getStatsDrivenSort(sortBy, sortOrder);
 
-  const hasStatsFilters = filters.getClimbStatsConditions().length > 0;
+  const hasStatsFilters = filters.hasRequiredStatsFilters();
   if (!statsDrivenSort) {
     return standardSearch(db, params, searchParams, filters, sortBy, sortOrder, isDraftsQuery, page, pageSize, false);
   }
@@ -248,6 +248,15 @@ export type SearchPath = 'standard-only' | 'stats-driven-only' | 'stats-driven-w
  *   - hasStatsFilters       → stats-driven-only (a stats predicate can't be satisfied through the
  *                             LEFT JOIN either, so a fallback would return nothing new)
  *   - otherwise             → stats-driven-with-fallback (any page — see issue #1971)
+ *
+ * `hasStatsFilters` is `filters.hasRequiredStatsFilters()`, NOT
+ * `filters.getClimbStatsConditions().length > 0` — it deliberately excludes the
+ * grade-range filter, which can now be satisfied by a climb with a
+ * board_climb_grades row but no board_climb_stats row at this angle (a MoonBoard
+ * wide angle, or an unclimbed angle with a published cross-angle estimate). The
+ * INNER JOIN this flag forces would drop exactly those climbs before the WHERE
+ * clause's Boardsesh-grade fallback ever runs, so a grade-range-only filter must
+ * fall through to `stats-driven-with-fallback` (or `standard-only`) instead.
  */
 export function chooseSearchPath(input: {
   statsDrivenSort: StatsDrivenSort | null;
@@ -272,10 +281,11 @@ export function chooseSearchPath(input: {
   // comes back empty while the count says e.g. 66. Force the LEFT JOIN path so
   // unclimbed routes surface; the tiny routes dataset makes the index plan moot.
   if (input.routesOnly) return 'standard-only';
-  // Stats filters (minAscents, grade range, quality, accuracy) exclude stats-less
-  // climbs from the LEFT JOIN path too, so a fallback would return nothing new and
-  // just double the query count. countClimbs applies the same conditions, so the
-  // count and the list already agree on this branch.
+  // Stats filters that genuinely require a real board_climb_stats row (minAscents,
+  // quality, accuracy, benchmarks — NOT grade range, see the doc comment above)
+  // exclude stats-less climbs from the LEFT JOIN path too, so a fallback would
+  // return nothing new and just double the query count. countClimbs applies the
+  // same conditions, so the count and the list already agree on this branch.
   if (input.hasStatsFilters) return 'stats-driven-only';
   return 'stats-driven-with-fallback';
 }
