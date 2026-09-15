@@ -511,9 +511,29 @@ export type BootstrapPathRecoveredInfo = {
 };
 export type BootstrapPathRecoveredReporter = (info: BootstrapPathRecoveredInfo) => void;
 
+/**
+ * A committed page of documents, handed to the platform for the side effects a
+ * row cannot carry.
+ *
+ * The one caller today is the spray-wall photo store: `syncSprayWalls` emits a
+ * short-lived presigned URL as a transient field (`TableSyncConfig.transientColumns`),
+ * and the device turns it into bytes on disk keyed by `photo_key`. Injected
+ * rather than imported because the engine has no filesystem and must not grow
+ * one — same rule as every other platform I/O in this package.
+ *
+ * Contract: bounded work (it runs inside the page loop), and it may throw —
+ * `syncTable` swallows it so an asset failure cannot end a cycle.
+ */
+export type DocumentsPulledSink = (info: {
+  tableName: string;
+  documents: Record<string, unknown>[];
+}) => void | Promise<void>;
+
 export type SyncOptions = {
   /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
+  /** Per-page side-effect sink for board reference data. See DocumentsPulledSink. */
+  onDocumentsPulled?: DocumentsPulledSink;
   /**
    * Connectivity probe, mirroring `DrainOptions.isOnline` (drainer.ts). A pull
    * that starts with no connection can only fail every request it makes, and
@@ -771,6 +791,12 @@ async function upsertDocuments(
   tableName: string,
   documents: Record<string, unknown>[],
   allowedColumns: readonly string[],
+  /**
+   * Fields the resolver emits on purpose and this table does not store — see
+   * `TableSyncConfig.transientColumns`. Skipped like any other unknown column,
+   * but WITHOUT a drift report: they are the contract, not a drift from it.
+   */
+  transientColumns: readonly string[],
   onSchemaDrift?: SchemaDriftReporter,
   page?: {
     canWrite: () => boolean;
@@ -787,8 +813,11 @@ async function upsertDocuments(
   // Drift still surfaces in telemetry (once per table+column per app launch),
   // so a resolver emitting a misnamed column stays observable.
   const allowedColumnSet = new Set(allowedColumns);
+  const transientColumnSet = new Set(transientColumns);
   for (const document of documents) {
-    const unknownColumns = Object.keys(document).filter((column) => !allowedColumnSet.has(column));
+    const unknownColumns = Object.keys(document).filter(
+      (column) => !allowedColumnSet.has(column) && !transientColumnSet.has(column),
+    );
     for (const unknownColumn of unknownColumns) {
       reportExtraColumn(onSchemaDrift, { origin: 'pull', tableName, column: unknownColumn });
     }
@@ -876,6 +905,8 @@ async function syncTable(
   onProgress?: (documentsProcessed: number) => void,
   onSchemaDrift?: SchemaDriftReporter,
   refresh?: { state: SchemaRefreshState; shouldContinue: () => Promise<boolean> },
+  /** Per-page side-effect sink; see DocumentsPulledSink. */
+  onDocumentsPulled?: DocumentsPulledSink,
 ): Promise<{ reachedTail: boolean; rowsProcessed: number; resumedFromCheckpoint: boolean }> {
   const config = TABLE_CONFIGS[tableName];
   if (!config) throw new Error(`No sync config for table: ${tableName}`);
@@ -961,7 +992,14 @@ async function syncTable(
       const clearDownloadCoverage = !refresh && missingRefreshColumns.length > 0;
       if (clearDownloadCoverage) fullDownload = false;
 
-      const committed = await upsertDocuments(db, tableName, result.documents, config.localColumns, onSchemaDrift, {
+      const committed = await upsertDocuments(
+        db,
+        tableName,
+        result.documents,
+        config.localColumns,
+        config.transientColumns ?? [],
+        onSchemaDrift,
+        {
         canWrite,
         preserveNewerRows: !!refresh,
         afterUpsert: async (transaction) => {
@@ -990,10 +1028,31 @@ async function syncTable(
               });
             }
           }
+          },
         },
-      });
+      );
       if (!committed) return finish(false);
       lastCursor = result.cursor;
+
+      // Side effects that belong to the page but not to the row — today only the
+      // spray-wall photo, fetched with the presigned URL the page carried and
+      // stored on the filesystem rather than in SQLite. Deliberately AFTER the
+      // commit: a sink that runs for rows the write rolled back would download a
+      // photo for a wall the device does not have.
+      //
+      // Never fatal. A photo is an asset, and a download that failed (or a
+      // platform with no photo store at all) must not end a sync cycle that has
+      // already written its rows and advanced its checkpoint.
+      if (onDocumentsPulled) {
+        try {
+          await onDocumentsPulled({ tableName, documents: result.documents });
+        } catch {
+          // Bounded and best-effort by contract. The checkpoint has moved, so this
+          // page is not re-offered — a photo that failed here is picked up by the
+          // renderer's own on-demand fetch instead, and by the next pull that
+          // touches the wall's row.
+        }
+      }
 
       totalProcessed += result.documents.length;
       onProgress?.(totalProcessed);
@@ -3179,6 +3238,8 @@ export async function pullSync(
           });
         },
         options?.onSchemaDrift,
+        undefined,
+        options?.onDocumentsPulled,
       );
       const tableMs = Date.now() - tableStartedAt;
       if (tableName === 'board_climbs') phases.climbsPullMs += tableMs;

@@ -5945,6 +5945,18 @@ export type Query = {
   syncPlaylists: SyncResult;
   /** Pull the authenticated user's setter-follows changed since the cursor. */
   syncSetterFollows: SyncResult;
+  /**
+   * Pull the spray wall at a layout, changed since the cursor (reference data).
+   *
+   * Carries the wall's canonical frame, its published version number, the holds
+   * alive at that version, that version's homography, and the private-bucket
+   * photo key plus a short-lived presigned URL for the bytes. Gated on the
+   * by-layout visibility rule — owner, gym member, or a public wall — so an
+   * unlisted wall does NOT resolve here: a layout id comes out of a sequence and
+   * is not the capability a wall uuid is. Unreadable scopes get an ordinary empty
+   * page rather than an error.
+   */
+  syncSprayWalls: SyncResult;
   /** Pull the authenticated user's ticks changed since the cursor. */
   syncTicks: SyncResult;
   /** Pull the authenticated user's user-follows changed since the cursor. */
@@ -6629,6 +6641,15 @@ export type QuerySyncPlaylistsArgs = {
 export type QuerySyncSetterFollowsArgs = {
   cursor?: InputMaybe<SyncCursorInput>;
   limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncSprayWallsArgs = {
+  boardType: Scalars['String']['input'];
+  cursor?: InputMaybe<SyncCursorInput>;
+  layoutId?: InputMaybe<Scalars['Int']['input']>;
+  limit?: Scalars['Int']['input'];
+  sizeId?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -13820,6 +13841,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QuerySyncSetterFollowsArgs, 'limit'>
+  >;
+  syncSprayWalls?: Resolver<
+    ResolversTypes['SyncResult'],
+    ParentType,
+    ContextType,
+    RequireFields<QuerySyncSprayWallsArgs, 'boardType' | 'limit'>
   >;
   syncTicks?: Resolver<
     ResolversTypes['SyncResult'],

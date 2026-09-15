@@ -13,6 +13,21 @@ export type TableSyncConfig = {
   invalidateKeys: InvalidateKeys;
   primaryKeyColumns: string[];
   localColumns: readonly string[];
+  /**
+   * Fields the resolver emits that are deliberately NOT stored — handed to the
+   * `onDocumentsPulled` sink and then dropped.
+   *
+   * Exactly one field uses this today: `spray_walls.photo_url`, a 15-minute
+   * presigned signature over an object in the PRIVATE bucket. The device needs
+   * it to fetch the bytes and must not keep it: the backend's own rule is
+   * "minted per read and never stored" (`presignVersionPhoto`), and a row that
+   * carried the URL would hand a stale, useless, and briefly live signature to
+   * anything that read the wall.
+   *
+   * Listing it here is not cosmetic — without it every pulled page reports a
+   * schema-drift event for a column the resolver is emitting on purpose.
+   */
+  transientColumns?: readonly string[];
   /** Bump when existing reference rows need newly synced fields backfilled. */
   refreshRevision?: number;
   /** Cumulative fields that must be present before coverage can be stamped. */
@@ -159,6 +174,22 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'compatible_size_ids',
       'characteristics',
       'hold_fingerprint',
+      // Spray-wall hold integrity (SW-15, #5448): how many of this climb's holds
+      // have since come off the wall, so `search-climbs-local.ts` can answer the
+      // Intact / Lost-holds filter instead of declining it.
+      //
+      // ADDED WITHOUT BUMPING `refreshRevision` / `refreshColumns`, on purpose.
+      // A bump means "every already-downloaded scope must re-crawl to backfill
+      // this field" — that is every enabled Kilter and Tension catalogue, tens of
+      // thousands of rows each, to fill in a column that is NULL on all of them
+      // (holds do not come off a catalogue board; only a spray reset writes it).
+      // Spray scopes are new in this release, so no checkpoint predating this
+      // column can exist for one, and the local predicate is NULL-safe
+      // (`COALESCE(missing_hold_count, 0)`) for every row pulled before it — the
+      // same "unknown reads as intact" rule the server's `holdIntegrityCondition`
+      // applies. The two conditions a bump exists to protect are therefore both
+      // already met, and paying for it would be a catalogue replay for nothing.
+      'missing_hold_count',
       'updated_at',
       'sync_seq',
     ],
@@ -214,6 +245,34 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'computed_at',
       'sync_seq',
     ],
+  },
+  spray_walls: {
+    queryName: 'syncSprayWalls',
+    cursorColumn: UPDATED_AT_CURSOR,
+    operationKey: 'SYNC_SPRAY_WALLS',
+    // Per-board, and the scope is never optional in practice: `syncSprayWalls`
+    // answers an empty page unless the caller names a layout it may read, so a
+    // page carries at most the one wall that scope key resolves to.
+    isPerBoard: true,
+    primaryKeyColumns: ['layout_id'],
+    // Matches the syncSprayWalls selectList, and the tombstone trigger's
+    // single-segment `record_id` (migration 0228 writes `layout_id::text`).
+    localColumns: [
+      'layout_id',
+      'board_uuid',
+      'name',
+      'reference_width',
+      'reference_height',
+      'current_version_number',
+      'photo_key',
+      'holds',
+      'homography',
+      'updated_at',
+      'sync_seq',
+    ],
+    // The presigned photo URL rides along and is never written. See the field's
+    // docblock on TableSyncConfig above.
+    transientColumns: ['photo_url'],
   },
 };
 

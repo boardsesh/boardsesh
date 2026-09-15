@@ -104,6 +104,7 @@ export type {
   SyncPullDocument,
   SyncProgress,
   SyncOptions,
+  DocumentsPulledSink,
   SchemaDriftReporter,
   BootstrapMetadataChangedInfo,
   BootstrapMetadataChangedReporter,
