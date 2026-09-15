@@ -42,6 +42,7 @@ import { selectByVariant } from '../../../src/theme/variants';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
 import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT } from '../../../src/theme/layout';
+import { screenshotModeLoadMore } from '../../../src/lib/screenshot-mode';
 
 const FOR_YOU_SMART_PLAYLIST_TYPES: SmartPlaylistType[] = [
   'LIKED_CLIMBS',
@@ -570,7 +571,7 @@ export default function DiscoverLibrary() {
             loading={userLoading && unpinnedUserPlaylists.length === 0}
             isLoadingMore={userLoadingMore}
             hasMore={userHasMore || userLoadMoreError}
-            onEndReached={userLoadMoreError ? retryLoadMoreUser : loadMoreUser}
+            onEndReached={screenshotModeLoadMore(userLoadMoreError ? retryLoadMoreUser : loadMoreUser)}
             items={unpinnedUserPlaylists}
             renderItem={renderOwnedPlaylist}
             keyExtractor={playlistKey}
@@ -605,7 +606,7 @@ export default function DiscoverLibrary() {
             loading={communityLoading && communityItems.length === 0}
             isLoadingMore={communityLoadingMore}
             hasMore={communityHasMore}
-            onEndReached={loadMoreCommunity}
+            onEndReached={screenshotModeLoadMore(loadMoreCommunity)}
             items={communityItems}
             renderItem={renderCommunityPlaylist}
             keyExtractor={playlistKey}

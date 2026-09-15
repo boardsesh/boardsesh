@@ -36,6 +36,7 @@ import {
 import { batchVoteSummaryEntityIds, type SocialEntityType } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
 import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
+import { screenshotModeNextPageParam } from '../../screenshot-mode';
 
 const SOCIAL_PAGE_SIZE = 30;
 
@@ -73,7 +74,10 @@ export function useFollowers(userId: string | undefined, enabled = true) {
       return response.followers;
     },
     getNextPageParam: (lastPage, allPages) =>
-      lastPage.hasMore ? allPages.reduce((sum, page) => sum + page.users.length, 0) : undefined,
+      screenshotModeNextPageParam(
+        lastPage.hasMore ? allPages.reduce((sum, page) => sum + page.users.length, 0) : undefined,
+        allPages.length,
+      ),
     enabled: enabled && !!userId,
   });
 }
@@ -95,7 +99,10 @@ export function useFollowing(userId: string | undefined, enabled = true) {
       return response.following;
     },
     getNextPageParam: (lastPage, allPages) =>
-      lastPage.hasMore ? allPages.reduce((sum, page) => sum + page.users.length, 0) : undefined,
+      screenshotModeNextPageParam(
+        lastPage.hasMore ? allPages.reduce((sum, page) => sum + page.users.length, 0) : undefined,
+        allPages.length,
+      ),
     enabled: enabled && !!userId,
   });
 }
@@ -119,7 +126,10 @@ export function useSearchUsers(query: string, enabled = true) {
       return response.searchUsers;
     },
     getNextPageParam: (lastPage, allPages) =>
-      lastPage.hasMore ? allPages.reduce((sum, page) => sum + page.results.length, 0) : undefined,
+      screenshotModeNextPageParam(
+        lastPage.hasMore ? allPages.reduce((sum, page) => sum + page.results.length, 0) : undefined,
+        allPages.length,
+      ),
     enabled: enabled && trimmedQuery.length >= 2,
   });
 }
@@ -175,7 +185,10 @@ export function useUserClimbs(userId: string | undefined, enabled = true) {
       return response.userClimbs;
     },
     getNextPageParam: (lastPage, allPages) =>
-      lastPage.hasMore ? allPages.reduce((sum, page) => sum + page.climbs.length, 0) : undefined,
+      screenshotModeNextPageParam(
+        lastPage.hasMore ? allPages.reduce((sum, page) => sum + page.climbs.length, 0) : undefined,
+        allPages.length,
+      ),
     enabled: enabled && !!userId,
   });
 }

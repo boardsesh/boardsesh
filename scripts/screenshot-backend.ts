@@ -6,9 +6,10 @@
  *   vp run mobile:screenshot-backend -- --mode replay
  *   vp run mobile:screenshot-backend -- --mode record --upstream https://ws.boardsesh.com
  *
- * The capture orchestrator will start this and point the app at it with
- * EXPO_PUBLIC_BACKEND_URL / EXPO_PUBLIC_WS_URL in a follow-up PR; until then it
- * is a standalone tool. See docs/mobile-screenshot-fixtures.md.
+ * The capture orchestrator starts this itself for
+ * `vp run mobile:screenshots -- --fixtures record|replay` and points the app at
+ * it with EXPO_PUBLIC_BACKEND_URL / EXPO_PUBLIC_WS_URL; run it by hand to serve
+ * a set to a dev build. See docs/mobile-screenshot-fixtures.md.
  */
 
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -19,12 +20,18 @@ import {
   readScreenshotFixtureManifest,
   type ScreenshotBackendServer,
 } from './lib/screenshot-backend';
-import type { ScreenshotBackendMode } from './lib/screenshot-fixtures';
+import {
+  DEFAULT_SCREENSHOT_FIXTURES_DIR,
+  SCREENSHOT_BACKEND_DEFAULT_PORT,
+  resolveScreenshotBackendPort,
+  startOfSecondIso,
+  type ScreenshotBackendMode,
+} from './lib/screenshot-fixtures';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_FIXTURES_DIR = 'packages/mobile/screenshot-fixtures';
+const DEFAULT_FIXTURES_DIR = DEFAULT_SCREENSHOT_FIXTURES_DIR;
 const DEFAULT_UPSTREAM = 'https://ws.boardsesh.com';
-const DEFAULT_PORT = 8090;
+const DEFAULT_PORT = SCREENSHOT_BACKEND_DEFAULT_PORT;
 
 type CliOptions = {
   mode: ScreenshotBackendMode;
@@ -34,6 +41,11 @@ type CliOptions = {
   frozenNow: string | null;
   fresh: boolean;
   flow: string | null;
+  /**
+   * Record only. True by default; `--no-pseudonymise` turns it off for a
+   * deliberate real-data recording that will NOT be committed.
+   */
+  pseudonymise: boolean;
 };
 
 const USAGE = [
@@ -43,9 +55,13 @@ const USAGE = [
   `  --port <n>              default BOARDSESH_SCREENSHOT_BACKEND_PORT or ${DEFAULT_PORT}`,
   `  --fixtures <dir>        default ${DEFAULT_FIXTURES_DIR} (relative to the repo root)`,
   `  --upstream <url>        record only, default ${DEFAULT_UPSTREAM}`,
-  '  --frozen-now <iso>      record: defaults to now; replay: defaults to the manifest',
+  '  --frozen-now <iso>      record: the start floor, defaults to now (the persisted manifest value',
+  '                          then trails the newest recorded response); replay: defaults to the manifest',
   '  --flow <name>           record only, the capture flow being recorded',
   '  --fresh                 record only, discard the existing fixture set first',
+  "  --no-pseudonymise       record only, keep other climbers' real names/handles/avatars",
+  '                          (they are replaced by stable stand-ins by default — never commit',
+  '                          a set recorded with this)',
 ].join('\n');
 
 function fail(message: string): never {
@@ -67,6 +83,7 @@ export function parseCliArguments(argv: string[]): CliOptions {
   let frozenNow: string | null = null;
   let flow: string | null = null;
   let fresh = false;
+  let pseudonymise = true;
 
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -108,6 +125,9 @@ export function parseCliArguments(argv: string[]): CliOptions {
       case '--fresh':
         fresh = true;
         break;
+      case '--no-pseudonymise':
+        pseudonymise = false;
+        break;
       case '--help':
       case '-h':
         console.log(USAGE);
@@ -119,12 +139,15 @@ export function parseCliArguments(argv: string[]): CliOptions {
   }
 
   if (!mode) fail(`--mode is required\n\n${USAGE}`);
-  const resolvedPort = port ?? Number(process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT ?? DEFAULT_PORT);
+  const resolvedPort = port ?? resolveScreenshotBackendPort(process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT);
   if (!Number.isInteger(resolvedPort) || resolvedPort < 0 || resolvedPort > 65535) {
     fail(`--port must be a port number, got ${resolvedPort}`);
   }
   if (mode === 'replay' && upstream) fail('--upstream is record-only: replay never makes an outbound request');
   if (mode === 'replay' && fresh) fail('--fresh is record-only');
+  // Replay writes nothing, so opting out of a rewrite there is a no-op the
+  // caller would read as "the set now has real names in it".
+  if (mode === 'replay' && !pseudonymise) fail('--no-pseudonymise is record-only: replay writes no fixtures');
 
   const fixturesArgument = fixtures ?? DEFAULT_FIXTURES_DIR;
   return {
@@ -135,12 +158,8 @@ export function parseCliArguments(argv: string[]): CliOptions {
     frozenNow,
     fresh,
     flow,
+    pseudonymise,
   };
-}
-
-/** Now, to the second. Milliseconds are dropped so a recorded manifest reads cleanly. */
-export function startOfSecondIso(now: Date): string {
-  return `${now.toISOString().slice(0, 19)}Z`;
 }
 
 async function main(): Promise<void> {
@@ -172,6 +191,7 @@ async function main(): Promise<void> {
       frozenNow,
       log: (line) => console.log(line),
       fresh: options.fresh,
+      pseudonymise: options.pseudonymise,
       ...(options.flow ? { flow: options.flow } : {}),
     });
   } catch (createError) {

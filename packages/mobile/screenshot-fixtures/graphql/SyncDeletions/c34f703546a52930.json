@@ -1,0 +1,29 @@
+{
+  "formatVersion": 1,
+  "operationName": "SyncDeletions",
+  "documentHash": "3a0d1e44f7fbc9278005f98727b7b8a161099add7805180f4676f3ad3b5aabbd",
+  "variablesHash": "c34f703546a52930d5380599b474101c937e9db8cc28a4de55625a807613609e",
+  "query": "\n  query SyncDeletions($cursor: SyncCursorInput, $limit: Int! = 500) {\n    syncDeletions(cursor: $cursor, limit: $limit) {\n      deletions {\n        tableName\n        recordId\n        deletedAt\n      }\n      cursor {\n        updatedAt\n        syncSeq\n      }\n      hasMore\n    }\n  }\n",
+  "variables": {
+    "cursor": {
+      "updatedAt": "2026-09-13T11:39:58.92289Z",
+      "syncSeq": "145844"
+    },
+    "limit": 500
+  },
+  "response": {
+    "data": {
+      "syncDeletions": {
+        "deletions": [],
+        "cursor": {
+          "updatedAt": "2026-09-13T11:39:58.92289Z",
+          "syncSeq": "145844"
+        },
+        "hasMore": false
+      }
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-15T15:05:51.419Z",
+  "upstream": "https://ws.boardsesh.com"
+}

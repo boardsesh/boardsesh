@@ -60,6 +60,18 @@ on:
         description: 'Which walls the board-backed shots sit on, "|"-separated, in slot order (slot 0 = every board-backed shot, slot 1 = the second board-view). Empty = the app default. Each entry matches a board name or a layout name.'
         type: string
         default: ''
+      fixtures:
+        description: '"replay" (the default) serves the committed fixture set, so captures are deterministic. "record" proxies PROD and uploads the recorded fixtures as an artifact — dispatch it with locales=en-US, then merge the artifacts with `vp run mobile:screenshot-fixtures-merge` and commit the set. "live" talks straight to PROD with no fixtures — the old direct-to-PROD path, kept for debugging.'
+        type: choice
+        default: replay
+        options:
+          - replay
+          - record
+          - live
+      frozen_now:
+        description: 'Record only: ISO instant to freeze "now" at (e.g. 2026-09-08T12:00:00Z). Empty mints one from the current time. Optional even when recording alongside the Android shard on the same run — the merge takes the max frozenNow across every shard regardless.'
+        type: string
+        default: ''
       upload:
         description: 'Upload captured screenshots to App Store Connect. Requires the full App Store set (app-store flow, empty locales).'
         type: boolean
@@ -211,10 +223,6 @@ jobs:
       # Metro bundle inlines this, so screenshots exercise the same fetch as production.
       EXPO_PUBLIC_USE_RN_FETCH: '1'
       SENTRY_DISABLE_AUTO_UPLOAD: 'true'
-      # The prod test/demo account the Maestro flow signs in with. Override via
-      # repo secrets if a different account is ever needed.
-      SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com' }}
-      SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD || 'test' }}
       # Belt-and-suspenders ceiling for Maestro's XCTest driver startup. With
       # --shutdown there's only one booted sim per shard so the default should
       # pass; this is free on the happy path (a timeout cap, not a fixed wait) and
@@ -288,6 +296,17 @@ jobs:
         env:
           RENDER_MODE_INPUT: ${{ inputs.render_mode || '' }}
           BOARDS_INPUT: ${{ inputs.boards || '' }}
+          FIXTURES_INPUT: ${{ inputs.fixtures || 'replay' }}
+          FROZEN_NOW_INPUT: ${{ inputs.frozen_now || '' }}
+          # The prod test/demo account the Maestro flow signs in with. Scoped to
+          # THIS step, not the job: a replay run never signs in (the backend
+          # hands out a synthetic session for the recorded account), so it has
+          # no business seeing the credential, and a job-level secret reaches
+          # every step. Empty on replay; the real value on record/live, where
+          # the flow does sign in against PROD. Override via repo secrets if a
+          # different account is ever needed.
+          SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com') || '' }}
+          SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_PASSWORD || 'test') || '' }}
         run: |
           set -euo pipefail
           # Empty inputs mean "whatever the app pins" — Aura, and the store walls
@@ -299,6 +318,21 @@ jobs:
           fi
           if [ -n "$BOARDS_INPUT" ]; then
             retarget+=(--boards "$BOARDS_INPUT")
+          fi
+          # `live` is the old direct-to-PROD path — it passes no --fixtures flag at
+          # all, so the shard talks to PROD exactly as it did before fixtures
+          # existed. `replay` (the default) and `record` both pass --fixtures
+          # through. A recording shard starts from an empty set (--fresh), so what
+          # it uploads is only what THIS locale/device asked for; the merge step
+          # downstream is what unions the shards.
+          if [ "$FIXTURES_INPUT" != "live" ]; then
+            retarget+=(--fixtures "$FIXTURES_INPUT")
+            if [ "$FIXTURES_INPUT" = "record" ]; then
+              retarget+=(--fresh)
+              if [ -n "$FROZEN_NOW_INPUT" ]; then
+                retarget+=(--frozen-now "$FROZEN_NOW_INPUT")
+              fi
+            fi
           fi
           attempts=2
           for attempt in $(seq 1 "$attempts"); do
@@ -349,6 +383,19 @@ jobs:
           path: capture-debug/**
           if-no-files-found: warn
           retention-days: 14
+
+      # A recording shard's whole output. Downloaded alongside the Android set and
+      # folded into one committed set with
+      # `vp run mobile:screenshot-fixtures-merge` — see
+      # docs/mobile-screenshot-fixtures.md.
+      - name: Upload recorded fixtures
+        if: ${{ always() && inputs.fixtures == 'record' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-fixtures-${{ matrix.locale }}-${{ matrix.device.slug }}
+          path: packages/mobile/screenshot-fixtures/**
+          if-no-files-found: warn
+          retention-days: 7
 
       # Hand this shard's PNGs to ios-finalize. The artifact's internal layout is
       # <app-store-locale>/<device>/NN-name.png (upper paths stripped to the

@@ -30,6 +30,7 @@ import { useAuthToken } from '../use-auth-token';
 // Neither file can import the other (see that module's note), so the constant
 // lives on its own rather than as a literal in both.
 import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
+import { screenshotModeNextPageParam } from '../../screenshot-mode';
 
 /** Groups per page — matches web's `use-grouped-notifications.ts`. */
 const PAGE_SIZE = 20;
@@ -80,7 +81,10 @@ export function useGroupedNotifications() {
     // `lastPageParam + lastPage.groups.length` because the resolver derives
     // `hasMore` from `offset + groups.length < totalCount`.
     getNextPageParam: (lastPage, allPages) =>
-      lastPage.hasMore ? allPages.reduce((total, page) => total + page.groups.length, 0) : undefined,
+      screenshotModeNextPageParam(
+        lastPage.hasMore ? allPages.reduce((total, page) => total + page.groups.length, 0) : undefined,
+        allPages.length,
+      ),
     enabled: !!authToken,
     staleTime: NOTIFICATIONS_STALE_TIME_MS,
   });
@@ -105,7 +109,10 @@ type ActorPage = { users: unknown[]; hasMore: boolean };
  */
 export function nextActorsOffset(lastPage: ActorPage, allPages: ActorPage[]): number | undefined {
   if (!lastPage.hasMore || lastPage.users.length === 0) return undefined;
-  return allPages.reduce((total, page) => total + page.users.length, 0);
+  return screenshotModeNextPageParam(
+    allPages.reduce((total, page) => total + page.users.length, 0),
+    allPages.length,
+  );
 }
 
 /**

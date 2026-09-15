@@ -1,0 +1,203 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetBulkVoteSummaries",
+  "documentHash": "05588e2743fdf1f49b71058ddfebdecb233cb20a7fe32e75887cdabe078f369e",
+  "variablesHash": "cb99486658ddb43609bcf84d2f608f80d2218549f4bdc11f5c884e27a3f32167",
+  "query": "\n  query GetBulkVoteSummaries($input: BulkVoteSummaryInput!) {\n    bulkVoteSummaries(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n",
+  "variables": {
+    "input": {
+      "entityType": "session",
+      "entityIds": [
+        "b0f25e25-eefd-48b1-b243-884bfb6eb20e",
+        "8f3ac800-0cbf-49df-a67b-867ce6f88d57",
+        "a466a3de-1fde-45aa-91e9-f6fec6b9c6e3",
+        "173c58fd-10d0-4839-8205-1d0f9b8c5b20",
+        "763ed19c-6513-4f99-a56a-8a5b815c4cb4",
+        "3476b82f-2964-4634-85f7-e319b1781619",
+        "268787cd-d146-4a59-889e-039dbdd9f2fa",
+        "9ba61fc8-9459-4579-8541-6499fbb038e8",
+        "63484e5d-ca5e-4955-b2ab-85861549fa37",
+        "83d9d415-94f3-413f-a3a6-8bf17a16afa8",
+        "0db721f7-c2d5-4af0-9c60-87b9d3a0f376",
+        "b0f23d95-a0f4-40be-bd5a-fe652774105d",
+        "0638e51e-b66a-4fc5-add0-8d8a624f0b13",
+        "5b16e674-0b75-4eff-a3ea-67d0e4f0ad2f",
+        "c61a6486-8cc9-4f2d-b1ae-7039e9487170",
+        "deff2e92-4e07-4b1b-a838-9f8236679838",
+        "1e926f37-f9bb-4aa0-adbe-6f34df45596e",
+        "78425928-8f8c-498f-807c-695c8a17db4b",
+        "04c7a4fc-0569-4445-9f3e-b8b439363244",
+        "33ebd944-2e02-4413-ba21-f4f40a8927db"
+      ]
+    }
+  },
+  "response": {
+    "data": {
+      "bulkVoteSummaries": [
+        {
+          "entityType": "session",
+          "entityId": "b0f25e25-eefd-48b1-b243-884bfb6eb20e",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "8f3ac800-0cbf-49df-a67b-867ce6f88d57",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "a466a3de-1fde-45aa-91e9-f6fec6b9c6e3",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "173c58fd-10d0-4839-8205-1d0f9b8c5b20",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "763ed19c-6513-4f99-a56a-8a5b815c4cb4",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "3476b82f-2964-4634-85f7-e319b1781619",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "268787cd-d146-4a59-889e-039dbdd9f2fa",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "9ba61fc8-9459-4579-8541-6499fbb038e8",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "63484e5d-ca5e-4955-b2ab-85861549fa37",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "83d9d415-94f3-413f-a3a6-8bf17a16afa8",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "0db721f7-c2d5-4af0-9c60-87b9d3a0f376",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "b0f23d95-a0f4-40be-bd5a-fe652774105d",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "0638e51e-b66a-4fc5-add0-8d8a624f0b13",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "5b16e674-0b75-4eff-a3ea-67d0e4f0ad2f",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "c61a6486-8cc9-4f2d-b1ae-7039e9487170",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "deff2e92-4e07-4b1b-a838-9f8236679838",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "1e926f37-f9bb-4aa0-adbe-6f34df45596e",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "78425928-8f8c-498f-807c-695c8a17db4b",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "04c7a4fc-0569-4445-9f3e-b8b439363244",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        },
+        {
+          "entityType": "session",
+          "entityId": "33ebd944-2e02-4413-ba21-f4f40a8927db",
+          "upvotes": 0,
+          "downvotes": 0,
+          "voteScore": 0,
+          "userVote": 0
+        }
+      ]
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-15T14:31:36.490Z",
+  "upstream": "https://ws.boardsesh.com"
+}

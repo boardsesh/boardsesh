@@ -1,0 +1,19 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetUserTicks",
+  "documentHash": "cc44dba7867fe833858f968d878fbf6823939393b0148d79bf93f5cc0d19a4d9",
+  "variablesHash": "72987ec990eef6af9a42d0849c7d1719b323f7529b8511dd0399daa057c13b14",
+  "query": "\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n",
+  "variables": {
+    "userId": "fbb773f8-5bec-473e-8216-e34ca55b073b",
+    "boardType": "spray"
+  },
+  "response": {
+    "data": {
+      "userTicks": []
+    }
+  },
+  "status": 200,
+  "recordedAt": "2026-09-15T15:02:27.871Z",
+  "upstream": "https://ws.boardsesh.com"
+}

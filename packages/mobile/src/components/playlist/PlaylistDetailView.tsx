@@ -37,6 +37,7 @@ import { Button } from '../Button';
 import { PlaylistEditClimbRow, type PlaylistEditRowBoard } from './PlaylistEditClimbRow';
 import { usePlaylistDrag } from './use-playlist-drag';
 import { PlaylistBoardBackdrop } from './PlaylistBoardBackdrop';
+import { screenshotModeLoadMore } from '../../lib/screenshot-mode';
 import { buildHeroGradient } from './playlist-gradient';
 import { resolvePlaylistEmojiIcon } from './playlist-icon';
 import { PLAYLIST_COLORS, normalizePlaylistColor } from './playlist-colors';
@@ -254,9 +255,17 @@ export function PlaylistDetailView({
   );
   const actionNode = actions?.(collapsed);
 
-  const handleEndReached = useCallback(() => {
+  const loadNextPage = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  // One page in screenshot mode — the same cap `screenshotModeNextPageParam`
+  // applies to the app's own infinite queries, but from the consumer side:
+  // both lists behind this view (`usePlaylistClimbs`, `useSmartPlaylist`) live
+  // in the renderer-agnostic `@boardsesh/playlists-react`, which web also
+  // consumes and which must not read a mobile build flag. `screenshotModeLoadMore`
+  // is the same wrapper Discover and the profile beta shelf use, and it returns
+  // one shared no-op, so a screenshot build hands the list a stable identity.
+  const handleEndReached = useMemo(() => screenshotModeLoadMore(loadNextPage), [loadNextPage]);
 
   // Stable per-row activate handler so the memoized `ClimbListRow`s aren't handed
   // a fresh closure each render — every renderItem rebuild (e.g. when the sticky

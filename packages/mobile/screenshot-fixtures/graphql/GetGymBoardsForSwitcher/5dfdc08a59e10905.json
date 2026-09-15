@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "operationName": "GetGymBoardsForSwitcher",
+  "documentHash": "156f496fcfc32035de9c3a636b644aa4545f3e04f875dba4efda1a27500b9a14",
+  "variablesHash": "5dfdc08a59e109050f8472fb2398acf588aa7501500f228aec9f043ea4975687",
+  "query": "\n  query GetGymBoardsForSwitcher($gymUuid: ID!) {\n    gymBoards(gymUuid: $gymUuid) {\n      \n  uuid\n  slug\n  ownerId\n  name\n  boardType\n  layoutId\n  sizeId\n  setIds\n  angle\n  isAngleAdjustable\n  hasLeds\n  isPublic\n  isUnlisted\n  locationName\n  gymId\n  gymUuid\n  boardId\n  canEdit\n\n      hideLocation\n      isOwned\n      createdAt\n      totalAscents\n      uniqueClimbers\n      followerCount\n      commentCount\n      isFollowedByMe\n      isPinnedByMe\n      gymName\n      serialNumber\n      timerName\n    }\n  }\n",
+  "variables": {
+    "gymUuid": "176a4c25-6f8e-4601-97c9-3dab515871fd"
+  },
+  "response": {
+    "errors": [
+      {
+        "message": "Gym not found",
+        "locations": [
+          {
+            "line": 3,
+            "column": 5
+          }
+        ],
+        "path": [
+          "gymBoards"
+        ],
+        "extensions": {
+          "code": "NOT_FOUND"
+        }
+      }
+    ],
+    "data": null
+  },
+  "status": 200,
+  "recordedAt": "2026-09-15T15:02:26.353Z",
+  "upstream": "https://ws.boardsesh.com"
+}

@@ -9,6 +9,7 @@ import {
   beginOptimisticAscent,
   getAcknowledgedClimbStatsTokens,
   getClimbStatsSnapshot,
+  isClimbStatsReadRetained,
   markOptimisticAscentQueued,
   resetClimbStatsStoreForTests,
   subscribeClimbStats,
@@ -18,6 +19,7 @@ import {
   createAcknowledgedClimbStatsReadOwner,
   getClimbStatsReadCoordinatorStateForTests,
   MAX_LAST_READ_ENTRIES,
+  prefetchClimbStatsForClimbs,
   recordClimbStatsReadForTests,
   resetClimbStatsReadCoordinatorForTests,
   scheduleAcknowledgedClimbStatsRead,
@@ -1128,5 +1130,50 @@ describe('useEffectiveClimbStats', () => {
 
     await act(async () => pendingBatches[2]?.([batchRow('climb-token', 5, '3')]));
     await waitFor(() => expect(getClimbStatsSnapshot(statsKey).optimisticFloor).toBeNull());
+  });
+});
+
+describe('prefetchClimbStatsForClimbs', () => {
+  beforeEach(() => {
+    resetClimbStatsStoreForTests();
+    resetClimbStatsReadCoordinatorForTests();
+  });
+
+  it("reads ids whose rows are not mounted, so a batch is the caller's list and not the draw distance", async () => {
+    const fetchClimbStatsForClimbs = vi.fn().mockResolvedValue([]);
+    const { adapter } = createWrapper({ fetchClimbStatsForClimbs });
+
+    // Deliberately no renderHook: nothing retains these keys, which is exactly
+    // the case `pruneUnusableQueuedReads` throws away on the per-row path.
+    await prefetchClimbStatsForClimbs(adapter, { boardType: 'kilter', layoutId: 1, angle: 40 }, [
+      'climb-c',
+      'climb-a',
+      'climb-b',
+      'climb-a',
+    ]);
+
+    expect(fetchClimbStatsForClimbs).toHaveBeenCalledTimes(1);
+    // Sorted and deduped, so the batch does not depend on the order the caller
+    // assembled its list in — which is what makes the fixture key stable.
+    expect(fetchClimbStatsForClimbs).toHaveBeenCalledWith('kilter', ['climb-a', 'climb-b', 'climb-c']);
+  });
+
+  it('releases the retention it took, so it cannot pin keys the app has moved on from', async () => {
+    const fetchClimbStatsForClimbs = vi.fn().mockResolvedValue([]);
+    const { adapter } = createWrapper({ fetchClimbStatsForClimbs });
+
+    const prefetch = prefetchClimbStatsForClimbs(adapter, { boardType: 'kilter', layoutId: 1, angle: 40 }, ['climb-a']);
+    expect(isClimbStatsReadRetained('kilter', 'climb-a')).toBe(true);
+
+    await prefetch;
+    expect(isClimbStatsReadRetained('kilter', 'climb-a')).toBe(false);
+  });
+
+  it('asks for nothing when the adapter cannot read stats', async () => {
+    const fetchClimbStatsForClimbs = vi.fn().mockResolvedValue([]);
+    const { adapter } = createWrapper({ fetchClimbStatsForClimbs, isAuthenticated: false });
+
+    await prefetchClimbStatsForClimbs(adapter, { boardType: 'kilter', layoutId: 1, angle: 40 }, ['climb-a']);
+    expect(fetchClimbStatsForClimbs).not.toHaveBeenCalled();
   });
 });
