@@ -54,6 +54,7 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     // crowd grade (the setter's grade is required on publish instead), and one
     // frame per climb.
     crowdGrade: false,
+    angleBoundClimbs: false,
     climbCreation: true,
     explicitClimbRules: false,
     multiFrameClimbs: false,

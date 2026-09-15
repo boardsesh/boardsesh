@@ -1543,6 +1543,16 @@ function ClimbListInner() {
     ],
   );
 
+  // The list-clip wrapper's style (see the render below): full-bleed on Liquid
+  // Glass, clipped below the measured chrome on Material. Memoized so Android
+  // doesn't allocate a new style array on every render of this screen.
+  // Must stay above the no-board early return: a hook below it changes the
+  // hook count when the board config resolves (BOARDSESH-K1 / BOARDSESH-K2).
+  const listClipStyle = useMemo(
+    () => (filterInTopChrome ? [styles.listClip, { top: searchBarHeight }] : styles.listClip),
+    [filterInTopChrome, searchBarHeight],
+  );
+
   if (!hasBoardConfig && !isBoardLoading) {
     return (
       <>
@@ -1616,14 +1626,6 @@ function ClimbListInner() {
   // the dead end they just tapped their way out of.
   const offlineCatalogMissing = offlineNoCatalog && offlineCatalog === 'missing';
   const offlineCatalogQueued = offlineNoCatalog && offlineCatalog === 'queued';
-
-  // The list-clip wrapper's style (see the render below): full-bleed on Liquid
-  // Glass, clipped below the measured chrome on Material. Memoized so Android
-  // doesn't allocate a new style array on every render of this screen.
-  const listClipStyle = useMemo(
-    () => (filterInTopChrome ? [styles.listClip, { top: searchBarHeight }] : styles.listClip),
-    [filterInTopChrome, searchBarHeight],
-  );
 
   return (
     <View testID="climbs-screen" style={[styles.container, { backgroundColor: systemColors.background }]}>
