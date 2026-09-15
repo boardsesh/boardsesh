@@ -1538,6 +1538,22 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       if (url.pathname === '/client/v4/zones/zone-1/settings/ssl') return envelope({ id: 'ssl', value: 'strict' });
       if (url.pathname === '/client/v4/zones/zone-1/dns_settings') return envelope({ flatten_all_cnames: false });
       if (url.pathname.includes('/rulesets/phases/')) return envelope({ id: 'ruleset-id', rules: [] });
+      // R2. Only reached when CLOUDFLARE_ACCOUNT_ID is set, so the tests that
+      // leave it unset still exercise the zone-only path untouched.
+      if (url.pathname.endsWith('/r2/buckets')) {
+        return envelope({ buckets: desiredR2Buckets.map((bucket) => ({ name: bucket.name })) });
+      }
+      if (url.pathname.endsWith('/domains/custom')) return envelope({ domains: [] });
+      if (url.pathname.endsWith('/cors')) {
+        // GET on a bucket that has never had a policy 404s; that is a normal
+        // state, not an error. The PUT that creates one obviously succeeds.
+        if (method === 'GET') {
+          return new Response(JSON.stringify({ success: false, errors: [{ code: 10_006, message: 'not found' }] }), {
+            status: 404,
+          });
+        }
+        return envelope({});
+      }
       throw new Error(`Unstubbed Cloudflare request: ${method} ${url.pathname}`);
     });
 
@@ -1567,6 +1583,37 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     // One PUT per phase, not one per drifted rule — the rulesets API only offers
     // a whole-phase write.
     expect(written).toHaveLength(MANAGED_RULE_PHASES.length);
+  });
+
+  it('converges each R2 bucket once, however many attributes drifted', async () => {
+    // Regression test for production run 34935969788. `diffR2Bucket` reports the
+    // missing domain and the missing CORS policy as two changes so a dry-run
+    // names both, but `applyR2Bucket` converges the whole bucket in one call and
+    // re-derives what to do from the `live` snapshot — stale by the second call.
+    // Calling it per change re-ran the domain attach after it had already
+    // succeeded, Cloudflare answered 409, and the deploy failed with the zone
+    // correctly converged. sync-static-assets, gated on a successful Cloudflare
+    // prerequisite, went down with it.
+    const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-1');
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    const attaches = requests.filter(
+      (request) => request.method === 'POST' && request.pathname.endsWith('/domains/custom'),
+    );
+    // The static-assets bucket drifted on BOTH domain and CORS — the
+    // two-changes-one-bucket case that produced the 409. Exactly one attach.
+    const assetsAttaches = attaches.filter((request) => request.pathname.includes('/boardsesh-static-assets/'));
+    expect(assetsAttaches).toHaveLength(1);
+    expect(assetsAttaches[0].body).toMatchObject({ domain: ASSETS_STAGING_HOSTNAME });
+    // And no bucket is attached twice: one POST per public bucket, no more.
+    const publicBuckets = desiredR2Buckets.filter((bucket) => bucket.customDomain !== null);
+    expect(attaches).toHaveLength(publicBuckets.length);
+
+    // Converging once must not mean converging less: the CORS policy is still written.
+    const corsPuts = requests.filter((request) => request.method === 'PUT' && request.pathname.endsWith('/cors'));
+    expect(corsPuts).toHaveLength(1);
   });
 
   it('sends the apex redirect rule verbatim in the dynamic-redirect PUT', async () => {
