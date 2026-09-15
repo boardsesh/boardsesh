@@ -326,9 +326,16 @@ describe('removeBoardScopeData — markers', () => {
         'checkpoint:board_climbs:kilter:1:5',
         'checkpoint:board_climb_stats:kilter:1:5',
         'checkpoint:board_climb_grades:kilter:1:5',
+        // The spray wall mirrored for this scope (#5448). Derived from
+        // BOARD_DATA_TABLES like the three above, so it is here for every scope
+        // key and not only a spray one — teardown deleting a key that was never
+        // written costs nothing, and the alternative is a per-table branch that
+        // is exactly how board_climb_grades' checkpoint got left behind once.
+        'checkpoint:spray_walls:kilter:1:5',
         'schema-refresh:board_climbs:kilter:1:5',
         'schema-refresh:board_climb_stats:kilter:1:5',
         'schema-refresh:board_climb_grades:kilter:1:5',
+        'schema-refresh:spray_walls:kilter:1:5',
         'scope-complete:kilter:1:5',
         // Its Started twin: leaving this behind would drop a re-added board out
         // of the download funnel forever (issue #4316).
