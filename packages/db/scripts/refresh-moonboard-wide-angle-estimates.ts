@@ -175,6 +175,18 @@ async function main(): Promise<void> {
     const coefficients = await loadShapeCoefficients(db);
     console.log(`[moon-wide] coefficients ${coefficients.coeffVersion} (model ${MOONBOARD_WIDE_ANGLE_MODEL_VERSION})`);
 
+    // Guard mirroring the sibling angle-transpose script's `report.problems`
+    // abort: with zero shape coverage, every target would fail
+    // estimateMoonboardGradeAtWideAngle and planMoonboardWideAngleEstimates
+    // would treat every existing row as "not wanted" — a --publish here would
+    // reap the entire table with nothing to replace it. Abort before that
+    // plan is ever built, not just when it's reported.
+    if (!MOONBOARD_WIDE_ANGLE_SHAPE_BOARDS.some((board) => coefficients.angleOffset[board])) {
+      console.error('[moon-wide] no angle-surface coverage from any shape board — nothing written.');
+      process.exitCode = 1;
+      return;
+    }
+
     const targets = await loadTargets(db);
     const existing = await loadExistingKeys(db);
     console.log(
