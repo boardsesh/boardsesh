@@ -1,3 +1,7 @@
+/// <reference types="node" />
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { NAME_INVARIANTS, parseMapping, verifyObfuscation } from './mobile-android-obfuscation-check';
@@ -17,7 +21,7 @@ function mapping(entries: [original: string, obfuscated: string][]): string {
   ].join('\n');
 }
 
-/** The three names that must survive, spelled identically on both sides. */
+/** Every name that must survive, spelled identically on both sides. */
 const INVARIANT_ENTRIES = NAME_INVARIANTS.map(({ className }) => [className, className] as [string, string]);
 
 function renamedFiller(count: number, from = 0): [string, string][] {
@@ -72,6 +76,36 @@ describe('parseMapping', () => {
   });
 });
 
+const MINIFY_PLUGIN = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../packages/mobile/plugins/with-android-minify.js',
+);
+
+/** Class names the plugin pins by name, in the order the keep rules appear. */
+function pinnedClassNames(): string[] {
+  const source = readFileSync(MINIFY_PLUGIN, 'utf8');
+  const rules = source.matchAll(/^-keep(?:names|classeswithmembernames)? class ([\w$.]+)/gm);
+  return [...rules].map((match) => match[1]!);
+}
+
+describe('NAME_INVARIANTS', () => {
+  // The list and the keep rules are two halves of one contract: a rule with no
+  // invariant is unguarded (this is how ScreenAppearEvent shipped unchecked), and
+  // an invariant with no rule fails the next release build instead of this test.
+  it('has an entry for every class the keep rules pin by name', () => {
+    const pinned = pinnedClassNames();
+
+    expect(pinned.length).toBeGreaterThan(0);
+    expect(NAME_INVARIANTS.map(({ className }) => className).sort()).toEqual([...pinned].sort());
+  });
+
+  it('gives every entry a reason a reader can act on', () => {
+    for (const { className, why } of NAME_INVARIANTS) {
+      expect({ className, described: why.length > 20 }).toEqual({ className, described: true });
+    }
+  });
+});
+
 describe('verifyObfuscation', () => {
   it('passes a healthy mapping', () => {
     const stats = parseMapping(mapping([...INVARIANT_ENTRIES, ...renamedFiller(7)]));
@@ -103,6 +137,24 @@ describe('verifyObfuscation', () => {
     const verdict = verifyObfuscation(stats, OPTIONS);
     expect(verdict.ok).toBe(false);
     expect(verdict.message).toContain('absent from the mapping');
+  });
+
+  // Sentry reads TWO react-native-screens names as strings. The first invariant
+  // covered only ScreenStackFragment, so a mapping that renamed ScreenAppearEvent
+  // and kept the fragment passed while time-to-initial-display went dark.
+  it('fails when only ScreenAppearEvent was renamed', () => {
+    const appearEvent = 'com.swmansion.rnscreens.events.ScreenAppearEvent';
+    const entries = INVARIANT_ENTRIES.map(([className]) =>
+      className === appearEvent
+        ? ([className, 'a.b.d'] as [string, string])
+        : ([className, className] as [string, string]),
+    );
+
+    const verdict = verifyObfuscation(parseMapping(mapping([...entries, ...renamedFiller(7)])), OPTIONS);
+
+    expect(verdict.ok).toBe(false);
+    expect(verdict.message).toContain(appearEvent);
+    expect(verdict.message).toContain('renamed to a.b.d');
   });
 
   it('fails when a broad keep rule collapses the renamed fraction', () => {

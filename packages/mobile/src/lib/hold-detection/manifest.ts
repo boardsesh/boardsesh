@@ -100,6 +100,20 @@ function triple(value: unknown): [number, number, number] | null {
   return [numbers[0] as number, numbers[1] as number, numbers[2] as number];
 }
 
+/**
+ * A triple whose every entry is > 0.
+ *
+ * `std` divides in the letterbox, so a manifest publishing `[0, 0, 0]` — or a
+ * negative — would hand the model Infinity/NaN tensors and report detections
+ * decoded from noise instead of failing. The manifest is remote, mutable and
+ * untrusted, so the zero is rejected here rather than divided by later.
+ */
+function positiveTriple(value: unknown): [number, number, number] | null {
+  const numbers = triple(value);
+  if (numbers === null) return null;
+  return numbers.every((entry) => entry > 0) ? numbers : null;
+}
+
 function parseInput(value: unknown): ModelManifestInput | null {
   if (!isRecord(value)) return null;
   const width = positiveInteger(value.width);
@@ -116,7 +130,7 @@ function parseInput(value: unknown): ModelManifestInput | null {
   if (value.letterbox !== 'stretch' && value.letterbox !== 'pad') return null;
   if (!isRecord(value.normalization)) return null;
   const mean = triple(value.normalization.mean);
-  const std = triple(value.normalization.std);
+  const std = positiveTriple(value.normalization.std);
   if (mean === null || std === null) return null;
   return { width, height, layout: 'NCHW', dtype: 'float32', letterbox: value.letterbox, normalization: { mean, std } };
 }

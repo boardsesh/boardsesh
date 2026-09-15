@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ModelStoreIo } from '../model-store';
 import {
+  MANIFEST_TIMEOUT_MS,
   MAX_CACHED_VERSIONS,
   MEDIA_BASE_URL,
   ensureModel,
+  expoModelStoreIo,
   resetVerifiedModelCache,
   sweepModelVersions,
 } from '../model-store';
@@ -266,5 +268,57 @@ describe('sweepModelVersions', () => {
     const io = fakeIo({ cached: [VERSION] });
 
     expect(sweepModelVersions(io, VERSION)).toEqual([]);
+  });
+});
+
+describe('expoModelStoreIo.fetchJson', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  // The stall this exists for: a connection that is open and silent. It never
+  // rejects on its own, and the benchmark screen shows a spinner with no cancel,
+  // so before the deadline the only way out was to kill the app.
+  it('resolves null once the deadline passes on a fetch that never settles', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise(() => {
+            // Deliberately never settles, and ignores the abort signal the way a
+            // platform fetch that drops signal support would.
+          }),
+      ),
+    );
+
+    const pending = expoModelStoreIo.fetchJson(`${MEDIA_BASE_URL}/models/hold-detector/x/manifest.json`);
+    await vi.advanceTimersByTimeAsync(MANIFEST_TIMEOUT_MS + 1);
+
+    await expect(pending).resolves.toBeNull();
+  });
+
+  it('passes an abort signal so the socket is actually torn down', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: { signal?: unknown }) => ({
+      ok: true,
+      json: async () => ({ schemaVersion: 1 }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expoModelStoreIo.fetchJson('https://example.test/manifest.json');
+
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('still returns a parsed body well inside the deadline', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({ schemaVersion: 1 }) })),
+    );
+
+    await expect(expoModelStoreIo.fetchJson('https://example.test/manifest.json')).resolves.toEqual({
+      schemaVersion: 1,
+    });
   });
 });

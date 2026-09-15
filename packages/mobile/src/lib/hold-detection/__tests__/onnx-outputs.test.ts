@@ -62,6 +62,50 @@ describe('selectRfDetrOutputs', () => {
     });
   });
 
+  it('prefers the manifest name over the key order for an ambiguous four-class export', () => {
+    // classes === 4 makes "last dimension 4" describe both tensors, so the shape
+    // rule falls back on Object.keys order, which ONNX Runtime does not promise.
+    // The manifest parses both names; when it published them, they decide.
+    const pred = { data: new Float32Array(8), dims: [1, 2, 4] };
+    const dets = { data: new Float32Array(8), dims: [1, 2, 4] };
+
+    const selected = selectRfDetrOutputs({ pred, dets }, 4, { boxes: 'dets', logits: 'pred' });
+
+    expect({ boxes: selected?.boxes === dets.data, logits: selected?.logits === pred.data }).toEqual({
+      boxes: true,
+      logits: true,
+    });
+  });
+
+  it('falls back to the shape when the named tensors are not in the result', () => {
+    // RF-DETR renames outputs between exports, which is why the schema allows a
+    // null name — a stale name must not turn into "no detections".
+    const selected = selectRfDetrOutputs({ logits: boxes, boxes: logits }, 1, {
+      boxes: 'dets',
+      logits: 'pred',
+    });
+
+    expect(selected).toEqual({
+      boxes: boxes.data,
+      boxesShape: [1, 2, 4],
+      logits: logits.data,
+      logitsShape: [1, 2, 1],
+    });
+  });
+
+  it('ignores a null name the way the manifest publishes it', () => {
+    const selected = selectRfDetrOutputs({ a: boxes, b: logits }, 1, { boxes: null, logits: null });
+
+    expect(selected?.boxesShape).toEqual([1, 2, 4]);
+  });
+
+  it('does not reuse the named boxes tensor as logits', () => {
+    // One tensor answering both names would decode noise as detections.
+    const only = { data: new Float32Array(8), dims: [1, 2, 4] };
+
+    expect(selectRfDetrOutputs({ only }, 4, { boxes: 'only' })).toBeNull();
+  });
+
   it('returns null when the boxes tensor is missing', () => {
     expect(selectRfDetrOutputs({ logits }, 1)).toBeNull();
   });

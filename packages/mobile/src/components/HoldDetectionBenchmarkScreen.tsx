@@ -87,6 +87,12 @@ export function HoldDetectionBenchmarkScreen() {
       setStatus('Opening the ONNX session…');
       runtime = await createHoldDetectionRuntime(modelHandle.uri, {
         classes: modelHandle.manifest.outputs.logits.classes,
+        // The manifest parses both output names; hand them over so a four-class
+        // export is not resolved by ONNX Runtime's key order.
+        outputNames: {
+          boxes: modelHandle.manifest.outputs.boxes.name,
+          logits: modelHandle.manifest.outputs.logits.name,
+        },
       });
       if (!runtime) {
         // i18n-ignore-next-line — tester-only screen
@@ -100,7 +106,7 @@ export function HoldDetectionBenchmarkScreen() {
         image,
         modelVersion: modelHandle.version,
         modelConfig: modelHandle.manifest.config,
-        executionProvider: runtime.executionProvider,
+        requestedExecutionProvider: runtime.requestedExecutionProvider,
         defaultThreshold: modelHandle.defaultThreshold,
         // Straight off the manifest, never the shared package's defaults: the
         // numbers this screen reports have to describe the preprocessing the
@@ -266,8 +272,7 @@ export function HoldDetectionBenchmarkScreen() {
             {
               kind: 'info',
               key: 'low',
-              // i18n-ignore-next-line — tester-only screen
-              label: 'Detections @ 0.30',
+              label: `Detections @ ${report.lowThreshold.toFixed(2)}`,
               value: `${size.detectionsAtLow}`,
             },
             {
@@ -284,6 +289,25 @@ export function HoldDetectionBenchmarkScreen() {
           ],
         });
       }
+      for (const failure of report.failures) {
+        sections.push({
+          key: `failed-${failure.size}`,
+          // i18n-ignore-next-line — tester-only screen
+          title: `${failure.size} px — refused`,
+          // i18n-ignore-next-line — tester-only screen
+          footer:
+            'The published graph is exported at one fixed input size with no dynamic axes, so anything below the trained size is rejected. The sizes that did run are still above.',
+          rows: [
+            {
+              kind: 'info',
+              key: 'error',
+              // i18n-ignore-next-line — tester-only screen
+              label: 'Error',
+              value: failure.error,
+            },
+          ],
+        });
+      }
       sections.push({
         key: 'copy',
         // i18n-ignore-next-line — tester-only screen
@@ -296,8 +320,11 @@ export function HoldDetectionBenchmarkScreen() {
             kind: 'info',
             key: 'provider',
             // i18n-ignore-next-line — tester-only screen
-            label: 'Execution provider',
-            value: report.executionProvider,
+            label: 'Requested provider',
+            // Requested, not measured: ONNX Runtime falls back to CPU per
+            // subgraph without saying so, so the honest label is what we asked
+            // for. A per-kernel answer needs a native profile.
+            value: report.requestedExecutionProvider,
           },
           {
             kind: 'info',

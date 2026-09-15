@@ -114,6 +114,56 @@ describe('App Store listing copy', () => {
   });
 });
 
+// docs/i18n-spanish-glossary.md keeps the brand product names in English and in
+// FULL: `Kilter Board`, `Tension Board`, `MoonBoard`. The 2.6 release notes said
+// «Un Kilter junto a un Tension», which uses a shortened trademark as a noun —
+// the exact usage LEGAL.md and /legal say we do not make. Only the determiner
+// form is checked: a keyword list ("Kilter,Tension,MoonBoard") and a compound
+// («la app Kilter Board») are both fine, and Apple counts every character of
+// keywords.txt, so padding those out would cost a keyword.
+const SPANISH_LOCALES = ['es-ES', 'es-MX', 'es-419'];
+
+/** `un Kilter` / `el Tension` with no `Board` after it. */
+const SHORTENED_TRADEMARK =
+  /\b(?:un|una|el|la|los|las|del|al|este|esta|ese|esa|tu|mi)\s+(Kilter|Tension)\b(?!\s+Board)/g;
+
+function shortenedTrademarks(source: string): string[] {
+  return [...source.matchAll(SHORTENED_TRADEMARK)].map((match) => match[0]);
+}
+
+describe('Spanish listing copy', () => {
+  const spanishFiles = [
+    ...SPANISH_LOCALES.flatMap((locale) =>
+      existsSync(join(APPLE_METADATA, locale))
+        ? fileSet(APPLE_METADATA, locale).map((name) => ({
+            path: join(APPLE_METADATA, locale, name),
+            file: `${locale}/${name}`,
+          }))
+        : [],
+    ),
+    ...SPANISH_LOCALES.flatMap((locale) =>
+      existsSync(join(PLAY_METADATA, locale))
+        ? fileSet(PLAY_METADATA, locale).map((name) => ({
+            path: join(PLAY_METADATA, locale, name),
+            file: `android/${locale}/${name}`,
+          }))
+        : [],
+    ),
+  ];
+
+  it('has Spanish copy to check', () => {
+    expect(spanishFiles.length).toBeGreaterThan(0);
+  });
+
+  it.each(spanishFiles.map(({ path, file }) => [file, path]))(
+    'spells the board trademarks in full in %s',
+    (file, path) => {
+      const found = shortenedTrademarks(readFileSync(path, 'utf8'));
+      expect({ file, found }).toEqual({ file, found: [] });
+    },
+  );
+});
+
 describe('Play listing copy', () => {
   it('has locale folders to check', () => {
     expect(playLocales().length).toBeGreaterThan(0);

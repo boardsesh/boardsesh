@@ -16,17 +16,19 @@
  *    predating this PR's fingerprint). So it is required lazily, inside a
  *    try/catch, and the whole feature reports "unavailable" instead of taking
  *    the app down at startup.
- * 2. **Outputs are selected by SHAPE, not by name.** RF-DETR's exporter does not
- *    name its outputs consistently, which is why the manifest schema allows
- *    `outputs.boxes.name` to be null and why `ml/holds/eval.py` and the shared
- *    decode both look for "last dimension 4" and "last dimension = classes".
- *    Matching on a name would work on one export and silently swap the tensors
- *    on the next.
+ * 2. **Outputs are selected by the manifest's NAME when it published one, and by
+ *    SHAPE otherwise.** RF-DETR's exporter does not name its outputs
+ *    consistently, which is why the manifest schema allows `outputs.boxes.name`
+ *    to be null and why `ml/holds/eval.py` and the shared decode both look for
+ *    "last dimension 4" and "last dimension = classes". Shape alone is ambiguous
+ *    for a four-class export, though, and its tie-break is `Object.keys` order,
+ *    which ONNX Runtime does not promise — so a published name wins, and a name
+ *    the result does not carry falls back to the shape rule rather than failing.
  */
 
 import { Platform } from 'react-native';
 import type { DetectionRuntime, RfDetrOutputs } from '@boardsesh/hold-detection';
-import { type OrtTensorLike, selectRfDetrOutputs, toSessionPath } from './onnx-outputs';
+import { type OrtTensorLike, type RfDetrOutputNames, selectRfDetrOutputs, toSessionPath } from './onnx-outputs';
 
 /** The slice of `onnxruntime-react-native` this adapter uses. */
 interface OrtSessionLike {
@@ -47,8 +49,11 @@ interface OrtModuleLike {
  *
  * Creating a session with an unavailable provider throws rather than falling
  * back, so each entry is attempted in turn and plain CPU closes the list. Which
- * one actually took is reported on the handle, because a benchmark number
- * without it says nothing (#5451 is decided from these numbers).
+ * one was REQUESTED is reported on the handle, because a benchmark number without
+ * it says nothing (#5451 is decided from these numbers). Requested, not actual:
+ * a session opens with a provider and then silently runs on CPU any subgraph that
+ * provider has no kernel for, and the JS API does not say which kernels went
+ * where. Only a native profile can answer that.
  *
  * CoreML on iOS and NNAPI on Android are the hardware paths; XNNPACK is the
  * optimised CPU kernel set and is the realistic answer on most Android devices,
@@ -90,8 +95,12 @@ export function isInferenceRuntimeAvailable(): boolean {
 }
 
 export interface HoldDetectionRuntime extends DetectionRuntime {
-  /** Which execution provider the session was actually created with. */
-  readonly executionProvider: string;
+  /**
+   * The provider the session was created WITH — the most accelerated one that
+   * would open the model. ONNX Runtime can still run any part of the graph on
+   * CPU, and it does not report that, so this is a request, not a measurement.
+   */
+  readonly requestedExecutionProvider: string;
   release(): Promise<void>;
 }
 
@@ -103,11 +112,12 @@ export interface HoldDetectionRuntime extends DetectionRuntime {
  */
 export async function createHoldDetectionRuntime(
   modelUri: string,
-  options: { classes?: number } = {},
+  options: { classes?: number; outputNames?: RfDetrOutputNames } = {},
 ): Promise<HoldDetectionRuntime | null> {
   const ort = loadOrt();
   if (!ort) return null;
   const classes = options.classes ?? 1;
+  const outputNames = options.outputNames ?? {};
   const path = toSessionPath(modelUri);
 
   let session: OrtSessionLike | null = null;
@@ -127,11 +137,11 @@ export async function createHoldDetectionRuntime(
   const inputName = openSession.inputNames?.[0] ?? 'input';
 
   return {
-    executionProvider: provider,
+    requestedExecutionProvider: provider,
     async run(input: Float32Array, size: number): Promise<RfDetrOutputs> {
       const tensor = new ort.Tensor('float32', input, [1, 3, size, size]);
       const results = await openSession.run({ [inputName]: tensor });
-      const selected = selectRfDetrOutputs(results, classes);
+      const selected = selectRfDetrOutputs(results, classes, outputNames);
       if (!selected) {
         throw new Error(
           `Hold detector produced no boxes/logits pair (outputs: ${Object.keys(results).join(', ') || 'none'})`,

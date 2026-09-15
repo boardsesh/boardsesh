@@ -113,6 +113,48 @@ function cacheFileName(file: ModelManifestFile): string {
 /** Chunk size for the streamed hash. 1 MB is 31 reads for the nano export. */
 const HASH_CHUNK_BYTES = 1024 * 1024;
 
+/**
+ * How long a manifest fetch may hang before it is given up on, milliseconds.
+ *
+ * A stalled TCP connection — the captive-portal / one-bar-of-signal case — never
+ * rejects on its own, and the benchmark screen shows a spinner with no cancel, so
+ * without a deadline the only way out is to kill the app. Ten seconds for a JSON
+ * file a few hundred bytes long is generous on any connection that works.
+ */
+export const MANIFEST_TIMEOUT_MS = 10_000;
+
+/**
+ * How long the weights download may hang, milliseconds.
+ *
+ * Longer than the manifest's because it is 31 MB: two minutes is about 2 Mbit/s,
+ * below which the download is not worth waiting for on a gym's wifi. This is a
+ * whole-transfer deadline, not an idle one — `File.downloadFileAsync` reports no
+ * progress to race against.
+ */
+export const DOWNLOAD_TIMEOUT_MS = 120_000;
+
+/**
+ * Reject with a deadline the wrapped promise cannot see.
+ *
+ * `AbortSignal.timeout` is what aborts `fetch`; a download that does not take a
+ * signal still needs a loser in the race, and this is it. The timer is always
+ * cleared, so a resolved promise does not hold the event loop open for the rest
+ * of the deadline (which in Hermes keeps the timer queue warm for two minutes).
+ */
+async function withDeadline<T>(work: Promise<T>, timeoutMs: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${what} timed out after ${timeoutMs} ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function modelDirectory(version: string): Directory {
   return new Directory(Paths.cache, MODEL_CACHE_DIR, version);
 }
@@ -135,11 +177,19 @@ function newestFileMs(directory: Directory): number {
 export const expoModelStoreIo: ModelStoreIo = {
   async fetchJson(url) {
     try {
-      const response = await fetch(url);
+      // Both halves of the deadline: the signal is what actually tears the socket
+      // down, and the race is what bounds this function even where the platform
+      // fetch ignores a signal (the Expo WinterCG fetch has done exactly that).
+      const response = await withDeadline(
+        fetch(url, { signal: AbortSignal.timeout(MANIFEST_TIMEOUT_MS) }),
+        MANIFEST_TIMEOUT_MS,
+        'Manifest fetch',
+      );
       if (!response.ok) return null;
       return (await response.json()) as unknown;
     } catch {
-      // Offline, DNS failure, TLS failure, or a body that is not JSON.
+      // Offline, DNS failure, TLS failure, a body that is not JSON, or the
+      // AbortError from the deadline above.
       return null;
     }
   },
@@ -152,9 +202,23 @@ export const expoModelStoreIo: ModelStoreIo = {
       // A half-written file from a killed download would otherwise be hashed as
       // if it were complete — and fail, which is correct but wastes the bytes.
       if (destination.exists) destination.delete();
-      const downloaded = await File.downloadFileAsync(url, destination);
+      const downloaded = await withDeadline(
+        File.downloadFileAsync(url, destination),
+        DOWNLOAD_TIMEOUT_MS,
+        'Model download',
+      );
       return downloaded.uri;
     } catch {
+      // A timed-out download leaves a partial file behind — and expo keeps
+      // writing to it, since nothing here can cancel the native transfer. Delete
+      // it so the next attempt re-downloads instead of hashing a truncated file.
+      try {
+        const partial = new File(modelDirectory(version), fileName);
+        if (partial.exists) partial.delete();
+      } catch {
+        // Nothing to clean up, or a file the OS will not let us remove; the
+        // sha256 check catches it either way.
+      }
       return null;
     }
   },

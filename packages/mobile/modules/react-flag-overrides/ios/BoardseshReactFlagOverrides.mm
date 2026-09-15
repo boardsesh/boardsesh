@@ -48,6 +48,14 @@ class WithSchedulerDelegateInvalidation final : public ReleaseLevelOverrides {
 // Mirrors ExpoReactNativeFactory's release-level lookup (Info.plist
 // ReactNativeReleaseLevel, default Stable), so every other flag keeps the value
 // the factory's own provider gave it.
+//
+// That duplication is pinned OUTSIDE the compiler: if Expo renames the key or the
+// levels, this provider silently hands every flag the Stable default while the
+// factory reads something else, and nothing in the build notices. So
+// scripts/assert-ios-flag-override-compiled.mjs asserts the sentinel text
+// ("ReactNativeReleaseLevel" and the three level names) is still in
+// node_modules/expo/ios/AppDelegates/ExpoReactNativeFactory.swift on every CI
+// iOS build. Change one side and that guard fails.
 std::unique_ptr<ReactNativeFeatureFlagsProvider> makeProvider()
 {
   id configured = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"ReactNativeReleaseLevel"];
@@ -78,11 +86,18 @@ std::unique_ptr<ReactNativeFeatureFlagsProvider> makeProvider()
     if (!enabled) {
       NSLog(@"[BoardseshReactFlagOverrides] ERROR: enableSchedulerDelegateInvalidation is still false after the override (#5293)");
     }
-#if DEBUG
+
+    // Unconditional, not #if DEBUG: readBeforeSwap names the flags something read
+    // BEFORE this swap, which is the timing-contract violation that makes
+    // dangerouslyForceOverride free an accessor another thread is reading. It only
+    // happens in a shipped configuration (a release-only subscriber, an
+    // expo-updates reload), so a DEBUG-only log is a signal we could never see in
+    // the one build where it matters. One line per launch.
     NSLog(
         @"[BoardseshReactFlagOverrides] enableSchedulerDelegateInvalidation=%@; flags read before the swap: %s",
         enabled ? @"true" : @"false",
         readBeforeSwap.has_value() ? readBeforeSwap->c_str() : "none");
+#if DEBUG
     NSAssert(enabled, @"enableSchedulerDelegateInvalidation override did not take effect (#5293)");
 #endif
   });
