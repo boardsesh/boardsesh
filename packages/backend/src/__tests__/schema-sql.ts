@@ -1649,6 +1649,115 @@ export const schemaSQL = `
           ))
     EXECUTE FUNCTION set_board_climb_stats_sync_fields();
 
+  -- ============================================
+  -- Spray walls (SW-04 #5437, read by SW-05 #5438)
+  -- ============================================
+  -- Mirrors packages/db/src/schema/app/spray-walls.ts. The FKs BETWEEN the spray
+  -- tables and onto user_boards are real, because the resolver behaviour under
+  -- test depends on them: removed_version_id is ON DELETE RESTRICT precisely so
+  -- deleting a version cannot resurrect the holds it removed, and
+  -- spray_walls.board_uuid is ON DELETE RESTRICT because a wall is only ever
+  -- soft-deleted.
+  --
+  -- Dropped first: worker databases are reused across runs, so a bare
+  -- CREATE ... IF NOT EXISTS would leave a previous shape in place and any change
+  -- here would never land.
+  DROP TABLE IF EXISTS "spray_climb_lineage" CASCADE;
+  DROP TABLE IF EXISTS "spray_wall_holds" CASCADE;
+  DROP TABLE IF EXISTS "spray_wall_versions" CASCADE;
+  DROP TABLE IF EXISTS "spray_walls" CASCADE;
+
+  DO $$ BEGIN
+    CREATE TYPE spray_wall_version_status AS ENUM ('draft', 'published', 'superseded');
+  EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+  DO $$ BEGIN
+    CREATE TYPE spray_hold_source AS ENUM ('manual', 'auto');
+  EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+  -- ONE sequence value is BOTH a layout id and a size id; the other hands out a
+  -- number that is BOTH a board_holes id and a board_placements id. Both stop at
+  -- int4 max, because every catalogue id column they feed is an integer: a default
+  -- bigint sequence would hand out a value those columns cannot store, and the
+  -- failure would land on a climber creating a wall instead of at the draw.
+  CREATE SEQUENCE IF NOT EXISTS "spray_wall_catalog_id_seq" START WITH 1 INCREMENT BY 1 MAXVALUE 2147483647;
+  CREATE SEQUENCE IF NOT EXISTS "spray_hold_catalog_id_seq" START WITH 1 INCREMENT BY 1 MAXVALUE 2147483647;
+
+  CREATE TABLE IF NOT EXISTS "spray_walls" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "board_uuid" text NOT NULL UNIQUE REFERENCES "user_boards"("uuid") ON DELETE RESTRICT,
+    "layout_id" integer NOT NULL UNIQUE,
+    "reference_width" integer,
+    "reference_height" integer,
+    "current_version_id" bigint,
+    "hold_count" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    "deleted_at" timestamp
+  );
+
+  CREATE TABLE IF NOT EXISTS "spray_wall_versions" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "wall_id" bigint NOT NULL REFERENCES "spray_walls"("id") ON DELETE CASCADE,
+    "version_number" integer NOT NULL,
+    "status" spray_wall_version_status DEFAULT 'draft' NOT NULL,
+    "photo_key" text,
+    "photo_width" integer,
+    "photo_height" integer,
+    "anchors" jsonb,
+    "homography" jsonb,
+    "notes" text,
+    "created_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "published_at" timestamp,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "spray_wall_versions_wall_version_idx"
+    ON "spray_wall_versions" ("wall_id", "version_number");
+
+  -- Added after both tables exist: the FK is circular (a wall points at its
+  -- published version, a version belongs to a wall).
+  ALTER TABLE "spray_walls"
+    ADD CONSTRAINT "spray_walls_current_version_id_spray_wall_versions_id_fk"
+    FOREIGN KEY ("current_version_id") REFERENCES "spray_wall_versions"("id") ON DELETE SET NULL;
+  CREATE INDEX IF NOT EXISTS "spray_walls_current_version_idx" ON "spray_walls" ("current_version_id");
+
+  CREATE TABLE IF NOT EXISTS "spray_wall_holds" (
+    "wall_id" bigint NOT NULL REFERENCES "spray_walls"("id") ON DELETE CASCADE,
+    "hold_id" integer NOT NULL,
+    "cx" integer NOT NULL,
+    "cy" integer NOT NULL,
+    "r" integer NOT NULL,
+    "outline" jsonb,
+    "installed_version_id" bigint NOT NULL REFERENCES "spray_wall_versions"("id") ON DELETE CASCADE,
+    "removed_version_id" bigint REFERENCES "spray_wall_versions"("id") ON DELETE RESTRICT,
+    "moved_from_hold_id" integer,
+    "source" spray_hold_source DEFAULT 'manual' NOT NULL,
+    "confidence" real,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("wall_id", "hold_id")
+  );
+  CREATE INDEX IF NOT EXISTS "spray_wall_holds_alive_idx"
+    ON "spray_wall_holds" ("wall_id", "removed_version_id");
+  -- Remix walks the other way — "what replaced the hold this climb lost?" — and
+  -- almost every row has no predecessor, so the index is partial.
+  CREATE INDEX IF NOT EXISTS "spray_wall_holds_moved_from_idx"
+    ON "spray_wall_holds" ("moved_from_hold_id") WHERE "moved_from_hold_id" IS NOT NULL;
+
+  CREATE TABLE IF NOT EXISTS "spray_climb_lineage" (
+    "child_uuid" text PRIMARY KEY NOT NULL,
+    "parent_uuid" text NOT NULL,
+    -- RESTRICT, like the removal FK above: cascading here would delete the
+    -- lineage row a remix's screen shows when the version it was rebuilt on went
+    -- away, silently orphaning the child from its parent.
+    "wall_version_id" bigint NOT NULL REFERENCES "spray_wall_versions"("id") ON DELETE RESTRICT,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    CONSTRAINT "spray_climb_lineage_child_fk" FOREIGN KEY ("child_uuid")
+      REFERENCES "board_climbs"("uuid") ON DELETE CASCADE ON UPDATE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS "spray_climb_lineage_parent_idx" ON "spray_climb_lineage" ("parent_uuid");
+
   CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
   BEGIN
     NEW.updated_at = NOW();

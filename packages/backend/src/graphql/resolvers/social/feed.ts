@@ -2,6 +2,7 @@ import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
 import {
   difficultyNameWithFallbackExpr,
@@ -106,6 +107,13 @@ export const socialFeedQueries = {
           // whose climb row is missing still renders as "Unknown Climb", and
           // `is_hidden = false` would silently drop those too.
           sql`${dbSchema.boardClimbs.isHidden} IS NOT TRUE`,
+          // A spray climb is stored `is_listed = true`, so a tick logged on somebody's
+          // PRIVATE wall would ride this feed to every follower with the climb's name
+          // and frames. A no-op on the other eight board types.
+          sprayClimbVisibilityCondition(
+            { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+            myUserId,
+          ),
         ),
       )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
@@ -162,7 +170,11 @@ export const socialFeedQueries = {
    * Get global activity feed of all recent ascents
    * No authentication required
    */
-  globalAscentsFeed: async (_: unknown, { input }: { input?: { limit?: number; offset?: number } }) => {
+  globalAscentsFeed: async (
+    _: unknown,
+    { input }: { input?: { limit?: number; offset?: number } },
+    ctx: ConnectionContext,
+  ) => {
     const validatedInput = validateInput(FollowingAscentsFeedInputSchema, input || {}, 'input');
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
@@ -218,7 +230,17 @@ export const socialFeedQueries = {
       .leftJoin(consensusGradeTable, consensusGradeJoinCondition)
       // Same hidden-climb rule as `followingAscentsFeed` — see the note there
       // for why this is `IS NOT TRUE` against a LEFT JOIN.
-      .where(sql`${dbSchema.boardClimbs.isHidden} IS NOT TRUE`)
+      .where(
+        and(
+          sql`${dbSchema.boardClimbs.isHidden} IS NOT TRUE`,
+          // Same rule as the following-feed above — and this one is the GLOBAL feed,
+          // reachable without signing in, so the viewer may be absent entirely.
+          sprayClimbVisibilityCondition(
+            { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+            ctx?.userId,
+          ),
+        ),
+      )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
       .limit(limit + 1)
       .offset(offset);

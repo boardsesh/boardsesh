@@ -42,6 +42,10 @@ vi.mock('@boardsesh/db/queries', () => ({
   // Mirror the real narrowing: known tier passes through, anything else → null.
   toConfidenceTier: (value: string | null | undefined) =>
     value === 'confirmed' || value === 'provisional' || value === 'setter_only' ? value : null,
+  // The spray wall visibility predicate. These tests mock the query builder, so the
+  // fragment is never rendered — what matters is that the module exports it, and
+  // that the shape is an `and()` arm rather than the bare `inArray` it used to be.
+  sprayClimbVisibilityCondition: () => ({ __sprayVisibility: true }),
 }));
 
 import { hydrateClimbsByRefs } from '../graphql/resolvers/playlists/helpers/hydrate-climbs';

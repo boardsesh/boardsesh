@@ -3,6 +3,7 @@ import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } 
 import { isSizeScopedBoard, parseSetIds } from '@boardsesh/board-config';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { validateInput } from '../../shared/helpers';
 import { GetPlaylistClimbsInputSchema } from '../../../../validation/schemas';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../../db/queries/util/table-select';
@@ -38,10 +39,18 @@ function buildSpecificBoardClimbJoinConditions(
   tables: typeof UNIFIED_TABLES,
   boardName: BoardName,
   input: PlaylistClimbsInput,
+  viewerUserId: string | null | undefined,
 ) {
   const climbJoinConditions = [
     eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid),
     eq(tables.climbs.boardType, boardName),
+    // A PUBLIC playlist would otherwise substitute its own visibility for the wall's:
+    // add a private spray wall's climb to one and anybody who can open the playlist
+    // reads its name and frames.
+    sprayClimbVisibilityCondition(
+      { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+      viewerUserId,
+    ),
   ];
 
   if (input.layoutId != null) {
@@ -111,6 +120,7 @@ async function fetchSpecificBoardClimbs(
   input: PlaylistClimbsInput,
   page: number,
   pageSize: number,
+  viewerUserId: string | null | undefined,
 ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> {
   const boardName = input.boardName as BoardName;
   if (!isValidBoardName(boardName)) {
@@ -118,7 +128,7 @@ async function fetchSpecificBoardClimbs(
   }
 
   const tables = UNIFIED_TABLES;
-  const climbJoinConditions = buildSpecificBoardClimbJoinConditions(tables, boardName, input);
+  const climbJoinConditions = buildSpecificBoardClimbJoinConditions(tables, boardName, input, viewerUserId);
 
   const [countResult] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -158,7 +168,7 @@ async function fetchSpecificBoardClimbs(
 
   const climbs = await hydrateClimbsByRefs(
     items.map((row) => ({ climbUuid: row.climbUuid, boardType: boardName })),
-    hydrateOptions,
+    { ...hydrateOptions, viewerUserId },
   );
 
   return { climbs, totalCount, hasMore };
@@ -193,6 +203,7 @@ async function fetchAllBoardsClimbs(
   input: PlaylistClimbsInput,
   page: number,
   pageSize: number,
+  viewerUserId: string | null | undefined,
 ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> {
   const tables = UNIFIED_TABLES;
 
@@ -200,7 +211,20 @@ async function fetchAllBoardsClimbs(
     .select({ count: sql<number>`count(*)::int` })
     .from(dbSchema.playlistClimbs)
     .innerJoin(tables.climbs, eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid))
-    .where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
+    .where(
+      and(
+        eq(dbSchema.playlistClimbs.playlistId, playlistId),
+        // BEFORE offset/limit, and on the COUNT too. The hydrate step drops an
+        // inaccessible spray climb, so filtering only there left pages short (a
+        // 20-row page arriving with 17) and the count inflated by rows the caller
+        // can never reach. The specific-board path applies it in the join for the
+        // same reason.
+        sprayClimbVisibilityCondition(
+          { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+          viewerUserId,
+        ),
+      ),
+    );
 
   const totalCount = countResult?.count ?? 0;
 
@@ -212,7 +236,20 @@ async function fetchAllBoardsClimbs(
     })
     .from(dbSchema.playlistClimbs)
     .innerJoin(tables.climbs, eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid))
-    .where(eq(dbSchema.playlistClimbs.playlistId, playlistId))
+    .where(
+      and(
+        eq(dbSchema.playlistClimbs.playlistId, playlistId),
+        // BEFORE offset/limit, and on the COUNT too. The hydrate step drops an
+        // inaccessible spray climb, so filtering only there left pages short (a
+        // 20-row page arriving with 17) and the count inflated by rows the caller
+        // can never reach. The specific-board path applies it in the join for the
+        // same reason.
+        sprayClimbVisibilityCondition(
+          { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+          viewerUserId,
+        ),
+      ),
+    )
     .orderBy(asc(dbSchema.playlistClimbs.position), asc(dbSchema.playlistClimbs.addedAt))
     .limit(pageSize + 1)
     .offset(page * pageSize);
@@ -232,7 +269,7 @@ async function fetchAllBoardsClimbs(
 
   const climbs = await hydrateClimbsByRefs(
     items.map((row) => ({ climbUuid: row.climbUuid, boardType: row.boardType })),
-    { angleOverrides },
+    { angleOverrides, viewerUserId },
   );
 
   return { climbs, totalCount, hasMore };
@@ -262,6 +299,6 @@ export const playlistClimbs = async (
   const playlistId = await verifyPlaylistAccess(input.playlistId, ctx.userId ?? null);
 
   return input.boardName
-    ? fetchSpecificBoardClimbs(playlistId, input, page, pageSize)
-    : fetchAllBoardsClimbs(playlistId, input, page, pageSize);
+    ? fetchSpecificBoardClimbs(playlistId, input, page, pageSize, ctx.userId)
+    : fetchAllBoardsClimbs(playlistId, input, page, pageSize, ctx.userId);
 };

@@ -89,6 +89,21 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     anyFeet: Boolean
     "Physical board size the climb is set on. Required on Woods (1 = 8x10, 2 = 12x12), where the two walls number their holds from their own origins. Ignored on boards that derive size compatibility from the hold bounding box."
     sizeId: Int
+    "The setter's own grade, seeded into board_climb_stats.display_difficulty. REQUIRED to publish on a spray wall, which has no crowd grade to fall back on; ignored elsewhere, where the grade comes from ticks or the Aurora sync."
+    userGrade: String
+    """
+    The spray wall this climb is being set on, as the share link carries it.
+
+    Only meaningful for \`boardType: "spray"\`, and only needed by a caller who is
+    neither the wall's owner nor a member of its gym: the wall's \`layoutId\` above
+    comes out of a sequence, so it is not a secret and cannot authorize a write on
+    its own. The wall's uuid IS the capability an UNLISTED wall's share link hands
+    out, so presenting it is what lets the crew somebody shared their home wall
+    with set climbs on it. A PRIVATE wall refuses everyone but its owner and its
+    gym, uuid or not. Send it on every spray write; it costs nothing when the
+    caller is a principal.
+    """
+    sprayWallUuid: String
   }
 
   """
@@ -153,6 +168,28 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     anyFeet: Boolean
     "Physical board size, where it is part of the climb's identity (Woods). Immutable — a size that differs from the stored one is rejected. Null or omitted keeps the stored size."
     sizeId: Int
+    """
+    The setter's own grade.
+
+    Needed to publish a DRAFT on a spray wall when the draft was created without
+    one: that board has no crowd grade to converge on, so a grade has to come from
+    either the stats row \`saveClimb\` already seeded or from this field. Ignored
+    on every other board, where the grade comes from ticks or the Aurora sync.
+    """
+    userGrade: String
+    """
+    The spray wall this climb is being set on, as the share link carries it.
+
+    Only meaningful for \`boardType: "spray"\`, and only needed by a caller who is
+    neither the wall's owner nor a member of its gym: the wall's \`layoutId\` above
+    comes out of a sequence, so it is not a secret and cannot authorize a write on
+    its own. The wall's uuid IS the capability an UNLISTED wall's share link hands
+    out, so presenting it is what lets the crew somebody shared their home wall
+    with set climbs on it. A PRIVATE wall refuses everyone but its owner and its
+    gym, uuid or not. Send it on every spray write; it costs nothing when the
+    caller is a principal.
+    """
+    sprayWallUuid: String
   }
 
   type UpdateClimbResult {

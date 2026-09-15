@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNotNull, or, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext, InstagramBetaScanInput, InstagramBetaScanResult } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { dbRead } from '../../../db/client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { InstagramBetaScanInputSchema } from '../../../validation/schemas';
@@ -77,6 +78,12 @@ export const instagramBetaImportQueries = {
         and(
           isNotNull(dbSchema.boardClimbs.name),
           nameConditions.length === 1 ? nameConditions[0] : or(...nameConditions),
+          // Not an enumeration — the caller supplies the candidate name — but it is
+          // a name → uuid/layout CONFIRMATION oracle for a private wall without it.
+          sprayClimbVisibilityCondition(
+            { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+            ctx.userId,
+          ),
         ),
       );
 

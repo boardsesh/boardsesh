@@ -1,6 +1,7 @@
 import { SUPPORTED_BOARDS, type ClimbStatsEvent, type ConnectionContext } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator, type CancellableAsyncIterator } from '../shared/async-iterators';
+import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 import { requireAuthenticated } from '../shared/helpers';
 import { acquireClimbStatsSubscription, releaseClimbStatsSubscription } from './climb-stats-subscription-counter';
 
@@ -73,6 +74,16 @@ export const climbStatsSubscriptions = {
       if (!Number.isInteger(layoutId) || layoutId < 1 || layoutId > MAX_LAYOUT_ID) {
         throw new Error(`Invalid layout id: ${layoutId}`);
       }
+
+      // The channel key IS the caller's `boardType:layoutId`, and a spray wall's
+      // layout id comes out of a sequence — so without this, any signed-in account
+      // could walk the sequence and hold a live feed of a private wall's climb
+      // uuids, ascent counts, quality and setter grade, updated on every tick. The
+      // same gate the sibling subscriptions take (`newClimbCreated`,
+      // `boardNowPlaying`); refused rather than silently empty, because a
+      // subscription that yields nothing is indistinguishable from a quiet wall and
+      // the client would hold the slot forever.
+      await assertSprayBoardIsReadable({ boardType, layoutId }, ctx.userId);
 
       acquireClimbStatsSubscription(ctx.connectionId);
       let capacityReleased = false;

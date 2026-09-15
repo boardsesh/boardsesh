@@ -114,6 +114,18 @@ export const SIMILAR_CLIMBS_QUERY = gql`
   }
 `;
 
+/**
+ * Create a climb on any board but MoonBoard.
+ *
+ * **On `boardType: 'spray'` the input needs two extra fields.** `userGrade` is
+ * required to publish — a spray wall has no crowd grade to converge on, so the
+ * setter's grade is the only one the climb will ever have. And `sprayWallUuid`
+ * carries the wall's uuid, which is the capability an unlisted wall's share link
+ * hands out: without it a caller who is neither the owner nor a member of the
+ * wall's gym is refused, because the `layoutId` in the input comes out of a
+ * sequence and authorizes nothing on its own. Send it unconditionally — it is
+ * ignored when the caller is already a principal. See `docs/spray-walls.md`.
+ */
 export const SAVE_CLIMB_MUTATION = gql`
   mutation SaveClimb($input: SaveClimbInput!) {
     saveClimb(input: $input) {
@@ -136,6 +148,14 @@ export const SAVE_MOONBOARD_CLIMB_MUTATION = gql`
   }
 `;
 
+/**
+ * Edit a climb in place.
+ *
+ * On `boardType: 'spray'` this needs `sprayWallUuid` for the same reason
+ * `SAVE_CLIMB_MUTATION` does: the wall is resolved from the stored climb's
+ * `layoutId`, which is not a secret, so a link-holder has to present the
+ * capability again on every edit.
+ */
 export const UPDATE_CLIMB_MUTATION = gql`
   mutation UpdateClimb($input: UpdateClimbInput!) {
     updateClimb(input: $input) {
