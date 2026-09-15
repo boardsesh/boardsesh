@@ -23,6 +23,11 @@ name: Mobile Screenshots (iOS)
 #                  matching shard from the `screenshots-baseline` prerelease and
 #                  compares them pixel-wise (scripts/compare-screenshots.ts).
 #                  Unchanged → ios-capture is skipped and the run ends in ~15 min.
+#                  A probe that CRASHES (result=failure) is treated the same as a
+#                  skip, not a stop: ios-capture still fans out to every shard
+#                  rather than silently leaving the run short, and ios-finalize's
+#                  dimension gate catches anything the crashed probe itself failed
+#                  to capture.
 #                  This one shard is blind to a change confined to another locale
 #                  (es/fr/de strings) or to an iPad-only layout — it would always
 #                  read as "unchanged". scripts/screenshot-probe-scope.ts closes
@@ -395,12 +400,17 @@ jobs:
     # `probe` is skipped on a full run and must not skip the fan-out with it, so
     # this is written on `result` rather than the default all-needs-succeeded
     # gate. `!cancelled()` keeps a cancelled run from starting 11 macOS shards.
+    # A probe that FAILS is treated exactly like a probe that was skipped: fan
+    # out to every shard rather than stopping the run short on a probe crash
+    # (a flaky simulator boot, a broken baseline fetch, ...). Without this, a
+    # probe crash would skip ios-capture and only redden the run by accident,
+    # via ios-finalize's dimension gate.
     # `force_full` (scripts/screenshot-probe-scope.ts) fans out exactly like a
     # pixel-wise `changed` would — it covers a locale-only or iPad-only change
     # the single probe shard never captures pixels for.
     if: >-
       !cancelled() && needs.setup.result == 'success' && needs.ios-build.result == 'success' &&
-      (needs.probe.result == 'skipped' ||
+      (needs.probe.result == 'skipped' || needs.probe.result == 'failure' ||
        (needs.probe.result == 'success' &&
         (needs.probe.outputs.changed == 'true' || needs.probe.outputs.force_full == 'true')))
     runs-on: macos-26
@@ -494,12 +504,15 @@ jobs:
         ${{ needs.probe.result == 'success' && needs.probe.outputs.changed == 'false' &&
             needs.probe.outputs.force_full != 'true' }}
       # A complete, trustworthy App Store tree landed in this run: the fan-out
-      # succeeded, the probe (if any) succeeded, and neither the flow nor the
-      # locale list was narrowed. Only such a run may refresh the baseline or push
-      # to App Store Connect.
+      # succeeded and neither the flow nor the locale list was narrowed. Whether
+      # the probe itself succeeded, was skipped, or crashed does not gate this —
+      # a probe crash still fans out to every shard (see ios-capture's `if:`
+      # above), and any shard a crashed probe failed to produce is caught by the
+      # dimension gate below, which every upload and baseline-refresh step is
+      # already conditioned on via `success()`. Only such a run may refresh the
+      # baseline or push to App Store Connect.
       FULL_SET_CAPTURED: >-
         ${{ needs.ios-capture.result == 'success' &&
-            (needs.probe.result == 'skipped' || needs.probe.result == 'success') &&
             (inputs.flow == null || inputs.flow == 'app-store') &&
             (inputs.locales == null || inputs.locales == '') }}
 
@@ -633,6 +646,8 @@ jobs:
           set -euo pipefail
           if [ "$PROBE_RESULT" = "skipped" ]; then
             echo "**Full capture** — every requested shard was shot; the probe gate was not used." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$PROBE_RESULT" = "failure" ]; then
+            echo "**Probe crashed** — treated like a skip, not a stop: fanned out to every shard rather than silently leaving the run short. Check the probe job's logs for the actual failure." >> "$GITHUB_STEP_SUMMARY"
           elif [ "$PROBE_CHANGED" = "false" ] && [ "$PROBE_FORCE_FULL" = "true" ]; then
             echo "**Forced full capture vs baseline ${BASELINE_COMMIT:-(none)}** — the probe shard matched pixel-for-pixel, but ${PROBE_FORCE_FULL_REASON:-a change outside the probe shard} forced the fan-out anyway (see scripts/screenshot-probe-scope.ts)." >> "$GITHUB_STEP_SUMMARY"
           elif [ "$PROBE_CHANGED" = "false" ]; then

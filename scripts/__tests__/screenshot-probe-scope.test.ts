@@ -9,6 +9,7 @@ import {
   PROBE_SCOPE_RULES,
   decideProbeScope,
   decideProbeScopeForUnreachableBaseline,
+  decideProbeScopeFromOptions,
   parseProbeScopeArguments,
   writeGithubOutput,
 } from '../screenshot-probe-scope';
@@ -123,6 +124,49 @@ describe('parseProbeScopeArguments', () => {
 
   it('rejects an unknown flag', () => {
     expect(() => parseProbeScopeArguments(['--bogus', 'x'])).toThrow(/Unknown argument/);
+  });
+
+  it('parses both flags together (precedence is decideProbeScopeFromOptions job, not the parser job)', () => {
+    expect(
+      parseProbeScopeArguments(['--unreachable-baseline', 'shallow clone', '--changed-files-file', '/tmp/diff.txt']),
+    ).toEqual({
+      changedFilesFile: '/tmp/diff.txt',
+      unreachableBaseline: 'shallow clone',
+    });
+  });
+});
+
+describe('decideProbeScopeFromOptions', () => {
+  it('uses the changed-files signal when only --changed-files-file was supplied', () => {
+    const options = parseProbeScopeArguments(['--changed-files-file', '/tmp/diff.txt']);
+    const decision = decideProbeScopeFromOptions(options, ['packages/mobile/locales/fr.json']);
+    expect(decision.forceFull).toBe(true);
+    expect(decision.reason).toContain('mobile locale resource');
+  });
+
+  it('forces full for an unreachable baseline when only --unreachable-baseline was supplied', () => {
+    const options = parseProbeScopeArguments(['--unreachable-baseline', 'shallow clone']);
+    const decision = decideProbeScopeFromOptions(options, []);
+    expect(decision.forceFull).toBe(true);
+    expect(decision.reason).toContain('shallow clone');
+  });
+
+  it('an unreachable baseline forces full and ignores the changed-files list when both flags are supplied', () => {
+    // Pins the documented precedence in screenshot-probe-scope.ts: an
+    // unreachable baseline forces a full capture regardless of the
+    // changed-file list, even when that list would otherwise report "nothing
+    // in scope changed".
+    const options = parseProbeScopeArguments([
+      '--unreachable-baseline',
+      'could not fetch deadbeef from origin',
+      '--changed-files-file',
+      '/tmp/diff.txt',
+    ]);
+    const decision = decideProbeScopeFromOptions(options, ['packages/mobile/src/components/board-view.tsx']);
+    expect(decision.forceFull).toBe(true);
+    expect(decision.reason).toContain('baseline commit unreachable');
+    expect(decision.reason).toContain('could not fetch deadbeef from origin');
+    expect(decision.reason).not.toContain('board-view.tsx');
   });
 });
 

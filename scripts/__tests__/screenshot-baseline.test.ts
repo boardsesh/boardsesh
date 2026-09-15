@@ -316,8 +316,14 @@ describe('publishBaseline', () => {
     expect(ghCalls[3].args.some((argument) => argument.endsWith('ios-manifest.json'))).toBe(true);
   });
 
-  it('reuses an existing prerelease instead of recreating it', () => {
+  it('reuses an existing prerelease, editing its notes instead of recreating it', () => {
+    // Pins the fix for #5326 review thread: on every re-publish the release
+    // body must still name the current source commit/run, not the one from the
+    // very first publish — so this path must call `release edit --notes`, never
+    // `release create`, while still uploading every asset (manifest last).
     const tree = writeTree(join(workDir, 'tree'));
+    // `release view` succeeding is the steady-state signal: the release already
+    // exists, so this run must take the edit path, not create.
     const runner = new FakeRunner(() => ok());
 
     publishBaseline({
@@ -329,7 +335,25 @@ describe('publishBaseline', () => {
       runner,
     });
 
-    expect(runner.calls.some((call) => call.command === 'gh' && call.args[1] === 'create')).toBe(false);
+    const ghCalls = runner.calls.filter((call) => call.command === 'gh');
+    expect(ghCalls.map((call) => call.args.slice(0, 2))).toEqual([
+      ['release', 'view'],
+      ['release', 'edit'],
+      ['release', 'upload'],
+      ['release', 'upload'],
+    ]);
+    expect(ghCalls.some((call) => call.args[1] === 'create')).toBe(false);
+    // The edit carries fresh notes naming this publish's commit and run.
+    expect(ghCalls[1].args).toContain(BASELINE_TAG);
+    expect(ghCalls[1].args).toContain('--notes');
+    const editedNotes = ghCalls[1].args[ghCalls[1].args.indexOf('--notes') + 1];
+    expect(editedNotes).toContain('deadbeef');
+    expect(editedNotes).toContain('run 7');
+    // Zips first, manifest last: same guarantee as the first-publish path.
+    expect(ghCalls[2].args.filter((argument) => argument.endsWith('.zip'))).toHaveLength(15);
+    expect(ghCalls[2].args).toContain('--clobber');
+    expect(ghCalls[3].args.some((argument) => argument.endsWith('ios-manifest.json'))).toBe(true);
+    expect(ghCalls[3].args).toContain('--clobber');
   });
 });
 

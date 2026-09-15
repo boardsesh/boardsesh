@@ -27,6 +27,12 @@
  * that fell out of history) — in that case there is nothing to compare, so the
  * fan-out is forced out of caution rather than guessed at.
  *
+ * If both flags are supplied, `--unreachable-baseline` wins and the
+ * `--changed-files-file` list is ignored: an unreachable baseline forces a full
+ * capture regardless of the changed-file list, since there is nothing to
+ * meaningfully diff a changed-files signal against. See
+ * decideProbeScopeFromOptions() below.
+ *
  * Pure decision logic lives in decideProbeScope() so every rule below has a
  * direct unit test; this file's CLI is just argument parsing and GitHub
  * Actions output wiring.
@@ -119,6 +125,20 @@ export function decideProbeScopeForUnreachableBaseline(reason: string): ProbeSco
   return { forceFull: true, reason: `baseline commit unreachable (${reason}); forcing a full capture out of caution` };
 }
 
+/**
+ * Pure: resolves the final decision from parsed CLI flags plus an
+ * already-read changed-files list. `--unreachable-baseline` takes precedence
+ * over `--changed-files-file` when both are supplied — an unreachable baseline
+ * means there is nothing to meaningfully diff against, so the changed-files
+ * list (even if also given, e.g. by a caller that always passes both) is
+ * disregarded rather than trusted to explain a gap it cannot see past.
+ */
+export function decideProbeScopeFromOptions(options: CliOptions, changedFiles: readonly string[]): ProbeScopeDecision {
+  return options.unreachableBaseline
+    ? decideProbeScopeForUnreachableBaseline(options.unreachableBaseline)
+    : decideProbeScope(changedFiles);
+}
+
 function readChangedFiles(path: string): string[] {
   if (!existsSync(path)) return [];
   return readFileSync(path, 'utf8')
@@ -127,7 +147,7 @@ function readChangedFiles(path: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-interface CliOptions {
+export interface CliOptions {
   changedFilesFile: string | null;
   unreachableBaseline: string | null;
 }
@@ -172,9 +192,7 @@ function main(argv: readonly string[]): number {
     return 1;
   }
 
-  const decision = options.unreachableBaseline
-    ? decideProbeScopeForUnreachableBaseline(options.unreachableBaseline)
-    : decideProbeScope(readChangedFiles(options.changedFilesFile ?? ''));
+  const decision = decideProbeScopeFromOptions(options, readChangedFiles(options.changedFilesFile ?? ''));
 
   console.log(`${LOG} force_full=${decision.forceFull}: ${decision.reason}`);
 

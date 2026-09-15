@@ -142,12 +142,19 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(scopeStep.run).toContain('git cat-file -e');
   });
 
-  it('fans out only when the probe was skipped, reported a change, or forced a full capture', () => {
+  it('fans out when the probe was skipped, crashed, reported a change, or forced a full capture', () => {
+    // Pins the fix for #5326 review thread: a probe that FAILS must fan out
+    // exactly like a probe that was skipped, not silently stop the run and let
+    // ios-finalize's dimension gate redden it by accident. Mutation check: drop
+    // the `needs.probe.result == 'failure'` clause below and this test must fail.
     const capture = workflow.jobs['ios-capture'];
     expect(capture.needs).toEqual(['setup', 'ios-build', 'probe']);
-    expect(flatten(capture.if)).toBe(
+    const captureIf = flatten(capture.if);
+    expect(captureIf).toContain("needs.probe.result == 'failure'");
+    expect(captureIf).toBe(
       "!cancelled() && needs.setup.result == 'success' && needs.ios-build.result == 'success' && " +
-        "(needs.probe.result == 'skipped' || (needs.probe.result == 'success' && " +
+        "(needs.probe.result == 'skipped' || needs.probe.result == 'failure' || " +
+        "(needs.probe.result == 'success' && " +
         "(needs.probe.outputs.changed == 'true' || needs.probe.outputs.force_full == 'true')))",
     );
     expect(capture.strategy?.['max-parallel']).toBe(4);
@@ -174,14 +181,23 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       "${{ ((github.event_name == 'workflow_dispatch' && inputs.upload) || " +
         "(github.event_name == 'workflow_run' && needs.ios-capture.result == 'success')) && 'Production' || '' }}",
     );
-    expect(flatten(finalize.env?.UNCHANGED)).toBe(
+    // UNCHANGED must require the probe to have actually SUCCEEDED — a crashed
+    // probe (result == 'failure') must never read as "unchanged", since
+    // ios-capture fans out to cover it and there is no trustworthy pixel
+    // comparison to trust in that case. Mutation check: drop the
+    // `needs.probe.result == 'success' &&` clause and this test must fail.
+    const unchanged = flatten(finalize.env?.UNCHANGED);
+    expect(unchanged).toContain("needs.probe.result == 'success'");
+    expect(unchanged).toBe(
       "${{ needs.probe.result == 'success' && needs.probe.outputs.changed == 'false' && " +
         "needs.probe.outputs.force_full != 'true' }}",
     );
     // FULL_SET_CAPTURED also folds across lines (`>-`); same flatten() treatment.
+    // It deliberately does NOT gate on the probe's own result: a crashed probe
+    // still fans out via ios-capture, and any shard the crash cost is caught by
+    // the dimension gate below (itself behind `success()`), not by this flag.
     expect(flatten(finalize.env?.FULL_SET_CAPTURED)).toBe(
       "${{ needs.ios-capture.result == 'success' && " +
-        "(needs.probe.result == 'skipped' || needs.probe.result == 'success') && " +
         "(inputs.flow == null || inputs.flow == 'app-store') && " +
         "(inputs.locales == null || inputs.locales == '') }}",
     );
