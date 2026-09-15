@@ -728,13 +728,14 @@
       "draw": "Choisis une prise, puis dessine son contour.",
       "oneSelected": "Prise n° {{id}} choisie.",
       "twoSelected": "Deux prises choisies. Fusionner n'en fait qu'une.",
-      "oneSelectedNew": "Ta nouvelle prise est sélectionnée."
+      "oneSelectedNew": "Ta nouvelle prise est sélectionnée.",
+      "manySelected": "{{value}} prises sélectionnées. Supprimer les retire toutes."
     },
     "errors": {
       "nothingToMove": "Choisis d'abord une prise, puis fais-la glisser.",
       "pickOneToRedraw": "Choisis une seule prise, puis dessine son contour.",
       "mergeNeedsTwo": "Choisis deux prises pour les fusionner.",
-      "tooManyHolds": "Ça fait plus de prises qu'un mur peut porter. Écartes-en quelques-unes et enregistre à nouveau.",
+      "tooManyHolds": "Ça fait plus de prises qu'un mur peut porter. Écarte-en quelques-unes et enregistre à nouveau.",
       "saveFailed": "L'enregistrement du mur a échoué.",
       "strokeNotClosed": "Cette boucle rate la prise. Dessine tout le tour.",
       "strokeTooBig": "Cette boucle est bien plus grande qu'une prise. Zoome et suis le contour de la prise elle-même.",

@@ -133,14 +133,18 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
   // Zipped against SIZE_PRESETS by key rather than looked up with a computed
   // `t(...)`: the i18n linter only accepts literal keys, and a dynamic one is
   // also invisible to the orphan scanner.
+  // Each row carries its OWN press handler rather than an inline closure built
+  // per render: the mobile perf checklist's "no inline closures" rule, and here
+  // it also keeps `Button`'s memoisation intact across a toolbar that re-renders
+  // on every selection change.
   const sizeOptions = useMemo(
     () => [
-      { key: 'S' as const, label: t('sprayEditor.size.s') },
-      { key: 'M' as const, label: t('sprayEditor.size.m') },
-      { key: 'L' as const, label: t('sprayEditor.size.l') },
-      { key: 'XL' as const, label: t('sprayEditor.size.xl') },
+      { key: 'S' as const, label: t('sprayEditor.size.s'), onPress: () => onResize('S') },
+      { key: 'M' as const, label: t('sprayEditor.size.m'), onPress: () => onResize('M') },
+      { key: 'L' as const, label: t('sprayEditor.size.l'), onPress: () => onResize('L') },
+      { key: 'XL' as const, label: t('sprayEditor.size.xl'), onPress: () => onResize('XL') },
     ],
-    [t],
+    [t, onResize],
   );
 
   const formatThreshold = useCallback(
@@ -186,7 +190,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
             title={option.label}
             variant="tonal"
             size="small"
-            onPress={() => onResize(option.key)}
+            onPress={option.onPress}
             disabled={selectedCount !== 1 || locked}
             style={styles.sizeButton}
           />

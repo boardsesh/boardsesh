@@ -89,14 +89,26 @@ export function useSprayWallDraft(
   });
 
   const renderData = query.data ?? null;
-  const [registered, setRegistered] = useState(false);
+
+  /**
+   * The verdict on one payload: which payload it was about, and whether the
+   * registry took it.
+   *
+   * Keyed on the payload rather than a bare boolean because the two failures it
+   * has to tell apart look identical to a boolean. "Not registered" means either
+   * "the effect has not run yet" — one render, on the frame the data lands — or
+   * "this payload cannot be drawn at all". Reporting the first as unavailable
+   * flashes a "this wall has no photo" screen for a frame before the editor
+   * appears; reporting the second as loading hangs a spinner forever.
+   */
+  const [verdict, setVerdict] = useState<{ payload: SprayWallRenderData; ok: boolean } | null>(null);
 
   useEffect(() => {
     if (!renderData) return;
     // `registerRenderData` answers false for a payload that cannot be drawn — no
     // readable photo size, or a homography with no inverse — which is exactly
     // the "cannot be edited" the screen shows in words.
-    setRegistered(registerRenderData(layoutId, renderData));
+    setVerdict({ payload: renderData, ok: registerRenderData(layoutId, renderData) });
   }, [layoutId, renderData]);
 
   // Captured in a ref so the teardown does not re-run — and therefore does not
@@ -117,9 +129,14 @@ export function useSprayWallDraft(
     [layoutId],
   );
 
+  const asked = wallUuid != null && versionNumber != null;
+  // A payload in hand that has not been ruled on yet is still loading, not
+  // unavailable — that is the one-frame flash.
+  const awaitingVerdict = renderData != null && verdict?.payload !== renderData;
+
   return {
-    isLoading: query.isPending && wallUuid != null && versionNumber != null,
-    isUnavailable: !query.isPending && wallUuid != null && versionNumber != null && !registered,
+    isLoading: asked && (query.isPending || awaitingVerdict),
+    isUnavailable: asked && !query.isPending && !awaitingVerdict && !(verdict?.ok ?? false),
     homography: renderData?.homography ?? null,
   };
 }

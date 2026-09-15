@@ -728,7 +728,8 @@
       "draw": "Pick a hold, then draw its edge.",
       "oneSelected": "Hold #{{id}} is picked.",
       "twoSelected": "Two picked. Merge makes them one.",
-      "oneSelectedNew": "Your new hold is picked."
+      "oneSelectedNew": "Your new hold is picked.",
+      "manySelected": "{{value}} holds picked. Delete takes them all off."
     },
     "errors": {
       "nothingToMove": "Pick a hold first, then drag it.",

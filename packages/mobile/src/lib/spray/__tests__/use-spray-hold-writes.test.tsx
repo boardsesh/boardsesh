@@ -45,6 +45,25 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
+/**
+ * A wrapper whose `invalidateQueries` resolves only when `release()` is called,
+ * so a test can prove what happens on either side of the refetch.
+ */
+function deferredInvalidationWrapper() {
+  let release = () => {};
+  const invalidated = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries').mockReturnValue(invalidated);
+  const Wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  return { Wrapper, release: () => release(), invalidateSpy };
+}
+
 /** Which document each call carried, in the order the hook sent them. */
 function sentDocuments(): string[] {
   return requestMock.mock.calls.map(([document]) => (document === REMOVE_SPRAY_WALL_HOLDS ? 'remove' : 'upsert'));
@@ -157,6 +176,37 @@ describe('useSaveSprayHolds', () => {
     expect(onRemoved).not.toHaveBeenCalled();
     expect(requestMock).toHaveBeenCalledTimes(1);
     expect(requestMock.mock.calls[0][0]).toBe(REMOVE_SPRAY_WALL_HOLDS);
+  });
+
+  it("awaits the draft refetch before the caller's onSuccess runs", async () => {
+    // The ordering the hook's own comment calls load-bearing: `invalidateQueries`
+    // is RETURNED so React Query awaits it. Dropping the `return` would leave
+    // every other test green while re-introducing the race where the editor
+    // re-seeds from the payload that predates its own save.
+    requestMock.mockImplementation((document: unknown) => {
+      if (document === REMOVE_SPRAY_WALL_HOLDS) return Promise.resolve({ removeSprayWallHolds: 2 });
+      return Promise.resolve({ upsertSprayWallHolds: [{ id: 7 }] });
+    });
+
+    const { Wrapper, release, invalidateSpy } = deferredInvalidationWrapper();
+    const callerOnSuccess = vi.fn();
+    const { result } = renderHook(() => useSaveSprayHolds(), { wrapper: Wrapper });
+
+    await act(async () => {
+      result.current.mutate(
+        { wallUuid: 'wall-1', versionNumber: 3, versionId: '77', plan: PLAN },
+        { onSuccess: callerOnSuccess },
+      );
+
+      // Both requests are done and the invalidation has been asked for...
+      await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(1));
+      // ...but the caller has not been told yet, because the refetch has not landed.
+      expect(callerOnSuccess).not.toHaveBeenCalled();
+
+      release();
+    });
+
+    await waitFor(() => expect(callerOnSuccess).toHaveBeenCalledTimes(1));
   });
 
   it('sends each half exactly what the plan carried', async () => {
