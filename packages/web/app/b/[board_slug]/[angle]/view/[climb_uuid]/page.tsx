@@ -13,6 +13,16 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
+import SprayViewPage, { buildSprayViewMetadata } from './spray-view';
+
+/**
+ * A spray wall is the ninth board type and there is no catalogue behind it — no
+ * bundled board art, no product size, no readable config tuple. So it takes its
+ * own branch out of both exports below rather than a set of holes punched
+ * through the catalogue path, and `./spray-view` owns the visibility rules that
+ * decide whether this URL renders at all.
+ */
+const SPRAY_BOARD_TYPE = 'spray';
 
 type BoardSlugViewRouteParams = { board_slug: string; angle: string; climb_uuid: string };
 
@@ -45,6 +55,14 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       });
     }
     const parsedParams = { ...parsedBoardParams, climb_uuid: extractUuidFromSlug(params.climb_uuid) };
+
+    if (board.boardType === SPRAY_BOARD_TYPE) {
+      return await buildSprayViewMetadata({
+        board,
+        parsedParams,
+        boardSlugParam: params.board_slug,
+      });
+    }
 
     const boardDetails = getBoardDetailsForBoard(parsedParams);
     const [currentClimb, angleStats] = await Promise.all([
@@ -125,6 +143,14 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
   const parsedBoardParams = boardToRouteParamsFromAngleSegment(board, params.angle);
   if (!parsedBoardParams) return notFound();
   const parsedParams = { ...parsedBoardParams, climb_uuid: extractUuidFromSlug(params.climb_uuid) };
+
+  if (board.boardType === SPRAY_BOARD_TYPE) {
+    // Deliberately outside the try/catch below: that block exists to keep a
+    // failed read from being reported as a 404 on an indexed URL, and the spray
+    // branch already makes the same split itself — `notFound()` for a wall
+    // nobody may see or a climb that is not there, a throw for anything else.
+    return <SprayViewPage board={board} parsedParams={parsedParams} />;
+  }
 
   try {
     const currentClimb = await getClimb(parsedParams);

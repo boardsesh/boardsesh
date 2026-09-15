@@ -369,3 +369,35 @@ export const getImageUrl = (imageUrl: string, board: BoardName, thumbnail?: bool
 
 export const getBoardImageDimensions = (board: BoardName, firstImage: string) =>
   BOARD_IMAGE_DIMENSIONS[board][firstImage];
+
+/**
+ * OG card image for a climb on a spray wall.
+ *
+ * Its own builder rather than a branch in `buildOgBoardRenderUrl`, because the
+ * catalogue builder needs a `BoardDetails` and a wall has none: there is no
+ * layout, size or set art to address. A wall's card is composed by the backend
+ * from the wall's public photo copy and the holds the frames light up, so the
+ * only parameters that mean anything are the layout id and the frames. The
+ * others are sent because `ogClimbQuerySchema` requires them, and a wall's size
+ * id is always its layout id with one synthetic hold set.
+ *
+ * Returns `null` when the backend origin cannot be resolved. There is no
+ * fallback: the web board-render route draws from the bundled catalogue art and
+ * could not produce a wall's card, and a URL that renders a blank board is
+ * worse in a share sheet than no `og:image` at all.
+ */
+export const buildSprayOgImageUrl = (layoutId: number, frames: string): string | null => {
+  const backendOrigin = getPublicBackendHttpUrl();
+  if (!backendOrigin) return null;
+
+  const backendParams = new URLSearchParams({
+    board_name: 'spray',
+    layout_id: String(layoutId),
+    // A wall's size id IS its layout id, and its one synthetic hold set is 1.
+    size_id: String(layoutId),
+    set_ids: '1',
+    frames: toFlatFrames(frames, 'spray'),
+    format: 'jpeg',
+  });
+  return `${backendOrigin}/og/climb?${backendParams}`;
+};

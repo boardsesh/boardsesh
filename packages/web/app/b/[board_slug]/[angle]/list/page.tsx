@@ -17,6 +17,9 @@ import {
 } from '@/app/lib/seo/list-page-robots';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 
+/** See the branches below: a wall has no catalogue row and no list page. */
+const SPRAY_BOARD_TYPE = 'spray';
+
 type BoardSlugListPageProps = {
   params: Promise<{ board_slug: string; angle: string }>;
   searchParams: Promise<SearchRequestPagination>;
@@ -33,6 +36,17 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
         title: t('metadata.list.fallbackTitle'),
         description: t('metadata.list.fallbackDescription'),
         locale,
+      });
+    }
+
+    // A wall has no `/list` surface on www — see the page body below for why —
+    // so its metadata is the same "nothing here" answer the route gives.
+    if (board.boardType === SPRAY_BOARD_TYPE) {
+      return createBoardContentPageMetadata({
+        title: t('metadata.list.fallbackTitle'),
+        description: t('metadata.list.fallbackDescription'),
+        locale,
+        robots: { index: false, follow: true },
       });
     }
 
@@ -91,6 +105,14 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   if (!board) {
     return notFound();
   }
+
+  // A spray wall has no climb list on www. SW-16 (#5449) gave a wall's CLIMBS a
+  // server-rendered page each, because those are what people share; the wall's
+  // own front door is not built, and this route would otherwise reach
+  // `getBoardDetailsForBoard`, which has no catalogue row to resolve for a wall
+  // and throws. A 404 is the honest answer for a page that does not exist, and
+  // it keeps `/b/{slug}` — which redirects here — off a 500.
+  if (board.boardType === SPRAY_BOARD_TYPE) return notFound();
 
   // Same ceiling as the config-tuple twin: nothing links past
   // `FRONT_DOOR_MAX_INDEXABLE_PAGE`, so a page number beyond the grace band is a

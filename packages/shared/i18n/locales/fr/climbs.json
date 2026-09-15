@@ -834,5 +834,24 @@
       "ariaLabel": "Ouvrir {{climbName}} dans l’app Boardsesh",
       "helper": "Ouvre l’app, allume les prises, enregistre la croix."
     }
+  },
+  "spray": {
+    "unknownGrade": "Sans cotation",
+    "unknownSetter": "un ouvreur inconnu",
+    "heading": "{{climbName}} — {{grade}}",
+    "summary": "Sur {{wallName}}, un mur de pan à {{angle}}° avec {{holdCount}} prises.",
+    "setterLine": "Ouvert par {{setter}}. {{ascents}} croix enregistrées.",
+    "ascentsLine": "{{ascents}} croix enregistrées.",
+    "setterNotesHeading": "Notes de l’ouvreur",
+    "keepLookingHeading": "Continue à chercher",
+    "setterLink": "Plus de blocs de {{setter}}",
+    "gymsLink": "Trouver une salle avec des murs",
+    "homeLink": "Accueil Boardsesh",
+    "photoAlt": "{{climbName}}, {{grade}}, allumé sur le mur de pan {{wallName}}",
+    "noPhoto": "Ce mur n’a pas encore de photo à montrer.",
+    "metadata": {
+      "title": "{{climbName}} {{grade}} sur {{wallName}} | Mur de pan",
+      "description": "{{climbName}}, {{grade}}, sur le mur de pan {{wallName}} à {{angle}}°, ouvert par {{setter}}. Vois les prises sur la photo du mur."
+    }
   }
 }

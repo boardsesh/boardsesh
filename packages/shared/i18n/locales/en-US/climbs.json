@@ -834,5 +834,24 @@
       "ariaLabel": "Open {{climbName}} in the Boardsesh app",
       "helper": "Opens the app, lights the holds, logs the send."
     }
+  },
+  "spray": {
+    "unknownGrade": "Ungraded",
+    "unknownSetter": "an unknown setter",
+    "heading": "{{climbName}} — {{grade}}",
+    "summary": "On {{wallName}}, a spray wall at {{angle}}° with {{holdCount}} holds.",
+    "setterLine": "Set by {{setter}}. {{ascents}} ascents logged.",
+    "ascentsLine": "{{ascents}} ascents logged.",
+    "setterNotesHeading": "Setter notes",
+    "keepLookingHeading": "Keep looking",
+    "setterLink": "More climbs by {{setter}}",
+    "gymsLink": "Find a gym with boards",
+    "homeLink": "Boardsesh home",
+    "photoAlt": "{{climbName}}, {{grade}}, lit up on the {{wallName}} spray wall",
+    "noPhoto": "This wall has no photo to show yet.",
+    "metadata": {
+      "title": "{{climbName}} {{grade}} on {{wallName}} | Spray Wall",
+      "description": "{{climbName}}, {{grade}}, on the {{wallName}} spray wall at {{angle}}°, set by {{setter}}. See the holds on the wall photo."
+    }
   }
 }
