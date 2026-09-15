@@ -927,6 +927,14 @@ export const sprayWallMutations = {
         holdIds.push(...newIds);
       }
 
+      // FOLLOW-UP (perf): the additions above are three batched statements for the
+      // whole run, but a CORRECTION costs two round trips each — the side-table
+      // update and the `board_holes` centre. A hold-editor session that nudges
+      // fifty holds therefore burns a hundred statements. Both are expressible as
+      // one `UPDATE … FROM (VALUES …)` per table; not done here because the
+      // correction path is a human dragging holds one at a time, so the batch is
+      // small in every flow that exists today. Revisit if SW-08's compare mode
+      // ever bulk-corrects a detector run.
       for (const hold of corrections) {
         holdIds.push(hold.id!);
         await tx
