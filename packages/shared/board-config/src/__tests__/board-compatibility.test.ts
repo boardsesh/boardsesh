@@ -397,7 +397,17 @@ describe('classifyClimbBoardCompatibility across spray walls', () => {
 
   // The #5099 failure, on walls: drawing the cellar's climb over the garage's
   // photo matches none of its hold ids and paints a veil over a bare board.
-  it('sends a climb from a SECOND wall back to its own board', () => {
+  //
+  // Deliberately WITHOUT `compatibleSizeIds`: a wall's size id equals its layout
+  // id, so a climb carrying its sizes would be separated by the size rule too and
+  // this would pass even with the layout rule deleted. The layout is the wall's
+  // identity, and this is the assertion that says so.
+  it('sends a climb from a SECOND wall back to its own board on the layout alone', () => {
+    const cellarClimb: ClimbBoardIdentity = { boardType: 'spray', layoutId: 942 };
+    expect(classifyClimbBoardCompatibility(garageWall, cellarClimb)).toBe('incompatible');
+  });
+
+  it('separates two walls even when both name their sizes', () => {
     const cellarClimb: ClimbBoardIdentity = { boardType: 'spray', layoutId: 942, compatibleSizeIds: [942] };
     expect(classifyClimbBoardCompatibility(garageWall, cellarClimb)).toBe('incompatible');
   });
