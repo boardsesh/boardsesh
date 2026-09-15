@@ -51,6 +51,26 @@ describe('parseModelManifest', () => {
     expect(parseModelManifest(body)).toBeNull();
   });
 
+  it('rejects one output name published for both tensors', () => {
+    const body = validManifest();
+    body.outputs = {
+      boxes: { name: 'dets', format: 'cxcywh-normalized' },
+      logits: { name: 'dets', activation: 'sigmoid', classes: 1 },
+    };
+
+    expect(parseModelManifest(body)).toBeNull();
+  });
+
+  it('accepts two distinct output names', () => {
+    const body = validManifest();
+    body.outputs = {
+      boxes: { name: 'dets', format: 'cxcywh-normalized' },
+      logits: { name: 'pred', activation: 'sigmoid', classes: 1 },
+    };
+
+    expect(parseModelManifest(body)?.outputs.boxes.name).toBe('dets');
+  });
+
   it('still accepts a mean of zero, which is a legal normalization', () => {
     const body = validManifest();
     body.input = { ...VALID_INPUT, normalization: { mean: [0, 0, 0], std: [1, 1, 1] } };

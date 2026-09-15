@@ -143,6 +143,10 @@ function parseOutputs(value: unknown): ModelManifestOutputs | null {
   if (classes === null) return null;
   const boxesName = typeof boxes.name === 'string' ? boxes.name : null;
   const logitsName = typeof logits.name === 'string' ? logits.name : null;
+  // One name for both tensors describes a graph that cannot exist. Taken at face
+  // value downstream it would decode the box coordinates as class logits, so the
+  // manifest is refused rather than half-honoured.
+  if (boxesName !== null && boxesName === logitsName) return null;
   return {
     boxes: { name: boxesName, format: 'cxcywh-normalized' },
     logits: { name: logitsName, activation: 'sigmoid', classes },

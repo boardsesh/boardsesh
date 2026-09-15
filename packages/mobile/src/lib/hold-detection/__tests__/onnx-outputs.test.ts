@@ -99,6 +99,14 @@ describe('selectRfDetrOutputs', () => {
     expect(selected?.boxesShape).toEqual([1, 2, 4]);
   });
 
+  it('returns null when one name is published for both tensors', () => {
+    // Decoding the same tensor as boxes AND logits would read box coordinates as
+    // scores, so a pair is refused rather than assembled from one tensor.
+    const only = { data: new Float32Array(8), dims: [1, 2, 4] };
+
+    expect(selectRfDetrOutputs({ only }, 4, { boxes: 'only', logits: 'only' })).toBeNull();
+  });
+
   it('does not reuse the named boxes tensor as logits', () => {
     // One tensor answering both names would decode noise as detections.
     const only = { data: new Float32Array(8), dims: [1, 2, 4] };

@@ -55,6 +55,10 @@ export function selectRfDetrOutputs(
 
   let boxes = named(names.boxes);
   let logits = named(names.logits);
+  // Both names resolving to ONE tensor is not a pair — decoding it as both would
+  // read box coordinates as scores. The manifest parser rejects duplicate names
+  // too; this is the half that also covers a hand-built options object.
+  if (boxes !== null && boxes === logits) return null;
   for (const [key, tensor] of Object.entries(outputs)) {
     // Never let the shape pass re-use the tensor the other name already claimed.
     if (key === names.boxes || key === names.logits) continue;
