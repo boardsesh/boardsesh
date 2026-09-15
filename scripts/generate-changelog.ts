@@ -237,6 +237,23 @@ export function filterToReachable<T extends { mergeCommitOid: string | null }>(
 }
 
 /**
+ * PURE: apply the reachability filter, or keep everything when the history is
+ * unreadable (`reachable === null` — a shallow clone, or no git at all).
+ *
+ * The fail-open half is why this is its own function rather than an inline
+ * ternary: "the git call failed, so publish a slightly over-inclusive changelog"
+ * is a decision worth a test, and `reachableCommits()` itself cannot have one
+ * without a fixture repository.
+ */
+export function selectPullRequestsInHistory<T extends { mergeCommitOid: string | null }>(
+  pullRequests: readonly T[],
+  reachable: ReadonlySet<string> | null,
+): T[] {
+  if (reachable === null) return [...pullRequests];
+  return filterToReachable(pullRequests, (oid) => reachable.has(oid));
+}
+
+/**
  * The commits reachable from HEAD, as a set of full SHAs — one `git rev-list`
  * rather than a `git merge-base --is-ancestor` per PR, which would be hundreds of
  * subprocesses. Returns null when the history can't be read (a shallow clone, no
@@ -251,7 +268,10 @@ function reachableCommits(): Set<string> | null {
     const stdout = execFileSync('git', ['rev-list', 'HEAD'], {
       cwd: resolve(here, '..'),
       encoding: 'utf8',
-      maxBuffer: 256 * 1024 * 1024,
+      // 41 bytes per line, ~12k commits today ≈ 0.5 MB; this allows ~800k, and a
+      // repo that outgrows it throws ENOBUFS into the catch below, which fails
+      // OPEN (every PR kept) rather than truncating the set and dropping entries.
+      maxBuffer: 32 * 1024 * 1024,
     });
     const commits = new Set(stdout.split('\n').filter(Boolean));
     return commits.size > 0 ? commits : null;
@@ -340,8 +360,7 @@ function main(): void {
 
   // Only what this tree actually contains — see filterToReachable.
   const reachable = reachableCommits();
-  const inThisHistory =
-    reachable === null ? pullRequests : filterToReachable(pullRequests, (oid) => reachable.has(oid));
+  const inThisHistory = selectPullRequestsInHistory(pullRequests, reachable);
   if (reachable !== null && inThisHistory.length !== pullRequests.length) {
     console.log(
       `[changelog] ${pullRequests.length - inThisHistory.length} merged PR(s) are not in this branch's history ` +
