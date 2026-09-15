@@ -16,7 +16,7 @@
 // builder they touch, so `useBoardBuilder` and `useSprayWallBuilder` both satisfy
 // them structurally without either importing the other.
 
-import { useCallback, useEffect, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, type ComponentProps } from 'react';
 import { Pressable, StyleSheet, TextInput } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
@@ -25,7 +25,7 @@ import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
-import { GymPickerSheet, type PickedGym } from './GymPickerSheet';
+import type { PickedGym } from './GymPickerSheet';
 import { spacing, borderRadius } from '../../theme/tokens';
 
 /**
@@ -43,8 +43,6 @@ export type BoardIdentityBuilder = {
   name: string;
   setName: (next: string) => void;
   selectedGym: { uuid: string; name: string } | null;
-  setSelectedGym: (gym: BoardGymSelection | null) => void;
-  coords: { latitude: number; longitude: number } | null;
 };
 
 /** The visibility + location slice of a builder. */
@@ -102,32 +100,22 @@ export function BuilderTextInput({ style, ...props }: ComponentProps<typeof Text
 export function BoardIdentityFields({
   builder,
   namePlaceholder,
-  onRequestManualLocation,
+  onOpenGymPicker,
 }: {
   builder: BoardIdentityBuilder;
   /** Shown while the name is blank — usually the auto-generated default. */
   namePlaceholder: string;
-  /** "None of these" on the gym picker. Callers that hide the location behind a disclosure open it. */
-  onRequestManualLocation?: () => void;
+  /**
+   * Open the gym picker.
+   *
+   * The SHEET itself is the host's, deliberately: it has to be a sibling of the
+   * host's ScrollView, not a descendant of it, or it inherits the scroller's
+   * clipping and its pan. This component only draws the row that asks for it.
+   */
+  onOpenGymPicker: () => void;
 }) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
-  const [gymPickerOpen, setGymPickerOpen] = useState(false);
-  const { setSelectedGym } = builder;
-
-  const onPickGym = useCallback(
-    (gym: BoardGymSelection | null) => {
-      setSelectedGym(gym);
-      setGymPickerOpen(false);
-    },
-    [setSelectedGym],
-  );
-
-  const onSkipGym = useCallback(() => {
-    setSelectedGym(null);
-    setGymPickerOpen(false);
-    onRequestManualLocation?.();
-  }, [setSelectedGym, onRequestManualLocation]);
 
   return (
     <>
@@ -143,7 +131,7 @@ export function BoardIdentityFields({
 
       <SectionLabel>{t('mobile.create.gym')}</SectionLabel>
       <Pressable
-        onPress={() => setGymPickerOpen(true)}
+        onPress={onOpenGymPicker}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.create.gym')}
         style={({ pressed }) => [
@@ -164,18 +152,6 @@ export function BoardIdentityFields({
         </Text>
         <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
       </Pressable>
-
-      {/* Presence-driven, like TimerPairingSheet — the sheet coordinator
-          serialises whichever else the host has open. */}
-      {gymPickerOpen ? (
-        <GymPickerSheet
-          selectedUuid={builder.selectedGym?.uuid ?? null}
-          boardCoords={builder.coords}
-          onSelect={onPickGym}
-          onRequestManualLocation={onSkipGym}
-          onDismiss={() => setGymPickerOpen(false)}
-        />
-      ) : null}
     </>
   );
 }

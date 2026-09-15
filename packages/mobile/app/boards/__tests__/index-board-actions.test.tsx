@@ -6,7 +6,7 @@
 // three things that move: the per-card ownership action, Edit/Done, and the fact
 // that a picker opened mid-session must still switch boards when the identity
 // lookup fails.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -103,6 +103,7 @@ vi.mock('react-i18next', () => ({
         'mobile.discovery.findNearby': 'Find nearby',
         'mobile.discovery.bluetooth': 'Bluetooth',
         'mobile.discovery.findGym': 'Find a gym',
+        'mobile.discovery.addWallTile': 'Spray wall',
         'mobile.manage.edit': 'Edit',
         'mobile.manage.done': 'Done',
         'mobile.manage.editAria': 'Edit {{name}}',
@@ -209,11 +210,13 @@ vi.mock('../../../src/components/offline/OfflineCatalogCta', () => ({ OfflineCat
 vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: vi.fn(async () => true), armWithoutConfirm: vi.fn() }),
 }));
+// The spray-wall tile is behind its own flag (epic #5346, SW-09). Off by default
+// so the existing cases keep describing the board row they were written for; the
+// tile's own describe block below flips it.
+const flagState = { sprayWalls: false };
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => true,
-  // The spray-wall tile is behind its own flag (epic #5346, SW-09). Off here so
-  // these cases keep describing the board row they were written for.
-  useSprayWallsEnabled: () => false,
+  useSprayWallsEnabled: () => flagState.sprayWalls,
 }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
@@ -639,5 +642,25 @@ describe('identity resolution never blocks the switcher', () => {
     render(createElement(BoardSelection));
 
     expect(screen.getByRole('button', { name: 'edit Marco garage' })).toBeTruthy();
+  });
+});
+
+describe('the spray-wall tile', () => {
+  afterEach(() => {
+    flagState.sprayWalls = false;
+  });
+
+  it('is absent while the flag is off', () => {
+    render(createElement(BoardSelection));
+    expect(screen.queryByText('Spray wall')).toBeNull();
+  });
+
+  it('renders next to the other mode cards when the flag is on', () => {
+    flagState.sprayWalls = true;
+    render(createElement(BoardSelection));
+    expect(screen.getByText('Spray wall')).toBeTruthy();
+    // Next to the create tile, not instead of it: the two answer different
+    // questions (this harness leaves an unmapped key as itself).
+    expect(screen.getByText('mobile.discovery.createTile')).toBeTruthy();
   });
 });

@@ -821,6 +821,13 @@
       "body": "Your wall and its photo are saved. Pick it up where you left off.",
       "stay": "Keep going",
       "go": "Leave"
+    },
+    "resume": {
+      "checking": "Looking for a wall you started…",
+      "title": "You've a wall on the go",
+      "body": "“{{name}}” isn't finished. Pick up where you left off, or start over.",
+      "pickUp": "Pick up where you left off",
+      "startOver": "Start over"
     }
   }
 }

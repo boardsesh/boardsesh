@@ -821,6 +821,13 @@
       "body": "Tu muro y su foto están guardados. Retómalo donde lo dejaste.",
       "stay": "Seguir",
       "go": "Salir"
+    },
+    "resume": {
+      "checking": "Buscando un muro que empezaste…",
+      "title": "Tienes un muro a medias",
+      "body": "«{{name}}» no está terminado. Retómalo donde lo dejaste o empieza de nuevo.",
+      "pickUp": "Retomarlo",
+      "startOver": "Empezar de nuevo"
     }
   }
 }
