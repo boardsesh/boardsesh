@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodeGripsClimbConcat } from './catalog-parse';
+import { decodeGripsClimbConcat, findUniqueDecodableLayout } from './catalog-parse';
 import { fingerprintFromHolds } from './fingerprint';
 import fixture from './__fixtures__/grips-multiframe.json';
 
@@ -206,5 +206,80 @@ void describe('decodeGripsClimbConcat — holds and fingerprint', () => {
     const first = decodeOk('h10p12h20p13', REMAP, 1);
     const second = decodeOk('h10p12h30p13', REMAP, 1);
     expect(fingerprintFromHolds(first.holds)).not.toBe(fingerprintFromHolds(second.holds));
+  });
+});
+
+void describe('findUniqueDecodableLayout — the mis-tagged-climb reroute', () => {
+  const SOURCE_LAYOUT_ID = 1;
+  const TARGET_LAYOUT_ID = 8;
+  // Hole ids that exist only on the target layout, like the Homewall-only holes
+  // in the eight climbs Kilter filed under Original (and vice versa).
+  const TARGET_REMAP = new Map<number, number>([
+    [4000, 900],
+    [4001, 901],
+  ]);
+
+  function layoutMaps(entries: Array<[number, Map<number, number>]>): Map<number, Map<number, number>> {
+    return new Map(entries);
+  }
+
+  it('returns the one other layout that decodes the whole concat, with ITS placement ids', () => {
+    const hit = findUniqueDecodableLayout(
+      'h4000p12h4001p13',
+      1,
+      SOURCE_LAYOUT_ID,
+      layoutMaps([
+        [SOURCE_LAYOUT_ID, REMAP],
+        [TARGET_LAYOUT_ID, TARGET_REMAP],
+      ]),
+    );
+    expect(hit?.layoutId).toBe(TARGET_LAYOUT_ID);
+    // Placement ids come from the target layout, not the source's remap.
+    expect(hit?.decoded.frames).toBe('p900r12p901r13');
+  });
+
+  it('refuses when two layouts decode it — picking one would be a coin flip', () => {
+    const sharedHoleIds = new Map(TARGET_REMAP);
+    expect(
+      findUniqueDecodableLayout(
+        'h4000p12',
+        1,
+        SOURCE_LAYOUT_ID,
+        layoutMaps([
+          [TARGET_LAYOUT_ID, TARGET_REMAP],
+          [9, sharedHoleIds],
+        ]),
+      ),
+    ).toBeNull();
+  });
+
+  it('refuses a partial match: one unplaceable hole disqualifies the layout', () => {
+    const missingOneHole = new Map<number, number>([[4000, 900]]);
+    expect(
+      findUniqueDecodableLayout(
+        'h4000p12h4001p13',
+        1,
+        SOURCE_LAYOUT_ID,
+        layoutMaps([[TARGET_LAYOUT_ID, missingOneHole]]),
+      ),
+    ).toBeNull();
+  });
+
+  it('never returns the source layout, even when its own placements would decode', () => {
+    expect(
+      findUniqueDecodableLayout('h10p12', 1, SOURCE_LAYOUT_ID, layoutMaps([[SOURCE_LAYOUT_ID, REMAP]])),
+    ).toBeNull();
+  });
+
+  it('returns null when the concat fails for a reason that is not about holes', () => {
+    // An unknown encoding or an out-of-range frame fails on every layout, so
+    // there is nothing to reroute — only a genuinely mis-tagged climb decodes
+    // cleanly somewhere else.
+    expect(
+      findUniqueDecodableLayout('h4000p12garbage', 1, SOURCE_LAYOUT_ID, layoutMaps([[TARGET_LAYOUT_ID, TARGET_REMAP]])),
+    ).toBeNull();
+    expect(
+      findUniqueDecodableLayout('h4000p12s9', 3, SOURCE_LAYOUT_ID, layoutMaps([[TARGET_LAYOUT_ID, TARGET_REMAP]])),
+    ).toBeNull();
   });
 });
