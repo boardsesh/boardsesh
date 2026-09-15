@@ -52,7 +52,8 @@ const EXPECTED: Record<string, BoardCapabilities> = {
     // A climber's own wall: the only thing it does is let climbs be set on it.
     // No LEDs and no firmware (so nothing native to drive), no vendor site, no
     // crowd grade (the setter's grade is required on publish instead), and one
-    // frame per climb.
+    // frame per climb. Its angle is fixed at creation, so climbs are browsed at
+    // the only angle they exist at and need no cross-angle stats fallback.
     crowdGrade: false,
     angleBoundClimbs: false,
     climbCreation: true,

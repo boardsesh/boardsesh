@@ -1583,6 +1583,27 @@
       "when": 1788915316685,
       "tag": "0225_dsm_serial_plan_default",
       "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1789429115751,
+      "tag": "0226_spray_wall_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1789429140433,
+      "tag": "0227_spray_catalogue_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1789429144264,
+      "tag": "0228_spray_walls_sync_deletions",
+      "breakpoints": true
     }
   ]
 }

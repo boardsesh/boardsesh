@@ -210,6 +210,10 @@ const WOODS_CAPABILITIES: BoardCapabilities = {
  */
 const SPRAY_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
+  // A wall's angle is fixed at creation, so every climb on it is set — and
+  // browsed — at that one angle. There is no other angle for a stats row to be
+  // missing at, which is the entire problem #5405 solved for Woods, so the
+  // fallback would buy nothing and would cost the index-ordered sort.
   angleBoundClimbs: false,
   climbCreation: true,
   explicitClimbRules: false,

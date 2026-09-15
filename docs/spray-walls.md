@@ -3,9 +3,11 @@
 A spray wall is a climber's own wall: photographed, its holds detected and
 corrected by hand, then set and logged on like any other board. The epic is
 [#5346](https://github.com/boardsesh/boardsesh/issues/5346); this file grows with
-each child PR. Today it covers only the identity mapping, which
+each child PR. Today it covers the identity mapping, which
 [SW-03 (#5436)](https://github.com/boardsesh/boardsesh/issues/5436) shipped as
-types with no rows and no UI behind them.
+types with no rows and no UI behind them, and the tables
+[SW-04 (#5437)](https://github.com/boardsesh/boardsesh/issues/5437) added
+underneath it.
 
 ## Identity mapping
 
@@ -37,6 +39,65 @@ writes a new layout or a new size. So every climb ever set on the wall keeps
 pointing at the same `(board_type, layout_id)` partition and stays findable, and
 the mobile render registry folds the version into its cache keys instead of into
 `sizeId`.
+
+## The tables
+
+Four side tables in `packages/db/src/schema/app/spray-walls.ts`, plus one column
+and two sequences.
+
+| Table | Key | What it holds |
+| --- | --- | --- |
+| `spray_walls` | `id`, with `board_uuid` and `layout_id` both unique | One wall. Its canonical frame (`reference_width` / `reference_height`), its published version, its hold count, and a soft delete. Owner, name, angle and visibility stay on the `user_boards` row it points at. |
+| `spray_wall_versions` | `id`, unique `(wall_id, version_number)` | One photograph: its key in the private bucket, its pixel size, its four anchors, the photo→canonical homography, and `draft` / `published` / `superseded`. |
+| `spray_wall_holds` | `(wall_id, hold_id)` | One hold across its whole life: centre, radius and silhouette in the canonical frame, the version that installed it, the version that removed it (NULL = still on the wall), and where it moved from. |
+| `spray_climb_lineage` | `child_uuid` | A remix and the climb it came from, plus the wall version it was rebuilt on. |
+
+What a climber sees is the wall at `spray_walls.current_version_id`, not "every
+hold whose `removed_version_id` is NULL": while a reset is still a draft, its
+added holds already have rows and its removals are only removals AT the draft, so
+the NULL test would leak an unpublished layout the moment the owner started
+editing. `aliveHolds(wallId)` resolves the published version; `aliveHolds(wallId,
+n)` reads the wall as it stood at version `n`, which is how a climb set two
+resets ago renders on the photo it was set against.
+
+`board_climbs.missing_hold_count` is the materialised integrity number: how many
+of a climb's holds have come off the wall. NULL on every other board type.
+`spray_wall_catalog_id_seq` hands out wall ids (one value is BOTH the layout id
+and the size id) and `spray_hold_catalog_id_seq` hands out hold ids (one value is
+BOTH the hole id and the placement id).
+
+### Why a side table, not columns on `board_placements`
+
+The catalogue rows are immutable identity. A climb's frames string
+(`p<placementId>r<code>`) points at a placement id forever, and every climb ever
+set on the wall keeps pointing at the same `(board_type, layout_id)` partition.
+Wall state is the opposite — it changes on every reset:
+
+- a hold's lifecycle (installed in version 2, taken off in version 5) is a
+  **range**, and a placement row has exactly one present tense;
+- each version carries its own anchors and homography, so the same hold sits at a
+  different place in every version's photo;
+- a silhouette is primary data versioned with the wall, not an admin override of
+  a tracer — which is what `hold_outline_overrides` is, and why it is not reused.
+
+Putting those on `board_placements` would make every other board carry nullable
+spray columns, and would force a reset to rewrite catalogue rows that climb
+frames depend on. Keying side tables by the same ids — the
+`board_hold_features` / `hold_outline_overrides` precedent — keeps the catalogue
+frozen and the wall's history append-only. A reset therefore stamps a removal and
+appends rows; it never updates geometry in place and never deletes. **A moved
+hold is removed + added** — the review can link `moved_from_hold_id` so remix
+suggests the successor — rather than an update of the row that moved.
+
+### Every per-wall catalogue row is `is_listed = false`
+
+`createSprayWallCatalogueRows` (`packages/db/src/queries/spray-walls/`) writes the
+`board_layouts`, `board_product_sizes` and `board_product_sizes_layouts_sets` rows
+for a wall, and all three are unlisted. **That is the primary privacy defence,
+not a cosmetic flag.** `getPopularConfigs` and the sitemap shards also drop
+`spray` by name (#5453), but those are backstops: any other reader of the
+catalogue tables has only `is_listed` to go on, so a wall seeded listed would put
+a climber's home wall on the www homepage rail. A test on the helper asserts it.
 
 ## Caps
 
