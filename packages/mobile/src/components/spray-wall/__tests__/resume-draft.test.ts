@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   findOpenDraft,
   findResumableWall,
+  planUploadRetry,
   resumeTargetFor,
   startOverPlan,
   type ResumableVersion,
@@ -121,5 +122,36 @@ describe('startOverPlan', () => {
 
   it('deletes a bare wall with nothing to discard', () => {
     expect(startOverPlan(wall(), [])).toEqual({ discardVersionId: null, deleteWallUuid: 'wall-1' });
+  });
+});
+
+describe('planUploadRetry', () => {
+  it('never queries on a first attempt', () => {
+    // Paying for a round trip before every upload would slow the common path for
+    // nothing: there is no earlier attempt to reconcile against.
+    expect(planUploadRetry(null, 0)).toEqual({ action: 'upload' });
+  });
+
+  it('adopts a draft the lost response had already created', () => {
+    const plan = planUploadRetry({ ...wall(), versions: [{ ...DRAFT_WITH_PHOTO, addedHoldCount: 7 }] }, 1);
+    expect(plan).toEqual({
+      action: 'adopt',
+      draft: { wallUuid: 'wall-1', layoutId: 9001, viewerCanEdit: true, versionId: 'version-1', versionNumber: 1 },
+      savedHoldCount: 7,
+    });
+  });
+
+  it('re-uploads when the wall genuinely has nothing on it', () => {
+    expect(planUploadRetry({ ...wall(), versions: [] }, 1)).toEqual({ action: 'upload' });
+    expect(planUploadRetry({ ...wall(), versions: [DRAFT_WITHOUT_PHOTO] }, 1)).toEqual({ action: 'upload' });
+  });
+
+  it('blocks — never re-uploads — when the wall could not be READ', () => {
+    // The bug this answers: falling through here re-uploads the photo and then
+    // meets the one-open-draft refusal if the first attempt did land, so on a
+    // marginal connection the same failure repeats with nothing to explain it.
+    // A read that failed is not "there is no draft".
+    expect(planUploadRetry(null, 1)).toEqual({ action: 'blocked' });
+    expect(planUploadRetry(null, 5)).toEqual({ action: 'blocked' });
   });
 });

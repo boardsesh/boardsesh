@@ -73,7 +73,7 @@ import {
   type CreatedWall,
   type CreatedWallDraft,
 } from './add-wall-machine';
-import { findResumableWall, resumeTargetFor, startOverPlan } from './resume-draft';
+import { findResumableWall, planUploadRetry, resumeTargetFor, startOverPlan } from './resume-draft';
 
 /** The `beforeRemove` payload this screen re-dispatches once the climber confirms. */
 type NavigationRemoveEvent = { preventDefault: () => void; data: { action: unknown } };
@@ -341,12 +341,20 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       // draft that is already there costs one query and ends that loop; it also
       // spares the private bucket a second copy of the same photo.
       if (wall && state.upload.attempts > 0) {
+        // `createSprayWallVersion` can commit and still lose its response, so a
+        // retry asks what the wall really has before spending the photo again.
+        // `planUploadRetry` owns all three answers, including the one that took a
+        // review to find: a read that FAILED is not "there is no draft".
         const existing = await fetchSprayWallVersions(wall.wallUuid).catch(() => null);
-        const adopted = existing ? resumeTargetFor(existing, existing.versions ?? []) : null;
-        if (adopted?.at === 'review') {
+        const plan = planUploadRetry(existing, state.upload.attempts);
+        if (plan.action === 'blocked') {
+          dispatch({ type: 'UPLOAD_FAILED', message: t('sprayWizard.upload.checkFailed') });
+          return;
+        }
+        if (plan.action === 'adopt') {
           // Straight to the editor, with no second detector pass: the photo was
           // already adopted, and the candidates from the first attempt are gone.
-          dispatch({ type: 'RESUMED_AT_REVIEW', draft: adopted.draft, savedHoldCount: adopted.savedHoldCount });
+          dispatch({ type: 'RESUMED_AT_REVIEW', draft: plan.draft, savedHoldCount: plan.savedHoldCount });
           return;
         }
       }

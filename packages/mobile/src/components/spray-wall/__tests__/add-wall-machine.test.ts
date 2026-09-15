@@ -173,6 +173,15 @@ describe('addWallReducer — going back', () => {
     const state = atReview();
     expect(addWallReducer(state, { type: 'BACK' }).step).toBe('review');
   });
+
+  it('has nowhere to go back to from detection either, once a draft exists', () => {
+    // Backing into `photo` from here would offer a second photo for a draft that
+    // already has one, which `runUpload` declines outright — so the step would sit
+    // doing nothing, which is worse than having no way back.
+    const detecting = run([{ type: 'DRAFT_CREATED', draft: DRAFT }]);
+    expect(detecting.step).toBe('detect');
+    expect(addWallReducer(detecting, { type: 'BACK' }).step).toBe('detect');
+  });
 });
 
 describe('addWallReducer — a failed upload', () => {

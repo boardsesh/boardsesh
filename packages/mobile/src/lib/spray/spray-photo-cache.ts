@@ -20,7 +20,13 @@
 
 import { Directory, File, Paths } from 'expo-file-system';
 import { getSprayWall, listRegisteredSprayWalls, refreshSprayWall } from './spray-wall-registry';
-import { SPRAY_PHOTO_CACHE_DIR_NAME, sprayPhotoFileName, type SprayPhotoIdentity } from './spray-photo-keys';
+import { releaseDownloadTaskAfterNativeCompletion, retainDownloadTask } from '../../offline/download-task-retention';
+import {
+  SPRAY_PHOTO_CACHE_DIR_NAME,
+  sprayPartialPhotoFileName,
+  sprayPhotoFileName,
+  type SprayPhotoIdentity,
+} from './spray-photo-keys';
 
 // Names live in a leaf module so the render path and the sweeper can use them
 // without importing `expo-file-system`; re-exported here because this is where
@@ -71,7 +77,7 @@ function photoFile(identity: SprayPhotoIdentity): File {
  * file; this makes the two platforms behave the same.
  */
 function partialPhotoFile(identity: SprayPhotoIdentity): File {
-  return new File(new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME), `${sprayPhotoFileName(identity)}.part`);
+  return new File(new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME), sprayPartialPhotoFileName(identity));
 }
 
 /** Delete a file if it is there, swallowing the race where it is not. */
@@ -170,8 +176,8 @@ async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Pr
     deleteQuietly(partial);
     deleteQuietly(destination);
 
-    const downloaded = await File.downloadFileAsync(wall.photoUrl, partial, { idempotent: true });
-    downloaded.moveSync(destination);
+    await runRetainedDownload(wall.photoUrl, partial);
+    partial.moveSync(destination);
 
     const path = toPath(destination.uri);
     resolvedPaths.set(key, path);
@@ -181,6 +187,35 @@ async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Pr
     deleteQuietly(partial);
     deleteQuietly(destination);
     return null;
+  }
+}
+
+/**
+ * Download to `destination`, holding the task handle until iOS has finished with
+ * it.
+ *
+ * `File.downloadFileAsync` is the shorter call and the wrong one here. It hands
+ * back no handle, so nothing can keep the shared object reachable from JS — and
+ * `FileSystemDownloadTask.sharedObjectWillRelease()` cancels an
+ * already-completing URLSessionTask with no guard, which is the EXC_BAD_ACCESS of
+ * issue #5297. The window between `didFinishDownloadingTo` (which settles the
+ * promise) and `didCompleteWithError` (which nils the pointer) does not depend on
+ * payload size, so a three-megabyte photo sits in it exactly as a 100 MB snapshot
+ * does. `download-task-retention.ts` has the whole ownership chain; this is the
+ * same pattern `snapshot-source.ts` uses, for the same reason.
+ */
+async function runRetainedDownload(url: string, destination: File): Promise<void> {
+  const task = File.createDownloadTask(url, destination, { sessionType: 'foreground' });
+  retainDownloadTask(task);
+  try {
+    const file = await task.downloadAsync();
+    // `downloadAsync` resolves null only for a paused task, which we never do.
+    // Treating it as success would move a file nobody wrote.
+    if (!file) throw new Error('spray photo download ended without a file');
+  } finally {
+    // Starts the countdown, never the release: a rejected transfer settles from
+    // `didCompleteWithError`'s own reject, i.e. inside the same window.
+    releaseDownloadTaskAfterNativeCompletion(task);
   }
 }
 

@@ -729,7 +729,8 @@
       "draw": "Elige una presa y dibuja su contorno.",
       "oneSelected": "Presa n.º {{id}} elegida.",
       "twoSelected": "Dos elegidas. Fusionar las convierte en una.",
-      "oneSelectedNew": "Tu presa nueva está seleccionada."
+      "oneSelectedNew": "Tu presa nueva está seleccionada.",
+      "manySelected": "{{value}} presas seleccionadas. Al eliminar se quitan todas."
     },
     "errors": {
       "nothingToMove": "Elige primero una presa y luego arrástrala.",
@@ -794,7 +795,8 @@
       "working": "Enviando tu foto…",
       "percent": "Enviado {{percent}} %",
       "failed": "La foto no llegó a subirse.",
-      "retry": "Reintentar"
+      "retry": "Reintentar",
+      "checkFailed": "No se pudo saber si tu foto llegó. Inténtalo cuando tengas cobertura."
     },
     "detect": {
       "title": "Buscando presas",

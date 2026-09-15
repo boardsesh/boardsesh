@@ -180,17 +180,20 @@ export function initialAddWallState(): AddWallState {
 /**
  * Where `BACK` goes from each step.
  *
- * `review` and `publish` are absent on purpose. By then the wall and its draft
- * version exist on the server and the photo has been adopted; stepping back into
- * `upload` would offer to upload a second photo onto a draft that already has
- * one, and the one-draft-per-wall rule would refuse it. The way out of those two
- * is leaving the flow, which keeps the draft for later.
+ * `detect`, `review` and `publish` are absent on purpose. By then the wall and
+ * its draft version exist on the server and the photo has been adopted; stepping
+ * back into `photo` would offer to upload a second photo onto a draft that
+ * already has one, which `runUpload` declines outright — so the step would sit
+ * there doing nothing at all, which is worse than having no way back. The way out
+ * of those three is leaving the flow, which keeps the draft for later.
+ *
+ * `upload` keeps its way back because a draft cannot exist there: the action that
+ * creates one is also the action that leaves the step.
  */
 const BACK_TARGET: Partial<Record<AddWallStep, AddWallStep>> = {
   photo: 'meta',
   anchors: 'photo',
   upload: 'photo',
-  detect: 'photo',
 };
 
 /**

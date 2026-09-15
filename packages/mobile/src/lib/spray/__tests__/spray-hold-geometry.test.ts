@@ -110,6 +110,17 @@ describe('mapCanonicalHoldsToPhoto', () => {
     expect(mapped![0]).toMatchObject({ id: 1, cx: 500, cy: 400, r: 20 });
   });
 
+  it('ignores an odd-length ring rather than mapping half a point', () => {
+    // A dangling coordinate would read `stored[index + 1]` as undefined on the
+    // last pair and put NaN into the canonical ring. The circle fallback is the
+    // honest answer to a malformed ring.
+    const mapped = mapCanonicalHoldsToPhoto(IDENTITY_HOMOGRAPHY, [
+      { id: 1, cx: 500, cy: 400, r: 20, outline: [1, 1, -1, 1, -1, -1, 1] },
+    ]);
+    expect(mapped![0].outline).toBeUndefined();
+    expect(mapped![0]).toMatchObject({ id: 1, cx: 500, cy: 400, r: 20 });
+  });
+
   it('ignores a ring too short to be a triangle', () => {
     const mapped = mapCanonicalHoldsToPhoto(IDENTITY_HOMOGRAPHY, [
       { id: 1, cx: 500, cy: 400, r: 20, outline: [1, 0, 0, 1] },

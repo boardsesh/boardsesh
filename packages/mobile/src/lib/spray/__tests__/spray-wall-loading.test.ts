@@ -10,6 +10,7 @@ import {
   REGISTERED_WALL_REVALIDATE_MS,
   setSprayWallLoader,
   subscribeToSprayWalls,
+  unregisterSprayWall,
 } from '../spray-wall-registry';
 import type { SprayPhotoHold } from '../spray-hold-geometry';
 import { resolveClimbRenderBoard } from '../../boards/climb-render-board';
@@ -266,6 +267,66 @@ describe('revalidating a wall this session already holds', () => {
     });
 
     expect(loader).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a wall that stops being renderable', () => {
+  it('is withdrawn rather than left drawing its old holds', async () => {
+    // `loadSprayWall` reaches this when the render payload comes back null on a
+    // REVALIDATION — deleted between the two reads, visibility revoked, the
+    // published photo gone. Keeping the registration would draw stale holds over
+    // a cached photo indefinitely.
+    let renderable = true;
+    setSprayWallLoader(async (layoutId: number) => {
+      if (renderable) registerSprayWall(layoutId, wallPayload(1));
+      else unregisterSprayWall(layoutId);
+    });
+
+    ensureSprayWallLoaded(ACTIVE_WALL);
+    await vi.waitFor(() => expect(getSprayWall(ACTIVE_WALL)).not.toBeNull());
+    // The registration lands inside the loader, before its promise chain's
+    // `finally` clears the in-flight mark — and a refresh requested while a load
+    // is still in flight is correctly dropped, so let the first one settle.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    renderable = false;
+    refreshSprayWall(ACTIVE_WALL);
+
+    await vi.waitFor(() => expect(getSprayWall(ACTIVE_WALL)).toBeNull());
+    expect(getSprayWallLoadState(ACTIVE_WALL)).toBe('unavailable');
+  });
+
+  it('wakes subscribers once, not once per code path', async () => {
+    // `unregisterSprayWall` notifies, and the load's `finally` settles the same
+    // answer. One state change should be one wake-up.
+    setSprayWallLoader(async (layoutId: number) => {
+      unregisterSprayWall(layoutId);
+    });
+    const listener = vi.fn();
+    subscribeToSprayWalls(listener);
+
+    ensureSprayWallLoaded(ACTIVE_WALL);
+    await vi.waitFor(() => expect(getSprayWallLoadState(ACTIVE_WALL)).toBe('unavailable'));
+    // The state settles inside the loader; the load's own `finally` runs a tick
+    // later and is the second would-be notify, so it has to be let through before
+    // the count means anything.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('clearSprayWallRegistry', () => {
+  it('drops subscribers too, so a listener cannot outlive its own test', () => {
+    const listener = vi.fn();
+    subscribeToSprayWalls(listener);
+    clearSprayWallRegistry();
+    listener.mockClear();
+
+    // A listener left attached would observe the NEXT case's clear and inflate
+    // its call count.
+    clearSprayWallRegistry();
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 

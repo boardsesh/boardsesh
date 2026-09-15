@@ -214,6 +214,22 @@ function now(): number {
 }
 
 /**
+ * Settle a wall as unavailable, notifying only if that is news.
+ *
+ * `loadSprayWall` calls `unregisterSprayWall` for a wall that resolved to
+ * nothing, and that already notifies — so the `finally` below would notify a
+ * second time for one answer. React deduplicates the identical snapshot, so this
+ * costs nothing today; it is still one wake-up per state change rather than per
+ * code path, which is the contract a subscriber should be able to rely on.
+ */
+function markUnavailable(layoutId: number): void {
+  const previous = loadStates.get(layoutId);
+  loadStates.set(layoutId, { state: 'unavailable', settledAtMs: now() });
+  if (previous?.state === 'unavailable') return;
+  notify();
+}
+
+/**
  * Install the function that actually fetches a wall.
  *
  * Injected rather than imported because this module is read on the DRAW path —
@@ -270,8 +286,7 @@ export function refreshSprayWall(layoutId: number): void {
     .finally(() => {
       inFlightLoads.delete(layoutId);
       if (walls.has(layoutId)) return;
-      loadStates.set(layoutId, { state: 'unavailable', settledAtMs: now() });
-      notify();
+      markUnavailable(layoutId);
     });
 }
 
@@ -326,8 +341,7 @@ export function ensureSprayWallLoaded(layoutId: number): void {
       // that did NOT arrive is marked unavailable. A revalidation that failed
       // keeps the copy it has rather than blanking a board that still draws.
       if (walls.has(layoutId)) return;
-      loadStates.set(layoutId, { state: 'unavailable', settledAtMs: now() });
-      notify();
+      markUnavailable(layoutId);
     });
 }
 
@@ -375,7 +389,15 @@ export function sprayCacheToken(boardName: string, layoutId: number): string {
   return `-sv${walls.get(layoutId)?.version ?? 0}`;
 }
 
-/** Forget every wall, its load state and the injected loader. Tests only. */
+/**
+ * Forget every wall, its load state, the injected loader AND every subscriber.
+ * Tests only.
+ *
+ * Subscribers are cleared last, after the notify: a listener left behind by an
+ * earlier case would otherwise still be attached when the NEXT case runs its own
+ * clear, and observe a call it never asked for — which is exactly how a
+ * subscriber-call-count assertion goes green for the wrong reason.
+ */
 export function clearSprayWallRegistry(): void {
   for (const layoutId of walls.keys()) unregisterRuntimeGeometry(sprayGeometryKey(layoutId));
   walls.clear();
@@ -384,4 +406,5 @@ export function clearSprayWallRegistry(): void {
   inFlightLoads.clear();
   sprayWallLoader = null;
   notify();
+  subscribers.clear();
 }

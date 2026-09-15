@@ -36,6 +36,25 @@ describe('the angles a wall may be built at', () => {
 });
 
 describe('useSprayWallBuilder', () => {
+  it('hands back a stable object across renders', () => {
+    // The screen puts `builder` in `useCallback` dep arrays, so a fresh literal
+    // per render would rebuild those callbacks on every commit — including every
+    // upload-progress tick. CLAUDE.md's mobile performance checklist asks for
+    // this of any hook whose return value lands in a dep array.
+    const { result, rerender } = renderHook(() => useSprayWallBuilder());
+    const first = result.current;
+    rerender({});
+    expect(result.current).toBe(first);
+  });
+
+  it('hands back a NEW object when something it holds changes', () => {
+    const { result } = renderHook(() => useSprayWallBuilder());
+    const first = result.current;
+    act(() => result.current.setName('Garage wall'));
+    expect(result.current).not.toBe(first);
+    expect(result.current.name).toBe('Garage wall');
+  });
+
   it('starts private, unlisted-off and location-hidden — a wall is somebody home', () => {
     const { result } = renderHook(() => useSprayWallBuilder());
     expect(result.current.isPublic).toBe(false);

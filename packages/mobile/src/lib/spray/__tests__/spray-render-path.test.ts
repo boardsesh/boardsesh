@@ -5,8 +5,13 @@ import { clearBoardRenderDataCache, getBoardAspectRatio, getBoardRenderData } fr
 import { clearCreateBoardHoldsCache, getCreateBoardHolds } from '../../create-board-holds';
 import { createClimbDraftKey } from '../../create-climb-draft-store';
 import { createClimbScreenKey } from '../../create-climb-screen-key';
-import { planSprayPhotoSweep, SPRAY_PHOTO_MAX_AGE_MS } from '../../cache-sweep-plan';
-import { parseSprayBackgroundKey, sprayBackgroundKey, sprayPhotoFileName } from '../spray-photo-keys';
+import { planSprayPhotoSweep, SPRAY_PARTIAL_SUFFIX, SPRAY_PHOTO_MAX_AGE_MS } from '../../cache-sweep-plan';
+import {
+  parseSprayBackgroundKey,
+  sprayBackgroundKey,
+  sprayPartialPhotoFileName,
+  sprayPhotoFileName,
+} from '../spray-photo-keys';
 import { clearSprayWallRegistry, registerSprayWall } from '../spray-wall-registry';
 import {
   _clearRenderBoardTargetCacheForTests,
@@ -281,6 +286,26 @@ describe('planSprayPhotoSweep', () => {
       protectedNames: new Set(['4200-2.jpg']),
     });
     expect(plan.deleteNames).toEqual(['4200-1.jpg']);
+  });
+
+  it('never deletes a download in flight, even on the Clear button', () => {
+    // The live-wall protection is keyed on the finished `.jpg`, so a `.part` is
+    // unprotected by name; `maxAgeMs: 0` (Clear) would otherwise remove the
+    // staging file under a running download and its `moveSync` would ENOENT.
+    const plan = planSprayPhotoSweep({
+      entries: [
+        { name: `4200-1.jpg${SPRAY_PARTIAL_SUFFIX}`, sizeBytes: 400, modifiedAtMs: 0 },
+        { name: '4200-1.jpg', sizeBytes: 900, modifiedAtMs: 0 },
+      ],
+      nowMs: NOW,
+      maxAgeMs: 0,
+      protectedNames: new Set(),
+    });
+    expect(plan.deleteNames).toEqual(['4200-1.jpg']);
+  });
+
+  it('agrees with the cache on what a staging file is called', () => {
+    expect(sprayPartialPhotoFileName({ layoutId: 4200, version: 1 })).toBe(`4200-1.jpg${SPRAY_PARTIAL_SUFFIX}`);
   });
 
   it('leaves an undateable entry alone', () => {

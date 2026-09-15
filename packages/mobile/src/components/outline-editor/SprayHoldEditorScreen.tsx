@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
-import { Alert, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSharedValue } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -32,7 +32,6 @@ import {
 } from './spray-hold-seed';
 import type { SprayHoldCandidate, SprayHoldSaveSummary } from './spray-hold-editor-types';
 import { editorTargetCapabilities, type SprayWallEditorTarget } from './editor-target';
-import { withUnsavedDraftGuard } from './draft-guard';
 import {
   editorCounts,
   filterVisible,
@@ -470,6 +469,10 @@ export function SprayHoldEditorScreen({
 
   const statusLine = useMemo(() => {
     if (!viewerCanEdit) return t('sprayEditor.status.readOnly');
+    // Three or more is reachable — every tap adds to the selection — and without
+    // its own line the status falls through to the tool hint, which reads as
+    // "nothing is selected" while several holds sit highlighted in white.
+    if (state.selectedIds.length > 2) return t('sprayEditor.status.manySelected', { value: state.selectedIds.length });
     if (state.selectedIds.length === 2) return t('sprayEditor.status.twoSelected');
     if (state.selectedIds.length === 1) {
       // A hold this session drew has a negative id — this editor's own
@@ -615,26 +618,9 @@ function rejectionMessage(reason: StrokeRejection, t: Translate): string {
   return t('sprayEditor.errors.strokeTooShort');
 }
 
-/**
- * Ask before leaving with unsaved holds on screen.
- *
- * Exported rather than wired to a navigation listener here: SW-09 owns the route
- * this screen sits on and therefore owns its back button, and a guard installed
- * from inside would fight the one the route installs. The RULE is
- * `withUnsavedDraftGuard`, shared with the catalogue editor.
- */
-export function confirmDiscardSprayEdits(
-  hasUnsaved: boolean,
-  action: () => void,
-  strings: { title: string; message: string; keep: string; discard: string },
-): void {
-  withUnsavedDraftGuard(hasUnsaved, action, (onConfirm) => {
-    Alert.alert(strings.title, strings.message, [
-      { text: strings.keep, style: 'cancel' },
-      { text: strings.discard, style: 'destructive', onPress: onConfirm },
-    ]);
-  });
-}
+// Re-exported from its own module so a caller imports one file, and so the
+// dialog's own wiring can be tested without mounting a board.
+export { confirmDiscardSprayEdits, type SprayDiscardStrings } from './spray-discard-guard';
 
 const styles = StyleSheet.create({
   container: {

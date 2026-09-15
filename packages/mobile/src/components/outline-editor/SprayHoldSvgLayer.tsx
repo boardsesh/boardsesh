@@ -130,7 +130,22 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
       .join('');
   }, [holds, selectedIds]);
 
-  const dashLength = Math.max(2, boardWidth / 300);
+  /**
+   * Dash patterns, memoised on the board width.
+   *
+   * `strokeDasharray` takes an ARRAY, and a fresh literal on every render is a
+   * new prop identity for react-native-svg to diff — on a component that
+   * re-renders on every single tap, because `selectedIds` moves. The length is
+   * scaled off the board's own size so it reads the same on a 1000 px photo and
+   * a 4000 px one.
+   */
+  const dashes = useMemo(() => {
+    const dashLength = Math.max(2, boardWidth / 300);
+    return {
+      lowConfidence: [dashLength, dashLength * 2] as const,
+      candidate: [dashLength * 2, dashLength] as const,
+    };
+  }, [boardWidth]);
 
   const draftProps = useAnimatedProps(() => {
     'worklet';
@@ -159,7 +174,7 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
         stroke={SPRAY_EDITOR_COLORS.lowConfidence}
         strokeWidth={STROKE_WIDTH.lowConfidence}
         strokeOpacity={0.9}
-        strokeDasharray={[dashLength, dashLength * 2]}
+        strokeDasharray={dashes.lowConfidence}
         vectorEffect="non-scaling-stroke"
       />
       <Path
@@ -168,7 +183,7 @@ export const SprayHoldSvgLayer = React.memo(function SprayHoldSvgLayer({
         stroke={SPRAY_EDITOR_COLORS.candidate}
         strokeWidth={STROKE_WIDTH.candidate}
         strokeOpacity={0.9}
-        strokeDasharray={[dashLength * 2, dashLength]}
+        strokeDasharray={dashes.candidate}
         vectorEffect="non-scaling-stroke"
       />
       <Path
