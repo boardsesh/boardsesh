@@ -6025,8 +6025,12 @@ export type Query = {
    * photo key plus a short-lived presigned URL for the bytes. Gated on the
    * by-layout visibility rule — owner, gym member, or a public wall — so an
    * unlisted wall does NOT resolve here: a layout id comes out of a sequence and
-   * is not the capability a wall uuid is. Unreadable scopes get an ordinary empty
-   * page rather than an error.
+   * is not the capability a wall uuid is. An unreadable, unscoped or non-spray
+   * request gets an ordinary empty page rather than an error; an UNAUTHENTICATED
+   * one is rejected, like every other sync pull.
+   *
+   * sizeId is accepted for symmetry with the other per-board pulls and is a
+   * no-op: a wall is its own size, so layoutId already names exactly one wall.
    */
   syncSprayWalls: SyncResult;
   /** Pull the authenticated user's ticks changed since the cursor. */
