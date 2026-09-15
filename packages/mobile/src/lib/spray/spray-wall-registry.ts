@@ -59,7 +59,26 @@ export type RegisteredSprayWall = {
   photoExpiresAt: string;
   /** Alive holds only — `sprayWallRenderData` returns the generation alive AT this version. */
   holds: readonly SprayPhotoHold[];
+  /**
+   * When this registration was made, for revalidation. Stamped by
+   * `registerSprayWall`, never by the caller — a caller-supplied timestamp is a
+   * caller that can accidentally pin a wall as fresh forever.
+   */
+  registeredAtMs: number;
 };
+
+/**
+ * How long a REGISTERED wall is taken at face value before a fresh ask is let
+ * through to the loader.
+ *
+ * Deliberately the same number as the render query's stale window, and that is
+ * the whole design: this gate decides whether the loader is asked at all, React
+ * Query then decides whether asking costs a request. Without it a registered wall
+ * short-circuits every later ask, so a reset published from another device is
+ * never seen until the app restarts, and the 15-minute presigned photo URL is
+ * kept long past its expiry.
+ */
+export const REGISTERED_WALL_REVALIDATE_MS = 10 * 60 * 1000;
 
 const walls = new Map<number, RegisteredSprayWall>();
 
@@ -110,8 +129,11 @@ function buildWallGeometry(holds: readonly SprayPhotoHold[]): BoardArtGeometry {
  * and a hold that came off must disappear rather than linger because it was
  * registered once.
  */
-export function registerSprayWall(layoutId: number, wall: Omit<RegisteredSprayWall, 'layoutId'>): void {
-  walls.set(layoutId, { ...wall, layoutId });
+export function registerSprayWall(
+  layoutId: number,
+  wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs'>,
+): void {
+  walls.set(layoutId, { ...wall, layoutId, registeredAtMs: now() });
   loadStates.set(layoutId, { state: 'ready', settledAtMs: now() });
   registerRuntimeGeometry(sprayGeometryKey(layoutId), buildWallGeometry(wall.holds));
   notify();
@@ -172,6 +194,17 @@ const loadStates = new Map<number, LoadRecord>();
  */
 const deferredRequests = new Set<number>();
 
+/**
+ * Walls with a load in flight right now.
+ *
+ * `loadStates` cannot carry this on its own: a REVALIDATION leaves the state at
+ * `ready` (the board is on screen and must not flash a placeholder), so without a
+ * separate set the second row to ask would start a second load. React Query would
+ * still collapse the network call, but the bookkeeping either side of it would
+ * run twice.
+ */
+const inFlightLoads = new Set<number>();
+
 /** Injected so this module fetches nothing itself — see `setSprayWallLoader`. */
 type SprayWallLoader = (layoutId: number, options?: { force?: boolean }) => Promise<void>;
 let sprayWallLoader: SprayWallLoader | null = null;
@@ -226,15 +259,16 @@ export function getSprayWallLoadState(layoutId: number): SprayWallLoadState {
  * from, is never.
  */
 export function refreshSprayWall(layoutId: number): void {
-  if (!sprayWallLoader) return;
-  if (loadStates.get(layoutId)?.state === 'loading') return;
+  if (!sprayWallLoader || inFlightLoads.has(layoutId)) return;
 
-  loadStates.set(layoutId, { state: 'loading', settledAtMs: 0 });
+  if (!walls.has(layoutId)) loadStates.set(layoutId, { state: 'loading', settledAtMs: 0 });
+  inFlightLoads.add(layoutId);
   void sprayWallLoader(layoutId, { force: true })
     .catch(() => {
       // Same as `ensureSprayWallLoaded`: every failure looks alike from here.
     })
     .finally(() => {
+      inFlightLoads.delete(layoutId);
       if (walls.has(layoutId)) return;
       loadStates.set(layoutId, { state: 'unavailable', settledAtMs: now() });
       notify();
@@ -260,25 +294,37 @@ export function refreshSprayWall(layoutId: number): void {
  * dropped; see `setSprayWallLoader`.
  */
 export function ensureSprayWallLoaded(layoutId: number): void {
-  if (walls.has(layoutId)) return;
+  // A wall already in hand is only short-circuited while its registration is
+  // still fresh. Past that the ask goes through: React Query's own stale window
+  // decides whether it costs a request, and a reset published from another
+  // device — or a presigned photo URL that has since expired — is picked up
+  // instead of surviving until the app restarts.
+  const registered = walls.get(layoutId);
+  if (registered && now() - registered.registeredAtMs < REGISTERED_WALL_REVALIDATE_MS) return;
+
   if (!sprayWallLoader) {
     deferredRequests.add(layoutId);
     return;
   }
 
+  if (inFlightLoads.has(layoutId)) return;
   const record = loadStates.get(layoutId);
-  if (record?.state === 'loading') return;
   if (record?.state === 'unavailable' && now() - record.settledAtMs < LOAD_RETRY_COOLDOWN_MS) return;
 
-  loadStates.set(layoutId, { state: 'loading', settledAtMs: 0 });
-  const load = sprayWallLoader(layoutId);
-  void load
+  // A revalidation of a wall we already hold must not advertise itself as
+  // `loading`: the board is on screen and drawable, and a surface reading the
+  // state would flash its placeholder for a refresh nobody asked to see.
+  if (!registered) loadStates.set(layoutId, { state: 'loading', settledAtMs: 0 });
+  inFlightLoads.add(layoutId);
+  void sprayWallLoader(layoutId)
     .catch(() => {
       // The loader registers on success; every failure looks the same here.
     })
     .finally(() => {
+      inFlightLoads.delete(layoutId);
       // `registerSprayWall` may already have moved this to `ready`; only a wall
-      // that did NOT arrive is marked unavailable.
+      // that did NOT arrive is marked unavailable. A revalidation that failed
+      // keeps the copy it has rather than blanking a board that still draws.
       if (walls.has(layoutId)) return;
       loadStates.set(layoutId, { state: 'unavailable', settledAtMs: now() });
       notify();
@@ -335,6 +381,7 @@ export function clearSprayWallRegistry(): void {
   walls.clear();
   loadStates.clear();
   deferredRequests.clear();
+  inFlightLoads.clear();
   sprayWallLoader = null;
   notify();
 }

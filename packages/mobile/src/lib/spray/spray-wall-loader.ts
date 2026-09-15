@@ -17,7 +17,14 @@ import type { QueryClient } from '@tanstack/react-query';
 import { GET_SPRAY_WALL_BY_LAYOUT, GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
-import { registerSprayWall, setSprayWallLoader, sprayCacheToken, unregisterSprayWall } from './spray-wall-registry';
+import {
+  REGISTERED_WALL_REVALIDATE_MS,
+  refreshSprayWall,
+  registerSprayWall,
+  setSprayWallLoader,
+  sprayCacheToken,
+  unregisterSprayWall,
+} from './spray-wall-registry';
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
 import { mapCanonicalHoldsToPhoto, type CanonicalSprayHold } from './spray-hold-geometry';
 
@@ -42,8 +49,13 @@ export const WALL_IDENTITY_STALE_TIME_MS = 60 * 60 * 1000;
  * that was opened just before the boundary. A reset lands on the next refetch —
  * the version moves, every cache key moves with it (`sprayCacheToken`), and the
  * new photo downloads under its own name.
+ *
+ * The SAME number as the registry's revalidation gate, and taken from it rather
+ * than re-declared: that gate decides whether the loader is asked, this one
+ * decides whether asking costs a request, and two windows that drifted apart
+ * would either re-request on every row or never re-request at all.
  */
-export const RENDER_DATA_STALE_TIME_MS = 10 * 60 * 1000;
+export const RENDER_DATA_STALE_TIME_MS = REGISTERED_WALL_REVALIDATE_MS;
 
 function toCanonicalHolds(renderData: SprayWallRenderData): CanonicalSprayHold[] {
   return renderData.holds.map((hold) => ({
@@ -158,6 +170,30 @@ export async function loadSprayWall(
   const renderData = await fetchSprayWallRenderData(queryClient, wallUuid);
   if (!renderData) return;
   registerRenderData(layoutId, renderData);
+}
+
+/**
+ * Re-register a wall immediately after THIS device changed it.
+ *
+ * The revalidation gate closes the cross-device hole (another climber publishes
+ * a reset; this session picks it up within the stale window), but the device that
+ * published should not wait on a window at all — it already knows the version
+ * moved. `publishSprayWallVersion` and, once SW-12 lands it,
+ * `commitSprayWallVersion` call this on success: the cached payload is dropped
+ * and the wall re-registers under its new version, which moves every spray cache
+ * key with it.
+ *
+ * No call sites on this branch — the mutations that would call it belong to SW-08
+ * and SW-12 — so this is the seam they plug into, not dead code waiting for a
+ * purpose.
+ */
+export async function invalidateSprayWallRenderData(
+  queryClient: QueryClient,
+  wallUuid: string,
+  layoutId: number,
+): Promise<void> {
+  await queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });
+  refreshSprayWall(layoutId);
 }
 
 /**

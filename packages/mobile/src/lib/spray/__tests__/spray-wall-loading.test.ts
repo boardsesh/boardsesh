@@ -7,6 +7,7 @@ import {
   getSprayWallLoadState,
   refreshSprayWall,
   registerSprayWall,
+  REGISTERED_WALL_REVALIDATE_MS,
   setSprayWallLoader,
   subscribeToSprayWalls,
 } from '../spray-wall-registry';
@@ -176,6 +177,95 @@ describe('asks that arrive before the loader is installed', () => {
     setSprayWallLoader(async () => {});
 
     expect(listener).toHaveBeenCalled();
+  });
+});
+
+/**
+ * A registered wall is not held forever. Another climber can publish a reset from
+ * their own device, and the photo URL in hand is a 15-minute presigned signature —
+ * so an ask past the revalidation window has to reach the loader, where React
+ * Query's own stale window then decides whether it costs a request.
+ */
+describe('revalidating a wall this session already holds', () => {
+  function atOffset<T>(offsetMs: number, run: () => T): T {
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + offsetMs;
+      return run();
+    } finally {
+      Date.now = realNow;
+    }
+  }
+
+  it('does not re-request a fresh registration', () => {
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    registerSprayWall(ACTIVE_WALL, wallPayload(1));
+
+    ensureSprayWallLoaded(ACTIVE_WALL);
+
+    expect(loader).not.toHaveBeenCalled();
+  });
+
+  it('re-requests one that is past the stale window', () => {
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    registerSprayWall(ACTIVE_WALL, wallPayload(1));
+
+    atOffset(REGISTERED_WALL_REVALIDATE_MS + 1, () => ensureSprayWallLoaded(ACTIVE_WALL));
+
+    expect(loader).toHaveBeenCalledWith(ACTIVE_WALL);
+  });
+
+  it('picks up a reset published from another device', async () => {
+    const loader = vi.fn(async (layoutId: number) => {
+      registerSprayWall(layoutId, wallPayload(2));
+    });
+    setSprayWallLoader(loader);
+    registerSprayWall(ACTIVE_WALL, wallPayload(1));
+    expect(getSprayWall(ACTIVE_WALL)?.version).toBe(1);
+
+    atOffset(REGISTERED_WALL_REVALIDATE_MS + 1, () => ensureSprayWallLoaded(ACTIVE_WALL));
+
+    await vi.waitFor(() => expect(getSprayWall(ACTIVE_WALL)?.version).toBe(2));
+  });
+
+  it('keeps reporting ready while it revalidates, so no board flashes a placeholder', () => {
+    setSprayWallLoader(async () => {});
+    registerSprayWall(ACTIVE_WALL, wallPayload(1));
+
+    atOffset(REGISTERED_WALL_REVALIDATE_MS + 1, () => ensureSprayWallLoaded(ACTIVE_WALL));
+
+    expect(getSprayWallLoadState(ACTIVE_WALL)).toBe('ready');
+    expect(getSprayWall(ACTIVE_WALL)).not.toBeNull();
+  });
+
+  it('keeps the copy it has when a revalidation fails', async () => {
+    const loader = vi.fn(async () => {
+      throw new Error('offline');
+    });
+    setSprayWallLoader(loader);
+    registerSprayWall(ACTIVE_WALL, wallPayload(1));
+
+    atOffset(REGISTERED_WALL_REVALIDATE_MS + 1, () => ensureSprayWallLoaded(ACTIVE_WALL));
+    await vi.waitFor(() => expect(loader).toHaveBeenCalled());
+
+    expect(getSprayWall(ACTIVE_WALL)?.version).toBe(1);
+    expect(getSprayWallLoadState(ACTIVE_WALL)).toBe('ready');
+  });
+
+  it('starts one revalidation however many rows ask', () => {
+    const loader = vi.fn(() => new Promise<void>(() => {}));
+    setSprayWallLoader(loader);
+    registerSprayWall(ACTIVE_WALL, wallPayload(1));
+
+    atOffset(REGISTERED_WALL_REVALIDATE_MS + 1, () => {
+      ensureSprayWallLoaded(ACTIVE_WALL);
+      ensureSprayWallLoaded(ACTIVE_WALL);
+      ensureSprayWallLoaded(ACTIVE_WALL);
+    });
+
+    expect(loader).toHaveBeenCalledTimes(1);
   });
 });
 

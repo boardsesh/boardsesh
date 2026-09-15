@@ -8,6 +8,7 @@ import { BoardOfflineToggle } from './BoardOfflineToggle';
 import type { BoardDownloadNotice, BoardDownloadProgress, BoardDownloadState } from './board-offline-state';
 import { OfflineDownloadProgressBar } from './OfflineDownloadProgressBar';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { formatBytes } from '../../lib/format-bytes';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -85,12 +86,18 @@ function BoardManageRowComponent({
   const { systemColors, brandColors } = useTheme();
 
   const boardName = toBoardName(board.boardType);
+  // Every wall in Manage Boards, not just the active one. A non-active spray wall
+  // would otherwise read `getBoardRenderData() === null`, draw the generic icon,
+  // and never ask for its photo or subscribe to its arrival — so a climber with
+  // two walls would see one photo and one icon, permanently.
+  const sprayToken = useSprayWallToken(boardName, board.layoutId);
   const renderData = useMemo(() => {
     if (!boardName) return null;
     const setIdValues = board.setIds.split(',').map(Number).filter(Number.isFinite);
     if (setIdValues.length === 0) return null;
     return getBoardRenderData({ boardName, layoutId: board.layoutId, sizeId: board.sizeId, setIds: setIdValues });
-  }, [boardName, board.layoutId, board.sizeId, board.setIds]);
+    // `sprayToken` recomputes this when the wall lands or is reset.
+  }, [boardName, board.layoutId, board.sizeId, board.setIds, sprayToken]);
 
   // Board art isn't square; fit it inside the square thumb at its native aspect
   // (passing height:'100%' would override BoardImageNative's aspectRatio and stretch it).
