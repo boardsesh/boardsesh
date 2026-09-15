@@ -109,6 +109,7 @@ const CLIMB_SEARCH_FIELDS = `
   boardseshDifficulty
   boardseshConfidence
   compatibleSizeIds
+  missingHoldCount
 `;
 
 const CLIMB_DETAIL_FIELDS = `
@@ -142,6 +143,7 @@ const CLIMB_DETAIL_FIELDS = `
   boardseshDifficulty
   boardseshConfidence
   compatibleSizeIds
+  missingHoldCount
 `;
 
 // ============================================

@@ -1002,6 +1002,24 @@ export type Climb = {
   is_no_match?: Maybe<Scalars['Boolean']['output']>;
   /** Layout ID the climb belongs to (used to identify cross-layout climbs) */
   layoutId?: Maybe<Scalars['Int']['output']>;
+  /**
+   * The holds this climb was set on that are no longer on the wall, carrying the
+   * geometry they had while they were — so a client can draw ghost rings where
+   * they used to be and the climber can see what the reset took.
+   *
+   * Spray walls only: null on every catalogue board, where holds do not come off,
+   * and null on a climb that has lost nothing, so the common case costs no query.
+   * An empty list means the climb's holds are all still there but the server did
+   * look.
+   *
+   * Coordinates are the wall's canonical frame — the same frame
+   * `SprayWallRenderData.holds` uses — so the two sets draw on one photo without
+   * conversion. `removedVersion` is the generation that took each hold off.
+   *
+   * Resolved per climb, with its own query. A list must not select it; it is for a
+   * single-climb surface — the play drawer and the remix editor.
+   */
+  lostHolds?: Maybe<Array<SprayWallHold>>;
   /** Whether the climb should be displayed mirrored */
   mirrored?: Maybe<Scalars['Boolean']['output']>;
   /**
@@ -1092,6 +1110,8 @@ export type ClimbInput = {
   /** Layout the climb belongs to. Round-tripped so a connected board can skip a climb set for another layout. */
   layoutId?: InputMaybe<Scalars['Int']['input']>;
   mirrored?: InputMaybe<Scalars['Boolean']['input']>;
+  /** How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board. */
+  missingHoldCount?: InputMaybe<Scalars['Int']['input']>;
   name: Scalars['String']['input'];
   /** ISO timestamp of when this climb was first published. */
   published_at?: InputMaybe<Scalars['String']['input']>;

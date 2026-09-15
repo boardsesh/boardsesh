@@ -84,6 +84,24 @@ export const climbTypeDefs = /* GraphQL */ `
     \`board_climb_holds\` table to join through.
     """
     missingHoldCount: Int
+    """
+    The holds this climb was set on that are no longer on the wall, carrying the
+    geometry they had while they were — so a client can draw ghost rings where
+    they used to be and the climber can see what the reset took.
+
+    Spray walls only: null on every catalogue board, where holds do not come off,
+    and null on a climb that has lost nothing, so the common case costs no query.
+    An empty list means the climb's holds are all still there but the server did
+    look.
+
+    Coordinates are the wall's canonical frame — the same frame
+    \`SprayWallRenderData.holds\` uses — so the two sets draw on one photo without
+    conversion. \`removedVersion\` is the generation that took each hold off.
+
+    Resolved per climb, with its own query. A list must not select it; it is for a
+    single-climb surface — the play drawer and the remix editor.
+    """
+    lostHolds: [SprayWallHold!]
   }
 
   """
@@ -142,6 +160,8 @@ export const climbTypeDefs = /* GraphQL */ `
     boardseshConfidence: String
     "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
     compatibleSizeIds: [Int!]
+    "How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board."
+    missingHoldCount: Int
   }
 
   # ============================================

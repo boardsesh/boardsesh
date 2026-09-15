@@ -72,6 +72,7 @@ import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
 import { syncQueries } from './sync/queries';
 import { resolveClimbNoMatch } from './shared/helpers';
+import { resolveClimbLostHolds, type ClimbLostHoldsParent } from './climbs/lost-holds';
 
 export const resolvers = {
   // Scalar types
@@ -188,6 +189,11 @@ export const resolvers = {
       description?: string | null;
       boardType?: string | null;
     }) => resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
+
+    // Spray only, and only for a climb whose materialised `missingHoldCount`
+    // says it lost something — see resolveClimbLostHolds. Per-climb by design:
+    // a list must not select it.
+    lostHolds: (climb: ClimbLostHoldsParent) => resolveClimbLostHolds(climb),
   },
 
   // Union type resolvers
