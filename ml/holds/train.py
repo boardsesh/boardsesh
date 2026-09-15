@@ -245,7 +245,9 @@ def main() -> int:
     elapsed = time.time() - started
 
     # The summary is a shareable artifact: keep the resume checkpoint repo-relative
-    # so a committed copy does not embed this machine's home directory layout.
+    # so a committed copy does not embed this machine's home directory layout. A
+    # checkpoint OUTSIDE the repo stays absolute — pass --resume last (or an
+    # in-repo path) when the summary is destined for results/.
     summary_train_config = dict(train_config)
     if "resume" in summary_train_config:
         resume_value = Path(summary_train_config["resume"])
