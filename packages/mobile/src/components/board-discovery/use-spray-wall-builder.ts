@@ -15,7 +15,7 @@
 // same `BoardMetaFields` components — which is where the duplication that
 // matters would otherwise live.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { SPRAY_ANGLES } from '@boardsesh/board-config';
 import type { CreateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import type { BoardGymSelection } from './BoardMetaFields';
@@ -149,27 +149,48 @@ export function useSprayWallBuilder(seed?: SprayWallBuilderSeed | null) {
     [isPublic, isUnlisted],
   );
 
-  return {
-    name,
-    setName,
-    angle,
-    setAngle,
-    isPublic,
-    setIsPublic,
-    isUnlisted,
-    setIsUnlisted,
-    hideLocation,
-    setHideLocation,
-    locationName,
-    setLocationName,
-    coords,
-    setCoords,
-    selectedGym,
-    setSelectedGym,
-    canCreate,
-    buildCreateInput,
-    pendingVisibility,
-  };
+  // Memoised because the screen puts `builder` in `useCallback` dep arrays (the
+  // upload and the publish both read several fields at once), and a fresh object
+  // literal per render would rebuild those callbacks on every commit — including
+  // every `UPLOAD_PROGRESS` tick. The mobile performance checklist in CLAUDE.md
+  // asks for this of any hook whose return value lands in a dep array.
+  return useMemo(
+    () => ({
+      name,
+      setName,
+      angle,
+      setAngle,
+      isPublic,
+      setIsPublic,
+      isUnlisted,
+      setIsUnlisted,
+      hideLocation,
+      setHideLocation,
+      locationName,
+      setLocationName,
+      coords,
+      setCoords,
+      selectedGym,
+      setSelectedGym,
+      canCreate,
+      buildCreateInput,
+      pendingVisibility,
+    }),
+    [
+      name,
+      angle,
+      isPublic,
+      isUnlisted,
+      hideLocation,
+      locationName,
+      coords,
+      selectedGym,
+      setSelectedGym,
+      canCreate,
+      buildCreateInput,
+      pendingVisibility,
+    ],
+  );
 }
 
 export type SprayWallBuilder = ReturnType<typeof useSprayWallBuilder>;

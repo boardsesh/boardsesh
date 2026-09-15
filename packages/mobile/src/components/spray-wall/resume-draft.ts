@@ -52,10 +52,12 @@ export type ResumableVersion = {
  * walls shared by a gym, and resuming somebody else's half-built wall is not a
  * thing this flow may do.
  *
- * The FIRST match wins rather than the newest. `mySprayWalls` is server-ordered,
- * and a climber with two abandoned walls has a bigger problem than which one
- * comes back; picking deterministically at least means the same one comes back
- * every time.
+ * The FIRST match wins, and that IS the most recent one: `mySprayWalls` orders
+ * `spray_walls.created_at` DESC (`resolvers/board/spray-walls.ts`), so the list
+ * arrives newest first. The order is the server's and this function does not
+ * re-sort — there is no timestamp on the wall payload to sort by, and inventing a
+ * client-side order that disagreed with the server's would be worse than relying
+ * on the one that is actually specified.
  */
 export function findResumableWall(walls: readonly ResumableWall[]): ResumableWall | null {
   return walls.find((wall) => wall.viewerCanEdit && wall.currentVersion == null) ?? null;
@@ -131,4 +133,41 @@ export function startOverPlan(
 ): { discardVersionId: string | null; deleteWallUuid: string } {
   const draft = findOpenDraft(versions);
   return { discardVersionId: draft?.id ?? null, deleteWallUuid: wall.uuid };
+}
+
+/** What an upload retry should do, once the wall's real state is known. */
+export type UploadRetryPlan =
+  | { action: 'adopt'; draft: CreatedWallDraft; savedHoldCount: number }
+  | { action: 'upload' }
+  | { action: 'blocked' };
+
+/**
+ * Decide what a retry of the upload does, given what the server says the wall
+ * already has.
+ *
+ * Three answers, and the third is the one that took a review to find.
+ * `createSprayWallVersion` can COMMIT and still lose its response, so a retry
+ * has to ask before re-uploading — that is `adopt`. A wall with nothing on it
+ * re-uploads, which is `upload`. And a wall whose state could not be READ is
+ * neither: re-uploading it would spend the photo and then meet the
+ * one-open-draft refusal if the first attempt did land, so the climber would
+ * watch the same failure repeat with nothing to explain it. `blocked` says so
+ * instead.
+ *
+ * `existing` is null only for a failed read. A wall that genuinely has no
+ * versions arrives as a payload with an empty list.
+ */
+export function planUploadRetry(
+  existing: (ResumableWall & { versions?: readonly ResumableVersion[] }) | null,
+  attempts: number,
+): UploadRetryPlan {
+  // A first attempt has nothing to reconcile against, and paying for a query
+  // before every upload would slow the common path down for nothing.
+  if (attempts <= 0) return { action: 'upload' };
+  if (!existing) return { action: 'blocked' };
+  const target = resumeTargetFor(existing, existing.versions ?? []);
+  if (target.at === 'review') {
+    return { action: 'adopt', draft: target.draft, savedHoldCount: target.savedHoldCount };
+  }
+  return { action: 'upload' };
 }

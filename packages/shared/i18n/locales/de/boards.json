@@ -795,7 +795,8 @@
       "working": "Dein Foto geht raus…",
       "percent": "{{percent}} % gesendet",
       "failed": "Das Foto ist nicht durchgekommen.",
-      "retry": "Nochmal versuchen"
+      "retry": "Nochmal versuchen",
+      "checkFailed": "Unklar, ob dein Foto durchgekommen ist. Versuch es mit Empfang nochmal."
     },
     "detect": {
       "title": "Suche nach Griffen",

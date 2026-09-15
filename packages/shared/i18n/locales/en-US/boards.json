@@ -795,7 +795,8 @@
       "working": "Sending your photo…",
       "percent": "Sent {{percent}}%",
       "failed": "The photo didn't make it up.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "checkFailed": "Couldn't tell whether your photo made it. Try again when you've signal."
     },
     "detect": {
       "title": "Looking for holds",

@@ -795,7 +795,8 @@
       "working": "Envoi de ta photo…",
       "percent": "Envoyé à {{percent}} %",
       "failed": "La photo n'est pas passée.",
-      "retry": "Réessayer"
+      "retry": "Réessayer",
+      "checkFailed": "Impossible de savoir si ta photo est passée. Réessaie quand tu auras du réseau."
     },
     "detect": {
       "title": "Recherche des prises",

@@ -795,7 +795,8 @@
       "working": "Enviando tu foto…",
       "percent": "Enviado {{percent}} %",
       "failed": "La foto no llegó a subirse.",
-      "retry": "Reintentar"
+      "retry": "Reintentar",
+      "checkFailed": "No se pudo saber si tu foto llegó. Inténtalo cuando tengas cobertura."
     },
     "detect": {
       "title": "Buscando presas",
