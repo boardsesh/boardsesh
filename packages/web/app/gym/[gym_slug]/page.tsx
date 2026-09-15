@@ -17,8 +17,11 @@ import {
   GET_GYM_PENDING_CLAIM,
   GET_GYM_BOARDS_FOR_LISTING,
   GET_GYM_KIOSK,
+  GET_GYM_SPRAY_WALLS,
   type GetGymPendingClaimQueryResponse,
   type GetGymBoardsQueryResponse,
+  type GetGymSprayWallsQueryResponse,
+  type GymSprayWallListing,
   type GetGymKioskQueryResponse,
   type GymKioskOperationResult,
 } from '@boardsesh/graphql/operations';
@@ -113,6 +116,28 @@ async function fetchGymBoards(gymUuid: string, token: string | undefined): Promi
 }
 
 /**
+ * The gym's spray walls, as its members and the open web respectively may see them.
+ *
+ * Its own query and its own catch, like every other section on this page: a
+ * backend that has not deployed `gymSprayWalls` yet must cost this page its wall
+ * list and nothing else. Folding the selection into `fetchGymBySlug` would 404
+ * the whole gym.
+ */
+async function fetchGymSprayWalls(gymUuid: string, token: string | undefined): Promise<GymSprayWallListing[]> {
+  try {
+    const response = await executeAuthenticatedGraphQL<GetGymSprayWallsQueryResponse>(
+      GET_GYM_SPRAY_WALLS,
+      { gymUuid },
+      token,
+    );
+    return response.gymSprayWalls ?? [];
+  } catch (error) {
+    console.error('fetchGymSprayWalls failed:', error);
+    return [];
+  }
+}
+
+/**
  * Absolute, http(s)-only URL for the owner-uploaded gym photo, or null.
  *
  * Two guards, both load-bearing. safeExternalHref keeps a legacy row holding a
@@ -199,7 +224,18 @@ export default async function GymPage(props: GymRouteProps) {
 
   const locale = await getLocale();
   const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
-  const [kiosk, boards] = await Promise.all([fetchDefaultKiosk(gym_slug, token), fetchGymBoards(gym.uuid, token)]);
+  const [kiosk, allBoards, sprayWalls] = await Promise.all([
+    fetchDefaultKiosk(gym_slug, token),
+    fetchGymBoards(gym.uuid, token),
+    fetchGymSprayWalls(gym.uuid, token),
+  ]);
+
+  // Spray walls come back in `gymBoards` too — they are ordinary `user_boards`
+  // rows under the ninth board type — and they get their own section below, with
+  // the photo and the hold count a wall is actually recognised by. Filtered out
+  // here so the same wall is not listed twice, and BEFORE the subtitles are
+  // built: those are index-aligned with the list they describe.
+  const boards = allBoards.filter((board) => board.boardType !== 'spray');
 
   // Two boards run by the same gym used to read identically here — "Kilter ·
   // 40°" twice, under two rows the setter had also named the same thing (issue
@@ -511,6 +547,72 @@ export default async function GymPage(props: GymRouteProps) {
               </Box>
             ))}
           </Box>
+        )}
+
+        {sprayWalls.length > 0 && (
+          <>
+            <Divider sx={{ my: 4 }} />
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+              <Typography variant="h5" component="h2" sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}>
+                {t('gymPage.sprayWallsHeading')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {t('gymPage.sprayWallCount', { count: sprayWalls.length })}
+              </Typography>
+            </Box>
+
+            <Typography variant="body2" sx={{ mb: 2, color: themeTokens.neutral[700] }}>
+              {t('gymPage.sprayWallsIntro')}
+            </Typography>
+
+            <Box
+              component="ul"
+              sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 2 }}
+            >
+              {sprayWalls.map((sprayWall) => (
+                <Box component="li" key={sprayWall.uuid} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  {/* Only a PUBLIC wall has a photo here: `publicPhotoUrl` is the
+                      copy in the world-readable bucket, and it is null for every
+                      other wall. A gym member reading their gym's private wall
+                      gets the name and the hold count, which is the row this
+                      page is allowed to render for a photograph nobody outside
+                      the gym may see. */}
+                  {sprayWall.publicPhotoUrl && (
+                    <Box
+                      component="img"
+                      src={sprayWall.publicPhotoUrl}
+                      alt={t('gymPage.sprayWallPhotoAlt', { wallName: sprayWall.board.name })}
+                      sx={{
+                        width: 96,
+                        height: 72,
+                        objectFit: 'cover',
+                        borderRadius: 1,
+                        display: 'block',
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                  <Box>
+                    <MuiLink
+                      component={LocaleLink}
+                      href={sprayWall.board.slug ? `/b/${sprayWall.board.slug}` : `/gym/${gym.slug}`}
+                      underline="hover"
+                      sx={{ color: 'var(--color-primary)', fontWeight: themeTokens.typography.fontWeight.semibold }}
+                    >
+                      {stripGymNamePrefix(sprayWall.board.name, gym.name)}
+                    </MuiLink>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('gymPage.sprayWallMeta', {
+                        angle: sprayWall.board.angle,
+                        holds: sprayWall.holdCount,
+                      })}
+                    </Typography>
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          </>
         )}
 
         <Divider sx={{ my: 4 }} />

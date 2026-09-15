@@ -131,6 +131,24 @@ export const sprayWalls = pgTable(
     ),
     /** Alive holds in the current version; maintained by the wall writers (SW-05). */
     holdCount: integer('hold_count').default(0).notNull(),
+    /**
+     * Key of the wall photo's copy in the PUBLIC `media` bucket, or NULL.
+     *
+     * Non-null exactly while the wall is public. Every other photo a wall has
+     * lives in the `private` bucket behind 15-minute signatures, because the
+     * photograph is of somebody's home — but a public wall has to show up on a web
+     * gym page that a logged-out climber reads, and nobody can hold a signature
+     * for that. So going public COPIES the current version's photo into `media`
+     * under an unguessable key and stores it here; going private deletes that
+     * object and nulls this (SW-14).
+     *
+     * The key is RANDOM rather than derived — `spray-walls/<wall uuid>/<128 random
+     * bits>.jpg`. `media` is world-readable under guessable keys
+     * (`docs/user-media-storage.md`), so a key derived from the wall uuid would
+     * stay fetchable to anyone who had ever seen the wall, and "made it private
+     * again" would mean nothing. Each promotion mints a fresh key.
+     */
+    publicPhotoKey: text('public_photo_key'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     /**

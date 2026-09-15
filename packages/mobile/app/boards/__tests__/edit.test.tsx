@@ -24,6 +24,7 @@ const backMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const alertMock = vi.hoisted(() => vi.fn());
 const buildUpdateInputMock = vi.hoisted(() => vi.fn());
+const updateSprayWallMock = vi.hoisted(() => vi.fn());
 
 // What each test varies: the gym on file, the gym the picker is showing, and
 // whether the board being edited is also the active one.
@@ -31,11 +32,17 @@ const state = vi.hoisted(() => ({
   boardGymUuid: null as string | null,
   selectedGym: null as { uuid: string; name: string } | null,
   activeBoardUuid: null as string | null,
+  // SW-14: a spray wall routes its visibility through `updateSprayWall`, so the
+  // board type and the two visibility pairs are what those tests vary.
+  boardType: 'moonboard',
+  boardIsPublic: false,
+  boardIsUnlisted: false,
+  builderIsPublic: false,
+  builderIsUnlisted: false,
 }));
 
 const board = {
   uuid: 'board-uuid',
-  boardType: 'moonboard',
   layoutId: 3,
   sizeId: 1,
   setIds: '5,6,7',
@@ -76,10 +83,20 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
-  useBoard: () => ({ data: { ...board, gymUuid: state.boardGymUuid }, isLoading: false }),
+  useBoard: () => ({
+    data: {
+      ...board,
+      boardType: state.boardType,
+      gymUuid: state.boardGymUuid,
+      isPublic: state.boardIsPublic,
+      isUnlisted: state.boardIsUnlisted,
+    },
+    isLoading: false,
+  }),
   useProfile: () => ({ data: { displayName: 'Marco' } }),
   useUpdateBoard: () => ({ mutateAsync: updateBoardMock }),
   useLinkBoardToGym: () => ({ mutateAsync: linkBoardToGymMock }),
+  useUpdateSprayWall: () => ({ mutateAsync: updateSprayWallMock }),
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
@@ -101,7 +118,9 @@ vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
 // the screen's control flow is what's under test.
 vi.mock('../../../src/components/board-discovery/use-board-builder', () => ({
   useBoardBuilder: () => ({
-    boardName: 'moonboard',
+    boardName: state.boardType,
+    isPublic: state.builderIsPublic,
+    isUnlisted: state.builderIsUnlisted,
     sizes: [],
     sizeId: 1,
     rawLayoutName: 'Standard',
@@ -155,7 +174,13 @@ beforeEach(() => {
   state.boardGymUuid = null;
   state.selectedGym = null;
   state.activeBoardUuid = null;
+  state.boardType = 'moonboard';
+  state.boardIsPublic = false;
+  state.boardIsUnlisted = false;
+  state.builderIsPublic = false;
+  state.builderIsUnlisted = false;
   buildUpdateInputMock.mockReturnValue({ boardUuid: 'board-uuid', name: 'Klimmuur MoonBoard' });
+  updateSprayWallMock.mockResolvedValue({ uuid: 'board-uuid', layoutId: 4242 });
   updateBoardMock.mockResolvedValue({ uuid: 'board-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
 });
 
@@ -357,5 +382,81 @@ describe('EditBoard', () => {
     expect(screen.getByTestId('error').textContent).toBe('mobile.create.limitReached');
     expect(alertMock).not.toHaveBeenCalled();
     expect(backMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `updateBoard` now REFUSES a visibility change on a spray board
+ * (SPRAY_WALL_VISIBILITY_ELSEWHERE), because flipping a wall public publishes the
+ * climber's own photograph and starts pushing their climbs into feeds. So the two
+ * flags have to leave this screen through `updateSprayWall` instead — and they
+ * have to leave `updateBoard`'s input entirely, or an unrelated rename would trip
+ * the guard.
+ */
+describe('EditBoard — spray wall visibility', () => {
+  function editSprayWall(next: { isPublic: boolean; isUnlisted: boolean }) {
+    state.boardType = 'spray';
+    state.builderIsPublic = next.isPublic;
+    state.builderIsUnlisted = next.isUnlisted;
+    buildUpdateInputMock.mockReturnValue({
+      boardUuid: 'board-uuid',
+      name: 'Brewery spray',
+      isPublic: next.isPublic,
+      isUnlisted: next.isUnlisted,
+    });
+  }
+
+  it('strips the visibility flags out of updateBoard and sends them to updateSprayWall', async () => {
+    editSprayWall({ isPublic: false, isUnlisted: true });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(updateSprayWallMock).toHaveBeenCalledTimes(1));
+    expect(updateSprayWallMock).toHaveBeenCalledWith({
+      uuid: 'board-uuid',
+      isPublic: false,
+      isUnlisted: true,
+    });
+    const boardInput = updateBoardMock.mock.calls[0][0];
+    expect(boardInput.name).toBe('Brewery spray');
+    expect('isPublic' in boardInput).toBe(false);
+    expect('isUnlisted' in boardInput).toBe(false);
+    await waitFor(() => expect(backMock).toHaveBeenCalled());
+  });
+
+  it('leaves the wall mutation alone when only the name changed', async () => {
+    state.boardIsUnlisted = true;
+    editSprayWall({ isPublic: false, isUnlisted: true });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(updateBoardMock).toHaveBeenCalledTimes(1));
+    expect(updateSprayWallMock).not.toHaveBeenCalled();
+  });
+
+  it('reports the owner-only rejection inline and keeps the rest of the save', async () => {
+    editSprayWall({ isPublic: true, isUnlisted: false });
+    updateSprayWallMock.mockRejectedValueOnce({
+      response: { errors: [{ message: 'nope', extensions: { code: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY' } }] },
+    });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(screen.getByTestId('error').textContent).toBe('mobile.sprayVisibility.ownerOnlyError');
+    // The name DID save, so this is not a navigation-blocking failure of the whole edit.
+    expect(updateBoardMock).toHaveBeenCalledTimes(1);
+    expect(backMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves visibility on updateBoard for a catalogue board', async () => {
+    state.builderIsPublic = true;
+    buildUpdateInputMock.mockReturnValue({ boardUuid: 'board-uuid', name: 'Klimmuur MoonBoard', isPublic: true });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(updateBoardMock).toHaveBeenCalledTimes(1));
+    expect(updateBoardMock.mock.calls[0][0].isPublic).toBe(true);
+    expect(updateSprayWallMock).not.toHaveBeenCalled();
   });
 });

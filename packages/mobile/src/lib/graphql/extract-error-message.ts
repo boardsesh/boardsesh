@@ -83,6 +83,21 @@ export function isExpectedBetaValidationError(error: unknown): boolean {
   );
 }
 
+/**
+ * The wall's owner, and only the wall's owner, may change who can see it.
+ *
+ * A gym admin or a community moderator can rename a wall and re-gym it, but
+ * flipping it public publishes the climber's own photograph to the open web and
+ * starts pushing their climbs into feeds — so the server rejects that with
+ * `SPRAY_WALL_VISIBILITY_OWNER_ONLY` and the edit screen says so in words next to
+ * the control, rather than failing the whole save.
+ */
+export function isSprayWallVisibilityOwnerOnlyError(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (graphqlError) => graphqlError.extensions?.code === 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
+  );
+}
+
 // The board-mutation rejections clients branch on are parsed in
 // @boardsesh/graphql so web and mobile read the same shapes. Re-exported here so
 // board screens keep a single import for GraphQL error handling.

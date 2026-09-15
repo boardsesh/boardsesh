@@ -5,12 +5,19 @@ import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { useBoard, useProfile, useUpdateBoard, useLinkBoardToGym } from '../../src/lib/graphql/hooks';
+import {
+  useBoard,
+  useProfile,
+  useUpdateBoard,
+  useLinkBoardToGym,
+  useUpdateSprayWall,
+} from '../../src/lib/graphql/hooks';
 import { useActiveBoard, useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
 import {
   extractGraphqlMessage,
   isBoardLimitError,
   isDuplicateBoardError,
+  isSprayWallVisibilityOwnerOnlyError,
   readDuplicateBoardError,
 } from '../../src/lib/graphql/extract-error-message';
 import { track } from '../../src/lib/analytics';
@@ -99,6 +106,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   const setActiveBoard = useSetActiveBoard();
   const updateBoard = useUpdateBoard();
   const linkBoardToGym = useLinkBoardToGym();
+  const updateSprayWall = useUpdateSprayWall();
 
   // Authorized editors (owner, or a community admin/leader for this board type —
   // the server reports this as `canEdit`) may change the config even when the
@@ -119,6 +127,11 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   // twice over when it is the wall's own owner reading it.
   const configLock = lockedConfigReason(board);
   const lockedConfig = configLock !== null;
+  // Not read off `configLock`: that answers "why is the config locked", and it
+  // says `permission` first, so a wall somebody else owns would come back
+  // `permission` and this would go false on a wall. This is the board TYPE, which
+  // is what decides where visibility is saved.
+  const isSprayWall = toBoardName(board.boardType) === 'spray';
 
   const seed = useMemo<BoardBuilderSeed>(() => {
     const seedBoardName = toBoardName(board.boardType)!;
@@ -180,6 +193,21 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         currentConfig: { layoutId: board.layoutId, sizeId: board.sizeId, setIds: board.setIds },
       });
       if (!input) return;
+      // Visibility on a wall does NOT ride `updateBoard`: the server refuses a
+      // visibility change on a spray board there (SPRAY_WALL_VISIBILITY_ELSEWHERE)
+      // because it is not a board-row edit — it publishes the wall's photo and
+      // starts pushing its climbs into feeds, and only the owner may do it. So the
+      // two flags are stripped here and sent through `updateSprayWall` below.
+      // Stripping rather than leaving them alone matters: the builder seeds them
+      // from the board, so an unchanged pair would still be on the wire and the
+      // guard would fire on a save that changed nothing but the name.
+      const nextIsPublic = builder.isPublic;
+      const nextIsUnlisted = builder.isUnlisted;
+      const visibilityChanged = isSprayWall && (nextIsPublic !== board.isPublic || nextIsUnlisted !== board.isUnlisted);
+      if (isSprayWall) {
+        delete input.isPublic;
+        delete input.isUnlisted;
+      }
       setSubmitting(true);
       setUpdateError(null);
       hapticSelection();
@@ -188,6 +216,27 @@ function EditBoardForm({ board }: { board: UserBoard }) {
           ...input,
           allowDuplicateConfig: options?.allowDuplicateConfig,
         });
+
+        // The wall's own mutation, reported on its own terms like the gym link
+        // below: the name and the gym DID save, and a moderator who may edit the
+        // wall but not share it should see which half was refused rather than a
+        // blanket failure.
+        let visibilityError: string | null = null;
+        let visibilityApplied = false;
+        if (visibilityChanged) {
+          try {
+            await updateSprayWall.mutateAsync({
+              uuid: board.uuid,
+              isPublic: nextIsPublic,
+              isUnlisted: nextIsUnlisted,
+            });
+            visibilityApplied = true;
+          } catch (error) {
+            visibilityError = isSprayWallVisibilityOwnerOnlyError(error)
+              ? t('mobile.sprayVisibility.ownerOnlyError')
+              : (extractGraphqlMessage(error) ?? t('mobile.sprayVisibility.updateError'));
+          }
+        }
 
         // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation.
         // It can be rejected on its own terms (too far from a gym the user doesn't
@@ -217,13 +266,18 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         // user re-picks it, across relaunches: the boards tab shows the new gym
         // while the play drawer and every analytics event still name the old one.
         if (activeBoard?.uuid === updated.uuid) {
-          await setActiveBoard(
-            gymLinked ? { ...updated, gymUuid: nextGymUuid, gymName: builder.selectedGym?.name ?? null } : updated,
-          );
+          // `updated` answers with the PRE-visibility wall too — `updateBoard` no
+          // longer carries those flags on spray — so a stored copy taken straight
+          // from it would keep saying "private" after the wall went public.
+          await setActiveBoard({
+            ...updated,
+            ...(gymLinked ? { gymUuid: nextGymUuid, gymName: builder.selectedGym?.name ?? null } : {}),
+            ...(visibilityApplied ? { isPublic: nextIsPublic, isUnlisted: nextIsUnlisted } : {}),
+          });
         }
 
-        if (gymLinkError) {
-          setUpdateError(gymLinkError);
+        if (visibilityError || gymLinkError) {
+          setUpdateError(visibilityError ?? gymLinkError);
           setSubmitting(false);
           return;
         }
@@ -289,6 +343,10 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       board.uuid,
       board.gymUuid,
       board.boardType,
+      board.isPublic,
+      board.isUnlisted,
+      isSprayWall,
+      updateSprayWall,
       board.layoutId,
       board.sizeId,
       board.setIds,
