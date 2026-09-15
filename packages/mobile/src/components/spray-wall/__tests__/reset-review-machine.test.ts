@@ -296,6 +296,76 @@ describe('buildResetCommitDecisions', () => {
     expect(decisions.kept.map((entry) => entry.holdId)).toEqual([11, 12]);
   });
 
+  // The two refines `CommitSprayWallVersionInputSchema` applies to `added`. Both
+  // reject the WHOLE commit, so the payload has to satisfy them by construction —
+  // a reset that fails validation after the owner has reviewed a hundred rings is
+  // not a thing to debug on a phone in a garage.
+  describe('satisfies the server refines on `added`', () => {
+    /** Two detections that round to one canonical centre and radius. */
+    const COLLIDING: ResetDetection[] = [
+      {
+        photo: { cx: 0, cy: 0, r: 5, outline: null },
+        canonical: { cx: 0, cy: 0, r: 5, outline: null },
+        confidence: 0.8,
+      },
+      {
+        photo: { cx: 10, cy: 10, r: 5, outline: null },
+        canonical: { cx: 10, cy: 10, r: 5, outline: null },
+        confidence: 0.8,
+      },
+      {
+        photo: { cx: 20, cy: 20, r: 5, outline: null },
+        canonical: { cx: 40, cy: 40, r: 7, outline: null },
+        confidence: 0.8,
+      },
+      {
+        photo: { cx: 21, cy: 21, r: 5, outline: null },
+        canonical: { cx: 40, cy: 40, r: 7, outline: null },
+        confidence: 0.7,
+      },
+    ];
+
+    /** Both detections 2 and 3 accepted — they sit at one canonical point. */
+    const withBothAccepted = () =>
+      run(initialResetReviewState(PROPOSAL, ALIVE, 4), { type: 'TOGGLE_DETECTION', index: 3 });
+
+    it('never sends two additions at the same centre and radius', () => {
+      const decisions = buildResetCommitDecisions(withBothAccepted(), COLLIDING);
+      const positions = decisions.added.map(({ detection }) => `${detection.cx},${detection.cy},${detection.r}`);
+
+      expect(new Set(positions).size).toBe(positions.length);
+      // One hold at that point, not two: rounding made them the same hold.
+      expect(positions.filter((position) => position === '40,40,7')).toHaveLength(1);
+    });
+
+    it("carries a collapsed duplicate's pairing onto the survivor", () => {
+      // The survivor (index 2) has no predecessor; the duplicate (index 3) does,
+      // and that pairing still describes this position.
+      const paired = run(withBothAccepted(), { type: 'PAIR_MOVE', index: 3, holdId: 13 });
+      const decisions = buildResetCommitDecisions(paired, COLLIDING);
+
+      const atPoint = decisions.added.filter(({ detection }) => detection.cx === 40 && detection.cy === 40);
+      expect(atPoint).toHaveLength(1);
+      expect(atPoint[0].movedFromHoldId).toBe(13);
+    });
+
+    it('never sends two additions naming the same predecessor', () => {
+      // `canPairMove` refuses the second claim, so the payload cannot carry it —
+      // one predecessor has one successor, and `remixClimb` walks that column the
+      // other way.
+      const paired = run(
+        withBothAccepted(),
+        { type: 'PAIR_MOVE', index: 2, holdId: 13 },
+        { type: 'PAIR_MOVE', index: 3, holdId: 13 },
+      );
+      const predecessors = buildResetCommitDecisions(paired, COLLIDING)
+        .added.map(({ movedFromHoldId }) => movedFromHoldId)
+        .filter((holdId): holdId is number => holdId != null);
+
+      expect(new Set(predecessors).size).toBe(predecessors.length);
+    });
+  });
+
   it('is stable: the same review sends the same bytes twice', () => {
     const state = seeded();
     expect(buildResetCommitDecisions(state, detections(3))).toEqual(buildResetCommitDecisions(state, detections(3)));

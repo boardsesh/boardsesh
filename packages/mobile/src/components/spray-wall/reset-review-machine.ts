@@ -473,15 +473,45 @@ export function buildResetCommitDecisions(
     if (detection) kept.push({ holdId, detection: toWire(detection) });
   }
 
+  /**
+   * Additions, with duplicates at one position collapsed.
+   *
+   * Two accepted detections can round to the SAME canonical centre and radius —
+   * `mapPhotoHoldToCanonical` rounds to integers because the columns are
+   * integers, so two blobs a pixel apart in a 2048 px photo become one hold in
+   * the frame. Sending both is refused (`CommitSprayWallVersionInputSchema`:
+   * "Two new holds sit at the same place"), and the server is right to: they
+   * would land as two catalogue ids at one point, with no DB conflict to notice,
+   * leaving the wall carrying an invisible duplicate that every read returns and
+   * the editor cannot tell apart.
+   *
+   * The FIRST in detection order wins, and a pairing from a collapsed duplicate
+   * is carried onto it only when the survivor has none — a predecessor may name
+   * one successor and no more (the other refine on the same input), so of two
+   * competing pairings the survivor's own is kept and the loser's predecessor
+   * simply ends up with no recorded successor. That costs one remix suggestion;
+   * sending both costs the whole commit.
+   */
   const added: { detection: ResetDetectionWire; movedFromHoldId?: number }[] = [];
+  const addedByPosition = new Map<string, number>();
   state.detectionVerdicts.forEach((verdict, index) => {
     if (verdict !== 'added') return;
     const detection = detections[index];
     if (!detection) return;
+    const wire = toWire(detection);
+    const position = `${wire.cx},${wire.cy},${wire.r}`;
     const movedFromHoldId = state.moves[index];
-    added.push(
-      movedFromHoldId == null ? { detection: toWire(detection) } : { detection: toWire(detection), movedFromHoldId },
-    );
+
+    const existing = addedByPosition.get(position);
+    if (existing != null) {
+      if (movedFromHoldId != null && added[existing].movedFromHoldId == null) {
+        added[existing] = { ...added[existing], movedFromHoldId };
+      }
+      return;
+    }
+
+    addedByPosition.set(position, added.length);
+    added.push(movedFromHoldId == null ? { detection: wire } : { detection: wire, movedFromHoldId });
   });
 
   // Sorted so the payload is stable across renders — a retry after a network
