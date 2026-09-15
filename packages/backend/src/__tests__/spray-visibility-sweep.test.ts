@@ -142,6 +142,7 @@ const CLIMB_DESCRIPTION = 'Zqx Sentinel Climb Description Zqx';
 const WALL_NAME = 'Zqx Sentinel Wall Name Zqx';
 const COMMENT_BODY = 'Zqx Sentinel Comment Body Zqx';
 const PROPOSAL_REASON = 'Zqx Sentinel Proposal Reason Zqx';
+const HIDE_REASON = 'Zqx Sentinel Hide Reason Zqx';
 const TICK_COMMENT = 'Zqx Sentinel Tick Comment Zqx';
 // Deliberately NOT an Instagram or TikTok URL: those two enrich through a live
 // outbound fetch that has nothing to answer it in CI, and the row is dropped.
@@ -207,6 +208,7 @@ type SeededWorld = {
   sessionId: string;
   serialNumber: string | null;
   username: string;
+  hideProposalUuid: string;
 };
 
 let world: SeededWorld;
@@ -995,6 +997,23 @@ async function seedWorld(): Promise<SeededWorld> {
     VALUES (${uuidv4()}, ${savedClimb.uuid}, 'spray', ${ANGLE}, ${OWNER}, 'grade', '20', '18', ${PROPOSAL_REASON}, 'open', now())
   `);
 
+  // A HIDE proposal, which is the shape that persists its reason as a COMMENT on
+  // itself — see `createProposal` in `social/proposals/mutations.ts`. That
+  // comment is prose about the climb, hung off an entity that is not the climb,
+  // and it is how a private wall reached `globalCommentFeed` before #5495's
+  // review. Angle is NULL on a hide proposal, which is also why this is a second
+  // row rather than a change to the one above: `climbProposals(angle: 40)` would
+  // stop finding it.
+  const hideProposalUuid = uuidv4();
+  await db.execute(sql`
+    INSERT INTO climb_proposals (uuid, climb_uuid, board_type, angle, proposer_id, type, proposed_value, current_value, reason, status, created_at)
+    VALUES (${hideProposalUuid}, ${savedClimb.uuid}, 'spray', NULL, ${OWNER}, 'hide', 'true', 'false', ${HIDE_REASON}, 'open', now())
+  `);
+  await db.execute(sql`
+    INSERT INTO comments (uuid, entity_type, entity_id, user_id, body, created_at, updated_at)
+    VALUES (${uuidv4()}, 'proposal', ${hideProposalUuid}, ${OWNER}, ${HIDE_REASON}, now(), now())
+  `);
+
   await db.execute(sql`
     INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username, angle, is_listed, created_by_user_id, tick_uuid)
     VALUES ('spray', ${savedClimb.uuid}, ${BETA_LINK}, 'someone', ${ANGLE}, true, ${OWNER}, ${tickUuid})
@@ -1022,6 +1041,7 @@ async function seedWorld(): Promise<SeededWorld> {
     sessionId,
     serialNumber: boardRow?.serial_number ?? null,
     username: String(userRow?.name ?? OWNER),
+    hideProposalUuid,
   };
 }
 
@@ -1085,6 +1105,8 @@ beforeAll(async () => {
     { name: 'wall name', value: WALL_NAME, kind: 'secret' },
     { name: 'comment body', value: COMMENT_BODY, kind: 'secret' },
     { name: 'proposal reason', value: PROPOSAL_REASON, kind: 'secret' },
+    { name: 'hide-proposal reason', value: HIDE_REASON, kind: 'secret' },
+    { name: 'hide-proposal uuid', value: world.hideProposalUuid, kind: 'identifier' },
     { name: 'tick comment', value: TICK_COMMENT, kind: 'secret' },
     { name: 'beta link', value: BETA_LINK, kind: 'secret' },
     { name: 'photo id', value: world.photoId, kind: 'secret' },
@@ -1152,6 +1174,38 @@ describe('the spray-wall visibility sweep', () => {
   it('keeps no stale allow-list rows', () => {
     const swept = new Set(rows.map((row) => row.key));
     expect(Object.keys(NOT_APPLICABLE).filter((key) => !swept.has(key))).toEqual([]);
+  });
+
+  /**
+   * The one thread the generic sweep cannot reach.
+   *
+   * `comments(input)` is swept with `entityType: 'climb'`, because that is what
+   * the seed table answers for an enum argument. A `hide` proposal's reason lives
+   * on `entityType: 'proposal'` instead — prose about a climb, hung off an entity
+   * that is not the climb — so it needs saying out loud.
+   */
+  it('hides a hide-proposal reason from a stranger and shows it to the owner', async () => {
+    const row: SweepRow = {
+      key: 'Query.comments(proposal)',
+      rootName: 'Query',
+      fieldName: 'comments',
+      document:
+        'query Sweep($input: CommentsInput!) { comments(input: $input) ' +
+        '{ __typename totalCount comments { __typename uuid entityType entityId body } } }',
+      variables: { input: { entityType: 'proposal', entityId: world.hideProposalUuid } },
+      kinds: [],
+    };
+    const scanFor = scannableSentinels(row.variables);
+
+    for (const viewer of VIEWERS) {
+      const outcome = await runRow(row, viewer.ctx);
+      const found = findSentinels(outcome.data, scanFor);
+      if (viewer.name === 'owner') {
+        expect(found.join(' | ')).toContain('hide-proposal reason');
+      } else {
+        expect({ viewer: viewer.name, found }).toEqual({ viewer: viewer.name, found: [] });
+      }
+    }
   });
 
   it('never hands a sentinel to an anonymous caller or a stranger', () => {

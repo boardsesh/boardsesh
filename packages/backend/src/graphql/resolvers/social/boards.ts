@@ -38,7 +38,7 @@ import {
   requireAnonReadableBoard,
 } from '../board-presence/shared';
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
-import { sprayBoardRowIsReadable } from '../climbs/spray-read-access';
+import { isSprayBoardType, sprayBoardRowIsReadable } from '../climbs/spray-read-access';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
 import { redisClientManager } from '../../../redis/client';
@@ -1105,11 +1105,20 @@ export const socialBoardQueries = {
     const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
     // Gate before enrichment so a masked anonymous read never runs the
     // owner/count/follow lookups for a board it isn't allowed to see.
-    if (!viewerId && !isRowAnonReadable(canonical)) return null;
-    // A spray wall is private by default and its row carries the wall's name and
-    // location, so the signed-in exemption above is the wrong rule for one. The
-    // uuid IS the share capability, so an unlisted wall still opens.
-    if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'capability'))) return null;
+    //
+    // A spray wall takes the wall's own rule INSTEAD of the anonymous mask, not
+    // after it. The mask refuses every non-public board to an anonymous caller,
+    // which is right for a piece of gym furniture and wrong here in both
+    // directions: it let a signed-in stranger into a PRIVATE wall (that is what
+    // the capability check below closes), and it kept an anonymous caller out of
+    // an UNLISTED one — even though the uuid they presented is the entire claim,
+    // 122 unguessable bits, and `sprayWall(uuid)` hands them the same wall. One
+    // rule per key: a uuid is a capability whether or not you are signed in.
+    if (isSprayBoardType(canonical.boardType)) {
+      if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'capability'))) return null;
+    } else if (!viewerId && !isRowAnonReadable(canonical)) {
+      return null;
+    }
     return enrichBoard(canonical, viewerId);
   },
 

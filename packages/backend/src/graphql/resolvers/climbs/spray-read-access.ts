@@ -153,3 +153,35 @@ export async function sprayClimbUuidIsReadable(
   );
   return rows[0]?.visible === true;
 }
+
+/**
+ * The same question for a PROPOSAL uuid, for the comment threads hung off one.
+ *
+ * A `hide` proposal persists its reason as a comment with
+ * `entity_type = 'proposal'` (`social/proposals/mutations.ts`), so the thread on
+ * a proposal is prose about a climb — written by someone who could see it, read
+ * by anyone holding the proposal uuid. The proposal names its climb, so the
+ * wall's rule reaches it one hop away.
+ *
+ * True for a proposal that does not exist and for one on any other board type,
+ * so the caller needs no branch beyond the entity type.
+ */
+export async function sprayProposalUuidIsReadable(
+  proposalUuid: string,
+  viewerUserId: string | null | undefined,
+): Promise<boolean> {
+  const rows = rowsFromResult<{ visible: boolean }>(
+    await dbRead.execute(
+      sql`SELECT NOT EXISTS (
+        SELECT 1
+        FROM climb_proposals cp
+        WHERE cp.uuid = ${proposalUuid}
+          AND NOT (${sprayReferenceVisibilityCondition(
+            { boardType: sql`cp.board_type`, climbUuid: sql`cp.climb_uuid` },
+            viewerUserId ?? null,
+          )})
+      ) AS visible`,
+    ),
+  );
+  return rows[0]?.visible === true;
+}
