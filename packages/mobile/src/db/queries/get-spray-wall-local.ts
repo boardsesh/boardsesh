@@ -125,7 +125,13 @@ function parseHolds(value: string | null): LocalSprayHold[] {
     ) {
       continue;
     }
-    holds.push({ id, cx, cy, r, outline: toFiniteNumbers(Array.isArray(candidate.outline) ? candidate.outline : null) });
+    holds.push({
+      id,
+      cx,
+      cy,
+      r,
+      outline: toFiniteNumbers(Array.isArray(candidate.outline) ? candidate.outline : null),
+    });
   }
   return holds;
 }

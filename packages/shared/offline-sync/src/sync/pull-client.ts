@@ -1000,34 +1000,34 @@ async function syncTable(
         config.transientColumns ?? [],
         onSchemaDrift,
         {
-        canWrite,
-        preserveNewerRows: !!refresh,
-        afterUpsert: async (transaction) => {
-          if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
-          if (clearDownloadCoverage && boardScope) {
-            await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [
-              schemaRefreshKey(tableName, boardScope.scopeKey),
-            ]);
-          }
-          if (revision && boardScope && (refresh || fullDownload)) {
-            if (!result.hasMore) {
-              await markSchemaRefreshComplete(
-                transaction,
-                tableName,
-                boardScope.scopeKey,
-                result.cursor,
-                refresh ? 'refresh' : 'download',
-              );
-              completedAtTail = true;
-            } else {
-              await writeSchemaRefreshState(transaction, tableName, boardScope.scopeKey, {
-                ...result.cursor,
-                revision,
-                complete: false,
-                mode: refresh ? 'refresh' : 'download',
-              });
+          canWrite,
+          preserveNewerRows: !!refresh,
+          afterUpsert: async (transaction) => {
+            if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
+            if (clearDownloadCoverage && boardScope) {
+              await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [
+                schemaRefreshKey(tableName, boardScope.scopeKey),
+              ]);
             }
-          }
+            if (revision && boardScope && (refresh || fullDownload)) {
+              if (!result.hasMore) {
+                await markSchemaRefreshComplete(
+                  transaction,
+                  tableName,
+                  boardScope.scopeKey,
+                  result.cursor,
+                  refresh ? 'refresh' : 'download',
+                );
+                completedAtTail = true;
+              } else {
+                await writeSchemaRefreshState(transaction, tableName, boardScope.scopeKey, {
+                  ...result.cursor,
+                  revision,
+                  complete: false,
+                  mode: refresh ? 'refresh' : 'download',
+                });
+              }
+            }
           },
         },
       );
