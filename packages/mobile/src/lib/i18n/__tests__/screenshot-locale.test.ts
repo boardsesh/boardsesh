@@ -26,18 +26,26 @@ describe('screenshot locale override', () => {
     vi.unstubAllEnvs();
   });
 
-  it('uses the bundled screenshot locale in screenshot mode', async () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_LOCALE', 'es');
+  it(
+    'uses the bundled screenshot locale in screenshot mode',
+    async () => {
+      vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+      vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_LOCALE', 'es');
 
-    const { detectDeviceLocale } = await import('../config');
+      const { detectDeviceLocale } = await import('../config');
 
-    expect(detectDeviceLocale()).toBe('es');
-  }, CATALOGUE_IMPORT_TIMEOUT_MS);
+      expect(detectDeviceLocale()).toBe('es');
+    },
+    CATALOGUE_IMPORT_TIMEOUT_MS,
+  );
 
-  it('falls back to device locale when screenshot locale is absent', async () => {
-    const { detectDeviceLocale } = await import('../config');
+  it(
+    'falls back to device locale when screenshot locale is absent',
+    async () => {
+      const { detectDeviceLocale } = await import('../config');
 
-    expect(detectDeviceLocale()).toBe('fr');
-  }, CATALOGUE_IMPORT_TIMEOUT_MS);
+      expect(detectDeviceLocale()).toBe('fr');
+    },
+    CATALOGUE_IMPORT_TIMEOUT_MS,
+  );
 });
