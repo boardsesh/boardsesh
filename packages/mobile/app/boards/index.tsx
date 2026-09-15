@@ -44,7 +44,7 @@ import { useRememberDownloadedBoards } from '../../src/offline/use-remember-down
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
 import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-state';
-import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled, useSprayWallsEnabled } from '../../src/providers/feature-flags-provider';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
 import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
@@ -535,6 +535,14 @@ export default function BoardSelection() {
     router.push({ pathname: '/boards/create', params: { returnTo: boardReturnTo, source } });
   }, [router, boardReturnTo, source]);
 
+  // The wall front door (epic #5346, SW-09). Flag-gated, and unresolved reads as
+  // off, so the tile never flickers into the row for the first frames of a cold
+  // open on a fleet the feature is dark for.
+  const sprayWallsEnabled = useSprayWallsEnabled();
+  const onModeAddWall = useCallback(() => {
+    router.push({ pathname: '/boards/spray/new', params: { returnTo: boardReturnTo } });
+  }, [router, boardReturnTo]);
+
   const onModeFindGym = useCallback(() => {
     router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo } });
   }, [router, boardReturnTo]);
@@ -718,6 +726,12 @@ export default function BoardSelection() {
               en-US and in all three other locales. The `+` glyph and the row's
               context carry the noun here; the full-width CTAs keep it. */}
           <BoardModeCard icon="plus" label={t('mobile.discovery.createTile')} onPress={onModeCreate} />
+          {/* Next to "Create board", because that is the question it answers: the
+              other tile is for a catalogue board you pick a layout for, this one
+              is for a wall you photograph. */}
+          {sprayWallsEnabled ? (
+            <BoardModeCard icon="camera" label={t('mobile.discovery.addWallTile')} onPress={onModeAddWall} />
+          ) : null}
         </View>
 
         {nearbySection}
