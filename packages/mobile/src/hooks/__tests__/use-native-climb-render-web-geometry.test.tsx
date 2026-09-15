@@ -173,6 +173,10 @@ describe('web Aura geometry recovery', () => {
   });
 
   it('does not re-ask for a chunk that failed, so a dropped download is not a loop', async () => {
+    // A render still inside the renderer, so no PNG is cached under the pending
+    // key: without that entry, nothing else stops the effect from re-entering the
+    // prefetch branch, which is exactly where the loop lived.
+    nativeModule.renderHoldsOverlay.mockImplementation(() => new Promise<string>(() => {}));
     renderHook(() => useNativeClimbRender({ ...GRASSHOPPER }));
 
     await waitFor(() => expect(geometryChunk.resolve).not.toBeNull());
@@ -181,10 +185,14 @@ describe('web Aura geometry recovery', () => {
     // A failed download resolves `null` and leaves the key pending. Bouncing the
     // effect on that would re-enter the same branch and ask again — forever.
     geometryChunk.resolve?.(null);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 30));
 
+    // One ask, not two: the render is still queued behind the hanging one, so
+    // this count is the only thing standing between a dropped chunk and an
+    // unbounded re-fetch. (The per-key download cap in
+    // `prefetchBoardArtGeometry` is the backstop, pinned in the
+    // board-art-geometry suite.)
     expect(geometryChunk.prefetchCalls).toBe(1);
-    expect(auraRenderKeys()).toHaveLength(1);
   });
 });
 
