@@ -113,7 +113,8 @@ commands that regenerate it):
 ```bash
 cd ml/holds && . .venv/bin/activate
 python eval.py --config nano-tiled-1024 --dataset fixtures --split images \
-  --score-threshold 0.05 --out /tmp/fixture-eval.json
+  --score-threshold 0.05 --model .data/artifacts/nano-tiled-1024/model-int8.onnx \
+  --out /tmp/fixture-eval.json
 ```
 
 Two things that command deliberately does **not** do. It does not run at the
@@ -184,10 +185,10 @@ phone-sized model, the lever is a smaller architecture at full-frame resolution
 
 ### What a full training run would need
 
-The retrain used **600 of 3,876 photos for one epoch** and took 34 minutes of CPU;
+The retrain used **600 of the 3,876 train-split photos for one epoch** and took 34 minutes of CPU;
 nano took 39 minutes for 1,400 tiles. A run that actually exhausts the dataset —
-all 3,876 photos, 10 epochs, which is the usual RF-DETR fine-tuning recipe — is
-about **65× that compute: roughly 35 hours on these 8 CPU threads, or 1–2 hours on
+all 3,876 train-split photos, 10 epochs, which is the usual RF-DETR fine-tuning recipe — is
+about **65× that compute: roughly 37 hours on these 8 CPU threads (64.6 × 34.4 min), or 1–2 hours on
 a single mid-range GPU.** That is the single cheapest experiment left on this
 epic, and it is the one that would turn 0.559 into a real answer. Nothing in the
 harness needs to change to run it; it needs a GPU box for an afternoon.
