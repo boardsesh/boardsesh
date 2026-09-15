@@ -8,8 +8,10 @@ name: Refresh MoonBoard Angle Estimates
 #
 # Weekly rather than nightly: the training sample is ~6k problems and moves
 # slowly, and the output only changes when a setter label or the fitted band
-# delta does. This is NOT the Boardsesh grade — MoonBoard has no crowd mean and
-# is excluded from refresh-climb-grades on purpose. See docs/boardsesh-grade.md.
+# delta does. This is separate from the nightly refresh-climb-grades.ts run:
+# MoonBoard is a CROWD_MEAN_BOARDS member there too now (for problems graded
+# at both 25° and 40°), but this job targets the disjoint single-angle case
+# that pipeline has no evidence for. See docs/boardsesh-grade.md.
 on:
   schedule:
     - cron: '0 8 * * 1' # 08:00 UTC Monday, well clear of the nightly grade refresh

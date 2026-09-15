@@ -4,6 +4,7 @@ import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
 import {
   boardClimbs,
   boardClimbStats,
+  boardClimbGrades,
   boardseshTicks,
   boardClimbHolds,
   boardPlacements,
@@ -12,7 +13,12 @@ import {
 } from '../../schema/index';
 import type { BoardRouteParams, ClimbSearchParams } from './types';
 import { climbHoldPlacementMatchSql } from './placement-match';
-import { effectiveStatsColumn, setAngleStatsJoinConditions, type StatsColumnKey } from './effective-stats';
+import {
+  effectiveStatsColumn,
+  setAngleStatsJoinConditions,
+  gradeJoinAngleSql,
+  type StatsColumnKey,
+} from './effective-stats';
 
 // Escape LIKE/ILIKE metacharacters so user-supplied search text is matched
 // literally. Postgres' default escape character is backslash, so `\%`, `\_`,
@@ -197,6 +203,9 @@ export const createClimbFilters = (
 
   // Conditions for climb stats
   const climbStatsConditions: SQL[] = [];
+  // Grade-range conditions, kept separate from climbStatsConditions — see the
+  // comment above the minGrade/maxGrade block below for why.
+  const gradeRangeConditions: SQL[] = [];
 
   // Skip minAscents when projectsOnly is active (they're mutually exclusive in the UI,
   // but guard here too so a stale query param can't produce a contradictory filter).
@@ -204,14 +213,28 @@ export const createClimbFilters = (
     climbStatsConditions.push(sql`${statsCol('ascensionistCount')} >= ${searchParams.minAscents}`);
   }
 
+  // Grade range: the legacy crowd/setter grade (display_difficulty) when a stats
+  // row exists, falling back to the Boardsesh grade when it doesn't — a climb at
+  // a MoonBoard wide angle (moonboard-wide-angles flag), or an unclimbed angle
+  // whose cross-angle projection is published, has a board_climb_grades row but
+  // no board_climb_stats row at all, so display_difficulty is NULL there. Kept
+  // out of `climbStatsConditions` on purpose: that bucket drives the INNER JOIN
+  // stats-driven-only routing decision in search-climbs.ts (a real evidence
+  // requirement — minAscents/minRating/onlyBenchmarks/gradeAccuracy genuinely
+  // can't be satisfied by a stats-less climb), whereas a grade-range filter now
+  // CAN match one, so it must not force that INNER JOIN and drop it.
+  // Reads through `statsCol` (not the raw column) so this composes with the
+  // cross-angle fallback above: under cross-angle, a climb with no stats at the
+  // browsed angle but one at its set angle already resolves a real
+  // display_difficulty there, and only a climb with NO stats row at either angle
+  // falls all the way through to the Boardsesh grade.
+  const gradeRangeValue = sql`COALESCE(ROUND(${statsCol('displayDifficulty')}::numeric, 0), ROUND(COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})::numeric, 0))`;
   if (searchParams.minGrade && searchParams.maxGrade) {
-    climbStatsConditions.push(
-      sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0) BETWEEN ${searchParams.minGrade} AND ${searchParams.maxGrade}`,
-    );
+    gradeRangeConditions.push(sql`${gradeRangeValue} BETWEEN ${searchParams.minGrade} AND ${searchParams.maxGrade}`);
   } else if (searchParams.minGrade) {
-    climbStatsConditions.push(sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0) >= ${searchParams.minGrade}`);
+    gradeRangeConditions.push(sql`${gradeRangeValue} >= ${searchParams.minGrade}`);
   } else if (searchParams.maxGrade) {
-    climbStatsConditions.push(sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0) <= ${searchParams.maxGrade}`);
+    gradeRangeConditions.push(sql`${gradeRangeValue} <= ${searchParams.maxGrade}`);
   }
 
   if (searchParams.minRating) {
@@ -725,7 +748,17 @@ export const createClimbFilters = (
       ...projectsOnlyConditions,
     ],
     getSizeConditions: () => sizeConditions,
-    getClimbStatsConditions: () => climbStatsConditions,
+    // Combined WHERE-clause conditions (both buckets) for callers that just need
+    // every stats-shaped predicate applied. Callers that also need to decide
+    // whether a stats row is REQUIRED (the INNER JOIN stats-driven-only routing
+    // in search-climbs.ts) must use `hasRequiredStatsFilters` instead of
+    // `.length` on this, since a grade-range-only filter no longer requires one.
+    getClimbStatsConditions: () => [...climbStatsConditions, ...gradeRangeConditions],
+    // True only for filters that can't be satisfied without a real board_climb_stats
+    // row (minAscents, minRating, onlyBenchmarks, gradeAccuracy) — excludes the
+    // grade range, which now falls back to the Boardsesh grade for a stats-less
+    // climb (see the gradeRangeConditions comment above).
+    hasRequiredStatsFilters: () => climbStatsConditions.length > 0,
     getClimbStatsJoinConditions: () => [
       eq(boardClimbStats.climbUuid, boardClimbs.uuid),
       eq(boardClimbStats.boardType, params.board_name),
@@ -737,6 +770,20 @@ export const createClimbFilters = (
      *  route off this rather than re-deriving it, so the search and the count can
      *  never describe different universes. */
     isCrossAngleStats: crossAngle,
+    // ON conditions for a LEFT JOIN to board_climb_grades — needed by any caller
+    // whose WHERE clause (via getClimbStatsConditions) can now reference the
+    // Boardsesh grade fallback in gradeRangeConditions. Reads through the same
+    // `gradeJoinAngleSql` the search path uses (see runStandardSearch in
+    // search-climbs.ts), so under cross-angle a caller here (count-climbs.ts;
+    // the holds heatmap never opts into cross-angle) resolves the grade at the
+    // SAME angle the search list did — without this, a climb whose Boardsesh
+    // grade only exists at its set angle (not the browsed one) could be found
+    // by one query and missed by the other.
+    getClimbGradesJoinConditions: () => [
+      eq(boardClimbGrades.boardType, params.board_name),
+      eq(boardClimbGrades.climbUuid, boardClimbs.uuid),
+      sql`${boardClimbGrades.angle} = ${gradeJoinAngleSql(params.angle, crossAngle)}`,
+    ],
     getHoldHeatmapClimbStatsConditions: () => [
       eq(boardClimbStats.climbUuid, boardClimbHolds.climbUuid),
       eq(boardClimbStats.boardType, params.board_name),
@@ -751,6 +798,7 @@ export const createClimbFilters = (
     // Raw parts
     baseConditions,
     climbStatsConditions,
+    gradeRangeConditions,
     nameCondition,
     setterNameCondition,
     holdConditions,

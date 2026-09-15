@@ -316,8 +316,15 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
     push(`${eff('ascensionist_count')} >= ?`, input.minAscents);
   }
 
-  // Grade range on the rounded display difficulty (integer grade ids).
-  const roundedGrade = `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
+  // Grade range on the rounded effective display difficulty (integer grade ids),
+  // falling back to the Boardsesh grade when there's no stats row at all —
+  // mirrors the server's gradeRangeConditions in create-climb-filters.ts (a
+  // MoonBoard wide angle, or an unclimbed angle with a published cross-angle
+  // estimate, has a board_climb_grades row here with no board_climb_stats row
+  // to match it). `eff('display_difficulty')` already resolves through the
+  // set-angle fallback under cross-angle, so only a climb with NO stats row at
+  // either angle falls all the way through to g.universal_grade/local_grade.
+  const roundedGrade = `CAST(ROUND(COALESCE(${eff('display_difficulty')}, COALESCE(g.universal_grade, g.local_grade))) AS INTEGER)`;
   if (input.minGrade && input.maxGrade) {
     push(`${roundedGrade} BETWEEN ? AND ?`, input.minGrade, input.maxGrade);
   } else if (input.minGrade) {

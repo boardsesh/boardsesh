@@ -113,7 +113,7 @@ export const boardConfigTypeDefs = /* GraphQL */ `
     gradeLow: Float
     "High end of the 95% band on the surfaced grade"
     gradeHigh: Float
-    "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) — neither estimate tier has ascents here"
+    "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) | moonboard_wide_angle_estimate (a MoonBoard grade borrowed from another board's angle-effect shape) — no estimate tier has ascents here"
     confidence: String!
     "Ascent count that produced this row"
     ascensionistCount: Int!
@@ -142,7 +142,7 @@ export const boardConfigTypeDefs = /* GraphQL */ `
     gradeLow: Float
     "High end of the 95% band on the surfaced grade"
     gradeHigh: Float
-    "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) — neither estimate tier has ascents here"
+    "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) | moonboard_wide_angle_estimate (a MoonBoard grade borrowed from another board's angle-effect shape) — no estimate tier has ascents here"
     confidence: String!
     "Ascent count that produced this row"
     ascensionistCount: Int!

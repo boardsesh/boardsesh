@@ -1,6 +1,6 @@
 import { sql, and } from 'drizzle-orm';
 import { dbRead } from '../../client';
-import { boardClimbs, boardClimbStats } from '@boardsesh/db/schema';
+import { boardClimbs, boardClimbStats, boardClimbGrades } from '@boardsesh/db/schema';
 import {
   boardClimbStatsAtSetAngle,
   createClimbFilters,
@@ -51,11 +51,15 @@ export const countClimbs = async (
   // allocates a DSM segment. `withSerialPlan` disables per-gather parallelism inside
   // a transaction, mirroring searchClimbs' standardSearch guard. Reproduced live on
   // prod: a bare board_climbs aggregate raised "could not resize shared memory
-  // segment". The unused board_climb_stats join is left in place — Postgres already
-  // eliminates it via the stats PK when no condition references stats columns
-  // (verified by the EXPLAIN harness), so there's nothing to hand-optimize. That
-  // elimination stops applying under cross-angle with a stats filter active: both
-  // joins are then referenced by the WHERE and neither can be dropped.
+  // segment". The unused board_climb_stats/board_climb_grades joins are left in
+  // place — Postgres already eliminates a join via its PK when no condition
+  // references its columns (verified by the EXPLAIN harness), so there's nothing
+  // to hand-optimize. That elimination stops applying under cross-angle with a
+  // stats filter active: all three joins are then referenced by the WHERE and
+  // none can be dropped. board_climb_grades must be joined here to match
+  // searchClimbs' two query paths (search-climbs.ts) — a grade-range filter's
+  // WHERE clause (getClimbStatsConditions) can reference it as a Boardsesh-grade
+  // fallback for a climb with no board_climb_stats row at this angle.
   try {
     return await withSerialPlan(dbRead, async (tx) => {
       const base = tx
@@ -65,7 +69,9 @@ export const countClimbs = async (
       const withSetAngle = filters.isCrossAngleStats
         ? base.leftJoin(boardClimbStatsAtSetAngle, and(...filters.getSetAngleStatsJoinConditions()))
         : base;
-      const result = await withSetAngle.where(and(...whereConditions));
+      const result = await withSetAngle
+        .leftJoin(boardClimbGrades, and(...filters.getClimbGradesJoinConditions()))
+        .where(and(...whereConditions));
       return Number(result[0]?.count ?? 0);
     });
   } catch (error) {

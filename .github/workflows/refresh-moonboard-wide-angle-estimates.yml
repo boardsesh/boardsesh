@@ -1,0 +1,65 @@
+name: Refresh MoonBoard Wide-Angle Estimates
+
+# Weekly: fit Kilter/Tension's angle-effect SHAPE and use it to estimate every
+# MoonBoard problem's grade at the angles behind the `moonboard-wide-angles`
+# flag (anything outside the catalog's own 25°/40°) — see
+# packages/db/src/queries/grade-model/moonboard-wide-angle-model.ts for the
+# estimator and its cross-board validation. Writes `moonboard_wide_angle_estimate`
+# rows into board_climb_grades, disjoint from both the main grade model
+# (25°/40° only) and refresh-moonboard-angle-estimates.yml's same-board
+# transpose (the OTHER of 25°/40°). Rows the run no longer stands behind are
+# reaped in the same transaction. Idempotent.
+#
+# Weekly rather than nightly for the same reason as the sibling angle-estimate
+# job: the training sample (MoonBoard problems with a known 25°/40° grade)
+# moves slowly, and Kilter/Tension's fitted angle surface changes at most
+# weekly too (see refresh-climb-grades.ts's own refit cadence). Offset 30
+# minutes after refresh-moonboard-angle-estimates.yml so the two jobs, which
+# both write to board_climb_grades for disjoint angles on the same board,
+# never run concurrently.
+on:
+  schedule:
+    - cron: '30 8 * * 1' # 08:30 UTC Monday
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Full plan including row shapes, write nothing'
+        type: boolean
+        default: false
+      publish:
+        description: 'Write coefficients and estimate rows (required to change anything)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: refresh-moonboard-wide-angle-estimates
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # DATABASE_URL must be a WRITABLE connection.
+    environment: Production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      # A scheduled run has no `inputs`, so `--publish` has to be forced on for
+      # the cron path — the script writes nothing without it.
+      - name: Refresh MoonBoard wide-angle estimates
+        working-directory: packages/db
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: >-
+          node --import tsx scripts/refresh-moonboard-wide-angle-estimates.ts
+          ${{ inputs.dry_run && '--dry-run' || '' }}
+          ${{ (github.event_name != 'workflow_dispatch' || inputs.publish) && '--publish' || '' }}
