@@ -182,6 +182,16 @@ jobs:
           fi
           echo "RNScreens compiled from source — patch exercised."
 
+      # #5293: React Native core is the prebuilt React.xcframework here, so a
+      # react-native source patch never compiles (the first fix for this crash
+      # did exactly that and stayed green). The fix is a runtime flag override
+      # in modules/react-flag-overrides, called from AppDelegate.swift by
+      # plugins/with-scheduler-delegate-invalidation.js. Prove both halves made
+      # it into this build: a CompileC for the .mm, and the call sitting between
+      # the factory init and startReactNative.
+      - name: Assert the SchedulerDelegate flag override compiled (#5293)
+        run: node scripts/assert-ios-flag-override-compiled.mjs build.log packages/mobile/ios/Boardsesh/AppDelegate.swift
+
       # Same species as the assertion above: a green build is not proof of a
       # correct binary. Expo's precompiled modules mean ExpoModulesCore ships as
       # a prebuilt xcframework whose undefined symbols the linker never
