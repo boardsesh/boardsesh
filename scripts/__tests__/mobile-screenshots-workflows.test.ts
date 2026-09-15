@@ -39,6 +39,7 @@ interface WorkflowStep {
   uses?: string;
   run?: string;
   if?: string;
+  env?: Record<string, string>;
   with?: Record<string, unknown>;
 }
 
@@ -480,6 +481,31 @@ describe('screenshot captures follow the native deploys', () => {
     expect(source).toContain(
       `No ${entry.platform === 'ios' ? 'iOS' : 'Android'} binary shipped at $SOURCE_SHA ` +
         `(no fingerprint-${entry.platform}-* tag) — nothing to capture." >> "$GITHUB_STEP_SUMMARY"`,
+    );
+  });
+
+  it.each(workflows)('$platform fails closed on an automatic run with no screenshot credentials', (entry) => {
+    // Pins the fix for the second #5331 review round: on `workflow_run` a
+    // missing SCREENSHOT_USER_EMAIL/PASSWORD secret is a misconfiguration, not
+    // intent, so the capture job's fallback (`|| 'test@boardsesh.com'` /
+    // `|| 'test'`) must never be reached automatically — only a human dispatch
+    // may fall back to the documented test account. Mutation check: delete this
+    // guard step from one workflow's first job and this test must fail.
+    const firstJob = parseWorkflow(entry.path).jobs[entry.firstJob];
+    const steps = firstJob.steps ?? [];
+    const guardStep = steps.find((step) =>
+      (step.name ?? '').includes('Refuse an automatic capture with no screenshot credentials'),
+    );
+    expect(
+      guardStep,
+      `${entry.path}'s ${entry.firstJob} job must guard against missing screenshot credentials on workflow_run`,
+    ).toBeTruthy();
+    expect(flatten(guardStep?.if)).toBe("github.event_name == 'workflow_run'");
+    expect(guardStep?.env?.SCREENSHOT_USER_EMAIL).toBe('${{ secrets.SCREENSHOT_USER_EMAIL }}');
+    expect(guardStep?.env?.SCREENSHOT_USER_PASSWORD).toBe('${{ secrets.SCREENSHOT_USER_PASSWORD }}');
+    expect(guardStep?.run).toContain(
+      '::error::SCREENSHOT_USER_EMAIL / SCREENSHOT_USER_PASSWORD are not set; an automatic capture ' +
+        'refuses to fall back to the documented test account',
     );
   });
 
