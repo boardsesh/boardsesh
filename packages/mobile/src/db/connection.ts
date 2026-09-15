@@ -42,6 +42,15 @@ export { DATABASE_NAME } from './database-name';
 // follows, or not-yet-synced writes. Board reference data (board_climbs,
 // board_climb_stats) is deliberately excluded — it is the expensive shared
 // cache and is identical regardless of who is logged in.
+//
+// `spray_walls` is the ONE piece of board reference data that is cleared here
+// (issue #5448), because the sentence above is false for it: a wall is not
+// identical regardless of who is logged in, it is a photograph of somebody's
+// garage that the server only handed over because THIS climber owns the wall, is
+// a member of its gym, or the wall is public. Leaving the row behind on a shared
+// phone would give the next account the wall's name, geometry and every hold on
+// it — and `clearStoredSprayPhotos` takes the picture itself for the same
+// reason. Re-downloading it costs one page, not a catalogue crawl.
 const USER_DATA_TABLES_TO_CLEAR = [
   'boardsesh_ticks',
   'playlists',
@@ -51,6 +60,7 @@ const USER_DATA_TABLES_TO_CLEAR = [
   'setter_follows',
   'playlist_follows',
   'pending_mutations',
+  'spray_walls',
 ] as const;
 
 let databaseHandle: SQLiteDatabase | null = null;

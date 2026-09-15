@@ -10,6 +10,7 @@ import {
   type CoverageEvaluatedReporter,
   type BootstrapRetryScheduledReporter,
   type BootstrapPathRecoveredReporter,
+  type DocumentsPulledSink,
   type BootstrapRetryWakeInfo,
 } from './pull-client';
 import type { SnapshotSource, SnapshotBootstrapErrorReporter } from './snapshot-bootstrap';
@@ -84,6 +85,8 @@ export type SchedulerOptions = {
   onBootstrapRetryScheduled?: BootstrapRetryScheduledReporter;
   /** Threaded through to pullSync's SyncOptions — see BootstrapPathRecoveredInfo. */
   onBootstrapPathRecovered?: BootstrapPathRecoveredReporter;
+  /** Threaded through to pullSync's SyncOptions — see DocumentsPulledSink. */
+  onDocumentsPulled?: DocumentsPulledSink;
   /**
    * Threaded through to pullSync's SyncOptions for automatic catalog refreshes
    * and healing partly-crawled scopes.
@@ -177,6 +180,7 @@ async function runSync(request: SyncRunRequest): Promise<void> {
       onCoverageEvaluated: options?.onCoverageEvaluated,
       onBootstrapRetryScheduled: options?.onBootstrapRetryScheduled,
       onBootstrapPathRecovered: options?.onBootstrapPathRecovered,
+      onDocumentsPulled: options?.onDocumentsPulled,
       isOnUnmeteredNetwork: options?.isOnUnmeteredNetwork,
       // Lifecycle-only callbacks. The active scheduler may be newer than this
       // run (for example after a React effect replacement), so resolve it at
