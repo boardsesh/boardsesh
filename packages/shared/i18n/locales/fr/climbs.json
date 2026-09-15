@@ -143,6 +143,11 @@
       "body": "Personne ne l'a encore enchaîné à cet angle : la cotation vient de la façon dont il passe à l'autre angle.",
       "bodyRange": "Personne ne l'a encore enchaîné à cet angle : sans doute {{low}}–{{high}}, d'après la façon dont il passe à l'autre angle."
     },
+    "moonboardWideAngle": {
+      "label": "Approximatif",
+      "body": "Personne n'a encore enchaîné à cet angle : c'est une estimation approximative, basée sur la façon dont d'autres plafonds changent selon l'angle.",
+      "bodyRange": "Personne n'a encore enchaîné à cet angle : sans doute {{low}}–{{high}}, une estimation approximative basée sur la façon dont d'autres plafonds changent selon l'angle."
+    },
     "dumbbell": {
       "legendBoardsesh": "Grade Boardsesh",
       "legendCrowd": "Ancien grade",
