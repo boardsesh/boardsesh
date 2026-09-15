@@ -899,14 +899,13 @@ export const sprayWallQueries = {
     // and "here is what your wall would look like" is the owner's business.
     const { wall } = await loadEditableWall(ctx, validated.wallUuid);
 
-    const [draft] = await db
-      .select()
-      .from(dbSchema.sprayWallVersions)
-      .where(
-        and(eq(dbSchema.sprayWallVersions.id, validated.versionId), eq(dbSchema.sprayWallVersions.wallId, wall.id)),
-      )
-      .limit(1);
-    if (!draft) return null;
+    // A proposal only means anything against a DRAFT. A published or superseded
+    // version's holds are what climbs are already set on, so "here is what would
+    // change" against one describes a commit that can never happen — and
+    // `commitSprayWallVersion` would refuse it a moment later, after the owner had
+    // reviewed a whole screen of decisions. Same check, same error, one step
+    // earlier. No lock: nothing is written, and the commit re-reads under one.
+    const draft = await loadDraftVersion(db, wall.id, validated.versionId);
 
     // The wall as CLIMBERS see it — alive at `current_version_id` — which is what
     // a reset is a reset OF. Deliberately not the draft's own view: the draft's

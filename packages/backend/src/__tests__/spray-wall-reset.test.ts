@@ -304,6 +304,26 @@ describe('proposeSprayWallReset', () => {
     expect(await missingFor(await saveClimbOn(wall, 'Untouched', [holdIds[0]]))).toBe(0);
   });
 
+  it('refuses a version that is no longer a draft', async () => {
+    // A proposal only means anything against a draft. Against the published
+    // version it would describe a commit that can never happen — and the commit
+    // would refuse it a moment later, after the owner had reviewed a whole screen
+    // of decisions.
+    const { wall } = await createPublishedWall(OWNER);
+    const [published] = (await db.execute(sql`
+      SELECT id FROM spray_wall_versions
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}) AND status = 'published'
+    `)) as unknown as Array<{ id: string }>;
+
+    await expect(
+      sprayWallQueries.proposeSprayWallReset(
+        {},
+        { input: { wallUuid: wall.uuid, versionId: String(published.id), detections: [] } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/already published/i);
+  });
+
   it('refuses a caller who cannot edit the wall', async () => {
     const { wall } = await createPublishedWall(OWNER);
     const versionId = await openDraft(wall);
@@ -441,6 +461,69 @@ describe('commitSprayWallVersion', () => {
         ctxFor(OWNER),
       ),
     ).rejects.toThrow(/is not on this wall/i);
+  });
+
+  it('refuses a batch that both keeps and removes the same hold', async () => {
+    // Not a contradiction the server can resolve: whichever it applied second
+    // would win silently, and one of the two decisions the owner made on that
+    // screen would vanish without a word.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const versionId = await openDraft(wall);
+
+    await expect(
+      sprayWallMutations.commitSprayWallVersion(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            versionId,
+            kept: [{ holdId: holdIds[0] }],
+            removed: [holdIds[0]],
+            added: [],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/both kept and removed/i);
+
+    // Nothing landed: the version is still a draft.
+    const [row] = (await db.execute(
+      sql`SELECT status FROM spray_wall_versions WHERE id = ${versionId}`,
+    )) as unknown as Array<{ status: string }>;
+    expect(row.status).toBe('draft');
+  });
+
+  it('refuses a movedFromHoldId that belongs to another wall', async () => {
+    // `moved_from_hold_id` is lineage, and remix walks it to suggest a successor.
+    // A pointer at another wall's hold would offer a climber a hold that is not on
+    // their wall — and the FK cannot catch it, because the column carries no FK.
+    const { wall } = await createPublishedWall(OWNER);
+    const { holdIds: otherWallHoldIds } = await createPublishedWall(OWNER);
+    const versionId = await openDraft(wall);
+
+    await expect(
+      sprayWallMutations.commitSprayWallVersion(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            versionId,
+            kept: [],
+            removed: [],
+            added: [{ detection: { cx: 200, cy: 250, r: 22 }, movedFromHoldId: otherWallHoldIds[0] }],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/has never been on this wall/i);
+
+    // And the whole commit rolled back — no orphan hold, no publish.
+    const [counts] = (await db.execute(sql`
+      SELECT (SELECT count(*)::int FROM spray_wall_holds
+              WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId})) AS holds,
+             (SELECT status FROM spray_wall_versions WHERE id = ${versionId}) AS status
+    `)) as unknown as Array<{ holds: number; status: string }>;
+    expect([counts.holds, counts.status]).toEqual([3, 'draft']);
   });
 
   it('rejects a second commit on a version that has already landed', async () => {
@@ -672,6 +755,30 @@ describe('remixClimb', () => {
     )) as unknown as Array<{ parent_uuid: string; wall_version_id: string }>;
     expect(lineage.parent_uuid).toBe(parent);
     expect(Number(lineage.wall_version_id)).toBeGreaterThan(0);
+  });
+
+  it('refuses a remix of a climb that is not on a spray wall', async () => {
+    // `spray_climb_lineage` is a spray table, so there is nothing a remix of a
+    // Kilter climb could write. Dropping the field silently would save the climb,
+    // report success, and leave the client believing a link exists that never
+    // will — and the lineage row can only be written once, with the child.
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'kilter',
+            layoutId: 1,
+            name: 'Not a spray remix',
+            isDraft: true,
+            frames: 'p1r12',
+            angle: 40,
+            remixOfClimbUuid: 'ffffffffffffffffffffffffffffffff',
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/only spray wall climbs can be remixed/i);
   });
 
   it('refuses a parent that is not on the same wall', async () => {

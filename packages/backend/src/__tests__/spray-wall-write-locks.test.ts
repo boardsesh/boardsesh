@@ -148,6 +148,21 @@ describe('every spray wall writer holds the wall lock', () => {
 
     expect(lockAt, `${name} never calls lockWallForWrite`).toBeGreaterThanOrEqual(0);
 
+    // …and INSIDE the transaction, not in front of it. `pg_advisory_xact_lock` is
+    // transaction-scoped: called on the pool it takes a lock on a throwaway
+    // connection, which commits and releases before the transaction that needed it
+    // has even opened. That reads exactly like a correct writer — the call is
+    // there, and it is before the first write — while serialising nothing. The
+    // helpers are exempt: they take an executor and are called from inside their
+    // caller's transaction, so `db.transaction(` never appears in their bodies.
+    const transactionAt = body.indexOf('db.transaction(');
+    if (transactionAt !== -1) {
+      expect(
+        lockAt,
+        `${name} locks at ${lockAt}, outside the transaction that opens at ${transactionAt}`,
+      ).toBeGreaterThan(transactionAt);
+    }
+
     const writeAt = firstWriteOffset(body);
     if (writeAt === -1) {
       // Two shapes have no guarded write of their own and still have to lock.
