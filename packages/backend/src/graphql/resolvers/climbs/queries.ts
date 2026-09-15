@@ -22,7 +22,7 @@ import {
 } from '../../../db/queries/climbs/index';
 import { isValidBoardName } from '../../../db/queries/util/table-select';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
-import { isSprayBoardType, sprayLayoutIsReadable } from './spray-read-access';
+import { isSprayBoardType, sprayLayoutIsReadable, sprayLayoutIsReadableWithCapability } from './spray-read-access';
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
 import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
 import { findSimilarClimbsCached } from './similar-climbs-cache';
@@ -253,9 +253,19 @@ export const climbQueries = {
     // The pre-baked empty result is the same shape the drafts branch above returns,
     // which is deliberate: an unreadable wall must be indistinguishable from an
     // empty one.
+    //
+    // `sprayWallUuid` is the one exemption, and it is a capability rather than a
+    // filter: a climber handed an unlisted wall's link may already SET on it
+    // (`saveClimb` takes the same uuid as proof), so refusing to LIST what they set
+    // made the wall write-only for them.
     if (
       isSprayBoardType(parsedInput.boardName) &&
-      !(await sprayLayoutIsReadable(parsedInput.boardName, parsedInput.layoutId, ctx.userId))
+      !(await sprayLayoutIsReadableWithCapability(
+        parsedInput.boardName,
+        parsedInput.layoutId,
+        ctx.userId,
+        parsedInput.sprayWallUuid,
+      ))
     ) {
       return {
         params,

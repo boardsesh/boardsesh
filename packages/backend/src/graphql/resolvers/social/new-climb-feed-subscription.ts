@@ -1,7 +1,7 @@
 import { type ConnectionContext, type NewClimbCreatedEvent, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
-import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
+import { isSprayBoardType, sprayLayoutIsReadable, sprayStreamGate } from '../climbs/spray-read-access';
 
 export const newClimbFeedSubscription = {
   newClimbCreated: {
@@ -36,7 +36,14 @@ export const newClimbFeedSubscription = {
         return pubsub.subscribeNewClimbs(channelKey, push);
       });
 
+      // The gate above ran once, at subscribe. A socket outlives that answer: the
+      // owner can take the wall private, or a gym can revoke the membership the
+      // answer rested on, and the client that was already watching would keep
+      // receiving every climb set on the wall. Re-asked per EVENT, which is the only
+      // moment it matters and is free on the other eight board types (null gate).
+      const gate = sprayStreamGate(boardType, layoutId, ctx.userId);
       for await (const event of asyncIterator) {
+        if (gate && !(await gate())) return;
         yield { newClimbCreated: event };
       }
     },

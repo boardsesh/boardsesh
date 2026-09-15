@@ -165,6 +165,8 @@ export const climbTypeDefs = /* GraphQL */ `
     setIds: String!
     "Board angle in degrees"
     angle: Int!
+    "A spray wall's uuid, presented as a capability. Only meaningful when boardName is 'spray': an UNLISTED wall's climbs are listable by a caller holding its uuid, the same way saveClimb accepts it as the right to set on one. A private wall does not open for it, and a uuid naming another wall is ignored."
+    sprayWallUuid: String
     "Page number for pagination (1-indexed)"
     page: Int
     "Number of results per page"

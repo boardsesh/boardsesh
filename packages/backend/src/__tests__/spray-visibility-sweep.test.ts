@@ -622,8 +622,6 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.session': 'live room state held in Redis, not a climb read; membership-gated',
   'Query.eventsReplay': 'the event buffer requires Redis, which the sweep does not run',
   'Query.sessionStatus': 'one enum: whether the session is active',
-  'Query.sessionSummary':
-    'session totals; the hardest-send NAME comes through fetchHardestSendsBatch, which renders an invisible wall as "Unknown Climb" by design (JOIN ON, not WHERE)',
 
   // --- board presence: Redis queue state, not board_climbs --------------------
   'Query.boardRecentClimbs': 'presence history is driven by live queue events, and the sweep publishes none',

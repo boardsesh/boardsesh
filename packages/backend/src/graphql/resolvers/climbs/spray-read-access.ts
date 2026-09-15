@@ -1,5 +1,6 @@
 import { GraphQLError } from 'graphql';
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import * as dbSchema from '@boardsesh/db/schema';
 import { sprayLayoutVisibilitySql, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { dbRead } from '../../../db/client';
@@ -90,6 +91,91 @@ export async function assertSprayBoardIsReadable(
   if (!isSprayBoardType(board.boardType)) return;
   if (await sprayLayoutIsReadable(board.boardType, Number(board.layoutId), viewerUserId)) return;
   throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+}
+
+/**
+ * The layout rule with the wall's UUID accepted as a CAPABILITY, for the reads a
+ * link-holder is supposed to be able to make.
+ *
+ * `saveClimb` takes the wall uuid as proof of the right to SET on an unlisted wall
+ * — that is what "unlisted" means, and `sprayWall(uuid)` opens one — but every
+ * read gate is by LAYOUT, which has no unlisted exemption. So a climber handed a
+ * link could set climbs on the wall and then never list them: the wall rendered,
+ * their own climb did not come back from `searchClimbs`, and there was no way in
+ * the API to see what was on the wall.
+ *
+ * The uuid has to name THIS layout, and the unlisted exemption is
+ * `sprayBoardRowIsReadable`'s `'capability'` half rather than a second copy of the
+ * rule — a PRIVATE wall still does not open for a uuid, which is the difference
+ * between unlisted and private.
+ *
+ * Falls through to the plain by-layout answer whenever no uuid is presented, so a
+ * caller can pass the field through unconditionally.
+ */
+export async function sprayLayoutIsReadableWithCapability(
+  boardType: string | null | undefined,
+  layoutId: number | null | undefined,
+  userId: string | null | undefined,
+  wallUuid: string | null | undefined,
+): Promise<boolean> {
+  if (!isSprayBoardType(boardType)) return true;
+  if (await sprayLayoutIsReadable(boardType, layoutId, userId)) return true;
+  if (!wallUuid) return false;
+
+  const [row] = await dbRead
+    .select({
+      boardType: dbSchema.userBoards.boardType,
+      layoutId: dbSchema.sprayWalls.layoutId,
+      isUnlisted: dbSchema.userBoards.isUnlisted,
+    })
+    .from(dbSchema.sprayWalls)
+    .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
+    .where(
+      and(
+        eq(dbSchema.userBoards.uuid, wallUuid),
+        isNull(dbSchema.sprayWalls.deletedAt),
+        isNull(dbSchema.userBoards.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  // A uuid naming a different wall than the layout under search is not a
+  // capability for this one.
+  if (!row || Number(row.layoutId) !== Number(layoutId)) return false;
+  return sprayBoardRowIsReadable(
+    { boardType: row.boardType, layoutId: Number(row.layoutId), isUnlisted: row.isUnlisted },
+    userId,
+    'capability',
+  );
+}
+
+/**
+ * Whether this caller may read the climbs on a spray channel RIGHT NOW, for the
+ * subscriptions — which check visibility once, at subscribe, and then hold the
+ * socket open for as long as the client likes.
+ *
+ * A wall going private, or a gym membership being revoked, has to end a stream that
+ * is already running: otherwise the flip only stops NEW subscribers and the client
+ * that was watching keeps receiving climb names, frames and grades. Returns null
+ * for every non-spray channel so the emit path pays nothing at all — not even the
+ * microtask an `async` call costs — and the call site reads:
+ *
+ *     const gate = sprayStreamGate(boardType, layoutId, ctx.userId);
+ *     for await (const event of iterator) {
+ *       if (gate && !(await gate())) return;
+ *       yield event;
+ *     }
+ *
+ * Ending the iterator is the subscription's "empty page": the client sees a normal
+ * completion rather than an error naming a wall it may not see.
+ */
+export function sprayStreamGate(
+  boardType: string | null | undefined,
+  layoutId: number | null | undefined,
+  userId: string | null | undefined,
+): (() => Promise<boolean>) | null {
+  if (!isSprayBoardType(boardType)) return null;
+  return () => sprayLayoutIsReadable(boardType, layoutId, userId);
 }
 
 /**

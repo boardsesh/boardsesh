@@ -1226,6 +1226,8 @@ export type ClimbSearchInput = {
   sortOrder?: InputMaybe<Scalars['String']['input']>;
   /** Seed for the 'random' sort; keeps OFFSET pagination stable across pages for one shuffle */
   sortSeed?: InputMaybe<Scalars['String']['input']>;
+  /** A spray wall's uuid, presented as a capability. Only meaningful when boardName is 'spray': an UNLISTED wall's climbs are listable by a caller holding its uuid, the same way saveClimb accepts it as the right to set on one. A private wall does not open for it, and a uuid naming another wall is ignored. */
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
   /** Restrict results using this drawn zone */
   zoneBox?: InputMaybe<ZoneBoxInput>;
   /** How the zone should match climb holds. Defaults to allHolds when omitted. */

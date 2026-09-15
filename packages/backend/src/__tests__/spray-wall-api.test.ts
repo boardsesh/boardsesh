@@ -84,6 +84,9 @@ const { climbStatsSubscriptions } = await import('../graphql/resolvers/ticks/cli
 const { socialProposalQueries } = await import('../graphql/resolvers/social/proposals/queries');
 const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = await import('@boardsesh/board-config');
 const { recomputeClimbStatsBulk } = await import('@boardsesh/db/queries');
+const { lockWallForWrite } = await import('../graphql/resolvers/board/spray-walls');
+const { betaLinkQueries } = await import('../graphql/resolvers/beta-videos/queries');
+const { tickQueries } = await import('../graphql/resolvers/ticks/queries');
 
 const OWNER = 'sw-owner';
 const STRANGER = 'sw-stranger';
@@ -244,7 +247,9 @@ beforeEach(async () => {
                    -- The stats-history and grade-model readers below write these.
                    "board_climb_stats_history",
                    -- The activity-feed gate below writes fan-out rows by hand.
-                   "feed_items"
+                   "feed_items",
+                   -- The beta-link gate test writes one.
+                   "board_beta_links"
     RESTART IDENTITY CASCADE
   `);
   // `spray_wall_catalog_id_seq` and `spray_hold_catalog_id_seq` are STANDALONE
@@ -3298,7 +3303,6 @@ describe('playlists paginate on what the viewer may actually see', () => {
   });
 });
 
-
 describe('a tick never takes the setter\u2019s grade off a spray climb', () => {
   /** The stats row for a spray climb at the wall angle. */
   async function statsFor(climbUuid: string) {
@@ -3467,5 +3471,344 @@ describe('activityFeed and a wall that went private after the fan-out', () => {
       items: Array<{ entityType: string }>;
     };
     expect(items.items.map((item) => item.entityType)).toEqual(['session']);
+  });
+});
+
+describe('the wall UUID is a capability for LISTING, not only for setting', () => {
+  const searchInput = (wall: CreatedWall, extra: Record<string, unknown> = {}) => ({
+    boardName: 'spray',
+    layoutId: wall.layoutId,
+    sizeId: wall.sizeId,
+    setIds: '1',
+    angle: 40,
+    ...extra,
+  });
+
+  /** Did this call get the pre-baked empty page, or a real search context? */
+  const listed = async (input: Record<string, unknown>, viewer: string | null) => {
+    const context = (await climbQueries.searchClimbs({}, { input }, ctxFor(viewer))) as {
+      _cachedClimbs?: unknown[];
+    };
+    return context._cachedClimbs === undefined;
+  };
+
+  it('lets an UNLISTED wall’s link-holder list the climbs they may already set', async () => {
+    // `saveClimb` accepts the wall uuid as the right to set on an unlisted wall, and
+    // every read gate is by LAYOUT with no unlisted exemption — so a climber handed
+    // the link could set a climb and then never see it again. The wall was
+    // write-only for them.
+    const { wall } = await wallWithAClimb({ isUnlisted: true });
+
+    expect(await listed(searchInput(wall), STRANGER)).toBe(false);
+    expect(await listed(searchInput(wall, { sprayWallUuid: wall.uuid }), STRANGER)).toBe(true);
+    // Anonymous too: the uuid is the capability, not the session.
+    expect(await listed(searchInput(wall, { sprayWallUuid: wall.uuid }), null)).toBe(true);
+  });
+
+  it('does NOT open a private wall, and ignores a uuid for another wall', async () => {
+    const privateWall = await wallWithAClimb();
+    const unlistedWall = await wallWithAClimb({ isUnlisted: true });
+
+    // Private is the difference between unlisted and private: a uuid earns the
+    // unlisted exemption and nothing earns this one.
+    expect(await listed(searchInput(privateWall.wall, { sprayWallUuid: privateWall.wall.uuid }), STRANGER)).toBe(false);
+
+    // …and a valid uuid for a DIFFERENT wall is not a capability for this layout.
+    expect(await listed(searchInput(privateWall.wall, { sprayWallUuid: unlistedWall.wall.uuid }), STRANGER)).toBe(
+      false,
+    );
+
+    // A uuid that names nothing at all is simply ignored.
+    expect(await listed(searchInput(privateWall.wall, { sprayWallUuid: uuidv4() }), STRANGER)).toBe(false);
+  });
+});
+
+describe('a later photo has to say where the wall corners are', () => {
+  it('takes version 1 without anchors and refuses version 2 without them', async () => {
+    // On version 1 the photo's own pixel box IS the canonical frame, so the identity
+    // homography is right. Version 2 inherits a frame derived from a DIFFERENT
+    // photograph, and with no anchors to map this one onto it every hold the owner
+    // draws lands somewhere else on the wall — and so do the climbs set on them.
+    const wall = await createWall(OWNER);
+    const firstPhoto = registerUploadedPhoto(wall.uuid);
+    const first = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: firstPhoto } },
+      ctxFor(OWNER),
+    )) as { id: string; number: number };
+    expect(first.number).toBe(1);
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: first.id } }, ctxFor(OWNER));
+
+    const secondPhoto = registerUploadedPhoto(wall.uuid);
+    await expect(
+      sprayWallMutations.createSprayWallVersion(
+        {},
+        { input: { wallUuid: wall.uuid, photoId: secondPhoto } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/four wall corners/i);
+
+    // …and it goes through with them.
+    await expect(
+      sprayWallMutations.createSprayWallVersion(
+        {},
+        { input: { wallUuid: wall.uuid, photoId: secondPhoto, anchors: ANCHORS } },
+        ctxFor(OWNER),
+      ),
+    ).resolves.toMatchObject({ number: 2, status: 'DRAFT' });
+  });
+
+  it('derives the frame from the photo it actually has, when a discard lands while it waits for the lock', async () => {
+    // The frame used to be read BEFORE the transaction: a concurrent discard of
+    // version 1 clears it to NULL, and the version created next then inherited a
+    // frame belonging to a photograph that no longer exists — putting every hold
+    // drawn on the recreated version 1 in the discarded generation's coordinates.
+    const wall = await createWall(OWNER);
+    const firstPhoto = registerUploadedPhoto(wall.uuid, { width: 1200, height: 900 });
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: firstPhoto, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+
+    const [wallRow] = (await db.execute(sql`
+      SELECT id, reference_width FROM spray_walls WHERE layout_id = ${wall.layoutId}
+    `)) as unknown as Array<{ id: number; reference_width: number }>;
+    expect(Number(wallRow.reference_width)).toBe(800);
+
+    // A replacement photo of a DIFFERENT size, so inheriting the stale frame and
+    // deriving a fresh one give different answers.
+    const replacementPhoto = registerUploadedPhoto(wall.uuid, { width: 2000, height: 1000 });
+
+    let lockHeld: () => void = () => {};
+    const lockIsHeld = new Promise<void>((resolve) => {
+      lockHeld = resolve;
+    });
+    let letTheDiscardCommit: () => void = () => {};
+    const discardMayCommit = new Promise<void>((resolve) => {
+      letTheDiscardCommit = resolve;
+    });
+
+    // The competing transaction: it holds the wall lock, and while the create below
+    // is queued behind it, it does exactly what `discardSprayWallVersion` does —
+    // drops the version and clears the frame — then commits.
+    const discard = db.transaction(async (tx) => {
+      await lockWallForWrite(tx, Number(wallRow.id));
+      lockHeld();
+      await discardMayCommit;
+      await tx.execute(sql`DELETE FROM spray_wall_versions WHERE id = ${draft.id}`);
+      await tx.execute(sql`
+        UPDATE spray_walls SET reference_width = NULL, reference_height = NULL WHERE id = ${wallRow.id}
+      `);
+    });
+
+    await lockIsHeld;
+    const create = sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: replacementPhoto } },
+      ctxFor(OWNER),
+    );
+    // Let the create reach the lock and block on it before the discard commits.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    letTheDiscardCommit();
+    await discard;
+
+    // It is version 1 again — so the anchors rule above does not apply to it — and
+    // its frame is its OWN photo, not the discarded one's 800x620.
+    await expect(create).resolves.toMatchObject({ number: 1 });
+    const [frame] = (await db.execute(sql`
+      SELECT reference_width, reference_height FROM spray_walls WHERE layout_id = ${wall.layoutId}
+    `)) as unknown as Array<{ reference_width: number; reference_height: number }>;
+    expect({ width: Number(frame.reference_width), height: Number(frame.reference_height) }).toEqual({
+      width: 2000,
+      height: 1000,
+    });
+  });
+});
+
+describe('newClimbFeed announces published climbs only', () => {
+  it('leaves a draft out of both the page and the count', async () => {
+    // The feed filtered on `board_type` + `layout_id` + `is_hidden` and nothing else,
+    // so an anonymous caller read every unpublished draft on a public wall. The count
+    // carries the same predicate as the page, or the total promises rows the list
+    // never hands back.
+    const { wall, holdIds } = await createPublishedWall(OWNER, { isPublic: true });
+    const climbOn = (name: string, isDraft: boolean) =>
+      climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'spray',
+            layoutId: wall.layoutId,
+            name,
+            isDraft,
+            frames: framesFor(holdIds),
+            angle: 40,
+            ...(isDraft ? {} : { userGrade: '6b/V4' }),
+          },
+        },
+        ctxFor(OWNER),
+      );
+
+    await climbOn('Published problem', false);
+    await climbOn('Unfinished problem', true);
+
+    const feed = await newClimbSubscriptionResolvers.Query.newClimbFeed(
+      {},
+      { input: { boardType: 'spray', layoutId: wall.layoutId, limit: 20, offset: 0 } },
+      ctxFor(null),
+    );
+    expect(feed.items.map((item) => item.name)).toEqual(['Published problem']);
+    expect(feed.totalCount).toBe(1);
+
+    // The two predicates are not one predicate. `saveClimb` writes
+    // `is_listed = !is_draft`, so a climb created through the API can never be a
+    // LISTED draft — which is exactly why the draft half has to be asserted on its
+    // own: with `is_listed` alone, a future writer that decouples the two columns
+    // (or a hand-edited row) puts the draft straight back in an anonymous feed.
+    await db.execute(sql`
+      UPDATE board_climbs SET is_listed = true WHERE board_type = 'spray' AND name = 'Unfinished problem'
+    `);
+    const withAListedDraft = await newClimbSubscriptionResolvers.Query.newClimbFeed(
+      {},
+      { input: { boardType: 'spray', layoutId: wall.layoutId, limit: 20, offset: 0 } },
+      ctxFor(null),
+    );
+    expect(withAListedDraft.items.map((item) => item.name)).toEqual(['Published problem']);
+    expect(withAListedDraft.totalCount).toBe(1);
+
+    // An UNLISTED (withdrawn) climb is out too, and the count follows it out.
+    await db.execute(sql`
+      UPDATE board_climbs SET is_listed = false
+      WHERE board_type = 'spray' AND name IN ('Published problem', 'Unfinished problem')
+    `);
+    const afterWithdrawal = await newClimbSubscriptionResolvers.Query.newClimbFeed(
+      {},
+      { input: { boardType: 'spray', layoutId: wall.layoutId, limit: 20, offset: 0 } },
+      ctxFor(null),
+    );
+    expect(afterWithdrawal.items).toEqual([]);
+    expect(afterWithdrawal.totalCount).toBe(0);
+  });
+});
+
+describe('the publish path’s bookkeeping', () => {
+  it('refuses to publish when current_version_id does not point at a published row', async () => {
+    // The supersede UPDATE carries `status = 'published'` as a guard, and a guard
+    // that matched nothing used to be a silent no-op: the publish moved
+    // `current_version_id` on anyway, leaving the wall with two published versions or
+    // pointing at a superseded one. Unreachable through the API, so it means a
+    // hand-edited row — which is exactly when a loud failure is worth having.
+    const { wall } = await createPublishedWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const reset = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+
+    await db.execute(sql`
+      UPDATE spray_wall_versions SET status = 'superseded'
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}) AND version_number = 1
+    `);
+
+    await expect(
+      sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER)),
+    ).rejects.toThrow(/unexpected state/i);
+
+    // Nothing moved: the wall still points at version 1.
+    const [row] = (await db.execute(sql`
+      SELECT v.version_number FROM spray_walls w
+      JOIN spray_wall_versions v ON v.id = w.current_version_id
+      WHERE w.layout_id = ${wall.layoutId}
+    `)) as unknown as Array<{ version_number: number }>;
+    expect(row.version_number).toBe(1);
+  });
+
+  it('presigns each version once per wall read, not twice for the current one', async () => {
+    // `currentVersion` and the matching entry in `versions` are the same row, and
+    // rendering it twice minted two signatures for the photo and two for its
+    // thumbnail on every wall read.
+    const { wall } = await createPublishedWall(OWNER);
+    presignedUrls.length = 0;
+
+    const payload = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
+      currentVersion: { id: string; photo: { url: string } } | null;
+      versions: Array<{ id: string; photo: { url: string } }>;
+    };
+
+    // One version on the wall, so one photo + one thumbnail signature.
+    expect(payload.versions).toHaveLength(1);
+    expect(presignedUrls).toHaveLength(2);
+    // …and `currentVersion` IS that entry, not a second render of it.
+    expect(payload.currentVersion).toBe(payload.versions[0]);
+  });
+});
+
+describe('the two readers #5495 left without an explicit gate test', () => {
+  it('recentBetaLinks drops a private wall’s beta, and keeps the owner’s', async () => {
+    // The rows carry the climb NAME, and the cache below the gate is keyed on the
+    // scope with no viewer in it — so the check has to come first and has to hold.
+    const { wall, climbUuid } = await wallWithAClimb();
+    await db.execute(sql`
+      INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username, angle, thumbnail, is_listed, created_at)
+      VALUES ('spray', ${climbUuid}, 'https://www.instagram.com/p/SW05C/', 'someclimber', 40,
+              '/static/beta-link-thumbnails/instagram/sw05c.jpg', true, now()::text)
+    `);
+
+    const read = (viewer: string | null) =>
+      betaLinkQueries.recentBetaLinks({}, { boardType: 'spray', layoutId: wall.layoutId, limit: 10 }, ctxFor(viewer));
+
+    expect(await read(null)).toEqual([]);
+    expect(await read(STRANGER)).toEqual([]);
+    expect((await read(OWNER)).map((entry) => entry.climbName)).toEqual(['Secret garage problem']);
+  });
+
+  it('userProfileStats hides a private wall’s LAYOUT from a stranger', async () => {
+    // `layoutStats` names a layout id per board type, which is the enumerable key
+    // every other spray gate protects — and a profile is readable without signing in.
+    const { wall, climbUuid } = await wallWithAClimb();
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, ${climbUuid}, 'spray', 40, 'send', 18, now(), now(), now())
+    `);
+
+    const layoutIds = async (viewer: string | null) => {
+      const stats = await tickQueries.userProfileStats({}, { userId: OWNER }, ctxFor(viewer));
+      return stats.layoutStats.filter((entry) => entry.boardType === 'spray').map((entry) => entry.layoutId);
+    };
+
+    expect(await layoutIds(null)).toEqual([]);
+    expect(await layoutIds(STRANGER)).toEqual([]);
+    expect(await layoutIds(OWNER)).toEqual([wall.layoutId]);
+  });
+});
+
+describe('the owner’s own session summary', () => {
+  it('names their private wall’s climb as the hardest send, for them only', async () => {
+    // The helper hard-coded a null viewer, which was right for a caller with no
+    // context and wrong for `sessionSummary` and `endSession`, where the viewer IS
+    // known: the hardest send of a garage session is usually on the garage wall, and
+    // the owner was shown "Unknown climb" for their own climb.
+    const { climbUuid } = await wallWithAClimb();
+    const sessionId = uuidv4();
+    await db.execute(sql`
+      INSERT INTO board_sessions (id, board_path, created_by_user_id, started_at, ended_at, created_at, last_activity)
+      VALUES (${sessionId}, '/spray/session', ${OWNER}, now() - interval '1 hour', now(), now(), now())
+    `);
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, session_id, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, ${climbUuid}, 'spray', 40, 'send', 18, ${sessionId}, now(), now(), now())
+    `);
+
+    const asOwner = (await generateSessionSummary(sessionId, OWNER)) as {
+      hardestClimb?: { climbName?: string };
+    } | null;
+    expect(asOwner?.hardestClimb?.climbName).toBe('Secret garage problem');
+
+    const asStranger = (await generateSessionSummary(sessionId, STRANGER)) as {
+      hardestClimb?: { climbName?: string };
+    } | null;
+    expect(asStranger?.hardestClimb?.climbName ?? 'Unknown climb').not.toBe('Secret garage problem');
   });
 });
