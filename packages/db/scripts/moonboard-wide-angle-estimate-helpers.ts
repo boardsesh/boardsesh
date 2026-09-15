@@ -148,6 +148,24 @@ export function planMoonboardWideAngleEstimates(
     }
   }
 
+  // Enforces the invariant this job's `board_climb_grades` upsert relies on
+  // for safety (see the ON CONFLICT doc comment in
+  // refresh-moonboard-wide-angle-estimates.ts): this job must never target
+  // 25°/40°, since another producer already owns those two angles for every
+  // climb. `wideAngles` includes 25/40 by construction (it's the board's full
+  // angle list) — the loop above skips them, but that skip is the only thing
+  // standing between this and silently overwriting the other producers' rows.
+  // A hard assertion here, on the actual output, catches a future change to
+  // that loop (or to MOONBOARD_SHALLOW_ANGLE/MOONBOARD_STEEP_ANGLE) that the
+  // skip condition falls out of sync with, rather than shipping the collision.
+  for (const row of upserts) {
+    if (row.angle === MOONBOARD_SHALLOW_ANGLE || row.angle === MOONBOARD_STEEP_ANGLE) {
+      throw new Error(
+        `moonboard-wide-angle-estimate-helpers: planned an upsert at ${row.angle}° for ${row.climbUuid} — this job must never target the board's real angles (${MOONBOARD_SHALLOW_ANGLE}°/${MOONBOARD_STEEP_ANGLE}°).`,
+      );
+    }
+  }
+
   const reaps = existingEstimateKeys.filter((key) => !wanted.has(estimateKey(key.climbUuid, key.angle)));
   return { upserts, reaps, skipped };
 }
