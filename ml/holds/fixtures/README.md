@@ -44,6 +44,9 @@ ceiling:
 | fp16 | 54.1 MB |
 | **int8** (dynamic) | **28.7 MB** |
 
+These expectations come from the **int8** artifact of the CC BY retrain
+(`.data/artifacts/nano-tiled-1024/model-int8.onnx`).
+
 int8 is the smallest that runs, and it is still nearly twice the ceiling. So the
 model this file's expectations came from **exists only on the machine that trained
 it**, which means a SW-06 parity test cannot run today.
@@ -63,10 +66,15 @@ Regenerate the exact artifact these expectations came from:
 
 ```bash
 cd ml/holds && . .venv/bin/activate
-python train.py  --config nano-tiled-1024 --epochs 2 --max-train-images 400
-python export.py --config nano-tiled-1024 --formats onnx
+ROBOFLOW_API_KEY=$(cat ~/.config/roboflow/api-key) \
+  python data/fetch.py --only roboflow-climbing-holds-and-volumes
+python data/single_class.py --source .data/roboflow-climbing-holds-and-volumes \
+  --target .data/roboflow-1class
+python train.py  --config nano-tiled-1024 --dataset .data/roboflow-1class \
+  --epochs 1 --max-train-images 1400
+python export.py --config nano-tiled-1024 --formats onnx --shrink int8
 python eval.py   --config nano-tiled-1024 --dataset fixtures --split images \
-  --score-threshold 0.05 \
+  --score-threshold 0.05 --model .data/artifacts/nano-tiled-1024/model-int8.onnx \
   --out fixtures/eval-nano.json --write-fixtures fixtures/expected-detections.json
 ```
 

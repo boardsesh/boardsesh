@@ -30,7 +30,7 @@
       "redistributable": true,
       "url": "https://github.com/ianli18/CS152-SSL",
       "format": "coco",
-      "notes": "3,876 images and 120,528 hold boxes, single class, no masks. LABELS ONLY: curl -sL -o cs152_ann.json https://raw.githubusercontent.com/ianli18/CS152-SSL/HEAD/_annotations.coco.json works with no key, but the matching IMAGES live on Roboflow and need an account. The repo's notebook contains a committed Roboflow API key; do not use it, get your own.",
+      "notes": "3,876 images and 120,528 hold boxes, single class, no masks. LABELS ONLY: curl -sL -o cs152_ann.json https://raw.githubusercontent.com/ianli18/CS152-SSL/HEAD/_annotations.coco.json works with no key, but the matching IMAGES live on Roboflow and need an account. The repo's notebook contains a committed Roboflow API key; do not use it, get your own. The images now come from roboflow-climbing-holds-and-volumes below, which fetch.py downloads directly.",
       "steps": [
         "Create a free account at https://app.roboflow.com/login",
         "Workspace Settings -> API Keys -> copy the Private API Key",
@@ -74,6 +74,17 @@
         "Hand-label with data/label_tool.py; flag any photo you could only label in part with \"partial\": true",
         "python data/label_tool.py merge --corpus .data/spraywalls --out .data/spraywall-coco --halves"
       ]
+    },
+    "roboflow-climbing-holds-and-volumes": {
+      "kind": "roboflow",
+      "licence": "CC BY 4.0",
+      "redistributable": true,
+      "url": "https://universe.roboflow.com/blackcreed-xpgxh/climbing-holds-and-volumes",
+      "workspace": "blackcreed-xpgxh",
+      "project": "climbing-holds-and-volumes",
+      "version": 14,
+      "format": "coco",
+      "notes": "The training set the CS152-SSL label file (120,528 boxes, CC BY 4.0) is drawn from. Needs a free Roboflow account: the key lives in ~/.config/roboflow/api-key (mode 600) or ROBOFLOW_API_KEY, is read at call time, and is never printed, logged or committed. A dataset export does not spend training credits; Roboflow-hosted training and inference are never used - everything here trains locally."
     }
   },
   "_rejected": {

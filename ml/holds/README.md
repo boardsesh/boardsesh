@@ -35,6 +35,7 @@ ml/holds/
   data/fetch.py        download the public sources (refuses NC / unlicensed ones)
   data/scrape_commons.py   pull climbing-wall photos + licences from Wikimedia Commons
   data/scrape_spraywalls.py pull spray-wall photos from Flickr feeds and the web
+  data/single_class.py  collapse a multi-category COCO set into one `hold` class
   data/label_tool.py   grid / render / merge — the hand-labelling loop
                        (`merge --halves` writes a `tune` and an `eval` split so the
                        score threshold is chosen on photos the F1 is not reported on)
@@ -70,8 +71,12 @@ honours `HOLDS_THREADS` (default 8) and pins OMP/MKL/torch to it.
 cd ml/holds && . .venv/bin/activate
 
 # 1. Corpus. --list prints the registry with each licence and whether it is usable;
-#    --only <name> prints the fetch steps for one source.
+#    --only <name> fetches one source (or prints its manual steps).
 python data/fetch.py --list
+ROBOFLOW_API_KEY=$(cat ~/.config/roboflow/api-key) \
+  python data/fetch.py --only roboflow-climbing-holds-and-volumes
+python data/single_class.py --source .data/roboflow-climbing-holds-and-volumes \
+  --target .data/roboflow-1class
 python data/fetch.py --only wayup
 
 # 2a. The public bootstrap corpus (The Way Up). Splits by participant, so a
@@ -141,30 +146,51 @@ any of these numbers.
 ### Spray walls, held-out — the number that counts
 
 Threshold picked on `tune`, F1 reported on `eval`. int8 weights, because int8 is
-what would ship (see "Export size").
+what would ship. Two training runs are shown: the original bootstrap (The Way Up,
+one route wall) and the retrain on the **CC BY 4.0 Roboflow climbing-holds set**.
 
-| | `nano-tiled-1024` | `medium-untiled-1280` | Gate |
-| --- | --- | --- | --- |
-| Threshold (chosen on `tune`) | 0.05 | 0.08 | — |
-| Precision | 0.274 | 0.504 | — |
-| Recall | 0.461 | 0.533 | — |
-| **F1 @ box IoU 0.5** | 0.344 | **0.518** | ≥ 0.80 |
-| Gap to the larger config | 17.4 pts | — | ≤ 5 pts |
-| Corrections ÷ holds | 1.76 | **0.99** | ≤ 0.10 |
-| Latency p50 / p95, 8 CPU threads | 0.560 s / 0.596 s | 0.365 s / 0.398 s | ≤ 8 s p50 (device) |
-| Peak RSS | 392 MB | 546 MB | < 500 MB |
-| Artifact | 28.7 MB int8 | 32.8 MB int8 | — |
+| | nano-tiled, bootstrap | nano-tiled, **CC BY** | medium-untiled, bootstrap | medium-untiled, **CC BY** | Gate |
+| --- | --- | --- | --- | --- | --- |
+| Trained on | 400 tiles of 1 wall | 1,400 tiles / ~350 photos | 300 frames of 1 wall | 600 photos | — |
+| Threshold (from `tune`) | 0.05 | 0.05 | 0.08 | **0.20** | — |
+| Precision | 0.274 | 0.228 | 0.504 | 0.514 | — |
+| Recall | 0.461 | 0.419 | 0.533 | **0.612** | — |
+| **F1 @ box IoU 0.5** | 0.344 | 0.295 | 0.518 | **0.559** | ≥ 0.80 ❌ |
+| Corrections ÷ holds | 1.76 | 2.00 | 0.99 | **0.97** | ≤ 0.10 ❌ |
+| Latency p50 / p95 | 0.560 / 0.596 s | 0.591 / 0.658 s | 0.365 / 0.398 s | **0.347 / 0.384 s** | ≤ 8 s on device ⚠️ |
+| Peak RSS | **391 MB** | **391 MB** | 545 MB | 545 MB | < 500 MB |
+| Artifact | 28.7 MB int8 | 28.7 MB int8 | 32.8 MB int8 | 32.8 MB int8 | — |
 
-Same runs in fp32, for reference: nano F1 0.345 (p50 0.858 s, 472 MB), medium F1
-0.513 (p50 0.512 s, 646 MB). **int8 costs nothing in accuracy** — medium is
-0.5 points *better* — while cutting latency by about a third and the file by 73 %.
+Both numbers come from the same 10 held-out spray-wall photos (964 holds) that
+neither model, and neither threshold sweep, ever saw.
 
-Secondary, all 54 labelled spray walls including the 33 labelled only in part:
-nano **0.220**, medium **0.372**. Those are precision *lower bounds*, not
-comparable to the table above: a detection in a region nobody labelled is charged
-as a false positive even when it is a real hold. They are here because they cover
-the dense walls the strict set has to leave out, and the strict set's optimism
-should be read against them.
+**The two configs moved in opposite directions**, which is the finding:
+
+- **medium-untiled improved by 4.1 F1 points** on 600 photos and a single epoch of
+  real hold data, almost all of it recall (0.533 → 0.612). It also became better
+  calibrated: its best threshold moved from 0.08 to 0.20, which is what a model
+  that has actually seen holds looks like.
+- **nano-tiled got 4.9 points worse.** Not noise — the tiling is wrong for this
+  data. The Roboflow photos are around 800 px on the long side, so cutting them
+  2×2 at 1024 produces ~330 px tiles upscaled to 384: each hold gets bigger and
+  the surrounding wall, which is what says "this is a hold and not a smudge",
+  disappears. And a 1,400-tile budget is only ~350 distinct photos against
+  medium's 600.
+
+So the tiled small config is not simply trailing the big one — it is the option
+that fails to benefit from better data at this photo scale. If SW-02 wants a
+phone-sized model, the lever is a smaller architecture at full-frame resolution
+(YOLOX-nano), not RF-DETR nano with tiles.
+
+### What a full training run would need
+
+The retrain used **600 of 3,876 photos for one epoch** and took 34 minutes of CPU;
+nano took 39 minutes for 1,400 tiles. A run that actually exhausts the dataset —
+all 3,876 photos, 10 epochs, which is the usual RF-DETR fine-tuning recipe — is
+about **65× that compute: roughly 35 hours on these 8 CPU threads, or 1–2 hours on
+a single mid-range GPU.** That is the single cheapest experiment left on this
+epic, and it is the one that would turn 0.559 into a real answer. Nothing in the
+harness needs to change to run it; it needs a GPU box for an afternoon.
 
 ### General climbing walls (Commons), and The Way Up
 
@@ -241,8 +267,12 @@ Neither claim is device-verified here.
 
 ### Training, and what was deliberately not trained on
 
-`nano-tiled-1024`: 400 tiles × 2 epochs, 21.6 min. `medium-untiled-1280`: 300
-photos × 1 epoch, 19.8 min. CPU only.
+Bootstrap runs (The Way Up): `nano-tiled-1024` 400 tiles × 2 epochs, 21.6 min;
+`medium-untiled-1280` 300 photos × 1 epoch, 19.8 min.
+
+CC BY runs (Roboflow): `medium-untiled-1280` 600 photos × 1 epoch, **34.4 min**;
+`nano-tiled-1024` 1,400 tiles × 1 epoch, **39.1 min**. CPU only, one process at a
+time.
 
 **The spray-wall corpus was not used for training, on purpose, for two reasons.**
 It is the only held-out measurement of the thing we actually care about, and
@@ -412,6 +442,7 @@ table, is what `data/fetch.py` enforces.
 | `onnxconverter-common` | MIT | offline only — the fp16 conversion |
 | Spray-wall photos (the primary evaluation corpus) | 41 of 61 **all rights reserved**, 11 `not stated`, 1 CC BY 4.0 | evaluation only, gitignored, never redistributed, **never training data**, never a fixture |
 | Wikimedia Commons wall photos (the secondary evaluation corpus) | per file: CC BY-SA 4.0 / 3.0 / 2.0, CC BY 4.0 / 3.0 / 2.0, CC0, public domain — **no NC, no ND** | evaluation only, gitignored; a photo promoted to `fixtures/` carries its licence, author and file page in the COCO record |
+| Roboflow `climbing-holds-and-volumes` v14 (the training set) | **CC BY 4.0** | fine-tuned weights would ship — **needs credit on the app licences screen** |
 | The Way Up (Zenodo 10.5281/zenodo.15196867) | **CC BY 4.0** | training data + the committed fixtures — **must be credited on the app licences screen** if anything trained on it ships |
 | CS152-SSL label set | CC BY 4.0 | labels are keyless; the images need a free Roboflow account |
 | xiaoxiae gym masks | CC BY-SA 4.0 | the only per-hold masks found; images need a Kaggle token |
