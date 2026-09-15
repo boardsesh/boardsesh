@@ -1538,6 +1538,20 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       if (url.pathname === '/client/v4/zones/zone-1/settings/ssl') return envelope({ id: 'ssl', value: 'strict' });
       if (url.pathname === '/client/v4/zones/zone-1/dns_settings') return envelope({ flatten_all_cnames: false });
       if (url.pathname.includes('/rulesets/phases/')) return envelope({ id: 'ruleset-id', rules: [] });
+      // R2 is only fetched when CLOUDFLARE_ACCOUNT_ID is set.
+      if (url.pathname.endsWith('/r2/buckets')) {
+        return envelope({ buckets: desiredR2Buckets.map((bucket) => ({ name: bucket.name })) });
+      }
+      if (url.pathname.endsWith('/domains/custom')) return envelope({ domains: [] });
+      if (url.pathname.endsWith('/cors')) {
+        // GET returns 404 before a CORS policy exists; PUT creates it.
+        if (method === 'GET') {
+          return new Response(JSON.stringify({ success: false, errors: [{ code: 10_006, message: 'not found' }] }), {
+            status: 404,
+          });
+        }
+        return envelope({});
+      }
       throw new Error(`Unstubbed Cloudflare request: ${method} ${url.pathname}`);
     });
 
@@ -1567,6 +1581,32 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     // One PUT per phase, not one per drifted rule — the rulesets API only offers
     // a whole-phase write.
     expect(written).toHaveLength(MANAGED_RULE_PHASES.length);
+  });
+
+  it('converges each R2 bucket once, however many attributes drifted', async () => {
+    const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-1');
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    const attaches = requests.filter(
+      (request) => request.method === 'POST' && request.pathname.endsWith('/domains/custom'),
+    );
+    const assetsAttaches = attaches.filter((request) => request.pathname.includes('/boardsesh-static-assets/'));
+    expect(assetsAttaches).toHaveLength(1);
+    expect(assetsAttaches[0].body).toMatchObject({ domain: ASSETS_STAGING_HOSTNAME });
+    const publicBuckets = desiredR2Buckets.filter((bucket) => bucket.customDomain !== null);
+    expect(attaches).toHaveLength(publicBuckets.length);
+
+    const corsPuts = requests.filter((request) => request.method === 'PUT' && request.pathname.endsWith('/cors'));
+    expect(corsPuts).toHaveLength(1);
+
+    const assetChangeLogs = vi
+      .mocked(console.log)
+      .mock.calls.map(([message]) => message)
+      .filter((message) => typeof message === 'string' && message.includes('R2 boardsesh-static-assets:'));
+    expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] applied:'))).toHaveLength(1);
+    expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] skipped:'))).toHaveLength(1);
   });
 
   it('sends the apex redirect rule verbatim in the dynamic-redirect PUT', async () => {
