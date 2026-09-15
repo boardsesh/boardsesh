@@ -101,6 +101,56 @@ describe('native release workflow contracts', () => {
     }
   });
 
+  // A platform the guard withheld was never attempted, so its `skipped` outcome
+  // is the intended result. If the summary counted it as requested, every train
+  // push before the first native change — and every main→release/next sync —
+  // would red a run that did exactly what it was supposed to do.
+  it('does not fail the run for a platform the train guard withheld', () => {
+    const summary = stepsOfJob(productionOta, 'publish').find(
+      (step) => step.name === 'Summarize platform publish results',
+    );
+    expect(summary, 'the production OTA workflow must summarize platform results').toBeDefined();
+
+    // The verdict has to reach the step: a summary that never reads the guard
+    // outputs cannot tell "withheld" from "failed", whatever its shell says.
+    const env = String(JSON.stringify(summary?.env ?? {}));
+    for (const output of ['publish_ios', 'publish_android']) {
+      expect(env, `the summary must read steps.train_guard.outputs.${output}`).toContain(
+        `steps.train_guard.outputs.${output}`,
+      );
+    }
+
+    const run = String(summary?.run ?? '');
+    expect(run).toContain('if [ "$TRAIN_PUBLISH_IOS" = false ]');
+    expect(run).toContain('if [ "$TRAIN_PUBLISH_ANDROID" = false ]');
+    expect(run).toContain('ios_requested=false');
+    expect(run).toContain('android_requested=false');
+
+    // Withholding every requested platform must stop the step with BOTH outputs
+    // false. Falling through would compute all_success=true — nothing left to
+    // contradict it — and the served-manifest verify, which runs on that claim,
+    // would then hunt for an update that was never published and fail the run.
+    // That is exactly the shape a single-platform republish from the train takes
+    // when the guard withholds its one platform.
+    const bothWithheld = run.match(
+      // The parsed block scalar is dedented, so the closing `fi` sits at column 0.
+      /if \[ "\$ios_requested" = false \] && \[ "\$android_requested" = false \]; then([\s\S]*?)\nfi/,
+    )?.[1];
+    expect(bothWithheld, 'the summary must stop when every requested platform was withheld').toBeTruthy();
+    // The capture is non-greedy, so a nested if/fi inside this branch would end
+    // the match early and leave every assertion below inspecting a fragment —
+    // passing on the wrong block. Fail loudly instead if that day comes.
+    expect(bothWithheld, 'the both-withheld branch gained a nested if; widen this match').not.toMatch(/\bif \[/);
+    expect(bothWithheld).toContain('echo "all_success=false"');
+    expect(bothWithheld).toContain('echo "any_success=false"');
+    expect(bothWithheld).toContain('exit 0');
+
+    // A withheld platform published nothing and the build that asked for it is
+    // waiting on an update it will never get: green, but never silent.
+    expect(run).toContain('::warning::iOS published nothing');
+    expect(run).toContain('::warning::Android published nothing');
+  });
+
   it('keeps fingerprint gates and tags store uploads only after success', () => {
     expect(ios).toContain('fingerprint-ios-');
     expect(ios).toContain("steps.testflight_upload.outcome == 'success'");
@@ -300,8 +350,36 @@ describe('native release workflow contracts', () => {
     expect(otaCheck).not.toContain("conclusion: 'neutral',");
 
     // The train owns its own pushes; the native workflows react to them.
-    const triggers = parse(otaCheck)['on'] as { push?: { 'branches-ignore'?: string[] } };
+    const triggers = parse(otaCheck)['on'] as {
+      push?: { 'branches-ignore'?: string[] };
+      pull_request?: { types?: string[] };
+    };
     expect(triggers.push?.['branches-ignore']).toEqual(['main', releaseBranch]);
+
+    // The verdict depends on the base branch and the labels, and neither
+    // remediation the failure prints (retarget, or add the waiver label) produces
+    // a push — so without these event types the red check-run would be stuck.
+    // `edited` is what a base change raises.
+    expect(triggers.pull_request?.types).toEqual(['opened', 'reopened', 'edited', 'labeled', 'unlabeled']);
+    // A fork PR's token is read-only, so the comment/label/check-run writes would
+    // 403; the push path never covered forks either.
+    expect(otaCheck).toContain('github.event.pull_request.head.repo.fork != true');
+    // Dependabot's PRs get a read-only token even though the head branch is
+    // same-repo, so the comment / label / check-run writes would 403 and the
+    // weekly lockfile PR would show a failed workflow and no verdict.
+    expect(otaCheck).toContain("github.actor != 'dependabot[bot]'");
+    // `edited` also fires on every title/body edit, and this job is a ~20-minute
+    // two-install resolve. Only a base change can move the verdict, and that is
+    // what `changes.base` reports.
+    expect(otaCheck).toContain("github.event.action != 'edited' || github.event.changes.base != null");
+    // The PR's head commit, not the synthetic merge ref: a check-run posted on
+    // the merge sha is invisible on the PR, and the merge tree is not what the
+    // author pushed.
+    expect(otaCheck).toContain('ref: ${{ github.event.pull_request.head.sha || github.sha }}');
+    expect(otaCheck).toContain('head_sha: process.env.HEAD_SHA,');
+    // Both event paths must serialize in ONE lane, or a retarget can race the
+    // push whose stale verdict it is trying to replace.
+    expect(otaCheck).toContain('group: mobile-ota-check-${{ github.head_ref || github.ref_name }}');
   });
 
   // The PR CI gate diffs head against the branch it will merge into. Diffing a
@@ -333,6 +411,9 @@ describe('native release workflow contracts', () => {
     run?: string;
     uses?: string;
     with?: Record<string, unknown>;
+    // Step-level env. Parsed rather than string-matched so an assertion about
+    // which values a step can actually see reads that step's own block.
+    env?: Record<string, unknown>;
     // `if` is the step's condition. Parsed rather than string-matched so an
     // assertion about a step's gate can't accidentally read a neighbour's.
     if?: string;

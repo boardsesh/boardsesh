@@ -429,6 +429,12 @@ interface Options {
   baseBranch: string;
   /** Set when the PR carries the allow-native-on-main label. */
   allowNativeOnMain: boolean;
+  /**
+   * Which platforms to resolve. A resolve is ~30s per tree per platform, so a
+   * caller that only cares about one (a single-platform OTA republish) should
+   * not pay for the other.
+   */
+  platforms: readonly Platform[];
 }
 
 export function parseArgs(argv: readonly string[], repoRoot: string): Options {
@@ -440,6 +446,7 @@ export function parseArgs(argv: readonly string[], repoRoot: string): Options {
     checkShippedTags: false,
     baseBranch: 'main',
     allowNativeOnMain: false,
+    platforms: PLATFORMS,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -480,6 +487,16 @@ export function parseArgs(argv: readonly string[], repoRoot: string): Options {
       case '--allow-native-on-main':
         options.allowNativeOnMain = true;
         break;
+      case '--platform': {
+        // 'all' (or an empty value) keeps both — the same vocabulary the OTA
+        // workflow's own platform input uses.
+        const requested = next();
+        if (requested && requested !== 'all') {
+          if (requested !== 'ios' && requested !== 'android') throw new Error(`unknown platform: ${requested}`);
+          options.platforms = [requested];
+        }
+        break;
+      }
       default:
         throw new Error(`unknown argument: ${flag}`);
     }
@@ -538,7 +555,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
     if (options.baseMobileDir) writeEnv(options.baseMobileDir);
   }
 
-  const results: PlatformResult[] = PLATFORMS.map((platform) => {
+  const results: PlatformResult[] = options.platforms.map((platform) => {
     // Re-read the baseline the same way each attempt: a provided value is fixed,
     // a worktree is re-resolved so a flaky baseline read can also self-correct.
     const readBaseFingerprint = (): string | null =>

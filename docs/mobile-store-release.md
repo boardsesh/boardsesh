@@ -91,7 +91,10 @@ A `release/next` push that resolves to a new native fingerprint triggers:
 
 `workflow_dispatch` still works from `main` as well as `release/next` — that is
 the hotfix rebuild after a merge-back, when main's fingerprint already equals the
-train's. Automatic builds come only from the train.
+train's. Automatic builds come only from the train. A dispatched build from
+`main` does **not** auto-draft, because `mobile-store-draft.yml` subscribes to
+completed runs whose head branch is `release/next`; dispatch
+`mobile-store-draft.yml` by hand after that build lands.
 
 Both workflows use the `Production` environment and serialize non-cancelling
 builds. A successful upload records the exact commit, store build number, and
