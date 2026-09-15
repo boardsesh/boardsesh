@@ -17,7 +17,7 @@ import {
 /**
  * The probe gate's whole value rests on these thresholds behaving exactly as
  * documented: too loose and a real App Store regression ships unnoticed, too
- * tight and every nightly reds with a false "changed" and fans out anyway.
+ * tight and every run reds with a false "changed" and fans out anyway.
  *
  * So the boundaries are pinned from both sides — a delta of exactly the channel
  * tolerance is noise, one more is a difference; exactly the ratio is noise, one
