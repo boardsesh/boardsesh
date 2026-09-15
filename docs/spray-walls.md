@@ -493,6 +493,44 @@ hold id is alive on the version being edited. It never asks whether a hold "look
 like" a hold. Owner decision 2026-09-14: it is the owner's wall, and trash in is
 their call.
 
+## The hold editor
+
+SW-08 (#5441) is not a second editor. It is the catalogue outline editor
+(`packages/mobile/src/components/outline-editor/`) pointed at a wall through a
+target adapter, because the stroke → ring chain that editor owns IS the
+`@boardsesh/board-art-geometry` ring contract, and a second polygon editor would
+be a second contract. The full split is in `docs/board-art-geometry.md`, "The
+editor that writes them"; what belongs here is what it means for a wall.
+
+`SprayHoldEditorScreen` is the entry point, and its props are the contract:
+`wallUuid`, `layoutId`, the DRAFT `versionId`, `viewerCanEdit`, the version's
+`homography`, and an optional `candidates` list. It reads the wall's holds from
+the SW-07 **registry** rather than taking them as a prop, so the board behind the
+editor, the queue thumbnail and the play drawer all draw the same wall from one
+fetch; a save invalidates `sprayWallRenderData`, which walks the new holds back
+through `useSprayWall` into that registry. There is no route yet — SW-09 and
+SW-11 wire the entry points.
+
+Three things the editor does are decided by this document rather than by taste:
+
+- **It edits THE draft.** One draft per wall, so there is no version to choose:
+  the `versionId` handed in is the open one, and publishing or discarding are the
+  two ways out (see "One open draft per wall").
+- **A candidate is drawn and never written.** Detector output arrives as
+  `source: AUTO` holds with a confidence, and Save skips every one nobody has
+  ruled on. A confidence slider hides the ones below its cut-off and "Keep all"
+  takes the rest; a rejected candidate is simply deleted, because it never became
+  a hold. Accepting is what marks it for the upsert — so a candidate cannot
+  become a hold on somebody's wall as a side effect of saving something else.
+- **Removals are sent BEFORE upserts.** A merge takes two holds off and puts one
+  back; the other order would leave the wall carrying both the merged hold and
+  the one it swallowed if the session died between the two calls. Holds missing
+  is a visible, fixable failure; duplicates nobody can tell apart is not.
+
+Editing follows ownership (epic decision 2026-09-15): the gate is
+`SprayWall.viewerCanEdit`, which is `requireBoardEditAccess` unchanged — no
+gym-editor extension, and nothing wall-specific to drift from it.
+
 ## The mobile render path
 
 Every catalogue board's background is a `.webp` inside the IPA/APK and every hold
