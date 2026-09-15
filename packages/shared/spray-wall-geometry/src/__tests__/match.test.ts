@@ -76,6 +76,10 @@ describe('colourDistance', () => {
   it('never exceeds 1, so it cannot swamp the geometry terms', () => {
     expect(colourDistance([-200, -200, -200], [200, 200, 200])).toBe(1);
   });
+
+  it('refuses descriptors of different lengths rather than scoring the shared axes', () => {
+    expect(() => colourDistance([50, 0, 0], [50, 0, 0, 1, 0, 0, 0])).toThrow(/equal length/);
+  });
 });
 
 describe('solveAssignment', () => {
@@ -157,6 +161,19 @@ describe('pairCost gates', () => {
       withoutColour,
       12,
     );
+  });
+
+  it('drops the colour term when the two descriptors are different lengths', () => {
+    // Lab-only against Lab-plus-hue: scoring the three axes they share would
+    // invent agreement, so the pair is scored on geometry alone.
+    const shifted: WallCircle = { cx: 105, cy: 100, r: 20 };
+    const mismatched = pairCost(
+      { ...hold, colour: [50, 0, 0] },
+      { ...shifted, colour: [50, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0] },
+      DEFAULT_MATCH_WEIGHTS,
+      gates,
+    );
+    expect(mismatched).toBeCloseTo(pairCost(hold, shifted, DEFAULT_MATCH_WEIGHTS, gates), 12);
   });
 
   it('charges for a colour that changed', () => {

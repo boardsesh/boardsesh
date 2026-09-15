@@ -77,9 +77,14 @@ export function tileWindows(width: number, height: number, grid: TileGrid): Tile
  * Plan the passes for one photo: resize to `longSide`, cut the grid, and hand
  * the windows back in the photo's own pixels.
  *
- * `eval.py` resizes first and divides the finished boxes by the scale at the
- * end; expressing the windows in source pixels here is the same arithmetic with
- * the round trip taken out, so nothing downstream has to remember the scale.
+ * `eval.py` resizes the whole photo first and divides the finished boxes by the
+ * scale at the end; expressing the windows in source pixels here is the same
+ * arithmetic with the round trip taken out, so nothing downstream has to
+ * remember the scale. The BOX ARITHMETIC is therefore identical — a window at
+ * `x0` in the working frame is `x0 / scale` here, and a normalised box maps to
+ * the same photo pixel either way — but the PIXEL VALUES the model sees are not:
+ * see `letterbox`, which samples the fractional source rect in one stage where
+ * `eval.py` takes two.
  */
 export function planTiles(width: number, height: number, options: TilePlanOptions = {}): TilePlan {
   const { longSide, rows, cols, overlap } = { ...DEFAULT_TILE_PLAN, ...options };

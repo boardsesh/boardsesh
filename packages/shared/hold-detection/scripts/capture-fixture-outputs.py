@@ -23,9 +23,11 @@ Two reasons, and the second one is the surprise.
 2. **`onnxruntime-node` 1.29 and the Python `onnxruntime` 1.30 do not agree on
    this model.** Measured on fixture `1.jpg`, tile 0: 280 of 300 query boxes
    differ by more than 0.01 in normalised units (median 0.40) and 294 of 300
-   logits by more than 0.05 (median 0.77) — enough to move the photo's detection
-   count from 44 to 49. Dynamic int8 quantisation puts a QGemm kernel in the hot
-   path and those are build- and version-specific; float32 would be far closer.
+   logits by more than 0.05 (median 0.77). The consequence, measured on a
+   different photo — `2008-08-05-evan-daniel-climbing-at-vertical-edge.jpg`,
+   whose Python run produces 44 detections — is 49 from a Node capture. Dynamic
+   int8 quantisation puts a QGemm kernel in the hot path and those are build- and
+   version-specific; float32 would be far closer.
    A Node capture would therefore pin TypeScript against a Python run that never
    happened. **SW-02 should expect the same on device**: the app's runtime will
    not reproduce the harness's numbers hold for hold, which is one more reason

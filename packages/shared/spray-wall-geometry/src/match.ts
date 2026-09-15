@@ -121,14 +121,23 @@ export function circleIou(a: WallCircle, b: WallCircle): number {
 }
 
 /**
- * Distance between two colour descriptors, normalised to roughly 0..1.
+ * Distance between two colour descriptors of the SAME length, normalised to
+ * roughly 0..1.
  *
  * The Lab triple is divided by 100 — Lab's lightness axis runs 0..100 and the
  * chroma axes rarely leave ±100 — so a black hold against a white one scores
  * about 1 and the term cannot swamp the geometry it is meant to break ties in.
+ *
+ * Two descriptors of different lengths are not comparable — a Lab-only vector
+ * against a Lab-plus-hue-histogram one would be scored on the three axes they
+ * share and silently read as a close match. `pairCost` refuses such a pair's
+ * colour term rather than asking for a number here.
  */
 export function colourDistance(a: readonly number[], b: readonly number[]): number {
-  const length = Math.min(a.length, b.length);
+  if (a.length !== b.length) {
+    throw new Error(`colourDistance needs descriptors of equal length, got ${a.length} and ${b.length}`);
+  }
+  const length = a.length;
   if (length === 0) return 0;
   let total = 0;
   for (let index = 0; index < length; index += 1) {
@@ -158,7 +167,11 @@ export function pairCost(hold: WallCircle, detection: WallCircle, weights: Match
 
   const holdColour = hold.colour;
   const detectionColour = detection.colour;
-  const hasColour = holdColour !== undefined && detectionColour !== undefined;
+  // Equal lengths too: a wall whose old holds carry a Lab-plus-hue descriptor and
+  // whose new detections carry Lab alone has no colour comparison to make, and
+  // scoring the axes they happen to share would invent agreement.
+  const hasColour =
+    holdColour !== undefined && detectionColour !== undefined && holdColour.length === detectionColour.length;
   // With no colour to compare, the two geometric terms are renormalised to carry
   // the whole cost, so the result stays on the same 0..1 scale as a matched pair
   // that did have colour — the gates and the ambiguity ratio are both expressed

@@ -116,9 +116,27 @@ function axisWeights(
 /**
  * Sample `rect` out of `image` into the model's square input tensor.
  *
- * The crop and the resize are one pass: the source rect is clipped to the photo
- * and resampled straight into the square, so no intermediate bitmap is allocated
- * on a phone already holding a 12-megapixel photo.
+ * ## One stage here, two in `eval.py`
+ *
+ * This resamples the fractional source rect straight into the square: ONE
+ * filtered read, and no intermediate bitmap on a phone already holding a
+ * 12-megapixel photo. `ml/holds/eval.py` takes TWO stages — it resizes the whole
+ * photo to `long_side`, then resizes each INTEGER crop of that copy to the model
+ * side — so it filters the pixels twice and snaps every tile boundary to a whole
+ * pixel of the resized copy.
+ *
+ * The box arithmetic is equivalent (see `planTiles`); the pixel values are not.
+ * Two filter passes are not one, and a tile boundary rounded to a whole working
+ * pixel sits up to half a working pixel away from the one used here.
+ *
+ * **Nothing in this repo pins the resample against Pillow.** The parity tests
+ * replay the model's RECORDED output tensors, so they check everything after
+ * inference and nothing before it. What is claimed for this function is only
+ * what its own tests claim: the layout and normalisation of the tensor, the
+ * `unLetterbox` round trip, and that a downscale is area-weighted rather than
+ * point-sampled. Whether the two stages feed the model measurably different
+ * pixels is open, and on the evidence in `capture-fixture-outputs.py` it matters
+ * far less than which ONNX runtime executes the graph.
  */
 export function letterbox(image: RgbaImage, rect: TileRect, options: LetterboxOptions): LetterboxResult {
   const { size, fit = 'stretch', mean = IMAGENET_MEAN, std = IMAGENET_STD, padValue = 114 } = options;

@@ -177,13 +177,18 @@ async function loadJpegDecoder(): Promise<((path: string) => Promise<RgbaImage>)
 describe('runDetection against the real ONNX', () => {
   const modelPath = process.env.HOLD_DETECTION_ONNX;
 
-  it('finds holds in a fixture photo', async () => {
+  // `context.skip(reason)`, not an early `return`: a bare return reports a green
+  // PASS for a test that ran no model, so CI would read as having exercised the
+  // real ONNX on every run. The reason rides the skip rather than a `console.log`
+  // — the default reporter does not surface a passing or skipped test's stdout, so
+  // a printed line there would be invisible exactly when someone wants it.
+  it('finds holds in a fixture photo', async (context) => {
     const runtimeModule = await loadOnnxRuntime();
     const decode = await loadJpegDecoder();
     if (!modelPath || !existsSync(modelPath) || !runtimeModule || !decode) {
-      console.info(
-        '[hold-detection] skipping the real-ONNX run: ' +
-          `model ${modelPath && existsSync(modelPath) ? 'present' : 'missing'}, ` +
+      context.skip(
+        'real-ONNX run needs all three: ' +
+          `model ${modelPath && existsSync(modelPath) ? 'present' : 'missing (set HOLD_DETECTION_ONNX)'}, ` +
           `onnxruntime-node ${runtimeModule ? 'present' : 'missing'}, ` +
           `sharp ${decode ? 'present' : 'missing'}. See this file's comment.`,
       );
