@@ -36,6 +36,7 @@ const CLIMB_FIELDS = `
   boardseshDifficulty
   boardseshConfidence
   compatibleSizeIds
+  missingHoldCount
 `;
 
 const QUEUE_ITEM_USER_FIELDS = `

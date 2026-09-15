@@ -1260,6 +1260,7 @@ export const SUBSCRIPTION_CLIMB_FIELDS = `
   boardseshDifficulty
   boardseshConfidence
   compatibleSizeIds
+  missingHoldCount
 `;
 
 // The item-level fields that cross the wire alongside the climb. This client now
