@@ -151,8 +151,11 @@ export function HoldDetectionBenchmarkScreen() {
         key: 'version',
         // i18n-ignore-next-line — tester-only screen
         label: 'Model version',
+        // The default itself, not a hand-typed example: the two drifted once
+        // already (a dotted default next to a dashed placeholder), and a version
+        // that does not match a published prefix just reports "No model".
         // i18n-ignore-next-line — tester-only screen
-        placeholder: 'e.g. 2026-09-15',
+        placeholder: `e.g. ${DEFAULT_MODEL_VERSION}`,
         value: version,
         onChangeText: setVersion,
         onSubmit: () => void loadModel(),
