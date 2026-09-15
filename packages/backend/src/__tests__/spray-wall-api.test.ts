@@ -144,10 +144,16 @@ async function createPublishedWall(
       input: {
         wallUuid: wall.uuid,
         versionId: version.id,
+        // Every hold sits STRICTLY inside the 800x620 canonical frame the ANCHORS
+        // above define. That is not cosmetic: `populateDenormalizedColumns` step 3
+        // compares the climb's edge box against the size row's with strict
+        // inequalities, so a hold ON the frame edge makes the derivation match
+        // nothing — and the `compatible_size_ids` re-assertion this file pins would
+        // become untestable, passing whether or not the resolver does it.
         holds: [
           { cx: 100, cy: 120, r: 24 },
           { cx: 300, cy: 400, r: 30, source: 'AUTO', confidence: 0.81 },
-          { cx: 520, cy: 640, r: 18, outline: [1, 0, 0, 1, -1, 0, 0, -1] },
+          { cx: 520, cy: 560, r: 18, outline: [1, 0, 0, 1, -1, 0, 0, -1] },
         ],
       },
     },
@@ -1294,11 +1300,58 @@ describe('the caps, and the shapes the server refuses', () => {
     )) as { uuid: string };
 
     const [climb] = (await db.execute(sql`
-      SELECT compatible_size_ids, required_set_ids FROM board_climbs WHERE uuid = ${saved.uuid}
-    `)) as unknown as Array<{ compatible_size_ids: number[]; required_set_ids: number[] }>;
+      SELECT edge_left, edge_right, edge_bottom, edge_top, compatible_size_ids, required_set_ids
+      FROM board_climbs WHERE uuid = ${saved.uuid}
+    `)) as unknown as Array<{
+      edge_left: number;
+      edge_right: number;
+      edge_bottom: number;
+      edge_top: number;
+      compatible_size_ids: number[];
+      required_set_ids: number[];
+    }>;
+
+    // Both walls' size rows carry a real edge box — `createSprayWallVersion` writes
+    // it when the frame is decided — and the climb's box sits strictly inside BOTH.
+    // So the unasserted derivation really would name both sizes, which is what
+    // makes the next assertion a pin rather than a tautology.
+    const sizeRows = (await db.execute(sql`
+      SELECT id, edge_left, edge_right, edge_bottom, edge_top
+      FROM board_product_sizes WHERE board_type = 'spray' ORDER BY id
+    `)) as unknown as Array<{
+      id: number;
+      edge_left: number;
+      edge_right: number;
+      edge_bottom: number;
+      edge_top: number;
+    }>;
+    expect(sizeRows.map((row) => row.id)).toEqual([first.wall.sizeId, roomy.sizeId]);
+    for (const row of sizeRows) {
+      expect(row.edge_left).toBe(0);
+      expect(row.edge_bottom).toBe(0);
+      expect(row.edge_right).toBeGreaterThan(climb.edge_right);
+      expect(row.edge_top).toBeGreaterThan(climb.edge_top);
+      expect(row.edge_left).toBeLessThan(climb.edge_left);
+      expect(row.edge_bottom).toBeLessThan(climb.edge_bottom);
+    }
+
     expect(climb.compatible_size_ids).toEqual([first.wall.sizeId]);
     expect(climb.compatible_size_ids).not.toContain(roomy.sizeId);
     expect(climb.required_set_ids).toEqual([1]);
+
+    // …and an EDIT that moves the holds re-runs the same helper, so it needs its
+    // own re-assertion. Pinned here rather than in a second fixture because the
+    // two-wall database is what makes the derivation wrong in the first place.
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: saved.uuid, boardType: 'spray', frames: framesFor([first.holdIds[0], first.holdIds[1]]) } },
+      ctxFor(OWNER),
+    );
+    const [edited] = (await db.execute(sql`
+      SELECT compatible_size_ids, required_set_ids FROM board_climbs WHERE uuid = ${saved.uuid}
+    `)) as unknown as Array<{ compatible_size_ids: number[]; required_set_ids: number[] }>;
+    expect(edited.compatible_size_ids).toEqual([first.wall.sizeId]);
+    expect(edited.required_set_ids).toEqual([1]);
   });
 
   it('refuses a degenerate anchor quad rather than pinning a broken frame', async () => {

@@ -329,6 +329,17 @@ the frame, because every existing hold's coordinates are in it. There are no
 user-entered wall dimensions anywhere (owner decision 2026-09-14: we just render
 the photo).
 
+Writing that frame is also what fills in the wall's **catalogue edge box**.
+`createSprayWall` cannot: the frame comes from the photo, and there is no photo
+yet, so the `board_product_sizes` row starts with `edge_right` / `edge_top` NULL
+and `createSprayWallVersion` sets them to the frame in the same transaction that
+decides it (`edge_left` / `edge_bottom` stay 0). Skipping that write leaves the
+box NULL for the wall's whole life, and three readers fail differently:
+`populateDenormalizedColumns` step 3 matches no size row at all so
+`compatible_size_ids` never derives — silently — the climb-search edge filter has
+nothing to compare against, and SW-07's render path gets a NULL box where every
+other board type has numbers.
+
 The homography is a 4-point DLT in pure TS
 (`packages/backend/src/lib/spray-wall-homography.ts`), nine row-major floats, and
 the identity matrix when a version has no anchors. A degenerate quad — anchors
@@ -351,6 +362,11 @@ Removal splits two ways, and the split is what keeps history honest:
 - a hold installed by an **earlier** version is stamped `removed_version_id` and
   never deleted, because a climb set on it has to stay findable and
   `missing_hold_count` has to stay countable.
+
+`movedFromHoldId` is lineage rather than geometry, and it is scoped against every
+hold **this** wall has ever had — not the alive set, because a move's whole point
+is that the predecessor has just come off. A pointer at another wall's hold, or at
+nothing, would make remix suggest a successor for a hold that was never there.
 
 Every hold read names the generation it means. `aliveHolds(wallId)` with no
 version is "alive at the wall's `current_version_id`" — the climber's view, which
@@ -424,6 +440,19 @@ reason:
 The cap is 10MB, `files: 1`, the magic bytes decide the format regardless of the
 declared Content-Type, and the caller must **own** the wall — not merely be able
 to edit it. Nobody uploads a photograph of a stranger's living room.
+
+There is also a **per-user budget of 20 uploads per 10 minutes**, answering `429`
+with a `Retry-After: 600` once it is spent. It is the `feedback-screenshots.ts`
+pattern and it is here for the same reason: every POST mints a NEW object, so one
+authenticated account could otherwise fill the private bucket with 10MB objects,
+and `MAX_VERSIONS_PER_WALL` does not help because it caps the ROWS rather than the
+uploads that never become one. A rejected upload is charged too — it still costs a
+multipart parse and a sharp decode, which is exactly what a spammer would loop on
+— and the check runs before both. The window is per process, so the real ceiling
+is 20 × the instance count and it resets on deploy; that is accepted rather than
+reaching for Redis, because the budget only has to make scripted abuse tedious.
+`applyRateLimit`, the two-tier limiter the resolvers use, is not reachable from a
+REST handler — it keys off the GraphQL connection context.
 
 An uploaded photo sits in the bucket unreferenced until `createSprayWallVersion`
 adopts it, so an abandoned upload is a stray object for the SW-17 (#5450) cleanup

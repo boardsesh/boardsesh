@@ -66,16 +66,10 @@ export async function aliveHolds(db: DrizzleDb, wallId: number, versionNumber?: 
   // A version's work counts when the version is no longer a draft, or when it is
   // the very version being asked about. Spelled out for both ends of the range,
   // because an abandoned draft's REMOVALS are as wrong as its additions.
-  const installedLanded = or(
-    ne(installedVersion.status, 'draft'),
-    eq(installedVersion.versionNumber, targetVersion),
-  );
+  const installedLanded = or(ne(installedVersion.status, 'draft'), eq(installedVersion.versionNumber, targetVersion));
   // The negation, by De Morgan rather than `not(...)`: still a draft AND not the
   // version being asked about.
-  const removalNeverLanded = and(
-    eq(removedVersion.status, 'draft'),
-    ne(removedVersion.versionNumber, targetVersion),
-  );
+  const removalNeverLanded = and(eq(removedVersion.status, 'draft'), ne(removedVersion.versionNumber, targetVersion));
 
   return db
     .select(getTableColumns(sprayWallHolds))

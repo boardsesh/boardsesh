@@ -656,6 +656,12 @@ export const sprayWallMutations = {
       // privacy defence rather than cosmetics — see the helper's own comment.
       // Inside the transaction so a half-written wall leaves a gap in the id
       // space (fine) rather than a catalogue row with no wall (not).
+      //
+      // `referenceWidth` / `referenceHeight` are deliberately NOT passed: the frame
+      // is derived from version 1's photo and there is no photo yet, so the size
+      // row's `edge_right` / `edge_top` start NULL and `createSprayWallVersion`
+      // fills them in when the frame is decided. Passing a guess here would put a
+      // wrong edge box on the catalogue that nothing later corrects.
       await createSprayWallCatalogueRows(tx, { layoutId, name: validated.name });
 
       const [board] = await tx
@@ -835,6 +841,27 @@ export const sprayWallMutations = {
           updatedAt: new Date(),
         })
         .where(eq(dbSchema.sprayWalls.id, wall.id));
+
+      // …and the SAME frame onto the catalogue's size row, which is the only place
+      // a reader that knows nothing about spray can find it.
+      //
+      // `createSprayWall` could not write it — the frame is derived from this
+      // photo, which did not exist yet — so without this the edge box stays NULL
+      // for the wall's whole life. Three things read it and each fails differently:
+      // `populateDenormalizedColumns` step 3 matches no size row at all (so
+      // `compatible_size_ids` never derives, silently), the climb-search edge
+      // filter has nothing to compare against, and SW-07's render path would get a
+      // NULL box where every other board type has numbers. Written in the same
+      // transaction as the frame it mirrors, so the two can never disagree.
+      await tx
+        .update(dbSchema.boardProductSizes)
+        .set({ edgeLeft: 0, edgeBottom: 0, edgeRight: geometry.referenceWidth, edgeTop: geometry.referenceHeight })
+        .where(
+          and(
+            eq(dbSchema.boardProductSizes.boardType, 'spray'),
+            eq(dbSchema.boardProductSizes.id, spraySizeIdForLayout(wall.layoutId)),
+          ),
+        );
 
       return inserted;
     });
