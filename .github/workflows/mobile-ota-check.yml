@@ -98,11 +98,17 @@ env:
 
 jobs:
   ota-check:
-    # Two gates on the pull_request path:
+    # Three gates on the pull_request path. None of them touches the push path,
+    # which keeps serving every branch it served before:
     #
     #   * A fork PR gets a read-only token, so the comment / label / check-run
     #     steps would all 403. The push path never ran for forks either (their
     #     pushes land on the fork, not here), so fork coverage is unchanged.
+    #   * Dependabot's PRs get that same read-only token even though the head
+    #     branch is in this repository, so the writes would fail with "Resource
+    #     not accessible by integration" — turning the weekly root dependency PR
+    #     (it touches pnpm-lock.yaml, which is in the paths filter) into a failed
+    #     workflow with no verdict attached.
     #   * `edited` fires on every title and body edit, not just a base change, and
     #     this job is a ~20-minute two-install fingerprint resolve. Only a base
     #     change can move the verdict, and GitHub reports that as
@@ -110,6 +116,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' ||
       (github.event.pull_request.head.repo.fork != true &&
+       github.actor != 'dependabot[bot]' &&
        (github.event.action != 'edited' || github.event.changes.base != null))
     runs-on: ubuntu-latest
     timeout-minutes: 20
