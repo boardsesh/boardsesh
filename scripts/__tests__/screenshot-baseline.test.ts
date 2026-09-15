@@ -377,12 +377,23 @@ describe('fetchBaseline', () => {
     const downloadDir = join(workDir, 'download');
     mkdirSync(downloadDir, { recursive: true });
     writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
-    writeFileSync(
-      join(downloadDir, 'ios-manifest.json'),
-      JSON.stringify({ platform: 'ios', commit: 'cafebabe', runId: '3', capturedAt: 'now', files: {} }),
-    );
-    const runner = new FakeRunner(() => ok());
+    const fileBytes = 'flat shard bytes';
+    const manifest: BaselineManifest = {
+      platform: 'ios',
+      commit: 'cafebabe',
+      runId: '3',
+      capturedAt: 'now',
+      files: { 'en-US/iphone-16-pro-max/01-discover.png': createHash('sha256').update(fileBytes).digest('hex') },
+    };
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
     const outDir = join(workDir, 'baseline');
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'unzip') {
+        mkdirSync(outDir, { recursive: true });
+        writeFileSync(join(outDir, '01-discover.png'), fileBytes);
+      }
+      return ok();
+    });
 
     const result = fetchBaseline({
       platform: 'ios',
@@ -479,21 +490,32 @@ describe('fetchBaseline', () => {
     const downloadDir = join(workDir, 'download');
     mkdirSync(downloadDir, { recursive: true });
     writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
-    // An empty-files manifest still counts as present — this test isolates the
-    // unzip exit-code handling from the manifest-verification behaviour.
-    writeFileSync(
-      join(downloadDir, 'ios-manifest.json'),
-      JSON.stringify({ platform: 'ios', commit: 'cafebabe', runId: '3', capturedAt: 'now', files: {} }),
-    );
-    const runner = new FakeRunner((invocation) =>
-      invocation.command === 'unzip'
-        ? { status: 1, stdout: '', stderr: '1 warning; stripped leading "../" from an entry' }
-        : ok(),
-    );
+    const fileBytes = 'extracted despite the warning';
+    // The shard IS listed (a real exit-1 unzip run still extracts its files;
+    // the warning is about a stripped path component, not a missing file) —
+    // this test isolates the unzip exit-code handling from the
+    // manifest-verification behaviour, not "no manifest entries at all".
+    const manifest: BaselineManifest = {
+      platform: 'ios',
+      commit: 'cafebabe',
+      runId: '3',
+      capturedAt: 'now',
+      files: { 'en-US/iphone-16-pro-max/01-discover.png': createHash('sha256').update(fileBytes).digest('hex') },
+    };
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    const outDir = join(workDir, 'baseline');
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'unzip') {
+        mkdirSync(outDir, { recursive: true });
+        writeFileSync(join(outDir, '01-discover.png'), fileBytes);
+        return { status: 1, stdout: '', stderr: '1 warning; stripped leading "../" from an entry' };
+      }
+      return ok();
+    });
 
     const result = fetchBaseline({
       platform: 'ios',
-      outDir: join(workDir, 'baseline'),
+      outDir,
       asset: 'ios-en-US-iphone-16-pro-max.zip',
       all: false,
       runner,
@@ -509,7 +531,13 @@ describe('fetchBaseline', () => {
     writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
     writeFileSync(
       join(downloadDir, 'ios-manifest.json'),
-      JSON.stringify({ platform: 'ios', commit: 'cafebabe', runId: '3', capturedAt: 'now', files: {} }),
+      JSON.stringify({
+        platform: 'ios',
+        commit: 'cafebabe',
+        runId: '3',
+        capturedAt: 'now',
+        files: { 'en-US/iphone-16-pro-max/01-discover.png': 'aa'.repeat(32) },
+      }),
     );
     const runner = new FakeRunner((invocation) =>
       invocation.command === 'unzip' ? { status: 2, stdout: '', stderr: 'cannot find zipfile directory' } : ok(),
@@ -532,12 +560,28 @@ describe('fetchBaseline', () => {
     mkdirSync(downloadDir, { recursive: true });
     writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
     writeFileSync(join(downloadDir, 'ios-de-DE-ipad-pro-11-inch-m5.zip'), 'zip-bytes');
-    writeFileSync(
-      join(downloadDir, 'ios-manifest.json'),
-      JSON.stringify({ platform: 'ios', commit: 'cafebabe', runId: '3', capturedAt: 'now', files: {} }),
-    );
-    const runner = new FakeRunner(() => ok());
+    const enUsBytes = 'en-US iphone shard bytes';
+    const deDeBytes = 'de-DE ipad shard bytes';
+    const manifest: BaselineManifest = {
+      platform: 'ios',
+      commit: 'cafebabe',
+      runId: '3',
+      capturedAt: 'now',
+      files: {
+        'en-US/iphone-16-pro-max/01-discover.png': createHash('sha256').update(enUsBytes).digest('hex'),
+        'de-DE/ipad-pro-11-inch-m5/01-discover.png': createHash('sha256').update(deDeBytes).digest('hex'),
+      },
+    };
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
     const outDir = join(workDir, 'baseline');
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'unzip') {
+        const target = invocation.args.at(-1) as string;
+        mkdirSync(target, { recursive: true });
+        writeFileSync(join(target, '01-discover.png'), target.includes('de-DE') ? deDeBytes : enUsBytes);
+      }
+      return ok();
+    });
 
     const result = fetchBaseline({ platform: 'ios', outDir, asset: null, all: true, runner, downloadDir });
 
@@ -549,6 +593,42 @@ describe('fetchBaseline', () => {
     ]);
     const download = runner.calls.find((call) => call.args[1] === 'download');
     expect(download?.args).toContain('ios-*.zip');
+  });
+
+  it('skips a release asset the manifest does not list, without failing the fetch', () => {
+    const downloadDir = join(workDir, 'download');
+    mkdirSync(downloadDir, { recursive: true });
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    // A future-format or migration artifact sitting in the release alongside
+    // the real shards. It doesn't decode to any known locale/device pair at
+    // all, so parseAssetName returns null for it — this must be skipped with
+    // a warning, not extracted, and must not fail the rest of the fetch.
+    writeFileSync(join(downloadDir, 'ios-legacy.zip'), 'zip-bytes');
+    const fileBytes = 'listed shard bytes';
+    const manifest: BaselineManifest = {
+      platform: 'ios',
+      commit: 'cafebabe',
+      runId: '3',
+      capturedAt: 'now',
+      files: { 'en-US/iphone-16-pro-max/01-discover.png': createHash('sha256').update(fileBytes).digest('hex') },
+    };
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    const outDir = join(workDir, 'baseline');
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'unzip') {
+        const target = invocation.args.at(-1) as string;
+        mkdirSync(target, { recursive: true });
+        writeFileSync(join(target, '01-discover.png'), fileBytes);
+      }
+      return ok();
+    });
+
+    const result = fetchBaseline({ platform: 'ios', outDir, asset: null, all: true, runner, downloadDir });
+
+    expect(result.found).toBe(true);
+    const unzipTargets = runner.calls.filter((call) => call.command === 'unzip').map((call) => call.args.at(-1));
+    expect(unzipTargets).toEqual([join(outDir, 'en-US', 'iphone-16-pro-max')]);
+    expect(existsSync(join(outDir, 'legacy'))).toBe(false);
   });
 
   it('reports found=false when the manifest is missing entirely', () => {
