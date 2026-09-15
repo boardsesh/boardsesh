@@ -199,6 +199,37 @@ export async function viewerCanSeeSprayWallByLayout(
 }
 
 /**
+ * Whether the caller may set or edit climbs on this wall.
+ *
+ * Climb writes are keyed on `layoutId`, which comes out of a sequence and is
+ * therefore not a secret — so the by-layout rule is the default: the owner, a
+ * member of the wall's gym, or a public wall. What this adds is the **share-link
+ * capability**, which is the case the epic actually wants: somebody photographs
+ * their home wall, sends the link to their crew, and the crew sets climbs on it.
+ *
+ * The capability is the wall's own uuid, and it only unlocks an **unlisted** wall:
+ *
+ *  - a PRIVATE wall refuses everyone but its principals, uuid or not. Private
+ *    means private, and the owner has not handed a link to anybody.
+ *  - a presented uuid has to be THIS wall's, matched against the row the
+ *    request's `layoutId` resolved to. That pairing is the whole check: without
+ *    it, one leaked uuid from any unlisted wall would authorize writes to every
+ *    wall in the sequence.
+ *
+ * A mismatch is reported by the caller as "not found", exactly like an unknown
+ * wall — so this is not an oracle for which layout ids are unlisted walls.
+ */
+export async function viewerCanWriteSprayClimbs(
+  board: UserBoardRow,
+  userId: string | null | undefined,
+  presentedWallUuid: string | null | undefined,
+): Promise<boolean> {
+  if (await viewerCanSeeSprayWallByLayout(board, userId)) return true;
+  if (!board.isUnlisted) return false;
+  return presentedWallUuid != null && presentedWallUuid === board.uuid;
+}
+
+/**
  * The wall named by `uuid`, when the viewer may see it — otherwise undefined.
  *
  * "Not visible" and "does not exist" are deliberately the same answer: telling a

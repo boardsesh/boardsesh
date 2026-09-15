@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
-import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
+import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
 
 // Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
@@ -313,6 +313,13 @@ export const SaveClimbInputSchema = z
     // the Aurora sync; the RESOLVER decides that, not this schema, because the
     // requirement depends on the wall rather than on the shape of the input.
     userGrade: z.string().max(20).optional(),
+    // The spray wall's uuid, as an unlisted wall's share link carries it. Only
+    // consulted for `boardType: 'spray'`, and only for a caller who is neither the
+    // owner nor a gym member — the `layoutId` above comes out of a sequence, so it
+    // is not a secret and cannot authorize a write on its own. Validated as a uuid
+    // here and matched against the wall in the resolver, which is where the wall
+    // data lives.
+    sprayWallUuid: UUIDSchema.optional(),
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,
@@ -339,6 +346,10 @@ export const UpdateClimbInputSchema = z
     noMatch: RuleFlagSchema,
     anyFeet: RuleFlagSchema,
     sizeId: ClimbSizeIdSchema,
+    // See SaveClimbInputSchema: the share-link capability for an unlisted spray
+    // wall. An edit needs it for the same reason a create does — the wall is
+    // resolved from the stored climb's `layoutId`, which is not a secret.
+    sprayWallUuid: UUIDSchema.optional(),
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,

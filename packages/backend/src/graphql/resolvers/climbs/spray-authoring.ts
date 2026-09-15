@@ -5,7 +5,7 @@ import { SPRAY_SET, spraySizeIdForLayout } from '@boardsesh/board-config';
 import { aliveHolds } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
-import { viewerCanSeeSprayWallByLayout } from '../board/spray-walls';
+import { viewerCanWriteSprayClimbs } from '../board/spray-walls';
 
 /**
  * What `saveClimb` / `updateClimb` have to know that no other board needs.
@@ -82,16 +82,22 @@ export type SprayClimbTarget = {
  * two are deliberately indistinguishable everywhere a wall is read, because
  * confirming that a layout id IS a wall somebody owns is itself a leak.
  *
- * The visibility rule is the BY-LAYOUT one, which does not exempt an unlisted
- * wall. A climb write is keyed on `layoutId`, and layout ids come out of a
- * sequence — so the uuid-capability argument that makes an unlisted wall readable
- * does not hold here, and without the narrower rule anyone could walk the sequence
- * and litter somebody's unlisted wall with climbs. The owner and the wall's gym
- * members are unaffected, which is who the epic says sets climbs. If SW-10 needs a
- * link-holder who is neither to set a climb, the write has to be keyed on the
- * wall's uuid rather than its layout id.
+ * The rule is `viewerCanWriteSprayClimbs`: the by-layout rule (owner, gym member,
+ * public wall) plus the share-link capability. A climb write is keyed on
+ * `layoutId`, and layout ids come out of a sequence, so the id alone authorizes
+ * nothing — but a caller who presents the WALL'S OWN UUID has the capability an
+ * unlisted wall's share link hands out, and that is the crew case the epic wants.
+ * A private wall still refuses everyone but its principals.
+ *
+ * `presentedWallUuid` is `SaveClimbInput.sprayWallUuid` / the same field on
+ * `UpdateClimbInput`. SW-10's client should send it on every spray write; it is
+ * ignored when the caller is already a principal.
  */
-export async function requireVisibleSprayWall(layoutId: number, userId: string): Promise<SprayClimbTarget> {
+export async function requireVisibleSprayWall(
+  layoutId: number,
+  userId: string,
+  presentedWallUuid?: string | null,
+): Promise<SprayClimbTarget> {
   const [row] = await db
     .select({
       wall: dbSchema.sprayWalls,
@@ -112,7 +118,7 @@ export async function requireVisibleSprayWall(layoutId: number, userId: string):
     )
     .limit(1);
 
-  if (!row || !(await viewerCanSeeSprayWallByLayout(row.board, userId))) {
+  if (!row || !(await viewerCanWriteSprayClimbs(row.board, userId, presentedWallUuid))) {
     throw new GraphQLError('That spray wall could not be found', {
       extensions: { code: SPRAY_CLIMB_CODES.wallNotFound },
     });

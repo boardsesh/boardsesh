@@ -470,27 +470,112 @@ describe('who can see and who can edit a wall', () => {
     expect(await sprayWallQueries.sprayWallByLayout({}, { layoutId: wall.layoutId }, ctxFor(null))).not.toBeNull();
   });
 
-  it('refuses a climb keyed on the layoutId of an unlisted wall', async () => {
-    // Same enumerable key, and a write is worse than a read: without the narrower
-    // rule anyone could walk the sequence and litter an unlisted wall with climbs.
-    const { wall, holdIds } = await createPublishedWall(OWNER, { isUnlisted: true });
-    await expect(
-      climbMutations.saveClimb(
+  describe('setting climbs with the share link', () => {
+    // The crew case the epic wants: somebody photographs their home wall, sends
+    // the link, and the crew sets climbs on it. The link's uuid is the capability;
+    // the layoutId in the request is not, because it comes out of a sequence.
+    async function saveAs(
+      userId: string | null,
+      wall: CreatedWall,
+      holdIds: number[],
+      extra: Record<string, unknown> = {},
+    ) {
+      return climbMutations.saveClimb(
         {},
         {
           input: {
             boardType: 'spray',
             layoutId: wall.layoutId,
-            name: 'Guessed the layout id',
+            name: 'Crew climb',
             isDraft: false,
             frames: framesFor(holdIds),
             angle: 40,
             userGrade: '6b/V4',
+            ...extra,
           },
         },
-        ctxFor(STRANGER),
-      ),
-    ).rejects.toThrow(/could not be found/i);
+        ctxFor(userId),
+      );
+    }
+
+    it('accepts a link-holder who presents the wall uuid on an UNLISTED wall', async () => {
+      const { wall, holdIds } = await createPublishedWall(OWNER, { isUnlisted: true });
+
+      const saved = (await saveAs(STRANGER, wall, holdIds, { sprayWallUuid: wall.uuid })) as { uuid: string };
+
+      const [climb] = (await db.execute(sql`
+        SELECT layout_id, board_type, user_id, compatible_size_ids FROM board_climbs WHERE uuid = ${saved.uuid}
+      `)) as unknown as Array<{
+        layout_id: number;
+        board_type: string;
+        user_id: string;
+        compatible_size_ids: number[];
+      }>;
+      expect(climb.board_type).toBe('spray');
+      expect(climb.layout_id).toBe(wall.layoutId);
+      expect(climb.user_id).toBe(STRANGER);
+      expect(climb.compatible_size_ids).toEqual([wall.sizeId]);
+    });
+
+    it('refuses the same link-holder without the uuid', async () => {
+      const { wall, holdIds } = await createPublishedWall(OWNER, { isUnlisted: true });
+      await expect(saveAs(STRANGER, wall, holdIds)).rejects.toThrow(/could not be found/i);
+    });
+
+    it('refuses a uuid that belongs to a DIFFERENT wall', async () => {
+      // The pairing is the whole check: without it one leaked uuid would authorize
+      // writes to every wall in the sequence.
+      const target = await createPublishedWall(OWNER, { isUnlisted: true });
+      const elsewhere = await createPublishedWall(OWNER, { isUnlisted: true });
+
+      await expect(
+        saveAs(STRANGER, target.wall, target.holdIds, { sprayWallUuid: elsewhere.wall.uuid }),
+      ).rejects.toThrow(/could not be found/i);
+    });
+
+    it('refuses a PRIVATE wall even with the correct uuid', async () => {
+      // Private means private: the owner has not handed a link to anybody.
+      const { wall, holdIds } = await createPublishedWall(OWNER);
+      await expect(saveAs(STRANGER, wall, holdIds, { sprayWallUuid: wall.uuid })).rejects.toThrow(
+        /could not be found/i,
+      );
+    });
+
+    it('lets a link-holder EDIT the climb they set, and only with the uuid', async () => {
+      const { wall, holdIds } = await createPublishedWall(OWNER, { isUnlisted: true });
+      const saved = (await saveAs(STRANGER, wall, holdIds, { sprayWallUuid: wall.uuid })) as { uuid: string };
+
+      // An edit resolves the wall from the STORED layoutId, which is no more a
+      // secret than the one on the create — so it needs the capability too.
+      await expect(
+        climbMutations.updateClimb(
+          {},
+          { input: { uuid: saved.uuid, boardType: 'spray', name: 'Renamed' } },
+          ctxFor(STRANGER),
+        ),
+      ).rejects.toThrow(/could not be found/i);
+
+      await expect(
+        climbMutations.updateClimb(
+          {},
+          { input: { uuid: saved.uuid, boardType: 'spray', name: 'Renamed', sprayWallUuid: wall.uuid } },
+          ctxFor(STRANGER),
+        ),
+      ).resolves.toMatchObject({ uuid: saved.uuid });
+    });
+
+    it('does not need the uuid from the owner or a gym member', async () => {
+      // Ignored when the caller is already a principal, so a client may send it
+      // unconditionally.
+      const { wall, holdIds } = await createPublishedWall(OWNER, { isUnlisted: true });
+      await expect(saveAs(OWNER, wall, holdIds)).resolves.toMatchObject({ uuid: expect.any(String) });
+    });
+
+    it('still refuses a climb on a wall the caller has no claim on at all', async () => {
+      // A PRIVATE wall, no uuid — the case the by-layout rule exists for.
+      const { wall, holdIds } = await createPublishedWall(OWNER);
+      await expect(saveAs(STRANGER, wall, holdIds)).rejects.toThrow(/could not be found/i);
+    });
   });
 
   it('hides a draft version from a viewer who cannot edit', async () => {

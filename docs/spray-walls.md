@@ -435,10 +435,34 @@ SW-03's blanket `assertClimbWriteBoardIsNotSpray` gate is gone. What replaced it
 is `packages/backend/src/graphql/resolvers/climbs/spray-authoring.ts`, and the
 four rules there are what the gate was standing in for:
 
-1. **The wall has to exist and the caller has to be able to see it.** A `layoutId`
-   alone is not authorization. Note it is VIEW access, not edit: setting a climb on
-   a gym's spray wall is what a gym member is there to do, and only the wall's
-   holds are the owner's alone.
+1. **The wall has to exist and the caller has to have a claim on it.** A
+   `layoutId` alone is not authorization — layout ids come out of a sequence. The
+   rule is `viewerCanWriteSprayClimbs`, and it is VIEW-shaped rather than
+   EDIT-shaped: setting a climb on a gym's spray wall is what a gym member is
+   there to do, and only the wall's *holds* are the owner's alone.
+
+   | Caller | Private wall | Unlisted wall | Public wall |
+   | --- | --- | --- | --- |
+   | Owner, or a member of the wall's gym | ✅ | ✅ | ✅ |
+   | Anyone else, with `sprayWallUuid` | ❌ | ✅ | ✅ |
+   | Anyone else, without it | ❌ | ❌ | ✅ |
+
+   **`SaveClimbInput.sprayWallUuid` (and the same field on `UpdateClimbInput`) is
+   the share-link capability**, and it is the crew case the epic wants: somebody
+   photographs their home wall, sends the link, and the crew set climbs on it. Two
+   things make it safe to be a capability. It must be **this** wall's uuid, matched
+   against the row the request's `layoutId` resolved to — without that pairing one
+   leaked uuid would authorize writes to every wall in the sequence. And it only
+   unlocks an **unlisted** wall: a private wall refuses everyone but its
+   principals, because its owner has not handed a link to anybody. A mismatch comes
+   back as the same "not found" an unknown wall gets, so it is not an oracle for
+   which layout ids are unlisted walls.
+
+   **SW-10's client must send `sprayWallUuid` on every spray climb write.** It is
+   ignored when the caller is already a principal, so there is no branch to get
+   wrong — send it unconditionally. An edit needs it too: `updateClimb` resolves
+   the wall from the stored climb's `layoutId`, which is no more a secret than the
+   one on the create.
 2. **A setter grade is required to publish.** `getBoardCapabilities('spray')`
    answers `crowdGrade: false` — a home wall has a handful of climbers, so nothing
    converges on a consensus grade and a published climb with no grade would stay

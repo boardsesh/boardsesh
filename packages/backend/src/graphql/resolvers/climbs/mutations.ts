@@ -145,7 +145,7 @@ export const climbMutations = {
     // the feed-event decision below. See `./spray-authoring.ts` for all four
     // rules this replaced SW-03's blanket reject-spray gate with.
     const sprayTarget: SprayClimbTarget | null = isSprayBoard(boardType)
-      ? await requireVisibleSprayWall(validated.layoutId, ctx.userId!)
+      ? await requireVisibleSprayWall(validated.layoutId, ctx.userId!, validated.sprayWallUuid)
       : null;
     if (sprayTarget) {
       // Ahead of every write: a spray wall has no crowd grade to converge on
@@ -739,7 +739,7 @@ export const climbMutations = {
     // set, and an edit to a climb on a wall the caller can no longer see is not an
     // edit they should be making.
     const sprayTarget: SprayClimbTarget | null = isSprayBoard(boardType)
-      ? await requireVisibleSprayWall(existing.layoutId, ctx.userId!)
+      ? await requireVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid)
       : null;
 
     const now = new Date().toISOString();
