@@ -93,6 +93,15 @@ export function buildSprayLitHoldMarks({
     const [photoX, photoY] = mapPoint(canonicalToPhoto, hold.cx, hold.cy);
     const photoRadius = hold.r * mapRadius(canonicalToPhoto, hold.cx, hold.cy);
 
+    // A matrix can invert cleanly and still send a hold to infinity: a point on
+    // the map's vanishing line divides by a homogeneous w of zero. The browser
+    // reads `cx="Infinity"` as 0 and draws the mark in the corner of the
+    // photograph rather than dropping it, which is worse than not drawing it —
+    // a hold that is not on this climb appears to be. Same guard the backend's
+    // card renderer applies to the same arithmetic.
+    if (!Number.isFinite(photoX) || !Number.isFinite(photoY)) continue;
+    if (!Number.isFinite(photoRadius) || photoRadius <= 0) continue;
+
     marks.push({
       id: hold.id,
       color: litHold.displayColor || litHold.color,
@@ -114,6 +123,11 @@ export function buildSprayLitHoldMarks({
  * so a ring is not the same shape at both ends of an off-axis photo. Ring
  * coordinates arrive in radius units around the hold's centre, so they become
  * canonical pixels (`cx + rx * r`) before they are mapped.
+ *
+ * One non-finite point discards the whole silhouette rather than the point: a
+ * polygon missing a vertex is a different shape drawn confidently, while
+ * returning null falls the hold back to its ring, which is the same thing an
+ * untraced hold gets.
  */
 function buildPolygonPoints(hold: SprayWallHoldGeometry, canonicalToPhoto: Homography): string | null {
   const ring = hold.outline;
@@ -126,6 +140,7 @@ function buildPolygonPoints(hold: SprayWallHoldGeometry, canonicalToPhoto: Homog
       hold.cx + ring[index] * hold.r,
       hold.cy + ring[index + 1] * hold.r,
     );
+    if (!Number.isFinite(photoX) || !Number.isFinite(photoY)) return null;
     mappedPoints.push(`${roundToTenth(photoX)},${roundToTenth(photoY)}`);
   }
 

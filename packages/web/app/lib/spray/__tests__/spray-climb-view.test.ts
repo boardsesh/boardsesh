@@ -61,6 +61,19 @@ describe('buildSprayLitHoldMarks', () => {
     consoleError.mockRestore();
   });
 
+  it('drops a hold the map sends to infinity rather than drawing it in the corner', () => {
+    // Invertible, but its INVERSE puts the vanishing line right through the
+    // wall: the hold at canonical y=400 divides by a homogeneous w of zero. A
+    // browser reads cx="NaN" as 0 and would draw the mark at the photo's edge,
+    // showing a hold this climb does not use.
+    const vanishing = [1, 0, 0, 0, 1, 0, 0, 1 / 400, 1];
+
+    const marks = buildSprayLitHoldMarks({ holds: HOLDS, homography: vanishing, frames: 'p101r1p102r3' });
+
+    expect(marks.map((mark) => mark.id)).toEqual([102]);
+    expect(marks.every((mark) => Number.isFinite(mark.cx) && Number.isFinite(mark.cy))).toBe(true);
+  });
+
   it('treats a missing or malformed matrix as the identity', () => {
     const [fromNull] = buildSprayLitHoldMarks({ holds: HOLDS, homography: null, frames: 'p101r1' });
     const [fromShort] = buildSprayLitHoldMarks({ holds: HOLDS, homography: [1, 0, 0], frames: 'p101r1' });

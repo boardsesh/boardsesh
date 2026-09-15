@@ -7,6 +7,7 @@ import { dbzRead } from '@/app/lib/db/db';
 import { boardClimbs } from '@/app/lib/db/schema';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from '@/app/lib/moonboard-config';
 import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
+import { withTimeout } from './with-timeout';
 import type { SitemapClimbConfig } from './climb-entries';
 import { getPublicSprayWallConfigs } from './spray-wall-configs';
 
@@ -108,18 +109,6 @@ async function fetchMoonBoardClimbCounts(): Promise<Map<number, number>> {
     countsByLayout.set(row.layoutId, Number(row.climbCount));
   }
   return countsByLayout;
-}
-
-function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([
-    work.finally(() => {
-      if (timer) clearTimeout(timer);
-    }),
-    new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} exceeded its ${ms}ms budget`)), ms);
-    }),
-  ]);
 }
 
 /** Data Cache stores plain JSON, so the Map is rebuilt on the way out. */
