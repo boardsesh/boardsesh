@@ -7355,6 +7355,17 @@ type Mutation {
   publishSprayWallVersion(input: PublishSprayWallVersionInput!): SprayWallVersion!
 
   """
+  Abandon a draft version, restoring the wall to the published generation.
+
+  A wall carries at most ONE open draft, so this is the other way out of one
+  besides publishing. The draft is DELETED rather than marked: its removals are
+  un-marked and the holds it added are dropped, catalogue rows included, which is
+  safe precisely because a draft has never been published and no climb can
+  reference its work. Owner only.
+  """
+  discardSprayWallVersion(input: PublishSprayWallVersionInput!): Boolean!
+
+  """
   Soft-delete a wall. The catalogue rows and every climb ever set on it stay
   behind — a deleted wall stops being reachable, it does not un-set the climbs.
   Owner only.

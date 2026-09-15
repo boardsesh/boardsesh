@@ -27,6 +27,7 @@ import { deleteClimbDependentRows } from './climb-cleanup';
 import {
   SPRAY_CLIMB_CODES,
   assertSprayAngleMatchesWall,
+  assertSprayClimbIsSingleFrame,
   populateSprayClimbColumns,
   assertSprayGradeOnPublish,
   assertSprayHoldsAreAlive,
@@ -159,6 +160,10 @@ export const climbMutations = {
       // stats across angles that do not exist. Rejected rather than silently
       // coerced, so the client learns it is sending the wrong number.
       assertSprayAngleMatchesWall(sprayTarget, validated.angle);
+      // `multiFrameClimbs: false`, and nothing downstream enforces it — including
+      // the duplicate gate, which only fires for a single frame, so a multi-frame
+      // spray climb would bypass the per-wall duplicate check entirely.
+      assertSprayClimbIsSingleFrame(validated.framesCount, validated.frames);
     }
 
     // Woods is code-driven: no board_placements to validate a hold against and
@@ -808,6 +813,12 @@ export const climbMutations = {
     const nextFrames = validated.frames ?? existing.frames ?? '';
     const nextFramesCount = validated.framesCount ?? existing.framesCount ?? 1;
     const nextHoldEntries = parseFramesToHoldEntries(boardType, nextFrames);
+
+    // An edit may not turn a single-frame wall climb into a sequence — same reason
+    // as the create path. Placed here because it needs the post-edit shape.
+    if (sprayTarget) {
+      assertSprayClimbIsSingleFrame(nextFramesCount, nextFrames);
+    }
 
     // Woods: the board size is fixed at creation and is what makes the hold ids
     // mean anything, so it comes from the row rather than the request. Re-run the

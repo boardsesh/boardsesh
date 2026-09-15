@@ -5,7 +5,7 @@ import { SPRAY_SET, spraySizeIdForLayout } from '@boardsesh/board-config';
 import { aliveHolds, populateDenormalizedColumns } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
-import { viewerCanWriteSprayClimbs } from '../board/spray-walls';
+import { lockWallForWrite, viewerCanWriteSprayClimbs } from '../board/spray-walls';
 
 /**
  * What `saveClimb` / `updateClimb` have to know that no other board needs.
@@ -41,6 +41,7 @@ export const SPRAY_CLIMB_CODES = {
   gradeRequired: 'SPRAY_CLIMB_GRADE_REQUIRED',
   holdNotAlive: 'SPRAY_WALL_HOLD_NOT_ALIVE',
   angleMismatch: 'SPRAY_CLIMB_ANGLE_MISMATCH',
+  multiFrame: 'SPRAY_CLIMB_MULTI_FRAME',
 } as const;
 
 /** True for the one board type these rules apply to. Keeps the string literal in one place. */
@@ -160,6 +161,44 @@ export function assertSprayGradeOnPublish(isDraft: boolean, userGrade: string | 
 }
 
 /**
+ * The wall's PUBLISHED version number, read fresh.
+ *
+ * Separate from the copy on `SprayClimbTarget` because that one is resolved before
+ * the write transaction; this is the one read under the lock.
+ */
+async function publishedVersionNumberFor(executor: DrizzleExecutor, wallId: number): Promise<number | null> {
+  const [row] = await executor
+    .select({ versionNumber: dbSchema.sprayWallVersions.versionNumber })
+    .from(dbSchema.sprayWalls)
+    .innerJoin(dbSchema.sprayWallVersions, eq(dbSchema.sprayWallVersions.id, dbSchema.sprayWalls.currentVersionId))
+    .where(eq(dbSchema.sprayWalls.id, wallId))
+    .limit(1);
+  return row?.versionNumber ?? null;
+}
+
+/**
+ * Refuse a multi-frame climb on a spray wall.
+ *
+ * `getBoardCapabilities('spray')` answers `multiFrameClimbs: false`, and nothing
+ * downstream enforces it: `frames_count` takes whatever it is given and the
+ * renderer would happily animate a wall that has no LEDs to animate. The
+ * duplicate gate is the sharper reason — it only fires for `framesCount === 1`,
+ * so a multi-frame spray climb would bypass the per-wall duplicate check
+ * entirely.
+ *
+ * Both halves are checked because they can disagree: a client may send
+ * `framesCount: 1` with a frames string holding two frames, and the string is what
+ * the renderer reads.
+ */
+export function assertSprayClimbIsSingleFrame(framesCount: number | null | undefined, frames: string): void {
+  const framesInString = frames.split(',').filter((frame) => frame.trim().length > 0).length;
+  if ((framesCount ?? 1) === 1 && framesInString <= 1) return;
+  throw new GraphQLError('A spray wall climb is a single frame — it has no LEDs to animate a sequence on', {
+    extensions: { code: SPRAY_CLIMB_CODES.multiFrame },
+  });
+}
+
+/**
  * Refuse a climb set at an angle the wall is not at.
  *
  * A spray wall's angle is fixed for its life (`is_angle_adjustable` is false), so
@@ -206,10 +245,17 @@ export async function assertSprayHoldsAreAlive(
 ): Promise<void> {
   if (holdIds.length === 0) return;
 
-  const alive =
-    target.publishedVersionNumber == null
-      ? []
-      : await aliveHolds(executor, target.wallId, target.publishedVersionNumber);
+  // Take the wall lock and RE-RESOLVE the published generation under it. The
+  // `publishedVersionNumber` on `target` was read before the caller's transaction
+  // opened, so a `publishSprayWallVersion` landing in between would leave this
+  // validating against a generation that no longer exists — and a climb could be
+  // written on holds the reset had just taken off. Locking here rather than in the
+  // resolvers keeps the "check and write under one lock" rule in the same function
+  // as the check it protects.
+  await lockWallForWrite(executor, target.wallId);
+  const publishedNow = await publishedVersionNumberFor(executor, target.wallId);
+
+  const alive = publishedNow == null ? [] : await aliveHolds(executor, target.wallId, publishedNow);
 
   const aliveIds = new Set(alive.map((row) => row.holdId));
   const missing = [...new Set(holdIds)].filter((holdId) => !aliveIds.has(holdId));

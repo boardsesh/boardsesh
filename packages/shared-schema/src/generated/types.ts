@@ -3471,6 +3471,16 @@ export type Mutation = {
    */
   detachBoardFromGym: Scalars['Boolean']['output'];
   /**
+   * Abandon a draft version, restoring the wall to the published generation.
+   *
+   * A wall carries at most ONE open draft, so this is the other way out of one
+   * besides publishing. The draft is DELETED rather than marked: its removals are
+   * un-marked and the holds it added are dropped, catalogue rows included, which is
+   * safe precisely because a draft has never been published and no climb can
+   * reference its work. Owner only.
+   */
+  discardSprayWallVersion: Scalars['Boolean']['output'];
+  /**
    * Unlink an external platform integration. Revokes the token on the
    * provider's side (best-effort) and deletes the stored credentials.
    * Requires authentication.
@@ -4095,6 +4105,11 @@ export type MutationDeleteTickArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDetachBoardFromGymArgs = {
   input: DetachBoardFromGymInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDiscardSprayWallVersionArgs = {
+  input: PublishSprayWallVersionInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -11891,6 +11906,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationDetachBoardFromGymArgs, 'input'>
+  >;
+  discardSprayWallVersion?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationDiscardSprayWallVersionArgs, 'input'>
   >;
   disconnectIntegration?: Resolver<
     ResolversTypes['Boolean'],

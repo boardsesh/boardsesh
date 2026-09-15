@@ -211,7 +211,20 @@ async function fetchAllBoardsClimbs(
     .select({ count: sql<number>`count(*)::int` })
     .from(dbSchema.playlistClimbs)
     .innerJoin(tables.climbs, eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid))
-    .where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
+    .where(
+      and(
+        eq(dbSchema.playlistClimbs.playlistId, playlistId),
+        // BEFORE offset/limit, and on the COUNT too. The hydrate step drops an
+        // inaccessible spray climb, so filtering only there left pages short (a
+        // 20-row page arriving with 17) and the count inflated by rows the caller
+        // can never reach. The specific-board path applies it in the join for the
+        // same reason.
+        sprayClimbVisibilityCondition(
+          { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+          viewerUserId,
+        ),
+      ),
+    );
 
   const totalCount = countResult?.count ?? 0;
 
@@ -223,7 +236,20 @@ async function fetchAllBoardsClimbs(
     })
     .from(dbSchema.playlistClimbs)
     .innerJoin(tables.climbs, eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid))
-    .where(eq(dbSchema.playlistClimbs.playlistId, playlistId))
+    .where(
+      and(
+        eq(dbSchema.playlistClimbs.playlistId, playlistId),
+        // BEFORE offset/limit, and on the COUNT too. The hydrate step drops an
+        // inaccessible spray climb, so filtering only there left pages short (a
+        // 20-row page arriving with 17) and the count inflated by rows the caller
+        // can never reach. The specific-board path applies it in the join for the
+        // same reason.
+        sprayClimbVisibilityCondition(
+          { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+          viewerUserId,
+        ),
+      ),
+    )
     .orderBy(asc(dbSchema.playlistClimbs.position), asc(dbSchema.playlistClimbs.addedAt))
     .limit(pageSize + 1)
     .offset(page * pageSize);

@@ -200,6 +200,16 @@ export const PUBLISH_SPRAY_WALL_VERSION = gql`
   }
 `;
 
+/**
+ * Abandon a draft. A wall carries one open draft at a time, so this and
+ * `PUBLISH_SPRAY_WALL_VERSION` are the two ways out of one.
+ */
+export const DISCARD_SPRAY_WALL_VERSION = gql`
+  mutation DiscardSprayWallVersion($input: PublishSprayWallVersionInput!) {
+    discardSprayWallVersion(input: $input)
+  }
+`;
+
 export const DELETE_SPRAY_WALL = gql`
   mutation DeleteSprayWall($uuid: ID!) {
     deleteSprayWall(uuid: $uuid)

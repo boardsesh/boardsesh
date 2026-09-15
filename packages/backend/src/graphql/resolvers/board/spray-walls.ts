@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import {
   MAX_HOLDS_PER_WALL,
@@ -116,6 +116,8 @@ export const SPRAY_WALL_CODES = {
   photoMissing: 'SPRAY_WALL_PHOTO_MISSING',
   photosNotConfigured: 'SPRAY_WALL_PHOTOS_NOT_CONFIGURED',
   anglePublished: 'SPRAY_WALL_ANGLE_PUBLISHED',
+  publishWouldGoBackwards: 'SPRAY_WALL_PUBLISH_BACKWARDS',
+  draftAlreadyOpen: 'SPRAY_WALL_DRAFT_ALREADY_OPEN',
 } as const;
 
 type SprayWallRow = typeof dbSchema.sprayWalls.$inferSelect;
@@ -130,7 +132,7 @@ type LoadedWall = { wall: SprayWallRow; board: UserBoardRow };
  * transaction handle. Spelled out so the checks that MUST run inside the wall
  * lock cannot accidentally be handed the pool instead of the transaction.
  */
-type SprayWriteExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type SprayWriteExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 function notFoundError(): GraphQLError {
   return new GraphQLError('Spray wall not found', { extensions: { code: SPRAY_WALL_CODES.notFound } });
@@ -479,7 +481,10 @@ const SPRAY_WALL_LOCK_NAMESPACE = 0x53505259;
  * up. Take it as the FIRST statement in the transaction, before any read whose
  * answer the write depends on.
  */
-async function lockWallForWrite(tx: SprayWriteExecutor, wallId: number): Promise<void> {
+export async function lockWallForWrite(
+  tx: { execute: (query: SQL) => Promise<unknown> },
+  wallId: number,
+): Promise<void> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_LOCK_NAMESPACE}, ${wallId})`);
 }
 
@@ -888,6 +893,41 @@ export const sprayWallMutations = {
     });
 
     const version = await db.transaction(async (tx) => {
+      // The wall lock, held for the one-draft check AND the insert. Checking
+      // outside the transaction would let two concurrent creates both see no open
+      // draft and both insert one — the exact state the rule exists to forbid.
+      await lockWallForWrite(tx, wall.id);
+
+      // ONE active draft per wall.
+      //
+      // Without it two drafts can each mark the SAME inherited hold removed, and
+      // `spray_wall_holds.removed_version_id` is a single column — the second write
+      // overwrites the first, so publishing the first draft no longer removes the
+      // hold and a climb that lost it reads intact. Making the column a range per
+      // draft would be a schema change for a workflow nobody asked for: a wall has
+      // one owner and a reset is one sitting.
+      //
+      // The way out is `publishSprayWallVersion` or `discardSprayWallVersion`; the
+      // error names the draft so a client can offer both.
+      const [openDraft] = await tx
+        .select({ id: dbSchema.sprayWallVersions.id, versionNumber: dbSchema.sprayWallVersions.versionNumber })
+        .from(dbSchema.sprayWallVersions)
+        .where(and(eq(dbSchema.sprayWallVersions.wallId, wall.id), eq(dbSchema.sprayWallVersions.status, 'draft')))
+        .limit(1);
+      if (openDraft) {
+        throw new GraphQLError(
+          `This wall already has an unfinished photo (version ${openDraft.versionNumber}). ` +
+            `Publish it or discard it before starting another.`,
+          {
+            extensions: {
+              code: SPRAY_WALL_CODES.draftAlreadyOpen,
+              draftVersionId: String(openDraft.id),
+              draftVersionNumber: openDraft.versionNumber,
+            },
+          },
+        );
+      }
+
       // Lock the WALL row first, then count. Postgres refuses `FOR UPDATE`
       // alongside an aggregate, and the version numbers have to be dense per
       // wall — so the wall row is the thing two concurrent uploads queue behind,
@@ -1395,6 +1435,27 @@ export const sprayWallMutations = {
         .where(eq(dbSchema.sprayWalls.id, found.wall.id))
         .limit(1);
 
+      // Publishing a version that is not NEWER than the published one would walk
+      // `current_version_id` backwards, and every hold read is bounded by the
+      // published version NUMBER — so the wall would silently revert to an older
+      // generation and climbs set since would point at holds that are no longer
+      // alive. The one-draft rule makes this unreachable today; the guard stays
+      // because it is the invariant, not a consequence of that rule.
+      if (wallNow?.currentVersionId != null) {
+        const [publishedNow] = await tx
+          .select({ versionNumber: dbSchema.sprayWallVersions.versionNumber })
+          .from(dbSchema.sprayWallVersions)
+          .where(eq(dbSchema.sprayWallVersions.id, wallNow.currentVersionId))
+          .limit(1);
+        if (publishedNow != null && found.version.versionNumber <= publishedNow.versionNumber) {
+          throw new GraphQLError(
+            `This wall is already published at version ${publishedNow.versionNumber}, ` +
+              `so version ${found.version.versionNumber} cannot replace it.`,
+            { extensions: { code: SPRAY_WALL_CODES.publishWouldGoBackwards } },
+          );
+        }
+      }
+
       // The previous published generation becomes `superseded` — it is still the
       // generation older climbs were set against, so it is never deleted.
       if (wallNow?.currentVersionId != null) {
@@ -1471,6 +1532,94 @@ export const sprayWallMutations = {
 
     const deltas = await versionHoldDeltas([Number(published.id)]);
     return toGraphQLVersion(published, deltas.get(Number(published.id)));
+  },
+
+  discardSprayWallVersion: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'discardSprayWallVersion');
+
+    const validated = validateInput(PublishSprayWallVersionInputSchema, input, 'input');
+
+    const [found] = await db
+      .select({ version: dbSchema.sprayWallVersions, wall: dbSchema.sprayWalls, board: dbSchema.userBoards })
+      .from(dbSchema.sprayWallVersions)
+      .innerJoin(dbSchema.sprayWalls, eq(dbSchema.sprayWalls.id, dbSchema.sprayWallVersions.wallId))
+      .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
+      .where(
+        and(
+          eq(dbSchema.sprayWallVersions.id, validated.versionId),
+          isNull(dbSchema.sprayWalls.deletedAt),
+          isNull(dbSchema.userBoards.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!found) throw notFoundError();
+    await requireBoardEditAccess(ctx, found.board);
+
+    await db.transaction(async (tx) => {
+      await lockWallForWrite(tx, found.wall.id);
+      // Re-read under the lock; the fast path above can be stale.
+      const version = await loadDraftVersion(tx, found.wall.id, found.version.id);
+
+      // A discarded draft is DELETED, not marked.
+      //
+      // There is no status that would work. `superseded` is the obvious candidate
+      // and is exactly wrong: `aliveHolds` treats any non-draft version as having
+      // LANDED, so the discarded draft's additions would come back as alive and its
+      // removals would take effect — the abandoned-draft bug, made permanent. A new
+      // `discarded` enum value would mean a migration for a state nobody reads.
+      // Deleting leaves nothing to reason about, and is safe precisely because a
+      // draft has never been published: no climb can reference its work.
+
+      // 1. Un-mark what it removed. RESTRICT on `removed_version_id` means this has
+      //    to happen before the version row goes.
+      await tx
+        .update(dbSchema.sprayWallHolds)
+        .set({ removedVersionId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(dbSchema.sprayWallHolds.wallId, found.wall.id),
+            eq(dbSchema.sprayWallHolds.removedVersionId, version.id),
+          ),
+        );
+
+      // 2. Drop the holds it added, catalogue rows included — the same split
+      //    `removeSprayWallHolds` makes for a hold drawn in the draft being edited.
+      const drawn = await tx
+        .select({ holdId: dbSchema.sprayWallHolds.holdId })
+        .from(dbSchema.sprayWallHolds)
+        .where(
+          and(
+            eq(dbSchema.sprayWallHolds.wallId, found.wall.id),
+            eq(dbSchema.sprayWallHolds.installedVersionId, version.id),
+          ),
+        );
+      const drawnIds = drawn.map((row) => row.holdId);
+      if (drawnIds.length > 0) {
+        await tx
+          .delete(dbSchema.sprayWallHolds)
+          .where(
+            and(eq(dbSchema.sprayWallHolds.wallId, found.wall.id), inArray(dbSchema.sprayWallHolds.holdId, drawnIds)),
+          );
+        await tx
+          .delete(dbSchema.boardPlacements)
+          .where(and(eq(dbSchema.boardPlacements.boardType, 'spray'), inArray(dbSchema.boardPlacements.id, drawnIds)));
+        await tx
+          .delete(dbSchema.boardHoles)
+          .where(and(eq(dbSchema.boardHoles.boardType, 'spray'), inArray(dbSchema.boardHoles.id, drawnIds)));
+      }
+
+      // 3. …and the version itself. Its photo object is now unreferenced; SW-17
+      //    (#5450) sweeps the bucket.
+      await tx.delete(dbSchema.sprayWallVersions).where(eq(dbSchema.sprayWallVersions.id, version.id));
+    });
+
+    logger.info('Spray wall draft discarded', {
+      layoutId: found.wall.layoutId,
+      versionNumber: found.version.versionNumber,
+    });
+    return true;
   },
 
   deleteSprayWall: async (_: unknown, { uuid }: { uuid: unknown }, ctx: ConnectionContext) => {

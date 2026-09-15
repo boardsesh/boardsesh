@@ -380,6 +380,44 @@ hold **this** wall has ever had — not the alive set, because a move's whole po
 is that the predecessor has just come off. A pointer at another wall's hold, or at
 nothing, would make remix suggest a successor for a hold that was never there.
 
+### One open draft per wall
+
+A wall carries **at most one draft at a time**. `createSprayWallVersion` refuses a
+second and names the open one; the ways out are `publishSprayWallVersion` and
+`discardSprayWallVersion`.
+
+The reason is `spray_wall_holds.removed_version_id`: it is a single column, so two
+drafts each marking the same inherited hold removed means the second write wins —
+and publishing the FIRST then no longer removes the hold, so a climb that lost it
+reads intact. Making removal a range per draft would be a schema change for a
+workflow nobody asked for: a wall has one owner and a reset is one sitting.
+
+**A discarded draft is DELETED, not marked.** There is no status that works.
+`superseded` is the obvious candidate and is exactly wrong — `aliveHolds` treats
+any non-draft version as having LANDED, so a discarded draft's additions would come
+back as alive and its removals would take effect, which is the abandoned-draft bug
+made permanent. A new `discarded` enum value would mean a migration for a state
+nothing reads. Deleting leaves nothing to reason about, and is safe precisely
+because a draft has never been published: no climb can reference its work. The
+discard un-marks what the draft removed, drops the holds it added (catalogue rows
+included), then deletes the version row.
+
+### The version state machine
+
+| From | To | How |
+| --- | --- | --- |
+| *(none)* | `draft` | `createSprayWallVersion` — refused while another draft is open |
+| `draft` | `published` | `publishSprayWallVersion` — refused unless the version number is GREATER than the published one |
+| `draft` | *(deleted)* | `discardSprayWallVersion` |
+| `published` | `superseded` | a later version publishing |
+
+Everything else is rejected: a published or superseded version cannot be edited
+(`loadDraftVersion`), re-published or discarded, and a version cannot go backwards
+to `draft`. The backwards-publish guard is unreachable while the one-draft rule
+holds, and stays because it is the invariant rather than a consequence of that rule
+— every hold read is bounded by the published version NUMBER, so moving
+`current_version_id` backwards would silently revert the wall.
+
 Every hold read names the generation it means. `aliveHolds(wallId)` with no
 version is "alive at the wall's `current_version_id`" — the climber's view, which
 does not include what an unpublished draft has drawn — so the backend always passes
@@ -485,6 +523,13 @@ reason:
    it without probing candidate extensions and a cleanup sweep can enumerate a
    wall's objects by prefix.
 
+Every stored object carries **`Cache-Control: private, no-store`**.
+`uploadToS3` defaults to `public, max-age=31536000, immutable`, which is right for
+an avatar and catastrophic here: a shared cache would keep serving the photo long
+past the 15-minute presign that is supposed to BE the access control, and past the
+owner making the wall private. The public-promotion copy SW-14 (#5447) writes to
+`media` is the only place a long lifetime may ever be set.
+
 The cap is 10MB, `files: 1`, the magic bytes decide the format regardless of the
 declared Content-Type, and the caller must **own** the wall — not merely be able
 to edit it. Nobody uploads a photograph of a stranger's living room.
@@ -557,7 +602,13 @@ four rules there are what the gate was standing in for:
    has drawn, so an owner mid-reset could publish a climb on holds nobody has put
    on the wall yet. A wall with nothing published therefore takes no climbs at
    all — the honest outcome for a wall the owner has not finished setting up.
-4. **The denormalised columns are authoritative at write time**:
+4. **One frame.** `multiFrameClimbs: false`, and nothing downstream enforces it:
+   `frames_count` takes whatever it is given. The sharper reason is the duplicate
+   gate, which only fires for a single frame — so a multi-frame spray climb would
+   bypass the per-wall duplicate check entirely. Both the count and the frames
+   string are checked, because a client can send `framesCount: 1` with two frames
+   in the string and the string is what the renderer reads.
+5. **The denormalised columns are authoritative at write time**:
    `compatible_size_ids = [layoutId]`, `required_set_ids = [1]`,
    `missing_hold_count = 0`, and `hold_fingerprint` written here because a wall
    has no Aurora sync to come back and fill it in.
@@ -569,6 +620,23 @@ having, and search's size filter reads them — but its step 3 derives
 whose edge box contains the climb's, **with no layout scoping**. On spray every
 wall's size row IS an edge box, so left alone the column would come out naming
 other walls' sizes as well as its own.
+
+### Turning a wall private has to RETRACT, not just stop
+
+Two things outlive a visibility change and both are handled in the same transaction
+as the flip:
+
+- **`feed_items`** is a materialised fan-out served with no second look at the wall,
+  so rows written while it was public sit in each follower's feed. Without
+  retracting them, "private" would mean "private to people who were not following
+  you at the time". `updateSprayWall` purges them on the public → private
+  transition and `deleteSprayWall` purges them outright — both event shapes, since
+  `climb.created` files under `entity_type = 'climb'` and `ascent.logged` under
+  `'tick'`. Becoming merely UNLISTED does **not** purge: an unlisted wall is still
+  shared.
+- **Persisted references** — a favourite, a playlist entry — keep resolving to the
+  climb. Those readers carry the visibility predicate, on the COUNT as well as the
+  page, or a count promises rows the page then withholds.
 
 That is **defence in depth, not a live leak**: every consumer of
 `compatible_size_ids` also filters `layout_id`, so no climb actually surfaces on
