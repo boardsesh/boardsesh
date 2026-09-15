@@ -109,6 +109,18 @@ export function evaluateDeletionsCoverage(coverageAt: number | null, nowMs: numb
  *    Clearing it would re-download tens to hundreds of MB, unprompted, possibly
  *    on cellular. A catalog rebuild stays where the user asks for it
  *    (removeBoardScopeData, behind the Storage settings flow).
+ *  - `spray_walls` rows and their `checkpoint:spray_walls:<scope>` keys — the one
+ *    board table the sentence above is not true of. A wall DOES emit a tombstone
+ *    (migration 0228, on the soft delete), scoped to its owner, so a coverage gap
+ *    can strand a wall the owner deleted while the device was away. It is still
+ *    not cleared here, for two reasons: the checkpoints are per scope key and
+ *    this function has no scope list to enumerate, so deleting the rows without
+ *    them would rewind nothing and the wall would never come back; and the
+ *    exposure is the owner's own deleted wall on the owner's own device, not a
+ *    cross-user leak — sign-out clears the table and the photographs outright,
+ *    and so does removing the board. The stranded row goes the moment anything
+ *    about that wall changes on the server. A per-scope reset is the fix if this
+ *    ever matters in practice.
  *  - `pending_mutations`. Unsynced local writes are not recoverable from the
  *    server; drainMutationQueue legitimately leaves rows behind (attempt budget,
  *    dead letters, offline), so "drain first, then wipe" is not a substitute for
