@@ -1054,6 +1054,28 @@ export const sprayWallMutations = {
     const losingPublic = validated.isPublic === false && board.isPublic;
 
     await db.transaction(async (tx) => {
+      await lockWallForWrite(tx, wall.id);
+
+      // Re-read the published version under the lock. The check above is a fast
+      // path with a nicer error; a publish landing between it and here would
+      // otherwise let an angle change through on a wall that has just acquired a
+      // published generation — and every tick already recorded sits at the old
+      // angle.
+      if (changingAngle) {
+        const [wallNow] = await tx
+          .select({ currentVersionId: dbSchema.sprayWalls.currentVersionId })
+          .from(dbSchema.sprayWalls)
+          .where(eq(dbSchema.sprayWalls.id, wall.id))
+          .limit(1);
+        if (wallNow?.currentVersionId != null) {
+          throw new GraphQLError(
+            "A published wall's angle cannot change — its climbs' grades and ascents are recorded at " +
+              `${board.angle}°. Create a new wall at ${validated.angle}° instead.`,
+            { extensions: { code: SPRAY_WALL_CODES.anglePublished, wallAngle: Number(board.angle) } },
+          );
+        }
+      }
+
       await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
 
       if (losingPublic) {
@@ -1637,6 +1659,11 @@ export const sprayWallMutations = {
     // transaction or a phone could keep a wall the server has dropped.
     const deletedAt = new Date();
     await db.transaction(async (tx) => {
+      // The same wall lock every other writer takes: without it a publish in
+      // flight would stamp `current_version_id` onto a wall this transaction is
+      // deleting.
+      await lockWallForWrite(tx, wall.id);
+
       // A deleted wall stops being reachable, so its feed rows have to go too —
       // they are served straight from `feed_items` and would outlive it otherwise.
       await purgeSprayWallFeedItems(tx, wall.layoutId);
