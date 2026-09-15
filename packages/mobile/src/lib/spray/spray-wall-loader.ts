@@ -64,6 +64,11 @@ function toCanonicalHolds(renderData: SprayWallRenderData): CanonicalSprayHold[]
     cy: hold.cy,
     r: hold.r,
     outline: hold.outline ?? null,
+    // Not geometry, and nothing on the render path reads it — but the editor
+    // does, and a hold seeded without it is re-submitted as MANUAL the first
+    // time it is nudged (#5441).
+    source: hold.source === 'AUTO' ? 'AUTO' : 'MANUAL',
+    confidence: hold.confidence ?? null,
   }));
 }
 

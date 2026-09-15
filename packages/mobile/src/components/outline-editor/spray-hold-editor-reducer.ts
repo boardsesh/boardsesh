@@ -95,15 +95,21 @@ export type SprayEditorAction =
   /** Every pending candidate at or above the current threshold. */
   | { type: 'ACCEPT_ALL' }
   /**
-   * The server took everything the last plan carried.
+   * The server took the holds named in `writtenIds`, and only those.
    *
-   * Clears `dirty` and `removedIds` WITHOUT waiting for the refetch, so a second
-   * press of Save cannot re-send holds the server has already applied — which on
-   * a correction is not a no-op: the resolver supersedes the named id, so
-   * re-sending it is refused and the whole batch fails. Not undoable: undoing a
-   * write that has landed would only lie about what is on the wall.
+   * Named rather than "everything", because a plan that SUCCEEDS can still leave
+   * holds out of it — one the homography sends off the wall, one drawn while the
+   * request was in flight — and the editor tells the climber so. Clearing
+   * `dirty` on those too would let the next re-seed silently delete the work the
+   * screen had just promised was still there.
+   *
+   * Clears without waiting for the refetch, so a second press of Save cannot
+   * re-send holds the server has already applied — which on a correction is not
+   * a no-op: the resolver supersedes the named id, so re-sending it is refused
+   * and the whole batch fails. Not undoable: undoing a write that has landed
+   * would only lie about what is on the wall.
    */
-  | { type: 'MARK_SAVED' }
+  | { type: 'MARK_SAVED'; writtenIds: readonly number[] }
   /**
    * `removeSprayWallHolds` came back, and the upsert has not run yet.
    *
@@ -314,15 +320,43 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
     }
 
     case 'MARK_REMOVED': {
-      return state.removedIds.length === 0 ? state : { ...state, removedIds: [] };
+      if (state.removedIds.length === 0) return state;
+      // The removals have LANDED, so they leave the undo stack with them. Without
+      // this, undoing past a merge whose upsert then failed would restore the
+      // victim as a clean live hold — and the next save would name an id the
+      // server has already stamped off, which is refused for the whole batch.
+      // History is rewritten rather than cleared: everything else in the session
+      // is still undoable, and losing an hour of corrections because one hold
+      // came off would be its own bug.
+      const spent = new Set(state.removedIds);
+      const scrub = (present: SprayEditorPresent): SprayEditorPresent => {
+        const holds: Record<number, SprayEditorHold> = {};
+        for (const hold of Object.values(present.holds)) {
+          if (!spent.has(hold.id)) holds[hold.id] = hold;
+        }
+        return {
+          holds,
+          removedIds: present.removedIds.filter((id) => !spent.has(id)),
+          selectedIds: present.selectedIds.filter((id) => !spent.has(id)),
+          nextLocalId: present.nextLocalId,
+        };
+      };
+      return {
+        ...state,
+        ...scrub(snapshotOf(state)),
+        past: state.past.map(scrub),
+        future: state.future.map(scrub),
+      };
     }
 
     case 'MARK_SAVED': {
+      const written = new Set(action.writtenIds);
       const holds: Record<number, SprayEditorHold> = {};
       let changed = state.removedIds.length > 0;
       for (const hold of Object.values(state.holds)) {
-        holds[hold.id] = hold.dirty ? { ...hold, dirty: false } : hold;
-        if (hold.dirty) changed = true;
+        const clears = hold.dirty && written.has(hold.id);
+        holds[hold.id] = clears ? { ...hold, dirty: false } : hold;
+        if (clears) changed = true;
       }
       if (!changed) return state;
       return { ...state, holds, removedIds: [] };

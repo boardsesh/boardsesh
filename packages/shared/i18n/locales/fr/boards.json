@@ -727,7 +727,8 @@
       "move": "Fais glisser une prise là où elle est vraiment.",
       "draw": "Choisis une prise, puis dessine son contour.",
       "oneSelected": "Prise n° {{id}} choisie.",
-      "twoSelected": "Deux prises choisies. Fusionner n'en fait qu'une."
+      "twoSelected": "Deux prises choisies. Fusionner n'en fait qu'une.",
+      "oneSelectedNew": "Ta nouvelle prise est sélectionnée."
     },
     "errors": {
       "nothingToMove": "Choisis d'abord une prise, puis fais-la glisser.",
