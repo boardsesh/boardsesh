@@ -18,6 +18,7 @@ import type { BoardName } from '@boardsesh/board-constants';
 import { fingerprintFromHolds } from '@boardsesh/kilter-sync/sync';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { recomputeMissingHoldCountForClimb } from '@boardsesh/db/queries';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
 import { publishSocialEvent } from '../../../events';
 import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
@@ -362,9 +363,12 @@ export const climbMutations = {
         // else, `required_set_ids` is the one synthetic "Holds" set, and the
         // fingerprint is written HERE because a wall has no Aurora sync to come
         // back and fill it in — without it the per-wall duplicate gate has
-        // nothing to key on. `missing_hold_count` starts at 0: every hold is
-        // alive right now (the check below just proved it), and a reset is what
-        // moves the number.
+        // nothing to key on. `missing_hold_count` starts at 0, not NULL:
+        // `assertSprayHoldsAreAlive` ran a few lines above, inside this same
+        // transaction and under the wall lock, and refused every hold that is not
+        // on the published generation — so a climb cannot be born broken. A reset
+        // is what moves the number, and an edit that changes the frames re-derives
+        // it (`recomputeMissingHoldCountForClimb`).
         ...(sprayTarget
           ? {
               compatibleSizeIds: sprayTarget.compatibleSizeIds,
@@ -1086,6 +1090,23 @@ export const climbMutations = {
                 })),
               )
               .onConflictDoNothing();
+          }
+
+          // The climb just moved under the wall, so its integrity number now
+          // describes holds it no longer uses. A climber whose problem lost two
+          // holds and who edited it onto two that are still there has fixed it —
+          // but nothing else would ever say so: the wall-wide recompute only runs
+          // when a reset lands, so until somebody reset that wall again the climb
+          // would sit in BROKEN searches wearing a badge for a problem its setter
+          // had already dealt with.
+          //
+          // Inside the same transaction as the hold rewrite it answers, and after
+          // it, so the count is read off the rows this edit just wrote. The wall
+          // lock is already held: `assertSprayHoldsAreAlive` took it above, before
+          // it resolved the published generation these holds were validated
+          // against, and `pg_advisory_xact_lock` holds to commit.
+          if (sprayTarget) {
+            await recomputeMissingHoldCountForClimb(tx, sprayTarget.wallId, validated.uuid);
           }
         }
       }
