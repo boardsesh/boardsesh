@@ -28,6 +28,7 @@ import {
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
+import { sprayCacheToken } from '../lib/spray/spray-wall-registry';
 import {
   ensureBackgroundsCached,
   tryGetBackgroundPathsSync,
@@ -1185,7 +1186,11 @@ function getBoardHoldIds(
   setIds: string,
   setIdsArray: number[],
 ): Set<number> | null {
-  const boardKey = `${boardName}-${layoutId}-${sizeId}-${setIds}`;
+  // The spray token carries the wall version (`''` for every catalogue board).
+  // Without it a reset would be answered out of this Set with the hold ids that
+  // came OFF the wall, and the overlay's hold-match check would pass on holds
+  // that no longer exist.
+  const boardKey = `${boardName}-${layoutId}-${sizeId}-${setIds}${sprayCacheToken(boardName, layoutId)}`;
   const cached = boardHoldIdsCache.get(boardKey);
   if (cached) return cached;
 
@@ -1381,7 +1386,20 @@ export function buildCacheKey(
   // board width. The token tracks the requested width, not the clamped
   // output, so it stays stable for a given (board, renderWidth) pair.
   const width = renderWidth != null ? `${renderWidth}` : 'full';
-  return `v${RENDERER_VERSION}_${style}_w${width}_${boardName}_${layoutId}_${sizeId}_${canonicalSetIds}_${framesHash}`;
+  // Spray walls only: `sprayCacheToken` is `''` for every catalogue board, so no
+  // overlay PNG already on disk changes name and the warm-up scan still matches.
+  // For a wall it is `-sv<version>`, and it has to be here rather than folded
+  // into `sizeId` — a wall's size id is its layout id forever, and encoding the
+  // version there would leak into `compatible_size_ids`, the offline key,
+  // `board_sessions.board_path` and share URLs (`docs/spray-walls.md`). Drop this
+  // token and a reset serves the previous generation's overlay over the new
+  // photo, which is the whole failure this exists to prevent.
+  //
+  // It rides on the SET-IDS segment, not on `sizeId`: `overlayNameMatchesScope`
+  // matches `_{boardName}_{layoutId}_{sizeId}_` as a delimited run to reap one
+  // board's art, and splitting that run would make a wall unreapable.
+  const spray = sprayCacheToken(boardName, layoutId);
+  return `v${RENDERER_VERSION}_${style}_w${width}_${boardName}_${layoutId}_${sizeId}_${canonicalSetIds}${spray}_${framesHash}`;
 }
 
 /**
@@ -1409,7 +1427,11 @@ export function buildBoardKey(
   // near-black MoonBoard layers resolve to `.dark.webp` siblings in dark mode
   // (see background-image-cache.ts), so without this term a flip would leave
   // the previous scheme's paths on screen until some other prop changed.
-  return `${boardName}-${layoutId}-${sizeId}-${setIds}-${variant}-${colorScheme}`;
+  //
+  // The wall version is in it for a third instance of the same reason: a spray
+  // wall's background is a downloaded photograph named per version, so a reset
+  // that did not move this key would leave the previous photo on screen.
+  return `${boardName}-${layoutId}-${sizeId}-${setIds}-${variant}-${colorScheme}${sprayCacheToken(boardName, layoutId)}`;
 }
 
 function getBoardConfig(
@@ -1432,7 +1454,11 @@ function getBoardConfig(
   litHoldIds: Set<number> = new Set(),
 ) {
   const widthKey = renderWidth != null ? `${renderWidth}` : 'full';
-  const configKey = `${boardName}-${layoutId}-${sizeId}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
+  // Spray token: the wall version, so a reset rebuilds the config (new hold
+  // positions, new photo dimensions, new runtime geometry) instead of reusing the
+  // entry the previous generation wrote.
+  const spray = sprayCacheToken(boardName, layoutId);
+  const configKey = `${boardName}-${layoutId}-${sizeId}${spray}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
   let cached = boardConfigCache.get(configKey);
 
   if (!cached) {

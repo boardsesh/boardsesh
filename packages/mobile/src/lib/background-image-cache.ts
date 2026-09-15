@@ -3,6 +3,8 @@ import { Asset } from 'expo-asset';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from './board-details';
 import { BOARD_BACKGROUND_ASSETS } from './board-backgrounds-manifest';
+import { parseSprayBackgroundKey } from './spray/spray-photo-keys';
+import { ensureSprayPhotoCached, tryGetSprayPhotoPathSync } from './spray/spray-photo-cache';
 
 /**
  * Strip the file:// scheme prefix from a URI to produce a plain
@@ -254,6 +256,17 @@ export function tryGetBackgroundPathsSync(params: BackgroundParams): BackgroundL
   const paths: string[] = [];
   let missingCount = 0;
   for (const backgroundImageKey of renderData.backgroundImageKeys) {
+    const sprayPhoto = parseSprayBackgroundKey(backgroundImageKey);
+    if (sprayPhoto) {
+      // A wall's photo is a download, not a bundled asset, and the variants do
+      // not exist: there is one JPEG per version, so `thumb` and `dark` both fall
+      // through to it. Until it lands on disk this is a missing layer, which is
+      // the placeholder contract every other board already relies on.
+      const photoPath = tryGetSprayPhotoPathSync(sprayPhoto);
+      if (photoPath) paths.push(photoPath);
+      else missingCount++;
+      continue;
+    }
     const manifestKey = resolveManifestKey(backgroundImageKey, variant, colorScheme);
     const path = tryResolveBundledPathSync(manifestKey);
     if (!path) {
@@ -288,6 +301,15 @@ export async function ensureBackgroundsCached(params: BackgroundParams): Promise
   const paths: string[] = [];
   let missingCount = 0;
   for (const backgroundImageKey of renderData.backgroundImageKeys) {
+    const sprayPhoto = parseSprayBackgroundKey(backgroundImageKey);
+    if (sprayPhoto) {
+      // This is the pass that actually fetches the photograph. Concurrent rows on
+      // one wall share the single in-flight download.
+      const photoPath = await ensureSprayPhotoCached(sprayPhoto);
+      if (photoPath) paths.push(photoPath);
+      else missingCount++;
+      continue;
+    }
     const manifestKey = resolveManifestKey(backgroundImageKey, variant, colorScheme);
     const path = await resolveBundledPathAsync(manifestKey);
     if (path) {

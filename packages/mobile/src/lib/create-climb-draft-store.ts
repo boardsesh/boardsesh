@@ -8,6 +8,7 @@
 // Backed by AsyncStorage (non-secret UI state) via the shared preference store.
 
 import { getPreference, setPreference, removePreference, removePreferencesMatching } from './preference-store';
+import { sprayCacheToken } from './spray/spray-wall-registry';
 import type { UserStorageOwner } from './user-storage-owner';
 
 /** Which authoring mode wrote this slot. Diagnostic only — the key decides. */
@@ -87,6 +88,11 @@ const KEY_PREFIX = 'boardsesh_create_climb_draft:';
  * because Kilter/Tension share a layout/size/angle across "original" vs
  * "commercial" (bolt-on) hold sets — leaving it out lets a draft from one set
  * restore hold IDs that don't exist in the current set.
+ *
+ * A spray wall folds its VERSION in through `sprayCacheToken` (empty for every
+ * catalogue board). A reset replaces the wall's holds under an unchanged
+ * layout/size, so without it a draft painted on the old generation would restore
+ * onto the new photo with hold ids that are no longer on the wall.
  */
 export function createClimbDraftKey(config: {
   boardName: string;
@@ -95,7 +101,8 @@ export function createClimbDraftKey(config: {
   setIds: string;
   angle: number;
 }): string {
-  return `${config.boardName}:${config.layoutId}:${config.sizeId}:${config.setIds}:${config.angle}`;
+  const spray = sprayCacheToken(config.boardName, config.layoutId);
+  return `${config.boardName}:${config.layoutId}:${config.sizeId}${spray}:${config.setIds}:${config.angle}`;
 }
 
 /**

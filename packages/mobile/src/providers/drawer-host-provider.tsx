@@ -43,6 +43,7 @@ import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
+import { useSprayWall } from '../lib/spray/use-spray-wall';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useDeviceLayout } from '../hooks/use-device-layout';
@@ -484,6 +485,15 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     () => boardConfigOverride ?? storedActiveBoardConfig,
     [boardConfigOverride, storedActiveBoardConfig],
   );
+
+  // A spray wall's photo and holds are runtime data, not bundled assets, so
+  // something has to fetch them before any surface can draw the wall. This is the
+  // one place that knows which board is active app-wide, so it is where the
+  // registry is filled; every board surface below then reads it synchronously
+  // (`getBoardRenderData`, the background cache, `use-native-climb-render`) with
+  // no branch of its own. `null` for every catalogue board disables both queries.
+  const activeSprayLayoutId = activeBoardConfig?.boardName === 'spray' ? activeBoardConfig.layoutId : null;
+  useSprayWall(activeSprayLayoutId);
 
   const selectedBoardPresenceBoard = useMemo<ResolveBoardUuidArgs | null>(() => {
     if (!activeBoard) return null;

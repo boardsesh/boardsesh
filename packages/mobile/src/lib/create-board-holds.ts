@@ -3,6 +3,7 @@ import type { BoardEdges } from '@boardsesh/climb-filters';
 import { WOODS_OCCUPIED_HOLD_IDS } from '@boardsesh/board-constants/woods';
 import { woodsSizeIdToDimension } from '@boardsesh/board-config';
 import { getBoardRenderData } from './board-details';
+import { sprayCacheToken } from './spray/spray-wall-registry';
 
 /**
  * The minimal per-hold geometry the interactive editor needs to place a tap
@@ -18,8 +19,14 @@ export type BoardHoldTarget = { id: number; cx: number; cy: number; r: number };
  * numbered from each board's own origin — which is why Woods is its own family
  * rather than another code-driven MoonBoard: an id means a different hold on
  * each of its two sizes (see `canAddClimbToBoard` rule 5).
+ *
+ * `spray` is its own family for a stronger reason still: a wall's holds are not
+ * code-driven OR generated, they are photographed, and the set that exists
+ * changes every time the owner resets the wall. An editor has to be able to tell
+ * "this board's holds are a runtime fact" from "this board's holds shipped in the
+ * binary".
  */
-export type CreateBoardFamily = 'aurora' | 'moonboard' | 'woods';
+export type CreateBoardFamily = 'aurora' | 'moonboard' | 'woods' | 'spray';
 
 export type CreateBoardHolds = BoardEdges & {
   holdTargets: BoardHoldTarget[];
@@ -39,7 +46,10 @@ const CREATE_BOARD_HOLDS_CACHE_LIMIT = 16;
 const createBoardHoldsCache = new Map<string, CreateBoardHolds | null>();
 
 function createBoardHoldsCacheKey(cfg: CreateBoardHoldsConfig): string {
-  return `${cfg.boardName}-${cfg.layoutId}-${cfg.sizeId}-${cfg.setIds.join(',')}`;
+  // Empty for every catalogue board; the wall version for a spray wall, so a
+  // reset cannot be answered out of this memo with the holds that came off.
+  const sprayToken = sprayCacheToken(cfg.boardName, cfg.layoutId);
+  return `${cfg.boardName}-${cfg.layoutId}-${cfg.sizeId}-${cfg.setIds.join(',')}${sprayToken}`;
 }
 
 /**
@@ -55,6 +65,7 @@ export function parseSetIdsParam(setIds: string): number[] {
 function resolveCreateBoardFamily(boardName: BoardName): CreateBoardFamily {
   if (boardName === 'moonboard') return 'moonboard';
   if (boardName === 'woods') return 'woods';
+  if (boardName === 'spray') return 'spray';
   return 'aurora';
 }
 
@@ -92,7 +103,13 @@ type BoardRenderData = NonNullable<ReturnType<typeof getBoardRenderData>>;
 /**
  * Narrow a board's render geometry to the holds an editor may make interactive.
  *
- * Only Woods narrows anything: an empty mounting slot must never become a tap
+ * Only Woods narrows anything. A spray wall needs no narrowing at all — its
+ * render data already carries the holds ALIVE at the wall's current version,
+ * because `sprayWallRenderData` returns that generation and nothing else, so a
+ * hold that came off in a reset never reaches this function. That is the same
+ * guarantee `WOODS_OCCUPIED_HOLD_IDS` buys Woods, bought on the server instead.
+ *
+ * Woods: an empty mounting slot must never become a tap
  * target. A dot painted on bare plywood reads as a hold that isn't there
  * (boardsesh/boardsesh#5185), and its hit circle sits in the same nearest-centre
  * partition as the real holds, so it also steals taps aimed at the hold beside

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
 
@@ -61,6 +61,7 @@ vi.mock('../../../modules/board-renderer/src/index', () => {
 });
 
 import { overlayNameMatchesScope } from '../../lib/cache-sweep-plan';
+import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 
 const {
   buildCacheKey,
@@ -638,5 +639,89 @@ describe('withLitHoldGeometry', () => {
       expect(hold.led_inner).toBeUndefined();
     }
     expect(attached.find((hold) => hold.id === 10)?.outline).toEqual(outline);
+  });
+});
+
+/**
+ * The wall version has to be in EVERY spray cache key (issue #5440): a reset
+ * replaces the photo and the hold generation under an unchanged
+ * (boardName, layoutId, sizeId, setIds), so a key that does not carry it serves
+ * the previous generation's overlay over the new photograph forever.
+ *
+ * Each case takes the key at version 1, registers version 2, and asserts the key
+ * moved. Remove `sprayCacheToken` from the builder under test and its case fails.
+ */
+describe('the wall version in the render cache keys', () => {
+  const LAYOUT_ID = 4200;
+
+  function registerWall(version: number) {
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'wall-uuid',
+      version,
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'https://private.example/photo',
+      photoThumbUrl: null,
+      photoExpiresAt: '2026-09-15T12:15:00.000Z',
+      holds: [{ id: 1, cx: 100, cy: 200, r: 18 }],
+    });
+  }
+
+  afterEach(() => {
+    clearSprayWallRegistry();
+  });
+
+  it('moves the overlay cache key on a reset', () => {
+    registerWall(1);
+    const atVersion1 = buildCacheKey('spray', LAYOUT_ID, LAYOUT_ID, '1', 'p1r12');
+    registerWall(2);
+    expect(buildCacheKey('spray', LAYOUT_ID, LAYOUT_ID, '1', 'p1r12')).not.toBe(atVersion1);
+  });
+
+  it('moves the background-paths key on a reset', () => {
+    registerWall(1);
+    const atVersion1 = buildBoardKey('spray', LAYOUT_ID, LAYOUT_ID, '1');
+    registerWall(2);
+    expect(buildBoardKey('spray', LAYOUT_ID, LAYOUT_ID, '1')).not.toBe(atVersion1);
+  });
+
+  it('keeps a wall reapable by scope, so the version never splits the scope run', () => {
+    registerWall(3);
+    const name = `${buildCacheKey('spray', LAYOUT_ID, LAYOUT_ID, '1', 'p1r12')}.png`;
+    expect(overlayNameMatchesScope(name, { boardType: 'spray', layoutId: LAYOUT_ID, sizeId: LAYOUT_ID })).toBe(true);
+  });
+
+  it('rebuilds the board config on a reset instead of reusing the previous generation', () => {
+    getBoardRenderDataMock.mockReturnValue({
+      boardWidth: 1000,
+      boardHeight: 1200,
+      holdsData: [{ id: 1, mirroredHoldId: null, cx: 100, cy: 200, r: 20 }],
+    });
+    registerWall(1);
+    const first = _getBoardConfigForTests('spray', LAYOUT_ID, LAYOUT_ID, '1', false);
+    expect(asRecord(first?.configBase).holds).toHaveLength(1);
+
+    getBoardRenderDataMock.mockReturnValue({
+      boardWidth: 1000,
+      boardHeight: 1200,
+      holdsData: [
+        { id: 1, mirroredHoldId: null, cx: 100, cy: 200, r: 20 },
+        { id: 2, mirroredHoldId: null, cx: 300, cy: 400, r: 20 },
+      ],
+    });
+    registerWall(2);
+    // Without the version in `configKey` this would be answered out of
+    // `boardConfigCache` with version 1's single hold.
+    expect(asRecord(_getBoardConfigForTests('spray', LAYOUT_ID, LAYOUT_ID, '1', false)?.configBase).holds).toHaveLength(
+      2,
+    );
+  });
+
+  it('leaves every catalogue board key byte-identical', () => {
+    registerWall(7);
+    expect(buildCacheKey('kilter', 1, 10, '24,25', 'p1r42p2r43')).toBe(
+      buildCacheKey('kilter', 1, 10, '24,25', 'p1r42p2r43'),
+    );
+    expect(buildBoardKey('kilter', 1, 10, '24,25')).toBe('kilter-1-10-24,25-full-light');
   });
 });
