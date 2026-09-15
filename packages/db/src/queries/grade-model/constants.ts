@@ -12,17 +12,37 @@ export const GRADE_MODEL_VERSION = 'v2.1'; // v2.1: zero-evidence cross-angle pr
 
 /**
  * Boards whose upstream `difficulty_average` is a live crowd mean (fractional,
- * moves with ascents). MoonBoard is deliberately absent: its feed carries only
- * integer labels (average == display == benchmark byte-for-byte), so there is
- * no crowd signal to model — the UI shows "not standardized yet" instead.
+ * moves with ascents). MoonBoard is normally excluded here in production:
+ * its feed carries only integer labels (average == display == benchmark
+ * byte-for-byte), so there is no crowd signal to model.
  *
- * (Explored putting MoonBoard through this pipeline on branch
- * experiment/moonboard-boardsesh-grade — worked mechanically once fed a
- * userGrade-derived difficulty_average, but the win landed on the separate,
- * already-shipped moonboard-angle-model.ts instead: same data source, no
- * blast radius on the other boards, no calibration gap. See that module.)
+ * EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade): MoonBoard is
+ * included, now that its `difficulty_average` is sourced from the catalog's
+ * `userGrade` (a real, independent crowd signal — see
+ * moonboard-catalog-helpers.ts's userDifficultyId). This is what gives a
+ * `confirmed`/`provisional` grade to a climb graded at BOTH of its real
+ * angles (25°/40°) — the case neither of the two standalone MoonBoard jobs
+ * covers: moonboard-angle-model.ts's same-board transpose only targets a
+ * climb graded at exactly ONE real angle, and moonboard-wide-angle-model.ts
+ * only targets angles outside {25, 40}. All three write disjoint angles for
+ * any one climb by construction, so they never race.
+ *
+ * `CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS` stays at 2 (never lowered) specifically
+ * so this does NOT also turn on `cross_angle_estimate` projection for
+ * MoonBoard — that path was the one with a real calibration gap when tried
+ * (95% band covered only 88% of held-out truth). Confirmed/provisional at a
+ * REAL angle needs no cross-angle projection at all, so this inclusion is
+ * safe on its own.
  */
-export const CROWD_MEAN_BOARDS = ['kilter', 'tension', 'grasshopper', 'decoy', 'soill', 'touchstone'] as const;
+export const CROWD_MEAN_BOARDS = [
+  'kilter',
+  'tension',
+  'grasshopper',
+  'decoy',
+  'soill',
+  'touchstone',
+  'moonboard',
+] as const;
 
 /**
  * Boards that get a cross-board `universal_grade`. Tension is the anchor
