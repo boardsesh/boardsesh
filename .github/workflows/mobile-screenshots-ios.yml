@@ -206,20 +206,28 @@ on:
 # Automatic runs share ONE group and never cancel each other: a capture in
 # flight always finishes (its shards hold macOS runners and its upload may
 # already be talking to App Store Connect), and GitHub coalesces whatever queues
-# behind it down to the newest. Every dispatch gets its own group keyed on the
-# run id, so an `upload: true` run by hand is never cancelled by a native deploy
-# landing mid-capture — or by another dispatch.
+# behind it down to the newest. A capture-only dispatch (no upload, no baseline
+# refresh) gets its own group keyed on the run id — it only reads, so it is
+# safe to run alongside anything else and is never cancelled by a native deploy
+# landing mid-capture.
 #
-# Accepted trade-off: a dispatch is never cancelled, so per-run groups only
-# serialize automatic runs against each other — two `upload`/`publish_baseline`
-# dispatches, or a dispatch and an automatic run, CAN run ios-finalize
-# concurrently and both reach `gh release upload --clobber` (the baseline
-# prerelease) and the App Store Connect screenshots upload. Neither is
-# transactional across two runs, so the last writer wins on both; we accept
-# that rather than adding cross-run locking, since a screenshot-only mismatch is
-# cheap to notice and re-run.
+# The race this used to leave open is now closed: a dispatch with
+# `upload: true` or `publish_baseline: true` joins the SAME group as automatic
+# runs, because it can reach the same two write targets ios-finalize does — `gh
+# release upload --clobber` on the baseline prerelease and the App Store
+# Connect screenshots upload — and neither is transactional across two
+# concurrent runs. Only a capture-only dispatch (or another capture-only
+# dispatch) still runs concurrently with anything; every writer serializes.
 concurrency:
-  group: ${{ github.event_name == 'workflow_run' && 'mobile-screenshots-ios' || format('mobile-screenshots-ios-dispatch-{0}', github.run_id) }}
+  # A capture-only dispatch gets its own per-run group (harmless to run
+  # alongside anything else — it only reads). A dispatch that can WRITE to the
+  # shared target (upload to App Store Connect, or refresh the baseline
+  # prerelease) joins the same serial group as automatic runs instead: two
+  # such writers racing could publish the baseline (or upload) out of order,
+  # so `inputs.upload`/`inputs.publish_baseline` are compared explicitly
+  # (never read bare) to stay null-tolerant on `workflow_run`, where `inputs`
+  # is null and both comparisons read false.
+  group: ${{ (github.event_name == 'workflow_run' || inputs.upload == true || inputs.publish_baseline == true) && 'mobile-screenshots-ios' || format('mobile-screenshots-ios-dispatch-{0}', github.run_id) }}
   cancel-in-progress: false
 
 permissions:
