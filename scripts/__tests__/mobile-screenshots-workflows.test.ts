@@ -171,8 +171,19 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
   const source = readYaml(IOS_WORKFLOW_PATH);
   const workflow = parseWorkflow(IOS_WORKFLOW_PATH);
 
-  it('is valid YAML with the four capture jobs', () => {
-    expect(Object.keys(workflow.jobs)).toEqual(['setup', 'ios-build', 'probe', 'ios-capture', 'ios-finalize']);
+  it('is valid YAML with the four capture jobs, in dependency order', () => {
+    // Pins the fix for the #5331 review thread: an exact toEqual() on the full
+    // job list would fail the day a debug or reporting job is appended, even
+    // though nothing about the capture pipeline changed. Assert the required
+    // jobs are present (toContain, one at a time) and still appear in the
+    // relative order their `needs` chains assume — but don't forbid a later
+    // job existing alongside them.
+    const jobNames = Object.keys(workflow.jobs);
+    const REQUIRED_JOBS = ['setup', 'ios-build', 'probe', 'ios-capture', 'ios-finalize'];
+    for (const job of REQUIRED_JOBS) {
+      expect(jobNames).toContain(job);
+    }
+    expect(jobNames.filter((name) => REQUIRED_JOBS.includes(name))).toEqual(REQUIRED_JOBS);
   });
 
   it('offers the gate and publish_baseline dispatch inputs', () => {
