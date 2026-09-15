@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   # The live check needs RAILWAY_TOKEN, which lives in the Production environment,
-  # and that environment's branch policy admits `main` alone. A pull_request run is
+  # and that environment's branch policy admits `main` and `release/next` alone. A pull_request run is
   # `refs/pull/N/merge`, so asking for the environment there fails the job outright
   # ("not allowed to deploy to Production") rather than skipping. Hence the split:
   # schedule and manual dispatch get the live project, pull requests get the layers

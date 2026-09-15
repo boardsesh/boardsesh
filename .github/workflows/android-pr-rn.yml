@@ -86,6 +86,8 @@ jobs:
         uses: ./.github/actions/mobile-native-gate
         with:
           platform: android
+          # Empty on a branch push (no PR context); the action then defaults to main.
+          base-ref: ${{ github.base_ref }}
 
   robolectric-tests:
     needs: gate

@@ -1174,9 +1174,9 @@ Set on the `Production` GitHub environment (referenced by the workflow): `DATABA
 is an optional `vars.*` passthrough (only needed if the backend's stability window is ever configured off
 its 30s default — the export reads the same env var so the two stay in lockstep).
 
-The Production environment restricts deployments to `main`, so `workflow_dispatch` runs of the export
-must be dispatched from `main` — a feature-branch dispatch fails immediately with a branch-policy
-rejection and zero log output.
+The Production environment restricts deployments to `main` and `release/next`, so `workflow_dispatch`
+runs of the export must be dispatched from `main` — a feature-branch dispatch fails immediately with a
+branch-policy rejection and zero log output.
 
 **Public URL base (Tigris quirk)**: the manifest's per-artifact `url` fields must be fetchable
 unauthenticated. Tigris serves public objects **only** on the bucket's virtual-host domain

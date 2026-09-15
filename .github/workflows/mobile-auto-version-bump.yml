@@ -54,7 +54,12 @@ jobs:
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
           permission-contents: write
 
-      - name: Checkout main
+      # main is only the tooling checkout. The anchor itself is commit-addressed:
+      # it resolves each accepted binary's build-<platform>-* tag and cuts the
+      # release anchor at THAT commit — which now lives on release/next, since that
+      # is where the native builds run. Nothing here diffs against the checked-out
+      # branch, so it stays correct wherever the build came from.
+      - name: Checkout main for the anchoring tooling
         uses: actions/checkout@v4
         with:
           ref: main

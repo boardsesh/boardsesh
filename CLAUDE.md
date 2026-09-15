@@ -330,9 +330,10 @@ For quick ad-hoc shots of the live app on an Android emulator (the fast KVM path
 
 ### Native release workflow
 
-- All mobile changes target `main`. JavaScript-only changes ship by OTA while `main` matches an accepted store fingerprint.
-- A change that moves the native fingerprint triggers automatic TestFlight and Play-internal builds from `main`. The current store fleet cannot receive OTAs from the new fingerprint until the replacement binary is installed, so keep native release work focused and ship promptly.
-- Land the version and localized release notes before the final native change so the automatic builds carry the intended release identity and copy.
+- **JavaScript-only changes target `main`.** They ship by OTA while `main` matches an accepted store fingerprint.
+- **Native changes target `release/next`, the release train.** A push there that moves the fingerprint triggers the automatic TestFlight and Play-internal builds; `main` no longer builds native. A fingerprint-moving PR into `main` fails the OTA compatibility check and must be retargeted (`gh pr edit <n> --base release/next`), unless the owner adds the `allow-native-on-main` label. The current store fleet cannot receive OTAs from the new fingerprint until the replacement binary is installed, so keep native release work focused and ship promptly.
+- **The train publishes OTAs too**, to the testers on its own binary — but only once a native change has moved its fingerprint off main's, so the store fleet keeps getting main's JS. Land the version and localized release notes on the train before the final native change, so the automatic builds carry the intended release identity and copy.
+- **Close the train with a merge commit, never a squash**, then reset it: `git push --force-with-lease origin main:release/next`. Sync main in with `git merge origin/main` whenever the train needs main's JS. Full runbook: `docs/mobile-store-release.md`.
 - Split mixed backend/native work when useful. Keep the backend compatible with the currently shipped app until the replacement store release has been adopted.
 - Urgent fixes for an older accepted fingerprint use the OTA backport workflow and immutable release anchors.
 
