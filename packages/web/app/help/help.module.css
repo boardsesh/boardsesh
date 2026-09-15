@@ -46,6 +46,8 @@
 
 .section {
   margin-bottom: 32px;
+  /* The header is fixed, so a #anchor jump must land below it, not under it. */
+  scroll-margin-top: calc(var(--global-header-height) + 16px);
 }
 
 .sectionTitle {

@@ -221,6 +221,13 @@
       "item2": "Your ascents stay yours. We never write back anything you didn't log.",
       "link": "Read the migration guide"
     },
+    "climbCounts": {
+      "title": "Why does Kilter's app show more climbs?",
+      "intro": "Both apps have the same climbs. They just count them differently.",
+      "item1": "Boardsesh counts each climb once and shows its grade and ascents at the angle you pick.",
+      "item2": "Kilter's app counts a climb once for every angle it has been logged at, so a climb with ascents at 40° and 45° counts as two.",
+      "item3": "That's why the same board can show about twice as many climbs in Kilter's app."
+    },
     "ask": {
       "title": "Still stuck?",
       "intro": "Ask us. We read all three.",

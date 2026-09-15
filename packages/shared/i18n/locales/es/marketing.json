@@ -297,6 +297,13 @@
       "item2": "Tus ascensiones siguen siendo tuyas. Nunca escribimos nada que no hayas registrado.",
       "link": "Leer la guía de migración"
     },
+    "climbCounts": {
+      "title": "¿Por qué la app de Kilter muestra más bloques?",
+      "intro": "Las dos apps tienen los mismos bloques. Solo los cuentan de otra forma.",
+      "item1": "Boardsesh cuenta cada bloque una vez y te muestra su grado y sus encadenes en el ángulo que elijas.",
+      "item2": "La app de Kilter cuenta un bloque una vez por cada ángulo en el que se ha registrado, así que un bloque con encadenes a 40° y a 45° cuenta como dos.",
+      "item3": "Por eso el mismo plafón puede mostrar más o menos el doble de bloques en la app de Kilter."
+    },
     "ask": {
       "title": "¿Sigues atascado?",
       "intro": "Pregúntanos. Leemos los tres.",
