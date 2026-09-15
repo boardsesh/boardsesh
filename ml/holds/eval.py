@@ -317,6 +317,8 @@ def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: 
             "mean": round(float(np.mean(latencies)) if latencies else 0.0, 3),
         },
         # ru_maxrss is kilobytes on Linux but BYTES on macOS (getrusage(2) on Darwin).
+        # The two-way branch assumes this harness only runs on macOS or Linux; other
+        # BSDs also report bytes and would need their own case.
         "peak_rss_mb": round(
             resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             / (1024 * 1024 if sys.platform == "darwin" else 1024),

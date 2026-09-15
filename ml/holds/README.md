@@ -111,7 +111,7 @@ python export.py --config medium-untiled-1280 --formats onnx --shrink int8
 #    the SAME int8 file the final number is reported on — quantization shifts
 #    score calibration, so a threshold tuned on the fp32 model.onnx (eval.py's
 #    default when --model is omitted) is tuned on the wrong artifact.
-for t in 0.02 0.05 0.08 0.12 0.20 0.30; do
+for t in 0.05 0.10 0.15 0.20 0.30 0.40 0.50 0.60 0.70; do
   python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco \
     --split tune --score-threshold $t \
     --model .data/artifacts/medium-untiled-1280/model-int8.onnx \
@@ -307,7 +307,10 @@ What the full run settles:
   not model size — held: the same weights that scored 0.295 with tiles score
   0.659 without them.
 - **The dataset is exhausted.** Per-epoch scoring on the spray halves (the
-  `results/full-run-2026-09-15-m5max/*/curve/` files) shows both configs
+  `results/full-run-2026-09-15-m5max/*/curve/` files — one file per epoch in
+  which `checkpoint_best_ema.pth` changed, so a missing epoch number, like
+  medium's 7, means the in-domain EMA metric did not improve that epoch and
+  there was no new checkpoint to score) shows both configs
   plateauing by epoch 4–6 (medium 0.586 → 0.619, nano 0.590 → 0.615, fp32
   coarse-sweep numbers) and flat for the rest of the run, while the in-domain
   Roboflow test F1 reaches 0.89–0.91. The model has learned this dataset; the

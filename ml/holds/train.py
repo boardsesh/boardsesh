@@ -244,12 +244,19 @@ def main() -> int:
     )
     elapsed = time.time() - started
 
+    # The summary is a shareable artifact: keep the resume checkpoint repo-relative
+    # so a committed copy does not embed this machine's home directory layout.
+    summary_train_config = dict(train_config)
+    if "resume" in summary_train_config:
+        resume_value = Path(summary_train_config["resume"])
+        if resume_value.is_absolute() and resume_value.is_relative_to(HOLDS_DIR):
+            summary_train_config["resume"] = str(resume_value.relative_to(HOLDS_DIR))
     summary = {
         "config": config.name,
         "dataset": str(dataset_dir),
         "device": device_name,
         "accelerator": accelerator,
-        "train_config": train_config,
+        "train_config": summary_train_config,
         "wall_clock_seconds": round(elapsed, 1),
         "output_dir": str(output_dir),
     }
