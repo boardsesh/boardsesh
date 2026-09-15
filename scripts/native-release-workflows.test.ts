@@ -360,6 +360,10 @@ describe('native release workflow contracts', () => {
     // A fork PR's token is read-only, so the comment/label/check-run writes would
     // 403; the push path never covered forks either.
     expect(otaCheck).toContain('github.event.pull_request.head.repo.fork != true');
+    // Dependabot's PRs get a read-only token even though the head branch is
+    // same-repo, so the comment / label / check-run writes would 403 and the
+    // weekly lockfile PR would show a failed workflow and no verdict.
+    expect(otaCheck).toContain("github.actor != 'dependabot[bot]'");
     // `edited` also fires on every title/body edit, and this job is a ~20-minute
     // two-install resolve. Only a base change can move the verdict, and that is
     // what `changes.base` reports.
