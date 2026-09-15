@@ -167,21 +167,49 @@ export async function assertCorsHeaderWithoutOrigin(
   origin: string = resolvePublicStaticAssetOrigin(),
 ): Promise<void> {
   for (const asset of assets.slice(0, CORS_PROBE_SAMPLE_SIZE)) {
-    await beforeRequest();
-    const response = await fetchImpl(`${origin}/${asset.objectKey}`, {
-      signal: AbortSignal.timeout(PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS),
-    });
-    if (!response.ok) throw new Error(`CORS probe for ${asset.logicalPath} failed: HTTP ${response.status}`);
-    // Drain rather than leak the socket; the body is not what is being checked.
-    await response.arrayBuffer();
-    if (response.headers.get('access-control-allow-origin') !== '*') {
-      throw new Error(
-        `Public asset ${asset.logicalPath} answered a request with no Origin header and no ` +
-          'Access-Control-Allow-Origin. That response is cacheable, and the board-render worker fetches ' +
-          'these URLs cross-origin — it would fail CORS against the cached copy and boards would render ' +
-          'with no background. Check the assets CORS response-header rule in infra/cloudflare/config.ts.',
-      );
+    // Same retry envelope as validatePublicAsset, and for the same reason: this
+    // runs inside sync-static-assets, which gates every downstream production
+    // job, so one transient 429 or 5xx from the edge must not reject an
+    // otherwise-valid deploy.
+    //
+    // The distinction that matters: a transport failure is retried, but a
+    // SUCCESSFUL response missing the header fails immediately. That is a
+    // configuration error, not a blip, and retrying it would only delay the
+    // message by the full backoff ladder.
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= PUBLIC_VALIDATION_ATTEMPTS; attempt += 1) {
+      try {
+        await beforeRequest();
+        const response = await fetchImpl(`${origin}/${asset.objectKey}`, {
+          signal: AbortSignal.timeout(PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+          const httpError = new Error(`CORS probe for ${asset.logicalPath} failed: HTTP ${response.status}`);
+          if (isNonRetryablePublicStatus(response.status)) throw Object.assign(httpError, { nonRetryable: true });
+          throw httpError;
+        }
+        // Drain rather than leak the socket; the body is not what is being checked.
+        await response.arrayBuffer();
+        if (response.headers.get('access-control-allow-origin') !== '*') {
+          throw Object.assign(
+            new Error(
+              `Public asset ${asset.logicalPath} answered a request with no Origin header and no ` +
+                'Access-Control-Allow-Origin. That response is cacheable, and the board-render worker fetches ' +
+                'these URLs cross-origin — it would fail CORS against the cached copy and boards would render ' +
+                'with no background. Check the assets CORS response-header rule in infra/cloudflare/config.ts.',
+            ),
+            { nonRetryable: true },
+          );
+        }
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (error && typeof error === 'object' && 'nonRetryable' in error) break;
+        if (attempt < PUBLIC_VALIDATION_ATTEMPTS) await delay(calculatePublicValidationDelay(attempt));
+      }
     }
+    if (lastError) throw lastError;
   }
   console.log(
     `CORS probe: ${Math.min(CORS_PROBE_SAMPLE_SIZE, assets.length)} object(s) send ACAO without an Origin header.`,

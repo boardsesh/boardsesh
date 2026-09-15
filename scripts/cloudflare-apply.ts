@@ -61,6 +61,7 @@ import {
   MANAGED_RULE_PHASES,
   buildPlan,
   diffR2Bucket,
+  r2CorsHasUnmanagedRules,
   r2CorsMatches,
   resolveRulePhase,
   upsertCacheRule,
@@ -402,6 +403,18 @@ async function applyR2Bucket(
       { domain: desired.customDomain, zoneId, enabled: true },
     );
     console.log(`[cf-apply] attached ${desired.customDomain} to R2 bucket ${desired.name}`);
+  }
+
+  // Guarded here as well as in the diff, not instead of it. This function is
+  // reached for ANY non-blocked change on the bucket — attaching a custom domain,
+  // typically — so checking only in the diff would let a domain change carry the
+  // CORS write past the block and delete rules this repo does not own.
+  if (r2CorsHasUnmanagedRules(desired, live)) {
+    console.warn(
+      `[cf-apply] SKIPPED CORS on ${desired.name}: bucket has ${live.corsRuleCount} rules and this tool ` +
+        'writes a single-rule policy. Reconcile them in the Cloudflare dashboard first.',
+    );
+    return;
   }
 
   if (desired.cors && !r2CorsMatches(live.cors, desired.cors)) {

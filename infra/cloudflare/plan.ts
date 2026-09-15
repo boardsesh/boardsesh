@@ -554,6 +554,21 @@ export interface LiveR2Bucket {
   corsRuleCount?: number;
 }
 
+/**
+ * True when the bucket carries CORS rules this repo does not describe.
+ *
+ * The write is a whole-policy PUT, so converging such a bucket would delete the
+ * rules it does not know about. Exported and used by BOTH the diff and the apply
+ * on purpose: the apply re-derives what to do from (desired, live) rather than
+ * from the plan, so a blocked CORS change is not enough on its own — a
+ * non-blocked change on the same bucket (an unattached custom domain, say) still
+ * routes through `applyR2Bucket` and would perform the write the block exists to
+ * prevent. One predicate, both callers, no way for them to disagree.
+ */
+export function r2CorsHasUnmanagedRules(desired: R2BucketDesired, live: LiveR2Bucket): boolean {
+  return Boolean(desired.cors) && (live.corsRuleCount ?? 0) > 1;
+}
+
 /** Same policy, ignoring order within each list. */
 export function r2CorsMatches(live: R2Cors | null, desired: R2Cors): boolean {
   if (!live) return false;
@@ -624,7 +639,7 @@ export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null
   // CORS is only converged where it is declared. An undeclared policy is left
   // exactly as it is: this tool should not be able to clear a policy that was
   // deliberately set somewhere else.
-  if (desired.cors && (live.corsRuleCount ?? 0) > 1) {
+  if (r2CorsHasUnmanagedRules(desired, live)) {
     // The write is a whole-policy PUT, so converging a bucket that carries rules
     // this repo does not know about would delete them. Shout instead — the same
     // choice the private-bucket check above makes.

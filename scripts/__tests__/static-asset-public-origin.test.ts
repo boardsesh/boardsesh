@@ -83,9 +83,47 @@ describe('assertCorsHeaderWithoutOrigin', () => {
     );
   });
 
-  it('fails on a non-OK response rather than reading headers off an error page', async () => {
-    await expect(assertCorsHeaderWithoutOrigin([asset], noop, reply({}, 503), 'https://x.test')).rejects.toThrow(
-      'HTTP 503',
+  it('retries a transient 503, so one CDN blip cannot reject a deploy', async () => {
+    // This runs inside sync-static-assets, which gates every downstream
+    // production job. A momentary edge failure must not fail the deployment.
+    let calls = 0;
+    const flaky = (async () => {
+      calls += 1;
+      return calls < 3
+        ? new Response(null, { status: 503 })
+        : new Response(null, { status: 200, headers: { 'access-control-allow-origin': '*' } });
+    }) as unknown as typeof fetch;
+
+    await expect(assertCorsHeaderWithoutOrigin([asset], noop, flaky, 'https://x.test')).resolves.toBeUndefined();
+    expect(calls).toBe(3);
+  });
+
+  it('does NOT retry a successful response that is missing the header', async () => {
+    // A 200 with no ACAO is a configuration error, not a blip. Retrying it would
+    // only delay the message by the whole backoff ladder.
+    let calls = 0;
+    const missing = (async () => {
+      calls += 1;
+      return new Response(null, { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await expect(assertCorsHeaderWithoutOrigin([asset], noop, missing, 'https://x.test')).rejects.toThrow(
+      'boards would render',
     );
+    expect(calls).toBe(1);
+  });
+
+  it('fails immediately on a permanent 4xx, without burning the retry ladder', async () => {
+    // 403 is non-retryable (unlike 404 and 429, which the CDN can answer
+    // transiently while a new object propagates). Headers are never read off an
+    // error page either way.
+    let calls = 0;
+    const forbidden = (async () => {
+      calls += 1;
+      return new Response(null, { status: 403 });
+    }) as unknown as typeof fetch;
+
+    await expect(assertCorsHeaderWithoutOrigin([asset], noop, forbidden, 'https://x.test')).rejects.toThrow('HTTP 403');
+    expect(calls).toBe(1);
   });
 });

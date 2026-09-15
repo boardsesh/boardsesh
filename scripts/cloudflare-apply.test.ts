@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { diffR2Bucket } from '../infra/cloudflare/plan';
+import { diffR2Bucket, r2CorsHasUnmanagedRules } from '../infra/cloudflare/plan';
 import { CloudflareApiRequestError, isAuthorizationError } from './cloudflare-apply';
 import {
   APEX_HOSTNAME,
@@ -1938,6 +1938,18 @@ describe('diffR2Bucket', () => {
     expect(changes).toHaveLength(1);
     expect(changes[0].blocked).toBe(true);
     expect(changes[0].summary).toContain('has 3 CORS rules');
+  });
+
+  it('reports unmanaged CORS rules through one predicate the apply shares', () => {
+    // The apply re-derives what to do from (desired, live) rather than walking
+    // the plan, so a blocked CORS change alone does not stop the write: a
+    // NON-blocked change on the same bucket (an unattached custom domain) still
+    // routes through applyR2Bucket. Both callers ask this, so they cannot drift.
+    const policy = { allowedOrigins: ['*'], allowedMethods: ['GET', 'HEAD'], maxAgeSeconds: 86_400 } as const;
+    expect(r2CorsHasUnmanagedRules(ASSETS, live(ASSETS.name, [], policy, 3))).toBe(true);
+    expect(r2CorsHasUnmanagedRules(ASSETS, live(ASSETS.name, [], policy, 1))).toBe(false);
+    // Undeclared CORS is never "unmanaged rules" — there is nothing to overwrite.
+    expect(r2CorsHasUnmanagedRules(MEDIA, live(MEDIA.name, [], policy, 3))).toBe(false);
   });
 
   it('leaves an undeclared CORS policy alone', () => {
