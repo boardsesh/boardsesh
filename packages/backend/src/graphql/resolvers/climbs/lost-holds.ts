@@ -1,14 +1,28 @@
 import { and, asc, eq, isNotNull, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { dbRead } from '../../../db/client';
 
-/** The parent fields `Climb.lostHolds` reads. Nothing else on a climb matters here. */
+/**
+ * The parent fields `Climb.lostHolds` reads.
+ *
+ * Every one of them is CLIENT-CONTROLLED and none of them authorizes anything.
+ * A `Climb` is not always a row this server read: the queue broadcasts climbs as
+ * `ClimbInput`, so a caller can hand back a synthetic parent with any
+ * `boardType`, any `layoutId` and any `missingHoldCount` it likes and then select
+ * `lostHolds` on it. They are used here only to AVOID work — each check can
+ * withhold data, never grant it — and the wall's visibility is decided in SQL,
+ * against the climb's own row, in the same statement that reads the geometry.
+ */
 export type ClimbLostHoldsParent = {
   uuid?: string | null;
   boardType?: string | null;
   missingHoldCount?: number | null;
 };
+
+/** What the resolver needs from the request: who is asking. */
+export type ClimbLostHoldsContext = { userId?: string | null } | null | undefined;
 
 /** One lost hold, shaped exactly like `SprayWallHold` on the wire. */
 export type GraphQLLostHold = {
@@ -52,8 +66,31 @@ export type GraphQLLostHold = {
  * catalogue ids it doubles as come from the single `spray_hold_catalog_id_seq`
  * — see `allocateHoldIds`), so joining on `hold_id` alone cannot pick up another
  * wall's hold and no layout scope is needed on top.
+ *
+ * ## Why the wall's visibility is a SQL predicate and not a check up front
+ *
+ * These rows are the geometry of a private wall: where the holds in somebody's
+ * garage used to be. A `Climb` parent is not proof of a read — the queue
+ * broadcasts climbs as `ClimbInput`, so a caller holding a climb uuid from a wall
+ * that was shared with them once can send back a forged parent claiming
+ * `boardType: 'spray'` and a positive `missingHoldCount`, and select `lostHolds`
+ * on it. So nothing on the parent is trusted: `layout_id` is read from the
+ * climb's own `board_climbs` row, and `sprayClimbVisibilityCondition` — the same
+ * by-layout rule (`owner, gym member, or a public wall`) every other spray climb
+ * reader carries — goes in the WHERE beside it.
+ *
+ * In one statement rather than two, so there is no window between deciding and
+ * reading, and a stranger gets an EMPTY LIST: byte for byte what an intact climb
+ * on a wall they can see returns. "Not visible" and "nothing lost" are
+ * indistinguishable on purpose — a different shape, or an error, would make this
+ * field an oracle for which climb uuids belong to private walls.
  */
-export async function resolveClimbLostHolds(climb: ClimbLostHoldsParent): Promise<GraphQLLostHold[] | null> {
+export async function resolveClimbLostHolds(
+  climb: ClimbLostHoldsParent,
+  ctx: ClimbLostHoldsContext,
+): Promise<GraphQLLostHold[] | null> {
+  // Fast paths only. Each one can withhold rows and none can produce any, so a
+  // forged parent buys nothing: the authorization is in the query below.
   if (climb.boardType !== 'spray') return null;
   if (climb.missingHoldCount == null) return null;
   if (climb.missingHoldCount === 0) return [];
@@ -78,6 +115,16 @@ export async function resolveClimbLostHolds(climb: ClimbLostHoldsParent): Promis
       removedVersionNumber: removedVersion.versionNumber,
     })
     .from(dbSchema.boardClimbHolds)
+    // The climb's OWN row, for its `layout_id`. The parent's is not read: the
+    // whole point of this join is that the wall is resolved from the database
+    // rather than from whatever the caller sent.
+    .innerJoin(
+      dbSchema.boardClimbs,
+      and(
+        eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbHolds.climbUuid),
+        eq(dbSchema.boardClimbs.boardType, dbSchema.boardClimbHolds.boardType),
+      ),
+    )
     .innerJoin(dbSchema.sprayWallHolds, eq(dbSchema.sprayWallHolds.holdId, dbSchema.boardClimbHolds.holdId))
     .innerJoin(installedVersion, eq(installedVersion.id, dbSchema.sprayWallHolds.installedVersionId))
     .innerJoin(removedVersion, eq(removedVersion.id, dbSchema.sprayWallHolds.removedVersionId))
@@ -87,6 +134,12 @@ export async function resolveClimbLostHolds(climb: ClimbLostHoldsParent): Promis
         eq(dbSchema.boardClimbHolds.boardType, 'spray'),
         isNotNull(dbSchema.sprayWallHolds.removedVersionId),
         ne(removedVersion.status, 'draft'),
+        // THE authorization. A wall the viewer may not see contributes no rows,
+        // so the answer is the same empty list an intact climb gives.
+        sprayClimbVisibilityCondition(
+          { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+          ctx?.userId,
+        ),
       ),
     )
     // Stable output: the hold editor and the ghost overlay both read this in order.

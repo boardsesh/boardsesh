@@ -15,19 +15,10 @@
 // component (`SprayResetCompareScreen`), so it is still testable on its own and
 // still gets the whole screen when it is showing.
 
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
-import {
-  Alert,
-  BackHandler,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
-import { useIsFocused, useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -54,10 +45,17 @@ import {
   anchorsAreReady,
   initialResetWallState,
   isBusy,
-  leavingKeepsDraft,
   resetWallReducer,
+  shouldConfirmLeave,
   type ResetWallStep,
 } from './reset-wall-machine';
+
+/** The `beforeRemove` payload this screen re-dispatches once the climber confirms. */
+type NavigationRemoveEvent = { preventDefault: () => void; data: { action: unknown } };
+type NavigationRemoveSubscribe = (
+  event: 'beforeRemove',
+  listener: (event: NavigationRemoveEvent) => void,
+) => () => void;
 
 /** Widest the photo preview is ever drawn. Past this it is a wall on a coffee table. */
 const MAX_PREVIEW_WIDTH = 520;
@@ -269,16 +267,21 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   // Leaving
   // ============================================
 
-  const leave = useCallback(() => {
-    if (!leavingKeepsDraft(state)) {
-      router.back();
-      return;
-    }
-    Alert.alert(t('sprayReset.leave.title'), t('sprayReset.leave.body'), [
-      { text: t('sprayWizard.leave.stay'), style: 'cancel' },
-      { text: t('sprayWizard.leave.go'), onPress: () => router.back() },
-    ]);
-  }, [state, router, t]);
+  const confirmLeave = useCallback(
+    (onConfirm: () => void) => {
+      if (!shouldConfirmLeave(state)) {
+        onConfirm();
+        return;
+      }
+      Alert.alert(t('sprayReset.leave.title'), t('sprayReset.leave.body'), [
+        { text: t('sprayWizard.leave.stay'), style: 'cancel' },
+        { text: t('sprayWizard.leave.go'), onPress: onConfirm },
+      ]);
+    },
+    [state, t],
+  );
+
+  const leave = useCallback(() => confirmLeave(() => router.back()), [confirmLeave, router]);
 
   const goBack = useCallback(() => {
     if (isBusy(state)) return;
@@ -290,28 +293,40 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   }, [state, leave]);
 
   /**
-   * Android's hardware back, held to the same rules as the Back button.
+   * The same question for every way out this screen does not draw.
    *
-   * Without it the flow has a second exit that obeys none of them: it pops the
-   * route mid-upload (landing the callback on a screen that is gone), and it
-   * leaves a draft behind without ever saying so. Returning `true` marks the
-   * press handled and stops the default pop.
+   * The footer's Back was guarded and nothing else was: the header's back
+   * button, the iOS back gesture and Android's Back key all remove the route
+   * outright — mid-upload, or with a draft on the server whose detections live
+   * only in this session. A silent exit there strands a draft nothing can resume
+   * and forces the owner to discard it and shoot the wall again.
    *
-   * Focus-gated for the reason `useBlockBack` spells out: `BackHandler`
-   * dispatches newest-first and stops at the first handler to return `true`, and
-   * React Navigation's own handler was registered when the container mounted —
-   * so an ungated listener here would keep eating back presses on every screen
-   * pushed on top of this one.
+   * `beforeRemove` is the one place all three pass through, which is why it
+   * replaces the `BackHandler` listener rather than sitting beside it: two
+   * guards on one gesture would ask twice. Same predicate as the footer
+   * (`shouldConfirmLeave`), and the event's own action is re-dispatched on
+   * confirm so the exit the climber chose is the exit they get.
    */
-  const isFocused = useIsFocused();
+  const navigation = useNavigation();
+  const confirmLeaveRef = useRef(confirmLeave);
+  confirmLeaveRef.current = confirmLeave;
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   useEffect(() => {
-    if (!isFocused) return;
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      goBack();
-      return true;
+    // Typed loosely on purpose, exactly as `SprayWallWizardScreen` does:
+    // `useNavigation()` here is the Expo Router stack's navigation object, and
+    // the payload is what has to be re-dispatched to let the removal through.
+    const subscribe = (navigation as unknown as { addListener?: NavigationRemoveSubscribe }).addListener;
+    if (typeof subscribe !== 'function') return;
+    return subscribe.call(navigation, 'beforeRemove', (event: NavigationRemoveEvent) => {
+      if (!shouldConfirmLeave(stateRef.current)) return;
+      event.preventDefault();
+      confirmLeaveRef.current(() => {
+        (navigation as unknown as { dispatch: (action: unknown) => void }).dispatch(event.data.action);
+      });
     });
-    return () => subscription.remove();
-  }, [isFocused, goBack]);
+  }, [navigation]);
 
   const handleCommitted = useCallback(
     (summary: { removedCount: number; addedCount: number; climbsChanged: number }) => {

@@ -148,6 +148,21 @@ export function isBusy(state: ResetWallState): boolean {
   return state.upload.running || state.detection.outcome === 'running';
 }
 
+/**
+ * Whether leaving needs to ask first — for EVERY way out, not just the one this
+ * screen draws.
+ *
+ * Mid-request, because the callback would land on a route that has gone and a
+ * half-sent photograph would be charged to the wrong attempt. And once the draft
+ * exists, because it is on the server and the detections that make it reviewable
+ * are not: they were computed from a local photograph. Walking out silently
+ * leaves a draft nothing can resume, and the only way back is discarding it and
+ * shooting the wall again.
+ */
+export function shouldConfirmLeave(state: ResetWallState): boolean {
+  return isBusy(state) || leavingKeepsDraft(state);
+}
+
 export function resetWallReducer(state: ResetWallState, action: ResetWallAction): ResetWallState {
   switch (action.type) {
     case 'PHOTO_PICKED':

@@ -1,5 +1,6 @@
 // eslint-disable-next-line import/no-named-as-default -- `graphql-type-json` exports both default and named `GraphQLJSON`; default is the canonical scalar.
 import GraphQLJSON from 'graphql-type-json';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 // Import domain resolvers
 import { boardQueries } from './board/queries';
@@ -193,7 +194,13 @@ export const resolvers = {
     // Spray only, and only for a climb whose materialised `missingHoldCount`
     // says it lost something — see resolveClimbLostHolds. Per-climb by design:
     // a list must not select it.
-    lostHolds: (climb: ClimbLostHoldsParent) => resolveClimbLostHolds(climb),
+    //
+    // `ctx` is not optional here: these rows are the geometry of somebody's
+    // garage, the parent may be a synthetic `ClimbInput` a caller sent back
+    // through the queue, and the wall's visibility is decided against the
+    // climb's own row with the viewer this request actually has.
+    lostHolds: (climb: ClimbLostHoldsParent, _args: unknown, ctx: ConnectionContext) =>
+      resolveClimbLostHolds(climb, ctx),
   },
 
   // Union type resolvers

@@ -58,6 +58,8 @@ const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { resolveClimbLostHolds } = await import('../graphql/resolvers/climbs/lost-holds');
 
 const OWNER = 'clh-owner';
+/** Somebody who has the climb uuid and no business with the wall. */
+const STRANGER = 'clh-stranger';
 
 const ANCHORS: [number, number][] = [
   [100, 80],
@@ -205,7 +207,7 @@ describe('Climb.lostHolds answers the cheap cases without a query', () => {
     const select = vi.spyOn(dbRead, 'select');
 
     await expect(
-      resolveClimbLostHolds({ uuid: 'kilter-climb', boardType: 'kilter', missingHoldCount: 3 }),
+      resolveClimbLostHolds({ uuid: 'kilter-climb', boardType: 'kilter', missingHoldCount: 3 }, ctxFor(OWNER)),
     ).resolves.toBe(null);
     expect(select).not.toHaveBeenCalled();
     select.mockRestore();
@@ -215,7 +217,7 @@ describe('Climb.lostHolds answers the cheap cases without a query', () => {
     const select = vi.spyOn(dbRead, 'select');
 
     await expect(
-      resolveClimbLostHolds({ uuid: 'spray-climb', boardType: 'spray', missingHoldCount: 0 }),
+      resolveClimbLostHolds({ uuid: 'spray-climb', boardType: 'spray', missingHoldCount: 0 }, ctxFor(OWNER)),
     ).resolves.toEqual([]);
     expect(select).not.toHaveBeenCalled();
     select.mockRestore();
@@ -227,7 +229,7 @@ describe('Climb.lostHolds answers the cheap cases without a query', () => {
     const select = vi.spyOn(dbRead, 'select');
 
     await expect(
-      resolveClimbLostHolds({ uuid: 'spray-climb', boardType: 'spray', missingHoldCount: null }),
+      resolveClimbLostHolds({ uuid: 'spray-climb', boardType: 'spray', missingHoldCount: null }, ctxFor(OWNER)),
     ).resolves.toBe(null);
     expect(select).not.toHaveBeenCalled();
     select.mockRestore();
@@ -269,11 +271,10 @@ describe('Climb.lostHolds after a reset', () => {
     // one the resolver is handed — says 2.
     expect(await missingFor(climbUuid)).toBe(2);
 
-    const lost = await resolveClimbLostHolds({
-      uuid: climbUuid,
-      boardType: 'spray',
-      missingHoldCount: await missingFor(climbUuid),
-    });
+    const lost = await resolveClimbLostHolds(
+      { uuid: climbUuid, boardType: 'spray', missingHoldCount: await missingFor(climbUuid) },
+      ctxFor(OWNER),
+    );
 
     // Both lost holds, in hold-id order, with the geometry they had on the wall
     // and the generation that installed and removed each. The third hold is
@@ -323,8 +324,48 @@ describe('Climb.lostHolds after a reset', () => {
     // The count is deliberately 3 — a lie the draft's removal would make true —
     // so the resolver cannot pass by short-circuiting on the number instead of
     // applying the landed bound.
-    const afterDraft = await resolveClimbLostHolds({ uuid: climbUuid, boardType: 'spray', missingHoldCount: 3 });
+    const afterDraft = await resolveClimbLostHolds(
+      { uuid: climbUuid, boardType: 'spray', missingHoldCount: 3 },
+      ctxFor(OWNER),
+    );
 
     expect(afterDraft?.map((hold) => hold.id)).toEqual([holdIds[0], holdIds[1]]);
+
+    // ====================================================================
+    // And now the privacy rule, on the same fixture.
+    //
+    // A `Climb` parent is not proof that this server read a row: the queue
+    // broadcasts climbs as `ClimbInput`, so a caller who once had this wall
+    // shared with them — or who simply holds the climb uuid — can send back a
+    // synthetic parent claiming spray and a positive count, and select
+    // `lostHolds` on it. The wall here is PRIVATE (created with no visibility
+    // flags), so the geometry of its removed holds is the inside of somebody's
+    // garage.
+    // ====================================================================
+    const forgedParent = { uuid: climbUuid, boardType: 'spray' as const, missingHoldCount: 99 };
+
+    // A signed-in stranger with the uuid and a forged count gets an empty list:
+    // byte for byte what an intact climb on a visible wall returns, so the field
+    // is not an oracle for which climb uuids belong to private walls.
+    await insertUser(STRANGER);
+    await expect(resolveClimbLostHolds(forgedParent, ctxFor(STRANGER))).resolves.toEqual([]);
+
+    // So does an anonymous caller.
+    await expect(resolveClimbLostHolds(forgedParent, ctxFor(null))).resolves.toEqual([]);
+    await expect(resolveClimbLostHolds(forgedParent, null)).resolves.toEqual([]);
+
+    // The owner still gets the geometry — the check narrows the query, it does
+    // not disable the field.
+    const asOwner = await resolveClimbLostHolds(forgedParent, ctxFor(OWNER));
+    expect(asOwner?.map((hold) => hold.id)).toEqual([holdIds[0], holdIds[1]]);
+
+    // And once the owner shares the wall, the stranger sees the same rows: the
+    // rule is the wall's visibility and nothing about who is asking for what.
+    await db.execute(sql`
+      UPDATE user_boards SET is_public = true
+      WHERE uuid = (SELECT board_uuid FROM spray_walls WHERE layout_id = ${wall.layoutId})
+    `);
+    const asStrangerOnPublicWall = await resolveClimbLostHolds(forgedParent, ctxFor(STRANGER));
+    expect(asStrangerOnPublicWall?.map((hold) => hold.id)).toEqual([holdIds[0], holdIds[1]]);
   });
 });

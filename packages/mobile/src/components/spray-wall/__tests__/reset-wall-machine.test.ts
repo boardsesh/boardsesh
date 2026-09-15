@@ -6,6 +6,7 @@ import {
   isBusy,
   leavingKeepsDraft,
   resetWallReducer,
+  shouldConfirmLeave,
   type ResetDraft,
   type ResetWallAction,
   type ResetWallState,
@@ -175,6 +176,52 @@ describe('resetWallReducer — the rest of the flow', () => {
       { type: 'DETECTION_FINISHED', candidates: [] },
     );
     expect(run(comparing, { type: 'BACK' }).step).toBe('compare');
+  });
+
+  // The predicate behind `beforeRemove`, which is what the header's back button,
+  // the iOS back gesture and Android's Back key all pass through. The footer's
+  // Back was guarded and none of those were: a silent exit mid-upload lands a
+  // callback on a route that has gone, and a silent exit after the draft exists
+  // strands a draft on the server whose detections lived only in that session —
+  // unresumable, so the owner has to discard it and shoot the wall again.
+  it('asks before leaving once the draft is on the server', () => {
+    const before = run(atAnchors(), { type: 'ANCHORS_SET', anchors: SQUARE });
+    expect(shouldConfirmLeave(before)).toBe(false);
+
+    const withDraft = run(before, { type: 'ANCHORS_DONE' }, { type: 'DRAFT_CREATED', draft: DRAFT });
+    expect(shouldConfirmLeave(withDraft)).toBe(true);
+  });
+
+  it('asks before leaving mid-request, draft or no draft', () => {
+    const uploading = run(
+      atAnchors(),
+      { type: 'ANCHORS_SET', anchors: SQUARE },
+      { type: 'ANCHORS_DONE' },
+      { type: 'UPLOAD_STARTED' },
+    );
+    expect(leavingKeepsDraft(uploading)).toBe(false);
+    expect(shouldConfirmLeave(uploading)).toBe(true);
+
+    const detecting = run(
+      atAnchors(),
+      { type: 'ANCHORS_SET', anchors: SQUARE },
+      { type: 'ANCHORS_DONE' },
+      { type: 'DRAFT_CREATED', draft: DRAFT },
+      { type: 'DETECTION_STARTED' },
+    );
+    expect(shouldConfirmLeave(detecting)).toBe(true);
+  });
+
+  it('lets a finished reset go without a question', () => {
+    const done = run(
+      atAnchors(),
+      { type: 'ANCHORS_SET', anchors: SQUARE },
+      { type: 'ANCHORS_DONE' },
+      { type: 'DRAFT_CREATED', draft: DRAFT },
+      { type: 'DETECTION_FINISHED', candidates: [] },
+      { type: 'COMMITTED' },
+    );
+    expect(shouldConfirmLeave(done)).toBe(false);
   });
 
   it('backing out of the corners keeps them — the climber may be checking the photo', () => {
