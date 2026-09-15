@@ -644,6 +644,47 @@ describe('fetchBaseline', () => {
     expect(result).toEqual({ found: false, commit: '', unzipped: [] });
     expect(existsSync(outDir)).toBe(false);
   });
+
+  it('removes the whole outDir, not just the failing shard, when a second shard fails verification under --all', () => {
+    const downloadDir = join(workDir, 'download');
+    mkdirSync(downloadDir, { recursive: true });
+    writeFileSync(join(downloadDir, 'ios-de-DE-ipad-pro-11-inch-m5.zip'), 'zip-bytes');
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    const goodBytes = 'real screenshot bytes';
+    const goodSha256 = createHash('sha256').update(goodBytes).digest('hex');
+    const manifest: BaselineManifest = {
+      platform: 'ios',
+      commit: 'cafebabe',
+      runId: '3',
+      capturedAt: 'now',
+      files: {
+        'de-DE/ipad-pro-11-inch-m5/01-discover.png': goodSha256,
+        'en-US/iphone-16-pro-max/01-discover.png': 'aa'.repeat(32),
+      },
+    };
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    const outDir = join(workDir, 'baseline');
+    // Shards unzip in sorted asset-name order — de-DE before en-US — so the
+    // FIRST shard extracted matches its manifest hash and the SECOND is
+    // tampered and fails verification. A non-fresh runner that reused outDir
+    // from a prior run must not be left with the first (still "good") shard
+    // sitting next to nothing for the second — the whole directory goes, not
+    // just the shard that failed.
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'unzip') {
+        const target = invocation.args.at(-1) as string;
+        mkdirSync(target, { recursive: true });
+        const bytes = target.includes('de-DE') ? goodBytes : 'tampered bytes';
+        writeFileSync(join(target, '01-discover.png'), bytes);
+      }
+      return ok();
+    });
+
+    const result = fetchBaseline({ platform: 'ios', outDir, asset: null, all: true, runner, downloadDir });
+
+    expect(result).toEqual({ found: false, commit: '', unzipped: [] });
+    expect(existsSync(outDir)).toBe(false);
+  });
 });
 
 describe('parseBaselineArguments', () => {

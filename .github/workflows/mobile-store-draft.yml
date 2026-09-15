@@ -454,6 +454,7 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] || { echo "::error::Missing APP_STORE_CONNECT_ISSUER_ID."; exit 1; }
+          [ -f "$ASC_KEY_PATH" ] || { echo "::error::App Store Connect key was not decoded; refusing to attach screenshots."; exit 1; }
           bundle exec fastlane ios screenshots
 
       - name: Warn if no screenshot baseline has been published yet

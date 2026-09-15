@@ -36,6 +36,20 @@
  * Pure decision logic lives in decideProbeScope() so every rule below has a
  * direct unit test; this file's CLI is just argument parsing and GitHub
  * Actions output wiring.
+ *
+ * KNOWN REMAINING BLIND SPOT: a shared component under
+ * packages/mobile/src/components/** whose change only renders differently on
+ * iPad (a `Platform.isPad` branch, a width-based layout switch, ...) is
+ * caught by neither the pixel probe (en-US iPhone only) nor the
+ * `mobile-ipad-tablet` path rule above, since the rule matches the FILE PATH
+ * ("ipad"/"tablet" in the name), not what the component actually renders.
+ * There is no changed-path signal to force full off of here without also
+ * forcing a full 12-shard capture on every ordinary component edit, which
+ * would defeat the whole point of probing first. The intentional remedy:
+ * dispatch with `gate: full` (or `upload: true`) by hand when you know a
+ * change is iPad-specific in effect, even though its path says nothing about
+ * iPad. Do not "fix" this by adding a rule that force-fulls on every
+ * packages/mobile/src/components/** change.
  */
 
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
