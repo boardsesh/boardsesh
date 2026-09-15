@@ -168,7 +168,7 @@ async function fetchSpecificBoardClimbs(
 
   const climbs = await hydrateClimbsByRefs(
     items.map((row) => ({ climbUuid: row.climbUuid, boardType: boardName })),
-    hydrateOptions,
+    { ...hydrateOptions, viewerUserId },
   );
 
   return { climbs, totalCount, hasMore };
@@ -203,6 +203,7 @@ async function fetchAllBoardsClimbs(
   input: PlaylistClimbsInput,
   page: number,
   pageSize: number,
+  viewerUserId: string | null | undefined,
 ): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> {
   const tables = UNIFIED_TABLES;
 
@@ -242,7 +243,7 @@ async function fetchAllBoardsClimbs(
 
   const climbs = await hydrateClimbsByRefs(
     items.map((row) => ({ climbUuid: row.climbUuid, boardType: row.boardType })),
-    { angleOverrides },
+    { angleOverrides, viewerUserId },
   );
 
   return { climbs, totalCount, hasMore };
@@ -273,5 +274,5 @@ export const playlistClimbs = async (
 
   return input.boardName
     ? fetchSpecificBoardClimbs(playlistId, input, page, pageSize, ctx.userId)
-    : fetchAllBoardsClimbs(playlistId, input, page, pageSize);
+    : fetchAllBoardsClimbs(playlistId, input, page, pageSize, ctx.userId);
 };

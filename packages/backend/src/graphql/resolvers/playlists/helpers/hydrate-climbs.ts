@@ -1,3 +1,4 @@
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { type Climb, type BoardName } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
@@ -10,6 +11,14 @@ const DEFAULT_ANGLE = 40;
 export type ClimbRef = { climbUuid: string; boardType: string };
 
 export type HydrateClimbsOptions = {
+  /**
+   * Who is asking, for the spray wall visibility rule.
+   *
+   * Omitted means anonymous, which is the safe default: only PUBLIC spray walls'
+   * climbs hydrate. Every caller that has a viewer should pass it, or a wall's own
+   * owner will not see their own climbs in a smart playlist.
+   */
+  viewerUserId?: string | null;
   /**
    * Per-ref angle override (e.g. a playlistClimbs.angle that should win over
    * the climb's stats angle). Map keys are `${boardType}:${climbUuid}`.
@@ -158,7 +167,18 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
         eq(boardClimbGrades.angle, tables.climbStats.angle),
       ),
     )
-    .where(inArray(tables.climbs.uuid, uuids));
+    .where(
+      and(
+        inArray(tables.climbs.uuid, uuids),
+        // The smart-playlist logbook types hydrate straight from a user's ticks, so
+        // without this a private spray wall's climbs arrive with name, frames and
+        // setter. A no-op on the other eight board types.
+        sprayClimbVisibilityCondition(
+          { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
+          options?.viewerUserId ?? null,
+        ),
+      ),
+    );
 
   // Climb UUIDs can collide across boards in principle, so key by both.
   const rowsByKey = new Map<string, (typeof rows)[number]>();

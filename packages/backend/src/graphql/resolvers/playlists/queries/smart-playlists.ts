@@ -326,7 +326,7 @@ export const smartPlaylist = async (
     const angleOverrides = new Map<string, number>(
       pageRefs.map((ref) => [`${ref.boardType}:${ref.climbUuid}`, target.angle]),
     );
-    const climbs = await hydrateClimbsByRefs(pageRefs, { angleOverrides });
+    const climbs = await hydrateClimbsByRefs(pageRefs, { angleOverrides, viewerUserId: input.userId });
     return {
       meta: {
         type: input.type,
@@ -354,7 +354,10 @@ export const smartPlaylist = async (
     selectSmartClimbRefs(input.type, input.userId, input.boardName, page, pageSize),
     countSmartClimbRefs(input.type, input.userId, input.boardName),
   ]);
-  const climbs = await hydrateClimbsByRefs(pageRefs);
+  // The logbook owner, so their own private wall's climbs still hydrate. Every
+  // other caller's smart playlist is built from their OWN ticks, so this is the
+  // viewer in every reachable case.
+  const climbs = await hydrateClimbsByRefs(pageRefs, { viewerUserId: input.userId });
 
   return {
     meta: {

@@ -71,6 +71,9 @@ const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
 const { newClimbSubscriptionResolvers } = await import('../graphql/resolvers/social/new-climb-subscriptions');
 const { syncQueries } = await import('../graphql/resolvers/sync/queries');
 const { setterFollowQueries } = await import('../graphql/resolvers/social/setter-follows');
+const { socialFeedQueries } = await import('../graphql/resolvers/social/feed');
+const { activityFeedQueries } = await import('../graphql/resolvers/social/activity-feed');
+const { sessionFeedQueries } = await import('../graphql/resolvers/social/session-feed');
 const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = await import('@boardsesh/board-config');
 
 const OWNER = 'sw-owner';
@@ -183,9 +186,22 @@ beforeEach(async () => {
     TRUNCATE TABLE "spray_walls", "user_boards", "gym_members", "gyms",
                    "board_climbs", "board_climb_holds", "board_climb_stats",
                    "board_layouts", "board_product_sizes", "board_product_sizes_layouts_sets",
-                   "board_holes", "board_placements", "board_difficulty_grades"
+                   "board_holes", "board_placements", "board_difficulty_grades",
+                   -- The tick-feed tests below write these; a tick or a follow
+                   -- surviving into the next test makes a feed assertion pass or
+                   -- fail for the wrong reason.
+                   "boardsesh_ticks", "user_follows"
     RESTART IDENTITY CASCADE
   `);
+  // `spray_wall_catalog_id_seq` and `spray_hold_catalog_id_seq` are STANDALONE
+  // sequences, not identity columns, so `TRUNCATE … RESTART IDENTITY` above does
+  // not touch them — they keep climbing across runs, and a worker database reused
+  // from an earlier run starts somewhere in the hundreds or thousands. Several
+  // assertions here compare ids and counts that only hold from a known start, so
+  // without this the suite passes on a fresh DB and fails on a reused one.
+  await db.execute(sql`ALTER SEQUENCE spray_wall_catalog_id_seq RESTART WITH 1`);
+  await db.execute(sql`ALTER SEQUENCE spray_hold_catalog_id_seq RESTART WITH 1`);
+
   await Promise.all(ALL_USERS.map(insertUser));
 
   // The grade scale migration 0227 seeds. `board_difficulty_grades` is in the
@@ -1708,6 +1724,106 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
       ctxFor(OWNER),
     )) as { climbs: Array<{ uuid: string }> };
     expect(asOwner.climbs.map((climb) => climb.uuid)).toContain(climbUuid);
+  });
+
+  // ---- the TICK-shaped readers -------------------------------------------
+  //
+  // These do not take a board type or a layout from the caller at all — they walk
+  // from a tick to its climb — so the gate cannot sit at the front of the resolver
+  // and has to ride in the WHERE. They select the climb's name and frames, and the
+  // epic decided private-wall ticks are the owner's logbook alone.
+
+  /** A published climb on a private wall, with a tick on it by the owner. */
+  async function tickOnAPrivateWall(overrides: Record<string, unknown> = {}) {
+    const { wall, climbUuid } = await wallWithAClimb(overrides);
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, ${climbUuid}, 'spray', 40, 'send', now(), now(), now())
+    `);
+    return { wall, climbUuid };
+  }
+
+  it('globalAscentsFeed hides it from an anonymous reader, and shows the owner their own tick', async () => {
+    const { climbUuid } = await tickOnAPrivateWall();
+    const read = async (viewer: string | null) =>
+      (
+        (await socialFeedQueries.globalAscentsFeed({}, { input: { limit: 50, offset: 0 } }, ctxFor(viewer))) as {
+          items: Array<{ climbUuid?: string }>;
+        }
+      ).items.map((item) => item.climbUuid);
+
+    expect(await read(null)).not.toContain(climbUuid);
+    expect(await read(STRANGER)).not.toContain(climbUuid);
+    expect(await read(OWNER)).toContain(climbUuid);
+  });
+
+  it('followingAscentsFeed hides it from a follower', async () => {
+    // Following somebody is not access to the inside of their garage.
+    const { climbUuid } = await tickOnAPrivateWall();
+    await db.execute(sql`
+      INSERT INTO user_follows (follower_id, following_id, created_at)
+      VALUES (${STRANGER}, ${OWNER}, now()) ON CONFLICT DO NOTHING
+    `);
+
+    const feed = (await socialFeedQueries.followingAscentsFeed(
+      {},
+      { input: { limit: 50, offset: 0 } },
+      ctxFor(STRANGER),
+    )) as { items: Array<{ climbUuid?: string }> };
+    expect(feed.items.map((item) => item.climbUuid)).not.toContain(climbUuid);
+  });
+
+  it('trendingFeed hides it, and that one is unauthenticated and rate-limit free', async () => {
+    const { climbUuid } = await tickOnAPrivateWall();
+    const read = async (viewer: string | null) =>
+      (
+        (await activityFeedQueries.trendingFeed({}, { input: { limit: 50 } }, ctxFor(viewer))) as {
+          items: Array<{ climbUuid?: string }>;
+        }
+      ).items.map((item) => item.climbUuid);
+
+    expect(await read(null)).not.toContain(climbUuid);
+    expect(await read(STRANGER)).not.toContain(climbUuid);
+    expect(await read(OWNER)).toContain(climbUuid);
+  });
+
+  it('sessionDetail hides it, and its daily ids are handed out by the grouped feed', async () => {
+    // `daily:<userId>:<day>` needs no auth and no secret, so the id is not a
+    // capability — the wall's visibility has to decide.
+    const { climbUuid } = await tickOnAPrivateWall();
+    const [{ day }] = (await db.execute(sql`SELECT to_char(now(), 'YYYY-MM-DD') AS day`)) as unknown as Array<{
+      day: string;
+    }>;
+    const sessionId = `daily:${OWNER}:${day}`;
+
+    const read = async (viewer: string | null) => {
+      const detail = (await sessionFeedQueries.sessionDetail({}, { sessionId }, ctxFor(viewer))) as {
+        ticks?: Array<{ climbUuid?: string; climbName?: string }>;
+      } | null;
+      return (detail?.ticks ?? []).map((tick) => tick.climbUuid);
+    };
+
+    expect(await read(null)).not.toContain(climbUuid);
+    expect(await read(STRANGER)).not.toContain(climbUuid);
+    expect(await read(OWNER)).toContain(climbUuid);
+  });
+
+  it('a PUBLIC wall still reaches every one of those feeds', async () => {
+    // Guards the guard: a condition that dropped every spray row would pass the
+    // four tests above for the wrong reason.
+    const { climbUuid } = await tickOnAPrivateWall({ isPublic: true });
+
+    const global = (await socialFeedQueries.globalAscentsFeed(
+      {},
+      { input: { limit: 50, offset: 0 } },
+      ctxFor(null),
+    )) as { items: Array<{ climbUuid?: string }> };
+    expect(global.items.map((item) => item.climbUuid)).toContain(climbUuid);
+
+    const trending = (await activityFeedQueries.trendingFeed({}, { input: { limit: 50 } }, ctxFor(null))) as {
+      items: Array<{ climbUuid?: string }>;
+    };
+    expect(trending.items.map((item) => item.climbUuid)).toContain(climbUuid);
   });
 
   it('lets a GYM MEMBER read a gym wall\u2019s climbs', async () => {
