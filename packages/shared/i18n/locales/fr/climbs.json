@@ -604,8 +604,7 @@
       "banner_one": "{{count}} prise de ce bloc n'est plus là",
       "banner_other": "{{count}} prises de ce bloc ne sont plus là",
       "bannerBody": "Remixe-le avec ce qu'il y a sur le mur maintenant.",
-      "remix": "Remixer",
-      "ghostAria": "Où se trouvait une prise"
+      "remix": "Remixer"
     },
     "climbActions": {
       "preview": "Aperçu",

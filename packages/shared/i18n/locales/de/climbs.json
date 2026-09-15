@@ -604,8 +604,7 @@
       "banner_one": "{{count}} Griff von diesem Boulder ist weg",
       "banner_other": "{{count}} Griffe von diesem Boulder sind weg",
       "bannerBody": "Remixe ihn mit dem, was jetzt an der Wand ist.",
-      "remix": "Remixen",
-      "ghostAria": "Wo früher ein Griff war"
+      "remix": "Remixen"
     },
     "climbActions": {
       "preview": "Vorschau",

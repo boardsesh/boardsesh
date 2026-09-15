@@ -604,8 +604,7 @@
       "banner_one": "{{count}} hold on this climb is gone",
       "banner_other": "{{count}} holds on this climb are gone",
       "bannerBody": "Remix it onto what's on the wall now.",
-      "remix": "Remix it",
-      "ghostAria": "Where a hold used to be"
+      "remix": "Remix it"
     },
     "climbActions": {
       "preview": "Preview",

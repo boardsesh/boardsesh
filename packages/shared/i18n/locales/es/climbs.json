@@ -604,8 +604,7 @@
       "banner_one": "Falta {{count}} presa de este bloque",
       "banner_other": "Faltan {{count}} presas de este bloque",
       "bannerBody": "Remézclalo con lo que hay ahora en el muro.",
-      "remix": "Remezclar",
-      "ghostAria": "Donde había una presa"
+      "remix": "Remezclar"
     },
     "climbActions": {
       "preview": "Vista previa",
