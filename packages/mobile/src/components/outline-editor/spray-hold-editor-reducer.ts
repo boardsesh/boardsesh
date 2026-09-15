@@ -104,6 +104,16 @@ export type SprayEditorAction =
    * write that has landed would only lie about what is on the wall.
    */
   | { type: 'MARK_SAVED' }
+  /**
+   * `removeSprayWallHolds` came back, and the upsert has not run yet.
+   *
+   * Its own action because the two calls are the two halves of one Save and the
+   * second can fail on its own — a rate limit, a dropped connection. Without
+   * this, `removedIds` would still name holds the server has already stamped
+   * off, and every retry for the rest of the session would be refused with
+   * "Hold N is not on this wall".
+   */
+  | { type: 'MARK_REMOVED' }
   | { type: 'UNDO' }
   | { type: 'REDO' };
 
@@ -303,6 +313,10 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
       return ids.length === 0 ? state : sprayEditorReducer(state, { type: 'ACCEPT', ids });
     }
 
+    case 'MARK_REMOVED': {
+      return state.removedIds.length === 0 ? state : { ...state, removedIds: [] };
+    }
+
     case 'MARK_SAVED': {
       const holds: Record<number, SprayEditorHold> = {};
       let changed = state.removedIds.length > 0;
@@ -350,9 +364,22 @@ function sameIds(left: readonly number[], right: readonly number[]): boolean {
 // they are pure and take the state rather than reading it out of a closure.
 // ---------------------------------------------------------------------------
 
-/** Every hold, in id order so the SVG layer's path buckets are stable across renders. */
+/**
+ * Every hold, in id order so the SVG layer's path buckets are stable across
+ * renders.
+ *
+ * Takes the RECORD rather than the state, so a caller can memoise on
+ * `state.holds` — which only changes when a hold does. Memoising on `state`
+ * instead would re-sort 1500 holds on every selection tap and every frame of a
+ * threshold drag, neither of which moves a hold.
+ */
+export function holdsInIdOrder(holds: Readonly<Record<number, SprayEditorHold>>): SprayEditorHold[] {
+  return Object.values(holds).sort((left, right) => left.id - right.id);
+}
+
+/** {@link holdsInIdOrder} against a whole state. */
 export function allHolds(state: SprayEditorPresent): SprayEditorHold[] {
-  return Object.values(state.holds).sort((left, right) => left.id - right.id);
+  return holdsInIdOrder(state.holds);
 }
 
 /** AUTO holds nobody has ruled on yet, whatever their confidence. */
@@ -373,9 +400,19 @@ export function isHiddenByThreshold(hold: SprayEditorHold, threshold: number): b
   return hold.review === 'pending' && (hold.confidence ?? 0) < threshold;
 }
 
+/**
+ * The holds to draw and hit-test at a threshold.
+ *
+ * Takes an already-ordered list so the caller can keep one sort and re-filter it
+ * as the slider moves.
+ */
+export function filterVisible(holds: readonly SprayEditorHold[], threshold: number): SprayEditorHold[] {
+  return holds.filter((hold) => !isHiddenByThreshold(hold, threshold));
+}
+
 /** The holds to draw and hit-test at the current threshold. */
 export function visibleHolds(state: SprayEditorState): SprayEditorHold[] {
-  return allHolds(state).filter((hold) => !isHiddenByThreshold(hold, state.threshold));
+  return filterVisible(allHolds(state), state.threshold);
 }
 
 export type SprayEditorCounts = {

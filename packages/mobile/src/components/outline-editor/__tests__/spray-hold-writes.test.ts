@@ -136,6 +136,30 @@ describe('buildSprayHoldWritePlan', () => {
     expect(plan.overCap).toBe(true);
   });
 
+  it('measures the cap against the WALL, not the batch', () => {
+    // A near-full wall is refused by a one-hold batch, because the server
+    // re-checks the wall's total after the upsert. A per-batch bound would never
+    // catch it, and the climber would get a raw server error.
+    const holds = Array.from({ length: 1500 }, (_, index) => storedHold(index + 1));
+    const state = run(holds, { type: 'ADD_HOLD', geometry: { cx: 1, cy: 1, r: 5, outline: null } });
+    const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
+    expect(plan.upsert).toHaveLength(1);
+    expect(plan.overCap).toBe(true);
+  });
+
+  it('leaves a full wall saveable while it stays at the cap', () => {
+    const holds = Array.from({ length: 1500 }, (_, index) => storedHold(index + 1));
+    const state = run(holds, { type: 'MOVE_HOLD', id: 1, cx: 9, cy: 9 });
+    expect(buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY).overCap).toBe(false);
+  });
+
+  it('a pending candidate does not count against the cap', () => {
+    const holds = Array.from({ length: 1500 }, (_, index) => storedHold(index + 1));
+    holds.push(storedHold(-1, { source: 'AUTO', confidence: 0.9, review: 'pending' }));
+    const state = run(holds, { type: 'MOVE_HOLD', id: 1, cx: 9, cy: 9 });
+    expect(buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY).overCap).toBe(false);
+  });
+
   it('a merge sends the survivor and removes the victim in one plan', () => {
     const state = run([storedHold(8, { cx: 100, cy: 100 }), storedHold(9, { cx: 140, cy: 100 })], {
       type: 'MERGE',
