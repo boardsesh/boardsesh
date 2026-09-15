@@ -87,6 +87,13 @@ export type KilterCatalogSummary = {
   statsUpserted: number;
   selfAliasesBackfilled: number;
   canonicalsRelisted: number;
+  /**
+   * Re-lists the deletion list blocked: Kilter still listed the climb on
+   * /climbs/all but also reports it on /delteduuids. Expected to track the
+   * cycle's own deletions; a number that stays high means the two endpoints
+   * disagree persistently and is worth a look.
+   */
+  relistsBlockedByDeletionHistory: number;
   /** Skipped climbs written to board_climb_ingest_skips this run. */
   skipsRecorded: number;
   /** Previously-skipped climbs this run managed to ingest. */
@@ -145,8 +152,10 @@ export type GroupResult = {
   statsUpserted: number;
   /** Self-aliases inserted this run for existing canonicals that lacked one. */
   selfAliasesBackfilled: number;
-  /** Unlisted synced canonicals re-listed because a listed Grips climb folded on. */
+  /** Unlisted synced canonicals re-listed because Kilter still lists the climb. */
   canonicalsRelisted: number;
+  /** Identity-path re-lists the deletion list blocked (see decideIdentityRelist). */
+  relistsBlockedByDeletionHistory: number;
   newCanonicals: NewClimbInfo[];
   /** Every climb this group couldn't ingest, for board_climb_ingest_skips. */
   skips: ClimbIngestSkip[];
@@ -163,6 +172,7 @@ export function createGroupResult(): GroupResult {
     statsUpserted: 0,
     selfAliasesBackfilled: 0,
     canonicalsRelisted: 0,
+    relistsBlockedByDeletionHistory: 0,
     newCanonicals: [],
     skips: [],
     resolvedSkipUuids: [],
@@ -185,6 +195,51 @@ export function shouldRelistFoldedCanonical(
   // Map.get yields `undefined` for a canonical created this run; the userId
   // column is `string | null` (never undefined), so both checks are exact.
   return canonicalMeta !== undefined && canonicalMeta.userId === null && canonicalMeta.isListed !== true;
+}
+
+export type IdentityRelistDecision = 'relist' | 'not_needed' | 'blocked_deleted_upstream' | 'blocked_no_deletion_list';
+
+/**
+ * Lowercased set of the uuids Kilter reports on `/climbs/delteduuids`, or null
+ * when the fetch failed or came back empty. Null means "we don't know what
+ * Kilter deleted": it disables the identity re-list AND deletion reconciliation
+ * for the run rather than letting either act on a list we don't have. Pure +
+ * exported for unit testing.
+ */
+export function buildDeletedLowerUuidSet(deletedUuids: string[] | null | undefined): Set<string> | null {
+  if (!deletedUuids || deletedUuids.length === 0) return null;
+  return new Set(deletedUuids.map((uuid) => uuid.toLowerCase()));
+}
+
+/**
+ * Decide whether a climb matched on UUID identity should be re-listed.
+ *
+ * Kilter listing a climb on `/climbs/all` is normally proof it exists on the
+ * wall, so an unlisted synced canonical behind that uuid is a stale unlisting —
+ * on prod, ~24 climbs carrying the 2026-07-07 migration baseline as their
+ * `updated_at`, invisible in search ever since.
+ *
+ * The guard is what makes that safe: Kilter also keeps serving climbs from
+ * `/climbs/all` that it has just put on `/delteduuids` (124 of them on
+ * 2026-09-15, unlisted by the same run's deletion pass). Re-listing those would
+ * flip them back on every cycle and churn offline sync's `sync_seq` forever, so
+ * they are blocked and counted instead. With no deletion list at all
+ * (`deletedLowerUuids === null`) nothing is re-listed — a missing list must not
+ * read as "nothing was deleted". Pure + exported for unit testing.
+ */
+export function decideIdentityRelist(
+  canonicalMeta: ExistingClimbMeta | undefined,
+  lowerUuid: string,
+  deletedLowerUuids: ReadonlySet<string> | null,
+): IdentityRelistDecision {
+  // A draft is deliberately invisible; the catalog sync doesn't publish it.
+  if (canonicalMeta?.isDraft === true) return 'not_needed';
+  // Reuses the fold path's classifier: undefined (created this run), a
+  // user-authored row, and an already-listed row all need nothing.
+  if (!shouldRelistFoldedCanonical(canonicalMeta)) return 'not_needed';
+  if (deletedLowerUuids === null) return 'blocked_no_deletion_list';
+  if (deletedLowerUuids.has(lowerUuid.toLowerCase())) return 'blocked_deleted_upstream';
+  return 'relist';
 }
 
 // Cap the uuids named in the log line — the full set is in the skips table, so
@@ -577,6 +632,8 @@ export type StageCatalogClimbContext = {
   climbUuidToCanonical: Map<string, string>;
   /** Synced canonicals to re-list once the batch is flushed. */
   canonicalsToRelist: Set<string>;
+  /** Lowercased /delteduuids set, or null when this run has no list (blocks re-listing). */
+  deletedLowerUuids: ReadonlySet<string> | null;
   result: GroupResult;
   /** Clock the new-canonical notification age check runs against. */
   now: Date;
@@ -617,6 +674,19 @@ export function stageCatalogClimb(
       index.existingSelfAliasLower.add(lowerUuid);
       batch.aliasRows.push({ boardType: KILTER, aliasUuid: existingUuid, canonicalUuid: existingUuid, source: KILTER });
       result.selfAliasesBackfilled += 1;
+    }
+    // Kilter still lists this climb, so an unlisted synced canonical behind the
+    // uuid is a stale unlisting worth undoing — unless Kilter also reports the
+    // uuid deleted. See decideIdentityRelist for why that guard is load-bearing.
+    const relistDecision = decideIdentityRelist(
+      index.existingCanonicalMeta.get(existingUuid),
+      lowerUuid,
+      context.deletedLowerUuids,
+    );
+    if (relistDecision === 'relist') {
+      canonicalsToRelist.add(existingUuid);
+    } else if (relistDecision === 'blocked_deleted_upstream') {
+      result.relistsBlockedByDeletionHistory += 1;
     }
     return 'identity';
   }
@@ -749,14 +819,19 @@ async function relistCanonicals(db: DrizzleDb, canonicalUuids: string[]): Promis
  * fully in-memory; new canonicals + their holds + aliases are flushed per Grips
  * layout, then stats for the whole group are accumulated and upserted.
  */
-async function syncBoardLayoutGroup(
-  db: DrizzleDb,
-  state: TokenState,
-  boardLayoutId: number,
-  gripsLayoutUuids: string[],
-  openSkips: Map<string, string>,
-  log: (message: string) => void,
-): Promise<GroupResult> {
+type SyncBoardLayoutGroupArgs = {
+  db: DrizzleDb;
+  state: TokenState;
+  boardLayoutId: number;
+  gripsLayoutUuids: string[];
+  openSkips: Map<string, string>;
+  /** Lowercased /delteduuids set for this run, or null when there is no list. */
+  deletedLowerUuids: ReadonlySet<string> | null;
+  log: (message: string) => void;
+};
+
+async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<GroupResult> {
+  const { db, state, boardLayoutId, gripsLayoutUuids, openSkips, deletedLowerUuids, log } = args;
   const result = createGroupResult();
   // Stamped once per group so every climb in it is aged against the same clock.
   const groupStartedAt = new Date();
@@ -781,6 +856,7 @@ async function syncBoardLayoutGroup(
       batch,
       climbUuidToCanonical,
       canonicalsToRelist,
+      deletedLowerUuids,
       result,
       now: groupStartedAt,
     };
@@ -804,22 +880,30 @@ async function syncBoardLayoutGroup(
     );
   }
 
-  // Re-list synced canonicals a listed Grips climb folded back onto.
+  // Re-list synced canonicals the current catalog pull proves are on the wall.
+  // Two paths feed this set, and they are protected differently:
   //
-  // Ordering vs deletions: reconcileDeletions runs LAST in syncKilterCatalog
-  // (after every layout group), so it is the authority within a cycle. This
-  // re-list can only fire when a *live-listed* alias (from the current catalog
-  // pull) folds onto the canonical, which necessarily gives that canonical ≥2
-  // aliases (its self-alias + the folded one). So even if the same cycle's
-  // /delteduuids also names this canonical, the deletion pass classifies it as
-  // skippedCanonicalWithAliases (it still backs a live alias) and does NOT
-  // re-unlist it — correct, because a live alias proves the wall position exists.
-  // A genuinely-dead canonical (no live folded alias) is never reached here, so
-  // the fold cannot resurrect a truly-deleted climb.
+  // 1. The FOLD path — a live-listed Grips climb fingerprint-matched this
+  //    canonical. Ordering vs deletions: reconcileDeletions runs LAST in
+  //    syncKilterCatalog (after every layout group), so it is the authority
+  //    within a cycle. A fold necessarily gives the canonical ≥2 aliases (its
+  //    self-alias + the folded one), so even if the same cycle's /delteduuids
+  //    also names it, the deletion pass classifies it as
+  //    skippedCanonicalWithAliases (it still backs a live alias) and does NOT
+  //    re-unlist it — correct, because a live alias proves the wall position
+  //    exists. A genuinely-dead canonical (no live folded alias) never reaches
+  //    the fold, so it cannot resurrect a truly-deleted climb.
+  // 2. The IDENTITY path — Kilter listed the same uuid on /climbs/all. That
+  //    argument does NOT hold here: the canonical usually has only its own
+  //    self-alias, so the deletion pass would re-unlist it in the same cycle
+  //    and the two would fight forever. decideIdentityRelist is what keeps them
+  //    apart: a uuid on this run's /delteduuids is blocked (and counted in
+  //    relistsBlockedByDeletionHistory) instead of re-listed, and with no
+  //    deletion list at all nothing is re-listed through this path.
   if (canonicalsToRelist.size > 0) {
     const relistedCount = await relistCanonicals(db, [...canonicalsToRelist]);
     result.canonicalsRelisted += relistedCount;
-    log(`[kilter-catalog] layout group ${boardLayoutId}: re-listed ${relistedCount} folded canonical(s)`);
+    log(`[kilter-catalog] layout group ${boardLayoutId}: re-listed ${relistedCount} canonical(s) Kilter still lists`);
   }
 
   // Stats for the whole group (after every climb is in climbUuidToCanonical).
@@ -933,6 +1017,7 @@ function addGroupResult(summary: KilterCatalogSummary, collected: CollectedGroup
   summary.statsUpserted += groupResult.statsUpserted;
   summary.selfAliasesBackfilled += groupResult.selfAliasesBackfilled;
   summary.canonicalsRelisted += groupResult.canonicalsRelisted;
+  summary.relistsBlockedByDeletionHistory += groupResult.relistsBlockedByDeletionHistory;
   collected.newCanonicals.push(...groupResult.newCanonicals);
   collected.skips.push(...groupResult.skips);
   collected.resolvedSkipUuids.push(...groupResult.resolvedSkipUuids);
@@ -976,6 +1061,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     statsUpserted: 0,
     selfAliasesBackfilled: 0,
     canonicalsRelisted: 0,
+    relistsBlockedByDeletionHistory: 0,
     skipsRecorded: 0,
     skipsResolved: 0,
     skipsWriteFailed: false,
@@ -1005,8 +1091,35 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   // ingests one can stamp it resolved without scanning every climb it saw.
   const openSkips = await loadOpenSkips(args.db, KILTER);
 
+  // Kilter's deletion list, fetched ONCE for the whole run and shared by both
+  // consumers: the identity re-list (which must never resurrect a climb Kilter
+  // has just deleted, even though /climbs/all still returns it) and
+  // reconcileDeletions at the end. A failed or empty fetch leaves it null, which
+  // disables both — an absent list is not evidence that nothing was deleted.
+  let deletedUuids: string[] | null = null;
+  let deletedListError: string | null = null;
+  try {
+    deletedUuids = await withToken(state, (token) => fetchDeletedClimbUuids(token));
+  } catch (error) {
+    deletedListError = error instanceof Error ? error.message : String(error);
+  }
+  const deletedLowerUuids = buildDeletedLowerUuidSet(deletedUuids);
+  if (deletedLowerUuids === null) {
+    log(
+      `[kilter-catalog] no deletion list this run (${deletedListError ?? 'endpoint returned none'}) — identity re-list and deletion reconciliation are both skipped`,
+    );
+  }
+
   for (const [boardLayoutId, gripsLayoutUuids] of byBoardLayout) {
-    const groupResult = await syncBoardLayoutGroup(args.db, state, boardLayoutId, gripsLayoutUuids, openSkips, log);
+    const groupResult = await syncBoardLayoutGroup({
+      db: args.db,
+      state,
+      boardLayoutId,
+      gripsLayoutUuids,
+      openSkips,
+      deletedLowerUuids,
+      log,
+    });
     summary.gripsLayoutsProcessed += gripsLayoutUuids.length;
     addGroupResult(summary, collected, groupResult);
   }
@@ -1067,14 +1180,17 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     }
   }
 
-  // Deletion reconciliation runs last (report-only unless applyDeletions).
-  try {
-    const deletedUuids = await withToken(state, (token) => fetchDeletedClimbUuids(token));
-    summary.deletions = await reconcileDeletions(args.db, deletedUuids, args.applyDeletions ?? false, log, {
-      batchLimit: args.deleteBatchLimit,
-    });
-  } catch (error) {
-    log(`[kilter-catalog] deletion reconciliation failed: ${error instanceof Error ? error.message : String(error)}`);
+  // Deletion reconciliation runs last (report-only unless applyDeletions), over
+  // the list fetched once at the top of the run. With no list it doesn't run at
+  // all — the empty summary.deletions report stands.
+  if (deletedUuids !== null && deletedLowerUuids !== null) {
+    try {
+      summary.deletions = await reconcileDeletions(args.db, deletedUuids, args.applyDeletions ?? false, log, {
+        batchLimit: args.deleteBatchLimit,
+      });
+    } catch (error) {
+      log(`[kilter-catalog] deletion reconciliation failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   log(`[kilter-catalog] done: ${JSON.stringify(summary)}`);
