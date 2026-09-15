@@ -21,3 +21,10 @@ numpy==2.3.5            # BSD-3 — pinned down by rfdetr[train]
 scipy==1.18.1           # BSD-3 — connected components for the classical in-box mask
 onnxconverter-common==1.16.0  # MIT — fp16 conversion (RF-DETR's own fp16 export is a no-op)
 av==18.1.0              # BSD-3 — decodes The Way Up clips into frames, no ffmpeg binary needed
+
+# publish_model.py (SW-01, issue #5434) — pushes an export to R2. None of these
+# three need torch/onnxruntime, so `pip install boto3 jsonschema pytest` alone is
+# enough to run publish_model.py and its tests without the rest of this file.
+boto3==1.43.94           # Apache-2.0 — S3-compatible upload to the media R2 bucket
+jsonschema==4.26.0       # MIT — validates the built manifest against model-manifest.schema.json
+pytest==9.1.1            # MIT — test_publish_model.py

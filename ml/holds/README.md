@@ -46,6 +46,9 @@ ml/holds/
   train.py          one pipeline; the config picks the model family
   export.py         ONNX (required), `--shrink fp16,int8`, TFLite if its extra is installed
   eval.py           score the exported ONNX on the held-out photos
+  publish_model.py  build + validate a manifest, upload it and the weights to R2 (see "Publishing a model")
+  model-manifest.schema.json   the manifest contract publish_model.py validates against
+  test_publish_model.py        pytest for publish_model.py — --dry-run only, no R2 needed
   fixtures/         committed inputs + expected detections for the SW-06 Node tests
   .data/            downloads, scraped photos, labels, checkpoints, exports —
                     gitignored, never committed
@@ -143,8 +146,101 @@ input (quadratic attention; use 768). If `mps` misbehaves in some new way,
 per-photo breakdown) from the `tune` sweep and the final `eval` split score,
 plus the int8 ONNX itself. The int8 export is 28-33 MB depending on config —
 over this repo's 15 MB ceiling — so it does not get committed; it goes to R2
-under `models/hold-detector/<version>/` instead (`docs/user-media-storage.md`
-has the bucket/credential contract).
+under `models/hold-detector/<version>/` instead — see "Publishing a model"
+below (`docs/user-media-storage.md` has the bucket/credential contract).
+
+## Publishing a model
+
+`publish_model.py` (SW-01, issue #5434) is the only thing in `ml/holds/` that
+talks to R2. Given a config and a version tag, it builds `manifest.json`,
+validates it against `model-manifest.schema.json`, and uploads it plus the
+exported ONNX weights to `models/hold-detector/<version>/` in the public
+`media` bucket (`docs/user-media-storage.md`). Nothing else in this directory
+uploads anything.
+
+**Weights are immutable per version; the manifest is the only mutable
+pointer.** `models/hold-detector/1.2.0/model-int8.onnx`, once published, is
+never rewritten — a new export gets a new version tag. The manifest at a given
+version *can* be re-published deliberately (`--force`), which is why weight
+files upload before the manifest: a reader can never see a manifest pointing
+at a weight file that hasn't landed yet.
+
+### Env vars
+
+Same `MEDIA_*` prefix the backend uses for the same bucket
+(`packages/backend/src/storage/bucket-config.ts`, `docs/user-media-storage.md`)
+— this script never falls back to bare `AWS_*`, so a typo'd prefix fails loudly
+instead of silently publishing into the wrong bucket:
+
+```
+MEDIA_S3_BUCKET_NAME          selects real-upload mode; absent = --dry-run by default
+MEDIA_AWS_ENDPOINT_URL        (or MEDIA_AWS_ENDPOINT_URL_S3)
+MEDIA_AWS_REGION              (or MEDIA_AWS_DEFAULT_REGION; defaults to `auto`)
+MEDIA_AWS_ACCESS_KEY_ID
+MEDIA_AWS_SECRET_ACCESS_KEY
+MEDIA_S3_FORCE_PATH_STYLE     optional, defaults false
+MEDIA_PUBLIC_BASE_URL         optional; only used to print the resulting manifest URL
+MEDIA_DISABLE_ACL             optional; defaults true for an R2 endpoint
+```
+
+### Command
+
+```bash
+cd ml/holds && . .venv/bin/activate
+pip install boto3 jsonschema  # publish_model.py's only non-stdlib deps; no torch/onnxruntime needed
+
+export MEDIA_S3_BUCKET_NAME=boardsesh-user-media
+export MEDIA_AWS_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com
+export MEDIA_AWS_ACCESS_KEY_ID=… MEDIA_AWS_SECRET_ACCESS_KEY=…
+export MEDIA_PUBLIC_BASE_URL=https://media.boardsesh.com
+
+python publish_model.py \
+  --config medium-untiled-1280 --version 2026.09.15 \
+  --threshold 0.20 --sweep 0.05,0.08,0.12,0.2 \
+  --dataset "Roboflow climbing-holds-and-volumes v14, 600 photos" \
+  --training-licence "CC BY 4.0" --epochs 1 --trained-on cpu --date 2026-09-14 \
+  --eval-json .data/artifacts/medium-untiled-1280/eval-full-run.json
+```
+
+`--eval-json` and `--training-json` accept a JSON file instead of (or on top
+of) the individual flags — see `python publish_model.py --help`. Add
+`--include-fp32` to also publish the fp32 weights alongside int8.
+
+### Dry run
+
+Without `MEDIA_S3_BUCKET_NAME` set, the script defaults to `--dry-run`: it
+builds and prints the same manifest but writes the tree to a local directory
+(`.data/publish/<config>/<version>` by default) instead of uploading. Pass
+`--dry-run` explicitly to test locally even with real credentials present.
+
+```bash
+python publish_model.py \
+  --config nano-tiled-1024 --version 2026.09.15-test --dry-run \
+  --dataset "The Way Up, 400 tiles" --training-licence "CC BY 4.0" \
+  --epochs 2 --trained-on cpu --date 2026-09-14
+```
+
+Both modes refuse to overwrite an existing version (an existing local
+directory in dry-run mode, an existing R2 object in real mode) unless `--force`
+is passed. Credentials are never printed or logged by either mode.
+
+### How the manifest gets consumed
+
+`model-manifest.schema.json` is the contract: `schemaVersion`, `version`,
+`family`, `config`, the ONNX `input`/`outputs` shape (letterbox mode,
+normalization, box format, sigmoid activation — the same conventions
+`eval.py`'s `OnnxDetector` decodes), `thresholds`, a `files` list with
+per-file `sha256` for integrity checking after download, `training`
+provenance (and its data licence, which the app's licences screen must
+credit), optional `eval` numbers, and the weights' own `licence`
+(`Apache-2.0` — every config in `configs.json` is an Apache-2.0 family).
+
+The mobile loader (issue #5435) fetches
+`models/hold-detector/<version>/manifest.json`, verifies each downloaded
+file's sha256 against the manifest before trusting it, and caches by version
+since weights never change under a version tag. A possible server-side
+inference container (issue #5451) reads the same manifest the same way — the
+manifest, not this script, is the interface between them.
 
 ## Reproducing every number in the report
 
