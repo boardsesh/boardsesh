@@ -116,7 +116,9 @@ jobs:
   # herd). It's a dev-client shell that loads its JS from Metro, so the native
   # binary only changes when NATIVE inputs change — the key hashes exactly those
   # (Expo/RN/native-module versions in packages/mobile/package.json, native config
-  # in app.config.ts, the config plugins + native modules, pnpm's patch/override
+  # in app.config.ts, the autolinking overrides in react-native.config.js (which
+  # decide which native modules are linked at all), the config plugins + native
+  # modules, pnpm's patch/override
   # policy, and the root @expo/cli pin). JS/TS-only and web-only
   # changes (incl. pnpm-lock.yaml churn) do NOT bust it, so the common path is a cache
   # hit and skips the ~30-min native build. Bump `-v1-` to force a rebuild.
@@ -147,7 +149,7 @@ jobs:
       # ios-capture shard restores the exact same bucket.
       - name: Compute app cache key
         id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
 
       # lookup-only: this job only needs to KNOW whether the .app is cached (the
       # shards do the actual restore), so on a hit we skip downloading a .app this

@@ -1,23 +1,23 @@
-New in 2.5:
+New in 2.6:
 
-WORKS WITH WOODS, FRONT TO BACK
+YOUR GYM'S OTHER BOARDS, ONE TAP AWAY
 
-Got a Woods Board? Add your 12x12 or 8x10, browse 5,000+ climbs with their matching and feet rules, and light any of them over Bluetooth. Set and remix your own problems on either size (the creator only offers holds that are really on your wall), mirror a climb and the wall flips with it, and run Previous, Next and Mirror from the Lock Screen and Dynamic Island. Holds draw in the Aura look with crisper outlines.
+A Kilter next to a Tension, or two walls of the same board at different angles? The wall sheet now lists the other boards at your gym, so you hop to the one you're standing at in one tap instead of scrolling past boards in other cities. The Bluetooth link moves with you, a queue built across two walls plays in order, and each board keeps its own name and angle.
 
-TAKE THE WALL, NO LEDS NEEDED
+A REST TIMER THAT MOVES THE QUEUE ON
 
-Climbing on a board with no light kit? Take the wall and everyone in the session follows the climb you put up, and so does the gym screen. Switch Lights off in the board's settings: turns keep rotating, your chosen angle stays put, and sessions on a named wall log from your watch too.
+Run boulders on the minute without picking your phone up between goes. Turn on the rest timer in the Record tab, set your rest, and it starts counting the moment you log a climb, then runs past zero into the red if you sit down too long. Let it move to the next climb and it lights that climb on the wall for you. "After each send" gives you the full rest every time; "On the minute" holds the beat however long the go takes.
 
-MIRROR FROM THE LOCK SCREEN
+ROUTES IN SECONDS, NOT MULTIPLIERS
 
-While your phone drives the board, the Live Activity and Dynamic Island get a Mirror button next to Previous, Next and the lightbulb. The app, your crew, the thumbnails and the LEDs all follow the mirrored climb, and it's still mirrored when you open the app.
+Route pacing now reads in seconds a frame, the unit the setter authored in, and reaches 60 seconds a frame. Half the route catalogue was set slower than the old control could play.
 
 FIXED
 
-- Holds draw faster: the board renderer no longer waits behind the rest of the app.
-- Your board stays dark until you ask for it. A phone that drifts back into range hours or days later no longer relights your last climb. The lightbulb, the widget and mid-climb reconnects still light it instantly.
-- The Climbs tab and its search no longer go dead after a playlist closes over them mid-session. No more force-quitting to get search back.
-- Downloaded climbs stay up to date after an app update.
-- Closing climb search no longer pops up a stray preview sheet.
+- Woods: every climb shows up whatever angle it was set at, carrying the grade it was given, and the setter filter lists all of a board's setters instead of the few with a climb graded at your angle.
+- MoonBoard: a problem graded at only one of the two angles now shows an estimate for the other.
+- Tap the lightbulb while a friend's phone holds the board and the climb lights over their link, instead of failing to connect.
+- Swiping in the play drawer stays on the list you picked from, even after logging a climb reorders that list.
+- Android: the Climbs tab no longer crashes when a board connects, offline saving keeps working after a long spell in the background, and switch labels are readable in dark mode.
 
 Free, no ads, open source.

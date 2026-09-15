@@ -195,7 +195,7 @@ export MEDIA_AWS_ACCESS_KEY_ID=… MEDIA_AWS_SECRET_ACCESS_KEY=…
 export MEDIA_PUBLIC_BASE_URL=https://media.boardsesh.com
 
 python publish_model.py \
-  --config medium-untiled-1280 --version 2026.09.15 \
+  --config medium-untiled-1280 --version 2026-09-15 \
   --threshold 0.20 --sweep 0.05,0.08,0.12,0.2 \
   --dataset "Roboflow climbing-holds-and-volumes v14, 600 photos" \
   --training-licence "CC BY 4.0" --epochs 1 --trained-on cpu --date 2026-09-14 \
@@ -215,7 +215,7 @@ builds and prints the same manifest but writes the tree to a local directory
 
 ```bash
 python publish_model.py \
-  --config nano-tiled-1024 --version 2026.09.15-test --dry-run \
+  --config nano-tiled-1024 --version 2026-09-15-test --dry-run \
   --dataset "The Way Up, 400 tiles" --training-licence "CC BY 4.0" \
   --epochs 2 --trained-on cpu --date 2026-09-14
 ```

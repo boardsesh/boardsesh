@@ -6,6 +6,7 @@
     "NSBluetoothPeripheralUsageDescription": "Boardsesh utilise le Bluetooth pour se connecter à ta board et piloter les prises LED.",
     "NSLocationWhenInUseUsageDescription": "Boardsesh utilise ta position pour trouver des boards près de chez toi et repérer les séances d'escalade proches en Mode soirée.",
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh utilise ta position pour trouver des boards près de chez toi et repérer les séances d'escalade proches en Mode soirée.",
+    "NSCameraUsageDescription": "Boardsesh utilise ton appareil photo pour que tu puisses photographier un mur et y créer des blocs.",
     "NSPhotoLibraryUsageDescription": "Boardsesh utilise ta photothèque pour que tu puisses choisir une photo de profil."
   }
 }

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "version": "2026-09-15-medium",
+  "family": "rfdetr",
+  "config": "medium-untiled-1280",
+  "input": {
+    "width": 576,
+    "height": 576,
+    "layout": "NCHW",
+    "dtype": "float32",
+    "letterbox": "stretch",
+    "normalization": {
+      "mean": [0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225]
+    }
+  },
+  "outputs": {
+    "boxes": {
+      "name": null,
+      "format": "cxcywh-normalized"
+    },
+    "logits": {
+      "name": null,
+      "activation": "sigmoid",
+      "classes": 1
+    }
+  },
+  "thresholds": {
+    "default": 0.6,
+    "sweep": [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+  },
+  "files": [
+    {
+      "path": "model-int8.onnx",
+      "bytes": 32846565,
+      "sha256": "45df3b19400c5bed0c8d5f750c3e4b255dbdf516f1b44034dda45bc378a9455d",
+      "dtype": "int8"
+    }
+  ],
+  "training": {
+    "dataset": "Roboflow climbing-holds-and-volumes v14, single `hold` class, full train split (3,876 photos / 129,868 boxes)",
+    "licence": "CC BY 4.0",
+    "epochs": 10,
+    "trainedOn": "m5-max-mps",
+    "date": "2026-09-15"
+  },
+  "licence": "Apache-2.0",
+  "eval": {
+    "sprayEvalF1": 0.6497,
+    "weightedCorrectionsPerHold": 0.6577,
+    "gestureSavings": 0.476
+  }
+}

@@ -6,6 +6,7 @@
     "NSBluetoothPeripheralUsageDescription": "Boardsesh usa Bluetooth para conectarse a tu plafón y controlar las presas LED.",
     "NSLocationWhenInUseUsageDescription": "Boardsesh usa tu ubicación para encontrar plafones cerca de ti y descubrir sesiones de escalada cercanas en Modo Fiesta.",
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh usa tu ubicación para encontrar plafones cerca de ti y descubrir sesiones de escalada cercanas en Modo Fiesta.",
+    "NSCameraUsageDescription": "Boardsesh usa tu cámara para que puedas fotografiar un plafón y crear bloques en él.",
     "NSPhotoLibraryUsageDescription": "Boardsesh usa tu fototeca para que puedas elegir una foto de perfil."
   }
 }
