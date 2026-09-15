@@ -28,7 +28,7 @@ function fakeQueryClient(): Parameters<typeof loadSprayWall>[0] {
 function renderDataPayload(overrides: Record<string, unknown> = {}) {
   return {
     sprayWallRenderData: {
-      wall: { uuid: WALL_UUID },
+      wall: { uuid: WALL_UUID, board: { angle: 25 } },
       versionNumber: 2,
       boardWidth: 1200,
       boardHeight: 1600,
@@ -43,6 +43,7 @@ function renderDataPayload(overrides: Record<string, unknown> = {}) {
 function registerExistingWall() {
   registerSprayWall(LAYOUT_ID, {
     wallUuid: WALL_UUID,
+    angle: 40,
     version: 1,
     photoWidth: 1200,
     photoHeight: 1600,
@@ -74,6 +75,25 @@ describe('loadSprayWall', () => {
 
     expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, photoWidth: 1200 });
     expect(getSprayWall(LAYOUT_ID)?.holds.map((hold) => hold.id)).toEqual([7]);
+    // The wall's own fixed angle, which is what every climb set on it publishes at
+    // (SW-10) — `assertSprayAngleMatchesWall` rejects any other outright.
+    expect(getSprayWall(LAYOUT_ID)?.angle).toBe(25);
+  });
+
+  it('registers a wall whose payload will not say its angle', async () => {
+    // Deliberately unlike a photo that will not say its size, which is refused:
+    // such a wall draws perfectly well, and blanking the board over a field only
+    // the authoring path reads would trade a working wall for a placeholder. Null
+    // rather than a fabricated number, so `authoringAngle` falls back to the
+    // caller instead of failing every publish on the server's angle check.
+    const payload = renderDataPayload();
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce({ sprayWallRenderData: { ...payload.sprayWallRenderData, wall: { uuid: WALL_UUID } } });
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, angle: null });
   });
 
   it('withdraws a held wall when the layout no longer resolves', async () => {
