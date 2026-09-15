@@ -856,4 +856,20 @@ void describe('cross-angle stats conditions', () => {
     assert.equal(createClimbFilters(woodsParams, {}, undefined, { crossAngleStats: true }).isCrossAngleStats, true);
     assert.equal(createClimbFilters(params, {}, undefined, { crossAngleStats: false }).isCrossAngleStats, false);
   });
+
+  // count-climbs.ts and search-climbs.ts's runStandardSearch must resolve a
+  // climb's Boardsesh grade at the SAME angle under cross-angle, or a climb
+  // whose grade only exists at its set angle (not the browsed one) could be
+  // found by one query and missed by the other.
+  void it('resolves the grades join at the effective (COALESCE) angle under cross-angle', () => {
+    const rendered = render(createClimbFilters(woodsParams, {}, undefined, crossAngle).getClimbGradesJoinConditions());
+    assert.match(rendered, /COALESCE/i);
+    assert.match(rendered, /stats_set_angle/);
+  });
+
+  void it('resolves the grades join at the literal browsed angle without the opt-in', () => {
+    const rendered = render(createClimbFilters(woodsParams, {}).getClimbGradesJoinConditions());
+    assert.doesNotMatch(rendered, /COALESCE/i);
+    assert.doesNotMatch(rendered, /stats_set_angle/);
+  });
 });

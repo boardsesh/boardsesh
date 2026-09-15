@@ -13,7 +13,12 @@ import {
 } from '../../schema/index';
 import type { BoardRouteParams, ClimbSearchParams } from './types';
 import { climbHoldPlacementMatchSql } from './placement-match';
-import { effectiveStatsColumn, setAngleStatsJoinConditions, type StatsColumnKey } from './effective-stats';
+import {
+  effectiveStatsColumn,
+  setAngleStatsJoinConditions,
+  gradeJoinAngleSql,
+  type StatsColumnKey,
+} from './effective-stats';
 
 // Escape LIKE/ILIKE metacharacters so user-supplied search text is matched
 // literally. Postgres' default escape character is backslash, so `\%`, `\_`,
@@ -765,16 +770,19 @@ export const createClimbFilters = (
      *  route off this rather than re-deriving it, so the search and the count can
      *  never describe different universes. */
     isCrossAngleStats: crossAngle,
-    // ON conditions for a LEFT JOIN to board_climb_grades at the searched angle —
-    // needed by any caller whose WHERE clause (via getClimbStatsConditions) can
-    // now reference the Boardsesh grade fallback in gradeRangeConditions. Always
-    // the literal browsed angle: count-climbs.ts and the holds heatmap have no
-    // cross-angle concept of their own, and neither search path uses this getter
-    // (they inline the join against gradeJoinAngleSql instead — see search-climbs.ts).
+    // ON conditions for a LEFT JOIN to board_climb_grades — needed by any caller
+    // whose WHERE clause (via getClimbStatsConditions) can now reference the
+    // Boardsesh grade fallback in gradeRangeConditions. Reads through the same
+    // `gradeJoinAngleSql` the search path uses (see runStandardSearch in
+    // search-climbs.ts), so under cross-angle a caller here (count-climbs.ts;
+    // the holds heatmap never opts into cross-angle) resolves the grade at the
+    // SAME angle the search list did — without this, a climb whose Boardsesh
+    // grade only exists at its set angle (not the browsed one) could be found
+    // by one query and missed by the other.
     getClimbGradesJoinConditions: () => [
       eq(boardClimbGrades.boardType, params.board_name),
       eq(boardClimbGrades.climbUuid, boardClimbs.uuid),
-      eq(boardClimbGrades.angle, params.angle),
+      sql`${boardClimbGrades.angle} = ${gradeJoinAngleSql(params.angle, crossAngle)}`,
     ],
     getHoldHeatmapClimbStatsConditions: () => [
       eq(boardClimbStats.climbUuid, boardClimbHolds.climbUuid),
