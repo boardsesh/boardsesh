@@ -549,7 +549,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
                   source={{ uri: state.photo.uri }}
                   style={{
                     width: previewWidth,
-                    height: previewWidth / (state.photo.width / state.photo.height),
+                    height: previewHeight(previewWidth, state.photo),
                     borderRadius: borderRadius.lg,
                   }}
                   contentFit="cover"
@@ -671,14 +671,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       <View
         style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
       >
-        {state.step === 'resuming' ? (
-          <View style={styles.doneBlock}>
-            <ActivityIndicator />
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {t('sprayWizard.resume.checking')}
-            </Text>
-          </View>
-        ) : null}
+        {/* Nothing here while the resume check runs: the body already shows the
+            spinner and its label, and a second copy in the footer read as two
+            things happening rather than one. */}
 
         {state.step === 'meta' ? (
           <Button
@@ -740,6 +735,21 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       </View>
     </KeyboardAvoidingView>
   );
+}
+
+/**
+ * How tall to draw the picked photo at `width`.
+ *
+ * A picker that could not report a size hands back zeros (`predictCompressedSize`
+ * normalises anything worse to the same), and dividing by that aspect yields NaN
+ * — which React Native takes as no height at all, so the photo the climber just
+ * chose does not appear and nothing says why. Four-by-three is the fallback: it
+ * is wrong for some photos and visible for all of them, which is the trade worth
+ * making on a step whose whole job is showing the photo back.
+ */
+function previewHeight(width: number, photo: { width: number; height: number }): number {
+  if (!(photo.width > 0) || !(photo.height > 0)) return (width * 3) / 4;
+  return (width * photo.height) / photo.width;
 }
 
 /** What the review bar says about where its candidates came from. */
