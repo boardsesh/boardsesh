@@ -282,6 +282,94 @@ describe('assertSprayHoldsAreAlive re-resolves the published generation under th
 });
 
 /**
+ * `publishDraftUnderLock` re-reads the wall scoped to a LIVE row, and treats an
+ * absent one as an error.
+ *
+ * Source-level, like the lock-ordering tests above and for the same reason: the
+ * behaviour it protects is a window, not a state. `loadEditableWall` runs before
+ * the transaction opens, and `deleteSprayWall` takes the same wall lock — so a
+ * delete cannot interleave INSIDE the lock, but one that committed between the
+ * authz read and the lock is ordinary. Forcing that window in a behavioural test
+ * means interleaving two transactions and would be flaky about hitting it; the
+ * outer gate (a wall already deleted when the call arrives) is covered
+ * behaviourally in spray-wall-reset.test.ts.
+ *
+ * The `IS NULL` scope alone is not enough, which is why the throw is asserted too:
+ * both guards below it read `wallNow?.currentVersionId` with an optional chain, so
+ * a missing row without the throw means "nothing published yet" and publishes
+ * straight into a wall nobody can reach.
+ */
+describe('publishDraftUnderLock refuses a wall that has been deleted', () => {
+  it('scopes its wall re-read to deleted_at IS NULL and throws when the row is gone', () => {
+    const body = functionBody(SPRAY_WALLS_SOURCE, 'publishDraftUnderLock');
+
+    const readAt = body.indexOf('const [wallNow]');
+    expect(readAt, 'publishDraftUnderLock no longer re-reads the wall').toBeGreaterThanOrEqual(0);
+
+    const readStatement = body.slice(readAt, body.indexOf(';', readAt));
+    expect(readStatement, 'the wall re-read is not scoped to a live row').toMatch(
+      /isNull\(dbSchema\.sprayWalls\.deletedAt\)/,
+    );
+
+    // …and the absent row is an error, before either `currentVersionId` guard.
+    const throwAt = body.indexOf('if (!wallNow) throw notFoundError();');
+    expect(throwAt, 'an absent wall row is not treated as an error').toBeGreaterThan(readAt);
+    // The code, not the comment above it that names the same expression.
+    expect(throwAt).toBeLessThan(body.indexOf('if (wallNow?.currentVersionId != null)'));
+  });
+});
+
+/**
+ * `recordRemixLineage` reads `current_version_id` under the lock too.
+ *
+ * `spray_climb_lineage.wall_version_id` says which generation the child was set
+ * against, so a `commitSprayWallVersion` landing between that read and the
+ * caller's commit would leave the row naming a generation that had already been
+ * superseded. `assertSprayHoldsAreAlive` takes the same lock a few lines earlier in
+ * `saveClimb` — but only when the climb HAS holds, so leaning on it would make this
+ * function's correctness depend on another function's early return.
+ */
+describe('recordRemixLineage reads the wall version under the lock', () => {
+  it('locks first, then reads the parent, then the wall', async () => {
+    const calls: string[] = [];
+    const rows: unknown[][] = [[{ uuid: 'parent-uuid' }], [{ currentVersionId: 7 }]];
+    let selectCount = 0;
+
+    const chainFor = (result: unknown[]) => {
+      const chain: Record<string, unknown> = {};
+      for (const method of ['from', 'innerJoin', 'leftJoin', 'where', 'limit', 'orderBy']) chain[method] = () => chain;
+      chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
+      return chain;
+    };
+
+    const executor = {
+      execute: () => {
+        calls.push('lock');
+        return Promise.resolve([]);
+      },
+      select: () => {
+        calls.push(selectCount === 0 ? 'parent' : 'wall');
+        return chainFor(rows[selectCount++] ?? []);
+      },
+      insert: () => {
+        calls.push('insert');
+        return { values: () => Promise.resolve([]) };
+      },
+    } as never;
+
+    const { recordRemixLineage } = await import('../graphql/resolvers/climbs/spray-authoring');
+    await recordRemixLineage(executor, { wallId: 42, layoutId: 9 }, 'child-uuid', 'parent-uuid');
+
+    // The parent read is a pure existence check and may sit either side of the
+    // lock; the WALL read is the one the write depends on, so the lock has to be
+    // held by then.
+    expect(calls).toContain('lock');
+    expect(calls.indexOf('lock')).toBeLessThan(calls.indexOf('wall'));
+    expect(calls.at(-1)).toBe('insert');
+  });
+});
+
+/**
  * The feed decision is made under the lock, not carried in from before it.
  *
  * `SprayClimbTarget.publishesFeedEvents` is resolved before the write transaction

@@ -190,13 +190,23 @@ export async function recomputeMissingHoldCountForClimb(
   wallId: number,
   climbUuid: string,
 ): Promise<boolean> {
+  // The count is computed ONCE, in a `FROM (…) AS m` derived table, for the same
+  // reason the wall-wide version uses one: written as two copies of the same
+  // correlated subquery — one for the SET and one for the `IS DISTINCT FROM`
+  // guard — Postgres evaluates it twice.
   const updated = await db.execute(sql`
     UPDATE board_climbs
-    SET missing_hold_count = ${missingHoldCountFor(wallId, sql`board_climbs.uuid`)},
+    SET missing_hold_count = m.missing_hold_count,
         updated_at = now()
-    WHERE board_climbs.uuid = ${climbUuid}
+    FROM (
+      SELECT c.uuid, ${missingHoldCountFor(wallId, sql`c.uuid`)} AS missing_hold_count
+      FROM board_climbs c
+      WHERE c.uuid = ${climbUuid}
+        AND c.board_type = 'spray'
+    ) AS m
+    WHERE board_climbs.uuid = m.uuid
       AND board_climbs.board_type = 'spray'
-      AND board_climbs.missing_hold_count IS DISTINCT FROM ${missingHoldCountFor(wallId, sql`board_climbs.uuid`)}
+      AND board_climbs.missing_hold_count IS DISTINCT FROM m.missing_hold_count
     RETURNING board_climbs.uuid
   `);
 
