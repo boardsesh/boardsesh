@@ -429,6 +429,9 @@ a version number instead:
 | `upsertSprayWallHolds` / `removeSprayWallHolds` | the **draft's own** number, so an editing session can correct a hold it drew a moment ago |
 | `publishSprayWallVersion`'s hold count | the version being published, so another draft's additions never land in the number climbers see |
 | `saveClimb` / `updateClimb` | the **published** one (see below) |
+| `proposeSprayWallReset` | the **published** one — a reset is a reset OF what climbers see, and matching a new photo against the draft's own holds would compare the detections with themselves |
+| `commitSprayWallVersion` | the **draft's own** number for its re-validation, then the version being published for the hold count |
+| `remixClimb` | the **published** one, which is what "the hold is no longer there" means to a climber |
 
 ### Authorization
 

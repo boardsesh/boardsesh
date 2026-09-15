@@ -9,12 +9,16 @@ import {
   SPRAY_SET,
   spraySizeIdForLayout,
 } from '@boardsesh/board-config';
-// `aliveHolds` is ALWAYS called with an explicit version number here, never in
-// its no-version form. The no-version form means "alive at the wall's
-// `current_version_id`", which is the right answer for a climber and the wrong one
-// for the hold editor: a draft's own additions and removals are invisible to it
-// until `publishSprayWallVersion`. Passing the version number makes each read say
-// which generation it means, so neither reading is accidental.
+// `aliveHolds`'s no-version form means "alive at the wall's `current_version_id`"
+// — the climber's view, which does not include what an unpublished draft has
+// drawn. Every WRITER here passes an explicit version number instead, because a
+// draft's own additions and removals have to be visible to the session editing it
+// and to nothing else. The two readings are never accidental: each call site says
+// which generation it means.
+//
+// `proposeSprayWallReset` is the one deliberate no-version caller. A reset is a
+// reset OF the published wall, and matching a new photo against the draft's own
+// holds would compare the detections with themselves.
 import {
   allocateHoldIds,
   allocateWallIds,
