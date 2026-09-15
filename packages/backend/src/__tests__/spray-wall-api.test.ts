@@ -2311,11 +2311,7 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     expect((await history(STRANGER)).length).toBeGreaterThan(0);
     expect(await outlier(null)).not.toBeNull();
 
-    await sprayWallMutations.updateSprayWall(
-      {},
-      { input: { uuid: wall.wall.uuid, isPublic: false } },
-      ctxFor(OWNER),
-    );
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.wall.uuid, isPublic: false } }, ctxFor(OWNER));
 
     // Private: nothing, for a stranger or an anonymous caller — and no error, so
     // the wall's existence stays unobservable.
@@ -2333,11 +2329,10 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     // counts and setter grades to anyone who walked the sequence.
     const wall = await wallWithAClimb();
     const subscribe = async (viewer: string) =>
-      climbStatsSubscriptions.climbStatsUpdated.subscribe(
-        {},
-        { boardType: 'spray', layoutId: wall.wall.layoutId },
-        { ...ctxFor(viewer), connectionId: `conn-${viewer}` } as never,
-      );
+      climbStatsSubscriptions.climbStatsUpdated.subscribe({}, { boardType: 'spray', layoutId: wall.wall.layoutId }, {
+        ...ctxFor(viewer),
+        connectionId: `conn-${viewer}`,
+      } as never);
 
     await expect(subscribe(STRANGER)).rejects.toThrow(/not found/i);
 
