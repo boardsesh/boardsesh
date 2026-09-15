@@ -16,6 +16,8 @@ const graphql = vi.hoisted(() => ({
   climbFailed: false,
 }));
 const boardActions = vi.hoisted(() => ({ saveClimb: vi.fn(), updateClimb: vi.fn() }));
+/** The holds `buildInitialFrames` hands back for a fork. */
+const forkSeed = vi.hoisted(() => ({ frame: {} as Record<number, { state: string }> }));
 const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
 const draftStore = vi.hoisted(() => ({
   loadDraft: vi.fn(async () => null as null | Record<string, unknown>),
@@ -60,7 +62,9 @@ vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: () => createClimb,
   computeCanUpdate: (savedClimb: unknown) => savedClimb != null,
   computeEditLocked: () => false,
-  buildInitialFrames: () => [{}],
+  // The real seeder turns a frames string into a LitUpHoldsMap; the fork's paint
+  // is what the any-feet seed has to read, so the stub has to carry it.
+  buildInitialFrames: () => [forkSeed.frame],
 }));
 vi.mock('@boardsesh/board-react', () => ({
   useBoardActions: () => ({
@@ -139,6 +143,7 @@ beforeEach(() => {
   graphql.climb = undefined;
   graphql.climbFailed = false;
   createClimb.litUpHoldsMap = { 1: { state: 'STARTING' }, 2: { state: 'FINISH' } };
+  forkSeed.frame = {};
   boardActions.saveClimb.mockReset();
   boardActions.saveClimb.mockResolvedValue({ uuid: 'saved-1', createdAt: null, publishedAt: null, isDraft: false });
   boardActions.updateClimb.mockReset();
@@ -279,6 +284,53 @@ describe('any feet on a wall', () => {
     createClimb.litUpHoldsMap = { 1: { state: 'STARTING' }, 2: { state: 'FINISH' }, 3: { state: 'FOOT' } };
     rerender();
     expect(result.current.anyFeet).toBe(true);
+  });
+
+  // `saveClimb` stores NULL, not `[]`, when a climb carries no rule tokens — and
+  // "feet on the marked holds" is no token. So the commonest wall climb there is
+  // (marked feet, any-feet off) remixes with NO characteristics param at all, and
+  // the board default would hand it back open over its own FOOT holds.
+  it('opens a rule-less remix of a feet-marked wall climb with any feet OFF', () => {
+    forkSeed.frame = { 1: { state: 'STARTING' }, 2: { state: 'FOOT' }, 3: { state: 'FINISH' } };
+    createClimb.litUpHoldsMap = forkSeed.frame;
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({ board: SPRAY_BOARD, forkFrames: 'p1r1p2r4p3r3', forkName: 'Parent' }),
+    );
+    expect(result.current.anyFeet).toBe(false);
+  });
+
+  it('opens a rule-less remix of a feet-free wall climb with any feet ON', () => {
+    forkSeed.frame = { 1: { state: 'STARTING' }, 2: { state: 'FINISH' } };
+    createClimb.litUpHoldsMap = forkSeed.frame;
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({ board: SPRAY_BOARD, forkFrames: 'p1r1p2r3', forkName: 'Parent' }),
+    );
+    expect(result.current.anyFeet).toBe(true);
+  });
+
+  it('still lets an explicit characteristics array win over the paint', () => {
+    forkSeed.frame = { 1: { state: 'STARTING' }, 2: { state: 'FOOT' } };
+    createClimb.litUpHoldsMap = forkSeed.frame;
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({
+        board: SPRAY_BOARD,
+        forkFrames: 'p1r1p2r4',
+        forkName: 'Parent',
+        forkCharacteristics: JSON.stringify(['any_feet']),
+      }),
+    );
+    expect(result.current.anyFeet).toBe(true);
+  });
+
+  it('leaves a rule-less remix on a catalogue board closed, as before', () => {
+    // The paint only answers this question where feet are open by default. A
+    // Kilter remix with no marked feet must NOT come back as an any-feet climb.
+    forkSeed.frame = { 1: { state: 'STARTING' }, 2: { state: 'FINISH' } };
+    createClimb.litUpHoldsMap = forkSeed.frame;
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({ board: KILTER_BOARD, forkFrames: 'p1r12p2r14', forkName: 'Parent' }),
+    );
+    expect(result.current.anyFeet).toBe(false);
   });
 
   it('leaves a catalogue board with its feet closed by default', () => {

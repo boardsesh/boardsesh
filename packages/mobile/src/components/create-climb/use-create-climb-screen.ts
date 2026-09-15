@@ -390,9 +390,22 @@ export function useCreateClimbScreen({
   // A fork inherits its source's answer; a fresh climb takes the board's default,
   // which is OPEN on a spray wall — a field of holds with no set-piece feet, where
   // "feet anywhere" is the convention rather than the exception (#5443).
-  const [anyFeet, setAnyFeetState] = useState(() =>
-    seededForkCharacteristics ? isAnyFeet(seededForkCharacteristics) : defaultAnyFeet(board.boardName),
-  );
+  //
+  // The middle case is the one that bites. `saveClimb` stores NULL rather than an
+  // empty array when a climb has no rule tokens at all, and "feet on the marked
+  // holds" IS no token — so a wall climb with feet marked comes back carrying
+  // nothing, `openRemix` sends no `forkCharacteristics`, and the board default
+  // would open the remix with "Any feet" ON over the FOOT holds it just inherited.
+  // `nextAnyFeetForFeetChange` cannot undo that either: the paint is already there
+  // on the first evaluation, which is deliberately not a change. So on a board
+  // where the paint answers this question, a rule-less fork reads the answer off
+  // the paint it was seeded with. A catalogue board keeps its closed default,
+  // exactly as before.
+  const [anyFeet, setAnyFeetState] = useState(() => {
+    if (seededForkCharacteristics) return isAnyFeet(seededForkCharacteristics);
+    if (isForking) return defaultAnyFeet(board.boardName) && !hasFootHolds(initialFrames?.[0] ?? {});
+    return defaultAnyFeet(board.boardName);
+  });
   const [isDraft, setIsDraft] = useState(true);
   // The setter's own grade, as a difficulty id on the shared Boardsesh scale.
   // Only boards with no crowd grade ask for it (`requiresSetterGrade`), and only

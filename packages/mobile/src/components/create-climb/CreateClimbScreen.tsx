@@ -12,6 +12,7 @@ import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
 import { useSprayWall } from '../../lib/spray/use-spray-wall';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
+import { isSprayBoard } from './spray-climb-rules';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -84,7 +85,7 @@ export function CreateClimbScreen({
   // brings a new wall version keeps reporting `ready`, so the state alone would
   // leave the editor painting the generation that just came off the wall.
   const sprayWallToken = useSprayWallToken(board.boardName, board.layoutId);
-  const sprayLayoutId = board.boardName === 'spray' ? board.layoutId : null;
+  const sprayLayoutId = isSprayBoard(board.boardName) ? board.layoutId : null;
   const { isLoading: sprayWallLoading } = useSprayWall(sprayLayoutId);
 
   const boardHolds = useMemo(
