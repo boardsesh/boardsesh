@@ -486,7 +486,8 @@
       "sends": "Sends",
       "flashes": "Flashes",
       "hardest": "Hardest"
-    }
+    },
+    "anonymousClimber": "A climber"
   },
   "boardPill": {
     "switchHint": "Opens the board switcher"

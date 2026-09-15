@@ -29,8 +29,13 @@ vi.mock('../graphql/resolvers/beta-videos/queries', () => betaMocks);
 
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { UpdateTickInputSchema, readTimestampFractionalSeconds } from '../validation/schemas/ticks';
+import {
+  SaveTickInputSchema,
+  UpdateTickInputSchema,
+  readTimestampFractionalSeconds,
+} from '../validation/schemas/ticks';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
+import { checkRateLimit, resetAllRateLimits } from '../utils/rate-limiter';
 
 const TEST_USER_ID = 'tick-validation-test-user';
 const TEST_TICK_UUID_PREFIX = 'tick-validation-test-tick';
@@ -198,6 +203,60 @@ describe('UpdateTickInputSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('bounds difficulty to the 1-39 grade scale', () => {
+    expect(() => UpdateTickInputSchema.parse({ difficulty: 2147483647 })).toThrowError(/Difficulty must be at most 39/);
+    expect(() => UpdateTickInputSchema.parse({ difficulty: 0 })).toThrowError(/Difficulty must be at least 1/);
+    expect(() => UpdateTickInputSchema.parse({ difficulty: 39 })).not.toThrow();
+    expect(() => UpdateTickInputSchema.parse({ difficulty: null })).not.toThrow();
+  });
+});
+
+/**
+ * The create path had neither guard, and both matter specifically because a
+ * ranked surface reads them: an unbounded difficulty owns MAX(difficulty)
+ * permanently, and a far-future climbed_at sits inside every rolling window
+ * forever. The update path already had the date refine; creates did not.
+ */
+describe('SaveTickInputSchema', () => {
+  const validSaveTick = {
+    boardType: 'kilter',
+    climbUuid: '11111111-1111-1111-1111-111111111111',
+    angle: 40,
+    isMirror: false,
+    status: 'send' as const,
+    attemptCount: 1,
+    isBenchmark: false,
+    comment: '',
+    climbedAt: new Date(Date.now() - 60_000).toISOString(),
+  };
+
+  it('accepts an ordinary recent send', () => {
+    expect(() => SaveTickInputSchema.parse(validSaveTick)).not.toThrow();
+  });
+
+  it('rejects a climbed-at in the future, which the update path already rejected', () => {
+    const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, climbedAt: nextYear })).toThrowError(
+      /Climbed at cannot be in the future/,
+    );
+  });
+
+  it('still tolerates small clock skew, matching the update path tolerance', () => {
+    const slightlyAhead = new Date(Date.now() + 30_000).toISOString();
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, climbedAt: slightlyAhead })).not.toThrow();
+  });
+
+  it('bounds difficulty to the 1-39 grade scale', () => {
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, difficulty: 2147483647 })).toThrowError(
+      /Difficulty must be at most 39/,
+    );
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, difficulty: 0 })).toThrowError(
+      /Difficulty must be at least 1/,
+    );
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, difficulty: 22 })).not.toThrow();
+    expect(() => SaveTickInputSchema.parse({ ...validSaveTick, difficulty: null })).not.toThrow();
+  });
 });
 
 describe('readTimestampFractionalSeconds', () => {
@@ -256,6 +315,76 @@ describe('tickMutations.saveTick validation', () => {
     } finally {
       selectSpy.mockRestore();
       transactionSpy.mockRestore();
+    }
+  });
+});
+
+// The constants themselves are unobservable — deleting the applyRateLimit call
+// would leave every other test green. These fill the in-memory bucket the
+// resolver shares (keyed `<userId>:<operation>`) up to its ceiling, so the
+// resolver's own call is the one over the line. Both assert the write never
+// starts: a limited request must cost nothing downstream.
+describeWithDatabase('tick write-path rate limits', () => {
+  const SHARED_CEILING = 120;
+
+  afterEach(() => {
+    resetAllRateLimits();
+  });
+
+  function fillBucket(operation: string): void {
+    for (let request = 0; request < SHARED_CEILING; request++) {
+      checkRateLimit(`${TEST_USER_ID}:${operation}`, SHARED_CEILING);
+    }
+  }
+
+  it('saveTick is wired to the limiter and refuses the request over the ceiling', async () => {
+    fillBucket('saveTick');
+    const transactionSpy = vi.spyOn(db, 'transaction');
+
+    try {
+      await expect(
+        tickMutations.saveTick(
+          null,
+          {
+            input: {
+              boardType: 'kilter',
+              climbUuid: TEST_CLIMB_UUID,
+              angle: 40,
+              isMirror: false,
+              status: 'send',
+              attemptCount: 1,
+              isBenchmark: false,
+              comment: '',
+              climbedAt: new Date().toISOString(),
+            },
+          },
+          authenticatedContext,
+        ),
+      ).rejects.toMatchObject({ extensions: { code: 'RATE_LIMITED', status: 429 } });
+      expect(transactionSpy).not.toHaveBeenCalled();
+    } finally {
+      transactionSpy.mockRestore();
+    }
+  });
+
+  // climbedAt is editable, so an edit can move an old tick into the current
+  // rolling window — the same capability a create has. Bounding only the create
+  // path would leave that open.
+  it('updateTick is wired to the limiter too', async () => {
+    fillBucket('updateTick');
+    const selectSpy = vi.spyOn(db, 'select');
+
+    try {
+      await expect(
+        tickMutations.updateTick(
+          null,
+          { uuid: `${TEST_TICK_UUID_PREFIX}-rate-limited`, input: { comment: 'edited' } },
+          authenticatedContext,
+        ),
+      ).rejects.toMatchObject({ extensions: { code: 'RATE_LIMITED', status: 429 } });
+      expect(selectSpy).not.toHaveBeenCalled();
+    } finally {
+      selectSpy.mockRestore();
     }
   });
 });

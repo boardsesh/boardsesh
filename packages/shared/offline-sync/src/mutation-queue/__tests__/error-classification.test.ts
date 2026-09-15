@@ -131,6 +131,18 @@ describe('isRetryable', () => {
     expect(isRetryable({ status: 429 })).toBe(true);
   });
 
+  // The backend now also sends `status: 429` alongside the string code
+  // (resolvers/shared/helpers.ts), so a status-reading client gets a real
+  // verdict instead of inferring one. Retryability itself does not depend on
+  // it — the classifier defaults to retrying anything outside
+  // PERMANENT_REJECTION_STATUSES, which is why the string-code-only case in
+  // the issue #4711 block below still drains.
+  it('a RATE_LIMITED error carrying an explicit numeric status reads 429 and retries', () => {
+    const rateLimited = { response: { errors: [{ extensions: { code: 'RATE_LIMITED', status: 429 } }] } };
+    expect(getErrorStatus(rateLimited)).toBe(429);
+    expect(isRetryable(rateLimited)).toBe(true);
+  });
+
   it('500 is retryable', () => {
     expect(isRetryable({ status: 500 })).toBe(true);
   });

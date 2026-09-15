@@ -81,12 +81,48 @@ describe('buildSessionLeaderboardRows', () => {
   });
 });
 
+describe('anonymous climbers in the period merge', () => {
+  it('merges an anonymous climber across boards by their stable pseudonym and keeps the name null', () => {
+    // The backend sends `anon:<hmac>` instead of the real user id for a climber
+    // who opted out of being named on gym screens. It is stable per climber, so
+    // the cross-board merge still sums their sends into one row rather than
+    // splitting them — and a null displayName is what makes the rail render its
+    // localized "anonymous" fallback instead of a blank cell.
+    const anonId = 'anon:VGhpc0lzQVN0YWJsZUht';
+    const merged = mergePeriodLeaderboards([
+      makeLeaderboard('board-1', [
+        makeEntry({ userId: anonId, isAnonymous: true, userDisplayName: null, totalSends: 4 }),
+      ]),
+      makeLeaderboard('board-2', [
+        makeEntry({ userId: anonId, isAnonymous: true, userDisplayName: null, totalSends: 3 }),
+      ]),
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ key: `user:${anonId}`, displayName: null, sendCount: 7 });
+  });
+
+  it('does not fuse two different anonymous climbers into one row', () => {
+    const merged = mergePeriodLeaderboards([
+      makeLeaderboard('board-1', [
+        makeEntry({ userId: 'anon:aaaaaaaaaaaaaaaaaaaaaa', isAnonymous: true, userDisplayName: null, totalSends: 4 }),
+        makeEntry({ userId: 'anon:bbbbbbbbbbbbbbbbbbbbbb', isAnonymous: true, userDisplayName: null, totalSends: 2 }),
+      ]),
+    ]);
+
+    expect(merged).toHaveLength(2);
+    expect(merged.map((row) => row.sendCount)).toEqual([4, 2]);
+  });
+});
+
 function makeEntry(overrides: Partial<BoardLeaderboardEntry> & { userId: string }): BoardLeaderboardEntry {
   return {
     rank: 1,
     totalSends: 1,
     totalFlashes: 0,
     totalSessions: 1,
+    // Named by default; the anonymous case below overrides this and drops the name.
+    isAnonymous: false,
     ...overrides,
   };
 }
