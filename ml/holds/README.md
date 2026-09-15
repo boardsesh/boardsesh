@@ -49,6 +49,8 @@ ml/holds/
   publish_model.py  build + validate a manifest, upload it and the weights to R2 (see "Publishing a model")
   model-manifest.schema.json   the manifest contract publish_model.py validates against
   test_publish_model.py        pytest for publish_model.py — --dry-run only, no R2 needed
+  test_train.py                pytest for the tiled-dataset cache (no training, no torch)
+  test_fetch.py                pytest for data/fetch.py's missing-SDK message
   fixtures/         committed inputs + expected detections for the SW-06 Node tests
   .data/            downloads, scraped photos, labels, checkpoints, exports —
                     gitignored, never committed
@@ -62,6 +64,7 @@ cd ml/holds
 python3 -m venv .venv && . .venv/bin/activate
 pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.0 torchvision==0.29.0
 pip install -r requirements.txt
+pip install roboflow   # only for data/fetch.py's Roboflow download; not pinned
 ```
 
 This box has no GPU and has fallen over under concurrent heavy jobs. **Run one
@@ -78,6 +81,7 @@ cd ml/holds
 python3 -m venv .venv && . .venv/bin/activate
 pip install torch==2.14.0 torchvision==0.29.0
 pip install -r requirements.txt
+pip install roboflow   # only for data/fetch.py's Roboflow download; not pinned
 ```
 
 `train.py --device auto` (the default) then picks `mps` on its own; pass
@@ -222,7 +226,18 @@ python publish_model.py \
 
 Both modes refuse to overwrite an existing version (an existing local
 directory in dry-run mode, an existing R2 object in real mode) unless `--force`
-is passed. Credentials are never printed or logged by either mode.
+is passed. In real mode `--force` covers the **manifest only**: weight files are
+served `public, max-age=31536000, immutable`, so an already-published file with
+the same sha256 is skipped and one with different bytes stops the publish and
+asks for a new `--version` — a cached client would otherwise keep bytes that no
+longer match the manifest's checksum. Credentials are never printed or logged by
+either mode.
+
+`--eval-json` takes an `eval.py` results file (`.data/artifacts/<config>/eval.json`)
+as well as a manifest-shaped one: `box.f1` and `correction_rate_micro` are read
+into the manifest's `sprayEvalF1` and `weightedCorrectionsPerHold`. A file with
+none of those keys is an error rather than a manifest that silently ships without
+its `eval` section.
 
 ### How the manifest gets consumed
 
@@ -264,10 +279,21 @@ python data/wayup.py --root <extracted Way Up tree> --out .data/coco \
 # 2b. Or a hand-labelled corpus (the Discord spray-wall photos), split by photo.
 python data/to_coco.py --source spraywall-discord:.data/spraywall-discord:coco
 
-# 3. Train. Tiled configs tile the dataset first (cached in .data/coco-tiles-*).
-#    --max-train-images keeps a CPU run inside a sane wall clock; it symlinks an
-#    evenly spaced subset rather than copying anything.
+# 3a. Train the BOOTSTRAP runs (The Way Up only — .data/coco, train.py's default
+#     --dataset). Tiled configs tile the dataset first, cached per source corpus in
+#     .data/<source>-tiles-<grid>-<long side>/. --max-train-images keeps a CPU run
+#     inside a sane wall clock; it symlinks an evenly spaced subset rather than
+#     copying anything, and for a tiled config it caps TILES, not photos.
 python train.py --config nano-tiled-1024 --epochs 2 --max-train-images 400
+python train.py --config medium-untiled-1280 --epochs 2 --max-train-images 300
+
+# 3b. Train the CC BY retrains — the second and fourth columns of the spray-wall
+#     table. --dataset is not optional here: without it these retrain the Way Up
+#     bootstrap corpus again, and the caps are the table's own "Trained on" row.
+python train.py --config nano-tiled-1024 --dataset .data/roboflow-1class \
+  --epochs 1 --max-train-images 1400
+python train.py --config medium-untiled-1280 --dataset .data/roboflow-1class \
+  --epochs 1 --max-train-images 600
 
 # 4. Export. ONNX is required; TFLite is attempted and the result recorded.
 python export.py --config nano-tiled-1024 --formats onnx,tflite
@@ -397,10 +423,11 @@ on both platforms.
 
 What the full run settles:
 
-- **Full-frame nano beats medium.** 0.659 vs 0.650, at a third of the training
-  cost and 31.3 MB. The spike's hypothesis — the lever is full-frame resolution,
-  not model size — held: the same weights that scored 0.295 with tiles score
-  0.659 without them.
+- **Full-frame nano beats medium.** 0.659 vs 0.650, in a 31.3 MB artifact. It did
+  not train faster: 99 min against medium's 78 min of useful time, because nano
+  runs at 768 px where medium's own full-frame pass is cheaper per step. The
+  spike's hypothesis — the lever is full-frame resolution, not model size — held:
+  the same weights that scored 0.295 with tiles score 0.659 without them.
 - **The dataset is exhausted.** Per-epoch scoring on the spray halves (the
   `results/full-run-2026-09-15-m5max/*/curve/` files — one file per epoch in
   which `checkpoint_best_ema.pth` changed, so a missing epoch number, like

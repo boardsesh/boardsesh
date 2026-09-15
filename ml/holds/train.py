@@ -124,16 +124,58 @@ def cap_train_split(dataset_dir: Path, limit: int) -> Path:
     return capped_dir
 
 
+TILE_SOURCE_FILENAME = "source.json"
+
+
+def tiled_dataset_dir(config, dataset_dir: Path) -> Path:
+    """Where the tiles cut from `dataset_dir` for `config` live.
+
+    The SOURCE dataset's name is part of the directory name, not just the tiling
+    geometry: two corpora tiled the same way are two different corpora, and a
+    cache keyed on geometry alone silently trains `--dataset .data/roboflow-1class`
+    on whatever was tiled first and records the wrong dataset in train-summary.json.
+    """
+    grid = config.tiles
+    source_name = dataset_dir.resolve().name
+    return (
+        HOLDS_DIR
+        / ".data"
+        / f"{source_name}-tiles-{grid.rows}x{grid.cols}-{grid.overlap}-{config.long_side}"
+    )
+
+
+def tile_source_record(config, dataset_dir: Path) -> dict[str, object]:
+    """The provenance stamp written beside a tiled dataset and checked before reuse."""
+    grid = config.tiles
+    return {
+        "source": str(dataset_dir.resolve()),
+        "rows": grid.rows,
+        "cols": grid.cols,
+        "overlap": grid.overlap,
+        "long_side": config.long_side,
+    }
+
+
 def prepare_dataset(config, dataset_dir: Path) -> Path:
     """Return the directory the trainer should read, tiling it first when needed."""
     if config.tiles.untiled:
         return dataset_dir
 
     grid = config.tiles
-    tiled_dir = HOLDS_DIR / ".data" / f"coco-tiles-{grid.rows}x{grid.cols}-{grid.overlap}-{config.long_side}"
+    tiled_dir = tiled_dataset_dir(config, dataset_dir)
+    expected_source = tile_source_record(config, dataset_dir)
+    source_path = tiled_dir / TILE_SOURCE_FILENAME
     if (tiled_dir / "train" / "_annotations.coco.json").exists():
-        print(f"reusing tiled dataset {tiled_dir}")
-        return tiled_dir
+        recorded = json.loads(source_path.read_text()) if source_path.exists() else None
+        if recorded == expected_source:
+            print(f"reusing tiled dataset {tiled_dir}")
+            return tiled_dir
+        raise SystemExit(
+            f"{tiled_dir} holds tiles from a different source than {dataset_dir.resolve()}\n"
+            f"  recorded: {json.dumps(recorded)}\n"
+            f"  wanted:   {json.dumps(expected_source)}\n"
+            "Delete that directory to re-tile. Training on it as-is would train the wrong corpus."
+        )
 
     print(f"tiling {dataset_dir} -> {tiled_dir}")
     subprocess.run(
@@ -149,6 +191,7 @@ def prepare_dataset(config, dataset_dir: Path) -> Path:
         ],
         check=True,
     )
+    source_path.write_text(json.dumps(expected_source, indent=2) + "\n")
     return tiled_dir
 
 

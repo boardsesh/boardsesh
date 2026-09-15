@@ -20,6 +20,10 @@ Weights are content-addressed by version and therefore immutable: once
 the manifest at that version may be intentionally replaced (with --force), which
 is why the weight files upload first and the manifest uploads last - a reader can
 never observe a manifest pointing at a weight file that hasn't landed yet.
+--force does NOT extend to the weights: a published weight file with the same
+sha256 is skipped, and one with different bytes stops the publish, because those
+objects are served with a one-year immutable cache and a client holding the old
+bytes would fail the new manifest's checksum.
 
 Env vars (mirrors packages/backend/src/storage/bucket-config.ts's MEDIA_* prefix;
 see docs/user-media-storage.md):
@@ -44,6 +48,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 from dataclasses import dataclass
@@ -60,12 +65,25 @@ INT8_FILENAME = "model-int8.onnx"
 FP32_FILENAME = "model.onnx"
 MANIFEST_FILENAME = "manifest.json"
 
+# --version is a path segment in two places: the R2 key prefix and the dry-run
+# output directory. Keep it to one boring segment so neither can escape.
+VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
 # RF-DETR is pretrained on ImageNet-normalised inputs; eval.py's OnnxDetector
 # uses these exact constants (ml/holds/eval.py, OnnxDetector.__init__).
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
 EVAL_KEYS = ("sprayEvalF1", "weightedCorrectionsPerHold", "gestureSavings")
+
+# eval.py writes its own vocabulary, not the manifest's: box F1 lives at
+# `box.f1` and the weighted correction rate at `correction_rate_micro` (see
+# ml/holds/eval.py's results dict). --eval-json is normally handed exactly that
+# file, so each manifest key also knows the dotted path to read it from.
+EVAL_SOURCE_PATHS: dict[str, tuple[str, ...]] = {
+    "sprayEvalF1": ("box", "f1"),
+    "weightedCorrectionsPerHold": ("correction_rate_micro",),
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -283,7 +301,15 @@ def resolve_training(args: argparse.Namespace) -> dict[str, Any]:
             training[key] = value
 
     required = ["dataset", "licence", "epochs", "trainedOn", "date"]
-    missing = [key for key in required if not training.get(key) and training.get(key) != 0]
+    # A real 0 (or 0.0) stays acceptable, so this cannot be a plain falsy test.
+    # It cannot be `not value` on booleans either: `True`/`False` compare equal to
+    # 1/0, so a JSON `"epochs": false` would slip through and fail much later as an
+    # opaque jsonschema type error instead of the friendly message below.
+    missing = [
+        key
+        for key in required
+        if training.get(key) is None or isinstance(training.get(key), bool) or training.get(key) == ""
+    ]
     if missing:
         raise SystemExit(
             "missing training metadata: "
@@ -293,14 +319,49 @@ def resolve_training(args: argparse.Namespace) -> dict[str, Any]:
     return training
 
 
+def _dig(payload: dict[str, Any], dotted_path: tuple[str, ...]) -> Any | None:
+    """Read a nested value out of an eval.py results dict, or None if it isn't there."""
+    current: Any = payload
+    for segment in dotted_path:
+        if not isinstance(current, dict) or segment not in current:
+            return None
+        current = current[segment]
+    return current
+
+
 def resolve_eval(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Pick the manifest's eval numbers out of --eval-json.
+
+    Accepts a manifest-shaped file (the keys already named as EVAL_KEYS) or, more
+    usually, an eval.py results file, whose own key names are mapped through
+    EVAL_SOURCE_PATHS. Matching nothing is an error rather than a manifest that
+    quietly ships with no `eval` section at all.
+    """
     if not args.eval_json:
         return None
     loaded = json.loads(Path(args.eval_json).read_text())
     if not isinstance(loaded, dict):
         raise SystemExit(f"--eval-json {args.eval_json} must contain a JSON object")
-    picked = {key: loaded[key] for key in EVAL_KEYS if key in loaded}
-    return picked or None
+
+    picked: dict[str, Any] = {}
+    for key in EVAL_KEYS:
+        if key in loaded:
+            picked[key] = loaded[key]
+            continue
+        from_eval_py = _dig(loaded, EVAL_SOURCE_PATHS[key]) if key in EVAL_SOURCE_PATHS else None
+        if from_eval_py is not None:
+            picked[key] = from_eval_py
+
+    if not picked:
+        readable = ", ".join(
+            f"{key} (or {'.'.join(EVAL_SOURCE_PATHS[key])})" if key in EVAL_SOURCE_PATHS else key
+            for key in EVAL_KEYS
+        )
+        raise SystemExit(
+            f"--eval-json {args.eval_json} has none of the keys the manifest can carry: {readable}. "
+            "Pass an eval.py results file (.data/artifacts/<config>/eval.json), or drop --eval-json."
+        )
+    return picked
 
 
 def resolve_files(config: ConfigInfo, args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str, Path]]:
@@ -360,10 +421,11 @@ def write_dry_run(out_dir: Path, manifest: dict[str, Any], sources: dict[str, Pa
 # --------------------------------------------------------------------------- #
 
 
-def upload(bucket: MediaBucketConfig, version: str, manifest: dict[str, Any], sources: dict[str, Path], force: bool) -> None:
+def build_s3_client(bucket: MediaBucketConfig) -> Any:
+    """Construct the S3 client for the media bucket. boto3 is imported lazily so a
+    dry run never needs it installed, and so tests can inject a fake instead."""
     import boto3
     from botocore.client import Config as BotoConfig
-    from botocore.exceptions import ClientError
 
     client_kwargs: dict[str, Any] = {
         "region_name": bucket.region,
@@ -375,22 +437,70 @@ def upload(bucket: MediaBucketConfig, version: str, manifest: dict[str, Any], so
     if bucket.force_path_style:
         client_kwargs["config"] = BotoConfig(s3={"addressing_style": "path"})
 
-    client = boto3.client("s3", **client_kwargs)
+    return boto3.client("s3", **client_kwargs)
+
+
+def head_object_or_none(client: Any, bucket_name: str, key: str) -> dict[str, Any] | None:
+    """The object's head, or None when it does not exist. Any other error raises:
+    a 403 from a bad credential must not read as "nothing published here yet"."""
+    from botocore.exceptions import ClientError
+
+    try:
+        return client.head_object(Bucket=bucket_name, Key=key)
+    except ClientError as error:
+        status = error.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if status == 404:
+            return None
+        raise
+
+
+def upload(
+    bucket: MediaBucketConfig,
+    version: str,
+    manifest: dict[str, Any],
+    sources: dict[str, Path],
+    force: bool,
+    client: Any | None = None,
+) -> None:
+    """Publish the weights and then the manifest for one version.
+
+    `--force` (the `force` argument) applies to the MANIFEST ONLY. Weight files are
+    served `public, max-age=31536000, immutable`, so a CDN or a phone that already
+    has `models/hold-detector/<version>/model-int8.onnx` will keep serving those
+    bytes for a year no matter what we re-upload - and the new manifest's sha256
+    would no longer match them. So the weight check runs whether or not --force was
+    passed: an already-published file with the same sha256 is skipped, and one with
+    different bytes is a hard error telling the publisher to bump --version.
+    """
+    if client is None:
+        client = build_s3_client(bucket)
+
     prefix = f"{MODEL_KEY_PREFIX}/{version}"
     weight_keys = {name: f"{prefix}/{name}" for name in sources}
     manifest_key = f"{prefix}/{MANIFEST_FILENAME}"
+    checksums = {entry["path"]: str(entry["sha256"]) for entry in manifest["files"]}
 
-    if not force:
-        for key in (*weight_keys.values(), manifest_key):
-            try:
-                client.head_object(Bucket=bucket.bucket_name, Key=key)
-            except ClientError as error:
-                status = error.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-                if status == 404:
-                    continue
-                raise
-            else:
-                raise SystemExit(f"refusing to overwrite existing s3://{bucket.bucket_name}/{key} (use --force)")
+    already_published: set[str] = set()
+    for name, key in weight_keys.items():
+        head = head_object_or_none(client, bucket.bucket_name, key)
+        if head is None:
+            continue
+        published_sha256 = (head.get("Metadata") or {}).get("sha256")
+        if published_sha256 is not None and published_sha256 == checksums[name]:
+            already_published.add(name)
+            print(f"already published, identical bytes - skipping {key}", file=sys.stderr)
+            continue
+        raise SystemExit(
+            f"s3://{bucket.bucket_name}/{key} already exists and is not the file being published "
+            f"(published sha256 {published_sha256 or 'unknown'}, local {checksums[name]}). "
+            "Weights are immutable per version - they are served with a one-year immutable "
+            "cache, so replacing them would leave cached clients checksumming against the new "
+            "manifest and failing. Publish under a new --version instead; --force only replaces "
+            "the manifest."
+        )
+
+    if not force and head_object_or_none(client, bucket.bucket_name, manifest_key) is not None:
+        raise SystemExit(f"refusing to overwrite existing s3://{bucket.bucket_name}/{manifest_key} (use --force)")
 
     acl_kwargs: dict[str, str] = {} if bucket.disable_acl else {"ACL": "public-read"}
 
@@ -398,6 +508,8 @@ def upload(bucket: MediaBucketConfig, version: str, manifest: dict[str, Any], so
     # at a weight file that hasn't landed yet, and weights are immutable per
     # version so re-running after a partial failure is always safe.
     for name, source in sources.items():
+        if name in already_published:
+            continue
         client.upload_file(
             str(source),
             bucket.bucket_name,
@@ -405,6 +517,9 @@ def upload(bucket: MediaBucketConfig, version: str, manifest: dict[str, Any], so
             ExtraArgs={
                 "ContentType": "application/octet-stream",
                 "CacheControl": "public, max-age=31536000, immutable",
+                # The checksum the next publish compares against, so an identical
+                # re-run can skip the upload and a differing one can refuse it.
+                "Metadata": {"sha256": checksums[name]},
                 **acl_kwargs,
             },
         )
@@ -467,7 +582,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # Test seam - not documented in --help output above the parser's own listing.
     parser.add_argument("--configs-path", default=str(DEFAULT_CONFIGS_PATH), help=argparse.SUPPRESS)
 
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    # --version becomes both an R2 key prefix and a local directory name, so
+    # anything with a slash or a leading dot could publish outside
+    # models/hold-detector/ or, in dry-run mode, write outside .data/publish/.
+    if not VERSION_PATTERN.match(args.version):
+        parser.error(
+            f"--version {args.version!r} must match {VERSION_PATTERN.pattern} - it is a path segment "
+            "(the R2 prefix models/hold-detector/<version>/ and the dry-run directory name), "
+            "e.g. 1.2.0 or 2026.09.15"
+        )
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:

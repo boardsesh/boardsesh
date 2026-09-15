@@ -9,7 +9,7 @@
   "properties": {
     "schemaVersion": {
       "const": 1,
-      "description": "Bump when a field is renamed or removed. Additive fields do not require a bump."
+      "description": "Bump when a field is renamed or removed. Additive fields do not require a bump — at the top level and inside `training`/`eval`/`outputs`, which stay open for exactly that reason. `input` and each `files` entry are closed instead: they are the preprocessing and integrity contract a consumer implements field by field, so an unrecognised key there is a typo it must not silently ignore."
     },
     "version": {
       "type": "string",
@@ -28,7 +28,7 @@
     },
     "input": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "required": ["width", "height", "layout", "dtype", "letterbox", "normalization"],
       "properties": {
         "width": { "type": "integer", "exclusiveMinimum": 0, "description": "Per-tile input width the ONNX graph consumes (config's resolution)." },
@@ -112,7 +112,7 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "required": ["path", "bytes", "sha256", "dtype"],
         "properties": {
           "path": { "type": "string", "minLength": 1, "description": "Key relative to models/hold-detector/<version>/." },
