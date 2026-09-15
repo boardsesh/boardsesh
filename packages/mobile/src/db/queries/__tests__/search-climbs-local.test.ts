@@ -729,7 +729,7 @@ describe('searchClimbsLocal: spray-wall hold integrity', () => {
   });
 
   const names = async (holdIntegrity?: 'ANY' | 'INTACT' | 'BROKEN') => {
-    const result = await searchClimbsLocal(db, makeInput({ holdIntegrity }), LOCAL_OWNER);
+    const result = await searchClimbsLocal(db, makeInput({ holdIntegrity }));
     return result.climbs.map((climb) => climb.uuid).sort();
   };
 
@@ -754,12 +754,12 @@ describe('searchClimbsLocal: spray-wall hold integrity', () => {
   });
 
   it('counts agree with the list, so the header is not a different search', async () => {
-    expect(await countClimbsLocal(db, makeInput({ holdIntegrity: 'INTACT' }), LOCAL_OWNER)).toBe(2);
-    expect(await countClimbsLocal(db, makeInput({ holdIntegrity: 'BROKEN' }), LOCAL_OWNER)).toBe(1);
+    expect(await countClimbsLocal(db, makeInput({ holdIntegrity: 'INTACT' }))).toBe(2);
+    expect(await countClimbsLocal(db, makeInput({ holdIntegrity: 'BROKEN' }))).toBe(1);
   });
 
   it('surfaces the count on the row, leaving an unknown one null', async () => {
-    const result = await searchClimbsLocal(db, makeInput(), LOCAL_OWNER);
+    const result = await searchClimbsLocal(db, makeInput());
     const byUuid = new Map(result.climbs.map((climb) => [climb.uuid, climb.missingHoldCount]));
     expect(byUuid.get('broken')).toBe(2);
     expect(byUuid.get('intact')).toBe(0);
