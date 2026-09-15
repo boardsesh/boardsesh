@@ -60,9 +60,10 @@ describe('resolveAuthSession while the backend is unreachable (#4862)', () => {
     expect(deduplicatedRefreshMock).not.toHaveBeenCalled();
     expect(session).toMatchObject({ status: 'authenticated', token: 'old-jwt', generation: 1 });
     const degraded = (session as { degraded?: { stage: string; error: unknown } }).degraded;
-    expect(degraded?.stage).toBe('refresh-unavailable');
-    expect(degraded?.error).toBeInstanceOf(BackendUnavailableError);
-    expect((degraded?.error as BackendUnavailableError).reason).toBe('backend_unreachable');
+    if (!degraded) throw new Error('Expected a degraded session');
+    expect(degraded.stage).toBe('refresh-unavailable');
+    expect(degraded.error).toBeInstanceOf(BackendUnavailableError);
+    expect((degraded.error as BackendUnavailableError).reason).toBe('backend_unreachable');
   });
 
   it('carries the offline-mode reason through so the UI can say why', async () => {
@@ -71,7 +72,8 @@ describe('resolveAuthSession while the backend is unreachable (#4862)', () => {
     const session = await resolveAuthSession();
 
     const degraded = (session as { degraded?: { error: unknown } }).degraded;
-    expect((degraded?.error as BackendUnavailableError).reason).toBe('offline_mode');
+    if (!degraded) throw new Error('Expected a degraded session');
+    expect((degraded.error as BackendUnavailableError).reason).toBe('offline_mode');
   });
 
   // A token that is NOT expiring never reaches the connectivity check, so an
