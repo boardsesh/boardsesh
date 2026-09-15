@@ -1,7 +1,7 @@
 import { SUPPORTED_BOARDS, type ClimbStatsEvent, type ConnectionContext } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator, type CancellableAsyncIterator } from '../shared/async-iterators';
-import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
+import { assertSprayBoardIsReadable, sprayStreamGate } from '../climbs/spray-read-access';
 import { requireAuthenticated } from '../shared/helpers';
 import { acquireClimbStatsSubscription, releaseClimbStatsSubscription } from './climb-stats-subscription-counter';
 
@@ -13,6 +13,12 @@ type ClimbStatsSubscriptionPayload = { climbStatsUpdated: ClimbStatsEvent };
 function mapClimbStatsIterator(
   source: CancellableAsyncIterator<ClimbStatsEvent>,
   releaseCapacity: () => void,
+  // Re-asks the spray wall's visibility rule per emitted event; null for every
+  // other board type, so the hot path pays nothing. The subscribe-time check is
+  // a one-off and a socket outlives it — the owner can take the wall private, or
+  // the gym can revoke the membership the answer rested on, and this stream
+  // carries climb uuids, grades and ascent counts on every tick.
+  stillReadable: (() => Promise<boolean>) | null = null,
 ): CancellableAsyncIterator<ClimbStatsSubscriptionPayload> {
   let closed = false;
   let closePromise: Promise<IteratorResult<ClimbStatsSubscriptionPayload>> | null = null;
@@ -40,6 +46,12 @@ function mapClimbStatsIterator(
         if (closed || result.done) {
           closed = true;
           releaseCapacity();
+          return completedResult();
+        }
+        // Withheld, and the iterator COMPLETES rather than throwing: the client sees
+        // an ordinary end of stream, which says nothing about the wall.
+        if (stillReadable && !(await stillReadable())) {
+          await close();
           return completedResult();
         }
         return { value: { climbStatsUpdated: result.value }, done: false };
@@ -98,7 +110,7 @@ export const climbStatsSubscriptions = {
           (push) => pubsub.subscribeClimbStats(channelKey, push),
           `climbStatsUpdated:${channelKey}`,
         );
-        return mapClimbStatsIterator(source, releaseCapacity);
+        return mapClimbStatsIterator(source, releaseCapacity, sprayStreamGate(boardType, layoutId, ctx.userId));
       } catch (error) {
         releaseCapacity();
         throw error;

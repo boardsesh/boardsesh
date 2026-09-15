@@ -800,8 +800,10 @@ export const sessionMutations = {
       logger.error(`[APNs] endLiveActivity failed for session ${sessionId}:`, err);
     }
 
-    // Generate and return summary
-    const summary = await generateSessionSummary(sessionId);
+    // Generate and return the summary AS the climber ending the session, so a send
+    // on their own private wall is in the summary they get back — the hardest send
+    // of a garage session is usually on the garage wall.
+    const summary = await generateSessionSummary(sessionId, ctx.userId ?? null);
 
     // Fire-and-forget: upload the finished session to every participant's
     // connected external integration (Strava) that has auto-sync on. Never
@@ -811,11 +813,17 @@ export const sessionMutations = {
     // skip the dispatch entirely so the catch below can never misattribute
     // that case as a failure.
     if (summary) {
-      autoSyncSessionToIntegrations(sessionId, summary, sessionData.boardPath, normalizedTimezone).catch(
-        (error: unknown) => {
-          logger.error(`[Integrations] auto-sync dispatch failed for session ${sessionId}:`, error);
-        },
-      );
+      // Generated again with NO viewer, because this copy is written into every
+      // participant's Strava activity: the ender's private-wall climb name is not
+      // theirs to receive. Only the response above is viewer-scoped.
+      const exportableSummary = await generateSessionSummary(sessionId, null);
+      if (exportableSummary) {
+        autoSyncSessionToIntegrations(sessionId, exportableSummary, sessionData.boardPath, normalizedTimezone).catch(
+          (error: unknown) => {
+            logger.error(`[Integrations] auto-sync dispatch failed for session ${sessionId}:`, error);
+          },
+        );
+      }
     }
 
     return summary;
