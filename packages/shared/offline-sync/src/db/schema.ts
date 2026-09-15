@@ -164,6 +164,44 @@ CREATE TABLE IF NOT EXISTS board_climb_stats (
 );
 `;
 
+/**
+ * One spray wall: the geometry and photo identity a garage wall needs in order
+ * to draw itself with no signal (issue #5448).
+ *
+ * Deliberately NOT part of `SCHEMA_STATEMENTS`. Like `board_climb_grades`, this
+ * table arrives in a later migration (v8) rather than by editing v1's shipped
+ * statement list. The DDL text still lives here because this file is the one
+ * home for on-device DDL; `migrations.ts` imports it.
+ *
+ * `layout_id` is the primary key because that is what the rest of the mirror
+ * already knows a wall by: `board_climbs.layout_id`, the offline board scope key
+ * `spray:<layoutId>:<layoutId>`, and the single-segment `record_id` that
+ * migration 0228's tombstone trigger writes. A wall is exactly one layout, so it
+ * is a natural key and a tombstone needs no re-encoding.
+ *
+ * `holds` and `homography` are JSON strings (the manifest's rule for arrays and
+ * JSON): respectively the holds ALIVE at `current_version_number`, and that
+ * version's row-major 3x3 photo→canonical matrix. The photo itself is not here —
+ * `photo_key` names a file the photo store keeps on disk, because a
+ * multi-megabyte JPEG has no business in a SQLite row, and the presigned URL it
+ * is fetched with is short-lived and is never persisted at all.
+ */
+export const SPRAY_WALLS = `
+CREATE TABLE IF NOT EXISTS spray_walls (
+  layout_id INTEGER PRIMARY KEY,
+  board_uuid TEXT,
+  name TEXT,
+  reference_width INTEGER,
+  reference_height INTEGER,
+  current_version_number INTEGER,
+  photo_key TEXT,
+  holds TEXT,
+  homography TEXT,
+  updated_at TEXT,
+  sync_seq INTEGER
+);
+`.trim();
+
 // --- Sync bookkeeping ---------------------------------------------------------
 // checkpoints.ts reads/writes sync_meta(key, value); it has no CREATE TABLE of
 // its own, so the table is created here.

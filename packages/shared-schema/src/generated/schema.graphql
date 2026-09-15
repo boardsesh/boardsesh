@@ -7035,6 +7035,25 @@ type Query {
     limit: Int! = 500
   ): SyncResult!
 
+  """
+  Pull the spray wall at a layout, changed since the cursor (reference data).
+
+  Carries the wall's canonical frame, its published version number, the holds
+  alive at that version, that version's homography, and the private-bucket
+  photo key plus a short-lived presigned URL for the bytes. Gated on the
+  by-layout visibility rule — owner, gym member, or a public wall — so an
+  unlisted wall does NOT resolve here: a layout id comes out of a sequence and
+  is not the capability a wall uuid is. Unreadable scopes get an ordinary empty
+  page rather than an error.
+  """
+  syncSprayWalls(
+    boardType: String!
+    layoutId: Int
+    sizeId: Int
+    cursor: SyncCursorInput
+    limit: Int! = 500
+  ): SyncResult!
+
   "Pull hard deletions (user-scoped + reference data) since the cursor."
   syncDeletions(cursor: SyncCursorInput, limit: Int! = 500): SyncDeletionsResult!
 }
