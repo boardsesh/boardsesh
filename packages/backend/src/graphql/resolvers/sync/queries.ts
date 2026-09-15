@@ -714,6 +714,12 @@ export const syncQueries = {
     },
     ctx: ConnectionContext,
   ): Promise<SyncResult> => {
+    // `sizeId` is validated and then deliberately unused: a wall IS its own size
+    // (`spraySizeIdForLayout`), so `layout_id` already identifies it and there is
+    // no size dimension to filter on. Clients still send it because the scope key
+    // carries it for every board type; a wrong value here changes nothing rather
+    // than silently narrowing the page. Said in the SDL too, so a caller can tell
+    // without reading this.
     const {
       limit: lim,
       boardType: validBoardType,
@@ -727,6 +733,16 @@ export const syncQueries = {
       return emptySyncPage(cursor);
     }
 
+    // NO `withSerialPlan` here, unlike syncClimbStats / syncClimbGrades. Their
+    // guard exists because those pages walk a reference table in cursor order and
+    // probe 375k-row board_climbs through a correlated EXISTS — a shape production
+    // plans as a Gather Merge, which has exhausted Postgres's DSM during sync
+    // bursts (Sentry BOARDSESH-AK). This page is a unique-index lookup on
+    // `spray_walls.layout_id` joined to two rows, returning at most one; there is
+    // no plan a parallel worker would be chosen for. If this query ever grows a
+    // scan — every wall for a board type, a join onto climbs — wrap it, because
+    // `runSyncPage` silently defaults to the bare pool and the omission is
+    // invisible.
     const page = await runSyncPage({
       // `ub.name` is the wall's name: a wall's name, angle, visibility and gym
       // all live on the user_boards row, so nothing about a wall is stored twice.

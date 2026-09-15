@@ -981,7 +981,12 @@ export async function purgeLocalDataForSignOut(
       'SELECT EXISTS(SELECT 1 FROM board_climbs LIMIT 1) AS has_rows',
     );
     hadDownloads = (downloadRow?.has_rows ?? 0) === 1;
-    for (const table of [...USER_DATA_TABLES_TO_CLEAR, ...BOARD_DATA_TABLES]) {
+    // De-duplicated: `spray_walls` is in BOTH lists — it is per-board in
+    // TABLE_CONFIGS and the one board table the selective wipe also clears
+    // (#5448) — so a plain concatenation ran its DELETE twice. Harmless today,
+    // and exactly the kind of thing that stops being harmless when someone adds
+    // a count or a trigger to this loop.
+    for (const table of new Set([...USER_DATA_TABLES_TO_CLEAR, ...BOARD_DATA_TABLES])) {
       await txn.runAsync(`DELETE FROM ${table}`);
     }
     await deleteAllSyncMeta(txn);

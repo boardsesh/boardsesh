@@ -136,6 +136,24 @@ describe('storeSprayPhoto', () => {
     expect(downloadedUrls).toHaveLength(1);
   });
 
+  it('refuses a URL that is not https, without touching the disk', async () => {
+    // Defence in depth on a URL this module did not build. `downloadFileAsync`
+    // will happily read a `file://` path, so a bug upstream could otherwise copy
+    // an arbitrary local file into the store and render it as somebody's wall.
+    // Every legitimate payload is a presigned https URL.
+    for (const hostileUrl of [
+      'file:///etc/passwd',
+      'http://private.example/photo',
+      '//private.example/photo',
+      'data:image/jpeg;base64,AAAA',
+    ]) {
+      expect(await storeSprayPhoto(KEY_V1, hostileUrl)).toBeNull();
+    }
+
+    expect(downloadedUrls).toEqual([]);
+    expect(names()).toEqual([]);
+  });
+
   it('resolves a stored photo synchronously, and answers null for one it has not got', async () => {
     expect(tryGetStoredSprayPhotoPathSync(KEY_V1)).toBeNull();
     await storeSprayPhoto(KEY_V1, 'https://private.example/photo?sig=1');

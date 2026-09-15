@@ -10,7 +10,7 @@ import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/t
  * which `spray-photo-store.test.ts` covers against a fake disk.
  */
 
-const { stored, deleted, pruned, storeResult } = vi.hoisted(() => ({
+const { stored, deleted, pruned, storeResult, reportedErrors } = vi.hoisted(() => ({
   stored: [] as { photoKey: string; photoUrl: string }[],
   deleted: [] as string[],
   pruned: [] as string[][],
@@ -18,6 +18,13 @@ const { stored, deleted, pruned, storeResult } = vi.hoisted(() => ({
   // false because there is nowhere to put bytes. A getter rather than a literal
   // so a single test can be the web platform without a second module graph.
   storeResult: { ok: true, available: true },
+  reportedErrors: [] as { error: unknown; tags?: Record<string, string> }[],
+}));
+
+vi.mock('../../lib/error-reporting', () => ({
+  reportHandledError: vi.fn((error: unknown, context?: { tags?: Record<string, string> }) => {
+    reportedErrors.push({ error, tags: context?.tags });
+  }),
 }));
 
 vi.mock('../../lib/spray/spray-photo-store', () => ({
@@ -70,6 +77,7 @@ beforeEach(async () => {
   pruned.length = 0;
   storeResult.ok = true;
   storeResult.available = true;
+  reportedErrors.length = 0;
   await setCheckpoint(db, CHECKPOINT_KEY, { updatedAt: '2026-06-01T00:00:00Z', syncSeq: '12' });
 });
 
@@ -157,11 +165,41 @@ describe('sprayWallPhotoSink', () => {
     expect(pending).toBeNull();
   });
 
-  it('does not prune when nothing was stored', async () => {
+  it('reports, and does not throw, when the retry write itself fails', async () => {
+    // pull-client swallows whatever escapes this sink, so a database error here
+    // would lose the retry with no trace at all: cursor advanced, no marker, the
+    // photograph gone until the server touches the wall.
+    storeResult.ok = false;
+    await insertWallRow();
+    const originalRunAsync = db.runAsync.bind(db);
+    db.runAsync = (async (sql: string, params?: unknown[]) => {
+      if (typeof sql === 'string' && sql.includes('sync_meta')) throw new Error('database is locked');
+      return originalRunAsync(sql, params as never);
+    }) as typeof db.runAsync;
+
+    await expect(pull([wallDocument()])).resolves.toBeUndefined();
+
+    db.runAsync = originalRunAsync;
+    expect(reportedErrors).toHaveLength(1);
+    expect(reportedErrors[0].tags?.op).toBe('spray-photo-retry-write');
+  });
+
+  it('prunes even when nothing was stored, so a failed presign still reclaims', async () => {
+    // A reset whose presign failed has already replaced the wall's `photo_key`,
+    // so the PREVIOUS generation's JPEG is orphaned whether or not the new one
+    // downloaded. Gating the prune on a successful download left it on disk with
+    // no sweeper — `Paths.document` is not swept, which is the point of it.
     storeResult.ok = false;
     await insertWallRow();
 
     await pull([wallDocument()]);
+
+    expect(pruned).toHaveLength(1);
+    expect(pruned[0]).toEqual([PHOTO_KEY]);
+  });
+
+  it('does not walk the directory for a page that carried no wall', async () => {
+    await pull([]);
 
     expect(pruned).toEqual([]);
   });

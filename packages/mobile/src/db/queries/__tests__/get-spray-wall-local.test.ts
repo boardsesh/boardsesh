@@ -158,6 +158,21 @@ describe('getSprayWallLocal — payload', () => {
     expect(wall?.holds[1].outline).toBeNull();
   });
 
+  it('drops a hold whose id did not survive as a number', async () => {
+    // Every non-finite id arrives here as `null`, because that is what
+    // `JSON.stringify` renders NaN and Infinity as and JSON.parse rejects a bare
+    // `NaN` token — so this, not a literal NaN, is the reachable shape. A hold
+    // with no usable id matches no placement and no frames entry, and the
+    // renderer would draw something nothing can select.
+    await insertWall({
+      holds: '[{"id":1,"cx":10,"cy":10,"r":5},{"id":null,"cx":20,"cy":20,"r":5},{"id":"3","cx":30,"cy":30,"r":5}]',
+    });
+
+    const wall = await getSprayWallLocal(db, 4, OWNER);
+
+    expect(wall?.holds.map((hold) => hold.id)).toEqual([1]);
+  });
+
   it('answers null for a row with no board uuid, which nothing can query with', async () => {
     await insertWall({ boardUuid: null });
 

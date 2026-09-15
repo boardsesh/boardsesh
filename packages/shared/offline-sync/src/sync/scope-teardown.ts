@@ -61,6 +61,7 @@ import {
   BOOTSTRAP_RETRY_PREFIX,
 } from './bootstrap-retry';
 import { BOARD_DATA_TABLES } from './table-config';
+import { schemaRefreshKey } from './schema-refresh';
 
 /**
  * The one board type that has a `spray_walls` row. A literal rather than an
@@ -69,7 +70,6 @@ import { BOARD_DATA_TABLES } from './table-config';
  * sync resolver and every scope key uses.
  */
 const SPRAY_BOARD_TYPE = 'spray';
-import { schemaRefreshKey } from './schema-refresh';
 
 /** One scope's measured footprint. `estimatedBytes` is an apportionment — see getScopeUsage. */
 export type ScopeUsage = {
