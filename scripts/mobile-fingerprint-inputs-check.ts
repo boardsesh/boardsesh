@@ -72,6 +72,30 @@ export function validateFingerprintSources(platform: Platform, sources: readonly
     );
   }
 
+  // Config plugins that carry a NATIVE guarantee in their file body rather than
+  // in the config they emit. with-android-minify.js holds the R8 keep rules; if
+  // its contents stopped being hashed, editing a keep rule would leave the
+  // runtimeVersion untouched, the native gate would skip the rebuild, and the fix
+  // would never reach a binary. Verified shape: @expo/fingerprint records local
+  // plugins as `{ type: 'file', filePath, reasons: ['expoConfigPlugins'] }`.
+  const expectedPluginSources = ['plugins/with-android-minify.js', 'plugins/with-android-sentry-proguard-uuid.js'];
+  for (const filePath of expectedPluginSources) {
+    const matches = sources.filter(
+      (source) =>
+        source.type === 'file' &&
+        source.filePath === filePath &&
+        Array.isArray(source.reasons) &&
+        source.reasons.includes('expoConfigPlugins'),
+    );
+    if (matches.length !== 1) {
+      errors.push(
+        `${platform}: expected exactly one expoConfigPlugins source for ${filePath}, found ${matches.length}`,
+      );
+    } else if (typeof matches[0]?.hash !== 'string') {
+      errors.push(`${platform}: ${filePath} has a null hash`);
+    }
+  }
+
   const expectedExtraSources = [
     {
       overrideHashKey: 'boardseshFingerprintConfig',

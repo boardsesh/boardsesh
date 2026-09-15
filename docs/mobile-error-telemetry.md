@@ -106,10 +106,27 @@ nothing.
   the Gradle version Expo prebuild generates doesn't have. The gap that leaves is the
   bundle baked into the APK, i.e. JS stacks from a device that hasn't taken its first
   OTA yet.
-- **Android native symbols**: nothing to upload. The `.so` files come from prebuilt
-  React Native / Expo AARs that ship stripped, and we build no NDK code of our own, so
-  there is no Android equivalent of the iOS dSYM fix. Native Android crashes are still
-  captured, just not symbolicated.
+- **Android native symbols**: three different things, don't conflate them.
+  - **Java/Kotlin frames** are obfuscated as of the R8 change, and deobfuscated from the
+    R8 mapping. `android-apk-rn.yml` mints a UUID before `expo prebuild`,
+    `plugins/with-android-sentry-proguard-uuid.js` bakes it into the manifest as
+    `io.sentry.proguard-uuid`, and a decoupled `continue-on-error` step uploads
+    `mapping.txt` under that same UUID with `sentry-cli upload-proguard --uuid`. The
+    Sentry Android Gradle Plugin, which normally does both halves, is deliberately not
+    applied — Sentry stays off the release critical path (see #4101).
+    **An unfamiliar single-letter Android class name in a stack trace means that upload
+    failed, not that the code is unknown.** The run logs a warning when it does.
+  - **`.so` frames**: still nothing to upload, unchanged. Those libraries come from
+    prebuilt React Native / Expo AARs that ship stripped. Native `.so` crashes are
+    captured but not symbolicated.
+  - **Google Play** deobfuscates on its own: AGP embeds the same mapping in the AAB
+    under `BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map` and Play
+    ingests it on upload. `vp run check:mobile-android-obfuscation --aab ...` asserts
+    that embedded copy is byte-identical to the one Sentry receives, so the two systems
+    can never be symbolicating different builds.
+  - Not covered: `RNSentryModuleImpl.getProguardUuid()` reads the assets
+    `sentry-debug-meta.properties`, which we do not write. It feeds only the profiling
+    payload's `build_id`, and Android profiling is off, so the gap is inert.
 
 ## Verifying
 

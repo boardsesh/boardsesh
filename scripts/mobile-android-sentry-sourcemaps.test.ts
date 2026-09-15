@@ -53,8 +53,54 @@ describe('Android RN release: Sentry source map upload (#4101)', () => {
     expect(workflow).toMatch(/echo "SENTRY_UPLOAD_ENABLED=true" >> "\$GITHUB_ENV"/);
     expect(workflow).toMatch(/echo "SENTRY_UPLOAD_ENABLED=false" >> "\$GITHUB_ENV"/);
     const occurrences = workflow.match(/SENTRY_AUTH_TOKEN:\s*\$\{\{\s*secrets\.SENTRY_AUTH_TOKEN\s*\}\}/g) ?? [];
-    // Once in the gate step, once in the explicit upload step.
-    expect(occurrences.length).toBe(2);
+    // Once in the gate step, once in the source-map upload, once in the R8
+    // mapping upload. Pinned as an exact count so a fourth consumer of the token
+    // has to be a deliberate edit here rather than an unnoticed widening.
+    expect(occurrences.length).toBe(3);
+  });
+
+  // R8 obfuscates Java/Kotlin names, so without this upload every native Android
+  // frame in Sentry reads as `a.b.c`. Play is unaffected (AGP embeds the mapping
+  // in the AAB), which is why this step is allowed to fail the same way the
+  // source-map upload is.
+  describe('R8 mapping upload', () => {
+    it('uploads the mapping under the UUID the binary carries', () => {
+      const workflow = readAndroidWorkflow();
+
+      expect(workflow).toMatch(/sentry-cli upload-proguard/);
+      expect(workflow).toMatch(/--uuid "\$BOARDSESH_SENTRY_PROGUARD_UUID"/);
+      // Without --require-one a moved output path exits 0 having uploaded nothing.
+      expect(workflow).toMatch(/--require-one/);
+    });
+
+    it('mints the UUID before prebuild writes the manifest', () => {
+      const workflow = readAndroidWorkflow();
+
+      const mint = workflow.indexOf('BOARDSESH_SENTRY_PROGUARD_UUID=$(uuidgen)');
+      const prebuild = workflow.indexOf('expo prebuild --platform android');
+      expect(mint).toBeGreaterThan(-1);
+      expect(prebuild).toBeGreaterThan(-1);
+      // Reversed, the binary ships with no proguard-uuid and the uploaded mapping
+      // can never be matched to it — a silent, permanent loss of symbolication.
+      expect(mint).toBeLessThan(prebuild);
+    });
+
+    it('never blocks the release on a Sentry failure', () => {
+      const workflow = readAndroidWorkflow();
+      const step = workflow.slice(workflow.indexOf('- name: Upload Sentry ProGuard mapping'));
+
+      expect(step).toMatch(/continue-on-error:\s*true/);
+      expect(step).toMatch(/if:\s*env\.SENTRY_UPLOAD_ENABLED == 'true'/);
+    });
+
+    it('keeps the Gradle-embedded Sentry upload disabled', () => {
+      const workflow = readAndroidWorkflow();
+
+      // The decoupled steps replace the Gradle task; re-enabling it would put
+      // Sentry back on the release critical path (see #4101).
+      expect(workflow).toMatch(/SENTRY_DISABLE_AUTO_UPLOAD/);
+      expect(workflow).not.toMatch(/SENTRY_DISABLE_AUTO_UPLOAD:\s*'false'/);
+    });
   });
 
   it('propagates the Metro debug ID into the Hermes-composed source map before uploading', () => {
