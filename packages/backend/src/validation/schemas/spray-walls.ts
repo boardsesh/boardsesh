@@ -259,7 +259,26 @@ export const CommitSprayWallVersionInputSchema = z
   .refine((input) => {
     const removed = new Set(input.removed);
     return input.kept.every((decision) => !removed.has(decision.holdId));
-  }, 'A hold cannot be both kept and removed');
+  }, 'A hold cannot be both kept and removed')
+  // One predecessor has at most one successor. Two additions naming the same
+  // `movedFromHoldId` would both get a `moved_from_hold_id` row pointing at it, and
+  // `remixClimb` walks that column the other way — so a climber remixing a problem
+  // that lost the hold would be offered two successors for it with nothing to say
+  // which is the one that replaced it.
+  .refine((input) => {
+    const predecessors = input.added
+      .map((decision) => decision.movedFromHoldId)
+      .filter((holdId): holdId is number => holdId != null);
+    return new Set(predecessors).size === predecessors.length;
+  }, 'Two new holds claim to have moved from the same hold — a hold has one successor')
+  // Two additions at the same centre and radius are the same hold twice. They would
+  // both land, with different catalogue ids and no DB conflict to notice, leaving
+  // the wall carrying an invisible duplicate that every hold read returns and the
+  // editor cannot tell apart. There is no reading under which it is meaningful.
+  .refine((input) => {
+    const positions = input.added.map(({ detection }) => `${detection.cx},${detection.cy},${detection.r}`);
+    return new Set(positions).size === positions.length;
+  }, 'Two new holds sit at the same place — send each hold once');
 
 export type SprayWallDetectionInput = z.infer<typeof SprayWallDetectionInputSchema>;
 export type ProposeSprayWallResetInput = z.infer<typeof ProposeSprayWallResetInputSchema>;

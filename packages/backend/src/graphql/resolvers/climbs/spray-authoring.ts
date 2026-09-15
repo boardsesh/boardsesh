@@ -390,10 +390,20 @@ export async function recordRemixLineage(
     });
   }
 
+  // Under the wall lock, like every other read this file makes to decide a write.
+  // `wall_version_id` says which generation the child was set against, and a
+  // `commitSprayWallVersion` landing between this read and the caller's commit
+  // would leave the lineage row naming a generation that had already been
+  // superseded. `assertSprayHoldsAreAlive` takes the same lock a few lines earlier
+  // in the caller — but only when the climb HAS holds, so relying on that is an
+  // implicit dependency on another function's early return. `pg_advisory_xact_lock`
+  // is re-entrant within a transaction, so taking it again costs nothing.
+  await lockWallForWrite(executor, target.wallId);
+
   const [wall] = await executor
     .select({ currentVersionId: dbSchema.sprayWalls.currentVersionId })
     .from(dbSchema.sprayWalls)
-    .where(eq(dbSchema.sprayWalls.id, target.wallId))
+    .where(and(eq(dbSchema.sprayWalls.id, target.wallId), isNull(dbSchema.sprayWalls.deletedAt)))
     .limit(1);
 
   if (wall?.currentVersionId == null) {

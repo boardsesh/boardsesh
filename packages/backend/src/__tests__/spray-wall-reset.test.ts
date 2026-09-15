@@ -682,6 +682,160 @@ describe('commitSprayWallVersion', () => {
     expect(link.hold_id).toBeGreaterThan(holdIds[2]);
   });
 
+  it('refuses two additions claiming the same predecessor', async () => {
+    // A hold has ONE successor. Two would both get a `moved_from_hold_id` row, and
+    // `remixClimb` walks that column the other way — so the climber would be
+    // offered two successors with nothing to say which replaced the hold.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const versionId = await openDraft(wall);
+
+    await expect(
+      sprayWallMutations.commitSprayWallVersion(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            versionId,
+            kept: [{ holdId: holdIds[0] }, { holdId: holdIds[2] }],
+            removed: [holdIds[1]],
+            added: [
+              { detection: { cx: 320, cy: 415, r: 28 }, movedFromHoldId: holdIds[1] },
+              { detection: { cx: 340, cy: 430, r: 26 }, movedFromHoldId: holdIds[1] },
+            ],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/moved from the same hold/i);
+  });
+
+  it('refuses two additions at the same place', async () => {
+    // Same centre and radius is the same hold twice. Both would land — different
+    // catalogue ids, no DB conflict — leaving the wall carrying a duplicate every
+    // hold read returns and the editor cannot tell apart.
+    const { wall } = await createPublishedWall(OWNER);
+    const versionId = await openDraft(wall);
+
+    await expect(
+      sprayWallMutations.commitSprayWallVersion(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            versionId,
+            kept: [],
+            removed: [],
+            added: [{ detection: { cx: 200, cy: 250, r: 22 } }, { detection: { cx: 200, cy: 250, r: 22 } }],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/same place/i);
+  });
+
+  it('refreshes every kept outline in one statement', async () => {
+    // One round trip for the batch, not one per hold: a capped wall keeps 1,500
+    // holds, and a statement each would hold the wall lock open for 1,500 of them.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const versionId = await openDraft(wall);
+
+    const diamond = [1, 0, 0, 1, -1, 0, 0, -1];
+    const square = [1, 1, -1, 1, -1, -1, 1, -1];
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId,
+          kept: [
+            { holdId: holdIds[0], detection: { cx: 100, cy: 120, r: 24, outline: diamond } },
+            // No detection: keeps whatever it had, which is nothing.
+            { holdId: holdIds[1] },
+            { holdId: holdIds[2], detection: { cx: 520, cy: 560, r: 18, outline: square } },
+          ],
+          removed: [],
+          added: [],
+        },
+      },
+      ctxFor(OWNER),
+    );
+
+    const rows = (await db.execute(sql`
+      SELECT hold_id, outline, cx, cy, r FROM spray_wall_holds
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId})
+      ORDER BY hold_id
+    `)) as unknown as Array<{ hold_id: number; outline: number[] | null; cx: number; cy: number; r: number }>;
+
+    expect(rows.map((row) => row.outline)).toEqual([diamond, null, square]);
+    // …and every kept hold is still exactly where it was published.
+    expect(rows.map((row) => [row.cx, row.cy, row.r])).toEqual([
+      [100, 120, 24],
+      [300, 400, 30],
+      [520, 560, 18],
+    ]);
+  });
+
+  it('refuses to publish into a wall that has been deleted', async () => {
+    // The OUTER gate: `loadEditableWall` resolves a live wall only, so a wall
+    // already deleted when the call arrives never reaches the transaction. The
+    // inner guard — a delete that commits in the window between that read and the
+    // wall lock — is a window rather than a state, so it is pinned at source in
+    // spray-wall-write-locks.test.ts instead of raced here.
+    const { wall } = await createPublishedWall(OWNER);
+    const versionId = await openDraft(wall);
+    await sprayWallMutations.deleteSprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER));
+
+    await expect(
+      sprayWallMutations.commitSprayWallVersion(
+        {},
+        { input: { wallUuid: wall.uuid, versionId, kept: [], removed: [], added: [] } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/not found/i);
+
+    const [row] = (await db.execute(
+      sql`SELECT status FROM spray_wall_versions WHERE id = ${versionId}`,
+    )) as unknown as Array<{ status: string }>;
+    expect(row.status).toBe('draft');
+  });
+
+  it('un-stamps every removal when the draft is discarded instead', async () => {
+    // Discard DELETES a draft, and it has to undo what the draft removed first —
+    // `removed_version_id` is RESTRICT, and a stamp left behind would badge climbs
+    // as broken for a reset that never happened.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const climb = await saveClimbOn(wall, 'Romeo', [holdIds[0], holdIds[1]]);
+
+    const versionId = await openDraft(wall);
+    await sprayWallMutations.removeSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId, holdIds: [holdIds[0], holdIds[1]] } },
+      ctxFor(OWNER),
+    );
+    const [stamped] = (await db.execute(sql`
+      SELECT count(*)::int AS stamped FROM spray_wall_holds WHERE removed_version_id = ${versionId}
+    `)) as unknown as Array<{ stamped: number }>;
+    expect(stamped.stamped).toBe(2);
+
+    await sprayWallMutations.discardSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
+
+    const rows = (await db.execute(sql`
+      SELECT hold_id, removed_version_id FROM spray_wall_holds
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId})
+      ORDER BY hold_id
+    `)) as unknown as Array<{ hold_id: number; removed_version_id: string | null }>;
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.removed_version_id === null)).toBe(true);
+
+    // The version row is gone, and the climb was never broken.
+    const [versions] = (await db.execute(
+      sql`SELECT count(*)::int AS versions FROM spray_wall_versions WHERE id = ${versionId}`,
+    )) as unknown as Array<{ versions: number }>;
+    expect(versions.versions).toBe(0);
+    expect(await missingFor(climb)).toBe(0);
+    expect(await searchNames(wall, 'intact')).toEqual(['Romeo']);
+  });
+
   it('rejects a second commit on a version that has already landed', async () => {
     // The stale-versionId case from the issue's acceptance: a client holding a
     // proposal from before somebody else committed must not be able to replay it.

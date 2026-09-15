@@ -641,11 +641,21 @@ async function publishDraftUnderLock(
 
   // …and re-read the wall, because `current_version_id` is what the supersede
   // below keys on and a concurrent publish moves it.
+  //
+  // …and scoped to a LIVE wall. `loadEditableWall` ran before the transaction
+  // opened, and `deleteSprayWall` takes this same lock — so a delete cannot
+  // interleave inside it, but one that committed in the window between the authz
+  // read and this lock is entirely possible. Without the `deleted_at` scope the
+  // row still comes back and the publish lands on a wall nobody can reach; with
+  // it, the row is absent, and an absent row has to be an error rather than
+  // `wallNow?.currentVersionId == null`, which both guards below would read as
+  // "nothing published yet" and publish straight through.
   const [wallNow] = await tx
     .select({ currentVersionId: dbSchema.sprayWalls.currentVersionId })
     .from(dbSchema.sprayWalls)
-    .where(eq(dbSchema.sprayWalls.id, wall.id))
+    .where(and(eq(dbSchema.sprayWalls.id, wall.id), isNull(dbSchema.sprayWalls.deletedAt)))
     .limit(1);
+  if (!wallNow) throw notFoundError();
 
   // Publishing a version that is not NEWER than the published one would walk
   // `current_version_id` backwards, and every hold read is bounded by the
@@ -810,9 +820,15 @@ function toMatcherCircle(detection: { cx: number; cy: number; r: number; colour?
  *
  * Reads `board_climb_holds` rather than `missing_hold_count`, because the whole
  * point of the number is to be shown BEFORE anything is written: the column still
- * says 0 for every one of these climbs. Drafts are counted too — a setter's
- * unfinished climb losing a hold is exactly as broken as a published one, and the
- * owner deciding whether to commit wants the real number.
+ * says 0 for every one of these climbs.
+ *
+ * **Every climb on the wall counts, drafts and community-hidden ones included.**
+ * That is deliberate, and the reason is consistency with what the commit does:
+ * `recomputeMissingHoldCounts` stamps every climb on the layout without looking at
+ * `is_draft` or `is_hidden`, so a preview that filtered either would promise the
+ * owner a smaller number than the reset delivers. On the merits too — a setter's
+ * unfinished climb losing a hold is exactly as broken as a published one, and a
+ * hidden climb can be unhidden, at which point its badge had better be right.
  */
 async function climbsUsingHolds(layoutId: number, holdIds: number[]): Promise<number> {
   if (holdIds.length === 0) return 0;
@@ -1973,12 +1989,24 @@ export const sprayWallMutations = {
       //    photographs of a wall that did not change still disagree by a few
       //    pixels; the hold did not move, the camera did. An outline is a picture
       //    of the hold rather than a position, so a sharper one is free.
+      //    ONE statement for the whole batch, not one per hold. A reset on a capped
+      //    wall keeps 1,500 holds, and a round trip each would hold the wall lock
+      //    open for 1,500 of them — every other writer on that wall queueing behind
+      //    a loop whose only work is copying silhouettes.
       const refreshed = validated.kept.filter((decision) => decision.detection?.outline != null);
-      for (const decision of refreshed) {
-        await tx
-          .update(dbSchema.sprayWallHolds)
-          .set({ outline: decision.detection!.outline ?? null, updatedAt: new Date() })
-          .where(and(eq(dbSchema.sprayWallHolds.wallId, wall.id), eq(dbSchema.sprayWallHolds.holdId, decision.holdId)));
+      if (refreshed.length > 0) {
+        await tx.execute(sql`
+          UPDATE spray_wall_holds
+          SET outline = refresh.outline, updated_at = now()
+          FROM (VALUES ${sql.join(
+            refreshed.map(
+              (decision) => sql`(${decision.holdId}::integer, ${JSON.stringify(decision.detection!.outline)}::jsonb)`,
+            ),
+            sql`, `,
+          )}) AS refresh(hold_id, outline)
+          WHERE spray_wall_holds.wall_id = ${wall.id}
+            AND spray_wall_holds.hold_id = refresh.hold_id
+        `);
       }
 
       // 4. …and publish, which is the moment every removal above becomes real.
