@@ -75,6 +75,7 @@ const {
   _resetWarmupForTests,
   _runWarmupForTests,
   _getBoardConfigForTests,
+  _getBoardHoldIdsForTests,
   _withLitHoldGeometryForTests,
 } = await import('../use-native-climb-render');
 
@@ -715,6 +716,27 @@ describe('the wall version in the render cache keys', () => {
     expect(asRecord(_getBoardConfigForTests('spray', LAYOUT_ID, LAYOUT_ID, '1', false)?.configBase).holds).toHaveLength(
       2,
     );
+  });
+
+  it('re-reads the board hold ids on a reset instead of matching against holds that came off', () => {
+    getBoardRenderDataMock.mockReturnValue({
+      boardWidth: 1000,
+      boardHeight: 1200,
+      holdsData: [{ id: 1, mirroredHoldId: null, cx: 100, cy: 200, r: 20 }],
+    });
+    registerWall(1);
+    expect([..._getBoardHoldIdsForTests('spray', LAYOUT_ID, LAYOUT_ID, '1', [1])!]).toEqual([1]);
+
+    getBoardRenderDataMock.mockReturnValue({
+      boardWidth: 1000,
+      boardHeight: 1200,
+      holdsData: [{ id: 2, mirroredHoldId: null, cx: 300, cy: 400, r: 20 }],
+    });
+    registerWall(2);
+    // Without the version in the board key this is answered out of the Set the
+    // previous generation wrote, and the overlay's hold-match check then passes
+    // on a hold that is no longer on the wall.
+    expect([..._getBoardHoldIdsForTests('spray', LAYOUT_ID, LAYOUT_ID, '1', [1])!]).toEqual([2]);
   });
 
   it('leaves every catalogue board key byte-identical', () => {

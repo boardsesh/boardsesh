@@ -1207,6 +1207,13 @@ function getBoardHoldIds(
   return holdIds;
 }
 
+/**
+ * Test-only handle onto the hold-id lookup, so the cache key can be pinned
+ * directly. The effect that calls it in production is behind a native renderer
+ * and a mounted surface; the KEY is the part that has to be right.
+ */
+export const _getBoardHoldIdsForTests = getBoardHoldIds;
+
 /** Test-only handle so a suite can force a fresh board-hold lookup. */
 export function _resetBoardHoldIdsCacheForTests(): void {
   boardHoldIdsCache.clear();
