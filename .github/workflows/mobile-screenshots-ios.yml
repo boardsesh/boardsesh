@@ -263,6 +263,24 @@ jobs:
       source_sha: ${{ steps.compute.outputs.source_sha }}
       shipped: ${{ steps.shipped.outputs.shipped }}
     steps:
+      # An automatic run has no human confirming the request, so a missing
+      # screenshot-account secret here is a misconfiguration, not intent — fail
+      # loudly before probe/ios-capture's fallback below would otherwise sign
+      # in as the shared test account. A dispatch keeps the fallback (a human
+      # asking for a capture by hand IS the intent); see the comment on
+      # SCREENSHOT_USER_EMAIL in the probe and ios-capture envs.
+      - name: Refuse an automatic capture with no screenshot credentials
+        if: github.event_name == 'workflow_run'
+        env:
+          SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
+          SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SCREENSHOT_USER_EMAIL" ] || [ -z "$SCREENSHOT_USER_PASSWORD" ]; then
+            echo "::error::SCREENSHOT_USER_EMAIL / SCREENSHOT_USER_PASSWORD are not set; an automatic capture refuses to fall back to the documented test account"
+            exit 1
+          fi
+
       # The conclusion guard above only proves the deploy run finished green — a
       # JS-only push does that with its build job skipped. The proof that a
       # binary shipped is the fingerprint tag, so look for it before spending a
