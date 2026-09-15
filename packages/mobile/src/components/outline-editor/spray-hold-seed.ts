@@ -154,7 +154,14 @@ export function buildEditorSeed(
   }
 
   if (includeCandidates) {
-    let nextLocalId = -1;
+    // Below every local id already in play, not from -1.
+    //
+    // A carried hand-drawn hold keeps the negative id this session minted for it,
+    // and a fresh detector run starting at -1 would land on top of it — one of
+    // the two holds then disappears depending on which write happened last. The
+    // ids are the editor's own bookkeeping, so the only rule they have to obey
+    // is being unique within one seed.
+    let nextLocalId = lowestLocalId(byId, carryOver) - 1;
     for (const candidate of candidates) {
       const id = nextLocalId--;
       byId.set(id, {
@@ -176,6 +183,25 @@ export function buildEditorSeed(
   }
 
   return [...byId.values()];
+}
+
+/**
+ * The lowest local (negative) id anything in this seed is already using, or 0
+ * when nothing is.
+ *
+ * Both sources have to be consulted: the carry-over holds a session's unsaved
+ * additions, and the seeded map can hold local ids too once a previous seed has
+ * put candidates in it.
+ */
+function lowestLocalId(seeded: Map<number, SprayEditorHold>, carryOver: readonly SprayEditorHold[]): number {
+  let lowest = 0;
+  for (const id of seeded.keys()) {
+    if (id < lowest) lowest = id;
+  }
+  for (const hold of carryOver) {
+    if (hold.id < lowest) lowest = hold.id;
+  }
+  return lowest;
 }
 
 /**

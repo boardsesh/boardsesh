@@ -184,6 +184,32 @@ describe('buildEditorSeed', () => {
     expect(seeded.filter((hold) => hold.id === 4)).toHaveLength(1);
   });
 
+  it('mints candidate ids below a carried hand-drawn hold, not on top of it', () => {
+    // A fresh detector run over a version somebody is already editing. Minting
+    // from -1 would put candidate -1 on the hand-drawn hold that already holds
+    // that id, and one of the two would silently disappear.
+    const handDrawn = {
+      id: -1,
+      cx: 500,
+      cy: 500,
+      r: 22,
+      outline: null,
+      source: 'MANUAL' as const,
+      confidence: null,
+      review: 'accepted' as const,
+      dirty: true,
+    };
+    const seeded = buildEditorSeed(wallWith(1, []), candidates, true, [handDrawn]);
+
+    expect(seeded).toHaveLength(3);
+    expect(new Set(seeded.map((hold) => hold.id)).size).toBe(3);
+    expect(seeded.find((hold) => hold.id === -1)).toEqual(handDrawn);
+    // The two proposals are still proposals, and neither took the drawn hold's id.
+    const pending = seeded.filter((hold) => hold.review === 'pending');
+    expect(pending).toHaveLength(2);
+    expect(pending.every((hold) => hold.id < -1)).toBe(true);
+  });
+
   it('drops the candidates once the version has been saved', () => {
     // Otherwise the accepted ones — now stored holds in `wall.holds` — would be
     // drawn twice and written again, and the rejected ones would come back.
