@@ -1376,6 +1376,55 @@ carries the climb's name and its wall's layout id to every follower, so firing o
 for a private wall would announce the existence of somebody's home wall to people
 who cannot open it.
 
+## Setting a climb on a wall (the editor)
+
+The create-climb editor is board-agnostic once `create-board-holds.ts` knows the
+holds and `getBoardCapabilities` allows authoring, and SW-07 made both true for a
+wall — so `isAuthorableBoard`
+(`packages/mobile/app/(tabs)/climbs/create.tsx`) already accepts `spray` through
+the capability, the brush bar already offers all four roles (`STATE_TO_PRIMARY_CODE.spray`),
+and start/finish still cap at two each. What is left is four rules a wall answers
+differently, and they live as pure functions in
+`packages/mobile/src/components/create-climb/spray-climb-rules.ts`:
+
+1. **A setter grade is required to publish, optional on a draft.**
+   `SetterGradeRow.tsx` puts the tick sheets' single-select grade rail in the
+   create form, over the board's own scale (`useGrades`, which falls back to the
+   bundled taxonomy offline — a wall copies the Tension scale, so the ids line up
+   with what `resolveDifficultyId` matches server-side). The pick rides
+   `SaveClimbInput.userGrade` / `UpdateClimbInput.userGrade` as the grade NAME
+   (`"6c/V5"`), the same string `board_difficulty_grades.boulder_name` stores.
+   `publishBlocked` names the missing grade under the Save button, so a disabled
+   button is never mute. `use-last-used-grade.ts` seeds a FRESH climb's picker
+   with what the setter last published on this board — a session on one wall
+   clusters hard — and a draft, a fork and an edit all overwrite that seed with
+   their own grade.
+2. **Feet are open by default, and the toggle follows the paint.** A wall is a
+   field of holds with no set-piece feet, so "any feet" starts on. It is not
+   derived, though: the first FOOT hold turns it off and clearing the last one
+   turns it back on, while a setter who overrides it by hand in between is left
+   alone until the feet change again (`nextAnyFeetForFeetChange`). A campus climb
+   never reopens its feet.
+3. **The angle is the wall's.** `assertSprayAngleMatchesWall` rejects any other
+   outright rather than coercing it, so sending the route param would turn a
+   stale deep link into a publish the setter cannot fix. `authoringAngle` reads it
+   off the registry, which carries `RegisteredSprayWall.angle` from the wall's
+   `user_boards` row. There is no angle control in this editor to hide.
+4. **`sprayWallUuid` rides every write**, from the same registry entry — see rule
+   1 of "Climb writes on a wall" above for why it is sent unconditionally.
+
+Everything else is unchanged and deliberately so: the duplicate gate surfaces
+through the existing `isDuplicateClimbError` + `DuplicateBanner` (the server
+computes `hold_fingerprint` per wall, so an identical hold set on ANOTHER wall is
+not a duplicate), drafts keep their per-wall-version slot from SW-07, there is no
+benchmark toggle, and Remix / Edit in `ClimbActionsSheet` were already gated on
+`climbCreation`.
+
+One screen-level difference: a wall reached cold — a share link, a fork of
+somebody else's wall climb — has no registry entry yet, so `CreateClimbScreen`
+holds a spinner on `useSprayWall`'s load state instead of settling on "can't set
+climbs here" and never looking again.
+
 ## Where spray is excluded
 
 Five exclusions matter, and all five are about a wall being someone's private

@@ -414,6 +414,11 @@ export function CreateDrawer({
 
           <View style={styles.belowFold}>
             <CreateDrawerForm
+              boardName={board.boardName}
+              showSetterGrade={controller.showSetterGrade}
+              setterGradeDifficultyId={controller.setterGradeDifficultyId}
+              onChangeSetterGrade={controller.setSetterGradeDifficultyId}
+              setterGradeRequired={controller.setterGradeMissing}
               description={controller.description}
               onChangeDescription={controller.setDescription}
               noMatch={controller.noMatch}

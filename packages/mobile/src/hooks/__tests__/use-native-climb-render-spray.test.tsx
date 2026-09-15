@@ -58,6 +58,7 @@ const SPRAY_BOARD = {
 function registerWall(version: number) {
   registerSprayWall(LAYOUT_ID, {
     wallUuid: 'wall-uuid',
+    angle: 40,
     version,
     photoWidth: 1200,
     photoHeight: 1600,

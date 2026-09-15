@@ -32,6 +32,7 @@ const HOLDS: SprayPhotoHold[] = [
 function registerWall(version: number, holds: SprayPhotoHold[] = HOLDS) {
   registerSprayWall(LAYOUT_ID, {
     wallUuid: 'wall-uuid',
+    angle: 40,
     version,
     photoWidth: 1200,
     photoHeight: 1600,
@@ -94,6 +95,7 @@ describe('getBoardRenderData — spray branch', () => {
   it('refuses a photo with no usable dimensions', () => {
     registerSprayWall(LAYOUT_ID, {
       wallUuid: 'wall-uuid',
+      angle: 40,
       version: 1,
       photoWidth: 0,
       photoHeight: 0,

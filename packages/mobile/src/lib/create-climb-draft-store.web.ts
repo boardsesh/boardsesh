@@ -24,6 +24,8 @@ export type CreateClimbDraft = {
   campus?: boolean;
   /** "Any feet" toggle. Optional for drafts created before this field. */
   anyFeet?: boolean;
+  /** The setter's own grade as a difficulty id, on a board that publishes with one. See the native fork. */
+  setterGradeDifficultyId?: number | null;
   /** Route mode. See the native fork for why inferring it from frame count isn't enough. */
   routeMode?: boolean;
   /** Authored per-frame pace in ms — the published climb's `frames_pace`. See the native fork. */
