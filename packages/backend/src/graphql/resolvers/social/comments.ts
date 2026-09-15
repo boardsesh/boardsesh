@@ -13,6 +13,8 @@ import {
 } from '../../../validation/schemas';
 import { logger } from '../../../utils/logger';
 import { encodeOffsetCursor, decodeOffsetCursor } from '../../../utils/feed-cursor';
+import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayClimbUuidIsReadable, sprayProposalUuidIsReadable } from '../climbs/spray-read-access';
 import { validateEntityExists } from './entity-validation';
 import { publishSocialEvent } from '../../../events/index';
 import { pubsub } from '../../../pubsub/index';
@@ -87,6 +89,19 @@ export const socialCommentQueries = {
     const { entityType, entityId, parentCommentUuid, sortBy, limit, offset } = validated;
 
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
+
+    // A climb comment thread is keyed on the climb uuid alone, so holding the
+    // uuid was the whole of the claim. On a spray wall it is not: the wall
+    // decides. The empty page, never an error — a different shape would say
+    // which uuids are climbs on a private wall.
+    if (entityType === 'climb' && !(await sprayClimbUuidIsReadable(entityId, authenticatedUserId))) {
+      return { comments: [], totalCount: 0, hasMore: false };
+    }
+    // And a PROPOSAL thread is prose about a climb: a `hide` proposal stores its
+    // reason as a comment on itself. One hop further out, same answer.
+    if (entityType === 'proposal' && !(await sprayProposalUuidIsReadable(entityId, authenticatedUserId))) {
+      return { comments: [], totalCount: 0, hasMore: false };
+    }
 
     // If parentCommentUuid is provided, resolve to internal ID for filtering replies
     let parentCommentFilter: ReturnType<typeof sql>;
@@ -261,6 +276,40 @@ export const socialCommentQueries = {
 
     const distinctClause = boardTypeFilter ? sql`DISTINCT ON (c."id")` : sql``;
 
+    // The feed spans every entity type and joins `board_climbs` only for the
+    // board filter, so a comment on a private wall's climb reached an anonymous
+    // caller carrying the climb uuid in `entityId`. The reference form of the
+    // wall rule, applied to the climb rows only — NULL-safe, so a comment whose
+    // climb row has gone survives.
+    const sprayCommentVisibility = sql`AND (
+      c."entity_type" <> 'climb'
+      OR ${sprayReferenceVisibilityCondition({ boardType: sql`'spray'`, climbUuid: sql`c."entity_id"` }, authenticatedUserId)}
+    )`;
+
+    // `proposal` was the hole the climb arm left open: a `hide` proposal persists
+    // its REASON as a comment on itself (`social/proposals/mutations.ts`), so the
+    // feed carried prose about a private wall's climb, and the proposal uuid with
+    // it, to anonymous callers. The proposal names its climb, so joining out to
+    // `board_climbs` reaches the wall — and then it is the COLUMN form, in the
+    // WHERE, because the join is right here.
+    //
+    // Both joins are LEFT and both are one-to-one (`climb_proposals.uuid` is
+    // unique, `board_climbs` is keyed on board type + uuid), so no comment can be
+    // duplicated by them. `IS DISTINCT FROM` does the rest: a comment that is not
+    // on a proposal, a proposal on one of the eight catalogue boards, and a
+    // proposal whose climb row has gone all leave `bc_vis.board_type` NULL or
+    // non-spray, and all survive.
+    const sprayProposalJoin = sql`
+      LEFT JOIN "climb_proposals" cp_vis
+        ON c."entity_type" = 'proposal' AND cp_vis."uuid" = c."entity_id"
+      LEFT JOIN "board_climbs" bc_vis
+        ON bc_vis."uuid" = cp_vis."climb_uuid" AND bc_vis."board_type" = cp_vis."board_type"
+    `;
+    const sprayProposalCommentVisibility = sql`AND ${sprayClimbVisibilityCondition(
+      { boardType: sql`bc_vis."board_type"`, layoutId: sql`bc_vis."layout_id"` },
+      authenticatedUserId,
+    )}`;
+
     const rawRows = await executeRows<CommentRow>(
       db,
       sql`
@@ -303,8 +352,11 @@ export const socialCommentQueries = {
           : sql``
       }
       ${boardFilterJoin}
+      ${sprayProposalJoin}
       WHERE c."deleted_at" IS NULL
         ${boardFilterWhere}
+        ${sprayCommentVisibility}
+        ${sprayProposalCommentVisibility}
       ORDER BY ${boardTypeFilter ? sql`c."id",` : sql``} c."created_at" DESC
       LIMIT ${limit + 1}
       OFFSET ${offset}

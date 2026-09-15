@@ -23,7 +23,7 @@ import { redisClientManager } from '../../../redis/client';
 import { logger } from '../../../utils/logger';
 import { REDISLESS_FALLBACK_TTL_MS, singleFlight } from '../../../utils/single-flight';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
+import { isSprayBoardType, sprayClimbUuidIsReadable, sprayLayoutIsReadable } from '../climbs/spray-read-access';
 import { applyRateLimit, requireAuthenticated } from '../shared/helpers';
 
 type BetaLinkResult = {
@@ -530,7 +530,20 @@ export const betaLinkQueries = {
   betaLinks: async (
     _: unknown,
     { boardType, climbUuid }: { boardType: string; climbUuid: string },
+    ctx?: ConnectionContext,
   ): Promise<BetaLinkResult[]> => {
+    // Keyed on the climb uuid alone, and unauthenticated — so holding the uuid
+    // was the whole of the claim. On a spray wall the WALL decides, and the
+    // answer for a wall the caller cannot see is the empty list, never an error.
+    // Short-circuited on the board type so the eight catalogue boards pay
+    // nothing, not even the round trip.
+    if (
+      isSprayBoardType(boardType) &&
+      !(await sprayClimbUuidIsReadable(climbUuid, ctx?.isAuthenticated ? (ctx.userId ?? null) : null))
+    ) {
+      return [];
+    }
+
     const rows = await db
       .select()
       .from(dbSchema.boardBetaLinks)

@@ -466,10 +466,63 @@ The fix is one predicate, in two shapes:
 | `sprayClimbVisibilityCondition(cols, userId)` (`packages/db/src/queries/climbs/spray-visibility.ts`) | in the WHERE | queries that span board types: `userClimbs`, the ascents feeds, the setter lists, comment-entity validation |
 | `sprayLayoutIsReadable(boardType, layoutId, userId)` (`packages/backend/src/graphql/resolvers/climbs/spray-read-access.ts`) | before the query | queries already narrowed to one board + layout: `searchClimbs`, `similarClimbs`, `setterStats`, `newClimbFeed` and its subscription, `recentBetaLinks`, `climb(uuid)`, and the three `syncClimbs*` offline pulls |
 
-Both express the **by-layout** rule — owner, gym member, or a public wall — the
-same one `viewerCanSeeSprayWallByLayout` applies, with no unlisted exemption. The
-row-level form is shaped `board_type <> 'spray' OR EXISTS (…)` so it is a no-op on
-every other board and a caller cannot forget the branch.
+A third shape joined them in #5469, for the readers that hold a **reference** to
+a climb and never join `board_climbs` at all:
+
+| Shape | Where | Used by |
+| --- | --- | --- |
+| `sprayReferenceVisibilityCondition({ boardType, climbUuid }, userId)` | in the WHERE, over the referencing table | the smart-playlist ref queries, `browseProposals`, `globalCommentFeed`, `userProfileStats` |
+| `sprayClimbUuidIsReadable(climbUuid, userId)` | before the query | `comments`, `climbProposals` — the uuid-keyed threads |
+
+It is phrased "there is **no INVISIBLE** spray climb behind this reference"
+rather than "there is a visible climb", so a reference whose climb row has gone
+survives; and because it starts from the reference, it works in a query that
+never mentions `board_climbs` — `userProfileStats` shares one condition list
+across three aggregates, one of which selects distinct climb uuids straight off
+`boardsesh_ticks`.
+
+Pick by what the query HAS, not by taste:
+
+- it already knows one board type and one layout → **layout form**, and return an
+  empty page;
+- it joins `board_climbs` → **column form**, in the WHERE;
+- it has a climb uuid and no join → **reference form**.
+
+#### LEFT JOIN: ON, or WHERE
+
+Several readers LEFT JOIN `board_climbs` onto a tick, and where the predicate
+goes changes what the caller sees:
+
+- in the **WHERE**, the whole row disappears. That is right when the row IS the
+  climb — a search result, a playlist page, a logbook entry;
+- in the **JOIN ON**, the row survives with null climb columns and renders as
+  "Unknown Climb". That is right when the row is counted somewhere else and
+  dropping it would short a page that a separate COUNT already sized —
+  `fetchTickHighlightsByUuid` and `fetchHardestSendsBatch` are the two.
+
+Either way the predicate must be `IS DISTINCT FROM 'spray'`, never `<>`: on a
+LEFT JOIN with no match, `NULL <> 'spray'` is NULL, the row is dropped, and
+`sessionDetail` — which returns null when it finds no ticks — loses the whole
+session. And a reader with its own COUNT has to apply the same condition list to
+the COUNT as to the page, or the total stands while the page shrinks.
+
+#### The wall ROW is a fourth rule
+
+`board(boardUuid)` and `boardBySlug(slug)` resolve a `user_boards` row without
+ever going through `sprayWall*`, and they deliberately let any signed-in climber
+open a private board by a direct link. For a photograph of somebody's living
+room that is the wrong rule, so `sprayBoardRowIsReadable(row, viewer, lookupKey)`
+applies the wall's own: `'capability'` for the uuid (an unlisted wall opens, like
+`sprayWall(uuid)`), `'enumerable'` for the slug — which is derived from the
+wall's NAME, so it is a guess, not a capability.
+
+All four express the same **by-layout** rule — owner, gym member, or a public
+wall — the one `viewerCanSeeSprayWallByLayout` applies, with no unlisted
+exemption. The board-ROW shape is the only one with a second mode, and its
+`'capability'` half is where the unlisted exemption lives, because a uuid earns
+it and nothing else does. The row-level condition is shaped
+`board_type <> 'spray' OR EXISTS (…)` so it is a no-op on every other board and a
+caller cannot forget the branch.
 
 Three details that are load-bearing:
 
@@ -482,6 +535,16 @@ Three details that are load-bearing:
   `recentBetaLinks` are gated BEFORE their caches for the same reason;
 - `board_type <> 'spray'` short-circuits before the subquery, so the cost on the
   hot Kilter path is one comparison.
+
+None of this is kept in step by hand.
+`packages/backend/src/__tests__/spray-visibility-sweep.test.ts` generates the
+reader list from the SDL — every `Query` and `Subscription` field whose arguments
+name a climb uuid, a session id, a playlist id, a gym uuid, a user id, a board id
+or a board + layout pair — seeds ONE private wall with a climb, a tick, a
+favourite, a public playlist, a proposal, a beta link and a comment, and runs the
+lot for an anonymous caller, a stranger and the owner. A new resolver is swept the
+day it lands, and its author has to either make it reach the wall or name it in
+that file's `NOT_APPLICABLE` with a reason.
 
 ### The server validates shape, and never re-runs detection
 

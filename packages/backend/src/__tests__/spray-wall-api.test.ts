@@ -68,6 +68,7 @@ const { sprayWallQueries, sprayWallMutations } = await import('../graphql/resolv
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
+const { socialBoardQueries } = await import('../graphql/resolvers/social/boards');
 const { newClimbSubscriptionResolvers } = await import('../graphql/resolvers/social/new-climb-subscriptions');
 const { syncQueries } = await import('../graphql/resolvers/sync/queries');
 const { setterFollowQueries } = await import('../graphql/resolvers/social/setter-follows');
@@ -467,6 +468,41 @@ describe('who can see and who can edit a wall', () => {
     expect(read?.uuid).toBe(wall.uuid);
     // Readable, not editable.
     expect(read?.viewerCanEdit).toBe(false);
+  });
+
+  it('reads a wall through board(boardUuid) by the WALL rule, not the anonymous board mask', async () => {
+    // `board(boardUuid)` and `boardBySlug(slug)` resolve the same `user_boards`
+    // row `sprayWall(uuid)` does, so they have to answer the same way. For a
+    // catalogue board the rule is "any signed-in caller may follow a direct
+    // link, anonymous callers only reach public rows"; for a photograph of
+    // somebody's living room it is the wall's own rule, and the KEY decides:
+    // a uuid is 122 unguessable bits, a slug is derived from the wall's name.
+    const unlisted = await createPublishedWall(OWNER, { isUnlisted: true });
+    const unlistedBoard = (await socialBoardQueries.board({}, { boardUuid: unlisted.wall.uuid }, ctxFor(null))) as {
+      uuid: string;
+    } | null;
+    expect(unlistedBoard?.uuid).toBe(unlisted.wall.uuid);
+
+    const [unlistedRow] = (await db.execute(
+      sql`SELECT slug FROM user_boards WHERE uuid = ${unlisted.wall.uuid}`,
+    )) as unknown as Array<{ slug: string }>;
+    // The slug is a guess, so it stays shut even though the uuid is open.
+    expect(await socialBoardQueries.boardBySlug({}, { slug: unlistedRow.slug }, ctxFor(null))).toBeNull();
+
+    const privateWall = await createPublishedWall(OWNER);
+    const [privateRow] = (await db.execute(
+      sql`SELECT slug FROM user_boards WHERE uuid = ${privateWall.wall.uuid}`,
+    )) as unknown as Array<{ slug: string }>;
+    expect(await socialBoardQueries.board({}, { boardUuid: privateWall.wall.uuid }, ctxFor(null))).toBeNull();
+    expect(await socialBoardQueries.boardBySlug({}, { slug: privateRow.slug }, ctxFor(null))).toBeNull();
+    // A signed-in stranger gets no further than an anonymous one: private means
+    // private, and holding no uuid for it is the whole of the difference.
+    expect(await socialBoardQueries.board({}, { boardUuid: privateWall.wall.uuid }, ctxFor(STRANGER))).toBeNull();
+    // The owner still reads their own wall through it.
+    const ownerRead = (await socialBoardQueries.board({}, { boardUuid: privateWall.wall.uuid }, ctxFor(OWNER))) as {
+      uuid: string;
+    } | null;
+    expect(ownerRead?.uuid).toBe(privateWall.wall.uuid);
   });
 
   it('refuses every wall mutation from a user who does not own the wall', async () => {
