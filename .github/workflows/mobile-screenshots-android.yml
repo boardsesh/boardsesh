@@ -129,19 +129,30 @@ on:
 
 # Automatic runs share ONE group and never cancel each other: a capture in
 # flight always finishes (it may be mid-emulator, or mid-push to main), and
-# GitHub coalesces whatever queues behind it down to the newest. Every dispatch
-# gets its own group keyed on the run id, so a `commit_to_main` run by hand is
-# never cancelled by a native deploy landing mid-capture — or by another dispatch.
+# GitHub coalesces whatever queues behind it down to the newest. A capture-only
+# dispatch (commit_to_main left false) gets its own group keyed on the run id —
+# it never pushes, so it is safe to run alongside anything else and is never
+# cancelled by a native deploy landing mid-capture.
 #
-# Accepted trade-off: a dispatch is never cancelled, so per-run groups only
-# serialize automatic runs against each other — two `commit_to_main` dispatches,
-# or a dispatch and an automatic run, can overlap and both reach `git push
-# origin HEAD:main` for the screenshots commit. Last writer wins; the loser's
-# push is simply rejected and retried against the new main (see the retry loop
-# in "Commit screenshots to main" below), so this can reorder which capture's
-# pixels land, but never corrupts the commit.
+# The race this used to leave open is now closed: a dispatch with
+# `commit_to_main: true` joins the SAME group as automatic runs, because it can
+# reach the same write target automatic runs do — `git push origin HEAD:main`
+# for the screenshots commit — and that push is not transactional across two
+# concurrent runs. Two such writers could still overlap under the old per-run
+# grouping; the loser's push would simply be rejected and retried against the
+# new main (see the retry loop in "Commit screenshots to main" below), which
+# reordered which capture's pixels landed without corrupting the commit — but
+# serializing writers removes the reordering risk entirely rather than just
+# tolerating it.
 concurrency:
-  group: ${{ github.event_name == 'workflow_run' && 'mobile-screenshots-android' || format('mobile-screenshots-android-dispatch-{0}', github.run_id) }}
+  # A capture-only dispatch gets its own per-run group (harmless to run
+  # alongside anything else — it only reads). A dispatch that can WRITE to the
+  # shared target (commit_to_main, which feeds mobile-store-metadata.yml's
+  # Play upload) joins the same serial group as automatic runs instead: two
+  # such writers racing could commit out of order. `inputs.commit_to_main` is
+  # compared explicitly (never read bare) to stay null-tolerant on
+  # `workflow_run`, where `inputs` is null and the comparison reads false.
+  group: ${{ (github.event_name == 'workflow_run' || inputs.commit_to_main == true) && 'mobile-screenshots-android' || format('mobile-screenshots-android-dispatch-{0}', github.run_id) }}
   cancel-in-progress: false
 
 permissions:

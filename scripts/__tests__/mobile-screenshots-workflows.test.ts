@@ -368,6 +368,20 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(publishStep?.run).toContain('--commit "${{ needs.setup.outputs.source_sha }}"');
   });
 
+  it('cannot report FULL_SET_CAPTURED=true on the partial/unchanged path where ios-capture was skipped', () => {
+    // The partial/unchanged path: the probe found nothing changed (or the
+    // whole run was gate=probe and stayed that way), so ios-capture's `if:`
+    // never fires and the job is SKIPPED — needs.ios-capture.result is
+    // 'skipped', never 'success'. FULL_SET_CAPTURED opens on
+    // `needs.ios-capture.result == 'success' &&`, so the `&&` chain
+    // short-circuits to false the moment that leading clause fails, by
+    // construction — it cannot read true unless ios-capture actually ran and
+    // succeeded, regardless of the flow/locales clauses that follow it.
+    const finalize = workflow.jobs['ios-finalize'];
+    const fullSetCaptured = flatten(finalize.env?.FULL_SET_CAPTURED);
+    expect(fullSetCaptured.startsWith("${{ needs.ios-capture.result == 'success' &&")).toBe(true);
+  });
+
   it('uploads to App Store Connect on an upload dispatch or a complete automatic run', () => {
     const finalize = workflow.jobs['ios-finalize'];
     const uploadStep = (finalize.steps ?? []).find((step) => step.name === 'Upload screenshots to App Store Connect');
@@ -520,16 +534,41 @@ describe('screenshot captures follow the native deploys', () => {
     }
   });
 
-  it.each(workflows)('$platform serializes automatic runs and never cancels one', (entry) => {
-    const concurrency = parseWorkflow(entry.path).concurrency;
-    // One shared group for automatic runs (GitHub coalesces the queue), and a
-    // per-run group for dispatches so a hand-run upload is never cancelled.
-    expect(concurrency?.group).toBe(
-      `\${{ github.event_name == 'workflow_run' && 'mobile-screenshots-${entry.platform}' || ` +
-        `format('mobile-screenshots-${entry.platform}-dispatch-{0}', github.run_id) }}`,
-    );
-    expect(concurrency?.['cancel-in-progress']).toBe(false);
-  });
+  it.each(workflows)(
+    '$platform serializes automatic runs and dispatches that write, but not capture-only dispatches',
+    (entry) => {
+      // A dispatch that can write to the shared target (upload / publish the
+      // baseline on iOS, commit_to_main on Android) must join the SAME group
+      // as automatic runs — two such writers racing could publish out of
+      // order. A capture-only dispatch keeps its own per-run group so it
+      // still runs alongside anything else. Mutation check: collapse the
+      // write condition away (every dispatch back to a bare per-run group)
+      // and this test must fail.
+      const concurrency = parseWorkflow(entry.path).concurrency;
+      const writeCondition =
+        entry.platform === 'ios'
+          ? 'inputs.upload == true || inputs.publish_baseline == true'
+          : 'inputs.commit_to_main == true';
+      expect(concurrency?.group).toBe(
+        `\${{ (github.event_name == 'workflow_run' || ${writeCondition}) && 'mobile-screenshots-${entry.platform}' || ` +
+          `format('mobile-screenshots-${entry.platform}-dispatch-{0}', github.run_id) }}`,
+      );
+      // Referenced explicitly (both assertions below hold given the exact
+      // match above, restated for a legible failure if the exact string ever
+      // has to change shape).
+      if (entry.platform === 'ios') {
+        expect(concurrency?.group).toContain('inputs.upload == true');
+        expect(concurrency?.group).toContain('inputs.publish_baseline == true');
+      } else {
+        expect(concurrency?.group).toContain('inputs.commit_to_main == true');
+      }
+      // Capture-only dispatches still get a per-run group.
+      expect(concurrency?.group).toContain(
+        `format('mobile-screenshots-${entry.platform}-dispatch-{0}', github.run_id)`,
+      );
+      expect(concurrency?.['cancel-in-progress']).toBe(false);
+    },
+  );
 
   it.each(workflows)('$platform only reads dispatch inputs in null-tolerant positions', (entry) => {
     expect(nullIntolerantInputReads(readYaml(entry.path))).toEqual([]);
