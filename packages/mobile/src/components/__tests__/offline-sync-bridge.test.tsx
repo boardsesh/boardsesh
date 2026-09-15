@@ -57,6 +57,13 @@ const getPendingCountMock = vi.fn(async (..._args: unknown[]) => 0);
 const assertLocalUserDataOwnerMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => 'ok'));
 const stampLocalUserIdMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 const clearUserDataMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+const clearStoredSprayPhotosMock = vi.hoisted(() => vi.fn(() => {}));
+// A wall photograph is not in SQLite, so the row wipe cannot take it. This
+// recovery exists because the sign-out that should have run did not (#5448), and
+// leaving the other account's garage photo decodable is the leak it is fixing.
+vi.mock('../../lib/spray/spray-photo-store', () => ({
+  clearStoredSprayPhotos: clearStoredSprayPhotosMock,
+}));
 const beginGlobalPurgeMock = vi.hoisted(() => vi.fn());
 vi.mock('@boardsesh/offline-sync', () => ({
   getPendingCount: (...args: unknown[]) => getPendingCountMock(...args),
@@ -219,6 +226,7 @@ beforeEach(() => {
   assertLocalUserDataOwnerMock.mockResolvedValue('ok');
   stampLocalUserIdMock.mockClear();
   clearUserDataMock.mockClear();
+  clearStoredSprayPhotosMock.mockClear();
   beginGlobalPurgeMock.mockClear();
   snapshotBaseUrlConfigured.value = true;
   // Every case below except the readiness-gating describe assumes the ordinary
@@ -259,6 +267,22 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
     expect(beginGlobalPurgeMock.mock.invocationCallOrder[0]).toBeLessThan(
       clearUserDataMock.mock.invocationCallOrder[0],
     );
+  });
+
+  it('deletes the stored wall photographs on that same recovery', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('mismatch');
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+
+    await waitFor(() => expect(clearStoredSprayPhotosMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('leaves the photographs alone when the stamp matches', async () => {
+    // This path is not a wipe, and a wall the signed-in climber downloaded is
+    // theirs to keep.
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(assertLocalUserDataOwnerMock).toHaveBeenCalled());
+
+    expect(clearStoredSprayPhotosMock).not.toHaveBeenCalled();
   });
 
   it('leaves a matching stamp alone', async () => {

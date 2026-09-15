@@ -111,6 +111,14 @@ export async function storeSprayPhoto(photoKey: string, photoUrl: string): Promi
   const existing = tryGetStoredSprayPhotoPathSync(photoKey);
   if (existing) return existing;
 
+  // Defence in depth on a URL we did not build. It arrives over the
+  // authenticated GraphQL channel and is a presigned https URL every time, but
+  // `File.downloadFileAsync` will happily read a `file://` path — so a bug or a
+  // compromise upstream could copy an arbitrary local file into the photo store
+  // and render it as somebody's wall. An https scheme is the whole contract, and
+  // there is no legitimate payload this rejects.
+  if (!photoUrl.startsWith('https://')) return null;
+
   const destination = storeFile(photoKey);
   const partial = partialFile(photoKey);
   try {

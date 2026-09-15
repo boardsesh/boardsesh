@@ -26,10 +26,15 @@ import { db } from '../db/client';
  * Storage is stubbed because there is no R2 in CI.
  */
 
-const { presignedKeys } = vi.hoisted(() => ({ presignedKeys: [] as string[] }));
+const { presignedKeys, storage } = vi.hoisted(() => ({
+  presignedKeys: [] as string[],
+  // A backend with no private bucket is a real deployment state (a dev box, a
+  // fork), and the resolver's degraded answer there is load-bearing.
+  storage: { privateConfigured: true },
+}));
 
 vi.mock('../storage/s3', () => ({
-  isS3Configured: vi.fn(() => true),
+  isS3Configured: vi.fn(() => storage.privateConfigured),
   presignGetObject: vi.fn(async (_bucket: string, key: string) => {
     presignedKeys.push(key);
     return { url: `https://private.example/${key}?X-Amz-Signature=stub`, expiresAt: new Date().toISOString() };
@@ -182,6 +187,7 @@ beforeEach(async () => {
     `);
   }
   presignedKeys.length = 0;
+  storage.privateConfigured = true;
 });
 
 describe('syncSprayWalls — visibility', () => {
@@ -257,6 +263,17 @@ describe('syncSprayWalls — visibility', () => {
     expect((await pull(OWNER, 1, { boardType: 'kilter' })).documents).toEqual([]);
   });
 
+  it('REJECTS an unauthenticated caller rather than answering an empty page', async () => {
+    // Worth pinning because it is the one case that is not an empty page: every
+    // sync pull goes through `requireAuthenticated` first, so "unreadable" and
+    // "not signed in" are deliberately different answers. The empty-page rule is
+    // about not telling an authenticated caller which layout ids are real walls;
+    // an anonymous caller never gets far enough to ask.
+    await insertWall({ layoutId: 1, isPublic: true, publish: true });
+
+    await expect(pull(null, 1)).rejects.toThrow();
+  });
+
   it('excludes a soft-deleted wall from its own owner', async () => {
     await insertWall({ layoutId: 1, publish: true, deleted: true });
 
@@ -291,6 +308,21 @@ describe('syncSprayWalls — payload', () => {
     expect(presignedKeys).toEqual([PHOTO_KEY]);
     // The device drops it: `spray_walls.transientColumns` in table-config.ts is
     // what keeps it out of SQLite, and out of the schema-drift telemetry.
+  });
+
+  it('still syncs the holds when there is no private bucket, with a null URL', async () => {
+    // The degraded path: no presign is possible, and the wall must still arrive.
+    // Holds and geometry are what makes a board renderable at all; the photo is
+    // one layer, and the device re-asks for it when the bucket comes back.
+    storage.privateConfigured = false;
+    await insertWall({ layoutId: 1, publish: true });
+
+    const [document] = documentsOf(await pull(OWNER, 1));
+
+    expect(document.photo_url).toBeNull();
+    expect(document.photo_key).toBe(PHOTO_KEY);
+    expect(document.holds.map((hold) => hold.id)).toEqual([1001, 1002]);
+    expect(presignedKeys).toEqual([]);
   });
 
   it('has no holds while the wall is still a draft', async () => {

@@ -5,6 +5,7 @@ import {
   pruneStoredSprayPhotos,
   storeSprayPhoto,
 } from '../lib/spray/spray-photo-store';
+import { reportHandledError } from '../lib/error-reporting';
 import { clearSprayPhotoPending, recordSprayPhotoFailure } from './spray-photo-retry';
 
 /**
@@ -36,7 +37,6 @@ import { clearSprayPhotoPending, recordSprayPhotoFailure } from './spray-photo-r
 export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, documents, db }) => {
   if (tableName !== 'spray_walls') return;
 
-  let storedAny = false;
   for (const document of documents) {
     const photoKey = document.photo_key;
     const photoUrl = document.photo_url;
@@ -48,7 +48,6 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     if (typeof photoUrl !== 'string' || !photoUrl) continue;
 
     if (await storeSprayPhoto(photoKey, photoUrl)) {
-      storedAny = true;
       if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId);
       continue;
     }
@@ -63,7 +62,20 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     // Not on a platform with no store at all: web would otherwise rewind on
     // every cycle forever to fetch bytes it has nowhere to put.
     if (SPRAY_PHOTO_STORE_AVAILABLE && Number.isFinite(layoutId)) {
-      await recordSprayPhotoFailure(db, layoutId, photoKey);
+      try {
+        await recordSprayPhotoFailure(db, layoutId, photoKey);
+      } catch (error) {
+        // The outer catch in pull-client swallows whatever escapes this sink, so
+        // a database error HERE would lose the retry silently: the cursor stays
+        // advanced, no marker is written, and the photograph is gone until the
+        // server touches the wall. Reported rather than swallowed, because a
+        // retry mechanism that has stopped working is exactly the thing nobody
+        // finds out about otherwise.
+        reportHandledError(error, {
+          tags: { source: 'offline-sync', op: 'spray-photo-retry-write' },
+          extra: { layoutId },
+        });
+      }
     }
   }
 
@@ -72,12 +84,18 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
   // durable directory forever — and `Paths.document` is not swept by anything,
   // which is exactly why the photo lives there.
   //
-  // Only after a store actually landed: the live set is read from the rows this
-  // page just committed, and running it on a page that stored nothing would be a
-  // directory walk per sync cycle for no reclaim. Keys come from the DATABASE,
-  // not from the page — a page names one wall, and deleting everything the other
-  // walls own is the failure this guard exists to avoid.
-  if (!storedAny) return;
+  // Run for any page that carried a wall, not only one that stored bytes. A
+  // reset whose presign failed (no private bucket configured, a signature that
+  // would not mint) still replaced the wall's `photo_key`, so the PREVIOUS
+  // generation's JPEG is already orphaned — gating the prune on a successful
+  // download left it in `Paths.document` with no sweeper. The cost is one
+  // directory walk per page that moved a wall row, which is a reset, not a cycle.
+  //
+  // Keys come from the DATABASE, never from the page: a page names one wall and
+  // the device may hold ten, and deleting the other nine's photographs is the
+  // failure this read exists to avoid. An empty result deletes nothing
+  // (`pruneStoredSprayPhotos` refuses an empty live set).
+  if (documents.length === 0) return;
   const rows = await db.getAllAsync<{ photo_key: string | null }>(
     'SELECT photo_key FROM spray_walls WHERE photo_key IS NOT NULL',
   );

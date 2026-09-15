@@ -57,6 +57,25 @@ describe('spray_walls sync definition', () => {
   });
 });
 
+describe('captureOnDelete', () => {
+  it('only names columns the table actually stores', () => {
+    // The list is stringly typed and read straight into a SELECT, so a rename or
+    // a typo would capture `undefined` for that field — and the only consumer,
+    // the photo delete, would then quietly stop deleting anything. Checked for
+    // every table rather than just `spray_walls`, so a second user is covered on
+    // the day it is added.
+    for (const [tableName, config] of Object.entries(TABLE_CONFIGS)) {
+      for (const column of config.captureOnDelete ?? []) {
+        expect(config.localColumns, `${tableName}.${column}`).toContain(column);
+      }
+    }
+  });
+
+  it('is declared for spray_walls, whose row is the only thing that names its photo', () => {
+    expect([...(TABLE_CONFIGS.spray_walls.captureOnDelete ?? [])]).toEqual(['layout_id', 'photo_key']);
+  });
+});
+
 describe('board_climbs.missing_hold_count', () => {
   const config = TABLE_CONFIGS.board_climbs;
 

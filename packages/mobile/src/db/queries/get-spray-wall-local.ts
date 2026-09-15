@@ -126,7 +126,17 @@ function parseHolds(value: string | null): LocalSprayHold[] {
     if (!entry || typeof entry !== 'object') continue;
     const candidate = entry as Record<string, unknown>;
     const { id, cx, cy, r } = candidate;
+    // `Number.isFinite` on the id as well as the `typeof` check. It is belt
+    // rather than braces: the only source here is `JSON.parse`, and JSON cannot
+    // carry a non-finite number — `JSON.stringify` renders NaN and Infinity as
+    // `null` (which the `typeof` test already drops) and `JSON.parse` rejects a
+    // bare `NaN` token outright. So this cannot fire today. It stays because the
+    // cost is one comparison and the failure it would prevent is a hold drawn at
+    // an id that matches no placement and no frames entry — and because the next
+    // person to feed this function from somewhere other than a JSON column
+    // should not have to rediscover that.
     if (
+      !Number.isFinite(id) ||
       typeof id !== 'number' ||
       typeof cx !== 'number' ||
       typeof cy !== 'number' ||
