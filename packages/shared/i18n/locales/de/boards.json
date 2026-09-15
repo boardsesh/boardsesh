@@ -727,7 +727,8 @@
       "move": "Zieh einen Griff dahin, wo er wirklich ist.",
       "draw": "Wähle einen Griff und zeichne seine Kante nach.",
       "oneSelected": "Griff Nr. {{id}} ist gewählt.",
-      "twoSelected": "Zwei gewählt. Zusammenführen macht einen daraus."
+      "twoSelected": "Zwei gewählt. Zusammenführen macht einen daraus.",
+      "oneSelectedNew": "Dein neuer Griff ist ausgewählt."
     },
     "errors": {
       "nothingToMove": "Wähle erst einen Griff, dann zieh ihn.",

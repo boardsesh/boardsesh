@@ -31,6 +31,7 @@ import type { SprayHoldWritePlan } from '../../../components/outline-editor/spra
 
 const PLAN: SprayHoldWritePlan = {
   upsert: [{ id: 7, cx: 10, cy: 20, r: 5, outline: null, source: 'MANUAL' }],
+  writtenIds: [7],
   removeIds: [8, 9],
   unmappableIds: [],
   outlinesDropped: 0,

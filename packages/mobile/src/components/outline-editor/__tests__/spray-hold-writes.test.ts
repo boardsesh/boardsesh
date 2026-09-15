@@ -136,6 +136,55 @@ describe('buildSprayHoldWritePlan', () => {
     expect(plan.overCap).toBe(true);
   });
 
+  it('names the editor ids it wrote, local negatives included', () => {
+    // The wire inputs cannot answer this: a new hold goes out with no `id` at
+    // all, because the server allocates it. Without the list, a successful save
+    // would clear `dirty` on holds it never carried.
+    const state = run(
+      [storedHold(7)],
+      { type: 'MOVE_HOLD', id: 7, cx: 150, cy: 250 },
+      { type: 'ADD_HOLD', geometry: { cx: 300, cy: 400, r: 25, outline: null } },
+    );
+    const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
+    expect(plan.writtenIds).toEqual([-1, 7]);
+  });
+
+  it('leaves an unmappable hold out of writtenIds, so its dirty flag survives the save', () => {
+    const state = run([], { type: 'ADD_HOLD', geometry: { cx: 100, cy: 100, r: 20, outline: null } });
+    const plan = buildSprayHoldWritePlan(state, [1, 0, 0, 0, 1, 0, 0, 0, 0]);
+    expect(plan.writtenIds).toEqual([]);
+    expect(plan.unmappableIds).toEqual([-1]);
+  });
+
+  it('does not count an omitted NEW hold against the cap', () => {
+    // 1499 stored + one valid addition + one off-wall addition lands exactly ON
+    // the cap, because the off-wall one is never written.
+    const holds = Array.from({ length: 1499 }, (_, index) => storedHold(index + 1));
+    const state = run(
+      holds,
+      { type: 'ADD_HOLD', geometry: { cx: 10, cy: 10, r: 5, outline: null } },
+      { type: 'ADD_HOLD', geometry: { cx: 200_000, cy: 10, r: 5, outline: null } },
+    );
+    const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
+    expect(plan.unmappableIds).toEqual([-2]);
+    expect(plan.overCap).toBe(false);
+  });
+
+  it('still counts an omitted CORRECTION, whose server row is alive either way', () => {
+    // A correction the homography drops does not take the hold off the wall —
+    // the row stays exactly as it was — so it keeps counting against the cap.
+    const holds = Array.from({ length: 1501 }, (_, index) => storedHold(index + 1));
+    const state = run(
+      holds,
+      { type: 'MOVE_HOLD', id: 1, cx: 200_000, cy: 1 },
+      { type: 'MOVE_HOLD', id: 2, cx: 42, cy: 42 },
+    );
+    const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
+    expect(plan.unmappableIds).toEqual([1]);
+    expect(plan.writtenIds).toEqual([2]);
+    expect(plan.overCap).toBe(true);
+  });
+
   it('measures the cap against the WALL, not the batch', () => {
     // A near-full wall is refused by a one-hold batch, because the server
     // re-checks the wall's total after the upsert. A per-batch bound would never

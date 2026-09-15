@@ -727,7 +727,8 @@
       "move": "Drag a hold to where it really is.",
       "draw": "Pick a hold, then draw its edge.",
       "oneSelected": "Hold #{{id}} is picked.",
-      "twoSelected": "Two picked. Merge makes them one."
+      "twoSelected": "Two picked. Merge makes them one.",
+      "oneSelectedNew": "Your new hold is picked."
     },
     "errors": {
       "nothingToMove": "Pick a hold first, then drag it.",

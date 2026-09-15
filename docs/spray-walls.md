@@ -549,18 +549,32 @@ Three things the editor does are decided by this document rather than by taste:
 - **It edits THE draft.** One draft per wall, so there is no version to choose:
   the `versionId` handed in is the open one, and publishing or discarding are the
   two ways out (see "One open draft per wall").
+- **Review controls only ever reach candidates.** Keep and Drop act on the
+  selected holds whose review state is `pending`, never on the selection as a
+  whole — a review control that reached a persisted hold would take it off the
+  wall.
+- **Provenance survives a round trip.** The render payload carries each stored
+  hold's `source` and `confidence`, the registry carries them into photo space,
+  and the seed reads them back; without that, an accepted detector hold is
+  re-submitted as MANUAL the first time it is nudged, overwriting what the wall
+  records about where its holds came from.
 - **A candidate is drawn and never written.** Detector output arrives as
   `source: AUTO` holds with a confidence, and Save skips every one nobody has
   ruled on. A confidence slider hides the ones below its cut-off and "Keep all"
   takes the rest; a rejected candidate is simply deleted, because it never became
   a hold. Accepting is what marks it for the upsert — so a candidate cannot
   become a hold on somebody's wall as a side effect of saving something else.
-- **A save clears its own dirty flags immediately** (`MARK_SAVED`), rather than
-  waiting for the refetch. Until they are clear a second press of Save re-sends
+- **A save clears the dirty flags of the holds it actually wrote**
+  (`MARK_SAVED` takes the ids), rather than Until they are clear a second press of Save re-sends
   holds the server has already applied — and a correction re-sent names an id the
   resolver has just superseded, which fails the whole batch.
 - **The removal half reports separately** (`MARK_REMOVED`), the moment
-  `removeSprayWallHolds` comes back and before the upsert runs. The two calls are
+  `removeSprayWallHolds` comes back and before the upsert runs. It also strips those
+  ids from every snapshot in the undo stack: the removal has LANDED, and undoing
+  past a merge whose upsert then failed would otherwise restore the victim as a
+  clean live hold, so the next save would name an id the server has already
+  stamped off. History is rewritten rather than cleared — losing an hour of
+  corrections because one hold came off would be its own bug. The two calls are
   the two halves of one Save and the second can fail on its own — a rate limit, a
   dropped connection — and without that hop the editor would still be holding ids
   the server had already stamped off, so every retry for the rest of the session
