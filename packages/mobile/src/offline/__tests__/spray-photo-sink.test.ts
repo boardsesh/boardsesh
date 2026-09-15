@@ -14,11 +14,16 @@ const { stored, deleted, pruned, storeResult } = vi.hoisted(() => ({
   stored: [] as { photoKey: string; photoUrl: string }[],
   deleted: [] as string[],
   pruned: [] as string[][],
-  storeResult: { ok: true },
+  // `available` models the platform, not a failure: the browser twin exports
+  // false because there is nowhere to put bytes. A getter rather than a literal
+  // so a single test can be the web platform without a second module graph.
+  storeResult: { ok: true, available: true },
 }));
 
 vi.mock('../../lib/spray/spray-photo-store', () => ({
-  SPRAY_PHOTO_STORE_AVAILABLE: true,
+  get SPRAY_PHOTO_STORE_AVAILABLE() {
+    return storeResult.available;
+  },
   storeSprayPhoto: vi.fn(async (photoKey: string, photoUrl: string) => {
     stored.push({ photoKey, photoUrl });
     return storeResult.ok ? `/documents/spray-wall-photos/${photoKey}` : null;
@@ -64,6 +69,7 @@ beforeEach(async () => {
   deleted.length = 0;
   pruned.length = 0;
   storeResult.ok = true;
+  storeResult.available = true;
   await setCheckpoint(db, CHECKPOINT_KEY, { updatedAt: '2026-06-01T00:00:00Z', syncSeq: '12' });
 });
 
@@ -131,6 +137,24 @@ describe('sprayWallPhotoSink', () => {
 
     expect(pruned).toHaveLength(1);
     expect(pruned[0].sort()).toEqual([PHOTO_KEY, 'spray-walls/wall-9/photo-1.jpg'].sort());
+  });
+
+  it('records nothing and rewinds nothing on a platform with no store', async () => {
+    // Web. A "failed" store there is not a failure to retry — it is the platform
+    // saying the question does not apply, and there is no second chance to buy.
+    // Without the guard, every cycle would rewind the cursor and re-pull the row
+    // forever to fetch bytes it has nowhere to put.
+    storeResult.ok = false;
+    storeResult.available = false;
+    await insertWallRow();
+
+    await pull([wallDocument()]);
+
+    expect(await getCheckpoint(db, CHECKPOINT_KEY)).not.toBeNull();
+    const pending = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key LIKE ?', [
+      'spray-photo-pending:%',
+    ]);
+    expect(pending).toBeNull();
   });
 
   it('does not prune when nothing was stored', async () => {
