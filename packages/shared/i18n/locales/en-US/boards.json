@@ -14,6 +14,7 @@
       "noAccess": "You don't have permission to edit this board",
       "back": "Go back",
       "configLockedHint": "You don't have permission to change this board's layout, size, or hold sets.",
+      "configLockedHintSpray": "A wall's layout is its photo. Shoot the wall again to change its holds.",
       "duplicate": {
         "title": "You already have this setup",
         "body": "This change makes the board match \"{{name}}\" — same layout, size and hold sets.",

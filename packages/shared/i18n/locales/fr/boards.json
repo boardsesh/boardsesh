@@ -14,6 +14,7 @@
       "noAccess": "Vous n'avez pas la permission de modifier cette board",
       "back": "Retour",
       "configLockedHint": "Vous n'avez pas la permission de modifier le layout, la taille ou les sets de cette board.",
+      "configLockedHintSpray": "La configuration d'un mur, c'est sa photo. Photographie-le à nouveau pour changer les prises.",
       "duplicate": {
         "title": "Vous avez déjà cette configuration",
         "body": "Avec ce changement, la board devient identique à « {{name}} » : même layout, même taille et mêmes sets de prises.",

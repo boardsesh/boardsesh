@@ -14,6 +14,7 @@
       "noAccess": "No tienes permiso para editar este plafón",
       "back": "Volver",
       "configLockedHint": "No tienes permiso para cambiar el layout, el tamaño ni los sets de este plafón.",
+      "configLockedHintSpray": "La configuración de un plafón es su foto. Vuelve a fotografiarlo para cambiar las presas.",
       "duplicate": {
         "title": "Ya tienes esta configuración",
         "body": "Con este cambio el plafón queda igual que «{{name}}»: mismo layout, tamaño y sets de presas.",
