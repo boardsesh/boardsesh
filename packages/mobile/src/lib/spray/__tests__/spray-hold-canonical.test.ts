@@ -50,6 +50,21 @@ describe('mapPhotoHoldToCanonical', () => {
     ).toBeNull();
   });
 
+  it('answers null for a hold past the column bounds, rather than failing the whole batch', () => {
+    // Zod refuses the WHOLE upsert on one out-of-range hold, so a coordinate the
+    // schema would reject has to be dropped client-side.
+    expect(mapPhotoHoldToCanonical(IDENTITY_HOMOGRAPHY, { cx: 100_001, cy: 0, r: 10 })).toBeNull();
+    expect(mapPhotoHoldToCanonical(IDENTITY_HOMOGRAPHY, { cx: 0, cy: -100_001, r: 10 })).toBeNull();
+    expect(mapPhotoHoldToCanonical(IDENTITY_HOMOGRAPHY, { cx: 0, cy: 0, r: 10_001 })).toBeNull();
+    // And takes the values exactly on the bound.
+    expect(mapPhotoHoldToCanonical(IDENTITY_HOMOGRAPHY, { cx: 100_000, cy: -100_000, r: 10_000 })).toEqual({
+      cx: 100_000,
+      cy: -100_000,
+      r: 10_000,
+      outline: null,
+    });
+  });
+
   it('leaves the outline null for a hold that never had one', () => {
     expect(mapPhotoHoldToCanonical(SKEWED, { cx: 500, cy: 400, r: 20 })?.outline).toBeNull();
   });

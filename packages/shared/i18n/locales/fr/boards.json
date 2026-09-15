@@ -738,11 +738,12 @@
       "strokeNotClosed": "Cette boucle rate la prise. Dessine tout le tour.",
       "strokeTooBig": "Cette boucle est bien plus grande qu'une prise. Zoome et suis le contour de la prise elle-même.",
       "strokeTooDetailed": "Ce tracé a trop de détails pour être enregistré. Suis le contour d'un seul geste.",
-      "strokeTooShort": "Ce tracé est trop court. Dessine une boucle complète autour de la prise."
+      "strokeTooShort": "Ce tracé est trop court. Dessine une boucle complète autour de la prise.",
+      "allHoldsOffWall": "Ces prises tombent en dehors du mur. Remets-les sur la photo puis enregistre à nouveau.",
+      "someHoldsOffWall": "{{value}} prises sont tombées en dehors du mur et n'ont pas été enregistrées."
     },
     "toast": {
-      "saved": "{{value}} prises enregistrées",
-      "someHoldsSkipped": "{{value}} prises sont tombées hors du mur et ont été ignorées"
+      "saved": "{{value}} prises enregistrées"
     },
     "empty": {
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."

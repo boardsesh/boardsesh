@@ -19,10 +19,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { REMOVE_SPRAY_WALL_HOLDS, UPSERT_SPRAY_WALL_HOLDS } from '@boardsesh/graphql/operations/spray-walls';
 import { getHttpClient } from '../graphql/client';
 import type { SprayHoldWritePlan } from '../../components/outline-editor/spray-hold-writes';
-import { sprayWallRenderDataQueryKey } from './use-spray-wall';
+import { sprayWallDraftQueryKey } from './use-spray-wall-draft';
 
 export type SaveSprayHoldsVariables = {
   wallUuid: string;
+  /** `SprayWallVersion.number` of the draft, so the save can refetch what it wrote. */
+  versionNumber: number;
   /** The DRAFT version's id. Published versions are immutable. */
   versionId: string;
   plan: SprayHoldWritePlan;
@@ -69,8 +71,13 @@ export function useSaveSprayHolds() {
 
       return { written, removed };
     },
-    onSuccess: (_result, { wallUuid }) => {
-      void queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });
+    onSuccess: (_result, { wallUuid, versionNumber }) => {
+      // The DRAFT's payload, not the published wall's: the editor reads the
+      // version it is writing to (`useSprayWallDraft`), and that is the query
+      // that now holds stale holds. Invalidating it re-fetches, which
+      // re-registers, which is what puts the server's own ids on the holds this
+      // session minted locally.
+      void queryClient.invalidateQueries({ queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber) });
     },
   });
 }

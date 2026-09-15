@@ -503,13 +503,35 @@ be a second contract. The full split is in `docs/board-art-geometry.md`, "The
 editor that writes them"; what belongs here is what it means for a wall.
 
 `SprayHoldEditorScreen` is the entry point, and its props are the contract:
-`wallUuid`, `layoutId`, the DRAFT `versionId`, `viewerCanEdit`, the version's
-`homography`, and an optional `candidates` list. It reads the wall's holds from
-the SW-07 **registry** rather than taking them as a prop, so the board behind the
-editor, the queue thumbnail and the play drawer all draw the same wall from one
-fetch; a save invalidates `sprayWallRenderData`, which walks the new holds back
-through `useSprayWall` into that registry. There is no route yet — SW-09 and
-SW-11 wire the entry points.
+`wallUuid`, `layoutId`, the draft's `versionId` AND its `versionNumber`,
+`viewerCanEdit`, and an optional `candidates` list. There is no route yet — SW-09
+and SW-11 wire the entry points.
+
+Both version fields are needed, and the reason is the one bug this screen could
+not survive. The mutations take the `id`; `sprayWallRenderData(uuid, version)`
+takes the `number`, and asked WITHOUT one it answers the **published**
+generation. An editor seeded that way would show none of the work a previous
+session already saved to the draft, would map holds drawn on the draft's
+photograph through a homography solved for the published one, and could never
+open at all on a wall whose version 1 is still a draft — which is the manual,
+zero-detection first pass.
+
+So `useSprayWallDraft` asks for the version by number and puts THAT payload in
+the registry under the wall's layout id, through the loader's own
+`registerRenderData`. Registering rather than holding it privately is the point:
+`InteractiveFilterBoard` draws the wall through `getBoardRenderData`, which reads
+the registry synchronously and has no way to be handed a payload — so with the
+draft registered, the board under the editor is the draft's photograph. Every
+cache key folds in the version (`sprayCacheToken`) and a draft's number is one
+past the published one, so nothing the draft writes can be served back for the
+published wall; on unmount `refreshSprayWall` pulls the published generation back
+for whatever outlives the screen.
+
+The editor re-seeds itself only for a real reason — a different wall, a new
+version, a new detector run, or a save of its own. Not "the registry
+re-registered the wall", which happens whenever a presigned photo signature
+expires: re-seeding on that would throw away the holds somebody is halfway
+through drawing.
 
 Three things the editor does are decided by this document rather than by taste:
 
@@ -522,6 +544,10 @@ Three things the editor does are decided by this document rather than by taste:
   takes the rest; a rejected candidate is simply deleted, because it never became
   a hold. Accepting is what marks it for the upsert — so a candidate cannot
   become a hold on somebody's wall as a side effect of saving something else.
+- **A save clears its own dirty flags immediately** (`MARK_SAVED`), rather than
+  waiting for the refetch. Until they are clear a second press of Save re-sends
+  holds the server has already applied — and a correction re-sent names an id the
+  resolver has just superseded, which fails the whole batch.
 - **Removals are sent BEFORE upserts.** A merge takes two holds off and puts one
   back; the other order would leave the wall carrying both the merged hold and
   the one it swallowed if the session died between the two calls. Holds missing

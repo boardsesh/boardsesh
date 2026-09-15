@@ -55,6 +55,8 @@ type SprayEditToolbarProps = {
   onAcceptSelected: () => void;
   onRejectSelected: () => void;
   onAcceptAll: () => void;
+  /** The target reviews `source: auto` holds. False hides the slider and the verdict row. */
+  canReviewCandidates: boolean;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -63,6 +65,12 @@ type SprayEditToolbarProps = {
   onThresholdChange: (threshold: number) => void;
   onSave: () => void;
   saving: boolean;
+  /**
+   * The viewer may look but not write. Every control that changes the wall is
+   * disabled — the screen refuses the same actions, so this is the half that
+   * says why rather than the half that enforces it.
+   */
+  readOnly: boolean;
   hasUnsavedWork: boolean;
 };
 
@@ -86,6 +94,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
   onAcceptSelected,
   onRejectSelected,
   onAcceptAll,
+  canReviewCandidates,
   canUndo,
   canRedo,
   onUndo,
@@ -94,10 +103,14 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
   onThresholdChange,
   onSave,
   saving,
+  readOnly,
   hasUnsavedWork,
 }: SprayEditToolbarProps) {
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
+  // One flag in front of every disabled test, so a read-only session cannot reach
+  // a control through a condition somebody forgot to extend.
+  const locked = readOnly || saving;
 
   const toolOptions = useMemo(
     () => [
@@ -166,7 +179,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
             variant="tonal"
             size="small"
             onPress={() => onResize(option.key)}
-            disabled={selectedCount !== 1 || saving}
+            disabled={selectedCount !== 1 || locked}
             style={styles.sizeButton}
           />
         ))}
@@ -178,7 +191,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
           variant="tonal"
           size="small"
           onPress={onMerge}
-          disabled={selectedCount !== 2 || saving}
+          disabled={selectedCount !== 2 || locked}
           style={styles.button}
         />
         <Button
@@ -187,7 +200,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
           size="small"
           role="destructive"
           onPress={onDelete}
-          disabled={selectedCount === 0 || saving}
+          disabled={selectedCount === 0 || locked}
           style={styles.button}
         />
         <Button
@@ -195,7 +208,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
           variant="text"
           size="small"
           onPress={onUndo}
-          disabled={!canUndo || saving}
+          disabled={!canUndo || locked}
           style={styles.button}
         />
         <Button
@@ -203,12 +216,12 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
           variant="text"
           size="small"
           onPress={onRedo}
-          disabled={!canRedo || saving}
+          disabled={!canRedo || locked}
           style={styles.button}
         />
       </View>
 
-      {counts.pending > 0 ? (
+      {canReviewCandidates && counts.pending > 0 ? (
         <>
           <ValueSlider
             value={threshold}
@@ -231,7 +244,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
               variant="tonal"
               size="small"
               onPress={onAcceptSelected}
-              disabled={selectedCount === 0 || saving}
+              disabled={selectedCount === 0 || locked}
               style={styles.button}
             />
             <Button
@@ -240,7 +253,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
               size="small"
               role="destructive"
               onPress={onRejectSelected}
-              disabled={selectedCount === 0 || saving}
+              disabled={selectedCount === 0 || locked}
               style={styles.button}
             />
             <Button
@@ -248,7 +261,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
               variant="tonal"
               size="small"
               onPress={onAcceptAll}
-              disabled={counts.pending === counts.hidden || saving}
+              disabled={counts.pending === counts.hidden || locked}
               style={styles.button}
             />
           </View>
@@ -259,7 +272,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
         title={t('sprayEditor.actions.save')}
         variant="filled"
         onPress={onSave}
-        disabled={!hasUnsavedWork || saving}
+        disabled={!hasUnsavedWork || locked}
         loading={saving}
       />
     </View>

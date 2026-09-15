@@ -166,6 +166,35 @@ describe('sprayEditorReducer', () => {
     expect(visibleHolds(state)).toHaveLength(1);
   });
 
+  it('MARK_SAVED clears the dirty flags and the removal list without waiting for a refetch', () => {
+    const state = run(
+      loaded([storedHold(1), storedHold(2)]),
+      { type: 'MOVE_HOLD', id: 1, cx: 9, cy: 9 },
+      { type: 'DELETE', ids: [2] },
+    );
+    expect(hasUnsavedWork(state)).toBe(true);
+
+    const saved = sprayEditorReducer(state, { type: 'MARK_SAVED' });
+    expect(hasUnsavedWork(saved)).toBe(false);
+    expect(saved.removedIds).toEqual([]);
+    // The hold is still where the climber moved it — only the "needs writing"
+    // flag is gone.
+    expect(saved.holds[1]).toMatchObject({ cx: 9, cy: 9, dirty: false });
+    // A second press of Save must therefore send nothing at all.
+    expect(sprayEditorReducer(saved, { type: 'MARK_SAVED' })).toBe(saved);
+  });
+
+  it('the threshold drops a selection it has just hidden', () => {
+    const state = run(
+      loaded([candidate(-1, 0.2), storedHold(1)]),
+      { type: 'SET_THRESHOLD', threshold: 0 },
+      { type: 'SELECT', ids: [-1, 1] },
+      { type: 'SET_THRESHOLD', threshold: 0.9 },
+    );
+    // Otherwise Delete would take a hold off the wall that is not on screen.
+    expect(state.selectedIds).toEqual([1]);
+  });
+
   it('the threshold clamps to 0..1 and starts at the detector default', () => {
     const state = loaded([]);
     expect(state.threshold).toBe(DEFAULT_CONFIDENCE_THRESHOLD);
