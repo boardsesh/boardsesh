@@ -40,7 +40,7 @@ The workflow keeps one deploy running at a time with `cancel-in-progress: false`
 
 - **Secrets/Variables:** the production database is Railway PostgreSQL, not Neon (`docs/neon-migration.md` covers that earlier move). See `docs/production-deploy.md` for the current list of required Production-environment secrets and variables, including the web-specific ones added for the Railway cut-over.
 
-Because the `Production` environment is gated to `main`, a `workflow_dispatch` dry run from a feature branch can't resolve these secrets (the environment-scoped jobs are blocked by the deployment-branch rule). Dry-run from `main`, or temporarily add the branch to the environment's allowed deployment branches.
+Because the `Production` environment is gated to `main` and `release/next` (the mobile release train), a `workflow_dispatch` dry run from any other branch can't resolve these secrets (the environment-scoped jobs are blocked by the deployment-branch rule). Dry-run from `main`, or temporarily add the branch to the environment's allowed deployment branches.
 
 Railway runs from the prebuilt image, not its own build — keep `railway.toml` free of a `[build]` block and point the service Source at `ghcr.io/boardsesh/boardsesh-daemon:production`.
 

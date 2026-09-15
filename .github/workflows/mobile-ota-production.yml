@@ -1,8 +1,12 @@
 name: Mobile OTA Production (Self-Hosted)
 
 # Publishes a production OTA (JS bundle + manifest) to the self-hosted
-# expo-open-ota server on every push to main that touches the mobile app, and on
-# manual dispatch. Safe to auto-run because runtimeVersion uses the `fingerprint`
+# expo-open-ota server on every push to main or release/next that touches the
+# mobile app, and on manual dispatch from either. main serves the store fleet;
+# release/next serves the testers on the train's TestFlight / Play-internal
+# binary, and only once the train's fingerprint has moved away from main's (the
+# train guard below). Changelog push-back, the Sentry release, the health probe
+# and the Discord notification stay main-only. Safe to auto-run because runtimeVersion uses the `fingerprint`
 # policy: the update only reaches a binary whose native fingerprint matches, so a
 # native change yields a new fingerprint and the OTA simply isn't delivered to old
 # installs (they keep their embedded bundle until a store build with the new
@@ -28,7 +32,11 @@ run-name: >-
 
 on:
   push:
-    branches: [main]
+    # Both lines publish: main serves the store fleet, release/next serves the
+    # TestFlight / Play-internal testers running the train's binary. The train's
+    # publish is guarded so it can never take over main's runtimeVersion — see the
+    # "Skip platforms whose runtimeVersion main still owns" step below.
+    branches: [main, release/next]
     # Matches the native build workflows' trigger set (ios-testflight-rn.yml /
     # android-apk-rn.yml) so a native build and its OTA fire on the same changes.
     # packages/shared/** already covers queue / board-config / ble-protocol, which
@@ -224,6 +232,60 @@ jobs:
           EXPO_PUBLIC_USE_RN_FETCH=$EXPO_PUBLIC_USE_RN_FETCH
           EOF
 
+      # ── Train guard (release/next only) ──────────────────────────────────────
+      # release/next publishes its own production OTA so the testers running the
+      # train's TestFlight / Play-internal binary get JS as quickly as main's fleet
+      # does. But xprem serves whichever update has the newest commitTime FOR A
+      # GIVEN runtimeVersion, so while the train's fingerprint still equals main's,
+      # an OTA published here would be handed to the entire store fleet — main's JS
+      # silently replaced by the train's. The train therefore only starts publishing
+      # once a native change has landed on it and moved its fingerprint away from
+      # main's. Until then the train's testers sit on main's runtimeVersion anyway,
+      # so main's publisher already serves them.
+      #
+      # The baseline is a sibling worktree of origin/main with its OWN install (the
+      # same shape mobile-ota-check.yml uses), carrying a byte-identical copy of the
+      # .env written above — the .env is hashed into the fingerprint, so anything
+      # else would make every comparison read "different".
+      - name: Materialize origin/main to compare against the train
+        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          git worktree add "$RUNNER_TEMP/main-baseline" origin/main
+          (cd "$RUNNER_TEMP/main-baseline" && vp install --frozen-lockfile)
+          cp packages/mobile/.env "$RUNNER_TEMP/main-baseline/packages/mobile/.env"
+
+      # Resolves both trees per platform under the same per-platform env the publish
+      # steps use (iOS without GOOGLE_MAPS_API_KEY, Android with it — the key enters
+      # the resolved config and moves the hash). Fails CLOSED: the two `false`s are
+      # written first, so a resolve that errors, flakes to `unknown`, or dies
+      # mid-step leaves both platforms un-publishable rather than letting the train
+      # publish onto main's runtimeVersion.
+      - name: Skip platforms whose runtimeVersion main still owns
+        id: train_guard
+        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          set -uo pipefail
+          {
+            echo 'publish_ios=false'
+            echo 'publish_android=false'
+          } >> "$GITHUB_OUTPUT"
+          set -e
+          verdicts="$(vp run check:mobile-ota-compat -- --base-dir "$RUNNER_TEMP/main-baseline")"
+          printf '%s\n' "$verdicts"
+          for pair in 'iOS:ios' 'Android:android'; do
+            label="${pair%%:*}"
+            key="${pair##*:}"
+            if printf '%s\n' "$verdicts" | grep -q "^\[mobile-ota-compat\] ${label}: native-change-required"; then
+              echo "publish_${key}=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::main still owns the ${label} runtimeVersion, so the ${label} OTA is skipped for this train push — publishing it would hand the train's JS to the whole store fleet. The train starts publishing once a native change moves its fingerprint."
+            fi
+          done
+
       # Only for a republish dispatched by a native build. That build shipped a
       # binary with a known fingerprint and wants an OTA stamped after it, but by
       # the time this run gets a runner `main` may already carry a NEW native
@@ -366,7 +428,7 @@ jobs:
       # single `--platform all` publish with one env could only ever match one side.
       - name: Publish iOS OTA
         id: publish_ios
-        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
         continue-on-error: true
         env:
           # V3 control-plane rejects Expo tokens; eoas publish authenticates with the
@@ -401,7 +463,7 @@ jobs:
 
       - name: Publish Android OTA
         id: publish_android
-        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
+        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
         continue-on-error: true
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}

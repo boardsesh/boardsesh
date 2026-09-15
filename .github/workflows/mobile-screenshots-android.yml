@@ -73,8 +73,8 @@ permissions:
 jobs:
   android:
     # Gate the crown-jewel secret (OTA_PUSH_APP_PRIVATE_KEY — a GitHub App key on
-    # main's PR-bypass allowlist) behind the Production environment, whose main-only
-    # branch policy fences it off from a pushed branch. Only a commit_to_main
+    # main's PR-bypass allowlist) behind the Production environment, whose branch
+    # policy (main and release/next) fences it off from any other pushed branch. Only a commit_to_main
     # dispatch mints/uses the token, so a capture-only dispatch resolves to '' (no
     # environment) and never waits on a future required reviewer — see the
     # conditional-vs-bare note at android-apk-rn.yml (gate job).

@@ -370,8 +370,8 @@ jobs:
     # gap (a missing locale fails it loudly rather than uploading a partial set).
     if: ${{ always() }}
     # Gate the App Store Connect secrets behind the Production environment — its
-    # main-only branch policy fences them off from anyone who can push a branch and
-    # workflow_dispatch it. The APP_STORE_CONNECT_* secrets are only referenced in
+    # branch policy (main and release/next) fences them off from anyone who can push
+    # another branch and workflow_dispatch it. The APP_STORE_CONNECT_* secrets are only referenced in
     # the `UPLOAD_RUN == 'true'` steps, so a capture-only dispatch resolves to ''
     # (no environment) and never waits on a future required reviewer — see the
     # conditional-vs-bare note at android-apk-rn.yml (gate job).
