@@ -14,6 +14,7 @@
       "noAccess": "Du darfst dieses Board nicht bearbeiten",
       "back": "Zurück",
       "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Boards nicht ändern.",
+      "configLockedHintSpray": "Das Layout eines Boards ist sein Foto. Fotografiere es neu, um die Griffe zu ändern.",
       "duplicate": {
         "title": "Dieses Setup hast du schon",
         "body": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",

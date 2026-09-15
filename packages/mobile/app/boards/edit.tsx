@@ -17,6 +17,7 @@ import { track } from '../../src/lib/analytics';
 import { useAuth } from '../../src/providers/auth-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { useBoardBuilder, type BoardBuilderSeed } from '../../src/components/board-discovery/use-board-builder';
+import { lockedConfigReason } from '../../src/components/board-discovery/locked-config-reason';
 import { BoardForm } from '../../src/components/board-discovery/BoardForm';
 import { formatDefaultBoardName } from '../../src/components/board-discovery/board-builder-labels';
 import { Text } from '../../src/components/Text';
@@ -105,15 +106,19 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   // the old ticks are preserved server-side. Anyone without edit access keeps the
   // config chips locked.
   //
-  // A spray wall is locked for everyone, however much edit access they have. Its
-  // config is not a choice anybody made: the layout row was created when the wall
-  // was photographed, its size id IS that layout id, and its one hold set is
+  // A spray wall is locked for everyone too, however much edit access they have.
+  // Its config is not a choice anybody made: the layout row was created when the
+  // wall was photographed, its size id IS that layout id, and its one hold set is
   // synthetic. Every climb ever set on the wall points at that
   // `(board_type, layout_id)` partition, so changing it would orphan the lot. The
   // name, gym and visibility rows stay editable — those are what this screen is
-  // for on a wall — and holds and photos are changed through their own flows
-  // (`sprayDetailRows`), never here.
-  const lockedConfig = !board.canEdit || toBoardName(board.boardType) === 'spray';
+  // for on a wall — and holds and photos are changed through their own flows,
+  // never here.
+  //
+  // The REASON travels with the lock, because the permission sentence is false
+  // twice over when it is the wall's own owner reading it.
+  const configLock = lockedConfigReason(board);
+  const lockedConfig = configLock !== null;
 
   const seed = useMemo<BoardBuilderSeed>(() => {
     const seedBoardName = toBoardName(board.boardType)!;
@@ -308,6 +313,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       onSubmit={() => void handleUpdate()}
       submitLabel={t('mobile.edit.save')}
       lockedConfig={lockedConfig}
+      lockedConfigReason={configLock ?? undefined}
       currentBoardUuid={board.uuid}
     />
   );

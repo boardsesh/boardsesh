@@ -20,6 +20,7 @@ import { useDeviceLocation } from '../../lib/use-device-location';
 import { useForeignSerialBoard } from '../../lib/boards/use-foreign-serial-board';
 import { serialReuseDisclosure } from '../../lib/boards/serial-reuse';
 import type { useBoardBuilder } from './use-board-builder';
+import type { LockedConfigReason } from './locked-config-reason';
 import { BoardConfigChips } from './BoardConfigChips';
 import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builder-labels';
 import { BoardImageNative } from '../BoardImageNative';
@@ -53,6 +54,13 @@ type BoardFormProps = {
    */
   lockedConfig?: boolean;
   /**
+   * WHY they are locked, which decides what the hint says. Defaults to
+   * `permission`, the only reason that existed before spray walls. A wall is
+   * locked for its own owner too, and telling them they lack permission is false
+   * twice over — see `lockedConfigReason`.
+   */
+  lockedConfigReason?: LockedConfigReason;
+  /**
    * A submit failure, rendered inline above the action. The create/edit screens
    * are `presentation: 'modal'` routes and the toast overlay draws behind those,
    * so a toast here would never be seen (#4166) — feedback lives in the form.
@@ -79,6 +87,7 @@ export function BoardForm({
   onSubmit,
   submitLabel,
   lockedConfig = false,
+  lockedConfigReason = 'permission',
   errorMessage = null,
   currentBoardUuid,
 }: BoardFormProps) {
@@ -210,8 +219,13 @@ export function BoardForm({
         {lockedConfig ? (
           <View style={[styles.lockedHint, { backgroundColor: systemColors.secondaryBackground }]}>
             <Icon name="info" size={16} color={systemColors.secondaryLabel} />
+            {/* Literal keys per branch — the i18n linter rejects a computed one,
+                and a computed key hides the string from the catalogue scanners
+                either way. */}
             <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.lockedHintText}>
-              {t('mobile.edit.configLockedHint')}
+              {lockedConfigReason === 'spray'
+                ? t('mobile.edit.configLockedHintSpray')
+                : t('mobile.edit.configLockedHint')}
             </Text>
           </View>
         ) : null}
