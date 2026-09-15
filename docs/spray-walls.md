@@ -172,11 +172,16 @@ assignment can either — and it is what makes a **full** reset cheap: every pai
 fails the gates, and handing the whole 1,500 x 1,500 matrix of nothing to the
 solver took 14.7 s on the dev box against 86 ms pruned.
 
-The colour term is optional. `@boardsesh/hold-detection`'s `describeColour`
-produces the descriptor — mean Lab plus an eight-bin saturation-weighted hue
-histogram — and when either side lacks one the term is dropped and the remaining
-weights are renormalised, so the gates and the ambiguity ratio keep meaning the
-same thing on a wall captured without colour.
+The colour term is optional, and **on a reset today it never runs**. The matcher
+compares colours only when BOTH sides carry a descriptor of the same length, and
+the holds already on the wall carry none: `spray_wall_holds` has nowhere to put
+one. So `proposeSprayWallReset` accepts a `colour` on each detection and decides
+on geometry alone regardless. The machinery is real — `@boardsesh/hold-detection`'s
+`describeColour` produces the descriptor (mean Lab plus an eight-bin
+saturation-weighted hue histogram), and when either side lacks one the term is
+dropped and the remaining weights are renormalised so the gates and the ambiguity
+ratio keep meaning the same thing — it is the stored half that is missing.
+**SW-12b (#5485)** adds it.
 
 The result is four sets: `kept` (with a confidence), `removed`, `added`, and
 `lowConfidence` — a kept hold that had a second detection inside its gates and
@@ -504,14 +509,35 @@ number, and can be remixed onto what is there now.
 
 The flow is three calls, and only the middle one of the three writes anything:
 
-1. `createSprayWallVersion` — the new photo, as a draft. (Anchors are optional on
-   version 1 and required here: this is the point at which two photographs have to
-   agree on where a hold is.)
+1. `createSprayWallVersion` — the new photo, as a draft. **It must carry
+   anchors** (see below).
 2. `proposeSprayWallReset(wallUuid, versionId, detections)` — match the new photo's
    detections against the holds on the wall today and report what changed. Writes
    nothing at all, so a client may call it as often as the owner drags a hold.
 3. `commitSprayWallVersion(wallUuid, versionId, decisions)` — apply the reviewed
    decisions and publish the draft, in ONE transaction under the wall lock.
+
+### The canonical frame is version 1's photo, forever
+
+Version 1 defines the frame and nothing ever re-defines it — every hold ever drawn
+on the wall is already stored in it, so moving it would move all of them. Version 1
+may legitimately have no anchors: with nothing to compare against, the frame IS
+that photo, and the identity homography is true by definition rather than a
+fallback.
+
+**From version 2 on, anchors are mandatory**, and `proposeSprayWallReset` and
+`commitSprayWallVersion` both refuse a draft without them
+(`SPRAY_WALL_ANCHORS_REQUIRED`). Without anchors `resolveVersionGeometry` stores
+the identity matrix again — which now asserts that the second photograph has the
+same crop, framing and dimensions as the first. Nobody made that promise and no
+phone honours it. The detections then arrive as raw photo pixels labelled
+canonical, and the matcher, which is only comparing two coordinate sets, reports
+the entire wall as removed and the entire photo as added. Committing that takes
+every hold off the wall and breaks every climb on it, and the anchors are also the
+only thing that could have told the two photographs apart afterwards.
+
+The check is in both calls, not just the commit: the proposal is what a human
+reads, and a client is free to skip it.
 
 ### What the proposal reports
 
@@ -554,7 +580,13 @@ editor published, and applying it then would remove holds that are already gone.
 2. **Added** detections get a fresh catalogue pair (one `board_holes` row and one
    `board_placements` row sharing an id from `spray_hold_catalog_id_seq`) and a
    `spray_wall_holds` row installed at this version. Where the review confirmed a
-   move, `moved_from_hold_id` points back at the hold it replaced.
+   move, `moved_from_hold_id` points back at the hold it replaced — which has to be
+   in the same commit's `removed` list, because a move IS one removal and one
+   addition in one sitting. A predecessor still on the wall would leave two holds
+   claiming one position, and the day a later reset took that predecessor off,
+   remix would offer this unrelated older hold as its successor with nothing left
+   to notice the mistake; a predecessor an earlier reset already removed is
+   history, whose successor was decided then or never.
 3. **Kept** holds take a fresher **silhouette** from the new photo and nothing
    else. `cx` / `cy` / `r` stay exactly as published, deliberately: every climb on
    the wall renders from those numbers, and a kept hold matched its detection

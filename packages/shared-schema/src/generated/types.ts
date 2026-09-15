@@ -1462,7 +1462,7 @@ export type CommitSprayWallVersionInput = {
   kept: Array<SprayWallKeptDecisionInput>;
   /** Hold ids that came off the wall. */
   removed: Array<Scalars['Int']['input']>;
-  /** The DRAFT version this reset lands as. */
+  /** The DRAFT version this reset lands as. It must carry anchors (see ProposeSprayWallResetInput). */
   versionId: Scalars['ID']['input'];
   wallUuid: Scalars['ID']['input'];
 };
@@ -5222,7 +5222,13 @@ export type ProposalVoteSummary = {
 export type ProposeSprayWallResetInput = {
   /** Every hold found in the new photo, in the wall's canonical frame. */
   detections: Array<SprayWallDetectionInput>;
-  /** The DRAFT version whose photo these detections came from. */
+  /**
+   * The DRAFT version whose photo these detections came from.
+   *
+   * It must carry anchors: the canonical frame is version 1's photo frame forever,
+   * so from version 2 on the four corners are the only thing that says where this
+   * photograph's pixels sit in it.
+   */
   versionId: Scalars['ID']['input'];
   wallUuid: Scalars['ID']['input'];
 };
@@ -5788,10 +5794,13 @@ export type Query = {
    * A remix starting point: a climb on a spray wall with every hold it has since
    * lost stripped out of its frames.
    *
-   * Visibility-gated like every other spray reader, and by UUID rather than layout
-   * id so an unlisted wall's share link works. Null when the climb is not on a
-   * spray wall, or when the viewer may not see the wall — the two are
-   * indistinguishable on purpose.
+   * Gated by exactly the rule `saveClimb` applies to a spray climb write: the
+   * owner, a member of the wall's gym, or anyone on a public wall — plus the
+   * share-link capability, which is `sprayWallUuid`. Send the wall's uuid and an
+   * UNLISTED wall opens up, the same way it does for setting a climb on it; a
+   * PRIVATE wall refuses everyone but its principals, uuid or not. Null when the
+   * climb is not on a spray wall, or when the viewer may not see the wall — the two
+   * are indistinguishable on purpose.
    *
    * The PARENT is shown even when it is no longer climbable (epic decision
    * 2026-09-14): a climb that lost three holds is exactly the one worth remixing.
@@ -6445,6 +6454,7 @@ export type QueryRecentBetaLinksArgs = {
 /** Root query type for all read operations. */
 export type QueryRemixClimbArgs = {
   parentUuid: Scalars['ID']['input'];
+  sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -8202,7 +8212,14 @@ export type SprayWall = {
 /** Put this detection on the wall as a new hold, with a new catalogue id. */
 export type SprayWallAddedDecisionInput = {
   detection: SprayWallDetectionInput;
-  /** The hold this one replaced, when the review confirmed a move. */
+  /**
+   * The hold this one replaced, when the review confirmed a move.
+   *
+   * It has to be in this commit's `removed` list: a move is one removal and one
+   * addition in the same reset. A predecessor that is still on the wall, or one an
+   * earlier reset already took off, is refused — either would leave remix offering
+   * an unrelated hold as a successor, with nothing to notice it afterwards.
+   */
   movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
 };
 
@@ -8219,10 +8236,11 @@ export type SprayWallDetectionInput = {
   /**
    * Optional colour descriptor (a Lab triple, or Lab plus a hue histogram).
    *
-   * Used only to break ties between two geometrically plausible pairings. Both
-   * sides must carry descriptors of the SAME length or the term is dropped —
-   * scoring the axes two different descriptors happen to share would invent
-   * agreement.
+   * **Accepted and currently ignored.** The matcher can only compare colours when
+   * BOTH sides carry a descriptor of the same length, and the holds already on the
+   * wall carry none — `spray_wall_holds` has nowhere to put one. So a reset today
+   * is decided on geometry alone, whatever is sent here. The field stays so a
+   * client need not change when SW-12b (#5485) gives a stored hold a descriptor.
    */
   colour?: InputMaybe<Array<Scalars['Float']['input']>>;
   confidence?: InputMaybe<Scalars['Float']['input']>;

@@ -324,6 +324,78 @@ describe('proposeSprayWallReset', () => {
     ).rejects.toThrow(/already published/i);
   });
 
+  it('refuses a reset draft with no anchors, and so does the commit', async () => {
+    // The canonical frame is version 1's photo, forever. Without anchors the
+    // second photo gets the identity homography again — an assertion that it has
+    // the same crop and dimensions as the first, which no phone honours. The
+    // detections then arrive as raw photo pixels labelled canonical and the
+    // matcher reports the whole wall removed and the whole photo added.
+    const { wall } = await createPublishedWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const version = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId } },
+      ctxFor(OWNER),
+    )) as { id: string };
+
+    await expect(
+      sprayWallQueries.proposeSprayWallReset(
+        {},
+        { input: { wallUuid: wall.uuid, versionId: version.id, detections: [] } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/tap the four corners/i);
+
+    // …and the commit refuses it too, because a client is free to skip the
+    // proposal and this is the call that writes.
+    await expect(
+      sprayWallMutations.commitSprayWallVersion(
+        {},
+        { input: { wallUuid: wall.uuid, versionId: version.id, kept: [], removed: [], added: [] } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/tap the four corners/i);
+
+    const [row] = (await db.execute(
+      sql`SELECT status FROM spray_wall_versions WHERE id = ${version.id}`,
+    )) as unknown as Array<{ status: string }>;
+    expect(row.status).toBe('draft');
+  });
+
+  it('still accepts version 1 without anchors, where the photo IS the frame', async () => {
+    // Version 1 has nothing to compare against, so the identity homography is true
+    // by definition rather than a fallback — and `createPublishedWall` would have
+    // had nowhere to get anchors from either.
+    const wall = (await sprayWallMutations.createSprayWall(
+      {},
+      { input: { name: `Wall ${uuidv4().slice(0, 6)}`, angle: 40 } },
+      ctxFor(OWNER),
+    )) as CreatedWall;
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const version = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId } },
+      ctxFor(OWNER),
+    )) as { id: string; number: number };
+    expect(version.number).toBe(1);
+
+    await expect(
+      sprayWallMutations.commitSprayWallVersion(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            versionId: version.id,
+            kept: [],
+            removed: [],
+            added: [{ detection: { cx: 100, cy: 120, r: 24 } }],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).resolves.toBeTruthy();
+  });
+
   it('refuses a caller who cannot edit the wall', async () => {
     const { wall } = await createPublishedWall(OWNER);
     const versionId = await openDraft(wall);
@@ -343,8 +415,10 @@ describe('proposeSprayWallReset', () => {
     const photoId = registerUploadedPhoto(wall.uuid, { width: 900, height: 1600 });
     const version = (await sprayWallMutations.createSprayWallVersion(
       {},
-      // No anchors: the frame is the photo, so the shapes genuinely disagree.
-      { input: { wallUuid: wall.uuid, photoId } },
+      // Anchored, like every reset must be — the 800x620 canonical frame it
+      // inherits is a different shape from this 900x1600 photo, which is exactly
+      // the disagreement the warning is about.
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
       ctxFor(OWNER),
     )) as { id: string };
 
@@ -497,6 +571,8 @@ describe('commitSprayWallVersion', () => {
     // `moved_from_hold_id` is lineage, and remix walks it to suggest a successor.
     // A pointer at another wall's hold would offer a climber a hold that is not on
     // their wall — and the FK cannot catch it, because the column carries no FK.
+    // It fails on the same rule a stray same-wall predecessor does: it is not in
+    // this reset's removals, and nothing outside them can be a predecessor.
     const { wall } = await createPublishedWall(OWNER);
     const { holdIds: otherWallHoldIds } = await createPublishedWall(OWNER);
     const versionId = await openDraft(wall);
@@ -515,7 +591,7 @@ describe('commitSprayWallVersion', () => {
         },
         ctxFor(OWNER),
       ),
-    ).rejects.toThrow(/has never been on this wall/i);
+    ).rejects.toThrow(/not coming off the wall in this reset/i);
 
     // And the whole commit rolled back — no orphan hold, no publish.
     const [counts] = (await db.execute(sql`
@@ -524,6 +600,86 @@ describe('commitSprayWallVersion', () => {
              (SELECT status FROM spray_wall_versions WHERE id = ${versionId}) AS status
     `)) as unknown as Array<{ holds: number; status: string }>;
     expect([counts.holds, counts.status]).toEqual([3, 'draft']);
+  });
+
+  it('refuses a movedFromHoldId that is still alive on the wall', async () => {
+    // Two holds would then claim one position, and the day a later reset took the
+    // predecessor off, remix would offer this unrelated older hold as its
+    // successor — with nothing left to notice the mistake.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const versionId = await openDraft(wall);
+
+    await expect(
+      sprayWallMutations.commitSprayWallVersion(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            versionId,
+            kept: [],
+            removed: [],
+            added: [{ detection: { cx: 200, cy: 250, r: 22 }, movedFromHoldId: holdIds[0] }],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/not coming off the wall in this reset/i);
+  });
+
+  it('refuses a movedFromHoldId an EARLIER reset already removed', async () => {
+    // That generation is history: its successor was decided then, or it had none.
+    // Back-filling one now rewrites a generation that is already published.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const firstReset = await openDraft(wall);
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: firstReset, kept: [], removed: [holdIds[0]], added: [] } },
+      ctxFor(OWNER),
+    );
+
+    const secondReset = await openDraft(wall);
+    await expect(
+      sprayWallMutations.commitSprayWallVersion(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            versionId: secondReset,
+            kept: [],
+            removed: [],
+            added: [{ detection: { cx: 200, cy: 250, r: 22 }, movedFromHoldId: holdIds[0] }],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/not coming off the wall in this reset/i);
+  });
+
+  it('accepts a movedFromHoldId that is in THIS reset removals, and links the pair', async () => {
+    // The definition of a move: one removal and one addition, in one sitting.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const versionId = await openDraft(wall);
+
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId,
+          kept: [{ holdId: holdIds[0] }, { holdId: holdIds[2] }],
+          removed: [holdIds[1]],
+          added: [{ detection: { cx: 320, cy: 415, r: 28 }, movedFromHoldId: holdIds[1] }],
+        },
+      },
+      ctxFor(OWNER),
+    );
+
+    const [link] = (await db.execute(sql`
+      SELECT hold_id FROM spray_wall_holds
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId})
+        AND moved_from_hold_id = ${holdIds[1]}
+    `)) as unknown as Array<{ hold_id: number }>;
+    expect(link.hold_id).toBeGreaterThan(holdIds[2]);
   });
 
   it('rejects a second commit on a version that has already landed', async () => {
@@ -619,8 +775,9 @@ describe('commitSprayWallVersion', () => {
     // longer reachable through it — but the landed bound is what makes an
     // abandoned draft harmless and a row like this can predate the rule.
     const [abandoned] = (await db.execute(sql`
-      INSERT INTO spray_wall_versions (wall_id, version_number, status, photo_key, photo_width, photo_height, created_at, updated_at)
-      VALUES ((SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}), 2, 'draft', 'abandoned/key.jpg', 1200, 900, now(), now())
+      INSERT INTO spray_wall_versions (wall_id, version_number, status, photo_key, photo_width, photo_height, anchors, created_at, updated_at)
+      VALUES ((SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}), 2, 'draft', 'abandoned/key.jpg', 1200, 900,
+              ${JSON.stringify(ANCHORS)}::jsonb, now(), now())
       RETURNING id
     `)) as unknown as Array<{ id: string }>;
     await db.execute(sql`
@@ -629,8 +786,9 @@ describe('commitSprayWallVersion', () => {
     `);
 
     const [live] = (await db.execute(sql`
-      INSERT INTO spray_wall_versions (wall_id, version_number, status, photo_key, photo_width, photo_height, created_at, updated_at)
-      VALUES ((SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}), 3, 'draft', 'live/key.jpg', 1200, 900, now(), now())
+      INSERT INTO spray_wall_versions (wall_id, version_number, status, photo_key, photo_width, photo_height, anchors, created_at, updated_at)
+      VALUES ((SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}), 3, 'draft', 'live/key.jpg', 1200, 900,
+              ${JSON.stringify(ANCHORS)}::jsonb, now(), now())
       RETURNING id
     `)) as unknown as Array<{ id: string }>;
 
@@ -728,6 +886,44 @@ describe('remixClimb', () => {
 
     await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
     expect(await sprayWallQueries.remixClimb({}, { parentUuid: parent }, ctxFor(STRANGER))).not.toBeNull();
+  });
+
+  it('opens an UNLISTED wall to a climber holding the share link', async () => {
+    // The crew case the epic wants: somebody photographs their home wall and sends
+    // the link. `saveClimb` already accepts that capability, so a crew that can SET
+    // a climb and cannot remix one would be an arbitrary hole.
+    const { wall, holdIds } = await createPublishedWall(OWNER, { isUnlisted: true });
+    const parent = await saveClimbOn(wall, 'Lima', [holdIds[0]]);
+
+    const seed = await sprayWallQueries.remixClimb(
+      {},
+      { parentUuid: parent, sprayWallUuid: wall.uuid },
+      ctxFor(STRANGER),
+    );
+    expect(seed).not.toBeNull();
+  });
+
+  it('refuses a PRIVATE wall even when the uuid is presented', async () => {
+    // Private means private: the owner has handed a link to nobody, so there is no
+    // capability to present.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const parent = await saveClimbOn(wall, 'Mike', [holdIds[0]]);
+
+    expect(
+      await sprayWallQueries.remixClimb({}, { parentUuid: parent, sprayWallUuid: wall.uuid }, ctxFor(STRANGER)),
+    ).toBeNull();
+  });
+
+  it('refuses one unlisted wall uuid presented against another', async () => {
+    // The pairing is the whole check: without it a single leaked uuid would open
+    // every wall in the sequence.
+    const { wall, holdIds } = await createPublishedWall(OWNER, { isUnlisted: true });
+    const { wall: otherWall } = await createPublishedWall(OWNER, { isUnlisted: true });
+    const parent = await saveClimbOn(wall, 'November', [holdIds[0]]);
+
+    expect(
+      await sprayWallQueries.remixClimb({}, { parentUuid: parent, sprayWallUuid: otherWall.uuid }, ctxFor(STRANGER)),
+    ).toBeNull();
   });
 
   it('is null for a stranger on an UNLISTED wall, because a layout id is not a secret', async () => {

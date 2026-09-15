@@ -258,10 +258,11 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
     """
     Optional colour descriptor (a Lab triple, or Lab plus a hue histogram).
 
-    Used only to break ties between two geometrically plausible pairings. Both
-    sides must carry descriptors of the SAME length or the term is dropped —
-    scoring the axes two different descriptors happen to share would invent
-    agreement.
+    **Accepted and currently ignored.** The matcher can only compare colours when
+    BOTH sides carry a descriptor of the same length, and the holds already on the
+    wall carry none — \`spray_wall_holds\` has nowhere to put one. So a reset today
+    is decided on geometry alone, whatever is sent here. The field stays so a
+    client need not change when SW-12b (#5485) gives a stored hold a descriptor.
     """
     colour: [Float!]
     source: SprayHoldSource
@@ -270,7 +271,13 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
 
   input ProposeSprayWallResetInput {
     wallUuid: ID!
-    "The DRAFT version whose photo these detections came from."
+    """
+    The DRAFT version whose photo these detections came from.
+
+    It must carry anchors: the canonical frame is version 1's photo frame forever,
+    so from version 2 on the four corners are the only thing that says where this
+    photograph's pixels sit in it.
+    """
     versionId: ID!
     "Every hold found in the new photo, in the wall's canonical frame."
     detections: [SprayWallDetectionInput!]!
@@ -347,7 +354,14 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
   "Put this detection on the wall as a new hold, with a new catalogue id."
   input SprayWallAddedDecisionInput {
     detection: SprayWallDetectionInput!
-    "The hold this one replaced, when the review confirmed a move."
+    """
+    The hold this one replaced, when the review confirmed a move.
+
+    It has to be in this commit's \`removed\` list: a move is one removal and one
+    addition in the same reset. A predecessor that is still on the wall, or one an
+    earlier reset already took off, is refused — either would leave remix offering
+    an unrelated hold as a successor, with nothing to notice it afterwards.
+    """
     movedFromHoldId: Int
   }
 
@@ -358,7 +372,7 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
   """
   input CommitSprayWallVersionInput {
     wallUuid: ID!
-    "The DRAFT version this reset lands as."
+    "The DRAFT version this reset lands as. It must carry anchors (see ProposeSprayWallResetInput)."
     versionId: ID!
     kept: [SprayWallKeptDecisionInput!]!
     "Hold ids that came off the wall."

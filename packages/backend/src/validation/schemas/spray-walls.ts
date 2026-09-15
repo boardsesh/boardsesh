@@ -185,8 +185,9 @@ export const PublishSprayWallVersionInputSchema = z.object({
  *
  * Shape only, like every other schema here — the server never re-runs detection
  * (epic decision 2026-09-14). What it adds over `SprayWallHoldInputSchema` is
- * `colour`, which exists solely to break ties in the matcher and never reaches a
- * column.
+ * `colour`, which is accepted and never reaches a column — and, until SW-12b
+ * (#5485) gives a STORED hold a descriptor too, never reaches the matcher's
+ * tie-breaker either, because that term needs both sides.
  */
 export const SprayWallDetectionInputSchema = z.object({
   cx: CanonicalPixelSchema,
@@ -197,7 +198,8 @@ export const SprayWallDetectionInputSchema = z.object({
    * A Lab triple, or Lab plus a small hue histogram. Bounded at 16 numbers
    * because a descriptor is a handful of axes and anything longer is a client
    * sending the wrong array; `colourDistance` refuses mismatched lengths anyway,
-   * so a hostile one degrades to "no colour term" rather than to a wrong match.
+   * so a hostile one degrades to "no colour term" rather than to a wrong match —
+   * which is what every value degrades to today, the stored holds having none.
    */
   colour: z.array(z.number().finite()).min(1).max(16).optional().nullable(),
   source: SprayHoldSourceSchema,

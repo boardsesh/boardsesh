@@ -756,15 +756,18 @@ export const queriesTypeDefs = /* GraphQL */ `
     A remix starting point: a climb on a spray wall with every hold it has since
     lost stripped out of its frames.
 
-    Visibility-gated like every other spray reader, and by UUID rather than layout
-    id so an unlisted wall's share link works. Null when the climb is not on a
-    spray wall, or when the viewer may not see the wall — the two are
-    indistinguishable on purpose.
+    Gated by exactly the rule \`saveClimb\` applies to a spray climb write: the
+    owner, a member of the wall's gym, or anyone on a public wall — plus the
+    share-link capability, which is \`sprayWallUuid\`. Send the wall's uuid and an
+    UNLISTED wall opens up, the same way it does for setting a climb on it; a
+    PRIVATE wall refuses everyone but its principals, uuid or not. Null when the
+    climb is not on a spray wall, or when the viewer may not see the wall — the two
+    are indistinguishable on purpose.
 
     The PARENT is shown even when it is no longer climbable (epic decision
     2026-09-14): a climb that lost three holds is exactly the one worth remixing.
     """
-    remixClimb(parentUuid: ID!): SprayRemixSeed
+    remixClimb(parentUuid: ID!, sprayWallUuid: ID): SprayRemixSeed
 
     # ============================================
     # Gym Kiosk Queries

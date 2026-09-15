@@ -129,6 +129,7 @@ export const SPRAY_WALL_CODES = {
   anglePublished: 'SPRAY_WALL_ANGLE_PUBLISHED',
   publishWouldGoBackwards: 'SPRAY_WALL_PUBLISH_BACKWARDS',
   draftAlreadyOpen: 'SPRAY_WALL_DRAFT_ALREADY_OPEN',
+  anchorsRequired: 'SPRAY_WALL_ANCHORS_REQUIRED',
 } as const;
 
 type SprayWallRow = typeof dbSchema.sprayWalls.$inferSelect;
@@ -761,6 +762,37 @@ export function aspectRatiosDiffer(
   return Math.abs(frameRatio - photoRatio) / frameRatio > ASPECT_MISMATCH_TOLERANCE;
 }
 
+/**
+ * Refuse a reset whose photo was never pinned to the wall.
+ *
+ * The canonical frame is version 1's photo frame, forever. Version 1 may have no
+ * anchors — with nothing to compare against, the frame IS that photo and the
+ * identity homography is true by definition, not a fallback. It is never
+ * re-anchored later, because every hold ever drawn is already stored in it.
+ *
+ * That makes anchors mandatory from version 2 on. Without them
+ * `resolveVersionGeometry` stores the identity matrix again, which now asserts
+ * that the new photograph has the same crop, framing and dimensions as the first
+ * one — an assertion nobody made and a phone will not honour. The detections then
+ * arrive as raw photo pixels labelled canonical, and the matcher, which is doing
+ * nothing more than comparing two coordinate sets, reports the whole wall as
+ * removed and the whole photo as added. Committing that would take every hold off
+ * the wall and break every climb on it.
+ *
+ * Checked in BOTH `proposeSprayWallReset` and `commitSprayWallVersion`: the
+ * proposal is the one a human reads, and the commit is the one that writes, and a
+ * client is free to skip the first.
+ */
+function assertResetVersionIsAnchored(version: SprayWallVersionRow): void {
+  if (version.versionNumber <= 1) return;
+  if (isValidAnchorQuad(version.anchors)) return;
+  throw new GraphQLError(
+    'Tap the four corners of the wall in the new photo before resetting — without them ' +
+      'there is no way to tell where a hold has moved to.',
+    { extensions: { code: SPRAY_WALL_CODES.anchorsRequired, versionNumber: version.versionNumber } },
+  );
+}
+
 /** A stored hold as the matcher wants it: canonical circle plus a string key. */
 function toMatcherHold(hold: SprayWallHoldRow): AliveHold {
   return { holdId: String(hold.holdId), cx: hold.cx, cy: hold.cy, r: hold.r };
@@ -906,6 +938,7 @@ export const sprayWallQueries = {
     // reviewed a whole screen of decisions. Same check, same error, one step
     // earlier. No lock: nothing is written, and the commit re-reads under one.
     const draft = await loadDraftVersion(db, wall.id, validated.versionId);
+    assertResetVersionIsAnchored(draft);
 
     // The wall as CLIMBERS see it — alive at `current_version_id` — which is what
     // a reset is a reset OF. Deliberately not the draft's own view: the draft's
@@ -942,7 +975,11 @@ export const sprayWallQueries = {
     };
   },
 
-  remixClimb: async (_: unknown, { parentUuid }: { parentUuid: unknown }, ctx: ConnectionContext) => {
+  remixClimb: async (
+    _: unknown,
+    { parentUuid, sprayWallUuid }: { parentUuid: unknown; sprayWallUuid?: unknown },
+    ctx: ConnectionContext,
+  ) => {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'remixClimb');
 
@@ -963,12 +1000,21 @@ export const sprayWallQueries = {
       .limit(1);
     if (!parent) return null;
 
-    // The visibility gate every spray reader goes through. By LAYOUT, because a
-    // climb names its wall by layout id and a layout id comes out of a sequence —
-    // so an unlisted wall must not resolve from one. `loadWall` also drops a
-    // deleted wall, whose climbs stop being remixable with it.
+    // The SAME gate `saveClimb` applies to a spray climb write, and for the same
+    // reason. A climb names its wall by layout id, which comes out of a sequence
+    // and is therefore no secret, so the default is the by-layout rule: the owner,
+    // a gym member, or a public wall. What the wall's own uuid adds is the
+    // share-link capability — somebody photographs their home wall, sends the link
+    // to their crew, and the crew sets climbs on it. A crew that can SET a climb
+    // and cannot remix one is an arbitrary hole, so the two use one helper.
+    //
+    // A PRIVATE wall still refuses everyone but its principals, uuid or not, and a
+    // uuid has to be THIS wall's: without that pairing one leaked uuid would open
+    // every wall in the sequence. `loadWall` also drops a deleted wall, whose
+    // climbs stop being remixable with it.
+    const presentedWallUuid = sprayWallUuid == null ? null : validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid');
     const loaded = await loadWall('layoutId', parent.layoutId);
-    if (!loaded || !(await viewerCanSeeSprayWallByLayout(loaded.board, ctx.userId))) return null;
+    if (!loaded || !(await viewerCanWriteSprayClimbs(loaded.board, ctx.userId, presentedWallUuid))) return null;
 
     // The wall as it stands, read ONCE and used for both halves below: it splits
     // the parent's own holds into kept and lost, and then filters the successors a
@@ -1795,6 +1841,7 @@ export const sprayWallMutations = {
       // generation and move every climb set on it.
       await lockWallForWrite(tx, wall.id);
       const version = await loadDraftVersion(tx, wall.id, validated.versionId);
+      assertResetVersionIsAnchored(version);
 
       // The decisions are re-validated against the wall as it is NOW, not against
       // whatever `proposeSprayWallReset` saw. A proposal is a screenshot: the owner
@@ -1815,33 +1862,34 @@ export const sprayWallMutations = {
         });
       }
 
-      // `movedFromHoldId` is lineage, and a pointer at another wall's hold would
-      // make remix suggest a successor for a hold that was never there. Checked
-      // against EVERY hold this wall has ever had rather than the alive set,
-      // because a move's whole point is that the predecessor is coming off in this
-      // very commit.
-      const movedFromIds = [
-        ...new Set(
-          validated.added
-            .map((decision) => decision.movedFromHoldId)
-            .filter((holdId): holdId is number => holdId != null),
-        ),
-      ];
-      if (movedFromIds.length > 0) {
-        const known = await tx
-          .select({ holdId: dbSchema.sprayWallHolds.holdId })
-          .from(dbSchema.sprayWallHolds)
-          .where(
-            and(eq(dbSchema.sprayWallHolds.wallId, wall.id), inArray(dbSchema.sprayWallHolds.holdId, movedFromIds)),
-          );
-        const knownIds = new Set(known.map((row) => row.holdId));
-        const unknownPredecessor = movedFromIds.find((holdId) => !knownIds.has(holdId));
-        if (unknownPredecessor != null) {
-          throw new GraphQLError(
-            `Hold ${unknownPredecessor} has never been on this wall, so nothing can have moved from it`,
-            { extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: unknownPredecessor } },
-          );
-        }
+      // `movedFromHoldId` is lineage, and it has to name a hold THIS reset is
+      // taking off the wall.
+      //
+      // A move is one removal and one addition in the same sitting — that is the
+      // whole definition (`docs/spray-walls.md`, "Why a moved hold is removed +
+      // added"). Anything looser corrupts remix permanently, and quietly:
+      //
+      //  - a predecessor that is still ALIVE means two holds now claim the same
+      //    position on the wall, and the moment a later reset takes the
+      //    predecessor off, `remixClimb` offers this unrelated older hold as its
+      //    successor. Nothing ever notices, because by then the two events look
+      //    exactly like a move;
+      //  - a predecessor removed by an EARLIER version is history. Its successor
+      //    was decided in that reset, or it had none; back-filling one now
+      //    rewrites a generation that has already been published.
+      //
+      // The `removed` list has already been checked against the alive set above,
+      // so membership in it is the whole test: it proves the hold is on the wall
+      // today and is coming off in this commit.
+      const removedNow = new Set(validated.removed);
+      const strayPredecessor = validated.added
+        .map((decision) => decision.movedFromHoldId)
+        .find((holdId): holdId is number => holdId != null && !removedNow.has(holdId));
+      if (strayPredecessor != null) {
+        throw new GraphQLError(
+          `Hold ${strayPredecessor} is not coming off the wall in this reset, so nothing can have moved from it`,
+          { extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: strayPredecessor } },
+        );
       }
 
       // What the wall would hold afterwards. An alive hold the decisions never
