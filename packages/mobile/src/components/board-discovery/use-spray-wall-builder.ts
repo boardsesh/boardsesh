@@ -16,25 +16,37 @@
 // matters would otherwise live.
 
 import { useCallback, useRef, useState } from 'react';
+import { SPRAY_ANGLES } from '@boardsesh/board-config';
 import type { CreateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import type { BoardGymSelection } from './BoardMetaFields';
 
 /**
  * The angle a wall opens at.
  *
- * Typed by the owner with a tape measure or a phone level, so there is no
- * catalogue list to pick from — `ANGLES[boardName]` does not exist for spray and
- * would be wrong if it did. 40° is the commonest home-wall build and the app's
- * default angle everywhere else.
+ * 40° is the commonest home-wall build and the app's default angle everywhere
+ * else. Fixed for the wall's life once a version publishes, because stats are
+ * keyed by angle.
  */
 export const DEFAULT_SPRAY_ANGLE = 40;
 
-/** What a wall's angle may be. A wall past vertical-to-roof is not a wall. */
-export const MIN_SPRAY_ANGLE = 0;
-export const MAX_SPRAY_ANGLE = 70;
+/**
+ * The angles a wall may be built at: the shared list, not a range of our own.
+ *
+ * `CreateSprayWallInputSchema` validates against `SPRAY_ANGLES` — 0 to 70 in
+ * five-degree steps — so a client that accepted every integer in between would
+ * let a climber type 37, walk the whole photo and corner flow, and only meet the
+ * refusal at the upload, with the wall already created. Offering the real list is
+ * what makes that unreachable rather than merely unlikely.
+ */
+export const SPRAY_ANGLE_OPTIONS: readonly number[] = SPRAY_ANGLES;
 
 /** Longest a wall's name may be, matching the board name column. */
 const MAX_NAME_LENGTH = 100;
+
+/** True when `value` is one of the angles the server will actually accept. */
+export function isValidSprayAngle(value: number): boolean {
+  return SPRAY_ANGLE_OPTIONS.includes(value);
+}
 
 export type SprayWallBuilderSeed = {
   name?: string;
@@ -45,27 +57,6 @@ export type SprayWallBuilderSeed = {
   locationName?: string;
 };
 
-/** True when `value` is an angle a wall can actually be built at. */
-export function isValidSprayAngle(value: number): boolean {
-  return Number.isFinite(value) && Number.isInteger(value) && value >= MIN_SPRAY_ANGLE && value <= MAX_SPRAY_ANGLE;
-}
-
-/**
- * Parse what the owner typed into the angle field.
- *
- * Returns null for anything that is not a usable angle, which is what disables
- * the step's primary action — rather than silently clamping, which would create
- * a wall at an angle nobody chose and, because the angle is frozen once a
- * version is published, would be permanent.
- */
-export function parseSprayAngle(text: string): number | null {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) return null;
-  if (!/^\d{1,2}$/.test(trimmed)) return null;
-  const parsed = Number(trimmed);
-  return isValidSprayAngle(parsed) ? parsed : null;
-}
-
 /**
  * The name / visibility / location / gym / angle state behind the add-a-wall
  * flow's first step.
@@ -75,7 +66,11 @@ export function parseSprayAngle(text: string): number | null {
  */
 export function useSprayWallBuilder(seed?: SprayWallBuilderSeed | null) {
   const [name, setName] = useState(seed?.name ?? '');
-  const [angleText, setAngleText] = useState(String(seed?.angle ?? DEFAULT_SPRAY_ANGLE));
+  // A number the picker snaps, not free text: `SPRAY_ANGLE_OPTIONS` is the whole
+  // set of legal answers, so there is no invalid state to validate out of.
+  const [angle, setAngle] = useState<number>(
+    seed?.angle != null && isValidSprayAngle(seed.angle) ? seed.angle : DEFAULT_SPRAY_ANGLE,
+  );
   // A wall is somebody's home, so every visibility default is inverted from a
   // catalogue board's: private, not listed, and — once a location is stamped at
   // all — hidden. The same inversion the `createSprayWall` resolver applies
@@ -109,8 +104,7 @@ export function useSprayWallBuilder(seed?: SprayWallBuilderSeed | null) {
     autoFilledLocationRef.current = gym.name;
   }, []);
 
-  const angle = parseSprayAngle(angleText);
-  const canCreate = name.trim().length > 0 && angle != null;
+  const canCreate = name.trim().length > 0 && isValidSprayAngle(angle);
 
   /**
    * The validated `createSprayWallInput`, or null while the step is incomplete.
@@ -122,26 +116,44 @@ export function useSprayWallBuilder(seed?: SprayWallBuilderSeed | null) {
    */
   const buildCreateInput = useCallback((): CreateSprayWallInput | null => {
     const trimmedName = name.trim().slice(0, MAX_NAME_LENGTH);
-    if (trimmedName.length === 0 || angle == null) return null;
+    if (trimmedName.length === 0 || !isValidSprayAngle(angle)) return null;
     return {
       name: trimmedName,
       angle,
-      isPublic,
-      isUnlisted,
+      // ALWAYS private at creation, whatever the climber chose.
+      //
+      // The row exists from here on — the photo handler authorises against it —
+      // but it has no version, no photo and no holds, and `searchBoards` filters
+      // on `is_public` / `is_unlisted` alone. A wall created public is therefore
+      // discoverable as an unusable board for as long as the flow takes, and
+      // forever if the flow is abandoned. The chosen visibility is applied by
+      // `updateSprayWall` immediately after the first publish instead, which is
+      // the first moment there is anything to see.
+      isPublic: false,
+      isUnlisted: false,
       hideLocation,
       locationName: locationName.trim() || undefined,
       latitude: coords?.latitude,
       longitude: coords?.longitude,
       gymUuid: selectedGym?.uuid,
     };
-  }, [name, angle, isPublic, isUnlisted, hideLocation, locationName, coords, selectedGym]);
+  }, [name, angle, hideLocation, locationName, coords, selectedGym]);
+
+  /**
+   * The visibility the climber asked for, to be applied once the wall has
+   * something worth seeing. Null when they left it private, which is the
+   * default and needs no second write.
+   */
+  const pendingVisibility = useCallback(
+    (): { isPublic: boolean; isUnlisted: boolean } | null => (isPublic || isUnlisted ? { isPublic, isUnlisted } : null),
+    [isPublic, isUnlisted],
+  );
 
   return {
     name,
     setName,
-    angleText,
-    setAngleText,
     angle,
+    setAngle,
     isPublic,
     setIsPublic,
     isUnlisted,
@@ -156,6 +168,7 @@ export function useSprayWallBuilder(seed?: SprayWallBuilderSeed | null) {
     setSelectedGym,
     canCreate,
     buildCreateInput,
+    pendingVisibility,
   };
 }
 

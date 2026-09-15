@@ -760,9 +760,10 @@
       "body": "Ponle nombre, di cuánto se inclina y elige quién puede verlo.",
       "namePlaceholder": "Muro del garaje",
       "angle": "Ángulo",
-      "angleHint": "Grados respecto a la vertical, de {{min}} a {{max}}. Queda fijo al publicar.",
+      "angleHint": "Cuánto se inclina el muro, en pasos de 5°. Queda fijo al publicar.",
       "publicHint": "Apagado, el muro y su foto son solo tuyos.",
-      "next": "Elegir una foto"
+      "next": "Elegir una foto",
+      "anglePreview": "Muro a {{angle}} grados"
     },
     "photo": {
       "title": "Fotografía el muro",
@@ -827,7 +828,9 @@
       "title": "Tienes un muro a medias",
       "body": "«{{name}}» no está terminado. Retómalo donde lo dejaste o empieza de nuevo.",
       "pickUp": "Retomarlo",
-      "startOver": "Empezar de nuevo"
+      "startOver": "Empezar de nuevo",
+      "checkFailed": "No se pudo comprobar ese muro. Inténtalo otra vez.",
+      "retry": "Reintentar"
     }
   },
   "sprayReset": {

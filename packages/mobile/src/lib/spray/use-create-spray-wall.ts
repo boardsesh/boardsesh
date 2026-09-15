@@ -16,6 +16,7 @@ import {
   GET_MY_SPRAY_WALLS,
   GET_SPRAY_WALL_WITH_VERSIONS,
   PUBLISH_SPRAY_WALL_VERSION,
+  UPDATE_SPRAY_WALL,
 } from '@boardsesh/graphql/operations/spray-walls';
 import type {
   CreateSprayWallInput,
@@ -46,6 +47,7 @@ type MySprayWallsResponse = { mySprayWalls: SprayWall[] };
 type SprayWallWithVersionsResponse = { sprayWall: CreatedSprayWall | null };
 type CreateVersionResponse = { createSprayWallVersion: SprayWallVersion };
 type PublishResponse = { publishSprayWallVersion: SprayWallVersion };
+type UpdateWallResponse = { updateSprayWall: CreatedSprayWall };
 
 /**
  * Create the wall row, its catalogue layout and its size.
@@ -125,6 +127,29 @@ export function useDiscardSprayWallDraft() {
       const client = getHttpClient();
       if (versionId) await client.request(DISCARD_SPRAY_WALL_VERSION, { input: { versionId } });
       await client.request(DELETE_SPRAY_WALL, { uuid: wallUuid });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+    },
+  });
+}
+
+/**
+ * Share a wall that was created private.
+ *
+ * Every wall is created private whatever the climber chose, because
+ * `searchBoards` filters on `is_public` / `is_unlisted` alone and would list a
+ * wall with no version, no photo and no holds as a board other people could try
+ * to climb on. This is the second half: run it once the first version publishes,
+ * which is the first moment there is anything to see. Idempotent, so a retry
+ * after a failed board bind may run it again.
+ */
+export function useUpdateSprayWallVisibility() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { uuid: string; isPublic: boolean; isUnlisted: boolean }): Promise<CreatedSprayWall> => {
+      const response = await getHttpClient().request<UpdateWallResponse>(UPDATE_SPRAY_WALL, { input });
+      return response.updateSprayWall;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });

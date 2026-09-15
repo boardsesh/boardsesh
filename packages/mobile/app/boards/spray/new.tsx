@@ -11,16 +11,21 @@
 
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { SprayWallWizardScreen } from '../../../src/components/spray-wall/SprayWallWizardScreen';
-import { useSprayWallsEnabled } from '../../../src/providers/feature-flags-provider';
+import { useFeatureFlagsResolved, useSprayWallsEnabled } from '../../../src/providers/feature-flags-provider';
 import { resolveBoardReturnTo } from '../../../src/lib/boards/board-return-to';
 
 export default function NewSprayWall() {
   const params = useLocalSearchParams<{ returnTo?: string }>();
+  const flagsResolved = useFeatureFlagsResolved();
   const enabled = useSprayWallsEnabled();
 
-  // Unresolved flags read as off (`useSprayWallsEnabled`), so this also covers
-  // the first frames of a cold open on a deep link: back to the picker, which is
-  // a real screen, rather than a blank one.
+  // Nothing at all until the flags are final. `useSprayWallsEnabled` reads an
+  // unresolved flag as OFF, which is right for a tile — it stays hidden and
+  // appears when the value lands — and wrong here: a redirect is not something a
+  // later value can undo, so a climber the feature IS enabled for would be
+  // bounced off their own deep link before PostHog ever answered. The wait is
+  // bounded by the provider's own timeout.
+  if (!flagsResolved) return null;
   if (!enabled) return <Redirect href="/boards" />;
 
   return <SprayWallWizardScreen returnTo={resolveBoardReturnTo(params.returnTo)} />;

@@ -760,9 +760,10 @@
       "body": "Gib ihr einen Namen, sag wie steil sie ist, und wähle, wer sie sehen darf.",
       "namePlaceholder": "Garagenwand",
       "angle": "Winkel",
-      "angleHint": "Grad aus der Senkrechten, {{min}} bis {{max}}. Nach dem Veröffentlichen fest.",
+      "angleHint": "Wie weit die Wand überhängt, in 5°-Schritten. Nach dem Veröffentlichen fest.",
       "publicHint": "Aus bleiben die Wand und ihr Foto nur bei dir.",
-      "next": "Foto wählen"
+      "next": "Foto wählen",
+      "anglePreview": "Wand mit {{angle}} Grad"
     },
     "photo": {
       "title": "Fotografiere die Wand",
@@ -827,7 +828,9 @@
       "title": "Du hast eine Wand offen",
       "body": "„{{name}}“ ist nicht fertig. Mach weiter, wo du aufgehört hast, oder fang neu an.",
       "pickUp": "Weitermachen",
-      "startOver": "Neu anfangen"
+      "startOver": "Neu anfangen",
+      "checkFailed": "Diese Wand ließ sich nicht prüfen. Versuch es nochmal.",
+      "retry": "Nochmal versuchen"
     }
   },
   "sprayReset": {

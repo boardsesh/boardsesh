@@ -17,7 +17,7 @@
 // Coordinates leaving this component are PHOTO pixels, which is what
 // `createSprayWallVersion` stores and what the homography is solved in.
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useTranslation } from 'react-i18next';
@@ -94,6 +94,31 @@ export function SprayCornerMarker({ photo, renderWidth, value, onChange, invalid
 
   const xs = useMemo(() => [x0, x1, x2, x3], [x0, x1, x2, x3]);
   const ys = useMemo(() => [y0, y1, y2, y3], [y0, y1, y2, y3]);
+
+  /**
+   * Put the handles back where the seed says.
+   *
+   * `useSharedValue(initial)` reads its argument ONCE, on the first render, and
+   * ignores it forever after. So "Clear" recalculated the seed to the default
+   * inset quad and changed the button's label while the four rings stayed exactly
+   * where they had been dragged — and the concrete failure was worse than
+   * cosmetic: a climber who crossed the corners, tapped Clear and dragged one
+   * handle re-committed the same crossed quad and met the same refusal, with no
+   * way out but moving all four by hand.
+   *
+   * Keyed on the seed's VALUES rather than its identity, so a re-render that
+   * rebuilds the same quad does not yank a handle out from under a finger.
+   */
+  const seedKey = seed.map(([pointX, pointY]) => `${pointX},${pointY}`).join(';');
+  useEffect(() => {
+    for (const [corner, [pointX, pointY]] of seed.entries()) {
+      xs[corner].value = pointX / photoScale;
+      ys[corner].value = pointY / photoScale;
+    }
+    // `seedKey` stands in for `seed`, and `xs` / `ys` are stable arrays of stable
+    // shared values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey, photoScale]);
 
   /**
    * Read all four handles and report them in photo pixels.
