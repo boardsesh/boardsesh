@@ -1194,7 +1194,14 @@ export const sprayWallMutations = {
     // starts announcing their climbs, and the person who took the photograph is
     // the only one who gets to throw it. A gym admin can still edit the gym's
     // wall — they cannot publish it to the world.
-    if (validated.isPublic !== undefined && board.ownerId !== ctx.userId) {
+    //
+    // BOTH halves, not just `isPublic`. `is_unlisted` is not the lesser flag it
+    // looks like: on a wall it is the SHARE LINK, and `viewerCanSeeSprayWall` and
+    // `viewerCanWriteSprayClimbs` both honour a presented uuid the moment it is
+    // set. Guarding only `isPublic` would let a gym admin flip a member's private
+    // wall to unlisted and mint a capability over the photograph of their garage —
+    // quieter than making it public and exactly as far from private.
+    if ((validated.isPublic !== undefined || validated.isUnlisted !== undefined) && board.ownerId !== ctx.userId) {
       throw new GraphQLError('Only the climber who set this wall up can change who can see it', {
         extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
       });

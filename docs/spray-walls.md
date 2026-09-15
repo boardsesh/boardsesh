@@ -629,12 +629,34 @@ through presigned URLs, like a private one.
 ### Who may flip the switch
 
 Every other field on `updateSprayWall` follows `requireBoardEditAccess`, which a
-gym owner/admin and a community leader also pass. `isPublic` does not: it is
-owner-only (`SPRAY_WALL_VISIBILITY_OWNER_ONLY`). Putting a photograph of somebody's
-wall on the open web, and starting to announce their climbs, is the photographer's
-call. `updateBoard` refuses a visibility CHANGE on a spray board outright
+gym owner/admin and a community leader also pass. Visibility does not: **both**
+`isPublic` and `isUnlisted` are owner-only
+(`SPRAY_WALL_VISIBILITY_OWNER_ONLY`). Putting a photograph of somebody's wall on
+the open web, and starting to announce their climbs, is the photographer's call.
+
+`isUnlisted` is in that guard for a reason that is easy to miss: on a wall it is
+not the lesser flag, it IS the share link. `viewerCanSeeSprayWall` and
+`viewerCanWriteSprayClimbs` both honour a presented uuid the moment it is set, so
+a guard that watched only `isPublic` would let a gym admin flip a member's private
+wall to unlisted and mint a capability over the photograph of their garage —
+quieter than making it public, and exactly as far from private.
+
+`updateBoard` refuses a CHANGE to either flag on a spray board outright
 (`SPRAY_WALL_VISIBILITY_ELSEWHERE`) so there is exactly one door — the ordinary
-board path would set the flag and copy nothing.
+board path would set the flag and copy nothing. It refuses `hasLeds` and
+`isAngleAdjustable` there too (`SPRAY_WALL_HAS_NO_HARDWARE`, #5486): both are
+pinned false at creation, `has_leds` is the whole of the "no Bluetooth on a wall"
+contract, and a wall does not adjust. All four refuse a change rather than the
+field's presence, so a client echoing the board back on a rename is not blocked.
+
+### The two senses of "unlisted"
+
+An ordinary board is unlisted when it is `is_public AND is_unlisted` — public
+enough to open by link, withheld from search. A wall is unlisted when it is
+`NOT is_public AND is_unlisted`: it is private to the world and reachable by the
+uuid its owner sent. That is why the public photo copy is keyed to `is_public`
+alone and survives a public wall ALSO being marked unlisted: the copy tracks
+"world-readable", and unlisted does not take that away.
 
 ### A gym's walls
 
@@ -664,6 +686,16 @@ page does not have.
 
 The app creates walls private and shares them after the first publish (SW-09), but
 the API is public and a server rule must not rest on a client convention.
+
+### Android deep links to a share URL
+
+A share link is `https://www.boardsesh.com/b/<slug>/<angle>/list`, with
+`?wall=<uuid>` on an unlisted wall. iOS takes it into the app through the
+host-wide `applinks:` entitlement. **Android does not yet**: the intent filters in
+`packages/mobile/app.config.ts` cover `/join`, `/preview` and
+`/auth/reset-password` only, so a `/b/` link opens the website instead. Adding the
+filter moves the native fingerprint, so it rides the next native train rather than
+an OTA (SW-14b).
 
 ## Climb writes on a wall
 

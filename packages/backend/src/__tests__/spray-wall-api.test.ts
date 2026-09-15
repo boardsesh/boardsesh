@@ -89,7 +89,7 @@ const { sprayWallQueries, sprayWallMutations } = await import('../graphql/resolv
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
-const { socialBoardQueries } = await import('../graphql/resolvers/social/boards');
+const { socialBoardQueries, socialBoardMutations } = await import('../graphql/resolvers/social/boards');
 const { newClimbSubscriptionResolvers } = await import('../graphql/resolvers/social/new-climb-subscriptions');
 const { syncQueries } = await import('../graphql/resolvers/sync/queries');
 const { setterFollowQueries } = await import('../graphql/resolvers/social/setter-follows');
@@ -108,7 +108,9 @@ const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = 
 const OWNER = 'sw-owner';
 const STRANGER = 'sw-stranger';
 const GYM_EDITOR = 'sw-gym-editor';
-const ALL_USERS = [OWNER, STRANGER, GYM_EDITOR];
+/** A fourth account with no tie to the wall or its gym — the public, in one id. */
+const OUTSIDER = 'sw-outsider';
+const ALL_USERS = [OWNER, STRANGER, GYM_EDITOR, OUTSIDER];
 
 /** A square-ish quad standing in for the four wall corners in a photo. */
 const ANCHORS: [number, number][] = [
@@ -3496,6 +3498,28 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     expect(n).toBe(0);
   });
 
+  it('stops answering publicPhotoUrl the moment the wall is not public, whatever the row holds', async () => {
+    // The field re-asserts `board.isPublic` rather than trusting the key: the two
+    // are written together, but this is what a web page and a crawler read, so it
+    // states the rule itself. Proven by putting the pair OUT of step by hand —
+    // exactly the row a half-applied demotion would leave.
+    const { wall } = await createPublishedWall(OWNER);
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+    expect(
+      ((await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as { publicPhotoUrl: string | null })
+        .publicPhotoUrl,
+    ).toMatch(/^https:\/\/media\.example\//);
+
+    // The flag goes private while the key stays behind.
+    await db.execute(sql`UPDATE user_boards SET is_public = false WHERE uuid = ${wall.uuid}`);
+    expect(await publicPhotoKeyOf(wall.layoutId)).not.toBeNull();
+
+    const read = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
+      publicPhotoUrl: string | null;
+    };
+    expect(read.publicPhotoUrl).toBeNull();
+  });
+
   it('leaves the public copy alone when the wall merely becomes unlisted', async () => {
     // Guards the guard: a copy or a delete on every update would make the two
     // tests above pass for the wrong reason.
@@ -3540,6 +3564,23 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
       sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(STRANGER)),
     ).rejects.toThrow(/can change who can see it/i);
     expect(publicBucketObjects.size).toBe(0);
+
+    // `isUnlisted` ALONE, which is the quieter half of the same switch: unlisted
+    // on a wall IS the share link, and `viewerCanSeeSprayWall` /
+    // `viewerCanWriteSprayClimbs` honour a presented uuid the moment it is set. A
+    // guard that watched only `isPublic` would let a gym admin mint a capability
+    // over the photograph of somebody's garage without ever making it public.
+    await expect(
+      sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isUnlisted: true } }, ctxFor(STRANGER)),
+    ).rejects.toThrow(/can change who can see it/i);
+
+    const [stillPrivate] = (await db.execute(
+      sql`SELECT is_public, is_unlisted FROM user_boards WHERE uuid = ${wall.uuid}`,
+    )) as unknown as Array<{ is_public: boolean; is_unlisted: boolean }>;
+    expect(stillPrivate.is_public).toBe(false);
+    expect(stillPrivate.is_unlisted).toBe(false);
+    // And the capability the flip would have minted does not resolve.
+    expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OUTSIDER))).toBeNull();
 
     // And the rest of the mutation still works for them.
     await sprayWallMutations.updateSprayWall(
@@ -3705,6 +3746,35 @@ describe('a wall with no published version is listed to nobody but its owner', (
     expect(search.totalCount).toBe(1);
   });
 
+  it('keeps the owner escape in myBoards — your own half-built wall stays in your list', async () => {
+    // `listableSprayWallCondition(userId)` is the only reason this row survives
+    // the filter, and it lives in the WHERE the COUNT and the page share. Without
+    // the escape a climber would photograph a wall and watch it vanish from their
+    // own board list until they published it.
+    const wall = await unpublishedPublicWall('Mine, unfinished');
+
+    const listed = async (userId: string) =>
+      (await socialBoardQueries.myBoards({}, { input: { limit: 50, offset: 0 } }, ctxFor(userId))) as {
+        boards: Array<{ uuid: string }>;
+        totalCount: number;
+      };
+
+    const owner = await listed(OWNER);
+    expect(owner.boards.map((board) => board.uuid)).toContain(wall.uuid);
+    expect(owner.totalCount).toBeGreaterThan(0);
+
+    // A follower of the wall gets the same list treatment as anybody else: the
+    // escape is the OWNER, not merely "someone who can see it".
+    await db.execute(sql`
+      INSERT INTO board_follows (user_id, board_uuid, created_at)
+      VALUES (${STRANGER}, ${wall.uuid}, now())
+      ON CONFLICT DO NOTHING
+    `);
+    const follower = await listed(STRANGER);
+    expect(follower.boards.map((board) => board.uuid)).not.toContain(wall.uuid);
+    expect(follower.totalCount).toBe(0);
+  });
+
   it('leaves catalogue boards alone', async () => {
     // The predicate is written as "not a spray wall, OR published, OR yours", so
     // a Kilter board — which has no `spray_walls` row at all — must not be caught
@@ -3724,5 +3794,84 @@ describe('a wall with no published version is listed to nobody but its owner', (
     )) as { boards: Array<{ uuid: string }>; totalCount: number };
 
     expect(search.boards.map((board) => board.uuid)).toContain(boardUuid);
+  });
+});
+
+/**
+ * `updateBoard` is the ordinary board door, and a wall is an ordinary board row —
+ * so every flag `createSprayWall` pins has to be pinned there too, or the flag is
+ * only as fixed as the client that last sent it.
+ */
+describe('updateBoard refuses the fields a wall does not have', () => {
+  /** The wall's board row, as `updateBoard` would find it. */
+  const boardRow = async (uuid: string) => {
+    const [row] = (await db.execute(sql`
+      SELECT is_public, is_unlisted, has_leds, is_angle_adjustable, name
+      FROM user_boards WHERE uuid = ${uuid}
+    `)) as unknown as Array<{
+      is_public: boolean;
+      is_unlisted: boolean;
+      has_leds: boolean;
+      is_angle_adjustable: boolean;
+      name: string;
+    }>;
+    return row;
+  };
+
+  it('refuses a light kit and an adjustable angle on a spray wall (#5486)', async () => {
+    // `has_leds` is the whole of the "no Bluetooth on a wall" contract: set it and
+    // the app offers a climber a device scan for a photograph.
+    const { wall } = await createPublishedWall(OWNER);
+
+    await expect(
+      socialBoardMutations.updateBoard({}, { input: { boardUuid: wall.uuid, hasLeds: true } }, ctxFor(OWNER)),
+    ).rejects.toThrow(/no lights/i);
+
+    await expect(
+      socialBoardMutations.updateBoard({}, { input: { boardUuid: wall.uuid, isAngleAdjustable: true } }, ctxFor(OWNER)),
+    ).rejects.toThrow(/does not adjust/i);
+
+    const row = await boardRow(wall.uuid);
+    expect(row.has_leds).toBe(false);
+    expect(row.is_angle_adjustable).toBe(false);
+  });
+
+  it('refuses a visibility change there, so the wall mutation stays the one door', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+
+    await expect(
+      socialBoardMutations.updateBoard({}, { input: { boardUuid: wall.uuid, isPublic: true } }, ctxFor(OWNER)),
+    ).rejects.toThrow(/on the wall itself/i);
+    await expect(
+      socialBoardMutations.updateBoard({}, { input: { boardUuid: wall.uuid, isUnlisted: true } }, ctxFor(OWNER)),
+    ).rejects.toThrow(/on the wall itself/i);
+
+    const row = await boardRow(wall.uuid);
+    expect(row.is_public).toBe(false);
+    expect(row.is_unlisted).toBe(false);
+  });
+
+  it("still takes a rename that echoes the wall's unchanged flags back", async () => {
+    // Guards the guards: all four refuse a CHANGE, not the field's presence. A
+    // client that resends the board it was given must not be blocked from
+    // renaming it.
+    const { wall } = await createPublishedWall(OWNER);
+
+    await socialBoardMutations.updateBoard(
+      {},
+      {
+        input: {
+          boardUuid: wall.uuid,
+          name: 'Renamed with the flags echoed',
+          isPublic: false,
+          isUnlisted: false,
+          hasLeds: false,
+          isAngleAdjustable: false,
+        },
+      },
+      ctxFor(OWNER),
+    );
+
+    expect((await boardRow(wall.uuid)).name).toBe('Renamed with the flags echoed');
   });
 });

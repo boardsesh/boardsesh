@@ -2353,6 +2353,25 @@ export const socialBoardMutations = {
       });
     }
 
+    // The other two flags `createSprayWall` pins and this mutation would happily
+    // unpin (#5486). `has_leds` is the whole of the "no Bluetooth on a wall"
+    // contract: it routes the bulb down the take-the-wall path, keeps the device
+    // picker unmounted and the LED controls hidden, so a wall with it set offers a
+    // climber a Bluetooth scan for a photograph. `is_angle_adjustable` is the same
+    // shape of lie — a wall does not adjust, and every climb on it is recorded at
+    // the one angle it was photographed at.
+    //
+    // A CHANGE again, not the field's presence: a client that echoes the board
+    // back unchanged on a rename must not be refused.
+    const changingWallHardware =
+      (validatedInput.hasLeds !== undefined && validatedInput.hasLeds !== board.hasLeds) ||
+      (validatedInput.isAngleAdjustable !== undefined && validatedInput.isAngleAdjustable !== board.isAngleAdjustable);
+    if (board.boardType === 'spray' && changingWallHardware) {
+      throw new GraphQLError('A spray wall is a photograph — it has no lights and it does not adjust', {
+        extensions: { code: 'SPRAY_WALL_HAS_NO_HARDWARE' },
+      });
+    }
+
     if (validatedInput.isPublic !== undefined) updateValues.isPublic = validatedInput.isPublic;
     if (validatedInput.isUnlisted !== undefined) updateValues.isUnlisted = validatedInput.isUnlisted;
     if (validatedInput.hideLocation !== undefined) updateValues.hideLocation = validatedInput.hideLocation;
