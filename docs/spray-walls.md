@@ -538,6 +538,97 @@ drop the token from any of them and that test fails.
 registered — an mtime-only rule would happily delete the photograph underneath a
 climber who is looking at it.
 
+### Asking is not the same as subscribing (SW-11)
+
+`useSprayWall` asks for exactly one wall: the active board's. Every other surface
+only SUBSCRIBED to the registry, and a subscription on a wall nobody asked for is
+a subscription nothing will ever wake — so a logbook row, a feed card, a shared
+ascent or a playlist thumbnail showing a climb from a wall that is not the active
+board drew a placeholder for the rest of the session.
+
+The ask therefore lives in `use-native-climb-render.ts`, the one hook every
+board-drawing surface already goes through: on `spray` it calls
+`ensureSprayWallLoaded(layoutId)` in an effect keyed on the wall token, which
+costs a `Map` lookup off spray and at most one request per wall. `Board Render
+Failed` would never have reported this, because nothing failed — nothing was
+asked.
+
+That fixes every surface that mounts the board. The ones that **early-return on a
+null `getBoardRenderData`**, before mounting anything that subscribes, need their
+own line: `useSprayWallToken(boardName, layoutId)` ABOVE the early return, which
+both asks and subscribes. `BoardManageRow`, `AccessoryClimbThumbnail`,
+`BoardDiscoveryCard`, `BoardConfigPreview`, `PlayDrawer`, `WallKioskScreen`, the
+hold filter and `ClimbReactionMenu` all do this. Adding a new synchronous board
+surface means adding that call; forgetting it is a permanent placeholder, not a
+crash.
+
+## What a wall looks like in the app (SW-11)
+
+Three rules the rest of the app reads off the board type, none of which needed a
+new screen: **the Climbs tab is a wall's home** once the wall is the active board.
+
+**The subtitle leads with the kind, not the place.** Every other board is
+recognisable from its name — "Kilter 12×14" says what it is — but a wall is named
+by its owner ("Garage", "Main wall"), and its layout and size have no catalogue
+rows to name, so `boardConfigLabel` answers null for spray by design. A row
+reading just "Bergen Klatresenter" under a name like "Main wall" therefore hid the
+one fact that separates it from the Kilter on the row above. So
+`boardRowSubtitle` inverts for spray only: `Spray wall`, or `Spray wall ·
+<place>`. Within one gym's list the place is dropped as redundant and the KIND
+survives, which is the opposite of every other board type and is the whole point.
+The word itself comes from the caller (`BoardLabelOptions.sprayKindLabel`, fed by
+mobile's `useSprayLabelOptions`): `formatBoardDisplayName` is deliberately English
+because it spells brand names, and "Spray wall" is the one value it returns that
+is not a brand. www passes nothing and keeps the English default.
+
+**An empty wall is not an empty search.** `shouldShowUnsetWallEmptyState` puts
+"No one's set on this wall yet" and the door to the first climb on the Climbs tab
+— but only with no query and no filters on. A wall with forty climbs, filtered to
+V8+, is empty for a reason that has nothing to do with the wall being new, and
+saying so to its owner would be false.
+
+**The config lock has two reasons and they need two sentences.**
+`lockedConfigReason` tells them apart: `permission` (the server's `canEdit` said
+no) and `spray` (a wall's configuration IS its photograph — the layout row was
+created when it was shot, its size id is that same number, and every climb on the
+wall points at that partition). Telling a wall's own owner they lacked permission
+was false twice over. Permission is checked FIRST: on a wall the viewer may not
+edit both hold, and only one is actionable, since "shoot the wall again" is advice
+for the owner. The edit screen also drops the light-kit, serial and timer rows for
+a wall — see the Bluetooth note below.
+
+**No Bluetooth, and the flag it rests on.** Every "take the wall instead of
+connecting" affordance keys on `user_boards.has_leds === false`, which
+`createSprayWall` hard-codes and its input schema has no key for. So a wall
+inherits the whole LED-less path from #4585 with no spray branch: the bulb means
+"I'm on it", the device picker is never mounted, and `SPRAY_CAPABILITIES`
+`nativeBoardControl: false` keeps the native BLE adapter out. That is why the edit
+form must not render the Lights toggle on a wall — one tap would have put a
+Bluetooth scan on a photograph. `updateBoard` still ACCEPTS `hasLeds` for a spray
+board, which is the remaining hole (#5486).
+
+### The owner rows, and the sheet that is not mounted
+
+`sprayDetailRows(board)` is the gate behind the wall-maintenance rows ("Edit
+holds", "New photo"): two rows on a spray wall whose `canEdit` is true, none
+anywhere else. It reads `canEdit` rather than `isOwned` because that is the field
+the spray API gates every version mutation on, so the affordance and the
+permission cannot drift.
+
+The rows are **not rendered** (`SPRAY_DETAIL_ROWS_ENABLED = false`), for two
+reasons that both have to be fixed before the flag flips (#5491):
+
+1. Neither route exists yet — `/boards/spray/holds` is SW-08 and
+   `/boards/spray/reset` is SW-13 — and Expo Router sends a prefix-less miss to
+   `+not-found`, which redirects to Home. A row that lands somewhere wrong is
+   worse than no row.
+2. **`BoardDetailSheet` is not mounted by anything.** The live board sheet is
+   `board-presence/BoardSheet`, hosted by `drawer-host-provider`;
+   `BoardDetailSheet` has no production importer at all. So these rows — and
+   SW-14's `BoardShareSheet`, whose only mount is that same file — are
+   unreachable regardless of the flag. Whatever wires them up has to put them on
+   the sheet climbers actually open.
+
 ## Photo privacy
 
 Wall photos go to the **`private`** R2 bucket and are read through **15-minute

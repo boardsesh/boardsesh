@@ -68,20 +68,34 @@ export function userBoardToItem(
 }
 
 /**
+ * Everything the list builder may be told, named.
+ *
+ * Named rather than positional because the callers are asymmetric: the "Your
+ * boards" carousel passes all five, while Near you and the offline rows pass one
+ * or two. Positionally that read as `(rows, uuid, undefined, undefined,
+ * undefined, labelOptions)` — six arguments and three holes, where miscounting is
+ * silent and the compiler cannot help (every optional slot is a different type
+ * only by luck).
+ */
+export type UserBoardItemsOptions = {
+  /** The active board's uuid, for the `isActive` flag. */
+  activeUuid?: string | null;
+  offlineStateFor?: (board: UserBoard) => BoardDownloadState;
+  /** See `userBoardToItem` — resolves `isViewerOwner` once per list build. */
+  currentUserId?: string;
+  /** Uuids the user just toggled, pending the next fetch. See `userBoardToItem`. */
+  pinnedOverrides?: ReadonlyMap<string, boolean>;
+  /** See `userBoardToItem`. */
+  labelOptions?: BoardLabelOptions;
+};
+
+/**
  * The whole carousel's items in one pass, with same-subtitle boards pulled apart
  * (see `disambiguateBoardSubtitles`). Disambiguation is scoped to the one list
  * the user is looking at, and runs here — at the list level — never per row.
  */
-export function userBoardsToItems(
-  boards: UserBoard[],
-  activeUuid?: string | null,
-  offlineStateFor?: (board: UserBoard) => BoardDownloadState,
-  currentUserId?: string,
-  /** Uuids the user just toggled, pending the next fetch. See `userBoardToItem`. */
-  pinnedOverrides?: ReadonlyMap<string, boolean>,
-  /** See `userBoardToItem`. */
-  labelOptions?: BoardLabelOptions,
-): DiscoveryBoardItem[] {
+export function userBoardsToItems(boards: UserBoard[], options: UserBoardItemsOptions = {}): DiscoveryBoardItem[] {
+  const { activeUuid, offlineStateFor, currentUserId, pinnedOverrides, labelOptions } = options;
   // Only boards that actually render take part: a board dropped for an
   // unsupported type must not push its neighbour into a disambiguation the user
   // can see no reason for.

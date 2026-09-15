@@ -515,7 +515,12 @@ export function BoardForm({
               </>
             )}
 
-            {foreignSerialDisclosure ? (
+            {/* Not on a wall. A wall has no serial to collide with — the field
+                above is not even rendered for one — so `useForeignSerialBoard`
+                never fires and this is null in practice. Saying so with the guard
+                rather than relying on that keeps the whole hardware group
+                answering to one condition. */}
+            {foreignSerialDisclosure && !isSprayWall ? (
               <View style={[styles.serialWarning, { borderColor: iosSystemColors.systemOrange }]}>
                 <Icon name="info" size={16} color={iosSystemColors.systemOrange} />
                 <Text variant="footnote" color={systemColors.label} style={styles.serialWarningText}>

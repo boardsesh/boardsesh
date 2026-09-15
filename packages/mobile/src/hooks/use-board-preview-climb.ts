@@ -80,7 +80,11 @@ export function useBoardPreviewClimb(enabled = true): BoardPreviewClimb {
   // moment `getBoardRenderData` misses. That is the wrong answer for a wall this
   // session simply has not fetched yet, and no caller would ask again. This asks
   // for it and re-renders when it lands.
-  const sprayToken = useSprayWallToken(activeBoard?.boardType, activeBoard?.layoutId);
+  //
+  // Through `toBoardName` like every other read of `boardType` in this file: the
+  // raw column and the canonical name happen to be the same string for spray
+  // today, so passing the column worked — by coincidence, not by rule.
+  const sprayToken = useSprayWallToken(toBoardName(activeBoard?.boardType), activeBoard?.layoutId);
 
   return useMemo<BoardPreviewClimb>(() => {
     // `undefined` is the AsyncStorage read still in flight; `null` is a climber

@@ -89,14 +89,12 @@ export function OnboardingBoardStep({
   const labelOptions = useSprayLabelOptions();
   const items = useMemo(
     () =>
-      userBoardsToItems(
-        sortViewerOwnedFirst(boards, currentUserId),
-        null,
-        boardOfflineState,
+      userBoardsToItems(sortViewerOwnedFirst(boards, currentUserId), {
+        activeUuid: null,
+        offlineStateFor: boardOfflineState,
         currentUserId,
-        undefined,
         labelOptions,
-      ),
+      }),
     [boards, boardOfflineState, currentUserId, labelOptions],
   );
 

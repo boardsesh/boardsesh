@@ -3553,6 +3553,111 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     expect(deletedPublicKeys).toContain(firstKey);
   });
 
+  /**
+   * Publish a second photo on `wall` and hand back the destination key the copy
+   * into `media` used, having run `duringTheCopy` in the middle of that copy.
+   *
+   * The races `refreshPublicWallPhoto` guards are only reachable from inside the
+   * copy: it runs AFTER the publish transaction has committed and released the wall
+   * lock, so a demotion or a newer publish can commit while the object is still in
+   * flight. `copyObjectBetweenBuckets` is already a stub here, so the stub IS the
+   * window — nothing else in the harness can express "this committed while the
+   * bytes were moving".
+   */
+  async function publishSecondPhotoWhile(
+    wall: CreatedWall,
+    duringTheCopy: () => Promise<void>,
+  ): Promise<string | undefined> {
+    const storage = await import('../storage/s3');
+    let attemptedKey: string | undefined;
+    vi.mocked(storage.copyObjectBetweenBuckets).mockImplementationOnce(
+      async (_source, sourceKey, _destination, destinationKey) => {
+        await duringTheCopy();
+        attemptedKey = destinationKey;
+        publicBucketObjects.set(destinationKey, sourceKey);
+        return { key: destinationKey };
+      },
+    );
+
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const version = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+    return attemptedKey;
+  }
+
+  it('drops the new copy rather than re-point a wall that went private mid-copy', async () => {
+    // The dangerous half of the race: the refresh write used to be unconditional,
+    // so a demotion committing while the copy was in flight got a fresh
+    // world-readable object AND a live `publicPhotoUrl` put back on a wall that is
+    // now private. Not an orphan — a leak.
+    const { wall } = await createPublishedWall(OWNER);
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+
+    const attemptedKey = await publishSecondPhotoWhile(wall, async () => {
+      await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: false } }, ctxFor(OWNER));
+    });
+
+    expect(attemptedKey).toBeDefined();
+    // The demotion's own bookkeeping stands, and the refresh wrote nothing over it.
+    expect(await publicPhotoKeyOf(wall.layoutId)).toBeNull();
+    // And the copy it had already made is gone from the bucket, not left behind.
+    expect(deletedPublicKeys).toContain(attemptedKey);
+    expect(publicBucketObjects.has(attemptedKey!)).toBe(false);
+    expect(
+      (
+        (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
+          publicPhotoUrl: string | null;
+        }
+      ).publicPhotoUrl,
+    ).toBeNull();
+  });
+
+  it("drops the new copy rather than overwrite a newer publish's photo", async () => {
+    // Two publishes overtaking each other: the copy takes as long as the photo is
+    // big, so an older one can finish last. The statement is keyed on the version
+    // it was started for, so the late finisher writes nothing.
+    const { wall } = await createPublishedWall(OWNER);
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+    const firstKey = await publicPhotoKeyOf(wall.layoutId);
+
+    const attemptedKey = await publishSecondPhotoWhile(wall, async () => {
+      // The wall's published pointer moves to a newer version row while this copy
+      // is in flight. By hand, because the API serialises publishes on the wall
+      // lock and this is the state the lock cannot prevent — the refresh runs
+      // outside it.
+      const newerVersionId = await abandonedDraftRow(wall.layoutId, 99);
+      await db.execute(sql`
+        UPDATE spray_walls SET current_version_id = ${newerVersionId} WHERE layout_id = ${wall.layoutId}
+      `);
+    });
+
+    expect(attemptedKey).toBeDefined();
+    // The row still points at the photo the newer generation left, not at this one.
+    expect(await publicPhotoKeyOf(wall.layoutId)).toBe(firstKey);
+    expect(deletedPublicKeys).toContain(attemptedKey);
+    expect(publicBucketObjects.has(attemptedKey!)).toBe(false);
+  });
+
+  it('clears the key and deletes the public copy when the wall is deleted', async () => {
+    // Soft-deleting the rows stops Boardsesh serving `publicPhotoUrl` and does
+    // nothing whatever about the object, so without this the photograph of a
+    // deleted wall keeps answering for anyone who kept the URL.
+    const { wall } = await createPublishedWall(OWNER);
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+    const publicKey = await publicPhotoKeyOf(wall.layoutId);
+    expect(publicKey).not.toBeNull();
+
+    await sprayWallMutations.deleteSprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER));
+
+    expect(await publicPhotoKeyOf(wall.layoutId)).toBeNull();
+    expect(deletedPublicKeys).toContain(publicKey);
+    expect(publicBucketObjects.size).toBe(0);
+  });
+
   it('refuses a visibility change from anyone but the wall owner', async () => {
     // A gym ADMIN passes `requireBoardEditAccess` and may edit the gym's wall.
     // Publishing a photograph of it to the open web is still the owner's call.
@@ -3635,6 +3740,33 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
       expect(await sprayWallQueries.gymSprayWalls({}, { gymUuid: gym.uuid }, ctxFor(STRANGER))).toEqual([]);
       // Still reachable by its uuid for whoever holds the link.
       expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))).not.toBeNull();
+    });
+
+    it("lists every one of a gym's private walls to a member", async () => {
+      // The membership answer is resolved ONCE for the page and reused per row
+      // (it was an N+1 SELECT on `gym_members`, one per wall). The memo is only
+      // sound because every row in this listing is attached to the same gym and
+      // read by the same viewer, so this pins the semantics it must not change:
+      // three private walls in one gym, all three listed to a member, none to a
+      // stranger. The query COUNT itself is not asserted — the harness talks to the
+      // real `db` client with no per-statement hook, so counting the membership
+      // SELECTs would mean either `pg_stat_statements` (not installed) or
+      // `pg_stat_user_tables` (flushed on a ~1s timer, so flaky).
+      const gym = await gymWith(GYM_EDITOR, 'member');
+      const walls = [
+        await createPublishedWall(OWNER),
+        await createPublishedWall(OWNER),
+        await createPublishedWall(OWNER),
+      ].map(({ wall }) => wall);
+      for (const wall of walls) {
+        await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+      }
+
+      const listed = (await sprayWallQueries.gymSprayWalls({}, { gymUuid: gym.uuid }, ctxFor(GYM_EDITOR))) as Array<{
+        uuid: string;
+      }>;
+      expect(listed.map((row) => row.uuid).sort()).toEqual(walls.map((wall) => wall.uuid).sort());
+      expect(await sprayWallQueries.gymSprayWalls({}, { gymUuid: gym.uuid }, ctxFor(STRANGER))).toEqual([]);
     });
 
     it('answers an unknown gym with an empty list rather than an error', async () => {

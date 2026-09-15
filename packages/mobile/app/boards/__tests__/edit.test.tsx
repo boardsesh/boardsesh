@@ -425,6 +425,13 @@ describe('EditBoard — spray wall visibility', () => {
   });
 
   it('leaves the wall mutation alone when only the name changed', async () => {
+    // Both sides of BOTH flags, set here rather than inherited from the
+    // `beforeEach` defaults: the assertion below is that nothing changed, and a
+    // default drifting to `true` would make it pass for the opposite reason —
+    // a wall mutation skipped because the guard tripped, not because there was
+    // nothing to send.
+    state.boardIsPublic = false;
+    state.builderIsPublic = false;
     state.boardIsUnlisted = true;
     editSprayWall({ isPublic: false, isUnlisted: true });
     render(createElement(EditBoard));

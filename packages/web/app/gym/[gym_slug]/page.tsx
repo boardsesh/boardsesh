@@ -138,6 +138,31 @@ async function fetchGymSprayWalls(gymUuid: string, token: string | undefined): P
 }
 
 /**
+ * Where a gym's spray-wall row links.
+ *
+ * `createSprayWall` mints a slug for every wall, so a null one is a data-integrity
+ * problem rather than a case to design for — but the row still renders: a gym
+ * member can see this wall, and dropping it would be a worse answer than a link to
+ * the gym they are already on. The dev-only warning is the whole point of the
+ * branch, so the broken row gets found instead of quietly degrading in production.
+ *
+ * No `?wall=` capability param, and none is needed: `gymSprayWalls` gates on
+ * `viewerCanSeeSprayWallByLayout`, which has no unlisted exemption, so an unlisted
+ * wall is never in this list. Every wall here is public — `/b/{slug}` resolves it
+ * for anybody — or private to a gym member, whom the server recognises by their
+ * session. The param is for the share link `buildSprayWallShareUrl` produces
+ * (`packages/mobile/src/lib/spray/spray-share.ts`), which is the one place an
+ * unlisted wall is handed out.
+ */
+function sprayWallHref(sprayWall: GymSprayWallListing, gymSlug: Gym['slug']): string {
+  if (sprayWall.board.slug) return `/b/${sprayWall.board.slug}`;
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(`gym spray wall ${sprayWall.uuid} has no board slug; linking to the gym instead`);
+  }
+  return `/gym/${gymSlug}`;
+}
+
+/**
  * Absolute, http(s)-only URL for the owner-uploaded gym photo, or null.
  *
  * Two guards, both load-bearing. safeExternalHref keeps a legacy row holding a
@@ -596,7 +621,7 @@ export default async function GymPage(props: GymRouteProps) {
                   <Box>
                     <MuiLink
                       component={LocaleLink}
-                      href={sprayWall.board.slug ? `/b/${sprayWall.board.slug}` : `/gym/${gym.slug}`}
+                      href={sprayWallHref(sprayWall, gym.slug)}
                       underline="hover"
                       sx={{ color: 'var(--color-primary)', fontWeight: themeTokens.typography.fontWeight.semibold }}
                     >

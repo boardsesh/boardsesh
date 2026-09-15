@@ -207,22 +207,21 @@ export default function BoardSelection() {
     // AsyncStorage on this device. `currentUserId` stamps `isViewerOwner` once
     // per list build so no row ever scans back into `myBoards` for it.
     () =>
-      userBoardsToItems(
-        hoistActiveBoard(myBoards, activeBoard?.uuid),
-        activeBoard?.uuid,
-        boardOfflineState,
+      userBoardsToItems(hoistActiveBoard(myBoards, activeBoard?.uuid), {
+        activeUuid: activeBoard?.uuid,
+        offlineStateFor: boardOfflineState,
         currentUserId,
         pinnedOverrides,
         labelOptions,
-      ),
+      }),
     [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides, labelOptions],
   );
   const nearbyItems = useMemo(
-    () => userBoardsToItems(nearby?.boards ?? [], activeBoard?.uuid, undefined, undefined, undefined, labelOptions),
+    () => userBoardsToItems(nearby?.boards ?? [], { activeUuid: activeBoard?.uuid, labelOptions }),
     [nearby?.boards, activeBoard?.uuid, labelOptions],
   );
   const offlineItems = useMemo(
-    () => userBoardsToItems(offlineRows, activeBoard?.uuid, undefined, undefined, undefined, labelOptions),
+    () => userBoardsToItems(offlineRows, { activeUuid: activeBoard?.uuid, labelOptions }),
     [offlineRows, activeBoard?.uuid, labelOptions],
   );
   const popularItems = useMemo(

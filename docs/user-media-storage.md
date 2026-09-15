@@ -6,10 +6,22 @@ Where avatars, gym images, beta-video thumbnails and user data exports live, and
 
 | Bucket | Handle | Provider | Access | Contents |
 | --- | --- | --- | --- | --- |
-| `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, and every `@<size>.jpg` resize variant |
+| `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, `spray-walls/<wall uuid>/<32 hex>.jpg`, and every `@<size>.jpg` resize variant |
 | `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `moonboard-ocr-test-data/<ts>-<uuid>/…` |
 | `boardsesh-board-snapshots` | `snapshots` | Tigris | Public on the bucket's virtual-host domain | `board-snapshots/**` — see `docs/board-snapshots.md` |
 | `boardsesh-static-assets` | — (published by CI, not the backend) | Cloudflare R2 | Public through a custom domain — `assets-r2.boardsesh.com` today, `assets.boardsesh.com` after the cutover | `static/v1/<sha256>.<ext>` — repo-owned board art, icons, brand marks; see `docs/static-assets.md` |
+
+A public spray wall's photo is the one entry whose filename is random rather than
+derived, and deliberately so. The wall photo itself lives in the `private` bucket
+and is read through 15-minute presigned URLs; promoting a wall to public COPIES the
+current published photo into `media` under `sprayWallPublicPhotoKey` —
+`spray-walls/<wall uuid>/<128 random bits>.jpg` — because a logged-out climber and
+a crawler reading a gym page cannot hold a signature. The 128 random bits are what
+make the owner's later "make this private" real: a key anybody could rebuild from
+the wall uuid would keep resolving in every cache and screenshot after the object
+was deleted, and a re-promotion would hand back a URL people already had. Going
+private, and deleting the wall, null the key and delete the object; the copy has no
+resize variants. See `docs/spray-walls.md`.
 
 **On R2 the bucket IS the privacy boundary.** R2 implements no object ACLs and no bucket policies, so there is no way to make one prefix of a bucket private. Attaching a custom domain publishes the whole bucket. That is why the exports live in a separate bucket rather than under a prefix, and why the private bucket must never be given a custom domain.
 

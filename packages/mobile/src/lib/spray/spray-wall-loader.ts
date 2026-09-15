@@ -288,6 +288,17 @@ type SprayWallResponse = { sprayWall: SprayWall | null };
  * `fetchSprayWallUuid`, and through it the whole render path — then finds the
  * wall in cache and never asks the query that would refuse it.
  *
+ * Seeding is not enough on its own, and that was a real bug: the handoff that
+ * navigates to the board runs CONCURRENTLY with this, so `ensureSprayWallLoaded`
+ * can get there first. On an unlisted wall it then resolves `sprayWallByLayout`
+ * to null — correctly, the recipient is not a member — which caches null for an
+ * hour, marks the wall `unavailable` in the registry and starts a 30-second retry
+ * cooldown. Writing the right answer into the cache afterwards fixes nothing by
+ * itself: nothing asks again, so a climber holding a perfectly good link lands on
+ * a blank placeholder. So adoption ENDS by forcing a registration, which skips
+ * both the cooldown and the stale window and now finds the seeded wall in cache.
+ * Whichever of the two got there first, the wall ends up registered.
+ *
  * Returns the wall's layout id, or `null` when it does not resolve (deleted, a
  * bad uuid, or a private wall the viewer may not see), in which case nothing is
  * written.
@@ -303,5 +314,6 @@ export async function adoptSprayWallFromLink(queryClient: QueryClient, wallUuid:
   if (!wall) return null;
 
   queryClient.setQueryData(sprayWallByLayoutQueryKey(wall.layoutId), { sprayWallByLayout: wall });
+  refreshSprayWall(wall.layoutId);
   return wall.layoutId;
 }
