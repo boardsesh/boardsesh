@@ -5,6 +5,7 @@ import { SPRAY_SET, SPRAY_SET_IDS } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { dbzRead } from '@/app/lib/db/db';
 import { boardClimbs, sprayWalls, userBoards } from '@/app/lib/db/schema';
+import { withTimeout } from './with-timeout';
 
 /**
  * The spray walls whose climbs the CLIMB sitemap may name — SW-16 (#5449).
@@ -162,18 +163,6 @@ async function fetchPublicSprayWallConfigs(): Promise<SitemapSprayWallConfig[]> 
   }
 
   return configs;
-}
-
-function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([
-    work.finally(() => {
-      if (timer) clearTimeout(timer);
-    }),
-    new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} exceeded its ${ms}ms budget`)), ms);
-    }),
-  ]);
 }
 
 const cachedPublicSprayWallConfigs = unstable_cache(fetchPublicSprayWallConfigs, ['sitemap-spray-wall-configs'], {
