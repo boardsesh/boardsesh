@@ -186,10 +186,66 @@ void describe('stageCatalogClimb — dedup and insert', () => {
     expect(context.batch.newClimbInserts).toHaveLength(0);
     expect(context.batch.aliasRows).toEqual([
       { boardType: 'kilter', aliasUuid: 'MISTAGGED', canonicalUuid: 'EXISTING', source: 'kilter' },
+      // …plus the canonical's own missing self-alias (see below).
+      { boardType: 'kilter', aliasUuid: 'EXISTING', canonicalUuid: 'EXISTING', source: 'kilter' },
     ]);
     // The fold path's re-list is not deletion-guarded: a live folded alias keeps
     // the canonical safe from the deletion pass in the same cycle.
     expect([...context.canonicalsToRelist]).toEqual(['EXISTING']);
+  });
+
+  it('stages the canonical’s missing self-alias when a climb folds onto it', () => {
+    // Without this the canonical is invisible to the deletion pass's alias-graph
+    // lookup, so the direct-uuid fallback unlists it in the very cycle the fold
+    // re-listed it — a permanent flip-flop for the ~6k canonicals that never got
+    // a self-alias, one sync_seq bump per cycle for offline clients.
+    const context = stagingContext({
+      climbRows: [catalogRow({ uuid: 'CANON', fingerprint: fingerprintFor(SOURCE_CONCAT, SOURCE_REMAP, 1) })],
+    });
+
+    expect(stageCatalogClimb(catalogClimb({ climbUuid: 'DUP' }), context)).toBe('folded');
+    expect(context.batch.aliasRows).toEqual([
+      { boardType: 'kilter', aliasUuid: 'DUP', canonicalUuid: 'CANON', source: 'kilter' },
+      { boardType: 'kilter', aliasUuid: 'CANON', canonicalUuid: 'CANON', source: 'kilter' },
+    ]);
+    expect(context.result.selfAliasesBackfilled).toBe(1);
+  });
+
+  it('stages that self-alias once, however many climbs fold onto the canonical', () => {
+    const context = stagingContext({
+      climbRows: [catalogRow({ uuid: 'CANON', fingerprint: fingerprintFor(SOURCE_CONCAT, SOURCE_REMAP, 1) })],
+    });
+
+    stageCatalogClimb(catalogClimb({ climbUuid: 'DUP-1' }), context);
+    stageCatalogClimb(catalogClimb({ climbUuid: 'DUP-2' }), context);
+    expect(context.batch.aliasRows).toHaveLength(3);
+    expect(context.result.selfAliasesBackfilled).toBe(1);
+  });
+
+  it('adds no self-alias when the canonical already has one', () => {
+    const context = stagingContext({
+      climbRows: [catalogRow({ uuid: 'CANON', fingerprint: fingerprintFor(SOURCE_CONCAT, SOURCE_REMAP, 1) })],
+      selfAliasUuids: ['CANON'],
+    });
+
+    stageCatalogClimb(catalogClimb({ climbUuid: 'DUP' }), context);
+    expect(context.batch.aliasRows).toEqual([
+      { boardType: 'kilter', aliasUuid: 'DUP', canonicalUuid: 'CANON', source: 'kilter' },
+    ]);
+    expect(context.result.selfAliasesBackfilled).toBe(0);
+  });
+
+  it('adds no self-alias for a canonical created earlier in the same run', () => {
+    // The insert path already staged one; a second would be pure churn.
+    const context = stagingContext();
+
+    expect(stageCatalogClimb(catalogClimb({ climbUuid: 'FRESH' }), context)).toBe('inserted');
+    expect(stageCatalogClimb(catalogClimb({ climbUuid: 'DUP' }), context)).toBe('folded');
+    expect(context.batch.aliasRows).toEqual([
+      { boardType: 'kilter', aliasUuid: 'FRESH', canonicalUuid: 'FRESH', source: 'kilter' },
+      { boardType: 'kilter', aliasUuid: 'DUP', canonicalUuid: 'FRESH', source: 'kilter' },
+    ]);
+    expect(context.result.selfAliasesBackfilled).toBe(0);
   });
 
   it('keeps the first canonical seen for a fingerprint', () => {
