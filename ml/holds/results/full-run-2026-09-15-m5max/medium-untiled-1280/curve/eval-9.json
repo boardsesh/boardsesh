@@ -1,0 +1,129 @@
+{
+  "config": "medium-untiled-1280",
+  "model": ".data/artifacts/medium-untiled-1280/model.onnx",
+  "model_bytes": 120581137,
+  "dataset": ".data/spraywall-coco",
+  "split": "eval",
+  "photos": 10,
+  "holds": 964,
+  "box": {
+    "precision": 0.5636,
+    "recall": 0.6753,
+    "f1": 0.6144,
+    "tp": 651,
+    "fp": 504,
+    "fn": 313
+  },
+  "latency_seconds": {
+    "p50": 0.309,
+    "p95": 0.48,
+    "mean": 0.339
+  },
+  "peak_rss_mb": 763.1,
+  "correction_rate_micro": 0.8475,
+  "correction_rate_macro": 0.8488,
+  "score_threshold": 0.3,
+  "threads": 8,
+  "per_photo": [
+    {
+      "file_name": "cbj-hwow-22-a-west-coast-adjustable-system-board.jpg",
+      "holds": 142,
+      "detections": 142,
+      "tp": 75,
+      "fp": 67,
+      "fn": 67,
+      "correction_rate": 0.9437,
+      "seconds": 0.283
+    },
+    {
+      "file_name": "cbj-hwow-38-colorful-comp-training-wall.jpg",
+      "holds": 93,
+      "detections": 106,
+      "tp": 70,
+      "fp": 36,
+      "fn": 23,
+      "correction_rate": 0.6344,
+      "seconds": 0.276
+    },
+    {
+      "file_name": "cbj-hwow-49-multi-angle-carport-homewall.jpg",
+      "holds": 79,
+      "detections": 93,
+      "tp": 56,
+      "fp": 37,
+      "fn": 23,
+      "correction_rate": 0.7595,
+      "seconds": 0.295
+    },
+    {
+      "file_name": "cbj-hwow-55-many-angled-homewall-covered-with-volu.jpg",
+      "holds": 93,
+      "detections": 119,
+      "tp": 60,
+      "fp": 59,
+      "fn": 33,
+      "correction_rate": 0.9892,
+      "seconds": 0.297
+    },
+    {
+      "file_name": "cbj-hwow-61-lots-of-angles-and-volumes.jpg",
+      "holds": 155,
+      "detections": 194,
+      "tp": 87,
+      "fp": 107,
+      "fn": 68,
+      "correction_rate": 1.129,
+      "seconds": 0.315
+    },
+    {
+      "file_name": "flickr-mattjonze-862432.jpg",
+      "holds": 56,
+      "detections": 107,
+      "tp": 42,
+      "fp": 65,
+      "fn": 14,
+      "correction_rate": 1.4107,
+      "seconds": 0.364
+    },
+    {
+      "file_name": "flickr-squeezemonkey-554707.jpg",
+      "holds": 57,
+      "detections": 77,
+      "tp": 36,
+      "fp": 41,
+      "fn": 21,
+      "correction_rate": 1.0877,
+      "seconds": 0.331
+    },
+    {
+      "file_name": "web-ascendclimbing-021.jpg",
+      "holds": 176,
+      "detections": 193,
+      "tp": 137,
+      "fp": 56,
+      "fn": 39,
+      "correction_rate": 0.5398,
+      "seconds": 0.356
+    },
+    {
+      "file_name": "web-spotsettingblog-078.jpg",
+      "holds": 97,
+      "detections": 101,
+      "tp": 72,
+      "fp": 29,
+      "fn": 25,
+      "correction_rate": 0.5567,
+      "seconds": 0.575
+    },
+    {
+      "file_name": "web-spotsettingblog-085.jpg",
+      "holds": 16,
+      "detections": 23,
+      "tp": 16,
+      "fp": 7,
+      "fn": 0,
+      "correction_rate": 0.4375,
+      "seconds": 0.302
+    }
+  ]
+}

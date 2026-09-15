@@ -1,0 +1,14 @@
+{
+  "config": "nano-untiled-1024",
+  "dataset": ".data/roboflow-1class",
+  "device": "mps",
+  "accelerator": "mps",
+  "train_config": {
+    "epochs": 10,
+    "batch_size": 8,
+    "grad_accum_steps": 2,
+    "lr": 0.0001
+  },
+  "wall_clock_seconds": 5945.3,
+  "output_dir": "/Users/marco/Projects/github/boardsesh/MLsupport/ml/holds/.data/runs/nano-untiled-1024"
+}
