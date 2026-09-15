@@ -74,8 +74,11 @@ vi.mock('../../lib/board-render-settings', async (importOriginal) => {
   };
 });
 
+const { overlayNameMatchesScope } = await import('../../lib/cache-sweep-plan');
+
 const {
   useNativeClimbRender,
+  buildCacheKey,
   _renderedOverlaysForTests,
   _inflightRendersForTests,
   _resetBoardConfigCacheForTests,
@@ -85,6 +88,10 @@ const {
   _setNativeModuleForTests,
   _unsupportedRenderSignaturesForTests,
 } = await import('../use-native-climb-render');
+
+/** Stands in for the browser renderer's own caches: one key, one PNG, for good. */
+const webOverlayStore = new Map<string, string>();
+let renderIndex = 0;
 
 const GRASSHOPPER = { boardName: 'grasshopper' as const, layoutId: 1, sizeId: 5, setIds: '1', frames: 'p1r2' };
 const FAKE_GEOMETRY = {
@@ -100,15 +107,11 @@ describe('web Aura geometry recovery', () => {
     probeBoardseshRendererSupport: vi.fn<() => Promise<boolean>>(),
   };
 
-  /** Every config the renderer was handed, in order. */
-  function sentConfigs(): Record<string, unknown>[] {
-    return nativeModule.renderHoldsOverlay.mock.calls.map(([configJson]) => JSON.parse(configJson));
-  }
-  function auraRenderCount(): number {
-    return sentConfigs().filter((config) => config.render_mode === 'aura').length;
-  }
-  function cachedOverlayUris(): string[] {
-    return [..._renderedOverlaysForTests.values()].map((entry) => entry.uri);
+  /** Every cache key the renderer was asked for an Aura drawing under, in order. */
+  function auraRenderKeys(): string[] {
+    return nativeModule.renderHoldsOverlay.mock.calls
+      .filter(([configJson]) => JSON.parse(configJson).render_mode === 'aura')
+      .map(([, cacheKey]) => cacheKey);
   }
 
   beforeEach(() => {
@@ -124,39 +127,49 @@ describe('web Aura geometry recovery', () => {
     _resetWarmupForTests();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     nativeModule.renderHoldsOverlay.mockReset();
-    // One distinct file per render, so the cache can be read for WHICH drawing
-    // it is holding rather than just how many it has.
-    let renderIndex = 0;
-    nativeModule.renderHoldsOverlay.mockImplementation(() => {
+    webOverlayStore.clear();
+    renderIndex = 0;
+    // Faithful to `packages/mobile/modules/board-renderer/src/index.web.ts`: the
+    // browser renderer answers steps 1 and 2 — the live object-URL map and the
+    // Cache API copy that survives a reload — BEFORE it draws anything, so one
+    // cache key means one PNG for good. A stub that minted a fresh URI per call
+    // would pass this suite with the bug in place.
+    nativeModule.renderHoldsOverlay.mockImplementation((_configJson, cacheKey) => {
+      const alreadyDrawn = webOverlayStore.get(cacheKey);
+      if (alreadyDrawn) return Promise.resolve(alreadyDrawn);
       renderIndex += 1;
-      return Promise.resolve(`file:///render-${renderIndex}.png`);
+      const objectUrl = `blob:overlay-${renderIndex}`;
+      webOverlayStore.set(cacheKey, objectUrl);
+      return Promise.resolve(objectUrl);
     });
     nativeModule.probeBoardseshRendererSupport.mockReset();
     nativeModule.probeBoardseshRendererSupport.mockResolvedValue(true);
     _setNativeModuleForTests(nativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
   });
 
-  it('evicts the ring-only overlay and renders again once the chunk lands', async () => {
-    renderHook(() => useNativeClimbRender({ ...GRASSHOPPER }));
+  it('renders the silhouettes under a key of their own once the chunk lands', async () => {
+    const { result } = renderHook(() => useNativeClimbRender({ ...GRASSHOPPER }));
 
-    // The ring pass: Aura mode, no silhouettes yet, and its PNG is now cached
-    // under the key the recovery run will ask for.
-    await waitFor(() => expect(auraRenderCount()).toBe(1));
+    // The ring pass. Its PNG is named for what it is: art still in flight.
+    await waitFor(() => expect(auraRenderKeys()).toHaveLength(1));
+    const ringKey = auraRenderKeys()[0];
+    expect(ringKey.endsWith('_geopending')).toBe(true);
+    await waitFor(() => expect(result.current.overlayUri).toBe(webOverlayStore.get(ringKey)));
+    const ringUri = webOverlayStore.get(ringKey);
+
     await waitFor(() => expect(geometryChunk.resolve).not.toBeNull());
-    const ringUri = await waitFor(() => {
-      const uris = cachedOverlayUris();
-      expect(uris.length).toBeGreaterThan(0);
-      return uris[uris.length - 1];
-    });
-
     geometryChunk.pending = false;
     geometryChunk.resolve?.(FAKE_GEOMETRY);
 
-    // A second Aura render is the whole point: without the eviction the cached
-    // ring PNG answers the recovery run and this stays at 1 forever — on web
-    // that cache survives the reload, so the board keeps its rings for good.
-    await waitFor(() => expect(auraRenderCount()).toBe(2));
-    await waitFor(() => expect(cachedOverlayUris()).not.toContain(ringUri));
+    // The recovery pass, under the clean key — which none of the browser's three
+    // overlay stores has an entry for, so it actually draws. Sharing the ring's
+    // key would hand step 1 or step 2 of the web renderer the ring PNG straight
+    // back, and on a reload the Cache API copy would still be there.
+    await waitFor(() => expect(auraRenderKeys()).toHaveLength(2));
+    const geometryKey = auraRenderKeys()[1];
+    expect(geometryKey).toBe(ringKey.slice(0, -'_geopending'.length));
+    await waitFor(() => expect(result.current.overlayUri).toBe(webOverlayStore.get(geometryKey)));
+    expect(result.current.overlayUri).not.toBe(ringUri);
   });
 
   it('does not re-ask for a chunk that failed, so a dropped download is not a loop', async () => {
@@ -171,6 +184,25 @@ describe('web Aura geometry recovery', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(geometryChunk.prefetchCalls).toBe(1);
-    expect(auraRenderCount()).toBe(1);
+    expect(auraRenderKeys()).toHaveLength(1);
+  });
+});
+
+describe('the _geopending cache-key token', () => {
+  const ARGS = ['kilter', 1, 7, '1,20', 'p1100r12', false, 400, 'sig'] as const;
+
+  it('is absent unless the art is still downloading, so no native PNG is renamed', () => {
+    expect(buildCacheKey(...ARGS)).toBe(buildCacheKey(...ARGS, false));
+    expect(buildCacheKey(...ARGS, true)).toBe(`${buildCacheKey(...ARGS)}_geopending`);
+  });
+
+  it('leaves the sweep able to reap the board it belongs to', () => {
+    // Both halves the cache sweep reads are upstream of the token: the version
+    // prefix it matches current files on, and the delimited board run it reaps a
+    // single board's art by.
+    const pendingName = `${buildCacheKey(...ARGS, true)}.png`;
+    expect(pendingName.startsWith('v')).toBe(true);
+    expect(overlayNameMatchesScope(pendingName, { boardType: 'kilter', layoutId: 1, sizeId: 7 })).toBe(true);
+    expect(overlayNameMatchesScope(pendingName, { boardType: 'kilter', layoutId: 1, sizeId: 70 })).toBe(false);
   });
 });

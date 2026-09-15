@@ -1364,6 +1364,7 @@ export function buildCacheKey(
   filledStyle = false,
   renderWidth?: number,
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
+  boardArtPending = false,
 ): string {
   // With no frames there are no lit holds to colour- or shape-override, so
   // that half of the signature is meaningless and collapses to the default —
@@ -1406,7 +1407,25 @@ export function buildCacheKey(
   // matches `_{boardName}_{layoutId}_{sizeId}_` as a delimited run to reap one
   // board's art, and splitting that run would make a wall unreapable.
   const spray = sprayCacheToken(boardName, layoutId);
-  return `v${RENDERER_VERSION}_${style}_w${width}_${boardName}_${layoutId}_${sizeId}_${canonicalSetIds}${spray}_${framesHash}`;
+  // Web only: Aura's traced silhouettes are a per-board `import()` chunk, so the
+  // first render of a board draws rings and a second one draws the art. Both are
+  // legitimate PNGs for the same climb, and they need separate names — every
+  // overlay store downstream is keyed by this string and none of them knows
+  // about geometry. The web renderer alone keeps three (`index.web.ts`: the
+  // in-session object-URL map, the Cache API copy that survives a reload, and
+  // the hook's own index), so an eviction from the hook's map is not enough:
+  // a shared key hands the recovery render the ring PNG straight back and the
+  // rings outlive the reload. `boardArtGeometryPending` is always false off web,
+  // where the shards are synchronous, so this token is empty on native and no
+  // PNG already on disk is renamed.
+  //
+  // Its own trailing segment, after the frames hash, so it composes with the
+  // spray token rather than displacing it: the `v${RENDERER_VERSION}_` prefix
+  // the warm-up scan matches on and the delimited
+  // `_{boardName}_{layoutId}_{sizeId}_` run `overlayNameMatchesScope` reaps by
+  // are both upstream of it and stay intact.
+  const boardArt = boardArtPending ? '_geopending' : '';
+  return `v${RENDERER_VERSION}_${style}_w${width}_${boardName}_${layoutId}_${sizeId}_${canonicalSetIds}${spray}_${framesHash}${boardArt}`;
 }
 
 /**
@@ -1946,6 +1965,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // cache when a signature has lapsed, is what does that.
   }, [boardName, layoutId, sprayVersionToken]);
 
+  // Web only, `false` everywhere else: is this board's traced-art chunk still in
+  // flight? Read on every render rather than memoised, because the answer is not
+  // a prop — the chunk resolving is what flips it, and the recovery re-render
+  // below is what has to observe the flip. Two Map lookups, next to a key
+  // builder that already runs an fnv1a char-loop.
+  const boardArtChunkPending =
+    effectiveRenderSettings.mode === 'aura' && boardArtGeometryPending({ boardName, layoutId, sizeId });
+
   // Both keys feed cache lookups on every FlashList row recycle; buildCacheKey
   // runs an fnv1a char-loop over the frames string. Memoize on exactly the
   // builders' inputs — a stale key would collide two climbs' overlays.
@@ -1962,6 +1989,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         filledStyle,
         renderWidth,
         effectiveRenderSignature,
+        boardArtChunkPending,
       ),
     [
       boardName,
@@ -1973,6 +2001,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       renderWidth,
       effectiveRenderSignature,
       sprayVersionToken,
+      boardArtChunkPending,
     ],
   );
   const currentBoardKey = useMemo(
@@ -2311,8 +2340,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // chunk rather than something already in the bundle. Start it, and bounce the
     // effect once it resolves so the config rebuilds with the art. Until then the
     // board still renders, with a ring at each placement radius.
-    if (effectiveRenderSettings.mode === 'aura' && boardArtGeometryPending({ boardName, layoutId, sizeId })) {
-      void prefetchBoardArtGeometry({ boardName, layoutId, sizeId }).then(async (geometry) => {
+    if (boardArtChunkPending) {
+      void prefetchBoardArtGeometry({ boardName, layoutId, sizeId }).then((geometry) => {
         // A chunk that failed to download resolves `null` and leaves the key
         // PENDING, so bouncing the effect here would re-enter this same branch,
         // ask for the chunk again, and get `null` again: a download loop that
@@ -2321,20 +2350,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // next mount try the download again — `prefetchBoardArtGeometry` caps
         // how many times one key may be re-fetched.
         if (!geometry) return;
-        // The ring-only render this same pass submitted may still be inside the
-        // renderer. Join it before evicting: re-entering the effect while it is
-        // in flight would only re-attach to that render through
-        // `getOrStartInflightRender` and cache the ring art under this key
-        // anyway, which is the failure the eviction below exists to prevent.
-        const inflightRingRender = inflightRenders.get(currentCacheKey);
-        if (inflightRingRender) await inflightRingRender.catch(() => undefined);
-        // Evict the ring-only PNG. The recovery bump re-runs this effect from
-        // the top, where the cached-overlay lookup would hand that PNG straight
-        // back and return before the geometry render is ever submitted — and on
-        // web that cache is persistent, so the ring art would outlive the
-        // reload for a board whose silhouettes did in fact arrive.
-        const ringEntry = getRenderedOverlay(currentCacheKey);
-        if (ringEntry) invalidateRenderedOverlay(currentCacheKey, ringEntry);
+        // Nothing to evict: `boardArtChunkPending` is false from here on, so the
+        // re-render this bump causes moves `currentCacheKey` off the
+        // `_geopending` name the ring PNG was cached under. The geometry render
+        // is submitted under the clean key, which no store has an entry for, and
+        // the ring entry is simply never looked up again.
         if (mountedRef.current) setRecoveryRequest((request) => request + 1);
       });
     }
@@ -2570,6 +2590,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentCacheKey,
+    // Redundant with `currentCacheKey`, which carries the `_geopending` token —
+    // listed so the branch's own input is visible where the effect declares it.
+    boardArtChunkPending,
     flatFrames,
     boardName,
     layoutId,
