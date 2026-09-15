@@ -56,15 +56,6 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
           eq(dbSchema.boardseshTicks.sessionId, sessionId),
           inArray(dbSchema.boardseshTicks.status, ['flash', 'send']),
           isNotNull(dbSchema.boardseshTicks.difficulty),
-          // The hardest-send rows carry the climb's name and frames, and the
-          // summary is keyed on a session id alone — session access is not wall
-          // access. A no-op on the other eight board types. `null` viewer: this
-          // helper has no context, so only a PUBLIC wall's climbs appear here
-          // until one is threaded through.
-          sprayClimbVisibilityCondition(
-            { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
-            null,
-          ),
         ),
       )
       .groupBy(dbSchema.boardDifficultyGrades.boulderName, dbSchema.boardDifficultyGrades.difficulty)

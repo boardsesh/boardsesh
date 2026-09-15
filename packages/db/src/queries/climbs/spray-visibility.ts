@@ -35,11 +35,23 @@ import { sql, type SQL } from 'drizzle-orm';
  *
  * ## Why it is shaped as "not spray, OR visible"
  *
+ * ## `IS DISTINCT FROM`, not `<>`
+ *
+ * Several callers AND this onto a **LEFT-JOINed** `board_climbs`: a tick whose climb
+ * row is missing is a case they deliberately support and render as "Unknown Climb".
+ * With a plain `<>`, `NULL <> 'spray'` is NULL, the row is dropped, and
+ * `sessionDetail` — which returns null when it finds no ticks — loses the whole
+ * session. `IS DISTINCT FROM` is NULL-safe and answers true for a missing climb,
+ * which is the honest reading: a row that is not a spray climb is not hidden by a
+ * spray rule.
+ *
+ * ## Why it is shaped as "not spray, OR visible"
+ *
  * So it can be dropped into a query that does not know, or does not constrain, the
  * board type — `userClimbs` and the ascents feeds span every board a climber has
  * touched. For those the condition is a no-op on the other eight board types and
  * self-scoping on spray, which means callers never need a board-type branch and
- * cannot forget one. `board_type <> 'spray'` short-circuits before the subquery on
+ * cannot forget one. The board-type test short-circuits before the subquery on
  * every non-spray row, so the cost on the hot Kilter path is one cheap comparison.
  */
 export type SprayVisibilityColumns = {
@@ -63,7 +75,7 @@ export type SprayVisibilityColumns = {
 export function sprayClimbVisibilityCondition(columns: SprayVisibilityColumns, userId: string | null | undefined): SQL {
   const viewer = userId ?? null;
   return sql`(
-    ${columns.boardType} <> 'spray'
+    ${columns.boardType} IS DISTINCT FROM 'spray'
     OR EXISTS (
       SELECT 1
       FROM spray_walls sw

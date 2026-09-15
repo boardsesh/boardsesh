@@ -1826,6 +1826,38 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     expect(trending.items.map((item) => item.climbUuid)).toContain(climbUuid);
   });
 
+  it('keeps a tick whose climb row is MISSING — the "Unknown Climb" case', async () => {
+    // Four callers AND this predicate onto a LEFT-JOINed `board_climbs`, and a tick
+    // with no climb row is a case they deliberately render as "Unknown Climb". With
+    // a plain `<>`, `NULL <> 'spray'` is NULL and the row vanishes — and
+    // `sessionDetail`, which returns null when it finds no ticks, loses the whole
+    // session. Hence `IS DISTINCT FROM`.
+    const orphanUuid = 'ORPHANTICKCLIMBUUID0000000000001';
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, ${orphanUuid}, 'kilter', 40, 'send', now(), now(), now())
+    `);
+
+    const [{ day }] = (await db.execute(sql`SELECT to_char(now(), 'YYYY-MM-DD') AS day`)) as unknown as Array<{
+      day: string;
+    }>;
+
+    const detail = (await sessionFeedQueries.sessionDetail(
+      {},
+      { sessionId: `daily:${OWNER}:${day}` },
+      ctxFor(OWNER),
+    )) as { ticks?: Array<{ climbUuid?: string }> } | null;
+    expect(detail).not.toBeNull();
+    expect((detail?.ticks ?? []).map((tick) => tick.climbUuid)).toContain(orphanUuid);
+
+    const global = (await socialFeedQueries.globalAscentsFeed(
+      {},
+      { input: { limit: 50, offset: 0 } },
+      ctxFor(null),
+    )) as { items: Array<{ climbUuid?: string }> };
+    expect(global.items.map((item) => item.climbUuid)).toContain(orphanUuid);
+  });
+
   it('lets a GYM MEMBER read a gym wall\u2019s climbs', async () => {
     // The rule is owner / gym member / public, so a gym's spray wall has to work
     // for the gym — otherwise the fix has broken the product.
