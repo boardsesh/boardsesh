@@ -70,8 +70,8 @@
       "notes": "The phone candidate without tiles: the spike showed 2x2 tiling hurts on the ~800 px Roboflow photos (each tile loses the wall context and upscales the holds), so this config gives the same nano weights one full-frame pass instead. Model input is 768, not 1024: the DINOv2 backbone's attention is quadratic in tokens, and 1024-px training (which rfdetr's multi-scale aug pushes to 1184) ran ~70x slower per step than medium-untiled on MPS. 768 is still 2x the tiled config's per-pass resolution and the source photos are ~800 px on the long side.",
       "train": {
         "epochs": 10,
-        "batch_size": 2,
-        "grad_accum_steps": 4,
+        "batch_size": 8,
+        "grad_accum_steps": 2,
         "lr": 0.0001
       },
       "num_classes": 1
@@ -116,8 +116,8 @@
       "notes": "The quality ceiling the phone configs are judged against. One pass over the whole photo.",
       "train": {
         "epochs": 10,
-        "batch_size": 1,
-        "grad_accum_steps": 8,
+        "batch_size": 8,
+        "grad_accum_steps": 2,
         "lr": 0.0001
       },
       "num_classes": 1

@@ -131,14 +131,13 @@ retrying the same number. `--threads` / `HOLDS_THREADS` only matter for
 `--device cpu`; they do nothing for `mps` compute (data loading still uses
 some CPU threads regardless of device).
 
-**Caveat, stated honestly**: nobody has run this harness's training path on
-`mps` yet. `rfdetr==1.10.1`'s Lightning trainer has explicit MPS handling
-(`torch.backends.mps.is_available()` branches for autocast precision, and
-`torch.compile` is deliberately CUDA-only — "CPU and MPS are not supported"),
-so it should work, but it is untested here. If `--device mps` fails partway
-through — a missing MPS kernel for some op is the most likely shape of that —
-`--device cpu` on the same Mac still runs the full pipeline and, on an M5 Max,
-should still be faster than the CPU box this harness was written on.
+**MPS status (2026-09-15)**: this path has now run in anger — the full-run
+results below all come from `--device mps` on an M5 Max. Two things bit and
+their fixes are in "The full run (M5 Max, 2026-09-15)" under *Training notes*:
+the allocator pool stalls training after the first validation unless the batch
+stays at 8 with the watermark ratios capped, and nano cannot train at a 1024 px
+input (quadratic attention; use 768). If `mps` misbehaves in some new way,
+`--device cpu` on the same Mac still runs the full pipeline.
 
 **What to hand back**: the `eval-*.json` files (`eval.py`'s `--out`, with the
 per-photo breakdown) from the `tune` sweep and the final `eval` split score,
@@ -291,7 +290,7 @@ columns are the 600-photo/1,400-tile CC BY retrains from the table above.
 | Weighted corr. (2·miss+FP) ÷ holds | **1.02** | 1.05 | — | — | ~0.5 (proposed) ❌ |
 | Latency p50 / p95 (M5 Max CPU) | 0.166 / 0.187 s | 0.148 / 0.241 s | — | — | ≤ 8 s ✅ |
 | Peak RSS (onnxruntime, macOS) | **987 MB** | 593 MB | — | — | < 500 MB ❌ |
-| int8 artifact | 29.9 MB | 31.3 MB | 28.7 MB | 32.8 MB | — |
+| int8 artifact | 31.3 MB | 32.8 MB | 28.7 MB | 32.8 MB | — |
 | Roboflow test split (in-domain) F1 | 0.908 | 0.893 | — | — | — |
 | Train wall clock | 99 min | 78 min¹ | 39 min (CPU) | 34 min (CPU) | — |
 
@@ -303,7 +302,7 @@ on both platforms.
 What the full run settles:
 
 - **Full-frame nano beats medium.** 0.659 vs 0.650, at a third of the training
-  cost and 30 MB. The spike's hypothesis — the lever is full-frame resolution,
+  cost and 31.3 MB. The spike's hypothesis — the lever is full-frame resolution,
   not model size — held: the same weights that scored 0.295 with tiles score
   0.659 without them.
 - **The dataset is exhausted.** Per-epoch scoring on the spray halves (the
