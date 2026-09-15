@@ -12,22 +12,29 @@ const repositoryRoot = join(currentDirectory, '..', '..');
 const sourceGuardScript = join(repositoryRoot, 'scripts', 'mobile-web-bundle-check.sh');
 const sourceExportScript = join(repositoryRoot, 'scripts', 'build-expo-web-export.sh');
 const sourcePatchScript = join(repositoryRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs');
+const sourceBudgetScript = join(repositoryRoot, 'scripts', 'lib', 'check-expo-web-eager-budget.mjs');
 
 const GLUE_PATH = 'board_renderer_wasm.js';
 const WASM_PATH = 'board_renderer_wasm_bg.wasm';
 const WORKER_PATH = 'board-render.worker.js';
 
 // The export script's PWA-manifest step (W-24, #4438) reads the rendered shell
-// and manifest.json back out of the export, so the stub has to emit real ones —
-// a `touch`ed empty index.html would fail every case here for the wrong reason.
-const EXPORT_SHELL_AND_MANIFEST = `cat > "$output_dir/index.html" <<'SHELL_EOF'
+// and manifest.json back out of the export, and its eager-payload budget step
+// reads the shell's <script src> list and the files behind it — so the stub has
+// to emit real ones. A `touch`ed empty index.html, or a shell with no script
+// tag, would fail every case here for the wrong reason.
+const EXPORT_SHELL_AND_MANIFEST = `mkdir -p "$output_dir/_expo/static/js/web"
+printf 'globalThis.__stub=1;\\n' > "$output_dir/_expo/static/js/web/entry-stub.js"
+cat > "$output_dir/index.html" <<'SHELL_EOF'
 <!doctype html>
 <html lang="en">
   <head>
     <title>Boardsesh</title>
     <link rel="manifest" href="/app/manifest.json" />
   </head>
-  <body><div id="root"></div></body>
+  <body><div id="root"></div>
+  <script src="/app/_expo/static/js/web/entry-stub.js" defer></script>
+  </body>
 </html>
 SHELL_EOF
 cat > "$output_dir/manifest.json" <<'MANIFEST_EOF'
@@ -62,6 +69,10 @@ describe('mobile-web-bundle-check.sh', () => {
     // …and the PWA-manifest patcher the export script shells out to.
     mkdirSync(join(fixtureRoot, 'scripts', 'lib'), { recursive: true });
     copyFileSync(sourcePatchScript, join(fixtureRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs'));
+    // The export script's eager-payload budget step runs on every export, so the
+    // fixture needs it too or every case dies on MODULE_NOT_FOUND before it
+    // reaches the assertion it is actually about.
+    copyFileSync(sourceBudgetScript, join(fixtureRoot, 'scripts', 'lib', 'check-expo-web-eager-budget.mjs'));
     // Pre-seed the isolated web-runtime install so the export script skips its
     // nested pnpm install step (no network in the test).
     mkdirSync(join(fixtureRoot, 'packages', 'mobile', 'web-runtime', 'node_modules', 'react-native-web'), {

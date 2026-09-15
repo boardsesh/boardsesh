@@ -20,9 +20,11 @@ import {
   toFlatFrames,
 } from '@boardsesh/board-constants/hold-states';
 import {
+  boardArtGeometryPending,
   getWallLightness,
   isWithinSpillRange,
   loadBoardArtGeometry,
+  prefetchBoardArtGeometry,
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
@@ -1555,7 +1557,15 @@ function getBoardConfig(
     }
 
     cached = { configBase, setIdsArray, holds, boardseshGeometry };
-    boardConfigCache.set(configKey, cached);
+    // On web the traced art arrives as an async chunk. A config built before it
+    // lands is correct to render — the renderer rings each placement — but it is
+    // NOT correct to keep: `configKey` has no geometry term, so caching it here
+    // would pin the ring fallback for this board for the rest of the session.
+    // Skip the write; the re-render after the chunk resolves builds it again,
+    // this time with the silhouettes, and that one caches.
+    if (!boardsesh || !boardArtGeometryPending({ boardName, layoutId, sizeId })) {
+      boardConfigCache.set(configKey, cached);
+    }
   }
 
   // A classic config, a Boardsesh one on a board the tracer skipped, and Modern
@@ -2219,6 +2229,16 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         }, MODULE_LOAD_RETRY_DELAY_MS);
       }
       return;
+    }
+
+    // Aura draws traced hold silhouettes, which on web are a per-board async
+    // chunk rather than something already in the bundle. Start it, and bounce the
+    // effect once it resolves so the config rebuilds with the art. Until then the
+    // board still renders, with a ring at each placement radius.
+    if (effectiveRenderSettings.mode === 'aura' && boardArtGeometryPending({ boardName, layoutId, sizeId })) {
+      void prefetchBoardArtGeometry({ boardName, layoutId, sizeId }).then(() => {
+        if (mountedRef.current) setRecoveryRequest((request) => request + 1);
+      });
     }
 
     const boardConfig = getBoardConfig(

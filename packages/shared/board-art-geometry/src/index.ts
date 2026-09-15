@@ -9,11 +9,13 @@ export type {
 } from './types';
 export { boardArtGeometryKey } from './types';
 export {
+  boardArtGeometryPending,
   clearBoardArtGeometryCache,
   getOutlineCounts,
   getWallLightness,
   listBoardArtGeometryKeys,
   loadBoardArtGeometry,
+  prefetchBoardArtGeometry,
 } from './loader';
 export type { VeilInput } from './veil';
 export { VEIL_TUNING, oklabLightness, veilOpacityFor } from './veil';
