@@ -99,6 +99,7 @@ def test_the_sample_model_is_not_a_machine_specific_path() -> None:
     source = Path(__file__).read_text()
     # Split so the needles are not themselves matched in this file's own source.
     assert "/home" + "/" not in source
+    assert "/User" + "s/" not in source  # the macOS spelling of the same mistake
     assert "skip" + "if" not in source
 
 
@@ -222,23 +223,76 @@ def test_eval_json_is_picked_by_known_keys_only(tmp_path: Path, sample_model: Pa
     assert manifest["eval"] == {"sprayEvalF1": 0.559, "weightedCorrectionsPerHold": 0.97}
 
 
+def _eval_py_results(**overrides: Any) -> dict[str, Any]:
+    """An eval.py results file matching what _run_publish publishes."""
+    results: dict[str, Any] = {
+        "config": CONFIG_NAME,
+        "model": f".data/artifacts/{CONFIG_NAME}/model-int8.onnx",
+        "split": "eval",
+        "score_threshold": 0.2,
+        "box": {"precision": 0.514, "recall": 0.612, "f1": 0.559, "tp": 590},
+        "correction_rate_micro": 0.97,
+        "correction_rate_macro": 1.04,
+    }
+    results.update(overrides)
+    return results
+
+
 def test_an_eval_py_results_file_populates_the_manifest(tmp_path: Path, sample_model: Path) -> None:
     """eval.py writes box.f1 / correction_rate_micro, not the manifest's own names."""
     eval_json_path = tmp_path / "eval.json"
-    eval_json_path.write_text(
-        json.dumps(
-            {
-                "config": CONFIG_NAME,
-                "split": "eval",
-                "box": {"precision": 0.514, "recall": 0.612, "f1": 0.559, "tp": 590},
-                "correction_rate_micro": 0.97,
-                "correction_rate_macro": 1.04,
-            }
-        )
-    )
+    eval_json_path.write_text(json.dumps(_eval_py_results()))
     out_dir = _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
     manifest = json.loads((out_dir / "manifest.json").read_text())
-    assert manifest["eval"] == {"sprayEvalF1": 0.559, "weightedCorrectionsPerHold": 0.97}
+    assert manifest["eval"] == {
+        "sprayEvalF1": 0.559,
+        "weightedCorrectionsPerHold": 0.97,
+        # Which half the numbers came from: `eval` is held out, `tune` is where the
+        # threshold was chosen.
+        "split": "eval",
+    }
+    schema = json.loads(publish_model.SCHEMA_PATH.read_text())
+    jsonschema.validate(instance=manifest, schema=schema)
+
+
+def test_an_eval_json_for_another_config_is_refused(tmp_path: Path, sample_model: Path) -> None:
+    eval_json_path = tmp_path / "eval.json"
+    eval_json_path.write_text(json.dumps(_eval_py_results(config="medium-untiled-1280")))
+    with pytest.raises(SystemExit, match="medium-untiled-1280"):
+        _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
+
+
+def test_an_eval_json_at_another_threshold_is_refused(tmp_path: Path, sample_model: Path) -> None:
+    """A tune-sweep run must not be published as the shipped default's result."""
+    eval_json_path = tmp_path / "eval.json"
+    eval_json_path.write_text(json.dumps(_eval_py_results(score_threshold=0.05, split="tune")))
+    with pytest.raises(SystemExit, match="score threshold 0.05"):
+        _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
+
+
+def test_an_eval_json_scored_on_another_artifact_is_refused(tmp_path: Path, sample_model: Path) -> None:
+    eval_json_path = tmp_path / "eval.json"
+    eval_json_path.write_text(json.dumps(_eval_py_results(model=f".data/artifacts/{CONFIG_NAME}/model-fp16.onnx")))
+    with pytest.raises(SystemExit, match="not one of"):
+        _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
+
+
+def test_an_eval_py_file_missing_its_provenance_is_refused(tmp_path: Path, sample_model: Path) -> None:
+    results = _eval_py_results()
+    del results["model"]
+    del results["score_threshold"]
+    eval_json_path = tmp_path / "eval.json"
+    eval_json_path.write_text(json.dumps(results))
+    with pytest.raises(SystemExit, match="does not record model, score_threshold"):
+        _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
+
+
+def test_a_null_correction_rate_is_refused_rather_than_dropped(tmp_path: Path, sample_model: Path) -> None:
+    """eval.py writes null when it had no holds to score; publishing that is a lie."""
+    eval_json_path = tmp_path / "eval.json"
+    eval_json_path.write_text(json.dumps(_eval_py_results(correction_rate_micro=None)))
+    with pytest.raises(SystemExit, match="correction_rate_micro set to null"):
+        _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
 
 
 def test_an_eval_json_with_no_usable_keys_is_an_error(tmp_path: Path, sample_model: Path) -> None:
@@ -406,12 +460,19 @@ MANIFEST_KEY = f"{publish_model.MODEL_KEY_PREFIX}/{VERSION}/manifest.json"
 class RecordingS3Client:
     """Fake s3 client: records every call, 404s anything not seeded as existing."""
 
-    def __init__(self, existing: dict[str, dict[str, Any]] | None = None, head_status: int | None = None) -> None:
+    def __init__(
+        self,
+        existing: dict[str, dict[str, Any]] | None = None,
+        head_status: int | None = None,
+        bodies: dict[str, bytes] | None = None,
+    ) -> None:
         self.existing = existing or {}
         self.head_status = head_status
+        self.bodies = bodies or {}
         self.calls: list[tuple[str, str]] = []
         self.uploads: list[dict[str, Any]] = []
         self.puts: list[dict[str, Any]] = []
+        self.copies: list[dict[str, Any]] = []
 
     def head_object(self, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803 - boto3's own kwarg names
         self.calls.append(("head_object", Key))
@@ -439,6 +500,14 @@ class RecordingS3Client:
     def put_object(self, Bucket: str, Key: str, Body: bytes, **kwargs: Any) -> None:  # noqa: N803
         self.calls.append(("put_object", Key))
         self.puts.append({"key": Key, "body": Body, **kwargs})
+
+    def download_file(self, Bucket: str, Key: str, Filename: str) -> None:  # noqa: N803
+        self.calls.append(("download_file", Key))
+        Path(Filename).write_bytes(self.bodies.get(Key, b"some other bytes entirely"))
+
+    def copy_object(self, **kwargs: Any) -> None:
+        self.calls.append(("copy_object", str(kwargs["Key"])))
+        self.copies.append(kwargs)
 
 
 @pytest.fixture
@@ -533,15 +602,50 @@ def test_force_still_refuses_to_replace_differing_weights(
     assert client.puts == []
 
 
-def test_a_published_weight_with_no_checksum_is_not_assumed_identical(
+def test_a_legacy_weight_with_identical_bytes_is_stamped_not_re_uploaded(
+    publishable: tuple[Any, dict[str, Any], dict[str, Path]],
+) -> None:
+    """Weights from the previous publisher carry no sha256, so hash them instead of
+    refusing - otherwise the manifest-repair path is closed for those versions."""
+    bucket, manifest, sources = publishable
+    source = sources["model-int8.onnx"]
+    client = RecordingS3Client(
+        existing={
+            WEIGHT_KEY: {"ContentLength": source.stat().st_size},
+            MANIFEST_KEY: {"ContentLength": 10},
+        },
+        bodies={WEIGHT_KEY: source.read_bytes()},
+    )
+
+    publish_model.upload(bucket, VERSION, manifest, sources, force=True, client=client)
+
+    # Bytes untouched: one same-key metadata copy, no re-upload, manifest replaced.
+    assert client.uploads == []
+    assert [copy["Key"] for copy in client.copies] == [WEIGHT_KEY]
+    stamped = client.copies[0]
+    assert stamped["CopySource"] == {"Bucket": bucket.bucket_name, "Key": WEIGHT_KEY}
+    assert stamped["MetadataDirective"] == "REPLACE"
+    assert stamped["Metadata"] == {"sha256": manifest["files"][0]["sha256"]}
+    # REPLACE drops anything not resent, so the immutable headers are restated.
+    assert stamped["CacheControl"] == "public, max-age=31536000, immutable"
+    assert stamped["ContentType"] == "application/octet-stream"
+    assert [put["key"] for put in client.puts] == [MANIFEST_KEY]
+
+
+def test_a_legacy_weight_with_different_bytes_is_still_refused(
     publishable: tuple[Any, dict[str, Any], dict[str, Path]],
 ) -> None:
     bucket, manifest, sources = publishable
-    client = RecordingS3Client(existing={WEIGHT_KEY: {"ContentLength": sources["model-int8.onnx"].stat().st_size}})
+    client = RecordingS3Client(
+        existing={WEIGHT_KEY: {"ContentLength": 1}},
+        bodies={WEIGHT_KEY: b"an older, different export"},
+    )
 
     with pytest.raises(SystemExit, match="immutable per version"):
         publish_model.upload(bucket, VERSION, manifest, sources, force=True, client=client)
     assert client.uploads == []
+    assert client.copies == []
+    assert client.puts == []
 
 
 def test_a_head_error_that_is_not_404_is_never_read_as_missing(

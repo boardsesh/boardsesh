@@ -51,6 +51,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -319,23 +320,93 @@ def resolve_training(args: argparse.Namespace) -> dict[str, Any]:
     return training
 
 
-def _dig(payload: dict[str, Any], dotted_path: tuple[str, ...]) -> Any | None:
-    """Read a nested value out of an eval.py results dict, or None if it isn't there."""
+# A distinct "the file does not have this key at all", so a key present with a null
+# value (which eval.py does write) is never confused with a missing one.
+_ABSENT = object()
+
+
+def _dig(payload: dict[str, Any], dotted_path: tuple[str, ...]) -> Any:
+    """Read a nested value out of an eval.py results dict, or _ABSENT if it has none."""
     current: Any = payload
     for segment in dotted_path:
         if not isinstance(current, dict) or segment not in current:
-            return None
+            return _ABSENT
         current = current[segment]
     return current
 
 
-def resolve_eval(args: argparse.Namespace) -> dict[str, Any] | None:
+def check_eval_provenance(
+    loaded: dict[str, Any],
+    eval_json_path: str,
+    *,
+    config_name: str,
+    threshold: float,
+    published_filenames: set[str],
+) -> None:
+    """Refuse an eval.py results file that measured something other than this export.
+
+    eval.py records which config, which ONNX file and which score threshold produced
+    its numbers. Publishing a tune-sweep run, another config's run, or a run at a
+    different threshold would present those numbers as this export's held-out result
+    at the shipped default - an easy file-selection mistake that silently corrupts
+    published experiment results, so each recorded field must match.
+    """
+    recorded_config = loaded.get("config")
+    recorded_model = loaded.get("model")
+    recorded_threshold = loaded.get("score_threshold")
+
+    missing = [
+        name
+        for name, value in (("config", recorded_config), ("model", recorded_model), ("score_threshold", recorded_threshold))
+        if value is None
+    ]
+    if missing:
+        raise SystemExit(
+            f"--eval-json {eval_json_path} looks like an eval.py results file but does not record "
+            + ", ".join(missing)
+            + ". Re-run eval.py to regenerate it, or pass a manifest-shaped eval JSON instead."
+        )
+
+    if recorded_config != config_name:
+        raise SystemExit(
+            f"--eval-json {eval_json_path} was measured on config {recorded_config!r}, "
+            f"but this publish is --config {config_name!r}. Score the config being published."
+        )
+
+    # eval.py writes the model path relative to ml/holds (or its bare filename), so
+    # compare the filename against the artifacts this publish actually uploads.
+    recorded_filename = Path(str(recorded_model)).name
+    if recorded_filename not in published_filenames:
+        raise SystemExit(
+            f"--eval-json {eval_json_path} was measured on {recorded_model!r}, which is not one of "
+            f"the files being published ({', '.join(sorted(published_filenames))}). Quantization "
+            "shifts score calibration, so the numbers must come from the artifact that ships."
+        )
+
+    if float(recorded_threshold) != float(threshold):
+        raise SystemExit(
+            f"--eval-json {eval_json_path} was measured at score threshold {recorded_threshold}, "
+            f"but this manifest ships {threshold} as its default. Re-score at the shipped threshold, "
+            "or publish the threshold that was scored."
+        )
+
+
+def resolve_eval(
+    args: argparse.Namespace,
+    *,
+    config_name: str,
+    threshold: float,
+    published_filenames: set[str],
+) -> dict[str, Any] | None:
     """Pick the manifest's eval numbers out of --eval-json.
 
     Accepts a manifest-shaped file (the keys already named as EVAL_KEYS) or, more
     usually, an eval.py results file, whose own key names are mapped through
-    EVAL_SOURCE_PATHS. Matching nothing is an error rather than a manifest that
-    quietly ships with no `eval` section at all.
+    EVAL_SOURCE_PATHS. An eval.py-shaped file also has its provenance checked
+    against this publish (see check_eval_provenance) and contributes its `split` to
+    the manifest, so a reader can tell a held-out number from a tune-sweep one.
+    Matching nothing is an error rather than a manifest that quietly ships with no
+    `eval` section at all.
     """
     if not args.eval_json:
         return None
@@ -344,13 +415,28 @@ def resolve_eval(args: argparse.Namespace) -> dict[str, Any] | None:
         raise SystemExit(f"--eval-json {args.eval_json} must contain a JSON object")
 
     picked: dict[str, Any] = {}
+    mapped_from_eval_py = False
     for key in EVAL_KEYS:
         if key in loaded:
             picked[key] = loaded[key]
             continue
-        from_eval_py = _dig(loaded, EVAL_SOURCE_PATHS[key]) if key in EVAL_SOURCE_PATHS else None
-        if from_eval_py is not None:
-            picked[key] = from_eval_py
+        if key not in EVAL_SOURCE_PATHS:
+            continue
+        dotted_path = EVAL_SOURCE_PATHS[key]
+        from_eval_py = _dig(loaded, dotted_path)
+        if from_eval_py is _ABSENT:
+            continue
+        mapped_from_eval_py = True
+        if from_eval_py is None:
+            # eval.py writes null for a rate it could not compute (no holds in the
+            # split). Publishing that as a number, or silently dropping it, would
+            # both misrepresent the run - so say which key and why.
+            raise SystemExit(
+                f"--eval-json {args.eval_json} has {'.'.join(dotted_path)} set to null, which eval.py "
+                f"writes when it had no holds to score. Re-score on a split with labelled holds, or "
+                f"drop --eval-json rather than publish {key} as unknown."
+            )
+        picked[key] = from_eval_py
 
     if not picked:
         readable = ", ".join(
@@ -361,6 +447,16 @@ def resolve_eval(args: argparse.Namespace) -> dict[str, Any] | None:
             f"--eval-json {args.eval_json} has none of the keys the manifest can carry: {readable}. "
             "Pass an eval.py results file (.data/artifacts/<config>/eval.json), or drop --eval-json."
         )
+
+    if mapped_from_eval_py:
+        check_eval_provenance(
+            loaded,
+            args.eval_json,
+            config_name=config_name,
+            threshold=threshold,
+            published_filenames=published_filenames,
+        )
+        picked["split"] = str(loaded["split"]) if loaded.get("split") else "unknown"
     return picked
 
 
@@ -454,6 +550,45 @@ def head_object_or_none(client: Any, bucket_name: str, key: str) -> dict[str, An
         raise
 
 
+WEIGHT_CACHE_CONTROL = "public, max-age=31536000, immutable"
+WEIGHT_CONTENT_TYPE = "application/octet-stream"
+
+
+def remote_sha256(client: Any, bucket_name: str, key: str) -> str:
+    """Hash a published object by downloading it to a temp file.
+
+    Only reached for weights uploaded before this script stamped a sha256 on them.
+    The bytes go to a temp file rather than memory because an fp32 export is over
+    100 MB.
+    """
+    print(f"no sha256 metadata on {key} - hashing the published bytes", file=sys.stderr)
+    with tempfile.NamedTemporaryFile(prefix="published-weight-", suffix=".onnx") as handle:
+        client.download_file(bucket_name, key, handle.name)
+        return sha256_file(Path(handle.name))
+
+
+def stamp_weight_checksum(client: Any, bucket: MediaBucketConfig, key: str, sha256: str) -> None:
+    """Record a sha256 on an already-published weight object without changing its bytes.
+
+    A same-key copy with MetadataDirective=REPLACE rewrites only the metadata, so the
+    object keeps serving the identical bytes (and the identical immutable cache
+    headers, which must be restated because REPLACE drops anything not resent).
+    """
+    copy_kwargs: dict[str, Any] = {
+        "Bucket": bucket.bucket_name,
+        "Key": key,
+        "CopySource": {"Bucket": bucket.bucket_name, "Key": key},
+        "MetadataDirective": "REPLACE",
+        "Metadata": {"sha256": sha256},
+        "ContentType": WEIGHT_CONTENT_TYPE,
+        "CacheControl": WEIGHT_CACHE_CONTROL,
+    }
+    if not bucket.disable_acl:
+        copy_kwargs["ACL"] = "public-read"
+    client.copy_object(**copy_kwargs)
+    print(f"stamped sha256 metadata on {key} (bytes unchanged)", file=sys.stderr)
+
+
 def upload(
     bucket: MediaBucketConfig,
     version: str,
@@ -486,7 +621,15 @@ def upload(
         if head is None:
             continue
         published_sha256 = (head.get("Metadata") or {}).get("sha256")
-        if published_sha256 is not None and published_sha256 == checksums[name]:
+        if published_sha256 is None:
+            # Uploaded before this script stamped a checksum: hash the remote bytes
+            # once rather than refuse. Identical bytes get the metadata stamped in
+            # place (a same-key copy, so the published bytes never change), which
+            # keeps the manifest-repair path open for those older versions.
+            published_sha256 = remote_sha256(client, bucket.bucket_name, key)
+            if published_sha256 == checksums[name]:
+                stamp_weight_checksum(client, bucket, key, published_sha256)
+        if published_sha256 == checksums[name]:
             already_published.add(name)
             print(f"already published, identical bytes - skipping {key}", file=sys.stderr)
             continue
@@ -515,8 +658,8 @@ def upload(
             bucket.bucket_name,
             weight_keys[name],
             ExtraArgs={
-                "ContentType": "application/octet-stream",
-                "CacheControl": "public, max-age=31536000, immutable",
+                "ContentType": WEIGHT_CONTENT_TYPE,
+                "CacheControl": WEIGHT_CACHE_CONTROL,
                 # The checksum the next publish compares against, so an identical
                 # re-run can skip the upload and a differing one can refuse it.
                 "Metadata": {"sha256": checksums[name]},
@@ -603,8 +746,13 @@ def main(argv: list[str] | None = None) -> int:
     sweep = [float(value) for value in args.sweep.split(",") if value.strip()]
 
     training = resolve_training(args)
-    eval_metrics = resolve_eval(args)
     files, sources = resolve_files(config, args)
+    eval_metrics = resolve_eval(
+        args,
+        config_name=config.name,
+        threshold=threshold,
+        published_filenames=set(sources),
+    )
 
     manifest = build_manifest(
         config=config,

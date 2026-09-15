@@ -139,6 +139,7 @@
       "additionalProperties": true,
       "description": "Optional - measured quality of THIS exact export on the held-out spray-wall corpus (ml/holds/README.md, 'Spray walls, held-out'). Omitted when no eval-json was supplied at publish time.",
       "properties": {
+        "split": { "type": "string", "minLength": 1, "description": "Which split these numbers were measured on, copied from the eval.py results file (e.g. `eval`, the held-out spray half, vs `tune`, where the threshold was chosen). publish_model.py refuses an eval file whose config, model file or score threshold does not match what is being published." },
         "sprayEvalF1": { "type": "number", "minimum": 0, "maximum": 1, "description": "Box F1 @ IoU 0.5 on the spray-wall `eval` split, at the shipped default threshold." },
         "weightedCorrectionsPerHold": { "type": "number", "minimum": 0, "description": "eval.py's correction_rate_micro: (false positives + misses) / total holds on the spray-wall `eval` split." },
         "gestureSavings": { "type": "number", "description": "Estimated fraction of manual tap-to-place gestures the detector saves a user, relative to placing every hold by hand." }

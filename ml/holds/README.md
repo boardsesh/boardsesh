@@ -230,14 +230,19 @@ is passed. In real mode `--force` covers the **manifest only**: weight files are
 served `public, max-age=31536000, immutable`, so an already-published file with
 the same sha256 is skipped and one with different bytes stops the publish and
 asks for a new `--version` — a cached client would otherwise keep bytes that no
-longer match the manifest's checksum. Credentials are never printed or logged by
+longer match the manifest's checksum. A weight file published before this script
+stamped checksums is hashed in place first, and an identical one has its metadata
+stamped (bytes untouched) so the repair path stays open for older versions. Credentials are never printed or logged by
 either mode.
 
 `--eval-json` takes an `eval.py` results file (`.data/artifacts/<config>/eval.json`)
 as well as a manifest-shaped one: `box.f1` and `correction_rate_micro` are read
-into the manifest's `sprayEvalF1` and `weightedCorrectionsPerHold`. A file with
-none of those keys is an error rather than a manifest that silently ships without
-its `eval` section.
+into the manifest's `sprayEvalF1` and `weightedCorrectionsPerHold`, and the file's
+`split` is recorded alongside them. A file with none of those keys is an error
+rather than a manifest that silently ships without its `eval` section, and so is
+one whose own `config`, `model` or `score_threshold` disagrees with what is being
+published — a tune-sweep run or another config's run must not be presented as this
+export's held-out number at the shipped threshold.
 
 ### How the manifest gets consumed
 
@@ -295,10 +300,17 @@ python train.py --config nano-tiled-1024 --dataset .data/roboflow-1class \
 python train.py --config medium-untiled-1280 --dataset .data/roboflow-1class \
   --epochs 1 --max-train-images 600
 
-# 4. Export. ONNX is required; TFLite is attempted and the result recorded.
-python export.py --config nano-tiled-1024 --formats onnx,tflite
+# 3c. The FULL-run columns (nano-untiled-1024 and medium-untiled-1280, all 3,876
+#     train-split photos x 10 epochs) are a Mac job, not a CPU-box one: ~37 hours
+#     here against a few hours on an M5 Max. Recipe: "Full run" above, with
+#     --config nano-untiled-1024 as well as medium-untiled-1280.
+python train.py --config nano-untiled-1024 --device mps --epochs 10 \
+  --dataset .data/roboflow-1class
 
-# 5. Score the EXPORTED artifact on the held-out photos.
+# 4 + 5. Export and score. Both live under .data/artifacts/<config>/, and every run
+#        of one config writes the same directory — so export and score a config
+#        before retraining it, or step 5 reports whichever run finished last.
+python export.py --config nano-tiled-1024 --formats onnx,tflite
 python eval.py --config nano-tiled-1024 --split valid
 python eval.py --config medium-untiled-1280 --split valid
 ```
