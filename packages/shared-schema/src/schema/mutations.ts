@@ -734,6 +734,35 @@ export const mutationsTypeDefs = /* GraphQL */ `
     deleteSprayWall(uuid: ID!): Boolean!
 
     """
+    Report a spray wall. Any signed-in climber who can see it, once per wall.
+
+    Nothing is hidden automatically — the outcome of a report is an admin reading
+    it. A second report from the same climber answers \`ALREADY_REPORTED\` and
+    writes nothing, and a wall the caller cannot see answers "not found", exactly
+    like a uuid that is not a wall.
+    """
+    reportSprayWall(input: ReportSprayWallInput!): SprayWallReportResult!
+
+    """
+    Hide or unhide a wall. Community admins only (\`spray\`-scoped or global).
+
+    A hidden wall reads exactly like a PRIVATE one for everybody but its owner,
+    who keeps seeing it with a notice. Reversible, and it destroys nothing: the
+    photographs, the holds and every climb set on the wall stay where they are.
+    """
+    setSprayWallHidden(input: SetSprayWallHiddenInput!): SprayWallModerationResult!
+
+    """
+    Delete the photographs of walls soft-deleted more than 30 days ago
+    (\`SPRAY_WALL_PHOTO_RETENTION_DAYS\`). Cron-authenticated; the scheduler's
+    \`purge-spray-wall-photos\` job is the only caller.
+
+    Photographs only. The catalogue rows and every climb ever set on the wall stay
+    behind, because other people's ticks point at them.
+    """
+    purgeDeletedSprayWallPhotos(limit: Int): SprayWallPhotoPurgeResult!
+
+    """
     Report that two gym listings are the same gym (any signed-in user). Surfaces the
     pair to admins for review in the merge queue. Rate-limited and de-duplicated per
     pair so repeated reports don't spam the team.

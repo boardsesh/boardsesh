@@ -129,7 +129,7 @@ export async function requireVisibleSprayWall(
     )
     .limit(1);
 
-  if (!row || !(await viewerCanWriteSprayClimbs(row.board, userId, presentedWallUuid))) {
+  if (!row || !(await viewerCanWriteSprayClimbs(row.wall, row.board, userId, presentedWallUuid))) {
     throw new GraphQLError('That spray wall could not be found', {
       extensions: { code: SPRAY_CLIMB_CODES.wallNotFound },
     });

@@ -741,6 +741,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     mySprayWalls: [SprayWall!]!
 
     """
+    Spray wall reports still waiting on a decision, newest first. Community admins
+    only (\`spray\`-scoped or global). Pass a wall uuid to read just that wall's.
+    """
+    sprayWallReports(uuid: ID): [SprayWallReport!]!
+
+    """
     What a reset WOULD do: match the detections from a new photo against the
     holds on the wall today and report kept / removed / added.
 

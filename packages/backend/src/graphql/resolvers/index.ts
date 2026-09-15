@@ -6,6 +6,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { boardQueries } from './board/queries';
 import { holdOutlineMutations, holdOutlineQueries } from './board/hold-outline-overrides';
 import { sprayWallMutations, sprayWallQueries } from './board/spray-walls';
+import { sprayWallModerationMutations, sprayWallModerationQueries } from './board/spray-wall-moderation';
 import { tickQueries } from './ticks/queries';
 import { tickMutations } from './ticks/mutations';
 import { climbStatsSubscriptions } from './ticks/climb-stats-subscriptions';
@@ -85,6 +86,7 @@ export const resolvers = {
     ...boardQueries,
     ...holdOutlineQueries,
     ...sprayWallQueries,
+    ...sprayWallModerationQueries,
     ...climbQueries,
     ...tickQueries,
     ...userQueries,
@@ -128,6 +130,7 @@ export const resolvers = {
     ...sessionMutations,
     ...holdOutlineMutations,
     ...sprayWallMutations,
+    ...sprayWallModerationMutations,
     ...pushTokenMutations,
     ...queueMutations,
     ...tickMutations,

@@ -3652,6 +3652,15 @@ export type Mutation = {
    */
   publishSprayWallVersion: SprayWallVersion;
   /**
+   * Delete the photographs of walls soft-deleted more than 30 days ago
+   * (`SPRAY_WALL_PHOTO_RETENTION_DAYS`). Cron-authenticated; the scheduler's
+   * `purge-spray-wall-photos` job is the only caller.
+   *
+   * Photographs only. The catalogue rows and every climb ever set on the wall stay
+   * behind, because other people's ticks point at them.
+   */
+  purgeDeletedSprayWallPhotos: SprayWallPhotoPurgeResult;
+  /**
    * Move a gym's ownership to another account (global admin only) — a sold gym,
    * a departed committee member, a claim approved to the wrong person. The
    * listing's human-curation freeze is left exactly as it was, the outgoing
@@ -3733,6 +3742,15 @@ export type Mutation = {
    * pair so repeated reports don't spam the team.
    */
   reportGymDuplicate: ReportGymDuplicateResult;
+  /**
+   * Report a spray wall. Any signed-in climber who can see it, once per wall.
+   *
+   * Nothing is hidden automatically — the outcome of a report is an admin reading
+   * it. A second report from the same climber answers `ALREADY_REPORTED` and
+   * writes nothing, and a wall the caller cannot see answers "not found", exactly
+   * like a uuid that is not a wall.
+   */
+  reportSprayWall: SprayWallReportResult;
   /**
    * Report that this client's BLE link to the wall dropped (explicit lightbulb-off or a
    * detected drop), so every session participant turns the queue-control-bar lightbulb off.
@@ -3870,6 +3888,14 @@ export type Mutation = {
    * Must be a participant of the session.
    */
   setSessionHealthKitWorkoutId: Scalars['Boolean']['output'];
+  /**
+   * Hide or unhide a wall. Community admins only (`spray`-scoped or global).
+   *
+   * A hidden wall reads exactly like a PRIVATE one for everybody but its owner,
+   * who keeps seeing it with a notice. Reversible, and it destroys nothing: the
+   * photographs, the holds and every climb set on the wall stay where they are.
+   */
+  setSprayWallHidden: SprayWallModerationResult;
   /** Setter override: directly set community status for your own climb. */
   setterOverrideCommunityStatus: ClimbCommunityStatus;
   /**
@@ -4315,6 +4341,11 @@ export type MutationPublishSprayWallVersionArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationPurgeDeletedSprayWallPhotosArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationReassignGymOwnerArgs = {
   input: ReassignGymOwnerInput;
 };
@@ -4408,6 +4439,11 @@ export type MutationReportClimbArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReportGymDuplicateArgs = {
   input: ReportGymDuplicateInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReportSprayWallArgs = {
+  input: ReportSprayWallInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4539,6 +4575,11 @@ export type MutationSetSessionBoardSerialArgs = {
 export type MutationSetSessionHealthKitWorkoutIdArgs = {
   sessionId: Scalars['ID']['input'];
   workoutId: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetSprayWallHiddenArgs = {
+  input: SetSprayWallHiddenInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5926,6 +5967,11 @@ export type Query = {
    */
   sprayWallRenderData?: Maybe<SprayWallRenderData>;
   /**
+   * Spray wall reports still waiting on a decision, newest first. Community admins
+   * only (`spray`-scoped or global). Pass a wall uuid to read just that wall's.
+   */
+  sprayWallReports: Array<SprayWallReport>;
+  /**
    * Boards that probably belong to a gym but aren't linked to it yet, for the
    * gym's Boards tab. Requires edit access to the gym. Returns two kinds of
    * candidate: boards on a listing whose merged_into chain resolves to this gym
@@ -6581,6 +6627,11 @@ export type QuerySprayWallRenderDataArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallReportsArgs = {
+  uuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
 export type QueryStrayBoardsForGymArgs = {
   gymUuid: Scalars['ID']['input'];
 };
@@ -7023,6 +7074,11 @@ export type ReportGymDuplicateResult = {
 };
 
 export type ReportGymDuplicateStatus = 'already_reported' | 'reported';
+
+export type ReportSprayWallInput = {
+  reason: SprayWallReportReason;
+  wallUuid: Scalars['ID']['input'];
+};
 
 /** Input for requesting ownership of a gym. */
 export type RequestGymClaimInput = {
@@ -7826,6 +7882,11 @@ export type SetCommunitySettingInput = {
   value: Scalars['String']['input'];
 };
 
+export type SetSprayWallHiddenInput = {
+  hidden: Scalars['Boolean']['input'];
+  uuid: Scalars['ID']['input'];
+};
+
 /** A climb created by a setter, for display on profile pages. */
 export type SetterClimb = {
   __typename?: 'SetterClimb';
@@ -8203,6 +8264,16 @@ export type SprayWall = {
   board: UserBoard;
   /** The published version climbers see. Null until the first publish. */
   currentVersion?: Maybe<SprayWallVersion>;
+  /**
+   * When an admin hid this wall, ISO 8601, or null for the overwhelmingly common
+   * case.
+   *
+   * Only ever non-null for the wall's OWNER: a hidden wall reads exactly like a
+   * private one to everybody else, so nobody else can resolve it to ask. The
+   * owner's app shows a notice off this field — a wall that vanished without a
+   * word would look like data loss.
+   */
+  hiddenAt?: Maybe<Scalars['String']['output']>;
   /** Holds alive on the current version. */
   holdCount: Scalars['Int']['output'];
   /** The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself. */
@@ -8329,6 +8400,15 @@ export type SprayWallKeptDecisionInput = {
   holdId: Scalars['Int']['input'];
 };
 
+/** The outcome of the admin switch, thin on purpose: a moderation tool, not a wall read. */
+export type SprayWallModerationResult = {
+  __typename?: 'SprayWallModerationResult';
+  hidden: Scalars['Boolean']['output'];
+  hiddenAt?: Maybe<Scalars['String']['output']>;
+  layoutId: Scalars['Int']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
 /**
  * A removed hold paired with the nearest added detection.
  *
@@ -8367,6 +8447,15 @@ export type SprayWallPhoto = {
   width?: Maybe<Scalars['Int']['output']>;
 };
 
+/** What one purge run cleared. Photographs only — no wall row is ever deleted. */
+export type SprayWallPhotoPurgeResult = {
+  __typename?: 'SprayWallPhotoPurgeResult';
+  durationMs: Scalars['Int']['output'];
+  objectsDeleted: Scalars['Int']['output'];
+  wallsConsidered: Scalars['Int']['output'];
+  wallsPurged: Scalars['Int']['output'];
+};
+
 /**
  * Everything a renderer needs for one wall at one version: the photo, the
  * geometry that maps it, and the holds alive at that version.
@@ -8386,6 +8475,43 @@ export type SprayWallRenderData = {
   versionNumber: Scalars['Int']['output'];
   wall: SprayWall;
 };
+
+/** One pending report, for the admin queue. */
+export type SprayWallReport = {
+  __typename?: 'SprayWallReport';
+  createdAt: Scalars['String']['output'];
+  /** Whether the wall is hidden right now. */
+  hidden: Scalars['Boolean']['output'];
+  id: Scalars['ID']['output'];
+  layoutId: Scalars['Int']['output'];
+  reason: SprayWallReportReason;
+  wallUuid: Scalars['ID']['output'];
+};
+
+/**
+ * Why a climber reported a wall. A closed set — there is no free-text field
+ * anywhere in the report path.
+ */
+export type SprayWallReportReason =
+  /** The photograph or the wall's name is not something we should be serving. */
+  | 'INAPPROPRIATE'
+  /** Not a climbing wall at all. */
+  | 'NOT_A_WALL'
+  | 'OTHER'
+  /** Somebody's face, address or documents are in the frame. */
+  | 'PERSONAL_INFO';
+
+export type SprayWallReportResult = {
+  __typename?: 'SprayWallReportResult';
+  status: SprayWallReportStatus;
+};
+
+/**
+ * What the report did. `ALREADY_REPORTED` is the answer to a second report from
+ * the same climber: their first one still stands, and nothing about the queue's
+ * state leaks back to them.
+ */
+export type SprayWallReportStatus = 'ALREADY_REPORTED' | 'CREATED';
 
 /** A hold the matcher believes is still on the wall, and which detection it matched. */
 export type SprayWallResetKeptHold = {

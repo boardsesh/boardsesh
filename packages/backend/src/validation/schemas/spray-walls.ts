@@ -315,3 +315,26 @@ export type CreateSprayWallVersionInput = z.infer<typeof CreateSprayWallVersionI
 export type SprayWallHoldInput = z.infer<typeof SprayWallHoldInputSchema>;
 export type UpsertSprayWallHoldsInput = z.infer<typeof UpsertSprayWallHoldsInputSchema>;
 export type RemoveSprayWallHoldsInput = z.infer<typeof RemoveSprayWallHoldsInputSchema>;
+
+/**
+ * The closed set of report reasons, as the GraphQL enum spells them.
+ *
+ * No free-text field anywhere: prose would have to be stored, read and shown to
+ * an admin, and at this volume four reasons plus `OTHER` say everything a wall
+ * photograph can be reported for. It also keeps a report out of the moderation
+ * queue's own attack surface.
+ */
+export const SPRAY_WALL_REPORT_REASONS = ['INAPPROPRIATE', 'NOT_A_WALL', 'PERSONAL_INFO', 'OTHER'] as const;
+
+export const ReportSprayWallInputSchema = z.object({
+  wallUuid: UUIDSchema,
+  reason: z.enum(SPRAY_WALL_REPORT_REASONS),
+});
+
+export const SetSprayWallHiddenInputSchema = z.object({
+  uuid: UUIDSchema,
+  hidden: z.boolean(),
+});
+
+export type ReportSprayWallInput = z.infer<typeof ReportSprayWallInputSchema>;
+export type SetSprayWallHiddenInput = z.infer<typeof SetSprayWallHiddenInputSchema>;

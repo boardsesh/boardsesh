@@ -27,7 +27,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncE
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { sprayWallResetApplied, sprayWallResetPreviewed } from '@boardsesh/analytics';
+import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -151,15 +152,17 @@ export function SprayResetCompareScreen({
     if (!proposal || !wall || seededRef.current === versionId) return;
     seededRef.current = versionId;
     dispatch({ type: 'SEED', proposal, aliveHoldIds, detectionCount: detections.length });
-    track(SHARED_EVENTS.SprayWallResetPreviewed, {
-      keptCount: proposal.kept.length,
-      removedCount: proposal.removed.length,
-      addedCount: proposal.added.length,
-      lowConfidenceCount: proposal.lowConfidence.length,
-      climbsAffected: proposal.climbsAffected,
-      aspectMismatch: proposal.aspectMismatch,
-      detectionCount: detections.length,
-    });
+    trackSprayEvent(
+      sprayWallResetPreviewed({
+        keptCount: proposal.kept.length,
+        removedCount: proposal.removed.length,
+        addedCount: proposal.added.length,
+        lowConfidenceCount: proposal.lowConfidence.length,
+        climbsAffected: proposal.climbsAffected,
+        aspectMismatch: proposal.aspectMismatch,
+        detectionCount: detections.length,
+      }),
+    );
   }, [proposal, wall, versionId, aliveHoldIds, detections.length]);
 
   const effective = review.seeded ? review : null;
@@ -223,13 +226,15 @@ export function SprayResetCompareScreen({
     const decisions = buildResetCommitDecisions(effective, detections);
     try {
       const result = await commitAsync({ wallUuid, versionId, ...decisions });
-      track(SHARED_EVENTS.SprayWallResetApplied, {
-        keptCount: result.keptCount,
-        removedCount: result.removedCount,
-        addedCount: result.addedCount,
-        climbsChanged: result.climbsChanged,
-        moveCount: Object.keys(effective.moves).length,
-      });
+      trackSprayEvent(
+        sprayWallResetApplied({
+          keptCount: result.keptCount,
+          removedCount: result.removedCount,
+          addedCount: result.addedCount,
+          climbsChanged: result.climbsChanged,
+          moveCount: Object.keys(effective.moves).length,
+        }),
+      );
       onCommitted(result);
     } catch (error) {
       reportError(error);

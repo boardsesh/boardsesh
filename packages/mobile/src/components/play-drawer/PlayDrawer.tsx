@@ -38,7 +38,8 @@ import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-t
 import { toBoardName } from '@boardsesh/board-config';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, climbRemixedFromBroken } from '@boardsesh/analytics';
+import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import { DeferredBoard } from './DeferredBoard';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from '../playback/PlaybackControls';
@@ -550,7 +551,7 @@ export function PlayDrawer({
   const lostHoldCount = displayedClimb?.missingHoldCount ?? 0;
   const handleRemixLostHolds = useCallback(() => {
     if (!displayedClimb) return;
-    track(SHARED_EVENTS.ClimbRemixedFromBroken, { lostHoldCount, source: 'play_drawer' });
+    trackSprayEvent(climbRemixedFromBroken({ lostHoldCount, source: 'play_drawer' }));
     openRemix(displayedClimb, renderBoardConfig);
   }, [lostHoldCount, openRemix, displayedClimb, renderBoardConfig]);
   // The climb belongs to a genuinely DIFFERENT board model. Same gate as an

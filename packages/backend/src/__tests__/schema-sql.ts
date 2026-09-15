@@ -1662,6 +1662,7 @@ export const schemaSQL = `
   -- Dropped first: worker databases are reused across runs, so a bare
   -- CREATE ... IF NOT EXISTS would leave a previous shape in place and any change
   -- here would never land.
+  DROP TABLE IF EXISTS "spray_wall_reports" CASCADE;
   DROP TABLE IF EXISTS "spray_climb_lineage" CASCADE;
   DROP TABLE IF EXISTS "spray_wall_holds" CASCADE;
   DROP TABLE IF EXISTS "spray_wall_versions" CASCADE;
@@ -1693,7 +1694,11 @@ export const schemaSQL = `
     "hold_count" integer DEFAULT 0 NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
-    "deleted_at" timestamp
+    "deleted_at" timestamp,
+    -- SW-17 moderation: a hidden wall reads exactly like a private one for
+    -- everybody but its owner. Independent of deleted_at; both can be set.
+    "hidden_at" timestamp,
+    "hidden_by" text REFERENCES "users"("id") ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS "spray_wall_versions" (
@@ -1757,6 +1762,29 @@ export const schemaSQL = `
       REFERENCES "board_climbs"("uuid") ON DELETE CASCADE ON UPDATE CASCADE
   );
   CREATE INDEX IF NOT EXISTS "spray_climb_lineage_parent_idx" ON "spray_climb_lineage" ("parent_uuid");
+
+  DO $$ BEGIN
+    CREATE TYPE spray_wall_report_reason AS ENUM ('inappropriate', 'not_a_wall', 'personal_info', 'other');
+  EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+  -- SW-17: the report queue. Deliberately not the climb-proposal vote machinery —
+  -- a wall photograph is somebody's home and the question has one right answer, so
+  -- the outcome is an admin reading a list, not a weighted threshold.
+  CREATE TABLE IF NOT EXISTS "spray_wall_reports" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "wall_id" bigint NOT NULL REFERENCES "spray_walls"("id") ON DELETE CASCADE,
+    "reporter_id" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "reason" spray_wall_report_reason NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "reviewed_at" timestamp,
+    "reviewed_by" text REFERENCES "users"("id") ON DELETE SET NULL
+  );
+  -- One report per climber per wall: a second reportSprayWall is an idempotent
+  -- no-op, and this index is what makes it one.
+  CREATE UNIQUE INDEX IF NOT EXISTS "spray_wall_reports_wall_reporter_idx"
+    ON "spray_wall_reports" ("wall_id", "reporter_id");
+  CREATE INDEX IF NOT EXISTS "spray_wall_reports_pending_idx"
+    ON "spray_wall_reports" ("created_at") WHERE "reviewed_at" IS NULL;
 
   CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
   BEGIN

@@ -21,7 +21,8 @@ import { Image } from 'expo-image';
 import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { sprayWallDetectionFinished, sprayWallPhotoPicked, sprayWallUploadFinished } from '@boardsesh/analytics';
+import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -34,7 +35,8 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
-import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import { sprayCapCopy, sprayCapFromErrorCode } from '../../lib/spray/spray-cap-copy';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { suggestSprayHolds } from '../../lib/spray/hold-suggestions';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
@@ -142,7 +144,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           return;
         }
         if (result.outcome === 'cancelled') return;
-        track(SHARED_EVENTS.SprayWallPhotoPicked, { source });
+        trackSprayEvent(sprayWallPhotoPicked(source));
         dispatch({ type: 'PHOTO_PICKED', photo: { ...result.photo, source } });
       } catch (error) {
         reportError(error);
@@ -167,11 +169,13 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
         storedPhoto: stored,
         onProgress: (done, total) => dispatch({ type: 'DETECTION_PROGRESS', done, total }),
       });
-      track(SHARED_EVENTS.SprayWallDetectionFinished, {
-        outcome: result.outcome,
-        candidateCount: result.outcome === 'ok' ? result.candidates.length : 0,
-        durationMs: Date.now() - startedAt,
-      });
+      trackSprayEvent(
+        sprayWallDetectionFinished({
+          outcome: result.outcome,
+          candidateCount: result.outcome === 'ok' ? result.candidates.length : 0,
+          durationMs: Date.now() - startedAt,
+        }),
+      );
       if (result.outcome === 'ok') {
         dispatch({ type: 'DETECTION_FINISHED', candidates: result.candidates });
         return;
@@ -198,12 +202,14 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
         uri: photo.uri,
         onProgress: (progress) => dispatch({ type: 'UPLOAD_PROGRESS', progress }),
       });
-      track(SHARED_EVENTS.SprayWallUploadFinished, {
-        outcome: 'ok',
-        durationMs: Date.now() - startedAt,
-        determinate: uploaded.determinate,
-        attempt,
-      });
+      trackSprayEvent(
+        sprayWallUploadFinished({
+          outcome: 'ok',
+          durationMs: Date.now() - startedAt,
+          determinate: uploaded.determinate,
+          attempt,
+        }),
+      );
 
       const stored = { width: uploaded.width, height: uploaded.height };
       // The anchors were tapped on the LOCAL file. The stored object is the
@@ -237,13 +243,25 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
       await runDetection(photo, stored);
     } catch (error) {
       reportError(error);
-      track(SHARED_EVENTS.SprayWallUploadFinished, {
-        outcome: 'failed',
-        durationMs: Date.now() - startedAt,
-        determinate: false,
-        attempt,
+      trackSprayEvent(
+        sprayWallUploadFinished({
+          outcome: 'failed',
+          durationMs: Date.now() - startedAt,
+          determinate: false,
+          attempt,
+        }),
+      );
+      // The version cap is the one a reset can actually hit — fifty resets is four
+      // years of monthly changes — and it comes back as an English resolver
+      // sentence. Branch on the code and say the number instead.
+      const cap = sprayCapFromErrorCode(extractGraphqlCode(error));
+      const capCopy = cap ? sprayCapCopy(cap) : null;
+      dispatch({
+        type: 'UPLOAD_FAILED',
+        message: capCopy
+          ? t(capCopy.key, capCopy.values)
+          : (extractGraphqlMessage(error) ?? t('sprayWizard.upload.failed')),
       });
-      dispatch({ type: 'UPLOAD_FAILED', message: extractGraphqlMessage(error) ?? t('sprayWizard.upload.failed') });
     }
   }, [
     state.photo,
@@ -459,6 +477,20 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* An admin acted on a report about this wall. A banner, not a gate: the
+            owner can still reset it, and a wall that quietly stopped being
+            visible to their crew with no explanation would read as data loss.
+            `hiddenAt` only ever resolves for the owner, so its presence is the
+            whole condition. */}
+        {wall.hiddenAt ? (
+          <View style={[styles.hiddenNotice, { backgroundColor: systemColors.secondaryBackground }]}>
+            <Text variant="headline">{t('sprayHidden.title')}</Text>
+            <Text variant="subheadline" color={systemColors.secondaryLabel}>
+              {t('sprayHidden.body')}
+            </Text>
+          </View>
+        ) : null}
+
         {stepIndex >= 0 ? (
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stepCounter}>
             {t('sprayWizard.stepCounter', { current: stepIndex + 1, total: COUNTED_STEPS.length })}
@@ -653,6 +685,11 @@ const styles = StyleSheet.create({
   },
   centeredText: {
     textAlign: 'center',
+  },
+  hiddenNotice: {
+    gap: spacing[2],
+    padding: spacing[4],
+    borderRadius: borderRadius.lg,
   },
   content: {
     padding: spacing[4],
