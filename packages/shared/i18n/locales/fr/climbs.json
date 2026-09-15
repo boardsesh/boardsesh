@@ -699,7 +699,7 @@
         }
       },
       "publish": {
-        "blocked": "Ajoutez une prise de départ et une prise d'arrivée pour publier",
+        "blocked": "Ajoute une prise de départ et une prise d'arrivée pour publier",
         "gradeBlocked": "Choisis ta cotation pour publier"
       },
       "wallSizeMismatch": "Sélectionne ce format de Woods comme pan actif pour l’allumer.",
