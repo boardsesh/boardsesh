@@ -313,7 +313,12 @@ async function fetchR2State(
       name: bucket.name,
       exists: true,
       customDomains: (domains.domains ?? []).map((entry) => entry.domain),
-      cors: bucket.cors ? await fetchR2Cors(token, accountId, bucket.name) : null,
+      ...(bucket.cors
+        ? await fetchR2Cors(token, accountId, bucket.name).then((read) => ({
+            cors: read.cors,
+            corsRuleCount: read.ruleCount,
+          }))
+        : { cors: null }),
     });
   }
   return state;
@@ -328,7 +333,11 @@ async function fetchR2State(
  * of the R2 path does (see fetchR2State): report null, let the diff say "will
  * set", and let the PUT be the thing that fails loudly if the scope is missing.
  */
-async function fetchR2Cors(token: string, accountId: string, bucketName: string): Promise<R2Cors | null> {
+async function fetchR2Cors(
+  token: string,
+  accountId: string,
+  bucketName: string,
+): Promise<{ cors: R2Cors | null; ruleCount: number }> {
   try {
     const response = await cfRequest<R2CorsListing>(
       token,
@@ -336,14 +345,19 @@ async function fetchR2Cors(token: string, accountId: string, bucketName: string)
       `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucketName)}/cors`,
     );
     const rule = response.rules?.[0];
-    if (!rule) return null;
+    if (!rule) return { cors: null, ruleCount: 0 };
     return {
-      allowedOrigins: rule.allowed?.origins ?? [],
-      allowedMethods: (rule.allowed?.methods ?? []) as R2Cors['allowedMethods'],
-      maxAgeSeconds: rule.maxAgeSeconds ?? 0,
+      cors: {
+        allowedOrigins: rule.allowed?.origins ?? [],
+        allowedMethods: (rule.allowed?.methods ?? []) as R2Cors['allowedMethods'],
+        maxAgeSeconds: rule.maxAgeSeconds ?? 0,
+      },
+      // Reported so diffR2Bucket can refuse to collapse a multi-rule policy into
+      // the single rule this tool writes.
+      ruleCount: response.rules?.length ?? 0,
     };
   } catch (error) {
-    if (isNotFoundError(error) || isAuthorizationError(error)) return null;
+    if (isNotFoundError(error) || isAuthorizationError(error)) return { cors: null, ruleCount: 0 };
     throw error;
   }
 }

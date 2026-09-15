@@ -1856,8 +1856,8 @@ describe('diffR2Bucket', () => {
   const MEDIA = { name: 'boardsesh-user-media', customDomain: 'media.boardsesh.com' } as const;
   const PRIVATE = { name: 'boardsesh-user-private', customDomain: null } as const;
 
-  function live(name: string, customDomains: string[] = [], cors: R2Cors | null = null) {
-    return { name, exists: true, customDomains, cors };
+  function live(name: string, customDomains: string[] = [], cors: R2Cors | null = null, corsRuleCount = cors ? 1 : 0) {
+    return { name, exists: true, customDomains, cors, corsRuleCount };
   }
 
   it('plans a create when the bucket is absent', () => {
@@ -1927,6 +1927,17 @@ describe('diffR2Bucket', () => {
     const changes = diffR2Bucket(ASSETS, live(ASSETS.name, [ASSETS.customDomain], drifted));
     expect(changes).toHaveLength(1);
     expect(changes[0].detail).toContain('https://www.boardsesh.com');
+  });
+
+  it('BLOCKS rather than collapsing a multi-rule CORS policy', () => {
+    // The write is a whole-policy PUT. Comparing rules[0] and then writing one
+    // rule would delete every other rule the bucket carried, silently, on the
+    // first converge that saw a mismatch.
+    const first = { allowedOrigins: ['*'], allowedMethods: ['GET', 'HEAD'], maxAgeSeconds: 86_400 } as const;
+    const changes = diffR2Bucket(ASSETS, live(ASSETS.name, [ASSETS.customDomain], first, 3));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].blocked).toBe(true);
+    expect(changes[0].summary).toContain('has 3 CORS rules');
   });
 
   it('leaves an undeclared CORS policy alone', () => {

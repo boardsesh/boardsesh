@@ -90,6 +90,8 @@ flip itself a non-event.
 2. **Merge the prepare change** (this one). `cf:apply` creates the bucket. Note it creates and returns: the custom
    domain attaches on the *next* run, which is why the flip is not repo-driven (see step 5).
 3. **Run `cf:apply` again** to attach `assets-r2.boardsesh.com` and converge CORS, the cache rule and the header rule.
+   Both rules cover the staging hostname as well as the production one, so the dry run in step 4 exercises the real
+   edge-cache and CORS behaviour rather than a fresh origin read every time.
 4. **Dual-publish and validate through staging** — the real gate:
    ```sh
    STATIC_ASSETS_PUBLIC_BASE_URL=https://assets-r2.boardsesh.com \

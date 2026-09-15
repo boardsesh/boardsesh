@@ -817,17 +817,6 @@ export const MEDIA_HOSTNAME = 'media.boardsesh.com';
  */
 export const ASSETS_STAGING_HOSTNAME = 'assets-r2.boardsesh.com';
 
-/**
- * CORS for a bucket of public images.
- *
- * `origins: ['*']` is deliberate, and tightening it to a list of our own origins
- * would be a mistake. R2 echoes the matching origin back, so a list makes the
- * response vary by request — and Cloudflare does not key its cache on `Vary`
- * below Enterprise. One cached copy would then be served to every origin, which
- * is either a CORS failure or a leak depending on which copy won. A constant `*`
- * has no such variance. See RESPONSE_HEADER_RULE_PHASE for the other half of
- * this problem.
- */
 export const ASSETS_CACHE_RULE_DESCRIPTION = 'boardsesh:assets-edge-cache (managed by scripts/cloudflare-apply.ts)';
 
 /**
@@ -840,10 +829,17 @@ export const ASSETS_CACHE_RULE_DESCRIPTION = 'boardsesh:assets-edge-cache (manag
  * (the board-render route, and www's HTML). Declaring it is cheaper than
  * rediscovering it.
  *
+ * Covers the staging hostname as well, for the same reason as the CORS rule: a
+ * dry run that does not exercise edge caching has not rehearsed the thing the
+ * move is for. The publisher's `cf-cache-status` and `cache-control` assertions
+ * then mean the same thing on both hosts.
+ *
  * The `/static/v1/` literal is repeated rather than imported: infra/cloudflare
  * has no workspace dependencies, by design.
  */
-export const ASSETS_CACHE_EXPRESSION = `(http.host eq "${ASSETS_HOSTNAME}" and starts_with(http.request.uri.path, "/static/v1/"))`;
+export const ASSETS_CACHE_EXPRESSION =
+  `((http.host eq "${ASSETS_HOSTNAME}" or http.host eq "${ASSETS_STAGING_HOSTNAME}") ` +
+  `and starts_with(http.request.uri.path, "/static/v1/"))`;
 
 export const ASSETS_CORS_HEADER_RULE_DESCRIPTION =
   'boardsesh:assets-cors-header (managed by scripts/cloudflare-apply.ts)';
@@ -859,6 +855,17 @@ export const ASSETS_CORS_HEADER_RULE_DESCRIPTION =
  */
 export const ASSETS_CORS_HEADER_EXPRESSION = `(http.host eq "${ASSETS_HOSTNAME}" or http.host eq "${ASSETS_STAGING_HOSTNAME}")`;
 
+/**
+ * CORS for a bucket of public images.
+ *
+ * `origins: ['*']` is deliberate, and tightening it to a list of our own origins
+ * would be a mistake. R2 echoes the matching origin back, so a list makes the
+ * response vary by request — and Cloudflare does not key its cache on `Vary`
+ * below Enterprise. One cached copy would then be served to every origin, which
+ * is either a CORS failure or a leak depending on which copy won. A constant `*`
+ * has no such variance. See RESPONSE_HEADER_RULE_PHASE for the other half of
+ * this problem.
+ */
 export const PUBLIC_IMAGE_CORS: R2Cors = {
   allowedOrigins: ['*'],
   allowedMethods: ['GET', 'HEAD'],

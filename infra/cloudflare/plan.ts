@@ -544,6 +544,14 @@ export interface LiveR2Bucket {
    * can be trusted.
    */
   cors: R2Cors | null;
+  /**
+   * How many CORS rules the bucket actually has.
+   *
+   * Tracked separately because `cors` above carries only the first one, and a
+   * converge that compared one rule and then wrote one rule would silently
+   * delete the rest. See diffR2Bucket.
+   */
+  corsRuleCount?: number;
 }
 
 /** Same policy, ignoring order within each list. */
@@ -616,7 +624,20 @@ export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null
   // CORS is only converged where it is declared. An undeclared policy is left
   // exactly as it is: this tool should not be able to clear a policy that was
   // deliberately set somewhere else.
-  if (desired.cors && !r2CorsMatches(live.cors, desired.cors)) {
+  if (desired.cors && (live.corsRuleCount ?? 0) > 1) {
+    // The write is a whole-policy PUT, so converging a bucket that carries rules
+    // this repo does not know about would delete them. Shout instead — the same
+    // choice the private-bucket check above makes.
+    changes.push({
+      resource: 'r2-bucket',
+      r2BucketName: desired.name,
+      summary: `R2 ${desired.name}: has ${live.corsRuleCount} CORS rules; this tool manages a single-rule policy`,
+      detail:
+        'Converging would replace all of them with the declared rule and drop the others. Reconcile them in the ' +
+        'Cloudflare dashboard, or fold what they allow into PUBLIC_IMAGE_CORS.',
+      blocked: true,
+    });
+  } else if (desired.cors && !r2CorsMatches(live.cors, desired.cors)) {
     changes.push({
       resource: 'r2-bucket',
       r2BucketName: desired.name,
