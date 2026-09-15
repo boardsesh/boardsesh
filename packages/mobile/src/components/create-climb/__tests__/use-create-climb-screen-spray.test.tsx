@@ -113,6 +113,8 @@ vi.mock('../brush-roles', () => ({
 }));
 
 import { clearSprayWallRegistry, registerSprayWall } from '../../../lib/spray/spray-wall-registry';
+import { getPreference, removePreference, setPreference } from '../../../lib/preference-store';
+import { lastUsedGradeKey } from '../use-last-used-grade';
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
 const LAYOUT_ID = 9001;
@@ -163,8 +165,10 @@ beforeEach(() => {
   registerWall(25);
 });
 
-afterEach(() => {
+afterEach(async () => {
   clearSprayWallRegistry();
+  await removePreference(lastUsedGradeKey('spray'));
+  await removePreference(lastUsedGradeKey('kilter'));
 });
 
 describe('the setter grade gates a publish', () => {
@@ -458,5 +462,101 @@ describe('the wall owns the angle and the identity', () => {
     expect(payload.angle).toBe(40);
     expect(payload.spray_wall_uuid).toBeUndefined();
     expect(payload.user_grade).toBeUndefined();
+  });
+});
+
+describe('the last-used grade seed', () => {
+  it('seeds a fresh climb from the board\u2019s last published grade', async () => {
+    await setPreference(lastUsedGradeKey('spray'), SIX_C_DIFFICULTY_ID);
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+    await waitFor(() => expect(result.current.setterGradeDifficultyId).toBe(SIX_C_DIFFICULTY_ID));
+  });
+
+  it('seeds AGAIN for the second climb of a session', async () => {
+    // `lastDifficultyId` does not move between the two climbs, so the seed effect
+    // never re-runs on its own — the latch has to be released by Start new or the
+    // second and every later climb opens with an empty picker.
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    act(() => {
+      result.current.setName('First of the session');
+      result.current.setIsDraft(false);
+      result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID);
+    });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    await waitFor(async () => expect(await getPreference<number>(lastUsedGradeKey('spray'))).toBe(SIX_C_DIFFICULTY_ID));
+
+    await act(async () => {
+      result.current.handleNewClimb();
+    });
+
+    await waitFor(() => expect(result.current.setterGradeDifficultyId).toBe(SIX_C_DIFFICULTY_ID));
+  });
+
+  it('does not let the seed overrule a grade the setter has moved', async () => {
+    await setPreference(lastUsedGradeKey('spray'), SIX_C_DIFFICULTY_ID);
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+    await waitFor(() => expect(result.current.setterGradeDifficultyId).toBe(SIX_C_DIFFICULTY_ID));
+
+    // 7a/V6.
+    act(() => result.current.setSetterGradeDifficultyId(22));
+    await waitFor(() => expect(result.current.setterGradeDifficultyId).toBe(22));
+  });
+});
+
+describe('a catalogue board never carries a setter grade', () => {
+  it('ignores a fork grade on a board that does not publish with one', () => {
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({
+        board: KILTER_BOARD,
+        forkFrames: 'p1r12p2r14',
+        forkName: 'Parent',
+        forkDifficultyId: SIX_C_DIFFICULTY_ID,
+      }),
+    );
+    expect(result.current.setterGradeDifficultyId).toBeNull();
+  });
+
+  it('remembers nothing after a catalogue publish, so later climbs send no grade', async () => {
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({
+        board: KILTER_BOARD,
+        forkFrames: 'p1r12p2r14',
+        forkName: 'Parent',
+        forkDifficultyId: SIX_C_DIFFICULTY_ID,
+      }),
+    );
+
+    act(() => {
+      result.current.setName('Kilter remix');
+      result.current.setIsDraft(false);
+    });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(boardActions.saveClimb.mock.calls[0][0].user_grade).toBeUndefined();
+    expect(await getPreference<number>(lastUsedGradeKey('kilter'))).toBeNull();
+  });
+});
+
+describe('an unnameable grade id', () => {
+  it('sends no grade rather than an empty string the server rejects', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    // 99 is not on the shared scale, so `getGradeLabel` answers `''`. An empty
+    // string passes the server's `userGrade != null` guard and comes back as
+    // `"" is not a grade on the Boardsesh scale`.
+    act(() => {
+      result.current.setName('Off-scale id');
+      result.current.setSetterGradeDifficultyId(99);
+    });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(boardActions.saveClimb.mock.calls[0][0].user_grade).toBeUndefined();
   });
 });

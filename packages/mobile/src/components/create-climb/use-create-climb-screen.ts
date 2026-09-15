@@ -408,8 +408,14 @@ export function useCreateClimbScreen({
   // a wall climb's grade is the setter's own, and a remix of a V5 is a V5 until
   // its setter says otherwise. It also beats the last-used seed below, for the
   // same reason an explicit `forkCharacteristics` array beats the board default.
+  //
+  // Gated on the board asking for a setter grade at all. A Kilter fork carries a
+  // grade too, and seeding it here meant the publish sent a `userGrade` the server
+  // discards for a non-spray board AND remembered it as that board's last-used
+  // grade, so every later Kilter publish carried one as well. Harmless on the wire
+  // and still wrong: the field is not part of what a catalogue board publishes.
   const [setterGradeDifficultyId, setSetterGradeDifficultyId] = useState<number | null>(() =>
-    isForking ? (forkDifficultyId ?? null) : null,
+    isForking && requiresSetterGrade(board.boardName) ? (forkDifficultyId ?? null) : null,
   );
   const [showAllHolds, setShowAllHolds] = useState(false);
 
@@ -494,18 +500,6 @@ export function useCreateClimbScreen({
     setAnyFeetState((current) => nextAnyFeetForFeetChange(previousHasFeet, hasFeet, current, campusRef.current));
   }, [feetFollowPaint, litUpHoldsMap]);
 
-  // Seeds the picker on a fresh climb only. A restored draft, a fork and an edit
-  // all carry their own grade — the fork's is already in the initial state above,
-  // and the other two overwrite it below.
-  const { lastDifficultyId, rememberDifficultyId: rememberLastUsedGrade } = useLastUsedGrade(board.boardName);
-  const seededLastGradeRef = useRef(false);
-  useEffect(() => {
-    if (seededLastGradeRef.current || lastDifficultyId === null) return;
-    seededLastGradeRef.current = true;
-    if (isEditing || isForking) return;
-    setSetterGradeDifficultyId((current) => current ?? lastDifficultyId);
-  }, [lastDifficultyId, isEditing, isForking]);
-
   const [savedClimb, setSavedClimb] = useState<SavedClimbSnapshot | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
@@ -521,6 +515,29 @@ export function useCreateClimbScreen({
   // can be cancelled — anything keyed on the press instead of this fires for a
   // climb that never changed. The create drawer drops the board zoom on it.
   const [blankClimbEpoch, setBlankClimbEpoch] = useState(0);
+
+  // Seeds the grade picker on a fresh climb only. A restored draft, a fork and an
+  // edit all carry their own grade — the fork's is already in the initial state
+  // above, and the other two overwrite it below.
+  const { lastDifficultyId, rememberDifficultyId: rememberLastUsedGrade } = useLastUsedGrade(board.boardName);
+  // Once per BLANK CLIMB, not once per mount.
+  //
+  // Latching at all is what stops the seed fighting the setter: once it has run,
+  // moving the picker has to stick. But latching for the life of the mount meant
+  // the second and every later climb of a session opened with an empty picker
+  // while a last-used grade sat right there — and a released ref would not have
+  // fixed it either, because releasing a ref re-runs no effect and
+  // `lastDifficultyId` never moves. `blankClimbEpoch` does move, exactly once per
+  // blank climb that actually starts, so keying the latch on it is both the
+  // re-trigger and the guard.
+  const seededLastGradeEpochRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (seededLastGradeEpochRef.current === blankClimbEpoch || lastDifficultyId === null) return;
+    if (isEditing || isForking || !requiresSetterGrade(board.boardName)) return;
+    seededLastGradeEpochRef.current = blankClimbEpoch;
+    setSetterGradeDifficultyId((current) => current ?? lastDifficultyId);
+  }, [blankClimbEpoch, lastDifficultyId, isEditing, isForking, board.boardName]);
+
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [savedSignatureUnknown, setSavedSignatureUnknown] = useState(false);
   const [failedSignature, setFailedSignature] = useState<string | null>(null);
@@ -1511,7 +1528,12 @@ export function useCreateClimbScreen({
     const sprayWallUuid = sprayWallUuidFor(board.boardName, board.layoutId);
     // The grade string the server grades against — `board_difficulty_grades.boulder_name`
     // for this board, which is the shared Boardsesh scale a wall copies.
-    const userGrade = setterGradeDifficultyId !== null ? getGradeLabel(setterGradeDifficultyId) : undefined;
+    // `|| undefined`, not just the null check: `getGradeLabel` answers `''` for an
+    // id the bundled table does not name, and an empty string passes the server's
+    // `userGrade != null` guard — so it would come back as `"" is not a grade on
+    // the Boardsesh scale` instead of simply saying nothing about the grade.
+    const userGrade =
+      setterGradeDifficultyId !== null ? getGradeLabel(setterGradeDifficultyId) || undefined : undefined;
     let nextSavedClimb: SavedClimbSnapshot | null = null;
     try {
       if (canUpdate && savedClimb) {
@@ -1624,7 +1646,7 @@ export function useCreateClimbScreen({
       setJustSaved(true);
       // Seed the next climb's picker with what this one published at — a session
       // on one wall clusters hard around two or three grades.
-      if (!isDraft) rememberLastUsedGrade(setterGradeDifficultyId);
+      if (!isDraft && showSetterGrade) rememberLastUsedGrade(setterGradeDifficultyId);
       showToast(isDraft ? t('mobile.create.save.draftToast') : t('mobile.create.save.publishedToast'), 'success');
       // A publish is commit-and-done — dismiss the drawer so the toast shows
       // over the climbs list (drafts stay open so you can keep editing).
@@ -1678,6 +1700,7 @@ export function useCreateClimbScreen({
     anyFeet,
     setterGradeDifficultyId,
     setterGradeMissing,
+    showSetterGrade,
     rememberLastUsedGrade,
     isDraft,
     autosaveSlotKey,
