@@ -2312,7 +2312,29 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // effect once it resolves so the config rebuilds with the art. Until then the
     // board still renders, with a ring at each placement radius.
     if (effectiveRenderSettings.mode === 'aura' && boardArtGeometryPending({ boardName, layoutId, sizeId })) {
-      void prefetchBoardArtGeometry({ boardName, layoutId, sizeId }).then(() => {
+      void prefetchBoardArtGeometry({ boardName, layoutId, sizeId }).then(async (geometry) => {
+        // A chunk that failed to download resolves `null` and leaves the key
+        // PENDING, so bouncing the effect here would re-enter this same branch,
+        // ask for the chunk again, and get `null` again: a download loop that
+        // ends only when something else changes. The ring art is already the
+        // right drawing for a board with no silhouettes, so keep it and let the
+        // next mount try the download again — `prefetchBoardArtGeometry` caps
+        // how many times one key may be re-fetched.
+        if (!geometry) return;
+        // The ring-only render this same pass submitted may still be inside the
+        // renderer. Join it before evicting: re-entering the effect while it is
+        // in flight would only re-attach to that render through
+        // `getOrStartInflightRender` and cache the ring art under this key
+        // anyway, which is the failure the eviction below exists to prevent.
+        const inflightRingRender = inflightRenders.get(currentCacheKey);
+        if (inflightRingRender) await inflightRingRender.catch(() => undefined);
+        // Evict the ring-only PNG. The recovery bump re-runs this effect from
+        // the top, where the cached-overlay lookup would hand that PNG straight
+        // back and return before the geometry render is ever submitted — and on
+        // web that cache is persistent, so the ring art would outlive the
+        // reload for a board whose silhouettes did in fact arrive.
+        const ringEntry = getRenderedOverlay(currentCacheKey);
+        if (ringEntry) invalidateRenderedOverlay(currentCacheKey, ringEntry);
         if (mountedRef.current) setRecoveryRequest((request) => request + 1);
       });
     }
