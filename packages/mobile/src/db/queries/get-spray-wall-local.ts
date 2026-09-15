@@ -33,6 +33,18 @@ import { assertLocalUserDataOwner, type OfflineDatabase } from '@boardsesh/offli
  * Deliberately NOT gated on `isUserDataComplete`: that marker is about the user
  * tables having reached their tail, and a downloaded wall is board data. Gating
  * on it would refuse a wall that is fully on disk.
+ *
+ * ## Who calls this
+ *
+ * Nobody in this branch, and that is deliberate rather than an oversight. The
+ * consumer is SW-07's spray wall loader (#5440, `spray-wall-loader.ts` /
+ * `setSprayWallLoader`), whose network path asks `sprayWallRenderData` and falls
+ * back when the query fails — that seam is on a branch this one is stacked
+ * beside, not under. The shape below is the registry's
+ * (`RegisteredSprayWall` minus the two presigned-URL fields, which no offline
+ * read can produce): the photo comes off disk through
+ * `tryGetStoredSprayPhotoPathSync(photoKey)` instead. Wiring the fallback is one
+ * call and lands in the PR that merges second.
  */
 export type LocalSprayWall = {
   layoutId: number;

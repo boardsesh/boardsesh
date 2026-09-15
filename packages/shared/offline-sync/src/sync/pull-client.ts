@@ -527,6 +527,17 @@ export type BootstrapPathRecoveredReporter = (info: BootstrapPathRecoveredInfo) 
 export type DocumentsPulledSink = (info: {
   tableName: string;
   documents: Record<string, unknown>[];
+  /**
+   * The database the page was just committed to.
+   *
+   * Handed over so a sink can ask what the device holds NOW rather than only what
+   * this page carried — the spray photo store needs every live `photo_key` to
+   * know which files on disk no wall claims any more, and a page only ever names
+   * one. Read-only by contract: the pull's own writes are done, and a sink that
+   * wrote here would be doing it outside the transaction that made the page
+   * atomic.
+   */
+  db: OfflineDatabase;
 }) => void | Promise<void>;
 
 export type SyncOptions = {
@@ -1045,7 +1056,7 @@ async function syncTable(
       // already written its rows and advanced its checkpoint.
       if (onDocumentsPulled) {
         try {
-          await onDocumentsPulled({ tableName, documents: result.documents });
+          await onDocumentsPulled({ tableName, documents: result.documents, db });
         } catch {
           // Bounded and best-effort by contract. The checkpoint has moved, so this
           // page is not re-offered — a photo that failed here is picked up by the

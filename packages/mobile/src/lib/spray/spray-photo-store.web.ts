@@ -24,6 +24,14 @@ export async function storeSprayPhoto(_photoKey: string, _photoUrl: string): Pro
   return null;
 }
 
+export function deleteStoredSprayPhoto(_photoKey: string | null | undefined): void {
+  // Nothing on disk.
+}
+
+export function pruneStoredSprayPhotos(_liveKeys: Iterable<string>): number {
+  return 0;
+}
+
 export function clearStoredSprayPhotos(): void {
   // Nothing on disk, nothing to wipe.
 }

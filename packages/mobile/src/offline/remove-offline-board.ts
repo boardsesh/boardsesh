@@ -23,6 +23,7 @@ import {
 import { getSetting, setOfflineBoardEnabled, forgetOfflineBoardScope } from '../settings';
 import { reportScopeDownloadAbandoned } from './offline-sync-adapter';
 import { reportHandledError } from '../lib/error-reporting';
+import { deleteStoredSprayPhoto } from '../lib/spray/spray-photo-store';
 import { sweepOverlaysForScope } from '../lib/sweep-caches';
 
 /** The query keys that read board reference rows, derived from the tables we delete from. */
@@ -108,6 +109,10 @@ export async function removeOfflineBoard(params: {
       // the `scope-started:` marker: after this call nothing can tell an
       // abandoned download from a board that was never downloaded.
       onDownloadAbandoned: reportScopeDownloadAbandoned,
+      // The wall photograph, for a spray scope (#5448). The engine reads the key
+      // inside its transaction and hands it here; without this the JPEG would
+      // outlive every row that names it, in a directory no sweeper walks.
+      removeSprayPhoto: deleteStoredSprayPhoto,
     });
   } finally {
     // Unconditional: a latch left set would block this layout's downloads for the

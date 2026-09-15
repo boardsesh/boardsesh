@@ -1014,4 +1014,101 @@ describe('pullSync', () => {
       setBackgrounded(false);
     }
   });
+
+  // The seam the spray wall photograph rides on (#5448): a presigned URL the
+  // resolver emits and the table deliberately does not store, handed to the
+  // platform once the page it came with is committed.
+  describe('the onDocumentsPulled sink', () => {
+    function fetchWithSprayWall() {
+      graphqlFetch.mockImplementation(async (query: string) => {
+        if (query.includes('syncDeletions')) return makeDeletionsResult([], false);
+        if (query.includes('syncSprayWalls')) {
+          return makeSyncResult(
+            'syncSprayWalls',
+            [
+              {
+                layout_id: 4,
+                photo_key: 'spray-walls/wall-4/photo-2.jpg',
+                photo_url: 'https://private.example/p?sig=1',
+              },
+            ],
+            false,
+          );
+        }
+        for (const config of Object.values(TABLE_CONFIGS)) {
+          if (query.includes(config.queryName)) return makeSyncResult(config.queryName, [], false);
+        }
+        throw new Error(`Unexpected query: ${query}`);
+      });
+    }
+
+    it('hands over the committed page, the table name and the database', async () => {
+      fetchWithSprayWall();
+      const seen: { tableName: string; documents: Record<string, unknown>[]; db: unknown }[] = [];
+
+      await pullSync(db, queryClient, graphqlFetch, {
+        enabledBoards: ['spray:4:4'],
+        onDocumentsPulled: (info) => {
+          seen.push(info);
+        },
+      });
+
+      const wallPages = seen.filter((info) => info.tableName === 'spray_walls');
+      expect(wallPages).toHaveLength(1);
+      // The transient URL reaches the sink even though no column stores it.
+      expect(wallPages[0].documents[0].photo_url).toBe('https://private.example/p?sig=1');
+      // The database comes along so a sink can ask what the device holds NOW,
+      // not only what this page carried — the photo prune needs every live key.
+      expect(wallPages[0].db).toBe(db);
+    });
+
+    it('fires AFTER the page is committed, never for rows the write rolled back', async () => {
+      // A sink that ran on an uncommitted page would fetch a photograph for a
+      // wall the device does not have.
+      fetchWithSprayWall();
+      const order: string[] = [];
+      (db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mockImplementation(
+        async (callback: (txn: typeof mockTxn) => Promise<void>) => {
+          await callback(mockTxn);
+          order.push('commit');
+        },
+      );
+
+      await pullSync(db, queryClient, graphqlFetch, {
+        enabledBoards: ['spray:4:4'],
+        onDocumentsPulled: ({ tableName }) => {
+          if (tableName === 'spray_walls') order.push('sink');
+        },
+      });
+
+      expect(order.indexOf('sink')).toBeGreaterThan(order.indexOf('commit'));
+    });
+
+    it('never lets a throwing sink fail the cycle', async () => {
+      // A photo is an asset. A download that threw must not end a cycle that has
+      // already written its rows and advanced its checkpoint.
+      fetchWithSprayWall();
+      const progressFrames: SyncProgress[] = [];
+
+      await expect(
+        pullSync(db, queryClient, graphqlFetch, {
+          enabledBoards: ['spray:4:4'],
+          onProgress: (progress) => progressFrames.push(progress),
+          onDocumentsPulled: () => {
+            throw new Error('disk is full');
+          },
+        }),
+      ).resolves.toBeUndefined();
+
+      // And the cycle still finished rather than being cut short.
+      expect(progressFrames.at(-1)?.phase).toBe('idle');
+      expect(progressFrames.at(-1)?.interrupted).toBeFalsy();
+    });
+
+    it('is optional — a caller that passes none pulls exactly as before', async () => {
+      fetchWithSprayWall();
+
+      await expect(pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['spray:4:4'] })).resolves.toBeUndefined();
+    });
+  });
 });

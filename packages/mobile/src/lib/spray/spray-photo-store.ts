@@ -123,6 +123,73 @@ export async function storeSprayPhoto(photoKey: string, photoUrl: string): Promi
 }
 
 /**
+ * Delete the stored photo for one object key.
+ *
+ * Called when a climber removes a downloaded wall: `removeBoardScopeData` deletes
+ * the `spray_walls` row inside its transaction and hands the key here afterwards,
+ * because the engine has no filesystem. Deleting the row alone would leave a
+ * multi-megabyte JPEG in the durable directory with nothing on disk naming it —
+ * unreachable, unswept, and still a photograph of somebody's wall.
+ *
+ * Best-effort and silent: the row is already gone, and a file we could not remove
+ * must not turn a completed teardown into a failure.
+ */
+export function deleteStoredSprayPhoto(photoKey: string | null | undefined): void {
+  if (!photoKey) return;
+  deleteQuietly(storeFile(photoKey));
+  deleteQuietly(partialFile(photoKey));
+}
+
+/**
+ * Delete every stored photo whose key no wall on this device claims any more.
+ *
+ * The store is keyed by `photo_key`, and a reset mints a new one — so without
+ * this, every reset of every wall leaves its predecessor's JPEG behind forever.
+ * `Paths.document` is not swept by anything (that is the point of storing there,
+ * see the module header), so nothing else would ever reclaim them.
+ *
+ * `liveKeys` is the set of keys the local `spray_walls` rows currently name; the
+ * caller reads it from SQLite, because this module does not get to run queries.
+ * An unrecognised `.part` goes too: a partial download is by definition not a
+ * usable photo, and one left by a killed process is never resumed.
+ *
+ * Skipped entirely when `liveKeys` is empty — an empty set is far more likely to
+ * mean "the caller could not read the rows" than "this device has no walls", and
+ * the failure mode of guessing wrong is deleting every photo the device holds.
+ * Sign-out's deliberate wipe is `clearStoredSprayPhotos`, which says so.
+ */
+export function pruneStoredSprayPhotos(liveKeys: Iterable<string>): number {
+  const keepNames = new Set<string>();
+  for (const key of liveKeys) keepNames.add(sprayPhotoStoreFileName(key));
+  if (keepNames.size === 0) return 0;
+
+  let deleted = 0;
+  try {
+    const directory = storeDirectory();
+    if (!directory.exists) return 0;
+    for (const entry of directory.list()) {
+      const name = entry.name;
+      // A `.part` is never a photo, so it is judged on the key it belongs to
+      // rather than on its own name.
+      const isPartial = name.endsWith('.part');
+      const keyName = isPartial ? name.slice(0, -'.part'.length) : name;
+      if (!isPartial && keepNames.has(keyName)) continue;
+      // A `.part` for a live key is a download that may be in flight right now.
+      if (isPartial && keepNames.has(keyName)) continue;
+      try {
+        entry.delete();
+        deleted += 1;
+      } catch {
+        // Next prune gets it.
+      }
+    }
+  } catch {
+    // An unreadable directory is nothing to reclaim, never a throw.
+  }
+  return deleted;
+}
+
+/**
  * Delete every stored wall photo.
  *
  * Called on sign-out, next to the `spray_walls` row wipe. A wall photo is
