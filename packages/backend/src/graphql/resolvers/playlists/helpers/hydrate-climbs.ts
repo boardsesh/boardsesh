@@ -190,6 +190,12 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
   for (const ref of refs) {
     const key = `${ref.boardType}:${ref.climbUuid}`;
     const row = rowsByKey.get(key);
+    // A ref with no row is dropped, which is why the visibility predicate above is
+    // the SECOND line of defence and not the first: this hydrator runs AFTER the
+    // caller has taken its page, so a ref filtered only here shrinks that page while
+    // the caller's `totalCount` stays as it was. Every caller therefore carries the
+    // same rule in the query that paginates (`playlist-climbs.ts`,
+    // `smart-playlists.ts`), and this one only catches a ref that slipped through.
     if (!row) continue;
     const override = options?.angleOverrides?.get(key);
     // Prefer the angle the stats row was actually joined at, so the returned
