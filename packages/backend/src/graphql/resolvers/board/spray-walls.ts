@@ -1051,7 +1051,13 @@ export const sprayWallMutations = {
     // Losing public status has to RETRACT what was already fanned out, not just
     // stop future fan-out — see `purgeSprayWallFeedItems`. `is_unlisted` is not a
     // trigger: an unlisted wall is still shared, just not listed.
-    const losingPublic = validated.isPublic === false && board.isPublic;
+    //
+    // Whether the wall IS public is decided under the lock, not here: a climb
+    // created between a concurrent update that made the wall public and this one
+    // announces itself (the announce decision is taken under the same lock), and a
+    // `board.isPublic` captured before that would read false and skip the purge,
+    // leaving the announcement in the feed for a wall that is now private.
+    const goingPrivate = validated.isPublic === false;
 
     await db.transaction(async (tx) => {
       await lockWallForWrite(tx, wall.id);
@@ -1075,6 +1081,13 @@ export const sprayWallMutations = {
           );
         }
       }
+
+      const [boardNow] = await tx
+        .select({ isPublic: dbSchema.userBoards.isPublic })
+        .from(dbSchema.userBoards)
+        .where(eq(dbSchema.userBoards.id, board.id))
+        .limit(1);
+      const losingPublic = goingPrivate && boardNow?.isPublic === true;
 
       await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
 

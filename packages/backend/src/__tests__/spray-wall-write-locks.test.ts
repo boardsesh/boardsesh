@@ -265,6 +265,28 @@ describe('assertSprayHoldsAreAlive re-resolves the published generation under th
  * milliseconds: a DB-level interleave test would be flaky about hitting it, while
  * "the resolver reads this under the lock" is exactly the property that fixes it.
  */
+/**
+ * The same race from the other side: `updateSprayWall` deciding whether the wall is
+ * LOSING public status. Read before the transaction, that value is false for a wall
+ * a concurrent update has just made public, so the `feed_items` purge is skipped and
+ * the announcement made in that window outlives the wall's privacy.
+ */
+describe('the feed retraction decision is re-read under the wall lock', () => {
+  it('updateSprayWall reads is_public after the lock, not before', () => {
+    const body = functionBody(SPRAY_WALLS_SOURCE, 'updateSprayWall');
+
+    const lockAt = body.indexOf('lockWallForWrite(');
+    const decisionAt = body.indexOf('const losingPublic =');
+    expect(lockAt).toBeGreaterThanOrEqual(0);
+    expect(decisionAt, 'updateSprayWall no longer computes losingPublic').toBeGreaterThanOrEqual(0);
+    expect(decisionAt, 'losingPublic is decided before the wall lock is held').toBeGreaterThan(lockAt);
+
+    // …and from a fresh read, never from the wall loaded for the authz check.
+    expect(body.slice(decisionAt, decisionAt + 200)).not.toMatch(/board\.isPublic/);
+    expect(body.slice(0, decisionAt)).toMatch(/\.select\(\{\s*isPublic:/);
+  });
+});
+
 describe('the climb.created decision is re-read under the wall lock', () => {
   const MUTATIONS_SOURCE = readFileSync(
     fileURLToPath(new URL('../graphql/resolvers/climbs/mutations.ts', import.meta.url)),
