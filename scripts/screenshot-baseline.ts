@@ -506,30 +506,50 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
     }
   }
 
+  // The set of shards the manifest actually describes, derived from its file
+  // paths (there is no other per-shard listing). A downloaded zip outside this
+  // set — a future-format asset, a migration leftover, anything
+  // parseAssetName can't even decode — is not this baseline's problem to
+  // verify: skip it rather than extracting it (which, for an undecodable name,
+  // would otherwise dump straight into outDir's root under `--all`) or failing
+  // the whole fetch over an asset nothing here asked for.
+  const manifestShards = new Set(
+    Object.keys(manifest.files)
+      .map((relativePath) => relativePath.split('/').slice(0, 2).join('/'))
+      .filter((shardKey) => shardKey.includes('/')),
+  );
+
   const unzipped: string[] = [];
   let verified = true;
   for (const zipName of downloaded.sort()) {
     const shard = parseAssetName(options.platform, zipName);
+    if (!shard) {
+      console.warn(`::warning::${LOG} ${zipName} does not decode to a known locale/device shard; skipping it.`);
+      continue;
+    }
+    if (!manifestShards.has(`${shard.locale}/${shard.deviceSlug}`)) {
+      console.warn(`::warning::${LOG} ${zipName} is not listed in the baseline manifest; skipping it.`);
+      continue;
+    }
+
     // `--all` rebuilds the <locale>/<slug>/ tree fastlane reads; a single-asset
     // fetch stays flat so it can be compared against one capture directory.
-    const target = options.all && shard ? join(outDir, shard.locale, shard.deviceSlug) : outDir;
+    const target = options.all ? join(outDir, shard.locale, shard.deviceSlug) : outDir;
     mkdirSync(target, { recursive: true });
     runUnzip(runner, ['-o', '-q', join(downloadDir, zipName), '-d', target]);
     unzipped.push(target);
 
-    if (shard) {
-      const sha256ByFile: Record<string, string> = {};
-      for (const name of readdirSync(target).filter((entry) => entry.toLowerCase().endsWith('.png'))) {
-        sha256ByFile[name] = sha256Of(join(target, name));
+    const sha256ByFile: Record<string, string> = {};
+    for (const name of readdirSync(target).filter((entry) => entry.toLowerCase().endsWith('.png'))) {
+      sha256ByFile[name] = sha256Of(join(target, name));
+    }
+    const verification = verifyShardAgainstManifest(manifest, target, shard.locale, shard.deviceSlug, sha256ByFile);
+    if (!verification.ok) {
+      for (const problem of verification.problems) {
+        console.warn(`::warning::${LOG} baseline verification failed: ${problem}`);
       }
-      const verification = verifyShardAgainstManifest(manifest, target, shard.locale, shard.deviceSlug, sha256ByFile);
-      if (!verification.ok) {
-        for (const problem of verification.problems) {
-          console.warn(`::warning::${LOG} baseline verification failed: ${problem}`);
-        }
-        rmSync(target, { recursive: true, force: true });
-        verified = false;
-      }
+      rmSync(target, { recursive: true, force: true });
+      verified = false;
     }
   }
 
