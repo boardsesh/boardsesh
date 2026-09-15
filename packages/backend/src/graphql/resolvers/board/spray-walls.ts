@@ -1639,6 +1639,49 @@ export const sprayWallMutations = {
       // 3. …and the version itself. Its photo object is now unreferenced; SW-17
       //    (#5450) sweeps the bucket.
       await tx.delete(dbSchema.sprayWallVersions).where(eq(dbSchema.sprayWallVersions.id, version.id));
+
+      // 4. If that was the wall's ONLY version and nothing was ever published, the
+      //    wall has no frame any more — so the frame that version DEFINED has to go
+      //    with it.
+      //
+      //    `createSprayWallVersion` treats a non-null `reference_width` as "the
+      //    frame is already decided, inherit it", which is right for a reset and
+      //    wrong here: the next upload is version 1 again, and it would be mapped
+      //    against the discarded photo's coordinate space. A replacement photo of a
+      //    different size would put every hold drawn on it in the wrong place, and
+      //    nothing later corrects that — the frame is inherited forever.
+      const [{ remaining }] = await tx
+        .select({ remaining: count() })
+        .from(dbSchema.sprayWallVersions)
+        .where(eq(dbSchema.sprayWallVersions.wallId, found.wall.id));
+
+      if (Number(remaining) === 0) {
+        await tx
+          .update(dbSchema.sprayWalls)
+          .set({ referenceWidth: null, referenceHeight: null, holdCount: 0, updatedAt: new Date() })
+          .where(eq(dbSchema.sprayWalls.id, found.wall.id));
+
+        // The catalogue's edge box mirrors that frame, and the join row's
+        // `image_filename` points at the discarded photo's key.
+        await tx
+          .update(dbSchema.boardProductSizes)
+          .set({ edgeLeft: 0, edgeBottom: 0, edgeRight: null, edgeTop: null })
+          .where(
+            and(
+              eq(dbSchema.boardProductSizes.boardType, 'spray'),
+              eq(dbSchema.boardProductSizes.id, spraySizeIdForLayout(found.wall.layoutId)),
+            ),
+          );
+        await tx
+          .update(dbSchema.boardProductSizesLayoutsSets)
+          .set({ imageFilename: null })
+          .where(
+            and(
+              eq(dbSchema.boardProductSizesLayoutsSets.boardType, 'spray'),
+              eq(dbSchema.boardProductSizesLayoutsSets.id, found.wall.layoutId),
+            ),
+          );
+      }
     });
 
     logger.info('Spray wall draft discarded', {

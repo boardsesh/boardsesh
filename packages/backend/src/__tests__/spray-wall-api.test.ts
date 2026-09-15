@@ -2798,6 +2798,71 @@ describe('one draft at a time, and the states a version may move between', () =>
     ).resolves.toMatchObject({ status: 'DRAFT' });
   });
 
+  it('clears the canonical frame when the only, never-published version is discarded', async () => {
+    // `createSprayWallVersion` treats a non-null `reference_width` as "the frame is
+    // already decided, inherit it". Leaving the discarded draft's frame behind means
+    // the NEXT version 1 is mapped against a photo that no longer exists — and a
+    // replacement of a different size puts every hold drawn on it in the wrong
+    // place, forever, because the frame is inherited from then on.
+    const wall = await createWall(OWNER);
+    const firstPhoto = registerUploadedPhoto(wall.uuid, { width: 1200, height: 900 });
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: firstPhoto, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+
+    const frame = async () => {
+      const [row] = (await db.execute(sql`
+        SELECT reference_width, reference_height FROM spray_walls WHERE layout_id = ${wall.layoutId}
+      `)) as unknown as Array<{ reference_width: number | null; reference_height: number | null }>;
+      return row;
+    };
+    expect(await frame()).toEqual({ reference_width: 800, reference_height: 620 });
+
+    await sprayWallMutations.discardSprayWallVersion({}, { input: { versionId: draft.id } }, ctxFor(OWNER));
+    expect(await frame()).toEqual({ reference_width: null, reference_height: null });
+
+    // …and the catalogue mirrors of it.
+    const [size] = (await db.execute(sql`
+      SELECT edge_right, edge_top FROM board_product_sizes WHERE board_type = 'spray' AND id = ${wall.sizeId}
+    `)) as unknown as Array<{ edge_right: number | null; edge_top: number | null }>;
+    expect(size).toEqual({ edge_right: null, edge_top: null });
+    const [join] = (await db.execute(sql`
+      SELECT image_filename FROM board_product_sizes_layouts_sets WHERE board_type = 'spray' AND id = ${wall.layoutId}
+    `)) as unknown as Array<{ image_filename: string | null }>;
+    expect(join.image_filename).toBeNull();
+
+    // The replacement photo — a different size — now DEFINES the frame instead of
+    // inheriting the discarded one.
+    const replacementPhoto = registerUploadedPhoto(wall.uuid, { width: 2000, height: 1000 });
+    await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: replacementPhoto } },
+      ctxFor(OWNER),
+    );
+    expect(await frame()).toEqual({ reference_width: 2000, reference_height: 1000 });
+  });
+
+  it('keeps the frame when a LATER draft is discarded', async () => {
+    // Guards the guard: a published generation's holds live in that frame, so
+    // discarding a reset must not move it.
+    const { wall } = await createPublishedWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const reset = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+
+    await sprayWallMutations.discardSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER));
+
+    const [row] = (await db.execute(sql`
+      SELECT reference_width, reference_height FROM spray_walls WHERE layout_id = ${wall.layoutId}
+    `)) as unknown as Array<{ reference_width: number | null; reference_height: number | null }>;
+    expect(row).toEqual({ reference_width: 800, reference_height: 620 });
+  });
+
   it('refuses to discard a PUBLISHED version, and refuses a stranger', async () => {
     const { wall, versionId } = await createPublishedWall(OWNER);
     await expect(
