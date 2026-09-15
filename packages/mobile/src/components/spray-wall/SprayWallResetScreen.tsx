@@ -45,6 +45,7 @@ import {
   anchorsAreReady,
   initialResetWallState,
   isBusy,
+  resetBackAction,
   resetWallReducer,
   shouldConfirmLeave,
   type ResetWallStep,
@@ -267,6 +268,13 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   // Leaving
   // ============================================
 
+  /**
+   * Ask before a removal that would cost something, then let it through.
+   *
+   * Called from ONE place — the `beforeRemove` listener below — because that is
+   * the one place every exit passes through. It is not a helper the footer may
+   * also call: doing that is exactly the double prompt this screen had.
+   */
   const confirmLeave = useCallback(
     (onConfirm: () => void) => {
       if (!shouldConfirmLeave(state)) {
@@ -281,16 +289,19 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     [state, t],
   );
 
-  const leave = useCallback(() => confirmLeave(() => router.back()), [confirmLeave, router]);
-
   const goBack = useCallback(() => {
     if (isBusy(state)) return;
-    if (state.step === 'photo' || state.step === 'compare') {
-      leave();
+    // Pops WITHOUT asking, and that is not a missing guard: popping fires
+    // `beforeRemove`, which asks. Asking here as well put two identical alerts on
+    // one tap, and the second one's "Stay" undid the answer the climber had just
+    // given to the first. One exit, one question — `resetBackAction` has no
+    // branch that could prompt, and the listener below owns the only one.
+    if (resetBackAction(state) === 'pop-route') {
+      router.back();
       return;
     }
     dispatch({ type: 'BACK' });
-  }, [state, leave]);
+  }, [state, router]);
 
   /**
    * The same question for every way out this screen does not draw.
@@ -301,11 +312,15 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
    * only in this session. A silent exit there strands a draft nothing can resume
    * and forces the owner to discard it and shoot the wall again.
    *
-   * `beforeRemove` is the one place all three pass through, which is why it
-   * replaces the `BackHandler` listener rather than sitting beside it: two
-   * guards on one gesture would ask twice. Same predicate as the footer
-   * (`shouldConfirmLeave`), and the event's own action is re-dispatched on
-   * confirm so the exit the climber chose is the exit they get.
+   * `beforeRemove` is the one place all of them pass through — the footer's Back
+   * included, since it pops the route like everything else. So this is the SOLE
+   * guard: it replaced a `BackHandler` listener that asked a second time for one
+   * Android press, and the footer no longer pre-prompts for the same reason. Two
+   * guards on one exit ask twice, and the second alert's "Stay" silently undoes
+   * the answer given to the first.
+   *
+   * The event's own action is re-dispatched on confirm, so the exit the climber
+   * chose is the exit they get.
    */
   const navigation = useNavigation();
   const confirmLeaveRef = useRef(confirmLeave);

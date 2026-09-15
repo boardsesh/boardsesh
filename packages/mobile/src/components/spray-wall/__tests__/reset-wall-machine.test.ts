@@ -5,6 +5,7 @@ import {
   initialResetWallState,
   isBusy,
   leavingKeepsDraft,
+  resetBackAction,
   resetWallReducer,
   shouldConfirmLeave,
   type ResetDraft,
@@ -210,6 +211,40 @@ describe('resetWallReducer — the rest of the flow', () => {
       { type: 'DETECTION_STARTED' },
     );
     expect(shouldConfirmLeave(detecting)).toBe(true);
+  });
+
+  // One prompt per leave. The footer used to ask, pop, and be asked again by
+  // `beforeRemove` on the way out — two identical alerts on one tap, and the
+  // second's "Stay" silently undid the answer to the first. So the footer's
+  // outcomes are "step back" and "pop the route", with no third that could
+  // prompt; popping is what raises the question, once, in the one listener every
+  // exit passes through.
+  it('pops the route from the steps that mean leaving, and never prompts itself', () => {
+    const atPhoto = initialResetWallState();
+    expect(resetBackAction(atPhoto)).toBe('pop-route');
+
+    const comparing = run(
+      atAnchors(),
+      { type: 'ANCHORS_SET', anchors: SQUARE },
+      { type: 'ANCHORS_DONE' },
+      { type: 'DRAFT_CREATED', draft: DRAFT },
+      { type: 'DETECTION_FINISHED', candidates: [] },
+    );
+    expect(resetBackAction(comparing)).toBe('pop-route');
+    // And it is the LISTENER's job to ask on the way out, not the footer's.
+    expect(shouldConfirmLeave(comparing)).toBe(true);
+  });
+
+  it('steps back within the flow everywhere else', () => {
+    expect(resetBackAction(atAnchors())).toBe('step-back');
+
+    const uploading = run(
+      atAnchors(),
+      { type: 'ANCHORS_SET', anchors: SQUARE },
+      { type: 'ANCHORS_DONE' },
+      { type: 'UPLOAD_FAILED', message: 'nope' },
+    );
+    expect(resetBackAction(uploading)).toBe('step-back');
   });
 
   it('lets a finished reset go without a question', () => {

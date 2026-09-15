@@ -94,6 +94,21 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
   renderWidth,
   renderHeight,
 }: SprayResetSvgLayerProps) {
+  /**
+   * Holds by id, built once and shared.
+   *
+   * Two consumers — the move leader lines and the selection ring — and both used
+   * to scan. A wall may carry 1500 holds, and the selection ring is rebuilt on
+   * every tap, so `holds.find()` there was a linear scan per tap on the largest
+   * thing on screen. Memoised on `holds` alone, which only changes when the wall
+   * does, so a tap and a filter change both reuse it.
+   */
+  const holdById = useMemo(() => {
+    const byId = new Map<number, SprayPhotoHold>();
+    for (const hold of holds) byId.set(hold.id, hold);
+    return byId;
+  }, [holds]);
+
   const buckets = useMemo(() => {
     const kept: string[] = [];
     const removed: string[] = [];
@@ -101,9 +116,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
     const added: string[] = [];
     const rejected: string[] = [];
 
-    const holdById = new Map<number, SprayPhotoHold>();
     for (const hold of holds) {
-      holdById.set(hold.id, hold);
       if (!holdPassesFilter(review, hold.id)) continue;
       const role = holdRingRole(review, hold.id);
       if (!role) continue;
@@ -139,7 +152,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
       rejected: rejected.join(''),
       leaders: leaders.join(''),
     };
-  }, [holds, detections, review]);
+  }, [holds, holdById, detections, review]);
 
   // Drawn again on top in white so the selection reads over whichever role colour
   // it already carries. A detection is keyed `-(index + 1)` so one number can
@@ -147,7 +160,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
   const selectedPath = useMemo(() => {
     if (selectedKey == null) return '';
     if (selectedKey >= 0) {
-      const hold = holds.find((candidate) => candidate.id === selectedKey);
+      const hold = holdById.get(selectedKey);
       return hold ? ringPath(hold, hold.outline) : '';
     }
     const detection = detections[-selectedKey - 1];
@@ -156,7 +169,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
       { id: 0, cx: detection.photo.cx, cy: detection.photo.cy, r: detection.photo.r },
       detection.photo.outline,
     );
-  }, [selectedKey, holds, detections]);
+  }, [selectedKey, holdById, detections]);
 
   const dash = Math.max(2, boardWidth / 300);
 

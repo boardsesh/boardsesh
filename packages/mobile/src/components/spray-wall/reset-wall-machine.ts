@@ -163,6 +163,25 @@ export function shouldConfirmLeave(state: ResetWallState): boolean {
   return isBusy(state) || leavingKeepsDraft(state);
 }
 
+/**
+ * What the footer's Back does from here.
+ *
+ * Two outcomes and deliberately no third. There is no "ask, then pop" — that was
+ * the bug: the footer asked, popped, and `beforeRemove` asked again on the way
+ * out, so the second alert's "Stay" silently undid the answer given to the
+ * first. Popping the route is what raises the question, exactly once, in the one
+ * listener every exit passes through (the header's back button and the iOS
+ * gesture have no other path). So the union has no branch that could prompt, and
+ * a future "confirm here as well" cannot be added without changing this type.
+ */
+export type ResetBackAction = 'step-back' | 'pop-route';
+
+export function resetBackAction(state: ResetWallState): ResetBackAction {
+  // `photo` has nothing behind it and `compare` has nothing it may return to —
+  // the draft is on the server by then. Both mean leaving.
+  return state.step === 'photo' || state.step === 'compare' ? 'pop-route' : 'step-back';
+}
+
 export function resetWallReducer(state: ResetWallState, action: ResetWallAction): ResetWallState {
   switch (action.type) {
     case 'PHOTO_PICKED':
