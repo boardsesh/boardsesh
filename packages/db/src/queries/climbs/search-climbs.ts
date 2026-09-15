@@ -377,14 +377,20 @@ async function runStatsDrivenSearch(
     .select(selectFields)
     .from(boardClimbStats)
     .innerJoin(boardClimbs, eq(boardClimbs.uuid, boardClimbStats.climbUuid))
-    // Boardsesh grade for the searched climb at the searched angle. LEFT JOIN so a
-    // climb without a grade row still returns (fields come back NULL — safe).
+    // Boardsesh grade for the searched climb, at the angle gradeJoinAngleSql
+    // resolves — the literal browsed angle here in practice, since
+    // chooseSearchPath never routes a cross-angle search through this INNER
+    // JOIN path (see its doc comment) — but kept consistent with
+    // runStandardSearch's join on purpose, so a future routing change can't
+    // silently reintroduce the count/list mismatch issue #5405 was about.
+    // LEFT JOIN so a climb without a grade row still returns (fields come
+    // back NULL — safe).
     .leftJoin(
       boardClimbGrades,
       and(
         eq(boardClimbGrades.boardType, params.board_name),
         eq(boardClimbGrades.climbUuid, boardClimbs.uuid),
-        eq(boardClimbGrades.angle, params.angle),
+        sql`${boardClimbGrades.angle} = ${gradeJoinAngleSql(params.angle, filters.isCrossAngleStats)}`,
       ),
     )
     .where(
