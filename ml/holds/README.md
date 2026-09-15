@@ -65,6 +65,81 @@ This box has no GPU and has fallen over under concurrent heavy jobs. **Run one
 training or evaluation at a time** and keep the thread cap: every entry point
 honours `HOLDS_THREADS` (default 8) and pins OMP/MKL/torch to it.
 
+### macOS (Apple Silicon)
+
+Same `requirements.txt`, different torch install: skip the `+cpu` wheel index
+entirely and take the plain PyPI wheels, which bundle Metal (MPS) support.
+
+```bash
+cd ml/holds
+python3 -m venv .venv && . .venv/bin/activate
+pip install torch==2.14.0 torchvision==0.29.0
+pip install -r requirements.txt
+```
+
+`train.py --device auto` (the default) then picks `mps` on its own; pass
+`--device mps` explicitly to fail fast instead of silently falling back to cpu
+if something about the environment is off. `--device cpu` still works and is
+the thing to reach for if `mps` misbehaves — see the caveat below.
+
+### Full run
+
+The retrain the report above describes used 600 of 3,876 available train-split
+photos for one epoch on this CPU box. A full run — the whole train split, the
+usual RF-DETR fine-tuning recipe of ~10 epochs — is estimated at ~37 hours here;
+on an M5 Max it should take a small fraction of that. Recipe, on the Mac:
+
+```bash
+cd ml/holds && . .venv/bin/activate
+
+# 1. Corpus: the CC BY 4.0 Roboflow set, collapsed to one class.
+ROBOFLOW_API_KEY=$(cat ~/.config/roboflow/api-key) \
+  python data/fetch.py --only roboflow-climbing-holds-and-volumes
+python data/single_class.py --source .data/roboflow-climbing-holds-and-volumes \
+  --target .data/roboflow-1class
+
+# 2. Train on the FULL train split — no --max-train-images — for 10 epochs.
+python train.py --config medium-untiled-1280 --device mps --epochs 10 \
+  --dataset .data/roboflow-1class
+
+# 3. Export, shrunk to int8 (what would ship).
+python export.py --config medium-untiled-1280 --formats onnx --shrink int8
+
+# 4. Score the exported artifact on the spray-wall eval split, threshold
+#    chosen on `tune` first (see "Reproducing every number" above for how the
+#    spray-wall corpus's tune/eval halves are built).
+python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco \
+  --split tune                                    # sweep here for the threshold
+python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco \
+  --split eval --score-threshold <chosen> \
+  --model .data/artifacts/medium-untiled-1280/model-int8.onnx \
+  --out .data/artifacts/medium-untiled-1280/eval-full-run.json
+```
+
+**Batch size**: `configs.json`'s `medium-untiled-1280` ships `batch_size: 2` for
+this box's CPU RAM. 128 GB of unified memory has room for far more — try
+`--batch-size 32` and step down if training is slow to start, and **halve it**
+on an `mps` "out of memory" (or the process silently stalling) rather than
+retrying the same number. `--threads` / `HOLDS_THREADS` only matter for
+`--device cpu`; they do nothing for `mps` compute (data loading still uses
+some CPU threads regardless of device).
+
+**Caveat, stated honestly**: nobody has run this harness's training path on
+`mps` yet. `rfdetr==1.10.1`'s Lightning trainer has explicit MPS handling
+(`torch.backends.mps.is_available()` branches for autocast precision, and
+`torch.compile` is deliberately CUDA-only — "CPU and MPS are not supported"),
+so it should work, but it is untested here. If `--device mps` fails partway
+through — a missing MPS kernel for some op is the most likely shape of that —
+`--device cpu` on the same Mac still runs the full pipeline and, on an M5 Max,
+should still be faster than the CPU box this harness was written on.
+
+**What to hand back**: the `eval-*.json` files (`eval.py`'s `--out`, with the
+per-photo breakdown) from the `tune` sweep and the final `eval` split score,
+plus the int8 ONNX itself. The int8 export is 28-33 MB depending on config —
+over this repo's 15 MB ceiling — so it does not get committed; it goes to R2
+under `models/hold-detector/<version>/` instead (`docs/user-media-storage.md`
+has the bucket/credential contract).
+
 ## Reproducing every number in the report
 
 ```bash
