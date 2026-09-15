@@ -282,6 +282,62 @@ describe('compareScreenshotSets', () => {
     expect(empty.reason).toBe('no-baseline');
   });
 
+  it('reports changed with every baseline file missing when the candidate directory is empty', async () => {
+    // A candidate directory that exists but holds zero PNGs is reachable in
+    // production: Maestro can crash before writing any screenshot at all. That
+    // must never read as "unchanged" just because listPngFiles(candidate) came
+    // back empty on both counts (nothing to compare, nothing differing) — every
+    // baseline file has to be reported "missing" instead.
+    const baseline = directory('baseline');
+    const candidate = directory('candidate');
+    await writeSolidPng(join(baseline, '01-discover.png'), 40, 40, GREY);
+    await writeSolidPng(join(baseline, '02-board.png'), 40, 40, GREY);
+
+    const comparison = await compareScreenshotSets({ baselineDir: baseline, candidateDir: candidate });
+
+    expect(comparison.changed).toBe(true);
+    expect(comparison.reason).toBe('changed');
+    expect(comparison.files.map((file) => [file.name, file.status])).toEqual([
+      ['01-discover.png', 'missing'],
+      ['02-board.png', 'missing'],
+    ]);
+  });
+
+  it('reports changed with every baseline file missing when the candidate directory does not exist at all', async () => {
+    const baseline = directory('baseline');
+    await writeSolidPng(join(baseline, '01-discover.png'), 40, 40, GREY);
+
+    const comparison = await compareScreenshotSets({
+      baselineDir: baseline,
+      candidateDir: join(workDir, 'never-created'),
+    });
+
+    expect(comparison.changed).toBe(true);
+    expect(comparison.reason).toBe('changed');
+    expect(comparison.files).toEqual([
+      { name: '01-discover.png', status: 'missing', differingRatio: 1, width: 40, height: 40 },
+    ]);
+  });
+
+  it('reports no-baseline with every candidate file extra when the baseline directory is empty (symmetric case)', async () => {
+    // Symmetric to the two tests above: an empty (or missing) baseline dir takes
+    // the dedicated no-baseline branch, which must mark every candidate file
+    // "extra" — never "unchanged" — the same way an empty candidate must mark
+    // every baseline file "missing".
+    const candidate = directory('candidate');
+    await writeSolidPng(join(candidate, '01-discover.png'), 40, 40, GREY);
+    await writeSolidPng(join(candidate, '02-board.png'), 40, 40, GREY);
+
+    const comparison = await compareScreenshotSets({ baselineDir: directory('empty'), candidateDir: candidate });
+
+    expect(comparison.changed).toBe(true);
+    expect(comparison.reason).toBe('no-baseline');
+    expect(comparison.files.map((file) => [file.name, file.status])).toEqual([
+      ['01-discover.png', 'extra'],
+      ['02-board.png', 'extra'],
+    ]);
+  });
+
   it('reports the whole set as changed when only one of several files moved', async () => {
     const baseline = directory('baseline');
     const candidate = directory('candidate');

@@ -24,8 +24,11 @@
  * `pack` refuses an incomplete tree, so a run that lost a shard can never
  * overwrite a good baseline with a partial one. `publish` uploads the manifest
  * LAST, so a reader that sees `ios-manifest.json` is guaranteed to see every zip
- * it describes. `fetch` exits 0 when the release or the asset does not exist yet
- * (first run, or a pruned asset) and reports that through `found=false`.
+ * it describes; on every publish (first or repeat) it also (re)writes the
+ * release notes to name the current source commit and run, so the release body
+ * never goes stale after the first-ever publish. `fetch` exits 0 when the
+ * release or the asset does not exist yet (first run, or a pruned asset) and
+ * reports that through `found=false`.
  *
  * Shelling out goes through an injectable CommandRunner so the unit tests never
  * touch `gh`, `zip` or the network.
@@ -360,6 +363,13 @@ export function publishBaseline(options: PublishOptions): PackResult {
       '--notes',
       baselineNotes(packed.manifest),
     ]);
+  } else {
+    // The release already exists: `gh release upload --clobber` below replaces
+    // the assets, but never touches the notes, so without this the release body
+    // would permanently show the commit/run from the very first publish. Edit
+    // it every time so the notes always name the source commit and run that
+    // most recently refreshed the baseline.
+    runOrThrow(runner, 'gh', ['release', 'edit', BASELINE_TAG, '--notes', baselineNotes(packed.manifest)]);
   }
 
   // Zips first, manifest last: a reader that sees the manifest is guaranteed to
