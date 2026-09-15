@@ -29,6 +29,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { TimerPairingSheet } from '../ble/TimerPairingSheet';
+import { GymPickerSheet } from './GymPickerSheet';
 import { BoardIdentityFields, BoardVisibilityFields, BuilderTextInput, SectionLabel } from './BoardMetaFields';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -103,6 +104,7 @@ export function BoardForm({
   const { width: windowWidth } = useWindowDimensions();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
+  const [gymPickerOpen, setGymPickerOpen] = useState(false);
 
   // Chip options — memoised so the per-snap angle re-render doesn't rebuild them
   // (they don't depend on angle), letting the memoised chip rows bail out.
@@ -256,7 +258,7 @@ export function BoardForm({
           <BoardIdentityFields
             builder={builder}
             namePlaceholder={defaultName}
-            onRequestManualLocation={() => setAdvancedOpen(true)}
+            onOpenGymPicker={() => setGymPickerOpen(true)}
           />
         ) : null}
 
@@ -366,6 +368,26 @@ export function BoardForm({
             setTimerPairingOpen(false);
           }}
           onDismiss={() => setTimerPairingOpen(false)}
+        />
+      ) : null}
+
+      {/* Presence-driven, like TimerPairingSheet — the two are never open at
+          once and the sheet coordinator serialises them. A SIBLING of the
+          ScrollView, never a child of it. */}
+      {gymPickerOpen ? (
+        <GymPickerSheet
+          selectedUuid={builder.selectedGym?.uuid ?? null}
+          boardCoords={builder.coords}
+          onSelect={(gym) => {
+            builder.setSelectedGym(gym);
+            setGymPickerOpen(false);
+          }}
+          onRequestManualLocation={() => {
+            builder.setSelectedGym(null);
+            setGymPickerOpen(false);
+            setAdvancedOpen(true);
+          }}
+          onDismiss={() => setGymPickerOpen(false)}
         />
       ) : null}
 

@@ -7,10 +7,14 @@
 // which is how a climber tapping "Try again" three times ends up with three
 // walls against a cap of ten.
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CREATE_SPRAY_WALL,
   CREATE_SPRAY_WALL_VERSION,
+  DELETE_SPRAY_WALL,
+  DISCARD_SPRAY_WALL_VERSION,
+  GET_MY_SPRAY_WALLS,
+  GET_SPRAY_WALL_WITH_VERSIONS,
   PUBLISH_SPRAY_WALL_VERSION,
 } from '@boardsesh/graphql/operations/spray-walls';
 import type {
@@ -38,6 +42,8 @@ export const mySprayWallsQueryKey = ['mySprayWalls'] as const;
 export type CreatedSprayWall = Omit<SprayWall, 'board'> & { board: UserBoard };
 
 type CreateWallResponse = { createSprayWall: CreatedSprayWall };
+type MySprayWallsResponse = { mySprayWalls: SprayWall[] };
+type SprayWallWithVersionsResponse = { sprayWall: CreatedSprayWall | null };
 type CreateVersionResponse = { createSprayWallVersion: SprayWallVersion };
 type PublishResponse = { publishSprayWallVersion: SprayWallVersion };
 
@@ -72,6 +78,56 @@ export function useCreateSprayWallVersion() {
     mutationFn: async (input: CreateSprayWallVersionInput): Promise<SprayWallVersion> => {
       const response = await getHttpClient().request<CreateVersionResponse>(CREATE_SPRAY_WALL_VERSION, { input });
       return response.createSprayWallVersion;
+    },
+  });
+}
+
+/**
+ * The caller's own walls, asked for once when the add-a-wall flow opens.
+ *
+ * Its whole job is finding an unfinished wall to offer back (`resume-draft.ts`).
+ * `staleTime: 0` on purpose: a wall abandoned five minutes ago on this very
+ * device must be found, and a cached list from before that is exactly what would
+ * hide it and let the flow mint a second wall beside the first.
+ */
+export function useMySprayWalls(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: mySprayWallsQueryKey,
+    queryFn: async (): Promise<SprayWall[]> => {
+      const response = await getHttpClient().request<MySprayWallsResponse>(GET_MY_SPRAY_WALLS);
+      return response.mySprayWalls;
+    },
+    enabled: options?.enabled ?? true,
+    staleTime: 0,
+  });
+}
+
+/** One wall WITH its version history — the only query that can see an open draft. */
+export async function fetchSprayWallVersions(uuid: string): Promise<CreatedSprayWall | null> {
+  const response = await getHttpClient().request<SprayWallWithVersionsResponse>(GET_SPRAY_WALL_WITH_VERSIONS, {
+    uuid,
+  });
+  return response.sprayWall;
+}
+
+/**
+ * Throw away an abandoned attempt: discard its open draft, then delete the wall.
+ *
+ * Order matters and is stated in `startOverPlan`. Both calls are best-effort at
+ * the call site — a start-over that cannot reach the server must still let the
+ * climber build their wall — so this hook reports rather than blocks, and a
+ * stray row is left for the SW-17 cleanup job.
+ */
+export function useDiscardSprayWallDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ versionId, wallUuid }: { versionId: string | null; wallUuid: string }): Promise<void> => {
+      const client = getHttpClient();
+      if (versionId) await client.request(DISCARD_SPRAY_WALL_VERSION, { input: { versionId } });
+      await client.request(DELETE_SPRAY_WALL, { uuid: wallUuid });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
     },
   });
 }

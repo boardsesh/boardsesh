@@ -822,6 +822,13 @@
       "body": "Ton mur et sa photo sont enregistrés. Tu reprendras où tu t'es arrêté.",
       "stay": "Continuer",
       "go": "Quitter"
+    },
+    "resume": {
+      "checking": "Recherche d'un mur commencé…",
+      "title": "Tu as un mur en cours",
+      "body": "« {{name}} » n'est pas fini. Reprends où tu t'es arrêté, ou recommence.",
+      "pickUp": "Reprendre",
+      "startOver": "Recommencer"
     }
   }
 }

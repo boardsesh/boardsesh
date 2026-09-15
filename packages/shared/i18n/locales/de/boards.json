@@ -822,6 +822,13 @@
       "body": "Deine Wand und ihr Foto sind gespeichert. Mach weiter, wo du aufgehört hast.",
       "stay": "Weitermachen",
       "go": "Verlassen"
+    },
+    "resume": {
+      "checking": "Suche nach einer angefangenen Wand…",
+      "title": "Du hast eine Wand offen",
+      "body": "„{{name}}“ ist nicht fertig. Mach weiter, wo du aufgehört hast, oder fang neu an.",
+      "pickUp": "Weitermachen",
+      "startOver": "Neu anfangen"
     }
   }
 }
