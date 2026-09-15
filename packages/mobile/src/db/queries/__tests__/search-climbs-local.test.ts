@@ -41,6 +41,9 @@ type ClimbFixture = {
   /** Nullable on purpose: rows pulled before migration v5 added the column have
    *  no value, and the search must read that as visible. */
   isHidden?: number | null;
+  /** `board_climbs.missing_hold_count` (migration v7). Undefined leaves it NULL,
+   *  which is what every catalogue-board climb and every pre-v7 row carries. */
+  missingHoldCount?: number | null;
   framesCount?: number | null;
   frames?: string;
   compatibleSizeIds?: number[] | null;
@@ -69,9 +72,10 @@ type StatFixture = {
 async function insertClimb(db: TestSqliteDb, fixture: ClimbFixture): Promise<void> {
   await db.runAsync(
     `INSERT INTO board_climbs
-      (uuid, board_type, layout_id, name, description, is_listed, is_draft, is_hidden, frames_count, frames,
+      (uuid, board_type, layout_id, name, description, is_listed, is_draft, is_hidden, missing_hold_count,
+       frames_count, frames,
        compatible_size_ids, required_set_ids, characteristics, setter_username, angle, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fixture.uuid,
       fixture.boardType ?? 'kilter',
@@ -81,6 +85,7 @@ async function insertClimb(db: TestSqliteDb, fixture: ClimbFixture): Promise<voi
       fixture.isListed ?? 1,
       fixture.isDraft ?? 0,
       fixture.isHidden === undefined ? 0 : fixture.isHidden,
+      fixture.missingHoldCount === undefined ? null : fixture.missingHoldCount,
       fixture.framesCount ?? 1,
       fixture.frames ?? '',
       fixture.compatibleSizeIds === undefined
@@ -699,6 +704,69 @@ describe('isOfflineSearchSupported', () => {
   // Random needs no un-synced tables, so it stays offline-supported.
   it('supports the random sort offline', () => {
     expect(isOfflineSearchSupported(makeInput({ sortBy: 'random', sortSeed: '42' }))).toBe(true);
+  });
+});
+
+describe('searchClimbsLocal: spray-wall hold integrity', () => {
+  let db: TestSqliteDb;
+
+  // Three states the column can be in, and the NULL is the one that matters:
+  // every climb on the eight catalogue boards carries it, as does any row pulled
+  // before migration v7. The server's `holdIntegrityCondition` COALESCEs it to 0
+  // — "presumed whole until a reset says otherwise" — and this mirror has to
+  // reach the same answer or a downloaded board disagrees with the network.
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+    await insertClimb(db, { uuid: 'intact', missingHoldCount: 0 });
+    await insertClimb(db, { uuid: 'broken', missingHoldCount: 2 });
+    await insertClimb(db, { uuid: 'unknown' });
+    for (const uuid of ['intact', 'broken', 'unknown']) {
+      await insertStat(db, { climbUuid: uuid, ascensionistCount: 3 });
+    }
+  });
+
+  const names = async (holdIntegrity?: 'ANY' | 'INTACT' | 'BROKEN') => {
+    const result = await searchClimbsLocal(db, makeInput({ holdIntegrity }), LOCAL_OWNER);
+    return result.climbs.map((climb) => climb.uuid).sort();
+  };
+
+  it('answers the filter locally instead of declining it', () => {
+    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'INTACT' }))).toBe(true);
+    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'BROKEN' }))).toBe(true);
+  });
+
+  it('INTACT keeps a zero count AND an unknown one', async () => {
+    expect(await names('INTACT')).toEqual(['intact', 'unknown']);
+  });
+
+  it('BROKEN keeps only a climb that has actually lost holds', async () => {
+    // The NULL row must NOT be here. Reversed, one un-backfilled row would badge
+    // every Kilter climb on the device as broken.
+    expect(await names('BROKEN')).toEqual(['broken']);
+  });
+
+  it('ANY and an absent filter carry no predicate at all', async () => {
+    expect(await names('ANY')).toEqual(['broken', 'intact', 'unknown']);
+    expect(await names()).toEqual(['broken', 'intact', 'unknown']);
+  });
+
+  it('counts agree with the list, so the header is not a different search', async () => {
+    expect(await countClimbsLocal(db, makeInput({ holdIntegrity: 'INTACT' }), LOCAL_OWNER)).toBe(2);
+    expect(await countClimbsLocal(db, makeInput({ holdIntegrity: 'BROKEN' }), LOCAL_OWNER)).toBe(1);
+  });
+
+  it('surfaces the count on the row, leaving an unknown one null', async () => {
+    const result = await searchClimbsLocal(db, makeInput(), LOCAL_OWNER);
+    const byUuid = new Map(result.climbs.map((climb) => [climb.uuid, climb.missingHoldCount]));
+    expect(byUuid.get('broken')).toBe(2);
+    expect(byUuid.get('intact')).toBe(0);
+    // Not 0: "no reset has touched this" and "this is not a spray climb" are
+    // different statements, and the server's Climb.missingHoldCount is nullable
+    // for exactly the same rows.
+    expect(byUuid.get('unknown')).toBeNull();
   });
 });
 
