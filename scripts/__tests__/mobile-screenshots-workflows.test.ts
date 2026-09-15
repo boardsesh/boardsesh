@@ -79,7 +79,13 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
 
   it('resolves the gate, the matrix and the source commit in setup', () => {
     const setup = workflow.jobs.setup;
-    expect(Object.keys(setup.outputs ?? {})).toEqual(['ios_locales', 'ios_matrix', 'gate', 'source_sha']);
+    expect(Object.keys(setup.outputs ?? {})).toEqual([
+      'ios_locales',
+      'ios_matrix_full',
+      'ios_matrix_without_probe',
+      'gate',
+      'source_sha',
+    ]);
     // upload and probe are contradictory: an upload needs all 12 shards.
     expect(source).toContain('upload=true cannot be combined with gate=probe');
     // A narrowed / onboarding / uploading run has no full-set baseline to compare against.
@@ -159,13 +165,31 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     );
     expect(capture.strategy?.['max-parallel']).toBe(4);
     expect(capture.strategy?.['fail-fast']).toBe(false);
-    expect(capture.strategy?.matrix).toBe('${{ fromJSON(needs.setup.outputs.ios_matrix) }}');
 
     const steps = capture.steps ?? [];
     expect(steps[0].uses).toBe('actions/checkout@v4');
     expect(steps[1].uses).toBe('./.github/actions/ios-screenshot-shard');
     expect(steps[1].with?.locale).toBe('${{ matrix.locale }}');
     expect(steps[1].with?.['device-name']).toBe('${{ matrix.device.name }}');
+  });
+
+  it('captures the full 12-shard matrix when the probe crashed or was skipped, and the 11-shard one only on probe success', () => {
+    // Pins the #5326 fix: gate=probe computes an exclude assuming the probe
+    // itself will capture and upload its shard, but a probe that FAILS never
+    // does that — so the matrix, not just the `if:`, must fall back to the
+    // full 12-shard set on failure (and on `skipped`, the gate=full path,
+    // which never asked for an exclude at all). Only an actually-successful
+    // probe gets the 11-shard exclude. Mutation check: hardcode this to
+    // always resolve to ios_matrix_without_probe and this test must fail.
+    const capture = workflow.jobs['ios-capture'];
+    const matrixExpression = flatten(capture.strategy?.matrix as string | undefined);
+    expect(matrixExpression).toContain('needs.probe.result');
+    expect(matrixExpression).toContain('needs.setup.outputs.ios_matrix_without_probe');
+    expect(matrixExpression).toContain('needs.setup.outputs.ios_matrix_full');
+    expect(matrixExpression).toBe(
+      "${{ fromJSON(needs.probe.result == 'success' && needs.setup.outputs.ios_matrix_without_probe || " +
+        'needs.setup.outputs.ios_matrix_full) }}',
+    );
   });
 
   it('finalizes on every non-cancelled run and skips the dimension gate when nothing moved', () => {
