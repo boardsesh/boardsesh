@@ -405,6 +405,19 @@ export interface FetchResult {
   unzipped: string[];
 }
 
+/**
+ * A fetch that turns up nothing trustworthy must never leave stale files
+ * behind in `outDir`: a non-fresh runner (or a re-run against a release that
+ * failed verification) could otherwise mix an old, already-unzipped shard
+ * with whatever partial set this attempt managed to restore, and the caller
+ * has no way to tell a trusted shard from a leftover one. Wipe the whole
+ * directory before reporting `found: false`.
+ */
+function failFetch(outDir: string): FetchResult {
+  rmSync(outDir, { recursive: true, force: true });
+  return { found: false, commit: '', unzipped: [] };
+}
+
 export function fetchBaseline(options: FetchOptions): FetchResult {
   const runner = options.runner ?? systemCommandRunner;
   const outDir = resolve(options.outDir);
@@ -433,13 +446,13 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
     // No release yet, or no matching asset. That is the first-run state, not an
     // error: the caller falls back to a full capture.
     console.log(`${LOG} no baseline available for ${pattern} (${download.stderr.trim() || 'no matching asset'}).`);
-    return { found: false, commit: '', unzipped: [] };
+    return failFetch(outDir);
   }
 
   const downloaded = readdirSync(downloadDir).filter((name) => name.endsWith('.zip'));
   if (downloaded.length === 0) {
     console.log(`${LOG} baseline release exists but carries no ${pattern} asset.`);
-    return { found: false, commit: '', unzipped: [] };
+    return failFetch(outDir);
   }
 
   // Read the manifest BEFORE unzipping so each shard can be checked against it
@@ -470,7 +483,7 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
     console.warn(
       `::warning::${LOG} baseline manifest ${manifestName} is missing or unreadable; treating as no baseline.`,
     );
-    return { found: false, commit: '', unzipped: [] };
+    return failFetch(outDir);
   }
 
   // `--all` must restore every shard the manifest describes — a shard that
@@ -489,7 +502,7 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
       console.warn(
         `::warning::${LOG} baseline is missing shard asset(s) listed in the manifest: ${[...missingAssets].sort().join(', ')}; treating as no baseline.`,
       );
-      return { found: false, commit: '', unzipped: [] };
+      return failFetch(outDir);
     }
   }
 
@@ -526,7 +539,7 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
     // all so the caller (the probe, or the store-draft attach) fans out /
     // refuses to attach instead of comparing against or shipping bad pixels.
     console.log(`${LOG} baseline failed manifest verification; treating as no baseline.`);
-    return { found: false, commit: '', unzipped: [] };
+    return failFetch(outDir);
   }
 
   console.log(

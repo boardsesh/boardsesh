@@ -163,6 +163,16 @@ fell out of history). `ios-capture` and `ios-finalize` then treat `force_full`
 exactly like a pixel-wise `changed`, fanning out even though the one shard the
 probe actually captured matched byte for byte.
 
+**Known remaining blind spot.** A shared component under
+`packages/mobile/src/components/**` whose change only renders differently on
+iPad (a `Platform.isPad` branch, a width-based layout switch) is caught by
+neither the pixel probe (en-US iPhone only) nor the path rules above — its
+file path says nothing about iPad. There is no changed-path signal to force a
+fan-out here without also forcing a full 12-shard capture on every ordinary
+component edit, which would defeat probing in the first place. Dispatch with
+`gate: full` (or `upload: true`) by hand when a change is iPad-specific by
+intent.
+
 The baseline lives on a rolling GitHub prerelease tagged `screenshots-baseline`:
 `pack` writes 15 `ios-<store-locale>-<device>.zip` files — 5 store locales × 3
 devices, since the captured `es` app locale fans out into both `es-ES` and
