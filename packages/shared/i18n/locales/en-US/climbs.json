@@ -699,7 +699,8 @@
         }
       },
       "publish": {
-        "blocked": "Add a start and a finish hold to publish"
+        "blocked": "Add a start and a finish hold to publish",
+        "gradeBlocked": "Pick your grade to publish"
       },
       "wallSizeMismatch": "Switch your active board to this Woods size to light it.",
       "routeMenu": {
@@ -707,6 +708,11 @@
         "makeRoute": "Make it a route",
         "makeBoulder": "Make it a boulder",
         "makeBoulderBlocked": "Make it a boulder — delete frames first"
+      },
+      "grade": {
+        "label": "Your grade",
+        "required": "Needed to publish",
+        "optional": "Optional on a draft"
       }
     },
     "holdFilter": {

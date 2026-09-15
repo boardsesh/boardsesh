@@ -33,6 +33,13 @@ export type DraftStatusState = {
   saveFailed: boolean;
   /** Publishing is selected but the climb has no start or no finish hold. */
   publishBlocked: boolean;
+  /**
+   * The publish is blocked by the missing SETTER GRADE rather than by the holds
+   * (a spray wall, which has no crowd grade to fall back on). Separate because a
+   * line that says "add a start and a finish" to somebody who has both is worse
+   * than no line at all.
+   */
+  publishBlockedByGrade?: boolean;
 };
 
 /**
@@ -63,7 +70,11 @@ export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraft
   // A disabled button must never be mute: while Save is blocked from publishing,
   // this line is what names the missing requirement.
   if (state.publishBlocked) {
-    return { text: t('mobile.create.publish.blocked'), tone: 'warning', announce: true };
+    return {
+      text: state.publishBlockedByGrade ? t('mobile.create.publish.gradeBlocked') : t('mobile.create.publish.blocked'),
+      tone: 'warning',
+      announce: true,
+    };
   }
 
   if (state.hasSavedClimb) {

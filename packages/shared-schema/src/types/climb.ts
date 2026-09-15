@@ -278,6 +278,25 @@ export type SaveClimbInput = {
    * which derives `compatible_size_ids` from the hold bounding box.
    */
   sizeId?: number | null;
+  /**
+   * The setter's own grade, seeded into `board_climb_stats.display_difficulty`.
+   *
+   * REQUIRED to publish on a spray wall, which has no crowd grade to fall back on
+   * (`getBoardCapabilities('spray').crowdGrade` is false). Ignored elsewhere,
+   * where the grade comes from ticks or the Aurora sync.
+   */
+  userGrade?: string | null;
+  /**
+   * The spray wall this climb is being set on, as the share link carries it.
+   *
+   * Only meaningful for `boardType: "spray"`, and only needed by a caller who is
+   * neither the wall's owner nor a member of its gym: the wall's `layoutId` comes
+   * out of a sequence, so it is not a secret and authorizes nothing on its own.
+   * The wall's uuid IS the capability an UNLISTED wall's share link hands out. A
+   * PRIVATE wall refuses everyone but its principals, uuid or not. Send it on
+   * every spray write; it costs nothing when the caller is a principal.
+   */
+  sprayWallUuid?: string | null;
 };
 
 export type SaveMoonBoardClimbInput = {
@@ -343,6 +362,25 @@ export type UpdateClimbInput = {
    * omitted keeps the stored size.
    */
   sizeId?: number | null;
+  /**
+   * The setter's own grade.
+   *
+   * Needed to publish a DRAFT on a spray wall that was created without one: that
+   * board has no crowd grade to converge on, so the grade comes from either the
+   * stats row `saveClimb` seeded or this field. Ignored on every other board.
+   */
+  userGrade?: string | null;
+  /**
+   * The spray wall this climb is being set on, as the share link carries it.
+   *
+   * Only meaningful for `boardType: "spray"`, and only needed by a caller who is
+   * neither the wall's owner nor a member of its gym: the wall's `layoutId` comes
+   * out of a sequence, so it is not a secret and authorizes nothing on its own.
+   * The wall's uuid IS the capability an UNLISTED wall's share link hands out. A
+   * PRIVATE wall refuses everyone but its principals, uuid or not. Send it on
+   * every spray write; it costs nothing when the caller is a principal.
+   */
+  sprayWallUuid?: string | null;
 };
 
 export type UpdateClimbResult = {

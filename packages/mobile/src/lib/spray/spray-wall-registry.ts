@@ -48,6 +48,16 @@ export const SPRAY_BOARD_NAME = 'spray';
 export type RegisteredSprayWall = {
   layoutId: number;
   wallUuid: string;
+  /**
+   * The wall's fixed angle, from its `user_boards` row.
+   *
+   * A wall does not adjust (`is_angle_adjustable` is false), so this is the one
+   * angle its climbs may be set at — and the server rejects any other
+   * (`assertSprayAngleMatchesWall`). The create-climb editor reads it from here
+   * rather than from the route params, which can carry a stale or hand-edited
+   * angle from a deep link.
+   */
+  angle: number;
   /** `SprayWallVersion.number`: 1-based and dense per wall. */
   version: number;
   photoWidth: number;

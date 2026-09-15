@@ -23,6 +23,7 @@ const HOLDS: SprayPhotoHold[] = [{ id: 7, cx: 100, cy: 200, r: 18 }];
 function wallPayload(version: number) {
   return {
     wallUuid: `wall-${version}`,
+    angle: 40,
     version,
     photoWidth: 1200,
     photoHeight: 1600,
