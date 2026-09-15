@@ -100,6 +100,26 @@ export function authoringAngle(boardName: string, layoutId: number, fallbackAngl
 }
 
 /**
+ * Whether the editor should hold a spinner rather than say it cannot set climbs
+ * here.
+ *
+ * Only ever true for a wall that can actually finish loading. `useSprayWall(null)`
+ * reports `idle`, which reads as loading, so keying the spinner on that alone left
+ * any catalogue board whose hold table came back empty — a malformed layout/size
+ * tuple off a deep link — spinning for ever instead of reaching the unavailable
+ * state it used to get.
+ */
+export function shouldAwaitWall(
+  hasBoardHolds: boolean,
+  sprayLayoutId: number | null,
+  sprayWallLoading: boolean,
+): boolean {
+  if (hasBoardHolds) return false;
+  if (sprayLayoutId === null) return false;
+  return sprayWallLoading;
+}
+
+/**
  * The wall uuid to present on every spray write, or `undefined`.
  *
  * `SaveClimbInput.sprayWallUuid` is the capability an UNLISTED wall's share link

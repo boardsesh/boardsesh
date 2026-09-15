@@ -9,6 +9,7 @@ import {
   isSprayBoard,
   nextAnyFeetForFeetChange,
   requiresSetterGrade,
+  shouldAwaitWall,
   sprayWallUuidFor,
 } from '../spray-climb-rules';
 
@@ -146,5 +147,25 @@ describe('the wall uuid rides every spray write', () => {
     expect(sprayWallUuidFor('spray', LAYOUT_ID)).toBeUndefined();
     registerWall(40);
     expect(sprayWallUuidFor('kilter', LAYOUT_ID)).toBeUndefined();
+  });
+});
+
+describe('waiting for a wall', () => {
+  it('holds a spinner for a wall that has not arrived', () => {
+    expect(shouldAwaitWall(false, LAYOUT_ID, true)).toBe(true);
+  });
+
+  it('gives up on a wall that resolved unavailable', () => {
+    expect(shouldAwaitWall(false, LAYOUT_ID, false)).toBe(false);
+  });
+
+  it('never spins for a catalogue board with no hold table', () => {
+    // `useSprayWall(null)` reports `idle`, which reads as loading — a malformed
+    // Kilter layout/size tuple must still reach the unavailable state.
+    expect(shouldAwaitWall(false, null, true)).toBe(false);
+  });
+
+  it('never spins once the holds are in hand', () => {
+    expect(shouldAwaitWall(true, LAYOUT_ID, true)).toBe(false);
   });
 });

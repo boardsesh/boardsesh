@@ -18,10 +18,13 @@ const graphql = vi.hoisted(() => ({
 const boardActions = vi.hoisted(() => ({ saveClimb: vi.fn(), updateClimb: vi.fn() }));
 /** The holds `buildInitialFrames` hands back for a fork. */
 const forkSeed = vi.hoisted(() => ({ frame: {} as Record<number, { state: string }> }));
+/** What the stubbed `createClimbDraftKey` folds in, standing in for the registry. */
+const sprayToken = vi.hoisted(() => ({ current: '' }));
 const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
 const draftStore = vi.hoisted(() => ({
   loadDraft: vi.fn(async () => null as null | Record<string, unknown>),
-  saveDraft: vi.fn(async () => {}),
+  // Typed with its real arity so a test can read the slot key off the call.
+  saveDraft: vi.fn(async (_slotKey: string, _draft: Record<string, unknown>) => {}),
   clearDraft: vi.fn(async () => {}),
 }));
 
@@ -95,7 +98,10 @@ vi.mock('../../../lib/create-climb-draft-store', () => ({
   loadDraft: draftStore.loadDraft,
   saveDraft: draftStore.saveDraft,
   clearDraft: draftStore.clearDraft,
-  createClimbDraftKey: () => 'draft-key',
+  // Mirrors the real key's shape closely enough to observe the one thing this
+  // suite cares about: the wall version it folds in.
+  createClimbDraftKey: (config: { boardName: string; layoutId: number }) =>
+    `draft-key:${config.boardName}:${config.layoutId}${sprayToken.current}`,
   createClimbEditDraftKey: (boardType: string, uuid: string) => `edit:${boardType}:${uuid}`,
   createClimbForkDraftKey: (boardKey: string) => `fork:${boardKey}`,
   isDraftStorageAvailable: () => true,
@@ -144,6 +150,7 @@ beforeEach(() => {
   graphql.climbFailed = false;
   createClimb.litUpHoldsMap = { 1: { state: 'STARTING' }, 2: { state: 'FINISH' } };
   forkSeed.frame = {};
+  sprayToken.current = '';
   boardActions.saveClimb.mockReset();
   boardActions.saveClimb.mockResolvedValue({ uuid: 'saved-1', createdAt: null, publishedAt: null, isDraft: false });
   boardActions.updateClimb.mockReset();
@@ -247,6 +254,30 @@ describe('the setter grade gates a publish', () => {
     expect(boardActions.updateClimb).toHaveBeenCalledWith(expect.objectContaining({ userGrade: '6c/V5' }));
   });
 
+  it('sends a changed grade on a plain edit, not only on the publish transition', async () => {
+    // The backend applies this now (`updateClimb`'s spray grade-edit branch); the
+    // client half is that it is on the wire for every spray update, not just the
+    // draft -> publish one.
+    const { result } = renderHook(() => useCreateClimbScreen({ board: SPRAY_BOARD }));
+
+    act(() => {
+      result.current.setName('Published, then regraded');
+      result.current.setIsDraft(false);
+      result.current.setSetterGradeDifficultyId(SIX_C_DIFFICULTY_ID);
+    });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    // 7a/V6 — a regrade of a climb that already has a graded stats row.
+    act(() => result.current.setSetterGradeDifficultyId(22));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(boardActions.updateClimb).toHaveBeenCalledWith(expect.objectContaining({ userGrade: '7a/V6' }));
+  });
+
   it('never asks a catalogue board for one', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD }));
     act(() => result.current.setIsDraft(false));
@@ -336,6 +367,55 @@ describe('any feet on a wall', () => {
   it('leaves a catalogue board with its feet closed by default', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD }));
     expect(result.current.anyFeet).toBe(false);
+  });
+});
+
+describe('the autosave slot follows the wall version', () => {
+  it('re-keys the draft slot when the wall lands after the first render', async () => {
+    // A cold spray entry renders before the registry has the wall, so the key
+    // folds in `-sv0`. Autosaving into that slot outlives the loader's
+    // superseded-draft sweep, which is how a WIP disappears on the next mount.
+    // The stubbed key reads `sprayToken`, standing in for the module-level
+    // registry the real one reads; the prop is what tells the memo to look again.
+    // In production both move together when the wall lands.
+    sprayToken.current = '-sv0';
+    const { result, rerender } = renderHook(
+      ({ token }: { token: string }) => useCreateClimbScreen({ board: SPRAY_BOARD, sprayWallToken: token }),
+      { initialProps: { token: '-sv0' } },
+    );
+
+    act(() => result.current.setName('Cold open'));
+    await waitFor(() => expect(draftStore.saveDraft).toHaveBeenCalled());
+    expect(draftStore.saveDraft.mock.calls[0][0]).toContain('-sv0');
+
+    draftStore.saveDraft.mockClear();
+    sprayToken.current = '-sv1';
+    rerender({ token: '-sv1' });
+    act(() => result.current.setName('Wall landed'));
+    await waitFor(() => expect(draftStore.saveDraft).toHaveBeenCalled());
+    expect(draftStore.saveDraft.mock.calls.at(-1)?.[0]).toContain('-sv1');
+  });
+});
+
+describe('a remix inherits its parent grade', () => {
+  it('opens a remix of a graded wall climb at its parent grade', () => {
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({
+        board: SPRAY_BOARD,
+        forkFrames: 'p1r1p2r3',
+        forkName: 'Parent',
+        forkDifficultyId: SIX_C_DIFFICULTY_ID,
+      }),
+    );
+    expect(result.current.setterGradeDifficultyId).toBe(SIX_C_DIFFICULTY_ID);
+    expect(result.current.setterGradeMissing).toBe(false);
+  });
+
+  it('opens a remix of an ungraded parent unset rather than at the last-used grade', () => {
+    const { result } = renderHook(() =>
+      useCreateClimbScreen({ board: SPRAY_BOARD, forkFrames: 'p1r1p2r3', forkName: 'Parent' }),
+    );
+    expect(result.current.setterGradeDifficultyId).toBeNull();
   });
 });
 

@@ -66,7 +66,10 @@ export function SetterGradeRow({ boardName, difficultyId, onSelect, required }: 
           grades={grades ?? []}
           selectedDifficultyId={difficultyId}
           onSelect={handleSelect}
-          allowClear
+          // No clear: `updateClimb` has no way to un-grade a climb, so offering
+          // the gesture would be an action the server cannot carry out. Moving
+          // the grade is the only edit there is.
+          allowClear={false}
           colorway="selection"
           contentInsetLeft={spacing[4]}
           contentInsetRight={RAIL_TRAIL_INSET}
