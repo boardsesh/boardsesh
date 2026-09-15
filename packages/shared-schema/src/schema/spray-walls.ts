@@ -370,8 +370,18 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
   type SprayWallResetResult {
     "The version, now PUBLISHED."
     version: SprayWallVersion!
+    """
+    Holds still on the wall from the previous generation.
+
+    The holds that were alive minus the ones this commit removed — NOT the length
+    of the \`kept\` list. An alive hold the decisions never mention simply stays,
+    so a client that lists only the holds it had something to say about would
+    otherwise be told most of its wall had vanished.
+    """
     keptCount: Int!
+    "Holds this commit took off the wall."
     removedCount: Int!
+    "Holds this commit put on the wall."
     addedCount: Int!
     "Climbs whose \`missingHoldCount\` moved as a result."
     climbsChanged: Int!

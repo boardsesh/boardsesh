@@ -971,6 +971,11 @@ export const sprayWallQueries = {
     const loaded = await loadWall('layoutId', parent.layoutId);
     if (!loaded || !(await viewerCanSeeSprayWallByLayout(loaded.board, ctx.userId))) return null;
 
+    // The wall as it stands, read ONCE and used for both halves below: it splits
+    // the parent's own holds into kept and lost, and then filters the successors a
+    // move linked, because a successor that has itself since come off is not
+    // somewhere a remix can start.
+    //
     // The parent is shown even when it is no longer climbable (epic decision
     // 2026-09-14) — a climb that lost three holds is exactly the one worth
     // remixing, and refusing the seed would strand it.
@@ -1937,6 +1942,10 @@ export const sprayWallMutations = {
       return {
         published,
         climbsChanged,
+        // What is still on the wall from the previous generation, not the length
+        // of the `kept` list: an alive hold the decisions never mention stays,
+        // and a client that listed only what it had something to say about would
+        // otherwise be told most of its wall had vanished.
         keptCount: existing.length - validated.removed.length,
         removedCount: validated.removed.length,
         addedCount: added.length,
