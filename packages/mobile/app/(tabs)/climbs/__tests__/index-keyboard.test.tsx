@@ -486,6 +486,25 @@ beforeEach(() => {
 // exported: an extra export from a route file costs it its Fast Refresh boundary.
 const PLACEHOLDER_TINT_DELAY_MS = 500;
 
+// The no-board empty state is an early return. Every hook must run above it, or
+// the hook count changes when a board binds or unbinds on the mounted screen
+// (BOARDSESH-K1 / BOARDSESH-K2).
+describe('ClimbList binding a board on the mounted screen', () => {
+  it('swaps the no-board empty state for the list and back without a hook-order crash', async () => {
+    mocks.activeBoard = null;
+    const { findByText, rerender } = render(<ClimbList />);
+    await findByText('mobile.emptyState.noBoard.title');
+
+    mocks.activeBoard = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 };
+    rerender(<ClimbList />);
+    await findByText('Moonage');
+
+    mocks.activeBoard = null;
+    rerender(<ClimbList />);
+    await findByText('mobile.emptyState.noBoard.title');
+  });
+});
+
 describe('ClimbList previous results standing in for a loading search', () => {
   it('shows no pull-to-refresh spinner for the placeholder fetch', async () => {
     mocks.isPlaceholderData = true;

@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-15
+
+### Fixed
+
+- The Climbs tab no longer crashes when you pick a board ([#5459](https://github.com/boardsesh/boardsesh/pull/5459))
+
 ## 2026-09-14
 
 ### New
