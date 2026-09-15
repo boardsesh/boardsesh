@@ -425,6 +425,12 @@
         "label": "Sammlung",
         "any": "Beliebig"
       },
+      "holdIntegrity": {
+        "label": "Griffe",
+        "any": "Alle",
+        "intact": "Nur intakte",
+        "broken": "Fehlende Griffe"
+      },
       "pin": "An Schnellzugriff anpinnen",
       "unpin": "Aus Schnellzugriff entfernen",
       "established2plus": "Etabliert 2+",
@@ -589,6 +595,17 @@
       "short": "ausgeblendet",
       "chip": "Ausgeblendet",
       "banner": "Von der Community ausgeblendet"
+    },
+    "lostHolds": {
+      "chip_one": "{{count}} Griff weg",
+      "chip_other": "{{count}} Griffe weg",
+      "chipAria_one": "{{count}} Griff ist nicht mehr an der Wand",
+      "chipAria_other": "{{count}} Griffe sind nicht mehr an der Wand",
+      "banner_one": "{{count}} Griff von diesem Boulder ist weg",
+      "banner_other": "{{count}} Griffe von diesem Boulder sind weg",
+      "bannerBody": "Remixe ihn mit dem, was jetzt an der Wand ist.",
+      "remix": "Remixen",
+      "ghostAria": "Wo früher ein Griff war"
     },
     "climbActions": {
       "preview": "Vorschau",

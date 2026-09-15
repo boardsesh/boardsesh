@@ -425,6 +425,12 @@
         "label": "Collection",
         "any": "Toutes"
       },
+      "holdIntegrity": {
+        "label": "Prises",
+        "any": "Toutes",
+        "intact": "Intacts seulement",
+        "broken": "Prises perdues"
+      },
       "pin": "Épingler comme raccourci",
       "unpin": "Retirer des raccourcis",
       "established2plus": "Établies 2+",
@@ -589,6 +595,17 @@
       "short": "masqué",
       "chip": "Masqué",
       "banner": "Masqué par la communauté"
+    },
+    "lostHolds": {
+      "chip_one": "{{count}} prise en moins",
+      "chip_other": "{{count}} prises en moins",
+      "chipAria_one": "{{count}} prise n'est plus sur le mur",
+      "chipAria_other": "{{count}} prises ne sont plus sur le mur",
+      "banner_one": "{{count}} prise de ce bloc n'est plus là",
+      "banner_other": "{{count}} prises de ce bloc ne sont plus là",
+      "bannerBody": "Remixe-le avec ce qu'il y a sur le mur maintenant.",
+      "remix": "Remixer",
+      "ghostAria": "Où se trouvait une prise"
     },
     "climbActions": {
       "preview": "Aperçu",

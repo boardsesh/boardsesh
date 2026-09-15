@@ -1243,3 +1243,55 @@ describe('ClimbFilterSheet name field (#3606)', () => {
     }
   });
 });
+
+// SW-13 (#5446): the spray-wall hold-integrity single-select, sitting under
+// Collection. Default is All — a climb that lost holds must stay findable
+// without opting into anything (the acceptance criterion for this control).
+describe('ClimbFilterSheet hold integrity (SW-13)', () => {
+  it('defaults to All and sends no holdIntegrity', () => {
+    const onApply = vi.fn();
+    const { getAllByTestId, getByText } = renderFilterSheet({ onApply });
+
+    // Both single-selects in this section rest on 'any' (Collection + Holds).
+    for (const segment of getAllByTestId('segment-any')) {
+      expect(segment.getAttribute('data-selected')).toBe('true');
+    }
+
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBeUndefined();
+  });
+
+  it('applies "Lost holds"', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onApply });
+
+    fireEvent.click(getByTestId('segment-broken'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBe('broken');
+  });
+
+  it('applies "Intact only"', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onApply });
+
+    fireEvent.click(getByTestId('segment-intact'));
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBe('intact');
+  });
+
+  it('clears back to undefined on All, not to an inert "any" value', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getAllByTestId, getByText } = renderFilterSheet({ onApply });
+
+    fireEvent.click(getByTestId('segment-broken'));
+    // The Holds control's own All segment is the second 'any' in the section.
+    fireEvent.click(getAllByTestId('segment-any')[1]);
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBeUndefined();
+  });
+
+  it('shows the committed selection when the sheet opens', () => {
+    const { getByTestId } = renderFilterSheet({ currentFilters: { ...currentFilters, holdIntegrity: 'broken' } });
+    expect(getByTestId('segment-broken').getAttribute('data-selected')).toBe('true');
+  });
+});
