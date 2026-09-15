@@ -53,6 +53,29 @@
       },
       "num_classes": 1
     },
+    "nano-untiled-1024": {
+      "family": "rfdetr",
+      "variant": "nano",
+      "resolution": 1024,
+      "long_side": 1024,
+      "tiles": {
+        "rows": 1,
+        "cols": 1,
+        "overlap": 0.0
+      },
+      "score_threshold": 0.3,
+      "nms_iou": 0.5,
+      "produces_masks": false,
+      "mask_source": "none",
+      "notes": "The phone candidate without tiles: the spike showed 2x2 tiling hurts on the ~800 px Roboflow photos (each tile loses the wall context and upscales the holds), so this config gives the same nano weights one full-frame pass at 1024 instead. Four 384px tile passes and one 1024px pass are within ~2x of each other in compute.",
+      "train": {
+        "epochs": 3,
+        "batch_size": 2,
+        "grad_accum_steps": 4,
+        "lr": 0.0001
+      },
+      "num_classes": 1
+    },
     "small-tiled-1024": {
       "family": "rfdetr",
       "variant": "small",

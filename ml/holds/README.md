@@ -107,11 +107,18 @@ python export.py --config medium-untiled-1280 --formats onnx --shrink int8
 
 # 4. Score the exported artifact on the spray-wall eval split, threshold
 #    chosen on `tune` first (see "Reproducing every number" above for how the
-#    spray-wall corpus's tune/eval halves are built).
+#    spray-wall corpus's tune/eval halves are built). The sweep must run against
+#    the SAME int8 file the final number is reported on — quantization shifts
+#    score calibration, so a threshold tuned on the fp32 model.onnx (eval.py's
+#    default when --model is omitted) is tuned on the wrong artifact.
+for t in 0.02 0.05 0.08 0.12 0.20 0.30; do
+  python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco \
+    --split tune --score-threshold $t \
+    --model .data/artifacts/medium-untiled-1280/model-int8.onnx \
+    --out .data/artifacts/medium-untiled-1280/eval-tune-$t.json
+done
 python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco \
-  --split tune                                    # sweep here for the threshold
-python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco \
-  --split eval --score-threshold <chosen> \
+  --split eval --score-threshold <best of the sweep> \
   --model .data/artifacts/medium-untiled-1280/model-int8.onnx \
   --out .data/artifacts/medium-untiled-1280/eval-full-run.json
 ```

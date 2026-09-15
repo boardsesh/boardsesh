@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import resource
+import sys
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -315,7 +316,12 @@ def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: 
             "p95": round(percentile(latencies, 95), 3),
             "mean": round(float(np.mean(latencies)) if latencies else 0.0, 3),
         },
-        "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
+        # ru_maxrss is kilobytes on Linux but BYTES on macOS (getrusage(2) on Darwin).
+        "peak_rss_mb": round(
+            resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            / (1024 * 1024 if sys.platform == "darwin" else 1024),
+            1,
+        ),
         # Micro: every correction over every hold. This is the one the reports quote.
         "correction_rate_micro": round((totals["fp"] + totals["fn"]) / total_holds, 4) if total_holds else None,
         # Macro: the mean of the per-photo rates, which a photo with three holds can swing.

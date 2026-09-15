@@ -166,6 +166,23 @@ def main() -> int:
             "'macOS (Apple Silicon)' batch-size guidance. Halve it on an MPS 'out of memory' error."
         ),
     )
+    parser.add_argument(
+        "--grad-accum-steps",
+        type=int,
+        help=(
+            "override the config's gradient accumulation. The effective batch is batch_size x "
+            "grad_accum_steps and the configs are tuned to keep it at 8-16 on tiny CPU batches; a "
+            "GPU box raising --batch-size should lower this in step (e.g. --batch-size 16 "
+            "--grad-accum-steps 1) so the optimizer still sees the same effective batch."
+        ),
+    )
+    parser.add_argument(
+        "--resume",
+        help=(
+            "resume a run from a Lightning checkpoint: a path, or 'last' for the config's own "
+            "last.ckpt. Forwarded to rfdetr's `resume`, i.e. trainer.fit(ckpt_path=...)."
+        ),
+    )
     parser.add_argument("--max-train-images", type=int, help="cap the training set, for a quick smoke run")
     parser.add_argument(
         "--threads",
@@ -196,6 +213,14 @@ def main() -> int:
         train_config["epochs"] = args.epochs
     if args.batch_size is not None:
         train_config["batch_size"] = args.batch_size
+    if args.grad_accum_steps is not None:
+        train_config["grad_accum_steps"] = args.grad_accum_steps
+    if args.resume:
+        resume_path = config.checkpoint_dir / "last.ckpt" if args.resume == "last" else Path(args.resume)
+        if args.resume != "last" or resume_path.exists():
+            train_config["resume"] = str(resume_path)
+        else:
+            raise SystemExit(f"--resume last: no checkpoint at {resume_path}")
 
     output_dir = config.checkpoint_dir
     output_dir.mkdir(parents=True, exist_ok=True)
