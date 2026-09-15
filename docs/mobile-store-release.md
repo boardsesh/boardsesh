@@ -139,7 +139,8 @@ compare against.
 
 Two thresholds decide "changed": a per-channel tolerance of 8 (simulator text
 and shadow rasterization wobbles by a step or two between runs) and a max
-differing-pixel ratio of 0.001. Both can be overridden per run through
+differing-pixel ratio of 0.001 (0.001 = 0.1% of the pixels). Both can be
+overridden per run through
 `SCREENSHOT_CHANNEL_TOLERANCE` / `SCREENSHOT_MAX_DIFF_RATIO`; the header comment
 in `scripts/compare-screenshots.ts` carries the recalibration procedure. The
 probe uploads an `ios-probe-compare` artifact with the summary JSON and a
@@ -189,7 +190,10 @@ capture, so a run that deliberately retargets `render_mode` or `boards` cannot
 silently redefine "unchanged" for everyone else. The `workflow_run` trigger (a
 later PR in this series) will publish automatically after each green full
 capture. `upload: true` is unchanged and still pushes the freshly captured set
-to App Store Connect.
+to App Store Connect. Two dispatches publishing at the same time can interleave
+the release-notes edit with the asset uploads and briefly desync which commit
+the notes name from which shards actually landed — last writer wins — which is
+acceptable at today's manual, occasional publish cadence.
 
 The iOS `release_notes.txt` is pushed by Mobile Store Metadata. Android release
 notes ship with the AAB from each
