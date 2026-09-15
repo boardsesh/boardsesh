@@ -1607,7 +1607,7 @@ async function publishAscentEvent(
       // and there is nothing for the climber to do about the feed.
       if (tick.boardType === 'spray' && climbData?.layoutId != null) {
         const [wallVisibility] = await db
-          .select({ isPublic: dbSchema.userBoards.isPublic })
+          .select({ isPublic: dbSchema.userBoards.isPublic, hiddenAt: dbSchema.sprayWalls.hiddenAt })
           .from(dbSchema.sprayWalls)
           .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
           .where(
@@ -1618,7 +1618,10 @@ async function publishAscentEvent(
             ),
           )
           .limit(1);
-        if (!wallVisibility?.isPublic) return;
+        // A wall an admin hid (SW-17) is private for this purpose too. Hiding
+        // purges the feed rows that already exist; without this, the next tick
+        // would put the wall straight back into the feed it was taken out of.
+        if (!wallVisibility?.isPublic || wallVisibility.hiddenAt != null) return;
       }
 
       const [userProfile] = await db

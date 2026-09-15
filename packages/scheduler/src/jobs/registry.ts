@@ -55,10 +55,18 @@ const GYM_ACTIVITY_REFRESH_TIMEOUT_MS = 900_000;
 /**
  * The spray wall photo purge lists and deletes object-storage keys for up to 200
  * walls per run, one round trip per object. Nothing here scans a large table —
- * the candidate query is an index read on `deleted_at` — so the bound is R2's
- * latency, not the database's. Ten minutes is well past a realistic batch — the
- * whole run is a few hundred DELETEs against R2 — and short enough that a wedged
- * storage endpoint cannot hold a worker until the next day's tick.
+ * the candidate query is an index read on `spray_walls_deleted_at_idx`, the
+ * partial index on `deleted_at IS NOT NULL` — so the bound is R2's latency, not
+ * the database's. Ten minutes is well past a realistic batch — the whole run is a
+ * few hundred DELETEs against R2 — and short enough that a wedged storage
+ * endpoint cannot hold a worker until the next day's tick.
+ *
+ * The deletes inside one wall's prefix are serial on purpose: a wall is a handful
+ * of objects (one photo plus one variant per version), 200 of them is still only
+ * hundreds of round trips, and fanning them out would trade a bounded run for R2
+ * rate-limit retries. A run that does not finish its batch is not a data loss —
+ * nothing was cleared for the walls it did not reach, so tomorrow's run takes
+ * them.
  */
 const SPRAY_PHOTO_PURGE_TIMEOUT_MS = 600_000;
 

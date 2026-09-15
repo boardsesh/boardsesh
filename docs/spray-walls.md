@@ -1027,10 +1027,10 @@ switch.
 
 | Piece | What it is |
 | --- | --- |
-| `reportSprayWall(input)` | Any signed-in climber who can SEE the wall, once per wall. Writes one `spray_wall_reports` row; a second report from the same climber answers `ALREADY_REPORTED` and writes nothing. |
+| `reportSprayWall(input)` | Any signed-in climber who can SEE the wall — owner, gym member, or anybody on a public or unlisted one — once per wall. Delegates to `viewerCanSeeSprayWall` rather than restating the rule, because restating it is how the gym-member path got dropped the first time. Writes one `spray_wall_reports` row; a second report from the same climber answers `ALREADY_REPORTED` and writes nothing. |
 | `spray_wall_reports` | `(wall_id, reporter_id)` unique, a closed-set `reason`, and `reviewed_at` / `reviewed_by`. No free-text field anywhere in the path. |
 | `setSprayWallHidden(input)` | Community admins (`spray`-scoped or global). Stamps or clears `spray_walls.hidden_at` / `hidden_by` and marks every pending report on the wall reviewed. |
-| `sprayWallReports(uuid)` | The pending queue, newest first. Admins only. There is no admin ROUTE yet — the mutation and the query are the tool. |
+| `sprayWallReports(uuid)` | The pending queue, newest first, excluding walls the owner has since deleted — those are no longer work. Admins only. There is no admin ROUTE yet (#5501). |
 | `SprayWall.hiddenAt` | Non-null only for the owner, because a hidden wall does not resolve for anybody else. The mobile banner renders off its presence. |
 
 **What hidden means: exactly what private means, for everybody but the owner.**
@@ -1063,9 +1063,12 @@ rows are served straight out of that table and would outlive the gate. Unhiding
 does NOT put them back: a feed is a record of what happened when, and
 re-announcing week-old climbs would be a lie. Everything else comes back.
 
-Reporting is API-only today. There is no report button in the app and no admin
-console route; both are follow-ups, and the mutation is what an admin or a
-support reply drives in the meantime.
+Reporting is API-only today: there is no report button in the app and no admin
+console route. Both are **SW-17b (#5501)**, split out because a report row belongs
+in `BoardDetailSheet`, which SW-11's stack is rewriting — landing one there from
+this stack would have been a guaranteed conflict for no gain, since the admin path
+needs the mutation either way. Until then the mutation is what an admin or a
+support reply drives.
 
 ## Retention: what happens to a deleted wall's photographs
 
@@ -1104,11 +1107,29 @@ object orphaned in the bucket forever, with nothing left that names it.
 
 Nothing else is touched. No `spray_walls`, `spray_wall_versions`,
 `spray_wall_holds` or `board_climbs` row is deleted, ever — other people's ticks
-point at them. One wall's storage failure is logged and skipped rather than
-failing the batch, so the next run picks it up; and a wall already purged is
-filtered out by "has a version with a photo key", because the row stays a
-candidate forever and every run would otherwise re-list an empty prefix for every
-wall ever deleted.
+point at them.
+
+Two rules keep the job honest, and both are the kind that fail silently if they
+are got wrong:
+
+- **"Still has a photo" is part of the candidate query, not a filter on its
+  results.** A purged wall's row is never deleted, so it stays past the cutoff
+  forever. Take the oldest 200 deletions and then drop the ones already done, and
+  once 200 walls have been purged every run fills its batch with no-ops — nothing
+  deleted afterwards is ever reached again, and the job reports `wallsPurged: 0`,
+  which looks exactly like "nothing to do". Pinned by a test that puts a full
+  batch of purged walls in front of one fresh deletion.
+- **A run that deleted nothing must not clear `photo_key`.** The key is the only
+  thing that names the object, so clearing it on a failed delete — or on a backend
+  with no `private` bucket, which every dev machine is — would leave the
+  photograph in the bucket, unnamed, and the wall would never be a candidate
+  again. A storage failure is logged and the wall is skipped, so the next run
+  takes it; "no bucket configured" throws rather than reporting zero.
+
+The deletes inside one wall's prefix are serial on purpose: a wall is a handful of
+objects, 200 of them is still only hundreds of round trips, and fanning them out
+would trade a bounded run for R2 rate-limit retries. A run that does not finish
+its batch loses nothing — tomorrow's run takes what it missed.
 
 ## Telemetry
 

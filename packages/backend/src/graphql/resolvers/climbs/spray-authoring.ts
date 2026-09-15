@@ -82,6 +82,12 @@ export type SprayClimbTarget = {
    * owner's logbook alone). A feed event carries the climb name and the wall's
    * layout id to every follower, so firing one for a private wall would announce
    * the existence of somebody's home wall to people who cannot open it.
+   *
+   * A HIDDEN wall (SW-17) is false here for the same reason it is invisible
+   * everywhere else. Hiding purges the feed rows that already exist, but that is
+   * only half of it: without this, the next climb set on the wall would announce
+   * itself to every follower and put the wall straight back in the feed it was
+   * just taken out of.
    */
   publishesFeedEvents: boolean;
 };
@@ -142,7 +148,7 @@ export async function requireVisibleSprayWall(
     requiredSetIds: [SPRAY_SET.id],
     angle: Number(row.board.angle),
     publishedVersionNumber: row.publishedVersionNumber ?? null,
-    publishesFeedEvents: row.board.isPublic,
+    publishesFeedEvents: row.board.isPublic && row.wall.hiddenAt == null,
   };
 }
 
@@ -166,7 +172,8 @@ export function assertSprayGradeOnPublish(isDraft: boolean, userGrade: string | 
  *
  * `SprayClimbTarget.publishesFeedEvents` is resolved before the write transaction
  * opens, and the event is published after the transaction commits and the lock is
- * released. So a concurrent `updateSprayWall` flipping the wall private — and
+ * released. So a concurrent `updateSprayWall` flipping the wall private, or a
+ * `setSprayWallHidden` hiding it — and
  * running its `feed_items` purge — can complete in that window, and the emit would
  * then insert a FRESH feed row for a now-private wall that the purge has already
  * been and gone past. The purge cannot catch what has not been written yet.
@@ -182,12 +189,16 @@ export function assertSprayGradeOnPublish(isDraft: boolean, userGrade: string | 
 export async function sprayWallMayAnnounceUnderLock(executor: DrizzleExecutor, wallId: number): Promise<boolean> {
   await lockWallForWrite(executor, wallId);
   const [row] = await executor
-    .select({ isPublic: dbSchema.userBoards.isPublic })
+    // `hidden_at` for the same reason `is_public` is here, and it has the same
+    // race: `setSprayWallHidden` purges the wall's feed rows, and a climb write in
+    // flight would otherwise insert a fresh one the purge has already gone past.
+    // Read under the lock, the two serialise.
+    .select({ isPublic: dbSchema.userBoards.isPublic, hiddenAt: dbSchema.sprayWalls.hiddenAt })
     .from(dbSchema.sprayWalls)
     .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
     .where(and(eq(dbSchema.sprayWalls.id, wallId), isNull(dbSchema.sprayWalls.deletedAt)))
     .limit(1);
-  return row?.isPublic === true;
+  return row?.isPublic === true && row.hiddenAt == null;
 }
 
 /**

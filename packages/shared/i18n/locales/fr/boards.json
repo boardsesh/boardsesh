@@ -791,8 +791,8 @@
       "clear": "Recommencer les coins"
     },
     "upload": {
-      "title": "Envoi de ta photo",
-      "working": "Envoi de ta photo…",
+      "title": "Téléversement de ta photo",
+      "working": "Téléversement de ta photo…",
       "percent": "Téléversé à {{percent}} %",
       "failed": "La photo n'est pas passée.",
       "retry": "Réessayer",

@@ -1698,7 +1698,11 @@ export const schemaSQL = `
     -- SW-17 moderation: a hidden wall reads exactly like a private one for
     -- everybody but its owner. Independent of deleted_at; both can be set.
     "hidden_at" timestamp,
-    "hidden_by" text REFERENCES "users"("id") ON DELETE SET NULL
+    "hidden_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    -- SW-17 retention: when the purge swept this wall's storage prefix. Explicit
+    -- state, because a purged wall's row is never deleted and a wall can own
+    -- objects no version row names (an abandoned wizard upload).
+    "photos_purged_at" timestamp
   );
 
   CREATE TABLE IF NOT EXISTS "spray_wall_versions" (
@@ -1726,6 +1730,11 @@ export const schemaSQL = `
     ADD CONSTRAINT "spray_walls_current_version_id_spray_wall_versions_id_fk"
     FOREIGN KEY ("current_version_id") REFERENCES "spray_wall_versions"("id") ON DELETE SET NULL;
   CREATE INDEX IF NOT EXISTS "spray_walls_current_version_idx" ON "spray_walls" ("current_version_id");
+  -- SW-17: the retention purge's candidate read — the oldest soft-deleted walls
+  -- that still have a photo. Partial, because deleted_at IS NULL is almost the
+  -- whole table.
+  CREATE INDEX IF NOT EXISTS "spray_walls_deleted_at_idx"
+    ON "spray_walls" ("deleted_at") WHERE "deleted_at" IS NOT NULL AND "photos_purged_at" IS NULL;
 
   CREATE TABLE IF NOT EXISTS "spray_wall_holds" (
     "wall_id" bigint NOT NULL REFERENCES "spray_walls"("id") ON DELETE CASCADE,
@@ -1782,7 +1791,7 @@ export const schemaSQL = `
   -- One report per climber per wall: a second reportSprayWall is an idempotent
   -- no-op, and this index is what makes it one.
   CREATE UNIQUE INDEX IF NOT EXISTS "spray_wall_reports_wall_reporter_idx"
-    ON "spray_wall_reports" ("wall_id", "reporter_id");
+    ON "spray_wall_reports" ("wall_id", "reporter_id") WHERE "reporter_id" IS NOT NULL;
   CREATE INDEX IF NOT EXISTS "spray_wall_reports_pending_idx"
     ON "spray_wall_reports" ("created_at") WHERE "reviewed_at" IS NULL;
 

@@ -95,7 +95,8 @@ on a missing object. One wall's storage failure is logged and skipped rather tha
 failing the batch; the next run picks it up.
 
 Ten minutes rather than the 15 the long jobs get. Nothing here scans a large
-table — the candidate query is an index read on `deleted_at`, batched at 200
+table — the candidate query is an index read on the partial index
+`spray_walls_deleted_at_idx` (`WHERE deleted_at IS NOT NULL`), batched at 200
 walls — so the bound is object-storage latency, and a wedged endpoint should not
 hold a worker until the next day's tick.
 

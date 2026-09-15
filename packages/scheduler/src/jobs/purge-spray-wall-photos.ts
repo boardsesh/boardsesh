@@ -33,8 +33,16 @@ function isRecord(candidate: unknown): candidate is Record<string, unknown> {
   return typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
 }
 
+/** What one purge run reports back. Mirrors `SprayWallPhotoPurgeResult` in the backend. */
+export type PurgeResult = {
+  wallsPurged: number;
+  objectsDeleted: number;
+  wallsConsidered: number;
+  durationMs: number;
+};
+
 /** HTTP 200 alone is insufficient: GraphQL can report resolver errors in it. */
-function readPurgeResult(payload: unknown): Record<string, unknown> {
+function readPurgeResult(payload: unknown): PurgeResult {
   if (!isRecord(payload) || payload.errors !== undefined || !isRecord(payload.data)) {
     throw new Error('purgeDeletedSprayWallPhotos returned GraphQL errors or an invalid response');
   }
@@ -47,7 +55,8 @@ function readPurgeResult(payload: unknown): Record<string, unknown> {
   ) {
     throw new Error('purgeDeletedSprayWallPhotos returned an invalid result');
   }
-  return purge;
+  // Narrowed by the checks above, which `Record<string, unknown>` cannot express.
+  return purge as PurgeResult;
 }
 
 export const purgeSprayWallPhotos: JobRun = async ({ config, timeoutMs, shutdownSignal, logger }) => {

@@ -1,5 +1,5 @@
 {
-  "id": "cc6e27f3-4ecd-4327-aac8-0a14c3115282",
+  "id": "6e539357-b403-46f4-85a2-b7ea2924b0d8",
   "prevId": "c174310b-d507-4093-b4d7-82e2357a2fcb",
   "version": "7",
   "dialect": "postgresql",
@@ -13607,6 +13607,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"spray_wall_reports\".\"reporter_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -13903,6 +13904,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "photos_purged_at": {
+          "name": "photos_purged_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -13917,6 +13924,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "spray_walls_deleted_at_idx": {
+          "name": "spray_walls_deleted_at_idx",
+          "columns": [
+            {
+              "expression": "deleted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"spray_walls\".\"deleted_at\" IS NOT NULL AND \"spray_walls\".\"photos_purged_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

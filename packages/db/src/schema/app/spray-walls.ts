@@ -168,9 +168,39 @@ export const sprayWalls = pgTable(
      * it are the record of why.
      */
     hiddenBy: text('hidden_by').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * When the retention purge swept this wall's object-storage prefix (SW-17).
+     *
+     * Explicit state rather than "does a version still have a photo key", and both
+     * halves of that matter:
+     *
+     *  - a purged wall's ROW is never deleted, so it stays past the retention
+     *    cutoff forever. Inferring "already done" from the version rows means the
+     *    candidate query cannot express it cheaply, and filtering after `LIMIT`
+     *    starves every deletion past the first batch;
+     *  - a wall can own objects with NO version pointing at them — a photo
+     *    uploaded into the wizard that was then abandoned. Those are exactly the
+     *    strays worth deleting, and no version row names them, so "has a photo
+     *    key" would skip the wall and leave them in the bucket forever.
+     *
+     * Stamped only after the objects are gone, so a failed sweep (or a backend
+     * with no bucket configured) leaves it NULL and the next run takes the wall
+     * again.
+     */
+    photosPurgedAt: timestamp('photos_purged_at'),
   },
   (table) => ({
     currentVersionIdx: index('spray_walls_current_version_idx').on(table.currentVersionId),
+    /**
+     * The retention purge's candidate read (SW-17): the oldest soft-deleted walls
+     * whose objects have not been swept yet. Partial on BOTH conditions, so the
+     * index holds only rows that are actually work — `deleted_at IS NULL` is the
+     * overwhelming majority of the table, and a purged wall never needs to be
+     * found again.
+     */
+    deletedAtIdx: index('spray_walls_deleted_at_idx')
+      .on(table.deletedAt)
+      .where(sql`${table.deletedAt} IS NOT NULL AND ${table.photosPurgedAt} IS NULL`),
   }),
 );
 
@@ -219,9 +249,22 @@ export const sprayWallReports = pgTable(
     reviewedBy: text('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
   },
   (table) => ({
-    // One report per climber per wall; a second `reportSprayWall` is an idempotent
-    // no-op rather than a second row.
-    reporterUnique: uniqueIndex('spray_wall_reports_wall_reporter_idx').on(table.wallId, table.reporterId),
+    /**
+     * One report per climber per wall; a second `reportSprayWall` is an
+     * idempotent no-op rather than a second row.
+     *
+     * Partial on `reporter_id IS NOT NULL`, which is honesty rather than a
+     * loosening: Postgres does not consider two NULLs equal, so the unpartitioned
+     * index never constrained orphaned rows either — it just looked as though it
+     * did. Deleting an account nulls its reports' `reporter_id` (the report is
+     * about the wall, not the person), so several orphans per wall are possible
+     * and correct; `NULLS NOT DISTINCT` would instead make the SECOND account
+     * deletion fail the FK's own update, which is a far worse outcome than a
+     * queue row appearing twice.
+     */
+    reporterUnique: uniqueIndex('spray_wall_reports_wall_reporter_idx')
+      .on(table.wallId, table.reporterId)
+      .where(sql`${table.reporterId} IS NOT NULL`),
     // The admin queue's read: everything still waiting, newest first.
     pendingIdx: index('spray_wall_reports_pending_idx')
       .on(table.createdAt)

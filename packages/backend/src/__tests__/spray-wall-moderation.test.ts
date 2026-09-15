@@ -27,11 +27,12 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
  * delete are scripted and everything else is real rows.
  */
 
-const { presignedUrls, storedPhotoMetadata, storedObjects, deletedObjects } = vi.hoisted(() => ({
+const { presignedUrls, storedPhotoMetadata, storedObjects, deletedObjects, publishedEvents } = vi.hoisted(() => ({
   presignedUrls: [] as string[],
   storedPhotoMetadata: new Map<string, { width: string; height: string }>(),
   storedObjects: new Map<string, Set<string>>(),
   deletedObjects: [] as Array<{ bucket: string; key: string }>,
+  publishedEvents: [] as Array<{ type: string; metadata?: Record<string, unknown> }>,
 }));
 
 vi.mock('../storage/s3', () => ({
@@ -57,7 +58,11 @@ vi.mock('../storage/s3', () => ({
   }),
 }));
 
-vi.mock('../events', () => ({ publishSocialEvent: vi.fn(async () => undefined) }));
+vi.mock('../events', () => ({
+  publishSocialEvent: vi.fn(async (event: { type: string; metadata?: Record<string, unknown> }) => {
+    publishedEvents.push(event);
+  }),
+}));
 vi.mock('../lib/web-revalidate', () => ({ notifyClimbRevalidated: vi.fn(async () => undefined) }));
 vi.mock('../utils/rate-limiter', () => ({ checkRateLimit: vi.fn(), resetAllRateLimits: vi.fn() }));
 vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: vi.fn().mockResolvedValue(undefined) }));
@@ -68,13 +73,16 @@ const { sprayWallModerationMutations, sprayWallModerationQueries, purgeDeletedSp
   await import('../graphql/resolvers/board/spray-wall-moderation');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
+const { smartPlaylist } = await import('../graphql/resolvers/playlists/queries/smart-playlists');
+const { favoriteClimbsQuery } = await import('../graphql/resolvers/favorites/favorite-climbs-query');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { SPRAY_WALL_PHOTO_RETENTION_DAYS } = await import('@boardsesh/board-config');
 
 const OWNER = 'sw17-owner';
 const STRANGER = 'sw17-stranger';
 const ADMIN = 'sw17-admin';
-const ALL_USERS = [OWNER, STRANGER, ADMIN];
+const GYM_MEMBER = 'sw17-gym-member';
+const ALL_USERS = [OWNER, STRANGER, ADMIN, GYM_MEMBER];
 
 const ANCHORS: [number, number][] = [
   [100, 80],
@@ -122,6 +130,18 @@ function registerUploadedPhoto(wallUuid: string): string {
 
 type CreatedWall = { uuid: string; layoutId: number };
 
+/** A wall with no photo and no version — the state an abandoned wizard leaves. */
+async function createWallOnly(): Promise<CreatedWall> {
+  for (const bucket of ['private', 'media']) {
+    if (!storedObjects.has(bucket)) storedObjects.set(bucket, new Set());
+  }
+  return (await sprayWallMutations.createSprayWall(
+    {},
+    { input: { name: `Wall ${uuidv4().slice(0, 6)}`, angle: 40 } },
+    ctxFor(OWNER),
+  )) as CreatedWall;
+}
+
 async function createPublishedWall(overrides: Record<string, unknown> = {}) {
   const wall = (await sprayWallMutations.createSprayWall(
     {},
@@ -156,7 +176,7 @@ async function createPublishedWall(overrides: Record<string, unknown> = {}) {
   return { wall, versionId: version.id, holdIds: holds.map((hold) => hold.id) };
 }
 
-async function setClimbOnWall(wall: CreatedWall, holdIds: number[]): Promise<string> {
+async function setClimbOnWall(wall: CreatedWall, holdIds: number[], name = 'Garage classic'): Promise<string> {
   const frames = holdIds.map((holdId, index) => `p${holdId}r${[1, 2, 3][index] ?? 2}`).join('');
   const saved = (await climbMutations.saveClimb(
     {},
@@ -164,7 +184,7 @@ async function setClimbOnWall(wall: CreatedWall, holdIds: number[]): Promise<str
       input: {
         boardType: 'spray',
         layoutId: wall.layoutId,
-        name: 'Garage classic',
+        name,
         isDraft: false,
         frames,
         angle: 40,
@@ -174,6 +194,27 @@ async function setClimbOnWall(wall: CreatedWall, holdIds: number[]): Promise<str
     ctxFor(OWNER),
   )) as { uuid: string };
   return saved.uuid;
+}
+
+/**
+ * A gym with one member, and the wall attached to it.
+ *
+ * The gym-member path is the one `viewerCanReport` dropped when it restated the
+ * visibility rule instead of delegating, so it needs a fixture of its own.
+ */
+async function attachWallToGymWithMember(wallUuid: string): Promise<void> {
+  const gymUuid = uuidv4();
+  await db.execute(sql`
+    INSERT INTO gyms (uuid, name, slug, owner_id, created_at, updated_at)
+    VALUES (${gymUuid}, ${'Gym ' + gymUuid.slice(0, 6)}, ${'gym-' + gymUuid.slice(0, 8)}, ${ADMIN}, now(), now())
+  `);
+  await db.execute(sql`
+    INSERT INTO gym_members (gym_id, user_id, role, created_at)
+    VALUES ((SELECT id FROM gyms WHERE uuid = ${gymUuid}), ${GYM_MEMBER}, 'member', now())
+  `);
+  await db.execute(sql`
+    UPDATE user_boards SET gym_id = (SELECT id FROM gyms WHERE uuid = ${gymUuid}) WHERE uuid = ${wallUuid}
+  `);
 }
 
 /** Backdate a wall's soft delete so the retention threshold can be driven. */
@@ -190,7 +231,7 @@ beforeEach(async () => {
                    "board_climbs", "board_climb_holds", "board_climb_stats",
                    "board_layouts", "board_product_sizes", "board_product_sizes_layouts_sets",
                    "board_holes", "board_placements", "board_difficulty_grades",
-                   "community_roles", "boardsesh_ticks", "feed_items"
+                   "community_roles", "boardsesh_ticks", "feed_items", "user_favorites"
     RESTART IDENTITY CASCADE
   `);
   await db.execute(sql`ALTER SEQUENCE spray_wall_catalog_id_seq RESTART WITH 1`);
@@ -210,6 +251,7 @@ beforeEach(async () => {
 
   presignedUrls.length = 0;
   deletedObjects.length = 0;
+  publishedEvents.length = 0;
   storedPhotoMetadata.clear();
   storedObjects.clear();
 
@@ -268,6 +310,51 @@ describe('reporting a wall', () => {
         ctxFor(STRANGER),
       ),
     ).rejects.toThrow('Spray wall not found');
+  });
+
+  it('lets a gym member report the gym\u2019s PRIVATE wall', async () => {
+    // The person most likely to notice something wrong with a gym's wall is
+    // somebody who climbs there. An earlier version of `viewerCanReport` restated
+    // the visibility rule and dropped the gym-member path, so they got "not
+    // found" — which is why the check now delegates to `viewerCanSeeSprayWall`.
+    const { wall } = await createPublishedWall({ isPublic: false, isUnlisted: false });
+    await attachWallToGymWithMember(wall.uuid);
+
+    expect(
+      await sprayWallModerationMutations.reportSprayWall(
+        {},
+        { input: { wallUuid: wall.uuid, reason: 'PERSONAL_INFO' } },
+        ctxFor(GYM_MEMBER),
+      ),
+    ).toEqual({ status: 'CREATED' });
+  });
+
+  it('refuses the report queue to a climber who is not an admin', async () => {
+    const { wall } = await createPublishedWall({ isPublic: true });
+    await sprayWallModerationMutations.reportSprayWall(
+      {},
+      { input: { wallUuid: wall.uuid, reason: 'OTHER' } },
+      ctxFor(STRANGER),
+    );
+    await expect(sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(OWNER))).rejects.toThrow(
+      /admin/i,
+    );
+  });
+
+  it('drops a pending report once the owner deletes the wall', async () => {
+    // Not work any more: no surface shows the wall, and hiding it would change
+    // nothing. The row stays as the record of why; the queue does not.
+    const { wall } = await createPublishedWall({ isPublic: true });
+    await sprayWallModerationMutations.reportSprayWall(
+      {},
+      { input: { wallUuid: wall.uuid, reason: 'NOT_A_WALL' } },
+      ctxFor(STRANGER),
+    );
+    expect(await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN))).toHaveLength(1);
+
+    await sprayWallMutations.deleteSprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER));
+
+    expect(await sprayWallModerationQueries.sprayWallReports({}, { uuid: null }, ctxFor(ADMIN))).toEqual([]);
   });
 
   it('refuses the admin switch to a climber who is not an admin', async () => {
@@ -343,6 +430,108 @@ describe('a hidden wall', () => {
     expect(owned.hiddenAt).toBeNull();
   });
 
+  it('drops out of the cross-board climb predicate, not just the wall reads', async () => {
+    // `sprayClimbVisibilityCondition` is its own implementation of the rule, in
+    // SQL, carried by ~15 reads that never touch the resolver helpers. Deleting
+    // its `hidden_at` clause has to red something, and the wall-read tests above
+    // do not notice.
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const climbUuid = await setClimbOnWall(wall, holdIds);
+    await db.execute(sql`
+      INSERT INTO user_favorites (user_id, climb_uuid, board_name, created_at)
+      VALUES (${STRANGER}, ${climbUuid}, 'spray', now())
+    `);
+
+    const favouritesFor = async (viewer: string) => {
+      const page = (await favoriteClimbsQuery.userFavoriteClimbs(
+        {},
+        {
+          input: {
+            boardName: 'spray',
+            layoutId: wall.layoutId,
+            sizeId: wall.layoutId,
+            setIds: '1',
+            angle: 40,
+            page: 0,
+            pageSize: 50,
+          },
+        },
+        ctxFor(viewer),
+      )) as { climbs: Array<{ uuid: string }> };
+      return page.climbs.map((climb) => climb.uuid);
+    };
+
+    expect(await favouritesFor(STRANGER)).toContain(climbUuid);
+
+    await sprayWallModerationMutations.setSprayWallHidden(
+      {},
+      { input: { uuid: wall.uuid, hidden: true } },
+      ctxFor(ADMIN),
+    );
+
+    expect(await favouritesFor(STRANGER)).not.toContain(climbUuid);
+  });
+
+  it('drops out of the REFERENCE predicate too, which never joins the climb', async () => {
+    // `sprayReferenceVisibilityCondition` is the third implementation: the
+    // smart-playlist reads paginate over ticks and favourites, so the climb is one
+    // join away and the column form cannot be used. Asserted separately from the
+    // column form because the two share no SQL.
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const climbUuid = await setClimbOnWall(wall, holdIds);
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, quality, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, ${climbUuid}, 'spray', 40, 'send', 5, now(), now(), now())
+    `);
+
+    const fiveStarsFor = async (viewer: string) => {
+      const result = (await smartPlaylist(
+        {},
+        { input: { type: 'FIVE_STARS', userId: OWNER, page: 0, pageSize: 50 } },
+        ctxFor(viewer),
+      )) as { climbs: Array<{ uuid: string }> };
+      return result.climbs.map((climb) => climb.uuid);
+    };
+
+    expect(await fiveStarsFor(STRANGER)).toContain(climbUuid);
+
+    await sprayWallModerationMutations.setSprayWallHidden(
+      {},
+      { input: { uuid: wall.uuid, hidden: true } },
+      ctxFor(ADMIN),
+    );
+
+    expect(await fiveStarsFor(STRANGER)).not.toContain(climbUuid);
+    // And the owner still has their own logbook.
+    expect(await fiveStarsFor(OWNER)).toContain(climbUuid);
+  });
+
+  it('announces nothing for a climb set on it after it was hidden', async () => {
+    // Hiding purges the feed rows that already exist, and that is only half of the
+    // job: the wall is still `is_public`, so without the write-time gate the next
+    // climb set on it would announce itself — name, setter, layout id, frames — to
+    // every follower and put the wall straight back into the feed it was just
+    // taken out of.
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+
+    // Before: a public wall's new climb does announce.
+    await setClimbOnWall(wall, holdIds);
+    expect(publishedEvents.filter((event) => event.type === 'climb.created')).not.toHaveLength(0);
+
+    await sprayWallModerationMutations.setSprayWallHidden(
+      {},
+      { input: { uuid: wall.uuid, hidden: true } },
+      ctxFor(ADMIN),
+    );
+    publishedEvents.length = 0;
+
+    // Two of the three holds, not all three: the duplicate gate is keyed on the
+    // hold set, so a second climb on the same holds is refused whatever it is called.
+    await setClimbOnWall(wall, holdIds.slice(0, 2), 'Second problem');
+
+    expect(publishedEvents.filter((event) => event.type === 'climb.created')).toHaveLength(0);
+  });
+
   it('stops honouring the share link an unlisted wall handed out', async () => {
     const { wall } = await createPublishedWall({ isPublic: false, isUnlisted: true });
     // The whole point of unlisted: the uuid IS the capability.
@@ -360,6 +549,14 @@ describe('a hidden wall', () => {
 });
 
 describe('the photo purge', () => {
+  it('keeps photographs for 30 days', () => {
+    // Pinned as a literal beside the boundary tests, which are all written
+    // relative to the constant: without this, moving the window moves the tests
+    // with it and they go on passing while the promise in the release notes and
+    // `docs/spray-walls.md` quietly becomes false.
+    expect(SPRAY_WALL_PHOTO_RETENTION_DAYS).toBe(30);
+  });
+
   it('clears a wall deleted past the window and leaves one deleted yesterday alone', async () => {
     const stale = await createPublishedWall();
     const fresh = await createPublishedWall();
@@ -419,11 +616,112 @@ describe('the photo purge', () => {
     deletedObjects.length = 0;
     const second = await purgeDeletedSprayWallPhotos({ now: new Date() });
 
-    // The row is never deleted, so a wall purged on an earlier run stays a
-    // candidate forever; without the photo-key filter every run would re-list an
-    // empty prefix for every wall ever deleted.
+    // The row is never deleted, so a wall swept on an earlier run stays past the
+    // cutoff forever; `photos_purged_at` is what takes it out of the candidate set.
     expect(second).toMatchObject({ wallsPurged: 0, wallsConsidered: 0 });
     expect(deletedObjects).toEqual([]);
+  });
+
+  it('deletes an abandoned upload that no version ever adopted', async () => {
+    // A photo uploaded into the wizard sits in the bucket unreferenced until
+    // `createSprayWallVersion` adopts it — and if the climber backs out, it never
+    // is. Nothing in the database names that object, so a sweep driven by version
+    // rows would leave it there forever. The sweep lists the PREFIX for exactly
+    // this case.
+    const wall = await createWallOnly();
+    const strayKey = sprayWallPhotoKey(wall.uuid, uuidv4());
+    storedObjects.get('private')!.add(strayKey);
+    await deleteWallDaysAgo(wall.uuid, SPRAY_WALL_PHOTO_RETENTION_DAYS + 1);
+
+    const result = await purgeDeletedSprayWallPhotos({ now: new Date() });
+
+    expect(result).toMatchObject({ wallsPurged: 1, wallsConsidered: 1, objectsDeleted: 1 });
+    expect(deletedObjects.map((object) => object.key)).toEqual([strayKey]);
+  });
+
+  it('reaches a fresh deletion past a full batch of already-purged walls', async () => {
+    // The starvation bug this pins: a purged wall's row is never deleted, so it
+    // stays past the cutoff forever. With the already-purged filter applied AFTER
+    // `LIMIT 200`, every run past the two-hundredth purge fills its batch with
+    // no-ops and nothing deleted afterwards is ever reached — a permanent
+    // `wallsPurged: 0` that looks exactly like "nothing to do".
+    //
+    // Built with raw rows rather than 201 real wall flows: the point is the
+    // candidate query's WHERE, and the flow costs a photo, a version and three
+    // holds each.
+    const batchSize = 3;
+    for (let index = 0; index < batchSize + 1; index++) {
+      await db.execute(sql`
+        INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, angle, created_at, updated_at, deleted_at)
+        VALUES (${`purged-${index}`}, ${`purged-${index}`}, ${OWNER}, 'spray', ${9000 + index}, ${9000 + index}, '1',
+                ${`Purged ${index}`}, 40, now(), now(), now())
+      `);
+      await db.execute(sql`
+        INSERT INTO spray_walls (board_uuid, layout_id, hold_count, created_at, updated_at, deleted_at)
+        VALUES (${`purged-${index}`}, ${9000 + index}, 0, now(), now(),
+                now() - ((${SPRAY_WALL_PHOTO_RETENTION_DAYS + 90 - index}) || ' days')::interval)
+      `);
+      // Already swept. These are the oldest deletions, so they sort to the front
+      // of the batch and would fill it entirely if the marker were filtered after
+      // the limit instead of inside the query.
+      await db.execute(sql`
+        UPDATE spray_walls SET photos_purged_at = now() WHERE board_uuid = ${`purged-${index}`}
+      `);
+    }
+
+    // The one wall with work, deleted MOST recently, so it is last in the order.
+    const fresh = await createPublishedWall();
+    await deleteWallDaysAgo(fresh.wall.uuid, SPRAY_WALL_PHOTO_RETENTION_DAYS + 1);
+
+    const result = await purgeDeletedSprayWallPhotos({ now: new Date(), batchSize });
+
+    expect(result).toMatchObject({ wallsPurged: 1, wallsConsidered: 1 });
+    expect(deletedObjects.every((object) => object.key.startsWith(`spray-walls/${fresh.wall.uuid}/`))).toBe(true);
+  });
+
+  it('leaves the photo key intact when the object delete fails', async () => {
+    // `photo_key` is the only thing that names the object. Clearing it on a failed
+    // delete would leave the photograph in the bucket, unnamed, and the wall would
+    // never be a candidate again — the one outcome the whole job exists to prevent.
+    const { wall } = await createPublishedWall();
+    await deleteWallDaysAgo(wall.uuid, SPRAY_WALL_PHOTO_RETENTION_DAYS + 3);
+
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.deleteFromS3).mockRejectedValueOnce(new Error('R2 said no'));
+
+    const result = await purgeDeletedSprayWallPhotos({ now: new Date() });
+
+    expect(result).toMatchObject({ wallsPurged: 0, wallsConsidered: 1 });
+    const [row] = [
+      ...(await db.execute<{ keys: number }>(sql`
+        SELECT count(*)::int AS keys FROM spray_wall_versions v
+        JOIN spray_walls w ON w.id = v.wall_id
+        WHERE w.board_uuid = ${wall.uuid} AND v.photo_key IS NOT NULL
+      `)),
+    ];
+    expect(row.keys).toBeGreaterThan(0);
+  });
+
+  it('refuses to clear a photo key when no private bucket is configured', async () => {
+    // A dev backend has no bucket. Reporting zero objects deleted and clearing the
+    // key anyway would orphan the photograph; the run has to be a loud no-op.
+    const { wall } = await createPublishedWall();
+    await deleteWallDaysAgo(wall.uuid, SPRAY_WALL_PHOTO_RETENTION_DAYS + 3);
+
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.isS3Configured).mockReturnValue(false);
+
+    const result = await purgeDeletedSprayWallPhotos({ now: new Date() });
+
+    expect(result).toMatchObject({ wallsPurged: 0, objectsDeleted: 0, wallsConsidered: 1 });
+    const [row] = [
+      ...(await db.execute<{ keys: number }>(sql`
+        SELECT count(*)::int AS keys FROM spray_wall_versions v
+        JOIN spray_walls w ON w.id = v.wall_id
+        WHERE w.board_uuid = ${wall.uuid} AND v.photo_key IS NOT NULL
+      `)),
+    ];
+    expect(row.keys).toBeGreaterThan(0);
   });
 
   it('refuses the purge mutation without cron authentication', async () => {

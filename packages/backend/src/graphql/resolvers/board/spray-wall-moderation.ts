@@ -1,5 +1,5 @@
 import { GraphQLError } from 'graphql';
-import { and, asc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { SPRAY_WALL_PHOTO_RETENTION_DAYS } from '@boardsesh/board-config';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -9,7 +9,7 @@ import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/h
 import { requireAdmin } from '../social/roles';
 import { ReportSprayWallInputSchema, SetSprayWallHiddenInputSchema, UUIDSchema } from '../../../validation/schemas';
 import { deleteFromS3, isS3Configured, listS3Objects } from '../../../storage/s3';
-import { purgeSprayWallFeedItems, SPRAY_WALL_CODES } from './spray-walls';
+import { purgeSprayWallFeedItems, SPRAY_WALL_CODES, viewerCanSeeSprayWall } from './spray-walls';
 
 /**
  * Moderation and retention for spray walls (SW-17, epic #5346).
@@ -95,15 +95,21 @@ async function loadWallForModeration(uuid: string): Promise<{ wall: WallRow; boa
 /**
  * Whether this viewer can see the wall well enough to report it.
  *
+ * Delegates to `viewerCanSeeSprayWall` rather than restating the rule. The first
+ * version of this file restated it and dropped the gym-member path in the
+ * process, so a member of a gym who could see the gym's private wall got "not
+ * found" when they tried to report it — which is precisely the person most likely
+ * to notice something wrong with it. A visibility rule has one implementation per
+ * key, and "can see it" is the uuid one.
+ *
  * The uuid rule, not the by-layout one: a report is always made from a wall
  * somebody is looking at, and an unlisted wall someone was sent a link to is
  * exactly the case worth reporting. A wall a viewer cannot see answers "not
  * found", the same as a uuid that is not a wall at all — a report must never be
  * an oracle for which uuids exist.
  */
-function viewerCanReport(wall: WallRow, board: BoardRow, userId: string): boolean {
-  if (wall.hiddenAt != null) return board.ownerId === userId;
-  return board.isPublic || board.isUnlisted || board.ownerId === userId;
+function viewerCanReport(wall: WallRow, board: BoardRow, userId: string): Promise<boolean> {
+  return viewerCanSeeSprayWall(wall, board, userId);
 }
 
 export const sprayWallModerationMutations = {
@@ -121,14 +127,22 @@ export const sprayWallModerationMutations = {
 
     const validated = validateInput(ReportSprayWallInputSchema, input, 'input');
     const loaded = await loadWallForModeration(validated.wallUuid);
-    if (!loaded || !viewerCanReport(loaded.wall, loaded.board, ctx.userId!)) throw notFoundError();
+    if (!loaded || !(await viewerCanReport(loaded.wall, loaded.board, ctx.userId!))) throw notFoundError();
 
     const reason = REPORT_REASON_BY_WIRE_NAME[validated.reason];
     const inserted = await db
       .insert(dbSchema.sprayWallReports)
       .values({ wallId: loaded.wall.id, reporterId: ctx.userId!, reason })
+      // The `where` is not optional here: `spray_wall_reports_wall_reporter_idx` is
+      // PARTIAL (`reporter_id IS NOT NULL`), and Postgres refuses to infer a
+      // partial index from a bare column list — `ON CONFLICT (wall_id,
+      // reporter_id)` alone fails outright with "no unique or exclusion constraint
+      // matching the ON CONFLICT specification". Drizzle renders this `where` into
+      // the inference position, which is the one that matters. The index predicate
+      // and this predicate move together, always.
       .onConflictDoNothing({
         target: [dbSchema.sprayWallReports.wallId, dbSchema.sprayWallReports.reporterId],
+        where: sql`${dbSchema.sprayWallReports.reporterId} IS NOT NULL`,
       })
       .returning({ id: dbSchema.sprayWallReports.id });
 
@@ -160,14 +174,23 @@ export const sprayWallModerationMutations = {
 
     const now = new Date();
     await db.transaction(async (tx) => {
+      // Hiding is idempotent on the WRITE, not on what was read before the
+      // transaction opened: `loaded` is a snapshot, so two admins pressing the
+      // switch together would both see `hidden_at IS NULL` and both stamp their
+      // own clock, and the later one would silently move the timestamp an appeal
+      // is measured from. The predicate is the guard — a second hide matches no
+      // row and changes nothing. An UNhide has no such hazard: null is null.
+      const hideGuard = validated.hidden
+        ? and(eq(dbSchema.sprayWalls.id, loaded.wall.id), isNull(dbSchema.sprayWalls.hiddenAt))
+        : eq(dbSchema.sprayWalls.id, loaded.wall.id);
       await tx
         .update(dbSchema.sprayWalls)
         .set({
-          hiddenAt: validated.hidden ? (loaded.wall.hiddenAt ?? now) : null,
-          hiddenBy: validated.hidden ? (loaded.wall.hiddenBy ?? ctx.userId!) : null,
+          hiddenAt: validated.hidden ? now : null,
+          hiddenBy: validated.hidden ? ctx.userId! : null,
           updatedAt: now,
         })
-        .where(eq(dbSchema.sprayWalls.id, loaded.wall.id));
+        .where(hideGuard);
 
       if (validated.hidden) await purgeSprayWallFeedItems(tx, loaded.wall.layoutId);
 
@@ -186,11 +209,20 @@ export const sprayWallModerationMutations = {
       adminId: ctx.userId,
     });
 
+    // Read back rather than echoing the write: under the guard above, a second
+    // concurrent hide changes nothing, and reporting its own `now` would tell the
+    // admin a timestamp the database does not hold.
+    const [current] = await db
+      .select({ hiddenAt: dbSchema.sprayWalls.hiddenAt })
+      .from(dbSchema.sprayWalls)
+      .where(eq(dbSchema.sprayWalls.id, loaded.wall.id))
+      .limit(1);
+
     return {
       uuid: loaded.board.uuid,
       layoutId: loaded.wall.layoutId,
-      hidden: validated.hidden,
-      hiddenAt: validated.hidden ? (loaded.wall.hiddenAt ?? now).toISOString() : null,
+      hidden: current?.hiddenAt != null,
+      hiddenAt: current?.hiddenAt ? current.hiddenAt.toISOString() : null,
     };
   },
 
@@ -214,7 +246,11 @@ export type SprayWallPhotoPurgeResult = {
   wallsPurged: number;
   /** Objects deleted, across both buckets. */
   objectsDeleted: number;
-  /** Walls past the retention window that still had a photo key when the run started. */
+  /**
+   * Walls in this run's batch: past the retention window and not yet swept. A run
+   * reporting `wallsConsidered: 0` had nothing to do; one where `wallsPurged` is
+   * lower than this had storage failures, which are logged per wall.
+   */
   wallsConsidered: number;
   durationMs: number;
 };
@@ -251,45 +287,64 @@ export async function purgeDeletedSprayWallPhotos({
   // `lt`, not `lte`: a wall deleted exactly at the cutoff is inside the window by
   // a hair, and a retention window should err towards keeping a photo one more
   // run rather than deleting it one run early.
-  const candidates = await db
+  //
+  // **`photos_purged_at IS NULL` is part of the candidate query, not a filter on
+  // its results.** A purged wall's row is never deleted, so it stays past the
+  // cutoff forever. Selecting the oldest `batchSize` deletions and THEN dropping
+  // the ones already done means that once `batchSize` walls have been purged,
+  // every run fills its whole batch with no-ops and no wall deleted afterwards is
+  // ever reached — a permanent `wallsPurged: 0` that looks exactly like "nothing
+  // to do". Pushed into the WHERE, the batch is always real work, and
+  // `spray_walls_deleted_at_idx` is partial on exactly this pair.
+  const work = await db
     .select({ id: dbSchema.sprayWalls.id, boardUuid: dbSchema.sprayWalls.boardUuid })
     .from(dbSchema.sprayWalls)
-    .where(and(isNotNull(dbSchema.sprayWalls.deletedAt), lt(dbSchema.sprayWalls.deletedAt, cutoff)))
+    .where(
+      and(
+        isNotNull(dbSchema.sprayWalls.deletedAt),
+        lt(dbSchema.sprayWalls.deletedAt, cutoff),
+        isNull(dbSchema.sprayWalls.photosPurgedAt),
+      ),
+    )
     .orderBy(asc(dbSchema.sprayWalls.deletedAt))
     .limit(batchSize);
 
-  if (candidates.length === 0) {
+  if (work.length === 0) {
     return { wallsPurged: 0, objectsDeleted: 0, wallsConsidered: 0, durationMs: Date.now() - startedAt };
   }
 
-  // Only walls that still have a photo key are work. A wall purged on an earlier
-  // run stays in the candidate list forever (the row is never deleted), so
-  // without this every run would re-list an empty prefix for every wall ever
-  // deleted.
-  const wallIds = candidates.map((candidate) => candidate.id);
-  const remaining = await db
-    .select({ wallId: dbSchema.sprayWallVersions.wallId })
-    .from(dbSchema.sprayWallVersions)
-    .where(and(inArray(dbSchema.sprayWallVersions.wallId, wallIds), isNotNull(dbSchema.sprayWallVersions.photoKey)))
-    .groupBy(dbSchema.sprayWallVersions.wallId);
-  const wallIdsWithPhotos = new Set(remaining.map((row) => Number(row.wallId)));
-
-  const work = candidates.filter((candidate) => wallIdsWithPhotos.has(Number(candidate.id)));
   let objectsDeleted = 0;
   let wallsPurged = 0;
 
   for (const candidate of work) {
+    // The whole PREFIX, not the keys the version rows name. A wall can own objects
+    // no version points at: a photo uploaded into the wizard and then abandoned
+    // sits in the bucket unreferenced until `createSprayWallVersion` adopts it, and
+    // if the climber backs out it never is. Those strays are exactly what a
+    // retention sweep is for, and nothing in the database names them — which is
+    // why the sweep lists storage and the rows are merely what it clears afterwards.
     const prefix = `spray-walls/${candidate.boardUuid}/`;
     try {
       objectsDeleted += await deletePrefixFromBothBuckets(prefix);
+      // Objects first, rows second. A crash between them leaves a version pointing
+      // at an object that is gone, which reads as a wall with no photo — the same
+      // thing the next run would have produced. The other order would leave a key
+      // nulled and the object orphaned in the bucket forever, with nothing left
+      // that names it.
       await db
         .update(dbSchema.sprayWallVersions)
         .set({ photoKey: null, updatedAt: now })
         .where(eq(dbSchema.sprayWallVersions.wallId, candidate.id));
+      await db
+        .update(dbSchema.sprayWalls)
+        .set({ photosPurgedAt: now, updatedAt: now })
+        .where(eq(dbSchema.sprayWalls.id, candidate.id));
       wallsPurged += 1;
     } catch (error) {
-      // One wall's storage failure must not stop the batch: the next run picks it
-      // up again, because nothing was cleared for it.
+      // One wall's storage failure must not stop the batch, and it must not stamp
+      // `photos_purged_at`: nothing was cleared, so the next run takes the wall
+      // again. A backend with no `private` bucket lands here for every wall, which
+      // is the intended loud no-op.
       logger.warn('Spray wall photo purge failed for one wall', { wallId: Number(candidate.id) }, error);
     }
   }
@@ -310,10 +365,22 @@ export async function purgeDeletedSprayWallPhotos({
  * `private` is where a wall photo lives. `media` is checked as well because it is
  * the world-readable bucket: a resize variant written there by an older path, or
  * by hand, is the one copy that would survive the private-bucket delete and stay
- * fetchable by anybody. A bucket that is not configured is skipped, not an error
- * — a dev backend has neither.
+ * fetchable by anybody.
+ *
+ * **A backend with no `private` bucket THROWS rather than reporting zero
+ * objects.** Returning 0 would let the caller clear `photo_key` on a run that
+ * deleted nothing — and `photo_key` is the only thing that names the object, so
+ * the photograph would be unreachable, unnamed and permanently in the bucket, and
+ * the wall would never be a candidate again. A dev backend genuinely has no
+ * bucket, which is exactly why this has to be a loud no-op instead of a quiet
+ * success. `media` alone missing is fine: the private copy is the one that always
+ * exists.
  */
 async function deletePrefixFromBothBuckets(prefix: string): Promise<number> {
+  if (!isS3Configured('private')) {
+    throw new Error('the private bucket is not configured; refusing to clear a photo key nothing would name');
+  }
+
   let deleted = 0;
   for (const bucket of ['private', 'media'] as const) {
     if (!isS3Configured(bucket)) continue;
@@ -332,7 +399,10 @@ export const sprayWallModerationQueries = {
     await requireAdmin(ctx, 'spray');
     await applyRateLimit(ctx, MODERATION_RATE_LIMIT, 'sprayWallReports');
 
-    const conditions = [isNull(dbSchema.sprayWallReports.reviewedAt)];
+    // A pending report on a wall the owner has since deleted is not work: no
+    // surface shows the wall, and hiding it would change nothing. It stays in the
+    // table as the record of why, and out of the queue.
+    const conditions = [isNull(dbSchema.sprayWallReports.reviewedAt), isNull(dbSchema.sprayWalls.deletedAt)];
     if (uuid !== undefined && uuid !== null) {
       const validatedUuid = validateInput(UUIDSchema, uuid, 'uuid');
       conditions.push(eq(dbSchema.sprayWalls.boardUuid, validatedUuid));
