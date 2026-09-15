@@ -29,6 +29,23 @@ export type SaveClimbOptions = {
   /** Feet may use any hold, not only the marked ones. Mutually exclusive with the
    *  `campus` characteristic, which the editor enforces. */
   any_feet?: boolean;
+  /**
+   * The setter's own grade, as a name on the board's scale ("6c/V5").
+   *
+   * REQUIRED to publish on a spray wall, which has no crowd grade to converge on;
+   * ignored everywhere else, where the grade comes from ticks or the Aurora sync.
+   */
+  user_grade?: string;
+  /**
+   * The spray wall this climb is being set on, as the share link carries it.
+   *
+   * The wall's `layoutId` comes out of a sequence, so it is not a secret and
+   * authorizes nothing on its own; the wall's uuid IS the capability an UNLISTED
+   * wall's share link hands out. The server ignores it for the owner and for gym
+   * members, so a spray client sends it on every write rather than trying to work
+   * out which of the three it is.
+   */
+  spray_wall_uuid?: string;
 };
 
 export type SaveClimbResponse = {
@@ -67,6 +84,8 @@ export function toSaveClimbInput(boardName: BoardName, options: SaveClimbOptions
     characteristics: options.characteristics ?? null,
     noMatch: options.no_match,
     anyFeet: options.any_feet,
+    userGrade: options.user_grade,
+    sprayWallUuid: options.spray_wall_uuid,
   };
 }
 

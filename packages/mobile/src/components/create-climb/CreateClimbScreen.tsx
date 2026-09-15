@@ -10,6 +10,9 @@ import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
+import { useSprayWall } from '../../lib/spray/use-spray-wall';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
+import { ActivityIndicator } from '../ActivityIndicator';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
@@ -72,6 +75,18 @@ export function CreateClimbScreen({
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
 
+  // A spray wall's holds are runtime data, not a bundled table: on a cold open
+  // (a share link, a fork of somebody else's wall climb) the registry has nothing
+  // yet, `getCreateBoardHolds` answers null, and without this the editor would
+  // settle on "can't set climbs here" and never look again. `loadState` in the
+  // memo's deps is what re-runs it when the wall lands.
+  // The TOKEN, not the load state, is the memo's dependency: a revalidation that
+  // brings a new wall version keeps reporting `ready`, so the state alone would
+  // leave the editor painting the generation that just came off the wall.
+  const sprayWallToken = useSprayWallToken(board.boardName, board.layoutId);
+  const sprayLayoutId = board.boardName === 'spray' ? board.layoutId : null;
+  const { isLoading: sprayWallLoading } = useSprayWall(sprayLayoutId);
+
   const boardHolds = useMemo(
     () =>
       getCreateBoardHolds({
@@ -80,7 +95,7 @@ export function CreateClimbScreen({
         sizeId: board.sizeId,
         setIds: board.setIds.split(',').map(Number),
       }),
-    [board.boardName, board.layoutId, board.sizeId, board.setIds],
+    [board.boardName, board.layoutId, board.sizeId, board.setIds, sprayWallToken],
   );
 
   // Every dismiss path — chevron, pan-down, backdrop, hardware back — lands here.
@@ -145,6 +160,18 @@ export function CreateClimbScreen({
   // No hold geometry for this config, or a climb that doesn't belong on this
   // board size — either way there is no honest editor to draw, so say so rather
   // than seeding one with holds that mean something else on this wall.
+  // The wall is still on its way. A spinner, not the unavailable state: nothing
+  // has failed yet, and the editor opens the moment the holds arrive.
+  if (!boardHolds && sprayWallLoading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (!boardHolds || controller.editSizeMismatch) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
