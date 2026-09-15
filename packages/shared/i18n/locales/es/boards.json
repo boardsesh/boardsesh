@@ -821,5 +821,82 @@
       "stay": "Seguir",
       "go": "Salir"
     }
+  },
+  "sprayReset": {
+    "screenTitle": "Resetear el muro",
+    "notYours": "Este muro no es tuyo para resetearlo.",
+    "nothingPublished": "Este muro todavía no está montado. Termina de añadirlo primero.",
+    "openDraft": {
+      "title": "Hay un reseteo a medias",
+      "body": "Una foto de un intento anterior sigue abierta en este muro. Tírala y empieza de nuevo: en el muro todavía no ha cambiado nada.",
+      "discard": "Tírala y empezar de nuevo",
+      "discarded": "Ese reseteo ya no está. Haz una foto nueva.",
+      "discardFailed": "Ese reseteo no se pudo borrar. Inténtalo otra vez."
+    },
+    "photo": {
+      "title": "Fotografía el muro otra vez",
+      "body": "Colócate donde te colocaste la primera vez si puedes. Mismo muro, presas nuevas."
+    },
+    "anchors": {
+      "title": "Marca las esquinas",
+      "body": "Arrastra los cuatro círculos a las esquinas del muro. Esto no es opcional: es lo que alinea tu foto nueva con cada bloque que ya vive en el muro.",
+      "use": "Usar estas esquinas",
+      "notConvex": "Esas esquinas se cruzan entre sí. Colócalas alrededor del muro en orden."
+    },
+    "detect": {
+      "title": "Viendo qué ha cambiado"
+    },
+    "leave": {
+      "title": "¿Dejar el reseteo?",
+      "body": "Tu foto nueva se queda como borrador. En el muro no cambia nada hasta que confirmes."
+    },
+    "compare": {
+      "working": "Calculando qué ha cambiado…",
+      "unavailable": "No pudimos calcular qué ha cambiado en este muro.",
+      "counts": "{{kept}} siguen · {{removed}} fuera · {{added}} nuevas",
+      "climbsAffected_one": "{{count}} bloque pierde una presa",
+      "climbsAffected_other": "{{count}} bloques pierden presas",
+      "aspectWarning": "Esta foto está encuadrada distinto que la anterior. Comprueba que las esquinas cayeron en las esquinas.",
+      "filterLabel": "Qué círculos mostrar",
+      "tapHint": "Toca cualquier círculo para cambiar de opinión.",
+      "confirm": "Confirmar el reseteo",
+      "acceptMoves": "Aceptar todos los cambios de sitio",
+      "noDetections": "Nada que comparar",
+      "noDetectionsBody": "Este móvil no pudo encontrar las presas en tu foto nueva, así que no hay nada con qué comparar. Tu foto queda guardada como borrador."
+    },
+    "commit": {
+      "failed": "El reseteo no se aplicó. En el muro no ha cambiado nada."
+    },
+    "filter": {
+      "all": "Todas",
+      "kept": "Siguen {{value}}",
+      "removed": "Fuera {{value}}",
+      "new": "Nuevas {{value}}",
+      "unsure": "Dudosas {{value}}"
+    },
+    "hold": {
+      "kept": "Presa {{id}} — sigue en el muro",
+      "removed": "Presa {{id}} — se va",
+      "unsure": "Presa {{id}} — mírala bien",
+      "stillHere": "Sigue aquí",
+      "gone": "Ya no está"
+    },
+    "detection": {
+      "new": "Una presa que antes no estaba",
+      "rejected": "No es una presa",
+      "accept": "Sí es una presa",
+      "reject": "No es una presa"
+    },
+    "pairing": {
+      "start": "La misma presa, movida aquí",
+      "prompt": "Toca el círculo donde estaba esa presa antes.",
+      "cancel": "Déjalo",
+      "paired": "Sustituye a la presa {{id}}",
+      "unpair": "No es esa presa",
+      "useSuggestion": "Sustituye a la presa {{id}}"
+    },
+    "done": {
+      "toast": "{{removed}} fuera, {{added}} nuevas, {{climbs}} bloques cambiados"
+    }
   }
 }

@@ -44,6 +44,11 @@ export default function BoardsLayout() {
           rule 3 keeps off a sheet's own drag. Flag-gated inside the screen — the
           route existing is not the same as the feature being reachable. */}
       <Stack.Screen name="spray/new" options={{ title: tBoards('sprayWizard.screenTitle') }} />
+      {/* Resetting a wall — a new photograph of a wall that already carries
+          climbs. Same route-not-sheet reasoning as the flow above: the corner
+          markers and the compare view are both full-screen pan-and-pinch
+          surfaces. SW-11 adds the "New photo" row that navigates here. */}
+      <Stack.Screen name="spray/reset" options={{ title: tBoards('sprayReset.screenTitle') }} />
     </Stack>
   );
 }

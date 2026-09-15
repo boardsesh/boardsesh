@@ -801,6 +801,73 @@ is also why `spray_climb_lineage.parent_uuid` carries no FK and the version FKs 
 `RESTRICT`: losing the lineage row would erase the only link a climber has back to
 the parent.
 
+## The reset on the phone
+
+`/boards/spray/reset?wallUuid=…` is one route with a stepper behind it
+(`reset-wall-machine.ts`), a sibling of the add-a-wall machine rather than a
+branch inside it. The two flows share three steps and disagree about everything
+around them: there is no wall to name here, and **the anchors are mandatory**.
+That gate is the reason the machines are separate — `ANCHORS_DONE` does nothing
+without four corners that describe a usable quadrilateral, so a climber never
+spends four minutes uploading a photograph the server is going to refuse.
+
+The compare view is a component, not a second route, and the detections are why.
+A wall photograph yields hundreds of circles and expo-router params are strings,
+so handing them to `/boards/spray/compare` would mean a module-level stash keyed
+by version id — a second source of truth for the one array whose INDICES the
+proposal is expressed in. It still gets the whole screen when it is showing.
+
+Three rules the client holds that the server cannot:
+
+- **Detections are built once**, in both frames, by `buildResetDetections`. A
+  candidate the homography cannot place is dropped BEFORE the array is indexed;
+  dropping it later would shift every index past it, and the proposal would then
+  describe holds the screen is not drawing.
+- **No detections, no review.** The matcher compares two sets of circles, so an
+  empty second set means "the whole wall has gone" — which, committed, takes
+  every hold off and breaks every climb on it. A phone with no detector lands in
+  the hold editor on the add-a-wall flow and is fine; there is no equivalent
+  fallback for a reset, because the thing being reviewed IS what the detector
+  found. The screen says so and offers nothing else.
+- **A pairing is unrepresentable unless the server would take it.**
+  `canPairMove` is the only way a `movedFromHoldId` enters the review, and
+  putting a predecessor back on the wall drops every pairing naming it. So the
+  "in this commit's `removed` list" rule cannot be violated by the client.
+
+The "N climbs lose holds" number is the server's, computed for the removal set
+the PROPOSAL named. Nothing on the phone can recompute it — the climbs' holds are
+not there — so `climbsAffectedIsStale` hides it the moment the owner changes that
+set, rather than showing a number about a different one.
+
+After a commit lands, `invalidateSprayWallRenderData(queryClient, wallUuid,
+layoutId)` runs immediately. The SW-07 registry keys every spray cache on the
+wall's version token and this device is the one that moved it; until it
+re-registers, every key still names the generation the owner was looking at when
+they pressed Confirm.
+
+### A climb that lost holds
+
+`Climb.missingHoldCount` reaches three mobile surfaces, and the rule across all
+three is that a broken climb stays findable and stays playable:
+
+- the climb-row chip ("2 holds gone"), beside the Hidden chip and in the same
+  neutral grey — colour in that row means grade and nothing else;
+- the **Holds** filter in the climb filter sheet (All / Intact only / Lost
+  holds), defaulting to All. One tap hides them; nothing hides them by default;
+- the play drawer banner, which states the number and offers the one thing that
+  fixes it. Remix goes through the same `useCreateClimbNavigation` handoff the
+  climb-actions sheet uses, carrying the parent's frames — the create editor's
+  own sanitiser drops the hold ids that are no longer on the wall, so it opens
+  with exactly the holds that survived.
+
+`Climb.lostHolds` carries the geometry of those holds as they were, for drawing
+dashed ghost rings where they used to be. The field and its resolver ship here;
+the layer that draws them does not. The play drawer renders through the board
+render pipeline rather than `InteractiveCreateBoard`'s `overlay` slot, so the
+ghosts need a seam in that pipeline, and the create editor would need the parent
+climb's holds threaded through route params that are strings. Both are follow-up
+work, and the banner already answers the question the missing holds raise.
+
 ## Photo privacy
 
 Wall photos go to the **`private`** R2 bucket and are read through **15-minute

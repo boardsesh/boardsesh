@@ -821,5 +821,82 @@
       "stay": "Keep going",
       "go": "Leave"
     }
+  },
+  "sprayReset": {
+    "screenTitle": "Reset the wall",
+    "notYours": "This wall isn't yours to reset.",
+    "nothingPublished": "This wall isn't set up yet. Finish adding it first.",
+    "openDraft": {
+      "title": "There's a reset half done",
+      "body": "A photo from an earlier go is still open on this wall. Throw it away and start again — nothing on the wall has changed yet.",
+      "discard": "Throw it away and start again",
+      "discarded": "That reset is gone. Take a new photo.",
+      "discardFailed": "That reset wouldn't clear. Try again."
+    },
+    "photo": {
+      "title": "Photograph the wall again",
+      "body": "Stand where you stood the first time if you can. Same wall, new holds."
+    },
+    "anchors": {
+      "title": "Mark the corners",
+      "body": "Drag the four rings onto the corners of the wall. This one isn't optional — it's what lines your new photo up with every climb already on the wall.",
+      "use": "Use these corners",
+      "notConvex": "Those corners cross over each other. Put them round the wall in order."
+    },
+    "detect": {
+      "title": "Seeing what changed"
+    },
+    "leave": {
+      "title": "Leave the reset?",
+      "body": "Your new photo stays as a draft. Nothing changes on the wall until you confirm."
+    },
+    "compare": {
+      "working": "Working out what changed…",
+      "unavailable": "We couldn't work out what changed on this wall.",
+      "counts": "{{kept}} kept · {{removed}} gone · {{added}} new",
+      "climbsAffected_one": "{{count}} climb loses a hold",
+      "climbsAffected_other": "{{count}} climbs lose holds",
+      "aspectWarning": "This photo is framed differently from the last one. Check the corners landed on the corners.",
+      "filterLabel": "Which rings to show",
+      "tapHint": "Tap any ring to change your mind about it.",
+      "confirm": "Confirm the reset",
+      "acceptMoves": "Take every suggested move",
+      "noDetections": "Nothing to compare",
+      "noDetectionsBody": "This phone couldn't spot the holds in your new photo, so there's nothing to check against. Your photo is saved as a draft."
+    },
+    "commit": {
+      "failed": "The reset didn't land. Nothing on the wall has changed."
+    },
+    "filter": {
+      "all": "All",
+      "kept": "Kept {{value}}",
+      "removed": "Gone {{value}}",
+      "new": "New {{value}}",
+      "unsure": "Unsure {{value}}"
+    },
+    "hold": {
+      "kept": "Hold {{id}} — still on the wall",
+      "removed": "Hold {{id}} — coming off",
+      "unsure": "Hold {{id}} — worth a look",
+      "stillHere": "It's still here",
+      "gone": "It's gone"
+    },
+    "detection": {
+      "new": "A hold that wasn't here before",
+      "rejected": "Not a hold",
+      "accept": "It's a hold",
+      "reject": "Not a hold"
+    },
+    "pairing": {
+      "start": "Same hold, moved here",
+      "prompt": "Tap the ring where that hold used to be.",
+      "cancel": "Never mind",
+      "paired": "Replaces hold {{id}}",
+      "unpair": "It's not that hold",
+      "useSuggestion": "Replaces hold {{id}}"
+    },
+    "done": {
+      "toast": "{{removed}} gone, {{added}} new, {{climbs}} climbs changed"
+    }
   }
 }
