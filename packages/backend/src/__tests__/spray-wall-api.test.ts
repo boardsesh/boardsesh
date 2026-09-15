@@ -1323,6 +1323,35 @@ describe('the caps, and the shapes the server refuses', () => {
     expect(holds).toBe(MAX_HOLDS_PER_WALL);
   });
 
+  it('refuses a removal batch that repeats one hold id', async () => {
+    // `removeSprayWallHolds` answers with `holdIds.length`, so [h, h, h] would tell
+    // the client three holds came off the wall when one did.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+
+    await expect(
+      sprayWallMutations.removeSprayWallHolds(
+        {},
+        { input: { wallUuid: wall.uuid, versionId: draft.id, holdIds: [holdIds[0], holdIds[0]] } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/same hold id appears twice/i);
+
+    // The one-of-each form still works and reports honestly.
+    await expect(
+      sprayWallMutations.removeSprayWallHolds(
+        {},
+        { input: { wallUuid: wall.uuid, versionId: draft.id, holdIds: [holdIds[0], holdIds[1]] } },
+        ctxFor(OWNER),
+      ),
+    ).resolves.toBe(2);
+  });
+
   it('refuses a batch that repeats one hold id, which would bypass the cap', async () => {
     // Every occurrence of a repeated correction id becomes its OWN successor, while
     // the cap counts a supersede as net zero — so 1,500 copies of one id would turn

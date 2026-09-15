@@ -165,7 +165,14 @@ export const UpsertSprayWallHoldsInputSchema = z.object({
 export const RemoveSprayWallHoldsInputSchema = z.object({
   wallUuid: UUIDSchema,
   versionId: BigIntIdSchema,
-  holdIds: z.array(z.number().int().positive()).min(1).max(MAX_HOLDS_PER_WALL),
+  holdIds: z
+    .array(z.number().int().positive())
+    .min(1)
+    .max(MAX_HOLDS_PER_WALL)
+    // Rejected for the same reason the upsert rejects them: the mutation answers
+    // with `holdIds.length`, so [7, 7, 7] would report three holds removed when
+    // one was, and a repeat eats batch budget without meaning anything.
+    .refine((holdIds) => new Set(holdIds).size === holdIds.length, 'The same hold id appears twice in this batch'),
 });
 
 export const PublishSprayWallVersionInputSchema = z.object({
