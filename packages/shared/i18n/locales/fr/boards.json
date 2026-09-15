@@ -793,7 +793,7 @@
     "upload": {
       "title": "Envoi de ta photo",
       "working": "Envoi de ta photo…",
-      "percent": "Envoyé à {{percent}} %",
+      "percent": "Téléversé à {{percent}} %",
       "failed": "La photo n'est pas passée.",
       "retry": "Réessayer",
       "checkFailed": "Impossible de savoir si ta photo est passée. Réessaie quand tu auras du réseau."

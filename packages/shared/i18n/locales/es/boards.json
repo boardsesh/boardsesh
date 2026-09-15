@@ -791,9 +791,9 @@
       "clear": "Empezar las esquinas de nuevo"
     },
     "upload": {
-      "title": "Enviando tu foto",
-      "working": "Enviando tu foto…",
-      "percent": "Enviado {{percent}} %",
+      "title": "Subiendo tu foto",
+      "working": "Subiendo tu foto…",
+      "percent": "Subido {{percent}} %",
       "failed": "La foto no llegó a subirse.",
       "retry": "Reintentar",
       "checkFailed": "No se pudo saber si tu foto llegó. Inténtalo cuando tengas cobertura."

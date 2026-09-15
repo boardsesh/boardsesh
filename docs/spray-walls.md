@@ -12,7 +12,19 @@ underneath it, and the API
 which is where the first real rows come from, and the add-a-wall flow
 [SW-09 (#5442)](https://github.com/boardsesh/boardsesh/issues/5442) built on the
 front of all of it — the route a climber actually walks (see "Adding a wall"
-below).
+below). [SW-17 (#5450)](https://github.com/boardsesh/boardsesh/issues/5450) adds
+the ops half: reporting a wall, hiding one, what happens to a deleted wall's
+photographs, the telemetry, and the flag rollout.
+
+**Sharing lands separately.**
+[SW-14 (#5447)](https://github.com/boardsesh/boardsesh/issues/5447) is in flight
+on the other stack and owns the visibility switch: private / unlisted with a link
+/ public, the QR share sheet, the gym attachment, and — on the storage side —
+copying a published photo out of the `private` bucket into world-readable `media`
+under a random key when a wall goes public, deleting it again when it goes back.
+Everything this file says about the hidden flag and the photo purge already
+accounts for that copy: hiding outranks the share link, and the purge sweeps the
+`media` prefix as well as the private one.
 
 ## Identity mapping
 
@@ -290,6 +302,24 @@ Three rules in that flow are not obvious from the API and are easy to undo:
 | `MAX_HOLDS_PER_WALL` | 1500 | A dense commercial spray wall runs 400–800 holds. The cap bounds what a detector run, a hold-editor session and a reset match hold in memory at once. |
 | `MAX_VERSIONS_PER_WALL` | 50 | A wall reset monthly for four years stays inside it. Every version keeps its own photo and its own hold generation. |
 
+All three are reachable by ordinary use — ten walls is a gym with a lot of bays,
+1,500 holds is a dense commercial spray wall, fifty resets is four years of
+monthly changes — so each is **said out loud with its number** rather than met as
+"Something went wrong":
+
+| Cap | Where the climber reads it |
+| --- | --- |
+| Walls | A hint on the create step, BEFORE it bites (`sprayCaps.wallsHint`), and the refusal itself. Meeting the cap on the publish step with a photo already uploaded is the worst moment to learn it. |
+| Holds | The hold editor's save refusal (`sprayEditor.errors.tooManyHolds`). |
+| Versions | The reset flow's upload failure (`sprayCaps.versions`). |
+
+The numbers come from `spray-config.ts` through
+`packages/mobile/src/lib/spray/spray-cap-copy.ts`, never typed into a catalog
+string: the server refuses on those same constants, and a copy string carrying a
+stale number would be telling a climber the rule is something other than what
+refused them. The refusals are matched on `extensions.code`, never on the
+server's English sentence, which is not a contract and is not translated.
+
 ## What spray deliberately does not do
 
 `getBoardCapabilities('spray')` answers `climbCreation: true` and everything else
@@ -333,6 +363,10 @@ Everything a wall needs is in `packages/shared-schema/src/schema/spray-walls.ts`
 | `removeSprayWallHolds(input)` | Takes holds off as of a draft. |
 | `publishSprayWallVersion(input)` | Makes a draft the generation climbers set against. |
 | `deleteSprayWall(uuid)` | Soft delete. Catalogue rows and climbs stay. |
+| `reportSprayWall(input)` | Report a wall. Any signed-in viewer who can see it, once per wall (SW-17, below). |
+| `setSprayWallHidden(input)` | The admin switch. Community admins only. |
+| `sprayWallReports(uuid)` | The pending report queue. Community admins only. |
+| `purgeDeletedSprayWallPhotos(limit)` | Cron-authenticated. Deletes the photographs of walls deleted more than 30 days ago. |
 
 ### What `createSprayWall` writes, and the two fields it never takes
 
@@ -972,8 +1006,161 @@ reaching for Redis, because the budget only has to make scripted abuse tedious.
 REST handler — it keys off the GraphQL connection context.
 
 An uploaded photo sits in the bucket unreferenced until `createSprayWallVersion`
-adopts it, so an abandoned upload is a stray object for the SW-17 (#5450) cleanup
-job rather than a row anyone can see.
+adopts it, so an abandoned upload is a stray object rather than a row anyone can
+see. The SW-17 purge below collects it with the rest of the wall's prefix once the
+wall is deleted — which is also why the object key is a pure function of the photo
+id: a whole wall's objects are enumerable by prefix.
+
+## Moderation: reporting a wall, and hiding one
+
+A wall photograph is a new class of content — user-supplied, of somebody's home,
+and reachable by a link the owner sends. Two mechanisms cover it, and neither is
+the `climb_proposals` vote machinery in `docs/climb-moderation.md`.
+
+**Why not proposals.** A proposal is a change to a CLIMB — its holds, its name,
+its grade — decided by a weighted approval threshold, because several climbers
+who have been on the climb know better than any one of them. "Should we be
+serving this photograph" is a different question: it has exactly one right
+answer, the people who could vote are the ones who can already see the wall, and
+the outcome is not a catalogue edit. So it is a queue an admin reads and one
+switch.
+
+| Piece | What it is |
+| --- | --- |
+| `reportSprayWall(input)` | Any signed-in climber who can SEE the wall, once per wall. Writes one `spray_wall_reports` row; a second report from the same climber answers `ALREADY_REPORTED` and writes nothing. |
+| `spray_wall_reports` | `(wall_id, reporter_id)` unique, a closed-set `reason`, and `reviewed_at` / `reviewed_by`. No free-text field anywhere in the path. |
+| `setSprayWallHidden(input)` | Community admins (`spray`-scoped or global). Stamps or clears `spray_walls.hidden_at` / `hidden_by` and marks every pending report on the wall reviewed. |
+| `sprayWallReports(uuid)` | The pending queue, newest first. Admins only. There is no admin ROUTE yet — the mutation and the query are the tool. |
+| `SprayWall.hiddenAt` | Non-null only for the owner, because a hidden wall does not resolve for anybody else. The mobile banner renders off its presence. |
+
+**What hidden means: exactly what private means, for everybody but the owner.**
+The wall leaves gym lists and the boards picker, its uuid and its share link stop
+resolving, and its climbs drop out of every read that carries the spray
+visibility predicate. Hiding outranks both `is_public` and the unlisted
+share-link capability — it has to take a wall off the internet, and a capability
+that survived it would be a link that still worked.
+
+The owner keeps everything: the wall, its photos, its holds and its climbs, plus
+a notice saying what happened. A wall that quietly stopped being visible to their
+crew with no explanation would read as data loss, and the climbs on it are their
+work.
+
+The rule lands in **four** implementations, which is the thing to keep in step —
+they do not share a query builder:
+
+1. `viewerCanSeeSprayWall` (by uuid) and 2. `viewerCanSeeSprayWallByLayout` in
+   `packages/backend/src/graphql/resolvers/board/spray-walls.ts`, both
+   short-circuiting on `hiddenAt` before the public/unlisted question;
+3. `viewerCanWriteSprayClimbs`, which additionally refuses the presented-uuid
+   capability on a hidden wall;
+4. the three SQL predicates in
+   `packages/db/src/queries/climbs/spray-visibility.ts`, each carrying
+   `AND (sw.hidden_at IS NULL OR ub.owner_id = <viewer>)`. Those are what gate a
+   spray climb's ~15 reads.
+
+Hiding also purges the wall's `feed_items`, the same as deleting it does — feed
+rows are served straight out of that table and would outlive the gate. Unhiding
+does NOT put them back: a feed is a record of what happened when, and
+re-announcing week-old climbs would be a lie. Everything else comes back.
+
+Reporting is API-only today. There is no report button in the app and no admin
+console route; both are follow-ups, and the mutation is what an admin or a
+support reply drives in the meantime.
+
+## Retention: what happens to a deleted wall's photographs
+
+Deleting a wall is a **soft** delete, and it always will be: the catalogue rows
+and every climb ever set on the wall stay behind, because a deleted wall stops
+being reachable and does not un-set anybody's climbs. The PHOTOGRAPHS are the
+part that must not linger.
+
+`SPRAY_WALL_PHOTO_RETENTION_DAYS` (30, in
+`packages/shared/board-config/src/spray-config.ts`) is the undo window, not a
+retention policy: long enough that an accidental delete can be walked back by
+hand, short enough that a climber who deleted a wall to get the photo off our
+disks is not waiting a quarter.
+
+The scheduler job `purge-spray-wall-photos` (07:00 UTC daily,
+`packages/scheduler/src/jobs/purge-spray-wall-photos.ts`, `docs/scheduler.md`)
+calls the cron-authenticated `purgeDeletedSprayWallPhotos` mutation. The job
+holds the SCHEDULE and nothing else — the scheduler has no database client and no
+storage credentials, and giving it either would put the private photo bucket
+behind a second service.
+
+What the mutation does, per wall, in this order:
+
+1. list `spray-walls/<wallUuid>/` in the `private` bucket and delete every
+   object — the photos, their resize variants, and any upload that was never
+   adopted as a version;
+2. the same prefix in `media`, which is where SW-14's public promotion copies a
+   published photo. That is the one copy that would survive a private-bucket
+   delete and stay fetchable by anybody;
+3. only then clear `photo_key` on the wall's versions.
+
+**Objects first, row second.** A crash between the two leaves a version pointing
+at an object that is gone, which reads as a wall with no photo — the same thing
+the next run would have produced. The other order leaves a key nulled and the
+object orphaned in the bucket forever, with nothing left that names it.
+
+Nothing else is touched. No `spray_walls`, `spray_wall_versions`,
+`spray_wall_holds` or `board_climbs` row is deleted, ever — other people's ticks
+point at them. One wall's storage failure is logged and skipped rather than
+failing the batch, so the next run picks it up; and a wall already purged is
+filtered out by "has a version with a photo key", because the row stays a
+candidate forever and every run would otherwise re-list an empty prefix for every
+wall ever deleted.
+
+## Telemetry
+
+Seven events, all in `SHARED_EVENTS` with typed builders in
+`packages/shared/analytics/src/spray-wall-events.ts` (the `board-render-events.ts`
+style: each builder returns `{ name, properties }` together, so a call site
+cannot pair one event's props with another event's name). Mobile fires them
+through `trackSprayEvent`; nothing calls `track` with a spray event name directly.
+
+| Event | Properties | What it answers |
+| --- | --- | --- |
+| `Spray Wall Photo Picked` | `source` | Camera or library — the two feel different on a slow phone. |
+| `Spray Wall Upload Finished` | `outcome`, `durationMs`, `determinate`, `attempt` | Whether the photo lands, and how long a climber waits for it. |
+| `Spray Wall Detection Finished` | `outcome`, `candidateCount`, `durationMs` | `unavailable` is a SUCCESS — the flow lands in the editor in manual mode. Read it against `ok` for the fraction of the fleet placing every hold by hand. |
+| `Spray Holds Reviewed` | `holdCount`, `hadCandidates` | What the review step actually saved. The number the detector is judged on. |
+| `Board Created` (existing) | `boardType: 'spray'` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. |
+| `Spray Wall Reset Previewed` | `keptCount`, `removedCount`, `addedCount`, `lowConfidenceCount`, `climbsAffected`, `aspectMismatch`, `detectionCount` | What the matcher found. |
+| `Spray Wall Reset Applied` | `keptCount`, `removedCount`, `addedCount`, `climbsChanged`, `moveCount` | What landed. The server's counts, not the review's. |
+| `Climb Remixed From Broken` | `lostHoldCount`, `suggestedHoldCount?`, `source` | Whether a climb a reset broke is a dead end or a starting point. |
+
+Two rules, both enforced by a test in
+`packages/shared/analytics/src/__tests__/spray-wall-events.test.ts`:
+
+- **Outcomes, not gestures.** PostHog is past the 1M-event tier, so every event
+  fires once per wall per step. Nothing fires per tap, per frame, or per hold.
+- **Nothing identifies the wall or what is on it.** No photo, no URI, no file
+  name, no wall name, no gym, no hold coordinates, no free text. Every property
+  is a number, a boolean, or a member of a closed string union, and the test
+  reads the payloads back field by field rather than trusting the types.
+
+## Rolling the flag out
+
+The whole surface is behind the mobile flag `spray-walls`
+(`docs/feature-flags.md` → "Mobile flags"). A POSITIVE rollout flag: unresolved
+reads as off, so the tile never flickers in for the first frames of a cold open.
+
+Three steps, each gated on a number rather than on a feeling:
+
+| Step | Audience | Gate before moving on |
+| --- | --- | --- |
+| 1 | Testers only (the on-device override, More → Feature Flags) | At least one wall photographed, reset and set on, end to end, on a real wall. |
+| 2 | 10 % | `SPRAY_ROLLOUT_GATES.detectionCorrectionRate` ≤ 0.15 over `Spray Holds Reviewed` where `hadCandidates` is true, and `Spray Wall Upload Finished` `outcome: 'ok'` ≥ 0.95. |
+| 3 | Everyone | `SPRAY_ROLLOUT_GATES.resetCommitRate` ≥ 0.6 — applied ÷ previewed. An owner who previews a reset and never applies it has been shown something they do not believe. |
+
+Both ratios are functions in `spray-wall-events.ts` rather than prose in a
+dashboard description, so the number in this doc and the number in the code
+cannot drift. The correction rate is a PROXY, not an F1: the detections are not
+stored, so a correction and a delete-plus-add are indistinguishable. It moves in
+the right direction, which is what a rollout gate needs.
+
+Step back at any point by setting the flag false — nothing the flag gates writes
+anything a rollback has to undo, and a wall already created stays created.
 
 ## Climb writes on a wall
 

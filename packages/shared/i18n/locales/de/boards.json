@@ -791,9 +791,9 @@
       "clear": "Ecken neu setzen"
     },
     "upload": {
-      "title": "Dein Foto geht raus",
-      "working": "Dein Foto geht raus…",
-      "percent": "{{percent}} % gesendet",
+      "title": "Dein Foto wird hochgeladen",
+      "working": "Dein Foto wird hochgeladen…",
+      "percent": "{{percent}} % hochgeladen",
       "failed": "Das Foto ist nicht durchgekommen.",
       "retry": "Nochmal versuchen",
       "checkFailed": "Unklar, ob dein Foto durchgekommen ist. Versuch es mit Empfang nochmal."

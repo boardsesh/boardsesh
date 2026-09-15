@@ -21,7 +21,7 @@ implementation and only the trigger moves.
 
 ## Job ownership
 
-All nine jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
+All ten jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
 row's path and slot as data, and asserts `packages/web/vercel.json` declares no
 `crons` key at all — so a schedule reappearing there (which would double-fire
 the route, Vercel and Railway both) reds CI.
@@ -37,6 +37,7 @@ the route, Vercel and Railway both) reds CI.
 | `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | `scheduler-profile-percentiles`        |
 | `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | `scheduler-refresh-sitemap-climbs`     |
 | `refresh-gym-activity-stats` | Backend `/graphql`: `refreshGymActivityStats` | `30 6 * * *` | 15 min | `scheduler-refresh-gym-activity-stats` |
+| `purge-spray-wall-photos`    | Backend `/graphql`: `purgeDeletedSprayWallPhotos` | `0 7 * * *` | 10 min | `scheduler-purge-spray-wall-photos`    |
 
 **The 15-minute stagger between the prewarms is a rate limit, not cosmetics.**
 Each one fans out heatmap aggregates against the same Postgres; collapsing them
@@ -71,6 +72,43 @@ authentication or the lock. Cron credentials do not grant user or WebSocket acce
 Successful responses and backend logs expose `scanDurationMs` (guard counts),
 `writeDurationMs` (cache rebuild), and `durationMs` (whole operation including
 lock acquisition and commit). Failed-run logs also carry these timings.
+
+### Spray wall photo retention
+
+`purge-spray-wall-photos` deletes the photographs of spray walls their owners
+soft-deleted more than 30 days ago (`SPRAY_WALL_PHOTO_RETENTION_DAYS`; see
+[spray-walls.md](./spray-walls.md) → "Retention"). 07:00 UTC, half an hour after
+the gym activity rebuild so the two daily jobs never share a tick.
+
+Like `refresh-gym-activity-stats`, the work is a cron-authenticated backend
+mutation and the job holds only the schedule: the scheduler has no database
+client and no storage credentials, and giving it either would put the private
+photo bucket behind a second service. Same failure handling — a non-2xx or
+GraphQL errors inside an HTTP 200 are both a failed run, and only 502/503 is
+retried once after two seconds, because those are "a deploy is in flight" rather
+than "the server said no".
+
+It is overlap-safe the way `JobDefinition` requires, without a lock: the mutation
+deletes objects and then clears `photo_key`, so a second run meeting a first
+re-lists prefixes that are already empty, deletes nothing twice, and never fails
+on a missing object. One wall's storage failure is logged and skipped rather than
+failing the batch; the next run picks it up.
+
+Ten minutes rather than the 15 the long jobs get. Nothing here scans a large
+table — the candidate query is an index read on `deleted_at`, batched at 200
+walls — so the bound is object-storage latency, and a wedged endpoint should not
+hold a worker until the next day's tick.
+
+Manual run: `scheduler run purge-spray-wall-photos`, or POST to the backend
+`/graphql` with `Authorization: Bearer $CRON_SECRET`:
+
+```json
+{"query":"mutation { purgeDeletedSprayWallPhotos { wallsPurged objectsDeleted wallsConsidered durationMs } }"}
+```
+
+`wallsConsidered` is how many walls past the window still had a photo key when
+the run started, so a run that reports `wallsPurged: 0, wallsConsidered: 0` has
+nothing to do — not a failure.
 
 ### Gym activity backend cutover
 

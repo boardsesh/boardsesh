@@ -791,9 +791,9 @@
       "clear": "Start the corners again"
     },
     "upload": {
-      "title": "Sending your photo",
-      "working": "Sending your photo…",
-      "percent": "Sent {{percent}}%",
+      "title": "Uploading your photo",
+      "working": "Uploading your photo…",
+      "percent": "Uploaded {{percent}}%",
       "failed": "The photo didn't make it up.",
       "retry": "Try again",
       "checkFailed": "Couldn't tell whether your photo made it. Try again when you've signal."

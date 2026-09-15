@@ -124,6 +124,25 @@ diagnostic) applies on native. The whole surface lives in three files:
   `useClimbModerationEnabled`, unresolved = enabled) that takes down the whole
   community-moderation surface at once: the "Report climb" action, the More-tab
   Moderation row, and the community moderation status on a climb.
+  `spray-walls` is a POSITIVE rollout flag (read through
+  `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall
+  surface: the "Add a spray wall" tile on the boards picker and the
+  `/boards/spray/*` routes behind it. Off is the direction that matters — a tile
+  that flickers in for the first frames of a cold open is worse than one that
+  arrives a beat late.
+
+  **The rollout, and what gates each step.** Testers first (the on-device
+  override, More → Feature Flags), then 10 %, then everyone. Step 2 needs
+  `SPRAY_ROLLOUT_GATES.detectionCorrectionRate` ≤ 0.15 over `Spray Holds
+  Reviewed` where `hadCandidates` is true, plus `Spray Wall Upload Finished`
+  `outcome: 'ok'` ≥ 0.95; step 3 needs `SPRAY_ROLLOUT_GATES.resetCommitRate`
+  ≥ 0.6 — resets applied ÷ resets previewed, because an owner who previews a
+  reset and never applies it has been shown something they do not believe. Both
+  ratios are functions in `packages/shared/analytics/src/spray-wall-events.ts`
+  rather than prose in a dashboard description, so the doc and the code cannot
+  drift. Stepping back is just setting the flag false: nothing it gates writes
+  anything a rollback has to undo, and a wall already created stays created.
+  Full table: `docs/spray-walls.md` → "Rolling the flag out".
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,
