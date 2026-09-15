@@ -210,6 +210,7 @@ const WOODS_CAPABILITIES: BoardCapabilities = {
  */
 const SPRAY_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
+  angleBoundClimbs: false,
   climbCreation: true,
   explicitClimbRules: false,
   multiFrameClimbs: false,
