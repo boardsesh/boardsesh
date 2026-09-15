@@ -26,7 +26,14 @@ runs:
         java-version: '21'
 
     - name: Setup Android SDK
+      # `packages: ''` is REQUIRED, not tidiness. setup-android@v3's default is
+      # `tools platform-tools`, and Google removed the obsolete `tools` package from
+      # the SDK repository, so the default now dies on `Warning: Failed to find
+      # package 'tools'` before any SDK component is installed. The next step
+      # installs what the build actually needs.
       uses: android-actions/setup-android@v3
+      with:
+        packages: ''
 
     - name: Accept licenses and install SDK components
       shell: bash
