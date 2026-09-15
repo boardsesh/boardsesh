@@ -2,7 +2,7 @@ import { eq, and, desc, sql, or, isNull } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
@@ -153,6 +153,28 @@ export const activityFeedQueries = {
         WHERE hidden_climb.uuid = ${dbSchema.feedItems.metadata}->>'climbUuid'
           AND hidden_climb.is_hidden = true
       )`,
+    );
+
+    // …and the same read-time treatment for a spray wall that went private.
+    //
+    // `feed_items` is a MATERIALISED fan-out and `publishSocialEvent` runs AFTER
+    // the mutation's transaction commits, so `updateSprayWall`'s purge
+    // (`purgeSprayWallFeedItems`) cannot catch a row that is fanned out in the
+    // window between the visibility flip and the publish — it deletes rows that
+    // exist, and that one did not yet. Without a read gate those rows sit in every
+    // follower's feed with the climb's name, frames, grade and layout id, served
+    // straight from this table with no further look at the wall, forever.
+    //
+    // The reference form, because a feed row never joins `board_climbs`: it carries
+    // the climb uuid in its metadata. Pinned to `'spray'` rather than to
+    // `metadata->>'boardType'` so a row with no board type in its metadata is still
+    // gated by its uuid. Rows with no climb uuid at all (a follow, a session) match
+    // nothing and pass through.
+    conditions.push(
+      sprayReferenceVisibilityCondition(
+        { boardType: sql`'spray'`, climbUuid: sql`${dbSchema.feedItems.metadata}->>'climbUuid'` },
+        myUserId,
+      ),
     );
 
     if (validatedInput.boardUuid) {

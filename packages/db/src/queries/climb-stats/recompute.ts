@@ -3,7 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsOf } from '../util/rows';
 import { setSerialPlan } from '../util/serial-plan';
 import { blendedQualityAverageSql } from './quality-blend';
-import { deriveGradeFromTicksSql, statsRowCarriesRealCatalogDataSql } from './real-catalog-data';
+import { deriveGradeFromTicksSql, ownedGradeIsOursSql, statsRowCarriesRealCatalogDataSql } from './real-catalog-data';
 
 // Any drizzle-orm PgDatabase (postgres-js client, the script client, the
 // Neon HTTP client the web app uses) and the PgTransaction handle backend
@@ -57,9 +57,10 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  *     tick-derived crowns this rule used to allow.)
  *
  * difficulty_average / display_difficulty / tick_graded_at: derived from
- * flash/send ticks when the climb is Boardsesh-owned OR deriveGradeFromTicksSql
- * (real-catalog-data.ts) says the grade is ours to write: not MoonBoard, and
- * the row either has no grade or carries tick_graded_at. The marker is stamped
+ * flash/send ticks when ownedGradeIsOursSql (the climb is Boardsesh-owned and not
+ * on a spray wall, whose setter grade is seeded and authoritative) OR
+ * deriveGradeFromTicksSql (real-catalog-data.ts) says the grade is ours to write:
+ * not MoonBoard, and the row either has no grade or carries tick_graded_at. The marker is stamped
  * now() AT TIME ZONE 'UTC' (zoneless column beside ISO-string upstream stamps)
  * on every derive that yields a grade, and cleared when the last graded tick
  * goes.
@@ -376,7 +377,8 @@ export async function recomputeClimbStats(
           ) latest
       ),
       owner AS (
-        SELECT bc.user_id IS NOT NULL AS boardsesh_owned
+        SELECT bc.user_id IS NOT NULL AS boardsesh_owned,
+               ${ownedGradeIsOursSql('bc')} AS boardsesh_graded
           FROM board_climbs bc
          WHERE bc.board_type = ${boardType}
            AND bc.uuid       = ${climbUuid}
@@ -434,13 +436,13 @@ export async function recomputeClimbStats(
                -- Grade columns (#4798): derive when the climb is ours or the row's
                -- grade is ours to write; otherwise upstream's grade stands.
                difficulty_average = CASE
-                 WHEN COALESCE((SELECT boardsesh_owned FROM owner), FALSE)
+                 WHEN COALESCE((SELECT boardsesh_graded FROM owner), FALSE)
                    OR COALESCE((SELECT derive_from_ticks FROM grade_source), FALSE)
                    THEN agg.avg_difficulty
                  ELSE s.difficulty_average
                END,
                display_difficulty = CASE
-                 WHEN COALESCE((SELECT boardsesh_owned FROM owner), FALSE)
+                 WHEN COALESCE((SELECT boardsesh_graded FROM owner), FALSE)
                    OR COALESCE((SELECT derive_from_ticks FROM grade_source), FALSE)
                    THEN agg.avg_difficulty
                  ELSE s.display_difficulty
@@ -448,7 +450,7 @@ export async function recomputeClimbStats(
                -- Provenance marker: set when a grade was derived, cleared when the
                -- derive yields nothing. UTC wall time, like the upstream stamps.
                tick_graded_at = CASE
-                 WHEN COALESCE((SELECT boardsesh_owned FROM owner), FALSE)
+                 WHEN COALESCE((SELECT boardsesh_graded FROM owner), FALSE)
                    OR COALESCE((SELECT derive_from_ticks FROM grade_source), FALSE)
                    THEN (CASE WHEN agg.avg_difficulty IS NULL THEN NULL ELSE (now() AT TIME ZONE 'UTC') END)
                  ELSE s.tick_graded_at
@@ -703,13 +705,13 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
              quality_normalized = CASE WHEN owned.boardsesh_owned THEN TRUE              ELSE s.quality_normalized END,
              -- Grade columns (#4798): derive when the climb is ours or the row's
              -- grade is ours to write; otherwise upstream's grade stands.
-             difficulty_average = CASE WHEN owned.boardsesh_owned OR ${deriveGradeFromTicksSql('s')}
+             difficulty_average = CASE WHEN owned.boardsesh_graded OR ${deriveGradeFromTicksSql('s')}
                                          THEN sd.avg_difficulty ELSE s.difficulty_average END,
-             display_difficulty = CASE WHEN owned.boardsesh_owned OR ${deriveGradeFromTicksSql('s')}
+             display_difficulty = CASE WHEN owned.boardsesh_graded OR ${deriveGradeFromTicksSql('s')}
                                          THEN sd.avg_difficulty ELSE s.display_difficulty END,
              -- Provenance marker: set when a grade was derived, cleared when the
              -- derive yields nothing. UTC wall time, like the upstream stamps.
-             tick_graded_at     = CASE WHEN owned.boardsesh_owned OR ${deriveGradeFromTicksSql('s')}
+             tick_graded_at     = CASE WHEN owned.boardsesh_graded OR ${deriveGradeFromTicksSql('s')}
                                          THEN (CASE WHEN sd.avg_difficulty IS NULL THEN NULL ELSE (now() AT TIME ZONE 'UTC') END)
                                          ELSE s.tick_graded_at END
         FROM keys k
@@ -726,7 +728,12 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
                    (SELECT bc.user_id IS NOT NULL
                       FROM board_climbs bc
                      WHERE bc.board_type = k.board_type AND bc.uuid = k.climb_uuid),
-                   FALSE) AS boardsesh_owned
+                   FALSE) AS boardsesh_owned,
+                 COALESCE(
+                   (SELECT ${ownedGradeIsOursSql('bc')}
+                      FROM board_climbs bc
+                     WHERE bc.board_type = k.board_type AND bc.uuid = k.climb_uuid),
+                   FALSE) AS boardsesh_graded
         ) owned ON TRUE
        WHERE s.board_type = k.board_type
          AND s.climb_uuid = k.climb_uuid
