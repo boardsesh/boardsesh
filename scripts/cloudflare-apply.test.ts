@@ -29,6 +29,7 @@ import {
   RSC_REQUEST_HEADER_NAME,
   SESSION_COOKIE_NAME_SUBSTRING,
   WWW_HOSTNAME,
+  WWW_HTML_CACHE_EXCLUDED_BOARDS,
   WWW_HTML_CACHE_LOCALE_PREFIXES,
   WWW_HTML_CACHE_ROOT_SEGMENTS,
   WWW_HTML_CACHE_RULE_DESCRIPTION,
@@ -1671,12 +1672,20 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
       '',
       ...supportedLocales.filter((locale) => locale !== defaultLocale).map((locale) => `/${locale}`),
     ]);
-    // `b` is the slug tree's root and has no board of its own.
-    expect([...WWW_HTML_CACHE_ROOT_SEGMENTS]).toEqual(['b', ...schemaBoards]);
+    // `b` is the slug tree's root and has no board of its own. A board www never
+    // serves on the numeric path (a spray wall, private by default) is excluded
+    // on purpose: edge-caching it would leak one visitor's wall page to the next.
+    const excluded: readonly string[] = WWW_HTML_CACHE_EXCLUDED_BOARDS;
+    const servedBoards = schemaBoards.filter((board) => !excluded.includes(board));
+    expect(servedBoards.length).toBeLessThan(schemaBoards.length);
+    expect([...WWW_HTML_CACHE_ROOT_SEGMENTS]).toEqual(['b', ...servedBoards]);
 
     for (const localePrefix of WWW_HTML_CACHE_LOCALE_PREFIXES) {
-      for (const rootSegment of ['b', ...schemaBoards]) {
+      for (const rootSegment of ['b', ...servedBoards]) {
         expect(expression).toContain(`starts_with(http.request.uri.path, "${localePrefix}/${rootSegment}/")`);
+      }
+      for (const board of excluded) {
+        expect(expression).not.toContain(`starts_with(http.request.uri.path, "${localePrefix}/${board}/")`);
       }
     }
   });

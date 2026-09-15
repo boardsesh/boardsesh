@@ -378,6 +378,16 @@ export const WWW_HTML_CACHE_LOCALE_PREFIXES = ['', '/es', '/fr', '/de'] as const
  * fails if a board is added there and not here — a missed board only costs the
  * cache, but it costs it silently.
  */
+/**
+ * Boards the schema knows but www never serves under `/{board}/…`, so they must
+ * NOT be edge-cached: a spray wall is a climber's own wall, private or unlisted
+ * by default, reached at `/b/{slug}` and 404ed on the numeric path (SW-03,
+ * #5453). Caching its HTML at the edge would serve one visitor's wall page —
+ * presigned photo URL included — to the next anonymous visitor. The test below
+ * expects every schema board here EXCEPT these.
+ */
+export const WWW_HTML_CACHE_EXCLUDED_BOARDS = ['spray'] as const;
+
 export const WWW_HTML_CACHE_ROOT_SEGMENTS = [
   'b',
   'kilter',
