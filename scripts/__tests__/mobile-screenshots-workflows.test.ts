@@ -8,8 +8,8 @@ import { parse } from 'yaml';
  * The iOS screenshot run gates itself: one probe shard decides whether the other
  * eleven macOS runners are worth spending. That decision lives entirely in job
  * `needs`/`if` expressions, which nothing else type-checks or executes locally —
- * a single wrong `result ==` there either burns twelve runners on every nightly
- * or silently stops capturing anything at all. So the wiring is pinned here.
+ * a single wrong `result ==` there either burns twelve runners on every run or
+ * silently stops capturing anything at all. So the wiring is pinned here.
  */
 
 const IOS_WORKFLOW_PATH = '.github/workflows/mobile-screenshots-ios.yml';

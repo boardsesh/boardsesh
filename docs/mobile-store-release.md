@@ -191,9 +191,8 @@ Publishing is manual today: dispatch with `publish_baseline: true`
 capture, so a run that deliberately retargets `render_mode` or `boards` cannot
 silently redefine "unchanged" for everyone else. The `workflow_run` trigger (a
 later PR in this series) will publish automatically after each green full
-capture; the nightly `schedule` cron stays capture-only and never publishes (it
-is being removed in #5320). `upload: true` is unchanged and still pushes the
-freshly captured set to App Store Connect.
+capture. `upload: true` is unchanged and still pushes the freshly captured set
+to App Store Connect.
 
 The iOS `release_notes.txt` is pushed by Mobile Store Metadata. Android release
 notes ship with the AAB from each
