@@ -12,6 +12,8 @@ import styles from './help.module.css';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 const GITHUB_ISSUES_URL = 'https://github.com/boardsesh/boardsesh/issues';
+// Anchor for /help#climb-counts, linked from docs/kilter-sync.md.
+const CLIMB_COUNTS_SECTION_ID = 'climb-counts';
 
 const CTA_SX = {
   borderRadius: `${themeTokens.borderRadius.full}px`,
@@ -24,15 +26,17 @@ const CTA_SX = {
 } as const;
 
 type SectionProps = {
+  /** Optional anchor id, so a section can be linked to directly. */
+  id?: string;
   title: string;
   intro: string;
   items: string[];
   children?: React.ReactNode;
 };
 
-function Section({ title, intro, items, children }: SectionProps) {
+function Section({ id, title, intro, items, children }: SectionProps) {
   return (
-    <Box component="section" className={styles.section}>
+    <Box component="section" id={id} className={styles.section}>
       <Typography variant="h2" className={styles.sectionTitle}>
         {title}
       </Typography>
@@ -119,6 +123,13 @@ export default function HelpContent() {
             </MuiLink>
           </Typography>
         </Section>
+
+        <Section
+          id={CLIMB_COUNTS_SECTION_ID}
+          title={t('help.climbCounts.title')}
+          intro={t('help.climbCounts.intro')}
+          items={[t('help.climbCounts.item1'), t('help.climbCounts.item2'), t('help.climbCounts.item3')]}
+        />
 
         <Box component="section" className={styles.section}>
           <Typography variant="h2" className={styles.sectionTitle}>

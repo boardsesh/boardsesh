@@ -175,6 +175,55 @@ The endpoint paths read off the APK were partly wrong; verified live against a r
 
 Wire JSON is **camelCase**. Across 19 listed layouts the catalog is ~424k climbs (all distinct; each climb has exactly one layout); ~80% already exist in `board_climbs` by UUID (case-insensitive).
 
+### Why Kilter's app shows more climbs than Boardsesh
+
+Climbers compare the two apps and see Kilter's number at roughly double ours: about 36k climbs on an 8x12 Kilter Homewall Full Ride in Kilter's app, about 18k in Boardsesh. Both apps have the same climbs. The difference is the counting unit.
+
+- **Boardsesh counts climbs.** The "Show N climbs" total comes from [`packages/backend/src/db/queries/climbs/count-climbs.ts`](../packages/backend/src/db/queries/climbs/count-climbs.ts). It LEFT JOINs `board_climb_stats` on its key at the one angle being browsed (`climb_uuid`, `board_type`, `angle`), so each climb contributes one row and `count(*)` is a count of distinct climbs.
+- **Kilter's app looks like it counts (climb, angle) pairs.** We measured our own data, not their code. Counting our stat rows one per (climb, angle) gives 36,000 on the 8x12, which is what their app shows, and 49,892 on the 10x12 against the ~50.6k reported there — within about 1.5%. That is what a per-(climb, angle) count does. A climb with stats at 40° and at 45° is two entries, so the ratio depends on how spread out a board's ascents are.
+
+Measured on prod, 2026-09-15, Kilter Homewall (`layout_id = 8`), `is_listed AND NOT is_draft AND NOT is_hidden`, all frame counts on both sides:
+
+| Size | `size_id` | Distinct climbs | `board_climb_stats` rows | Rows per climb | Kilter's app |
+| --- | --- | --- | --- | --- | --- |
+| 8x12 Full Ride | 23 | 18,335 | 36,000 | 1.96x | ~36k |
+| 10x12 Full Ride | 25 | 28,671 | 49,892 | 1.74x | ~50.6k |
+
+One caveat on the row counts: a few stat rows exist only because someone logged a tick in Boardsesh, not because Kilter sent them. Those are the rows with `upstream_synced_at IS NULL` — 114 of the 36,000 on the 8x12 (0.3%) and 216 of the 49,892 on the 10x12. Too few to move the ratio, but the row count is not purely Kilter's own data.
+
+To re-check, run both queries read-only and swap the `size_id`. They share the same climb predicates, so the only difference is what gets counted. Distinct climbs:
+
+```sql
+SELECT count(*)
+FROM board_climbs c
+WHERE c.board_type = 'kilter'
+  AND c.layout_id = 8
+  AND c.compatible_size_ids @> ARRAY[23]::int[]
+  AND c.is_listed = true
+  AND c.is_draft = false
+  AND c.is_hidden = false;
+```
+
+The same climbs counted once per angle:
+
+```sql
+SELECT count(*)
+FROM board_climbs c
+JOIN board_climb_stats s
+  ON s.board_type = c.board_type
+ AND s.climb_uuid = c.uuid
+WHERE c.board_type = 'kilter'
+  AND c.layout_id = 8
+  AND c.compatible_size_ids @> ARRAY[23]::int[]
+  AND c.is_listed = true
+  AND c.is_draft = false
+  AND c.is_hidden = false;
+```
+
+The in-app filter defaults to boulders only (`frames_count = 1 OR frames_count IS NULL`, from `createClimbFilters`), so the button reads a little lower than the table: 18,296 climbs over 35,843 stat rows on the 8x12, and 28,602 over 49,693 on the 10x12. Add `AND (c.frames_count = 1 OR c.frames_count IS NULL)` to both queries to reproduce those. Picking "Both" under Climb Type adds the routes back.
+
+Climbers see this explained in two places: the Help page section at `/help#climb-counts`, and a one-line note under the Show button in the mobile filter sheet on Kilter boards.
+
 ### Cooldown + piggyback
 
 The per-board cooldown is persisted in `board_shared_syncs` (default 1h via
