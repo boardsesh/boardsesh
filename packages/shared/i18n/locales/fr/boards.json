@@ -97,7 +97,8 @@
       "pinAria": "Épingler {{name}}",
       "unpinAria": "Désépingler {{name}}",
       "pinnedBadgeAria": "Épinglée",
-      "pinError": "Impossible de mettre à jour tes boards épinglées"
+      "pinError": "Impossible de mettre à jour tes boards épinglées",
+      "addWallTile": "Mur spray"
     },
     "create": {
       "screenTitle": "Configure ta board",
@@ -747,6 +748,78 @@
     },
     "empty": {
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."
+    }
+  },
+  "sprayWizard": {
+    "screenTitle": "Ajouter un mur de spray",
+    "stepCounter": "Étape {{current}} sur {{total}}",
+    "back": "Retour",
+    "meta": {
+      "title": "C'est quoi ce mur ?",
+      "body": "Donne-lui un nom, dis son dévers et choisis qui peut le voir.",
+      "namePlaceholder": "Mur du garage",
+      "angle": "Angle",
+      "angleHint": "Degrés par rapport à la verticale, de {{min}} à {{max}}. Figé une fois publié.",
+      "publicHint": "Désactivé, le mur et sa photo restent pour toi seul.",
+      "next": "Choisir une photo"
+    },
+    "photo": {
+      "title": "Photographie le mur",
+      "body": "Place-toi bien en face, shoote en 1x et cadre tout le mur. Chaque prise que tu poses vit sur ces pixels.",
+      "library": "Choisir une photo",
+      "camera": "Prendre une photo",
+      "pickAnother": "Choisir une autre photo",
+      "next": "Suivant",
+      "libraryDenied": "Boardsesh a besoin de ta photothèque pour ajouter un mur.",
+      "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un mur.",
+      "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre."
+    },
+    "anchors": {
+      "title": "Marque les coins",
+      "body": "Fais glisser les quatre cercles sur les coins du mur. Passe si tu as shooté bien en face.",
+      "hint": "En haut à gauche, en haut à droite, en bas à droite, en bas à gauche.",
+      "crossed": "Ces coins se croisent. Place-les autour du mur dans l'ordre.",
+      "cornerTopLeft": "Coin en haut à gauche",
+      "cornerTopRight": "Coin en haut à droite",
+      "cornerBottomRight": "Coin en bas à droite",
+      "cornerBottomLeft": "Coin en bas à gauche",
+      "use": "Utiliser ces coins",
+      "skip": "Passer pour l'instant",
+      "clear": "Recommencer les coins"
+    },
+    "upload": {
+      "title": "Envoi de ta photo",
+      "working": "Envoi de ta photo…",
+      "percent": "Envoyé à {{percent}} %",
+      "failed": "La photo n'est pas passée.",
+      "retry": "Réessayer"
+    },
+    "detect": {
+      "title": "Recherche des prises",
+      "working": "Recherche des prises…",
+      "tiles": "Passe {{done}} sur {{total}}"
+    },
+    "review": {
+      "found": "{{value}} prises à vérifier",
+      "nothingFound": "Rien trouvé. Dessine les prises toi-même.",
+      "manualOnly": "Cette version ne peut pas proposer de prises. Dessine-les toi-même.",
+      "detectionFailed": "La recherche de prises a échoué. Dessine-les toi-même.",
+      "done": "Terminé"
+    },
+    "publish": {
+      "title": "Ajoute-le à tes boards",
+      "body": "Tes prises sont enregistrées. Publie le mur et tu peux commencer à ouvrir.",
+      "cta": "Ajouter ce mur",
+      "failed": "La publication du mur a échoué."
+    },
+    "done": {
+      "body": "Préparation de ton mur…"
+    },
+    "leave": {
+      "title": "Laisser ce mur pour l'instant ?",
+      "body": "Ton mur et sa photo sont enregistrés. Tu reprendras où tu t'es arrêté.",
+      "stay": "Continuer",
+      "go": "Quitter"
     }
   }
 }

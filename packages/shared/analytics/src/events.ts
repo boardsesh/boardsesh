@@ -397,6 +397,32 @@ export const SHARED_EVENTS = {
   // (there is no existing board to switch to), so they never convert to
   // ReusedExisting — split on `source` before reading that ratio.
   BoardDuplicatePrompted: 'Board Duplicate Prompted',
+  // Spray walls — the add-a-wall funnel (epic #5346, SW-09). Four steps, each
+  // fired once per wall, so the drop-off between them is readable without a
+  // per-gesture event: picking the photo, the upload landing, detection
+  // settling, and the holds being saved. `Board Created` with
+  // `boardType: 'spray'` closes the funnel and is the SAME event every other
+  // board type fires — a wall is a board, and a spray-only variant would hide
+  // walls from every board-creation number we already watch.
+  //
+  // Nothing here carries the photo, its URI or the wall's name: a wall photo is
+  // the inside of somebody's home.
+  // Props: { source: 'library' | 'camera' }.
+  SprayWallPhotoPicked: 'Spray Wall Photo Picked',
+  // Props: { outcome: 'ok' | 'failed', durationMs, determinate, attempt }.
+  // `determinate` says whether the upload could report bytes or fell back to an
+  // indeterminate bar — the two feel different to a climber on a slow link, and
+  // only one of them is fixable.
+  SprayWallUploadFinished: 'Spray Wall Upload Finished',
+  // Props: { outcome: 'ok' | 'unavailable' | 'failed', candidateCount, durationMs }.
+  // `unavailable` is the no-model branch (no inference runtime in this binary,
+  // or the weights would not download) and it is a SUCCESS for the flow: it
+  // lands in the editor in manual mode. Read it against `ok` to see what
+  // fraction of the fleet is placing every hold by hand.
+  SprayWallDetectionFinished: 'Spray Wall Detection Finished',
+  // Props: { holdCount, hadCandidates }. What the review step actually saved —
+  // the number the detector, and later the retrain flywheel (SW-20), is judged on.
+  SprayHoldsReviewed: 'Spray Holds Reviewed',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

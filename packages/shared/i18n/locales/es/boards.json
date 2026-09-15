@@ -97,7 +97,8 @@
       "pinAria": "Fijar {{name}}",
       "unpinAria": "Desfijar {{name}}",
       "pinnedBadgeAria": "Fijado",
-      "pinError": "No se pudieron actualizar tus plafones fijados"
+      "pinError": "No se pudieron actualizar tus plafones fijados",
+      "addWallTile": "Muro spray"
     },
     "create": {
       "screenTitle": "Configura tu plafón",
@@ -747,6 +748,78 @@
     },
     "empty": {
       "noPhoto": "Este muro todavía no tiene foto que editar."
+    }
+  },
+  "sprayWizard": {
+    "screenTitle": "Añadir un muro de spray",
+    "stepCounter": "Paso {{current}} de {{total}}",
+    "back": "Atrás",
+    "meta": {
+      "title": "¿Qué muro es este?",
+      "body": "Ponle nombre, di cuánto se inclina y elige quién puede verlo.",
+      "namePlaceholder": "Muro del garaje",
+      "angle": "Ángulo",
+      "angleHint": "Grados respecto a la vertical, de {{min}} a {{max}}. Queda fijo al publicar.",
+      "publicHint": "Apagado, el muro y su foto son solo tuyos.",
+      "next": "Elegir una foto"
+    },
+    "photo": {
+      "title": "Fotografía el muro",
+      "body": "Ponte de frente, dispara a 1x y encuadra el muro entero. Cada presa que pongas vive en estos píxeles.",
+      "library": "Elegir una foto",
+      "camera": "Hacer una foto",
+      "pickAnother": "Elegir otra foto",
+      "next": "Siguiente",
+      "libraryDenied": "Boardsesh necesita tu galería para añadir un muro.",
+      "cameraDenied": "Boardsesh necesita tu cámara para fotografiar un muro.",
+      "failed": "Esa foto no se abre. Prueba con otra."
+    },
+    "anchors": {
+      "title": "Marca las esquinas",
+      "body": "Arrastra los cuatro círculos a las esquinas del muro. Sáltatelo si disparaste de frente.",
+      "hint": "Arriba izquierda, arriba derecha, abajo derecha, abajo izquierda.",
+      "crossed": "Esas esquinas se cruzan entre sí. Colócalas alrededor del muro en orden.",
+      "cornerTopLeft": "Esquina superior izquierda",
+      "cornerTopRight": "Esquina superior derecha",
+      "cornerBottomRight": "Esquina inferior derecha",
+      "cornerBottomLeft": "Esquina inferior izquierda",
+      "use": "Usar estas esquinas",
+      "skip": "Saltar por ahora",
+      "clear": "Empezar las esquinas de nuevo"
+    },
+    "upload": {
+      "title": "Enviando tu foto",
+      "working": "Enviando tu foto…",
+      "percent": "Enviado {{percent}} %",
+      "failed": "La foto no llegó a subirse.",
+      "retry": "Reintentar"
+    },
+    "detect": {
+      "title": "Buscando presas",
+      "working": "Buscando presas…",
+      "tiles": "Pasada {{done}} de {{total}}"
+    },
+    "review": {
+      "found": "{{value}} presas por revisar",
+      "nothingFound": "No se encontró nada. Dibuja tú las presas.",
+      "manualOnly": "Esta versión no puede sugerir presas. Dibújalas tú.",
+      "detectionFailed": "La búsqueda de presas falló. Dibújalas tú.",
+      "done": "Listo"
+    },
+    "publish": {
+      "title": "Añádelo a tus plafones",
+      "body": "Tus presas están guardadas. Publica el muro y ya puedes empezar a equipar.",
+      "cta": "Añadir este muro",
+      "failed": "No se pudo publicar el muro."
+    },
+    "done": {
+      "body": "Preparando tu muro…"
+    },
+    "leave": {
+      "title": "¿Dejar este muro por ahora?",
+      "body": "Tu muro y su foto están guardados. Retómalo donde lo dejaste.",
+      "stay": "Seguir",
+      "go": "Salir"
     }
   }
 }

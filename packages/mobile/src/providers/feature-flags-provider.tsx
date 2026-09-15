@@ -124,6 +124,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Abort interactive GraphQL requests after 20 s so a hung server cannot pin a screen. Kill switch for marginal networks: set to false (sync keeps its own 30 s).',
   },
   {
+    key: 'spray-walls',
+    label: 'Spray walls',
+    description:
+      'The "Add a spray wall" tile on the boards picker and the /boards/spray/* routes behind it: photograph a wall, mark its corners, let the phone suggest holds, correct them, publish. A POSITIVE rollout flag — unresolved reads as off, so the tile never flickers in for the first frames of a cold open.',
+  },
+  {
     key: 'climb-moderation-kill',
     label: 'Disable climb reporting + moderation',
     description:
@@ -289,6 +295,21 @@ export function useInteractiveRequestDeadlineEnabled(): boolean {
  */
 export function useSharedSessionBrowseEnabled(): boolean {
   return useFeatureFlag('shared-session-browse') === true;
+}
+
+/**
+ * Gate for the spray-wall front door (epic #5346, SW-09): the picker tile and
+ * every `/boards/spray/*` route behind it.
+ *
+ * A POSITIVE rollout flag, and `=== true` is the whole contract: PostHog
+ * resolves asynchronously, so anything looser (`!== false`) would show the tile
+ * for the first frames of every cold open and let a deep link walk into the flow
+ * on a fleet the feature is not enabled for. Unresolved, absent and explicitly
+ * off all read the same — hidden — which is the only safe reading while a
+ * feature is dark.
+ */
+export function useSprayWallsEnabled(): boolean {
+  return useFeatureFlag('spray-walls') === true;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {
