@@ -11,6 +11,7 @@ import { getPublicClientIp } from '../utils/client-ip';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';
 import { RenderQueueSaturatedError, ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
+import { createSprayOgCardDeps, renderSprayOgCard, type SprayOgCardDeps } from '../services/spray-og-card';
 import { logger } from '../utils/logger';
 
 const RATE_LIMIT_MAX = 120;
@@ -88,13 +89,21 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     throw error;
   }
 
+  const query = parsed.data;
+  const format: OutputFormat = query.format ? (normalizeOutputFormat(query.format) ?? 'jpeg') : 'jpeg';
+
+  // Spray walls (SW-16, #5449) are answered from the database, before the WASM
+  // availability check: the card is sharp + SVG over a fetched photograph, so a
+  // renderer that failed to boot has nothing to do with it and must not 503 it.
+  if (query.board_name === 'spray') {
+    await serveSprayOgCard(res, { layoutId: query.layout_id, frames: query.frames, format });
+    return;
+  }
+
   if (!(await ensureBoardRendererAvailable())) {
     sendJson(res, 503, { error: 'Board renderer unavailable' });
     return;
   }
-
-  const query = parsed.data;
-  const format: OutputFormat = query.format ? (normalizeOutputFormat(query.format) ?? 'jpeg') : 'jpeg';
 
   try {
     const totalT0 = performance.now();
@@ -163,5 +172,89 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     }
     logger.error('[OGClimb] render failed:', error);
     sendJson(res, 500, { error: 'Render failed' });
+  }
+}
+
+// Resolved once. The deps close over the drizzle client and the media bucket,
+// neither of which changes for the life of the process.
+let sprayOgCardDeps: SprayOgCardDeps | null = null;
+function getSprayOgCardDeps(): SprayOgCardDeps {
+  sprayOgCardDeps ??= createSprayOgCardDeps();
+  return sprayOgCardDeps;
+}
+
+/**
+ * A spray-wall climb's card: public walls only, everything else a 404.
+ *
+ * 404 rather than 403 or a generic card because this URL is guessable — layout
+ * ids are sequential — and any answer other than "there is nothing here" tells a
+ * stranger which ids are somebody's home wall. A private wall and a nonexistent
+ * one are indistinguishable from outside.
+ *
+ * The 200 is daily rather than `immutable`. Unlike every other card on this
+ * endpoint, the bytes are NOT determined by the query string: a reset re-points
+ * the photograph and the holds under an unchanged `layout_id` + `frames`, so a
+ * year-long immutable header would pin last year's wall at the edge forever.
+ */
+async function serveSprayOgCard(
+  res: ServerResponse,
+  params: { layoutId: number; frames: string; format: OutputFormat },
+): Promise<void> {
+  const totalT0 = performance.now();
+  let result: Awaited<ReturnType<typeof renderSprayOgCard>>;
+  try {
+    result = await renderSprayOgCard(params, getSprayOgCardDeps());
+  } catch (error) {
+    // A photo fetch or a sharp decode that blew up is ours, not the caller's,
+    // and it must not leak whether the wall existed.
+    logger.error('[OGClimb] spray render failed:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ error: 'Render failed' }));
+    return;
+  }
+
+  if (result.kind === 'not-found') {
+    // Never cached: a wall its owner makes public tomorrow must not stay a 404
+    // at the edge, and a cached 404 on a shareable URL is the exact failure
+    // docs/og-climb.md warns about.
+    res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+    return;
+  }
+
+  const totalMs = performance.now() - totalT0;
+  const serverTiming = [
+    `total;dur=${totalMs.toFixed(1)}`,
+    `photo;dur=${result.timings.photoMs.toFixed(1)}`,
+    `compose;dur=${result.timings.composeMs.toFixed(1)}`,
+  ].join(', ');
+
+  // Same spread as the catalogue path: the Vercel header is meaningless here.
+  const { 'Vercel-CDN-Cache-Control': _vercelOnlyHeader, ...ogImageHeaders } = createOgImageHeaders({
+    contentType: result.contentType,
+    version: null,
+    unversionedTier: 'daily',
+    serverTiming,
+  });
+  res.writeHead(200, {
+    ...ogImageHeaders,
+    'Content-Length': result.buffer.length,
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(result.buffer);
+
+  const logPayload = {
+    boardName: 'spray',
+    layoutId: params.layoutId,
+    totalMs: Math.round(totalMs),
+    photoMs: Math.round(result.timings.photoMs),
+    composeMs: Math.round(result.timings.composeMs),
+    bytes: result.buffer.length,
+    format: params.format,
+  };
+  if (totalMs > SLOW_RENDER_MS) {
+    logger.warn('[OGClimb] served spray (slow)', logPayload);
+  } else {
+    logger.info('[OGClimb] served spray', logPayload);
   }
 }
