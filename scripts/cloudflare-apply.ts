@@ -54,12 +54,14 @@ import type {
   DnsRecordDesired,
   FullyManagedDnsRecordDesired,
   R2BucketDesired,
+  R2Cors,
   SslMode,
 } from '../infra/cloudflare/config';
 import {
   MANAGED_RULE_PHASES,
   buildPlan,
   diffR2Bucket,
+  r2CorsMatches,
   resolveRulePhase,
   upsertCacheRule,
 } from '../infra/cloudflare/plan';
@@ -76,6 +78,7 @@ const TOKEN_SCOPES = [
   'Zone.WAF Edit              — create/update the two crawler rules',
   'Zone.Rate Limit Edit       — create/update the climb-view rate-limit rule (http_ratelimit phase)',
   'Zone.Dynamic Redirect Edit — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
+  'Zone.Transform Rules Edit  — create/update the assets CORS response-header rule\n                               (http_response_headers_transform phase)',
   'Zone.Zone Settings Read    — read the SSL/TLS mode',
   'Zone.Zone Settings Edit    — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
   'Account.Workers R2 Storage Edit — create R2 buckets + attach their custom domains (Read is not enough:\n                               it detects drift but cannot converge it). Needs CLOUDFLARE_ACCOUNT_ID too.',
@@ -227,6 +230,15 @@ interface R2CustomDomainListing {
   domains?: { domain: string; enabled?: boolean }[];
 }
 
+/** Cloudflare's R2 CORS shape: GET and PUT both use it. */
+interface R2CorsListing {
+  rules?: {
+    allowed?: { origins?: string[]; methods?: string[]; headers?: string[] };
+    exposeHeaders?: string[];
+    maxAgeSeconds?: number;
+  }[];
+}
+
 /**
  * Read the account's R2 buckets and the custom domain attached to each declared one.
  *
@@ -241,6 +253,17 @@ interface R2CustomDomainListing {
  */
 export function isAuthorizationError(error: unknown): boolean {
   return error instanceof CloudflareApiRequestError && (error.status === 401 || error.status === 403);
+}
+
+/**
+ * True for "that resource does not exist yet".
+ *
+ * Distinguished from an authorization failure because for CORS they mean the
+ * same thing operationally (no policy to read) but not diagnostically: a 404 is
+ * the normal state of a brand-new bucket, a 403 is a token that needs a scope.
+ */
+export function isNotFoundError(error: unknown): boolean {
+  return error instanceof CloudflareApiRequestError && error.status === 404;
 }
 
 /**
@@ -278,7 +301,7 @@ async function fetchR2State(
   const state = new Map<string, LiveR2Bucket>();
   for (const bucket of desired) {
     if (!existing.has(bucket.name)) {
-      state.set(bucket.name, { name: bucket.name, exists: false, customDomains: [] });
+      state.set(bucket.name, { name: bucket.name, exists: false, customDomains: [], cors: null });
       continue;
     }
     const domains = await cfRequest<R2CustomDomainListing>(
@@ -290,9 +313,54 @@ async function fetchR2State(
       name: bucket.name,
       exists: true,
       customDomains: (domains.domains ?? []).map((entry) => entry.domain),
+      cors: bucket.cors ? await fetchR2Cors(token, accountId, bucket.name) : null,
     });
   }
   return state;
+}
+
+/**
+ * Read a bucket's CORS policy, or null if it has none / cannot be read.
+ *
+ * A bucket that has never been given a policy answers 404 here, which is a
+ * normal state and not an error — it is exactly what the new bucket looks like
+ * before the first apply. Authorization failures degrade the same way the rest
+ * of the R2 path does (see fetchR2State): report null, let the diff say "will
+ * set", and let the PUT be the thing that fails loudly if the scope is missing.
+ */
+async function fetchR2Cors(token: string, accountId: string, bucketName: string): Promise<R2Cors | null> {
+  try {
+    const response = await cfRequest<R2CorsListing>(
+      token,
+      'GET',
+      `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucketName)}/cors`,
+    );
+    const rule = response.rules?.[0];
+    if (!rule) return null;
+    return {
+      allowedOrigins: rule.allowed?.origins ?? [],
+      allowedMethods: (rule.allowed?.methods ?? []) as R2Cors['allowedMethods'],
+      maxAgeSeconds: rule.maxAgeSeconds ?? 0,
+    };
+  } catch (error) {
+    if (isNotFoundError(error) || isAuthorizationError(error)) return null;
+    throw error;
+  }
+}
+
+async function putR2Cors(token: string, accountId: string, bucketName: string, cors: R2Cors): Promise<void> {
+  await cfRequest(token, 'PUT', `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucketName)}/cors`, {
+    rules: [
+      {
+        allowed: {
+          origins: [...cors.allowedOrigins],
+          methods: [...cors.allowedMethods],
+        },
+        maxAgeSeconds: cors.maxAgeSeconds,
+      },
+    ],
+  });
+  console.log(`[cf-apply] set CORS on R2 bucket ${bucketName}`);
 }
 
 async function applyR2Bucket(
@@ -321,6 +389,10 @@ async function applyR2Bucket(
     );
     console.log(`[cf-apply] attached ${desired.customDomain} to R2 bucket ${desired.name}`);
   }
+
+  if (desired.cors && !r2CorsMatches(live.cors, desired.cors)) {
+    await putR2Cors(token, accountId, desired.name, desired.cors);
+  }
 }
 
 async function fetchDnsRecord(token: string, zoneId: string, name: string): Promise<LiveDnsRecord | null> {
@@ -333,7 +405,12 @@ async function fetchDnsRecord(token: string, zoneId: string, name: string): Prom
 }
 
 /** A phase's entrypoint ruleset. Returns an empty rule set when the phase has no ruleset yet (404). */
-async function fetchPhaseRules(token: string, zoneId: string, phase: string): Promise<RulesetRule[]> {
+async function fetchPhaseRules(
+  token: string,
+  zoneId: string,
+  phase: string,
+  optional = false,
+): Promise<RulesetRule[] | null> {
   try {
     const ruleset = await cfRequest<{ id: string; rules?: RulesetRule[] }>(
       token,
@@ -344,6 +421,10 @@ async function fetchPhaseRules(token: string, zoneId: string, phase: string): Pr
   } catch (error) {
     // A phase with no ruleset 404s on the entrypoint — that's an empty rule set, not a failure.
     if (error instanceof CloudflareApiRequestError && error.status === 404) return [];
+    // `null` = "could not read", which is NOT the same as "empty" and must not
+    // be diffed as if it were. Only phases the registry marks optional get this;
+    // everything else still fails loudly on a lost scope.
+    if (optional && isAuthorizationError(error)) return null;
     throw error;
   }
 }
@@ -378,7 +459,7 @@ async function fetchLiveState(
     // the diff comparing against an empty array it never fetched.
     Promise.all(
       MANAGED_RULE_PHASES.map(
-        async (phase) => [phase.resource, await fetchPhaseRules(token, zoneId, phase.phase)] as const,
+        async (phase) => [phase.resource, await fetchPhaseRules(token, zoneId, phase.phase, phase.optional)] as const,
       ),
     ),
     fetchSslMode(token, zoneId),
@@ -387,7 +468,20 @@ async function fetchLiveState(
   // Built straight from the registry: no second place that has to learn about a
   // new phase. The cast is sound because ALL_PHASES_REGISTERED in plan.ts fails
   // the build if a resource has no registry entry, so every key is present.
-  const rules = Object.fromEntries(phaseRules) as LiveState['rules'];
+  const unavailableRulePhases = new Set(
+    phaseRules.filter(([, liveRules]) => liveRules === null).map(([resource]) => resource),
+  );
+  for (const resource of unavailableRulePhases) {
+    const phase = MANAGED_RULE_PHASES.find((candidate) => candidate.resource === resource);
+    console.warn(
+      `[cf-apply] Token cannot read the ${phase?.phase ?? resource} phase — skipping ${resource}. ` +
+        'Zone config for every other phase was still applied. Grant the matching scope (keeping every existing ' +
+        'one: editing a token REPLACES all its policies) to manage it here.',
+    );
+  }
+  const rules = Object.fromEntries(
+    phaseRules.map(([resource, liveRules]) => [resource, liveRules ?? []]),
+  ) as LiveState['rules'];
   const dnsRecords: Record<string, LiveDnsRecord | null> = {};
   for (const [desiredRecord, liveRecord] of fetchedDnsRecords) {
     if (!liveRecord && desiredRecord.management === 'proxied-only') {
@@ -398,7 +492,7 @@ async function fetchLiveState(
     }
     dnsRecords[desiredRecord.name] = liveRecord;
   }
-  return { dnsRecords, rules, sslMode, flattenAllCnames };
+  return { dnsRecords, rules, sslMode, flattenAllCnames, unavailableRulePhases };
 }
 
 export function fullyManagedDnsBody(desired: FullyManagedDnsRecordDesired): Record<string, unknown> {

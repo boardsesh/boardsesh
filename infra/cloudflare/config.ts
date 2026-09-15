@@ -168,6 +168,36 @@ export const RATE_LIMIT_RULE_PHASE = 'http_ratelimit';
  */
 export const DYNAMIC_REDIRECT_RULE_PHASE = 'http_request_dynamic_redirect';
 
+/**
+ * The rulesets phase that holds Response Header Transform Rules.
+ *
+ * Needed because R2 and Tigris disagree about CORS in a way Cloudflare's cache
+ * turns into a bug. Measured 2026-09-15:
+ *
+ *   assets.boardsesh.com (Tigris)  → `Access-Control-Allow-Origin: *` on EVERY
+ *                                    response, whether or not the request carried
+ *                                    an `Origin` header.
+ *   media.boardsesh.com  (R2)      → no ACAO header at all, on any request.
+ *
+ * R2 emits CORS headers only in response to a request that carries `Origin`
+ * (Cloudflare's R2 CORS docs are explicit about this). The same objects are
+ * loaded both ways: `<img src>` sends no `Origin`, while
+ * `ensureImagesPreloaded` in packages/web/app/lib/board-render-worker/worker-manager.ts
+ * does a real `fetch()` for every board background. One cache key, two possible
+ * bodies-with-different-headers, and the `<img>` one wins the race as often as
+ * not — after which the `fetch()` fails CORS against a response with no ACAO.
+ *
+ * That failure is swallowed (`console.warn('Failed to preload background image')`),
+ * so the symptom is boards quietly rendering without backgrounds, per-colo,
+ * pinned for a year by `Cache-Control: immutable`, with no purge tooling and no
+ * `Zone.Cache Purge` scope on this token.
+ *
+ * Setting the header unconditionally at the edge removes the variance entirely:
+ * every cached copy carries ACAO, so it does not matter which request shape
+ * populated it.
+ */
+export const RESPONSE_HEADER_RULE_PHASE = 'http_response_headers_transform';
+
 /** Cloudflare SSL/TLS modes ordered weakest → strongest, for the "is the live mode weaker?" check. */
 export const SSL_MODE_STRENGTH = ['off', 'flexible', 'full', 'strict'] as const;
 export type SslMode = (typeof SSL_MODE_STRENGTH)[number];
@@ -322,6 +352,20 @@ export interface RedirectRuleDesired {
   enabled: boolean;
 }
 
+/**
+ * A Response Header Transform rule. `set` overwrites whatever the origin sent
+ * (or did not send), which is the point — see RESPONSE_HEADER_RULE_PHASE.
+ */
+export interface ResponseHeaderRuleDesired {
+  description: string;
+  expression: string;
+  action: 'rewrite';
+  action_parameters: {
+    headers: Record<string, { operation: 'set'; value: string }>;
+  };
+  enabled: boolean;
+}
+
 export interface CloudflareDesiredState {
   zoneName: string;
   dnsRecords: DnsRecordDesired[];
@@ -340,6 +384,8 @@ export interface CloudflareDesiredState {
   rateLimitRules: RateLimitRuleDesired[];
   /** Order is not significant: Cloudflare stops at the first matching redirect and there is only one. */
   redirectRules: RedirectRuleDesired[];
+  /** Order is not significant: matched by expression, like cache rules. */
+  responseHeaderRules: ResponseHeaderRuleDesired[];
   ssl: SslDesired;
 }
 
@@ -759,6 +805,67 @@ export const APEX_REDIRECT_TARGET_EXPRESSION = `concat("https://${WWW_HOSTNAME}"
 export const MEDIA_HOSTNAME = 'media.boardsesh.com';
 
 /**
+ * Where the R2 static-assets bucket is proved before `assets.boardsesh.com`
+ * points at it.
+ *
+ * The catalogue keys are `static/v1/<sha256>`: content-addressed, immutable,
+ * written only when missing and never deleted. So Tigris and R2 can hold the
+ * identical catalogue at the same time, and the publisher can upload and
+ * validate all 362 objects through this hostname — signed HEAD, public GET,
+ * SHA-256, MIME, cache headers, CORS — while every reader is still on Tigris.
+ * That dry run is what proves R2 before the cutover, not after.
+ */
+export const ASSETS_STAGING_HOSTNAME = 'assets-r2.boardsesh.com';
+
+/**
+ * CORS for a bucket of public images.
+ *
+ * `origins: ['*']` is deliberate, and tightening it to a list of our own origins
+ * would be a mistake. R2 echoes the matching origin back, so a list makes the
+ * response vary by request — and Cloudflare does not key its cache on `Vary`
+ * below Enterprise. One cached copy would then be served to every origin, which
+ * is either a CORS failure or a leak depending on which copy won. A constant `*`
+ * has no such variance. See RESPONSE_HEADER_RULE_PHASE for the other half of
+ * this problem.
+ */
+export const ASSETS_CACHE_RULE_DESCRIPTION = 'boardsesh:assets-edge-cache (managed by scripts/cloudflare-apply.ts)';
+
+/**
+ * Edge-cache the immutable asset catalogue.
+ *
+ * The objects already carry `public, max-age=31536000, immutable`, and most of
+ * them are `.webp`/`.png`, which Cloudflare caches by extension anyway. The rule
+ * exists for `static/v1/manifest.json`, whose extension is NOT on that default
+ * list, and because this zone has twice been bitten by relying on the default
+ * (the board-render route, and www's HTML). Declaring it is cheaper than
+ * rediscovering it.
+ *
+ * The `/static/v1/` literal is repeated rather than imported: infra/cloudflare
+ * has no workspace dependencies, by design.
+ */
+export const ASSETS_CACHE_EXPRESSION = `(http.host eq "${ASSETS_HOSTNAME}" and starts_with(http.request.uri.path, "/static/v1/"))`;
+
+export const ASSETS_CORS_HEADER_RULE_DESCRIPTION =
+  'boardsesh:assets-cors-header (managed by scripts/cloudflare-apply.ts)';
+
+/**
+ * Both hostnames, so the rule is already live and proven on staging before
+ * `assets.boardsesh.com` ever resolves to R2.
+ *
+ * Harmless on `assets.boardsesh.com` today: that record is grey-clouded, so its
+ * traffic never reaches Cloudflare's proxy and the rule simply does not match.
+ * It starts applying at the moment of the flip, which is exactly when it is
+ * needed.
+ */
+export const ASSETS_CORS_HEADER_EXPRESSION = `(http.host eq "${ASSETS_HOSTNAME}" or http.host eq "${ASSETS_STAGING_HOSTNAME}")`;
+
+export const PUBLIC_IMAGE_CORS: R2Cors = {
+  allowedOrigins: ['*'],
+  allowedMethods: ['GET', 'HEAD'],
+  maxAgeSeconds: 86_400,
+};
+
+/**
  * R2 buckets this repo owns, and whether each one is public.
  *
  * `customDomain` is the entire access-control story for an R2 bucket. R2
@@ -771,10 +878,23 @@ export const MEDIA_HOSTNAME = 'media.boardsesh.com';
  * Buckets are created when absent and NEVER deleted by this tool. Deleting
  * object storage is not something a converge loop should be able to do.
  */
+/** A bucket CORS policy, in the shape Cloudflare's R2 CORS API takes. */
+export interface R2Cors {
+  allowedOrigins: readonly string[];
+  allowedMethods: readonly ('GET' | 'HEAD' | 'PUT' | 'POST' | 'DELETE')[];
+  maxAgeSeconds: number;
+}
+
 export interface R2BucketDesired {
   name: string;
   /** Hostname serving this bucket publicly, or null when it must stay unreachable. */
   customDomain: string | null;
+  /**
+   * Bucket CORS policy. Omitted means "this repo does not manage CORS here" —
+   * NOT "no CORS" — so a bucket whose policy is set elsewhere is left alone
+   * rather than silently cleared.
+   */
+  cors?: R2Cors;
   /**
    * Cloudflare location hint, applied only at creation time and immutable
    * afterwards. Omitted lets Cloudflare choose on first write.
@@ -787,6 +907,15 @@ export const desiredR2Buckets: readonly R2BucketDesired[] = [
   { name: 'boardsesh-user-media', customDomain: MEDIA_HOSTNAME },
   // User data exports and MoonBoard OCR submissions. MUST stay domain-less.
   { name: 'boardsesh-user-private', customDomain: null },
+  // Repo-owned board art, icons and brand marks — the catalogue behind
+  // assets.boardsesh.com, moving off Tigris (which serves it HTTP/1.1 from a
+  // single region, measured 614 ms TTFB and 4.62 s for 24 images from Sydney,
+  // with no edge cache because a Tigris custom domain cannot be proxied).
+  //
+  // Still pointed at the staging hostname: this entry creates the bucket and
+  // lets the publisher prove it. `assets.boardsesh.com` moves in a separate
+  // change, after that dry run passes. See docs/static-assets.md.
+  { name: 'boardsesh-static-assets', customDomain: ASSETS_STAGING_HOSTNAME, cors: PUBLIC_IMAGE_CORS },
 ];
 
 export const desiredCloudflareState: CloudflareDesiredState = {
@@ -909,6 +1038,27 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       },
       enabled: true,
     },
+    // Appended rather than prepended: two fixtures in
+    // scripts/cloudflare-apply.test.ts address the og rule by index 0. Cache
+    // rules are matched by expression and their order carries no meaning (see
+    // the field comment on cacheRules), so the end is the right place.
+    {
+      description: ASSETS_CACHE_RULE_DESCRIPTION,
+      expression: ASSETS_CACHE_EXPRESSION,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
+        // Same shape as every other rule here: honour the origin's own
+        // Cache-Control, so the audit manifest's `max-age=60, must-revalidate`
+        // is respected and an error response with no Cache-Control never enters
+        // the edge cache at all.
+        edge_ttl: { mode: 'bypass_by_default' },
+        // Pin the browser TTL to the origin header so a zone-level Browser
+        // Cache TTL cannot undercut the 1-year immutable max-age.
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
   ],
   wafRules: [
     // MUST stay first — see the ordering contract on CloudflareDesiredState.wafRules.
@@ -977,6 +1127,19 @@ export const desiredCloudflareState: CloudflareDesiredState = {
           status_code: 301,
           target_url: { expression: APEX_REDIRECT_TARGET_EXPRESSION },
           preserve_query_string: true,
+        },
+      },
+      enabled: true,
+    },
+  ],
+  responseHeaderRules: [
+    {
+      description: ASSETS_CORS_HEADER_RULE_DESCRIPTION,
+      expression: ASSETS_CORS_HEADER_EXPRESSION,
+      action: 'rewrite',
+      action_parameters: {
+        headers: {
+          'access-control-allow-origin': { operation: 'set', value: '*' },
         },
       },
       enabled: true,

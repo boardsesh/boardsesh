@@ -65,6 +65,36 @@ describe('public static asset validation', () => {
     expect(() => assertPublicStaticAssetHeaders(asset, headers)).not.toThrow();
   });
 
+  it('accepts a Tigris response with no cf-ray while the origin is not Cloudflare', () => {
+    // Today's production shape. Asserting cf-ray unconditionally would fail
+    // every publish until the hostname actually moves.
+    const headers = new Headers({
+      'content-type': 'image/webp',
+      'content-length': String(asset.bytes),
+      'cache-control': 'public, max-age=31536000, immutable',
+      'access-control-allow-origin': '*',
+    });
+    expect(() => assertPublicStaticAssetHeaders(asset, headers, { expectCloudflare: false })).not.toThrow();
+  });
+
+  it('rejects a response with no cf-ray once the origin is an R2 custom domain', () => {
+    // The replacement for the "is it proxied?" DNS assertion, which R2 takes
+    // over the record from. No cf-ray means grey-clouded, detached, or back on
+    // Tigris — no edge cache and no CORS transform rule.
+    const headers = new Headers({
+      'content-type': 'image/webp',
+      'content-length': String(asset.bytes),
+      'cache-control': 'public, max-age=31536000, immutable',
+      'access-control-allow-origin': '*',
+    });
+    expect(() => assertPublicStaticAssetHeaders(asset, headers, { expectCloudflare: true })).toThrow(
+      'not served by Cloudflare',
+    );
+
+    headers.set('cf-ray', 'a3b4518338a32ffe-SYD');
+    expect(() => assertPublicStaticAssetHeaders(asset, headers, { expectCloudflare: true })).not.toThrow();
+  });
+
   it('rejects missing CORS and unsafe cache metadata', () => {
     const headers = new Headers({
       'content-type': 'image/webp',

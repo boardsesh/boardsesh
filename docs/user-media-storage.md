@@ -9,6 +9,7 @@ Where avatars, gym images, beta-video thumbnails and user data exports live, and
 | `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, and every `@<size>.jpg` resize variant |
 | `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `moonboard-ocr-test-data/<ts>-<uuid>/…` |
 | `boardsesh-board-snapshots` | `snapshots` | Tigris | Public on the bucket's virtual-host domain | `board-snapshots/**` — see `docs/board-snapshots.md` |
+| `boardsesh-static-assets` | — (published by CI, not the backend) | Cloudflare R2 | Public through a custom domain — `assets-r2.boardsesh.com` today, `assets.boardsesh.com` after the cutover | `static/v1/<sha256>.<ext>` — repo-owned board art, icons, brand marks; see `docs/static-assets.md` |
 
 **On R2 the bucket IS the privacy boundary.** R2 implements no object ACLs and no bucket policies, so there is no way to make one prefix of a bucket private. Attaching a custom domain publishes the whole bucket. That is why the exports live in a separate bucket rather than under a prefix, and why the private bucket must never be given a custom domain.
 
