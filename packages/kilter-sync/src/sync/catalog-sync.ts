@@ -29,7 +29,7 @@ import { pullKilterReference, type KilterReferencePull } from './reference-pull'
 import { correctGripsQualityAverage } from './quality-scale';
 import { buildLayoutResolver } from './layout-resolver';
 import { sanitizeFirstAscent } from '@boardsesh/sync-runtime';
-import { decodeGripsClimbConcat } from './catalog-parse';
+import { decodeGripsClimbConcat, findUniqueDecodableLayout, type GripsDecodeResult } from './catalog-parse';
 import {
   buildSkipRow,
   describeSkip,
@@ -94,6 +94,11 @@ export type KilterCatalogSummary = {
    * disagree persistently and is worth a look.
    */
   relistsBlockedByDeletionHistory: number;
+  /**
+   * Climbs Kilter tagged with the wrong layout, ingested onto the layout their
+   * holds actually place on instead of sitting in the skip backlog.
+   */
+  climbsRerouted: number;
   /** Skipped climbs written to board_climb_ingest_skips this run. */
   skipsRecorded: number;
   /** Previously-skipped climbs this run managed to ingest. */
@@ -156,6 +161,8 @@ export type GroupResult = {
   canonicalsRelisted: number;
   /** Identity-path re-lists the deletion list blocked (see decideIdentityRelist). */
   relistsBlockedByDeletionHistory: number;
+  /** Climbs ingested onto a different layout than Kilter tagged them with. */
+  climbsRerouted: number;
   newCanonicals: NewClimbInfo[];
   /** Every climb this group couldn't ingest, for board_climb_ingest_skips. */
   skips: ClimbIngestSkip[];
@@ -173,6 +180,7 @@ export function createGroupResult(): GroupResult {
     selfAliasesBackfilled: 0,
     canonicalsRelisted: 0,
     relistsBlockedByDeletionHistory: 0,
+    climbsRerouted: 0,
     newCanonicals: [],
     skips: [],
     resolvedSkipUuids: [],
@@ -634,12 +642,39 @@ export type StageCatalogClimbContext = {
   canonicalsToRelist: Set<string>;
   /** Lowercased /delteduuids set, or null when this run has no list (blocks re-listing). */
   deletedLowerUuids: ReadonlySet<string> | null;
+  /**
+   * Lookup for climbs Kilter tagged with the wrong layout, or null to disable
+   * rerouting. The reroute pass itself stages with it off, so a climb can never
+   * hop from layout to layout.
+   */
+  reroute: RerouteContext | null;
   result: GroupResult;
   /** Clock the new-canonical notification age check runs against. */
   now: Date;
 };
 
-export type StageCatalogClimbOutcome = 'identity' | 'skipped' | 'folded' | 'inserted';
+/** A climb whose holes place on exactly one OTHER layout, held for the final reroute pass. */
+export type RerouteCandidate = {
+  climb: KilterCatalogClimb;
+  sourceLayoutId: number;
+  sourceLayoutUuid: string;
+  targetLayoutId: number;
+  /** Fingerprint of the decode against the TARGET layout's placements. */
+  fingerprint: string;
+  /** How the decode failed on the source layout, for the fallback skip row. */
+  sourceFailure: Extract<GripsDecodeResult, { ok: false }>;
+  /** Stat rows the source group saw for this climb, replayed onto the target. */
+  stats: KilterCatalogStat[];
+};
+
+export type RerouteContext = {
+  /** layoutId → hole_id → placement_id, for every layout this run's listed set resolves to. */
+  holeToPlacementByLayout: ReadonlyMap<number, Map<number, number>>;
+  /** lower(uuid) → candidate, deduped across the Grips layouts of a group. */
+  candidates: Map<string, RerouteCandidate>;
+};
+
+export type StageCatalogClimbOutcome = 'identity' | 'skipped' | 'folded' | 'inserted' | 'reroute_candidate';
 
 /**
  * Stage one listed Grips climb against a layout's catalog: UUID identity, then
@@ -697,6 +732,37 @@ export function stageCatalogClimb(
   // rather than disappearing (issue #3523).
   const decoded = decodeGripsClimbConcat(climb.climbConcat, index.holeToPlacement, climb.frameCount);
   if (!decoded.ok) {
+    // Kilter sometimes tags a climb with the wrong product layout, so every
+    // hole misses here while placing cleanly on another layout. Hold those
+    // aside for the reroute pass rather than writing a skip row they'd never
+    // escape (see findUniqueDecodableLayout / ingestRerouteCandidates).
+    const alternateLayout =
+      context.reroute && decoded.reason === 'unplaceable_hole'
+        ? findUniqueDecodableLayout(
+            climb.climbConcat,
+            climb.frameCount,
+            index.layoutId,
+            context.reroute.holeToPlacementByLayout,
+          )
+        : null;
+    if (context.reroute && alternateLayout) {
+      // Keyed by uuid: several Grips layouts collapse onto one board layout, so
+      // the same climb can reach this branch more than once per run.
+      if (!context.reroute.candidates.has(lowerUuid)) {
+        context.reroute.candidates.set(lowerUuid, {
+          climb,
+          sourceLayoutId: index.layoutId,
+          sourceLayoutUuid: context.sourceLayoutUuid,
+          targetLayoutId: alternateLayout.layoutId,
+          fingerprint: fingerprintFromHolds(alternateLayout.decoded.holds),
+          sourceFailure: decoded,
+          stats: [],
+        });
+      }
+      // Deliberately neither a skip row nor climbsUnmapped: the reroute pass
+      // writes the original skip row itself if the climb can't be ingested.
+      return 'reroute_candidate';
+    }
     result.climbsUnmapped += 1;
     result.skips.push(
       buildSkipRow(climb, decoded, {
@@ -827,16 +893,20 @@ type SyncBoardLayoutGroupArgs = {
   openSkips: Map<string, string>;
   /** Lowercased /delteduuids set for this run, or null when there is no list. */
   deletedLowerUuids: ReadonlySet<string> | null;
+  /** hole_id → placement_id for this board layout, preloaded by the caller. */
+  holeToPlacement: Map<number, number>;
+  /** Collects climbs Kilter tagged with the wrong layout, for the final reroute pass. */
+  reroute: RerouteContext;
   log: (message: string) => void;
 };
 
 async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<GroupResult> {
-  const { db, state, boardLayoutId, gripsLayoutUuids, openSkips, deletedLowerUuids, log } = args;
+  const { db, state, boardLayoutId, gripsLayoutUuids, openSkips, deletedLowerUuids, holeToPlacement, reroute, log } =
+    args;
   const result = createGroupResult();
   // Stamped once per group so every climb in it is aged against the same clock.
   const groupStartedAt = new Date();
 
-  const holeToPlacement = await loadHoleToPlacement(db, boardLayoutId);
   const index = await loadLayoutCatalogIndex(db, boardLayoutId, holeToPlacement);
 
   // Canonicals to re-list this group (a listed Grips climb folded onto a synced
@@ -857,6 +927,7 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
       climbUuidToCanonical,
       canonicalsToRelist,
       deletedLowerUuids,
+      reroute,
       result,
       now: groupStartedAt,
     };
@@ -912,8 +983,15 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
   for (const gripsLayoutUuid of gripsLayoutUuids) {
     const stats = await withToken(state, (token) => fetchLayoutClimbStats(token, gripsLayoutUuid));
     for (const stat of stats) {
-      const canonicalUuid = climbUuidToCanonical.get(stat.climbUuid.toLowerCase());
-      if (!canonicalUuid) continue; // stat for a filtered/unknown climb
+      const lowerStatUuid = stat.climbUuid.toLowerCase();
+      const canonicalUuid = climbUuidToCanonical.get(lowerStatUuid);
+      if (!canonicalUuid) {
+        // A climb held for the reroute pass has no canonical yet. Its stats are
+        // only served from this (wrongly-tagged) layout, so carry them along or
+        // they're lost when the climb lands on the layout it belongs to.
+        reroute.candidates.get(lowerStatUuid)?.stats.push(stat);
+        continue; // otherwise: a stat for a filtered/unknown climb
+      }
       foldCatalogStatOnce(statsByCanonicalAngle, seenSourceStats, stat, canonicalUuid);
     }
   }
@@ -1018,9 +1096,259 @@ function addGroupResult(summary: KilterCatalogSummary, collected: CollectedGroup
   summary.selfAliasesBackfilled += groupResult.selfAliasesBackfilled;
   summary.canonicalsRelisted += groupResult.canonicalsRelisted;
   summary.relistsBlockedByDeletionHistory += groupResult.relistsBlockedByDeletionHistory;
+  summary.climbsRerouted += groupResult.climbsRerouted;
   collected.newCanonicals.push(...groupResult.newCanonicals);
   collected.skips.push(...groupResult.skips);
   collected.resolvedSkipUuids.push(...groupResult.resolvedSkipUuids);
+}
+
+/** Fold one group result into another — the reroute pass runs once per target layout. */
+function mergeGroupResult(into: GroupResult, from: GroupResult): void {
+  into.climbsSeen += from.climbsSeen;
+  into.climbsUnmapped += from.climbsUnmapped;
+  into.canonicalsInserted += from.canonicalsInserted;
+  into.aliasesUpserted += from.aliasesUpserted;
+  into.statsUpserted += from.statsUpserted;
+  into.selfAliasesBackfilled += from.selfAliasesBackfilled;
+  into.canonicalsRelisted += from.canonicalsRelisted;
+  into.relistsBlockedByDeletionHistory += from.relistsBlockedByDeletionHistory;
+  into.climbsRerouted += from.climbsRerouted;
+  into.newCanonicals.push(...from.newCanonicals);
+  into.skips.push(...from.skips);
+  into.resolvedSkipUuids.push(...from.resolvedSkipUuids);
+}
+
+/**
+ * Where a rerouted climb's stats may be written: only when the climb is its own
+ * canonical on the target layout. If it folded onto an existing canonical there,
+ * that canonical's own Grips stat row is authoritative, and replaying the
+ * duplicate's grade/quality/FA over it would clobber real data — the same
+ * distinction foldCatalogStat makes between an own row and a merged one. Pure +
+ * exported for unit testing.
+ */
+export function canonicalForReroutedStats(climbLowerUuid: string, canonicalUuid: string | undefined): string | null {
+  if (!canonicalUuid) return null;
+  return canonicalUuid.toLowerCase() === climbLowerUuid ? canonicalUuid : null;
+}
+
+/** Record the skip row the source group deliberately didn't write. */
+function pushRerouteFallbackSkip(result: GroupResult, candidate: RerouteCandidate): void {
+  result.climbsUnmapped += 1;
+  result.skips.push(
+    buildSkipRow(candidate.climb, candidate.sourceFailure, {
+      boardType: KILTER,
+      layoutId: candidate.sourceLayoutId,
+      sourceLayoutUuid: candidate.sourceLayoutUuid,
+    }),
+  );
+}
+
+type IngestRerouteCandidatesArgs = {
+  db: DrizzleDb;
+  candidates: RerouteCandidate[];
+  openSkips: Map<string, string>;
+  deletedLowerUuids: ReadonlySet<string> | null;
+  holeToPlacementByLayout: ReadonlyMap<number, Map<number, number>>;
+  log: (message: string) => void;
+};
+
+/**
+ * Ingest the climbs Kilter tagged with the wrong layout, grouped by the layout
+ * their holds actually place on. Eight climbs on prod (2026-09-15) had been
+ * stuck in the skip backlog this way, invisible in Boardsesh with no path out.
+ *
+ * A per-layout failure is contained: those candidates fall back to the skip row
+ * the source group would have written, and the rest of the catalog run (backlog
+ * write, locations, deletions) still completes.
+ */
+async function ingestRerouteCandidates(args: IngestRerouteCandidatesArgs): Promise<GroupResult> {
+  const result = createGroupResult();
+  if (args.candidates.length === 0) return result;
+
+  const byTargetLayout = new Map<number, RerouteCandidate[]>();
+  for (const candidate of args.candidates) {
+    const group = byTargetLayout.get(candidate.targetLayoutId) ?? [];
+    group.push(candidate);
+    byTargetLayout.set(candidate.targetLayoutId, group);
+  }
+
+  for (const [targetLayoutId, layoutCandidates] of byTargetLayout) {
+    const holeToPlacement = args.holeToPlacementByLayout.get(targetLayoutId);
+    if (!holeToPlacement) {
+      // Unreachable — the candidate's target came from this very map — but a
+      // missing map must degrade to the backlog, never to a lost climb.
+      for (const candidate of layoutCandidates) pushRerouteFallbackSkip(result, candidate);
+      continue;
+    }
+    try {
+      const layoutResult = await ingestRerouteCandidatesForLayout({
+        db: args.db,
+        targetLayoutId,
+        candidates: layoutCandidates,
+        holeToPlacement,
+        openSkips: args.openSkips,
+        deletedLowerUuids: args.deletedLowerUuids,
+        log: args.log,
+      });
+      mergeGroupResult(result, layoutResult);
+    } catch (error) {
+      args.log(
+        `[kilter-catalog] reroute onto layout ${targetLayoutId} failed (${error instanceof Error ? error.message : String(error)}); ${layoutCandidates.length} climb(s) stay in the backlog`,
+      );
+      for (const candidate of layoutCandidates) pushRerouteFallbackSkip(result, candidate);
+    }
+  }
+  return result;
+}
+
+async function ingestRerouteCandidatesForLayout(input: {
+  db: DrizzleDb;
+  targetLayoutId: number;
+  candidates: RerouteCandidate[];
+  holeToPlacement: Map<number, number>;
+  openSkips: Map<string, string>;
+  deletedLowerUuids: ReadonlySet<string> | null;
+  log: (message: string) => void;
+}): Promise<GroupResult> {
+  const { db, targetLayoutId, candidates, holeToPlacement, openSkips, deletedLowerUuids, log } = input;
+  const result = createGroupResult();
+  const candidateLowerUuids = candidates.map((candidate) => candidate.climb.climbUuid.toLowerCase());
+  const candidateFingerprints = [...new Set(candidates.map((candidate) => candidate.fingerprint))];
+
+  // Two narrow loads rather than the whole target layout: the candidate uuids
+  // wherever they live (one already on another layout must not be ingested a
+  // second time), plus the target layout's rows carrying a candidate
+  // fingerprint, so a reroute folds onto an existing canonical instead of
+  // duplicating it.
+  const climbColumns = {
+    uuid: boardClimbs.uuid,
+    layoutId: boardClimbs.layoutId,
+    fingerprint: boardClimbs.holdFingerprint,
+    isListed: boardClimbs.isListed,
+    userId: boardClimbs.userId,
+    isDraft: boardClimbs.isDraft,
+  };
+  const uuidRows = await db
+    .select(climbColumns)
+    .from(boardClimbs)
+    .where(and(eq(boardClimbs.boardType, KILTER), inArray(sql`lower(${boardClimbs.uuid})`, candidateLowerUuids)));
+  const fingerprintRows =
+    candidateFingerprints.length > 0
+      ? await db
+          .select(climbColumns)
+          .from(boardClimbs)
+          .where(
+            and(
+              eq(boardClimbs.boardType, KILTER),
+              eq(boardClimbs.layoutId, targetLayoutId),
+              inArray(boardClimbs.holdFingerprint, candidateFingerprints),
+            ),
+          )
+      : [];
+
+  const targetRowsByLowerUuid = new Map<string, LayoutCatalogClimbRow>();
+  const otherLayoutByLowerUuid = new Map<string, number | null>();
+  for (const row of [...uuidRows, ...fingerprintRows]) {
+    const lowerUuid = row.uuid.toLowerCase();
+    if (row.layoutId === targetLayoutId) {
+      if (!targetRowsByLowerUuid.has(lowerUuid)) targetRowsByLowerUuid.set(lowerUuid, row);
+    } else {
+      otherLayoutByLowerUuid.set(lowerUuid, row.layoutId);
+    }
+  }
+
+  const targetLowerUuids = [...targetRowsByLowerUuid.keys()];
+  const selfAliasRows =
+    targetLowerUuids.length > 0
+      ? await db
+          .select({ aliasUuid: boardClimbAliases.aliasUuid })
+          .from(boardClimbAliases)
+          .where(
+            and(
+              eq(boardClimbAliases.boardType, KILTER),
+              eq(boardClimbAliases.aliasUuid, boardClimbAliases.canonicalUuid),
+              inArray(sql`lower(${boardClimbAliases.aliasUuid})`, targetLowerUuids),
+            ),
+          )
+      : [];
+
+  const index = buildLayoutCatalogIndex({
+    layoutId: targetLayoutId,
+    climbRows: [...targetRowsByLowerUuid.values()],
+    selfAliasUuids: selfAliasRows.map((row) => row.aliasUuid),
+    holeToPlacement,
+  });
+
+  const batch = createStagingBatch();
+  const climbUuidToCanonical = new Map<string, string>();
+  const canonicalsToRelist = new Set<string>();
+  const stagedCandidates: RerouteCandidate[] = [];
+  const startedAt = new Date();
+  for (const candidate of candidates) {
+    const lowerUuid = candidate.climb.climbUuid.toLowerCase();
+    const otherLayoutId = otherLayoutByLowerUuid.get(lowerUuid);
+    if (otherLayoutId !== undefined) {
+      // The uuid already lives on a third layout, so ingesting it here would
+      // give one climb two rows. Leave the original skip row as the record.
+      log(
+        `[kilter-catalog] reroute declined: ${candidate.climb.climbUuid} already exists on layout ${otherLayoutId ?? 'unknown'}`,
+      );
+      pushRerouteFallbackSkip(result, candidate);
+      continue;
+    }
+    const outcome = stageCatalogClimb(candidate.climb, {
+      index,
+      sourceLayoutUuid: candidate.sourceLayoutUuid,
+      openSkips,
+      batch,
+      climbUuidToCanonical,
+      canonicalsToRelist,
+      deletedLowerUuids,
+      // Rerouting is off inside the reroute pass: this IS the second hop, and a
+      // third would let a climb bounce between layouts run after run.
+      reroute: null,
+      result,
+      now: startedAt,
+    });
+    // 'skipped' can't normally happen (the target decoded during resolution),
+    // but if it did the skip row is already recorded against the target layout.
+    if (outcome !== 'skipped') stagedCandidates.push(candidate);
+  }
+
+  await flushKilterLayoutBatch(db, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows);
+  result.canonicalsInserted += batch.newClimbInserts.length;
+  result.aliasesUpserted += batch.aliasRows.length;
+  result.climbsRerouted += stagedCandidates.length;
+  if (canonicalsToRelist.size > 0) {
+    result.canonicalsRelisted += await relistCanonicals(db, [...canonicalsToRelist]);
+  }
+
+  // The source layout is the only place these climbs' stats are served from, so
+  // replay the rows the source group set aside — but only onto a climb that is
+  // its own canonical here (see canonicalForReroutedStats).
+  const statsByCanonicalAngle = new Map<string, StatAccum>();
+  const seenSourceStats = new Set<string>();
+  for (const candidate of stagedCandidates) {
+    const lowerUuid = candidate.climb.climbUuid.toLowerCase();
+    const canonicalUuid = canonicalForReroutedStats(lowerUuid, climbUuidToCanonical.get(lowerUuid));
+    if (!canonicalUuid) {
+      if (candidate.stats.length > 0) {
+        log(
+          `[kilter-catalog] rerouted ${candidate.climb.climbUuid} folded onto an existing canonical on layout ${targetLayoutId}; its ${candidate.stats.length} stat row(s) stay with that canonical`,
+        );
+      }
+      continue;
+    }
+    for (const stat of candidate.stats) {
+      foldCatalogStatOnce(statsByCanonicalAngle, seenSourceStats, stat, canonicalUuid);
+    }
+  }
+  result.statsUpserted += await upsertCatalogStats(db, statsByCanonicalAngle);
+
+  if (stagedCandidates.length > 0) {
+    log(`[kilter-catalog] rerouted ${stagedCandidates.length} mis-tagged climb(s) onto layout ${targetLayoutId}`);
+  }
+  return result;
 }
 
 export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<KilterCatalogSummary> {
@@ -1030,7 +1358,8 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   const reference = args.reference ?? (await pullKilterReference({ accessToken: state.token, log }));
   const resolver = await buildLayoutResolver(args.db);
 
-  let listed = reference.productLayouts.filter((layout) => layout.isListed);
+  const allListedLayouts = reference.productLayouts.filter((layout) => layout.isListed);
+  let listed = allListedLayouts;
   if (args.layoutUuids) {
     const wanted = new Set(args.layoutUuids);
     listed = listed.filter((layout) => wanted.has(layout.productLayoutUuid));
@@ -1051,6 +1380,26 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     byBoardLayout.set(layoutId, group);
   }
 
+  // hole_id → placement_id for every board layout the FULL listed set resolves
+  // to, not just the layouts --layouts kept: the reroute resolver has to be able
+  // to see the layout a mis-tagged climb really belongs to, and on a partial run
+  // that layout is often outside the filter. Resolving the wider set also
+  // persists those layout aliases and reports them as unmapped, which is why
+  // `layoutsUnmapped` above stays counted over the filtered set only.
+  const holeToPlacementByLayout = new Map<number, Map<number, number>>();
+  const holeToPlacementFor = async (layoutId: number): Promise<Map<number, number>> => {
+    const cached = holeToPlacementByLayout.get(layoutId);
+    if (cached) return cached;
+    const loaded = await loadHoleToPlacement(args.db, layoutId);
+    holeToPlacementByLayout.set(layoutId, loaded);
+    return loaded;
+  };
+  for (const layout of allListedLayouts) {
+    const layoutId = resolver.resolve(layout.productLayoutUuid, layout.productName);
+    if (layoutId !== null) await holeToPlacementFor(layoutId);
+  }
+  const rerouteCandidates = new Map<string, RerouteCandidate>();
+
   const summary: KilterCatalogSummary = {
     gripsLayoutsProcessed: 0,
     layoutsUnmapped,
@@ -1062,6 +1411,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     selfAliasesBackfilled: 0,
     canonicalsRelisted: 0,
     relistsBlockedByDeletionHistory: 0,
+    climbsRerouted: 0,
     skipsRecorded: 0,
     skipsResolved: 0,
     skipsWriteFailed: false,
@@ -1118,11 +1468,27 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
       gripsLayoutUuids,
       openSkips,
       deletedLowerUuids,
+      holeToPlacement: await holeToPlacementFor(boardLayoutId),
+      reroute: { holeToPlacementByLayout, candidates: rerouteCandidates },
       log,
     });
     summary.gripsLayoutsProcessed += gripsLayoutUuids.length;
     addGroupResult(summary, collected, groupResult);
   }
+
+  // Reroute pass: climbs Kilter tagged with the wrong layout, ingested onto the
+  // layout their holds actually place on. It runs after every group, so a climb
+  // seen under several Grips layouts is rerouted once, and before the backlog
+  // write below, so a successful reroute never leaves a skip row behind.
+  const rerouteResult = await ingestRerouteCandidates({
+    db: args.db,
+    candidates: [...rerouteCandidates.values()],
+    openSkips,
+    deletedLowerUuids,
+    holeToPlacementByLayout,
+    log,
+  });
+  addGroupResult(summary, collected, rerouteResult);
 
   // Persist the backlog. A skipped climb used to leave nothing behind but a
   // counter, so it could be missing from Boardsesh forever with no record of
