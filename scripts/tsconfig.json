@@ -1,5 +1,5 @@
 {
-  "//": "Typechecks the repo-root scripts wired into typecheck:scripts, including the Discord feedback pipeline, development tooling, board-art generation, Railway configuration, and iOS profiling/build/simulator ownership tools with their regression tests.",
+  "//": "Typechecks the repo-root scripts wired into typecheck:scripts, including the Discord feedback pipeline, development tooling, board-art generation, Railway configuration, iOS profiling/build/simulator ownership tools, and the store-screenshot baseline/compare pipeline, with their regression tests.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -36,6 +36,16 @@
     "__tests__/screenshot-backend.test.ts",
     "__tests__/screenshot-backend-cli.test.ts",
     "__tests__/screenshot-fixtures.test.ts",
+    "assert-screenshot-dimensions.ts",
+    "assert-screenshot-content.ts",
+    "compare-screenshots.ts",
+    "screenshot-baseline.ts",
+    "screenshot-probe-scope.ts",
+    "__tests__/compare-screenshots.test.ts",
+    "__tests__/screenshot-baseline.test.ts",
+    "__tests__/screenshot-probe-scope.test.ts",
+    "__tests__/assert-screenshot-content.test.ts",
+    "__tests__/mobile-screenshots-workflows.test.ts",
     "../infra/railway/config.ts",
     "../infra/railway/plan.ts",
     "mobile-profile-capture.ts",
