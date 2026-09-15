@@ -251,19 +251,23 @@ describe('reporting a wall', () => {
   it('reports a wall the viewer cannot see as not found, exactly like an unknown uuid', async () => {
     const { wall } = await createPublishedWall({ isPublic: false, isUnlisted: false });
 
-    const onPrivateWall = sprayWallModerationMutations.reportSprayWall(
-      {},
-      { input: { wallUuid: wall.uuid, reason: 'OTHER' } },
-      ctxFor(STRANGER),
-    );
-    const onNothing = sprayWallModerationMutations.reportSprayWall(
-      {},
-      { input: { wallUuid: uuidv4(), reason: 'OTHER' } },
-      ctxFor(STRANGER),
-    );
-
-    await expect(onPrivateWall).rejects.toThrow('Spray wall not found');
-    await expect(onNothing).rejects.toThrow('Spray wall not found');
+    // Called inside the assertion, not hoisted into a pair of variables: a
+    // rejected promise nobody is awaiting yet is an unhandled rejection, and
+    // Vitest fails the RUN on one even when every test passed.
+    await expect(
+      sprayWallModerationMutations.reportSprayWall(
+        {},
+        { input: { wallUuid: wall.uuid, reason: 'OTHER' } },
+        ctxFor(STRANGER),
+      ),
+    ).rejects.toThrow('Spray wall not found');
+    await expect(
+      sprayWallModerationMutations.reportSprayWall(
+        {},
+        { input: { wallUuid: uuidv4(), reason: 'OTHER' } },
+        ctxFor(STRANGER),
+      ),
+    ).rejects.toThrow('Spray wall not found');
   });
 
   it('refuses the admin switch to a climber who is not an admin', async () => {
