@@ -71,6 +71,7 @@ vi.mock('@boardsesh/db/queries', () => ({
     getClimbWhereConditions: () => [],
     getSizeConditions: () => [],
     getClimbStatsConditions: () => [],
+    getClimbGradesJoinConditions: () => [],
   }),
 }));
 
