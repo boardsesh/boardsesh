@@ -39,3 +39,4 @@ export * from './logbook-sync-skips';
 export * from './sitemap-shard-refreshes';
 export * from './sitemap-climb-urls';
 export * from './spray-walls';
+export * from './tick-climbed-at-corrections';
