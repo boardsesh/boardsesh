@@ -738,11 +738,12 @@
       "strokeNotClosed": "That loop missed the hold. Draw all the way round it.",
       "strokeTooBig": "That loop is far bigger than a hold. Zoom in and trace the hold itself.",
       "strokeTooDetailed": "That stroke has too much detail to store. Trace the edge in one pass.",
-      "strokeTooShort": "That stroke is too short. Draw a full loop round the hold."
+      "strokeTooShort": "That stroke is too short. Draw a full loop round the hold.",
+      "allHoldsOffWall": "Those holds land off the wall. Move them back onto the photo and save again.",
+      "someHoldsOffWall": "{{value}} holds landed off the wall and weren't saved."
     },
     "toast": {
-      "saved": "Saved {{value}} holds",
-      "someHoldsSkipped": "{{value}} holds landed off the wall and were skipped"
+      "saved": "Saved {{value}} holds"
     },
     "empty": {
       "noPhoto": "This wall has no photo to edit yet."

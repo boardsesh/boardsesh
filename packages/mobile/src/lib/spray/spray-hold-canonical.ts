@@ -34,6 +34,18 @@ const OUTLINE_DECIMALS = 4;
  */
 const MIN_CANONICAL_RADIUS = 1;
 
+/**
+ * The bounds `SprayWallHoldInputSchema` imposes on a stored hold.
+ *
+ * Checked here rather than left to the server, because Zod refuses the WHOLE
+ * batch: one hold mapped near the homography's horizon — finite, but a hundred
+ * thousand pixels out — would take ninety good holds down with it. Answering
+ * `null` instead routes that hold into the write plan's `unmappableIds`, which
+ * is the drop-one-hold outcome the plan exists to produce.
+ */
+const MAX_CANONICAL_PIXEL = 100_000;
+const MAX_CANONICAL_RADIUS = 10_000;
+
 function isFinitePair(x: number, y: number): boolean {
   return Number.isFinite(x) && Number.isFinite(y);
 }
@@ -111,6 +123,9 @@ export function mapPhotoHoldToCanonical(
   const roundedCx = Math.round(cx);
   const roundedCy = Math.round(cy);
   const roundedR = Math.max(MIN_CANONICAL_RADIUS, Math.round(r));
+
+  if (Math.abs(roundedCx) > MAX_CANONICAL_PIXEL || Math.abs(roundedCy) > MAX_CANONICAL_PIXEL) return null;
+  if (roundedR > MAX_CANONICAL_RADIUS) return null;
 
   // The ring is expressed against the ROUNDED radius, not the exact one, so the
   // hold the server stores and the hold the editor previewed describe the same

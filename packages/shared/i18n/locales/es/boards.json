@@ -738,11 +738,12 @@
       "strokeNotClosed": "Ese trazo no rodea la presa. Dibuja la vuelta entera a su alrededor.",
       "strokeTooBig": "Ese trazo es mucho más grande que una presa. Amplía y repasa la presa misma.",
       "strokeTooDetailed": "Ese trazo tiene demasiado detalle para guardarlo. Repasa el contorno de una sola pasada.",
-      "strokeTooShort": "Ese trazo es demasiado corto. Dibuja un bucle completo alrededor de la presa."
+      "strokeTooShort": "Ese trazo es demasiado corto. Dibuja un bucle completo alrededor de la presa.",
+      "allHoldsOffWall": "Esas presas caen fuera del muro. Vuelve a colocarlas sobre la foto y guarda otra vez.",
+      "someHoldsOffWall": "{{value}} presas cayeron fuera del muro y no se guardaron."
     },
     "toast": {
-      "saved": "{{value}} presas guardadas",
-      "someHoldsSkipped": "{{value}} presas cayeron fuera del muro y se omitieron"
+      "saved": "{{value}} presas guardadas"
     },
     "empty": {
       "noPhoto": "Este muro todavía no tiene foto que editar."

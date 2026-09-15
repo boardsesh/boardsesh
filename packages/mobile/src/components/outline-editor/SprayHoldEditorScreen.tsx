@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSharedValue } from 'react-native-reanimated';
@@ -16,15 +16,17 @@ import { spacing } from '../../theme/tokens';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { getSprayWall, SPRAY_BOARD_NAME, subscribeToSprayWalls } from '../../lib/spray/spray-wall-registry';
-import { useSprayWall } from '../../lib/spray/use-spray-wall';
+import { useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import { useSaveSprayHolds } from '../../lib/spray/use-spray-hold-writes';
 import { DrawStrokeOverlay } from './DrawStrokeOverlay';
 import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
 import { SprayEditToolbar, type SprayEditorTool } from './SprayEditToolbar';
 import { renderToBoardScale, type StrokeRejection } from './stroke';
 import { buildSprayHoldWritePlan, planHasWork } from './spray-hold-writes';
+import { editorTargetCapabilities, type SprayWallEditorTarget } from './editor-target';
 import { withUnsavedDraftGuard } from './draft-guard';
 import {
+  allHolds,
   editorCounts,
   hasUnsavedWork as stateHasUnsavedWork,
   initialSprayEditorState,
@@ -79,10 +81,17 @@ export type SprayHoldEditorScreenProps = {
   layoutId: number;
   /** `SprayWallVersion.id` of the wall's ONE open draft. Every write lands on it. */
   versionId: string;
-  /** `SprayWall.viewerCanEdit`. False renders the read-only notice and no tools. */
+  /**
+   * `SprayWallVersion.number` of that same draft — 1-based and dense per wall.
+   *
+   * Both come off one row and both are needed: the id is what the mutations
+   * take, the number is what `sprayWallRenderData(uuid, version)` reads. Without
+   * the number the editor would be seeded from the PUBLISHED generation, which
+   * carries neither the draft's holds nor the draft's photograph.
+   */
+  versionNumber: number;
+  /** `SprayWall.viewerCanEdit`. False renders the tools disabled and never writes. */
   viewerCanEdit: boolean;
-  /** The draft version's row-major photo→canonical homography (9 floats). */
-  homography: readonly number[];
   /** Detector output awaiting review. Omit for the manual-only, zero-detection flow. */
   candidates?: readonly SprayHoldCandidate[];
   /** Fired after each successful save, with what the server actually applied. */
@@ -112,8 +121,8 @@ export function SprayHoldEditorScreen({
   wallUuid,
   layoutId,
   versionId,
+  versionNumber,
   viewerCanEdit,
-  homography,
   candidates,
   onSaved,
 }: SprayHoldEditorScreenProps) {
@@ -123,8 +132,16 @@ export function SprayHoldEditorScreen({
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-  const { isLoading, isUnrenderable } = useSprayWall(layoutId);
+  const { isLoading, isUnavailable, homography } = useSprayWallDraft(layoutId, wallUuid, versionNumber);
   const saveHolds = useSaveSprayHolds();
+
+  // The capabilities the adapter names for this target, read rather than
+  // re-decided: `fingerDrawDefault` is why the wall opens with a tool that draws
+  // where the catalogue target opens stylus-only.
+  const capabilities = useMemo(() => {
+    const target: SprayWallEditorTarget = { kind: 'sprayWall', wallUuid, layoutId, versionId, viewerCanEdit };
+    return editorTargetCapabilities(target);
+  }, [wallUuid, layoutId, versionId, viewerCanEdit]);
 
   const [tool, setTool] = useState<SprayEditorTool>('pan');
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -135,18 +152,39 @@ export function SprayHoldEditorScreen({
   const drawingRef = useRef(false);
   const boardControlsRef = useRef<FilterBoardControls | null>(null);
 
-  // The registry is a module-level map written by `useSprayWall`, so the screen
-  // subscribes to it rather than re-reading it every render — the same
-  // `useSyncExternalStore` shape every other spray surface uses.
-  const [registryVersion, setRegistryVersion] = useState(0);
-  useEffect(() => subscribeToSprayWalls(() => setRegistryVersion((previous) => previous + 1)), []);
-  const wall = useMemo(() => getSprayWall(layoutId), [layoutId, registryVersion]);
+  // The registry is a module-level map, so the wall is read through
+  // `useSyncExternalStore` — the same shape `useSprayWall` uses. Its own
+  // `loadState` snapshot does NOT move when a wall is re-registered at the same
+  // state (which is exactly what a save's refresh does), so the screen has to
+  // subscribe to the wall itself or it would keep drawing the pre-save holds.
+  // The snapshot is the registry's own object, so it is referentially stable
+  // between registrations and the store never loops.
+  const wall = useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => getSprayWall(layoutId), [layoutId]),
+  );
 
-  // Seed the editor whenever the wall's own holds change underneath it (the
-  // first load, and every save's refetch). Candidates are appended as PENDING,
-  // so they are drawn from the first frame and written by nothing until accepted.
+  // Bumped after every successful save, so the wall that comes back re-seeds the
+  // editor even though it is the same version it was.
+  const [saveEpoch, setSaveEpoch] = useState(0);
+
+  /**
+   * What the editor's contents are seeded FROM.
+   *
+   * Deliberately not "the wall object changed". The registry re-registers a wall
+   * on every refresh — an expired photo signature is enough — and re-seeding on
+   * that would throw away the holds somebody is halfway through drawing, which is
+   * the worst thing this screen could do. A re-seed needs a real reason: a
+   * different wall, a new version of it, a new detector run, or a save of our own.
+   */
+  const seedKey = wall ? `${wall.wallUuid}:${wall.version}:${candidates?.length ?? 0}:${saveEpoch}` : null;
+  const seededKeyRef = useRef<string | null>(null);
+
+  // Candidates are appended as PENDING, so they are drawn from the first frame
+  // and written by nothing until somebody rules on them.
   useEffect(() => {
-    if (!wall) return;
+    if (!wall || seedKey == null || seededKeyRef.current === seedKey) return;
+    seededKeyRef.current = seedKey;
     const stored: SprayEditorHold[] = wall.holds.map((hold) => ({
       id: hold.id,
       cx: hold.cx,
@@ -159,7 +197,12 @@ export function SprayHoldEditorScreen({
       dirty: false,
     }));
     let nextLocalId = -1;
-    const pending: SprayEditorHold[] = (candidates ?? []).map((candidate) => ({
+    // Only on the first seed of a version. After a save the accepted candidates
+    // are holds on the draft and come back in `stored`, so re-injecting the same
+    // list would draw every one of them twice and let them be written a second
+    // time; the rejected ones would come back from the dead. A new detector run
+    // is a new `candidates` prop, which moves the seed key on its own.
+    const pending: SprayEditorHold[] = (saveEpoch > 0 ? [] : (candidates ?? [])).map((candidate) => ({
       id: nextLocalId--,
       cx: candidate.cx,
       cy: candidate.cy,
@@ -171,7 +214,7 @@ export function SprayHoldEditorScreen({
       dirty: false,
     }));
     dispatch({ type: 'LOAD', holds: [...stored, ...pending] });
-  }, [wall, candidates]);
+  }, [wall, seedKey, saveEpoch, candidates]);
 
   const boardRender = useMemo(() => {
     if (!wall) return { width: 0, height: 0 };
@@ -185,6 +228,7 @@ export function SprayHoldEditorScreen({
   }, [wall, windowWidth, windowHeight, insets.top, insets.bottom]);
 
   const holds = useMemo(() => visibleHolds(state), [state]);
+  const allEditorHolds = useMemo(() => allHolds(state), [state]);
   const counts = useMemo(() => editorCounts(state), [state]);
   const hasUnsaved = useMemo(() => stateHasUnsavedWork(state), [state]);
 
@@ -192,14 +236,25 @@ export function SprayHoldEditorScreen({
   // draw overlay declines every touch and the board handles selection itself.
   const holdTargets = useMemo<BoardHoldTarget[]>(() => holds.map(toBoardHoldTarget), [holds]);
 
-  /** The hold size a tap places, and the unit the S/M/L/XL presets scale. */
-  const medianRadius = useMemo(() => defaultHoldRadius(holds, wall?.photoWidth ?? 0), [holds, wall?.photoWidth]);
+  /**
+   * The hold size a tap places, and the unit the S/M/L/XL presets scale.
+   *
+   * Measured over EVERY hold, not the visible ones: the confidence slider must
+   * not change what "M" means, and it would if the median moved with whichever
+   * candidates happen to be on screen.
+   */
+  const medianRadius = useMemo(
+    () => defaultHoldRadius(allEditorHolds, wall?.photoWidth ?? 0),
+    [allEditorHolds, wall?.photoWidth],
+  );
 
   useEffect(() => {
     // `pan` is the tool that hands touches back to the board. Every other tool
-    // draws, which on a phone means the finger has to be allowed to.
-    fingerDrawSV.value = tool !== 'pan';
-  }, [tool, fingerDrawSV]);
+    // draws, which on a phone means the finger has to be allowed to — and that
+    // permission is the target's, not this screen's: the catalogue target keeps
+    // the stylus-only default, where a finger still pans a zoomed board.
+    fingerDrawSV.value = capabilities.fingerDrawDefault && tool !== 'pan';
+  }, [capabilities.fingerDrawDefault, tool, fingerDrawSV]);
 
   const clearStroke = useCallback(() => {
     draftPointsSV.value = NO_POINTS;
@@ -299,54 +354,79 @@ export function SprayHoldEditorScreen({
     (presetKey: SizePresetKey) => {
       const target = singleSelection(state.selectedIds, holds);
       const preset = SIZE_PRESETS.find((candidate) => candidate.key === presetKey);
-      if (!target || !preset) return;
+      if (!viewerCanEdit || !target || !preset) return;
       dispatch({ type: 'RESIZE_HOLD', id: target.id, r: medianRadius * preset.scale });
     },
-    [state.selectedIds, holds, medianRadius],
+    [viewerCanEdit, state.selectedIds, holds, medianRadius],
   );
 
+  // Every mutating handler refuses when the viewer may not edit. The toolbar is
+  // disabled too, but the gate lives here as well: a disabled button is a
+  // presentation detail, and the rule is that a read-only session never changes
+  // the wall — not even locally, where the change would look real until Save
+  // came back refused.
   const handleDelete = useCallback(() => {
-    if (state.selectedIds.length === 0) return;
+    if (!viewerCanEdit || state.selectedIds.length === 0) return;
     dispatch({ type: 'DELETE', ids: state.selectedIds });
-  }, [state.selectedIds]);
+  }, [viewerCanEdit, state.selectedIds]);
 
   const handleMerge = useCallback(() => {
+    if (!viewerCanEdit) return;
     if (state.selectedIds.length !== 2) {
       setErrorText(t('sprayEditor.errors.mergeNeedsTwo'));
       return;
     }
     dispatch({ type: 'MERGE', ids: state.selectedIds });
-  }, [state.selectedIds, t]);
+  }, [viewerCanEdit, state.selectedIds, t]);
 
   const handleAcceptSelected = useCallback(() => {
+    if (!viewerCanEdit) return;
     dispatch({ type: 'ACCEPT', ids: state.selectedIds });
-  }, [state.selectedIds]);
+  }, [viewerCanEdit, state.selectedIds]);
 
   // Rejecting a candidate is deleting it — it never became a hold, so there is
   // nothing else for "no" to mean.
   const handleRejectSelected = handleDelete;
 
-  const handleAcceptAll = useCallback(() => dispatch({ type: 'ACCEPT_ALL' }), []);
+  const handleAcceptAll = useCallback(() => {
+    if (!viewerCanEdit) return;
+    dispatch({ type: 'ACCEPT_ALL' });
+  }, [viewerCanEdit]);
   const handleUndo = useCallback(() => dispatch({ type: 'UNDO' }), []);
   const handleRedo = useCallback(() => dispatch({ type: 'REDO' }), []);
   const handleThresholdChange = useCallback((threshold: number) => dispatch({ type: 'SET_THRESHOLD', threshold }), []);
 
   const handleSave = useCallback(() => {
+    if (!viewerCanEdit || homography == null) return;
     const plan = buildSprayHoldWritePlan(state, homography);
-    if (!planHasWork(plan)) return;
+    if (!planHasWork(plan)) {
+      // Nothing sendable, but the button was enabled — which means every dirty
+      // hold is one the homography sends off the wall. Saying so beats a press
+      // that does nothing and explains nothing.
+      if (plan.unmappableIds.length > 0) setErrorText(t('sprayEditor.errors.allHoldsOffWall'));
+      return;
+    }
     if (plan.overCap) {
       setErrorText(t('sprayEditor.errors.tooManyHolds'));
       return;
     }
     setErrorText(null);
     saveHolds.mutate(
-      { wallUuid, versionId, plan },
+      { wallUuid, versionNumber, versionId, plan },
       {
         onSuccess: (result) => {
+          // Clear the dirty flags NOW rather than waiting for the refetch. Until
+          // they are clear a second press of Save re-sends holds the server has
+          // already applied, and a correction re-sent names an id the resolver
+          // has just superseded — which fails the whole batch.
+          dispatch({ type: 'MARK_SAVED' });
+          // The refetched draft carries the server's own ids for every hold this
+          // session minted locally, so the editor re-seeds from it rather than
+          // keeping negative ids that no longer mean anything.
+          setSaveEpoch((previous) => previous + 1);
+          showToast(t('sprayEditor.toast.saved', { value: result.written }), 'success');
           if (plan.unmappableIds.length > 0) {
-            showToast(t('sprayEditor.toast.someHoldsSkipped', { value: plan.unmappableIds.length }), 'error');
-          } else {
-            showToast(t('sprayEditor.toast.saved', { value: result.written }), 'success');
+            setErrorText(t('sprayEditor.errors.someHoldsOffWall', { value: plan.unmappableIds.length }));
           }
           onSaved?.(result);
         },
@@ -357,7 +437,7 @@ export function SprayHoldEditorScreen({
         },
       },
     );
-  }, [state, homography, saveHolds, wallUuid, versionId, showToast, onSaved, t]);
+  }, [viewerCanEdit, state, homography, saveHolds, wallUuid, versionNumber, versionId, showToast, onSaved, t]);
 
   const handleToolChange = useCallback((next: SprayEditorTool) => {
     setErrorText(null);
@@ -425,7 +505,7 @@ export function SprayHoldEditorScreen({
     );
   }
 
-  if (!wall || isUnrenderable) {
+  if (!wall || isUnavailable || !homography) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Text variant="headline" style={styles.centeredText}>
@@ -471,6 +551,7 @@ export function SprayHoldEditorScreen({
           onAcceptSelected={handleAcceptSelected}
           onRejectSelected={handleRejectSelected}
           onAcceptAll={handleAcceptAll}
+          canReviewCandidates={capabilities.canReviewCandidates}
           canUndo={state.past.length > 0}
           canRedo={state.future.length > 0}
           onUndo={handleUndo}
@@ -479,7 +560,8 @@ export function SprayHoldEditorScreen({
           onThresholdChange={handleThresholdChange}
           onSave={handleSave}
           saving={saveHolds.isPending}
-          hasUnsavedWork={viewerCanEdit && hasUnsaved}
+          readOnly={!viewerCanEdit}
+          hasUnsavedWork={hasUnsaved}
         />
       </ScrollView>
     </View>

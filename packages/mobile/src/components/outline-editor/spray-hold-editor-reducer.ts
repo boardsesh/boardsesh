@@ -12,7 +12,7 @@
  * Holds live in a record keyed by id, not an array, because every per-hold
  * operation on this screen — the tap hit test, the selection ring, the review
  * badge, the dirty check — would otherwise be a scan per hold per render on a
- * wall that is allowed to carry 600 of them.
+ * wall that is allowed to carry 1500 of them.
  *
  * Coordinates are BOARD px throughout (a wall's board frame is its photograph).
  * Nothing here maps to canonical coordinates; that is the write path's job.
@@ -94,6 +94,16 @@ export type SprayEditorAction =
   | { type: 'ACCEPT'; ids: readonly number[] }
   /** Every pending candidate at or above the current threshold. */
   | { type: 'ACCEPT_ALL' }
+  /**
+   * The server took everything the last plan carried.
+   *
+   * Clears `dirty` and `removedIds` WITHOUT waiting for the refetch, so a second
+   * press of Save cannot re-send holds the server has already applied — which on
+   * a correction is not a no-op: the resolver supersedes the named id, so
+   * re-sending it is refused and the whole batch fails. Not undoable: undoing a
+   * write that has landed would only lie about what is on the wall.
+   */
+  | { type: 'MARK_SAVED' }
   | { type: 'UNDO' }
   | { type: 'REDO' };
 
@@ -161,7 +171,16 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
 
     case 'SET_THRESHOLD': {
       const threshold = Math.min(1, Math.max(0, action.threshold));
-      return threshold === state.threshold ? state : { ...state, threshold };
+      if (threshold === state.threshold) return state;
+      // Drop a selection the slider has just hidden. Otherwise Delete would take
+      // a hold off the wall that is not on screen, while Resize — which resolves
+      // through the visible list — would silently do nothing to the same hold:
+      // two buttons giving two different answers about one selection.
+      const selectedIds = state.selectedIds.filter((id) => {
+        const hold = state.holds[id];
+        return hold != null && !isHiddenByThreshold(hold, threshold);
+      });
+      return { ...state, threshold, selectedIds };
     }
 
     case 'ADD_HOLD': {
@@ -282,6 +301,17 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
     case 'ACCEPT_ALL': {
       const ids = pendingCandidateIds(state).filter((id) => (state.holds[id].confidence ?? 0) >= state.threshold);
       return ids.length === 0 ? state : sprayEditorReducer(state, { type: 'ACCEPT', ids });
+    }
+
+    case 'MARK_SAVED': {
+      const holds: Record<number, SprayEditorHold> = {};
+      let changed = state.removedIds.length > 0;
+      for (const hold of Object.values(state.holds)) {
+        holds[hold.id] = hold.dirty ? { ...hold, dirty: false } : hold;
+        if (hold.dirty) changed = true;
+      }
+      if (!changed) return state;
+      return { ...state, holds, removedIds: [] };
     }
 
     case 'UNDO': {
