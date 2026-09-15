@@ -77,6 +77,7 @@ const { sessionFeedQueries } = await import('../graphql/resolvers/social/session
 const { smartPlaylist } = await import('../graphql/resolvers/playlists/queries/smart-playlists');
 const { tickMutations } = await import('../graphql/resolvers/ticks/mutations');
 const { generateSessionSummary } = await import('../graphql/resolvers/sessions/session-summary');
+const { favoriteClimbsQuery } = await import('../graphql/resolvers/favorites/favorite-climbs-query');
 const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = await import('@boardsesh/board-config');
 
 const OWNER = 'sw-owner';
@@ -1944,6 +1945,127 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
       hardestClimb?: { climbName?: string };
     } | null;
     expect(publicSummary?.hardestClimb?.climbName).toBe('Secret garage problem');
+  });
+
+  it('revokes a FAVOURITE when the wall goes private again', async () => {
+    // A favourite is a reference the user persisted, so it outlives the wall's
+    // visibility — without the predicate it keeps returning name, description and
+    // frames after the owner takes the wall private.
+    const publicWall = await wallWithAClimb({ isPublic: true });
+    await db.execute(sql`
+      INSERT INTO user_favorites (user_id, climb_uuid, board_name, created_at)
+      VALUES (${STRANGER}, ${publicWall.climbUuid}, 'spray', now())
+    `);
+
+    const read = async (viewer: string) => {
+      const result = (await favoriteClimbsQuery.userFavoriteClimbs(
+        {},
+        {
+          input: {
+            boardName: 'spray',
+            layoutId: publicWall.wall.layoutId,
+            sizeId: publicWall.wall.sizeId,
+            setIds: '1',
+            angle: 40,
+            page: 0,
+            pageSize: 50,
+          },
+        },
+        ctxFor(viewer),
+      )) as { climbs: Array<{ uuid: string }>; totalCount: number };
+      return result;
+    };
+
+    const whilePublic = await read(STRANGER);
+    expect(whilePublic.climbs.map((climb) => climb.uuid)).toContain(publicWall.climbUuid);
+    expect(whilePublic.totalCount).toBe(1);
+
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: publicWall.wall.uuid, isPublic: false } },
+      ctxFor(OWNER),
+    );
+
+    const afterPrivate = await read(STRANGER);
+    expect(afterPrivate.climbs.map((climb) => climb.uuid)).not.toContain(publicWall.climbUuid);
+    // The count has to move with the page, or it promises rows the page withholds.
+    expect(afterPrivate.totalCount).toBe(0);
+
+    // The owner still sees their own.
+    expect((await read(OWNER)).climbs.map((climb) => climb.uuid)).not.toContain(publicWall.climbUuid);
+  });
+
+  it('retracts already-fanned-out feed rows when a wall goes private', async () => {
+    // `feed_items` is a MATERIALISED fan-out served without a second look at the
+    // wall, so the read gates alone would leave "private" meaning "private to
+    // people who were not following you at the time".
+    const publicWall = await wallWithAClimb({ isPublic: true });
+    await db.execute(sql`
+      INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, created_at)
+      VALUES (${STRANGER}, ${OWNER}, 'climb', 'climb', ${publicWall.climbUuid}, now())
+    `);
+    const tickUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, climbed_at, created_at, updated_at)
+      VALUES (${tickUuid}, ${OWNER}, ${publicWall.climbUuid}, 'spray', 40, 'send', now(), now(), now())
+    `);
+    await db.execute(sql`
+      INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, created_at)
+      VALUES (${STRANGER}, ${OWNER}, 'ascent', 'tick', ${tickUuid}, now())
+    `);
+
+    const feedCount = async () => {
+      const [{ n }] = (await db.execute(
+        sql`SELECT count(*)::int AS n FROM feed_items WHERE recipient_id = ${STRANGER}`,
+      )) as unknown as Array<{ n: number }>;
+      return n;
+    };
+    expect(await feedCount()).toBe(2);
+
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: publicWall.wall.uuid, isPublic: false } },
+      ctxFor(OWNER),
+    );
+    // Both shapes go: `climb.created` files under 'climb', `ascent.logged' under 'tick'.
+    expect(await feedCount()).toBe(0);
+  });
+
+  it('retracts feed rows when a wall is deleted', async () => {
+    const publicWall = await wallWithAClimb({ isPublic: true });
+    await db.execute(sql`
+      INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, created_at)
+      VALUES (${STRANGER}, ${OWNER}, 'climb', 'climb', ${publicWall.climbUuid}, now())
+    `);
+
+    await sprayWallMutations.deleteSprayWall({}, { uuid: publicWall.wall.uuid }, ctxFor(OWNER));
+
+    const [{ n }] = (await db.execute(
+      sql`SELECT count(*)::int AS n FROM feed_items WHERE recipient_id = ${STRANGER}`,
+    )) as unknown as Array<{ n: number }>;
+    expect(n).toBe(0);
+  });
+
+  it('leaves the feed alone when a wall merely becomes UNLISTED', async () => {
+    // Unlisted is still shared — the share link works — so there is nothing to
+    // retract. Guards the guard: a purge on every update would pass the two tests
+    // above for the wrong reason.
+    const publicWall = await wallWithAClimb({ isPublic: true });
+    await db.execute(sql`
+      INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, created_at)
+      VALUES (${STRANGER}, ${OWNER}, 'climb', 'climb', ${publicWall.climbUuid}, now())
+    `);
+
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: publicWall.wall.uuid, isUnlisted: true } },
+      ctxFor(OWNER),
+    );
+
+    const [{ n }] = (await db.execute(
+      sql`SELECT count(*)::int AS n FROM feed_items WHERE recipient_id = ${STRANGER}`,
+    )) as unknown as Array<{ n: number }>;
+    expect(n).toBe(1);
   });
 
   it('keeps a tick whose climb row is MISSING — the "Unknown Climb" case', async () => {

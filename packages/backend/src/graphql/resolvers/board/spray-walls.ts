@@ -23,6 +23,7 @@ import {
   recomputeMissingHoldCounts,
 } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
+import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import { logger } from '../../../utils/logger';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
@@ -544,6 +545,45 @@ export function resolveVersionGeometry(input: {
   };
 }
 
+/**
+ * Drop every already-materialised feed row for a wall's climbs.
+ *
+ * The read gates keep a private wall out of the feeds from now on, but
+ * `feed_items` is a MATERIALISED fan-out: rows written while the wall was public
+ * sit in each follower's feed and are served straight from that table, with no
+ * further look at the wall. So making a wall private — or deleting it — has to
+ * retract what was already handed out, or "private" only means "private to people
+ * who were not following you at the time".
+ *
+ * Both event shapes, because both carry the climb: `climb.created` files under
+ * `entity_type = 'climb'` keyed on the climb uuid, and `ascent.logged` under
+ * `'tick'` keyed on the tick uuid.
+ *
+ * Runs in the caller's transaction so the visibility flip and the retraction land
+ * together — a crash between them would leave the wall private and its feed rows
+ * standing.
+ */
+async function purgeSprayWallFeedItems(tx: SprayWriteExecutor, layoutId: number): Promise<number> {
+  const result = await tx.execute(sql`
+    DELETE FROM feed_items
+    WHERE (
+      entity_type = 'climb'
+      AND entity_id IN (SELECT uuid FROM board_climbs WHERE board_type = 'spray' AND layout_id = ${layoutId})
+    ) OR (
+      entity_type = 'tick'
+      AND entity_id IN (
+        SELECT t.uuid FROM boardsesh_ticks t
+        WHERE t.board_type = 'spray'
+          AND t.climb_uuid IN (
+            SELECT uuid FROM board_climbs WHERE board_type = 'spray' AND layout_id = ${layoutId}
+          )
+      )
+    )
+    RETURNING id
+  `);
+  return rowsFromResult<{ id: string }>(result).length;
+}
+
 // ============================================
 // Queries
 // ============================================
@@ -968,8 +1008,23 @@ export const sprayWallMutations = {
     if (nextGymId !== undefined) updates.gymId = nextGymId;
     if (validated.angle !== undefined) updates.angle = validated.angle;
 
+    // Losing public status has to RETRACT what was already fanned out, not just
+    // stop future fan-out — see `purgeSprayWallFeedItems`. `is_unlisted` is not a
+    // trigger: an unlisted wall is still shared, just not listed.
+    const losingPublic = validated.isPublic === false && board.isPublic;
+
     await db.transaction(async (tx) => {
       await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
+
+      if (losingPublic) {
+        const retracted = await purgeSprayWallFeedItems(tx, wall.layoutId);
+        if (retracted > 0) {
+          logger.info('Spray wall went private; retracted its feed rows', {
+            layoutId: wall.layoutId,
+            feedItemsDeleted: retracted,
+          });
+        }
+      }
 
       // The catalogue rows carry the wall's name so a psql session can read them,
       // so a rename has to reach them too or they drift from the wall forever.
@@ -1433,6 +1488,10 @@ export const sprayWallMutations = {
     // transaction or a phone could keep a wall the server has dropped.
     const deletedAt = new Date();
     await db.transaction(async (tx) => {
+      // A deleted wall stops being reachable, so its feed rows have to go too —
+      // they are served straight from `feed_items` and would outlive it otherwise.
+      await purgeSprayWallFeedItems(tx, wall.layoutId);
+
       await tx
         .update(dbSchema.sprayWalls)
         .set({ deletedAt, updatedAt: deletedAt })
