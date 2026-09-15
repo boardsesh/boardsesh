@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { filterToReachable, isBranchPlumbingPullRequest } from './generate-changelog';
+import { filterToReachable, isBranchPlumbingPullRequest, selectPullRequestsInHistory } from './generate-changelog';
 
 // Sync (main → release/next) and merge-back (release/next → main) PRs carry other
 // people's commits, so counting them would duplicate every entry the train
@@ -71,5 +71,34 @@ describe('filterToReachable', () => {
   it('keeps a PR whose merge commit GitHub did not report, rather than dropping it', () => {
     const kept = filterToReachable([{ number: 3, mergeCommitOid: null }], reachableFrom([]));
     expect(kept.map((pr) => pr.number)).toEqual([3]);
+  });
+});
+
+// `reachableCommits()` shells out to git, so it cannot be unit-tested without a
+// fixture repository — but its FAILURE contract can be, and that is the half that
+// matters: a shallow clone or a missing git must publish a slightly over-inclusive
+// changelog, never an empty one.
+describe('selectPullRequestsInHistory', () => {
+  const prs = [
+    { number: 1, mergeCommitOid: 'aaa' },
+    { number: 2, mergeCommitOid: 'bbb' },
+  ];
+
+  it('keeps every PR when the history could not be read', () => {
+    expect(selectPullRequestsInHistory(prs, null).map((pr) => pr.number)).toEqual([1, 2]);
+  });
+
+  it('filters by reachability when the history is available', () => {
+    expect(selectPullRequestsInHistory(prs, new Set(['bbb'])).map((pr) => pr.number)).toEqual([2]);
+  });
+
+  it('drops everything only when the history genuinely contains none of them', () => {
+    // An EMPTY set is different from an unreadable history: reachableCommits()
+    // returns null for the latter, which the case above covers.
+    expect(selectPullRequestsInHistory(prs, new Set())).toEqual([]);
+  });
+
+  it('never returns the caller its own array to mutate', () => {
+    expect(selectPullRequestsInHistory(prs, null)).not.toBe(prs);
   });
 });

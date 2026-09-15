@@ -137,6 +137,10 @@ describe('native release workflow contracts', () => {
       /if \[ "\$ios_requested" = false \] && \[ "\$android_requested" = false \]; then([\s\S]*?)\nfi/,
     )?.[1];
     expect(bothWithheld, 'the summary must stop when every requested platform was withheld').toBeTruthy();
+    // The capture is non-greedy, so a nested if/fi inside this branch would end
+    // the match early and leave every assertion below inspecting a fragment —
+    // passing on the wrong block. Fail loudly instead if that day comes.
+    expect(bothWithheld, 'the both-withheld branch gained a nested if; widen this match').not.toMatch(/\bif \[/);
     expect(bothWithheld).toContain('echo "all_success=false"');
     expect(bothWithheld).toContain('echo "any_success=false"');
     expect(bothWithheld).toContain('exit 0');

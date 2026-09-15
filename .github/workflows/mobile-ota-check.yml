@@ -40,6 +40,11 @@ on:
   # or add the allow-native-on-main label) would otherwise leave a stale red
   # check-run behind, with no way to re-run it but an empty commit. `edited` is
   # the event a base change raises; `labeled`/`unlabeled` cover the waiver.
+  #
+  # The paths filter applies to label events too, so labelling a PR that touches
+  # none of these files does NOT re-run the check. That is correct rather than a
+  # gap: a PR with no mobile paths has no fingerprint verdict to revise, and can
+  # never have been failed by this check in the first place.
   pull_request:
     types: [opened, reopened, edited, labeled, unlabeled]
     paths:
@@ -113,6 +118,13 @@ jobs:
     #     this job is a ~20-minute two-install fingerprint resolve. Only a base
     #     change can move the verdict, and GitHub reports that as
     #     `changes.base` — so an `edited` without one is dropped.
+    #
+    #     `changes.base != null` is the whole test, and it leans on one documented
+    #     expression rule: an absent property is null (so a title-only edit is
+    #     dropped), while the present `changes.base` OBJECT is not (so a retarget
+    #     runs). Don't "simplify" it to `changes.base.ref != ''` — on a title-only
+    #     edit that dereferences a missing property and evaluates to the same ''
+    #     on both sides of the comparison, which would let every edit through.
     if: >-
       github.event_name != 'pull_request' ||
       (github.event.pull_request.head.repo.fork != true &&
