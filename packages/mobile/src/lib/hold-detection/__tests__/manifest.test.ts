@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseModelManifest, selectInt8File } from '../manifest';
+import { letterboxFitFor, parseModelManifest, selectInt8File } from '../manifest';
 
 const VALID_INPUT = {
   width: 768,
@@ -64,6 +64,12 @@ describe('parseModelManifest', () => {
     ['a schemaVersion the app has not been taught', { schemaVersion: 2 }],
     ['a missing version', { version: '' }],
     ['a non-NCHW input layout', { input: { ...VALID_INPUT, layout: 'NHWC' } }],
+    // `none` is in the schema's enum but says "do not fit the frame at all",
+    // which no path here can honour — every one resamples into a fixed square.
+    // Guessing `stretch` would report numbers for preprocessing the publisher
+    // did not ask for.
+    ['a letterbox mode the shared package cannot honour', { input: { ...VALID_INPUT, letterbox: 'none' } }],
+    ['an unknown letterbox mode', { input: { ...VALID_INPUT, letterbox: 'contain' } }],
     ['an int8 input tensor', { input: { ...VALID_INPUT, dtype: 'int8' } }],
     [
       'a softmax activation',
@@ -84,6 +90,17 @@ describe('parseModelManifest', () => {
 
   it.each([[null], [undefined], ['a string'], [42], [[]]])('rejects the non-object body %j', (body) => {
     expect(parseModelManifest(body)).toBeNull();
+  });
+});
+
+describe('letterboxFitFor', () => {
+  it.each([
+    ['stretch', 'stretch'],
+    ['pad', 'contain'],
+  ])('maps the manifest %j to the shared package fit %j', (letterbox, expected) => {
+    const manifest = parseModelManifest({ ...validManifest(), input: { ...VALID_INPUT, letterbox } });
+
+    expect(letterboxFitFor(manifest!.input)).toBe(expected);
   });
 });
 

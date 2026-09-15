@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelStoreIo } from '../model-store';
-import { MAX_CACHED_VERSIONS, MEDIA_BASE_URL, ensureModel, sweepModelVersions } from '../model-store';
+import {
+  MAX_CACHED_VERSIONS,
+  MEDIA_BASE_URL,
+  ensureModel,
+  resetVerifiedModelCache,
+  sweepModelVersions,
+} from '../model-store';
 
 const VERSION = '2026-09-15';
 const SHA = 'a'.repeat(64);
@@ -45,13 +51,13 @@ interface FakeIoOptions {
 }
 
 interface FakeIo extends ModelStoreIo {
-  calls: { fetched: string[]; downloaded: string[]; removed: string[] };
+  calls: { fetched: string[]; downloaded: string[]; removed: string[]; hashed: number };
 }
 
 function fakeIo(options: FakeIoOptions = {}): FakeIo {
   const cached = [...(options.cached ?? [])];
   const present = new Set(options.present ?? []);
-  const calls = { fetched: [] as string[], downloaded: [] as string[], removed: [] as string[] };
+  const calls = { fetched: [] as string[], downloaded: [] as string[], removed: [] as string[], hashed: 0 };
 
   return {
     calls,
@@ -70,6 +76,7 @@ function fakeIo(options: FakeIoOptions = {}): FakeIo {
       return present.has(`${version}/${fileName}`) ? `file:///cache/hold-detector/${version}/${fileName}` : null;
     },
     async hashFile() {
+      calls.hashed += 1;
       return options.digest === undefined ? SHA : options.digest;
     },
     listVersions() {
@@ -83,6 +90,12 @@ function fakeIo(options: FakeIoOptions = {}): FakeIo {
     },
   };
 }
+
+// The verified set is module state, so a test that left an entry behind would
+// make the next one's "did it re-hash?" assertion meaningless.
+beforeEach(() => {
+  resetVerifiedModelCache();
+});
 
 describe('ensureModel', () => {
   it('downloads, verifies and returns a handle', async () => {
@@ -179,6 +192,62 @@ describe('ensureModel', () => {
     // The new version plus the most recently modified other one survive.
     expect(io.listVersions().sort()).toEqual([VERSION, '2026-09-10'].sort());
     expect(io.calls.removed).toEqual(['2026-09-05', '2026-08-01']);
+  });
+});
+
+describe('ensureModel verification cache', () => {
+  it('does not re-hash the same bytes twice in one process', async () => {
+    const io = fakeIo();
+
+    await ensureModel(VERSION, { io });
+    const stages: string[] = [];
+    const second = await ensureModel(VERSION, { io, onStage: (stage) => stages.push(stage) });
+
+    expect(second?.version).toBe(VERSION);
+    expect(io.calls.hashed).toBe(1);
+    // The screen must not claim to be verifying when it is not.
+    expect(stages).toEqual(['manifest']);
+  });
+
+  it('re-hashes after a cold start', async () => {
+    const io = fakeIo();
+
+    await ensureModel(VERSION, { io });
+    resetVerifiedModelCache();
+    await ensureModel(VERSION, { io });
+
+    expect(io.calls.hashed).toBe(2);
+  });
+
+  it('re-hashes when the manifest starts expecting different bytes', async () => {
+    // The manifest is the one mutable pointer: a re-publish can change the
+    // expected digest under a version tag, and a pass recorded against the old
+    // one says nothing about the new.
+    const first = fakeIo();
+    await ensureModel(VERSION, { io: first });
+
+    const republished = fakeIo({
+      manifest: manifestBody({
+        files: [{ path: 'model-int8.onnx', bytes: 31_300_000, sha256: OTHER_SHA, dtype: 'int8' }],
+      }),
+      digest: OTHER_SHA,
+      cached: [VERSION],
+      present: [`${VERSION}/model-int8.onnx`],
+    });
+    const handle = await ensureModel(VERSION, { io: republished });
+
+    expect(handle?.version).toBe(VERSION);
+    expect(republished.calls.hashed).toBe(1);
+  });
+
+  it('does not remember a version whose digest did not match', async () => {
+    const bad = fakeIo({ digest: OTHER_SHA });
+    expect(await ensureModel(VERSION, { io: bad })).toBeNull();
+
+    const good = fakeIo();
+    await ensureModel(VERSION, { io: good });
+
+    expect(good.calls.hashed).toBe(1);
   });
 });
 

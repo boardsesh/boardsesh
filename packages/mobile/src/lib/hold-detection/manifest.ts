@@ -14,14 +14,33 @@
  * missing or malformed field the app depends on does.
  */
 
-/** What the ONNX graph consumes. `width`/`height` are the TRAINED input size. */
+/**
+ * What the ONNX graph consumes. `width`/`height` are the TRAINED input size.
+ *
+ * The schema's `letterbox` enum is `none | stretch | pad`, which is NOT the
+ * shared package's `LetterboxFit` (`stretch | contain`). Only two of the three
+ * have a meaning this app can act on:
+ *
+ * - `stretch` → `stretch`: squash the frame to the square, what `eval.py` does.
+ * - `pad`     → `contain`: aspect preserved, remainder padded.
+ * - `none`    → nothing. It says "do not fit the frame at all", and every path
+ *               here resamples into a fixed square, so there is no honest way to
+ *               honour it. {@link parseModelManifest} rejects such a manifest
+ *               rather than quietly running `stretch` and reporting numbers for
+ *               a preprocessing the publisher did not ask for.
+ */
 export interface ModelManifestInput {
   width: number;
   height: number;
   layout: 'NCHW';
   dtype: 'float32';
-  letterbox: 'none' | 'stretch' | 'pad';
+  letterbox: 'stretch' | 'pad';
   normalization: { mean: [number, number, number]; std: [number, number, number] };
+}
+
+/** The shared package's fit for a manifest's `input.letterbox`. */
+export function letterboxFitFor(input: ModelManifestInput): 'stretch' | 'contain' {
+  return input.letterbox === 'pad' ? 'contain' : 'stretch';
 }
 
 /**
@@ -91,7 +110,10 @@ function parseInput(value: unknown): ModelManifestInput | null {
   // dtype would be describing a graph this app cannot feed, so it is rejected
   // rather than coerced.
   if (value.layout !== 'NCHW' || value.dtype !== 'float32') return null;
-  if (value.letterbox !== 'none' && value.letterbox !== 'stretch' && value.letterbox !== 'pad') return null;
+  // `none` is a legal schema value this app cannot honour — see the note on
+  // ModelManifestInput. Rejecting is the difference between "no suggestions" and
+  // suggestions computed through preprocessing the model was not exported for.
+  if (value.letterbox !== 'stretch' && value.letterbox !== 'pad') return null;
   if (!isRecord(value.normalization)) return null;
   const mean = triple(value.normalization.mean);
   const std = triple(value.normalization.std);

@@ -474,19 +474,37 @@ which is a separate failure mode covered next.
 
 ### Fingerprint register
 
-Every entry here is a merge that deliberately moved both platform fingerprints. Record one when you
-land a native change, so a JS slice that needs the new binary knows which hash to gate on and so the
-next reader can tell an intended move from a surprise.
+Record an entry when you land a native change, so a JS slice that needs the new binary knows which
+hash to gate on and the next reader can tell an intended move from a surprise.
 
-| Merged | What moved it | iOS before → after | Android before → after |
+**Never record a bare local `runtimeversion:resolve`.** The absolute hash is a function of the whole
+resolved config, and the native workflows feed it a `.env` of `EXPO_PUBLIC_*` values plus
+`EXPO_UPDATES_URL` — the `.env` file is itself hashed, which is what
+`scripts/mobile-ci-env-parity.test.ts` exists to keep in lockstep. A resolve without that env
+produces a hash no binary will ever carry, and none of the 112 `fingerprint-*` tags match one. Even
+WITH the CI env reproduced byte-for-byte, a developer box does not reliably land on the runner's
+value; treat the absolute number as a CI output, not something to compute at your desk.
+
+Two places produce a trustworthy hash:
+
+- **`ota-check`** (`.github/workflows/mobile-ota-check.yml`) resolves both platforms on every PR push
+  and prints a 12-hex prefix per side. Its **iOS** value is the real one — the iOS gate and
+  `ota-check` both resolve without `GOOGLE_MAPS_API_KEY`, so the prefix matches the shipped
+  `fingerprint-ios-*` tag. Its **Android** value is NOT: `GOOGLE_MAPS_API_KEY` is a
+  Production-environment secret that feature-branch pushes cannot read, and the key perturbs the
+  Android config. `ota-check` is still correct about Android *change vs no change*, because the
+  missing key shifts both sides of its comparison equally — but the number it prints is not the
+  number a binary embeds.
+- **The `fingerprint-<platform>-<hash>` tag** the native build job pushes on a successful store
+  upload. That is the full 40-hex value the binary actually embeds, and it is the only thing a JS
+  feature gate may be written against. It exists only after the build runs on `main`.
+
+So: record the iOS pair at merge time from `ota-check`, record the Android pair as "minted on merge",
+and fill both in from `git tag -l 'fingerprint-*' --sort=-creatordate` once the store builds land.
+
+| Merged | What moved it | iOS | Android |
 | --- | --- | --- | --- |
-| 2026-09-15, #5435 (SW-02) | `onnxruntime-react-native` 1.24.3 autolinked on Android via `packages/mobile/react-native.config.js`, `cameraPermission` on the `expo-image-picker` plugin, Android `CAMERA`, version 2.5.0 → 2.6.0 | `2bba2c60ae36f3d914afe10e996460d0aefa6c91` → `b86d17295167db21dec5ab1f9d12cfd11b230a81` | `81840ab57de6b637ab38d00e4e5c4799dedc1c4b` → `db349c4953142a9b9adb8291e20b89d83c22fd62` |
-
-Resolve a hash with `TAILSCALE_HOSTS= vp exec expo-updates runtimeversion:resolve --platform ios|android`
-from `packages/mobile`, with no `android/` or `ios/` directory present (a local prebuild is hashed
-too, and CI has neither). Pin `TAILSCALE_HOSTS=` — live Tailscale peers otherwise leak into the
-resolved config and two runs disagree. The Android value also moves with `GOOGLE_MAPS_API_KEY`, so
-resolve both sides of a comparison the same way.
+| 2026-09-15, #5435 (SW-02) | `onnxruntime-react-native` 1.24.3 autolinked on Android via `packages/mobile/react-native.config.js`, `cameraPermission` on the `expo-image-picker` plugin, Android `CAMERA`, version 2.5.0 → 2.6.0 | main `b71bdb600c5a3e954d75c9ca673f056c62247ea9` (shipped tag) → PR `f0a4650d0746…` (`ota-check`; full hash lands as `fingerprint-ios-*` when `ios-testflight-rn` uploads) | main shipped tag `154bc941c504727afc914057aed2edff2c096576`; `ota-check` sees `fbc79fa47dc8…` → `4f14a7ee6bac…` WITHOUT the maps key, so neither is the binary's value — the real one lands as `fingerprint-android-*` when `android-apk-rn` uploads |
 
 ### Publish ordering: a binary can outrank a newer OTA
 

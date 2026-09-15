@@ -37,13 +37,15 @@ export const MEDIA_BASE_URL = (process.env.EXPO_PUBLIC_MEDIA_BASE_URL?.trim() ||
  * retrained model is a one-line change with no store release.
  *
  * It has to match a `--version` tag `ml/holds/publish_model.py` has actually
- * written; the value here follows that script's own documented example
- * (`ml/holds/README.md`, "Command"). Nothing is published under it yet, so
- * today `ensureModel()` resolves null and the benchmark screen's version field
- * is how a tester reaches whatever is really in the bucket. Getting it wrong
- * costs a 404 and a null, never a crash.
+ * written. The tag shape is the dashed date in
+ * `ml/holds/model-manifest.schema.json` ("a date tag (e.g. 2026-09-15)") — the
+ * schema is the contract, and the README's example commands were corrected to
+ * match it rather than the other way round. Nothing is published under it yet,
+ * so today `ensureModel()` resolves null and the benchmark screen's version
+ * field is how a tester reaches whatever is really in the bucket. Getting it
+ * wrong costs a 404 and a null, never a crash.
  */
-export const DEFAULT_MODEL_VERSION = process.env.EXPO_PUBLIC_HOLD_DETECTOR_VERSION?.trim() || '2026.09.15';
+export const DEFAULT_MODEL_VERSION = process.env.EXPO_PUBLIC_HOLD_DETECTOR_VERSION?.trim() || '2026-09-15';
 
 /** Cache subdirectory holding one directory per version. */
 export const MODEL_CACHE_DIR = 'hold-detector';
@@ -242,6 +244,28 @@ export function sweepModelVersions(io: ModelStoreIo, keep: string): string[] {
   return removed;
 }
 
+/**
+ * `<version>@<sha256>` pairs this process has already hashed and matched.
+ *
+ * Deliberately in-process and never persisted. The sha256 is what stands between
+ * a truncated download and an ONNX session that either throws deep in native
+ * code or, worse, loads and emits noise — so it has to be paid once per launch,
+ * on bytes this process has not seen. Paying it on EVERY call is ~31 MB of
+ * streamed hashing for a file nothing has touched since the last call a second
+ * ago. A cold start clears the set, which is exactly when the file could have
+ * been truncated, replaced or half-reclaimed underneath us.
+ *
+ * Keyed on the digest as well as the version so a re-published manifest (the
+ * manifest is the one mutable pointer) re-verifies rather than reusing a pass
+ * recorded against different expected bytes.
+ */
+const verifiedThisProcess = new Set<string>();
+
+/** Test seam: forget what this process has verified, as a cold start would. */
+export function resetVerifiedModelCache(): void {
+  verifiedThisProcess.clear();
+}
+
 export interface EnsureModelOptions {
   io?: ModelStoreIo;
   /** Called with 'manifest' | 'download' | 'verify' so a screen can say what is slow. */
@@ -251,11 +275,6 @@ export interface EnsureModelOptions {
 /**
  * The model for `version` (default `DEFAULT_MODEL_VERSION`), downloading and
  * verifying it if this device does not have it yet. Null when it cannot be had.
- *
- * The cached file is re-hashed on every call rather than trusted on sight. It is
- * ~31 MB of streamed SHA-256 — a couple of seconds — and it is the only thing
- * standing between a truncated download and an ONNX session that either throws
- * deep in native code or, worse, loads and emits noise.
  */
 export async function ensureModel(
   version: string = DEFAULT_MODEL_VERSION,
@@ -282,11 +301,15 @@ export async function ensureModel(
     if (!uri) return null;
   }
 
-  options.onStage?.('verify');
-  const digest = await io.hashFile(uri);
-  if (digest !== file.sha256) {
-    io.removeVersion(version);
-    return null;
+  const verificationKey = `${version}@${file.sha256}`;
+  if (!verifiedThisProcess.has(verificationKey)) {
+    options.onStage?.('verify');
+    const digest = await io.hashFile(uri);
+    if (digest !== file.sha256) {
+      io.removeVersion(version);
+      return null;
+    }
+    verifiedThisProcess.add(verificationKey);
   }
 
   sweepModelVersions(io, version);

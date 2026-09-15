@@ -242,7 +242,12 @@ describe('runDetection normalisation', () => {
     const runtime: DetectionRuntime = {
       run(input) {
         seen.push(Float32Array.from(input));
-        return { boxes: new Float32Array(0), boxesShape: [1, 0, 4], logits: new Float32Array(0), logitsShape: [1, 0, 1] };
+        return {
+          boxes: new Float32Array(0),
+          boxesShape: [1, 0, 4],
+          logits: new Float32Array(0),
+          logitsShape: [1, 0, 1],
+        };
       },
     };
     const image: RgbaImage = {

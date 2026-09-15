@@ -63,6 +63,9 @@ describe('runBenchmark', () => {
       modelConfig: 'nano-untiled-1024',
       executionProvider: 'xnnpack',
       defaultThreshold: 0.6,
+      fit: 'stretch',
+      mean: [0.485, 0.456, 0.406],
+      std: [0.229, 0.224, 0.225],
       sizes: [768, 512],
       runsPerSize: 3,
     });
@@ -83,6 +86,9 @@ describe('runBenchmark', () => {
       modelConfig: 'c',
       executionProvider: 'cpu',
       defaultThreshold: 0.6,
+      fit: 'stretch',
+      mean: [0.485, 0.456, 0.406],
+      std: [0.229, 0.224, 0.225],
       sizes: [512],
       runsPerSize: 1,
     });
@@ -108,6 +114,9 @@ describe('runBenchmark', () => {
       modelConfig: 'c',
       executionProvider: 'cpu',
       defaultThreshold: 0.6,
+      fit: 'stretch',
+      mean: [0.485, 0.456, 0.406],
+      std: [0.229, 0.224, 0.225],
       sizes: [512],
       runsPerSize: 3,
       now,
@@ -115,6 +124,49 @@ describe('runBenchmark', () => {
 
     expect(report.sizes[0].runsMs).toEqual([10, 50, 30]);
     expect(report.sizes[0].p50Ms).toBe(30);
+  });
+
+  it('puts the frame through the preprocessing it was given and records it', async () => {
+    // A white photo with mean 0 / std 1 is 1.0 everywhere; under the shared
+    // package's ImageNet default the same pixels arrive near 2.2. Asserting the
+    // TENSOR, not just the echoed report, is what catches the options being
+    // dropped between here and `runDetection`.
+    const seen: Float32Array[] = [];
+    const runtime = {
+      run(input: Float32Array) {
+        seen.push(Float32Array.from(input));
+        return {
+          boxes: new Float32Array(0),
+          boxesShape: [1, 0, 4],
+          logits: new Float32Array(0),
+          logitsShape: [1, 0, 1],
+        };
+      },
+    };
+    const white = {
+      width: 4,
+      height: 4,
+      rgba: new Uint8ClampedArray(4 * 4 * 4).fill(255),
+      sourceWidth: 8,
+      sourceHeight: 8,
+    };
+
+    const report = await runBenchmark({
+      runtime,
+      image: white,
+      modelVersion: 'v',
+      modelConfig: 'c',
+      executionProvider: 'cpu',
+      defaultThreshold: 0.6,
+      fit: 'contain',
+      mean: [0, 0, 0],
+      std: [1, 1, 1],
+      sizes: [2],
+      runsPerSize: 1,
+    });
+
+    expect(Array.from(seen[0])).toEqual(new Array(3 * 2 * 2).fill(1));
+    expect(report.preprocessing).toEqual({ fit: 'contain', mean: [0, 0, 0], std: [1, 1, 1] });
   });
 
   it('reports the progress of every pass so the screen can say what is slow', async () => {
@@ -127,6 +179,9 @@ describe('runBenchmark', () => {
       modelConfig: 'c',
       executionProvider: 'cpu',
       defaultThreshold: 0.6,
+      fit: 'stretch',
+      mean: [0.485, 0.456, 0.406],
+      std: [0.229, 0.224, 0.225],
       sizes: [640],
       runsPerSize: 2,
       onProgress: (size, run, totalRuns) => seen.push(`${size}:${run}/${totalRuns}`),
@@ -145,6 +200,9 @@ describe('formatBenchmarkJson', () => {
       modelConfig: 'nano-untiled-1024',
       executionProvider: 'coreml',
       defaultThreshold: 0.6,
+      fit: 'stretch',
+      mean: [0.485, 0.456, 0.406],
+      std: [0.229, 0.224, 0.225],
       sizes: [512],
       runsPerSize: 1,
     });

@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Device from 'expo-device';
 import { type BenchmarkReport, formatBenchmarkJson, runBenchmark } from '../lib/hold-detection/benchmark';
 import { decodePhotoToRgba } from '../lib/hold-detection/decode-image';
+import { letterboxFitFor } from '../lib/hold-detection/manifest';
 import { DEFAULT_MODEL_VERSION, type ModelHandle, ensureModel } from '../lib/hold-detection/model-store';
 import { createHoldDetectionRuntime, isInferenceRuntimeAvailable } from '../lib/hold-detection/onnx-runtime';
 import { hapticError, hapticLight } from '../lib/haptics';
@@ -101,6 +102,12 @@ export function HoldDetectionBenchmarkScreen() {
         modelConfig: modelHandle.manifest.config,
         executionProvider: runtime.executionProvider,
         defaultThreshold: modelHandle.defaultThreshold,
+        // Straight off the manifest, never the shared package's defaults: the
+        // numbers this screen reports have to describe the preprocessing the
+        // model was actually exported for.
+        fit: letterboxFitFor(modelHandle.manifest.input),
+        mean: modelHandle.manifest.input.normalization.mean,
+        std: modelHandle.manifest.input.normalization.std,
         onProgress: (size, run, totalRuns) => {
           // i18n-ignore-next-line — tester-only screen
           setStatus(`${size} px — pass ${run} of ${totalRuns}…`);

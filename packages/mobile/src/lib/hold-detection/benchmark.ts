@@ -62,6 +62,8 @@ export interface BenchmarkReport {
   modelConfig: string;
   executionProvider: string;
   defaultThreshold: number;
+  /** What the frame was actually put through — copied into the JSON blob. */
+  preprocessing: { fit: 'stretch' | 'contain'; mean: number[]; std: number[] };
   photo: { width: number; height: number; sourceWidth: number; sourceHeight: number };
   sizes: BenchmarkSizeResult[];
 }
@@ -100,6 +102,19 @@ export interface BenchmarkInput {
   modelConfig: string;
   executionProvider: string;
   defaultThreshold: number;
+  /**
+   * Preprocessing, straight off the manifest — `letterboxFitFor(manifest.input)`
+   * and `manifest.input.normalization`.
+   *
+   * Required, not optional with a default. Both have defaults in the shared
+   * package (`stretch`, ImageNet), and a benchmark that silently used them while
+   * the manifest published something else would report latency and detection
+   * counts for a preprocessing the model was never exported for — which is the
+   * one thing this screen must not do, since #5451 is decided from its numbers.
+   */
+  fit: 'stretch' | 'contain';
+  mean: readonly [number, number, number];
+  std: readonly [number, number, number];
   sizes?: readonly number[];
   runsPerSize?: number;
   /** Progress for the screen: which size, which pass. */
@@ -123,6 +138,9 @@ export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkRepo
     sizes = BENCHMARK_INPUT_SIZES,
     runsPerSize = BENCHMARK_RUNS_PER_SIZE,
     defaultThreshold,
+    fit,
+    mean,
+    std,
     onProgress,
     now = Date.now,
   } = input;
@@ -135,7 +153,13 @@ export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkRepo
     for (let run = 0; run < runsPerSize; run += 1) {
       onProgress?.(size, run + 1, runsPerSize);
       const startedAt = now();
-      const { candidates } = await runDetection(runtime, image, { size, scoreThreshold: BENCHMARK_LOW_THRESHOLD });
+      const { candidates } = await runDetection(runtime, image, {
+        size,
+        scoreThreshold: BENCHMARK_LOW_THRESHOLD,
+        fit,
+        mean,
+        std,
+      });
       runsMs.push(now() - startedAt);
       lastCandidates = candidates;
     }
@@ -158,6 +182,7 @@ export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkRepo
     modelConfig: input.modelConfig,
     executionProvider: input.executionProvider,
     defaultThreshold,
+    preprocessing: { fit, mean: [...mean], std: [...std] },
     photo: {
       width: image.width,
       height: image.height,
