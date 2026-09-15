@@ -227,6 +227,44 @@ export async function deleteFromS3(bucket: StorageBucket, key: string): Promise<
   );
 }
 
+/**
+ * Copy one object into another named bucket, under a key you choose.
+ *
+ * Reads the body and writes it again rather than issuing `CopyObject`: the two
+ * buckets are separate handles with their own endpoint, credentials and region
+ * (`storage/bucket-config.ts`), and a server-side copy needs both sides to live
+ * behind one set of those. Spray-wall photos are capped at 10MB, so buffering
+ * one is bounded and happens on a visibility change, not on a read.
+ *
+ * Returns null when the SOURCE object does not exist — the caller decides
+ * whether a wall with no photo yet is an error (it is not) — and throws for
+ * every other failure, because a half-done promotion must not look like a
+ * finished one.
+ */
+export async function copyObjectBetweenBuckets(
+  source: StorageBucket,
+  sourceKey: string,
+  destination: StorageBucket,
+  destinationKey: string,
+  options: { contentType?: string; cacheControl?: string } = {},
+): Promise<{ key: string } | null> {
+  const object = await getFromS3Strict(source, sourceKey);
+  if (!object) return null;
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of object.stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return uploadToS3(
+    destination,
+    Buffer.concat(chunks),
+    destinationKey,
+    options.contentType ?? object.contentType ?? 'application/octet-stream',
+    options.cacheControl ? { cacheControl: options.cacheControl } : {},
+  );
+}
+
 /** True for the S3 shapes of "the object does not exist" (vs a read failure). */
 function isS3NotFoundError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;

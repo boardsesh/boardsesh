@@ -135,7 +135,13 @@
       "independence": "Boardsesh ist eine unabhängige App. Sie ist weder mit Aurora Climbing, Moon Climbing oder einem anderen Board-Hersteller verbunden noch wird sie von ihnen unterstützt.",
       "printAction": "Poster drucken",
       "backToGym": "Zurück zur Halle"
-    }
+    },
+    "sprayWallsHeading": "Spray Walls",
+    "sprayWallCount_one": "{{count}} Wand",
+    "sprayWallCount_other": "{{count}} Wände",
+    "sprayWallsIntro": "Die Spray Walls dieser Halle, Griff für Griff. Öffne eine und sieh, was dort geschraubt wurde.",
+    "sprayWallPhotoAlt": "Foto von {{wallName}}",
+    "sprayWallMeta": "{{angle}}° · {{holds}} Griffe"
   },
   "manage": {
     "welcome": {

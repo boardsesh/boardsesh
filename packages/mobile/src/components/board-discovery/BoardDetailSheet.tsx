@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, StyleSheet, type ColorValue } from 'react-native';
 import BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useRouter } from 'expo-router';
@@ -13,8 +13,9 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { getBoardDetailFields, isActiveBoard } from './board-detail-fields';
-import { sprayDetailRows, type SprayDetailRow } from './spray-detail-rows';
+import { sprayDetailRows, sprayShareTarget, type SprayDetailRow, type SprayShareTarget } from './spray-detail-rows';
 import { SPRAY_DETAIL_ROWS_ENABLED } from '../../lib/spray/spray-routes';
+import { BoardShareSheet } from './BoardShareSheet';
 
 type BoardDetailSheetProps = {
   board: UserBoard | null;
@@ -35,6 +36,14 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   // them until the two screens the rows lead to exist. See
   // `SPRAY_DETAIL_ROWS_ENABLED`; the gate below is live and tested either way.
   const wallRows = useMemo(() => (SPRAY_DETAIL_ROWS_ENABLED ? sprayDetailRows(board) : []), [board]);
+
+  // Null on a catalogue board and on a PRIVATE wall — a private wall's link
+  // resolves for nobody, so the row is absent rather than disabled. The edit
+  // screen is where a wall is made shareable.
+  const shareTarget = useMemo(() => sprayShareTarget(board), [board]);
+  const [shareOpen, setShareOpen] = useState(false);
+  const openShare = useCallback(() => setShareOpen(true), []);
+  const closeShare = useCallback(() => setShareOpen(false), []);
 
   // Close first, then navigate: the sheet is always mounted and these rows push a
   // full route, so leaving it open would stack a screen under an open sheet.
@@ -71,24 +80,39 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   ) : null;
 
   return (
-    <Sheet
-      ref={sheetRef}
-      snapPoints={['55%', '90%']}
-      onClose={onClose}
-      scrollable
-      contentContainerStyle={styles.content}
-      footer={footer}
-    >
-      {board ? (
-        <BoardDetailBody
-          board={board}
-          systemColors={systemColors}
-          t={t}
-          wallRows={wallRows}
-          onOpenWallRow={openWallRow}
+    <>
+      <Sheet
+        ref={sheetRef}
+        snapPoints={['55%', '90%']}
+        onClose={onClose}
+        scrollable
+        contentContainerStyle={styles.content}
+        footer={footer}
+      >
+        {board ? (
+          <BoardDetailBody
+            board={board}
+            systemColors={systemColors}
+            t={t}
+            wallRows={wallRows}
+            onOpenWallRow={openWallRow}
+            shareTarget={shareTarget}
+            onOpenShare={openShare}
+          />
+        ) : null}
+      </Sheet>
+      {/* A sibling of the detail sheet, not a child: it is its own native sheet,
+        and the coordinator serialises the two presentations. */}
+      {shareOpen && board && shareTarget ? (
+        <BoardShareSheet
+          visible
+          onDismiss={closeShare}
+          shareUrl={shareTarget.url}
+          wallName={board.name}
+          visibility={shareTarget.visibility}
         />
       ) : null}
-    </Sheet>
+    </>
   );
 }
 
@@ -101,12 +125,16 @@ function BoardDetailBody({
   t,
   wallRows,
   onOpenWallRow,
+  shareTarget,
+  onOpenShare,
 }: {
   board: UserBoard;
   systemColors: SystemColors;
   t: TFn;
   wallRows: SprayDetailRow[];
   onOpenWallRow: (href: string) => void;
+  shareTarget: SprayShareTarget | null;
+  onOpenShare: () => void;
 }) {
   const { subLocation, setNames, sizeText } = getBoardDetailFields(board);
 
@@ -166,6 +194,23 @@ function BoardDetailBody({
           the card and its separator never render there. Literal translation keys
           per row — a computed `t(row.key)` is rejected by the i18n linter and
           hides the string from the catalogue scanners either way. */}
+      {shareTarget ? (
+        <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
+          <WallRow
+            icon="share"
+            label={t('mobile.boardDetail.spray.shareLink')}
+            hint={
+              shareTarget.visibility === 'public'
+                ? t('mobile.boardDetail.spray.shareLinkPublicHint')
+                : t('mobile.boardDetail.spray.shareLinkUnlistedHint')
+            }
+            showSeparator={false}
+            systemColors={systemColors}
+            onPress={onOpenShare}
+          />
+        </View>
+      ) : null}
+
       {wallRows.length > 0 ? (
         <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
           {wallRows.map((row, index) => (

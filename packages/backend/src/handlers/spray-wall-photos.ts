@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { randomUUID } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import Busboy from 'busboy';
 import sharp from 'sharp';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -158,6 +158,23 @@ const PRIVATE_PHOTO_CACHE_CONTROL = 'private, no-store';
 export function sprayWallPhotoKey(wallUuid: string, photoId: string): string {
   return `spray-walls/${wallUuid}/${photoId}.${STORED_EXTENSION}`;
 }
+
+/**
+ * The key a PUBLIC wall's photo copy is stored under in the `media` bucket.
+ *
+ * Random, not derived: `media` is world-readable under guessable keys, so a key
+ * anybody could reconstruct from the wall uuid would keep serving the photo of
+ * somebody's garage after they made the wall private again — the object would be
+ * gone, but the URL every cache and screenshot holds would resolve again on the
+ * next promotion. 128 random bits make a demotion a real one, and a
+ * re-promotion a URL nobody has seen (SW-14).
+ */
+export function sprayWallPublicPhotoKey(wallUuid: string): string {
+  return `spray-walls/${wallUuid}/${randomBytes(16).toString('hex')}.${STORED_EXTENSION}`;
+}
+
+/** What every stored wall photo is: the upload handler re-encodes to JPEG. */
+export const SPRAY_PHOTO_CONTENT_TYPE = STORED_CONTENT_TYPE;
 
 /** Object-metadata keys carrying the decoded pixel size. Read back by `createSprayWallVersion`. */
 export const SPRAY_PHOTO_WIDTH_METADATA_KEY = 'width';

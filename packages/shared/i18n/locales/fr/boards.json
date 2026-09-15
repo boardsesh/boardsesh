@@ -178,7 +178,10 @@
         "editHolds": "Modifier les prises",
         "editHoldsHint": "Ajoute, déplace ou supprime les prises de ton mur.",
         "newPhoto": "Nouvelle photo",
-        "newPhotoHint": "Photographie le mur à nouveau après un changement de prises."
+        "newPhotoHint": "Photographie le mur à nouveau après un changement de prises.",
+        "shareLink": "Partager le lien",
+        "shareLinkPublicHint": "N'importe qui peut ouvrir ce mur.",
+        "shareLinkUnlistedHint": "Seulement les grimpeurs à qui tu l’envoies."
       }
     },
     "disambiguation": {
@@ -356,6 +359,26 @@
       "empty": "Aucune salle à proximité",
       "sharedEditHint": "L'équipe de cette salle pourra modifier les infos de cette board.",
       "linkError": "Impossible d'associer cette salle. Elle est peut-être trop loin de ta board. Tes autres modifications ont bien été enregistrées."
+    },
+    "sprayShare": {
+      "title": "Partage ce mur",
+      "publicBody": "Ce mur est public : n'importe qui peut l'ouvrir, il apparaît sur la page de la salle et ses blocs arrivent dans le feed.",
+      "unlistedBody": "Seuls les grimpeurs à qui tu envoies ce lien peuvent ouvrir le mur. Il n'est listé nulle part.",
+      "copyLink": "Copier le lien",
+      "share": "Partager",
+      "copied": "Lien copié",
+      "qrLabel": "Code QR de {{name}}"
+    },
+    "sprayVisibility": {
+      "label": "Qui peut le voir",
+      "private": "Privé",
+      "unlisted": "Lien seulement",
+      "public": "Public",
+      "privateHint": "Toi seul. La photo de ton mur reste dans ton compte.",
+      "unlistedHint": "Toute personne qui a le lien entre. Le mur n'apparaît pas sur la page de la salle et sa photo reste hors du web ouvert.",
+      "publicHint": "N'importe qui peut trouver le mur. Il apparaît sur la page de la salle, ses blocs arrivent dans le feed, et la photo du mur part sur le web ouvert.",
+      "ownerOnlyError": "Seul le grimpeur qui a monté ce mur peut changer qui le voit. Tes autres modifications sont enregistrées.",
+      "updateError": "Impossible de changer qui voit ce mur. Réessaie."
     }
   },
   "boardEntity": {

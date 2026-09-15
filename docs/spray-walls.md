@@ -596,6 +596,75 @@ An uploaded photo sits in the bucket unreferenced until `createSprayWallVersion`
 adopts it, so an abandoned upload is a stray object for the SW-17 (#5450) cleanup
 job rather than a row anyone can see.
 
+### The one public copy (SW-14)
+
+A **public** wall is the single exception, and it is a copy rather than a move.
+`updateSprayWall` promoting a wall to public copies the current published photo
+from `private` into the world-readable `media` bucket under
+`spray-walls/<wall uuid>/<128 random bits>.jpg`
+(`sprayWallPublicPhotoKey`) and stores the key in `spray_walls.public_photo_key`;
+`SprayWall.publicPhotoUrl` serves it and is null for every wall that is not
+public. That copy exists because a public wall has to render on a web gym page a
+logged-out climber and a crawler read, and neither can hold a 15-minute signature.
+
+Three properties of the copy are load-bearing:
+
+- **The key is random, not derived.** `media` is world-readable under guessable
+  keys, so a key anybody could rebuild from the wall uuid would keep resolving in
+  every cache and screenshot after the owner made the wall private again. 128 bits
+  means the demotion is real, and a re-promotion is a URL nobody has seen.
+- **Demotion deletes the object and nulls the key**, in the same transaction that
+  flips the flag, alongside the feed retraction below. A delete that fails is
+  logged and left to the SW-17 sweep — the row has already stopped handing the URL
+  out, which is what "private" actually rests on.
+- **A publish re-points it.** `publishSprayWallVersion` on a public wall copies the
+  newly published photo and sweeps the old object, or the gym page would show last
+  year's wall forever.
+
+The copy is made BEFORE the transaction — object storage is a network round trip
+and the wall's advisory lock must not be held across one — and is deleted again if
+the transaction then fails. **Unlisted walls get no copy**: they are read by uuid,
+through presigned URLs, like a private one.
+
+### Who may flip the switch
+
+Every other field on `updateSprayWall` follows `requireBoardEditAccess`, which a
+gym owner/admin and a community leader also pass. `isPublic` does not: it is
+owner-only (`SPRAY_WALL_VISIBILITY_OWNER_ONLY`). Putting a photograph of somebody's
+wall on the open web, and starting to announce their climbs, is the photographer's
+call. `updateBoard` refuses a visibility CHANGE on a spray board outright
+(`SPRAY_WALL_VISIBILITY_ELSEWHERE`) so there is exactly one door — the ordinary
+board path would set the flag and copy nothing.
+
+### A gym's walls
+
+`gymSprayWalls(gymUuid)` lists a gym's walls for the mobile gym screen and the web
+gym page. It gates on **`viewerCanSeeSprayWallByLayout`**, not
+`viewerCanSeeSprayWall`: a listing is enumerable, so the unlisted exemption must
+not apply — appearing in a public list is the one thing "unlisted" promises not to
+do. Gym members see the gym's walls including the private ones; everybody else,
+logged out included, sees only the public ones. An unknown gym is an empty list.
+
+### An unpublished wall is listed to nobody but its owner
+
+`is_public` and the first publish are two separate moments: the API lets a caller
+create a wall public and photograph it afterwards, and in between the row is a
+public board with no photo, no holds and no climbs. So every listing that can
+return a spray wall carries one more rule — a wall whose
+`spray_walls.current_version_id` is NULL is listed only to its owner.
+
+`listableSprayWallCondition(viewerId)`
+(`resolvers/board/spray-wall-listing.ts`) is that rule as SQL, and it is applied
+in `searchBoards` (both the proximity and the text path), `gymBoards` and
+`myBoards`; `gymSprayWalls` applies the row-level twin `sprayWallIsListable`,
+having already joined the wall. SQL rather than a post-filter because
+`searchBoards` and `myBoards` each run a COUNT beside the page: a filter that
+dropped rows from the page alone would leave the count promising results the last
+page does not have.
+
+The app creates walls private and shares them after the first publish (SW-09), but
+the API is public and a server rule must not rest on a client convention.
+
 ## Climb writes on a wall
 
 SW-03's blanket `assertClimbWriteBoardIsNotSpray` gate is gone. What replaced it

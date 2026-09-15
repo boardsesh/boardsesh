@@ -178,7 +178,10 @@
         "editHolds": "Edit holds",
         "editHoldsHint": "Add, move or delete the holds on your wall.",
         "newPhoto": "New photo",
-        "newPhotoHint": "Shoot the wall again after a reset."
+        "newPhotoHint": "Shoot the wall again after a reset.",
+        "shareLink": "Share link",
+        "shareLinkPublicHint": "Anyone can open this wall.",
+        "shareLinkUnlistedHint": "Only the climbers you send it to."
       }
     },
     "disambiguation": {
@@ -356,6 +359,26 @@
       "empty": "No gyms nearby",
       "sharedEditHint": "This gym's staff will be able to edit this board's details.",
       "linkError": "Couldn't link that gym. It may be too far from your board. Your other changes were saved."
+    },
+    "sprayShare": {
+      "title": "Share this wall",
+      "publicBody": "This wall is public, so anyone can open it, it shows on the gym page, and its climbs turn up in the feed.",
+      "unlistedBody": "Only the climbers you send this link to can open the wall. It isn't listed anywhere.",
+      "copyLink": "Copy link",
+      "share": "Share",
+      "copied": "Link copied",
+      "qrLabel": "QR code for {{name}}"
+    },
+    "sprayVisibility": {
+      "label": "Who can see it",
+      "private": "Private",
+      "unlisted": "Link only",
+      "public": "Public",
+      "privateHint": "Only you. Your wall photo stays in your account.",
+      "unlistedHint": "Anyone with the link gets in. The wall isn't listed on the gym page and its photo stays off the open web.",
+      "publicHint": "Anyone can find the wall. It shows on the gym page, its climbs turn up in the feed, and the wall photo goes on the open web.",
+      "ownerOnlyError": "Only the climber who set this wall up can change who sees it. Your other changes saved.",
+      "updateError": "Couldn't change who can see this wall. Try again."
     }
   },
   "boardEntity": {

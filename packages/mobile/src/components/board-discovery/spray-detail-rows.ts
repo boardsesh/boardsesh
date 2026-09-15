@@ -18,6 +18,7 @@
 import { toBoardName } from '@boardsesh/board-config';
 import type { IconName } from '../icon-map';
 import { sprayHoldEditorHref, sprayResetHref } from '../../lib/spray/spray-routes';
+import { buildSprayWallShareUrl, sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
 
 /** The board fields the gate reads. Structural so a partial board works uncast. */
 export type SprayDetailRowBoard = {
@@ -25,6 +26,52 @@ export type SprayDetailRowBoard = {
   boardType: string;
   canEdit?: boolean;
 };
+
+/** The board fields the share gate reads, on top of the ones above. */
+export type SprayShareBoard = SprayDetailRowBoard & {
+  slug: string;
+  angle: number;
+  name: string;
+  isPublic: boolean;
+  isUnlisted: boolean;
+};
+
+export type SprayShareTarget = {
+  url: string;
+  /** What the link grants — the sheet says so in words, and they differ. */
+  visibility: Exclude<SprayWallVisibility, 'private'>;
+};
+
+/**
+ * The share link for one wall, or `null` when there is nothing to share.
+ *
+ * Null on every catalogue board (they have their own slug routes and no wall
+ * capability to hand out) and, deliberately, on a PRIVATE wall: a private wall's
+ * link resolves for nobody, so offering one would be a promise the server
+ * refuses. The way to get a link is to make the wall shareable on the edit
+ * screen, which is where that decision — and its consequences — belong.
+ *
+ * No `canEdit` gate. A wall you can already open is a wall you can already tell a
+ * friend about; the link grants exactly the access the viewer has.
+ */
+export function sprayShareTarget(board: SprayShareBoard | null | undefined): SprayShareTarget | null {
+  if (!board) return null;
+  if (toBoardName(board.boardType) !== 'spray') return null;
+
+  const visibility = sprayWallVisibility(board);
+  if (visibility === 'private') return null;
+
+  const url = buildSprayWallShareUrl({
+    slug: board.slug,
+    angle: board.angle,
+    // A wall's uuid IS its board uuid (`SprayWall.uuid`), which is what makes the
+    // `?wall=` capability resolvable by `sprayWall(uuid:)`.
+    wallUuid: board.uuid,
+    isPublic: board.isPublic,
+    isUnlisted: board.isUnlisted,
+  });
+  return url ? { url, visibility } : null;
+}
 
 export type SprayDetailRowKey = 'editHolds' | 'newPhoto';
 

@@ -26,9 +26,11 @@ import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builde
 import { BoardImageNative } from '../BoardImageNative';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
+import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { SwitchRow } from '../SwitchRow';
+import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
@@ -183,6 +185,25 @@ export function BoardForm({
   // screen was the sharp edge: flipping it would put a Bluetooth scan and a
   // device picker on a photograph.
   const isSprayWall = builder.boardName === 'spray';
+  const sprayVisibility = sprayWallVisibility(builder);
+  const { setIsPublic, setIsUnlisted } = builder;
+  // One control, two flags. Public wins over unlisted on read (`sprayWallVisibility`),
+  // so writing the pair exclusively is what keeps the round trip honest.
+  const onSelectVisibility = useCallback(
+    (next: SprayWallVisibility) => {
+      setIsPublic(next === 'public');
+      setIsUnlisted(next === 'unlisted');
+    },
+    [setIsPublic, setIsUnlisted],
+  );
+  const visibilityOptions = useMemo(
+    () => [
+      { key: 'private' as const, label: t('mobile.sprayVisibility.private') },
+      { key: 'unlisted' as const, label: t('mobile.sprayVisibility.unlisted') },
+      { key: 'public' as const, label: t('mobile.sprayVisibility.public') },
+    ],
+    [t],
+  );
   const showPreview = builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0;
   const setIdsWire = builder.setIds.join(',');
   // Account for both the scroll content padding and the preview tile's padding.
@@ -332,6 +353,33 @@ export function BoardForm({
               </Text>
               <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
             </Pressable>
+
+            {/* Visibility on a WALL lives in the main form, beside the name and
+                the gym, because on a wall it is not an advanced setting — it is
+                the difference between a private notebook and a wall the gym
+                climbs on, and it is the only thing standing between the
+                climber's photograph and the open web. The two switches that
+                carry it on a catalogue board are hidden below for spray: three
+                states expressed as two independent booleans made "unlisted and
+                public" reachable, which is a state nobody meant to pick. */}
+            {isSprayWall ? (
+              <>
+                <SectionLabel>{t('mobile.sprayVisibility.label')}</SectionLabel>
+                <SegmentedControl<SprayWallVisibility>
+                  options={visibilityOptions}
+                  selectedKey={sprayVisibility}
+                  onSelect={onSelectVisibility}
+                  accessibilityLabel={t('mobile.sprayVisibility.label')}
+                />
+                <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.visibilityHint}>
+                  {sprayVisibility === 'public'
+                    ? t('mobile.sprayVisibility.publicHint')
+                    : sprayVisibility === 'unlisted'
+                      ? t('mobile.sprayVisibility.unlistedHint')
+                      : t('mobile.sprayVisibility.privateHint')}
+                </Text>
+              </>
+            ) : null}
           </>
         ) : null}
 
@@ -361,17 +409,24 @@ export function BoardForm({
             ) : null}
 
             <SwitchRow label={t('mobile.create.ownBoard')} value={builder.isOwned} onValueChange={builder.setIsOwned} />
-            <SwitchRow
-              label={t('mobile.create.public')}
-              description={t('mobile.create.publicHint')}
-              value={builder.isPublic}
-              onValueChange={builder.setIsPublic}
-            />
-            <SwitchRow
-              label={t('mobile.create.unlisted')}
-              value={builder.isUnlisted}
-              onValueChange={builder.setIsUnlisted}
-            />
+            {/* Spray reads these two through the segmented control in the main
+                form above — leaving the switches here too would give one wall two
+                controls that can disagree. */}
+            {isSprayWall ? null : (
+              <>
+                <SwitchRow
+                  label={t('mobile.create.public')}
+                  description={t('mobile.create.publicHint')}
+                  value={builder.isPublic}
+                  onValueChange={builder.setIsPublic}
+                />
+                <SwitchRow
+                  label={t('mobile.create.unlisted')}
+                  value={builder.isUnlisted}
+                  onValueChange={builder.setIsUnlisted}
+                />
+              </>
+            )}
             <SwitchRow
               label={t('mobile.create.hideLocation')}
               value={builder.hideLocation}
@@ -683,6 +738,10 @@ const styles = StyleSheet.create({
   },
   serialHint: {
     marginTop: spacing[1],
+  },
+  visibilityHint: {
+    marginTop: spacing[2],
+    lineHeight: 18,
   },
   timerRow: {
     flexDirection: 'row',

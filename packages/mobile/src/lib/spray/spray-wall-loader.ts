@@ -14,7 +14,11 @@
 // expire in fifteen minutes and holds that change on every reset.
 
 import type { QueryClient } from '@tanstack/react-query';
-import { GET_SPRAY_WALL_BY_LAYOUT, GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
+import {
+  GET_SPRAY_WALL,
+  GET_SPRAY_WALL_BY_LAYOUT,
+  GET_SPRAY_WALL_RENDER_DATA,
+} from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import {
@@ -212,4 +216,39 @@ export function installSprayWallLoader(queryClient: QueryClient): () => void {
   return () => {
     setSprayWallLoader(null);
   };
+}
+
+type SprayWallResponse = { sprayWall: SprayWall | null };
+
+/**
+ * Take up the capability in a share link: resolve one wall BY UUID and seed the
+ * by-layout cache with it.
+ *
+ * This is the whole reason an unlisted share link carries `?wall=<uuid>`.
+ * `sprayWallByLayout` refuses an unlisted wall to anyone who is not its owner or
+ * a member of its gym — a layout id is a sequence number, so answering there
+ * would make every unlisted wall enumerable — while `sprayWall(uuid)` resolves
+ * it, because holding the uuid IS the proof you were handed the link.
+ *
+ * So the link's recipient asks the question they can answer, and the answer is
+ * written into `sprayWallByLayoutQueryKey(layoutId)`. Every later reader —
+ * `fetchSprayWallUuid`, and through it the whole render path — then finds the
+ * wall in cache and never asks the query that would refuse it.
+ *
+ * Returns the wall's layout id, or `null` when it does not resolve (deleted, a
+ * bad uuid, or a private wall the viewer may not see), in which case nothing is
+ * written.
+ */
+export async function adoptSprayWallFromLink(queryClient: QueryClient, wallUuid: string): Promise<number | null> {
+  const response = await queryClient.fetchQuery({
+    queryKey: ['sprayWall', wallUuid] as const,
+    queryFn: () => getHttpClient().request<SprayWallResponse>(GET_SPRAY_WALL, { uuid: wallUuid }),
+    staleTime: WALL_IDENTITY_STALE_TIME_MS,
+  });
+
+  const wall = response.sprayWall;
+  if (!wall) return null;
+
+  queryClient.setQueryData(sprayWallByLayoutQueryKey(wall.layoutId), { sprayWallByLayout: wall });
+  return wall.layoutId;
 }

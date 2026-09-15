@@ -24,11 +24,17 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
  * `getS3ObjectMetadata` are scripted and everything else is real rows.
  */
 
-const { presignedUrls, storedPhotoMetadata, publishedEvents } = vi.hoisted(() => ({
-  presignedUrls: [] as string[],
-  storedPhotoMetadata: new Map<string, { width: string; height: string }>(),
-  publishedEvents: [] as Array<{ type: string; metadata?: Record<string, unknown> }>,
-}));
+const { presignedUrls, storedPhotoMetadata, publishedEvents, publicBucketObjects, deletedPublicKeys } = vi.hoisted(
+  () => ({
+    presignedUrls: [] as string[],
+    storedPhotoMetadata: new Map<string, { width: string; height: string }>(),
+    publishedEvents: [] as Array<{ type: string; metadata?: Record<string, unknown> }>,
+    // The `media` bucket, as far as these tests are concerned: public key ->
+    // the private key it was copied from.
+    publicBucketObjects: new Map<string, string>(),
+    deletedPublicKeys: [] as string[],
+  }),
+);
 
 vi.mock('../storage/s3', () => ({
   isS3Configured: vi.fn(() => true),
@@ -42,6 +48,21 @@ vi.mock('../storage/s3', () => ({
     return metadata ? { contentType: 'image/jpeg', contentLength: 1024, lastModified: new Date(), metadata } : null;
   }),
   uploadToS3: vi.fn(async (_bucket: string, _body: Buffer, key: string) => ({ key })),
+  // The public-promotion path (SW-14). `storedPhotoMetadata` is the set of
+  // objects that exist in the private bucket, so a copy of a key nothing
+  // uploaded answers null exactly like the real one does.
+  copyObjectBetweenBuckets: vi.fn(
+    async (_source: string, sourceKey: string, _destination: string, destinationKey: string) => {
+      if (!storedPhotoMetadata.has(sourceKey)) return null;
+      publicBucketObjects.set(destinationKey, sourceKey);
+      return { key: destinationKey };
+    },
+  ),
+  deleteFromS3: vi.fn(async (_bucket: string, key: string) => {
+    publicBucketObjects.delete(key);
+    deletedPublicKeys.push(key);
+  }),
+  getPublicUrl: vi.fn((_bucket: string, key: string) => `https://media.example/${key}`),
 }));
 
 vi.mock('../events', () => ({
@@ -68,6 +89,7 @@ const { sprayWallQueries, sprayWallMutations } = await import('../graphql/resolv
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
+const { socialBoardQueries } = await import('../graphql/resolvers/social/boards');
 const { newClimbSubscriptionResolvers } = await import('../graphql/resolvers/social/new-climb-subscriptions');
 const { syncQueries } = await import('../graphql/resolvers/sync/queries');
 const { setterFollowQueries } = await import('../graphql/resolvers/social/setter-follows');
@@ -269,6 +291,8 @@ beforeEach(async () => {
   presignedUrls.length = 0;
   publishedEvents.length = 0;
   storedPhotoMetadata.clear();
+  publicBucketObjects.clear();
+  deletedPublicKeys.length = 0;
 
   // `clearAllMocks` resets call history but NOT a `mockReturnValueOnce` queue, so the
   // unconfigured-bucket test two describes down would otherwise hand its leftover
@@ -3355,5 +3379,350 @@ describe('playlists paginate on what the viewer may actually see', () => {
     const asOwner = await read(OWNER);
     expect(asOwner.climbs).toHaveLength(2);
     expect(asOwner.totalCount).toBe(2);
+  });
+});
+
+/**
+ * SW-14: who a wall is shared with, and what that does to the PHOTOGRAPH.
+ *
+ * Visibility on a spray wall is not an ordinary board flag. Going public copies
+ * the wall photo out of the private bucket into the world-readable one, and going
+ * private again has to undo that — delete the object AND retract the climbs
+ * already fanned out to feeds. Every test here is about one half of that pair
+ * actually happening, because either half alone is a leak or a dead link.
+ */
+describe('sharing a wall: public promotion, demotion and gym listing', () => {
+  /** A gym owned by `OWNER`, with `member` joined at `role`. */
+  async function gymWith(member: string, role: 'admin' | 'editor' | 'member'): Promise<{ uuid: string; id: number }> {
+    const gymUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO gyms (uuid, name, slug, owner_id, is_public, created_at, updated_at)
+      VALUES (${gymUuid}, 'Spray Gym', ${gymUuid}, ${OWNER}, true, now(), now())
+    `);
+    const [gym] = (await db.execute(sql`SELECT id FROM gyms WHERE uuid = ${gymUuid}`)) as unknown as Array<{
+      id: number;
+    }>;
+    await db.execute(sql`
+      INSERT INTO gym_members (gym_id, user_id, role, created_at)
+      VALUES (${gym.id}, ${member}, ${role}, now())
+    `);
+    return { uuid: gymUuid, id: Number(gym.id) };
+  }
+
+  const publicPhotoKeyOf = async (layoutId: number): Promise<string | null> => {
+    const [row] = (await db.execute(
+      sql`SELECT public_photo_key FROM spray_walls WHERE layout_id = ${layoutId}`,
+    )) as unknown as Array<{ public_photo_key: string | null }>;
+    return row?.public_photo_key ?? null;
+  };
+
+  it('copies the photo into the public bucket on promotion and serves a stable URL', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+
+    // Private: nothing is in the public bucket and there is no stable URL at all.
+    expect(publicBucketObjects.size).toBe(0);
+
+    const promoted = (await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, isPublic: true } },
+      ctxFor(OWNER),
+    )) as { publicPhotoUrl: string | null };
+
+    expect(publicBucketObjects.size).toBe(1);
+    const [publicKey] = [...publicBucketObjects.keys()];
+    // 128 random bits, NOT derived from the wall uuid: a demotion has to be a
+    // real one, and a guessable key would survive it in every cache.
+    expect(publicKey).toMatch(new RegExp(`^spray-walls/${wall.uuid}/[0-9a-f]{32}\\.jpg$`));
+    expect(await publicPhotoKeyOf(wall.layoutId)).toBe(publicKey);
+    expect(promoted.publicPhotoUrl).toBe(`https://media.example/${publicKey}`);
+  });
+
+  it('deletes the public copy — and retracts the feed — when the wall goes private again', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+    const publicKey = await publicPhotoKeyOf(wall.layoutId);
+    expect(publicKey).not.toBeNull();
+
+    // A climb fanned out to a follower while the wall was public.
+    const saved = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Was public for a while',
+          isDraft: false,
+          frames: framesFor([1, 2, 3]),
+          angle: 40,
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+    await db.execute(sql`
+      INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, created_at)
+      VALUES (${STRANGER}, ${OWNER}, 'climb', 'climb', ${saved.uuid}, now())
+    `);
+
+    // The purge matches on (board_type, layout_id) through `board_climbs`, so a
+    // climb that did not land there would make the feed assertion below pass or
+    // fail for a reason that has nothing to do with the purge.
+    const [{ n: climbRows }] = (await db.execute(sql`
+      SELECT count(*)::int AS n FROM board_climbs
+      WHERE board_type = 'spray' AND layout_id = ${wall.layoutId} AND uuid = ${saved.uuid}
+    `)) as unknown as Array<{ n: number }>;
+    expect(climbRows).toBe(1);
+
+    const demoted = (await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, isPublic: false } },
+      ctxFor(OWNER),
+    )) as { publicPhotoUrl: string | null };
+
+    // The object is gone, the row has forgotten the key, and the field stops answering.
+    expect(deletedPublicKeys).toContain(publicKey);
+    expect(publicBucketObjects.size).toBe(0);
+    expect(await publicPhotoKeyOf(wall.layoutId)).toBeNull();
+    expect(demoted.publicPhotoUrl).toBeNull();
+
+    // The feed rows written while it was public go with it. Scoped to THIS
+    // climb's uuid rather than to the recipient: `feed_items` is not in the
+    // per-test TRUNCATE list, so an earlier test's row — orphaned when its climb
+    // went with `board_climbs` — is still sitting in the table for STRANGER, and
+    // counting the recipient would measure that instead of this purge.
+    const [{ n }] = (await db.execute(
+      sql`SELECT count(*)::int AS n FROM feed_items WHERE entity_id = ${saved.uuid}`,
+    )) as unknown as Array<{ n: number }>;
+    expect(n).toBe(0);
+  });
+
+  it('leaves the public copy alone when the wall merely becomes unlisted', async () => {
+    // Guards the guard: a copy or a delete on every update would make the two
+    // tests above pass for the wrong reason.
+    const { wall } = await createPublishedWall(OWNER);
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+    const publicKey = await publicPhotoKeyOf(wall.layoutId);
+
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isUnlisted: true } }, ctxFor(OWNER));
+
+    expect(deletedPublicKeys).toHaveLength(0);
+    expect(await publicPhotoKeyOf(wall.layoutId)).toBe(publicKey);
+  });
+
+  it('re-points the public copy at the photo a reset publishes', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+    const firstKey = await publicPhotoKeyOf(wall.layoutId);
+
+    const secondPhotoId = registerUploadedPhoto(wall.uuid);
+    const secondVersion = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: secondPhotoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: secondVersion.id } }, ctxFor(OWNER));
+
+    const secondKey = await publicPhotoKeyOf(wall.layoutId);
+    // A new key over the new photo, and the old object swept.
+    expect(secondKey).not.toBe(firstKey);
+    expect(publicBucketObjects.get(secondKey!)).toBe(sprayWallPhotoKey(wall.uuid, secondPhotoId));
+    expect(deletedPublicKeys).toContain(firstKey);
+  });
+
+  it('refuses a visibility change from anyone but the wall owner', async () => {
+    // A gym ADMIN passes `requireBoardEditAccess` and may edit the gym's wall.
+    // Publishing a photograph of it to the open web is still the owner's call.
+    const { wall } = await createPublishedWall(OWNER);
+    const gym = await gymWith(STRANGER, 'admin');
+    await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+
+    await expect(
+      sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(STRANGER)),
+    ).rejects.toThrow(/can change who can see it/i);
+    expect(publicBucketObjects.size).toBe(0);
+
+    // And the rest of the mutation still works for them.
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, name: 'Gym renamed it' } },
+      ctxFor(STRANGER),
+    );
+    const [board] = (await db.execute(
+      sql`SELECT name FROM user_boards WHERE uuid = ${wall.uuid}`,
+    )) as unknown as Array<{ name: string }>;
+    expect(board.name).toBe('Gym renamed it');
+  });
+
+  describe('the gym wall listing', () => {
+    it("shows a gym's private walls to its members and hides them from everyone else", async () => {
+      const gym = await gymWith(GYM_EDITOR, 'member');
+      const { wall: privateWall } = await createPublishedWall(OWNER);
+      await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${privateWall.uuid}`);
+
+      const listFor = async (userId: string | null) =>
+        (await sprayWallQueries.gymSprayWalls({}, { gymUuid: gym.uuid }, ctxFor(userId))) as Array<{ uuid: string }>;
+
+      expect((await listFor(GYM_EDITOR)).map((row) => row.uuid)).toEqual([privateWall.uuid]);
+      expect((await listFor(OWNER)).map((row) => row.uuid)).toEqual([privateWall.uuid]);
+      // A stranger and an anonymous reader — the web gym page's caller — get nothing.
+      expect(await listFor(STRANGER)).toEqual([]);
+      expect(await listFor(null)).toEqual([]);
+    });
+
+    it('lists a public wall to anyone, with the URL the web page renders', async () => {
+      const gym = await gymWith(GYM_EDITOR, 'member');
+      const { wall } = await createPublishedWall(OWNER);
+      await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+      await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+
+      const listed = (await sprayWallQueries.gymSprayWalls({}, { gymUuid: gym.uuid }, ctxFor(null))) as Array<{
+        uuid: string;
+        publicPhotoUrl: string | null;
+      }>;
+      expect(listed.map((row) => row.uuid)).toEqual([wall.uuid]);
+      expect(listed[0].publicPhotoUrl).toMatch(/^https:\/\/media\.example\/spray-walls\//);
+    });
+
+    it('does NOT list an unlisted wall — a listing is enumerable, a share link is not', async () => {
+      // `viewerCanSeeSprayWall` would let this through on a uuid lookup, which is
+      // the whole point of unlisted. Appearing on a gym page is the one thing
+      // unlisted promises not to do.
+      const gym = await gymWith(GYM_EDITOR, 'member');
+      const { wall } = await createPublishedWall(OWNER, { isUnlisted: true });
+      await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+
+      expect(await sprayWallQueries.gymSprayWalls({}, { gymUuid: gym.uuid }, ctxFor(STRANGER))).toEqual([]);
+      // Still reachable by its uuid for whoever holds the link.
+      expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))).not.toBeNull();
+    });
+
+    it('answers an unknown gym with an empty list rather than an error', async () => {
+      expect(await sprayWallQueries.gymSprayWalls({}, { gymUuid: uuidv4() }, ctxFor(OWNER))).toEqual([]);
+    });
+  });
+});
+
+/**
+ * A wall with nothing published yet is not a board anybody can climb on.
+ *
+ * `is_public` and the first publish are two separate moments: the API lets a
+ * caller create a wall public and photograph it afterwards, and in between the
+ * row is a public board with no photo, no holds and no climbs. SW-09 changes the
+ * app to create walls private and share them after the first publish — but the
+ * rule cannot rest on a client convention, so every listing that can return a
+ * spray wall carries it, in the WHERE the count and the page share.
+ */
+describe('a wall with no published version is listed to nobody but its owner', () => {
+  /** A public spray wall that has never been published — the state the gate is about. */
+  async function unpublishedPublicWall(name: string): Promise<CreatedWall> {
+    const wall = await createWall(OWNER, { name, isPublic: true });
+    // No version, no publish: `current_version_id` stays NULL.
+    const [row] = (await db.execute(
+      sql`SELECT current_version_id FROM spray_walls WHERE layout_id = ${wall.layoutId}`,
+    )) as unknown as Array<{ current_version_id: number | null }>;
+    expect(row.current_version_id).toBeNull();
+    return wall;
+  }
+
+  it('keeps it out of searchBoards for everyone but the owner', async () => {
+    const wall = await unpublishedPublicWall('Half-built garage');
+
+    const search = async (userId: string | null) =>
+      (await socialBoardQueries.searchBoards(
+        {},
+        { input: { query: 'Half-built garage', limit: 20, offset: 0 } },
+        ctxFor(userId),
+      )) as { boards: Array<{ uuid: string }>; totalCount: number };
+
+    const stranger = await search(STRANGER);
+    expect(stranger.boards.map((board) => board.uuid)).not.toContain(wall.uuid);
+    // The COUNT moves with the page: a count that still promised the row would
+    // render "1 result" over an empty list.
+    expect(stranger.totalCount).toBe(0);
+    expect((await search(null)).totalCount).toBe(0);
+
+    const owner = await search(OWNER);
+    expect(owner.boards.map((board) => board.uuid)).toContain(wall.uuid);
+  });
+
+  it("keeps it out of the gym's board list, gym admins included", async () => {
+    const wall = await unpublishedPublicWall('Unfinished gym wall');
+    const gymUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO gyms (uuid, name, slug, owner_id, is_public, created_at, updated_at)
+      VALUES (${gymUuid}, 'Listing Gym', ${gymUuid}, ${STRANGER}, true, now(), now())
+    `);
+    const [gym] = (await db.execute(sql`SELECT id FROM gyms WHERE uuid = ${gymUuid}`)) as unknown as Array<{
+      id: number;
+    }>;
+    await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+
+    const listed = async (userId: string | null) =>
+      ((await socialBoardQueries.gymBoards({}, { gymUuid }, ctxFor(userId))) as Array<{ uuid: string }>).map(
+        (board) => board.uuid,
+      );
+
+    // STRANGER owns the gym, so they see its private rows — and still not this one.
+    expect(await listed(STRANGER)).not.toContain(wall.uuid);
+    expect(await listed(null)).not.toContain(wall.uuid);
+    expect(await listed(OWNER)).toContain(wall.uuid);
+  });
+
+  it('keeps it out of the spray-wall listing for the gym too', async () => {
+    const wall = await unpublishedPublicWall('Unfinished spray row');
+    const gymUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO gyms (uuid, name, slug, owner_id, is_public, created_at, updated_at)
+      VALUES (${gymUuid}, 'Spray Listing Gym', ${gymUuid}, ${STRANGER}, true, now(), now())
+    `);
+    const [gym] = (await db.execute(sql`SELECT id FROM gyms WHERE uuid = ${gymUuid}`)) as unknown as Array<{
+      id: number;
+    }>;
+    await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+
+    const listed = async (userId: string | null) =>
+      ((await sprayWallQueries.gymSprayWalls({}, { gymUuid }, ctxFor(userId))) as Array<{ uuid: string }>).map(
+        (row) => row.uuid,
+      );
+
+    expect(await listed(STRANGER)).not.toContain(wall.uuid);
+    expect(await listed(null)).not.toContain(wall.uuid);
+    expect(await listed(OWNER)).toContain(wall.uuid);
+  });
+
+  it('lists a PUBLISHED public wall everywhere — the gate is about the version, not the type', async () => {
+    // Guards the guard: a filter that dropped every spray wall would pass the
+    // three tests above and quietly delete the feature.
+    const { wall } = await createPublishedWall(OWNER, { name: 'Finished wall', isPublic: true });
+
+    const search = (await socialBoardQueries.searchBoards(
+      {},
+      { input: { query: 'Finished wall', limit: 20, offset: 0 } },
+      ctxFor(STRANGER),
+    )) as { boards: Array<{ uuid: string }>; totalCount: number };
+
+    expect(search.boards.map((board) => board.uuid)).toContain(wall.uuid);
+    expect(search.totalCount).toBe(1);
+  });
+
+  it('leaves catalogue boards alone', async () => {
+    // The predicate is written as "not a spray wall, OR published, OR yours", so
+    // a Kilter board — which has no `spray_walls` row at all — must not be caught
+    // by the EXISTS half.
+    const boardUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO user_boards (uuid, owner_id, board_type, layout_id, size_id, set_ids, angle, name, slug,
+                               is_public, is_unlisted, created_at, updated_at)
+      VALUES (${boardUuid}, ${OWNER}, 'kilter', 8, 17, '26,27', 40, 'Rail board', ${'rail-' + boardUuid.slice(0, 8)},
+              true, false, now(), now())
+    `);
+
+    const search = (await socialBoardQueries.searchBoards(
+      {},
+      { input: { query: 'Rail board', limit: 20, offset: 0 } },
+      ctxFor(STRANGER),
+    )) as { boards: Array<{ uuid: string }>; totalCount: number };
+
+    expect(search.boards.map((board) => board.uuid)).toContain(boardUuid);
   });
 });
