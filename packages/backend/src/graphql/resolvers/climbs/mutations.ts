@@ -28,6 +28,7 @@ import {
   SPRAY_CLIMB_CODES,
   assertSprayAngleMatchesWall,
   assertSprayClimbIsSingleFrame,
+  recordRemixLineage,
   populateSprayClimbColumns,
   assertSprayGradeOnPublish,
   assertSprayHoldsAreAlive,
@@ -165,6 +166,17 @@ export const climbMutations = {
       // the duplicate gate, which only fires for a single frame, so a multi-frame
       // spray climb would bypass the per-wall duplicate check entirely.
       assertSprayClimbIsSingleFrame(validated.framesCount, validated.frames);
+    }
+
+    // A remix is a spray-wall idea and `spray_climb_lineage` is a spray table, so
+    // there is nothing a remix of a Kilter climb could write. Rejected rather than
+    // ignored: dropping the field silently would save the climb, report success,
+    // and leave the client believing a link exists that never will — and the
+    // lineage row can only be written once, with the child.
+    if (!sprayTarget && validated.remixOfClimbUuid) {
+      throw new GraphQLError('Only spray wall climbs can be remixed', {
+        extensions: { code: SPRAY_CLIMB_CODES.remixParentNotFound, boardType },
+      });
     }
 
     // Woods is code-driven: no board_placements to validate a hold against and
@@ -381,6 +393,13 @@ export const climbMutations = {
             })),
           )
           .onConflictDoNothing();
+      }
+
+      // The remix link, written with the child rather than after it: a lineage row
+      // is the only record of where a remix came from, and a climb that landed
+      // without it would look like an original forever.
+      if (sprayTarget && validated.remixOfClimbUuid) {
+        await recordRemixLineage(tx, sprayTarget, uuid, validated.remixOfClimbUuid);
       }
 
       // Derive the denormalised columns, then re-assert the spray ones — see

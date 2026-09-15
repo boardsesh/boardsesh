@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { woodsHoldIdsInZone } from '@boardsesh/board-config';
-import { createClimbFilters, hiddenClimbCondition } from '../create-climb-filters';
+import { createClimbFilters, hiddenClimbCondition, holdIntegrityCondition } from '../create-climb-filters';
 import type { BoardRouteParams, ClimbSearchParams } from '../types';
 
 const params: BoardRouteParams = {
@@ -793,5 +793,46 @@ void describe('cross-angle stats conditions', () => {
   void it('turns itself on for an angle-bound board without an explicit opt-in', () => {
     assert.equal(createClimbFilters(woodsParams, {}, undefined, { crossAngleStats: true }).isCrossAngleStats, true);
     assert.equal(createClimbFilters(params, {}, undefined, { crossAngleStats: false }).isCrossAngleStats, false);
+  });
+});
+
+void describe('createClimbFilters: spray-wall hold integrity', () => {
+  const integritySql = (search: ClimbSearchParams) => holdIntegrityCondition(search).map(sqlToString).join(' || ');
+
+  void it('adds nothing at all for ANY, which is what an absent value means', () => {
+    assert.deepEqual(holdIntegrityCondition(baseSearch), []);
+    assert.deepEqual(holdIntegrityCondition({ holdIntegrity: undefined }), []);
+  });
+
+  void it('keeps climbs that have lost nothing for INTACT', () => {
+    const rendered = integritySql({ holdIntegrity: 'intact' });
+    assert.match(rendered, /missing_hold_count/);
+    assert.match(rendered, /= 0/);
+  });
+
+  void it('keeps only climbs that have lost something for BROKEN', () => {
+    const rendered = integritySql({ holdIntegrity: 'broken' });
+    assert.match(rendered, /missing_hold_count/);
+    assert.match(rendered, /> 0/);
+  });
+
+  void it('COALESCEs NULL, so an un-backfilled row reads as INTACT rather than broken', () => {
+    // Every non-spray climb carries NULL — holds do not come off a catalogue
+    // board. Reversed, one NULL would badge every Kilter climb as broken.
+    assert.match(integritySql({ holdIntegrity: 'intact' }), /coalesce/i);
+    assert.match(integritySql({ holdIntegrity: 'broken' }), /coalesce/i);
+  });
+
+  void it('puts the predicate in the climb WHERE array the browse query runs', () => {
+    const rendered = createClimbFilters(params, { holdIntegrity: 'broken' })
+      .getClimbWhereConditions()
+      .map(sqlToString)
+      .join(' || ');
+    assert.match(rendered, /missing_hold_count/);
+  });
+
+  void it('leaves the WHERE array untouched for an unfiltered browse', () => {
+    const rendered = createClimbFilters(params, baseSearch).getClimbWhereConditions().map(sqlToString).join(' || ');
+    assert.doesNotMatch(rendered, /missing_hold_count/);
   });
 });

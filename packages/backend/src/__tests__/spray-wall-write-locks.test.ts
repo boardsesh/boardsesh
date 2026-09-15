@@ -118,6 +118,12 @@ const WRITERS: Array<{ name: string; source: string; why: string; exempt?: strin
   { name: 'upsertSprayWallHolds', source: SPRAY_WALLS_SOURCE, why: 'the draft-status and alive-set reads decide' },
   { name: 'removeSprayWallHolds', source: SPRAY_WALLS_SOURCE, why: 'the draft-status and alive-set reads decide' },
   { name: 'publishSprayWallVersion', source: SPRAY_WALLS_SOURCE, why: 'supersede keys on current_version_id' },
+  {
+    name: 'publishDraftUnderLock',
+    source: SPRAY_WALLS_SOURCE,
+    why: 'it IS the publish: supersede, hold count, catalogue image and the integrity recompute',
+  },
+  { name: 'commitSprayWallVersion', source: SPRAY_WALLS_SOURCE, why: 'the alive-set and draft-status reads decide' },
   { name: 'discardSprayWallVersion', source: SPRAY_WALLS_SOURCE, why: 'the draft-status read decides' },
   { name: 'updateSprayWall', source: SPRAY_WALLS_SOURCE, why: 'the angle rule reads current_version_id' },
   { name: 'deleteSprayWall', source: SPRAY_WALLS_SOURCE, why: 'a publish must not land on a wall being deleted' },
@@ -142,12 +148,34 @@ describe('every spray wall writer holds the wall lock', () => {
 
     expect(lockAt, `${name} never calls lockWallForWrite`).toBeGreaterThanOrEqual(0);
 
+    // …and INSIDE the transaction, not in front of it. `pg_advisory_xact_lock` is
+    // transaction-scoped: called on the pool it takes a lock on a throwaway
+    // connection, which commits and releases before the transaction that needed it
+    // has even opened. That reads exactly like a correct writer — the call is
+    // there, and it is before the first write — while serialising nothing. The
+    // helpers are exempt: they take an executor and are called from inside their
+    // caller's transaction, so `db.transaction(` never appears in their bodies.
+    const transactionAt = body.indexOf('db.transaction(');
+    if (transactionAt !== -1) {
+      expect(
+        lockAt,
+        `${name} locks at ${lockAt}, outside the transaction that opens at ${transactionAt}`,
+      ).toBeGreaterThan(transactionAt);
+    }
+
     const writeAt = firstWriteOffset(body);
     if (writeAt === -1) {
+      // Two shapes have no guarded write of their own and still have to lock.
+      //
       // `assertSprayHoldsAreAlive` only READS — but it reads to authorize a write
       // its caller is about to make in the same transaction, so the lock still has
       // to be held from here on.
-      expect(name).toBe('assertSprayHoldsAreAlive');
+      //
+      // `publishSprayWallVersion` delegates every write to `publishDraftUnderLock`,
+      // which is itself in this list and takes the lock again (re-entrant within a
+      // transaction) before its first write. The resolver still locks, so a reader
+      // of either function sees the rule stated where the transaction opens.
+      expect(['assertSprayHoldsAreAlive', 'publishSprayWallVersion']).toContain(name);
       return;
     }
     expect(lockAt, `${name} writes at offset ${writeAt} before locking at ${lockAt}`).toBeLessThan(writeAt);

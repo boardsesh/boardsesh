@@ -54,6 +54,38 @@ export function hiddenClimbCondition(searchParams: ClimbSearchParams): SQL[] {
   return hasNameQuery ? [] : [eq(boardClimbs.isHidden, false)];
 }
 
+/**
+ * The spray-wall integrity predicate: does this climb still have every hold it
+ * was set on?
+ *
+ * Reads the materialised `board_climbs.missing_hold_count`, which
+ * `recomputeMissingHoldCounts` re-derives whenever a reset lands. Materialised
+ * rather than joined through `board_climb_holds` on purpose — the offline mirror
+ * has no such table, so a join would be a filter the phone could never mirror.
+ *
+ * NULL is the reason both branches COALESCE. Every non-spray climb carries NULL
+ * (holds do not come off a catalogue board), as does a spray climb written before
+ * the column existed. The honest reading of "unknown" is INTACT: a climb is
+ * presumed whole until a reset says otherwise, so INTACT keeps NULLs and BROKEN
+ * drops them. Reversed, one un-backfilled row would badge every Kilter climb in
+ * the database as broken.
+ *
+ * The offline mirror of this rule lives in
+ * packages/mobile/src/db/queries/search-climbs-local.ts — which cannot express it,
+ * because `missing_hold_count` is not synced to the device until SW-15 (#5448), so
+ * it declines the search instead. Declining is the mirror: answering from a column
+ * the device does not have would show broken climbs as intact.
+ */
+export function holdIntegrityCondition(searchParams: ClimbSearchParams): SQL[] {
+  if (searchParams.holdIntegrity === 'intact') {
+    return [sql`COALESCE(${boardClimbs.missingHoldCount}, 0) = 0`];
+  }
+  if (searchParams.holdIntegrity === 'broken') {
+    return [sql`COALESCE(${boardClimbs.missingHoldCount}, 0) > 0`];
+  }
+  return [];
+}
+
 function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: SQL; y: SQL } {
   const geometry = getMoonBoardGeometryByLayoutId(layoutId);
   const { leftMargin, rightMargin, topMargin, bottomMargin } = geometry.calibration;
@@ -176,6 +208,7 @@ export const createClimbFilters = (
     ...(isListedCondition ? [isListedCondition] : []),
     isDraftCondition,
     ...hiddenClimbCondition(searchParams),
+    ...holdIntegrityCondition(searchParams),
     ...(climbTypeCondition ? [climbTypeCondition] : []),
   ];
 

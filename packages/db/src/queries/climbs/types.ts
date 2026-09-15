@@ -68,6 +68,17 @@ export type ClimbSearchParams = {
   onlyRatedByMe?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
+  /**
+   * Hold integrity, for spray walls: 'intact' keeps climbs that have lost no
+   * holds, 'broken' keeps only the ones that have, 'any' (the default, and what
+   * `undefined` means) adds no predicate at all.
+   *
+   * Reads the materialised `board_climbs.missing_hold_count`, which a reset
+   * re-computes (`recomputeMissingHoldCounts`). Lower case because that is what
+   * every other param here uses; the GraphQL enum arrives SCREAMING and is
+   * lowered by the validator.
+   */
+  holdIntegrity?: 'any' | 'intact' | 'broken';
   // Resolve each climb's stats through its own set angle when the browsed angle
   // has no row (issue #5405). Ignored — always on — for boards whose climbs are
   // angle-bound; see `resolveCrossAngleStats` in ./effective-stats.
@@ -120,6 +131,7 @@ export type ClimbSearchInputLike = {
   onlyRatedByMe?: boolean | null;
   onlyDrafts?: boolean | null;
   projectsOnly?: boolean | null;
+  holdIntegrity?: string | null;
   crossAngleStats?: boolean | null;
   boulders?: boolean | null;
   routes?: boolean | null;
@@ -138,6 +150,21 @@ const SEARCH_SORT_ALIASES: Record<string, NonNullable<ClimbSearchParams['sortBy'
   created_at: 'creation',
   published_at: 'creation',
 };
+
+/**
+ * Map a wire `holdIntegrity` value onto the param.
+ *
+ * Unknown strings collapse to undefined rather than throwing: the validator has
+ * already rejected anything off the enum by the time a GraphQL search gets here,
+ * and the SSR path builds this shape from URL text where an unreadable value must
+ * not blank the page.
+ */
+export function normalizeHoldIntegrity(raw: string | null | undefined): ClimbSearchParams['holdIntegrity'] {
+  if (!raw) return undefined;
+  const value = raw.toLowerCase();
+  if (value === 'intact' || value === 'broken') return value;
+  return undefined;
+}
 
 export function normalizeSearchSortBy(sortBy: string | null | undefined): NonNullable<ClimbSearchParams['sortBy']> {
   if (!sortBy) return 'ascents';
@@ -194,6 +221,10 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     onlyRatedByMe: input.onlyRatedByMe ?? undefined,
     onlyDrafts: input.onlyDrafts ?? undefined,
     projectsOnly: input.projectsOnly ?? undefined,
+    // The GraphQL enum is SCREAMING_CASE and the param is lower case. ANY is the
+    // "no filter" value, so it collapses to undefined here rather than travelling
+    // down to `createClimbFilters` as a predicate that matches everything.
+    holdIntegrity: normalizeHoldIntegrity(input.holdIntegrity),
     crossAngleStats: input.crossAngleStats ?? undefined,
     boulders: input.boulders ?? undefined,
     routes: input.routes ?? undefined,
@@ -265,4 +296,8 @@ export type ClimbRow = {
    *  (`canAddClimbToBoard`) can separate Woods' two sizes, whose hold ids
    *  overlap without meaning the same holds. */
   compatibleSizeIds: number[] | null;
+  /** `board_climbs.missing_hold_count` — how many of this climb's holds have come
+   *  off the wall. Spray only; null on every catalogue board and on any row the
+   *  reset recompute has never touched, both of which mean "intact". */
+  missingHoldCount: number | null;
 };
