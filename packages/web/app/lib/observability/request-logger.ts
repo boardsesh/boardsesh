@@ -54,12 +54,9 @@ function resolveRoute(url: string): string {
  *  - `headers()` is async in Next 16. Sourcing the request id from it would
  *    make every `log.info(...)` an `await`, in catch blocks and `after()`
  *    callbacks included.
- *  - There is no middleware hook to seed a store from. `packages/web/middleware.ts`
- *    matches only `/api/v1/:path*`, `/api/auth/:path*` and `/api/internal/ws-auth`
- *    under `/api`; its page matcher excludes `api/` outright via the
- *    `(?!api/…)` lookahead. That narrowing was deliberate (~50k/day board-render
- *    fetches were paying for middleware that did nothing for them), so most
- *    `/api/**` handlers never run middleware at all.
+ *  - Origin verification now runs on all routes, but locale/session handling
+ *    still has a narrower scope. Taking the Request directly keeps correlation
+ *    independent of either middleware path and never copies its header bag.
  */
 export function createRequestLogger(request: Request, options: RequestLoggerOptions = {}): RequestLogger {
   const requestId = request.headers.get(RAILWAY_REQUEST_ID_HEADER) ?? undefined;

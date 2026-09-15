@@ -617,21 +617,42 @@ function resolvePath(check: SmokeCheck, env: NodeJS.ProcessEnv): string | null {
   return buildPath ? buildPath(fixtureValue) : null;
 }
 
-async function fetchOnce(url: string, timeoutMs: number): Promise<SmokeResponse> {
+export async function fetchOnce(url: string, timeoutMs: number, originSecret?: string): Promise<SmokeResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        // Identify the smoke in access logs, and ask for the uncached answer —
-        // a CDN hit would happily serve the *previous* deploy's HTML and mask
-        // exactly the regression this exists to catch.
-        'User-Agent': 'boardsesh-production-smoke/1.0',
-        'Cache-Control': 'no-cache',
-      },
-    });
+    const initialUrl = new URL(url);
+    const headersForOrigin: Record<string, string> = {
+      // Identify the smoke in access logs, and ask for the uncached answer —
+      // a CDN hit would happily serve the *previous* deploy's HTML and mask
+      // exactly the regression this exists to catch.
+      'User-Agent': 'boardsesh-production-smoke/1.0',
+      'Cache-Control': 'no-cache',
+    };
+    if (originSecret) {
+      if (initialUrl.protocol !== 'https:' || !initialUrl.hostname.endsWith('.up.railway.app')) {
+        throw new Error('Origin verification secret requires an HTTPS Railway origin');
+      }
+      headersForOrigin['X-Boardsesh-Origin-Verify'] = originSecret;
+    }
+    let currentUrl = initialUrl;
+    let response: Response;
+    for (let redirects = 0; ; redirects++) {
+      response = await fetch(currentUrl.toString(), {
+        signal: controller.signal,
+        redirect: 'manual',
+        headers: headersForOrigin,
+      });
+      const location = response.headers.get('location');
+      if (![301, 302, 303, 307, 308].includes(response.status) || !location) break;
+      await response.body?.cancel();
+      if (redirects >= 5) throw new Error('Too many smoke redirects');
+      const destination = new URL(location, currentUrl);
+      if (destination.origin !== initialUrl.origin || destination.username || destination.password) {
+        throw new Error('Smoke redirect left the requested origin');
+      }
+      currentUrl = destination;
+    }
     const headers: Record<string, string> = {};
     response.headers.forEach((value, name) => {
       headers[name.toLowerCase()] = value;
@@ -641,8 +662,8 @@ async function fetchOnce(url: string, timeoutMs: number): Promise<SmokeResponse>
       contentType: response.headers.get('content-type') ?? '',
       body: await response.text(),
       headers,
-      // `redirect: 'follow'` above means this can differ from `url`.
-      url: response.url || url,
+      // Same-origin redirects may change the final path.
+      url: response.url || currentUrl.toString(),
     };
   } finally {
     clearTimeout(timer);
@@ -687,7 +708,7 @@ async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessE
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     let detail: string;
     try {
-      const response = await fetchOnce(url, check.timeoutMs ?? REQUEST_TIMEOUT_MS);
+      const response = await fetchOnce(url, check.timeoutMs ?? REQUEST_TIMEOUT_MS, env.WEB_ORIGIN_VERIFY_SECRET);
       const failure =
         originFailure(response, baseUrl) ??
         check.assert(response, {
