@@ -171,6 +171,12 @@
         "sets": "Sets",
         "angle": "Angle",
         "adjustable": "adjustable"
+      },
+      "spray": {
+        "editHolds": "Edit holds",
+        "editHoldsHint": "Add, move or delete the holds on your wall.",
+        "newPhoto": "New photo",
+        "newPhotoHint": "Shoot the wall again after a reset."
       }
     },
     "disambiguation": {

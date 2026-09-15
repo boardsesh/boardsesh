@@ -13,6 +13,7 @@ import { InteractiveFilterBoard } from '../../../src/components/search/Interacti
 import { HoldFilterPicker } from '../../../src/components/search/HoldFilterPicker';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { getCreateBoardHolds, parseSetIdsParam } from '../../../src/lib/create-board-holds';
+import { useSprayWallToken } from '../../../src/lib/spray/use-spray-wall-token';
 import { emitHoldsFilterSelection } from '../../../src/lib/hold-filter-handoff';
 import { track } from '../../../src/lib/analytics';
 import { spacing } from '../../../src/theme/tokens';
@@ -69,6 +70,10 @@ export default function HoldFilterScreen() {
   const [selectedType, setSelectedType] = useState<HoldFilterType>('HAND');
   const [applyMode, setApplyMode] = useState<HoldFilterMode>('include');
 
+  // The picker early-returns on null holds, before anything that would subscribe
+  // to the registry is mounted, so opening the hold filter on a wall before its
+  // query settled left a permanently empty picker.
+  const sprayToken = useSprayWallToken(boardName, layoutId);
   const boardHolds = useMemo(() => {
     if (!boardName) return null;
     return getCreateBoardHolds({
@@ -77,7 +82,8 @@ export default function HoldFilterScreen() {
       sizeId,
       setIds: parseSetIdsParam(setIds),
     });
-  }, [boardName, layoutId, sizeId, setIds]);
+    // `sprayToken` moves when the wall arrives or is reset.
+  }, [boardName, layoutId, sizeId, setIds, sprayToken]);
 
   const boardRender = useMemo(() => {
     if (!boardHolds) return { width: 0, height: 0 };

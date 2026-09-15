@@ -151,8 +151,22 @@ export function boardConfigLabel(board: BoardLabelSource): string | null {
 /**
  * The one-line subtitle under a board's name: where it is, else what it is,
  * else the brand. Never the raw lowercase board type (CLAUDE.md trademark rule).
+ *
+ * A spray wall inverts that order and leads with WHAT it is: "Spray wall", with
+ * the place appended when there is one. Every other board type is recognisable
+ * from its name — "Kilter 12×14" says what it is on its own — but a wall is named
+ * by its owner ("Garage", "The cave", "Main wall"), so a row reading just
+ * "Bergen Klatresenter" under a name like that tells a climber nothing about
+ * which of the gym's walls they are looking at, and hides the one fact that
+ * separates it from the Kilter on the next row. Whichever list the row is in,
+ * spray leads the same way: the `within-gym` scope drops the place, not the kind.
  */
 export function boardRowSubtitle(board: BoardLabelSource, options?: BoardLabelOptions): string {
+  if (toBoardName(board.boardType) === 'spray') {
+    const kind = formatBoardDisplayName(board.boardType);
+    const place = boardPlaceLabel(board, options);
+    return place === null ? kind : `${kind} · ${place}`;
+  }
   return boardPlaceLabel(board, options) ?? boardConfigLabel(board) ?? formatBoardDisplayName(board.boardType);
 }
 

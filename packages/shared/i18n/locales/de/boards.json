@@ -171,6 +171,12 @@
         "sets": "Sets",
         "angle": "Winkel",
         "adjustable": "verstellbar"
+      },
+      "spray": {
+        "editHolds": "Griffe bearbeiten",
+        "editHoldsHint": "Füge Griffe hinzu, verschiebe oder lösche sie.",
+        "newPhoto": "Neues Foto",
+        "newPhotoHint": "Fotografiere dein Board nach einem Umbau neu."
       }
     },
     "disambiguation": {

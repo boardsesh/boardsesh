@@ -11,6 +11,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { hapticHeavy, hapticLight } from '../../lib/haptics';
 import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../../lib/row-accessibility-actions';
 import { springs } from '../../theme/animations';
@@ -169,6 +170,12 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
 
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
+  // Same reason as BoardManageRow: a spray wall's photo and holds are runtime
+  // data, so `getBoardRenderData` answers null until the registry holds the wall
+  // and the card falls through to the generic glyph below. Asking here is what
+  // fetches the wall, and subscribing is what re-renders this card when it lands
+  // — the card's props never move, so nothing else would.
+  const sprayToken = useSprayWallToken(item.boardName, item.layoutId);
   const render = useMemo(
     () =>
       getBoardRenderData({
@@ -177,7 +184,8 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
         sizeId: item.sizeId,
         setIds: item.setIds.split(',').map(Number).filter(Number.isFinite),
       }),
-    [item.boardName, item.layoutId, item.sizeId, item.setIds],
+    // `sprayToken` is a real dependency: it moves when the wall arrives or is reset.
+    [item.boardName, item.layoutId, item.sizeId, item.setIds, sprayToken],
   );
 
   const thumbStyle = {

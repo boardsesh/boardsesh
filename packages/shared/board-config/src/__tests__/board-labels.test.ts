@@ -305,3 +305,43 @@ describe('stripGymNamePrefix', () => {
     expect(stripGymNamePrefix('Bergen Klatresenter - Kilter', null)).toBe('Bergen Klatresenter - Kilter');
   });
 });
+
+// A spray wall is a climber's own wall: its layout row is created at runtime, so
+// neither the layout nor the size facet can name it, and the row title is a name
+// the owner chose ("Garage", "Main wall") that says nothing about what it is.
+describe('boardRowSubtitle on a spray wall', () => {
+  const wall: BoardLabelSource = { boardType: 'spray', layoutId: 941, sizeId: 941 };
+
+  it('leads with what it is when there is no place', () => {
+    expect(boardRowSubtitle(wall)).toBe('Spray wall');
+  });
+
+  it('keeps the kind in front of the gym', () => {
+    expect(boardRowSubtitle({ ...wall, gymName: 'Bergen Klatresenter' })).toBe('Spray wall · Bergen Klatresenter');
+  });
+
+  it('falls back to the free-text location the way every other board does', () => {
+    expect(boardRowSubtitle({ ...wall, locationName: 'Garage' })).toBe('Spray wall · Garage');
+  });
+
+  // Inside one gym's list the place is dropped as redundant — but the KIND is
+  // exactly what tells the wall apart from the gym's Kilter on the row above, so
+  // that is what survives.
+  it('drops the place but keeps the kind within a gym', () => {
+    expect(boardRowSubtitle({ ...wall, gymName: 'Bergen Klatresenter' }, { scope: 'within-gym' })).toBe('Spray wall');
+  });
+
+  it('never shows a catalogue config for a wall', () => {
+    expect(boardConfigLabel(wall)).toBeNull();
+  });
+
+  // Two of one climber's walls collide on "Spray wall" and separate on a facet
+  // that a wall actually has — never on a layout or size name it does not.
+  it('separates two walls at the same gym on their angle', () => {
+    const subtitles = disambiguateBoardSubtitles([
+      { ...wall, layoutId: 941, sizeId: 941, angle: 40 },
+      { ...wall, layoutId: 942, sizeId: 942, angle: 25 },
+    ]);
+    expect(subtitles).toEqual(['Spray wall · 40°', 'Spray wall · 25°']);
+  });
+});
