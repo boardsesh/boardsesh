@@ -127,22 +127,31 @@ export interface MoonboardDualAngleSampleRow {
 }
 
 /**
- * The training sample: MoonBoard problems with a real, ascent-backed display
- * grade at both angles. "Real" is `display_difficulty IS NOT NULL AND
- * ascensionist_count > 0` — the same predicate the publish script uses to
- * decide an angle is missing, so a climb can never be both a training pair and
- * an estimate target.
+ * The training sample: MoonBoard problems with a real, ascent-backed grade at
+ * both angles. Reads `difficulty_average` rather than `display_difficulty` —
+ * the app's own `userGrade` (a real, independent community opinion distinct
+ * from the setter's `grade`; confirmed against OCR'd app screenshots, see
+ * docs/boardsesh-grade.md) is imported into `difficulty_average` when present,
+ * falling back to the setter's grade when it is not — so this is a strict
+ * upgrade over the setter label wherever the community has actually weighed
+ * in, and a no-op everywhere else. Held-out validation on the real capture
+ * (branch experiment/moonboard-boardsesh-grade): MAE 0.879 vs 1.026 for the
+ * setter-label version, non-monotonic pairs 7.6% vs 13.0%.
+ *
+ * "Real" is `difficulty_average IS NOT NULL AND ascensionist_count > 0` — the
+ * same predicate the publish script uses to decide an angle is missing, so a
+ * climb can never be both a training pair and an estimate target.
  */
 export function buildMoonboardDualAngleSampleSql(): SQL {
   return sql`
     SELECT s.climb_uuid,
-           MAX(s.display_difficulty) FILTER (WHERE s.angle = ${MOONBOARD_SHALLOW_ANGLE})::float8 AS grade_25,
-           MAX(s.display_difficulty) FILTER (WHERE s.angle = ${MOONBOARD_STEEP_ANGLE})::float8 AS grade_40
+           MAX(s.difficulty_average) FILTER (WHERE s.angle = ${MOONBOARD_SHALLOW_ANGLE})::float8 AS grade_25,
+           MAX(s.difficulty_average) FILTER (WHERE s.angle = ${MOONBOARD_STEEP_ANGLE})::float8 AS grade_40
     FROM board_climb_stats s
     JOIN board_climbs bc ON bc.board_type = s.board_type AND bc.uuid = s.climb_uuid
     WHERE s.board_type = 'moonboard'
       AND s.angle IN (${MOONBOARD_SHALLOW_ANGLE}, ${MOONBOARD_STEEP_ANGLE})
-      AND s.display_difficulty IS NOT NULL
+      AND s.difficulty_average IS NOT NULL
       AND s.ascensionist_count > 0
       AND bc.is_listed = true
       AND COALESCE(bc.is_draft, false) = false

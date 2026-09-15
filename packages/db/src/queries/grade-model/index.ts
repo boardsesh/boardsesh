@@ -10,4 +10,5 @@ export * from './raters';
 export * from './behavior';
 export * from './bridges';
 export * from './moonboard-angle-model';
+export * from './moonboard-wide-angle-model';
 export * from './deherded';

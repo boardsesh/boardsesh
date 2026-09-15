@@ -12,28 +12,17 @@ export const GRADE_MODEL_VERSION = 'v2.1'; // v2.1: zero-evidence cross-angle pr
 
 /**
  * Boards whose upstream `difficulty_average` is a live crowd mean (fractional,
- * moves with ascents). MoonBoard is normally deliberately absent: its feed
- * carries only integer labels (average == display == benchmark byte-for-byte),
- * so there is no crowd signal to model — the UI shows "not standardized yet"
- * instead.
+ * moves with ascents). MoonBoard is deliberately absent: its feed carries only
+ * integer labels (average == display == benchmark byte-for-byte), so there is
+ * no crowd signal to model — the UI shows "not standardized yet" instead.
  *
- * EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade): MoonBoard is
- * temporarily included here to test the gate/pipeline mechanics against a
- * `difficulty_average` sourced from the catalog's `userGrade` field instead of
- * the setter's `grade` — see moonboard-catalog-helpers.ts's userDifficultyId.
- * NOT for merge to main as-is; see docs/boardsesh-grade.md §5/§7 for why a real
- * MoonBoard grade still needs much more (tick history, angle coverage, bridge
- * coverage) than this one field.
+ * (Explored putting MoonBoard through this pipeline on branch
+ * experiment/moonboard-boardsesh-grade — worked mechanically once fed a
+ * userGrade-derived difficulty_average, but the win landed on the separate,
+ * already-shipped moonboard-angle-model.ts instead: same data source, no
+ * blast radius on the other boards, no calibration gap. See that module.)
  */
-export const CROWD_MEAN_BOARDS = [
-  'kilter',
-  'tension',
-  'grasshopper',
-  'decoy',
-  'soill',
-  'touchstone',
-  'moonboard',
-] as const;
+export const CROWD_MEAN_BOARDS = ['kilter', 'tension', 'grasshopper', 'decoy', 'soill', 'touchstone'] as const;
 
 /**
  * Boards that get a cross-board `universal_grade`. Tension is the anchor
@@ -71,6 +60,13 @@ export const CONFIDENCE = {
   setterOnly: 'setter_only',
   crossAngleEstimate: 'cross_angle_estimate',
   moonboardAngleEstimate: 'moonboard_angle_estimate',
+  // EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade): a MoonBoard
+  // grade projected onto a `moonboard-wide-angles`-flag angle (anything other
+  // than the catalog's 25°/40°) using a borrowed cross-board angle-effect
+  // shape (see moonboard-wide-angle-model.ts) — rougher than
+  // moonboardAngleEstimate, which transposes between MoonBoard's own two real
+  // angles. No frontend copy exists for this tier yet.
+  moonboardWideAngleEstimate: 'moonboard_wide_angle_estimate',
 } as const;
 export type ConfidenceTier = (typeof CONFIDENCE)[keyof typeof CONFIDENCE];
 
@@ -199,6 +195,13 @@ export const BEHAVIOR_MAX_BUCKET_TOP_USER_SHARE = 0.2;
  * as a Boardsesh grade. The posterior SD cap keeps a projection whose band would
  * span most of the grade scale off the screen entirely; the reader gets the
  * plain setter grade instead, exactly as today.
+ *
+ * (Tried dropping this to 1 on branch experiment/moonboard-boardsesh-grade to
+ * get MoonBoard through this gate — it worked, but loosening it is a GLOBAL
+ * change that also affects Kilter/Tension/etc, and MoonBoard's own projections
+ * came out overconfident (95% band covered only 88% of held-out truth vs
+ * 98.9%+ for the other boards). Left at 2; see moonboard-angle-model.ts for
+ * the scoped alternative that won instead.)
  */
 export const CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS = 2;
 /**
