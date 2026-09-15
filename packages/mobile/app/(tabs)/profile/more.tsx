@@ -982,6 +982,16 @@ export default function MoreScreen() {
     if (profile?.isTester) {
       devRows.push({
         kind: 'nav',
+        key: 'holdDetectionBenchmark',
+        // i18n-ignore-next-line — tester-only dev tooling
+        label: 'Hold Detection Benchmark',
+        // i18n-ignore-next-line
+        subtitle: 'Measure the wall-hold detector on this device: latency, detections, memory',
+        icon: 'boardLook',
+        onPress: navAction(() => router.push('/(tabs)/profile/hold-detection-benchmark')),
+      });
+      devRows.push({
+        kind: 'nav',
         key: 'sentryDiagnostics',
         // i18n-ignore-next-line — tester-only dev tooling
         label: 'Sentry Diagnostics',

@@ -1,5 +1,5 @@
-Nouveautés de la version 2.5 :
-- Compatible Woods de bout en bout : ajoute ta 12x12 ou 8x10, parcours 5 000 blocs et leurs règles, allume-les en Bluetooth, ouvre et remixe les tiens, mets un bloc en miroir et le mur suit.
-- Prends le mur sur une board sans LED : ton crew et l'écran de la salle suivent le bloc que tu mets.
-- Mets ton bloc en miroir depuis la notification Android ; l'app, ton crew et les LED suivent.
-- Les prises s'affichent plus vite et les blocs téléchargés restent à jour.
+Nouveautés de la version 2.6 :
+- Passe d'une board à l'autre dans ta salle depuis la feuille du mur : un tap vers celle devant toi, le Bluetooth et la file te suivent.
+- Un minuteur de repos qui démarre dès que tu enregistres un bloc et peut passer au suivant en l'allumant pour toi.
+- Le rythme des voies se lit en secondes par image, jusqu'à 60 s.
+- Woods : tous les blocs apparaissent quel que soit leur angle, et le filtre d'ouvreurs les liste tous.

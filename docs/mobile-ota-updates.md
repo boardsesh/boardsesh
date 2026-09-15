@@ -472,6 +472,22 @@ Android builds on Linux like its gate, so it was never divergent; it pins the sa
 invariant. That claim is about fingerprint **identity** only — it says nothing about publish order,
 which is a separate failure mode covered next.
 
+### Fingerprint register
+
+Every entry here is a merge that deliberately moved both platform fingerprints. Record one when you
+land a native change, so a JS slice that needs the new binary knows which hash to gate on and so the
+next reader can tell an intended move from a surprise.
+
+| Merged | What moved it | iOS before → after | Android before → after |
+| --- | --- | --- | --- |
+| 2026-09-15, #5435 (SW-02) | `onnxruntime-react-native` 1.24.3 autolinked on Android via `packages/mobile/react-native.config.js`, `cameraPermission` on the `expo-image-picker` plugin, Android `CAMERA`, version 2.5.0 → 2.6.0 | `2bba2c60ae36f3d914afe10e996460d0aefa6c91` → `b86d17295167db21dec5ab1f9d12cfd11b230a81` | `81840ab57de6b637ab38d00e4e5c4799dedc1c4b` → `db349c4953142a9b9adb8291e20b89d83c22fd62` |
+
+Resolve a hash with `TAILSCALE_HOSTS= vp exec expo-updates runtimeversion:resolve --platform ios|android`
+from `packages/mobile`, with no `android/` or `ios/` directory present (a local prebuild is hashed
+too, and CI has neither). Pin `TAILSCALE_HOSTS=` — live Tailscale peers otherwise leak into the
+resolved config and two runs disagree. The Android value also moves with `GOOGLE_MAPS_API_KEY`, so
+resolve both sides of a comparison the same way.
+
 ### Publish ordering: a binary can outrank a newer OTA
 
 Matching fingerprints get an update *offered* to a binary. Whether it is *applied* is decided

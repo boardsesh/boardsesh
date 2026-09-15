@@ -6,6 +6,7 @@
     "NSBluetoothPeripheralUsageDescription": "Boardsesh uses Bluetooth to connect to your climbing board and control the LED holds.",
     "NSLocationWhenInUseUsageDescription": "Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.",
     "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh uses your location to find nearby boards to climb on and to discover nearby climbing sessions in Party Mode.",
+    "NSCameraUsageDescription": "Boardsesh uses your camera so you can photograph a wall and set climbs on it.",
     "NSPhotoLibraryUsageDescription": "Boardsesh uses your photo library so you can pick a profile picture."
   }
 }

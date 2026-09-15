@@ -1,5 +1,5 @@
-New in 2.5:
-- Works with Woods, front to back: add your 12x12 or 8x10, browse 5,000+ climbs with their rules, light them over Bluetooth, set and remix your own, and mirror a climb so the wall flips with it.
-- Take the wall on a board with no LEDs: your crew and the gym screen follow the climb you put up.
-- Mirror your climb from the Android notification; the app, your crew and the LEDs follow.
-- Holds draw faster. Downloaded climbs stay current after an app update.
+New in 2.6:
+- Hop between your gym's boards from the wall sheet: one tap to the wall you're standing at, and Bluetooth and the queue come with you.
+- A rest timer that counts from the moment you log a climb, and can move the queue on and light the next climb for you.
+- Route pacing now reads in seconds a frame, up to 60s, the unit the setter used.
+- Woods: every climb shows up whatever angle it was set at, and the setter filter lists them all.

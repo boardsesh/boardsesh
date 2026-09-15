@@ -1,23 +1,23 @@
-Neu in 2.5:
+Neu in 2.6:
 
-LÄUFT MIT WOODS, VON VORN BIS HINTEN
+DIE ANDEREN BOARDS DEINER HALLE, EIN TIPP ENTFERNT
 
-Du hast ein Woods Board? Leg dein 12x12 oder 8x10 an, stöbere durch über 5.000 Boulder mit ihren Match- und Fußregeln und beleuchte jeden davon per Bluetooth. Bau und remixe eigene Boulder auf beiden Größen (der Editor bietet nur Griffe an, die wirklich an deinem Board sind), spiegle einen Boulder und das Board zieht mit, und steuere Zurück, Weiter und Spiegeln vom Sperrbildschirm und der Dynamic Island. Griffe erscheinen im Aura-Look mit schärferen Konturen.
+Ein Kilter neben einem Tension, oder zwei Wände desselben Boards in verschiedenen Winkeln? Das Wand-Sheet listet jetzt die anderen Boards deiner Halle, also wechselst du mit einem Tipp zu dem, vor dem du stehst, statt an Boards aus anderen Städten vorbeizuscrollen. Die Bluetooth-Verbindung zieht mit, eine Warteschlange über zwei Wände läuft der Reihe nach, und jedes Board behält seinen Namen und seinen Winkel.
 
-ÜBERNIMM DIE WAND, AUCH OHNE LEDS
+EIN PAUSEN-TIMER, DER DIE WARTESCHLANGE WEITERSCHALTET
 
-Du kletterst an einem Board ohne LED-Kit? Übernimm die Wand, und die ganze Session folgt dem Boulder, den du zeigst, der Hallen-Bildschirm auch. Schalt die Beleuchtung in den Einstellungen des Boards aus: Ihr wechselt euch weiter ab, dein Winkel bleibt stehen, und Sessions an einer benannten Wand loggst du auch von der Uhr.
+Zieh Boulder im Minutentakt durch, ohne zwischen den Versuchen zum Handy zu greifen. Schalt den Pausen-Timer im Tab Aufnehmen ein, stell deine Pause ein, und er läuft ab dem Moment, in dem du eine Begehung einträgst — und danach ins Rote, wenn du zu lange sitzen bleibst. Lass ihn zum nächsten Boulder wechseln, dann beleuchtet er ihn für dich an der Wand. „Nach jeder Begehung“ gibt dir jedes Mal die volle Pause, „Fester Takt“ hält den Takt, so lange du auch brauchst.
 
-SPIEGELN VOM SPERRBILDSCHIRM
+ROUTEN IN SEKUNDEN STATT MULTIPLIKATOREN
 
-Während dein Handy das Board steuert, bekommen Live-Aktivität und Dynamic Island einen Spiegeln-Button neben Zurück, Weiter und der Glühbirne. App, Crew, Vorschaubilder und LEDs folgen dem gespiegelten Boulder, und er bleibt gespiegelt, wenn du die App öffnest.
+Das Tempo einer Route steht jetzt in Sekunden pro Bild da, in der Einheit, in der die Routenbauer*innen sie angelegt haben, und reicht bis 60 Sekunden. Die Hälfte des Katalogs war langsamer gesetzt, als die alte Steuerung abspielen konnte.
 
 BEHOBEN
 
-- Griffe zeichnen schneller: das Board-Rendering wartet nicht mehr auf den Rest der App.
-- Dein Board bleibt dunkel, bis du es willst. Ein Handy, das Stunden oder Tage später wieder in Reichweite kommt, beleuchtet nicht mehr deinen letzten Boulder. Glühbirne, Widget und Reconnects mitten im Boulder beleuchten das Board weiterhin sofort.
-- Der Boulder-Tab und seine Suche bleiben nicht mehr hängen, nachdem sich mitten in der Session eine Playlist darüber geschlossen hat. Kein App-Neustart mehr, um die Suche zurückzubekommen.
-- Heruntergeladene Boulder bleiben nach einem App-Update aktuell.
-- Die Boulder-Suche schließt sich, ohne dass ein Vorschau-Sheet aufspringt.
+- Woods: Jeder Boulder taucht auf, egal in welchem Winkel er gesetzt wurde, mit dem Grad, den er bekommen hat, und der Filter zeigt alle Routenbauer*innen eines Boards statt nur der wenigen mit einem Boulder in deinem Winkel.
+- MoonBoard: Ein Boulder mit Grad in nur einem der beiden Winkel zeigt jetzt eine Schätzung für den anderen.
+- Tipp auf die Glühbirne, während das Handy einer anderen Person das Board hält: Der Boulder leuchtet über deren Verbindung auf, statt am Verbinden zu scheitern.
+- Wischen im Play-Drawer bleibt auf der Liste, aus der du ausgewählt hast, auch wenn eine eingetragene Begehung diese Liste neu sortiert.
+- Android: Der Boulder-Tab stürzt nicht mehr ab, wenn sich ein Board verbindet, das Speichern offline läuft auch nach längerer Zeit im Hintergrund weiter, und Schalter-Beschriftungen sind im Dunkelmodus lesbar.
 
 Kostenlos, werbefrei, Open Source.

@@ -1,5 +1,5 @@
-Neu in 2.5:
-- Läuft mit Woods, von vorn bis hinten: Leg dein 12x12 oder 8x10 an, stöbere in über 5.000 Bouldern mit ihren Regeln, beleuchte sie per Bluetooth, bau und remixe eigene, spiegle einen Boulder, das Board zieht mit.
-- Übernimm die Wand an einem Board ohne LEDs: Crew und Hallen-Bildschirm folgen dem Boulder, den du zeigst.
-- Spiegle deinen Boulder aus der Android-Benachrichtigung; App, Crew und LEDs folgen.
-- Griffe zeichnen schneller; geladene Boulder bleiben nach Updates aktuell.
+Neu in 2.6:
+- Wechsle im Wand-Sheet zwischen den Boards deiner Halle: ein Tipp auf die Wand, vor der du stehst, Bluetooth und Warteschlange ziehen mit.
+- Ein Pausen-Timer, der ab deiner eingetragenen Begehung läuft und für dich zum nächsten Boulder wechselt und ihn beleuchtet.
+- Das Tempo einer Route steht in Sekunden pro Bild, bis 60 s.
+- Woods: Jeder Boulder taucht auf, egal in welchem Winkel er gesetzt wurde, und der Filter zeigt alle Routenbauer*innen.

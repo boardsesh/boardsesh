@@ -175,7 +175,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-rn-dev-client-${{ hashFiles('packages/mobile/package.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+          key: ${{ runner.os }}-gradle-rn-dev-client-${{ hashFiles('packages/mobile/package.json', 'packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
           restore-keys: |
             ${{ runner.os }}-gradle-rn-dev-client-
 

@@ -315,7 +315,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     name: appName,
     slug: 'boardsesh',
     owner: 'boardsesh',
-    version: '2.5.0',
+    version: '2.6.0',
     scheme: 'com.boardsesh.app',
     orientation: 'portrait',
     icon: iconPath,
@@ -524,6 +524,12 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         'FOREGROUND_SERVICE',
         'FOREGROUND_SERVICE_CONNECTED_DEVICE',
         'POST_NOTIFICATIONS',
+        // Photographing a spray wall (epic #5346, SW-09). expo-image-picker's
+        // plugin already adds CAMERA when `cameraPermission` is set below, but
+        // that string is also what turns the iOS prompt on, so the Android name
+        // is listed here too: the two knobs are independent and a future edit to
+        // one should not silently drop the other.
+        'CAMERA',
       ],
       // BLUETOOTH_SCAN needs `android:usesPermissionFlags="neverForLocation"` on
       // Android 12+ or the OS silently drops every scan result for a caller
@@ -613,15 +619,22 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       ],
       'expo-updates',
       'expo-web-browser',
-      // Photo-library access for picking a profile avatar (Edit Profile screen).
-      // Library-only — the editor doesn't open the camera, so we don't request
-      // NSCameraUsageDescription. Adds NSPhotoLibraryUsageDescription on iOS and
-      // the READ_MEDIA_IMAGES permission on Android; native change, ships on the
-      // next build (not OTA).
+      // Photo-library access for picking a profile avatar (Edit Profile screen)
+      // and camera access for photographing a spray wall (epic #5346, SW-09).
+      // Adds NSPhotoLibraryUsageDescription + NSCameraUsageDescription on iOS and
+      // READ_MEDIA_IMAGES + CAMERA on Android; native change, ships on the next
+      // build (not OTA). Nothing calls launchCameraAsync yet — the permission
+      // lands here weeks ahead of the UI so the JS slice that opens the camera
+      // can ship by OTA into a fleet whose binary already declares it.
+      //
+      // These are the base/en strings. The localized prompts come from
+      // locales/<lang>.json (the `locales` map above), kept in step by
+      // scripts/mobile-locales-parity.test.ts.
       [
         'expo-image-picker',
         {
           photosPermission: 'Boardsesh uses your photo library so you can pick a profile picture.',
+          cameraPermission: 'Boardsesh uses your camera so you can photograph a wall and set climbs on it.',
         },
       ],
       'react-native-ble-plx',
