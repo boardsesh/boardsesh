@@ -803,6 +803,121 @@ describe('commitSprayWallVersion', () => {
   });
 });
 
+describe('editing a climb re-derives its integrity', () => {
+  it('clears the badge when the setter replaces every lost hold', async () => {
+    // The other direction from a reset: the CLIMB moves under the wall. Nothing
+    // else would ever correct the number — the wall-wide recompute only runs when
+    // a reset lands — so the climb would sit in BROKEN searches wearing a badge
+    // for a problem its setter had already dealt with.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const climb = await saveClimbOn(wall, 'Oscar', [holdIds[0], holdIds[1]]);
+    expect(await missingFor(climb)).toBe(0);
+
+    // A reset takes hold 1 off and bolts a replacement on.
+    const versionId = await openDraft(wall);
+    const result = (await sprayWallMutations.commitSprayWallVersion(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId,
+          kept: [{ holdId: holdIds[0] }, { holdId: holdIds[2] }],
+          removed: [holdIds[1]],
+          added: [{ detection: { cx: 320, cy: 415, r: 28 }, movedFromHoldId: holdIds[1] }],
+        },
+      },
+      ctxFor(OWNER),
+    )) as { addedCount: number };
+    expect(result.addedCount).toBe(1);
+
+    expect(await missingFor(climb)).toBe(1);
+    expect(await searchNames(wall, 'broken')).toEqual(['Oscar']);
+
+    const [successor] = (await db.execute(sql`
+      SELECT hold_id FROM spray_wall_holds
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId})
+        AND moved_from_hold_id = ${holdIds[1]}
+    `)) as unknown as Array<{ hold_id: number }>;
+
+    // The setter moves the climb onto the replacement.
+    await climbMutations.updateClimb(
+      {},
+      {
+        input: {
+          uuid: climb,
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          frames: framesFor([holdIds[0], successor.hold_id]),
+          angle: 40,
+        },
+      },
+      ctxFor(OWNER),
+    );
+
+    expect(await missingFor(climb)).toBe(0);
+    expect(await searchNames(wall, 'broken')).toEqual([]);
+    expect(await searchNames(wall, 'intact')).toEqual(['Oscar']);
+  });
+
+  it('refuses an edit back onto a removed hold, and leaves the count alone', async () => {
+    // `assertSprayHoldsAreAlive` is what refuses it — a climb cannot be set on a
+    // hold that is not on the wall — and the whole edit rolls back, so the number
+    // it would have re-derived never lands either.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const climb = await saveClimbOn(wall, 'Papa', [holdIds[0], holdIds[1]]);
+
+    const versionId = await openDraft(wall);
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId,
+          kept: [{ holdId: holdIds[0] }, { holdId: holdIds[2] }],
+          removed: [holdIds[1]],
+          added: [],
+        },
+      },
+      ctxFor(OWNER),
+    );
+    expect(await missingFor(climb)).toBe(1);
+
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        {
+          input: {
+            uuid: climb,
+            boardType: 'spray',
+            layoutId: wall.layoutId,
+            // holdIds[1] came off the wall in the reset above.
+            frames: framesFor([holdIds[2], holdIds[1]]),
+            angle: 40,
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/is not on this wall/i);
+
+    expect(await missingFor(climb)).toBe(1);
+    expect(await searchNames(wall, 'broken')).toEqual(['Papa']);
+  });
+
+  it('seeds a brand-new spray climb at 0, never NULL', async () => {
+    // `assertSprayHoldsAreAlive` runs before the insert, so a climb cannot be born
+    // broken — and 0 rather than NULL is what keeps INTACT and BROKEN answering
+    // about it from the moment it exists.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const climb = await saveClimbOn(wall, 'Quebec', [holdIds[0], holdIds[2]]);
+
+    const [row] = (await db.execute(
+      sql`SELECT missing_hold_count FROM board_climbs WHERE uuid = ${climb}`,
+    )) as unknown as Array<{ missing_hold_count: number | null }>;
+    expect(row.missing_hold_count).toBe(0);
+    expect(row.missing_hold_count).not.toBeNull();
+  });
+});
+
 describe('remixClimb', () => {
   it('strips the lost holds and offers the successor a move linked', async () => {
     const { wall, holdIds } = await createPublishedWall(OWNER);
