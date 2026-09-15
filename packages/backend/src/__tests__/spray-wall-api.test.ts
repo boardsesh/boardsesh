@@ -2194,6 +2194,73 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     expect(publishedEvents.filter((event) => event.type === 'climb.created')).toHaveLength(0);
   });
 
+  it('withholds a private wall\u2019s stats from a retained uuid', async () => {
+    // The stats row carries the SETTER GRADE and fa_username, and spray seeds it at
+    // creation — so a uuid kept from while the wall was public would keep reading
+    // them after access was revoked.
+    const publicWall = await wallWithAClimb({ isPublic: true });
+
+    const anglesFor = async (viewer: string | null) =>
+      (await climbQueries.climbStatsForAngles(
+        {},
+        { boardName: 'spray', climbUuid: publicWall.climbUuid },
+        ctxFor(viewer),
+      )) as Array<{ angle: number }>;
+    const batchFor = async (viewer: string | null) =>
+      (await climbQueries.climbStatsForClimbs(
+        {},
+        { boardName: 'spray', climbUuids: [publicWall.climbUuid] },
+        ctxFor(viewer),
+      )) as Array<unknown>;
+
+    expect((await anglesFor(STRANGER)).length).toBeGreaterThan(0);
+    expect((await batchFor(STRANGER)).length).toBeGreaterThan(0);
+
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: publicWall.wall.uuid, isPublic: false } },
+      ctxFor(OWNER),
+    );
+
+    // Empty, not an error — the wall's existence stays unobservable.
+    expect(await anglesFor(STRANGER)).toEqual([]);
+    expect(await batchFor(STRANGER)).toEqual([]);
+    expect(await anglesFor(null)).toEqual([]);
+
+    // The owner still reads their own.
+    expect((await anglesFor(OWNER)).length).toBeGreaterThan(0);
+  });
+
+  it('smart playlists count and paginate on visible refs only', async () => {
+    // `selectSmartClimbRefs` applies LIMIT/OFFSET and `countSmartClimbRefs` counts,
+    // both before the hydrate step that used to be the only filter — so a private
+    // wall's ticks consumed page slots and inflated the count for other viewers.
+    const privateWall = await wallWithAClimb();
+    const publicWall = await wallWithAClimb({ isPublic: true });
+    for (const climbUuid of [privateWall.climbUuid, publicWall.climbUuid]) {
+      await db.execute(sql`
+        INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, quality, climbed_at, created_at, updated_at)
+        VALUES (${uuidv4()}, ${OWNER}, ${climbUuid}, 'spray', 40, 'send', 5, now(), now(), now())
+      `);
+    }
+
+    const read = async (viewer: string | null) =>
+      (await smartPlaylist(
+        {},
+        { input: { type: 'FIVE_STARS', userId: OWNER, page: 0, pageSize: 50 } },
+        ctxFor(viewer),
+      )) as { climbs: Array<{ uuid: string }>; totalCount: number };
+
+    const asStranger = await read(STRANGER);
+    expect(asStranger.climbs.map((climb) => climb.uuid)).toEqual([publicWall.climbUuid]);
+    // The count has to agree with the page, or it promises a row the page withholds.
+    expect(asStranger.totalCount).toBe(1);
+
+    const asOwner = await read(OWNER);
+    expect(asOwner.climbs).toHaveLength(2);
+    expect(asOwner.totalCount).toBe(2);
+  });
+
   it('keeps a tick whose climb row is MISSING — the "Unknown Climb" case', async () => {
     // Four callers AND this predicate onto a LEFT-JOINed `board_climbs`, and a tick
     // with no climb row is a case they deliberately render as "Unknown Climb". With

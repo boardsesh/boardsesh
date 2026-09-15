@@ -38,6 +38,7 @@ import {
 import type { ClimbSearchContext } from '../shared/types';
 import { db, dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
@@ -476,7 +477,22 @@ export const climbQueries = {
         syncSeq: sql<string>`${dbSchema.boardClimbStats.syncSeq}::text`,
       })
       .from(dbSchema.boardClimbStats)
-      .where(and(eq(dbSchema.boardClimbStats.boardType, boardName), eq(dbSchema.boardClimbStats.climbUuid, climbUuid)))
+      .where(
+        and(
+          eq(dbSchema.boardClimbStats.boardType, boardName),
+          eq(dbSchema.boardClimbStats.climbUuid, climbUuid),
+          // Numbers, but not ONLY numbers: a spray climb's stats row carries the
+          // setter's grade and `fa_username`, and it is seeded at creation — so
+          // anyone who kept a uuid could keep reading them after the wall went
+          // private. The epic rule is that a private wall shows a non-principal
+          // nothing, so the reference predicate rides here too (empty result, no
+          // error). A no-op on the other eight board types.
+          sprayReferenceVisibilityCondition(
+            { boardType: dbSchema.boardClimbStats.boardType, climbUuid: dbSchema.boardClimbStats.climbUuid },
+            ctx?.userId,
+          ),
+        ),
+      )
       .orderBy(asc(dbSchema.boardClimbStats.angle));
 
     return rows.map((row) => ({
@@ -527,6 +543,13 @@ export const climbQueries = {
         and(
           eq(dbSchema.boardClimbStats.boardType, boardName),
           inArray(dbSchema.boardClimbStats.climbUuid, uniqueClimbUuids),
+          // Same rule as `climbStatsForAngles`: the row carries the setter grade
+          // and `fa_username`, so a retained uuid must not outlive the wall's
+          // visibility.
+          sprayReferenceVisibilityCondition(
+            { boardType: dbSchema.boardClimbStats.boardType, climbUuid: dbSchema.boardClimbStats.climbUuid },
+            ctx?.userId,
+          ),
         ),
       )
       .orderBy(asc(dbSchema.boardClimbStats.climbUuid), asc(dbSchema.boardClimbStats.angle));

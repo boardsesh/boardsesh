@@ -101,6 +101,52 @@ export function sprayClimbVisibilityCondition(columns: SprayVisibilityColumns, u
 }
 
 /**
+ * The same rule for a query that reaches a climb only through a REFERENCE to it —
+ * a tick, a favourite — and never joins `board_climbs` at all.
+ *
+ * The smart-playlist reference queries select from `boardsesh_ticks` /
+ * `user_favorites` and paginate there, so the climb is one join away and the
+ * column form cannot be used. Phrased as "there is no INVISIBLE spray climb behind
+ * this reference" rather than "there is a visible climb", so a reference whose
+ * climb row is missing survives — the same NULL-safety the column form needs, for
+ * the same reason.
+ */
+export function sprayReferenceVisibilityCondition(
+  columns: { boardType: SQL | unknown; climbUuid: SQL | unknown },
+  userId: string | null | undefined,
+): SQL {
+  const viewer = userId ?? null;
+  return sql`NOT EXISTS (
+    SELECT 1
+    FROM board_climbs ref_climb
+    WHERE ref_climb.uuid = ${columns.climbUuid}
+      AND ref_climb.board_type = ${columns.boardType}
+      AND ref_climb.board_type = 'spray'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM spray_walls sw
+        JOIN user_boards ub ON ub.uuid = sw.board_uuid
+        WHERE sw.layout_id = ref_climb.layout_id
+          AND sw.deleted_at IS NULL
+          AND ub.deleted_at IS NULL
+          AND (
+            ub.is_public
+            OR (
+              ${viewer}::text IS NOT NULL
+              AND (
+                ub.owner_id = ${viewer}::text
+                OR EXISTS (
+                  SELECT 1 FROM gym_members gm
+                  WHERE gm.gym_id = ub.gym_id AND gm.user_id = ${viewer}::text
+                )
+              )
+            )
+          )
+      )
+  )`;
+}
+
+/**
  * The same rule for a query that has already narrowed to one board type and one
  * layout in JavaScript — the `boardType + layoutId` resolvers.
  *

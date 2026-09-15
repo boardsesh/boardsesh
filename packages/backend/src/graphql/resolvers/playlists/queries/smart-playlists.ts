@@ -8,6 +8,7 @@ import {
 } from '@boardsesh/db/queries';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../../shared/helpers';
 import { GetSmartPlaylistInputSchema } from '../../../../validation/schemas';
 import { hydrateClimbsByRefs, type ClimbRef } from '../helpers/hydrate-climbs';
@@ -40,11 +41,25 @@ type SmartClimbRef = ClimbRef;
  * Build the WHERE conditions shared by every smart-playlist query path:
  * `userId = ?` plus, when scoped, `boardType = ?`.
  */
-function smartBaseConditions(userId: string, boardName: string | undefined): SQL[] {
+function smartBaseConditions(
+  userId: string,
+  boardName: string | undefined,
+  viewerUserId: string | null | undefined,
+): SQL[] {
   const conditions: SQL[] = [eq(dbSchema.boardseshTicks.userId, userId)];
   if (boardName) {
     conditions.push(eq(dbSchema.boardseshTicks.boardType, boardName));
   }
+  // BEFORE the LIMIT/OFFSET these conditions feed, and on the count built from the
+  // same list. Filtering only at the hydrate step let a private wall's ticks consume
+  // page slots and inflate `totalCount` / `hasMore`, so another viewer got short or
+  // empty pages of somebody else's logbook.
+  conditions.push(
+    sprayReferenceVisibilityCondition(
+      { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
+      viewerUserId,
+    ),
+  );
   return conditions;
 }
 
@@ -85,8 +100,9 @@ async function selectSmartClimbRefs(
   boardName: string | undefined,
   page: number,
   pageSize: number,
+  viewerUserId: string | null | undefined,
 ): Promise<SmartClimbRef[]> {
-  const conditions = smartBaseConditions(userId, boardName);
+  const conditions = smartBaseConditions(userId, boardName, viewerUserId);
   const offset = page * pageSize;
 
   if (type === 'FIVE_STARS') {
@@ -123,7 +139,14 @@ async function selectSmartClimbRefs(
   }
 
   if (type === 'LIKED_CLIMBS') {
-    const favConditions: SQL[] = [eq(dbSchema.userFavorites.userId, userId)];
+    const favConditions: SQL[] = [
+      eq(dbSchema.userFavorites.userId, userId),
+      // Favourites are the other reference source — same rule, same reason.
+      sprayReferenceVisibilityCondition(
+        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        viewerUserId,
+      ),
+    ];
     if (boardName) {
       favConditions.push(eq(dbSchema.userFavorites.boardName, boardName));
     }
@@ -169,8 +192,9 @@ async function countSmartClimbRefs(
   type: LogbookPlaylistType,
   userId: string,
   boardName: string | undefined,
+  viewerUserId: string | null | undefined,
 ): Promise<number> {
-  const conditions = smartBaseConditions(userId, boardName);
+  const conditions = smartBaseConditions(userId, boardName, viewerUserId);
 
   if (type === 'FIVE_STARS') {
     const [row] = await db
@@ -198,7 +222,14 @@ async function countSmartClimbRefs(
   }
 
   if (type === 'LIKED_CLIMBS') {
-    const favConditions: SQL[] = [eq(dbSchema.userFavorites.userId, userId)];
+    const favConditions: SQL[] = [
+      eq(dbSchema.userFavorites.userId, userId),
+      // Favourites are the other reference source — same rule, same reason.
+      sprayReferenceVisibilityCondition(
+        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        viewerUserId,
+      ),
+    ];
     if (boardName) {
       favConditions.push(eq(dbSchema.userFavorites.boardName, boardName));
     }
@@ -354,8 +385,8 @@ export const smartPlaylist = async (
   }
 
   const [pageRefs, totalCount] = await Promise.all([
-    selectSmartClimbRefs(input.type, input.userId, input.boardName, page, pageSize),
-    countSmartClimbRefs(input.type, input.userId, input.boardName),
+    selectSmartClimbRefs(input.type, input.userId, input.boardName, page, pageSize, ctx.userId),
+    countSmartClimbRefs(input.type, input.userId, input.boardName, ctx.userId),
   ]);
   // The VIEWER. `input.userId` is whose logbook is being rendered, which is not the
   // same person and must never stand in for them — see the recommendation branch.
