@@ -104,7 +104,16 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   // board has ticks: a config change reflects a real physical reconfiguration and
   // the old ticks are preserved server-side. Anyone without edit access keeps the
   // config chips locked.
-  const lockedConfig = !board.canEdit;
+  //
+  // A spray wall is locked for everyone, however much edit access they have. Its
+  // config is not a choice anybody made: the layout row was created when the wall
+  // was photographed, its size id IS that layout id, and its one hold set is
+  // synthetic. Every climb ever set on the wall points at that
+  // `(board_type, layout_id)` partition, so changing it would orphan the lot. The
+  // name, gym and visibility rows stay editable — those are what this screen is
+  // for on a wall — and holds and photos are changed through their own flows
+  // (`sprayDetailRows`), never here.
+  const lockedConfig = !board.canEdit || toBoardName(board.boardType) === 'spray';
 
   const seed = useMemo<BoardBuilderSeed>(() => {
     const seedBoardName = toBoardName(board.boardType)!;

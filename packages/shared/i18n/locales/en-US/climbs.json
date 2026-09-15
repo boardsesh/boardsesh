@@ -334,6 +334,11 @@
         "title": "No climbs found",
         "subtitle": "Try adjusting your board settings"
       },
+      "unsetWall": {
+        "title": "No one's set on this wall yet",
+        "subtitle": "Pick your holds, name it, and the wall has its first climb.",
+        "cta": "Set the first climb"
+      },
       "noMatches": {
         "title": "No matches",
         "description": "Nothing matches \"{{query}}\""

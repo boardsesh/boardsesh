@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useBoardClimbRecentSenders } from '@boardsesh/board-presence-react';
 import { getBoardRenderData } from '../../../lib/board-details';
+import { useSprayWallToken } from '../../../lib/spray/use-spray-wall-token';
 import { parseSetIds } from '../../../lib/board-presence/parse-set-ids';
 import { useTheme } from '../../../providers/theme-provider';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
@@ -27,6 +28,12 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
 
+  // The kiosk is reachable on a spray wall: it needs a board-presence id, and a
+  // wall with no light kit gets one from the "take the wall" CTA with no
+  // Bluetooth anywhere. Null render data early-returns the empty state below,
+  // which mounts nothing that subscribes — so without this the wall's own screen
+  // is the one screen that never draws it.
+  const sprayToken = useSprayWallToken(boardConfig.boardName, boardConfig.layoutId);
   const renderData = useMemo(() => {
     const setIds = parseSetIds(boardConfig.setIds);
     if (setIds.length === 0) return null;
@@ -36,7 +43,8 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
       sizeId: boardConfig.sizeId,
       setIds,
     });
-  }, [boardConfig]);
+    // `sprayToken` moves when the wall arrives or is reset.
+  }, [boardConfig, sprayToken]);
 
   const aspectRatio = renderData ? renderData.boardWidth / renderData.boardHeight : null;
   const { onLayout, layout, typeScale } = useWallKioskLayout(aspectRatio);

@@ -383,3 +383,44 @@ describe('canAddClimbToBoard — size containment', () => {
     ).toEqual({ ok: true });
   });
 });
+
+// Each spray wall is its own board. There is one `board_layouts` row per wall, so
+// the layout id IS the wall's identity, and the ordinary layout check is what
+// separates two walls — no spray-specific rule exists or should.
+describe('classifyClimbBoardCompatibility across spray walls', () => {
+  const garageWall: ActiveBoardForCompatibility = { boardName: 'spray', layoutId: 941, sizeId: 941 };
+
+  it('keeps a climb set on this wall', () => {
+    const climb: ClimbBoardIdentity = { boardType: 'spray', layoutId: 941, compatibleSizeIds: [941] };
+    expect(classifyClimbBoardCompatibility(garageWall, climb)).toBe('compatible');
+  });
+
+  // The #5099 failure, on walls: drawing the cellar's climb over the garage's
+  // photo matches none of its hold ids and paints a veil over a bare board.
+  it('sends a climb from a SECOND wall back to its own board', () => {
+    const cellarClimb: ClimbBoardIdentity = { boardType: 'spray', layoutId: 942, compatibleSizeIds: [942] };
+    expect(classifyClimbBoardCompatibility(garageWall, cellarClimb)).toBe('incompatible');
+  });
+
+  it('sends a Kilter climb back to Kilter while a wall is active', () => {
+    const kilterClimb: ClimbBoardIdentity = { boardType: 'kilter', layoutId: 1, compatibleSizeIds: [7] };
+    expect(classifyClimbBoardCompatibility(garageWall, kilterClimb)).toBe('incompatible');
+  });
+
+  it('sends a wall climb back to its wall while a Kilter is active', () => {
+    const kilterBoard: ActiveBoardForCompatibility = { boardName: 'kilter', layoutId: 1, sizeId: 7 };
+    const wallClimb: ClimbBoardIdentity = { boardType: 'spray', layoutId: 941, compatibleSizeIds: [941] };
+    expect(classifyClimbBoardCompatibility(kilterBoard, wallClimb)).toBe('incompatible');
+  });
+
+  // A mixed queue renders each climb under its own board and skips past the ones
+  // this wall cannot show, rather than blanking on them.
+  it('skips the foreign climbs in a mixed queue', () => {
+    const queue = [
+      { uuid: 'a', climb: { boardType: 'kilter', layoutId: 1 } },
+      { uuid: 'b', climb: { boardType: 'spray', layoutId: 942 } },
+      { uuid: 'c', climb: { boardType: 'spray', layoutId: 941 } },
+    ];
+    expect(findNextCompatibleQueueItem(queue, 'a', garageWall)).toEqual({ item: queue[2], skippedCount: 2 });
+  });
+});

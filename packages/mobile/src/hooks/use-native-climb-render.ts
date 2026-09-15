@@ -28,7 +28,7 @@ import {
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
-import { sprayCacheToken, subscribeToSprayWalls } from '../lib/spray/spray-wall-registry';
+import { ensureSprayWallLoaded, sprayCacheToken, subscribeToSprayWalls } from '../lib/spray/spray-wall-registry';
 import {
   ensureBackgroundsCached,
   tryGetBackgroundPathsSync,
@@ -1929,6 +1929,20 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     subscribeToSprayWalls,
     useCallback(() => sprayCacheToken(boardName, layoutId), [boardName, layoutId]),
   );
+
+  // Subscribing says "wake me when the wall changes"; it does not say "fetch the
+  // wall". Only the ACTIVE board is asked for by name (`useSprayWall`, in the
+  // drawer host), so every surface drawing a climb from some OTHER wall — a
+  // logbook row, a feed card, a shared ascent, a playlist thumbnail — mounted a
+  // subscription that nothing would ever wake, and drew a placeholder for the
+  // session. This is the ask, in the one place every board-drawing surface
+  // already goes through. A Map lookup off spray, at most one request per wall.
+  useEffect(() => {
+    if (boardName === 'spray') ensureSprayWallLoaded(layoutId);
+    // `sprayVersionToken` re-runs this after a reset, and after the registry's
+    // ten-minute revalidation window lapses — the presigned photo URL the
+    // registration carries is only good for fifteen.
+  }, [boardName, layoutId, sprayVersionToken]);
 
   // Both keys feed cache lookups on every FlashList row recycle; buildCacheKey
   // runs an fnv1a char-loop over the frames string. Memoize on exactly the

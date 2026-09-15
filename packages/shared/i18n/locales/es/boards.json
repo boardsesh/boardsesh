@@ -171,6 +171,12 @@
         "sets": "Sets",
         "angle": "Ángulo",
         "adjustable": "ajustable"
+      },
+      "spray": {
+        "editHolds": "Editar presas",
+        "editHoldsHint": "Añade, mueve o borra las presas de tu plafón.",
+        "newPhoto": "Nueva foto",
+        "newPhotoHint": "Fotografía el plafón otra vez después de un cambio de presas."
       }
     },
     "disambiguation": {
