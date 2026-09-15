@@ -79,6 +79,8 @@ const { tickMutations } = await import('../graphql/resolvers/ticks/mutations');
 const { generateSessionSummary } = await import('../graphql/resolvers/sessions/session-summary');
 const { favoriteClimbsQuery } = await import('../graphql/resolvers/favorites/favorite-climbs-query');
 const { playlistQueries } = await import('../graphql/resolvers/playlists/queries');
+const { climbStatsSubscriptions } = await import('../graphql/resolvers/ticks/climb-stats-subscriptions');
+const { socialProposalQueries } = await import('../graphql/resolvers/social/proposals/queries');
 const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = await import('@boardsesh/board-config');
 
 const OWNER = 'sw-owner';
@@ -236,7 +238,9 @@ beforeEach(async () => {
                    -- fail for the wrong reason.
                    "boardsesh_ticks", "user_follows",
                    -- The favourite and playlist tests write these.
-                   "user_favorites", "playlists"
+                   "user_favorites", "playlists",
+                   -- The stats-history and grade-model readers below write these.
+                   "board_climb_stats_history"
     RESTART IDENTITY CASCADE
   `);
   // `spray_wall_catalog_id_seq` and `spray_hold_catalog_id_seq` are STANDALONE
@@ -2258,6 +2262,88 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
 
     // The owner still reads their own.
     expect((await anglesFor(OWNER)).length).toBeGreaterThan(0);
+  });
+
+  it('withholds every OTHER stats reader from a retained uuid too', async () => {
+    // The by-uuid readers of `board_climb_stats` the class audit turned up: the
+    // twelve-month history, and the outlier analysis behind `climbCommunityStatus`
+    // — which is unauthenticated and takes a bare uuid.
+    //
+    // `boardseshGrade` / `boardseshGradesForAngles` carry the same predicate and are
+    // NOT exercised here: they LEFT JOIN `board_climb_embeddings`, which the test
+    // database image does not carry, and `board_climb_grades` has no spray rows to
+    // begin with (the nightly model runs over CROWD_MEAN_BOARDS only). Their gate
+    // closes a latent gap rather than a live leak.
+    const wall = await wallWithAClimb({ isPublic: true });
+
+    await db.execute(sql`
+      INSERT INTO board_climb_stats_history
+        (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, difficulty_average, quality_average, created_at)
+      VALUES ('spray', ${wall.climbUuid}, 40, 17, 4, 17, 3, now())
+    `);
+    // Three angles with ten-plus ascents each: `analyzeGradeOutlier` needs two
+    // qualifying neighbours before it answers at all.
+    for (const angle of [30, 40, 50]) {
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count)
+        VALUES ('spray', ${wall.climbUuid}, ${angle}, ${angle === 40 ? 21 : 14}, 12)
+        ON CONFLICT (board_type, climb_uuid, angle) DO UPDATE
+          SET display_difficulty = EXCLUDED.display_difficulty, ascensionist_count = EXCLUDED.ascensionist_count
+      `);
+    }
+
+    const history = async (viewer: string | null) =>
+      (await climbQueries.climbStatsHistory(
+        {},
+        { boardName: 'spray', climbUuid: wall.climbUuid },
+        ctxFor(viewer),
+      )) as unknown[];
+    const outlier = async (viewer: string | null) =>
+      (
+        (await socialProposalQueries.climbCommunityStatus(
+          {},
+          { climbUuid: wall.climbUuid, boardType: 'spray', angle: 40 },
+          ctxFor(viewer),
+        )) as { outlierAnalysis: unknown }
+      ).outlierAnalysis;
+
+    // Public: every one of them answers.
+    expect((await history(STRANGER)).length).toBeGreaterThan(0);
+    expect(await outlier(null)).not.toBeNull();
+
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.wall.uuid, isPublic: false } },
+      ctxFor(OWNER),
+    );
+
+    // Private: nothing, for a stranger or an anonymous caller — and no error, so
+    // the wall's existence stays unobservable.
+    expect(await history(STRANGER)).toEqual([]);
+    expect(await history(null)).toEqual([]);
+    expect(await outlier(null)).toBeNull();
+
+    // …and the owner still reads their own wall.
+    expect((await history(OWNER)).length).toBeGreaterThan(0);
+  });
+
+  it('refuses a climb-stats subscription on a wall the caller cannot see', async () => {
+    // The channel key IS `boardType:layoutId`, and a spray layout id comes out of a
+    // sequence — so this was a live feed of a private wall's climb uuids, ascent
+    // counts and setter grades to anyone who walked the sequence.
+    const wall = await wallWithAClimb();
+    const subscribe = async (viewer: string) =>
+      climbStatsSubscriptions.climbStatsUpdated.subscribe(
+        {},
+        { boardType: 'spray', layoutId: wall.wall.layoutId },
+        { ...ctxFor(viewer), connectionId: `conn-${viewer}` } as never,
+      );
+
+    await expect(subscribe(STRANGER)).rejects.toThrow(/not found/i);
+
+    const owned = await subscribe(OWNER);
+    expect(owned).toBeDefined();
+    await owned.return();
   });
 
   it('smart playlists count and paginate on visible refs only', async () => {

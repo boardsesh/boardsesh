@@ -407,7 +407,11 @@ export const climbQueries = {
   /**
    * Get climb stats history for the last 12 months
    */
-  climbStatsHistory: async (_: unknown, { boardName, climbUuid }: { boardName: string; climbUuid: string }) => {
+  climbStatsHistory: async (
+    _: unknown,
+    { boardName, climbUuid }: { boardName: string; climbUuid: string },
+    ctx: ConnectionContext,
+  ) => {
     validateInput(BoardNameSchema, boardName, 'boardName');
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
 
@@ -433,6 +437,19 @@ export const climbQueries = {
           eq(dbSchema.boardClimbStatsHistory.boardType, boardName),
           eq(dbSchema.boardClimbStatsHistory.climbUuid, climbUuid),
           gte(dbSchema.boardClimbStatsHistory.createdAt, twelveMonthsAgo.toISOString()),
+          // The same rule `climbStatsForAngles` carries, for the same rows a month
+          // at a time: a retained uuid would otherwise buy the twelve-month
+          // ascent, quality and grade trajectory of a climb on a wall that has
+          // since gone private. This resolver is unauthenticated, so the viewer is
+          // whatever the socket carries and usually null. A no-op on the other
+          // eight board types.
+          sprayReferenceVisibilityCondition(
+            {
+              boardType: dbSchema.boardClimbStatsHistory.boardType,
+              climbUuid: dbSchema.boardClimbStatsHistory.climbUuid,
+            },
+            ctx?.userId,
+          ),
         ),
       )
       .orderBy(desc(dbSchema.boardClimbStatsHistory.createdAt));
@@ -605,6 +622,15 @@ export const climbQueries = {
           eq(dbSchema.boardClimbGrades.boardType, boardName),
           eq(dbSchema.boardClimbGrades.climbUuid, climbUuid),
           eq(dbSchema.boardClimbGrades.angle, angle),
+          // `board_climb_grades` carries no spray rows today — the nightly model
+          // runs over CROWD_MEAN_BOARDS only — so this predicate is closing the
+          // gap ahead of the day spray joins that list, not a live leak. Both
+          // readers are unauthenticated, and the row is a grade band with an
+          // ascent count, which is exactly what the wall's privacy covers.
+          sprayReferenceVisibilityCondition(
+            { boardType: dbSchema.boardClimbGrades.boardType, climbUuid: dbSchema.boardClimbGrades.climbUuid },
+            ctx?.userId,
+          ),
         ),
       )
       .limit(1);
@@ -652,7 +678,19 @@ export const climbQueries = {
         ),
       )
       .where(
-        and(eq(dbSchema.boardClimbGrades.boardType, boardName), eq(dbSchema.boardClimbGrades.climbUuid, climbUuid)),
+        and(
+          eq(dbSchema.boardClimbGrades.boardType, boardName),
+          eq(dbSchema.boardClimbGrades.climbUuid, climbUuid),
+          // `board_climb_grades` carries no spray rows today — the nightly model
+          // runs over CROWD_MEAN_BOARDS only — so this predicate is closing the
+          // gap ahead of the day spray joins that list, not a live leak. Both
+          // readers are unauthenticated, and the row is a grade band with an
+          // ascent count, which is exactly what the wall's privacy covers.
+          sprayReferenceVisibilityCondition(
+            { boardType: dbSchema.boardClimbGrades.boardType, climbUuid: dbSchema.boardClimbGrades.climbUuid },
+            ctx?.userId,
+          ),
+        ),
       )
       .orderBy(asc(dbSchema.boardClimbGrades.angle));
 

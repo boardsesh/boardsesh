@@ -3,6 +3,7 @@ import type { ErrorResponse, BoardName } from '@/app/lib/types';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { createRequestLogger } from '@/app/lib/observability/request-logger';
 import { reportHandledError } from '@/app/lib/observability/report-error';
+import { boardHasDeepConfigRoute } from '@/app/lib/board-route-paths';
 import { NextResponse } from 'next/server';
 
 // Per-IP cap on this public, documented endpoint. The app itself fetches climb
@@ -44,6 +45,20 @@ export async function GET(
   }
 
   const params = await props.params;
+
+  // A spray wall is never served from this endpoint. It is anonymous and
+  // CDN-cached under a key with no viewer in it, so one fetch by anybody would
+  // publish a private wall's per-angle ascents, quality, setter grade and FA
+  // username to every later caller — and the wall's privacy is the whole point of
+  // the board type. `spray` is already absent from every other www surface
+  // (`boardHasDeepConfigRoute`); this is the one route that takes a board name
+  // without going through the route parser, so it needs its own answer. 404,
+  // matching what the deep routes do, so nothing distinguishes a private wall
+  // from a board that does not exist.
+  if (!boardHasDeepConfigRoute(params.board_name)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
   try {
     // Create a minimal parsed params object with just what we need
     const parsedParams = {

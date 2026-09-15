@@ -106,7 +106,7 @@ export const socialProposalQueries = {
   climbCommunityStatus: async (
     _: unknown,
     { climbUuid, boardType, angle }: { climbUuid: string; boardType: string; angle: number },
-    _ctx: ConnectionContext,
+    ctx: ConnectionContext,
   ) => {
     // Get community status
     const [status] = await db
@@ -153,7 +153,7 @@ export const socialProposalQueries = {
       );
 
     // Run outlier analysis
-    const outlierAnalysis = await analyzeGradeOutlier(climbUuid, boardType, angle);
+    const outlierAnalysis = await analyzeGradeOutlier(climbUuid, boardType, angle, ctx?.userId);
 
     return {
       climbUuid,
