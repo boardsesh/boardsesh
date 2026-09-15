@@ -282,6 +282,14 @@ vi.mock('../../lib/boards/use-set-board-angle', () => ({
   useSetBoardAngle: () => vi.fn(async () => {}),
 }));
 
+// Mocked for the same reason every other data hook here is: the real module
+// reaches the GraphQL client, which pulls `expo-secure-store` at import time and
+// has no Node build. The provider only calls it to fill the spray registry for a
+// spray active board, which none of these cases uses.
+vi.mock('../../lib/spray/use-spray-wall', () => ({
+  useSprayWall: () => ({ isLoading: false, isUnrenderable: false }),
+}));
+
 vi.mock('../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: activeBoard.stored }),
   useSetActiveBoard: () => activeBoard.setActiveBoard,
