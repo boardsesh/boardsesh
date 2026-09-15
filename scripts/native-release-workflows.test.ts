@@ -125,6 +125,26 @@ describe('native release workflow contracts', () => {
     expect(run).toContain('if [ "$TRAIN_PUBLISH_ANDROID" = false ]');
     expect(run).toContain('ios_requested=false');
     expect(run).toContain('android_requested=false');
+
+    // Withholding every requested platform must stop the step with BOTH outputs
+    // false. Falling through would compute all_success=true — nothing left to
+    // contradict it — and the served-manifest verify, which runs on that claim,
+    // would then hunt for an update that was never published and fail the run.
+    // That is exactly the shape a single-platform republish from the train takes
+    // when the guard withholds its one platform.
+    const bothWithheld = run.match(
+      // The parsed block scalar is dedented, so the closing `fi` sits at column 0.
+      /if \[ "\$ios_requested" = false \] && \[ "\$android_requested" = false \]; then([\s\S]*?)\nfi/,
+    )?.[1];
+    expect(bothWithheld, 'the summary must stop when every requested platform was withheld').toBeTruthy();
+    expect(bothWithheld).toContain('echo "all_success=false"');
+    expect(bothWithheld).toContain('echo "any_success=false"');
+    expect(bothWithheld).toContain('exit 0');
+
+    // A withheld platform published nothing and the build that asked for it is
+    // waiting on an update it will never get: green, but never silent.
+    expect(run).toContain('::warning::iOS published nothing');
+    expect(run).toContain('::warning::Android published nothing');
   });
 
   it('keeps fingerprint gates and tags store uploads only after success', () => {
@@ -340,6 +360,10 @@ describe('native release workflow contracts', () => {
     // A fork PR's token is read-only, so the comment/label/check-run writes would
     // 403; the push path never covered forks either.
     expect(otaCheck).toContain('github.event.pull_request.head.repo.fork != true');
+    // `edited` also fires on every title/body edit, and this job is a ~20-minute
+    // two-install resolve. Only a base change can move the verdict, and that is
+    // what `changes.base` reports.
+    expect(otaCheck).toContain("github.event.action != 'edited' || github.event.changes.base != null");
     // The PR's head commit, not the synthetic merge ref: a check-run posted on
     // the merge sha is invisible on the PR, and the merge tree is not what the
     // author pushed.
