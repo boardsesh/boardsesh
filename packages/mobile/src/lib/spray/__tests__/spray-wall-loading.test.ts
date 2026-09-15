@@ -119,6 +119,66 @@ describe('ensureSprayWallLoaded', () => {
   });
 });
 
+/**
+ * The loader is installed from a provider's `useEffect`, and React runs CHILD
+ * effects before its parent's — so every row in the first commit resolves its
+ * board while the loader is still null. Dropping those asks left a row that never
+ * re-renders showing a placeholder for the whole session.
+ */
+describe('asks that arrive before the loader is installed', () => {
+  it('are replayed once the loader lands', async () => {
+    // The first commit: rows resolve, nothing can fetch yet.
+    ensureSprayWallLoaded(ACTIVE_WALL);
+    ensureSprayWallLoaded(OTHER_WALL);
+    expect(getSprayWallLoadState(ACTIVE_WALL)).toBe('idle');
+
+    const loader = vi.fn(async (layoutId: number) => {
+      registerSprayWall(layoutId, wallPayload(1));
+    });
+    setSprayWallLoader(loader);
+
+    await vi.waitFor(() => expect(getSprayWall(ACTIVE_WALL)).not.toBeNull());
+    await vi.waitFor(() => expect(getSprayWall(OTHER_WALL)).not.toBeNull());
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
+
+  it('are replayed exactly once, however many rows asked', async () => {
+    ensureSprayWallLoaded(ACTIVE_WALL);
+    ensureSprayWallLoaded(ACTIVE_WALL);
+    ensureSprayWallLoaded(ACTIVE_WALL);
+
+    const loader = vi.fn(async (layoutId: number) => {
+      registerSprayWall(layoutId, wallPayload(1));
+    });
+    setSprayWallLoader(loader);
+
+    await vi.waitFor(() => expect(getSprayWall(ACTIVE_WALL)).not.toBeNull());
+    expect(loader).toHaveBeenCalledTimes(1);
+  });
+
+  it('are not replayed a second time when the loader is reinstalled', async () => {
+    ensureSprayWallLoaded(ACTIVE_WALL);
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    await vi.waitFor(() => expect(getSprayWallLoadState(ACTIVE_WALL)).toBe('unavailable'));
+
+    // A remount reinstalls the loader; the cooldown, not a replay, decides.
+    setSprayWallLoader(loader);
+    expect(loader).toHaveBeenCalledTimes(1);
+  });
+
+  it('wakes render-path subscribers, which ask again on their next render', () => {
+    // The per-row resolvers ask from a RENDER, not an effect, so they leave no
+    // deferred entry to replay — they need the re-render instead.
+    const listener = vi.fn();
+    subscribeToSprayWalls(listener);
+
+    setSprayWallLoader(async () => {});
+
+    expect(listener).toHaveBeenCalled();
+  });
+});
+
 describe('refreshSprayWall', () => {
   it('re-fetches past the cooldown, forcing the cached payload out', async () => {
     const loader = vi.fn(async () => {});

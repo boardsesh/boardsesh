@@ -165,6 +165,13 @@ const LOAD_RETRY_COOLDOWN_MS = 30_000;
 
 const loadStates = new Map<number, LoadRecord>();
 
+/**
+ * Walls asked for while no loader was installed, replayed by
+ * `setSprayWallLoader`. Bounded by the number of distinct walls one screen can
+ * resolve in a single commit.
+ */
+const deferredRequests = new Set<number>();
+
 /** Injected so this module fetches nothing itself — see `setSprayWallLoader`. */
 type SprayWallLoader = (layoutId: number, options?: { force?: boolean }) => Promise<void>;
 let sprayWallLoader: SprayWallLoader | null = null;
@@ -185,6 +192,21 @@ function now(): number {
  */
 export function setSprayWallLoader(loader: SprayWallLoader | null): void {
   sprayWallLoader = loader;
+  if (!loader) return;
+
+  // Everything that asked before the loader existed. This gap is real and not
+  // rare: the loader is installed from a provider's `useEffect`, and React runs
+  // CHILD effects before its parent's, so every row in the first commit resolves
+  // its board while `sprayWallLoader` is still null. Those asks were dropped on
+  // the floor, and a row that never re-renders — a list that is not scrolled, a
+  // thumbnail that is already settled — kept its placeholder for the session.
+  const deferred = [...deferredRequests];
+  deferredRequests.clear();
+  for (const layoutId of deferred) ensureSprayWallLoaded(layoutId);
+
+  // And wake anything that asked from a RENDER rather than an effect (the
+  // per-row resolvers), so it re-renders and asks again.
+  notify();
 }
 
 /** What this session knows about a wall right now. O(1). */
@@ -193,21 +215,6 @@ export function getSprayWallLoadState(layoutId: number): SprayWallLoadState {
   return loadStates.get(layoutId)?.state ?? 'idle';
 }
 
-/**
- * Make sure a wall is on its way, whoever resolved it.
- *
- * The active board is loaded by `useSprayWall`, but a wall reaches a surface in
- * four other ways — a queue item set on another wall, a playlist row, a second
- * wall in My Boards, and `resolveClimbRenderBoard` falling a climb back onto its
- * own board — and none of those is the active board. Without this they resolve a
- * spray config the registry has never heard of, `getBoardRenderData` answers
- * null, and the surface draws a placeholder for the rest of the session with no
- * `Board Render Failed` to show for it.
- *
- * Safe to call from a render or a per-row resolver: a Map lookup, then at most
- * one in-flight fetch per wall. Fire-and-forget — the registry notifies its
- * subscribers when the wall lands, which is what re-renders the rows that asked.
- */
 /**
  * Re-fetch a wall whose cached payload is known to be useless, bypassing both the
  * retry cooldown and React Query's stale window.
@@ -234,8 +241,30 @@ export function refreshSprayWall(layoutId: number): void {
     });
 }
 
+/**
+ * Make sure a wall is on its way, whoever resolved it.
+ *
+ * The active board is loaded by `useSprayWall`, but a wall reaches a surface in
+ * four other ways — a queue item set on another wall, a playlist row, a second
+ * wall in My Boards, and `resolveClimbRenderBoard` falling a climb back onto its
+ * own board — and none of those is the active board. Without this they resolve a
+ * spray config the registry has never heard of, `getBoardRenderData` answers
+ * null, and the surface draws a placeholder for the rest of the session with no
+ * `Board Render Failed` to show for it.
+ *
+ * Safe to call from a render or a per-row resolver: a Map lookup, then at most
+ * one in-flight fetch per wall. Fire-and-forget — the registry notifies its
+ * subscribers when the wall lands, which is what re-renders the rows that asked.
+ *
+ * An ask that arrives before the loader is installed is REMEMBERED rather than
+ * dropped; see `setSprayWallLoader`.
+ */
 export function ensureSprayWallLoaded(layoutId: number): void {
-  if (walls.has(layoutId) || !sprayWallLoader) return;
+  if (walls.has(layoutId)) return;
+  if (!sprayWallLoader) {
+    deferredRequests.add(layoutId);
+    return;
+  }
 
   const record = loadStates.get(layoutId);
   if (record?.state === 'loading') return;
@@ -305,6 +334,7 @@ export function clearSprayWallRegistry(): void {
   for (const layoutId of walls.keys()) unregisterRuntimeGeometry(sprayGeometryKey(layoutId));
   walls.clear();
   loadStates.clear();
+  deferredRequests.clear();
   sprayWallLoader = null;
   notify();
 }
