@@ -16,9 +16,18 @@
 // still gets the whole screen when it is showing.
 
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import {
+  Alert,
+  BackHandler,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useIsFocused, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -39,7 +48,7 @@ import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { suggestSprayHolds } from '../../lib/spray/hold-suggestions';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
 import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
-import { useCreateSprayWallVersion } from '../../lib/spray/use-create-spray-wall';
+import { fetchSprayWallVersions, useCreateSprayWallVersion } from '../../lib/spray/use-create-spray-wall';
 import { useDiscardSprayWallVersion, useSprayWallWithVersions } from '../../lib/spray/use-spray-wall-reset';
 import {
   anchorsAreReady,
@@ -187,7 +196,18 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
         rescalePoint(point, { width: photo.width, height: photo.height }, stored),
       );
 
-      const version = await createVersionAsync({ wallUuid, photoId: uploaded.photoId, anchors: storedAnchors });
+      // A retry has to reconcile before it creates. `createSprayWallVersion` can
+      // land on the server and lose its response on the way back — a dropped
+      // connection, a backgrounded app — and the wall then carries a draft this
+      // session does not know about. Creating a second one is refused by the
+      // one-draft-per-wall rule, so the retry would fail forever on a wall that
+      // is actually fine. Adopting the draft that is already there is both the
+      // correct state and the only way out.
+      const version =
+        attempt > 1
+          ? ((await fetchSprayWallVersions(wallUuid))?.versions?.find((row) => row.status === 'DRAFT') ??
+            (await createVersionAsync({ wallUuid, photoId: uploaded.photoId, anchors: storedAnchors })))
+          : await createVersionAsync({ wallUuid, photoId: uploaded.photoId, anchors: storedAnchors });
       dispatch({
         type: 'DRAFT_CREATED',
         draft: {
@@ -250,6 +270,30 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     }
     dispatch({ type: 'BACK' });
   }, [state, leave]);
+
+  /**
+   * Android's hardware back, held to the same rules as the Back button.
+   *
+   * Without it the flow has a second exit that obeys none of them: it pops the
+   * route mid-upload (landing the callback on a screen that is gone), and it
+   * leaves a draft behind without ever saying so. Returning `true` marks the
+   * press handled and stops the default pop.
+   *
+   * Focus-gated for the reason `useBlockBack` spells out: `BackHandler`
+   * dispatches newest-first and stops at the first handler to return `true`, and
+   * React Navigation's own handler was registered when the container mounted —
+   * so an ungated listener here would keep eating back presses on every screen
+   * pushed on top of this one.
+   */
+  const isFocused = useIsFocused();
+  useEffect(() => {
+    if (!isFocused) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      goBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [isFocused, goBack]);
 
   const handleCommitted = useCallback(
     (summary: { removedCount: number; addedCount: number; climbsChanged: number }) => {
