@@ -524,21 +524,32 @@ jobs:
           # main→release/next sync — would red the run, and a change that moves
           # only one platform's fingerprint would red a run whose other publish
           # succeeded.
+          # A warning, not a notice: a dispatched single-platform republish that
+          # ends here published nothing at all, and the native build that asked
+          # for it is waiting on an update its binary will never receive. Green is
+          # the right result — nothing failed — but it must not look like a
+          # successful publish in the run list.
           if [ "$TRAIN_PUBLISH_IOS" = false ]; then
             ios_requested=false
-            echo "::notice::iOS was withheld by the train fingerprint guard; not counting it toward this run's result."
+            echo "::warning::iOS published nothing: main still owns the iOS runtimeVersion, so the train's fingerprint guard withheld it. Not counted toward this run's result."
           fi
           if [ "$TRAIN_PUBLISH_ANDROID" = false ]; then
             android_requested=false
-            echo "::notice::Android was withheld by the train fingerprint guard; not counting it toward this run's result."
+            echo "::warning::Android published nothing: main still owns the Android runtimeVersion, so the train's fingerprint guard withheld it. Not counted toward this run's result."
           fi
 
-          # Both platforms withheld: nothing was requested of us, which is a
-          # green no-op rather than a vacuous "all succeeded".
+          # Every requested platform was withheld: nothing was published, so both
+          # outputs must be FALSE and the step must stop here. `all_success=true`
+          # would be a vacuous claim that every platform shipped, and the steps
+          # that consume it act on that claim — the served-manifest verify would
+          # go looking for an update that was never published and fail the run.
+          # Falling through instead would compute all_success=true for the same
+          # reason (no requested platform left to contradict it), which is exactly
+          # what this branch exists to prevent.
           if [ "$ios_requested" = false ] && [ "$android_requested" = false ]; then
             echo "all_success=false" >> "$GITHUB_OUTPUT"
             echo "any_success=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::main still owns both runtimeVersions — nothing to publish from the train yet."
+            echo "::notice::main still owns the requested runtimeVersion(s) — nothing to publish from the train yet."
             exit 0
           fi
 

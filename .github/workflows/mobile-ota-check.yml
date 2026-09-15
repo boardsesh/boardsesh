@@ -98,10 +98,19 @@ env:
 
 jobs:
   ota-check:
-    # A fork PR gets a read-only token, so the comment / label / check-run steps
-    # would all 403. The push path never ran for forks either (their pushes land
-    # on the fork, not here), so this changes nothing about fork coverage.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork != true
+    # Two gates on the pull_request path:
+    #
+    #   * A fork PR gets a read-only token, so the comment / label / check-run
+    #     steps would all 403. The push path never ran for forks either (their
+    #     pushes land on the fork, not here), so fork coverage is unchanged.
+    #   * `edited` fires on every title and body edit, not just a base change, and
+    #     this job is a ~20-minute two-install fingerprint resolve. Only a base
+    #     change can move the verdict, and GitHub reports that as
+    #     `changes.base` — so an `edited` without one is dropped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.fork != true &&
+       (github.event.action != 'edited' || github.event.changes.base != null))
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
