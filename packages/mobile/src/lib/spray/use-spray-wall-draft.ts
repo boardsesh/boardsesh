@@ -19,16 +19,24 @@
 // The registry keys every cache on the version (`sprayCacheToken`), and a draft's
 // number is one past the published one, so nothing the draft writes can be served
 // back for the published wall. On unmount the published generation is pulled back
-// in with `refreshSprayWall`, so a surface that outlives the editor is not left
-// drawing an unpublished photo.
+// in through `invalidateSprayWallRenderData` — the SW-07 seam for "this device
+// changed this wall" — so a surface that outlives the editor is neither left
+// drawing an unpublished photo nor served a cached payload from before the
+// session.
+//
+// That seam is deliberately NOT what a hold save calls. It re-registers the
+// PUBLISHED version, which is exactly wrong while the editor is holding the
+// draft: a save would put the published wall back under the climber's hands
+// mid-session. A hold save changes the draft and only the draft, so it
+// invalidates the draft's own key (see `use-spray-hold-writes.ts`) and the
+// published generation waits for the editor to close.
 
-import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
-import { registerRenderData } from './spray-wall-loader';
-import { refreshSprayWall } from './spray-wall-registry';
+import { invalidateSprayWallRenderData, registerRenderData } from './spray-wall-loader';
 
 type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | null };
 
@@ -91,12 +99,20 @@ export function useSprayWallDraft(
     setRegistered(registerRenderData(layoutId, renderData));
   }, [layoutId, renderData]);
 
+  // Captured in a ref so the teardown does not re-run — and therefore does not
+  // yank the published wall back mid-session — when the uuid prop settles.
+  const queryClient = useQueryClient();
+  const teardownRef = useRef({ queryClient, wallUuid });
+  teardownRef.current = { queryClient, wallUuid };
+
   useEffect(
     () => () => {
-      // Put the published generation back for whatever outlives this screen. A
-      // no-op when the wall was never registered, and cheap when it was: the
-      // published payload is almost always still in React Query's cache.
-      refreshSprayWall(layoutId);
+      // Put the published generation back for whatever outlives this screen, and
+      // drop the cached payload with it: this device has been writing to the
+      // wall, so a payload from before the session is not to be trusted.
+      const { queryClient: client, wallUuid: uuid } = teardownRef.current;
+      if (!uuid) return;
+      void invalidateSprayWallRenderData(client, uuid, layoutId);
     },
     [layoutId],
   );

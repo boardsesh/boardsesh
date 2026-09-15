@@ -533,6 +533,17 @@ re-registered the wall", which happens whenever a presigned photo signature
 expires: re-seeding on that would throw away the holds somebody is halfway
 through drawing.
 
+"A save of its own" is the subtle half, and `spray-hold-seed.ts` states it:
+**`invalidateQueries` is not the refetch.** A save that re-seeded the moment the
+mutation resolved would re-read the payload from BEFORE the write — the holds it
+had just added would vanish, the ones it had just deleted would come back, and
+the ids it carried forward would be the superseded ones, so every later save in
+that session would be refused for the whole batch. So a save ARMS a latch, and
+the re-seed fires on the arrival of a payload that is not the one already seeded,
+which is the only evidence the refetch actually happened. The mutation's own
+`onSuccess` also RETURNS the invalidation rather than firing it and forgetting,
+so React Query awaits the refetch before the caller's `onSuccess` runs.
+
 Three things the editor does are decided by this document rather than by taste:
 
 - **It edits THE draft.** One draft per wall, so there is no version to choose:
@@ -548,6 +559,12 @@ Three things the editor does are decided by this document rather than by taste:
   waiting for the refetch. Until they are clear a second press of Save re-sends
   holds the server has already applied — and a correction re-sent names an id the
   resolver has just superseded, which fails the whole batch.
+- **The removal half reports separately** (`MARK_REMOVED`), the moment
+  `removeSprayWallHolds` comes back and before the upsert runs. The two calls are
+  the two halves of one Save and the second can fail on its own — a rate limit, a
+  dropped connection — and without that hop the editor would still be holding ids
+  the server had already stamped off, so every retry for the rest of the session
+  would be refused with "Hold N is not on this wall".
 - **Removals are sent BEFORE upserts.** A merge takes two holds off and puts one
   back; the other order would leave the wall carrying both the merged hold and
   the one it swallowed if the session died between the two calls. Holds missing

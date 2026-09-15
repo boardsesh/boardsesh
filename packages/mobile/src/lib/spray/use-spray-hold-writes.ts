@@ -28,6 +28,15 @@ export type SaveSprayHoldsVariables = {
   /** The DRAFT version's id. Published versions are immutable. */
   versionId: string;
   plan: SprayHoldWritePlan;
+  /**
+   * Fired the moment `removeSprayWallHolds` comes back, BEFORE the upsert runs.
+   *
+   * The two calls are the two halves of one Save and the second can fail on its
+   * own — a rate limit, a dropped connection. Without this hop the caller would
+   * still be holding ids the server has already stamped off, and every retry for
+   * the rest of the session would be refused with "Hold N is not on this wall".
+   */
+  onRemoved?: (removedIds: readonly number[]) => void;
 };
 
 export type SaveSprayHoldsResult = {
@@ -51,7 +60,12 @@ type RemoveResponse = { removeSprayWallHolds: number };
 export function useSaveSprayHolds() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ wallUuid, versionId, plan }: SaveSprayHoldsVariables): Promise<SaveSprayHoldsResult> => {
+    mutationFn: async ({
+      wallUuid,
+      versionId,
+      plan,
+      onRemoved,
+    }: SaveSprayHoldsVariables): Promise<SaveSprayHoldsResult> => {
       const client = getHttpClient();
       let removed = 0;
       if (plan.removeIds.length > 0) {
@@ -59,6 +73,7 @@ export function useSaveSprayHolds() {
           input: { wallUuid, versionId, holdIds: [...plan.removeIds] },
         });
         removed = response.removeSprayWallHolds;
+        onRemoved?.(plan.removeIds);
       }
 
       let written = 0;
@@ -71,13 +86,19 @@ export function useSaveSprayHolds() {
 
       return { written, removed };
     },
+    // RETURNED, not fired and forgotten. `invalidateQueries` resolves when the
+    // refetch it triggered has landed, and React Query awaits a promise returned
+    // from here before it runs the caller's own `onSuccess`. Without the return,
+    // a caller that re-reads the wall on success reads the payload from BEFORE
+    // the save — the holds it just added missing, the ones it just deleted back,
+    // and every id it carried forward superseded.
     onSuccess: (_result, { wallUuid, versionNumber }) => {
       // The DRAFT's payload, not the published wall's: the editor reads the
       // version it is writing to (`useSprayWallDraft`), and that is the query
       // that now holds stale holds. Invalidating it re-fetches, which
       // re-registers, which is what puts the server's own ids on the holds this
       // session minted locally.
-      void queryClient.invalidateQueries({ queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber) });
+      return queryClient.invalidateQueries({ queryKey: sprayWallDraftQueryKey(wallUuid, versionNumber) });
     },
   });
 }

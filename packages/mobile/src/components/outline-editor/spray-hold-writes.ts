@@ -46,7 +46,16 @@ export type SprayHoldWritePlan = {
   unmappableIds: readonly number[];
   /** Holds written as plain circles because their ring could not be stored. */
   outlinesDropped: number;
-  /** The upsert exceeds the per-wall cap and cannot be sent as one batch. */
+  /**
+   * The wall would end up over its hold cap.
+   *
+   * Measured the way the SERVER measures it — the holds alive after this save,
+   * not the size of this batch. `upsertSprayWallHolds` re-checks the wall's
+   * total afterwards (`spray-walls.ts`), so a near-full wall is refused by a
+   * five-hold batch that no per-batch bound would ever catch, and the climber
+   * would get a raw server error instead of a sentence telling them to drop a
+   * few.
+   */
   overCap: boolean;
 };
 
@@ -69,11 +78,15 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
   const upsert: SprayHoldWireInput[] = [];
   const unmappableIds: number[] = [];
   let outlinesDropped = 0;
+  // Every hold that would be on the wall once this save lands: the removals have
+  // already left `state.holds`, and a pending candidate is not on the wall.
+  let aliveAfterSave = 0;
 
   for (const hold of allHolds(state)) {
     // A candidate awaiting a verdict is not work in progress — it is a proposal.
     // Saving must not turn it into a hold on somebody's wall.
     if (hold.review === 'pending') continue;
+    aliveAfterSave += 1;
     if (!hold.dirty) continue;
 
     const canonical = mapPhotoHoldToCanonical(homography, hold);
@@ -109,7 +122,7 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
     removeIds: [...state.removedIds],
     unmappableIds,
     outlinesDropped,
-    overCap: upsert.length > MAX_HOLDS_PER_WALL,
+    overCap: aliveAfterSave > MAX_HOLDS_PER_WALL || upsert.length > MAX_HOLDS_PER_WALL,
   };
 }
 

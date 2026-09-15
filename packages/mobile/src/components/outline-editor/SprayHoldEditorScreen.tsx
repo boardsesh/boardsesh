@@ -23,15 +23,17 @@ import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
 import { SprayEditToolbar, type SprayEditorTool } from './SprayEditToolbar';
 import { renderToBoardScale, type StrokeRejection } from './stroke';
 import { buildSprayHoldWritePlan, planHasWork } from './spray-hold-writes';
+import { buildEditorSeed, shouldSeedEditor, sprayEditorSeedKey } from './spray-hold-seed';
+import type { SprayHoldCandidate, SprayHoldSaveSummary } from './spray-hold-editor-types';
 import { editorTargetCapabilities, type SprayWallEditorTarget } from './editor-target';
 import { withUnsavedDraftGuard } from './draft-guard';
 import {
-  allHolds,
   editorCounts,
+  filterVisible,
+  holdsInIdOrder,
   hasUnsavedWork as stateHasUnsavedWork,
   initialSprayEditorState,
   sprayEditorReducer,
-  visibleHolds,
   type SprayEditorHold,
 } from './spray-hold-editor-reducer';
 import {
@@ -51,28 +53,11 @@ const CHROME_BUDGET = 420;
 
 const NO_POINTS: number[] = [];
 
-/**
- * One detector candidate, in PHOTO pixels of the draft version's photo.
- *
- * Handed in rather than fetched because detection runs on the device (epic
- * decision 2026-09-15: trust the client's detections) and SW-06 owns where. The
- * editor's only opinion is that a candidate is drawn and never written until
- * somebody rules on it.
- */
-export type SprayHoldCandidate = {
-  cx: number;
-  cy: number;
-  r: number;
-  /** Radius-unit ring, or null for a plain circle. */
-  outline?: number[] | null;
-  /** 0–1. Drives the threshold slider and the low-confidence styling. */
-  confidence: number;
-};
-
-export type SprayHoldSaveSummary = {
-  written: number;
-  removed: number;
-};
+// Re-exported so a caller that opens this screen imports one module. The shapes
+// themselves live in `spray-hold-editor-types.ts`, which has no React in it, so
+// the pure seeding rules can name a candidate without pulling the board surface
+// into their test.
+export type { SprayHoldCandidate, SprayHoldSaveSummary };
 
 export type SprayHoldEditorScreenProps = {
   /** The wall being edited. Names the mutations' `wallUuid`. */
@@ -164,57 +149,42 @@ export function SprayHoldEditorScreen({
     useCallback(() => getSprayWall(layoutId), [layoutId]),
   );
 
-  // Bumped after every successful save, so the wall that comes back re-seeds the
-  // editor even though it is the same version it was.
-  const [saveEpoch, setSaveEpoch] = useState(0);
-
   /**
-   * What the editor's contents are seeded FROM.
+   * A save has landed and the payload carrying what it wrote has not arrived yet.
    *
-   * Deliberately not "the wall object changed". The registry re-registers a wall
-   * on every refresh — an expired photo signature is enough — and re-seeding on
-   * that would throw away the holds somebody is halfway through drawing, which is
-   * the worst thing this screen could do. A re-seed needs a real reason: a
-   * different wall, a new version of it, a new detector run, or a save of our own.
+   * A ref, not state: it is a latch between two async events, and rendering on it
+   * would change nothing on screen. Armed on save, disarmed by the arrival of a
+   * payload that is not the one already seeded — see `spray-hold-seed.ts` for why
+   * the trigger has to be the payload rather than a counter.
    */
-  const seedKey = wall ? `${wall.wallUuid}:${wall.version}:${candidates?.length ?? 0}:${saveEpoch}` : null;
-  const seededKeyRef = useRef<string | null>(null);
+  const awaitingSavedPayloadRef = useRef(false);
+  /** Has this version been saved once? Gates the detector's proposals. */
+  const savedThisVersionRef = useRef(false);
 
-  // Candidates are appended as PENDING, so they are drawn from the first frame
-  // and written by nothing until somebody rules on them.
+  const seedKey = sprayEditorSeedKey(wall, candidates?.length ?? 0);
+  const seededKeyRef = useRef<string | null>(null);
+  const seededWallRef = useRef<typeof wall>(null);
+
   useEffect(() => {
-    if (!wall || seedKey == null || seededKeyRef.current === seedKey) return;
+    if (
+      !wall ||
+      !shouldSeedEditor({
+        seedKey,
+        seededKey: seededKeyRef.current,
+        wall,
+        seededWall: seededWallRef.current,
+        awaitingSavedPayload: awaitingSavedPayloadRef.current,
+      })
+    ) {
+      return;
+    }
+    const isNewVersion = seededKeyRef.current !== seedKey;
+    if (isNewVersion) savedThisVersionRef.current = false;
     seededKeyRef.current = seedKey;
-    const stored: SprayEditorHold[] = wall.holds.map((hold) => ({
-      id: hold.id,
-      cx: hold.cx,
-      cy: hold.cy,
-      r: hold.r,
-      outline: hold.outline ? [...hold.outline] : null,
-      source: 'MANUAL',
-      confidence: null,
-      review: 'accepted',
-      dirty: false,
-    }));
-    let nextLocalId = -1;
-    // Only on the first seed of a version. After a save the accepted candidates
-    // are holds on the draft and come back in `stored`, so re-injecting the same
-    // list would draw every one of them twice and let them be written a second
-    // time; the rejected ones would come back from the dead. A new detector run
-    // is a new `candidates` prop, which moves the seed key on its own.
-    const pending: SprayEditorHold[] = (saveEpoch > 0 ? [] : (candidates ?? [])).map((candidate) => ({
-      id: nextLocalId--,
-      cx: candidate.cx,
-      cy: candidate.cy,
-      r: candidate.r,
-      outline: candidate.outline ? [...candidate.outline] : null,
-      source: 'AUTO',
-      confidence: candidate.confidence,
-      review: 'pending',
-      dirty: false,
-    }));
-    dispatch({ type: 'LOAD', holds: [...stored, ...pending] });
-  }, [wall, seedKey, saveEpoch, candidates]);
+    seededWallRef.current = wall;
+    awaitingSavedPayloadRef.current = false;
+    dispatch({ type: 'LOAD', holds: buildEditorSeed(wall, candidates ?? [], !savedThisVersionRef.current) });
+  }, [wall, seedKey, candidates]);
 
   const boardRender = useMemo(() => {
     if (!wall) return { width: 0, height: 0 };
@@ -227,8 +197,11 @@ export function SprayHoldEditorScreen({
     return { width: availableWidth, height: availableWidth / boardAspect };
   }, [wall, windowWidth, windowHeight, insets.top, insets.bottom]);
 
-  const holds = useMemo(() => visibleHolds(state), [state]);
-  const allEditorHolds = useMemo(() => allHolds(state), [state]);
+  // Memoised on `state.holds`, which only changes when a hold does — so a
+  // selection tap and every frame of a threshold drag re-filter an already-sorted
+  // list instead of re-sorting up to 1500 holds.
+  const allEditorHolds = useMemo(() => holdsInIdOrder(state.holds), [state.holds]);
+  const holds = useMemo(() => filterVisible(allEditorHolds, state.threshold), [allEditorHolds, state.threshold]);
   const counts = useMemo(() => editorCounts(state), [state]);
   const hasUnsaved = useMemo(() => stateHasUnsavedWork(state), [state]);
 
@@ -412,7 +385,15 @@ export function SprayHoldEditorScreen({
     }
     setErrorText(null);
     saveHolds.mutate(
-      { wallUuid, versionNumber, versionId, plan },
+      {
+        wallUuid,
+        versionNumber,
+        versionId,
+        plan,
+        // Fired between the two calls. If the upsert then fails, the removals
+        // have still landed, and re-sending them on a retry would be refused.
+        onRemoved: () => dispatch({ type: 'MARK_REMOVED' }),
+      },
       {
         onSuccess: (result) => {
           // Clear the dirty flags NOW rather than waiting for the refetch. Until
@@ -422,8 +403,11 @@ export function SprayHoldEditorScreen({
           dispatch({ type: 'MARK_SAVED' });
           // The refetched draft carries the server's own ids for every hold this
           // session minted locally, so the editor re-seeds from it rather than
-          // keeping negative ids that no longer mean anything.
-          setSaveEpoch((previous) => previous + 1);
+          // keeping negative ids that no longer mean anything. Armed rather than
+          // done here: the payload may not have landed yet, and re-seeding from
+          // the pre-save one would undo the save on screen.
+          savedThisVersionRef.current = true;
+          awaitingSavedPayloadRef.current = true;
           showToast(t('sprayEditor.toast.saved', { value: result.written }), 'success');
           if (plan.unmappableIds.length > 0) {
             setErrorText(t('sprayEditor.errors.someHoldsOffWall', { value: plan.unmappableIds.length }));
