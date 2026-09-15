@@ -119,3 +119,36 @@ export function deriveGradeFromTicksSql(tableAlias: StatsTableAlias): SQL {
     )
   )`;
 }
+
+/**
+ * "This climb is Boardsesh-owned AND its GRADE is ours to re-derive from ticks."
+ *
+ * The owned leg of the recompute (`board_climbs.user_id IS NOT NULL`) is the other
+ * half of the grade decision beside {@link deriveGradeFromTicksSql}: a climb a
+ * Boardsesh setter created has no upstream grade to protect, so its grade is the
+ * average of its ticks.
+ *
+ * Spray walls break that. A spray climb is an ordinary `board_climbs` row with a
+ * non-null `user_id` (the wall's setter), so the owned leg matched it — and
+ * `saveClimb` SEEDS the setter's own grade into `board_climb_stats`
+ * (`docs/spray-walls.md`). So the first tick logged with no difficulty averaged to
+ * NULL, NULLed `display_difficulty` and cleared `tick_graded_at`, and the setter's
+ * grade was gone with nothing left to recover it from — the row no longer even
+ * says a grade was ever derived.
+ *
+ * The spray fence mirrors the MoonBoard one above, and sits on the OWNED leg rather
+ * than inside `deriveGradeFromTicksSql` because the two legs answer different
+ * questions and only this one is wrong for spray: an UNGRADED spray climb
+ * (`display_difficulty IS NULL`) still takes its grade from its ticks, which is the
+ * only grade it can have.
+ *
+ * Everything else the owned leg decides — the plain quality AVG, the derived FA,
+ * `quality_normalized` — stays TRUE for spray: those ARE Boardsesh's to compute,
+ * there being no manufacturer behind a wall in somebody's garage.
+ *
+ * `climbTableAlias` is the `board_climbs` alias in the query it goes into.
+ */
+export function ownedGradeIsOursSql(climbTableAlias: string): SQL {
+  const alias = sql.raw(climbTableAlias);
+  return sql`(${alias}.user_id IS NOT NULL AND ${alias}.board_type <> 'spray')`;
+}

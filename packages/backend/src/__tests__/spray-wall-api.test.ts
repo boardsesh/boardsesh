@@ -83,6 +83,7 @@ const { playlistQueries } = await import('../graphql/resolvers/playlists/queries
 const { climbStatsSubscriptions } = await import('../graphql/resolvers/ticks/climb-stats-subscriptions');
 const { socialProposalQueries } = await import('../graphql/resolvers/social/proposals/queries');
 const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = await import('@boardsesh/board-config');
+const { recomputeClimbStatsBulk } = await import('@boardsesh/db/queries');
 
 const OWNER = 'sw-owner';
 const STRANGER = 'sw-stranger';
@@ -241,7 +242,9 @@ beforeEach(async () => {
                    -- The favourite and playlist tests write these.
                    "user_favorites", "playlists",
                    -- The stats-history and grade-model readers below write these.
-                   "board_climb_stats_history"
+                   "board_climb_stats_history",
+                   -- The activity-feed gate below writes fan-out rows by hand.
+                   "feed_items"
     RESTART IDENTITY CASCADE
   `);
   // `spray_wall_catalog_id_seq` and `spray_hold_catalog_id_seq` are STANDALONE
@@ -701,7 +704,11 @@ describe('who can see and who can edit a wall', () => {
   it('hides a draft version from a viewer who cannot edit', async () => {
     const { wall } = await createPublishedWall(OWNER, { isUnlisted: true });
     const photoId = registerUploadedPhoto(wall.uuid);
-    await sprayWallMutations.createSprayWallVersion({}, { input: { wallUuid: wall.uuid, photoId } }, ctxFor(OWNER));
+    await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    );
 
     const asOwner = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
       versions: Array<{ status: string }>;
@@ -857,7 +864,7 @@ describe('removing holds', () => {
     const photoId = registerUploadedPhoto(wall.uuid);
     const reset = (await sprayWallMutations.createSprayWallVersion(
       {},
-      { input: { wallUuid: wall.uuid, photoId } },
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
       ctxFor(OWNER),
     )) as { id: string };
     void versionId;
@@ -3288,5 +3295,177 @@ describe('playlists paginate on what the viewer may actually see', () => {
     const asOwner = await read(OWNER);
     expect(asOwner.climbs).toHaveLength(2);
     expect(asOwner.totalCount).toBe(2);
+  });
+});
+
+
+describe('a tick never takes the setter\u2019s grade off a spray climb', () => {
+  /** The stats row for a spray climb at the wall angle. */
+  async function statsFor(climbUuid: string) {
+    const [row] = (await db.execute(sql`
+      SELECT display_difficulty, difficulty_average, tick_graded_at,
+             ascensionist_count, boardsesh_ascensionist_count,
+             quality_average, quality_normalized, fa_username
+      FROM board_climb_stats
+      WHERE board_type = 'spray' AND climb_uuid = ${climbUuid} AND angle = 40
+    `)) as unknown as Array<{
+      display_difficulty: number | null;
+      difficulty_average: number | null;
+      tick_graded_at: string | null;
+      ascensionist_count: number | string;
+      boardsesh_ascensionist_count: number | string;
+      quality_average: number | string | null;
+      quality_normalized: boolean | null;
+      fa_username: string | null;
+    }>;
+    return row;
+  }
+
+  const sendTick = (climbUuid: string, viewer: string, difficulty?: number, quality?: number) =>
+    tickMutations.saveTick(
+      {},
+      {
+        input: {
+          climbUuid,
+          boardType: 'spray',
+          angle: 40,
+          status: 'send',
+          attemptCount: 1,
+          isMirror: false,
+          isBenchmark: false,
+          comment: '',
+          climbedAt: new Date().toISOString(),
+          ...(difficulty == null ? {} : { difficulty }),
+          ...(quality == null ? {} : { quality }),
+        },
+      },
+      ctxFor(viewer),
+    );
+
+  it('leaves display_difficulty at the seeded id when the tick carries no grade', async () => {
+    // The owned leg of the recompute is `board_climbs.user_id IS NOT NULL`, and a
+    // spray climb HAS a user_id — its setter. So the first ungraded tick averaged
+    // the (empty) set of tick difficulties to NULL, wrote that over the seeded
+    // setter grade and cleared `tick_graded_at`, which left nothing on the row to
+    // say a grade had ever been there. Unrecoverable.
+    const { climbUuid } = await wallWithAClimb({ isPublic: true });
+    expect((await statsFor(climbUuid)).display_difficulty).toBe(18);
+
+    await sendTick(climbUuid, OWNER, undefined, 5);
+
+    const afterUngraded = await statsFor(climbUuid);
+    expect(afterUngraded.display_difficulty).toBe(18);
+    expect(afterUngraded.difficulty_average).toBe(18);
+    expect(afterUngraded.tick_graded_at).toBeNull();
+
+    // …and a tick that DOES carry a grade is no different: the setter's grade is
+    // the wall's grade, and 4a/V0 from one climber does not replace it.
+    await sendTick(climbUuid, STRANGER, 10, 4);
+    const afterGraded = await statsFor(climbUuid);
+    expect(afterGraded.display_difficulty).toBe(18);
+    expect(afterGraded.difficulty_average).toBe(18);
+    expect(afterGraded.tick_graded_at).toBeNull();
+
+    // The fence is on the GRADE only. Everything else the owned leg decides is
+    // still Boardsesh's to compute on a wall in somebody's garage: the counts
+    // moved, the quality is the plain AVG over both ticks, and the FA is derived.
+    // Counts come back from postgres-js as bigint strings.
+    expect(Number(afterGraded.boardsesh_ascensionist_count)).toBe(2);
+    expect(Number(afterGraded.ascensionist_count)).toBe(2);
+    expect(Number(afterGraded.quality_average)).toBeCloseTo(4.5, 5);
+    expect(afterGraded.quality_normalized).toBe(true);
+    expect(afterGraded.fa_username).toBe('User ' + OWNER);
+  });
+
+  it('holds the same line through the BULK recompute', async () => {
+    // The sync daemons and the backfill take the set-based path, which repeats the
+    // owned leg in its own LATERAL. A fence on one path only would let the nightly
+    // job undo what saveTick was stopped from doing.
+    const { climbUuid } = await wallWithAClimb({ isPublic: true });
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, ${climbUuid}, 'spray', 40, 'send', now(), now(), now())
+    `);
+
+    await recomputeClimbStatsBulk(db, [{ boardType: 'spray', climbUuid, angle: 40 }]);
+
+    const stats = await statsFor(climbUuid);
+    expect(stats.display_difficulty).toBe(18);
+    expect(stats.difficulty_average).toBe(18);
+    expect(stats.tick_graded_at).toBeNull();
+    expect(Number(stats.boardsesh_ascensionist_count)).toBe(1);
+  });
+
+  it('still grades an UNGRADED spray climb from its ticks', async () => {
+    // The fence is on the owned leg, not on `deriveGradeFromTicksSql`, so a climb
+    // with no grade at all is not frozen ungraded forever — tick-derived is the
+    // only grade it can have. Built by hand: `saveClimb` refuses to publish one.
+    const { climbUuid } = await wallWithAClimb({ isPublic: true });
+    await db.execute(sql`
+      UPDATE board_climb_stats SET display_difficulty = NULL, difficulty_average = NULL
+      WHERE board_type = 'spray' AND climb_uuid = ${climbUuid}
+    `);
+
+    await sendTick(climbUuid, OWNER, 10);
+
+    const stats = await statsFor(climbUuid);
+    expect(stats.display_difficulty).toBe(10);
+    expect(stats.tick_graded_at).not.toBeNull();
+  });
+});
+
+describe('activityFeed and a wall that went private after the fan-out', () => {
+  /**
+   * A fanned-out feed row, written the way `publishSocialEvent` writes one.
+   *
+   * By hand on purpose: the publish runs AFTER the mutation's transaction commits,
+   * so a row landing in the window between a visibility flip and the publish is
+   * exactly the row `purgeSprayWallFeedItems` cannot delete — it deletes rows that
+   * exist, and this one did not exist yet.
+   */
+  async function fanOut(recipient: string, climbUuid: string, layoutId: number) {
+    await db.execute(sql`
+      INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, metadata, created_at)
+      VALUES (${recipient}, ${OWNER}, 'ascent', 'climb', ${climbUuid},
+              ${JSON.stringify({ climbUuid, boardType: 'spray', layoutId, climbName: 'Secret garage problem' })}::jsonb,
+              now())
+    `);
+  }
+
+  const read = async (viewer: string) => {
+    const result = (await activityFeedQueries.activityFeed({}, { input: { limit: 20 } }, ctxFor(viewer))) as {
+      items: Array<{ climbUuid: string | null }>;
+    };
+    return result.items.map((item) => item.climbUuid);
+  };
+
+  it('stops serving the row to a follower, and keeps serving it to the owner', async () => {
+    const wall = await wallWithAClimb({ isPublic: true });
+    await fanOut(STRANGER, wall.climbUuid, wall.wall.layoutId);
+    await fanOut(OWNER, wall.climbUuid, wall.wall.layoutId);
+
+    // While the wall is public the follower's feed carries it.
+    expect(await read(STRANGER)).toContain(wall.climbUuid);
+
+    // The flip, WITHOUT the purge — the post-commit window.
+    await db.execute(sql`UPDATE user_boards SET is_public = false WHERE uuid = ${wall.wall.uuid}`);
+
+    expect(await read(STRANGER)).not.toContain(wall.climbUuid);
+    // The owner's own logbook row is untouched: the gate is the wall's visibility
+    // rule, not a blanket delete.
+    expect(await read(OWNER)).toContain(wall.climbUuid);
+  });
+
+  it('leaves a row with no climb uuid alone', async () => {
+    // Follows and session summaries carry no `climbUuid`, so the reference form
+    // matches nothing for them and they must pass straight through.
+    await db.execute(sql`
+      INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, metadata, created_at)
+      VALUES (${STRANGER}, ${OWNER}, 'session_summary', 'session', ${uuidv4()}, ${'{}'}::jsonb, now())
+    `);
+    const items = (await activityFeedQueries.activityFeed({}, { input: { limit: 20 } }, ctxFor(STRANGER))) as {
+      items: Array<{ entityType: string }>;
+    };
+    expect(items.items.map((item) => item.entityType)).toEqual(['session']);
   });
 });
