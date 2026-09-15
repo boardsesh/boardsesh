@@ -1007,6 +1007,16 @@ export type Climb = {
   layoutId?: Maybe<Scalars['Int']['output']>;
   /** Whether the climb should be displayed mirrored */
   mirrored?: Maybe<Scalars['Boolean']['output']>;
+  /**
+   * How many of this climb's holds are no longer on the wall.
+   *
+   * Spray walls only — null on every catalogue board, where holds do not come off.
+   * 0 is an intact climb; anything higher is a climb that survived a reset minus
+   * some holds, which stays findable, gets a badge and can be remixed. Materialised
+   * on `board_climbs` rather than joined, because the offline mirror has no
+   * `board_climb_holds` table to join through.
+   */
+  missingHoldCount?: Maybe<Scalars['Int']['output']>;
   /** Name/title of the climb */
   name: Scalars['String']['output'];
   /** ISO timestamp of when this climb was first published (null while still a draft) */
@@ -1175,6 +1185,8 @@ export type ClimbSearchInput = {
   hideAttempted?: InputMaybe<Scalars['Boolean']['input']>;
   /** Hide climbs the user has completed (requires auth) */
   hideCompleted?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Keep only intact climbs, only climbs that have lost a hold, or everything (the default). */
+  holdIntegrity?: InputMaybe<HoldIntegrityFilter>;
   /** Hold filter object: { holdId: 'ANY' | 'NOT', ... } */
   holdsFilter?: InputMaybe<Scalars['JSON']['input']>;
   /** Layout ID */
@@ -1438,6 +1450,21 @@ export type CommentsInput = {
   sortBy?: InputMaybe<SortMode>;
   /** Time period filter */
   timePeriod?: InputMaybe<TimePeriod>;
+};
+
+/**
+ * The reviewed outcome of a reset. Re-validated against the wall's current state
+ * inside the commit transaction — a proposal computed ten minutes ago against a
+ * generation that has since been published is rejected, not applied.
+ */
+export type CommitSprayWallVersionInput = {
+  added: Array<SprayWallAddedDecisionInput>;
+  kept: Array<SprayWallKeptDecisionInput>;
+  /** Hold ids that came off the wall. */
+  removed: Array<Scalars['Int']['input']>;
+  /** The DRAFT version this reset lands as. */
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
 };
 
 /** A community role assignment for a user. */
@@ -3019,6 +3046,16 @@ export type GymTopClimb = {
 };
 
 /**
+ * Whether a climb still has every hold it was set on.
+ *
+ * ANY is the default and adds no filter at all. INTACT keeps climbs that have lost
+ * nothing; BROKEN keeps only the ones that have. Meaningful on spray walls, where a
+ * reset takes holds off the wall; on a catalogue board every climb is INTACT, so
+ * BROKEN there is an empty result rather than an error.
+ */
+export type HoldIntegrityFilter = 'ANY' | 'BROKEN' | 'INTACT';
+
+/**
  * A board config, identified the way a geometry shard is. Set ids are absent on
  * purpose: every shard is traced with every set of its layout and size mounted,
  * so an override never names one.
@@ -3366,6 +3403,19 @@ export type Mutation = {
    * only permits a later matching source refresh and writes an audit record.
    */
   clearLocationSyncFreeze: ClearLocationSyncFreezeResult;
+  /**
+   * Land a reviewed reset: apply the decisions and publish the draft, in ONE
+   * transaction under the wall lock.
+   *
+   * Removed holds are stamped, never deleted — the climbs set on them stay
+   * findable and countable. Added holds get a fresh catalogue pair and, where the
+   * review confirmed a move, a `movedFromHoldId` back to the hold they replaced.
+   * Kept holds keep their published position and take only a fresher silhouette.
+   * The previous generation is superseded and every climb on the wall has its
+   * `missingHoldCount` re-materialised, which is what makes the badge, the
+   * Intact / Lost holds filter and the remix prompt agree. Owner only.
+   */
+  commitSprayWallVersion: SprayWallResetResult;
   /**
    * Confirm to all session participants that a climb was successfully relayed to the wall
    * over BLE from this client's phone. Any session participant may call — the BLE-capable
@@ -3978,6 +4028,11 @@ export type MutationChooseBoardForSerialArgs = {
 /** Root mutation type for all write operations. */
 export type MutationClearLocationSyncFreezeArgs = {
   input: ClearLocationSyncFreezeInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCommitSprayWallVersionArgs = {
+  input: CommitSprayWallVersionInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5164,6 +5219,14 @@ export type ProposalVoteSummary = {
   weightedUpvotes: Scalars['Int']['output'];
 };
 
+export type ProposeSprayWallResetInput = {
+  /** Every hold found in the new photo, in the wall's canonical frame. */
+  detections: Array<SprayWallDetectionInput>;
+  /** The DRAFT version whose photo these detections came from. */
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
 /** Public-facing user profile for social features. */
 export type PublicUserProfile = {
   __typename?: 'PublicUserProfile';
@@ -5691,6 +5754,17 @@ export type Query = {
    * Returns null if not authenticated.
    */
   profile?: Maybe<UserProfile>;
+  /**
+   * What a reset WOULD do: match the detections from a new photo against the
+   * holds on the wall today and report kept / removed / added.
+   *
+   * Writes nothing — not one row — so a client may call it as often as the owner
+   * drags a hold around. The detections are expected in the wall's CANONICAL
+   * frame, i.e. already mapped through the draft version's own homography, which
+   * is the only reason two photographs taken from different spots can be compared
+   * at all. Editor only, since a proposal describes an unpublished draft.
+   */
+  proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
   /**
@@ -5710,6 +5784,19 @@ export type Query = {
    * thumbnails are already cached in our S3; no live IG/TikTok enrichment.
    */
   recentBetaLinks: Array<RecentBetaLink>;
+  /**
+   * A remix starting point: a climb on a spray wall with every hold it has since
+   * lost stripped out of its frames.
+   *
+   * Visibility-gated like every other spray reader, and by UUID rather than layout
+   * id so an unlisted wall's share link works. Null when the climb is not on a
+   * spray wall, or when the viewer may not see the wall — the two are
+   * indistinguishable on purpose.
+   *
+   * The PARENT is shown even when it is no longer climbable (epic decision
+   * 2026-09-14): a climb that lost three holds is exactly the one worth remixing.
+   */
+  remixClimb?: Maybe<SprayRemixSeed>;
   /** Search public boards. */
   searchBoards: UserBoardConnection;
   /**
@@ -6333,6 +6420,11 @@ export type QueryPopularBoardConfigsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryProposeSprayWallResetArgs = {
+  input: ProposeSprayWallResetInput;
+};
+
+/** Root query type for all read operations. */
 export type QueryPublicProfileArgs = {
   userId: Scalars['ID']['input'];
 };
@@ -6348,6 +6440,11 @@ export type QueryRecentBetaLinksArgs = {
   boardType?: InputMaybe<Scalars['String']['input']>;
   layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryRemixClimbArgs = {
+  parentUuid: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -7007,6 +7104,16 @@ export type SaveClimbInput = {
   name: Scalars['String']['input'];
   /** Matching disallowed. Wins over the legacy 'No match' description prefix; null or omitted falls back to that prefix and otherwise means false. */
   noMatch?: InputMaybe<Scalars['Boolean']['input']>;
+  /**
+   * The spray wall climb this one was remixed from.
+   *
+   * Writes a `spray_climb_lineage` row alongside the child, which is what the
+   * child's screen reads to link back to the parent's ticks and grade history.
+   * Only meaningful for `boardType: "spray"`, and the parent has to be a climb
+   * on the SAME wall. The parent is kept even when it is no longer climbable —
+   * that is usually why it was remixed.
+   */
+  remixOfClimbUuid?: InputMaybe<Scalars['ID']['input']>;
   /** Physical board size the climb is set on. Required on Woods (1 = 8x10, 2 = 12x12), where the two walls number their holds from their own origins. Ignored on boards that derive size compatibility from the hold bounding box. */
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /**
@@ -8030,6 +8137,36 @@ export type SortMode = 'controversial' | 'hot' | 'new' | 'top';
 export type SprayHoldSource = 'AUTO' | 'MANUAL';
 
 /**
+ * A remix starting point: the parent climb with every hold it has since lost
+ * stripped out of its frames.
+ *
+ * Nothing is written by asking for one. Pass `parentUuid` back as
+ * `SaveClimbInput.remixOfClimbUuid` and the lineage row is written with the
+ * child.
+ */
+export type SprayRemixSeed = {
+  __typename?: 'SprayRemixSeed';
+  angle: Scalars['Int']['output'];
+  /** The parent's frames with the lost holds removed. Empty when nothing survived. */
+  frames: Scalars['String']['output'];
+  /** Holds of the parent that are still there. */
+  keptHoldIds: Array<Scalars['Int']['output']>;
+  layoutId: Scalars['Int']['output'];
+  /** Holds the parent used that are no longer on the wall. */
+  lostHoldIds: Array<Scalars['Int']['output']>;
+  parentName: Scalars['String']['output'];
+  /** The climb being remixed. */
+  parentUuid: Scalars['ID']['output'];
+  /**
+   * Successors the reset review linked for the lost holds, nearest first.
+   *
+   * A remix wants somewhere to start, and `moved_from_hold_id` is the only
+   * record of which of today's holds replaced one of yesterday's.
+   */
+  suggestedHoldIds: Array<Scalars['Int']['output']>;
+};
+
+/**
  * A climber's own wall: one runtime-created catalogue layout under the `spray`
  * board type. Its owner, name, angle, visibility and gym live on the
  * `user_boards` row `board` returns — nothing about a wall is stored twice.
@@ -8060,6 +8197,41 @@ export type SprayWall = {
    * them: they can edit the gym's page and not a wall's holds.
    */
   viewerCanEdit: Scalars['Boolean']['output'];
+};
+
+/** Put this detection on the wall as a new hold, with a new catalogue id. */
+export type SprayWallAddedDecisionInput = {
+  detection: SprayWallDetectionInput;
+  /** The hold this one replaced, when the review confirmed a move. */
+  movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/**
+ * One hold the client found in the NEW photo, already mapped through that photo's
+ * homography into the wall's canonical frame.
+ *
+ * The server never re-runs detection on these (epic decision 2026-09-14): it is
+ * the owner's wall. What it does with them is match them against the holds that
+ * are on the wall today, which is a question about two coordinate sets and not
+ * about whether a blob is a hold.
+ */
+export type SprayWallDetectionInput = {
+  /**
+   * Optional colour descriptor (a Lab triple, or Lab plus a hue histogram).
+   *
+   * Used only to break ties between two geometrically plausible pairings. Both
+   * sides must carry descriptors of the SAME length or the term is dropped —
+   * scoring the axes two different descriptors happen to share would invent
+   * agreement.
+   */
+  colour?: InputMaybe<Array<Scalars['Float']['input']>>;
+  confidence?: InputMaybe<Scalars['Float']['input']>;
+  cx: Scalars['Int']['input'];
+  cy: Scalars['Int']['input'];
+  /** Flat implicitly-closed ring in radius units, same contract as SprayWallHold.outline. */
+  outline?: InputMaybe<Array<Scalars['Float']['input']>>;
+  r: Scalars['Int']['input'];
+  source?: InputMaybe<SprayHoldSource>;
 };
 
 /**
@@ -8107,6 +8279,36 @@ export type SprayWallHoldInput = {
   source?: InputMaybe<SprayHoldSource>;
 };
 
+/** Keep this hold, optionally refreshing its silhouette from the new photo. */
+export type SprayWallKeptDecisionInput = {
+  /**
+   * The detection this hold matched.
+   *
+   * Only the OUTLINE is taken from it. `cx` / `cy` / `r` stay exactly as
+   * published: every climb on the wall renders from those numbers, so nudging a
+   * kept hold by the few pixels two photographs disagree by would move the climbs
+   * with it. A silhouette is a picture of the hold, not a position, so a sharper
+   * one from the newer photo is free.
+   */
+  detection?: InputMaybe<SprayWallDetectionInput>;
+  holdId: Scalars['Int']['input'];
+};
+
+/**
+ * A removed hold paired with the nearest added detection.
+ *
+ * Strictly a suggestion — the proposal still reports the pair as one removal and
+ * one addition, because a hold that moved is not the hold a climb used any more.
+ * Confirming one writes `movedFromHoldId` so remix can offer the successor.
+ */
+export type SprayWallMoveSuggestion = {
+  __typename?: 'SprayWallMoveSuggestion';
+  detectionIndex: Scalars['Int']['output'];
+  /** Centre-to-centre distance in canonical pixels. */
+  distance: Scalars['Float']['output'];
+  movedFromHoldId: Scalars['Int']['output'];
+};
+
 /**
  * A wall photo, behind short-lived presigned URLs.
  *
@@ -8148,6 +8350,59 @@ export type SprayWallRenderData = {
   photo: SprayWallPhoto;
   versionNumber: Scalars['Int']['output'];
   wall: SprayWall;
+};
+
+/** A hold the matcher believes is still on the wall, and which detection it matched. */
+export type SprayWallResetKeptHold = {
+  __typename?: 'SprayWallResetKeptHold';
+  /** 1 - match cost, clamped to 0..1. 1 is a perfect overlap of identical colours. */
+  confidence: Scalars['Float']['output'];
+  /** Index into the `detections` array that was submitted. */
+  detectionIndex: Scalars['Int']['output'];
+  holdId: Scalars['Int']['output'];
+};
+
+/**
+ * What a reset would do, computed and thrown away. `proposeSprayWallReset`
+ * writes nothing at all — the owner reviews this and `commitSprayWallVersion`
+ * is what lands it.
+ */
+export type SprayWallResetProposal = {
+  __typename?: 'SprayWallResetProposal';
+  /** Indices into `detections` that matched nothing already on the wall. */
+  added: Array<Scalars['Int']['output']>;
+  /**
+   * The new photo's aspect ratio differs from the wall's canonical frame by more
+   * than a tenth.
+   *
+   * A WARNING and never a block (epic decision 2026-09-14). A phone held the other
+   * way up, or a step back from the wall, changes the framing without changing the
+   * wall — the anchors are what put the two photos in one frame, and they have
+   * already been applied by the time these detections arrive.
+   */
+  aspectMismatch: Scalars['Boolean']['output'];
+  /** How many climbs on this wall use at least one of the removed holds. */
+  climbsAffected: Scalars['Int']['output'];
+  kept: Array<SprayWallResetKeptHold>;
+  /** Kept hold ids a human should look at — a second detection was nearly as good a match. */
+  lowConfidence: Array<Scalars['Int']['output']>;
+  movesSuggested: Array<SprayWallMoveSuggestion>;
+  /** Hold ids with no detection inside the gates: these came off the wall. */
+  removed: Array<Scalars['Int']['output']>;
+  /** The draft version number the proposal was computed against. */
+  versionNumber: Scalars['Int']['output'];
+};
+
+/** What a committed reset changed. */
+export type SprayWallResetResult = {
+  __typename?: 'SprayWallResetResult';
+  addedCount: Scalars['Int']['output'];
+  /** Climbs whose `missingHoldCount` moved as a result. */
+  climbsChanged: Scalars['Int']['output'];
+  keptCount: Scalars['Int']['output'];
+  removedCount: Scalars['Int']['output'];
+  /** The version, now PUBLISHED. */
+  version: SprayWallVersion;
 };
 
 /** One photograph of the wall, with the geometry that maps it onto the canonical frame. */
@@ -9320,6 +9575,7 @@ export type ResolversTypes = ResolversObject<{
   CommentEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CommentEvent']>;
   CommentUpdated: ResolverTypeWrapper<CommentUpdated>;
   CommentsInput: CommentsInput;
+  CommitSprayWallVersionInput: CommitSprayWallVersionInput;
   CommunityRoleAssignment: ResolverTypeWrapper<CommunityRoleAssignment>;
   CommunityRoleType: CommunityRoleType;
   CommunitySetting: ResolverTypeWrapper<CommunitySetting>;
@@ -9431,6 +9687,7 @@ export type ResolversTypes = ResolversObject<{
   GymStatsPeriod: GymStatsPeriod;
   GymStatsWindow: ResolverTypeWrapper<GymStatsWindow>;
   GymTopClimb: ResolverTypeWrapper<GymTopClimb>;
+  HoldIntegrityFilter: HoldIntegrityFilter;
   HoldOutlineConfigInput: HoldOutlineConfigInput;
   HoldOutlineKind: HoldOutlineKind;
   HoldOutlineOverride: ResolverTypeWrapper<HoldOutlineOverride>;
@@ -9500,6 +9757,7 @@ export type ResolversTypes = ResolversObject<{
   ProposalStatus: ProposalStatus;
   ProposalType: ProposalType;
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
+  ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   PublicUserProfile: ResolverTypeWrapper<PublicUserProfile>;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: ResolverTypeWrapper<QaLabel>;
@@ -9602,11 +9860,19 @@ export type ResolversTypes = ResolversObject<{
   SocialEntityType: SocialEntityType;
   SortMode: SortMode;
   SprayHoldSource: SprayHoldSource;
+  SprayRemixSeed: ResolverTypeWrapper<SprayRemixSeed>;
   SprayWall: ResolverTypeWrapper<SprayWall>;
+  SprayWallAddedDecisionInput: SprayWallAddedDecisionInput;
+  SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: ResolverTypeWrapper<SprayWallHold>;
   SprayWallHoldInput: SprayWallHoldInput;
+  SprayWallKeptDecisionInput: SprayWallKeptDecisionInput;
+  SprayWallMoveSuggestion: ResolverTypeWrapper<SprayWallMoveSuggestion>;
   SprayWallPhoto: ResolverTypeWrapper<SprayWallPhoto>;
   SprayWallRenderData: ResolverTypeWrapper<SprayWallRenderData>;
+  SprayWallResetKeptHold: ResolverTypeWrapper<SprayWallResetKeptHold>;
+  SprayWallResetProposal: ResolverTypeWrapper<SprayWallResetProposal>;
+  SprayWallResetResult: ResolverTypeWrapper<SprayWallResetResult>;
   SprayWallVersion: ResolverTypeWrapper<SprayWallVersion>;
   SprayWallVersionStatus: SprayWallVersionStatus;
   StrayBoard: ResolverTypeWrapper<StrayBoard>;
@@ -9736,6 +10002,7 @@ export type ResolversParentTypes = ResolversObject<{
   CommentEvent: ResolversUnionTypes<ResolversParentTypes>['CommentEvent'];
   CommentUpdated: CommentUpdated;
   CommentsInput: CommentsInput;
+  CommitSprayWallVersionInput: CommitSprayWallVersionInput;
   CommunityRoleAssignment: CommunityRoleAssignment;
   CommunitySetting: CommunitySetting;
   ControllerEvent: ResolversUnionTypes<ResolversParentTypes>['ControllerEvent'];
@@ -9896,6 +10163,7 @@ export type ResolversParentTypes = ResolversObject<{
   Proposal: Proposal;
   ProposalConnection: ProposalConnection;
   ProposalVoteSummary: ProposalVoteSummary;
+  ProposeSprayWallResetInput: ProposeSprayWallResetInput;
   PublicUserProfile: PublicUserProfile;
   PublishSprayWallVersionInput: PublishSprayWallVersionInput;
   QaLabel: QaLabel;
@@ -9987,11 +10255,19 @@ export type ResolversParentTypes = ResolversObject<{
   SmartPlaylistCount: SmartPlaylistCount;
   SmartPlaylistMeta: SmartPlaylistMeta;
   SmartPlaylistResult: SmartPlaylistResult;
+  SprayRemixSeed: SprayRemixSeed;
   SprayWall: SprayWall;
+  SprayWallAddedDecisionInput: SprayWallAddedDecisionInput;
+  SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: SprayWallHold;
   SprayWallHoldInput: SprayWallHoldInput;
+  SprayWallKeptDecisionInput: SprayWallKeptDecisionInput;
+  SprayWallMoveSuggestion: SprayWallMoveSuggestion;
   SprayWallPhoto: SprayWallPhoto;
   SprayWallRenderData: SprayWallRenderData;
+  SprayWallResetKeptHold: SprayWallResetKeptHold;
+  SprayWallResetProposal: SprayWallResetProposal;
+  SprayWallResetResult: SprayWallResetResult;
   SprayWallVersion: SprayWallVersion;
   StrayBoard: StrayBoard;
   String: Scalars['String']['output'];
@@ -10568,6 +10844,7 @@ export type ClimbResolvers<
   is_no_match?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   mirrored?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  missingHoldCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   published_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   quality_average?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -11761,6 +12038,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationClearLocationSyncFreezeArgs, 'input'>
+  >;
+  commitSprayWallVersion?: Resolver<
+    ResolversTypes['SprayWallResetResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCommitSprayWallVersionArgs, 'input'>
   >;
   confirmClimbOnWall?: Resolver<
     ResolversTypes['Session'],
@@ -13286,6 +13569,12 @@ export type QueryResolvers<
     Partial<QueryPopularBoardConfigsArgs>
   >;
   profile?: Resolver<Maybe<ResolversTypes['UserProfile']>, ParentType, ContextType>;
+  proposeSprayWallReset?: Resolver<
+    Maybe<ResolversTypes['SprayWallResetProposal']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryProposeSprayWallResetArgs, 'input'>
+  >;
   publicProfile?: Resolver<
     Maybe<ResolversTypes['PublicUserProfile']>,
     ParentType,
@@ -13303,6 +13592,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryRecentBetaLinksArgs, 'limit'>
+  >;
+  remixClimb?: Resolver<
+    Maybe<ResolversTypes['SprayRemixSeed']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryRemixClimbArgs, 'parentUuid'>
   >;
   searchBoards?: Resolver<
     ResolversTypes['UserBoardConnection'],
@@ -14313,6 +14608,21 @@ export type SmartPlaylistResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SprayRemixSeedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayRemixSeed'] = ResolversParentTypes['SprayRemixSeed'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  frames?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  keptHoldIds?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  lostHoldIds?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
+  parentName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  parentUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  suggestedHoldIds?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SprayWallResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SprayWall'] = ResolversParentTypes['SprayWall'],
@@ -14347,6 +14657,16 @@ export type SprayWallHoldResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SprayWallMoveSuggestionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallMoveSuggestion'] = ResolversParentTypes['SprayWallMoveSuggestion'],
+> = ResolversObject<{
+  detectionIndex?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  distance?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  movedFromHoldId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SprayWallPhotoResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SprayWallPhoto'] = ResolversParentTypes['SprayWallPhoto'],
@@ -14370,6 +14690,43 @@ export type SprayWallRenderDataResolvers<
   photo?: Resolver<ResolversTypes['SprayWallPhoto'], ParentType, ContextType>;
   versionNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   wall?: Resolver<ResolversTypes['SprayWall'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallResetKeptHoldResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallResetKeptHold'] = ResolversParentTypes['SprayWallResetKeptHold'],
+> = ResolversObject<{
+  confidence?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  detectionIndex?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  holdId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallResetProposalResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallResetProposal'] = ResolversParentTypes['SprayWallResetProposal'],
+> = ResolversObject<{
+  added?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
+  aspectMismatch?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  climbsAffected?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  kept?: Resolver<Array<ResolversTypes['SprayWallResetKeptHold']>, ParentType, ContextType>;
+  lowConfidence?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
+  movesSuggested?: Resolver<Array<ResolversTypes['SprayWallMoveSuggestion']>, ParentType, ContextType>;
+  removed?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
+  versionNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallResetResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallResetResult'] = ResolversParentTypes['SprayWallResetResult'],
+> = ResolversObject<{
+  addedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  climbsChanged?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  keptCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  removedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  version?: Resolver<ResolversTypes['SprayWallVersion'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14959,10 +15316,15 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SmartPlaylistCount?: SmartPlaylistCountResolvers<ContextType>;
   SmartPlaylistMeta?: SmartPlaylistMetaResolvers<ContextType>;
   SmartPlaylistResult?: SmartPlaylistResultResolvers<ContextType>;
+  SprayRemixSeed?: SprayRemixSeedResolvers<ContextType>;
   SprayWall?: SprayWallResolvers<ContextType>;
   SprayWallHold?: SprayWallHoldResolvers<ContextType>;
+  SprayWallMoveSuggestion?: SprayWallMoveSuggestionResolvers<ContextType>;
   SprayWallPhoto?: SprayWallPhotoResolvers<ContextType>;
   SprayWallRenderData?: SprayWallRenderDataResolvers<ContextType>;
+  SprayWallResetKeptHold?: SprayWallResetKeptHoldResolvers<ContextType>;
+  SprayWallResetProposal?: SprayWallResetProposalResolvers<ContextType>;
+  SprayWallResetResult?: SprayWallResetResultResolvers<ContextType>;
   SprayWallVersion?: SprayWallVersionResolvers<ContextType>;
   StrayBoard?: StrayBoardResolvers<ContextType>;
   Subscription?: SubscriptionResolvers<ContextType>;

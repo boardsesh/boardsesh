@@ -238,3 +238,171 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     angle: Int
   }
 `;
+
+export const sprayWallResetTypeDefs = /* GraphQL */ `
+  """
+  One hold the client found in the NEW photo, already mapped through that photo's
+  homography into the wall's canonical frame.
+
+  The server never re-runs detection on these (epic decision 2026-09-14): it is
+  the owner's wall. What it does with them is match them against the holds that
+  are on the wall today, which is a question about two coordinate sets and not
+  about whether a blob is a hold.
+  """
+  input SprayWallDetectionInput {
+    cx: Int!
+    cy: Int!
+    r: Int!
+    "Flat implicitly-closed ring in radius units, same contract as SprayWallHold.outline."
+    outline: [Float!]
+    """
+    Optional colour descriptor (a Lab triple, or Lab plus a hue histogram).
+
+    Used only to break ties between two geometrically plausible pairings. Both
+    sides must carry descriptors of the SAME length or the term is dropped —
+    scoring the axes two different descriptors happen to share would invent
+    agreement.
+    """
+    colour: [Float!]
+    source: SprayHoldSource
+    confidence: Float
+  }
+
+  input ProposeSprayWallResetInput {
+    wallUuid: ID!
+    "The DRAFT version whose photo these detections came from."
+    versionId: ID!
+    "Every hold found in the new photo, in the wall's canonical frame."
+    detections: [SprayWallDetectionInput!]!
+  }
+
+  "A hold the matcher believes is still on the wall, and which detection it matched."
+  type SprayWallResetKeptHold {
+    holdId: Int!
+    "Index into the \`detections\` array that was submitted."
+    detectionIndex: Int!
+    "1 - match cost, clamped to 0..1. 1 is a perfect overlap of identical colours."
+    confidence: Float!
+  }
+
+  """
+  A removed hold paired with the nearest added detection.
+
+  Strictly a suggestion — the proposal still reports the pair as one removal and
+  one addition, because a hold that moved is not the hold a climb used any more.
+  Confirming one writes \`movedFromHoldId\` so remix can offer the successor.
+  """
+  type SprayWallMoveSuggestion {
+    movedFromHoldId: Int!
+    detectionIndex: Int!
+    "Centre-to-centre distance in canonical pixels."
+    distance: Float!
+  }
+
+  """
+  What a reset would do, computed and thrown away. \`proposeSprayWallReset\`
+  writes nothing at all — the owner reviews this and \`commitSprayWallVersion\`
+  is what lands it.
+  """
+  type SprayWallResetProposal {
+    "The draft version number the proposal was computed against."
+    versionNumber: Int!
+    kept: [SprayWallResetKeptHold!]!
+    "Hold ids with no detection inside the gates: these came off the wall."
+    removed: [Int!]!
+    "Indices into \`detections\` that matched nothing already on the wall."
+    added: [Int!]!
+    "Kept hold ids a human should look at — a second detection was nearly as good a match."
+    lowConfidence: [Int!]!
+    "How many climbs on this wall use at least one of the removed holds."
+    climbsAffected: Int!
+    movesSuggested: [SprayWallMoveSuggestion!]!
+    """
+    The new photo's aspect ratio differs from the wall's canonical frame by more
+    than a tenth.
+
+    A WARNING and never a block (epic decision 2026-09-14). A phone held the other
+    way up, or a step back from the wall, changes the framing without changing the
+    wall — the anchors are what put the two photos in one frame, and they have
+    already been applied by the time these detections arrive.
+    """
+    aspectMismatch: Boolean!
+  }
+
+  "Keep this hold, optionally refreshing its silhouette from the new photo."
+  input SprayWallKeptDecisionInput {
+    holdId: Int!
+    """
+    The detection this hold matched.
+
+    Only the OUTLINE is taken from it. \`cx\` / \`cy\` / \`r\` stay exactly as
+    published: every climb on the wall renders from those numbers, so nudging a
+    kept hold by the few pixels two photographs disagree by would move the climbs
+    with it. A silhouette is a picture of the hold, not a position, so a sharper
+    one from the newer photo is free.
+    """
+    detection: SprayWallDetectionInput
+  }
+
+  "Put this detection on the wall as a new hold, with a new catalogue id."
+  input SprayWallAddedDecisionInput {
+    detection: SprayWallDetectionInput!
+    "The hold this one replaced, when the review confirmed a move."
+    movedFromHoldId: Int
+  }
+
+  """
+  The reviewed outcome of a reset. Re-validated against the wall's current state
+  inside the commit transaction — a proposal computed ten minutes ago against a
+  generation that has since been published is rejected, not applied.
+  """
+  input CommitSprayWallVersionInput {
+    wallUuid: ID!
+    "The DRAFT version this reset lands as."
+    versionId: ID!
+    kept: [SprayWallKeptDecisionInput!]!
+    "Hold ids that came off the wall."
+    removed: [Int!]!
+    added: [SprayWallAddedDecisionInput!]!
+  }
+
+  "What a committed reset changed."
+  type SprayWallResetResult {
+    "The version, now PUBLISHED."
+    version: SprayWallVersion!
+    keptCount: Int!
+    removedCount: Int!
+    addedCount: Int!
+    "Climbs whose \`missingHoldCount\` moved as a result."
+    climbsChanged: Int!
+  }
+
+  """
+  A remix starting point: the parent climb with every hold it has since lost
+  stripped out of its frames.
+
+  Nothing is written by asking for one. Pass \`parentUuid\` back as
+  \`SaveClimbInput.remixOfClimbUuid\` and the lineage row is written with the
+  child.
+  """
+  type SprayRemixSeed {
+    "The climb being remixed."
+    parentUuid: ID!
+    parentName: String!
+    layoutId: Int!
+    angle: Int!
+    "The parent's frames with the lost holds removed. Empty when nothing survived."
+    frames: String!
+    "Holds the parent used that are no longer on the wall."
+    lostHoldIds: [Int!]!
+    "Holds of the parent that are still there."
+    keptHoldIds: [Int!]!
+    """
+    Successors the reset review linked for the lost holds, nearest first.
+
+    A remix wants somewhere to start, and \`moved_from_hold_id\` is the only
+    record of which of today's holds replaced one of yesterday's.
+    """
+    suggestedHoldIds: [Int!]!
+  }
+`;

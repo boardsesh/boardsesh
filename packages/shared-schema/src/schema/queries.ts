@@ -740,6 +740,32 @@ export const queriesTypeDefs = /* GraphQL */ `
     "Every wall the caller owns, newest first. Includes walls with no published version."
     mySprayWalls: [SprayWall!]!
 
+    """
+    What a reset WOULD do: match the detections from a new photo against the
+    holds on the wall today and report kept / removed / added.
+
+    Writes nothing — not one row — so a client may call it as often as the owner
+    drags a hold around. The detections are expected in the wall's CANONICAL
+    frame, i.e. already mapped through the draft version's own homography, which
+    is the only reason two photographs taken from different spots can be compared
+    at all. Editor only, since a proposal describes an unpublished draft.
+    """
+    proposeSprayWallReset(input: ProposeSprayWallResetInput!): SprayWallResetProposal
+
+    """
+    A remix starting point: a climb on a spray wall with every hold it has since
+    lost stripped out of its frames.
+
+    Visibility-gated like every other spray reader, and by UUID rather than layout
+    id so an unlisted wall's share link works. Null when the climb is not on a
+    spray wall, or when the viewer may not see the wall — the two are
+    indistinguishable on purpose.
+
+    The PARENT is shown even when it is no longer climbable (epic decision
+    2026-09-14): a climb that lost three holds is exactly the one worth remixing.
+    """
+    remixClimb(parentUuid: ID!): SprayRemixSeed
+
     # ============================================
     # Gym Kiosk Queries
     # ============================================

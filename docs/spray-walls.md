@@ -493,6 +493,153 @@ hold id is alive on the version being edited. It never asks whether a hold "look
 like" a hold. Owner decision 2026-09-14: it is the owner's wall, and trash in is
 their call.
 
+## Resets
+
+A reset is what happens when someone takes holds off the wall and puts others on.
+The climb database survives it: climbs that lost holds stay findable, get a
+number, and can be remixed onto what is there now.
+
+The flow is three calls, and only the middle one of the three writes anything:
+
+1. `createSprayWallVersion` — the new photo, as a draft. (Anchors are optional on
+   version 1 and required here: this is the point at which two photographs have to
+   agree on where a hold is.)
+2. `proposeSprayWallReset(wallUuid, versionId, detections)` — match the new photo's
+   detections against the holds on the wall today and report what changed. Writes
+   nothing at all, so a client may call it as often as the owner drags a hold.
+3. `commitSprayWallVersion(wallUuid, versionId, decisions)` — apply the reviewed
+   decisions and publish the draft, in ONE transaction under the wall lock.
+
+### What the proposal reports
+
+`proposeSprayWallReset` runs `matchHolds` from `@boardsesh/spray-wall-geometry`
+over two sets of circles in the wall's canonical frame: the holds alive at
+`current_version_id`, and the detections the client sends (already mapped through
+the draft's own homography — the server never warps an image and never re-runs
+detection). It comes back with:
+
+| Field | What it is |
+| --- | --- |
+| `kept` | hold id + which detection it matched + a 0..1 confidence |
+| `removed` | hold ids with no detection inside the gates |
+| `added` | indices into `detections` that matched nothing already there |
+| `lowConfidence` | kept holds where a second detection was nearly as good a match |
+| `climbsAffected` | climbs using at least one removed hold, counted from `board_climb_holds` |
+| `movesSuggested` | each removed hold paired with the nearest added detection |
+| `aspectMismatch` | the new photo is shaped more than a tenth differently from the frame |
+
+`aspectMismatch` is a **warning and never a block** (epic decision 2026-09-14). The
+anchors are what put two photographs in one frame and they have already been
+applied by the time detections arrive, so a different aspect ratio usually means
+the owner stood somewhere else. It is still worth saying, because the one case
+where it IS wrong — anchors tapped on the wrong corners — shows up here first.
+
+`climbsAffected` reads `board_climb_holds` rather than `missing_hold_count`,
+because the whole point is to show the number BEFORE anything is written: the
+column still says 0 for every one of those climbs.
+
+### What the commit writes
+
+All of it in one transaction, with `lockWallForWrite(tx, wallId)` as the first
+statement, and every decision re-validated under that lock against the wall as it
+is NOW. A proposal is a screenshot: the owner may have sat on it while another
+editor published, and applying it then would remove holds that are already gone.
+
+1. **Removed** holds are stamped `removed_version_id = <this version>`. Never
+   deleted — the climbs set on them have to stay findable, and
+   `missing_hold_count` has to stay countable.
+2. **Added** detections get a fresh catalogue pair (one `board_holes` row and one
+   `board_placements` row sharing an id from `spray_hold_catalog_id_seq`) and a
+   `spray_wall_holds` row installed at this version. Where the review confirmed a
+   move, `moved_from_hold_id` points back at the hold it replaced.
+3. **Kept** holds take a fresher **silhouette** from the new photo and nothing
+   else. `cx` / `cy` / `r` stay exactly as published, deliberately: every climb on
+   the wall renders from those numbers, and a kept hold matched its detection
+   within six tenths of a radius — real, and enough to shift a climb's start hold
+   under the climber if it were written through. Two photographs of a wall that did
+   not change still disagree by a few pixels; the hold did not move, the camera
+   did. An outline is a picture of the hold rather than a position, so a sharper
+   one is free.
+4. Then the ordinary publish, through the same `publishDraftUnderLock` helper
+   `publishSprayWallVersion` uses: the previous generation is superseded, this one
+   becomes `published`, `current_version_id` / `hold_count` / the catalogue image
+   move, and `recomputeMissingHoldCounts(wallId)` re-materialises every climb's
+   integrity number.
+
+An alive hold the decisions never mention simply stays on the wall. That is the
+safe direction for a client that forgot one; the alternative silently unsets every
+climb through it.
+
+Because the publish happens inside the same transaction, there is no instant at
+which the holds have gone but the version has not landed — which matters, since a
+removal is only real once its version has landed.
+
+### The generation rule
+
+A hold generation counts only once its installing (or removing) version has
+**landed**: `status <> 'draft'`, or it is the version being asked about. Both
+`aliveHolds` and `recomputeMissingHoldCounts` carry that bound on both ends.
+
+Without it, an abandoned draft poisons the wall forever. Version numbers are dense
+per wall and handed out when a photo is uploaded, so a draft nobody ever published
+still owns a number: publish v1, start a reset as v2 and walk away, publish v3, and
+v2's additions would come back as alive holds nobody ever screwed to the wall, while
+its removals would badge every climb through them as broken with no way back.
+
+`discardSprayWallVersion` therefore **deletes** a draft rather than marking it.
+There is no status that would work: `superseded` is read as landed, so a discarded
+draft's work would take effect, which is the abandoned-draft bug made permanent.
+
+### Climb integrity
+
+`board_climbs.missing_hold_count` is how many of a climb's holds now carry a landed
+`removed_version_id`. Materialised on the climb row rather than joined through
+`board_climb_holds`, because the offline mirror has no such table — a join would be
+a filter the phone could never mirror.
+
+It reaches three places:
+
+- **`Climb.missingHoldCount`** in GraphQL. Null on every catalogue board, where
+  holds do not come off.
+- **`ClimbSearchInput.holdIntegrity: ANY | INTACT | BROKEN`**, implemented by
+  `holdIntegrityCondition` in `packages/db/src/queries/climbs/create-climb-filters.ts`
+  next to `hiddenClimbCondition`. Both branches `COALESCE(…, 0)`: NULL means
+  "unknown", and the honest reading of unknown is INTACT — reversed, one
+  un-backfilled row would badge every Kilter climb in the database as broken.
+- **the offline mirror**, `packages/mobile/src/db/queries/search-climbs-local.ts`,
+  which **declines** an INTACT/BROKEN search rather than answering it. The column is
+  not synced to the device until SW-15 (#5448), and declining IS the faithful
+  mirror: answering from a column the device does not have would report every climb
+  on a wall that has just been reset as intact, which is the one answer this filter
+  exists to contradict.
+
+`recomputeMissingHoldCounts` writes only the climbs whose number actually moved
+(`IS DISTINCT FROM`) and stamps `updated_at` on those, so the offline sync cursor
+ships the change without re-shipping the whole partition after every reset.
+
+### Why a moved hold is removed + added, and what remix is for
+
+Climbs reference positions. A hold unbolted and re-bolted 40 cm left is not the
+hold that climb used — every climb through it now asks the climber to reach
+somewhere the wall has nothing. Calling it "the same hold, moved" would silently
+rewrite those climbs into different problems and leave their grades and ticks
+attached. So it is one removal and one addition, `moved_from_hold_id` records the
+pairing, and **remix** is the way back.
+
+`remixClimb(parentUuid)` returns a seed: the parent's frames with the lost holds
+stripped, the ids it lost, the ids it kept, and the successors
+`moved_from_hold_id` names for the lost ones. It writes nothing. The child is then
+an ordinary `saveClimb` carrying `remixOfClimbUuid`, which writes the
+`spray_climb_lineage` row alongside the climb — one transaction, so a remix never
+lands without the link that says where it came from.
+
+The **parent is shown even when it is no longer climbable** (epic decision
+2026-09-14). A climb that lost three holds is exactly the one worth remixing, and
+its ticks and grade history are still the best thing the child can point at. That
+is also why `spray_climb_lineage.parent_uuid` carries no FK and the version FKs are
+`RESTRICT`: losing the lineage row would erase the only link a climber has back to
+the parent.
+
 ## Photo privacy
 
 Wall photos go to the **`private`** R2 bucket and are read through **15-minute

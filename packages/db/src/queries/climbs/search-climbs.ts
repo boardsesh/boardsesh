@@ -51,6 +51,10 @@ type RawSelectResult = {
   // integer[] comes back as a real JS number array; NULL for a climb whose
   // denormalised columns haven't been populated (drafts, legacy rows).
   compatible_size_ids: number[] | null;
+  // Spray walls only: how many of the climb's holds a reset has taken off the
+  // wall. NULL on every catalogue board, and on a spray row the recompute has
+  // never touched — both mean intact.
+  missing_hold_count: number | null;
   // doublePrecision COALESCE comes back as a real JS number (like benchmark_difficulty);
   // confidence is text. Both null when the climb has no board_climb_grades row at this angle.
   boardsesh_difficulty: number | null;
@@ -98,6 +102,7 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams):
     framesCount: result.frames_count ?? null,
     framesPace: result.frames_pace ?? null,
     compatibleSizeIds: result.compatible_size_ids ?? null,
+    missingHoldCount: result.missing_hold_count ?? null,
     // COALESCE(universal_grade, local_grade) is doublePrecision → real JS number, but
     // coerce defensively so a stringly-typed driver value can't string-concatenate.
     boardseshDifficulty: result.boardsesh_difficulty == null ? null : Number(result.boardsesh_difficulty),
@@ -355,6 +360,9 @@ async function runStatsDrivenSearch(
     // and the playlist rows judge size compatibility client-side, and on Woods
     // that is the only signal that separates the 8x10 from the 12x12.
     compatible_size_ids: boardClimbs.compatibleSizeIds,
+    // Carried on every search row so a spray list can badge a climb that lost a
+    // hold without a second round trip — the badge is on the row, not the detail.
+    missing_hold_count: boardClimbs.missingHoldCount,
     // Boardsesh grade at the searched angle (params.angle). Surfaced flattened so
     // list rows carry it without a per-climb boardseshGrade round-trip.
     boardsesh_difficulty: sql<
@@ -566,6 +574,9 @@ async function runStandardSearch(
     // and the playlist rows judge size compatibility client-side, and on Woods
     // that is the only signal that separates the 8x10 from the 12x12.
     compatible_size_ids: boardClimbs.compatibleSizeIds,
+    // Carried on every search row so a spray list can badge a climb that lost a
+    // hold without a second round trip — the badge is on the row, not the detail.
+    missing_hold_count: boardClimbs.missingHoldCount,
     // Boardsesh grade at the searched angle (params.angle). Surfaced flattened so
     // list rows carry it without a per-climb boardseshGrade round-trip.
     boardsesh_difficulty: sql<

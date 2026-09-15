@@ -28,6 +28,7 @@ import {
   SPRAY_CLIMB_CODES,
   assertSprayAngleMatchesWall,
   assertSprayClimbIsSingleFrame,
+  recordRemixLineage,
   populateSprayClimbColumns,
   assertSprayGradeOnPublish,
   assertSprayHoldsAreAlive,
@@ -381,6 +382,13 @@ export const climbMutations = {
             })),
           )
           .onConflictDoNothing();
+      }
+
+      // The remix link, written with the child rather than after it: a lineage row
+      // is the only record of where a remix came from, and a climb that landed
+      // without it would look like an original forever.
+      if (sprayTarget && validated.remixOfClimbUuid) {
+        await recordRemixLineage(tx, sprayTarget, uuid, validated.remixOfClimbUuid);
       }
 
       // Derive the denormalised columns, then re-assert the spray ones — see

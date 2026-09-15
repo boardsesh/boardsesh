@@ -179,6 +179,90 @@ export const PublishSprayWallVersionInputSchema = z.object({
   versionId: BigIntIdSchema,
 });
 
+/**
+ * One hold found in the new photo, already mapped into the wall's canonical
+ * frame by the client through the draft version's homography.
+ *
+ * Shape only, like every other schema here — the server never re-runs detection
+ * (epic decision 2026-09-14). What it adds over `SprayWallHoldInputSchema` is
+ * `colour`, which exists solely to break ties in the matcher and never reaches a
+ * column.
+ */
+export const SprayWallDetectionInputSchema = z.object({
+  cx: CanonicalPixelSchema,
+  cy: CanonicalPixelSchema,
+  r: z.number().int().min(1).max(10_000),
+  outline: SprayOutlineRingSchema.optional().nullable(),
+  /**
+   * A Lab triple, or Lab plus a small hue histogram. Bounded at 16 numbers
+   * because a descriptor is a handful of axes and anything longer is a client
+   * sending the wrong array; `colourDistance` refuses mismatched lengths anyway,
+   * so a hostile one degrades to "no colour term" rather than to a wrong match.
+   */
+  colour: z.array(z.number().finite()).min(1).max(16).optional().nullable(),
+  source: SprayHoldSourceSchema,
+  confidence: z.number().min(0).max(1).optional().nullable(),
+});
+
+export const ProposeSprayWallResetInputSchema = z.object({
+  wallUuid: UUIDSchema,
+  versionId: BigIntIdSchema,
+  // A full reset of a capped wall is the worst case and it is legitimate, so the
+  // bound is the per-wall cap. Empty is legitimate too: a photo in which the
+  // client found nothing proposes removing everything, which is exactly what the
+  // owner needs to see before they commit it.
+  detections: z.array(SprayWallDetectionInputSchema).max(MAX_HOLDS_PER_WALL),
+});
+
+const SprayWallKeptDecisionSchema = z.object({
+  holdId: z.number().int().positive(),
+  detection: SprayWallDetectionInputSchema.optional().nullable(),
+});
+
+const SprayWallAddedDecisionSchema = z.object({
+  detection: SprayWallDetectionInputSchema,
+  movedFromHoldId: z.number().int().positive().optional().nullable(),
+});
+
+/**
+ * The reviewed reset.
+ *
+ * The three lists are disjoint by construction and the schema says so: a hold
+ * cannot be both kept and removed, and a batch repeating an id would apply one
+ * decision twice — which for a removal is harmless and for a keep is a second
+ * outline write racing the first. Rejected rather than de-duplicated, because
+ * there is no reading under which sending a hold twice is meaningful.
+ *
+ * The caps are the per-wall cap on each list rather than on the total: the
+ * resolver counts what the wall would actually hold afterwards, which is the
+ * number that matters, and a bound here only exists to keep a hostile payload
+ * from being parsed into memory.
+ */
+export const CommitSprayWallVersionInputSchema = z
+  .object({
+    wallUuid: UUIDSchema,
+    versionId: BigIntIdSchema,
+    kept: z.array(SprayWallKeptDecisionSchema).max(MAX_HOLDS_PER_WALL),
+    removed: z.array(z.number().int().positive()).max(MAX_HOLDS_PER_WALL),
+    added: z.array(SprayWallAddedDecisionSchema).max(MAX_HOLDS_PER_WALL),
+  })
+  .refine((input) => {
+    const keptIds = input.kept.map((decision) => decision.holdId);
+    return new Set(keptIds).size === keptIds.length;
+  }, 'The same hold is kept twice — send each hold once')
+  .refine(
+    (input) => new Set(input.removed).size === input.removed.length,
+    'The same hold is removed twice — send each hold once',
+  )
+  .refine((input) => {
+    const removed = new Set(input.removed);
+    return input.kept.every((decision) => !removed.has(decision.holdId));
+  }, 'A hold cannot be both kept and removed');
+
+export type SprayWallDetectionInput = z.infer<typeof SprayWallDetectionInputSchema>;
+export type ProposeSprayWallResetInput = z.infer<typeof ProposeSprayWallResetInputSchema>;
+export type CommitSprayWallVersionInput = z.infer<typeof CommitSprayWallVersionInputSchema>;
+
 export const UpdateSprayWallInputSchema = z
   .object({
     uuid: UUIDSchema,
