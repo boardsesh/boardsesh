@@ -95,6 +95,23 @@ export const OPAQUE_RENDER_INPUTS: readonly string[] = [
  */
 export const BOARD_ART_GEOMETRY_ROOT = 'packages/shared/board-art-geometry/src/generated';
 
+/**
+ * The one file under that root that is deliberately NOT hashed.
+ *
+ * `shards.web.ts` is the browser app's loader index — a map of board key to
+ * `import()`, generated beside `shards.ts` purely so Metro can split the shards
+ * into per-board chunks. It holds no polygon, no lightness, no LED offset, and
+ * nothing in the server render path ever resolves it (Node and Metro-for-native
+ * both take `shards.ts`). It therefore cannot move a single rendered pixel, and
+ * hashing it would churn the version — and with it a year of `immutable` CDN
+ * copies of every board image — every time the web loader is regenerated.
+ *
+ * This does not reopen the "a new board slips in unhashed" hole the whole-directory
+ * hash was chosen to close: the two indexes carry the same key list, `shards.ts`
+ * is still hashed, and `shards-web.test.ts` fails if they ever disagree.
+ */
+export const BOARD_ART_GEOMETRY_UNRENDERED = ['shards.web.ts'];
+
 /** Board photos live in web's public tree; the backend gets a copy of the same files. */
 const PUBLIC_IMAGE_ROOT = 'packages/web/public';
 
@@ -114,10 +131,12 @@ function listFilesRecursively(directory: string): string[] {
 }
 
 /** Content hash of a whole generated directory: sorted relative paths plus their bytes. */
-function hashDirectory(absoluteRoot: string): string {
+function hashDirectory(absoluteRoot: string, skip: readonly string[] = []): string {
   const directoryHash = createHash('sha256');
   for (const filePath of listFilesRecursively(absoluteRoot)) {
-    directoryHash.update(`${path.relative(absoluteRoot, filePath)}=${hashFile(filePath)}\n`);
+    const relativePath = path.relative(absoluteRoot, filePath);
+    if (skip.includes(relativePath)) continue;
+    directoryHash.update(`${relativePath}=${hashFile(filePath)}\n`);
   }
   return directoryHash.digest('hex');
 }
@@ -146,7 +165,7 @@ export function computeBoardRenderVersion(repoRoot: string): string {
         'Run `vp run generate:board-art-geometry`, or fix BOARD_ART_GEOMETRY_ROOT.',
     );
   }
-  fileHashes[BOARD_ART_GEOMETRY_ROOT] = hashDirectory(geometryRoot);
+  fileHashes[BOARD_ART_GEOMETRY_ROOT] = hashDirectory(geometryRoot, BOARD_ART_GEOMETRY_UNRENDERED);
 
   const projections = buildBoardRenderProjections();
   const boardHashes: Record<string, string> = {};

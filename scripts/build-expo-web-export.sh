@@ -277,4 +277,20 @@ if [[ -n "${BOARDSESH_EXPORT_EXPECT_URLS:-}" ]]; then
   assert_baked_urls
 fi
 
+# Eager-payload budget + dangling-chunk check.
+#
+# The budget is on every <script src> the shell carries, not on entry-*.js. With
+# route splitting on, Metro hoists the shared trunk into a __common chunk loaded
+# beside the entry, so an entry-only budget would watch the one number that
+# stayed small while the number a reader actually waits for grew freely.
+#
+# Set deliberately close to the current figure. It is a ratchet, not headroom:
+# the measured total is printed on every run (pass or fail) so it can be walked
+# down as the split work continues.
+BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2050000}"
+node "$ROOT_DIR/scripts/lib/check-expo-web-eager-budget.mjs" \
+  "$OUTPUT_DIR" \
+  "$BOARDSESH_WEB_EAGER_BROTLI_BUDGET" \
+  "$MANIFEST_BASE"
+
 echo "[build-expo-web-export] Expo web export (baseUrl $WEB_BASE_URL) written to $OUTPUT_DIR"

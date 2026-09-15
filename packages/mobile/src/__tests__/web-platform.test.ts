@@ -24,6 +24,17 @@ describe('resolveWebPlatforms', () => {
     expect('baseUrl' in resolution).toBe(false);
   });
 
+  it('never returns a router key off web (fingerprint-critical)', () => {
+    // `router.asyncRoutes` is merged into `extra.router`, and `extra` is part of
+    // the resolved Expo config that @expo/fingerprint hashes. If it leaked out
+    // of the web branch, every native runtime version would change and the whole
+    // store fleet would stop accepting OTA updates until a new binary shipped.
+    // Verified out-of-band by resolving the runtime version with and without
+    // this change: ios and android hashes were identical.
+    expect('router' in resolveWebPlatforms(undefined)).toBe(false);
+    expect('router' in resolveWebPlatforms('0')).toBe(false);
+  });
+
   it('ignores BOARDSESH_WEB_BASE_URL when web is disabled (fingerprint-critical)', () => {
     // Native builds leave BOARDSESH_WEB unset; the base-URL knob must never
     // perturb their resolved config, so the mobile-only shape stays identical.
@@ -44,6 +55,7 @@ describe('resolveWebPlatforms', () => {
       platforms: ['ios', 'android', 'web'],
       web: { output: 'single', bundler: 'metro' },
       baseUrl: '/app',
+      router: { asyncRoutes: true },
     });
   });
 
@@ -58,6 +70,7 @@ describe('resolveWebPlatforms', () => {
       platforms: ['ios', 'android', 'web'],
       web: { output: 'single', bundler: 'metro' },
       baseUrl: '',
+      router: { asyncRoutes: true },
     });
   });
 });
