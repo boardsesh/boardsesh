@@ -101,6 +101,32 @@ describe('native release workflow contracts', () => {
     }
   });
 
+  // A platform the guard withheld was never attempted, so its `skipped` outcome
+  // is the intended result. If the summary counted it as requested, every train
+  // push before the first native change — and every main→release/next sync —
+  // would red a run that did exactly what it was supposed to do.
+  it('does not fail the run for a platform the train guard withheld', () => {
+    const summary = stepsOfJob(productionOta, 'publish').find(
+      (step) => step.name === 'Summarize platform publish results',
+    );
+    expect(summary, 'the production OTA workflow must summarize platform results').toBeDefined();
+
+    // The verdict has to reach the step: a summary that never reads the guard
+    // outputs cannot tell "withheld" from "failed", whatever its shell says.
+    const env = String(JSON.stringify(summary?.env ?? {}));
+    for (const output of ['publish_ios', 'publish_android']) {
+      expect(env, `the summary must read steps.train_guard.outputs.${output}`).toContain(
+        `steps.train_guard.outputs.${output}`,
+      );
+    }
+
+    const run = String(summary?.run ?? '');
+    expect(run).toContain('if [ "$TRAIN_PUBLISH_IOS" = false ]');
+    expect(run).toContain('if [ "$TRAIN_PUBLISH_ANDROID" = false ]');
+    expect(run).toContain('ios_requested=false');
+    expect(run).toContain('android_requested=false');
+  });
+
   it('keeps fingerprint gates and tags store uploads only after success', () => {
     expect(ios).toContain('fingerprint-ios-');
     expect(ios).toContain("steps.testflight_upload.outcome == 'success'");
@@ -300,8 +326,28 @@ describe('native release workflow contracts', () => {
     expect(otaCheck).not.toContain("conclusion: 'neutral',");
 
     // The train owns its own pushes; the native workflows react to them.
-    const triggers = parse(otaCheck)['on'] as { push?: { 'branches-ignore'?: string[] } };
+    const triggers = parse(otaCheck)['on'] as {
+      push?: { 'branches-ignore'?: string[] };
+      pull_request?: { types?: string[] };
+    };
     expect(triggers.push?.['branches-ignore']).toEqual(['main', releaseBranch]);
+
+    // The verdict depends on the base branch and the labels, and neither
+    // remediation the failure prints (retarget, or add the waiver label) produces
+    // a push — so without these event types the red check-run would be stuck.
+    // `edited` is what a base change raises.
+    expect(triggers.pull_request?.types).toEqual(['opened', 'reopened', 'edited', 'labeled', 'unlabeled']);
+    // A fork PR's token is read-only, so the comment/label/check-run writes would
+    // 403; the push path never covered forks either.
+    expect(otaCheck).toContain('github.event.pull_request.head.repo.fork != true');
+    // The PR's head commit, not the synthetic merge ref: a check-run posted on
+    // the merge sha is invisible on the PR, and the merge tree is not what the
+    // author pushed.
+    expect(otaCheck).toContain('ref: ${{ github.event.pull_request.head.sha || github.sha }}');
+    expect(otaCheck).toContain('head_sha: process.env.HEAD_SHA,');
+    // Both event paths must serialize in ONE lane, or a retarget can race the
+    // push whose stale verdict it is trying to replace.
+    expect(otaCheck).toContain('group: mobile-ota-check-${{ github.head_ref || github.ref_name }}');
   });
 
   // The PR CI gate diffs head against the branch it will merge into. Diffing a
@@ -333,6 +379,9 @@ describe('native release workflow contracts', () => {
     run?: string;
     uses?: string;
     with?: Record<string, unknown>;
+    // Step-level env. Parsed rather than string-matched so an assertion about
+    // which values a step can actually see reads that step's own block.
+    env?: Record<string, unknown>;
     // `if` is the step's condition. Parsed rather than string-matched so an
     // assertion about a step's gate can't accidentally read a neighbour's.
     if?: string;

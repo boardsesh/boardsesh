@@ -251,7 +251,9 @@ jobs:
         if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next'
         run: |
           set -euo pipefail
-          git fetch origin main --depth=1
+          # No --depth: the job checks out with fetch-depth: 0, and a shallow
+          # fetch on top of a complete clone only confuses later history reads.
+          git fetch origin main
           git worktree add "$RUNNER_TEMP/main-baseline" origin/main
           (cd "$RUNNER_TEMP/main-baseline" && vp install --frozen-lockfile)
           cp packages/mobile/.env "$RUNNER_TEMP/main-baseline/packages/mobile/.env"
@@ -274,11 +276,17 @@ jobs:
             echo 'publish_android=false'
           } >> "$GITHUB_OUTPUT"
           set -e
-          verdicts="$(vp run check:mobile-ota-compat -- --base-dir "$RUNNER_TEMP/main-baseline")"
+          # A resolve costs ~30s per tree per platform, and a single-platform
+          # republish has no use for the other one's verdict.
+          verdicts="$(vp run check:mobile-ota-compat -- --base-dir "$RUNNER_TEMP/main-baseline" --platform "$INPUT_PLATFORM")"
           printf '%s\n' "$verdicts"
           for pair in 'iOS:ios' 'Android:android'; do
             label="${pair%%:*}"
             key="${pair##*:}"
+            # A platform this run did not ask about produces no verdict line, so
+            # it simply keeps the fail-closed `false` and its publish step is
+            # already gated off by INPUT_PLATFORM anyway.
+            if [ "$INPUT_PLATFORM" != all ] && [ "$INPUT_PLATFORM" != "$key" ]; then continue; fi
             if printf '%s\n' "$verdicts" | grep -q "^\[mobile-ota-compat\] ${label}: native-change-required"; then
               echo "publish_${key}=true" >> "$GITHUB_OUTPUT"
             else
@@ -495,6 +503,10 @@ jobs:
         env:
           IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
           ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
+          # Empty on a main run (the guard step is skipped there); 'false' only
+          # when the train guard deliberately withheld that platform.
+          TRAIN_PUBLISH_IOS: ${{ steps.train_guard.outputs.publish_ios }}
+          TRAIN_PUBLISH_ANDROID: ${{ steps.train_guard.outputs.publish_android }}
         run: |
           set -euo pipefail
           ios_requested=false
@@ -505,6 +517,30 @@ jobs:
             android) android_requested=true ;;
             *) echo "::error::Unknown platform '$INPUT_PLATFORM'"; exit 1 ;;
           esac
+
+          # A platform the train guard withheld was never attempted, so its
+          # `skipped` outcome is the intended result, not a failure. Without this
+          # every train push before the first native change — and every
+          # main→release/next sync — would red the run, and a change that moves
+          # only one platform's fingerprint would red a run whose other publish
+          # succeeded.
+          if [ "$TRAIN_PUBLISH_IOS" = false ]; then
+            ios_requested=false
+            echo "::notice::iOS was withheld by the train fingerprint guard; not counting it toward this run's result."
+          fi
+          if [ "$TRAIN_PUBLISH_ANDROID" = false ]; then
+            android_requested=false
+            echo "::notice::Android was withheld by the train fingerprint guard; not counting it toward this run's result."
+          fi
+
+          # Both platforms withheld: nothing was requested of us, which is a
+          # green no-op rather than a vacuous "all succeeded".
+          if [ "$ios_requested" = false ] && [ "$android_requested" = false ]; then
+            echo "all_success=false" >> "$GITHUB_OUTPUT"
+            echo "any_success=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::main still owns both runtimeVersions — nothing to publish from the train yet."
+            exit 0
+          fi
 
           all_success=true
           any_success=false
