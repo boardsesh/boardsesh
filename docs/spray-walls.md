@@ -975,7 +975,76 @@ property rather than a catalogue:
    open a wall in the app; it is not consent to be crawled. SW-16 (#5449) decides
    whether public walls get an indexing story of their own.
 
-www has no spray surface at all today: `boardHasDeepConfigRoute` in
-`packages/web/app/lib/board-route-paths.ts` 404s `/spray/...`, and
-`resolveReadableBoardSegments` emits only numeric paths for spray, because a
-wall has no layout, size or set NAMES to slug.
+The config-tuple tree stays closed: `boardHasDeepConfigRoute` in
+`packages/web/app/lib/board-route-paths.ts` 404s `/spray/...`, because a wall
+has no layout, size or set NAMES to slug. What www does serve is the wall's
+climbs at `/b/{slug}`, which is the next section.
+
+## The wall on the web (SW-16)
+
+A share link from the app opens on www, so a wall's CLIMBS get a
+server-rendered page each — `/b/{slug}/{angle}/view/{climb}` — and nothing else
+does. The wall itself has no front door on www: `/b/{slug}/{angle}/list` 404s
+for spray, which is also what `/b/{slug}` redirects into. That is a page that
+does not exist rather than a page that failed; without the guard the route
+reaches `getBoardDetailsForBoard`, which has no catalogue size row for a wall
+and throws a 500 on a URL the gym page links to.
+
+### Three states, and what each one gets
+
+| The wall is | The page | Indexed | OG card |
+| --- | --- | --- | --- |
+| public | server-rendered | yes, self-canonical | yes |
+| unlisted | server-rendered for whoever followed the link | `noindex, follow` | no |
+| private | `notFound()` | — | — |
+
+**A private wall is a 404, never a 403, and 404 for its signed-in owner too.**
+Telling a stranger that a URL IS a wall they may not see is itself the leak, and
+the owner reads their own wall in the app. www could not serve one safely in any
+case: `middleware.ts` puts a shared `s-maxage` on every climb-view URL with no
+session split, so a private wall rendered for its owner would be cached for
+everybody. The decision is made from the board row the slug resolved to and
+nothing else, so a private wall costs no round trip and the backend is never
+asked a question whose answer would confirm the wall exists
+(`spray-view.tsx`, `resolveSprayWallVisibility`).
+
+### Which photograph the page shows
+
+A PUBLIC wall shows `SprayWall.publicPhotoUrl` — the copy SW-14 makes in the
+world-readable bucket — because a crawler, an unfurler and a CDN can all hold a
+stable URL and none of them can hold a fifteen-minute signature. An UNLISTED
+wall has no such copy by design, so it shows the presigned URL from
+`sprayWallRenderData`, which is right for a page read by whoever has the link
+and never indexed. Never the other way round: a presigned URL in a public page's
+HTML is a dead image fifteen minutes later.
+
+### Drawing the climb
+
+No board renderer. Every other board's art is a bundled photo plus a WASM
+overlay addressed by the catalogue tuple, and a wall has neither. The page draws
+the photograph as a plain `<img>` with an inline SVG over it, server-rendered
+into the first HTML byte — that picture is the page's LCP, and a crawler runs no
+JavaScript.
+
+The mapping is `packages/web/app/lib/spray/spray-climb-view.ts`. Hold
+coordinates are canonical-frame pixels and the stored matrix maps
+photo -> canonical, so drawing means inverting it once and pushing every centre,
+radius and silhouette point back into photo pixels through
+`@boardsesh/spray-wall-geometry`. A hold with an `outline` draws its real
+silhouette as a polygon; one without draws a ring at its mapped radius, the same
+fallback an untraced catalogue placement gets. Two departures from the backend's
+rule about `invert`: the SVG's coordinate system is the VERSION's photo box
+rather than the canonical frame (they only agree on a wall whose owner tapped no
+anchors), and a singular matrix degrades to the photograph with no marks on it
+instead of throwing. On a server that is the wrong call; on a link somebody
+shared, a picture of the wall beats a 500.
+
+### The card and the sitemap
+
+`GET /og/climb?board_name=spray` composes the card from the public copy and the
+lit holds, for public walls only — see `docs/og-climb.md`. An unlisted wall's
+page emits no `og:image` at all rather than pointing at a URL that answers 404.
+
+Public walls' climbs are the only spray URLs in a sitemap, and the boards shard
+stays catalogue-only because a wall has no `/list` page to submit. The rule, the
+config source and the SQL belt behind it are in `docs/sitemap.md`.

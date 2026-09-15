@@ -818,5 +818,24 @@
       "ariaLabel": "Abre {{climbName}} en la app de Boardsesh",
       "helper": "Abre la app, ilumina las presas y registra el encadene."
     }
+  },
+  "spray": {
+    "unknownGrade": "Sin grado",
+    "unknownSetter": "un equipador desconocido",
+    "heading": "{{climbName}} — {{grade}}",
+    "summary": "En {{wallName}}, un plafón de spray a {{angle}}° con {{holdCount}} presas.",
+    "setterLine": "Equipado por {{setter}}. {{ascents}} ascensiones registradas.",
+    "ascentsLine": "{{ascents}} ascensiones registradas.",
+    "setterNotesHeading": "Notas del equipador",
+    "keepLookingHeading": "Sigue buscando",
+    "setterLink": "Más bloques de {{setter}}",
+    "gymsLink": "Encuentra un rocódromo con plafones",
+    "homeLink": "Inicio de Boardsesh",
+    "photoAlt": "{{climbName}}, {{grade}}, iluminado en el plafón de spray {{wallName}}",
+    "noPhoto": "Este plafón aún no tiene foto que mostrar.",
+    "metadata": {
+      "title": "{{climbName}} {{grade}} en {{wallName}} | Plafón de spray",
+      "description": "{{climbName}}, {{grade}}, en el plafón de spray {{wallName}} a {{angle}}°, equipado por {{setter}}. Mira las presas sobre la foto del plafón."
+    }
   }
 }
