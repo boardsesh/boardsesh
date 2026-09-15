@@ -63,7 +63,7 @@
         "cols": 1,
         "overlap": 0.0
       },
-      "score_threshold": 0.3,
+      "score_threshold": 0.6,
       "nms_iou": 0.5,
       "produces_masks": false,
       "mask_source": "none",
@@ -109,7 +109,7 @@
         "cols": 1,
         "overlap": 0.0
       },
-      "score_threshold": 0.3,
+      "score_threshold": 0.6,
       "nms_iou": 0.5,
       "produces_masks": false,
       "mask_source": "none",

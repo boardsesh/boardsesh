@@ -10,5 +10,5 @@
     "lr": 0.0001
   },
   "wall_clock_seconds": 5945.3,
-  "output_dir": "/Users/marco/Projects/github/boardsesh/MLsupport/ml/holds/.data/runs/nano-untiled-1024"
+  "output_dir": ".data/runs/nano-untiled-1024"
 }

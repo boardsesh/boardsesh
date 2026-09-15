@@ -217,10 +217,9 @@ def main() -> int:
         train_config["grad_accum_steps"] = args.grad_accum_steps
     if args.resume:
         resume_path = config.checkpoint_dir / "last.ckpt" if args.resume == "last" else Path(args.resume)
-        if args.resume != "last" or resume_path.exists():
-            train_config["resume"] = str(resume_path)
-        else:
-            raise SystemExit(f"--resume last: no checkpoint at {resume_path}")
+        if not resume_path.exists():
+            raise SystemExit(f"--resume: no checkpoint at {resume_path}")
+        train_config["resume"] = str(resume_path)
 
     output_dir = config.checkpoint_dir
     output_dir.mkdir(parents=True, exist_ok=True)
