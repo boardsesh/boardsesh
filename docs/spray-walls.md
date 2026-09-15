@@ -516,10 +516,13 @@ applies the wall's own: `'capability'` for the uuid (an unlisted wall opens, lik
 `sprayWall(uuid)`), `'enumerable'` for the slug — which is derived from the
 wall's NAME, so it is a guess, not a capability.
 
-Both express the **by-layout** rule — owner, gym member, or a public wall — the
-same one `viewerCanSeeSprayWallByLayout` applies, with no unlisted exemption. The
-row-level form is shaped `board_type <> 'spray' OR EXISTS (…)` so it is a no-op on
-every other board and a caller cannot forget the branch.
+All four express the same **by-layout** rule — owner, gym member, or a public
+wall — the one `viewerCanSeeSprayWallByLayout` applies, with no unlisted
+exemption. The board-ROW shape is the only one with a second mode, and its
+`'capability'` half is where the unlisted exemption lives, because a uuid earns
+it and nothing else does. The row-level condition is shaped
+`board_type <> 'spray' OR EXISTS (…)` so it is a no-op on every other board and a
+caller cannot forget the branch.
 
 Three details that are load-bearing:
 

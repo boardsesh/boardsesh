@@ -278,11 +278,20 @@ const ARGUMENT_KINDS: Array<{ kind: SeedKind; when: (site: ArgumentSite) => bool
 
 /**
  * A field is swept when its arguments name one of the objects on the private
- * wall. The board+layout PAIR is deliberately a pair: `grades(boardName:)` alone
- * scopes nothing to a wall.
+ * wall.
+ *
+ * A bare `layoutId` counts ON ITS OWN, with no board type beside it. That is the
+ * whole point of the epic's enumeration worry — `spray_wall_catalog_id_seq` hands
+ * out 1, 2, 3, … — and requiring the PAIR left `sprayWallByLayout(layoutId: Int!)`
+ * out of both the sweep and the allow-list, which is precisely the reader
+ * `docs/spray-walls.md` splits its two visibility rules over. `serialNumbers` is
+ * here for the same reason: it names a board without naming a board type.
+ *
+ * `grades(boardName:)` still is not swept — a board type alone scopes nothing to a
+ * wall — and that is the only thing the old pairing rule was buying.
  */
 function isRelevant(kinds: Set<SeedKind>): boolean {
-  if (
+  return (
     kinds.has('climbUuid') ||
     kinds.has('climbUuids') ||
     kinds.has('sessionId') ||
@@ -294,11 +303,10 @@ function isRelevant(kinds: Set<SeedKind>): boolean {
     kinds.has('boardUuid') ||
     kinds.has('boardSlug') ||
     kinds.has('entityId') ||
-    kinds.has('username')
-  ) {
-    return true;
-  }
-  return kinds.has('boardType') && kinds.has('layoutId');
+    kinds.has('username') ||
+    kinds.has('layoutId') ||
+    kinds.has('serialNumbers')
+  );
 }
 
 /** The value each kind resolves to, once the world is seeded. */
@@ -543,11 +551,24 @@ function scannableSentinels(argumentValues: Record<string, unknown>): Sentinel[]
 
 /**
  * Fields that are swept but cannot show the owner a sentinel, each with the
- * reason. Adding a row is a claim that the field returns nothing that names a
- * climb — check it before you write one, because the NEGATIVE half of the sweep
- * still runs against every row here.
+ * reason. Adding a row is a claim about this field — check it before you write
+ * one, because the NEGATIVE half of the sweep still runs against every row here.
+ *
+ * Two different claims live in this one list, and the reason text says which.
+ * Most rows are genuinely inapplicable: the field answers with counts, ids the
+ * caller already sent, or rows that are not climbs. But some are **seed gaps** —
+ * `recentBetaLinks`, `climbStatsHistory`, `followingClimbAscents`, `gymKiosk(s)`,
+ * the board-presence rows and `eventsReplay` all read state this sweep does not
+ * create (an enriched beta link, a stats history row, a follow, a kiosk, a live
+ * queue event, Redis). Their negative half still runs and still has to pass;
+ * what is unproven is the owner half, so seeding what they read is an
+ * improvement, not a rule change.
  */
 const NOT_APPLICABLE: Record<string, string> = {
+  // --- readers scoped to another board type entirely ---------------------------
+  'Query.checkMoonBoardClimbDuplicates':
+    "hardcoded to board_type = 'moonboard', so a spray climb is not a row it can return",
+
   // --- stats and grades: numbers keyed on a uuid the caller already holds -----
   'Query.angles': 'the static angle catalogue for a board type; the layout id is not read',
   'Query.climbStatsHistory': 'ascent/quality/grade numbers only, and the seed logs no history rows',
@@ -609,6 +630,13 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.boardConnection': 'who holds the board connection right now; Redis state',
   'Query.boardQueuePreview': 'the live queue preview; Redis state',
   'Query.boardLeaderboard': 'senders and counts for the board uuid the caller sent; no climb is named',
+
+  // --- serial-number lookups --------------------------------------------------
+  // A spray wall is LED-less by construction (`has_leds` is forced false and is
+  // not in the input schema at all), so it never gets a serial number and there
+  // is nothing for these to look one up by.
+  'Query.boardsBySerialNumbers': 'a spray wall has no serial number, so it can never be a row in this answer',
+  'Query.myBoardSerialConfigs': 'same: there is no serial to configure',
 
   // --- gym surfaces -----------------------------------------------------------
   'Query.gym': 'the gym row. A gym is public by design; the wall it holds is reached through gymBoards, which IS swept',
@@ -707,6 +735,35 @@ type Outcome = { data: unknown; errorMessages: string[]; subscribed: boolean };
  */
 const SUBSCRIPTION_SETTLE_MS = 150;
 
+/**
+ * Per-field deadline on the query path.
+ *
+ * Without it one wedged resolver — a lock wait, a single-flight that never
+ * resolves — eats the whole `beforeAll` and the sweep reports a 600 s hook
+ * timeout naming nothing. With it the row fails, carrying its own field name, and
+ * the coverage test says which reader stopped answering. Generous on purpose: the
+ * slowest honest row here is two orders of magnitude under it.
+ */
+const QUERY_TIMEOUT_MS = 30_000;
+
+/** Reject with `label` if `work` has not settled in `QUERY_TIMEOUT_MS`. */
+async function withQueryDeadline<T>(work: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} did not answer within ${QUERY_TIMEOUT_MS} ms`)),
+          QUERY_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function runRow(row: SweepRow, ctx: ConnectionContext): Promise<Outcome> {
   const document = parse(row.document);
   const shared = { schema: sweepSchema, document, variableValues: row.variables, contextValue: ctx };
@@ -739,7 +796,7 @@ async function runRow(row: SweepRow, ctx: ConnectionContext): Promise<Outcome> {
         subscribed: false,
       };
     }
-    const result = await execute(shared);
+    const result = await withQueryDeadline(Promise.resolve(execute(shared)), row.key);
     return {
       data: result.data ?? null,
       errorMessages: (result.errors ?? []).map((error) => error.message),
@@ -1055,6 +1112,17 @@ afterAll(() => {
 describe('the spray-wall visibility sweep', () => {
   it('enumerates the climb readers from the schema', () => {
     expect(rows.length).toBeGreaterThan(30);
+
+    // Four pinned BY NAME, because narrowing the detection rule is the one change
+    // nothing else in this file notices: a field that stops being swept simply
+    // vanishes from `rows`, and only the allow-listed ones leave a stale row
+    // behind. `sprayWallByLayout` is the canonical case — a bare layout id, the
+    // enumerable key `docs/spray-walls.md` splits its two visibility rules over —
+    // and the other three stand for the argument shapes beside it.
+    const swept = rows.map((row) => row.key);
+    for (const key of ['Query.sprayWallByLayout', 'Query.climb', 'Query.searchClimbs', 'Query.userTicks']) {
+      expect(swept).toContain(key);
+    }
   });
 
   it('covers every enumerated field — exercised, or allow-listed with a reason', () => {

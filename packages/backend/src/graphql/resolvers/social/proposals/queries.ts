@@ -4,7 +4,7 @@ import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { validateInput } from '../../shared/helpers';
-import { sprayClimbUuidIsReadable } from '../../climbs/spray-read-access';
+import { isSprayBoardType, sprayClimbUuidIsReadable } from '../../climbs/spray-read-access';
 import { GetClimbProposalsInputSchema, BrowseProposalsInputSchema } from '../../../../validation/schemas';
 import { resolveCommunitySetting } from '../community-settings';
 import { batchEnrichProposals } from './enrichment';
@@ -22,7 +22,11 @@ export const socialProposalQueries = {
     // one uuid away and never joined, so this is the reference form of the wall
     // rule — and an unreadable wall gets the EMPTY PAGE, not an error, so the
     // shape is not an oracle for which climbs are on a private wall.
-    if (!(await sprayClimbUuidIsReadable(climbUuid, authenticatedUserId))) {
+    //
+    // Short-circuited on the board type, which this resolver has in hand, so the
+    // eight catalogue boards pay nothing — not even the round trip.
+    // `comments(input)` cannot do the same: it is keyed on an entity, not a board.
+    if (isSprayBoardType(boardType) && !(await sprayClimbUuidIsReadable(climbUuid, authenticatedUserId))) {
       return { proposals: [], totalCount: 0, hasMore: false };
     }
 
