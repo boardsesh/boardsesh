@@ -99,6 +99,135 @@ not a cosmetic flag.** `getPopularConfigs` and the sitemap shards also drop
 catalogue tables has only `is_listed` to go on, so a wall seeded listed would put
 a climber's home wall on the www homepage rail. A test on the helper asserts it.
 
+## Canonical coordinates and matching
+
+Two photographs of one wall have to agree on where a hold is, or a reset cannot
+tell a hold that came off from a hold the climber simply stood further left to
+photograph. That agreement is the **canonical frame**, and
+[SW-06 (#5439)](https://github.com/boardsesh/boardsesh/issues/5439) is the pure
+TypeScript that produces it: `@boardsesh/spray-wall-geometry` for the frame and
+the matcher, `@boardsesh/hold-detection` for turning a model's tensors into
+circles in the first place.
+
+### The frame
+
+The canonical frame is **version 1's anchor quad mapped onto a rectangle**. The
+four anchors are the wall's corners as tapped in that photo, in TL/TR/BR/BL
+order; `homographyFromAnchors` solves the 4-point DLT that takes them to
+`(0, 0)-(width, height)`, and `boundingSize` derives that rectangle from the quad
+itself. There are no wall dimensions anywhere: the owner decided on 2026-09-14
+that the frame is the photo.
+
+Three consequences worth stating plainly.
+
+- **No image is ever warped.** The matrix is stored on the version; the renderer
+  maps holds through `invert()` at draw time and paints them over the untouched
+  photo. Warping would cost a re-encode per version and lose pixels at the edges
+  for no gain.
+- **A version without anchors stores the identity**, which is the honest answer
+  for a wall whose photo *is* its frame. Anchors are optional at creation and
+  required at the first reset, because that is the first moment two photographs
+  have to be compared.
+- **A degenerate quad is refused at the door**, not papered over.
+  `isSolvableAnchorQuad` wants a bounding box at least 8 px on a side and an
+  enclosed area of at least 2% of that box. Version 1's anchors define the frame
+  *forever*, so four taps in a line would pin an unusable coordinate space on the
+  wall for the rest of its life. Where a quad slips through anyway — a matrix
+  that turns out singular — the solver returns the identity rather than a matrix
+  of NaN, because a wrong map still renders and NaN renders nothing.
+
+A hold's radius is mapped with `mapRadius`, which takes `sqrt(|det J|)` of the
+local Jacobian: the scale that preserves the hold's **area**. A circle under a
+projective map is an ellipse, so there is no single right radius; taking one axis
+would make every hold on the compressed far side of an off-axis photo visibly
+wrong in the other direction.
+
+### The gates
+
+`matchHolds(previousAlive, detections)` compares the last published version's
+alive holds with what the new photo produced — both already in canonical
+coordinates. A pair has to clear **both** gates before it is a candidate at all:
+
+| Gate | Value | Why |
+| --- | --- | --- |
+| Centroid distance | `< 0.6 x` the pair's mean radius | Well inside the hold. Two neighbouring bolts on even a dense spray wall sit further apart than that, so a hold can never be matched to its neighbour. |
+| Circle IoU | `> 0.3` | Catches the same-centre, wrong-size case the distance gate waves through: a detector that boxed a whole volume where a crimp used to be. |
+
+What survives is scored `0.5 x (distance / mean r) + 0.3 x (1 - IoU) + 0.2 x
+colour distance`, and a **Hungarian assignment** minimises the total. Not greedy
+nearest-neighbour: on a row of identical holds with one missing, greedy pairs
+each old hold with the nearest new one, cascades the error down the row and
+reports the *last* hold as removed instead of the one that actually went.
+
+The colour term is optional. `@boardsesh/hold-detection`'s `describeColour`
+produces the descriptor — mean Lab plus an eight-bin saturation-weighted hue
+histogram — and when either side lacks one the term is dropped and the remaining
+weights are renormalised, so the gates and the ambiguity ratio keep meaning the
+same thing on a wall captured without colour.
+
+The result is four sets: `kept` (with a confidence), `removed`, `added`, and
+`lowConfidence` — a kept hold that had a second detection inside its gates and
+nearly as cheap, which is exactly what a reviewer should be shown.
+
+### Why a moved hold is removed + added
+
+Climbs reference **positions**. A hold unbolted and re-bolted 40 cm along is not
+the hold those climbs used any more: every climb through it now asks the climber
+to reach somewhere the wall has nothing. Calling it "the same hold, moved" would
+silently rewrite each of those climbs into a different problem while keeping its
+grade, its ticks and its comments attached to the new shape.
+
+So the matcher reports one removal and one addition, the affected climbs get a
+`missing_hold_count` and a badge, and `suggestMoves()` separately offers the
+pairing — nearest added detection within 3 radii — as a `movedFromHoldId` hint
+for the review UI, so a remix can start from the successor. The suggestion
+changes nothing about what was matched.
+
+### Detection post-processing, and why one full-frame pass
+
+`@boardsesh/hold-detection` is the platform-free half of on-device detection:
+tile planning, preprocessing into the model's input tensor, decoding RF-DETR's
+two output tensors, merging what several tiles saw, and handing back circles. The
+inference runtime and the image decoder are injected, so the same code runs in
+the Expo app, in a browser worker and under Node.
+
+The default is **one full-frame pass**, not the 2x2 tiling the SW-01 harness
+config uses. SW-01 measured tiling making the small model 4.9 F1 points *worse*
+on real wall photos (`ml/holds/README.md`): photos around 800 px on the long side
+cut into ~330 px tiles that are then upscaled, so every hold gets bigger and the
+surrounding wall — the thing that says "hold" rather than "smudge" — leaves the
+frame. Tiling stays available for the case it was meant for, a very large photo
+of a dense wall.
+
+Two things the package deliberately does not do:
+
+- **No outlines.** The model returns boxes, not masks, and the classical in-box
+  segmentation in `ml/holds/eval.py` stops at a boolean mask — there is no
+  contour tracer or simplifier on the Python side to port, and no corpus with
+  mask ground truth to score an invented one against. So a candidate carries
+  `{ cx, cy, r }` and the renderer falls back to a ring, exactly as it already
+  does for a catalogue hold with no traced art. `HoldCandidate.outline` exists
+  for the ring SW-08's editor writes when a climber re-traces a hold by hand.
+- **No seam-distance preference in NMS.** The higher-scoring box wins, as in the
+  Python. Preferring the detection further from a tile edge was floated in #5439,
+  but nothing in the fixtures could tell a better rule from a worse one.
+
+The post-processing is pinned against the Python by
+`packages/shared/hold-detection/src/__tests__/parity.test.ts`, which replays the
+model's recorded output tensors and compares with
+`ml/holds/fixtures/expected-detections.json`. The model itself is not in the repo
+— the int8 export is 28.7 MB against a 15 MB ceiling — so the oracle is those
+recorded tensors, regenerated by
+`packages/shared/hold-detection/scripts/capture-fixture-outputs.py`.
+
+One thing that capture found, which SW-02 should expect on device:
+**`onnxruntime-node` and the Python `onnxruntime` do not agree on this int8
+model.** On one fixture tile, 280 of 300 boxes differ by more than 0.01 in
+normalised units and the photo's detection count moves from 44 to 49. Dynamic
+int8 quantisation puts a build-specific QGemm kernel in the hot path. The app's
+runtime will not reproduce the harness's numbers hold for hold either, which is
+one more reason the score threshold is a slider rather than a shipped constant.
+
 ## Caps
 
 | Cap | Value | Why |

@@ -38,7 +38,19 @@ export default defineConfig({
     // ml/holds writes its JSON artefacts from Python (`json.dumps(indent=2)` in
     // eval.py and the data/ scripts), so a formatted copy would be undone by the
     // next regeneration and re-red CI. Mirrored in .prettierignore.
-    ignore: ['design/**', '**/generated/**', '**/board-controller/**', 'CHANGELOG.md', '**/*.md', 'ml/holds/**/*.json'],
+    // The hold-detection parity fixtures are written by the same Python
+    // (`packages/shared/hold-detection/scripts/capture-fixture-outputs.py`,
+    // `json.dumps(indent=2)`), for the same reason: a formatted copy would be
+    // undone by the next regeneration and re-red CI. Mirrored in .prettierignore.
+    ignore: [
+      'design/**',
+      '**/generated/**',
+      '**/board-controller/**',
+      'CHANGELOG.md',
+      '**/*.md',
+      'ml/holds/**/*.json',
+      'packages/shared/hold-detection/src/__tests__/fixtures/*.json',
+    ],
   },
   lint: {
     // Keep this list in lock-step with `ignorePatterns` in .oxlintrc.json.
@@ -132,6 +144,8 @@ export default defineConfig({
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
       './packages/shared/board-art-geometry/vite.config.ts',
+      './packages/shared/hold-detection/vite.config.ts',
+      './packages/shared/spray-wall-geometry/vite.config.ts',
       './packages/shared/board-look/vite.config.ts',
       './packages/shared/board-render/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
@@ -759,6 +773,12 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/board-render run typecheck',
         dependsOn: ['build:constants'],
       },
+      'typecheck:hold-detection': {
+        command: 'pnpm --filter @boardsesh/hold-detection run typecheck',
+      },
+      'typecheck:spray-wall-geometry': {
+        command: 'pnpm --filter @boardsesh/spray-wall-geometry run typecheck',
+      },
       'typecheck:board-art-geometry': {
         command: 'pnpm --filter @boardsesh/board-art-geometry run typecheck',
         dependsOn: ['build:constants'],
@@ -885,6 +905,8 @@ export default defineConfig({
           'typecheck:board-config',
           'typecheck:board-render',
           'typecheck:board-art-geometry',
+          'typecheck:hold-detection',
+          'typecheck:spray-wall-geometry',
           'typecheck:play-view',
           'typecheck:playback-react',
           'typecheck:profile-stats',

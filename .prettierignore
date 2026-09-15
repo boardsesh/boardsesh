@@ -49,3 +49,9 @@ packages/web/board-controller/
 # eval run; formatting it would be undone immediately. Mirrors the fmt ignore
 # list in vite.config.ts.
 ml/holds/**/*.json
+
+# The hold-detection parity oracle is written by the same kind of Python
+# (packages/shared/hold-detection/scripts/capture-fixture-outputs.py,
+# json.dumps(indent=2)) and regenerated whenever the model is retrained.
+# Mirrors the fmt ignore list in vite.config.ts.
+packages/shared/hold-detection/src/__tests__/fixtures/*.json
