@@ -293,7 +293,7 @@ vi.mock('../../lib/spray/spray-photo-store', () => ({
   clearStoredSprayPhotos: clearStoredSprayPhotosMock,
 }));
 
-const clearUserDataMock = vi.hoisted(() => vi.fn(async () => {}));
+const clearUserDataMock = vi.hoisted(() => vi.fn(async (): Promise<string[]> => []));
 const purgeLocalDataForSignOutMock = vi.hoisted(() =>
   vi.fn(async () => ({ pendingDiscarded: 0, deadLettersDiscarded: 0, hadDownloads: false, vacuumed: true })),
 );
@@ -1179,6 +1179,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     authSignOutMock.mockReset();
     getDatabaseHandleMock.mockReset();
     clearUserDataMock.mockClear();
+    clearUserDataMock.mockResolvedValue([]);
     clearStoredSprayPhotosMock.mockClear();
     purgeLocalDataForSignOutMock.mockClear();
     purgeLocalDataForSignOutMock.mockResolvedValue({
@@ -1255,6 +1256,35 @@ describe('AuthProvider sign-out offline data wipe', () => {
 
     await waitFor(() => expect(clearUserDataMock).toHaveBeenCalled());
     expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+  });
+
+  // The database cleanup is the one step here that is EXPECTED to fail — a
+  // locked database is the documented case — and the photographs are the half
+  // that cannot be recovered afterwards: once `spray_walls` is gone, nothing on
+  // disk names the files.
+  it('still deletes the photographs when the explicit wipe rejects', async () => {
+    purgeLocalDataForSignOutMock.mockRejectedValue(new Error('database is locked'));
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+  });
+
+  it('still deletes the photographs when the selective wipe rejects', async () => {
+    clearUserDataMock.mockRejectedValue(new Error('database is locked'));
+    await renderSignedIn();
+    await waitFor(() => expect(setOnForcedSignOutMock).toHaveBeenCalled());
+    const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+
+    await act(async () => {
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(clearStoredSprayPhotosMock).toHaveBeenCalled());
   });
 
   it('wipes the downloaded catalogs when the account is deleted', async () => {

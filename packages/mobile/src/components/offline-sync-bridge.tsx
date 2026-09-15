@@ -21,6 +21,7 @@ import { useAuth } from '../providers/auth-provider';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { clearUserData } from '../db/connection';
+import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { reportError } from '../lib/error-reporting';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 
@@ -115,6 +116,11 @@ export function OfflineSyncBridge() {
           // narrow it to.
           beginGlobalPurge();
           await clearUserData(db);
+          // The rows named a photograph each, and this recovery exists precisely
+          // because the sign-out that should have run did not (#5448). Wiping the
+          // rows and leaving the files would keep the other account's wall
+          // decodable with nothing on disk left to say whose it was.
+          clearStoredSprayPhotos();
           if (cancelled) return;
         }
         if (ownership !== 'ok') await stampLocalUserId(db, localUserId);

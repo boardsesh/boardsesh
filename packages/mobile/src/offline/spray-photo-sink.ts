@@ -1,5 +1,11 @@
-import type { DocumentsPulledSink } from '@boardsesh/offline-sync';
-import { pruneStoredSprayPhotos, storeSprayPhoto } from '../lib/spray/spray-photo-store';
+import type { DocumentsPulledSink, RowsDeletedSink } from '@boardsesh/offline-sync';
+import {
+  SPRAY_PHOTO_STORE_AVAILABLE,
+  deleteStoredSprayPhoto,
+  pruneStoredSprayPhotos,
+  storeSprayPhoto,
+} from '../lib/spray/spray-photo-store';
+import { clearSprayPhotoPending, recordSprayPhotoFailure } from './spray-photo-retry';
 
 /**
  * Turn a pulled `spray_walls` page into photographs on disk (issue #5448).
@@ -34,12 +40,31 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
   for (const document of documents) {
     const photoKey = document.photo_key;
     const photoUrl = document.photo_url;
+    const layoutId = typeof document.layout_id === 'number' ? document.layout_id : Number(document.layout_id);
     // A wall with no published version has neither; a backend with no private
     // bucket configured sends the key and no URL. Both are "nothing to fetch",
     // not an error — the wall still syncs its holds.
     if (typeof photoKey !== 'string' || !photoKey) continue;
     if (typeof photoUrl !== 'string' || !photoUrl) continue;
-    if (await storeSprayPhoto(photoKey, photoUrl)) storedAny = true;
+
+    if (await storeSprayPhoto(photoKey, photoUrl)) {
+      storedAny = true;
+      if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId);
+      continue;
+    }
+
+    // The bytes did not land. The row's cursor has already advanced, so without
+    // this the wall is never offered again and the photograph is simply missing
+    // — on a board the climber has been told is downloaded. `recordSprayPhotoFailure`
+    // rewinds this table's cursor for this scope so the next cycle re-offers the
+    // row with a FRESH signature (the one we hold is dead in fifteen minutes and
+    // cannot be retried), bounded by an attempt count.
+    //
+    // Not on a platform with no store at all: web would otherwise rewind on
+    // every cycle forever to fetch bytes it has nowhere to put.
+    if (SPRAY_PHOTO_STORE_AVAILABLE && Number.isFinite(layoutId)) {
+      await recordSprayPhotoFailure(db, layoutId, photoKey);
+    }
   }
 
   // Reap the generation this page replaced. A reset mints a NEW `photo_key`, so
@@ -57,4 +82,27 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     'SELECT photo_key FROM spray_walls WHERE photo_key IS NOT NULL',
   );
   pruneStoredSprayPhotos(rows.map((row) => row.photo_key).filter((key): key is string => !!key));
+};
+
+/**
+ * Take a deleted wall's photograph with it (issue #5448).
+ *
+ * The tombstone path deletes by primary key and owns no filesystem, so the file
+ * is captured through `TableSyncConfig.captureOnDelete` before the row goes —
+ * afterwards nothing on the device names it. Neither of the other two reclaim
+ * paths can find it either: board teardown reads a row that is gone, and the
+ * prune only knows the walls the device still has, so the file would sit in
+ * durable storage until sign-out.
+ */
+export const sprayWallDeletedSink: RowsDeletedSink = async ({ tableName, rows, db }) => {
+  if (tableName !== 'spray_walls') return;
+
+  for (const row of rows) {
+    const photoKey = row.photo_key;
+    if (typeof photoKey === 'string' && photoKey) deleteStoredSprayPhoto(photoKey);
+    // The wall is gone, so a pending-photo marker for it describes nothing and
+    // would keep rewinding a cursor for a row that will never be served again.
+    const layoutId = typeof row.layout_id === 'number' ? row.layout_id : Number(row.layout_id);
+    if (Number.isFinite(layoutId)) await clearSprayPhotoPending(db, layoutId);
+  }
 };

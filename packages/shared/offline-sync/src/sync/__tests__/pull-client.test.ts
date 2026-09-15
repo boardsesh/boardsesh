@@ -35,12 +35,17 @@ type SqlCall = { sql: string; params: unknown[] };
 function createMockDb() {
   const sqlCalls: SqlCall[] = [];
   const mockTxn = {
-    runAsync: vi.fn(async (sql: string, params: unknown[]) => {
+    // The return type is widened so a test can report `changes` — the deletion
+    // path reads it to tell a real delete from one the resurrection guard spared.
+    runAsync: vi.fn(async (sql: string, params: unknown[]): Promise<{ changes: number } | void> => {
       sqlCalls.push({ sql, params });
     }),
     // The upsert transaction sets busy_timeout via execAsync first; a no-op that
     // stays out of sqlCalls keeps the runAsync-based assertions unchanged.
     execAsync: vi.fn(async () => {}),
+    // The deletion path reads a row's `captureOnDelete` columns before deleting
+    // it; null is "no such row", which is what every other table sees.
+    getFirstAsync: vi.fn().mockResolvedValue(null),
   };
   const db = {
     runAsync: vi.fn(async (sql: string, params: unknown[]) => {
@@ -1109,6 +1114,89 @@ describe('pullSync', () => {
       fetchWithSprayWall();
 
       await expect(pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['spray:4:4'] })).resolves.toBeUndefined();
+    });
+  });
+
+  // The other half of the wall's file lifecycle (#5448): a tombstone deletes the
+  // row by primary key, and after that nothing on the device names the JPEG.
+  describe('the onRowsDeleted sink', () => {
+    function fetchWithWallTombstone() {
+      graphqlFetch.mockImplementation(async (query: string) => {
+        if (query.includes('syncDeletions')) {
+          // One page, then the tail — an empty page cannot advance the cursor.
+          const already = graphqlFetch.mock.calls.filter((args: unknown[]) =>
+            String(args[0]).includes('syncDeletions'),
+          ).length;
+          if (already > 1) return makeDeletionsResult([], false);
+          return makeDeletionsResult(
+            [{ tableName: 'spray_walls', recordId: '4', deletedAt: '2026-06-02T00:00:00Z' }],
+            false,
+          );
+        }
+        for (const config of Object.values(TABLE_CONFIGS)) {
+          if (query.includes(config.queryName)) return makeSyncResult(config.queryName, [], false);
+        }
+        throw new Error(`Unexpected query: ${query}`);
+      });
+    }
+
+    it('captures the columns the table asked for BEFORE the delete, and hands them over', async () => {
+      fetchWithWallTombstone();
+      // The capture SELECT is the only read that can still answer "which file?".
+      (mockTxn.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue({
+        layout_id: 4,
+        photo_key: 'spray-walls/wall-4/photo-2.jpg',
+      });
+      // The base mock reports no `changes`, which reads as "the row was not
+      // deleted" — the resurrection-guard case the next test covers.
+      mockTxn.runAsync.mockImplementation(async (sql: string, params: unknown[]) => {
+        sqlCalls.push({ sql, params });
+        return { changes: 1 };
+      });
+      const seen: { tableName: string; rows: Record<string, unknown>[] }[] = [];
+
+      await pullSync(db, queryClient, graphqlFetch, {
+        onRowsDeleted: (info) => {
+          seen.push(info);
+        },
+      });
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0].tableName).toBe('spray_walls');
+      expect(seen[0].rows[0].photo_key).toBe('spray-walls/wall-4/photo-2.jpg');
+    });
+
+    it('does NOT fire for a row the resurrection guard spared', async () => {
+      // A stale tombstone leaves a live wall behind; deleting its photograph
+      // would blank a board the device still has.
+      fetchWithWallTombstone();
+      (mockTxn.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ layout_id: 4, photo_key: 'key' });
+      mockTxn.runAsync.mockImplementation(async (sql: string, params: unknown[]) => {
+        sqlCalls.push({ sql, params });
+        return { changes: sql.startsWith('DELETE FROM spray_walls') ? 0 : 1 };
+      });
+      const seen: unknown[] = [];
+
+      await pullSync(db, queryClient, graphqlFetch, { onRowsDeleted: (info) => void seen.push(info) });
+
+      expect(seen).toEqual([]);
+    });
+
+    it('never lets a throwing sink stop the tombstone stream', async () => {
+      fetchWithWallTombstone();
+      (mockTxn.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ layout_id: 4, photo_key: 'key' });
+      mockTxn.runAsync.mockImplementation(async (sql: string, params: unknown[]) => {
+        sqlCalls.push({ sql, params });
+        return { changes: 1 };
+      });
+
+      await expect(
+        pullSync(db, queryClient, graphqlFetch, {
+          onRowsDeleted: () => {
+            throw new Error('disk is read-only');
+          },
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 });
