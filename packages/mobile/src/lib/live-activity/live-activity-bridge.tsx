@@ -13,6 +13,7 @@ import {
   addWidgetMirrorListener,
   getPendingWidgetMirror,
   acknowledgeWidgetMirror,
+  acknowledgeWidgetMirrorRequest,
   type WidgetMirrorEvent,
   addWidgetQueueNavigateListener,
   addBoardControlListener,
@@ -219,12 +220,25 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     if (event.kind === 'confirmed') {
       // Native already changed the wall. Replay the sequenced result, never toggle again.
       if (await dispatchWidgetMirror(event)) await acknowledgeWidgetMirror(event.sessionId, event.sequence);
-    } else if (
-      boardConnection === 'connectedByMe' &&
-      boardSupportsMirroring(boardName, layoutId) &&
-      state.currentClimbQueueItem?.uuid === event.queueItemUuid
-    ) {
-      await mirrorCurrentClimb(event.mirrored, event.queueItemUuid);
+      return;
+    }
+    if (!boardSupportsMirroring(boardName, layoutId)) return;
+    if (state.currentClimbQueueItem?.uuid !== event.queueItemUuid) {
+      // The queue moved on, so the server would refuse this anyway. Retire an
+      // iOS tap parked by a failed request rather than replaying it forever.
+      await acknowledgeWidgetMirrorRequest(event.sessionId);
+      return;
+    }
+    // Not holding the board yet is a timing condition, not a verdict: a parked
+    // tap replayed during a cold launch can arrive before Bluetooth reconnects,
+    // so leave it parked for the next handover instead of acknowledging it.
+    if (boardConnection !== 'connectedByMe') return;
+    // Only a server-accepted replay retires the parked tap. The mutation turns
+    // a failure into a toast, which on a locked phone nobody sees, so acking
+    // unconditionally would throw the tap away in exactly the outage it exists
+    // to survive.
+    if (await mirrorCurrentClimb(event.mirrored, event.queueItemUuid)) {
+      await acknowledgeWidgetMirrorRequest(event.sessionId);
     }
   };
   useEffect(() => {

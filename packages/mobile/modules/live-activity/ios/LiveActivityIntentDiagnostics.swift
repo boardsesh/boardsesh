@@ -54,6 +54,9 @@ enum LiveActivityIntentCompletionClass: String, Codable, CaseIterable {
     case localNavigationEnabled
     case alreadyAllowed
     case bleFailure
+    /// The server confirmed a mirror but there was no local snapshot to publish
+    /// it against, so neither the widget nor the wall was updated from it.
+    case mirrorNotCommitted
 }
 
 struct LiveActivityIntentDiagnosticRecord: Codable, Equatable {

@@ -69,7 +69,8 @@ type QueueContextValue = {
    * can't double-advance when the WebSocket echo lands before the Darwin event.
    * Mirrors web's `dispatchWidgetNavigation`.
    */
-  mirrorCurrentClimb: (mirrored: boolean, queueItemUuid: string) => Promise<void>;
+  /** Resolves true only when the server accepted the orientation. */
+  mirrorCurrentClimb: (mirrored: boolean, queueItemUuid: string) => Promise<boolean>;
   dispatchWidgetMirror: (event: Extract<WidgetMirrorEvent, { kind: 'confirmed' }>) => Promise<boolean>;
   dispatchWidgetNavigation: (item: ClimbQueueItem, correlationId: string) => void;
   /** Replace the playlist suggestion source that drives swipe-through climbs. */

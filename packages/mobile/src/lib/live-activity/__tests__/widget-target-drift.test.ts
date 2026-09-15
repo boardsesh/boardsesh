@@ -91,6 +91,7 @@ const TYPESCRIPT_COMPLETION_CLASSES = {
   localNavigationEnabled: true,
   alreadyAllowed: true,
   bleFailure: true,
+  mirrorNotCommitted: true,
 } as const satisfies Record<LiveActivityIntentCompletionClass, true>;
 
 type SwiftConditionalBranch = {

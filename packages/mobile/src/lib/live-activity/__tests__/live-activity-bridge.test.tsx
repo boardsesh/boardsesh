@@ -25,7 +25,7 @@ function makeItem(index: number): ClimbQueueItem {
 
 const queue = vi.hoisted(() => ({
   sessionId: 'session-1' as string | null,
-  mirrorCurrentClimb: vi.fn(),
+  mirrorCurrentClimb: vi.fn(async (): Promise<boolean> => true),
   dispatchWidgetMirror: vi.fn(async () => true),
   dispatchWidgetNavigation: vi.fn(),
   state: {
@@ -39,6 +39,7 @@ const widget = vi.hoisted(() => ({
   mirrorListener: null as null | ((event: WidgetMirrorEvent) => void),
   pendingMirror: vi.fn(async (): Promise<WidgetMirrorEvent | null> => null),
   acknowledgeMirror: vi.fn(async () => {}),
+  acknowledgeMirrorRequest: vi.fn(async () => {}),
   listener: null as null | ((event: QueueNavigateEvent) => void),
   boardControlListener: null as null | ((event: BoardControlEvent) => void),
   useLiveActivity: vi.fn(),
@@ -153,6 +154,7 @@ vi.mock('../use-live-activity', () => ({
 vi.mock('../live-activity-plugin', () => ({
   getPendingWidgetMirror: widget.pendingMirror,
   acknowledgeWidgetMirror: widget.acknowledgeMirror,
+  acknowledgeWidgetMirrorRequest: widget.acknowledgeMirrorRequest,
   addWidgetMirrorListener: (listener: (event: WidgetMirrorEvent) => void) => {
     widget.mirrorListener = listener;
     return () => {
@@ -562,6 +564,8 @@ describe('mirror controls', () => {
     queue.dispatchWidgetMirror.mockClear();
     queue.dispatchWidgetMirror.mockResolvedValue(true);
     widget.acknowledgeMirror.mockClear();
+    widget.acknowledgeMirrorRequest.mockClear();
+    queue.mirrorCurrentClimb.mockResolvedValue(true);
     widget.pendingMirror.mockResolvedValue(null);
   });
   const tap = { kind: 'request', sessionId: 'session-1', queueItemUuid: 'queue-item-0', mirrored: true } as const;
@@ -573,6 +577,35 @@ describe('mirror controls', () => {
       widget.mirrorListener?.(tap);
     });
     expect(queue.mirrorCurrentClimb).toHaveBeenCalledWith(true, 'queue-item-0');
+    expect(widget.acknowledgeMirrorRequest).toHaveBeenCalledWith('session-1');
+  });
+  it('keeps a parked tap alive while the board link is still coming back', async () => {
+    // A cold launch replays the tap before Bluetooth reconnects. Acknowledging
+    // it there would lose it, so it stays parked for the next handover.
+    boardState.boardConnection = 'disconnected';
+    render(<LiveActivityBridge boardName="tension" layoutId={1} sizeId={1} setIds="1" />);
+    await act(async () => {
+      widget.mirrorListener?.(tap);
+    });
+    expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+    expect(widget.acknowledgeMirrorRequest).not.toHaveBeenCalled();
+  });
+  it('keeps a parked tap alive when the replayed mutation fails', async () => {
+    queue.mirrorCurrentClimb.mockResolvedValue(false);
+    render(<LiveActivityBridge boardName="tension" layoutId={1} sizeId={1} setIds="1" />);
+    await act(async () => {
+      widget.mirrorListener?.(tap);
+    });
+    expect(queue.mirrorCurrentClimb).toHaveBeenCalledWith(true, 'queue-item-0');
+    expect(widget.acknowledgeMirrorRequest).not.toHaveBeenCalled();
+  });
+  it('retires a parked tap once the queue has moved past its slot', async () => {
+    render(<LiveActivityBridge boardName="tension" layoutId={1} sizeId={1} setIds="1" />);
+    await act(async () => {
+      widget.mirrorListener?.({ ...tap, queueItemUuid: 'old-slot' });
+    });
+    expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+    expect(widget.acknowledgeMirrorRequest).toHaveBeenCalledWith('session-1');
   });
   it.each(['heldByPeer', 'disconnected'] as const)('drops a tap after ownership changes to %s', async (connection) => {
     boardState.boardConnection = connection;
