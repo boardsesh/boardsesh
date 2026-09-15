@@ -431,6 +431,7 @@
       "benchmark": "Benchmarks",
       "showCount_one": "Show {{count}} climb",
       "showCount_other": "Show {{count}} climbs",
+      "countNote": "Each climb counts once, not once per angle.",
       "sort": {
         "ascents": "Ascents",
         "quality": "Quality",

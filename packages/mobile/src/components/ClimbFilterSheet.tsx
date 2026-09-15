@@ -214,6 +214,8 @@ export function ClimbFilterSheet({
   const isMountedRef = useRef(true);
   const boardName = boardConfig?.boardName ?? '';
   const { data: grades } = useGrades(boardName);
+  // Kilter's app counts one row per (climb, angle); see docs/kilter-sync.md.
+  const showCountNote = boardName === 'kilter';
 
   const [localFilters, setLocalFilters] = useState<ClimbFilters>(() =>
     statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated),
@@ -1280,6 +1282,11 @@ export function ClimbFilterSheet({
           ]}
         >
           <Button title={applyLabel} onPress={handleApply} variant="filled" size="large" style={styles.applyButton} />
+          {showCountNote ? (
+            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.countNote}>
+              {t('mobile.filter.countNote')}
+            </Text>
+          ) : null}
         </View>
       </View>
     </BottomSheetModal>
@@ -1413,5 +1420,9 @@ const styles = StyleSheet.create({
   },
   applyButton: {
     width: '100%',
+  },
+  countNote: {
+    marginTop: spacing[2],
+    textAlign: 'center',
   },
 });
