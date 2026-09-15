@@ -1127,7 +1127,7 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Board Created` (existing) | `boardType: 'spray'` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. |
 | `Spray Wall Reset Previewed` | `keptCount`, `removedCount`, `addedCount`, `lowConfidenceCount`, `climbsAffected`, `aspectMismatch`, `detectionCount` | What the matcher found. |
 | `Spray Wall Reset Applied` | `keptCount`, `removedCount`, `addedCount`, `climbsChanged`, `moveCount` | What landed. The server's counts, not the review's. |
-| `Climb Remixed From Broken` | `lostHoldCount`, `suggestedHoldCount?`, `source` | Whether a climb a reset broke is a dead end or a starting point. |
+| `Climb Remixed From Broken` | `lostHoldCount`, `source` | Whether a climb a reset broke is a dead end or a starting point. |
 
 Two rules, both enforced by a test in
 `packages/shared/analytics/src/__tests__/spray-wall-events.test.ts`:

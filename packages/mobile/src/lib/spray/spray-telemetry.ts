@@ -15,9 +15,8 @@ import { track } from '../analytics';
  * event every other board type fires, so it belongs to the board-creation
  * funnel, not to this one.
  */
-export function trackSprayEvent<
-  TName extends string,
-  TProperties extends Record<string, number | boolean | string | undefined>,
->(payload: SprayWallPayload<TName, TProperties>): void {
+export function trackSprayEvent<TName extends string, TProperties extends Record<string, number | boolean | string>>(
+  payload: SprayWallPayload<TName, TProperties>,
+): void {
   track(payload.name, payload.properties);
 }

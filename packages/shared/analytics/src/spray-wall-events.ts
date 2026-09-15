@@ -31,10 +31,7 @@
 import { SHARED_EVENTS } from './events';
 
 /** A name paired with the exact properties that name expects. */
-export type SprayWallPayload<
-  TName extends string,
-  TProperties extends Record<string, number | boolean | string | undefined>,
-> = {
+export type SprayWallPayload<TName extends string, TProperties extends Record<string, number | boolean | string>> = {
   name: TName;
   properties: TProperties;
 };
@@ -155,13 +152,9 @@ export type SprayRemixSurface = 'play_drawer';
 export type ClimbRemixedFromBrokenProps = {
   /** Holds this climb lost to a reset. Never which holds. */
   lostHoldCount: number;
-  /**
-   * Successors the reset review linked for those lost holds, when the surface
-   * knows them. Optional because the play drawer offers the remix off the
-   * climb's own `missingHoldCount` and does not always have the suggestions
-   * loaded; an event without it means "not known here", not "none".
-   */
-  suggestedHoldCount?: number;
+  // Deliberately no successor count: `remixClimb`'s suggestions are not read on
+  // this path (SW-13), and a property that is always absent reads as "no
+  // successors were offered" rather than "nobody asked".
   source: SprayRemixSurface;
 };
 
