@@ -1585,6 +1585,31 @@ async function publishAscentEvent(
         .where(and(eq(dbSchema.boardClimbs.uuid, tick.climbUuid), eq(dbSchema.boardClimbs.boardType, tick.boardType)))
         .limit(1);
 
+      // A private spray wall's ticks are the owner's logbook alone (epic decision
+      // 2026-09-14). `saveClimb` already withholds `climb.created` for a non-public
+      // wall, but THIS event carries the same payload — climb name, setter, layout
+      // id, frames — and `events/index.ts` fans it to every follower, where
+      // `activityFeed` then serves it out of `feed_items`. So the wall's visibility
+      // has to gate the fan-out too, or the logbook leaks one tick at a time.
+      //
+      // Silently skipped rather than failed: the tick itself is saved and correct,
+      // and there is nothing for the climber to do about the feed.
+      if (tick.boardType === 'spray' && climbData?.layoutId != null) {
+        const [wallVisibility] = await db
+          .select({ isPublic: dbSchema.userBoards.isPublic })
+          .from(dbSchema.sprayWalls)
+          .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
+          .where(
+            and(
+              eq(dbSchema.sprayWalls.layoutId, climbData.layoutId),
+              isNull(dbSchema.sprayWalls.deletedAt),
+              isNull(dbSchema.userBoards.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!wallVisibility?.isPublic) return;
+      }
+
       const [userProfile] = await db
         .select({
           name: dbSchema.users.name,

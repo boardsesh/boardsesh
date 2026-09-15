@@ -74,6 +74,9 @@ const { setterFollowQueries } = await import('../graphql/resolvers/social/setter
 const { socialFeedQueries } = await import('../graphql/resolvers/social/feed');
 const { activityFeedQueries } = await import('../graphql/resolvers/social/activity-feed');
 const { sessionFeedQueries } = await import('../graphql/resolvers/social/session-feed');
+const { smartPlaylist } = await import('../graphql/resolvers/playlists/queries/smart-playlists');
+const { tickMutations } = await import('../graphql/resolvers/ticks/mutations');
+const { generateSessionSummary } = await import('../graphql/resolvers/sessions/session-summary');
 const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = await import('@boardsesh/board-config');
 
 const OWNER = 'sw-owner';
@@ -1824,6 +1827,123 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
       items: Array<{ climbUuid?: string }>;
     };
     expect(trending.items.map((item) => item.climbUuid)).toContain(climbUuid);
+  });
+
+  it('smartPlaylist hydrates for the VIEWER, not the logbook owner', async () => {
+    // The logbook branch has no owner check — anyone may ask for anyone's
+    // FIVE_STARS — so hydrating with `input.userId` made every row load as if the
+    // owner were asking, handing out a private wall's climb name and frames.
+    const { climbUuid } = await wallWithAClimb();
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, quality, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, ${climbUuid}, 'spray', 40, 'send', 5, now(), now(), now())
+    `);
+
+    const read = async (viewer: string | null) => {
+      const result = (await smartPlaylist(
+        {},
+        { input: { type: 'FIVE_STARS', userId: OWNER, page: 0, pageSize: 50 } },
+        ctxFor(viewer),
+      )) as { climbs: Array<{ uuid: string }> };
+      return result.climbs.map((climb) => climb.uuid);
+    };
+
+    expect(await read(null)).not.toContain(climbUuid);
+    expect(await read(STRANGER)).not.toContain(climbUuid);
+    expect(await read(OWNER)).toContain(climbUuid);
+  });
+
+  it('does not fan an ascent on a private wall out to followers', async () => {
+    // `saveClimb` already withholds `climb.created` for a non-public wall, but the
+    // ascent event carries the same payload — name, setter, layout id, frames — and
+    // is fanned to every follower, where `activityFeed` serves it from `feed_items`.
+    // The epic decided private-wall ticks are the owner's logbook alone.
+    const privateWall = await wallWithAClimb();
+    await db.execute(sql`
+      INSERT INTO user_follows (follower_id, following_id, created_at)
+      VALUES (${STRANGER}, ${OWNER}, now()) ON CONFLICT DO NOTHING
+    `);
+
+    publishedEvents.length = 0;
+    await tickMutations.saveTick(
+      {},
+      {
+        input: {
+          climbUuid: privateWall.climbUuid,
+          boardType: 'spray',
+          angle: 40,
+          status: 'send',
+          attemptCount: 1,
+          isMirror: false,
+          isBenchmark: false,
+          comment: '',
+          climbedAt: new Date().toISOString(),
+        },
+      },
+      ctxFor(OWNER),
+    );
+    // The fan-out is fire-and-forget, so let the microtask queue drain.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(publishedEvents.filter((event) => event.type === 'ascent.logged')).toHaveLength(0);
+
+    // A PUBLIC wall still announces, so the gate is not silencing everything.
+    const publicWall = await wallWithAClimb({ isPublic: true });
+    publishedEvents.length = 0;
+    await tickMutations.saveTick(
+      {},
+      {
+        input: {
+          climbUuid: publicWall.climbUuid,
+          boardType: 'spray',
+          angle: 40,
+          status: 'send',
+          attemptCount: 1,
+          isMirror: false,
+          isBenchmark: false,
+          comment: '',
+          climbedAt: new Date().toISOString(),
+        },
+      },
+      ctxFor(OWNER),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(publishedEvents.filter((event) => event.type === 'ascent.logged')).toHaveLength(1);
+  });
+
+  it('sessionSummary does not name a private wall\u2019s climb as the hardest send', async () => {
+    // The summary is keyed on a session id alone and returns the hardest send's
+    // climb NAME. It establishes no viewer at all, so the gate is deliberately the
+    // strict one: only PUBLIC walls appear.
+    const { climbUuid } = await wallWithAClimb();
+    const sessionId = uuidv4();
+    await db.execute(sql`
+      INSERT INTO board_sessions (id, board_path, created_by_user_id, started_at, ended_at, created_at, last_activity)
+      VALUES (${sessionId}, '/spray/session', ${OWNER}, now() - interval '1 hour', now(), now(), now())
+    `);
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, session_id, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, ${climbUuid}, 'spray', 40, 'send', 18, ${sessionId}, now(), now(), now())
+    `);
+
+    const summary = (await generateSessionSummary(sessionId)) as { hardestClimb?: { climbName?: string } } | null;
+    // The tick still counts towards the session; only the climb's NAME is withheld.
+    expect(summary?.hardestClimb?.climbName ?? 'Unknown climb').not.toBe('Secret garage problem');
+
+    // …and a PUBLIC wall's climb is named, so the gate is not blanking everything.
+    const publicWall = await wallWithAClimb({ isPublic: true });
+    const publicSessionId = uuidv4();
+    await db.execute(sql`
+      INSERT INTO board_sessions (id, board_path, created_by_user_id, started_at, ended_at, created_at, last_activity)
+      VALUES (${publicSessionId}, '/spray/session', ${OWNER}, now() - interval '1 hour', now(), now(), now())
+    `);
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, session_id, climbed_at, created_at, updated_at)
+      VALUES (${uuidv4()}, ${OWNER}, ${publicWall.climbUuid}, 'spray', 40, 'send', 18, ${publicSessionId}, now(), now(), now())
+    `);
+    const publicSummary = (await generateSessionSummary(publicSessionId)) as {
+      hardestClimb?: { climbName?: string };
+    } | null;
+    expect(publicSummary?.hardestClimb?.climbName).toBe('Secret garage problem');
   });
 
   it('keeps a tick whose climb row is MISSING — the "Unknown Climb" case', async () => {

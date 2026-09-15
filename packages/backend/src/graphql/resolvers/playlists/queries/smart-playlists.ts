@@ -326,7 +326,10 @@ export const smartPlaylist = async (
     const angleOverrides = new Map<string, number>(
       pageRefs.map((ref) => [`${ref.boardType}:${ref.climbUuid}`, target.angle]),
     );
-    const climbs = await hydrateClimbsByRefs(pageRefs, { angleOverrides, viewerUserId: input.userId });
+    // The VIEWER, not `input.userId` — that is the logbook's owner, so passing it
+    // made every smart playlist hydrate as if the owner were asking and handed a
+    // private wall's climb name and frames to anyone who named them.
+    const climbs = await hydrateClimbsByRefs(pageRefs, { angleOverrides, viewerUserId: ctx.userId });
     return {
       meta: {
         type: input.type,
@@ -354,10 +357,9 @@ export const smartPlaylist = async (
     selectSmartClimbRefs(input.type, input.userId, input.boardName, page, pageSize),
     countSmartClimbRefs(input.type, input.userId, input.boardName),
   ]);
-  // The logbook owner, so their own private wall's climbs still hydrate. Every
-  // other caller's smart playlist is built from their OWN ticks, so this is the
-  // viewer in every reachable case.
-  const climbs = await hydrateClimbsByRefs(pageRefs, { viewerUserId: input.userId });
+  // The VIEWER. `input.userId` is whose logbook is being rendered, which is not the
+  // same person and must never stand in for them — see the recommendation branch.
+  const climbs = await hydrateClimbsByRefs(pageRefs, { viewerUserId: ctx.userId });
 
   return {
     meta: {
