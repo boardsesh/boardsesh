@@ -94,6 +94,7 @@ const PAST = new Date(Date.now() - 60 * 1000).toISOString();
 function registerWall(expiresAt: string) {
   registerSprayWall(LAYOUT_ID, {
     wallUuid: 'wall-uuid',
+    angle: 40,
     version: 1,
     photoWidth: 1200,
     photoHeight: 1600,

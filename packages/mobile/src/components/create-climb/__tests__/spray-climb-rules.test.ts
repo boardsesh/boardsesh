@@ -132,6 +132,23 @@ describe('the wall is the angle', () => {
     expect(authoringAngle('spray', LAYOUT_ID, 40)).toBe(40);
   });
 
+  it('falls back to the caller for a wall whose payload carried no angle', () => {
+    // The registry keeps `null` rather than fabricating a number for such a
+    // payload, precisely so this stays a fallback and not a failed publish.
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'wall-uuid',
+      angle: null,
+      version: 1,
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'https://private.example/photo',
+      photoThumbUrl: null,
+      photoExpiresAt: '2026-09-15T12:15:00.000Z',
+      holds: [{ id: 7, cx: 100, cy: 200, r: 18 }],
+    });
+    expect(authoringAngle('spray', LAYOUT_ID, 40)).toBe(40);
+  });
+
   it('never touches a catalogue board', () => {
     registerWall(25);
     expect(authoringAngle('kilter', LAYOUT_ID, 40)).toBe(40);
