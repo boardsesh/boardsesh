@@ -304,7 +304,10 @@ jobs:
       EXPO_PUBLIC_USE_RN_FETCH: '1'
       SENTRY_DISABLE_AUTO_UPLOAD: 'true'
       # The prod test/demo account the Maestro flow signs in with. Override via
-      # repo secrets if a different account is ever needed.
+      # repo secrets if a different account is ever needed. The fallback is the
+      # documented PROD screenshots account (docs/mobile-screenshot-fixtures.md),
+      # not a leaked secret — #5330 scopes it to the capture step only, outside
+      # replay.
       SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com' }}
       SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD || 'test' }}
       # Belt-and-suspenders ceiling for Maestro's XCTest driver startup. With
@@ -441,7 +444,10 @@ jobs:
       EXPO_PUBLIC_USE_RN_FETCH: '1'
       SENTRY_DISABLE_AUTO_UPLOAD: 'true'
       # The prod test/demo account the Maestro flow signs in with. Override via
-      # repo secrets if a different account is ever needed.
+      # repo secrets if a different account is ever needed. The fallback is the
+      # documented PROD screenshots account (docs/mobile-screenshot-fixtures.md),
+      # not a leaked secret — #5330 scopes it to the capture step only, outside
+      # replay.
       SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com' }}
       SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD || 'test' }}
       # Belt-and-suspenders ceiling for Maestro's XCTest driver startup. With
