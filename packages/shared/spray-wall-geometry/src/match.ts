@@ -161,9 +161,12 @@ export function pairCost(hold: WallCircle, detection: WallCircle, weights: Match
   const meanRadius = (Math.max(0, hold.r) + Math.max(0, detection.r)) / 2;
   if (meanRadius <= 0) return INFEASIBLE;
 
+  // Distance first: it is one `hypot`, where `circleIou` is two `acos` calls. On a
+  // 1,500-hold wall almost every pair fails here, so the order is worth stating.
   const distance = Math.hypot(hold.cx - detection.cx, hold.cy - detection.cy);
+  if (distance >= gates.distanceGate * meanRadius) return INFEASIBLE;
   const overlap = circleIou(hold, detection);
-  if (distance >= gates.distanceGate * meanRadius || overlap <= gates.iouGate) return INFEASIBLE;
+  if (overlap <= gates.iouGate) return INFEASIBLE;
 
   const holdColour = hold.colour;
   const detectionColour = detection.colour;
@@ -185,12 +188,72 @@ export function pairCost(hold: WallCircle, detection: WallCircle, weights: Match
   return cost / total;
 }
 
+/** One feasible pair: a hold row, a detection column, and what it costs. */
+interface FeasibleEdge {
+  row: number;
+  column: number;
+  cost: number;
+}
+
+/**
+ * Disjoint-set over rows and columns together — rows at `0..rows-1`, columns
+ * offset by `rows` — so one feasible edge unions the two sides it joins.
+ */
+function connectedComponents(rows: number, columns: number, edges: readonly FeasibleEdge[]): Map<number, number[]> {
+  const parent = Array.from({ length: rows + columns }, (_, index) => index);
+  const find = (node: number): number => {
+    let root = node;
+    while (parent[root] !== root) root = parent[root];
+    // Path compression, so a long chain of edges does not make the next find walk it again.
+    let walk = node;
+    while (parent[walk] !== root) {
+      const next = parent[walk];
+      parent[walk] = root;
+      walk = next;
+    }
+    return root;
+  };
+
+  for (const edge of edges) {
+    const rowRoot = find(edge.row);
+    const columnRoot = find(rows + edge.column);
+    if (rowRoot !== columnRoot) parent[rowRoot] = columnRoot;
+  }
+
+  const byRoot = new Map<number, number[]>();
+  for (const edge of edges) {
+    const root = find(edge.row);
+    const bucket = byRoot.get(root);
+    if (bucket) bucket.push(edge.row, rows + edge.column);
+    else byRoot.set(root, [edge.row, rows + edge.column]);
+  }
+  return byRoot;
+}
+
 /**
  * Match the holds that survived a reset.
  *
  * Both gates have to pass before a pair is even a candidate, and the assignment
  * then minimises the total cost over the pairs that remain. Anything left over
  * is a removal or an addition.
+ *
+ * ## Why this prunes before it solves
+ *
+ * The gates are brutal by design — 0.6 of a radius — so the feasible graph on a
+ * real wall is extremely sparse: a hold has one candidate, occasionally two,
+ * essentially never twenty. Handing the whole gated matrix to `solveAssignment`
+ * makes it walk a cubic loop over a matrix that is almost entirely
+ * {@link INFEASIBLE} filler. A full reset is the worst case and the one that
+ * matters: every pair fails, nothing is assignable, and a 1,500 x 1,500 constant
+ * matrix took about 19 seconds on a desktop Node — on a phone, worse, and for an
+ * answer ("all removed, all added") that needs no solver at all.
+ *
+ * So: collect the feasible edges, hand every row and column with no edge straight
+ * to `removed` / `added`, split what remains into connected components of the
+ * feasible graph, and solve each component on its own. That is exact, not an
+ * approximation — no feasible edge crosses components, so no optimal assignment
+ * can either. A pathological wall where every hold really can match every
+ * detection still costs what it always did; a real one costs nothing.
  */
 export function matchHolds(
   previousAlive: readonly AliveHold[],
@@ -204,28 +267,77 @@ export function matchHolds(
   };
   const ambiguityRatio = options.ambiguityRatio ?? DEFAULT_AMBIGUITY_RATIO;
 
-  const costs: number[][] = previousAlive.map((hold) =>
-    detections.map((detection) => pairCost(hold, detection, weights, gates)),
-  );
+  // Every pair is still costed — that is 2.25M cheap arithmetic calls at the
+  // 1,500-hold cap, tens of milliseconds — but only the feasible ones are kept.
+  const edges: FeasibleEdge[] = [];
+  const edgesByRow = new Map<number, FeasibleEdge[]>();
+  previousAlive.forEach((hold, row) => {
+    detections.forEach((detection, column) => {
+      const cost = pairCost(hold, detection, weights, gates);
+      if (cost >= INFEASIBLE) return;
+      const edge: FeasibleEdge = { row, column, cost };
+      edges.push(edge);
+      const bucket = edgesByRow.get(row);
+      if (bucket) bucket.push(edge);
+      else edgesByRow.set(row, [edge]);
+    });
+  });
 
-  const assignment = solveAssignment(costs);
+  const assignedColumnForRow = new Map<number, number>();
+  const costForRow = new Map<number, number>();
+  for (const nodes of connectedComponents(previousAlive.length, detections.length, edges).values()) {
+    const componentRows = [...new Set(nodes.filter((node) => node < previousAlive.length))].sort((a, b) => a - b);
+    const componentColumns = [
+      ...new Set(nodes.filter((node) => node >= previousAlive.length).map((node) => node - previousAlive.length)),
+    ].sort((a, b) => a - b);
+
+    // A component of one hold and one detection is the overwhelmingly common
+    // case; the solver would give the same answer, just slower.
+    if (componentRows.length === 1 && componentColumns.length === 1) {
+      const [only] = edgesByRow.get(componentRows[0]) ?? [];
+      if (only) {
+        assignedColumnForRow.set(only.row, only.column);
+        costForRow.set(only.row, only.cost);
+      }
+      continue;
+    }
+
+    const rowIndex = new Map(componentRows.map((row, index) => [row, index]));
+    const columnIndex = new Map(componentColumns.map((column, index) => [column, index]));
+    const subMatrix = componentRows.map(() => componentColumns.map(() => INFEASIBLE));
+    for (const edge of edges) {
+      const subRow = rowIndex.get(edge.row);
+      const subColumn = columnIndex.get(edge.column);
+      if (subRow !== undefined && subColumn !== undefined) subMatrix[subRow][subColumn] = edge.cost;
+    }
+
+    const assignment = solveAssignment(subMatrix);
+    assignment.rowToColumn.forEach((subColumn, subRow) => {
+      if (subColumn < 0) return;
+      const row = componentRows[subRow];
+      assignedColumnForRow.set(row, componentColumns[subColumn]);
+      costForRow.set(row, subMatrix[subRow][subColumn]);
+    });
+  }
+
   const kept: KeptHold[] = [];
   const removed: string[] = [];
   const lowConfidence: string[] = [];
+  const claimedColumns = new Set(assignedColumnForRow.values());
 
   previousAlive.forEach((hold, row) => {
-    const column = assignment.rowToColumn[row] ?? -1;
-    if (column < 0) {
+    const column = assignedColumnForRow.get(row);
+    if (column === undefined) {
       removed.push(hold.holdId);
       return;
     }
-    const cost = costs[row][column];
+    const cost = costForRow.get(row) ?? 0;
     kept.push({ holdId: hold.holdId, detectionIndex: column, confidence: Math.max(0, Math.min(1, 1 - cost)) });
 
     // A runner-up inside both gates and nearly as cheap means the assignment
     // could have gone the other way — exactly the case a reviewer should see.
-    const runnerUp = costs[row].reduce(
-      (best, value, index) => (index === column || value >= INFEASIBLE ? best : Math.min(best, value)),
+    const runnerUp = (edgesByRow.get(row) ?? []).reduce(
+      (best, edge) => (edge.column === column ? best : Math.min(best, edge.cost)),
       Number.POSITIVE_INFINITY,
     );
     if (Number.isFinite(runnerUp) && runnerUp <= Math.max(cost, Number.EPSILON) * ambiguityRatio) {
@@ -233,10 +345,7 @@ export function matchHolds(
     }
   });
 
-  // `?? -1` rather than a bare lookup: with no previous holds at all the solver
-  // returns empty arrays, and `undefined < 0` is false — which would report a
-  // brand-new wall as having added nothing.
-  const added = detections.map((_, index) => index).filter((index) => (assignment.columnToRow[index] ?? -1) < 0);
+  const added = detections.map((_, index) => index).filter((index) => !claimedColumns.has(index));
   return { kept, removed, added, lowConfidence };
 }
 

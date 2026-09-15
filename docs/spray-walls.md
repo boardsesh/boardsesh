@@ -159,6 +159,16 @@ nearest-neighbour: on a row of identical holds with one missing, greedy pairs
 each old hold with the nearest new one, cascades the error down the row and
 reports the *last* hold as removed instead of the one that actually went.
 
+The gates are strict enough — 0.6 of a radius — that the feasible graph is very
+sparse: a hold has one candidate, occasionally two. So the matcher prunes before
+it solves. Rows and columns with no feasible pair at all go straight to `removed`
+and `added`, and what remains is split into connected components of the feasible
+graph and solved one component at a time. That is exact rather than an
+approximation — no feasible pair crosses a component boundary, so no optimal
+assignment can either — and it is what makes a **full** reset cheap: every pair
+fails the gates, and handing the whole 1,500 x 1,500 matrix of nothing to the
+solver took 14.7 s on the dev box against 86 ms pruned.
+
 The colour term is optional. `@boardsesh/hold-detection`'s `describeColour`
 produces the descriptor — mean Lab plus an eight-bin saturation-weighted hue
 histogram — and when either side lacks one the term is dropped and the remaining

@@ -325,6 +325,171 @@ describe('matchHolds', () => {
   });
 });
 
+describe('matchHolds pruning', () => {
+  const gates = { distanceGate: DEFAULT_DISTANCE_GATE, iouGate: DEFAULT_IOU_GATE };
+
+  /**
+   * The dense-matrix semantics the pruned matcher has to reproduce: every row
+   * takes a distinct column, an infeasible pair costs INFEASIBLE, and the total is
+   * minimised — so the optimum assigns as many feasible pairs as it can and then
+   * picks the cheapest way to do it. Exhaustive, for small cases only.
+   */
+  function bruteForce(holds: readonly AliveHold[], detections: readonly WallCircle[]) {
+    const costs = holds.map((hold) =>
+      detections.map((detection) => pairCost(hold, detection, DEFAULT_MATCH_WEIGHTS, gates)),
+    );
+    let best = Number.POSITIVE_INFINITY;
+    let bestPairs: [number, number][] = [];
+
+    const walk = (row: number, used: Set<number>, total: number, pairs: [number, number][]) => {
+      if (total >= best) return;
+      if (row === holds.length) {
+        best = total;
+        bestPairs = [...pairs];
+        return;
+      }
+      // "Unassigned" is just the cheapest infeasible column, so it needs no
+      // separate branch beyond the columns themselves.
+      for (let column = 0; column < detections.length; column += 1) {
+        if (used.has(column)) continue;
+        used.add(column);
+        const cost = costs[row][column];
+        if (cost < INFEASIBLE) pairs.push([row, column]);
+        walk(row + 1, used, total + cost, pairs);
+        if (cost < INFEASIBLE) pairs.pop();
+        used.delete(column);
+      }
+      if (detections.length < holds.length) walk(row + 1, used, total + INFEASIBLE, pairs);
+    };
+    walk(0, new Set(), 0, []);
+    return { cost: bestPairs.reduce((sum, [row, column]) => sum + costs[row][column], 0), pairs: bestPairs };
+  }
+
+  it('returns all-removed / all-added fast when no pair clears the gates', () => {
+    // The full-reset case, and the one the pruning exists for: a 1,500 x 1,500
+    // matrix of nothing but INFEASIBLE took ~19 s through the solver.
+    const holds: AliveHold[] = Array.from({ length: 1500 }, (_, index) => ({
+      holdId: `old-${index}`,
+      cx: (index % 50) * 60,
+      cy: Math.floor(index / 50) * 60,
+      r: 20,
+    }));
+    // Same grid, offset far enough that every single pair fails the distance gate.
+    const detections: WallCircle[] = holds.map((hold) => ({ cx: hold.cx + 30, cy: hold.cy + 30, r: 20 }));
+
+    const started = performance.now();
+    const result = matchHolds(holds, detections);
+    const elapsed = performance.now() - started;
+
+    expect(result.kept).toEqual([]);
+    expect(result.removed).toHaveLength(1500);
+    expect(result.added).toHaveLength(1500);
+    expect(result.lowConfidence).toEqual([]);
+    // Measured 86 ms on the dev box, against 14.7 s for the same shape through
+    // the unpruned solver — a 170x gap. The bound is deliberately an order of
+    // magnitude above the measurement rather than just above it: a shared CI
+    // runner under load is not a benchmark, and a test that races the wall clock
+    // flakes instead of catching anything. Anything that reintroduces the cubic
+    // walk blows this by 15x (and vitest's 5 s default timeout as well).
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  it('agrees with brute force on two disjoint clusters', () => {
+    // Two clusters of three, far apart: the pruning splits them into separate
+    // components and solves each, which must give the same answer as solving the
+    // whole 6 x 6 at once.
+    const holds: AliveHold[] = [
+      { holdId: 'a0', cx: 100, cy: 100, r: 20 },
+      { holdId: 'a1', cx: 108, cy: 104, r: 21 },
+      { holdId: 'a2', cx: 96, cy: 112, r: 19 },
+      { holdId: 'b0', cx: 900, cy: 700, r: 22 },
+      { holdId: 'b1', cx: 906, cy: 708, r: 20 },
+      { holdId: 'b2', cx: 894, cy: 694, r: 23 },
+    ];
+    const detections: WallCircle[] = [
+      { cx: 907, cy: 707, r: 20 },
+      { cx: 99, cy: 111, r: 19 },
+      { cx: 101, cy: 101, r: 20 },
+      { cx: 893, cy: 695, r: 23 },
+      { cx: 109, cy: 103, r: 21 },
+      { cx: 901, cy: 701, r: 22 },
+    ];
+
+    const result = matchHolds(holds, detections);
+    const reference = bruteForce(holds, detections);
+
+    expect(result.kept).toHaveLength(reference.pairs.length);
+    const keptCost = result.kept.reduce(
+      (sum, kept) =>
+        sum +
+        pairCost(
+          holds[holds.findIndex((hold) => hold.holdId === kept.holdId)],
+          detections[kept.detectionIndex],
+          DEFAULT_MATCH_WEIGHTS,
+          gates,
+        ),
+      0,
+    );
+    expect(keptCost).toBeCloseTo(reference.cost, 12);
+
+    const pairs = result.kept.map((kept) => [
+      holds.findIndex((hold) => hold.holdId === kept.holdId),
+      kept.detectionIndex,
+    ]);
+    expect([...pairs].sort((left, right) => left[0] - right[0])).toEqual(
+      [...reference.pairs].sort((left, right) => left[0] - right[0]),
+    );
+  });
+
+  it('agrees with brute force on rectangular and sparse cases', () => {
+    // Deliberately awkward shapes: more holds than detections, more detections
+    // than holds, and a hold whose only candidate is contested.
+    const cases: [AliveHold[], WallCircle[]][] = [
+      [
+        [
+          { holdId: 'a', cx: 100, cy: 100, r: 20 },
+          { holdId: 'b', cx: 106, cy: 100, r: 20 },
+          { holdId: 'c', cx: 500, cy: 500, r: 20 },
+        ],
+        [{ cx: 103, cy: 100, r: 20 }],
+      ],
+      [
+        [{ holdId: 'a', cx: 100, cy: 100, r: 20 }],
+        [
+          { cx: 102, cy: 100, r: 20 },
+          { cx: 97, cy: 101, r: 20 },
+          { cx: 400, cy: 400, r: 20 },
+        ],
+      ],
+      [
+        [
+          { holdId: 'a', cx: 200, cy: 200, r: 25 },
+          { holdId: 'b', cx: 209, cy: 203, r: 24 },
+        ],
+        [
+          { cx: 204, cy: 201, r: 25 },
+          { cx: 212, cy: 205, r: 24 },
+        ],
+      ],
+    ];
+
+    for (const [holds, detections] of cases) {
+      const result = matchHolds(holds, detections);
+      const reference = bruteForce(holds, detections);
+      expect(result.kept).toHaveLength(reference.pairs.length);
+      expect(result.removed).toHaveLength(holds.length - reference.pairs.length);
+      expect(result.added).toHaveLength(detections.length - reference.pairs.length);
+      const pairs = result.kept.map((kept) => [
+        holds.findIndex((hold) => hold.holdId === kept.holdId),
+        kept.detectionIndex,
+      ]);
+      expect([...pairs].sort((left, right) => left[0] - right[0])).toEqual(
+        [...reference.pairs].sort((left, right) => left[0] - right[0]),
+      );
+    }
+  });
+});
+
 describe('suggestMoves', () => {
   it('pairs a removed hold with the detection that replaced it nearby', () => {
     const holds = wall(2, 2);
