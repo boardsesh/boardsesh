@@ -46,6 +46,7 @@
     "@boardsesh/queue": "workspace:*",
     "@boardsesh/session-inference": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
+    "@boardsesh/spray-wall-geometry": "workspace:*",
     "@boardsesh/text-redaction": "workspace:*",
     "@escape.tech/graphql-armor-cost-limit": "^2.4.3",
     "@escape.tech/graphql-armor-max-depth": "^2.4.2",

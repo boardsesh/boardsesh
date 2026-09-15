@@ -3886,6 +3886,14 @@ export type Mutation = {
    * participants when the title changes.
    */
   updateSession: UpdateSessionResult;
+  /**
+   * Rename a wall, change its description, share it, attach it to a gym, or correct
+   * its angle. Owner only (through the same gate as every other wall mutation).
+   *
+   * Sharing is the point: without this a wall created private — which is the
+   * default, because a wall is somebody's home — could never be shown to anybody.
+   */
+  updateSprayWall: SprayWall;
   /** Update an existing tick. Only the owner can update their own ticks. */
   updateTick: Tick;
   /** Update display name and avatar in the current session. */
@@ -4571,6 +4579,11 @@ export type MutationUpdateProfileArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpdateSessionArgs = {
   input: UpdateSessionInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdateSprayWallArgs = {
+  input: UpdateSprayWallInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -8023,7 +8036,14 @@ export type SprayWall = {
   uuid: Scalars['ID']['output'];
   /** Every version, newest first. Drafts are only visible to the owner. */
   versions: Array<SprayWallVersion>;
-  /** Whether the viewer may edit this wall — i.e. whether they own it. */
+  /**
+   * Whether the viewer may edit this wall's holds and photos.
+   *
+   * True for the owner, and — because the rule is `requireBoardEditAccess`
+   * unchanged — also for the owner or an admin of the gym the wall is attached to,
+   * and for a community admin/leader on a PUBLIC wall. A gym `editor` is not among
+   * them: they can edit the gym's page and not a wall's holds.
+   */
   viewerCanEdit: Scalars['Boolean']['output'];
 };
 
@@ -8123,7 +8143,13 @@ export type SprayWallVersion = {
   /** The wall's four corners in THIS photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Null means the photo frame is the quad. */
   anchors?: Maybe<Scalars['JSON']['output']>;
   createdAt: Scalars['String']['output'];
-  /** Row-major 3x3 photo→canonical homography, nine floats. The identity matrix when the version has no anchors. */
+  /**
+   * Row-major 3x3 photo→canonical homography, nine floats.
+   *
+   * The IDENTITY matrix when no anchors were solved for this version — either none
+   * were tapped, or the four that were do not describe a usable quadrilateral. Null
+   * only for a row written before the homography existed; treat null as the identity.
+   */
   homography?: Maybe<Array<Scalars['Float']['output']>>;
   id: Scalars['ID']['output'];
   /** What changed in this reset, in the wall owner's own words. */
@@ -8627,6 +8653,15 @@ export type UpdateClimbInput = {
    * caller is a principal.
    */
   sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * The setter's own grade.
+   *
+   * Needed to publish a DRAFT on a spray wall when the draft was created without
+   * one: that board has no crowd grade to converge on, so a grade has to come from
+   * either the stats row `saveClimb` already seeded or from this field. Ignored
+   * on every other board, where the grade comes from ticks or the Aurora sync.
+   */
+  userGrade?: InputMaybe<Scalars['String']['input']>;
   uuid: Scalars['ID']['input'];
 };
 
@@ -8748,6 +8783,29 @@ export type UpdateSessionResult = {
   notes?: Maybe<Scalars['String']['output']>;
   /** Session that was updated */
   sessionId: Scalars['ID']['output'];
+};
+
+export type UpdateSprayWallInput = {
+  /**
+   * Correct the wall's angle.
+   *
+   * Only while the wall has NO published version — stats are keyed by angle, so
+   * moving it afterwards would orphan every tick and stat already recorded. Rejected
+   * rather than cascaded.
+   */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+  /** Attach the wall to a gym the caller may link boards to, or pass null to detach. */
+  gymUuid?: InputMaybe<Scalars['ID']['input']>;
+  /**
+   * Make the wall world-readable. This is the switch that turns a private wall into
+   * a shared one, so it is also what starts publishing its climbs to feeds.
+   */
+  isPublic?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Reachable by uuid — the share link — and listed nowhere. */
+  isUnlisted?: InputMaybe<Scalars['Boolean']['input']>;
+  name?: InputMaybe<Scalars['String']['input']>;
+  uuid: Scalars['ID']['input'];
 };
 
 /**
@@ -9565,6 +9623,7 @@ export type ResolversTypes = ResolversObject<{
   UpdateProfileInput: UpdateProfileInput;
   UpdateSessionInput: UpdateSessionInput;
   UpdateSessionResult: ResolverTypeWrapper<UpdateSessionResult>;
+  UpdateSprayWallInput: UpdateSprayWallInput;
   UpdateTickInput: UpdateTickInput;
   UpsertHoldOutlineOverrideInput: UpsertHoldOutlineOverrideInput;
   UpsertSprayWallHoldsInput: UpsertSprayWallHoldsInput;
@@ -9945,6 +10004,7 @@ export type ResolversParentTypes = ResolversObject<{
   UpdateProfileInput: UpdateProfileInput;
   UpdateSessionInput: UpdateSessionInput;
   UpdateSessionResult: UpdateSessionResult;
+  UpdateSprayWallInput: UpdateSprayWallInput;
   UpdateTickInput: UpdateTickInput;
   UpsertHoldOutlineOverrideInput: UpsertHoldOutlineOverrideInput;
   UpsertSprayWallHoldsInput: UpsertSprayWallHoldsInput;
@@ -12350,6 +12410,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationUpdateSessionArgs, 'input'>
+  >;
+  updateSprayWall?: Resolver<
+    ResolversTypes['SprayWall'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdateSprayWallArgs, 'input'>
   >;
   updateTick?: Resolver<
     ResolversTypes['Tick'],

@@ -20,3 +20,4 @@ export type { BoardRouteParams, ClimbSearchParams, ClimbSearchInputLike, ClimbRo
 export { mapSearchInputToParams } from './types';
 
 export { applyWoodsRuleUpdates, type WoodsRuleUpdate } from './woods-rule-repair';
+export * from './spray-visibility';

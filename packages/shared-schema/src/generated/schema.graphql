@@ -4907,6 +4907,15 @@ input UpdateClimbInput {
   "Physical board size, where it is part of the climb's identity (Woods). Immutable — a size that differs from the stored one is rejected. Null or omitted keeps the stored size."
   sizeId: Int
   """
+  The setter's own grade.
+
+  Needed to publish a DRAFT on a spray wall when the draft was created without
+  one: that board has no crowd grade to converge on, so a grade has to come from
+  either the stats row `saveClimb` already seeded or from this field. Ignored
+  on every other board, where the grade comes from ticks or the Aurora sync.
+  """
+  userGrade: String
+  """
   The spray wall this climb is being set on, as the share link carries it.
 
   Only meaningful for `boardType: "spray"`, and only needed by a caller who is
@@ -5512,7 +5521,13 @@ type SprayWallVersion {
   photo: SprayWallPhoto
   "The wall's four corners in THIS photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Null means the photo frame is the quad."
   anchors: JSON
-  "Row-major 3x3 photo→canonical homography, nine floats. The identity matrix when the version has no anchors."
+  """
+  Row-major 3x3 photo→canonical homography, nine floats.
+
+  The IDENTITY matrix when no anchors were solved for this version — either none
+  were tapped, or the four that were do not describe a usable quadrilateral. Null
+  only for a row written before the homography existed; treat null as the identity.
+  """
   homography: [Float!]
   "What changed in this reset, in the wall owner's own words."
   notes: String
@@ -5545,7 +5560,14 @@ type SprayWall {
   versions: [SprayWallVersion!]!
   "Holds alive on the current version."
   holdCount: Int!
-  "Whether the viewer may edit this wall — i.e. whether they own it."
+  """
+  Whether the viewer may edit this wall's holds and photos.
+
+  True for the owner, and — because the rule is `requireBoardEditAccess`
+  unchanged — also for the owner or an admin of the gym the wall is attached to,
+  and for a community admin/leader on a PUBLIC wall. A gym `editor` is not among
+  them: they can edit the gym's page and not a wall's holds.
+  """
   viewerCanEdit: Boolean!
 }
 
@@ -5629,6 +5651,29 @@ input RemoveSprayWallHoldsInput {
 
 input PublishSprayWallVersionInput {
   versionId: ID!
+}
+
+input UpdateSprayWallInput {
+  uuid: ID!
+  name: String
+  description: String
+  """
+  Make the wall world-readable. This is the switch that turns a private wall into
+  a shared one, so it is also what starts publishing its climbs to feeds.
+  """
+  isPublic: Boolean
+  "Reachable by uuid — the share link — and listed nowhere."
+  isUnlisted: Boolean
+  "Attach the wall to a gym the caller may link boards to, or pass null to detach."
+  gymUuid: ID
+  """
+  Correct the wall's angle.
+
+  Only while the wall has NO published version — stats are keyed by angle, so
+  moving it afterwards would orphan every tick and stat already recorded. Rejected
+  rather than cascaded.
+  """
+  angle: Int
 }
 
 """
@@ -7265,6 +7310,15 @@ type Mutation {
   `MAX_SPRAY_WALLS_PER_USER` walls per owner.
   """
   createSprayWall(input: CreateSprayWallInput!): SprayWall!
+
+  """
+  Rename a wall, change its description, share it, attach it to a gym, or correct
+  its angle. Owner only (through the same gate as every other wall mutation).
+
+  Sharing is the point: without this a wall created private — which is the
+  default, because a wall is somebody's home — could never be shown to anybody.
+  """
+  updateSprayWall(input: UpdateSprayWallInput!): SprayWall!
 
   """
   Attach a photo to the wall as a new DRAFT version, and compute its

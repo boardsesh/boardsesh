@@ -228,6 +228,9 @@ importers:
       '@boardsesh/shared-schema':
         specifier: workspace:*
         version: link:../shared-schema
+      '@boardsesh/spray-wall-geometry':
+        specifier: workspace:*
+        version: link:../shared/spray-wall-geometry
       '@boardsesh/text-redaction':
         specifier: workspace:*
         version: link:../shared/text-redaction

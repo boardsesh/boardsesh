@@ -67,6 +67,10 @@ const { db } = await import('../db/client');
 const { sprayWallQueries, sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
+const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
+const { newClimbSubscriptionResolvers } = await import('../graphql/resolvers/social/new-climb-subscriptions');
+const { syncQueries } = await import('../graphql/resolvers/sync/queries');
+const { setterFollowQueries } = await import('../graphql/resolvers/social/setter-follows');
 const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = await import('@boardsesh/board-config');
 
 const OWNER = 'sw-owner';
@@ -196,6 +200,14 @@ beforeEach(async () => {
   presignedUrls.length = 0;
   publishedEvents.length = 0;
   storedPhotoMetadata.clear();
+
+  // `clearAllMocks` resets call history but NOT a `mockReturnValueOnce` queue, so the
+  // unconfigured-bucket test two describes down would otherwise hand its leftover
+  // `false` to whichever test ran next — and every later wall creation would fail
+  // with "photos are not configured". Reset the queue, then restore the default.
+  const storage = await import('../storage/s3');
+  vi.mocked(storage.isS3Configured).mockReset();
+  vi.mocked(storage.isS3Configured).mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -1389,6 +1401,49 @@ describe('the caps, and the shapes the server refuses', () => {
       ),
     ).rejects.toThrow(/do not enclose a wall/i);
 
+    // Concave: clears the size and area rules, and its homography's denominator
+    // crosses zero INSIDE the wall. The geometry rule lives in
+    // `@boardsesh/spray-wall-geometry`; what this pins is that the Zod refine
+    // actually reaches it from the resolver.
+    await expect(
+      sprayWallMutations.createSprayWallVersion(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            photoId,
+            anchors: [
+              [0, 0],
+              [100, 0],
+              [40, 40],
+              [0, 100],
+            ],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/do not enclose a wall/i);
+
+    // A bow-tie, whose two lobes partly cancel in a shoelace test.
+    await expect(
+      sprayWallMutations.createSprayWallVersion(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            photoId,
+            anchors: [
+              [0, 0],
+              [100, 0],
+              [0, 100],
+              [140, 140],
+            ],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/do not enclose a wall/i);
+
     // A hard perspective trapezoid is NOT degenerate and still goes through.
     await expect(
       sprayWallMutations.createSprayWallVersion(
@@ -1479,5 +1534,670 @@ describe('the caps, and the shapes the server refuses', () => {
     // rather than a half-built object.
     vi.mocked(storage.isS3Configured).mockReturnValueOnce(false).mockReturnValueOnce(false);
     expect(await sprayWallQueries.sprayWallRenderData({}, { uuid: wall.uuid }, ctxFor(OWNER))).toBeNull();
+  });
+});
+
+describe('a private wall\u2019s climbs are not readable through the climb API', () => {
+  // A spray climb is stored `is_listed = true` — that is what makes queue, play,
+  // ticks and search work on a wall unchanged — so every predicate written for the
+  // eight catalogue boards reads it as public. Layout ids come out of a sequence,
+  // so each of these reads was an enumeration of every wall in the database.
+  //
+  // The contract for all of them: an EMPTY result, never an error, and never a
+  // different shape — otherwise the response says which layout ids are private.
+  async function wallWithAClimb(overrides: Record<string, unknown> = {}) {
+    const { wall, holdIds } = await createPublishedWall(OWNER, overrides);
+    const saved = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Secret garage problem',
+          isDraft: false,
+          frames: framesFor(holdIds),
+          angle: 40,
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+    return { wall, holdIds, climbUuid: saved.uuid };
+  }
+
+  const searchInputFor = (layoutId: number, sizeId: number) => ({
+    boardName: 'spray',
+    layoutId,
+    sizeId,
+    setIds: '1',
+    angle: 40,
+  });
+
+  it('searchClimbs returns an empty page to a stranger and the climbs to the owner', async () => {
+    const { wall } = await wallWithAClimb();
+    const input = searchInputFor(wall.layoutId, wall.sizeId);
+
+    for (const viewer of [null, STRANGER]) {
+      const context = (await climbQueries.searchClimbs({}, { input }, ctxFor(viewer))) as {
+        _cachedClimbs?: unknown[];
+        _cachedTotalCount?: number;
+      };
+      expect(context._cachedClimbs).toEqual([]);
+      expect(context._cachedTotalCount).toBe(0);
+    }
+
+    // The owner gets a real search context — no pre-baked empty — so the gate is
+    // not simply refusing everyone.
+    const asOwner = (await climbQueries.searchClimbs({}, { input }, ctxFor(OWNER))) as {
+      _cachedClimbs?: unknown[];
+      params: { layout_id: number };
+    };
+    expect(asOwner._cachedClimbs).toBeUndefined();
+    expect(asOwner.params.layout_id).toBe(wall.layoutId);
+  });
+
+  it('never serves a spray search from the shared anonymous cache', async () => {
+    // The Redis key is the board config with NO viewer in it, so one owner's page of
+    // their own private wall would be handed to the next caller for that layout.
+    const { wall } = await wallWithAClimb();
+    const asOwner = (await climbQueries.searchClimbs(
+      {},
+      { input: searchInputFor(wall.layoutId, wall.sizeId) },
+      ctxFor(OWNER),
+    )) as { _isCacheable?: boolean };
+    expect(asOwner._isCacheable).toBe(false);
+  });
+
+  it('searchClimbs still works for a PUBLIC wall, anonymously', async () => {
+    const { wall } = await wallWithAClimb({ isPublic: true });
+    const context = (await climbQueries.searchClimbs(
+      {},
+      { input: searchInputFor(wall.layoutId, wall.sizeId) },
+      ctxFor(null),
+    )) as { _cachedClimbs?: unknown[] };
+    expect(context._cachedClimbs).toBeUndefined();
+  });
+
+  it('similarClimbs takes a bare hold set, so it needed the gate most', async () => {
+    // `climbUuid` is optional here: posting holds with threshold 0 against a guessed
+    // layoutId dumped the whole catalogue with no capability at all.
+    const { wall, holdIds } = await wallWithAClimb();
+    const input = {
+      boardType: 'spray',
+      layoutId: wall.layoutId,
+      // `frames` instead of `climbUuid` — that is the whole point: no capability.
+      frames: framesFor(holdIds),
+      threshold: 0,
+      limit: 20,
+    };
+    expect(await climbQueries.similarClimbs({}, { input }, ctxFor(null))).toEqual([]);
+    expect(await climbQueries.similarClimbs({}, { input }, ctxFor(STRANGER))).toEqual([]);
+  });
+
+  it('setterStats hides the private wall\u2019s crew', async () => {
+    const { wall } = await wallWithAClimb();
+    const input = {
+      boardName: 'spray',
+      layoutId: wall.layoutId,
+      sizeId: wall.sizeId,
+      setIds: '1',
+      angle: 40,
+    };
+    expect(await climbQueries.setterStats({}, { input }, ctxFor(STRANGER))).toEqual([]);
+    expect((await climbQueries.setterStats({}, { input }, ctxFor(OWNER))).length).toBeGreaterThan(0);
+  });
+
+  it('newClimbFeed hides it, and it was the cheapest read of all', async () => {
+    const { wall } = await wallWithAClimb();
+    const input = { boardType: 'spray', layoutId: wall.layoutId, limit: 20, offset: 0 };
+
+    const asStranger = await newClimbSubscriptionResolvers.Query.newClimbFeed({}, { input }, ctxFor(STRANGER));
+    expect(asStranger.items).toEqual([]);
+    expect(asStranger.totalCount).toBe(0);
+
+    const asOwner = await newClimbSubscriptionResolvers.Query.newClimbFeed({}, { input }, ctxFor(OWNER));
+    expect(asOwner.items.length).toBeGreaterThan(0);
+  });
+
+  it('the climb(uuid) read is gated by the WALL, not by holding the uuid', async () => {
+    // A uuid is a 122-bit secret so this is not enumerable — but it is the path a
+    // shared link takes, and a link that escaped once would otherwise serve a
+    // private wall's climb forever.
+    const { wall, climbUuid } = await wallWithAClimb();
+    const args = {
+      boardName: 'spray',
+      layoutId: wall.layoutId,
+      sizeId: wall.sizeId,
+      setIds: '1',
+      angle: 40,
+      climbUuid,
+    };
+    expect(await climbQueries.climb({}, args, ctxFor(STRANGER))).toBeNull();
+    expect(await climbQueries.climb({}, args, ctxFor(OWNER))).not.toBeNull();
+  });
+
+  it('the offline syncClimbs pull hands a stranger an empty page', async () => {
+    // The highest-fidelity leak: this scope is `board_type` + `layout_id` and
+    // nothing else — no is_listed, no is_draft — because it is a full row mirror.
+    const { wall } = await wallWithAClimb();
+    const args = { boardType: 'spray', layoutId: wall.layoutId, sizeId: wall.sizeId, cursor: null, limit: 50 };
+
+    const asStranger = await syncQueries.syncClimbs({}, args, ctxFor(STRANGER));
+    expect(asStranger.documents).toEqual([]);
+    expect(asStranger.hasMore).toBe(false);
+
+    const asOwner = await syncQueries.syncClimbs({}, args, ctxFor(OWNER));
+    expect(asOwner.documents.length).toBeGreaterThan(0);
+  });
+
+  it('userClimbs does not leak a private wall through a public profile', async () => {
+    // No board scoping at all on this one — a spray climb rode along with every
+    // other board the climber has set on, layout id included.
+    const { climbUuid } = await wallWithAClimb();
+
+    const asStranger = (await setterFollowQueries.userClimbs(
+      {},
+      { input: { userId: OWNER, limit: 50, offset: 0 } },
+      ctxFor(STRANGER),
+    )) as { climbs: Array<{ uuid: string }>; totalCount: number };
+    expect(asStranger.climbs.map((climb) => climb.uuid)).not.toContain(climbUuid);
+
+    const asOwner = (await setterFollowQueries.userClimbs(
+      {},
+      { input: { userId: OWNER, limit: 50, offset: 0 } },
+      ctxFor(OWNER),
+    )) as { climbs: Array<{ uuid: string }> };
+    expect(asOwner.climbs.map((climb) => climb.uuid)).toContain(climbUuid);
+  });
+
+  it('lets a GYM MEMBER read a gym wall\u2019s climbs', async () => {
+    // The rule is owner / gym member / public, so a gym's spray wall has to work
+    // for the gym — otherwise the fix has broken the product.
+    const { wall, climbUuid } = await wallWithAClimb();
+    const gymUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO gyms (uuid, name, slug, owner_id, is_public, created_at, updated_at)
+      VALUES (${gymUuid}, 'Gate Gym', ${gymUuid}, ${OWNER}, true, now(), now())
+    `);
+    const [gym] = (await db.execute(sql`SELECT id FROM gyms WHERE uuid = ${gymUuid}`)) as unknown as Array<{
+      id: number;
+    }>;
+    await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
+    await db.execute(sql`
+      INSERT INTO gym_members (gym_id, user_id, role, created_at)
+      VALUES (${gym.id}, ${GYM_EDITOR}, 'member', now())
+    `);
+
+    const asMember = (await climbQueries.searchClimbs(
+      {},
+      { input: searchInputFor(wall.layoutId, wall.sizeId) },
+      ctxFor(GYM_EDITOR),
+    )) as { _cachedClimbs?: unknown[] };
+    expect(asMember._cachedClimbs).toBeUndefined();
+
+    expect(
+      await climbQueries.climb(
+        {},
+        {
+          boardName: 'spray',
+          layoutId: wall.layoutId,
+          sizeId: wall.sizeId,
+          setIds: '1',
+          angle: 40,
+          climbUuid,
+        },
+        ctxFor(GYM_EDITOR),
+      ),
+    ).not.toBeNull();
+  });
+});
+
+describe('a published generation is immutable', () => {
+  it('turns a correction to an INHERITED hold into a removal plus a new hold', async () => {
+    // `spray_wall_holds` is the geometry every climb on the published wall renders
+    // from. Editing an inherited hold in place would move it under all of them —
+    // before this draft is published, and even if it never is.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const inherited = holdIds[0];
+
+    const [before] = (await db.execute(sql`
+      SELECT cx, cy, r FROM spray_wall_holds
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}) AND hold_id = ${inherited}
+    `)) as unknown as Array<{ cx: number; cy: number; r: number }>;
+
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+
+    const written = (await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId: draft.id,
+          holds: [{ id: inherited, cx: before.cx + 37, cy: before.cy + 41, r: before.r + 3 }],
+        },
+      },
+      ctxFor(OWNER),
+    )) as Array<{ id: number; cx: number; cy: number; movedFromHoldId: number | null; installedVersion: number }>;
+
+    // The caller gets the SUCCESSOR, not the id it sent — the id it sent is history
+    // as of this draft.
+    expect(written).toHaveLength(1);
+    expect(written[0].id).not.toBe(inherited);
+    expect(written[0].cx).toBe(before.cx + 37);
+    expect(written[0].movedFromHoldId).toBe(inherited);
+    expect(written[0].installedVersion).toBe(2);
+
+    // The ORIGINAL row is untouched apart from being stamped removed at the draft.
+    const [original] = (await db.execute(sql`
+      SELECT cx, cy, r, removed_version_id FROM spray_wall_holds
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}) AND hold_id = ${inherited}
+    `)) as unknown as Array<{ cx: number; cy: number; r: number; removed_version_id: number | null }>;
+    expect(original.cx).toBe(before.cx);
+    expect(original.cy).toBe(before.cy);
+    expect(original.r).toBe(before.r);
+    expect(Number(original.removed_version_id)).toBe(Number(draft.id));
+
+    // And the PUBLISHED wall still renders the old geometry, because version 1 is
+    // what climbers are looking at until the draft publishes.
+    const published = (await sprayWallQueries.sprayWallRenderData({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
+      versionNumber: number;
+      holds: Array<{ id: number; cx: number }>;
+    };
+    expect(published.versionNumber).toBe(1);
+    expect(published.holds.find((hold) => hold.id === inherited)!.cx).toBe(before.cx);
+    expect(published.holds.map((hold) => hold.id)).not.toContain(written[0].id);
+  });
+
+  it('edits a hold the SAME draft drew, in place', async () => {
+    // Guards the guard: a rule that superseded everything would make the editor
+    // allocate a new id every time somebody nudged a hold they had just placed.
+    const wall = await createWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+
+    const [drawn] = (await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: draft.id, holds: [{ cx: 100, cy: 100, r: 20 }] } },
+      ctxFor(OWNER),
+    )) as Array<{ id: number }>;
+
+    const [nudged] = (await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: draft.id, holds: [{ id: drawn.id, cx: 140, cy: 150, r: 22 }] } },
+      ctxFor(OWNER),
+    )) as Array<{ id: number; cx: number; cy: number }>;
+
+    expect(nudged.id).toBe(drawn.id);
+    expect(nudged.cx).toBe(140);
+
+    // One row, not two: no supersede happened.
+    const [{ holds }] = (await db.execute(
+      sql`SELECT count(*)::int AS holds FROM spray_wall_holds
+          WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId})`,
+    )) as unknown as Array<{ holds: number }>;
+    expect(holds).toBe(1);
+
+    // And the catalogue centre moved with it.
+    const [hole] = (await db.execute(
+      sql`SELECT x, y FROM board_holes WHERE board_type = 'spray' AND id = ${drawn.id}`,
+    )) as unknown as Array<{ x: number; y: number }>;
+    expect([hole.x, hole.y]).toEqual([140, 150]);
+  });
+});
+
+describe('publishing re-materialises climb integrity', () => {
+  it('sets missing_hold_count on every climb that lost a hold', async () => {
+    // A publish is the moment a removal becomes real. Without the recompute a climb
+    // that just lost two holds reads 0 everywhere — badge, Intact / Lost holds
+    // filter, remix prompt and the offline mirror all say it is fine.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+
+    const saveClimbOn = async (name: string, holds: number[]) =>
+      (await climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'spray',
+            layoutId: wall.layoutId,
+            name,
+            isDraft: false,
+            frames: framesFor(holds),
+            angle: 40,
+            userGrade: '6b/V4',
+          },
+        },
+        ctxFor(OWNER),
+      )) as { uuid: string };
+
+    // Two climbs share the doomed hold; a third avoids it.
+    const first = await saveClimbOn('Shares the doomed hold', [holdIds[0], holdIds[1]]);
+    const second = await saveClimbOn('Also shares it', [holdIds[1], holdIds[2]]);
+    const untouched = await saveClimbOn('Avoids it', [holdIds[0], holdIds[2]]);
+
+    const missingFor = async (uuid: string) => {
+      const [row] = (await db.execute(
+        sql`SELECT missing_hold_count FROM board_climbs WHERE uuid = ${uuid}`,
+      )) as unknown as Array<{ missing_hold_count: number | null }>;
+      return row.missing_hold_count;
+    };
+
+    expect(await missingFor(first.uuid)).toBe(0);
+
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const reset = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.removeSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: reset.id, holdIds: [holdIds[1]] } },
+      ctxFor(OWNER),
+    );
+
+    // Still a DRAFT: the removal has not happened as far as anyone is concerned.
+    expect(await missingFor(first.uuid)).toBe(0);
+    expect(await missingFor(second.uuid)).toBe(0);
+
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER));
+
+    expect(await missingFor(first.uuid)).toBe(1);
+    expect(await missingFor(second.uuid)).toBe(1);
+    expect(await missingFor(untouched.uuid)).toBe(0);
+  });
+
+  it('counts nothing for a removal an ABANDONED draft made', async () => {
+    // The recompute carries the same landed-version bound `aliveHolds` does, or
+    // starting a reset and walking away would badge every climb on the wall as
+    // broken and the number would never come back on its own.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const climb = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Untouched by an abandoned draft',
+          isDraft: false,
+          frames: framesFor([holdIds[0], holdIds[1]]),
+          angle: 40,
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+
+    // Draft v2 removes a hold, and is never published.
+    const abandonedPhoto = registerUploadedPhoto(wall.uuid);
+    const abandoned = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: abandonedPhoto, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.removeSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: abandoned.id, holdIds: [holdIds[0]] } },
+      ctxFor(OWNER),
+    );
+
+    // Draft v3 removes nothing and publishes, which runs the recompute.
+    const realPhoto = registerUploadedPhoto(wall.uuid);
+    const real = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId: realPhoto, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: real.id } }, ctxFor(OWNER));
+
+    const [row] = (await db.execute(
+      sql`SELECT missing_hold_count FROM board_climbs WHERE uuid = ${climb.uuid}`,
+    )) as unknown as Array<{ missing_hold_count: number | null }>;
+    expect(row.missing_hold_count).toBe(0);
+  });
+});
+
+describe('updateSprayWall', () => {
+  it('shares a private wall, which is the only way one ever becomes visible', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    expect(await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))).toBeNull();
+
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, isUnlisted: true, name: 'The Shed', description: 'Low and mean' } },
+      ctxFor(OWNER),
+    );
+
+    const read = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(STRANGER))) as {
+      board: { name: string; description: string | null; isUnlisted: boolean };
+    } | null;
+    expect(read?.board.name).toBe('The Shed');
+    expect(read?.board.description).toBe('Low and mean');
+    expect(read?.board.isUnlisted).toBe(true);
+
+    // A rename reaches the catalogue rows too, or they drift from the wall forever.
+    const [layout] = (await db.execute(
+      sql`SELECT name, is_listed FROM board_layouts WHERE board_type = 'spray' AND id = ${wall.layoutId}`,
+    )) as unknown as Array<{ name: string; is_listed: boolean }>;
+    expect(layout.name).toBe('The Shed');
+    // …and nothing here makes a wall listable.
+    expect(layout.is_listed).toBe(false);
+  });
+
+  it('refuses an angle change once a version is published', async () => {
+    // Stats are keyed by angle: every tick already recorded sits at the old one, so
+    // moving it would orphan the wall's whole history.
+    const { wall } = await createPublishedWall(OWNER);
+    await expect(
+      sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, angle: 25 } }, ctxFor(OWNER)),
+    ).rejects.toThrow(/cannot change/i);
+  });
+
+  it('allows an angle change while nothing is published yet', async () => {
+    const wall = await createWall(OWNER);
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, angle: 25 } }, ctxFor(OWNER));
+    const [board] = (await db.execute(
+      sql`SELECT angle FROM user_boards WHERE uuid = ${wall.uuid}`,
+    )) as unknown as Array<{ angle: number }>;
+    expect(Number(board.angle)).toBe(25);
+  });
+
+  it('refuses a stranger, and refuses an empty update', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await expect(
+      sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(STRANGER)),
+    ).rejects.toThrow(/not authorized/i);
+    await expect(sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid } }, ctxFor(OWNER))).rejects.toThrow(
+      /Nothing to update/i,
+    );
+  });
+});
+
+describe('the wall angle is fixed', () => {
+  it('refuses a climb at an angle the wall is not set at', async () => {
+    // Nothing downstream would complain — `board_climbs.angle` takes what it is
+    // given — it would just scatter the wall's climbs across angles the wall has
+    // never been at, where search (exact angle) would never show them again.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'spray',
+            layoutId: wall.layoutId,
+            name: 'Wrong angle',
+            isDraft: false,
+            frames: framesFor(holdIds),
+            angle: 25,
+            userGrade: '6b/V4',
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/set at 40°/i);
+
+    const [{ climbs }] = (await db.execute(
+      sql`SELECT count(*)::int AS climbs FROM board_climbs WHERE board_type = 'spray'`,
+    )) as unknown as Array<{ climbs: number }>;
+    expect(climbs).toBe(0);
+  });
+
+  it('refuses an EDIT that moves a climb off the wall angle', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const saved = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Right angle',
+          isDraft: false,
+          frames: framesFor(holdIds),
+          angle: 40,
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+
+    await expect(
+      climbMutations.updateClimb({}, { input: { uuid: saved.uuid, boardType: 'spray', angle: 30 } }, ctxFor(OWNER)),
+    ).rejects.toThrow(/set at 40°/i);
+  });
+});
+
+describe('publishing a draft that was created without a grade', () => {
+  it('accepts the grade on updateClimb, which used to be impossible', async () => {
+    // `saveClimb` lets a draft through without a grade on purpose — the grade is the
+    // last thing a setter decides — but `UpdateClimbInput` had no `userGrade`, so
+    // draft → publish always hit the grade error and the draft could never publish.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const draft = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Graded at publish',
+          isDraft: true,
+          frames: framesFor(holdIds),
+          angle: 40,
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+
+    // Still refused with no grade from either source.
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        { input: { uuid: draft.uuid, boardType: 'spray', isDraft: false } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/needs your grade/i);
+
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        { input: { uuid: draft.uuid, boardType: 'spray', isDraft: false, userGrade: '6b/V4' } },
+        ctxFor(OWNER),
+      ),
+    ).resolves.toMatchObject({ isDraft: false });
+
+    const [stats] = (await db.execute(sql`
+      SELECT display_difficulty, difficulty_average FROM board_climb_stats WHERE climb_uuid = ${draft.uuid}
+    `)) as unknown as Array<{ display_difficulty: number; difficulty_average: number }>;
+    expect(stats.display_difficulty).toBe(18);
+    expect(stats.difficulty_average).toBe(18);
+  });
+
+  it('refuses a grade the scale does not know, at publish time', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const draft = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Nonsense at publish',
+          isDraft: true,
+          frames: framesFor(holdIds),
+          angle: 40,
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        { input: { uuid: draft.uuid, boardType: 'spray', isDraft: false, userGrade: 'V99' } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/not a grade/i);
+  });
+});
+
+describe('the alive-holds check on a metadata-only edit', () => {
+  it('validates the STORED holds, so it is not vacuous', async () => {
+    // The check reads `board_climb_holds`, and `saveClimb` writes those rows for
+    // every spray climb — not gated on a frames change — so a metadata-only edit
+    // still has holds to validate. If those rows were ever conditional, this test
+    // would pass while the check did nothing.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const saved = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Has stored holds',
+          isDraft: false,
+          frames: framesFor(holdIds),
+          angle: 40,
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+
+    const [{ stored }] = (await db.execute(sql`
+      SELECT count(*)::int AS stored FROM board_climb_holds
+      WHERE board_type = 'spray' AND climb_uuid = ${saved.uuid}
+    `)) as unknown as Array<{ stored: number }>;
+    expect(stored).toBe(holdIds.length);
+
+    // Take one of its holds off the wall for real.
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const reset = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.removeSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: reset.id, holdIds: [holdIds[0]] } },
+      ctxFor(OWNER),
+    );
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: reset.id } }, ctxFor(OWNER));
+
+    // A pure RENAME — no frames in the input at all — is still refused, because the
+    // climb it would re-publish is one nobody can do.
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        { input: { uuid: saved.uuid, boardType: 'spray', name: 'Renamed' } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/not on this wall/i);
   });
 });

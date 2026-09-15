@@ -659,6 +659,15 @@ export const mutationsTypeDefs = /* GraphQL */ `
     createSprayWall(input: CreateSprayWallInput!): SprayWall!
 
     """
+    Rename a wall, change its description, share it, attach it to a gym, or correct
+    its angle. Owner only (through the same gate as every other wall mutation).
+
+    Sharing is the point: without this a wall created private — which is the
+    default, because a wall is somebody's home — could never be shown to anybody.
+    """
+    updateSprayWall(input: UpdateSprayWallInput!): SprayWall!
+
+    """
     Attach a photo to the wall as a new DRAFT version, and compute its
     photo→canonical homography from the anchors by 4-point DLT.
 

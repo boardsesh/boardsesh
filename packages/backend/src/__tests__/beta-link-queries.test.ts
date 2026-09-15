@@ -1,3 +1,4 @@
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 
 const {
@@ -143,6 +144,13 @@ import {
   dropRecentBetaLinksFallback,
 } from '../graphql/resolvers/beta-videos/queries';
 import { resetSingleFlightForTests } from '../utils/single-flight';
+
+/**
+ * `recentBetaLinks` takes a context now, so it can apply the spray wall
+ * visibility rule. Every fixture in this file is a catalogue board, where that
+ * rule is a no-op, so an anonymous reader is the honest caller to test as.
+ */
+const ANON_CTX = { connectionId: 'test', isAuthenticated: false, userId: null } as unknown as ConnectionContext;
 
 type Row = {
   boardType: string;
@@ -388,7 +396,7 @@ describe('recentBetaLinks resolver', () => {
       cteRow({ link: 'https://www.instagram.com/p/B/', board_type: 'tension' }, 'Steep Compression'),
     ]);
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
 
     expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({
@@ -405,7 +413,7 @@ describe('recentBetaLinks resolver', () => {
       cteRow({ link: 'https://www.instagram.com/p/A/' }, 'Project'),
     ]);
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
 
     expect(result).toHaveLength(1);
     expect(result[0]?.climbName).toBe('Project');
@@ -414,7 +422,7 @@ describe('recentBetaLinks resolver', () => {
   it('strips the Instagram share-attribution param from the returned link', async () => {
     executeMock.mockReturnValueOnce([cteRow({ link: 'https://www.instagram.com/reel/ABC/?igsh=x' }, 'Project')]);
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
 
     expect(result[0]?.betaLink.link).toBe('https://www.instagram.com/reel/ABC/');
   });
@@ -422,7 +430,7 @@ describe('recentBetaLinks resolver', () => {
   it('tolerates a null climbName (beta link arrived before the climb synced)', async () => {
     executeMock.mockReturnValueOnce([cteRow({}, null)]);
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
 
     expect(result).toHaveLength(1);
     expect(result[0]?.climbName).toBeNull();
@@ -432,7 +440,7 @@ describe('recentBetaLinks resolver', () => {
     const ourThumb = '/static/beta-link-thumbnails/instagram/ABC.jpg';
     executeMock.mockReturnValueOnce([cteRow({ thumbnail: ourThumb })]);
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
 
     expect(result[0]?.betaLink.thumbnail).toBe(ourThumb);
   });
@@ -443,7 +451,7 @@ describe('recentBetaLinks resolver', () => {
       cteRow({ link: 'https://www.tiktok.com/@u/video/1' }),
     ]);
 
-    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
 
     expect(fetchInstagramMetaMock).not.toHaveBeenCalled();
     expect(fetchTikTokMetaMock).not.toHaveBeenCalled();
@@ -452,7 +460,7 @@ describe('recentBetaLinks resolver', () => {
   it('accepts the boardType filter without throwing', async () => {
     executeMock.mockReturnValueOnce([cteRow({ board_type: 'kilter' })]);
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter' });
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter' }, ANON_CTX);
 
     expect(result).toHaveLength(1);
     expect(result[0]?.boardType).toBe('kilter');
@@ -461,7 +469,7 @@ describe('recentBetaLinks resolver', () => {
   it('applies board and layout scope before ranking and the total limit', async () => {
     executeMock.mockReturnValueOnce([cteRow({ board_type: 'kilter', layout_id: 12 })]);
 
-    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter', layoutId: 12 });
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter', layoutId: 12 }, ANON_CTX);
 
     const sqlToText = (query: unknown): string => {
       if (typeof query === 'string') return query;
@@ -489,7 +497,9 @@ describe('recentBetaLinks resolver', () => {
   });
 
   it('rejects layoutId without boardType', async () => {
-    await expect(betaLinkQueries.recentBetaLinks(undefined, { limit: 20, layoutId: 12 })).rejects.toMatchObject({
+    await expect(
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20, layoutId: 12 }, ANON_CTX),
+    ).rejects.toMatchObject({
       message: 'layoutId requires boardType',
       extensions: { code: 'BAD_USER_INPUT' },
     });
@@ -657,7 +667,7 @@ describe('recentBetaLinks Redis cache', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(JSON.stringify([cachedRow({ link: 'https://www.instagram.com/p/CACHE/' })]));
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
 
     expect(result).toHaveLength(1);
     expect(result[0]?.betaLink.link).toBe('https://www.instagram.com/p/CACHE/');
@@ -668,7 +678,7 @@ describe('recentBetaLinks Redis cache', () => {
   it('runs the CTE on miss and writes the result back to Redis', async () => {
     executeMock.mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/MISS/' })]);
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
 
     expect(result).toHaveLength(1);
     expect(executeMock).toHaveBeenCalledTimes(1);
@@ -684,9 +694,9 @@ describe('recentBetaLinks Redis cache', () => {
   it('uses distinct cache keys for global, board, and board-layout scopes', async () => {
     executeMock.mockReturnValue([cachedRow({ board_type: 'kilter', layout_id: 12 })]);
 
-    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
-    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter' });
-    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter', layoutId: 12 });
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter' }, ANON_CTX);
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter', layoutId: 12 }, ANON_CTX);
 
     expect(redisSetMock.mock.calls.map(([key]) => key)).toEqual([
       'boardsesh:recent-beta-links:global:v0',
@@ -701,7 +711,11 @@ describe('recentBetaLinks Redis cache', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(JSON.stringify([cachedRow({ board_type: 'tension', layout_id: 3 })]));
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'tension', layoutId: 3 });
+    const result = await betaLinkQueries.recentBetaLinks(
+      undefined,
+      { limit: 20, boardType: 'tension', layoutId: 3 },
+      ANON_CTX,
+    );
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ boardType: 'tension', layoutId: 3 });
@@ -712,7 +726,7 @@ describe('recentBetaLinks Redis cache', () => {
     redisConnectedMock.mockReturnValue(false);
     executeMock.mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/NORDB/' })]);
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
 
     expect(result).toHaveLength(1);
     expect(executeMock).toHaveBeenCalledTimes(1);
@@ -735,10 +749,10 @@ describe('recentBetaLinks Redis cache', () => {
     );
 
     const concurrent = [
-      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
-      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
-      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
-      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }),
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX),
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX),
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX),
+      betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX),
     ];
     expect(executeMock).toHaveBeenCalledTimes(1);
 
@@ -767,8 +781,16 @@ describe('recentBetaLinks Redis cache', () => {
         }),
       );
 
-    const kilterRead = betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'kilter', layoutId: 12 });
-    const tensionRead = betaLinkQueries.recentBetaLinks(undefined, { limit: 20, boardType: 'tension', layoutId: 12 });
+    const kilterRead = betaLinkQueries.recentBetaLinks(
+      undefined,
+      { limit: 20, boardType: 'kilter', layoutId: 12 },
+      ANON_CTX,
+    );
+    const tensionRead = betaLinkQueries.recentBetaLinks(
+      undefined,
+      { limit: 20, boardType: 'tension', layoutId: 12 },
+      ANON_CTX,
+    );
 
     expect(executeMock).toHaveBeenCalledTimes(2);
     releaseKilter([cachedRow({ board_type: 'kilter', layout_id: 12 })]);
@@ -780,7 +802,7 @@ describe('recentBetaLinks Redis cache', () => {
     redisGetMock.mockRejectedValueOnce(new Error('redis down mid-flight'));
     executeMock.mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/REDISFAIL/' })]);
 
-    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
 
     expect(result).toHaveLength(1);
     expect(executeMock).toHaveBeenCalledTimes(1);
@@ -834,21 +856,29 @@ describe('recentBetaLinks Redis cache', () => {
       )
       .mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/AFTER/' })]);
 
-    const readStartedFirst = betaLinkQueries.recentBetaLinks(undefined, {
-      limit: 20,
-      boardType: 'kilter',
-      layoutId: 12,
-    });
+    const readStartedFirst = betaLinkQueries.recentBetaLinks(
+      undefined,
+      {
+        limit: 20,
+        boardType: 'kilter',
+        layoutId: 12,
+      },
+      ANON_CTX,
+    );
     // The climber saves their link while that CTE is still running, so its rows
     // are the pre-save strip.
     await invalidateRecentBetaLinksCache();
     // The next scoped read must start a fresh CTE instead of joining the
     // pre-write flight. It arrives before that first SQL call completes.
-    const readStartedAfter = betaLinkQueries.recentBetaLinks(undefined, {
-      limit: 20,
-      boardType: 'kilter',
-      layoutId: 12,
-    });
+    const readStartedAfter = betaLinkQueries.recentBetaLinks(
+      undefined,
+      {
+        limit: 20,
+        boardType: 'kilter',
+        layoutId: 12,
+      },
+      ANON_CTX,
+    );
     expect(executeMock).toHaveBeenCalledTimes(2);
     releaseFirstRead([cachedRow({ link: 'https://www.instagram.com/p/BEFORE/' })]);
     await readStartedFirst;
@@ -861,14 +891,14 @@ describe('recentBetaLinks Redis cache', () => {
     redisConnectedMock.mockReturnValue(false);
     executeMock.mockReturnValue([cachedRow({ link: 'https://www.instagram.com/p/BEFORE/' })]);
 
-    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
     expect(executeMock).toHaveBeenCalledTimes(1);
 
     // Without the drop, a dev/CI server serves the pre-save strip for up to
     // REDISLESS_FALLBACK_TTL_MS (10 min) after a climber posts a beta link.
     await invalidateRecentBetaLinksCache();
 
-    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 });
+    await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
     expect(executeMock).toHaveBeenCalledTimes(2);
   });
 });

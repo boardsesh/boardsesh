@@ -103,7 +103,13 @@ export async function aliveHolds(db: DrizzleDb, wallId: number, versionNumber?: 
  * without a join the mobile SQLite mirror cannot make (it has no
  * `board_climb_holds` table).
  *
- * Three deliberate details:
+ * A removal only counts once the version that made it LANDED — the same rule
+ * `aliveHolds` applies (see its own note). An abandoned draft owns a version
+ * number and can stamp `removed_version_id`, so counting a bare NOT NULL would
+ * badge every climb on the wall as broken the moment an owner started a reset and
+ * walked away, and the number would never come back on its own.
+ *
+ * Four deliberate details:
  *
  *   - the count is computed ONCE per climb, in a `FROM (…) AS m` derived table.
  *     Written as two copies of the same correlated subquery — one for the SET and
@@ -129,9 +135,11 @@ export async function recomputeMissingHoldCounts(db: DrizzleDb, wallId: number):
                SELECT count(*)
                FROM board_climb_holds h
                JOIN spray_wall_holds s ON s.hold_id = h.hold_id AND s.wall_id = ${wallId}
+               JOIN spray_wall_versions rv ON rv.id = s.removed_version_id
                WHERE h.climb_uuid = c.uuid
                  AND h.board_type = 'spray'
                  AND s.removed_version_id IS NOT NULL
+                 AND rv.status <> 'draft'
              )::integer AS missing_hold_count
       FROM board_climbs c
       WHERE c.board_type = 'spray'

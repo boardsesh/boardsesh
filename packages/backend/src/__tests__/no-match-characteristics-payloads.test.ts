@@ -1,3 +1,4 @@
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { describe, it, expect, beforeAll, afterAll } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
@@ -114,9 +115,13 @@ describe('no-match payloads read characteristics, not just the description (#512
   });
 
   it('newClimbFeed lets an empty characteristics array override the prose', async () => {
-    const result = (await newClimbSubscriptionResolvers.Query.newClimbFeed(null, {
-      input: { boardType: 'kilter', layoutId: LAYOUT_ID, limit: 100 },
-    })) as { items: NewClimbFeedItem[] };
+    const result = (await newClimbSubscriptionResolvers.Query.newClimbFeed(
+      null,
+      { input: { boardType: 'kilter', layoutId: LAYOUT_ID, limit: 100 } },
+      // See climb-stats-angle-fallback.test.ts: the resolver takes a context for
+      // the spray visibility rule, which is a no-op on a catalogue board.
+      { connectionId: 'test', isAuthenticated: false, userId: null } as unknown as ConnectionContext,
+    )) as { items: NewClimbFeedItem[] };
 
     const byUuid = new Map(result.items.map((item) => [item.uuid, item.isNoMatch]));
     expect(byUuid.get(CLIMB_EXPLICIT_FALSE)).toBe(false);

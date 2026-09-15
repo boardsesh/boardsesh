@@ -5,6 +5,7 @@ import { db } from '../../../db/client';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
 import { requireAuthenticated } from '../shared/helpers';
+import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
 import { normalizeRow, toIso, type RawRow } from './row-normalize';
 import {
   validateInput,
@@ -114,6 +115,19 @@ async function runSyncPage(params: {
     cursor: nextCursor,
     hasMore: rows.length === limit,
   };
+}
+
+/**
+ * An empty page that still advances nothing — what a sync resolver returns when the
+ * caller may not read the scope it asked for.
+ *
+ * Deliberately a normal empty page rather than an error: the offline engine drains
+ * these in a loop and an error would retry forever, and a distinguishable response
+ * would tell a caller which layout ids are private spray walls.
+ */
+function emptySyncPage(cursor: SyncCursorInput | null | undefined): SyncResult {
+  const { ts, seq } = cursorBounds(cursor);
+  return { documents: [], cursor: { updatedAt: ts, syncSeq: seq }, hasMore: false };
 }
 
 /**
@@ -441,6 +455,17 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+
+    // The board scope here is `board_type` + an optional `layout_id` and NOTHING
+    // else — no `is_listed`, no `is_draft` — because this is a full row mirror for
+    // the offline database. On the eight catalogue boards that is correct; on spray
+    // it is the highest-fidelity leak in the API, because one authenticated account
+    // could walk `layoutId` 1..N and pull every column of every private wall's
+    // climbs. An unreadable scope returns an ordinary empty page.
+    if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+      return emptySyncPage(cursor);
+    }
+
     return runSyncPage({
       selectList: sql`uuid, board_type, layout_id, setter_id, setter_username, name, description,
         hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,
@@ -485,6 +510,14 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+
+    // Same enumeration as `syncClimbs`: this scope reaches `board_climbs` by
+    // layout to decide which rows belong to the pull, so a private spray wall
+    // would hand over its climbs' stats (and grades) to any account that guessed
+    // the layout id.
+    if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+      return emptySyncPage(cursor);
+    }
 
     return runScopedBoardRefSyncPage({
       table: sql`board_climb_stats`,
@@ -533,6 +566,14 @@ export const syncQueries = {
       layoutId: lid,
       sizeId: sid,
     } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+
+    // Same enumeration as `syncClimbs`: this scope reaches `board_climbs` by
+    // layout to decide which rows belong to the pull, so a private spray wall
+    // would hand over its climbs' stats (and grades) to any account that guessed
+    // the layout id.
+    if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+      return emptySyncPage(cursor);
+    }
 
     return runScopedBoardRefSyncPage({
       table: sql`board_climb_grades`,

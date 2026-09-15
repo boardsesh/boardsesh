@@ -340,6 +340,18 @@ box NULL for the wall's whole life, and three readers fail differently:
 nothing to compare against, and SW-07's render path gets a NULL box where every
 other board type has numbers.
 
+The geometry all lives in **`@boardsesh/spray-wall-geometry`** (SW-06, #5466) —
+`homographyFromAnchors`, `isSolvableAnchorQuad`, `invert`, `mapPoint`, `mapRing`,
+`mapRadius`. The backend imports it and owns no copy.
+
+One contract to know before adding a backend caller: **`invert` THROWS on a
+singular matrix** rather than returning the identity. Nothing on the server inverts
+today — the stored matrix is the forward photo→canonical one and the client inverts
+at draw time — so there is no call site to guard yet. When one appears, let the
+throw surface as a clear error rather than catching it into the identity: a corrupt
+stored homography that silently becomes the identity renders every hold at the
+wrong place, which is far harder to notice than a failed request.
+
 The homography is a 4-point DLT in pure TS
 (`packages/backend/src/lib/spray-wall-homography.ts`), nine row-major floats, and
 the identity matrix when a version has no anchors. A degenerate quad — anchors
@@ -389,13 +401,49 @@ Two rules, and they are deliberately different:
 | **View** a wall | The owner, a member of the gym it is attached to, or anybody at all when `is_public` or `is_unlisted` is set. |
 | **Edit** a wall | `requireBoardEditAccess`, **unchanged** — the owner, a gym owner/admin for an attached wall, a community admin/leader on a public one. |
 
-A gym **`editor`** can edit the gym's page and cannot touch a wall's holds
-(owner decision 2026-09-14: ownership grants editing; no gym-editor extension).
-Reusing `requireBoardEditAccess` rather than writing a wall-specific rule is what
-keeps that true without a second gate to keep in step.
+A gym **owner or admin may edit** a wall attached to their gym; a gym **`editor`
+may not** — they can edit the gym's page and not a wall's holds. That is what
+`requireBoardEditAccess` already said, and reusing it rather than writing a
+wall-specific rule is what keeps the two from drifting (owner decision 2026-09-14:
+ownership grants editing; no gym-editor extension).
 
 "Not visible" and "does not exist" are the same answer everywhere a wall is read.
-Telling a stranger that a uuid IS a wall they may not see is itself a leak.
+Telling a stranger that a uuid IS a wall they may not see is itself a leak. The
+same goes for a wall that has been soft-deleted: `sprayWall` returns null and a
+climb write against it reports "not found", never "deleted".
+
+### Reading a wall's CLIMBS is a third rule, applied in ~15 places
+
+A spray climb is an ordinary `board_climbs` row with `is_listed = true` — that is
+what makes queue, play, ticks, stats, playlists and search work on a wall
+unchanged — so **every predicate written for the eight catalogue boards reads a
+spray climb as public**. Combined with layout ids that come out of a sequence
+(1, 2, 3, …), any read taking `boardType + layoutId` from a caller was an
+enumeration of every wall in the database.
+
+The fix is one predicate, in two shapes:
+
+| Shape | Where | Used by |
+| --- | --- | --- |
+| `sprayClimbVisibilityCondition(cols, userId)` (`packages/db/src/queries/climbs/spray-visibility.ts`) | in the WHERE | queries that span board types: `userClimbs`, the ascents feeds, the setter lists, comment-entity validation |
+| `sprayLayoutIsReadable(boardType, layoutId, userId)` (`packages/backend/src/graphql/resolvers/climbs/spray-read-access.ts`) | before the query | queries already narrowed to one board + layout: `searchClimbs`, `similarClimbs`, `setterStats`, `newClimbFeed` and its subscription, `recentBetaLinks`, `climb(uuid)`, and the three `syncClimbs*` offline pulls |
+
+Both express the **by-layout** rule — owner, gym member, or a public wall — the
+same one `viewerCanSeeSprayWallByLayout` applies, with no unlisted exemption. The
+row-level form is shaped `board_type <> 'spray' OR EXISTS (…)` so it is a no-op on
+every other board and a caller cannot forget the branch.
+
+Three details that are load-bearing:
+
+- an unreadable wall yields an **empty result, never an error**, and never a
+  different shape — otherwise the response is an oracle for which layout ids are
+  private walls;
+- `searchClimbs` also drops `spray` from `isCacheableBoard`, because the Redis key
+  is the board config with no viewer in it, so one owner's page of their own wall
+  would be served to the next caller who asked for that layout. `similarClimbs` and
+  `recentBetaLinks` are gated BEFORE their caches for the same reason;
+- `board_type <> 'spray'` short-circuits before the subquery, so the cost on the
+  hot Kilter path is one comparison.
 
 ### The server validates shape, and never re-runs detection
 

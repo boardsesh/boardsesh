@@ -83,7 +83,13 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     photo: SprayWallPhoto
     "The wall's four corners in THIS photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Null means the photo frame is the quad."
     anchors: JSON
-    "Row-major 3x3 photo→canonical homography, nine floats. The identity matrix when the version has no anchors."
+    """
+    Row-major 3x3 photo→canonical homography, nine floats.
+
+    The IDENTITY matrix when no anchors were solved for this version — either none
+    were tapped, or the four that were do not describe a usable quadrilateral. Null
+    only for a row written before the homography existed; treat null as the identity.
+    """
     homography: [Float!]
     "What changed in this reset, in the wall owner's own words."
     notes: String
@@ -116,7 +122,14 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     versions: [SprayWallVersion!]!
     "Holds alive on the current version."
     holdCount: Int!
-    "Whether the viewer may edit this wall — i.e. whether they own it."
+    """
+    Whether the viewer may edit this wall's holds and photos.
+
+    True for the owner, and — because the rule is \`requireBoardEditAccess\`
+    unchanged — also for the owner or an admin of the gym the wall is attached to,
+    and for a community admin/leader on a PUBLIC wall. A gym \`editor\` is not among
+    them: they can edit the gym's page and not a wall's holds.
+    """
     viewerCanEdit: Boolean!
   }
 
@@ -200,5 +213,28 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
 
   input PublishSprayWallVersionInput {
     versionId: ID!
+  }
+
+  input UpdateSprayWallInput {
+    uuid: ID!
+    name: String
+    description: String
+    """
+    Make the wall world-readable. This is the switch that turns a private wall into
+    a shared one, so it is also what starts publishing its climbs to feeds.
+    """
+    isPublic: Boolean
+    "Reachable by uuid — the share link — and listed nowhere."
+    isUnlisted: Boolean
+    "Attach the wall to a gym the caller may link boards to, or pass null to detach."
+    gymUuid: ID
+    """
+    Correct the wall's angle.
+
+    Only while the wall has NO published version — stats are keyed by angle, so
+    moving it afterwards would orphan every tick and stat already recorded. Rejected
+    rather than cascaded.
+    """
+    angle: Int
   }
 `;

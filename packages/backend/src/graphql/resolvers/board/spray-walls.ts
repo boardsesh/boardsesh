@@ -15,7 +15,13 @@ import {
 // for the hold editor: a draft's own additions and removals are invisible to it
 // until `publishSprayWallVersion`. Passing the version number makes each read say
 // which generation it means, so neither reading is accidental.
-import { allocateHoldIds, allocateWallIds, aliveHolds, createSprayWallCatalogueRows } from '@boardsesh/db/queries';
+import {
+  allocateHoldIds,
+  allocateWallIds,
+  aliveHolds,
+  createSprayWallCatalogueRows,
+  recomputeMissingHoldCounts,
+} from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { logger } from '../../../utils/logger';
@@ -29,7 +35,7 @@ import {
   IDENTITY_HOMOGRAPHY,
   isValidAnchorQuad,
   type Quad,
-} from '../../../lib/spray-wall-homography';
+} from '@boardsesh/spray-wall-geometry';
 import {
   SPRAY_PHOTO_HEIGHT_METADATA_KEY,
   SPRAY_PHOTO_WIDTH_METADATA_KEY,
@@ -42,6 +48,7 @@ import {
   CreateSprayWallVersionInputSchema,
   PublishSprayWallVersionInputSchema,
   RemoveSprayWallHoldsInputSchema,
+  UpdateSprayWallInputSchema,
   SPRAY_VERSION_STATUS_WIRE_NAME,
   UpsertSprayWallHoldsInputSchema,
   UUIDSchema,
@@ -107,6 +114,7 @@ export const SPRAY_WALL_CODES = {
   holdNotAlive: 'SPRAY_WALL_HOLD_NOT_ALIVE',
   photoMissing: 'SPRAY_WALL_PHOTO_MISSING',
   photosNotConfigured: 'SPRAY_WALL_PHOTOS_NOT_CONFIGURED',
+  anglePublished: 'SPRAY_WALL_ANGLE_PUBLISHED',
 } as const;
 
 type SprayWallRow = typeof dbSchema.sprayWalls.$inferSelect;
@@ -115,6 +123,13 @@ type SprayWallHoldRow = typeof dbSchema.sprayWallHolds.$inferSelect;
 type UserBoardRow = typeof dbSchema.userBoards.$inferSelect;
 
 type LoadedWall = { wall: SprayWallRow; board: UserBoardRow };
+
+/**
+ * Anything that can run these reads and writes: the pooled client or a
+ * transaction handle. Spelled out so the checks that MUST run inside the wall
+ * lock cannot accidentally be handed the pool instead of the transaction.
+ */
+type SprayWriteExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 function notFoundError(): GraphQLError {
   return new GraphQLError('Spray wall not found', { extensions: { code: SPRAY_WALL_CODES.notFound } });
@@ -441,14 +456,49 @@ async function resolveReadableVersion(
 }
 
 /**
+ * Advisory-lock namespace for spray wall writes. `pg_advisory_xact_lock`'s
+ * single-int8 form shares one global lock space with every other advisory-lock
+ * caller in the cluster, so this uses the two-int form with an arbitrary
+ * namespace — `0x53505259` is ASCII "SPRY". Mirrors
+ * `CLIMB_DUPLICATE_LOCK_NAMESPACE` in `climbs/climb-similarity.ts`.
+ */
+const SPRAY_WALL_LOCK_NAMESPACE = 0x53505259;
+
+/**
+ * Serialize every write that changes a wall's holds or its published version.
+ *
+ * Editing holds and publishing are TOCTOU by nature: the edit reads "this version
+ * is a draft" and then writes, and a publish landing in between turns that write
+ * into a silent mutation of a PUBLISHED generation — moving every climb set on it.
+ * The lock is keyed on the wall rather than the version because the two sides race
+ * on different rows (a version row and the wall's `current_version_id`), so a
+ * per-version lock would not make them queue.
+ *
+ * Transaction-scoped, so it releases on commit or rollback with nothing to clean
+ * up. Take it as the FIRST statement in the transaction, before any read whose
+ * answer the write depends on.
+ */
+async function lockWallForWrite(tx: SprayWriteExecutor, wallId: number): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_LOCK_NAMESPACE}, ${wallId})`);
+}
+
+/**
  * The version being edited, asserted to be a DRAFT of this wall.
  *
  * Published and superseded versions are immutable: a climb set against a
  * published generation reads its holds by id, so rewriting that generation's
  * geometry would silently move every climb on it.
+ *
+ * Takes an executor because it has to be re-run INSIDE the wall lock. Reading it
+ * outside is a fast path that returns a nicer error for the common case; the read
+ * that decides is the one under the lock.
  */
-async function loadDraftVersion(wallId: number, versionId: number): Promise<SprayWallVersionRow> {
-  const [version] = await db
+async function loadDraftVersion(
+  executor: SprayWriteExecutor,
+  wallId: number,
+  versionId: number,
+): Promise<SprayWallVersionRow> {
+  const [version] = await executor
     .select()
     .from(dbSchema.sprayWallVersions)
     .where(and(eq(dbSchema.sprayWallVersions.id, versionId), eq(dbSchema.sprayWallVersions.wallId, wallId)))
@@ -869,78 +919,199 @@ export const sprayWallMutations = {
     return toGraphQLVersion(version);
   },
 
+  updateSprayWall: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'updateSprayWall');
+
+    const validated = validateInput(UpdateSprayWallInputSchema, input, 'input');
+    const loaded = await loadEditableWall(ctx, validated.uuid);
+    const { wall, board } = loaded;
+
+    // The angle is the one field a published wall cannot change. `board_climb_stats`
+    // is keyed by angle and every tick recorded so far sits at the old one, so
+    // moving it would orphan the wall's whole history — the climbs would still be
+    // there and their grades and ascents would not. Refused rather than cascaded:
+    // rewriting stats across angles is a migration, not an edit.
+    const changingAngle = validated.angle !== undefined && validated.angle !== Number(board.angle);
+    if (changingAngle && wall.currentVersionId != null) {
+      throw new GraphQLError(
+        "A published wall's angle cannot change — its climbs' grades and ascents are recorded at " +
+          `${board.angle}°. Create a new wall at ${validated.angle}° instead.`,
+        { extensions: { code: SPRAY_WALL_CODES.anglePublished, wallAngle: Number(board.angle) } },
+      );
+    }
+
+    // The shared gate: a gym owner/admin, or a nearby public gym the caller is
+    // adding their own wall to. `null` detaches, which needs no permission — you
+    // may always take your own wall off a gym.
+    let nextGymId: number | null | undefined;
+    if (validated.gymUuid !== undefined) {
+      if (validated.gymUuid === null) {
+        nextGymId = null;
+      } else {
+        const gym = await requireBoardGymLinkAccess({
+          ctx,
+          gymUuid: validated.gymUuid,
+          userId: ctx.userId!,
+          boardLatitude: board.latitude,
+          boardLongitude: board.longitude,
+        });
+        nextGymId = gym.id;
+      }
+    }
+
+    const updates: Partial<typeof dbSchema.userBoards.$inferInsert> = {};
+    if (validated.name !== undefined) updates.name = validated.name;
+    if (validated.description !== undefined) updates.description = validated.description;
+    if (validated.isPublic !== undefined) updates.isPublic = validated.isPublic;
+    if (validated.isUnlisted !== undefined) updates.isUnlisted = validated.isUnlisted;
+    if (nextGymId !== undefined) updates.gymId = nextGymId;
+    if (validated.angle !== undefined) updates.angle = validated.angle;
+
+    await db.transaction(async (tx) => {
+      await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
+
+      // The catalogue rows carry the wall's name so a psql session can read them,
+      // so a rename has to reach them too or they drift from the wall forever.
+      // Still `is_listed = false` — nothing here makes a wall listable.
+      if (validated.name !== undefined) {
+        await tx
+          .update(dbSchema.boardLayouts)
+          .set({ name: validated.name })
+          .where(and(eq(dbSchema.boardLayouts.boardType, 'spray'), eq(dbSchema.boardLayouts.id, wall.layoutId)));
+        await tx
+          .update(dbSchema.boardProductSizes)
+          .set({ name: validated.name })
+          .where(
+            and(
+              eq(dbSchema.boardProductSizes.boardType, 'spray'),
+              eq(dbSchema.boardProductSizes.id, spraySizeIdForLayout(wall.layoutId)),
+            ),
+          );
+      }
+
+      await tx.update(dbSchema.sprayWalls).set({ updatedAt: new Date() }).where(eq(dbSchema.sprayWalls.id, wall.id));
+    });
+
+    logger.info('Spray wall updated', {
+      layoutId: wall.layoutId,
+      userId: ctx.userId,
+      fields: Object.keys(updates),
+    });
+
+    const reloaded = await loadWall('uuid', validated.uuid);
+    if (!reloaded) throw notFoundError();
+    return toGraphQLWall(reloaded, ctx.userId, true);
+  },
+
   upsertSprayWallHolds: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'upsertSprayWallHolds');
 
     const validated = validateInput(UpsertSprayWallHoldsInputSchema, input, 'input');
     const { wall } = await loadEditableWall(ctx, validated.wallUuid);
-    const version = await loadDraftVersion(wall.id, validated.versionId);
 
-    // The wall as THIS DRAFT sees it: holds installed at or before the draft's own
-    // version number and not removed by it. That includes the holds this same
-    // draft added, which is what lets an editing session correct a hold it drew a
-    // moment ago, and excludes the ones it has already taken off.
-    const existing = await aliveHolds(db, wall.id, version.versionNumber);
-    const aliveById = new Map(existing.map((hold) => [hold.holdId, hold]));
+    // EVERY check runs inside the lock. Reading the draft status and the alive set
+    // outside it and writing after would let a publish land in the window, turning
+    // this edit into a silent mutation of a PUBLISHED generation.
+    const result = await db.transaction(async (tx) => {
+      await lockWallForWrite(tx, wall.id);
+      const version = await loadDraftVersion(tx, wall.id, validated.versionId);
 
-    // Every named id has to be alive on the wall. A hold that came off in an
-    // earlier reset is history, and rewriting its geometry would move it under
-    // every climb that still references it.
-    const corrections = validated.holds.filter((hold) => hold.id != null);
-    const unknownId = corrections.find((hold) => !aliveById.has(hold.id!));
-    if (unknownId) {
-      throw new GraphQLError(`Hold ${unknownId.id} is not on this wall`, {
-        extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: unknownId.id },
-      });
-    }
+      // The wall as THIS DRAFT sees it: holds installed at or before the draft's
+      // own version number and not removed by it. That includes the holds this
+      // same draft added, which is what lets an editing session correct a hold it
+      // drew a moment ago, and excludes the ones it has already taken off.
+      const existing = await aliveHolds(tx, wall.id, version.versionNumber);
+      const aliveById = new Map(existing.map((hold) => [hold.holdId, hold]));
 
-    // `movedFromHoldId` is lineage, and a lineage pointer at another wall's hold
-    // (or at nothing) would make remix suggest a successor for a hold that was
-    // never there. Scoped against EVERY hold this wall has ever had, not the alive
-    // set: a move's whole point is that the predecessor has just come off.
-    const movedFromIds = [
-      ...new Set(
-        validated.holds.map((hold) => hold.movedFromHoldId).filter((holdId): holdId is number => holdId != null),
-      ),
-    ];
-    if (movedFromIds.length > 0) {
-      const known = await db
-        .select({ holdId: dbSchema.sprayWallHolds.holdId })
-        .from(dbSchema.sprayWallHolds)
-        .where(and(eq(dbSchema.sprayWallHolds.wallId, wall.id), inArray(dbSchema.sprayWallHolds.holdId, movedFromIds)));
-      const knownIds = new Set(known.map((row) => row.holdId));
-      const strayId = movedFromIds.find((holdId) => !knownIds.has(holdId));
-      if (strayId != null) {
-        throw new GraphQLError(`Hold ${strayId} has never been on this wall, so nothing can have moved from it`, {
-          extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: strayId },
+      // Every named id has to be alive on the wall. A hold that came off in an
+      // earlier reset is history, and rewriting its geometry would move it under
+      // every climb that still references it.
+      const corrections = validated.holds.filter((hold) => hold.id != null);
+      const unknownId = corrections.find((hold) => !aliveById.has(hold.id!));
+      if (unknownId) {
+        throw new GraphQLError(`Hold ${unknownId.id} is not on this wall`, {
+          extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: unknownId.id },
         });
       }
-    }
 
-    const additions = validated.holds.filter((hold) => hold.id == null);
-    if (existing.length + additions.length > MAX_HOLDS_PER_WALL) {
-      throw new GraphQLError(
-        `A wall may hold at most ${MAX_HOLDS_PER_WALL} holds; this would make ` +
-          `${existing.length + additions.length}.`,
-        { extensions: { code: SPRAY_WALL_CODES.holdLimitReached, maxHolds: MAX_HOLDS_PER_WALL } },
+      // `movedFromHoldId` is lineage, and a lineage pointer at another wall's hold
+      // (or at nothing) would make remix suggest a successor for a hold that was
+      // never there. Scoped against EVERY hold this wall has ever had, not the
+      // alive set: a move's whole point is that the predecessor has just come off.
+      const movedFromIds = [
+        ...new Set(
+          validated.holds.map((hold) => hold.movedFromHoldId).filter((holdId): holdId is number => holdId != null),
+        ),
+      ];
+      if (movedFromIds.length > 0) {
+        const known = await tx
+          .select({ holdId: dbSchema.sprayWallHolds.holdId })
+          .from(dbSchema.sprayWallHolds)
+          .where(
+            and(eq(dbSchema.sprayWallHolds.wallId, wall.id), inArray(dbSchema.sprayWallHolds.holdId, movedFromIds)),
+          );
+        const knownIds = new Set(known.map((row) => row.holdId));
+        const strayId = movedFromIds.find((holdId) => !knownIds.has(holdId));
+        if (strayId != null) {
+          throw new GraphQLError(`Hold ${strayId} has never been on this wall, so nothing can have moved from it`, {
+            extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: strayId },
+          });
+        }
+      }
+
+      // The split that keeps a published generation immutable.
+      //
+      // A hold THIS DRAFT drew has never been on the real wall and no climb can
+      // reference it, so correcting it is an ordinary in-place update. A hold
+      // inherited from a version that LANDED is a different thing entirely: climbs
+      // are already set on it, and `spray_wall_holds` is the geometry those climbs
+      // render from — so an in-place update would move the hold under every climb
+      // on the published wall, before this draft is published and even if it never
+      // is.
+      //
+      // Correcting an inherited hold is therefore a REMOVAL plus an ADDITION, the
+      // same shape a moved hold takes elsewhere in this table: the old row is
+      // stamped `removed_version_id` at this draft, a new row gets a new catalogue
+      // id, and `moved_from_hold_id` links the two so remix can suggest the
+      // successor. The published generation keeps the geometry it was published
+      // with, and the climbs on it stay exactly where they were.
+      const inPlaceEdits = corrections.filter(
+        (hold) => Number(aliveById.get(hold.id!)!.installedVersionId) === Number(version.id),
       );
-    }
+      const supersedes = corrections.filter(
+        (hold) => Number(aliveById.get(hold.id!)!.installedVersionId) !== Number(version.id),
+      );
 
-    const writtenHoldIds = await db.transaction(async (tx) => {
-      const holdIds: number[] = [];
+      const additions = validated.holds.filter((hold) => hold.id == null);
+      // A supersede is one hold out and one in, so it does not move the total —
+      // only genuine additions do.
+      const nextTotal = existing.length + additions.length;
+      if (nextTotal > MAX_HOLDS_PER_WALL) {
+        throw new GraphQLError(`A wall may hold at most ${MAX_HOLDS_PER_WALL} holds; this would make ${nextTotal}.`, {
+          extensions: { code: SPRAY_WALL_CODES.holdLimitReached, maxHolds: MAX_HOLDS_PER_WALL },
+        });
+      }
 
-      // One round trip for the whole batch, ascending — the hold editor relies on
-      // that order to keep a freshly detected batch in the order it was reviewed.
-      const newIds = await allocateHoldIds(tx, additions.length);
+      // Additions and supersedes both need a fresh catalogue id, so they are
+      // allocated together in one ascending round trip — the hold editor relies on
+      // that order to keep a freshly reviewed batch in the order it was reviewed.
+      const newRows = [
+        ...additions.map((hold) => ({ hold, predecessorId: hold.movedFromHoldId ?? null })),
+        // The predecessor of a supersede IS the hold being corrected, so it wins
+        // over any `movedFromHoldId` the client sent alongside.
+        ...supersedes.map((hold) => ({ hold, predecessorId: hold.id! })),
+      ];
+      const newIds = await allocateHoldIds(tx, newRows.length);
 
-      if (additions.length > 0) {
+      if (newRows.length > 0) {
         // The catalogue pair every hold needs: one `board_holes` row and one
         // `board_placements` row SHARING the id, because a climb's frames string
         // (`p<placementId>r<code>`) has to resolve to the row the wall editor drew
         // and a wall hold has no separate hole to mount into.
         await tx.insert(dbSchema.boardHoles).values(
-          additions.map((hold, index) => ({
+          newRows.map(({ hold }, index) => ({
             boardType: 'spray' as const,
             id: newIds[index],
             productId: null,
@@ -954,7 +1125,7 @@ export const sprayWallMutations = {
         );
 
         await tx.insert(dbSchema.boardPlacements).values(
-          additions.map((hold, index) => ({
+          newRows.map((_row, index) => ({
             boardType: 'spray' as const,
             id: newIds[index],
             layoutId: wall.layoutId,
@@ -963,13 +1134,11 @@ export const sprayWallMutations = {
             defaultPlacementRoleId: null,
           })),
         );
-      }
 
-      if (additions.length > 0) {
         // One statement for the batch: a detector run can be 800 holds, and a
         // round trip each would make the editor's save a multi-second wait.
         await tx.insert(dbSchema.sprayWallHolds).values(
-          additions.map((hold, index) => ({
+          newRows.map(({ hold, predecessorId }, index) => ({
             wallId: wall.id,
             holdId: newIds[index],
             cx: hold.cx,
@@ -977,24 +1146,39 @@ export const sprayWallMutations = {
             r: hold.r,
             outline: hold.outline ?? null,
             installedVersionId: version.id,
-            movedFromHoldId: hold.movedFromHoldId ?? null,
+            movedFromHoldId: predecessorId,
             source: hold.source,
             confidence: hold.confidence ?? null,
           })),
         );
-        holdIds.push(...newIds);
       }
 
-      // FOLLOW-UP (perf): the additions above are three batched statements for the
-      // whole run, but a CORRECTION costs two round trips each — the side-table
+      // Stamp the superseded originals as removed AT THIS DRAFT. Never deleted:
+      // the climbs set on them have to stay findable, and `missing_hold_count` has
+      // to stay countable once this draft publishes.
+      if (supersedes.length > 0) {
+        await tx
+          .update(dbSchema.sprayWallHolds)
+          .set({ removedVersionId: version.id, updatedAt: new Date() })
+          .where(
+            and(
+              eq(dbSchema.sprayWallHolds.wallId, wall.id),
+              inArray(
+                dbSchema.sprayWallHolds.holdId,
+                supersedes.map((hold) => hold.id!),
+              ),
+            ),
+          );
+      }
+
+      // FOLLOW-UP (perf): the new rows above are three batched statements for the
+      // whole run, but an in-place EDIT costs two round trips each — the side-table
       // update and the `board_holes` centre. A hold-editor session that nudges
-      // fifty holds therefore burns a hundred statements. Both are expressible as
-      // one `UPDATE … FROM (VALUES …)` per table; not done here because the
-      // correction path is a human dragging holds one at a time, so the batch is
-      // small in every flow that exists today. Revisit if SW-08's compare mode
-      // ever bulk-corrects a detector run.
-      for (const hold of corrections) {
-        holdIds.push(hold.id!);
+      // fifty holds it just drew therefore burns a hundred statements. Both are
+      // expressible as one `UPDATE … FROM (VALUES …)` per table; not done here
+      // because the edit path is a human dragging holds one at a time, so the batch
+      // is small in every flow that exists today.
+      for (const hold of inPlaceEdits) {
         await tx
           .update(dbSchema.sprayWallHolds)
           .set({
@@ -1009,25 +1193,37 @@ export const sprayWallMutations = {
           })
           .where(and(eq(dbSchema.sprayWallHolds.wallId, wall.id), eq(dbSchema.sprayWallHolds.holdId, hold.id!)));
 
-        // A correction keeps the hold's `board_holes` centre in step, so the
-        // catalogue never disagrees with the wall about where a hold is.
+        // Keep the hold's `board_holes` centre in step, so the catalogue never
+        // disagrees with the wall about where a hold is.
         await tx
           .update(dbSchema.boardHoles)
           .set({ x: hold.cx, y: hold.cy })
           .where(and(eq(dbSchema.boardHoles.boardType, 'spray'), eq(dbSchema.boardHoles.id, hold.id!)));
       }
 
-      return holdIds;
+      // The ids the caller now owns: a supersede hands back the SUCCESSOR, not the
+      // id it sent, because the id it sent is history as of this draft.
+      const writtenHoldIds = [...newIds, ...inPlaceEdits.map((hold) => hold.id!)];
+
+      const written =
+        writtenHoldIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(dbSchema.sprayWallHolds)
+              .where(
+                and(
+                  eq(dbSchema.sprayWallHolds.wallId, wall.id),
+                  inArray(dbSchema.sprayWallHolds.holdId, writtenHoldIds),
+                ),
+              )
+              .orderBy(asc(dbSchema.sprayWallHolds.holdId));
+
+      return written;
     });
 
     const versionNumberById = await loadVersionNumbers(wall.id);
-    const written = await db
-      .select()
-      .from(dbSchema.sprayWallHolds)
-      .where(and(eq(dbSchema.sprayWallHolds.wallId, wall.id), inArray(dbSchema.sprayWallHolds.holdId, writtenHoldIds)))
-      .orderBy(asc(dbSchema.sprayWallHolds.holdId));
-
-    return written.map((hold) => toGraphQLHold(hold, versionNumberById));
+    return result.map((hold) => toGraphQLHold(hold, versionNumberById));
   },
 
   removeSprayWallHolds: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -1036,33 +1232,36 @@ export const sprayWallMutations = {
 
     const validated = validateInput(RemoveSprayWallHoldsInputSchema, input, 'input');
     const { wall } = await loadEditableWall(ctx, validated.wallUuid);
-    const version = await loadDraftVersion(wall.id, validated.versionId);
 
-    // The draft's own view of the wall — see `upsertSprayWallHolds`.
-    const existing = await aliveHolds(db, wall.id, version.versionNumber);
-    const aliveById = new Map(existing.map((hold) => [hold.holdId, hold]));
-
-    const unknownId = validated.holdIds.find((holdId) => !aliveById.has(holdId));
-    if (unknownId != null) {
-      throw new GraphQLError(`Hold ${unknownId} is not on this wall`, {
-        extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: unknownId },
-      });
-    }
-
-    // Two different removals, and the split is what keeps history honest. A hold
-    // this same draft ADDED was never on the real wall — the owner drew it and
-    // changed their mind — so it is deleted outright, catalogue rows included. A
-    // hold installed by an earlier version is stamped removed and never deleted:
-    // a climb set on it has to stay findable, and `missing_hold_count` has to
-    // stay countable.
-    const drawnInThisDraft = validated.holdIds.filter(
-      (holdId) => Number(aliveById.get(holdId)!.installedVersionId) === Number(version.id),
-    );
-    const takenOffTheWall = validated.holdIds.filter(
-      (holdId) => Number(aliveById.get(holdId)!.installedVersionId) !== Number(version.id),
-    );
-
+    // Every check inside the lock — see `upsertSprayWallHolds`.
     await db.transaction(async (tx) => {
+      await lockWallForWrite(tx, wall.id);
+      const version = await loadDraftVersion(tx, wall.id, validated.versionId);
+
+      // The draft's own view of the wall — see `upsertSprayWallHolds`.
+      const existing = await aliveHolds(tx, wall.id, version.versionNumber);
+      const aliveById = new Map(existing.map((hold) => [hold.holdId, hold]));
+
+      const unknownId = validated.holdIds.find((holdId) => !aliveById.has(holdId));
+      if (unknownId != null) {
+        throw new GraphQLError(`Hold ${unknownId} is not on this wall`, {
+          extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: unknownId },
+        });
+      }
+
+      // Two different removals, and the split is what keeps history honest. A hold
+      // this same draft ADDED was never on the real wall — the owner drew it and
+      // changed their mind — so it is deleted outright, catalogue rows included. A
+      // hold installed by an earlier version is stamped removed and never deleted:
+      // a climb set on it has to stay findable, and `missing_hold_count` has to
+      // stay countable.
+      const drawnInThisDraft = validated.holdIds.filter(
+        (holdId) => Number(aliveById.get(holdId)!.installedVersionId) === Number(version.id),
+      );
+      const takenOffTheWall = validated.holdIds.filter(
+        (holdId) => Number(aliveById.get(holdId)!.installedVersionId) !== Number(version.id),
+      );
+
       if (drawnInThisDraft.length > 0) {
         await tx
           .delete(dbSchema.sprayWallHolds)
@@ -1118,6 +1317,8 @@ export const sprayWallMutations = {
     if (!found) throw notFoundError();
     await requireBoardEditAccess(ctx, found.board);
 
+    // A fast path with a nicer error. The read that DECIDES is the one inside the
+    // lock below — two concurrent publishes of the same draft both get here.
     if (found.version.status !== 'draft') {
       throw new GraphQLError('That wall version is already published', {
         extensions: { code: SPRAY_WALL_CODES.versionNotDraft },
@@ -1125,15 +1326,29 @@ export const sprayWallMutations = {
     }
 
     const published = await db.transaction(async (tx) => {
+      await lockWallForWrite(tx, found.wall.id);
+      // Re-read under the lock: an interleaved publish or a hold edit may have
+      // landed since the check above, and publishing a version twice would
+      // supersede the wrong generation.
+      await loadDraftVersion(tx, found.wall.id, found.version.id);
+
+      // …and re-read the wall, because `current_version_id` is what the supersede
+      // below keys on and a concurrent publish moves it.
+      const [wallNow] = await tx
+        .select({ currentVersionId: dbSchema.sprayWalls.currentVersionId })
+        .from(dbSchema.sprayWalls)
+        .where(eq(dbSchema.sprayWalls.id, found.wall.id))
+        .limit(1);
+
       // The previous published generation becomes `superseded` — it is still the
       // generation older climbs were set against, so it is never deleted.
-      if (found.wall.currentVersionId != null) {
+      if (wallNow?.currentVersionId != null) {
         await tx
           .update(dbSchema.sprayWallVersions)
           .set({ status: 'superseded', updatedAt: new Date() })
           .where(
             and(
-              eq(dbSchema.sprayWallVersions.id, found.wall.currentVersionId),
+              eq(dbSchema.sprayWallVersions.id, wallNow.currentVersionId),
               eq(dbSchema.sprayWallVersions.status, 'published'),
             ),
           );
@@ -1170,6 +1385,25 @@ export const sprayWallMutations = {
               eq(dbSchema.boardProductSizesLayoutsSets.id, found.wall.layoutId),
             ),
           );
+      }
+
+      // Re-materialise every climb's integrity number. This publish is the moment
+      // a removal becomes real, so without it a climb that just lost two holds
+      // reads `missing_hold_count = 0` everywhere — the badge, the Intact / Lost
+      // holds filter, the remix prompt and the offline mirror all say the climb is
+      // fine. Inside the transaction and AFTER the version flips to `published`,
+      // because the recompute only counts removals by generations that landed.
+      //
+      // Planned for SW-12 (#5445) with the reset flow; brought forward because a
+      // publish that removes holds already exists here, and the number it left
+      // behind would be wrong in the meantime.
+      const repaired = await recomputeMissingHoldCounts(tx, found.wall.id);
+      if (repaired > 0) {
+        logger.info('Spray wall publish re-materialised climb integrity', {
+          layoutId: found.wall.layoutId,
+          versionNumber: row.versionNumber,
+          climbsChanged: repaired,
+        });
       }
 
       return row;

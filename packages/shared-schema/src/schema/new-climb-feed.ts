@@ -169,6 +169,15 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     "Physical board size, where it is part of the climb's identity (Woods). Immutable — a size that differs from the stored one is rejected. Null or omitted keeps the stored size."
     sizeId: Int
     """
+    The setter's own grade.
+
+    Needed to publish a DRAFT on a spray wall when the draft was created without
+    one: that board has no crowd grade to converge on, so a grade has to come from
+    either the stats row \`saveClimb\` already seeded or from this field. Ignored
+    on every other board, where the grade comes from ticks or the Aurora sync.
+    """
+    userGrade: String
+    """
     The spray wall this climb is being set on, as the share link carries it.
 
     Only meaningful for \`boardType: "spray"\`, and only needed by a caller who is

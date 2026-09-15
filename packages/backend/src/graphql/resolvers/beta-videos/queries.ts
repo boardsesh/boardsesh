@@ -22,6 +22,7 @@ import { redisClientManager } from '../../../redis/client';
 import { logger } from '../../../utils/logger';
 import { REDISLESS_FALLBACK_TTL_MS, singleFlight } from '../../../utils/single-flight';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
 import { applyRateLimit, requireAuthenticated } from '../shared/helpers';
 
 type BetaLinkResult = {
@@ -605,11 +606,24 @@ export const betaLinkQueries = {
   recentBetaLinks: async (
     _: unknown,
     { limit, boardType, layoutId }: { limit?: number | null; boardType?: string | null; layoutId?: number | null },
+    ctx: ConnectionContext,
   ): Promise<RecentBetaLinkResult[]> => {
     const cappedLimit = Math.min(Math.max(limit ?? RECENT_BETA_LINKS_DEFAULT_LIMIT, 1), RECENT_BETA_LINKS_MAX_LIMIT);
     if (layoutId !== null && layoutId !== undefined && !boardType) {
       throw new GraphQLError('layoutId requires boardType', { extensions: { code: 'BAD_USER_INPUT' } });
     }
+
+    // The rows carry `bc.name`, so a scope on a private spray wall would leak its
+    // climb names to anyone who guessed the layout id. The cache below is keyed on
+    // the scope with no viewer in it, so the check has to come first.
+    //
+    // A spray scope with NO layoutId is refused outright: the query would then span
+    // every wall in the database and there is no single wall whose visibility could
+    // permit that.
+    if (isSprayBoardType(boardType) && !(await sprayLayoutIsReadable(boardType, layoutId, ctx?.userId))) {
+      return [];
+    }
+
     const scope: RecentBetaLinksScope = { boardType: boardType ?? null, layoutId: layoutId ?? null };
 
     const cached = await getCachedRecentBetaLinks(scope);

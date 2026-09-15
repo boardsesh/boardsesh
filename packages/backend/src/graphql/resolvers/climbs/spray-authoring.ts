@@ -2,7 +2,7 @@ import { GraphQLError } from 'graphql';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { SPRAY_SET, spraySizeIdForLayout } from '@boardsesh/board-config';
-import { aliveHolds } from '@boardsesh/db/queries';
+import { aliveHolds, populateDenormalizedColumns } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { viewerCanWriteSprayClimbs } from '../board/spray-walls';
@@ -40,6 +40,7 @@ export const SPRAY_CLIMB_CODES = {
   wallNotFound: 'SPRAY_WALL_NOT_FOUND',
   gradeRequired: 'SPRAY_CLIMB_GRADE_REQUIRED',
   holdNotAlive: 'SPRAY_WALL_HOLD_NOT_ALIVE',
+  angleMismatch: 'SPRAY_CLIMB_ANGLE_MISMATCH',
 } as const;
 
 /** True for the one board type these rules apply to. Keeps the string literal in one place. */
@@ -55,6 +56,14 @@ export type SprayClimbTarget = {
   compatibleSizeIds: number[];
   /** Always `[1]` — the one synthetic "Holds" set every wall carries. */
   requiredSetIds: number[];
+  /**
+   * The wall's fixed angle, from its `user_boards` row.
+   *
+   * A spray wall does not adjust — `is_angle_adjustable` is false and the angle is
+   * chosen once at creation — so this is the ONLY angle its climbs and stats may
+   * live at.
+   */
+  angle: number;
   /**
    * The PUBLISHED version's number, or null when the wall has nothing published.
    *
@@ -129,6 +138,7 @@ export async function requireVisibleSprayWall(
     layoutId: row.wall.layoutId,
     compatibleSizeIds: [spraySizeIdForLayout(row.wall.layoutId)],
     requiredSetIds: [SPRAY_SET.id],
+    angle: Number(row.board.angle),
     publishedVersionNumber: row.publishedVersionNumber ?? null,
     publishesFeedEvents: row.board.isPublic,
   };
@@ -146,6 +156,27 @@ export function assertSprayGradeOnPublish(isDraft: boolean, userGrade: string | 
   if (userGrade && userGrade.trim().length > 0) return;
   throw new GraphQLError('A spray wall climb needs your grade before you can publish it', {
     extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
+  });
+}
+
+/**
+ * Refuse a climb set at an angle the wall is not at.
+ *
+ * A spray wall's angle is fixed for its life (`is_angle_adjustable` is false), so
+ * there is exactly one angle its climbs can exist at. Nothing downstream would
+ * complain about a mismatch — `board_climbs.angle` and `board_climb_stats.angle`
+ * take whatever they are given — it would just scatter the wall's climbs across
+ * angles the wall has never been at, where search (which filters by exact angle)
+ * would never show them again.
+ *
+ * Rejected rather than silently coerced to the wall's angle: a client sending the
+ * wrong number has a bug, and quietly fixing it up would hide that the angle
+ * control should not have been offered at all.
+ */
+export function assertSprayAngleMatchesWall(target: Pick<SprayClimbTarget, 'angle'>, angle: number): void {
+  if (angle === target.angle) return;
+  throw new GraphQLError(`This spray wall is set at ${target.angle}°, so its climbs cannot be at ${angle}°`, {
+    extensions: { code: SPRAY_CLIMB_CODES.angleMismatch, wallAngle: target.angle },
   });
 }
 
@@ -191,4 +222,42 @@ export async function assertSprayHoldsAreAlive(
       { extensions: { code: SPRAY_CLIMB_CODES.holdNotAlive, holdIds: missing } },
     );
   }
+}
+
+/**
+ * Derive `board_climbs`' denormalised columns, then put the spray ones back.
+ *
+ * INVARIANT: on spray, `compatible_size_ids` is EXACTLY the wall's own size and
+ * `required_set_ids` is EXACTLY `[1]`. Anything that runs
+ * `populateDenormalizedColumns` for a spray climb must go through here, because
+ * that helper's step 3 derives `compatible_size_ids` by joining every
+ * `board_product_sizes` row of the board type whose edge box contains the climb's,
+ * **with no layout scoping** — and on spray every wall's size row IS an edge box,
+ * so the column comes out naming other walls' sizes too.
+ *
+ * Defence in depth rather than a live leak today: every consumer of the column
+ * also filters `layout_id`, so no climb surfaces on the wrong wall. The bug would
+ * be a future reader that trusted it alone. Running the helper is still worth it
+ * for the edge columns it computes (the climb-search size filter reads them), so
+ * the order is derive-then-re-assert rather than skip.
+ *
+ * Two call sites — `saveClimb` and `updateClimb` — and they used to carry a copy of
+ * this each. One function so a third write path cannot be added without it.
+ */
+export async function populateSprayClimbColumns(
+  tx: DrizzleExecutor,
+  boardType: string,
+  climbUuid: string,
+  sprayTarget: SprayClimbTarget | null,
+): Promise<void> {
+  await populateDenormalizedColumns(tx, boardType, [climbUuid]);
+  if (!sprayTarget) return;
+
+  await tx
+    .update(dbSchema.boardClimbs)
+    .set({
+      compatibleSizeIds: sprayTarget.compatibleSizeIds,
+      requiredSetIds: sprayTarget.requiredSetIds,
+    })
+    .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, boardType)));
 }

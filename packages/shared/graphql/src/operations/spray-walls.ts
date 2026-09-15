@@ -155,6 +155,21 @@ export const CREATE_SPRAY_WALL = gql`
   }
 `;
 
+/**
+ * Rename, share, re-gym or re-angle a wall.
+ *
+ * Sharing is the point: a wall is created PRIVATE, so without this one it could
+ * never be shown to anybody. The angle is only accepted while the wall has no
+ * published version — stats are keyed by angle.
+ */
+export const UPDATE_SPRAY_WALL = gql`
+  mutation UpdateSprayWall($input: UpdateSprayWallInput!) {
+    updateSprayWall(input: $input) {
+      ${SPRAY_WALL_FIELDS}
+    }
+  }
+`;
+
 export const CREATE_SPRAY_WALL_VERSION = gql`
   mutation CreateSprayWallVersion($input: CreateSprayWallVersionInput!) {
     createSprayWallVersion(input: $input) {

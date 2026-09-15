@@ -22,6 +22,7 @@ import {
 } from '../../../db/queries/climbs/index';
 import { isValidBoardName } from '../../../db/queries/util/table-select';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
+import { isSprayBoardType, sprayLayoutIsReadable } from './spray-read-access';
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
 import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
 import { findSimilarClimbsCached } from './similar-climbs-cache';
@@ -91,6 +92,16 @@ export const climbQueries = {
       throw new Error(`Invalid board name: ${validated.boardType}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
     }
     const boardType = validated.boardType as BoardName;
+
+    // `climbUuid` is OPTIONAL here — a caller may pass a bare hold set — so this
+    // needs no capability at all: posting `holds: [1..N]` with `threshold: 0`
+    // against a guessed `layoutId` dumped a private wall's whole catalogue, names
+    // and frames included. Results are also written to a Redis cache keyed on
+    // `boardType:layoutId:shapeHash` with no viewer in the key, so one leak would
+    // have been served to everyone after.
+    if (isSprayBoardType(boardType) && !(await sprayLayoutIsReadable(boardType, validated.layoutId, ctx.userId))) {
+      return [];
+    }
 
     let holds: NormalizedHold[];
     let excludeUuid = validated.excludeClimbUuid ?? undefined;
@@ -234,6 +245,27 @@ export const climbQueries = {
       };
     }
 
+    // A spray climb is stored `is_listed = true`, so every predicate written for
+    // the eight catalogue boards reads it as public — and a wall's `layout_id`
+    // comes out of a sequence, so this query took a guessable key. Without this a
+    // stranger could read a private wall's climb names, frames, setters and stats.
+    // The pre-baked empty result is the same shape the drafts branch above returns,
+    // which is deliberate: an unreadable wall must be indistinguishable from an
+    // empty one.
+    if (
+      isSprayBoardType(parsedInput.boardName) &&
+      !(await sprayLayoutIsReadable(parsedInput.boardName, parsedInput.layoutId, ctx.userId))
+    ) {
+      return {
+        params,
+        searchParams,
+        userId: undefined,
+        _cachedClimbs: [],
+        _cachedHasMore: false,
+        _cachedTotalCount: 0,
+      };
+    }
+
     // MoonBoard and Woods data changes under the search, so keep GraphQL search
     // results uncached for both. Other boards can still use Redis when the query
     // is anonymous and has no user-specific filters.
@@ -246,7 +278,13 @@ export const climbQueries = {
     const hasUserSpecificFilters = USER_SPECIFIC_SEARCH_PARAMS.some(
       (param) => !!searchParams[param as keyof typeof searchParams],
     );
-    const isCacheableBoard = parsedInput.boardName !== 'moonboard' && parsedInput.boardName !== 'woods';
+    // Spray joins MoonBoard and Woods as uncacheable, for a different reason: the
+    // cache key is the board config, NOT the viewer, so one owner's page of their
+    // own private wall would be served to the next caller who asked for that
+    // layout. A per-viewer key would work and is not worth it for a wall with a
+    // handful of climbers.
+    const isCacheableBoard =
+      parsedInput.boardName !== 'moonboard' && parsedInput.boardName !== 'woods' && parsedInput.boardName !== 'spray';
 
     // Only resolve userId when user-specific filters are active — otherwise the query
     // results are identical to anonymous and can be served from Redis cache.
@@ -291,6 +329,15 @@ export const climbQueries = {
       angle: validated.angle,
     };
 
+    // Otherwise this hands back the usernames and per-setter climb counts of every
+    // private spray wall's crew, to anyone who walks the layout-id sequence.
+    if (
+      isSprayBoardType(validated.boardName) &&
+      !(await sprayLayoutIsReadable(validated.boardName, validated.layoutId, ctx.userId))
+    ) {
+      return [];
+    }
+
     const rows = await getSetterStats(dbRead, params, validated.search);
 
     return rows.map((row) => ({
@@ -319,6 +366,7 @@ export const climbQueries = {
       angle: number;
       climbUuid: string;
     },
+    ctx: ConnectionContext,
   ) => {
     // Validate board name
     validateInput(BoardNameSchema, boardName, 'boardName');
@@ -335,6 +383,14 @@ export const climbQueries = {
     validateInput(ExternalUUIDSchema, climbUuid, 'climbUuid');
 
     if (DEBUG) logger.info('[climb] Fetching:', { boardName, layoutId, sizeId, setIds, angle, climbUuid });
+
+    // A climb uuid is a 122-bit secret, so this is not an enumeration — but it is
+    // the path a SHARED LINK takes, and a link that escaped once would otherwise
+    // keep serving a private wall's climb forever. The wall's visibility decides,
+    // not the possession of the uuid.
+    if (isSprayBoardType(boardName) && !(await sprayLayoutIsReadable(boardName, layoutId, ctx?.userId))) {
+      return null;
+    }
 
     const climb = await getClimbByUuid({
       board_name: boardName,

@@ -19,7 +19,6 @@ import { fingerprintFromHolds } from '@boardsesh/kilter-sync/sync';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
-import { populateDenormalizedColumns } from '@boardsesh/db/queries';
 import { publishSocialEvent } from '../../../events';
 import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -27,6 +26,8 @@ import { requireAdminOrLeader } from '../social/roles';
 import { deleteClimbDependentRows } from './climb-cleanup';
 import {
   SPRAY_CLIMB_CODES,
+  assertSprayAngleMatchesWall,
+  populateSprayClimbColumns,
   assertSprayGradeOnPublish,
   assertSprayHoldsAreAlive,
   isSprayBoard,
@@ -152,6 +153,12 @@ export const climbMutations = {
       // (`crowdGrade: false`), so a published climb with no setter grade would
       // stay ungraded forever.
       assertSprayGradeOnPublish(validated.isDraft, validated.userGrade);
+      // A wall's angle is fixed for its life — it is chosen once at creation and
+      // `is_angle_adjustable` is false — so an angle that disagrees with the wall
+      // is a client bug, and accepting it would scatter the wall's climbs and
+      // stats across angles that do not exist. Rejected rather than silently
+      // coerced, so the client learns it is sending the wrong number.
+      assertSprayAngleMatchesWall(sprayTarget, validated.angle);
     }
 
     // Woods is code-driven: no board_placements to validate a hold against and
@@ -360,28 +367,9 @@ export const climbMutations = {
           .onConflictDoNothing();
       }
 
-      // Populate denormalized required_set_ids and compatible_size_ids
-      await populateDenormalizedColumns(tx, validated.boardType, [uuid]);
-
-      // …and then put the spray columns back — defence in depth rather than a
-      // live leak. That helper's step 3 derives `compatible_size_ids` by joining
-      // EVERY `board_product_sizes` row of the board type whose edge box contains
-      // the climb's, with no layout scoping, and on spray every wall's size row IS
-      // an edge box — so the column comes out naming other walls' sizes too.
-      // Nothing reads it in isolation today (every consumer also filters
-      // `layout_id`), so no climb surfaces on the wrong wall; the column is simply
-      // wrong, and a future reader that trusts it alone would be the bug. Running
-      // the helper is still worth it for the edge columns it computes (search's
-      // size filter reads them), so the order is derive-then-re-assert, not skip.
-      if (sprayTarget) {
-        await tx
-          .update(dbSchema.boardClimbs)
-          .set({
-            compatibleSizeIds: sprayTarget.compatibleSizeIds,
-            requiredSetIds: sprayTarget.requiredSetIds,
-          })
-          .where(and(eq(dbSchema.boardClimbs.uuid, uuid), eq(dbSchema.boardClimbs.boardType, validated.boardType)));
-      }
+      // Derive the denormalised columns, then re-assert the spray ones — see
+      // `populateSprayClimbColumns` for the INVARIANT and why the order matters.
+      await populateSprayClimbColumns(tx, validated.boardType, uuid, sprayTarget);
 
       // Stats rows used to come exclusively from the Aurora sync pipeline, so
       // Boardsesh-originated climbs had none. The hot search path INNER JOINs
@@ -767,6 +755,18 @@ export const climbMutations = {
     // what stops draft → publish from being a way around
     // `assertSprayGradeOnPublish`: without it a client could save an ungraded
     // draft and immediately publish it.
+    // A wall's angle is fixed, so an edit may not move a climb off it either.
+    if (sprayTarget && validated.angle !== undefined) {
+      assertSprayAngleMatchesWall(sprayTarget, validated.angle);
+    }
+
+    // Publishing a spray climb needs a grade, and it may come from EITHER side: the
+    // stats row `saveClimb` seeded when the draft carried a grade, or `userGrade`
+    // on this call for a draft that did not. Accepting only the stored row is what
+    // made an ungraded draft unpublishable forever — `saveClimb` lets a draft
+    // through without a grade on purpose, because the grade is the last thing a
+    // setter decides.
+    let sprayGradeToSeed: number | null = null;
     if (sprayTarget && transitioningToPublished) {
       const [gradedStats] = await db
         .select({ displayDifficulty: dbSchema.boardClimbStats.displayDifficulty })
@@ -781,9 +781,13 @@ export const climbMutations = {
         .limit(1);
 
       if (gradedStats?.displayDifficulty == null) {
-        throw new GraphQLError('A spray wall climb needs your grade before you can publish it', {
-          extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
-        });
+        assertSprayGradeOnPublish(false, validated.userGrade);
+        sprayGradeToSeed = await resolveDifficultyId(boardType, validated.userGrade);
+        if (sprayGradeToSeed === null) {
+          throw new GraphQLError(`"${validated.userGrade}" is not a grade on the Boardsesh scale`, {
+            extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
+          });
+        }
       }
     }
 
@@ -1010,25 +1014,8 @@ export const climbMutations = {
       // so search filters still match, and resync board_climb_holds (which the
       // duplicate gate and similarity queries read from).
       if (validated.frames !== undefined) {
-        await populateDenormalizedColumns(tx, validated.boardType, [validated.uuid]);
-
-        // …and put the spray columns back, for the reason spelled out in
-        // `saveClimb`: that helper's `compatible_size_ids` join is not scoped to
-        // the layout, and on spray every wall's size row is an edge box.
-        if (sprayTarget) {
-          await tx
-            .update(dbSchema.boardClimbs)
-            .set({
-              compatibleSizeIds: sprayTarget.compatibleSizeIds,
-              requiredSetIds: sprayTarget.requiredSetIds,
-            })
-            .where(
-              and(
-                eq(dbSchema.boardClimbs.uuid, validated.uuid),
-                eq(dbSchema.boardClimbs.boardType, validated.boardType),
-              ),
-            );
-        }
+        // See `populateSprayClimbColumns` — same INVARIANT as the create path.
+        await populateSprayClimbColumns(tx, validated.boardType, validated.uuid, sprayTarget);
 
         if (framesChanged) {
           const refreshedHolds = nextHoldEntries;
@@ -1063,7 +1050,32 @@ export const climbMutations = {
       // because search filters by exact angle, and removing it would race with concurrent ticks.
       // The combined check also re-narrows `resolvedAngle` to non-null for TS — we threw
       // above on (shouldSeedStats && null) so the second clause is the only path through.
-      if (shouldSeedStats && resolvedAngle !== null) {
+      // The grade this call supplied, on the row the publish is about to make
+      // searchable. `onConflictDoUpdate` rather than `DoNothing`: a draft created
+      // without a grade may already HAVE a barebones stats row (a previous angle
+      // edit seeds one), and leaving it ungraded would publish a spray climb with
+      // no grade after the check above said there was one.
+      if (sprayGradeToSeed !== null && resolvedAngle !== null) {
+        await tx
+          .insert(dbSchema.boardClimbStats)
+          .values({
+            boardType: validated.boardType,
+            climbUuid: validated.uuid,
+            angle: resolvedAngle,
+            displayDifficulty: sprayGradeToSeed,
+            difficultyAverage: sprayGradeToSeed,
+            ascensionistCount: 0,
+            faUsername: existing.setterUsername,
+          })
+          .onConflictDoUpdate({
+            target: [
+              dbSchema.boardClimbStats.boardType,
+              dbSchema.boardClimbStats.climbUuid,
+              dbSchema.boardClimbStats.angle,
+            ],
+            set: { displayDifficulty: sprayGradeToSeed, difficultyAverage: sprayGradeToSeed },
+          });
+      } else if (shouldSeedStats && resolvedAngle !== null) {
         await tx
           .insert(dbSchema.boardClimbStats)
           .values({

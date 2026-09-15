@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
-import { isSolvableAnchorQuad } from '../../lib/spray-wall-homography';
+import { isSolvableAnchorQuad } from '@boardsesh/spray-wall-geometry';
 import { UUIDSchema } from './primitives';
 
 /**
@@ -159,6 +159,32 @@ export const RemoveSprayWallHoldsInputSchema = z.object({
 export const PublishSprayWallVersionInputSchema = z.object({
   versionId: BigIntIdSchema,
 });
+
+export const UpdateSprayWallInputSchema = z
+  .object({
+    uuid: UUIDSchema,
+    name: z.string().trim().min(1).max(200).optional(),
+    description: z.string().max(2000).optional().nullable(),
+    isPublic: z.boolean().optional(),
+    isUnlisted: z.boolean().optional(),
+    // Explicit null detaches the wall from its gym, which is why this is nullable
+    // rather than merely optional — the two mean different things here.
+    gymUuid: UUIDSchema.optional().nullable(),
+    angle: z
+      .number()
+      .int()
+      .refine(
+        (angle) => (SPRAY_ANGLES as readonly number[]).includes(angle),
+        `A spray wall's angle must be one of ${SPRAY_ANGLES.join(', ')}`,
+      )
+      .optional(),
+  })
+  // An update that changes nothing is a client bug, and answering it with a
+  // success teaches the client that its no-op worked.
+  .refine(
+    (input) => Object.keys(input).some((key) => key !== 'uuid'),
+    'Nothing to update — pass at least one field besides the wall uuid',
+  );
 
 export type CreateSprayWallInput = z.infer<typeof CreateSprayWallInputSchema>;
 export type CreateSprayWallVersionInput = z.infer<typeof CreateSprayWallVersionInputSchema>;

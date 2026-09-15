@@ -346,6 +346,10 @@ export const UpdateClimbInputSchema = z
     noMatch: RuleFlagSchema,
     anyFeet: RuleFlagSchema,
     sizeId: ClimbSizeIdSchema,
+    // Needed to publish a spray DRAFT that was created without a grade. The
+    // resolver accepts a grade from here OR from the stats row saveClimb seeded,
+    // so a client that already supplied one at creation need not repeat it.
+    userGrade: z.string().max(20).optional(),
     // See SaveClimbInputSchema: the share-link capability for an unlisted spray
     // wall. An edit needs it for the same reason a create does — the wall is
     // resolved from the stored climb's `layoutId`, which is not a secret.
