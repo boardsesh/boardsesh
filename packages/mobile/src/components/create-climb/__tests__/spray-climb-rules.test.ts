@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { BoardName, HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { clearSprayWallRegistry, registerSprayWall } from '../../../lib/spray/spray-wall-registry';
+import { getDifficultyIdForGradeName } from '../../../lib/grade-label';
 import { getPaintRoles, computeRoleCapacity } from '../brush-roles';
 import {
   authoringAngle,
@@ -167,5 +168,21 @@ describe('waiting for a wall', () => {
 
   it('never spins once the holds are in hand', () => {
     expect(shouldAwaitWall(true, LAYOUT_ID, true)).toBe(false);
+  });
+});
+
+describe('the grade name a remix inherits', () => {
+  it('resolves the canonical name the server actually sends', () => {
+    // `Climb.difficulty` comes out of the server's `getGradeLabel`, which writes
+    // "6b/V4". This is the string the fork seed has to understand.
+    expect(getDifficultyIdForGradeName('6b/V4')).toBe(18);
+    expect(getDifficultyIdForGradeName('7a/V6')).toBe(22);
+  });
+
+  it('refuses a display label, which names more than one grade', () => {
+    // "V4" is both 6b and 6b+; guessing would re-grade the remix.
+    expect(getDifficultyIdForGradeName('V4')).toBeNull();
+    expect(getDifficultyIdForGradeName('6b')).toBeNull();
+    expect(getDifficultyIdForGradeName('')).toBeNull();
   });
 });

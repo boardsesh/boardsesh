@@ -366,6 +366,9 @@ describe('useClimbActions create-climb navigation (fork / edit)', () => {
         forkFrames: 'p1r12',
         forkName: 'Test Climb',
         forkDescription: '',
+        // The parent's grade rides along so a remix on a board that publishes
+        // with the setter's own grade (a spray wall) opens at it (#5443).
+        forkDifficulty: 'V4',
         boardName: 'kilter',
         layoutId: '1',
         sizeId: '10',
