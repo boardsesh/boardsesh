@@ -172,8 +172,14 @@ describe('toSentryTag', () => {
 // tag / extra bug would otherwise hide behind the enablement gate.
 describe('applyErrorContextToScope', () => {
   function makeScope() {
-    return { setLevel: vi.fn(), setTag: vi.fn(), setExtra: vi.fn() };
+    return { setLevel: vi.fn(), setTag: vi.fn(), setExtra: vi.fn(), setFingerprint: vi.fn() };
   }
+
+  it('sets the fingerprint when one is provided', () => {
+    const scope = makeScope();
+    applyErrorContextToScope(scope, { fingerprint: ['graphql-validation-failed', 'Cannot query field "x".'] });
+    expect(scope.setFingerprint).toHaveBeenCalledWith(['graphql-validation-failed', 'Cannot query field "x".']);
+  });
 
   it('sets the level when one is provided', () => {
     const scope = makeScope();
@@ -201,6 +207,7 @@ describe('applyErrorContextToScope', () => {
     expect(scope.setLevel).not.toHaveBeenCalled();
     expect(scope.setTag).not.toHaveBeenCalled();
     expect(scope.setExtra).not.toHaveBeenCalled();
+    expect(scope.setFingerprint).not.toHaveBeenCalled();
   });
 });
 

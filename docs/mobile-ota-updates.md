@@ -475,6 +475,30 @@ release notes before the final native change, keep the release focused, and move
 both store builds through QA and review promptly. Keep backend changes compatible with the
 currently shipped app until the replacement has been adopted.
 
+### GraphQL schema changes: installed builds keep querying old fields
+
+Every installed bundle, including old store builds and `pr-*` preview branches pointed at
+production, keeps sending the queries it shipped with. Two rules follow (#5370):
+
+- **Backend first.** Deploy a new field before the OTA that queries it. An OTA that lands first
+  fails those requests until the backend catches up.
+- **Never remove what installed builds still query.** Mark the field `@deprecated` and remove it
+  only after those builds are gone: the store release that stopped querying it has been out for a
+  full adoption cycle, and PostHog's `OTA Update Status` event, grouped by `runtimeVersion` (see
+  [OTA observability](#ota-observability-adoption--funnel)), shows no meaningful traffic on older
+  fingerprints. After the removal, watch Sentry for `schema_mismatch:true` events naming the field. CI's `codegen-drift` job runs
+  `packages/shared-schema/scripts/check-breaking-changes.ts`, which fails a PR whose generated SDL
+  removes a field, argument, type or enum value (or adds a required argument / input field)
+  against the base branch. A deliberate removal opts out with the `schema-breaking-ok` label;
+  adding a label does not re-trigger CI, so re-run the job afterwards.
+
+When a mismatch does reach a phone, the mobile client does not retry the request
+(`GRAPHQL_VALIDATION_FAILED` fails the same way every time) and reports it to Sentry at `warning`
+level, tagged `schema_mismatch: true` and fingerprinted by the validation message. Each mismatch is
+its own Sentry issue; the `ota_channel` tag shows which bundle sent it. Before that change, all of
+them landed in catch-all issues on the GraphQL client frame (BOARDSESH-CJ / BOARDSESH-7H), which
+still collect unrelated request failures and must not be resolved as "the schema issue".
+
 The native builds (`ios-testflight-rn`, ~60 min on macOS;
 `android-apk-rn`, on Linux) only run when the fingerprint changes. A JS/TS-only
 change keeps the same fingerprint, so a fresh store build is wasted. Each native

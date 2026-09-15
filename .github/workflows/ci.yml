@@ -739,6 +739,19 @@ jobs:
             echo "::error::Generated GraphQL files are out of date. Run 'vp run codegen' locally and commit the result."
             exit 1
           fi
+      # Installed app builds keep sending the queries they shipped with, so a
+      # removed field, argument, type or enum value fails their requests with
+      # GRAPHQL_VALIDATION_FAILED (#5370). Runs after the drift check, so the
+      # committed SDL compared here is the regenerated one. A deliberate removal
+      # opts out with the `schema-breaking-ok` label; adding a label does not
+      # re-trigger this workflow, so re-run the job (or push) afterwards.
+      - name: Block client-breaking schema changes
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'schema-breaking-ok')
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          node --import tsx packages/shared-schema/scripts/check-breaking-changes.ts --base-ref FETCH_HEAD
 
   # No `if:` path gate and no `needs: [changes]` on purpose. The version is derived
   # from the whole board catalogue plus the compiled renderer and every board photo
