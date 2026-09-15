@@ -1310,9 +1310,16 @@ async function ingestRerouteCandidatesForLayout(input: {
       result,
       now: startedAt,
     });
-    // 'skipped' can't normally happen (the target decoded during resolution),
-    // but if it did the skip row is already recorded against the target layout.
-    if (outcome !== 'skipped') stagedCandidates.push(candidate);
+    if (outcome === 'skipped') {
+      // Shouldn't happen — the target decoded when the candidate was recorded —
+      // so say so rather than letting it vanish into the counters. The skip row
+      // is already written, against the target layout this time.
+      log(
+        `[kilter-catalog] reroute of ${candidate.climb.climbUuid} failed to decode on layout ${targetLayoutId} after all; left in the backlog`,
+      );
+      continue;
+    }
+    stagedCandidates.push(candidate);
   }
 
   await flushKilterLayoutBatch(db, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows);
