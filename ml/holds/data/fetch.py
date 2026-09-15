@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tarfile
 import urllib.request
 import zipfile
+from datetime import date
 from pathlib import Path
 
 HOLDS_DIR = Path(__file__).resolve().parent.parent
@@ -76,6 +78,65 @@ def unpack(archive: Path, target: Path) -> None:
         raise SystemExit(f"do not know how to unpack {archive}")
 
 
+def roboflow_api_key() -> str:
+    """Read the Roboflow key from the environment, or from the owner's key file.
+
+    Never printed, never logged, never written into `sources.json` or any artifact.
+    The file is the source of truth; the env var exists so a caller can do
+    `ROBOFLOW_API_KEY=$(cat ~/.config/roboflow/api-key) python data/fetch.py`
+    without the key reaching the process table of anything else.
+    """
+    from_env = os.environ.get("ROBOFLOW_API_KEY", "").strip()
+    if from_env:
+        return from_env
+    key_path = Path.home() / ".config" / "roboflow" / "api-key"
+    if key_path.exists():
+        return key_path.read_text().strip()
+    raise SystemExit(
+        "no Roboflow API key. Put it in ~/.config/roboflow/api-key (mode 600), "
+        "or set ROBOFLOW_API_KEY. Never pass it on a command line."
+    )
+
+
+def fetch_roboflow(entry: dict, target: Path) -> None:
+    """Download one Roboflow Universe dataset version in COCO format.
+
+    A dataset export does not consume training credits, but Roboflow-hosted
+    training and hosted inference do — this repo trains locally, so neither is
+    ever called from here.
+    """
+    from roboflow import Roboflow
+
+    workspace, project, version = entry["workspace"], entry["project"], int(entry["version"])
+    if (target / "train" / "_annotations.coco.json").exists():
+        print(f"  already downloaded: {target}")
+        return
+    # The SDK creates the location itself and skips the download when the
+    # directory already exists, so do not pre-create it.
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    dataset = (
+        Roboflow(api_key=roboflow_api_key())
+        .workspace(workspace)
+        .project(project)
+        .version(version)
+        .download("coco", location=str(target), overwrite=True)
+    )
+    # Record what we actually got, so a number in the report can be traced to a
+    # dataset version rather than to "Roboflow, some time in September".
+    manifest = {
+        "workspace": workspace,
+        "project": project,
+        "version": version,
+        "licence": entry["licence"],
+        "url": entry.get("url"),
+        "downloaded_to": str(dataset.location if hasattr(dataset, "location") else target),
+        "fetched_on": date.today().isoformat(),
+    }
+    (target / "boardsesh-manifest.json").write_text(json.dumps(manifest, indent=2))
+    print(f"  -> {target} (version {version}, {entry['licence']})")
+
+
 def fetch_git(url: str, target: Path, ref: str | None) -> None:
     if target.exists():
         print(f"  already cloned: {target}")
@@ -107,6 +168,9 @@ def fetch_source(name: str, entry: dict) -> None:
         return
 
     target = DATA_DIR / name
+    if kind == "roboflow":
+        fetch_roboflow(entry, target)
+        return
     if kind == "git":
         fetch_git(entry["url"], target, entry.get("ref"))
     elif kind == "archive":
