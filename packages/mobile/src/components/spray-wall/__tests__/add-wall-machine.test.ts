@@ -6,6 +6,7 @@ import {
   initialAddWallState,
   isBusy,
   leavingKeepsDraft,
+  shouldConfirmLeave,
   type AddWallAction,
   type AddWallState,
   type CreatedWallDraft,
@@ -427,5 +428,65 @@ describe('addWallReducer — publishing is latched separately from binding', () 
     );
     expect(state.published).toBe(false);
     expect(state.step).toBe('publish');
+  });
+});
+
+describe('addWallReducer — a resumed draft that already has holds', () => {
+  it('unlocks Done without a gratuitous edit', () => {
+    // The editor loads persisted holds as CLEAN state, so its own Save is
+    // disabled (nothing is dirty). A Done gated on "this session saved
+    // something" would leave a climber who saved and walked away unable to
+    // publish at all.
+    const state = addWallReducer(initialAddWallState(), {
+      type: 'RESUMED_AT_REVIEW',
+      draft: DRAFT,
+      savedHoldCount: 42,
+    });
+    expect(state.hasSavedHolds).toBe(true);
+    expect(state.savedHoldCount).toBe(42);
+    expect(addWallReducer(state, { type: 'REVIEW_DONE' }).step).toBe('publish');
+  });
+
+  it('leaves Done locked for a draft with no holds on it yet', () => {
+    const state = addWallReducer(initialAddWallState(), {
+      type: 'RESUMED_AT_REVIEW',
+      draft: DRAFT,
+      savedHoldCount: 0,
+    });
+    expect(state.hasSavedHolds).toBe(false);
+    expect(addWallReducer(state, { type: 'REVIEW_DONE' }).step).toBe('review');
+  });
+});
+
+describe('shouldConfirmLeave', () => {
+  // Every way out asks the same question — the footer's Back, the header's back
+  // button, the iOS gesture and Android's Back key — because a climber asked by
+  // one and silently dropped by another has learned the app does not mean it.
+  it('does not ask before anything has been written', () => {
+    expect(shouldConfirmLeave(fresh())).toBe(false);
+    expect(shouldConfirmLeave(run([{ type: 'META_DONE' }, { type: 'PHOTO_PICKED', photo: PHOTO }]))).toBe(false);
+  });
+
+  it('asks while a request is in flight', () => {
+    expect(shouldConfirmLeave(run([{ type: 'UPLOAD_STARTED' }]))).toBe(true);
+    expect(shouldConfirmLeave(run([{ type: 'DETECTION_STARTED' }]))).toBe(true);
+    expect(shouldConfirmLeave(run([{ type: 'PUBLISH_STARTED' }]))).toBe(true);
+  });
+
+  it('asks once a draft exists, because only the editor knows what is unsaved', () => {
+    expect(shouldConfirmLeave(atReview())).toBe(true);
+  });
+
+  it('stops asking once the wall is published', () => {
+    const published = run(
+      [
+        { type: 'HOLDS_SAVED', holdCount: 1 },
+        { type: 'REVIEW_DONE' },
+        { type: 'PUBLISH_STARTED' },
+        { type: 'PUBLISHED' },
+      ],
+      atReview(),
+    );
+    expect(shouldConfirmLeave(published)).toBe(false);
   });
 });

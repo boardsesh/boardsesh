@@ -11,7 +11,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { renderHook } from '@testing-library/react';
-import { FEATURE_FLAG_DEFINITIONS, FeatureFlagsProvider, useSprayWallsEnabled } from '../feature-flags-provider';
+import {
+  FEATURE_FLAG_DEFINITIONS,
+  FeatureFlagsProvider,
+  useFeatureFlagsResolved,
+  useSprayWallsEnabled,
+} from '../feature-flags-provider';
 
 vi.mock('@react-native-async-storage/async-storage', () => {
   const storage: Record<string, string> = {};
@@ -56,5 +61,27 @@ describe('useSprayWallsEnabled', () => {
 
   it('is on only for a true boolean', () => {
     expect(renderGate({ 'spray-walls': true }).current).toBe(true);
+  });
+});
+
+describe('useFeatureFlagsResolved', () => {
+  function renderResolved(flags?: Record<string, boolean | string | undefined>) {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FeatureFlagsProvider flags={flags}>{children}</FeatureFlagsProvider>
+    );
+    return renderHook(() => useFeatureFlagsResolved(), { wrapper }).result;
+  }
+
+  it('is false on the first frame with nothing supplied', () => {
+    // What the redirect gate needs to know. Reading the empty first bag as final
+    // would bounce a climber the feature IS enabled for straight off their own
+    // deep link, and a value arriving afterwards cannot bring the route back.
+    expect(renderResolved().current).toBe(false);
+  });
+
+  it('is true immediately for a statically supplied bag', () => {
+    // The env override, and every test: there is nothing on its way that could
+    // change it, so waiting would be waiting for nothing.
+    expect(renderResolved({ 'spray-walls': false }).current).toBe(true);
   });
 });

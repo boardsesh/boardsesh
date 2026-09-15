@@ -35,8 +35,11 @@ export const FIRST_VERSION_WITH_WALL_CAMERA = '2.6.0';
 /** Parse `1.2.3` into comparable parts. Non-numeric or short versions answer null. */
 function parseVersion(value: string | null | undefined): [number, number, number] | null {
   if (!value) return null;
+  // No `length === 0` guard: `String.split` never returns an empty array, so
+  // that branch was unreachable. A non-numeric segment is what the NaN check
+  // below catches.
   const parts = value.trim().split('.');
-  if (parts.length === 0 || parts.length > 3) return null;
+  if (parts.length > 3) return null;
   const numbers = parts.map((part) => (/^\d+$/.test(part) ? Number(part) : Number.NaN));
   if (numbers.some(Number.isNaN)) return null;
   return [numbers[0] ?? 0, numbers[1] ?? 0, numbers[2] ?? 0];

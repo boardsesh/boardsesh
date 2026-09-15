@@ -760,9 +760,10 @@
       "body": "Name it, say how steep it is, and choose who gets to see it.",
       "namePlaceholder": "Garage wall",
       "angle": "Angle",
-      "angleHint": "Degrees off vertical, {{min}} to {{max}}. It's fixed once you publish.",
+      "angleHint": "How far the wall leans back, in 5° steps. Fixed once you publish.",
       "publicHint": "Off keeps the wall and its photo to you.",
-      "next": "Pick a photo"
+      "next": "Pick a photo",
+      "anglePreview": "Wall at {{angle}} degrees"
     },
     "photo": {
       "title": "Photograph the wall",
@@ -827,7 +828,9 @@
       "title": "You've a wall on the go",
       "body": "“{{name}}” isn't finished. Pick up where you left off, or start over.",
       "pickUp": "Pick up where you left off",
-      "startOver": "Start over"
+      "startOver": "Start over",
+      "checkFailed": "Couldn't check that wall. Try again.",
+      "retry": "Try again"
     }
   }
 }

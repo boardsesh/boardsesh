@@ -24,6 +24,7 @@ const DRAFT_WITH_PHOTO: ResumableVersion = {
   number: 1,
   status: 'draft',
   photo: { url: 'https://example.invalid/wall.jpg' },
+  addedHoldCount: 0,
 };
 
 const DRAFT_WITHOUT_PHOTO: ResumableVersion = { id: 'version-1', number: 1, status: 'draft', photo: null };
@@ -71,7 +72,23 @@ describe('resumeTargetFor', () => {
     expect(target).toEqual({
       at: 'review',
       draft: { wallUuid: 'wall-1', layoutId: 9001, viewerCanEdit: true, versionId: 'version-1', versionNumber: 1 },
+      savedHoldCount: 0,
     });
+  });
+
+  it('reports holds a previous sitting already saved', () => {
+    // The gate that unlocks Done. The editor loads persisted holds as CLEAN
+    // state, so its own Save stays disabled — a Done waiting for a save of its
+    // own would leave the climber unable to publish without a pointless edit.
+    const target = resumeTargetFor(wall(), [{ ...DRAFT_WITH_PHOTO, addedHoldCount: 42 }]);
+    expect(target.at === 'review' && target.savedHoldCount).toBe(42);
+  });
+
+  it('treats a missing or negative hold count as none', () => {
+    const missing = resumeTargetFor(wall(), [{ ...DRAFT_WITH_PHOTO, addedHoldCount: null }]);
+    expect(missing.at === 'review' && missing.savedHoldCount).toBe(0);
+    const negative = resumeTargetFor(wall(), [{ ...DRAFT_WITH_PHOTO, addedHoldCount: -3 }]);
+    expect(negative.at === 'review' && negative.savedHoldCount).toBe(0);
   });
 
   it('rejoins at the photo step when the wall has no version at all', () => {

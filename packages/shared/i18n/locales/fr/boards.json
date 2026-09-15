@@ -760,9 +760,10 @@
       "body": "Donne-lui un nom, dis son dévers et choisis qui peut le voir.",
       "namePlaceholder": "Mur du garage",
       "angle": "Angle",
-      "angleHint": "Degrés par rapport à la verticale, de {{min}} à {{max}}. Figé une fois publié.",
+      "angleHint": "Le dévers du mur, par pas de 5°. Figé une fois publié.",
       "publicHint": "Désactivé, le mur et sa photo restent pour toi seul.",
-      "next": "Choisir une photo"
+      "next": "Choisir une photo",
+      "anglePreview": "Mur à {{angle}} degrés"
     },
     "photo": {
       "title": "Photographie le mur",
@@ -827,7 +828,9 @@
       "title": "Tu as un mur en cours",
       "body": "« {{name}} » n'est pas fini. Reprends où tu t'es arrêté, ou recommence.",
       "pickUp": "Reprendre",
-      "startOver": "Recommencer"
+      "startOver": "Recommencer",
+      "checkFailed": "Impossible de vérifier ce mur. Réessaie.",
+      "retry": "Réessayer"
     }
   }
 }
