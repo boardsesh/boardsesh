@@ -378,8 +378,7 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
         // recompute later adds boardsesh_ascensionist_count on top of upstream.
         upstreamAscensionistCount: stat.ascensionistCount,
         ascensionistCount: stat.ascensionistCount,
-        // EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade): source
-        // difficulty_average from the community's userGrade instead of
+        // Sources difficulty_average from the community's userGrade instead of
         // duplicating the setter's grade, so MoonBoard gets a genuine (if
         // catalog-snapshot) crowd-mean-like signal. See userDifficultyId's
         // doc comment in moonboard-catalog-helpers.ts.

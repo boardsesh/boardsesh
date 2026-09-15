@@ -1,6 +1,5 @@
 /**
- * EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade) — MoonBoard
- * wide-angle grade estimate.
+ * MoonBoard wide-angle grade estimate.
  *
  * The `moonboard-wide-angles` feature flag lets a MoonBoard problem be climbed
  * (and BLE-controlled) at any angle in MOONBOARD_WIDE_ANGLES (0°-70°, 5° steps),

@@ -134,9 +134,9 @@ export interface MoonboardDualAngleSampleRow {
  * docs/boardsesh-grade.md) is imported into `difficulty_average` when present,
  * falling back to the setter's grade when it is not — so this is a strict
  * upgrade over the setter label wherever the community has actually weighed
- * in, and a no-op everywhere else. Held-out validation on the real capture
- * (branch experiment/moonboard-boardsesh-grade): MAE 0.879 vs 1.026 for the
- * setter-label version, non-monotonic pairs 7.6% vs 13.0%.
+ * in, and a no-op everywhere else. Held-out validation on the real capture:
+ * MAE 0.879 vs 1.026 for the setter-label version, non-monotonic pairs 7.6%
+ * vs 13.0%.
  *
  * "Real" is `difficulty_average IS NOT NULL AND ascensionist_count > 0` — the
  * same predicate the publish script uses to decide an angle is missing, so a

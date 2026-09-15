@@ -1,6 +1,5 @@
 /**
- * EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade) — planning
- * helpers for `refresh-moonboard-wide-angle-estimates.ts`. See
+ * Planning helpers for `refresh-moonboard-wide-angle-estimates.ts`. See
  * moonboard-wide-angle-model.ts for the estimation math and why this exists.
  */
 import { sql, type SQL } from 'drizzle-orm';

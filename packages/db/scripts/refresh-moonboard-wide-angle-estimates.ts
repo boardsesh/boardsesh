@@ -1,6 +1,5 @@
 /**
- * EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade) — MoonBoard
- * wide-angle grade estimate refresh.
+ * MoonBoard wide-angle grade estimate refresh.
  *
  * The `moonboard-wide-angles` feature flag lets a MoonBoard problem be climbed
  * at any angle (0°-70°, 5° steps), not just Moon's own catalog angles
@@ -9,11 +8,8 @@
  * MoonBoard's own two real angles), this job borrows another crowd-mean
  * board's fitted angle-EFFECT SHAPE and applies it to MoonBoard's own known
  * grade at 25°/40°. See src/queries/grade-model/moonboard-wide-angle-model.ts
- * for the estimator and the cross-board validation behind it.
- *
- * NOT for merge to main as-is: no frontend copy exists for the
- * `moonboard_wide_angle_estimate` tier yet, and this trades same-board
- * accuracy for immediate coverage on purpose (see the module doc).
+ * for the estimator and the cross-board validation behind it. This trades
+ * same-board accuracy for immediate coverage on purpose (see the module doc).
  *
  * Run locally: `vp run db:refresh-moonboard-wide-angle-estimates -- --dry-run`
  * Flags: --dry-run (full plan including row shapes, write nothing),
@@ -30,6 +26,7 @@ import {
   type AngleSurfaceRow,
   type GradeCoefficients,
 } from '../src/queries/grade-model/index.js';
+import { MOONBOARD_WIDE_ANGLES } from '@boardsesh/board-config';
 import { rowsOf } from '../src/queries/util/rows.js';
 import {
   MOONBOARD_BOARD_TYPE,
@@ -41,11 +38,6 @@ import {
   type MoonboardWideAngleEstimatePlan,
   type MoonboardWideAngleTarget,
 } from './moonboard-wide-angle-estimate-helpers.js';
-
-// MOONBOARD_WIDE_ANGLES lives in @boardsesh/board-config, a web-facing package
-// this db-scripts context doesn't depend on — inlined rather than adding that
-// dependency for one constant. Keep in sync with moonboard-config.ts.
-const MOONBOARD_WIDE_ANGLES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70] as const;
 
 const READ_PAGE_ROWS = 20000;
 const UPSERT_BATCH = 500;
@@ -109,6 +101,18 @@ async function loadExistingKeys(db: Db): Promise<MoonboardWideAngleEstimateKey[]
   return rows.map((row) => ({ climbUuid: row.climb_uuid, angle: Number(row.angle) }));
 }
 
+/**
+ * The conflict target is (board_type, climb_uuid, angle) — no model_version.
+ * Safe only because this job's targets (angles outside {25, 40} — see
+ * buildMoonboardWideAngleTargetSql) never overlap the two other MoonBoard
+ * producers writing to this table: the main model only computes 25°/40°, and
+ * moonboard-angle-model.ts's same-board transpose only targets the OTHER of
+ * those same two angles. That is a construction-time invariant, not something
+ * the schema enforces — if a future job's target angles ever overlap this
+ * one's, its upsert would silently overwrite these rows (see
+ * deleteStaleGrades's model_version scoping in refresh-climb-grades.ts for the
+ * same class of bug on the delete side).
+ */
 async function upsertEstimates(db: DbWriter, plan: MoonboardWideAngleEstimatePlan): Promise<number> {
   let written = 0;
   for (let start = 0; start < plan.upserts.length; start += UPSERT_BATCH) {

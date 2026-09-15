@@ -634,10 +634,9 @@ void describe('anchorAngles', () => {
 });
 
 void describe('boardSupportsCrossAngleEstimate', () => {
-  // EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade): MoonBoard is
-  // now a CROWD_MEAN_BOARDS member (real userGrade-derived difficulty_average
-  // gives confirmed/provisional grades at its two real angles), so this is no
-  // longer false. It still never actually PRODUCES a cross-angle projection —
+  // MoonBoard is a CROWD_MEAN_BOARDS member (real userGrade-derived
+  // difficulty_average gives confirmed/provisional grades at its two real
+  // angles), so this is true. It still never actually PRODUCES a cross-angle projection —
   // CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS (2) requires evidence at 3+ angles per
   // climb, and MoonBoard structurally maxes out at 2 — see
   // moonboard-wide-angle-model.ts for how that gap is covered instead.

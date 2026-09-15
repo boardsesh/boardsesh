@@ -16,8 +16,8 @@ export const GRADE_MODEL_VERSION = 'v2.1'; // v2.1: zero-evidence cross-angle pr
  * its feed carries only integer labels (average == display == benchmark
  * byte-for-byte), so there is no crowd signal to model.
  *
- * EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade): MoonBoard is
- * included, now that its `difficulty_average` is sourced from the catalog's
+ * MoonBoard is included here now that its `difficulty_average` is sourced
+ * from the catalog's
  * `userGrade` (a real, independent crowd signal — see
  * moonboard-catalog-helpers.ts's userDifficultyId). This is what gives a
  * `confirmed`/`provisional` grade to a climb graded at BOTH of its real
@@ -80,12 +80,11 @@ export const CONFIDENCE = {
   setterOnly: 'setter_only',
   crossAngleEstimate: 'cross_angle_estimate',
   moonboardAngleEstimate: 'moonboard_angle_estimate',
-  // EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade): a MoonBoard
-  // grade projected onto a `moonboard-wide-angles`-flag angle (anything other
-  // than the catalog's 25°/40°) using a borrowed cross-board angle-effect
-  // shape (see moonboard-wide-angle-model.ts) — rougher than
+  // A MoonBoard grade projected onto a `moonboard-wide-angles`-flag angle
+  // (anything other than the catalog's 25°/40°) using a borrowed cross-board
+  // angle-effect shape (see moonboard-wide-angle-model.ts) — rougher than
   // moonboardAngleEstimate, which transposes between MoonBoard's own two real
-  // angles. No frontend copy exists for this tier yet.
+  // angles.
   moonboardWideAngleEstimate: 'moonboard_wide_angle_estimate',
 } as const;
 export type ConfidenceTier = (typeof CONFIDENCE)[keyof typeof CONFIDENCE];
@@ -216,12 +215,11 @@ export const BEHAVIOR_MAX_BUCKET_TOP_USER_SHARE = 0.2;
  * span most of the grade scale off the screen entirely; the reader gets the
  * plain setter grade instead, exactly as today.
  *
- * (Tried dropping this to 1 on branch experiment/moonboard-boardsesh-grade to
- * get MoonBoard through this gate — it worked, but loosening it is a GLOBAL
- * change that also affects Kilter/Tension/etc, and MoonBoard's own projections
- * came out overconfident (95% band covered only 88% of held-out truth vs
- * 98.9%+ for the other boards). Left at 2; see moonboard-angle-model.ts for
- * the scoped alternative that won instead.)
+ * (Tried dropping this to 1 to get MoonBoard through this gate — it worked,
+ * but loosening it is a GLOBAL change that also affects Kilter/Tension/etc,
+ * and MoonBoard's own projections came out overconfident (95% band covered
+ * only 88% of held-out truth vs 98.9%+ for the other boards). Left at 2; see
+ * moonboard-angle-model.ts for the scoped alternative that won instead.)
  */
 export const CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS = 2;
 /**

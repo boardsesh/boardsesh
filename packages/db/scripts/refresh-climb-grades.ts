@@ -1004,8 +1004,7 @@ async function insertRefreshKeys(db: DbWriter, boardType: string, computed: Comp
 /**
  * Reaps only rows THIS pipeline published (`model_version = GRADE_MODEL_VERSION`).
  *
- * EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade): MoonBoard now
- * shares `board_climb_grades` with two other, independent jobs —
+ * MoonBoard shares `board_climb_grades` with two other, independent jobs —
  * moonboard-angle-model.ts (`moonboard-angle-v1`, transposes between 25°/40°)
  * and moonboard-wide-angle-model.ts (`moonboard-wide-angle-v1`, borrowed-shape
  * estimates outside 25°/40°) — each covering angles this pipeline never

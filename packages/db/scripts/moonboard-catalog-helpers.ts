@@ -81,11 +81,10 @@ export type MappedCatalogClimbStats = {
   angle: number;
   // undefined for an unmappable grade — caller decides (we only emit graded configs).
   difficultyId: number | undefined;
-  // EXPERIMENTAL (branch: experiment/moonboard-boardsesh-grade): the MoonBoard
-  // app's own community-voted grade (config.userGrade), distinct from the
-  // setter's `grade`, falling back to `difficultyId` when userGrade is absent.
-  // Not part of any shipped import path — see moonboard-catalog-batch.ts's use
-  // of this field for difficulty_average.
+  // The MoonBoard app's own community-voted grade (config.userGrade), distinct
+  // from the setter's `grade`, falling back to `difficultyId` when userGrade
+  // is absent. See moonboard-catalog-batch.ts's use of this field for
+  // difficulty_average.
   userDifficultyId: number | undefined;
   // The setter grade exactly as the catalog spelled it, kept so the importer can
   // name the offending strings when difficultyId comes back undefined.
@@ -501,8 +500,8 @@ export function mapCatalogProblemStructural(
 export function mapCatalogConfigStats(config: MoonBoardCatalogConfiguration, angle: number): MappedCatalogClimbStats {
   const rating = config.userRating ?? 0;
   const difficultyId = moonBoardGradeToDifficultyId(config.grade);
-  // EXPERIMENTAL: prefer the community's own userGrade over the setter's grade
-  // for userDifficultyId, falling back to the setter grade when userGrade is
+  // Prefer the community's own userGrade over the setter's grade for
+  // userDifficultyId, falling back to the setter grade when userGrade is
   // empty/absent (the majority case — see docs/moonboard-catalog-import.md).
   const userDifficultyId = config.userGrade ? moonBoardGradeToDifficultyId(config.userGrade) : difficultyId;
   return {
