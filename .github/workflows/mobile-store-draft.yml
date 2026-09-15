@@ -4,9 +4,11 @@ name: Mobile Store Draft Submission
 # version, so a human only has to review and hit Submit — we never auto-submit for
 # review. Each platform is pinned to the exact highest uploaded build tag for the
 # validated version and must fingerprint-match the pinned release/next commit. No
-# binary upload, no screenshots,
-# no metadata (those are owned by mobile-store-metadata.yml / the screenshot
-# workflows), no review submission, no rollout.
+# binary upload, no review submission, no rollout. It does not CAPTURE screenshots
+# or author metadata (the screenshot workflows and mobile-store-metadata.yml own
+# those), but it does attach the already-published `screenshots-baseline` set to
+# the version it creates and dispatch the metadata push for it — the two things
+# that only exist once this job has made an editable version.
 #
 # ALWAYS ON: there is no enable flag. What protects the stores is that this only
 # ever prepares DRAFTS (submit_for_review: false, release_status: draft), and

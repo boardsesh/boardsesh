@@ -60,9 +60,14 @@ interface WorkflowRunTrigger {
   branches?: string[];
 }
 
+interface PushTrigger {
+  branches?: string[];
+}
+
 interface ParsedWorkflow {
   name?: string;
   on?: Record<string, unknown>;
+  env?: Record<string, string>;
   concurrency?: { group?: string; 'cancel-in-progress'?: boolean };
   jobs: Record<string, WorkflowJob>;
 }
@@ -76,6 +81,26 @@ function workflowName(path: string): string {
   const declared = parseWorkflow(path).name;
   expect(declared, `${path} must declare a name`).toBeTruthy();
   return declared as string;
+}
+
+/**
+ * The branch a deploy workflow actually builds store candidates from — read out
+ * of its own `push.branches` rather than repeated as a literal here. #5477 moved
+ * that from `main` to `release/next`; the next rename (or a second branch added
+ * to the list) must red this test, naming the deploy workflow, instead of
+ * silently leaving the screenshot captures subscribed to a branch that no longer
+ * deploys anything.
+ */
+function deployBranch(deployPath: string): string {
+  const push = (parseWorkflow(deployPath).on ?? {}).push as PushTrigger | undefined;
+  const branches = push?.branches ?? [];
+  expect(
+    branches,
+    `${deployPath} must declare exactly one push branch — the release train the screenshot ` +
+      'workflows follow. Update both mobile-screenshots-*.yml (the workflow_run `branches:` ' +
+      'filter and the RELEASE_BRANCH env) if this deliberately changed.',
+  ).toHaveLength(1);
+  return branches[0];
 }
 
 /** Every `actions/checkout` step in a workflow, flattened across its jobs. */
@@ -363,9 +388,10 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
 });
 
 /**
- * The automatic trigger. `workflow_run` only ever fires from the default branch,
- * so none of this can be exercised on a PR branch — these assertions are the
- * pre-merge proof, and the first native deploy after merge is the live one.
+ * The automatic trigger. A `workflow_run` workflow always runs the copy of itself
+ * that sits on the default branch, so none of this can be exercised on a PR
+ * branch — these assertions are the pre-merge proof, and the first native deploy
+ * on the release train after merge is the live one.
  */
 describe('screenshot captures follow the native deploys', () => {
   const workflows = [
@@ -383,9 +409,37 @@ describe('screenshot captures follow the native deploys', () => {
     // screenshots quietly never running again.
     expect(workflowRun?.workflows).toEqual([workflowName(entry.deploy)]);
     expect(workflowRun?.types).toEqual(['completed']);
-    expect(workflowRun?.branches).toEqual(['main']);
-    // Manual dispatch survives alongside it — the only other way to capture.
+
+    // Native store candidates are built from the release train, not main, so the
+    // branch filter is read out of the deploy workflow's own `push.branches`
+    // instead of being repeated here. A future rename of the train reds this with
+    // the deploy workflow named, rather than leaving the captures subscribed to a
+    // branch that no longer builds anything.
+    const releaseBranch = deployBranch(entry.deploy);
+    expect(
+      workflowRun?.branches,
+      `${entry.path} must follow the branch ${entry.deploy} deploys from (${releaseBranch})`,
+    ).toEqual([releaseBranch]);
+
+    // Manual dispatch survives alongside it — the only other way to capture, and
+    // it is runnable from any branch (no branch filter of its own).
     expect(triggers).toHaveProperty('workflow_dispatch');
+  });
+
+  it.each(workflows)('$platform mirrors the release branch as RELEASE_BRANCH', (entry) => {
+    // mobile-store-draft.yml's convention: the train lives in one workflow-level
+    // env so prose, notices and summaries below read from a single place. `on:`
+    // cannot read `env`, so the literal is unavoidably written twice in the file
+    // — this is what keeps the two copies (and the deploy workflow) in agreement.
+    const releaseBranch = deployBranch(entry.deploy);
+    expect(
+      parseWorkflow(entry.path).env?.RELEASE_BRANCH,
+      `${entry.path} must declare RELEASE_BRANCH: ${releaseBranch}, mirroring its workflow_run filter`,
+    ).toBe(releaseBranch);
+    expect(
+      parseWorkflow(STORE_DRAFT_PATH).env?.RELEASE_BRANCH,
+      'mobile-store-draft.yml is the convention these mirror; it must name the same train',
+    ).toBe(releaseBranch);
   });
 
   it.each(workflows)('$platform has no schedule and no cron', (entry) => {
@@ -467,6 +521,20 @@ describe('screenshot captures follow the native deploys', () => {
     expect(source).toContain(`GATE_INPUT: \${{ inputs.gate || 'full' }}`);
     expect(source).toContain('gate="$GATE_INPUT"');
     expect(source).toContain('if [ "$EVENT_NAME" = "workflow_run" ]; then\n            gate=probe');
+  });
+
+  it('never commits screenshots from an automatic Android run', () => {
+    const workflow = parseWorkflow(ANDROID_WORKFLOW_PATH);
+    // COMMIT_RUN opens with the dispatch check, so on `workflow_run` the whole
+    // expression short-circuits to `false` before `inputs` (null there) is read.
+    // That is the only thing keeping a native deploy from pushing a
+    // non-deterministic capture straight onto the live Play listing.
+    expect(workflow.jobs.android.env?.COMMIT_RUN).toBe(
+      "${{ github.event_name == 'workflow_dispatch' && inputs.commit_to_main }}",
+    );
+    const commitStep = (workflow.jobs.android.steps ?? []).find((step) => step.name === 'Commit screenshots to main');
+    expect(commitStep, 'the Android push-back step must still exist').toBeTruthy();
+    expect(commitStep?.if).toContain("env.COMMIT_RUN == 'true'");
   });
 
   it('gates the whole Android capture on one job instead of fifteen steps', () => {

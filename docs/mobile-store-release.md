@@ -121,9 +121,11 @@ New land without anyone running it by hand. Dispatch it manually only to re-push
 unchanged copy.
 
 Screenshots are automatic too. **Mobile Screenshots** (`mobile-screenshots-ios.yml`
-and `mobile-screenshots-android.yml`) runs after each native deploy on `main`
-**that actually shipped a binary**, one workflow per platform. There is no cron;
-a manual `workflow_dispatch` is the only other way to start a capture.
+and `mobile-screenshots-android.yml`) runs after each native deploy on
+`release/next` **that actually shipped a binary**, one workflow per platform —
+the train is where store candidates are built (§1), so that is where the pixels
+come from. There is no cron; a manual `workflow_dispatch`, runnable from any
+branch, is the only other way to start a capture.
 
 "Shipped" is not the same as "the deploy run went green". A JS-only push finishes
 the deploy workflow with its build job skipped, and that run still concludes
@@ -132,10 +134,18 @@ tag the deploy forces onto its own commit right after a successful store upload
 (§2), so each screenshot run looks for that tag on the triggering commit before
 spending a runner, and writes "no binary shipped … nothing to capture" to its
 step summary when it finds none. Every checkout in both workflows pins that same
-commit, so the pixels belong to the binary rather than to whatever `main` moved
-on to meanwhile. Automatic runs share one concurrency group per platform and
-never cancel each other; each dispatch gets its own, so a hand-run capture is
-never cancelled by a deploy landing mid-run.
+commit (`workflow_run.head_sha`), so the pixels belong to the binary rather than
+to whatever the train moved on to meanwhile. Both workflows name the train once
+as a `RELEASE_BRANCH` env, the way `mobile-store-draft.yml` does; the contract
+test reads the deploy workflows' own `push.branches` and fails if either
+workflow's `workflow_run` filter or `RELEASE_BRANCH` drifts off it. Automatic
+runs share one concurrency group per platform and never cancel each other; each
+dispatch gets its own, so a hand-run capture is never cancelled by a deploy
+landing mid-run.
+
+The upload lane needs the `Production` environment, whose deployment-branch
+policy must list `release/next` (see Notes) — without it a train-triggered
+automatic upload fails with a branch-policy rejection.
 
 A forced rebuild of an already-shipped fingerprint keeps the existing tag (it
 still points at the first commit that shipped it), so that run reads as
@@ -145,7 +155,8 @@ An automatic iOS run always uses the probe gate below, and only a run that
 captured the complete set uploads to App Store Connect and refreshes the
 baseline. An automatic Android run captures, posts the Discord preview and
 uploads the artifact; committing the set back to `main` stays opt-in on a
-dispatch (`commit_to_main`).
+dispatch (`commit_to_main`) — that is deliberately still `main`, because
+`mobile-store-metadata.yml` reads the committed PNGs from there.
 
 ### The iOS probe gate
 
