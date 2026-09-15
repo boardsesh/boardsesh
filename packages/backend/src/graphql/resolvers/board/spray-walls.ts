@@ -1203,8 +1203,12 @@ export const sprayWallMutations = {
 
       const additions = validated.holds.filter((hold) => hold.id == null);
       // A supersede is one hold out and one in, so it does not move the total —
-      // only genuine additions do.
-      const nextTotal = existing.length + additions.length;
+      // only genuine additions do. The `- uniqueSupersededIds` term is belt and
+      // braces with the Zod uniqueness refine: a batch repeating one id would
+      // otherwise remove that hold ONCE while adding a successor per occurrence, so
+      // the extras are net additions and have to be counted as such.
+      const uniqueSupersededIds = new Set(supersedes.map((hold) => hold.id!)).size;
+      const nextTotal = existing.length + additions.length + (supersedes.length - uniqueSupersededIds);
       if (nextTotal > MAX_HOLDS_PER_WALL) {
         throw new GraphQLError(`A wall may hold at most ${MAX_HOLDS_PER_WALL} holds; this would make ${nextTotal}.`, {
           extensions: { code: SPRAY_WALL_CODES.holdLimitReached, maxHolds: MAX_HOLDS_PER_WALL },

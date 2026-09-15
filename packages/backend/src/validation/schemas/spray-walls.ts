@@ -147,7 +147,19 @@ export const UpsertSprayWallHoldsInputSchema = z.object({
   // detector run at once, and the resolver still re-checks the wall's total
   // afterwards, so this bound is only here to keep a hostile payload from being
   // parsed into memory.
-  holds: z.array(SprayWallHoldInputSchema).min(1).max(MAX_HOLDS_PER_WALL),
+  holds: z
+    .array(SprayWallHoldInputSchema)
+    .min(1)
+    .max(MAX_HOLDS_PER_WALL)
+    // A repeated correction id is not a correction applied twice — each occurrence
+    // becomes its OWN successor hold, so N copies of one id turn one physical hold
+    // into N live ones and slip past the per-wall cap, which counts a supersede as
+    // net zero. There is no reading under which sending the same hold twice in one
+    // batch is meaningful, so it is rejected rather than de-duplicated.
+    .refine((holds) => {
+      const ids = holds.map((hold) => hold.id).filter((id): id is number => id != null);
+      return new Set(ids).size === ids.length;
+    }, 'The same hold id appears twice in this batch — send each hold once'),
 });
 
 export const RemoveSprayWallHoldsInputSchema = z.object({

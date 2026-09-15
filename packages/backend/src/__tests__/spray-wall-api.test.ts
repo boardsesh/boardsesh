@@ -1323,6 +1323,78 @@ describe('the caps, and the shapes the server refuses', () => {
     expect(holds).toBe(MAX_HOLDS_PER_WALL);
   });
 
+  it('refuses a batch that repeats one hold id, which would bypass the cap', async () => {
+    // Every occurrence of a repeated correction id becomes its OWN successor, while
+    // the cap counts a supersede as net zero — so 1,500 copies of one id would turn
+    // one physical hold into 1,500 live ones and sail past MAX_HOLDS_PER_WALL.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid);
+    const draft = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+
+    const repeated = Array.from({ length: MAX_HOLDS_PER_WALL }, () => ({
+      id: holdIds[0],
+      cx: 100,
+      cy: 120,
+      r: 24,
+    }));
+
+    await expect(
+      sprayWallMutations.upsertSprayWallHolds(
+        {},
+        { input: { wallUuid: wall.uuid, versionId: draft.id, holds: repeated } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/same hold id appears twice/i);
+
+    // Even two copies are refused — the rule is "send each hold once", not a cap
+    // side effect.
+    await expect(
+      sprayWallMutations.upsertSprayWallHolds(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            versionId: draft.id,
+            holds: [
+              { id: holdIds[0], cx: 100, cy: 120, r: 24 },
+              { id: holdIds[0], cx: 200, cy: 220, r: 24 },
+            ],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/same hold id appears twice/i);
+
+    // Nothing landed: the wall still carries exactly its original holds.
+    const [{ holds }] = (await db.execute(sql`
+      SELECT count(*)::int AS holds FROM spray_wall_holds
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId})
+    `)) as unknown as Array<{ holds: number }>;
+    expect(holds).toBe(holdIds.length);
+
+    // …and a batch correcting each of two DIFFERENT holds once still works.
+    await expect(
+      sprayWallMutations.upsertSprayWallHolds(
+        {},
+        {
+          input: {
+            wallUuid: wall.uuid,
+            versionId: draft.id,
+            holds: [
+              { id: holdIds[0], cx: 111, cy: 121, r: 24 },
+              { id: holdIds[1], cx: 222, cy: 222, r: 24 },
+            ],
+          },
+        },
+        ctxFor(OWNER),
+      ),
+    ).resolves.toHaveLength(2);
+  });
+
   it("keeps a climb's compatible_size_ids to its OWN wall on a two-wall database", async () => {
     // `populateDenormalizedColumns` derives this column by joining every spray
     // size row whose edge box contains the climb's, with no layout scoping — so on
