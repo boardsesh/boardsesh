@@ -7,8 +7,11 @@ are the sanctioned alternatives if RF-DETR disappoints; add them as another bran
 of `build_model`, not as a second script. Ultralytics is AGPL-3.0 and must never
 be installed in this repo.
 
-This runs on CPU. It is slow on purpose: the box it was written on has no GPU and
-has fallen over under concurrent heavy jobs, so run one training at a time.
+Device defaults to `--device auto` (cuda, then mps, then cpu). The box this was
+written on has no GPU, so it trains on CPU on purpose and is slow: it has also
+fallen over under concurrent heavy jobs, so run one training at a time there. On
+an Apple Silicon Mac, `--device mps` (or the auto default) uses the GPU instead —
+see the README's "macOS (Apple Silicon)" section for the full run.
 """
 
 from __future__ import annotations
@@ -29,6 +32,44 @@ RFDETR_VARIANTS = {
     "seg-nano": "RFDETRSegNano",
     "seg-small": "RFDETRSegSmall",
 }
+
+# torch device name -> the PyTorch Lightning `accelerator` kwarg rfdetr's own
+# `RFDETR.train()` would derive from a `device="..."` string (see
+# `rfdetr.detr.RFDETR._resolve_trainer_device_kwargs`): "cuda" maps to Lightning's
+# "gpu", "mps" and "cpu" pass through unchanged.
+ACCELERATOR_BY_DEVICE = {"cpu": "cpu", "mps": "mps", "cuda": "gpu"}
+
+
+def resolve_device(requested: str) -> tuple[str, str]:
+    """Return (device_name, lightning_accelerator) for a `--device` value.
+
+    `auto` prefers cuda, then Apple Silicon's mps, then cpu. An explicit `cuda`
+    or `mps` request fails fast with a plain-language reason instead of letting
+    Lightning discover the missing backend deep inside `model.train()`.
+    """
+    import torch
+
+    if requested == "auto":
+        if torch.cuda.is_available():
+            return "cuda", ACCELERATOR_BY_DEVICE["cuda"]
+        if torch.backends.mps.is_available():
+            return "mps", ACCELERATOR_BY_DEVICE["mps"]
+        return "cpu", ACCELERATOR_BY_DEVICE["cpu"]
+
+    if requested == "cuda" and not torch.cuda.is_available():
+        raise SystemExit(
+            "--device cuda requested but torch.cuda.is_available() is False. "
+            "No CUDA GPU (or no CUDA-enabled torch build) on this machine — use --device cpu, "
+            "or --device mps on an Apple Silicon Mac."
+        )
+    if requested == "mps" and not torch.backends.mps.is_available():
+        raise SystemExit(
+            "--device mps requested but torch.backends.mps.is_available() is False. "
+            "mps needs macOS 12.3+ on Apple Silicon (or an AMD GPU) and a torch build with MPS "
+            "support — the PyPI torch/torchvision wheels the README's macOS section installs, not "
+            "the +cpu wheel this box uses. Use --device cpu here instead."
+        )
+    return requested, ACCELERATOR_BY_DEVICE[requested]
 
 
 def build_model(family: str, variant: str, resolution: int, num_classes: int = 1):
@@ -116,12 +157,35 @@ def main() -> int:
     parser.add_argument("--config", required=True)
     parser.add_argument("--dataset", default=str(HOLDS_DIR / ".data" / "coco"))
     parser.add_argument("--epochs", type=int, help="override the config's epoch count")
-    parser.add_argument("--batch-size", type=int)
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        help=(
+            "override the config's batch size. Configs are tuned for this box's CPU RAM; a GPU or "
+            "an Apple Silicon Mac's unified memory can usually go much higher — see the README's "
+            "'macOS (Apple Silicon)' batch-size guidance. Halve it on an MPS 'out of memory' error."
+        ),
+    )
     parser.add_argument("--max-train-images", type=int, help="cap the training set, for a quick smoke run")
-    parser.add_argument("--threads", type=int, default=DEFAULT_THREADS)
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=DEFAULT_THREADS,
+        help="CPU thread cap (OMP/MKL/BLAS + torch intra-op). Only meaningful for --device cpu.",
+    )
+    parser.add_argument(
+        "--device",
+        choices=["auto", "cpu", "mps", "cuda"],
+        default="auto",
+        help=(
+            "auto (default) picks cuda, then Apple Silicon's mps, then cpu. Pass mps explicitly on "
+            "a Mac, or cpu to force this box's original behaviour."
+        ),
+    )
     args = parser.parse_args()
 
     cap_threads(args.threads)
+    device_name, accelerator = resolve_device(args.device)
     config = load_config(args.config)
     dataset_dir = prepare_dataset(config, Path(args.dataset))
     if args.max_train_images:
@@ -138,7 +202,7 @@ def main() -> int:
 
     print(f"config       {config.name} ({config.family}/{config.variant} @ {config.resolution}px, {config.num_classes} class)")
     print(f"dataset      {dataset_dir}")
-    print(f"train config {json.dumps(train_config)}")
+    print(f"train config {json.dumps({**train_config, 'device': device_name, 'accelerator': accelerator})}")
 
     model = build_model(config.family, config.variant, config.resolution, config.num_classes)
 
@@ -146,7 +210,7 @@ def main() -> int:
     model.train(
         dataset_dir=str(dataset_dir),
         output_dir=str(output_dir),
-        accelerator="cpu",
+        accelerator=accelerator,
         devices=1,
         num_workers=2,
         tensorboard=False,
@@ -159,6 +223,8 @@ def main() -> int:
     summary = {
         "config": config.name,
         "dataset": str(dataset_dir),
+        "device": device_name,
+        "accelerator": accelerator,
         "train_config": train_config,
         "wall_clock_seconds": round(elapsed, 1),
         "output_dir": str(output_dir),
