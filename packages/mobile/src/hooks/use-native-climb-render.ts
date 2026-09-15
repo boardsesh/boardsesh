@@ -1939,9 +1939,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // already goes through. A Map lookup off spray, at most one request per wall.
   useEffect(() => {
     if (boardName === 'spray') ensureSprayWallLoaded(layoutId);
-    // `sprayVersionToken` re-runs this after a reset, and after the registry's
-    // ten-minute revalidation window lapses — the presigned photo URL the
-    // registration carries is only good for fifteen.
+    // `sprayVersionToken` is here because a RESET moves it, and a wall whose
+    // version changed under us is a wall worth asking about again. It says
+    // nothing about time — it is `-sv<version>` — so it cannot be what refreshes
+    // an expired presigned photo URL; `refreshSprayWall`, called by the photo
+    // cache when a signature has lapsed, is what does that.
   }, [boardName, layoutId, sprayVersionToken]);
 
   // Both keys feed cache lookups on every FlashList row recycle; buildCacheKey

@@ -173,6 +173,7 @@
         "adjustable": "ajustable"
       },
       "spray": {
+        "kind": "Mur de pan",
         "editHolds": "Modifier les prises",
         "editHoldsHint": "Ajoute, déplace ou supprime les prises de ton mur.",
         "newPhoto": "Nouvelle photo",

@@ -173,6 +173,7 @@
         "adjustable": "adjustable"
       },
       "spray": {
+        "kind": "Spray wall",
         "editHolds": "Edit holds",
         "editHoldsHint": "Add, move or delete the holds on your wall.",
         "newPhoto": "New photo",

@@ -173,6 +173,7 @@
         "adjustable": "ajustable"
       },
       "spray": {
+        "kind": "Plafón de presas",
         "editHolds": "Editar presas",
         "editHoldsHint": "Añade, mueve o borra las presas de tu plafón.",
         "newPhoto": "Nueva foto",

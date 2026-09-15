@@ -28,3 +28,16 @@ describe('shouldShowUnsetWallEmptyState', () => {
     expect(shouldShowUnsetWallEmptyState({ ...freshWall, activeFilterCount: 1 })).toBe(false);
   });
 });
+
+describe('shouldShowUnsetWallEmptyState edge cases', () => {
+  // A search box left holding a space is nobody searching for anything.
+  it('treats a whitespace-only query as no query', () => {
+    expect(shouldShowUnsetWallEmptyState({ ...freshWall, query: '   ' })).toBe(true);
+  });
+
+  // `toBoardName` is what decides, so a board string we cannot name never gets
+  // the wall's copy — the same rule the owner-row gate reads.
+  it('keeps the generic copy for an unknown board string', () => {
+    expect(shouldShowUnsetWallEmptyState({ ...freshWall, boardType: 'sprayy' })).toBe(false);
+  });
+});

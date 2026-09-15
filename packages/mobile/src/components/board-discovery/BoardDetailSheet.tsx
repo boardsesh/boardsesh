@@ -14,6 +14,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { getBoardDetailFields, isActiveBoard } from './board-detail-fields';
 import { sprayDetailRows, type SprayDetailRow } from './spray-detail-rows';
+import { SPRAY_DETAIL_ROWS_ENABLED } from '../../lib/spray/spray-routes';
 
 type BoardDetailSheetProps = {
   board: UserBoard | null;
@@ -30,8 +31,10 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   const sheetRef = useRef<BottomSheet>(null);
 
   // Empty for every board that is not a spray wall the viewer may edit, which is
-  // what keeps this a no-op on the eight catalogue boards.
-  const wallRows = useMemo(() => sprayDetailRows(board), [board]);
+  // what keeps this a no-op on the eight catalogue boards — and empty for ALL of
+  // them until the two screens the rows lead to exist. See
+  // `SPRAY_DETAIL_ROWS_ENABLED`; the gate below is live and tested either way.
+  const wallRows = useMemo(() => (SPRAY_DETAIL_ROWS_ENABLED ? sprayDetailRows(board) : []), [board]);
 
   // Close first, then navigate: the sheet is always mounted and these rows push a
   // full route, so leaving it open would stack a screen under an open sheet.

@@ -47,6 +47,19 @@ export type BoardLabelScope = 'global' | 'within-gym';
 export type BoardLabelOptions = {
   /** Defaults to `global`. */
   scope?: BoardLabelScope;
+  /**
+   * What to call a spray wall, in the reader's language.
+   *
+   * This package holds no catalogues and no i18n, and `formatBoardDisplayName`
+   * is deliberately English — it spells brand names ("MoonBoard", "So iLL"), and
+   * a brand does not translate. "Spray wall" is the one value it returns that is
+   * not a brand: it describes a KIND of wall, and it is the word a spray row
+   * leads with, so leaving it English would put one English phrase in front of
+   * an otherwise translated row. Callers with a catalogue in hand pass the
+   * translated word; callers without one (www's gym page, a test) get the
+   * English default and read exactly as they did before.
+   */
+  sprayKindLabel?: string;
 };
 
 /** Trimmed value, or null for null/undefined/blank. Blank strings come back from the API. */
@@ -163,7 +176,7 @@ export function boardConfigLabel(board: BoardLabelSource): string | null {
  */
 export function boardRowSubtitle(board: BoardLabelSource, options?: BoardLabelOptions): string {
   if (toBoardName(board.boardType) === 'spray') {
-    const kind = formatBoardDisplayName(board.boardType);
+    const kind = options?.sprayKindLabel ?? formatBoardDisplayName(board.boardType);
     const place = boardPlaceLabel(board, options);
     return place === null ? kind : `${kind} · ${place}`;
   }
