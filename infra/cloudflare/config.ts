@@ -811,7 +811,7 @@ export const MEDIA_HOSTNAME = 'media.boardsesh.com';
  * The catalogue keys are `static/v1/<sha256>`: content-addressed, immutable,
  * written only when missing and never deleted. So Tigris and R2 can hold the
  * identical catalogue at the same time, and the publisher can upload and
- * validate all 362 objects through this hostname — signed HEAD, public GET,
+ * validate all 365 objects through this hostname — signed HEAD, public GET,
  * SHA-256, MIME, cache headers, CORS — while every reader is still on Tigris.
  * That dry run is what proves R2 before the cutover, not after.
  */

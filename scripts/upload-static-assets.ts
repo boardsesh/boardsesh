@@ -157,14 +157,18 @@ const CORS_PROBE_SAMPLE_SIZE = 5;
  * The per-asset validation above deliberately sends `Origin`, so it cannot see
  * this. This can.
  */
-async function assertCorsHeaderWithoutOrigin(
+export async function assertCorsHeaderWithoutOrigin(
   assets: readonly StaticAssetRecord[],
   beforeRequest: RequestStartLimiter,
+  // Injected so the probe's contract is testable without a network: the whole
+  // point of it is the request shape (no Origin header) and the assertion, and
+  // both are worth pinning.
+  fetchImpl: typeof fetch = fetch,
+  origin: string = resolvePublicStaticAssetOrigin(),
 ): Promise<void> {
-  const origin = resolvePublicStaticAssetOrigin();
   for (const asset of assets.slice(0, CORS_PROBE_SAMPLE_SIZE)) {
     await beforeRequest();
-    const response = await fetch(`${origin}/${asset.objectKey}`, {
+    const response = await fetchImpl(`${origin}/${asset.objectKey}`, {
       signal: AbortSignal.timeout(PUBLIC_VALIDATION_REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`CORS probe for ${asset.logicalPath} failed: HTTP ${response.status}`);
@@ -189,7 +193,7 @@ async function assertCorsHeaderWithoutOrigin(
  *
  * Defaults to the baked catalogue origin. `STATIC_ASSETS_PUBLIC_BASE_URL`
  * overrides it so the R2 bucket can be published and fully validated through a
- * staging hostname — all 362 objects, signed HEAD and public GET, SHA-256, MIME,
+ * staging hostname — all 365 objects, signed HEAD and public GET, SHA-256, MIME,
  * cache headers and CORS — while every reader is still on Tigris. That dry run
  * is the gate on the cutover.
  *
