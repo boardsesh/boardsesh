@@ -287,7 +287,8 @@ vi.mock('../../lib/boards/use-set-board-angle', () => ({
 // has no Node build. The provider only calls it to fill the spray registry for a
 // spray active board, which none of these cases uses.
 vi.mock('../../lib/spray/use-spray-wall', () => ({
-  useSprayWall: () => ({ isLoading: false, isUnrenderable: false }),
+  useSprayWallLoader: () => {},
+  useSprayWall: () => ({ isLoading: false, isUnrenderable: false, loadState: 'idle' }),
 }));
 
 vi.mock('../../lib/graphql/use-active-board', () => ({

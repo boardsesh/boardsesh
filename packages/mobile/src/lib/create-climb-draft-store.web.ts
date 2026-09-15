@@ -49,6 +49,14 @@ export function createClimbDraftKey(config: {
   return `${config.boardName}:${config.layoutId}:${config.sizeId}${spray}:${config.setIds}:${config.angle}`;
 }
 
+/** See the native fork. */
+export function clearSupersededSprayDrafts(layoutId: number, currentVersionToken: string): Promise<void> {
+  const wallPrefix = `${KEY_PREFIX}spray:${layoutId}:${layoutId}`;
+  return removePreferencesMatching(
+    (key) => key.startsWith(wallPrefix) && !key.startsWith(`${wallPrefix}${currentVersionToken}:`),
+  );
+}
+
 /** See the native fork — one deterministic slot per authoring mode. */
 export function createClimbEditDraftKey(boardType: string, uuid: string): string {
   return `edit:${boardType}:${uuid}`;

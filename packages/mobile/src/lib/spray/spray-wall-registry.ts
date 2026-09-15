@@ -112,6 +112,7 @@ function buildWallGeometry(holds: readonly SprayPhotoHold[]): BoardArtGeometry {
  */
 export function registerSprayWall(layoutId: number, wall: Omit<RegisteredSprayWall, 'layoutId'>): void {
   walls.set(layoutId, { ...wall, layoutId });
+  loadStates.set(layoutId, { state: 'ready', settledAtMs: now() });
   registerRuntimeGeometry(sprayGeometryKey(layoutId), buildWallGeometry(wall.holds));
   notify();
 }
@@ -123,9 +124,136 @@ export function getSprayWall(layoutId: number): RegisteredSprayWall | null {
 
 /** Drop a wall and its runtime geometry, so the render path reports no board rather than a stale one. */
 export function unregisterSprayWall(layoutId: number): void {
-  if (!walls.delete(layoutId)) return;
+  loadStates.set(layoutId, { state: 'unavailable', settledAtMs: now() });
+  if (!walls.delete(layoutId)) {
+    notify();
+    return;
+  }
   unregisterRuntimeGeometry(sprayGeometryKey(layoutId));
   notify();
+}
+
+// ============================================
+// Loading a wall nobody has asked for yet
+// ============================================
+
+/**
+ * What this session knows about a wall it has not got.
+ *
+ * `unavailable` covers every reason a wall did not arrive — it does not exist,
+ * the viewer may not see it, nothing is published, the fetch failed — because a
+ * surface cannot do anything different about any of them. They differ only in
+ * whether retrying helps, which the cooldown below handles without the caller
+ * needing to know.
+ */
+export type SprayWallLoadState = 'idle' | 'loading' | 'ready' | 'unavailable';
+
+type LoadRecord = { state: SprayWallLoadState; settledAtMs: number };
+
+/**
+ * How long a failed load is left alone before `ensureSprayWallLoaded` tries
+ * again.
+ *
+ * Sticky failure is the wrong default here: the common reason a wall does not
+ * arrive is a phone with no signal, and a permanently `unavailable` wall would
+ * be a board that stays blank until the app is killed. Thirty seconds is long
+ * enough that a scrolling list of that wall's climbs does not hammer the
+ * backend — every row asks, one row fetches — and short enough that coming back
+ * into coverage fixes the board on the next scroll.
+ */
+const LOAD_RETRY_COOLDOWN_MS = 30_000;
+
+const loadStates = new Map<number, LoadRecord>();
+
+/** Injected so this module fetches nothing itself — see `setSprayWallLoader`. */
+type SprayWallLoader = (layoutId: number, options?: { force?: boolean }) => Promise<void>;
+let sprayWallLoader: SprayWallLoader | null = null;
+
+function now(): number {
+  return Date.now();
+}
+
+/**
+ * Install the function that actually fetches a wall.
+ *
+ * Injected rather than imported because this module is read on the DRAW path —
+ * `board-details.ts`, `create-board-holds.ts`, the two render-board resolvers —
+ * and importing the GraphQL client here would put `expo-secure-store` and the
+ * whole auth chain into every one of their module graphs. The React side calls
+ * this once at the app root; until it does, `ensureSprayWallLoaded` is a no-op
+ * and a wall only arrives through `useSprayWall`.
+ */
+export function setSprayWallLoader(loader: SprayWallLoader | null): void {
+  sprayWallLoader = loader;
+}
+
+/** What this session knows about a wall right now. O(1). */
+export function getSprayWallLoadState(layoutId: number): SprayWallLoadState {
+  if (walls.has(layoutId)) return 'ready';
+  return loadStates.get(layoutId)?.state ?? 'idle';
+}
+
+/**
+ * Make sure a wall is on its way, whoever resolved it.
+ *
+ * The active board is loaded by `useSprayWall`, but a wall reaches a surface in
+ * four other ways — a queue item set on another wall, a playlist row, a second
+ * wall in My Boards, and `resolveClimbRenderBoard` falling a climb back onto its
+ * own board — and none of those is the active board. Without this they resolve a
+ * spray config the registry has never heard of, `getBoardRenderData` answers
+ * null, and the surface draws a placeholder for the rest of the session with no
+ * `Board Render Failed` to show for it.
+ *
+ * Safe to call from a render or a per-row resolver: a Map lookup, then at most
+ * one in-flight fetch per wall. Fire-and-forget — the registry notifies its
+ * subscribers when the wall lands, which is what re-renders the rows that asked.
+ */
+/**
+ * Re-fetch a wall whose cached payload is known to be useless, bypassing both the
+ * retry cooldown and React Query's stale window.
+ *
+ * The one caller is the photo cache meeting an expired presigned signature. That
+ * URL will 403 on every attempt for as long as the payload holding it is
+ * considered fresh, so without this the board shows a placeholder until something
+ * else happens to invalidate the query — which, on a wall nobody navigates away
+ * from, is never.
+ */
+export function refreshSprayWall(layoutId: number): void {
+  if (!sprayWallLoader) return;
+  if (loadStates.get(layoutId)?.state === 'loading') return;
+
+  loadStates.set(layoutId, { state: 'loading', settledAtMs: 0 });
+  void sprayWallLoader(layoutId, { force: true })
+    .catch(() => {
+      // Same as `ensureSprayWallLoaded`: every failure looks alike from here.
+    })
+    .finally(() => {
+      if (walls.has(layoutId)) return;
+      loadStates.set(layoutId, { state: 'unavailable', settledAtMs: now() });
+      notify();
+    });
+}
+
+export function ensureSprayWallLoaded(layoutId: number): void {
+  if (walls.has(layoutId) || !sprayWallLoader) return;
+
+  const record = loadStates.get(layoutId);
+  if (record?.state === 'loading') return;
+  if (record?.state === 'unavailable' && now() - record.settledAtMs < LOAD_RETRY_COOLDOWN_MS) return;
+
+  loadStates.set(layoutId, { state: 'loading', settledAtMs: 0 });
+  const load = sprayWallLoader(layoutId);
+  void load
+    .catch(() => {
+      // The loader registers on success; every failure looks the same here.
+    })
+    .finally(() => {
+      // `registerSprayWall` may already have moved this to `ready`; only a wall
+      // that did NOT arrive is marked unavailable.
+      if (walls.has(layoutId)) return;
+      loadStates.set(layoutId, { state: 'unavailable', settledAtMs: now() });
+      notify();
+    });
 }
 
 /**
@@ -172,9 +300,11 @@ export function sprayCacheToken(boardName: string, layoutId: number): string {
   return `-sv${walls.get(layoutId)?.version ?? 0}`;
 }
 
-/** Forget every wall. Tests only — production withdraws a wall by name. */
+/** Forget every wall, its load state and the injected loader. Tests only. */
 export function clearSprayWallRegistry(): void {
   for (const layoutId of walls.keys()) unregisterRuntimeGeometry(sprayGeometryKey(layoutId));
   walls.clear();
+  loadStates.clear();
+  sprayWallLoader = null;
   notify();
 }

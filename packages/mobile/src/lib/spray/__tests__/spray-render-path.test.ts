@@ -1,4 +1,5 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import * as preferenceStore from '../../preference-store';
 import { clearBoardArtGeometryCache } from '@boardsesh/board-art-geometry';
 import { clearBoardRenderDataCache, getBoardAspectRatio, getBoardRenderData } from '../../board-details';
 import { clearCreateBoardHoldsCache, getCreateBoardHolds } from '../../create-board-holds';
@@ -7,6 +8,12 @@ import { createClimbScreenKey } from '../../create-climb-screen-key';
 import { planSprayPhotoSweep, SPRAY_PHOTO_MAX_AGE_MS } from '../../cache-sweep-plan';
 import { parseSprayBackgroundKey, sprayBackgroundKey, sprayPhotoFileName } from '../spray-photo-keys';
 import { clearSprayWallRegistry, registerSprayWall } from '../spray-wall-registry';
+import {
+  _clearRenderBoardTargetCacheForTests,
+  getPlaylistRenderBoardTarget,
+} from '../../playlists/playlist-climb-render-board';
+import { overlayRetainIdentity } from '../../overlay-retain-identity';
+import { clearSupersededSprayDrafts } from '../../create-climb-draft-store';
 import type { SprayPhotoHold } from '../spray-hold-geometry';
 
 const LAYOUT_ID = 4200;
@@ -37,6 +44,7 @@ beforeEach(() => {
   clearBoardRenderDataCache();
   clearCreateBoardHoldsCache();
   clearBoardArtGeometryCache();
+  _clearRenderBoardTargetCacheForTests();
 });
 
 afterEach(() => {
@@ -44,6 +52,7 @@ afterEach(() => {
   clearBoardRenderDataCache();
   clearCreateBoardHoldsCache();
   clearBoardArtGeometryCache();
+  _clearRenderBoardTargetCacheForTests();
 });
 
 describe('getBoardRenderData — spray branch', () => {
@@ -152,6 +161,40 @@ describe('the wall version is in every spray cache key', () => {
     expect(getCreateBoardHolds(SPRAY_CONFIG)?.holdTargets.map((hold) => hold.id)).toEqual([8]);
   });
 
+  it('playlist render-board target: the compatibility check sees the live holds', () => {
+    const renderBoard = {
+      boardName: 'spray',
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: '1',
+      angle: 40,
+    };
+    registerWall(1, [HOLDS[0]]);
+    expect([...(getPlaylistRenderBoardTarget(renderBoard).holdsData ?? [])].map((hold) => hold.id)).toEqual([7]);
+
+    // The target cache holds `holdsData`, which `canAddClimbToBoard` reads. Keyed
+    // without the version it would keep matching climbs against hold 7 after the
+    // reset that took it off the wall.
+    registerWall(2, [HOLDS[1]]);
+    expect([...(getPlaylistRenderBoardTarget(renderBoard).holdsData ?? [])].map((hold) => hold.id)).toEqual([8]);
+  });
+
+  it('playlist render-board target: a row resolved before the wall landed is not pinned empty', () => {
+    const renderBoard = {
+      boardName: 'spray',
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: '1',
+      angle: 40,
+    };
+    // Nothing registered: no render data, so no holds. A key without the version
+    // would memoise this `undefined` for the rest of the session.
+    expect(getPlaylistRenderBoardTarget(renderBoard).holdsData).toBeUndefined();
+
+    registerWall(1);
+    expect(getPlaylistRenderBoardTarget(renderBoard).holdsData).toHaveLength(2);
+  });
+
   it('create-climb draft slot', () => {
     const draftConfig = { boardName: 'spray', layoutId: LAYOUT_ID, sizeId: SIZE_ID, setIds: '1', angle: 40 };
     registerWall(1);
@@ -174,6 +217,15 @@ describe('the wall version is in every spray cache key', () => {
     expect(createClimbScreenKey('new', { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2' })).toBe(
       'new:kilter:1:10:1,2',
     );
+  });
+
+  it('overlay retain identity: a reset does not bridge with the superseded overlay', () => {
+    registerWall(1);
+    const atVersion1 = overlayRetainIdentity('spray', LAYOUT_ID, SIZE_ID, '1');
+    registerWall(2);
+    expect(overlayRetainIdentity('spray', LAYOUT_ID, SIZE_ID, '1')).not.toBe(atVersion1);
+    // Catalogue boards keep the identity they have always bridged on.
+    expect(overlayRetainIdentity('kilter', 1, 10, '24,25')).toBe('kilter-1-10-24,25');
   });
 
   it('photo file name: two generations are two different files', () => {
@@ -249,5 +301,25 @@ describe('planSprayPhotoSweep', () => {
       protectedNames: new Set(),
     });
     expect(plan.deleteNames).toEqual([]);
+  });
+});
+
+describe('clearSupersededSprayDrafts', () => {
+  it('drops the wall\u2019s older slots and nothing else', async () => {
+    const removed: string[] = [];
+    const keys = [
+      'boardsesh_create_climb_draft:spray:4200:4200-sv1:1:40',
+      'boardsesh_create_climb_draft:spray:4200:4200-sv2:1:40',
+      // Another wall, and a catalogue board. Neither is this wall's business.
+      'boardsesh_create_climb_draft:spray:4201:4201-sv1:1:40',
+      'boardsesh_create_climb_draft:kilter:1:10:24,25:40',
+    ];
+    vi.spyOn(preferenceStore, 'removePreferencesMatching').mockImplementation(async (matches) => {
+      removed.push(...keys.filter(matches));
+    });
+
+    await clearSupersededSprayDrafts(LAYOUT_ID, '-sv2');
+
+    expect(removed).toEqual(['boardsesh_create_climb_draft:spray:4200:4200-sv1:1:40']);
   });
 });

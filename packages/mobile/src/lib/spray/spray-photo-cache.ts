@@ -19,7 +19,7 @@
 //     the download.
 
 import { Directory, File, Paths } from 'expo-file-system';
-import { getSprayWall, listRegisteredSprayWalls } from './spray-wall-registry';
+import { getSprayWall, listRegisteredSprayWalls, refreshSprayWall } from './spray-wall-registry';
 import { SPRAY_PHOTO_CACHE_DIR_NAME, sprayPhotoFileName, type SprayPhotoIdentity } from './spray-photo-keys';
 
 // Names live in a leaf module so the render path and the sweeper can use them
@@ -150,9 +150,13 @@ async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Pr
 
   // A signature that has already expired cannot be fetched with, and retrying it
   // would 403 on every pass for the rest of the session while the board showed a
-  // placeholder. The render query owns minting a fresh one; the honest answer
-  // here is "no photo yet", which is what a refetch then fixes.
-  if (isExpired(wall.photoExpiresAt)) return null;
+  // placeholder. Ask for a fresh payload — only the render query can mint one —
+  // and answer "no photo yet"; the registration that follows re-runs this with a
+  // live URL.
+  if (isExpired(wall.photoExpiresAt)) {
+    refreshSprayWall(identity.layoutId);
+    return null;
+  }
 
   const destination = photoFile(identity);
   const partial = partialPhotoFile(identity);

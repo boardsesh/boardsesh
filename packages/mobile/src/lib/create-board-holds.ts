@@ -3,7 +3,7 @@ import type { BoardEdges } from '@boardsesh/climb-filters';
 import { WOODS_OCCUPIED_HOLD_IDS } from '@boardsesh/board-constants/woods';
 import { woodsSizeIdToDimension } from '@boardsesh/board-config';
 import { getBoardRenderData } from './board-details';
-import { sprayCacheToken } from './spray/spray-wall-registry';
+import { ensureSprayWallLoaded, sprayCacheToken } from './spray/spray-wall-registry';
 
 /**
  * The minimal per-hold geometry the interactive editor needs to place a tap
@@ -147,6 +147,12 @@ function buildCreateBoardHolds(cfg: CreateBoardHoldsConfig, data: BoardRenderDat
  * to the slots that actually carry a hold — see {@link buildCreateBoardHolds}.
  */
 export function getCreateBoardHolds(cfg: CreateBoardHoldsConfig): CreateBoardHolds | null {
+  // The editor can be opened on a wall the registry has not got — a fork of a
+  // climb set on somebody else's wall, or a cold start straight into the create
+  // screen. Ask for it; a no-op for a catalogue board and for a wall already in
+  // hand.
+  if (cfg.boardName === 'spray') ensureSprayWallLoaded(cfg.layoutId);
+
   const cacheKey = createBoardHoldsCacheKey(cfg);
   if (createBoardHoldsCache.has(cacheKey)) {
     const cached = createBoardHoldsCache.get(cacheKey) ?? null;

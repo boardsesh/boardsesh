@@ -1,0 +1,176 @@
+// Fetching one wall and putting it in the registry.
+//
+// Split from `spray-wall-registry.ts` because that module is read on the DRAW
+// path — `board-details.ts`, `create-board-holds.ts`, both render-board
+// resolvers — and a GraphQL client there would drag `expo-secure-store` and the
+// whole auth chain into every one of their module graphs. The registry takes
+// this as an injected function instead (`setSprayWallLoader`), so the render
+// path can ASK for a wall without being able to reach the network itself.
+//
+// Two round trips, deliberately. `sprayWallRenderData` is keyed on the wall's
+// uuid; a board config carries only a layout id. `sprayWallByLayout` turns one
+// into the other, and it is a separate query so it can be cached hard: a wall's
+// uuid never changes, while its render payload carries presigned photo URLs that
+// expire in fifteen minutes and holds that change on every reset.
+
+import type { QueryClient } from '@tanstack/react-query';
+import { GET_SPRAY_WALL_BY_LAYOUT, GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
+import type { SprayWall, SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
+import { getHttpClient } from '../graphql/client';
+import { registerSprayWall, setSprayWallLoader, sprayCacheToken, unregisterSprayWall } from './spray-wall-registry';
+import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
+import { mapCanonicalHoldsToPhoto, type CanonicalSprayHold } from './spray-hold-geometry';
+
+type SprayWallByLayoutResponse = { sprayWallByLayout: SprayWall | null };
+type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | null };
+
+export const sprayWallByLayoutQueryKey = (layoutId: number | null) => ['sprayWallByLayout', layoutId] as const;
+export const sprayWallRenderDataQueryKey = (wallUuid: string | null) => ['sprayWallRenderData', wallUuid] as const;
+
+/**
+ * A wall's uuid is immutable, so this is cached for the session and never
+ * refetched on focus. A wall that is deleted resolves null on the next cold
+ * start, which is when the board itself disappears from the roster anyway.
+ */
+export const WALL_IDENTITY_STALE_TIME_MS = 60 * 60 * 1000;
+
+/**
+ * How long the render payload stays fresh.
+ *
+ * Bounded by the photo signature, not by how often a wall changes: the URLs in
+ * hand stop working after fifteen minutes, so ten leaves a margin for a surface
+ * that was opened just before the boundary. A reset lands on the next refetch —
+ * the version moves, every cache key moves with it (`sprayCacheToken`), and the
+ * new photo downloads under its own name.
+ */
+export const RENDER_DATA_STALE_TIME_MS = 10 * 60 * 1000;
+
+function toCanonicalHolds(renderData: SprayWallRenderData): CanonicalSprayHold[] {
+  return renderData.holds.map((hold) => ({
+    id: hold.id,
+    cx: hold.cx,
+    cy: hold.cy,
+    r: hold.r,
+    outline: hold.outline ?? null,
+  }));
+}
+
+/**
+ * The photo's own pixel size, or `null`.
+ *
+ * `SprayWallPhoto.width` / `height` are nullable — they come off the stored
+ * object's metadata, and a row written by hand may have neither. There is no
+ * fallback, and the canonical frame is specifically NOT one: holds were mapped
+ * into PHOTO pixels, so drawing them against a frame of a different aspect does
+ * not stretch the picture, it slides every hold off the hold it belongs to. A
+ * wall whose photo will not say how big it is cannot be drawn, and the render
+ * path's placeholder is the honest answer.
+ */
+function photoDimensions(renderData: SprayWallRenderData): { width: number; height: number } | null {
+  const { width, height } = renderData.photo;
+  if (typeof width !== 'number' || typeof height !== 'number') return null;
+  if (!(width > 0) || !(height > 0)) return null;
+  return { width, height };
+}
+
+/** Put one wall's published version in the registry, mapped into its photo's pixels. */
+export function registerRenderData(layoutId: number, renderData: SprayWallRenderData): boolean {
+  const dimensions = photoDimensions(renderData);
+  const holds = mapCanonicalHoldsToPhoto(renderData.homography, toCanonicalHolds(renderData));
+  // A wall we cannot map is a wall we must not draw: registering it with unmapped
+  // holds would paint every one at its canonical coordinate on top of a
+  // photograph it does not belong to — plausible-looking and wrong.
+  if (!holds || !dimensions) return false;
+
+  registerSprayWall(layoutId, {
+    wallUuid: renderData.wall.uuid,
+    version: renderData.versionNumber,
+    photoWidth: dimensions.width,
+    photoHeight: dimensions.height,
+    photoUrl: renderData.photo.url,
+    photoThumbUrl: renderData.photo.thumbUrl ?? null,
+    photoExpiresAt: renderData.photo.expiresAt,
+    holds,
+  });
+
+  // The create-climb draft slot is keyed on the version, so a reset moves it and
+  // leaves the old one holding holds that are no longer on the wall. Nothing else
+  // would ever read or remove it. Fire-and-forget: losing this costs a few
+  // kilobytes, and it must not sit in front of the first paint.
+  void clearSupersededSprayDrafts(layoutId, sprayCacheToken('spray', layoutId)).catch(() => {
+    // AsyncStorage unavailable. The orphan survives until the next reset.
+  });
+  return true;
+}
+
+/** The wall's uuid for a layout id, through React Query so two callers share one request. */
+export function fetchSprayWallUuid(queryClient: QueryClient, layoutId: number): Promise<string | null> {
+  return queryClient
+    .fetchQuery({
+      queryKey: sprayWallByLayoutQueryKey(layoutId),
+      queryFn: () => getHttpClient().request<SprayWallByLayoutResponse>(GET_SPRAY_WALL_BY_LAYOUT, { layoutId }),
+      staleTime: WALL_IDENTITY_STALE_TIME_MS,
+    })
+    .then((response) => response.sprayWallByLayout?.uuid ?? null);
+}
+
+/** The render payload for a wall uuid, through the same shared cache. */
+export function fetchSprayWallRenderData(
+  queryClient: QueryClient,
+  wallUuid: string,
+): Promise<SprayWallRenderData | null> {
+  return queryClient
+    .fetchQuery({
+      queryKey: sprayWallRenderDataQueryKey(wallUuid),
+      queryFn: () =>
+        getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, { uuid: wallUuid }),
+      staleTime: RENDER_DATA_STALE_TIME_MS,
+    })
+    .then((response) => response.sprayWallRenderData ?? null);
+}
+
+/**
+ * Fetch one wall and register it.
+ *
+ * Rejects on a transport failure so the registry marks the wall unavailable and
+ * retries after its cooldown; resolves without registering when the wall is
+ * genuinely not there (deleted, invisible, nothing published), which is the same
+ * outcome from a surface's point of view but not worth retrying against.
+ */
+export async function loadSprayWall(
+  queryClient: QueryClient,
+  layoutId: number,
+  options?: { force?: boolean },
+): Promise<void> {
+  const wallUuid = await fetchSprayWallUuid(queryClient, layoutId);
+  if (!wallUuid) {
+    unregisterSprayWall(layoutId);
+    return;
+  }
+
+  // A forced load is one whose CACHED payload is known to be useless — the photo
+  // signature in it has expired — so the stale window has to be dropped or
+  // `fetchQuery` hands the dead URL straight back.
+  if (options?.force) {
+    await queryClient.invalidateQueries({ queryKey: sprayWallRenderDataQueryKey(wallUuid) });
+  }
+
+  const renderData = await fetchSprayWallRenderData(queryClient, wallUuid);
+  if (!renderData) return;
+  registerRenderData(layoutId, renderData);
+}
+
+/**
+ * Wire `ensureSprayWallLoaded` up to the network. Returns the teardown.
+ *
+ * Called once, from the app-wide provider that owns the query client. Every
+ * spray surface below it — including ones that never see a hook, like the
+ * per-row render-board resolvers — can then ask for a wall by layout id.
+ */
+export function installSprayWallLoader(queryClient: QueryClient): () => void {
+  const loader = (layoutId: number, options?: { force?: boolean }) => loadSprayWall(queryClient, layoutId, options);
+  setSprayWallLoader(loader);
+  return () => {
+    setSprayWallLoader(null);
+  };
+}

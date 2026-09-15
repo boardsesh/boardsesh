@@ -172,6 +172,26 @@ export async function clearDraft(boardKey: string, _owner?: UserStorageOwner | n
   await removePreference(storageKey(boardKey));
 }
 
+/**
+ * Drops the working drafts a spray wall left behind at earlier versions.
+ *
+ * `createClimbDraftKey` folds the wall version in, so a reset moves the slot and
+ * the old one is orphaned: a payload of holds that are no longer on the wall,
+ * sitting in AsyncStorage with nothing that would ever read or remove it. Keyed
+ * on the wall's layout id, so this never touches another wall or a catalogue
+ * board — the prefix ends at the layout, and `-sv<version>` is what varies after
+ * it.
+ *
+ * Best-effort: losing the sweep costs a few kilobytes, so it is never awaited on
+ * a path the climber is waiting for.
+ */
+export function clearSupersededSprayDrafts(layoutId: number, currentVersionToken: string): Promise<void> {
+  const wallPrefix = `${KEY_PREFIX}spray:${layoutId}:${layoutId}`;
+  return removePreferencesMatching(
+    (key) => key.startsWith(wallPrefix) && !key.startsWith(`${wallPrefix}${currentVersionToken}:`),
+  );
+}
+
 /** Drops every locally saved create-climb draft for the departing account. */
 export function clearAllCreateClimbDrafts(_owner?: UserStorageOwner | null): Promise<void> {
   return removePreferencesMatching((key) => key.startsWith(KEY_PREFIX));
