@@ -37,6 +37,7 @@ import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-s
 import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
 import { resetActiveBoardSelfHealValidationCache } from '../lib/boards/active-board-self-heal-validation-cache';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
+import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { resetSyncStatus } from '../sync/sync-status';
 import { setSetting, clearOfflineBoards } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
@@ -262,6 +263,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       } else {
         await clearUserData(localDb);
       }
+      // The wall photographs, wiped on BOTH branches. The rows in `spray_walls`
+      // name a file each; deleting the rows without the files would leave a
+      // picture of the previous account's garage decodable on a shared phone,
+      // with nothing left on disk that says whose it was (issue #5448).
+      clearStoredSprayPhotos();
     } catch (error) {
       if (__DEV__) {
         console.warn('[Auth] local offline data cleanup during sign-out failed:', error);
