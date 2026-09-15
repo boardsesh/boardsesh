@@ -5,7 +5,7 @@ import { SPRAY_SET, spraySizeIdForLayout } from '@boardsesh/board-config';
 import { aliveHolds } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
-import { viewerCanSeeSprayWall } from '../board/spray-walls';
+import { viewerCanSeeSprayWallByLayout } from '../board/spray-walls';
 
 /**
  * What `saveClimb` / `updateClimb` have to know that no other board needs.
@@ -81,6 +81,15 @@ export type SprayClimbTarget = {
  * A wall the caller cannot see is reported as "not found", not "forbidden": the
  * two are deliberately indistinguishable everywhere a wall is read, because
  * confirming that a layout id IS a wall somebody owns is itself a leak.
+ *
+ * The visibility rule is the BY-LAYOUT one, which does not exempt an unlisted
+ * wall. A climb write is keyed on `layoutId`, and layout ids come out of a
+ * sequence — so the uuid-capability argument that makes an unlisted wall readable
+ * does not hold here, and without the narrower rule anyone could walk the sequence
+ * and litter somebody's unlisted wall with climbs. The owner and the wall's gym
+ * members are unaffected, which is who the epic says sets climbs. If SW-10 needs a
+ * link-holder who is neither to set a climb, the write has to be keyed on the
+ * wall's uuid rather than its layout id.
  */
 export async function requireVisibleSprayWall(layoutId: number, userId: string): Promise<SprayClimbTarget> {
   const [row] = await db
@@ -103,7 +112,7 @@ export async function requireVisibleSprayWall(layoutId: number, userId: string):
     )
     .limit(1);
 
-  if (!row || !(await viewerCanSeeSprayWall(row.board, userId))) {
+  if (!row || !(await viewerCanSeeSprayWallByLayout(row.board, userId))) {
     throw new GraphQLError('That spray wall could not be found', {
       extensions: { code: SPRAY_CLIMB_CODES.wallNotFound },
     });

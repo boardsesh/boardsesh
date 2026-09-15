@@ -1676,9 +1676,12 @@ export const schemaSQL = `
   EXCEPTION WHEN duplicate_object THEN null; END $$;
 
   -- ONE sequence value is BOTH a layout id and a size id; the other hands out a
-  -- number that is BOTH a board_holes id and a board_placements id.
-  CREATE SEQUENCE IF NOT EXISTS "spray_wall_catalog_id_seq" START WITH 1 INCREMENT BY 1;
-  CREATE SEQUENCE IF NOT EXISTS "spray_hold_catalog_id_seq" START WITH 1 INCREMENT BY 1;
+  -- number that is BOTH a board_holes id and a board_placements id. Both stop at
+  -- int4 max, because every catalogue id column they feed is an integer: a default
+  -- bigint sequence would hand out a value those columns cannot store, and the
+  -- failure would land on a climber creating a wall instead of at the draw.
+  CREATE SEQUENCE IF NOT EXISTS "spray_wall_catalog_id_seq" START WITH 1 INCREMENT BY 1 MAXVALUE 2147483647;
+  CREATE SEQUENCE IF NOT EXISTS "spray_hold_catalog_id_seq" START WITH 1 INCREMENT BY 1 MAXVALUE 2147483647;
 
   CREATE TABLE IF NOT EXISTS "spray_walls" (
     "id" bigserial PRIMARY KEY NOT NULL,
@@ -1737,11 +1740,18 @@ export const schemaSQL = `
   );
   CREATE INDEX IF NOT EXISTS "spray_wall_holds_alive_idx"
     ON "spray_wall_holds" ("wall_id", "removed_version_id");
+  -- Remix walks the other way — "what replaced the hold this climb lost?" — and
+  -- almost every row has no predecessor, so the index is partial.
+  CREATE INDEX IF NOT EXISTS "spray_wall_holds_moved_from_idx"
+    ON "spray_wall_holds" ("moved_from_hold_id") WHERE "moved_from_hold_id" IS NOT NULL;
 
   CREATE TABLE IF NOT EXISTS "spray_climb_lineage" (
     "child_uuid" text PRIMARY KEY NOT NULL,
     "parent_uuid" text NOT NULL,
-    "wall_version_id" bigint NOT NULL REFERENCES "spray_wall_versions"("id") ON DELETE CASCADE,
+    -- RESTRICT, like the removal FK above: cascading here would delete the
+    -- lineage row a remix's screen shows when the version it was rebuilt on went
+    -- away, silently orphaning the child from its parent.
+    "wall_version_id" bigint NOT NULL REFERENCES "spray_wall_versions"("id") ON DELETE RESTRICT,
     "created_at" timestamp DEFAULT now() NOT NULL,
     CONSTRAINT "spray_climb_lineage_child_fk" FOREIGN KEY ("child_uuid")
       REFERENCES "board_climbs"("uuid") ON DELETE CASCADE ON UPDATE CASCADE

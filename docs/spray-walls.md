@@ -466,9 +466,15 @@ Rule 4 has one subtlety worth knowing before you touch it.
 having, and search's size filter reads them — but its step 3 derives
 `compatible_size_ids` by joining EVERY `board_product_sizes` row of the board type
 whose edge box contains the climb's, **with no layout scoping**. On spray every
-wall's size row IS an edge box, so a climb on one wall would come out "compatible"
-with any other wall whose frame happens to contain its holds. Both resolvers
-therefore re-assert the two columns immediately after the helper runs.
+wall's size row IS an edge box, so left alone the column would come out naming
+other walls' sizes as well as its own.
+
+That is **defence in depth, not a live leak**: every consumer of
+`compatible_size_ids` also filters `layout_id`, so no climb actually surfaces on
+the wrong wall today. The column would simply be wrong, and the bug would be a
+future reader that trusted it on its own. Both resolvers re-assert the two columns
+immediately after the helper runs, and a test pins the value on a two-wall
+database.
 
 And the feed: **`climb.created` is published for PUBLIC walls only** (owner
 decision 2026-09-14: private-wall ticks are the owner's logbook). A feed event

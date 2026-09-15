@@ -54,6 +54,59 @@ import { logger } from '../utils/logger';
 /** 10MB. A phone photo of a wall is 2-5MB; the cap bounds what one POST can cost. */
 export const SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+// Per-user upload budget, copied from `handlers/feedback-screenshots.ts` and for
+// the same reason: every POST here mints a NEW object (the key carries a fresh
+// uuid), so without a budget one authenticated account can fill the private
+// bucket with 10MB objects, and an abandoned upload is never referenced by a row
+// so nothing else bounds it either. `MAX_VERSIONS_PER_WALL` does not help — it
+// caps the rows, not the uploads that never become one.
+//
+// A fixed window per process is deliberately coarse: a spam ceiling, not a
+// fairness mechanism. The real ceiling is 20 x the instance count and it resets
+// on deploy, which is accepted here rather than reaching for Redis, exactly as
+// the screenshot handler argues. `applyRateLimit`, the two-tier limiter the
+// resolvers use, is not reachable from a REST handler — it keys off the GraphQL
+// connection context.
+const RATE_LIMIT_MAX_UPLOADS = 20;
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+/** Prune only once the map is big enough to matter, so the common path is O(1). */
+const RATE_LIMIT_PRUNE_AT_ENTRIES = 1000;
+
+const uploadWindows = new Map<string, { count: number; windowStart: number }>();
+
+/**
+ * Clear the in-process upload counters. Test seam — the window is module state,
+ * so a test that exhausts it needs this between cases.
+ */
+export function resetSprayWallPhotoRateLimit(): void {
+  uploadWindows.clear();
+}
+
+/**
+ * Record one upload attempt for `userId`, returning false once the window's
+ * budget is spent. Failed uploads count too: a rejected request still costs a
+ * multipart parse and a sharp decode, which is exactly what a spammer would loop
+ * on.
+ */
+function consumeUploadBudget(userId: string): boolean {
+  const now = Date.now();
+
+  if (uploadWindows.size >= RATE_LIMIT_PRUNE_AT_ENTRIES) {
+    for (const [countedUserId, expiredCandidate] of uploadWindows) {
+      if (now - expiredCandidate.windowStart >= RATE_LIMIT_WINDOW_MS) uploadWindows.delete(countedUserId);
+    }
+  }
+
+  const userWindow = uploadWindows.get(userId);
+  if (!userWindow || now - userWindow.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    uploadWindows.set(userId, { count: 1, windowStart: now });
+    return true;
+  }
+  if (userWindow.count >= RATE_LIMIT_MAX_UPLOADS) return false;
+  userWindow.count += 1;
+  return true;
+}
+
 /**
  * What a wall photo may arrive as.
  *
@@ -154,6 +207,14 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
     return;
   }
   const authenticatedUserId = authResult.userId;
+
+  // Before the multipart parse and the sharp decode, which are the expensive
+  // halves a spammer would loop on.
+  if (!consumeUploadBudget(authenticatedUserId)) {
+    res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(RATE_LIMIT_WINDOW_MS / 1000) });
+    res.end(JSON.stringify({ error: 'Too many wall photo uploads. Try again in a few minutes.' }));
+    return;
+  }
 
   // No environment gets a disk fallback — see the module comment. A wall photo
   // either lands in the private bucket or it does not land.

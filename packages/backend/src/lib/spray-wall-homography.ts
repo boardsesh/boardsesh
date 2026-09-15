@@ -66,6 +66,57 @@ export function boundingSize(quad: Quad): ReferenceSize {
 }
 
 /**
+ * Smallest edge, in pixels, a usable anchor quad may have, and the smallest
+ * fraction of its own bounding box its area may cover.
+ *
+ * Both are loose on purpose. A photograph taken hard off to one side is a narrow
+ * trapezoid and is perfectly usable; what is not usable is a quad with no area —
+ * four taps in a line, or on top of each other. 2% of the bounding box rejects
+ * those and nothing a person would actually tap.
+ */
+const MIN_QUAD_EDGE_PX = 8;
+const MIN_QUAD_AREA_FRACTION = 0.02;
+
+/**
+ * Twice the signed area of a quad, by the shoelace formula.
+ *
+ * Signed, so a quad tapped clockwise and the same quad tapped anticlockwise come
+ * out with opposite signs — callers take the absolute value. Zero means the four
+ * points enclose nothing.
+ */
+export function quadDoubleArea(quad: Quad): number {
+  let total = 0;
+  for (let index = 0; index < 4; index++) {
+    const [x1, y1] = quad[index];
+    const [x2, y2] = quad[(index + 1) % 4];
+    total += x1 * y2 - x2 * y1;
+  }
+  return total;
+}
+
+/**
+ * Whether a quad describes a shape a homography can actually be solved from.
+ *
+ * This is the gate `createSprayWallVersion` needs rather than the identity
+ * fallback further down. On version 1 the anchors also DEFINE the canonical
+ * frame — `boundingSize` derives `reference_width` / `reference_height` from
+ * them — and the frame is inherited by every later version forever. So a
+ * degenerate quad accepted at creation does not merely lose a transform; it pins
+ * a 1x1 (or 8x0) coordinate space on the wall for good, and every hold ever drawn
+ * on it lands in the same pixel. Refusing it at the door is the only cheap moment.
+ */
+export function isSolvableAnchorQuad(quad: unknown): quad is Quad {
+  if (!isValidAnchorQuad(quad)) return false;
+
+  const { width, height } = boundingSize(quad);
+  if (width < MIN_QUAD_EDGE_PX || height < MIN_QUAD_EDGE_PX) return false;
+
+  // Compared against the bounding box rather than an absolute pixel count so the
+  // rule reads the same for a phone photo and a 40-megapixel one.
+  return Math.abs(quadDoubleArea(quad)) / 2 >= width * height * MIN_QUAD_AREA_FRACTION;
+}
+
+/**
  * Solve a dense linear system by Gauss-Jordan elimination with partial pivoting.
  *
  * Eight equations is small enough that an off-the-shelf linear-algebra

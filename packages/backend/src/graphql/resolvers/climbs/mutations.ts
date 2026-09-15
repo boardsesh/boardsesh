@@ -363,14 +363,16 @@ export const climbMutations = {
       // Populate denormalized required_set_ids and compatible_size_ids
       await populateDenormalizedColumns(tx, validated.boardType, [uuid]);
 
-      // …and then put the spray columns back. That helper's step 3 derives
-      // `compatible_size_ids` by joining EVERY `board_product_sizes` row of the
-      // board type whose edge box contains the climb's, with no layout scoping —
-      // and on spray every wall's size row IS an edge box, so a climb on one
-      // wall comes out "compatible" with any other wall whose frame happens to
-      // contain its holds. Running the helper is still worth it for the edge
-      // columns it computes (search's size filter reads them), so the order is
-      // derive-then-re-assert rather than skip.
+      // …and then put the spray columns back — defence in depth rather than a
+      // live leak. That helper's step 3 derives `compatible_size_ids` by joining
+      // EVERY `board_product_sizes` row of the board type whose edge box contains
+      // the climb's, with no layout scoping, and on spray every wall's size row IS
+      // an edge box — so the column comes out naming other walls' sizes too.
+      // Nothing reads it in isolation today (every consumer also filters
+      // `layout_id`), so no climb surfaces on the wrong wall; the column is simply
+      // wrong, and a future reader that trusts it alone would be the bug. Running
+      // the helper is still worth it for the edge columns it computes (search's
+      // size filter reads them), so the order is derive-then-re-assert, not skip.
       if (sprayTarget) {
         await tx
           .update(dbSchema.boardClimbs)
@@ -1010,9 +1012,9 @@ export const climbMutations = {
       if (validated.frames !== undefined) {
         await populateDenormalizedColumns(tx, validated.boardType, [validated.uuid]);
 
-        // …and put the spray columns back, for the cross-wall reason spelled out
-        // in `saveClimb`: that helper's `compatible_size_ids` join is not scoped
-        // to the layout, and on spray every wall's size row is an edge box.
+        // …and put the spray columns back, for the reason spelled out in
+        // `saveClimb`: that helper's `compatible_size_ids` join is not scoped to
+        // the layout, and on spray every wall's size row is an edge box.
         if (sprayTarget) {
           await tx
             .update(dbSchema.boardClimbs)

@@ -145,15 +145,13 @@ async function loadWall(where: 'uuid' | 'layoutId', value: string | number): Pro
 }
 
 /**
- * Whether the viewer may see this wall at all.
+ * Whether the viewer may see this wall on the strength of WHO THEY ARE — the
+ * owner, or a member of the gym the wall is attached to.
  *
- * A private wall is visible to its owner and to members of the gym it is
- * attached to, and to nobody else. `is_public` and `is_unlisted` both open it up:
- * the difference between them is discoverability (listings, search, sitemaps),
- * which lives on the surfaces that list walls, not here.
+ * Split out from `viewerCanSeeSprayWall` because `is_unlisted` is not an identity
+ * claim, it is a property of the LOOKUP: see the note there.
  */
-export async function viewerCanSeeSprayWall(board: UserBoardRow, userId: string | null | undefined): Promise<boolean> {
-  if (board.isPublic || board.isUnlisted) return true;
+async function viewerIsWallPrincipal(board: UserBoardRow, userId: string | null | undefined): Promise<boolean> {
   if (!userId) return false;
   if (board.ownerId === userId) return true;
   if (board.gymId == null) return false;
@@ -165,6 +163,39 @@ export async function viewerCanSeeSprayWall(board: UserBoardRow, userId: string 
     .limit(1);
 
   return !!membership;
+}
+
+/**
+ * Whether the viewer may see this wall through a lookup BY UUID.
+ *
+ * The owner, a member of the wall's gym, or anyone at all when the wall is public
+ * or unlisted. An unlisted wall opens up here and NOWHERE else: a uuid is an
+ * unguessable 122-bit capability, so knowing one is the whole of the claim.
+ *
+ * `is_unlisted` is therefore not an identity check but a property of the lookup —
+ * which is exactly why `sprayWallByLayout` must not use this function. Layout ids
+ * come out of `spray_wall_catalog_id_seq`, i.e. 1, 2, 3, …, so treating unlisted
+ * as world-readable on a layout lookup would let an anonymous caller walk the
+ * sequence and collect a live presigned photo of every unlisted home wall in the
+ * database. Use `viewerCanSeeSprayWallByLayout` for any enumerable key.
+ */
+export async function viewerCanSeeSprayWall(board: UserBoardRow, userId: string | null | undefined): Promise<boolean> {
+  if (board.isPublic || board.isUnlisted) return true;
+  return viewerIsWallPrincipal(board, userId);
+}
+
+/**
+ * Whether the viewer may see this wall through a lookup on an ENUMERABLE key.
+ *
+ * Same rule minus the unlisted exemption: the owner, a gym member, or a public
+ * wall. Nothing about the wall's existence is answerable from a guessed number.
+ */
+export async function viewerCanSeeSprayWallByLayout(
+  board: UserBoardRow,
+  userId: string | null | undefined,
+): Promise<boolean> {
+  if (board.isPublic) return true;
+  return viewerIsWallPrincipal(board, userId);
 }
 
 /**
@@ -452,8 +483,10 @@ export const sprayWallQueries = {
       throw new Error('Invalid layoutId');
     }
 
+    // NOT `viewerCanSeeSprayWall`: a layout id is a small integer from a
+    // sequence, so an unlisted wall must not resolve here. See that function.
     const loaded = await loadWall('layoutId', layoutId);
-    if (!loaded || !(await viewerCanSeeSprayWall(loaded.board, ctx.userId))) return null;
+    if (!loaded || !(await viewerCanSeeSprayWallByLayout(loaded.board, ctx.userId))) return null;
     return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));
   },
 
@@ -802,6 +835,29 @@ export const sprayWallMutations = {
       throw new GraphQLError(`Hold ${unknownId.id} is not on this wall`, {
         extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: unknownId.id },
       });
+    }
+
+    // `movedFromHoldId` is lineage, and a lineage pointer at another wall's hold
+    // (or at nothing) would make remix suggest a successor for a hold that was
+    // never there. Scoped against EVERY hold this wall has ever had, not the alive
+    // set: a move's whole point is that the predecessor has just come off.
+    const movedFromIds = [
+      ...new Set(
+        validated.holds.map((hold) => hold.movedFromHoldId).filter((holdId): holdId is number => holdId != null),
+      ),
+    ];
+    if (movedFromIds.length > 0) {
+      const known = await db
+        .select({ holdId: dbSchema.sprayWallHolds.holdId })
+        .from(dbSchema.sprayWallHolds)
+        .where(and(eq(dbSchema.sprayWallHolds.wallId, wall.id), inArray(dbSchema.sprayWallHolds.holdId, movedFromIds)));
+      const knownIds = new Set(known.map((row) => row.holdId));
+      const strayId = movedFromIds.find((holdId) => !knownIds.has(holdId));
+      if (strayId != null) {
+        throw new GraphQLError(`Hold ${strayId} has never been on this wall, so nothing can have moved from it`, {
+          extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: strayId },
+        });
+      }
     }
 
     const additions = validated.holds.filter((hold) => hold.id == null);

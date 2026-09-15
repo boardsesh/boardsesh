@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, gt, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { alias } from 'drizzle-orm/pg-core';
 import { sprayWallHolds, sprayWallVersions, sprayWalls } from '../../schema/app/spray-walls';
@@ -40,6 +40,21 @@ async function publishedVersionNumber(db: DrizzleDb, wallId: number): Promise<nu
  *
  * A hold is never updated in place and never deleted, so "as it stood" is a range
  * test rather than a history replay.
+ *
+ * ## Why the range is not the version NUMBER alone
+ *
+ * Version numbers are dense per wall and handed out when a photo is uploaded, so
+ * an ABANDONED draft still owns a number. Bounding on the number alone therefore
+ * folds that draft's work into every later generation: publish v1, start a reset
+ * as v2 and walk away, then start v3 and publish it, and v2's holds would come
+ * back as alive at v3 — holds nobody ever screwed to the wall, which climbs could
+ * then be set on. Its removals would leak the same way, hiding a hold that is
+ * still there.
+ *
+ * So a generation only counts once it has LANDED: its installing (or removing)
+ * version is no longer a draft, or it IS the version being asked about. That
+ * second half is what lets the hold editor see the draft it is editing while
+ * every other draft on the wall stays invisible.
  */
 export async function aliveHolds(db: DrizzleDb, wallId: number, versionNumber?: number): Promise<SprayWallHold[]> {
   const targetVersion = versionNumber ?? (await publishedVersionNumber(db, wallId));
@@ -47,6 +62,20 @@ export async function aliveHolds(db: DrizzleDb, wallId: number, versionNumber?: 
 
   const installedVersion = alias(sprayWallVersions, 'installed_version');
   const removedVersion = alias(sprayWallVersions, 'removed_version');
+
+  // A version's work counts when the version is no longer a draft, or when it is
+  // the very version being asked about. Spelled out for both ends of the range,
+  // because an abandoned draft's REMOVALS are as wrong as its additions.
+  const installedLanded = or(
+    ne(installedVersion.status, 'draft'),
+    eq(installedVersion.versionNumber, targetVersion),
+  );
+  // The negation, by De Morgan rather than `not(...)`: still a draft AND not the
+  // version being asked about.
+  const removalNeverLanded = and(
+    eq(removedVersion.status, 'draft'),
+    ne(removedVersion.versionNumber, targetVersion),
+  );
 
   return db
     .select(getTableColumns(sprayWallHolds))
@@ -57,7 +86,15 @@ export async function aliveHolds(db: DrizzleDb, wallId: number, versionNumber?: 
       and(
         eq(sprayWallHolds.wallId, wallId),
         lte(installedVersion.versionNumber, targetVersion),
-        or(isNull(sprayWallHolds.removedVersionId), gt(removedVersion.versionNumber, targetVersion)),
+        installedLanded,
+        // Removed only by a generation that landed at or before the target. The
+        // three ways a hold survives: nothing removed it, the removal is in the
+        // future, or the removing version is a draft that never landed.
+        or(
+          isNull(sprayWallHolds.removedVersionId),
+          gt(removedVersion.versionNumber, targetVersion),
+          removalNeverLanded,
+        ),
       ),
     )
     .orderBy(asc(sprayWallHolds.holdId));

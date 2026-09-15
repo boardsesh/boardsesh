@@ -70,7 +70,17 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     "1-based and dense per wall."
     number: Int!
     status: SprayWallVersionStatus!
-    photo: SprayWallPhoto!
+    """
+    The photo, or null when it cannot be served right now.
+
+    Nullable rather than required even though every version is created WITH a
+    photo: the URLs are minted per read, so a backend with no \`private\` bucket
+    configured — or a row whose key was cleared by hand — has nothing to hand back.
+    Non-null here would turn that into a hard error on the whole \`versions\` list
+    instead of one absent photo, which is the wrong failure for a field a client
+    already has to re-fetch when it expires.
+    """
+    photo: SprayWallPhoto
     "The wall's four corners in THIS photo's pixels, TL/TR/BR/BL, as [[x, y], ...]. Null means the photo frame is the quad."
     anchors: JSON
     "Row-major 3x3 photo→canonical homography, nine floats. The identity matrix when the version has no anchors."

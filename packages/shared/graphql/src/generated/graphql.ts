@@ -8114,7 +8114,17 @@ export type SprayWallVersion = {
   notes?: Maybe<Scalars['String']['output']>;
   /** 1-based and dense per wall. */
   number: Scalars['Int']['output'];
-  photo: SprayWallPhoto;
+  /**
+   * The photo, or null when it cannot be served right now.
+   *
+   * Nullable rather than required even though every version is created WITH a
+   * photo: the URLs are minted per read, so a backend with no `private` bucket
+   * configured — or a row whose key was cleared by hand — has nothing to hand back.
+   * Non-null here would turn that into a hard error on the whole `versions` list
+   * instead of one absent photo, which is the wrong failure for a field a client
+   * already has to re-fetch when it expires.
+   */
+  photo?: Maybe<SprayWallPhoto>;
   publishedAt?: Maybe<Scalars['String']['output']>;
   /** Holds this version took off the wall. */
   removedHoldCount: Scalars['Int']['output'];

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
+import { isSolvableAnchorQuad } from '../../lib/spray-wall-homography';
 import { UUIDSchema } from './primitives';
 
 /**
@@ -69,7 +70,17 @@ export const SPRAY_VERSION_STATUS_WIRE_NAME = {
  */
 export const SprayAnchorsSchema = z
   .array(z.tuple([z.number().finite(), z.number().finite()]))
-  .length(4, 'Anchors are the four wall corners, in TL/TR/BR/BL order');
+  .length(4, 'Anchors are the four wall corners, in TL/TR/BR/BL order')
+  // A quad with no area is the one shape-level anchor failure worth hard-rejecting,
+  // because on version 1 the anchors also DEFINE the canonical frame that every
+  // later version of the wall inherits. Four taps in a line would pin an 8x0
+  // coordinate space on the wall for good and land every hold ever drawn on it in
+  // the same pixel. The solver's identity fallback is the last line of defence,
+  // not this one — by the time it fires the frame is already written.
+  .refine(
+    isSolvableAnchorQuad,
+    'Those four corners do not enclose a wall — tap the corners of the wall in the photo, going clockwise from the top left',
+  );
 
 /**
  * Bigint primary keys arrive as GraphQL `ID!`, i.e. a string. Parse to a number

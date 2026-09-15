@@ -28,8 +28,12 @@ vi.mock('../storage/s3', () => ({
 }));
 
 const { db } = await import('../db/client');
-const { handleSprayWallPhotoUpload, sprayWallPhotoKey, SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES } =
-  await import('../handlers/spray-wall-photos');
+const {
+  handleSprayWallPhotoUpload,
+  resetSprayWallPhotoRateLimit,
+  sprayWallPhotoKey,
+  SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES,
+} = await import('../handlers/spray-wall-photos');
 
 /**
  * POST /api/spray-wall-photos, over real HTTP against the real database.
@@ -154,6 +158,8 @@ beforeEach(async () => {
   await Promise.all(ALL_USERS.map(insertUser));
   uploadedObjects.length = 0;
   isS3ConfiguredMock.mockReturnValue(true);
+  // The window is module state, so a test that exhausts it would leak into the next.
+  resetSprayWallPhotoRateLimit();
   validateTokenMock.mockImplementation(async (token: string) => ({ userId: token }));
 
   wallUuid = uuidv4();
@@ -324,6 +330,53 @@ describe('POST /api/spray-wall-photos', () => {
 
   it('caps the upload at 10MB', () => {
     expect(SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES).toBe(10 * 1024 * 1024);
+  });
+
+  it('spends a per-user budget and then answers 429', async () => {
+    // Every POST mints a NEW object (the key carries a fresh uuid) and an
+    // abandoned upload is referenced by no row, so nothing else bounds this —
+    // `MAX_VERSIONS_PER_WALL` caps the rows, not the uploads that never become one.
+    const png = await plainPng();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const response = await uploadPhoto(baseUrl, {
+        token: OWNER,
+        wallUuid,
+        bytes: png,
+        mimeType: 'image/png',
+      });
+      expect(response.status).toBe(200);
+    }
+
+    const overBudget = await uploadPhoto(baseUrl, { token: OWNER, wallUuid, bytes: png, mimeType: 'image/png' });
+    expect(overBudget.status).toBe(429);
+    expect(overBudget.headers.get('retry-after')).toBe('600');
+
+    // Per user, not global: a second climber is unaffected.
+    await db.execute(sql`UPDATE user_boards SET owner_id = ${STRANGER} WHERE uuid = ${wallUuid}`);
+    const otherUser = await uploadPhoto(baseUrl, { token: STRANGER, wallUuid, bytes: png, mimeType: 'image/png' });
+    expect(otherUser.status).toBe(200);
+  });
+
+  it('charges the budget for a REJECTED upload too', async () => {
+    // A rejected request still costs a multipart parse and a sharp decode, which
+    // is exactly what a spammer would loop on.
+    const renamedPng = await plainPng();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const response = await uploadPhoto(baseUrl, {
+        token: OWNER,
+        wallUuid,
+        bytes: renamedPng,
+        mimeType: 'image/jpeg',
+      });
+      expect(response.status).toBe(400);
+    }
+    const overBudget = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: renamedPng,
+      mimeType: 'image/png',
+    });
+    expect(overBudget.status).toBe(429);
   });
 });
 
