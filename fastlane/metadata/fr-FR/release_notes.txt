@@ -1,23 +1,23 @@
-Nouveautés de la version 2.5 :
+Nouveautés de la version 2.6 :
 
-COMPATIBLE WOODS, DE BOUT EN BOUT
+LES AUTRES BOARDS DE TA SALLE, À UN TAP
 
-Tu as une Woods Board ? Ajoute ta 12x12 ou ta 8x10, parcours plus de 5 000 blocs avec leurs règles de mains et de pieds, et allume n'importe lequel en Bluetooth. Ouvre et remixe tes propres blocs sur l'une ou l'autre taille (l'éditeur ne propose que les prises vraiment présentes sur ton mur), mets un bloc en miroir et le mur suit, et pilote Précédent, Suivant et Miroir depuis l'écran verrouillé et la Dynamic Island. Les prises s'affichent avec le look Aura et des contours plus nets.
+Une Kilter à côté d'une Tension, ou deux murs de la même board à des angles différents ? La feuille du mur liste maintenant les autres boards de ta salle : tu passes à celle devant laquelle tu es en un tap, sans faire défiler des boards d'autres villes. Le Bluetooth te suit, une file montée sur deux murs se joue dans l'ordre, et chaque board garde son nom et son angle.
 
-PRENDS LE MUR, MÊME SANS LED
+UN MINUTEUR DE REPOS QUI FAIT AVANCER LA FILE
 
-Tu grimpes sur une board sans kit LED ? Prends le mur : toute la session suit le bloc que tu mets, et l'écran de la salle aussi. Désactive l'Éclairage dans les réglages de la board : le tour de rôle continue, ton angle reste en place, et les sessions sur un mur nommé se loguent aussi depuis la montre.
+Enchaîne des blocs à la minute sans toucher ton téléphone entre deux essais. Active le minuteur de repos dans l'onglet Enregistrer, choisis ton repos : il démarre dès que tu enregistres un bloc, puis continue dans le rouge si tu traînes. Laisse-le passer au bloc suivant et il l'allume sur le mur pour toi. « Après chaque croix » te laisse tout ton repos à chaque fois ; « Rythme fixe » garde le tempo quelle que soit la durée de l'essai.
 
-MIROIR DEPUIS L'ÉCRAN VERROUILLÉ
+DES VOIES EN SECONDES, PAS EN MULTIPLICATEURS
 
-Quand ton téléphone pilote la board, l'activité en direct et la Dynamic Island ont un bouton Miroir à côté de Précédent, Suivant et l'ampoule. L'app, ton crew, les vignettes et les LED suivent le bloc en miroir, et il l'est encore quand tu ouvres l'app.
+Le rythme des voies se lit maintenant en secondes par image, l'unité utilisée par l'ouvreur ou l'ouvreuse, et monte jusqu'à 60 secondes. La moitié du catalogue était réglée plus lentement que ce que l'ancien réglage pouvait jouer.
 
 CORRIGÉ
 
-- Les prises s'affichent plus vite : le rendu de la board n'attend plus le reste de l'app.
-- Ta board reste éteinte tant que tu ne demandes rien. Un téléphone qui repasse à portée des heures ou des jours plus tard ne rallume plus ton dernier bloc. L'ampoule, le widget et les reconnexions en plein bloc l'allument toujours instantanément.
-- L'onglet Blocs et sa recherche ne restent plus figés après la fermeture d'une playlist par-dessus en pleine session. Plus besoin de forcer la fermeture de l'app pour retrouver la recherche.
-- Les blocs téléchargés restent à jour après une mise à jour de l'app.
-- Fermer la recherche de blocs ne fait plus surgir une feuille d'aperçu.
+- Woods : tous les blocs apparaissent quel que soit l'angle auquel ils ont été ouverts, avec la cotation qu'ils ont reçue, et le filtre d'ouvreurs les liste tous au lieu des rares qui ont un bloc coté à ton angle.
+- MoonBoard : un bloc coté à un seul des deux angles affiche maintenant une estimation pour l'autre.
+- Touche l'ampoule pendant que le téléphone d'un autre grimpeur tient la board : le bloc s'allume par sa connexion au lieu d'échouer.
+- Les swipes dans le tiroir de lecture restent sur la liste d'où tu es parti, même quand enregistrer un bloc réordonne cette liste.
+- Android : l'onglet Blocs ne fait plus planter l'app quand une board se connecte, l'enregistrement hors ligne continue après un long passage en arrière-plan, et les libellés des interrupteurs se lisent en mode sombre.
 
 Gratuit, sans pub, open source.
