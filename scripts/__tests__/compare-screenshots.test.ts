@@ -3,8 +3,17 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
+
+// Wraps the real sharp so every existing fixture-writing helper below keeps
+// working unmocked; only the one test below that needs a non-RGBA decode
+// queues a `mockImplementationOnce` on top of it.
+vi.mock('sharp', async (importOriginal) => {
+  const actual = await importOriginal();
+  const actualDefault = (actual as { default: typeof sharp }).default;
+  return { default: vi.fn(actualDefault) };
+});
 
 import {
   DEFAULT_CHANNEL_TOLERANCE,
@@ -110,6 +119,35 @@ describe('compareScreenshotSets', () => {
     ]);
     expect(comparison.channelTolerance).toBe(DEFAULT_CHANNEL_TOLERANCE);
     expect(comparison.maxDiffRatio).toBe(DEFAULT_MAX_DIFF_RATIO);
+  });
+
+  it('throws instead of comparing when a decode does not carry 4 channels after ensureAlpha()', async () => {
+    // findDifferingPixels() trusts `channels` blindly to compute per-pixel byte
+    // offsets. A short (non-RGBA) buffer would otherwise silently read
+    // out-of-range bytes as `undefined`, so every delta is NaN and `NaN >
+    // channelTolerance` is always false — every such pixel would report "no
+    // difference" instead of failing loudly. ensureAlpha() should never
+    // actually produce this, so it's mocked here to exercise the guard.
+    const candidateDir = directory('candidate');
+    await writeSolidPng(join(candidateDir, '01-discover.png'), 10, 10, GREY);
+
+    vi.mocked(sharp).mockImplementationOnce(
+      () =>
+        ({
+          ensureAlpha: () => ({
+            raw: () => ({
+              toBuffer: async () => ({
+                data: Buffer.alloc(10 * 10 * 3),
+                info: { width: 10, height: 10, channels: 3 },
+              }),
+            }),
+          }),
+        }) as unknown as ReturnType<typeof sharp>,
+    );
+
+    await expect(compareScreenshotSets({ baselineDir: directory('empty'), candidateDir })).rejects.toThrow(
+      /expected 4 channels/,
+    );
   });
 
   it('ignores a single pixel one channel step away', async () => {

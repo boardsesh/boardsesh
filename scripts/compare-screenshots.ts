@@ -122,6 +122,17 @@ function listPngFiles(root: string): string[] {
 /** Decode a PNG to straight RGBA bytes. Alpha is read but never compared. */
 async function readRawImage(file: string): Promise<RawImage> {
   const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  // ensureAlpha() should guarantee 4 channels (RGBA), always — but
+  // findDifferingPixels() trusts `channels` blindly to compute per-pixel byte
+  // offsets. If it were ever wrong (a future sharp behaviour change, an
+  // unsupported color space, a mocked/stubbed decode), a short buffer would
+  // silently read out-of-range values as `undefined`, `Math.abs(undefined -
+  // undefined)` is NaN, and `NaN > channelTolerance` is always false — every
+  // such pixel would report "no difference" instead of failing loudly. Fail
+  // here instead, where the cause is obvious.
+  if (info.channels !== 4) {
+    throw new Error(`${file}: expected 4 channels (RGBA) after ensureAlpha(), got ${info.channels}.`);
+  }
   return { data, width: info.width, height: info.height, channels: info.channels };
 }
 
