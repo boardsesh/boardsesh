@@ -73,7 +73,7 @@
     "@mui/icons-material": "^7.3.11",
     "@mui/material": "^7.3.11",
     "@mui/material-nextjs": "^7.3.10",
-    "@mui/utils": "^7.3.11",
+    "@mui/utils": "^9.4.0",
     "@mui/x-charts": "^8.29.2",
     "@mui/x-date-pickers": "^8.29.2",
     "@sentry/nextjs": "^10.69.0",
