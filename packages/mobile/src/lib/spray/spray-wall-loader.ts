@@ -26,6 +26,7 @@ import {
   unregisterSprayWall,
 } from './spray-wall-registry';
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
+import { reportHandledError } from '../error-reporting';
 import { mapCanonicalHoldsToPhoto, type CanonicalSprayHold } from './spray-hold-geometry';
 
 type SprayWallByLayoutResponse = { sprayWallByLayout: SprayWall | null };
@@ -85,14 +86,55 @@ function photoDimensions(renderData: SprayWallRenderData): { width: number; heig
   return { width, height };
 }
 
+/**
+ * Share of a wall's holds that may fail to map before it is worth reporting.
+ *
+ * Not zero. A projective map sends points beyond its horizon to infinity, and a
+ * wall photographed hard off to one side can legitimately lose a hold or two at
+ * the very edge — `mapCanonicalHoldsToPhoto` drops those on purpose so one bad
+ * row costs one hold rather than the wall. What is NOT normal is a near-degenerate
+ * homography taking a large slice of the wall with it: the board still renders, so
+ * `Board Render Failed` never fires, and without this the only symptom is a
+ * climber saying holds are missing.
+ */
+const DROPPED_HOLD_REPORT_FRACTION = 0.05;
+
+/**
+ * Report a wall that lost a material share of its holds to the mapping.
+ *
+ * Sentry, not an analytics event: `docs/board-render-analytics.md` keeps the
+ * board-render event set deliberately small, and this is a defect signal with a
+ * stack and a wall to look at rather than a behavioural one worth a per-render
+ * PostHog row.
+ */
+function reportDroppedHolds(renderData: SprayWallRenderData, expected: number, mapped: number): void {
+  const dropped = expected - mapped;
+  if (dropped <= 0 || expected === 0) return;
+  if (dropped < expected * DROPPED_HOLD_REPORT_FRACTION) return;
+
+  reportHandledError(new Error(`spray wall dropped ${dropped} of ${expected} holds while mapping into its photo`), {
+    level: 'warning',
+    tags: { boardName: 'spray' },
+    extra: {
+      wallUuid: renderData.wall.uuid,
+      versionNumber: renderData.versionNumber,
+      expectedHolds: expected,
+      mappedHolds: mapped,
+    },
+  });
+}
+
 /** Put one wall's published version in the registry, mapped into its photo's pixels. */
 export function registerRenderData(layoutId: number, renderData: SprayWallRenderData): boolean {
   const dimensions = photoDimensions(renderData);
-  const holds = mapCanonicalHoldsToPhoto(renderData.homography, toCanonicalHolds(renderData));
+  const canonicalHolds = toCanonicalHolds(renderData);
+  const holds = mapCanonicalHoldsToPhoto(renderData.homography, canonicalHolds);
   // A wall we cannot map is a wall we must not draw: registering it with unmapped
   // holds would paint every one at its canonical coordinate on top of a
   // photograph it does not belong to — plausible-looking and wrong.
   if (!holds || !dimensions) return false;
+
+  reportDroppedHolds(renderData, canonicalHolds.length, holds.length);
 
   registerSprayWall(layoutId, {
     wallUuid: renderData.wall.uuid,
@@ -168,7 +210,16 @@ export async function loadSprayWall(
   }
 
   const renderData = await fetchSprayWallRenderData(queryClient, wallUuid);
-  if (!renderData) return;
+  if (!renderData) {
+    // The wall exists but has nothing renderable: deleted between the two reads,
+    // visibility revoked, the published version's photo gone. A wall we already
+    // hold must be WITHDRAWN here rather than left drawing its old holds over a
+    // cached photo indefinitely — the `!wallUuid` branch above withdraws for the
+    // same reason, and a revalidation is exactly when this branch is reached with
+    // a live registration in place.
+    unregisterSprayWall(layoutId);
+    return;
+  }
   registerRenderData(layoutId, renderData);
 }
 

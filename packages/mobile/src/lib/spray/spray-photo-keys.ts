@@ -41,3 +41,15 @@ export function parseSprayBackgroundKey(backgroundImageKey: string): SprayPhotoI
 export function sprayPhotoFileName(identity: SprayPhotoIdentity): string {
   return `${identity.layoutId}-${identity.version}.jpg`;
 }
+
+/**
+ * Suffix a download stages under before it is moved into place. The sweeper
+ * refuses to delete anything carrying it (`planSprayPhotoSweep`), so the two must
+ * agree — hence one constant rather than two literals.
+ */
+export const SPRAY_PARTIAL_SUFFIX = '.part';
+
+/** Where a download lands before it is complete. */
+export function sprayPartialPhotoFileName(identity: SprayPhotoIdentity): string {
+  return `${sprayPhotoFileName(identity)}${SPRAY_PARTIAL_SUFFIX}`;
+}

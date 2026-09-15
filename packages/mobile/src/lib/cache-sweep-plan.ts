@@ -257,6 +257,13 @@ export function planStaleArtifactSweep(params: {
 export const SPRAY_PHOTO_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 /**
+ * Suffix a spray-wall photo download stages under. Mirrors `partialPhotoFile` in
+ * `spray-photo-cache.ts`; a plan must never delete one (see
+ * {@link planSprayPhotoSweep}).
+ */
+export const SPRAY_PARTIAL_SUFFIX = '.part';
+
+/**
  * Which wall photos to reap: the stale ones, minus anything a live wall is using.
  *
  * `protectedNames` is the load-bearing half. Superseded versions age out on their
@@ -276,6 +283,14 @@ export function planSprayPhotoSweep(params: {
   const deleteNames: string[] = [];
   let freedBytes = 0;
   for (const entry of params.entries) {
+    // A `.part` is a download in flight. Its mtime is NOW, so the age rule alone
+    // protects it from an ordinary sweep — but the Clear button passes
+    // `maxAgeMs: 0`, and the live-wall protection is keyed on the finished `.jpg`
+    // name, so without this the Clear action deletes the staging file underneath
+    // a running download: `moveSync` then fails with ENOENT and the wall shows a
+    // placeholder until something asks again. Never ours to reclaim mid-write —
+    // the same rule the overlay cache applies to its own managed temps.
+    if (entry.name.endsWith(SPRAY_PARTIAL_SUFFIX)) continue;
     if (params.protectedNames.has(entry.name)) continue;
     if (entry.modifiedAtMs === null) continue;
     if (params.nowMs - entry.modifiedAtMs < params.maxAgeMs) continue;

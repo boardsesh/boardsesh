@@ -68,7 +68,11 @@ function mapHoldOutline(
   mappedR: number,
 ): number[] | undefined {
   const stored = hold.outline;
-  if (!stored || stored.length < 6 || hold.r <= 0) return undefined;
+  // Odd length as well as too short: a ring with a dangling coordinate would read
+  // `stored[index + 1]` as `undefined` on its last pair and build a canonical ring
+  // with NaN in it. The downstream finite check catches the result, but the honest
+  // answer to a malformed ring is the circle fallback, not a ring we half-mapped.
+  if (!stored || stored.length < 6 || stored.length % 2 !== 0 || hold.r <= 0) return undefined;
 
   const canonicalRing: number[] = [];
   for (let index = 0; index + 1 < stored.length; index += 2) {
