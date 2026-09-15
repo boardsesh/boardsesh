@@ -33,6 +33,7 @@ import {
   assertSprayHoldsAreAlive,
   isSprayBoard,
   requireVisibleSprayWall,
+  sprayWallMayAnnounceUnderLock,
   type SprayClimbTarget,
 } from './spray-authoring';
 import {
@@ -240,6 +241,11 @@ export const climbMutations = {
     // Resolved before the transaction so a grade string the scale does not know
     // fails the write rather than silently landing an ungradeable climb. Null for
     // every other board: their grade comes from ticks or the Aurora sync.
+    // Decided inside the transaction, under the wall lock — see
+    // `sprayWallMayAnnounceUnderLock`. Seeded from the pre-transaction read so a
+    // draft (which never reaches the transaction's spray branch) still has a value.
+    let sprayMayAnnounce = sprayTarget?.publishesFeedEvents ?? false;
+
     const sprayDifficultyId = sprayTarget ? await resolveDifficultyId(boardType, validated.userGrade) : null;
     if (sprayTarget && !validated.isDraft && sprayDifficultyId === null) {
       throw new GraphQLError(`"${validated.userGrade}" is not a grade on the Boardsesh scale`, {
@@ -295,6 +301,11 @@ export const climbMutations = {
           sprayTarget,
           holdEntries.map((entry) => entry.holdId),
         );
+        // Re-read visibility UNDER THE LOCK — see the helper. The pre-transaction
+        // value would let a concurrent public → private flip slip past: its
+        // `feed_items` purge runs before this emit, so the row we write afterwards
+        // would survive it.
+        sprayMayAnnounce = await sprayWallMayAnnounceUnderLock(tx, sprayTarget.wallId);
       }
 
       await tx.insert(UNIFIED_TABLES.climbs).values({
@@ -439,7 +450,7 @@ export const climbMutations = {
     // follower, so firing one for a PRIVATE wall would announce the existence of
     // somebody's home wall to people who cannot open it. Public walls only
     // (epic decision 2026-09-14: private-wall ticks are the owner's logbook).
-    const mayAnnounce = !sprayTarget || sprayTarget.publishesFeedEvents;
+    const mayAnnounce = !sprayTarget || sprayMayAnnounce;
     if (!validated.isDraft && mayAnnounce) {
       await publishSocialEvent({
         type: 'climb.created',
@@ -760,6 +771,9 @@ export const climbMutations = {
     // what stops draft → publish from being a way around
     // `assertSprayGradeOnPublish`: without it a client could save an ungraded
     // draft and immediately publish it.
+    // Decided inside the transaction, under the wall lock — see `saveClimb`.
+    let sprayMayAnnounce = sprayTarget?.publishesFeedEvents ?? false;
+
     // A wall's angle is fixed, so an edit may not move a climb off it either.
     if (sprayTarget && validated.angle !== undefined) {
       assertSprayAngleMatchesWall(sprayTarget, validated.angle);
@@ -979,6 +993,8 @@ export const climbMutations = {
           sprayTarget,
           nextHoldEntries.map((entry) => entry.holdId),
         );
+        // Under the lock — same reason as `saveClimb`.
+        sprayMayAnnounce = await sprayWallMayAnnounceUnderLock(tx, sprayTarget.wallId);
       }
 
       // Build the update set from provided fields only.
@@ -1113,7 +1129,7 @@ export const climbMutations = {
     // On a draft → published transition, announce the new climb so follower
     // feeds pick it up, the same way saveClimb does.
     // Public walls only — see the note on `saveClimb`'s event.
-    if (transitioningToPublished && (!sprayTarget || sprayTarget.publishesFeedEvents)) {
+    if (transitioningToPublished && (!sprayTarget || sprayMayAnnounce)) {
       const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId);
       const preferredSetter = displayName || name || null;
       await publishSocialEvent({

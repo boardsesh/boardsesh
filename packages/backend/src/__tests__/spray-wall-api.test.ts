@@ -2089,6 +2089,39 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     expect(n).toBe(1);
   });
 
+  it('does not announce a climb on a wall that was made private before the save', async () => {
+    // The OUTCOME, not the race: this flips privacy before the resolver runs, so it
+    // would pass on the pre-transaction read too. The race itself — a flip landing
+    // between the resolve and the emit — is pinned in spray-wall-write-locks.test.ts,
+    // where the mechanism can be observed directly; a DB-level interleave here would
+    // be flaky about the window it is trying to hit.
+    const publicWall = await wallWithAClimb({ isPublic: true });
+    publishedEvents.length = 0;
+
+    await db.execute(sql`UPDATE user_boards SET is_public = false WHERE uuid = ${publicWall.wall.uuid}`);
+
+    const saved = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: publicWall.wall.layoutId,
+          name: 'Saved as it went private',
+          isDraft: false,
+          // A different hold set: the wall already carries one climb, and the
+          // per-wall duplicate gate would reject an identical one.
+          frames: framesFor([publicWall.holdIds[0], publicWall.holdIds[1]]),
+          angle: 40,
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+
+    expect(saved.uuid).toBeTruthy();
+    expect(publishedEvents.filter((event) => event.type === 'climb.created')).toHaveLength(0);
+  });
+
   it('keeps a tick whose climb row is MISSING — the "Unknown Climb" case', async () => {
     // Four callers AND this predicate onto a LEFT-JOINed `board_climbs`, and a tick
     // with no climb row is a case they deliberately render as "Unknown Climb". With

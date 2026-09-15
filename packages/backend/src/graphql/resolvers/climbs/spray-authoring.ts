@@ -161,6 +161,35 @@ export function assertSprayGradeOnPublish(isDraft: boolean, userGrade: string | 
 }
 
 /**
+ * Whether this wall may announce to the feed, read UNDER THE WALL LOCK.
+ *
+ * `SprayClimbTarget.publishesFeedEvents` is resolved before the write transaction
+ * opens, and the event is published after the transaction commits and the lock is
+ * released. So a concurrent `updateSprayWall` flipping the wall private — and
+ * running its `feed_items` purge — can complete in that window, and the emit would
+ * then insert a FRESH feed row for a now-private wall that the purge has already
+ * been and gone past. The purge cannot catch what has not been written yet.
+ *
+ * Reading it inside the transaction, under the lock the flip also has to take,
+ * serialises the two: either the flip goes first and this returns false, or this
+ * goes first and the flip's purge sweeps the row it wrote.
+ *
+ * Takes the lock itself. `pg_advisory_xact_lock` is re-entrant within a
+ * transaction, so calling it again after `assertSprayHoldsAreAlive` costs nothing
+ * and means a caller with no holds to check is still serialised.
+ */
+export async function sprayWallMayAnnounceUnderLock(executor: DrizzleExecutor, wallId: number): Promise<boolean> {
+  await lockWallForWrite(executor, wallId);
+  const [row] = await executor
+    .select({ isPublic: dbSchema.userBoards.isPublic })
+    .from(dbSchema.sprayWalls)
+    .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
+    .where(and(eq(dbSchema.sprayWalls.id, wallId), isNull(dbSchema.sprayWalls.deletedAt)))
+    .limit(1);
+  return row?.isPublic === true;
+}
+
+/**
  * The wall's PUBLISHED version number, read fresh.
  *
  * Separate from the copy on `SprayClimbTarget` because that one is resolved before

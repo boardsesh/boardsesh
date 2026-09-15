@@ -252,3 +252,60 @@ describe('assertSprayHoldsAreAlive re-resolves the published generation under th
     expect(calls).toEqual([]);
   });
 });
+
+/**
+ * The feed decision is made under the lock, not carried in from before it.
+ *
+ * `SprayClimbTarget.publishesFeedEvents` is resolved before the write transaction
+ * and the event is emitted after it commits. A concurrent `updateSprayWall` going
+ * private in that window runs its `feed_items` purge BEFORE the emit, so a decision
+ * based on the stale value writes a fresh row the purge has already been past.
+ *
+ * Pinned at source as well as behaviourally, because the race is a window of a few
+ * milliseconds: a DB-level interleave test would be flaky about hitting it, while
+ * "the resolver reads this under the lock" is exactly the property that fixes it.
+ */
+describe('the climb.created decision is re-read under the wall lock', () => {
+  const MUTATIONS_SOURCE = readFileSync(
+    fileURLToPath(new URL('../graphql/resolvers/climbs/mutations.ts', import.meta.url)),
+    'utf8',
+  );
+
+  it.each(['saveClimb', 'updateClimb'])('%s decides from the locked read', (resolver) => {
+    const body = functionBody(MUTATIONS_SOURCE, resolver);
+
+    const lockedReadAt = body.indexOf('sprayWallMayAnnounceUnderLock(');
+    expect(lockedReadAt, `${resolver} never re-reads visibility under the lock`).toBeGreaterThanOrEqual(0);
+
+    // And the emit must consult the variable that read fills, never the value
+    // carried in on the target.
+    const emitAt = body.indexOf("type: 'climb.created'");
+    expect(emitAt).toBeGreaterThan(lockedReadAt);
+    expect(
+      body.slice(0, emitAt),
+      `${resolver} still gates the event on the pre-transaction sprayTarget.publishesFeedEvents`,
+    ).not.toMatch(/(?:mayAnnounce|transitioningToPublished)[^\n]*sprayTarget\.publishesFeedEvents/);
+  });
+
+  it('reads visibility only after taking the lock', async () => {
+    const calls: string[] = [];
+    const chain: Record<string, unknown> = {};
+    for (const method of ['from', 'innerJoin', 'where', 'limit']) chain[method] = () => chain;
+    chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve([{ isPublic: false }]).then(resolve);
+
+    const executor = {
+      execute: () => {
+        calls.push('lock');
+        return Promise.resolve([]);
+      },
+      select: () => {
+        calls.push('read');
+        return chain;
+      },
+    } as never;
+
+    const { sprayWallMayAnnounceUnderLock } = await import('../graphql/resolvers/climbs/spray-authoring');
+    await expect(sprayWallMayAnnounceUnderLock(executor, 42)).resolves.toBe(false);
+    expect(calls).toEqual(['lock', 'read']);
+  });
+});
