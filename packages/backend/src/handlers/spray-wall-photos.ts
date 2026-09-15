@@ -133,6 +133,27 @@ const STORED_EXTENSION = 'jpg';
 /** Quality for the stored photo. High: the hold editor traces silhouettes on these pixels. */
 const STORED_JPEG_QUALITY = 88;
 
+/**
+ * `Cache-Control` for every object this handler writes.
+ *
+ * `uploadToS3` defaults to `public, max-age=31536000, immutable`, which is right
+ * for a world-readable avatar and catastrophic here: a browser or any shared
+ * cache on the path would keep serving a photograph of somebody's home for a
+ * YEAR — long past the 15-minute presign that is supposed to be the access
+ * control, and past the owner flipping the wall private or deleting it.
+ *
+ * `no-store` rather than a short max-age because there is no version of "keep a
+ * copy of this for a while" that survives a privacy change. The bytes are fetched
+ * once per presign; the saving a cache would buy is not worth a stale copy of
+ * someone's living room.
+ *
+ * **The public-promotion path is the ONLY place a long lifetime may ever be set.**
+ * SW-14 (#5447) copies a public wall's photo to the `media` bucket under a random
+ * key; that copy is world-readable by intent and can be immutable. Anything
+ * writing to `private` uses this.
+ */
+const PRIVATE_PHOTO_CACHE_CONTROL = 'private, no-store';
+
 /** The object key a wall photo is stored under. The ONE place this shape is written. */
 export function sprayWallPhotoKey(wallUuid: string, photoId: string): string {
   return `spray-walls/${wallUuid}/${photoId}.${STORED_EXTENSION}`;
@@ -367,12 +388,17 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
           await writeImageVariants(
             normalised.body,
             key,
-            (variantKey, body, contentType) => uploadToS3('private', body, variantKey, contentType, { acl: null }),
+            (variantKey, body, contentType) =>
+              uploadToS3('private', body, variantKey, contentType, {
+                acl: null,
+                cacheControl: PRIVATE_PHOTO_CACHE_CONTROL,
+              }),
             [280],
             STORED_CONTENT_TYPE,
           );
           await uploadToS3('private', normalised.body, key, STORED_CONTENT_TYPE, {
             acl: null,
+            cacheControl: PRIVATE_PHOTO_CACHE_CONTROL,
             // The dimensions ride WITH the object so `createSprayWallVersion`
             // reads them off storage instead of trusting a client-sent number:
             // they define the canonical frame, and a lie about them would put

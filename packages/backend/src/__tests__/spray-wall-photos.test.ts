@@ -245,6 +245,14 @@ describe('POST /api/spray-wall-photos', () => {
       height: '120',
     });
     expect(base!.contentType).toBe('image/jpeg');
+
+    // `uploadToS3` defaults to `public, max-age=31536000, immutable`. On a
+    // photograph of somebody's home that would let any shared cache keep serving
+    // it for a YEAR — past the 15-minute presign that is the access control, and
+    // past the owner flipping the wall private. EVERY object, variants included.
+    for (const object of uploadedObjects) {
+      expect((object.options as { cacheControl?: string }).cacheControl).toBe('private, no-store');
+    }
   });
 
   it('keys the object under the wall, so a cleanup sweep can enumerate by prefix', async () => {
