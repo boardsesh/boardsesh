@@ -2,7 +2,9 @@ import { eq, and, count, desc, inArray, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { validateInput } from '../../shared/helpers';
+import { sprayClimbUuidIsReadable } from '../../climbs/spray-read-access';
 import { GetClimbProposalsInputSchema, BrowseProposalsInputSchema } from '../../../../validation/schemas';
 import { resolveCommunitySetting } from '../community-settings';
 import { batchEnrichProposals } from './enrichment';
@@ -15,6 +17,14 @@ export const socialProposalQueries = {
     const limitVal = rawLimit ?? 20;
     const offsetVal = rawOffset ?? 0;
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
+
+    // A proposal names its climb and carries the proposer's reason. The climb is
+    // one uuid away and never joined, so this is the reference form of the wall
+    // rule — and an unreadable wall gets the EMPTY PAGE, not an error, so the
+    // shape is not an oracle for which climbs are on a private wall.
+    if (!(await sprayClimbUuidIsReadable(climbUuid, authenticatedUserId))) {
+      return { proposals: [], totalCount: 0, hasMore: false };
+    }
 
     const conditions = [
       eq(dbSchema.climbProposals.climbUuid, climbUuid),
@@ -69,7 +79,16 @@ export const socialProposalQueries = {
       }
     }
 
-    const conditions: SQL[] = [];
+    // Carried in the WHERE that also carries the LIMIT/OFFSET, and repeated on the
+    // COUNT below, so a private wall's proposal neither shortens a page nor
+    // inflates a total. `browseProposals` is unauthenticated, so the viewer is
+    // null for an anonymous caller — never a hopeful value.
+    const conditions: SQL[] = [
+      sprayReferenceVisibilityCondition(
+        { boardType: dbSchema.climbProposals.boardType, climbUuid: dbSchema.climbProposals.climbUuid },
+        authenticatedUserId,
+      ),
+    ];
     if (boardTypeFilter) conditions.push(eq(dbSchema.climbProposals.boardType, boardTypeFilter));
     if (type) conditions.push(eq(dbSchema.climbProposals.type, type));
     // `types` is the multi-select form of `type`; both narrow, so a caller that
@@ -77,7 +96,7 @@ export const socialProposalQueries = {
     if (types?.length) conditions.push(inArray(dbSchema.climbProposals.type, types));
     if (status) conditions.push(eq(dbSchema.climbProposals.status, status));
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const whereClause = and(...conditions);
 
     // Sort with open proposals first, then by creation date
     const proposals = await db

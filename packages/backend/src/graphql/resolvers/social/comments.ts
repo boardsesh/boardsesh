@@ -13,6 +13,8 @@ import {
 } from '../../../validation/schemas';
 import { logger } from '../../../utils/logger';
 import { encodeOffsetCursor, decodeOffsetCursor } from '../../../utils/feed-cursor';
+import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayClimbUuidIsReadable } from '../climbs/spray-read-access';
 import { validateEntityExists } from './entity-validation';
 import { publishSocialEvent } from '../../../events/index';
 import { pubsub } from '../../../pubsub/index';
@@ -87,6 +89,14 @@ export const socialCommentQueries = {
     const { entityType, entityId, parentCommentUuid, sortBy, limit, offset } = validated;
 
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
+
+    // A climb comment thread is keyed on the climb uuid alone, so holding the
+    // uuid was the whole of the claim. On a spray wall it is not: the wall
+    // decides. The empty page, never an error — a different shape would say
+    // which uuids are climbs on a private wall.
+    if (entityType === 'climb' && !(await sprayClimbUuidIsReadable(entityId, authenticatedUserId))) {
+      return { comments: [], totalCount: 0, hasMore: false };
+    }
 
     // If parentCommentUuid is provided, resolve to internal ID for filtering replies
     let parentCommentFilter: ReturnType<typeof sql>;
@@ -261,6 +271,16 @@ export const socialCommentQueries = {
 
     const distinctClause = boardTypeFilter ? sql`DISTINCT ON (c."id")` : sql``;
 
+    // The feed spans every entity type and joins `board_climbs` only for the
+    // board filter, so a comment on a private wall's climb reached an anonymous
+    // caller carrying the climb uuid in `entityId`. The reference form of the
+    // wall rule, applied to the climb rows only — NULL-safe, so a comment whose
+    // climb row has gone survives.
+    const sprayCommentVisibility = sql`AND (
+      c."entity_type" <> 'climb'
+      OR ${sprayReferenceVisibilityCondition({ boardType: sql`'spray'`, climbUuid: sql`c."entity_id"` }, authenticatedUserId)}
+    )`;
+
     const rawRows = await executeRows<CommentRow>(
       db,
       sql`
@@ -305,6 +325,7 @@ export const socialCommentQueries = {
       ${boardFilterJoin}
       WHERE c."deleted_at" IS NULL
         ${boardFilterWhere}
+        ${sprayCommentVisibility}
       ORDER BY ${boardTypeFilter ? sql`c."id",` : sql``} c."created_at" DESC
       LIMIT ${limit + 1}
       OFFSET ${offset}

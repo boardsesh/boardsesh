@@ -38,6 +38,7 @@ import {
   requireAnonReadableBoard,
 } from '../board-presence/shared';
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
+import { sprayBoardRowIsReadable } from '../climbs/spray-read-access';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
 import { redisClientManager } from '../../../redis/client';
@@ -1105,6 +1106,10 @@ export const socialBoardQueries = {
     // Gate before enrichment so a masked anonymous read never runs the
     // owner/count/follow lookups for a board it isn't allowed to see.
     if (!viewerId && !isRowAnonReadable(canonical)) return null;
+    // A spray wall is private by default and its row carries the wall's name and
+    // location, so the signed-in exemption above is the wrong rule for one. The
+    // uuid IS the share capability, so an unlisted wall still opens.
+    if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'capability'))) return null;
     return enrichBoard(canonical, viewerId);
   },
 
@@ -1122,6 +1127,9 @@ export const socialBoardQueries = {
     // Same anonymous mask as the active path and `board(boardUuid)`: following a
     // tombstone must not disclose a private survivor to an anonymous caller.
     if (!viewerId && !isRowAnonReadable(canonical)) return null;
+    // A spray wall's slug is derived from the wall's NAME, so it is a guess and
+    // not a capability: no unlisted exemption here, unlike `board(boardUuid)`.
+    if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'enumerable'))) return null;
     return enrichBoard(canonical, viewerId);
   },
 

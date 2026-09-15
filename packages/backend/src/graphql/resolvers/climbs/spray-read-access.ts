@@ -1,5 +1,6 @@
 import { GraphQLError } from 'graphql';
-import { sprayLayoutVisibilitySql } from '@boardsesh/db/queries';
+import { sql } from 'drizzle-orm';
+import { sprayLayoutVisibilitySql, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { dbRead } from '../../../db/client';
 
@@ -89,4 +90,66 @@ export async function assertSprayBoardIsReadable(
   if (!isSprayBoardType(board.boardType)) return;
   if (await sprayLayoutIsReadable(board.boardType, Number(board.layoutId), viewerUserId)) return;
   throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+}
+
+/**
+ * The wall rule for a `user_boards` ROW, for the board readers that resolve a
+ * wall without ever going through `sprayWall*`.
+ *
+ * `board(boardUuid)` and `boardBySlug(slug)` deliberately let ANY signed-in
+ * climber open a private board by a direct link — "direct private-board links
+ * keep working for signed-in climbers" — because a private Kilter board is a
+ * piece of gym furniture whose name gives nothing away. A spray wall is a
+ * photograph of somebody's living room, it is **private by default** (inverted
+ * from every other board type), and its row carries the wall's name and its
+ * location. So those two readers need the wall's own rule, and they need the two
+ * halves of it separately:
+ *
+ *  - `'capability'` — the caller presented the wall's uuid, an unguessable
+ *    122-bit token, so an UNLISTED wall opens up. Mirrors `sprayWall(uuid)` and
+ *    `viewerCanSeeSprayWall`.
+ *  - `'enumerable'` — the caller presented a guessable key. A slug is derived
+ *    from the wall's NAME, so it is a guess, not a capability. Mirrors
+ *    `sprayWallByLayout` and `viewerCanSeeSprayWallByLayout`: no unlisted
+ *    exemption.
+ *
+ * Answers true for every non-spray board, so the call site needs no branch.
+ * A refused wall must be reported as the caller's "not found", never as an
+ * error of its own — otherwise the response is an oracle.
+ */
+export async function sprayBoardRowIsReadable(
+  board: { boardType: string; layoutId: number | null; isUnlisted?: boolean | null },
+  viewerUserId: string | null | undefined,
+  lookupKey: 'capability' | 'enumerable',
+): Promise<boolean> {
+  if (!isSprayBoardType(board.boardType)) return true;
+  if (lookupKey === 'capability' && board.isUnlisted === true) return true;
+  return sprayLayoutIsReadable(board.boardType, board.layoutId, viewerUserId);
+}
+
+/**
+ * Whether the viewer may reach the climb behind a bare CLIMB UUID, for the
+ * readers that hold a reference to a climb and never join `board_climbs` at all
+ * — a comment thread, the proposals on a climb.
+ *
+ * Phrased through {@link sprayReferenceVisibilityCondition}, so it is the same
+ * "there is no INVISIBLE spray climb behind this reference" rule the reference
+ * queries carry in their WHERE, and so a reference whose climb row is missing
+ * survives. Answers true for every non-spray climb, so a call site needs no
+ * board-type branch — and the caller must answer an unreadable climb with its
+ * own EMPTY PAGE, never an error.
+ */
+export async function sprayClimbUuidIsReadable(
+  climbUuid: string,
+  viewerUserId: string | null | undefined,
+): Promise<boolean> {
+  const rows = rowsFromResult<{ visible: boolean }>(
+    await dbRead.execute(
+      sql`SELECT ${sprayReferenceVisibilityCondition(
+        { boardType: sql`'spray'`, climbUuid: sql`${climbUuid}` },
+        viewerUserId ?? null,
+      )} AS visible`,
+    ),
+  );
+  return rows[0]?.visible === true;
 }
