@@ -73,6 +73,8 @@ const SESSION_SUMMARY_FIELDS = `
   }
   boardTypes
   hardestGrade
+  socialEntityType
+  socialEntityId
   firstTickAt
   lastTickAt
   durationMinutes
@@ -155,8 +157,6 @@ const SESSION_FEED_ITEM_FIELDS = `
       boardId
     }
   }
-  socialEntityType
-  socialEntityId
 `;
 
 export const GET_SESSION_GROUPED_FEED = gql`

@@ -313,6 +313,12 @@ export type SessionDetail = {
   gradeDistribution: SessionGradeDistributionItem[];
   boardTypes: string[];
   hardestGrade?: string | null;
+  // The real entity behind this session's votes/comments — see SessionFeedItem's
+  // matching field. A `daily_highlight` session has no session row, so this
+  // points at the day's hardest tick instead; callers must post votes/comments
+  // against this pair, never `sessionId` directly.
+  socialEntityType: 'session' | 'tick';
+  socialEntityId: string;
   firstTickAt: string;
   lastTickAt: string;
   durationMinutes?: number | null;
