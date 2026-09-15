@@ -36,7 +36,7 @@ import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
-import { sprayCapCopy, sprayCapFromErrorCode } from '../../lib/spray/spray-cap-copy';
+import { sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { suggestSprayHolds } from '../../lib/spray/hold-suggestions';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
@@ -255,12 +255,9 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
       // years of monthly changes — and it comes back as an English resolver
       // sentence. Branch on the code and say the number instead.
       const cap = sprayCapFromErrorCode(extractGraphqlCode(error));
-      const capCopy = cap ? sprayCapCopy(cap) : null;
       dispatch({
         type: 'UPLOAD_FAILED',
-        message: capCopy
-          ? t(capCopy.key, capCopy.values)
-          : (extractGraphqlMessage(error) ?? t('sprayWizard.upload.failed')),
+        message: cap ? sprayCapMessage(cap, t) : (extractGraphqlMessage(error) ?? t('sprayWizard.upload.failed')),
       });
     }
   }, [

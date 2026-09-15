@@ -55,7 +55,7 @@ import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
-import { SPRAY_CAP_VALUES, sprayCapCopy, sprayCapFromErrorCode } from '../../lib/spray/spray-cap-copy';
+import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
 import { invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
@@ -121,10 +121,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const capOrServerMessage = useCallback(
     (error: unknown, fallback: string): string => {
       const cap = sprayCapFromErrorCode(extractGraphqlCode(error));
-      if (cap) {
-        const copy = sprayCapCopy(cap);
-        return t(copy.key, copy.values);
-      }
+      if (cap) return sprayCapMessage(cap, t);
       return extractGraphqlMessage(error) ?? fallback;
     },
     [t],

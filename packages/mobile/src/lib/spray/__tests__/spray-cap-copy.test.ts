@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } from '@boardsesh/board-config';
 import boardsCatalog from '@boardsesh/i18n/locales/en-US/boards.json';
-import { SPRAY_CAP_CODES, SPRAY_CAP_VALUES, sprayCapCopy, sprayCapFromErrorCode } from '../spray-cap-copy';
+import { SPRAY_CAP_CODES, SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../spray-cap-copy';
 
 /**
  * The caps, as the climber reads them.
@@ -25,11 +25,24 @@ function render(template: string, values: Record<string, number>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => String(values[key]));
 }
 
+/**
+ * A stand-in for `useTranslation('boards').t`: looks the key up in the REAL
+ * en-US catalog and interpolates it the way i18next would. Rendering through the
+ * actual catalog is the point — a fake that echoed the key back would pass
+ * whether or not the sentence carries the number.
+ */
+function translate(key: string, values: Record<string, number>): string {
+  const path = key.split('.');
+  let node: unknown = catalog;
+  for (const segment of path) node = (node as Record<string, unknown>)[segment];
+  if (typeof node !== 'string') throw new Error(`no en-US boards string at ${key}`);
+  return render(node, values);
+}
+
 describe('spray cap copy', () => {
-  it('names an i18n key and the value for every cap', () => {
-    expect(sprayCapCopy('walls')).toEqual({ key: 'sprayCaps.walls', values: { max: MAX_SPRAY_WALLS_PER_USER } });
-    expect(sprayCapCopy('holds')).toEqual({ key: 'sprayCaps.holds', values: { max: MAX_HOLDS_PER_WALL } });
-    expect(sprayCapCopy('versions')).toEqual({ key: 'sprayCaps.versions', values: { max: MAX_VERSIONS_PER_WALL } });
+  it('gives each cap its own sentence', () => {
+    const messages = (['walls', 'holds', 'versions'] as const).map((kind) => sprayCapMessage(kind, translate));
+    expect(new Set(messages).size).toBe(3);
   });
 
   it('recognises a cap refusal by its code and nothing else', () => {
@@ -46,10 +59,10 @@ describe('spray cap copy', () => {
 
   it('renders every cap sentence with the number board-config enforces', () => {
     const rendered = {
-      walls: render(catalog.sprayCaps.walls, sprayCapCopy('walls').values),
+      walls: sprayCapMessage('walls', translate),
       wallsHint: render(catalog.sprayCaps.wallsHint, { max: SPRAY_CAP_VALUES.walls }),
-      holds: render(catalog.sprayCaps.holds, sprayCapCopy('holds').values),
-      versions: render(catalog.sprayCaps.versions, sprayCapCopy('versions').values),
+      holds: sprayCapMessage('holds', translate),
+      versions: sprayCapMessage('versions', translate),
       editorTooMany: render(catalog.sprayEditor.errors.tooManyHolds, { max: SPRAY_CAP_VALUES.holds }),
     };
 

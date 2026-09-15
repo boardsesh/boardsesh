@@ -32,18 +32,30 @@ export const SPRAY_CAP_VALUES = {
   versions: MAX_VERSIONS_PER_WALL,
 } as const satisfies Record<SprayCapKind, number>;
 
-/** An i18n key plus the interpolation values it expects. */
-export type SprayCapCopy = { key: string; values: { max: number } };
+/**
+ * Whatever renders an i18n key. Taken as a parameter so this module stays pure
+ * TypeScript — the caps and their copy are one idea, and it should not need a
+ * React context to answer a question about a number.
+ */
+export type SprayCapTranslator = (key: string, values: { max: number }) => string;
 
 /**
- * The message for one cap, ready to hand to `t`.
+ * The message for one cap, rendered.
  *
- * `i18n-keep boards.sprayCaps.walls`
- * `i18n-keep boards.sprayCaps.holds`
- * `i18n-keep boards.sprayCaps.versions`
+ * A switch with three literal keys rather than a computed
+ * `t(`sprayCaps.${kind}`)`: `check:i18n:orphans` walks every `t()` call and a
+ * non-static argument is a hard failure, because a key nobody can find
+ * statically is a key nobody can safely delete. Three lines is the whole cost.
  */
-export function sprayCapCopy(kind: SprayCapKind): SprayCapCopy {
-  return { key: `sprayCaps.${kind}`, values: { max: SPRAY_CAP_VALUES[kind] } };
+export function sprayCapMessage(kind: SprayCapKind, t: SprayCapTranslator): string {
+  switch (kind) {
+    case 'walls':
+      return t('sprayCaps.walls', { max: MAX_SPRAY_WALLS_PER_USER });
+    case 'holds':
+      return t('sprayCaps.holds', { max: MAX_HOLDS_PER_WALL });
+    case 'versions':
+      return t('sprayCaps.versions', { max: MAX_VERSIONS_PER_WALL });
+  }
 }
 
 /**
