@@ -789,9 +789,30 @@ export function stageCatalogClimb(
       canonicalUuid: canonicalByFingerprint,
       source: KILTER,
     });
+    const canonicalMeta = index.existingCanonicalMeta.get(canonicalByFingerprint);
+    const canonicalLowerUuid = canonicalByFingerprint.toLowerCase();
+    // Self-heal the canonical's OWN alias row while we're here. ~6k historical
+    // canonicals never got one, and without it the canonical is invisible to
+    // deletion reconciliation's alias-graph lookup: the folded alias above
+    // wouldn't count for it, the direct-uuid fallback would unlist it again in
+    // the same cycle, and the fold would re-list it in the next — a permanent
+    // flip-flop costing offline clients a sync_seq bump every cycle. With the
+    // self-alias present the canonical has ≥2 aliases and reconciliation files
+    // it as skippedCanonicalWithAliases instead. `undefined` meta means the
+    // canonical was created earlier this run and already staged its own.
+    if (canonicalMeta !== undefined && !index.existingSelfAliasLower.has(canonicalLowerUuid)) {
+      index.existingSelfAliasLower.add(canonicalLowerUuid);
+      batch.aliasRows.push({
+        boardType: KILTER,
+        aliasUuid: canonicalByFingerprint,
+        canonicalUuid: canonicalByFingerprint,
+        source: KILTER,
+      });
+      result.selfAliasesBackfilled += 1;
+    }
     // A listed Grips climb folded onto this canonical → if it's a synced
     // canonical we'd previously unlisted, re-list it (it exists again).
-    if (shouldRelistFoldedCanonical(index.existingCanonicalMeta.get(canonicalByFingerprint))) {
+    if (shouldRelistFoldedCanonical(canonicalMeta)) {
       canonicalsToRelist.add(canonicalByFingerprint);
     }
     return 'folded';
@@ -957,13 +978,17 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
   // 1. The FOLD path — a live-listed Grips climb fingerprint-matched this
   //    canonical. Ordering vs deletions: reconcileDeletions runs LAST in
   //    syncKilterCatalog (after every layout group), so it is the authority
-  //    within a cycle. A fold necessarily gives the canonical ≥2 aliases (its
-  //    self-alias + the folded one), so even if the same cycle's /delteduuids
-  //    also names it, the deletion pass classifies it as
-  //    skippedCanonicalWithAliases (it still backs a live alias) and does NOT
-  //    re-unlist it — correct, because a live alias proves the wall position
-  //    exists. A genuinely-dead canonical (no live folded alias) never reaches
-  //    the fold, so it cannot resurrect a truly-deleted climb.
+  //    within a cycle. The fold leaves the canonical with ≥2 aliases: the
+  //    folded one, plus its self-alias, which stageCatalogClimb stages into the
+  //    same batch when the canonical is one of the ~6k that never got one. So
+  //    even if the same cycle's /delteduuids names it, the deletion pass
+  //    classifies it as skippedCanonicalWithAliases (it still backs a live
+  //    alias) and does NOT re-unlist it — correct, because a live alias proves
+  //    the wall position exists. That staged self-alias is what makes the
+  //    invariant true: without it the canonical misses the alias-graph lookup
+  //    entirely and the direct-uuid fallback re-unlists it every cycle. A
+  //    genuinely-dead canonical (no live folded alias) never reaches the fold,
+  //    so it cannot resurrect a truly-deleted climb.
   // 2. The IDENTITY path — Kilter listed the same uuid on /climbs/all. That
   //    argument does NOT hold here: the canonical usually has only its own
   //    self-alias, so the deletion pass would re-unlist it in the same cycle
@@ -1283,6 +1308,13 @@ async function ingestRerouteCandidatesForLayout(input: {
   const climbUuidToCanonical = new Map<string, string>();
   const canonicalsToRelist = new Set<string>();
   const stagedCandidates: RerouteCandidate[] = [];
+  // Only an insert or a fold is a recovery. Kilter never fixes the upstream tag,
+  // so on every later cycle these same climbs are held aside again, decode
+  // against the target layout and match there on UUID identity — counting those
+  // would report the same eight climbs as rerouted forever and leave the
+  // post-deploy check unable to tell a recovery from a re-handle. Their stats
+  // are still replayed below.
+  let recoveredCount = 0;
   const startedAt = new Date();
   for (const candidate of candidates) {
     const lowerUuid = candidate.climb.climbUuid.toLowerCase();
@@ -1319,13 +1351,14 @@ async function ingestRerouteCandidatesForLayout(input: {
       );
       continue;
     }
+    if (outcome === 'inserted' || outcome === 'folded') recoveredCount += 1;
     stagedCandidates.push(candidate);
   }
 
   await flushKilterLayoutBatch(db, batch.newClimbInserts, batch.newHoldRows, batch.aliasRows);
   result.canonicalsInserted += batch.newClimbInserts.length;
   result.aliasesUpserted += batch.aliasRows.length;
-  result.climbsRerouted += stagedCandidates.length;
+  result.climbsRerouted += recoveredCount;
   if (canonicalsToRelist.size > 0) {
     result.canonicalsRelisted += await relistCanonicals(db, [...canonicalsToRelist]);
   }
@@ -1353,7 +1386,10 @@ async function ingestRerouteCandidatesForLayout(input: {
   result.statsUpserted += await upsertCatalogStats(db, statsByCanonicalAngle);
 
   if (stagedCandidates.length > 0) {
-    log(`[kilter-catalog] rerouted ${stagedCandidates.length} mis-tagged climb(s) onto layout ${targetLayoutId}`);
+    const reHandledCount = stagedCandidates.length - recoveredCount;
+    log(
+      `[kilter-catalog] rerouted ${recoveredCount} mis-tagged climb(s) onto layout ${targetLayoutId}${reHandledCount > 0 ? ` (${reHandledCount} already there from an earlier run)` : ''}`,
+    );
   }
   return result;
 }

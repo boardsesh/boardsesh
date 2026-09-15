@@ -156,7 +156,7 @@ Implemented in [`packages/kilter-sync/src/sync/catalog-sync.ts`](../packages/kil
 
 1. **Reference pull** (`sync/reference-pull.ts`) over PowerSync `global` + `global_gyms` → `products`, `product_layouts`, `holds`, `difficulty_grades`. The `product_layouts` list is the set of `productLayoutUuid`s to fetch; the others drive a reconcile/verify pass.
 2. **Layout resolve** (`sync/layout-resolver.ts`): each Grips `productLayoutUuid` (a small int-string like `"27"`) → the integer `board_layouts.id`, by product name. Grips ships finer layout granularity than the legacy catalog, so many Grips layouts collapse onto one `board_layouts` row (six "Kilter Board Original" variants → `layout_id=1`). Resolutions persist to `board_layout_aliases`. Products with multiple board layouts (Tycho) or unknown to board\_\* ("UP Board") resolve to null → skipped and reported.
-3. **Catalog REST pull**, grouped by resolved `board_layouts.id` so the existing catalog loads once per board layout: `GET /api/climbs/all/{productLayoutUuid}` (full per-layout array, no pagination) + `GET /api/climb-stat/all/{productLayoutUuid}`.
+3. **Catalog REST pull**, grouped by resolved `board_layouts.id` so the existing catalog loads once per board layout: `GET /api/climbs/all/{productLayoutUuid}` (full per-layout array, no pagination) + `GET /api/climb-stat/all/{productLayoutUuid}`. `--layouts` scopes which layouts are *pulled*, but not the hole→placement preload the reroute resolver needs: every listed layout still resolves, so a scoped run also persists those layout aliases and reports unmapped layouts from outside the filter.
 4. **Parse + remap** (`sync/catalog-parse.ts`): Grips `climb_concat` is `h{holeId}p{code}[s{start}][e{end}]`; the legacy catalog stores `frames` as `p{placementId}r{code}`. `board_placements(layout_id, hole_id) → id` (unique per layout) bridges the two, so `climb_concat` is rewritten to the canonical Aurora frames format and routed through the existing `convertLitUpHoldsStringToMap`. This guarantees byte-identical `board_climb_holds` / `hold_fingerprint` to the legacy data (verified 366/366 in Phase 0).
 5. **Dedup** (see [Climb dedup](#climb-dedup)) — **UUID-first** (Grips inherited Aurora's climb UUIDs, so ~80% of climbs already exist as their own canonical), then hold-fingerprint for new UUIDs.
 6. **Upsert** `board_climbs` (new canonicals only) + `board_climb_holds` + `board_climb_aliases`, then `board_climb_stats`, writing the Grips count into `upstream_ascensionist_count` (see below). Setter notifications fire for newly-inserted canonicals (`sync/notifications.ts`, ported from aurora-sync).
@@ -255,7 +255,7 @@ vp exec kilter-sync backlog reject <uuid…> --note "AI test climb: holes that e
 vp exec kilter-sync backlog unreject <uuid…>
 ```
 
-`reject` takes `--note`, not `--reason`: the parent `backlog` command already owns `--reason` as the skip-reason filter, and commander lets it swallow the same flag on the subcommand. A UUID matching no row is named and sets exit code 1, so a typo can't look like a successful write-off.
+`reject` takes `--note`, not `--reason`: the parent `backlog` command already uses `--reason` for the skip-reason filter, so reusing that name on the subcommand would read as that filter. A UUID matching no row is named and sets exit code 1, so a typo can't look like a successful write-off.
 
 A non-zero `unparsable_concat` count is the signal that Kilter changed the encoding — and the raw payloads needed to decode the new form are already sitting in the table.
 
@@ -307,7 +307,7 @@ Kilter's catalog has duplicate climbs at different UUIDs with identical hold lay
 
 Both dedup paths can re-list a synced canonical we previously unlisted, because the incoming climb is live-listed in the current catalog pull. They are protected differently:
 
-- **Fold path** — a listed Grips climb fingerprint-matched the canonical. The fold necessarily leaves that canonical with ≥2 aliases, so the same cycle's deletion pass classifies it as `skippedCanonicalWithAliases` and never re-unlists it.
+- **Fold path** — a listed Grips climb fingerprint-matched the canonical. The fold leaves it with ≥2 aliases: the folded one, plus its self-alias, which the fold stages into the same batch for the ~6k canonicals that never got one. The same cycle's deletion pass then classifies it as `skippedCanonicalWithAliases` and never re-unlists it. That staged self-alias is what makes the invariant hold — without it the canonical misses the alias-graph lookup, the direct-uuid fallback unlists it again in the same cycle, and the next fold re-lists it: a flip-flop costing a `sync_seq` bump per cycle.
 - **Identity path** — Kilter served the same UUID from `/climbs/all`. That argument does **not** hold here: the canonical usually has only its own self-alias, so the deletion pass would re-unlist it and the two would fight every cycle. `decideIdentityRelist` keeps them apart, using the run's single `/delteduuids` fetch:
   - UUID on the deletion list → blocked, counted in `relistsBlockedByDeletionHistory`;
   - no deletion list at all (fetch failed, or empty) → nothing re-listed through this path, and reconciliation is skipped too;

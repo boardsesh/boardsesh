@@ -255,10 +255,8 @@ function reportUnmatchedClimbUuids(requestedUuids: string[], matchedUuids: strin
 backlogCommand
   .command('reject <climbUuids...>')
   .description('Write climbs off so they drop out of the open backlog (nothing is deleted)')
-  // --note, NOT --reason: the parent `backlog` command already owns --reason as
-  // the skip-reason FILTER, and commander lets the parent option swallow the
-  // same flag here, so `backlog reject <uuid> --reason "…"` would silently
-  // filter a report instead of writing the note.
+  // --note, not --reason: the parent `backlog` command already uses --reason for
+  // the skip-reason filter, so reusing that name here would read as the filter.
   .requiredOption('--note <text>', 'why these climbs are being written off (stored on the row)')
   .action(async (climbUuids: string[], opts: { note: string }) => {
     const client = postgres(getDatabaseUrl(), { max: 1, prepare: false });
