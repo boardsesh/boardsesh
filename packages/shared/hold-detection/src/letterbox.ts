@@ -212,7 +212,10 @@ export function letterbox(image: RgbaImage, rect: TileRect, options: LetterboxOp
       }
     }
     // Drop rows the next output pixel cannot reach, so a tall crop does not keep
-    // every resampled row alive at once.
+    // every resampled row alive at once. Deleting from a Map while iterating its
+    // own keys is defined behaviour — the iterator visits insertion order and
+    // simply skips what has gone — and the vertical windows only ever advance, so
+    // nothing removed here is wanted again.
     const nextFrom = out + 1 < contentHeight ? vertical.start[out + 1] : Number.POSITIVE_INFINITY;
     for (const cachedRow of resampledRows.keys()) if (cachedRow < nextFrom) resampledRows.delete(cachedRow);
 

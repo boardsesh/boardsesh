@@ -53,6 +53,16 @@ export function decodeRfDetr(outputs: RfDetrOutputs, options: DecodeOptions): De
 }
 
 function readQueryCount(outputs: RfDetrOutputs): number {
+  // Checked before indexing: a 1-D shape would make `length - 2` negative, the
+  // lookup `undefined`, and the loop below run zero times — a runtime that
+  // flattened its outputs would then read as "the model found no holds" instead
+  // of as a bug.
+  if (outputs.boxesShape.length < 2 || outputs.logitsShape.length < 2) {
+    throw new Error(
+      `RF-DETR outputs must be at least 2-D, got boxes [${outputs.boxesShape.join(', ')}] ` +
+        `and logits [${outputs.logitsShape.join(', ')}]`,
+    );
+  }
   const boxQueries = outputs.boxesShape[outputs.boxesShape.length - 2];
   const logitQueries = outputs.logitsShape[outputs.logitsShape.length - 2];
   if (outputs.boxesShape[outputs.boxesShape.length - 1] !== 4) {

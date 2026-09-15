@@ -5,7 +5,7 @@ import { toHoldCandidates } from '../candidates';
 import { decodeRfDetr } from '../decode';
 import { IMAGENET_MEAN, IMAGENET_STD, letterbox, unLetterbox } from '../letterbox';
 import { boxIou, mergeTiles, nms } from '../nms';
-import { DEFAULT_TILE_PLAN, planTiles, tileWindows } from '../tiles';
+import { DEFAULT_TILE_PLAN, planTiles, roundHalfToEven, tileWindows } from '../tiles';
 import type { Box, Detection, RgbaImage, TileRect } from '../types';
 
 /** A flat grey photo, so a resample's output is exactly its input. */
@@ -34,6 +34,22 @@ describe('tileWindows', () => {
       { x0: 0, y0: 435, x1: 442, y1: 1024 },
       { x0: 326, y0: 435, x1: 768, y1: 1024 },
     ]);
+  });
+
+  it('rounds tile sizes the way Python does, ties to even', () => {
+    // 1020 / 2 * 1.15 is exactly 586.5 in float64. Python's `round` gives 586 and
+    // `Math.round` gives 587, and one pixel of tile width moves the window, the
+    // un-letterbox mapping and every box that came out of that tile.
+    expect((1020 / 2) * 1.15).toBe(586.5);
+    expect(tileWindows(1020, 1020, { rows: 2, cols: 2, overlap: 0.15 })[0]).toEqual({
+      x0: 0,
+      y0: 0,
+      x1: 586,
+      y1: 586,
+    });
+    // The plain half-up case, where nothing is at a tie.
+    expect((1021 / 2) * 1.0).toBe(510.5);
+    expect(tileWindows(1021, 1021, { rows: 2, cols: 2, overlap: 0 })[0].x1).toBe(510);
   });
 
   it('covers the image exactly, with neighbours overlapping', () => {
@@ -70,9 +86,23 @@ describe('planTiles', () => {
     expect(plan.tiles[0]).toEqual({ x0: 0, y0: 0, x1: 589 / 0.5, y1: 442 / 0.5 });
   });
 
+  it('rounds the working size ties-to-even as well', () => {
+    // `eval.py` sizes the long-side resize with Python's `round` too: a 5 px side
+    // at scale 0.5 is 2.5, which is 2 there and would be 3 under Math.round.
+    expect(planTiles(10, 5, { longSide: 5 }).workingHeight).toBe(2);
+    expect(planTiles(10, 7, { longSide: 5 }).workingHeight).toBe(4);
+  });
+
   it('refuses a non-positive size rather than planning zero tiles', () => {
     expect(() => planTiles(0, 100)).toThrow(/positive image size/);
     expect(() => planTiles(100, Number.NaN)).toThrow(/positive image size/);
+  });
+});
+
+describe('roundHalfToEven', () => {
+  it('sends a tie to the even neighbour and leaves everything else alone', () => {
+    expect([0.5, 1.5, 2.5, 3.5, -0.5, -1.5, -2.5].map(roundHalfToEven)).toEqual([0, 2, 2, 4, 0, -2, -2]);
+    expect([0.4, 0.6, 2.49, 2.51, -0.4, -0.6, 7].map(roundHalfToEven)).toEqual([0, 1, 2, 3, -0, -1, 7]);
   });
 });
 
@@ -179,6 +209,14 @@ describe('decodeRfDetr', () => {
 
   it('stamps the tile it came from', () => {
     expect(decodeRfDetr(outputs, { scoreThreshold: 0, tileIndex: 3 })[0].tileIndex).toBe(3);
+  });
+
+  it('refuses a flattened shape rather than decoding zero queries', () => {
+    // `length - 2` on a 1-D shape is -1, the lookup is undefined, and the decode
+    // loop runs zero times — a runtime that flattened its outputs would read as
+    // "the model found no holds".
+    expect(() => decodeRfDetr({ ...outputs, boxesShape: [8] }, { scoreThreshold: 0 })).toThrow(/at least 2-D/);
+    expect(() => decodeRfDetr({ ...outputs, logitsShape: [4] }, { scoreThreshold: 0 })).toThrow(/at least 2-D/);
   });
 
   it('refuses tensors that are not the RF-DETR pair', () => {

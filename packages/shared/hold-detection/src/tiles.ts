@@ -45,6 +45,24 @@ export const DEFAULT_TILE_PLAN: Required<TilePlanOptions> = {
 };
 
 /**
+ * Python's `round()`: ties go to the EVEN integer, not away from zero.
+ *
+ * Not a nicety. `ml/holds/common.py` sizes its tiles with `int(round(...))`, and
+ * a 1020 px working width on the 2x2 / 0.15 grid lands on exactly 586.5 in
+ * float64 — Python returns 586 and `Math.round` returns 587. One pixel of tile
+ * width shifts the window, the un-letterbox mapping and therefore every box in
+ * that tile, so the two languages would disagree on any photo whose long side
+ * happens to hit a tie. The same applies to the long-side resize, which `eval.py`
+ * also rounds with `round()`.
+ */
+export function roundHalfToEven(value: number): number {
+  const floor = Math.floor(value);
+  const fraction = value - floor;
+  if (fraction !== 0.5) return Math.round(value);
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
+/**
  * Verbatim port of `tile_boxes` in `ml/holds/common.py`, integer working pixels.
  *
  * Tiles overlap by `grid.overlap` of a tile side so a hold on a seam is whole in
@@ -52,13 +70,14 @@ export const DEFAULT_TILE_PLAN: Required<TilePlanOptions> = {
  * the windows cover the image exactly with no padding. The integer rounding is
  * part of the contract, not an accident: the Python expectations in
  * `ml/holds/fixtures/expected-detections.json` were produced through these exact
- * `int(round(...))` / floor-division steps.
+ * `round()` / floor-division steps — including its ties-to-even rounding, which
+ * {@link roundHalfToEven} reproduces.
  */
 export function tileWindows(width: number, height: number, grid: TileGrid): TileRect[] {
   if (grid.rows === 1 && grid.cols === 1) return [{ x0: 0, y0: 0, x1: width, y1: height }];
 
-  const tileWidth = Math.round((width / grid.cols) * (1 + grid.overlap));
-  const tileHeight = Math.round((height / grid.rows) * (1 + grid.overlap));
+  const tileWidth = roundHalfToEven((width / grid.cols) * (1 + grid.overlap));
+  const tileHeight = roundHalfToEven((height / grid.rows) * (1 + grid.overlap));
   const stepX = grid.cols > 1 ? Math.max(1, Math.floor((width - tileWidth) / Math.max(1, grid.cols - 1))) : width;
   const stepY = grid.rows > 1 ? Math.max(1, Math.floor((height - tileHeight) / Math.max(1, grid.rows - 1))) : height;
 
@@ -93,8 +112,8 @@ export function planTiles(width: number, height: number, options: TilePlanOption
   }
 
   const scale = longSide / Math.max(width, height);
-  const workingWidth = Math.max(1, Math.round(width * scale));
-  const workingHeight = Math.max(1, Math.round(height * scale));
+  const workingWidth = Math.max(1, roundHalfToEven(width * scale));
+  const workingHeight = Math.max(1, roundHalfToEven(height * scale));
 
   return {
     scale,

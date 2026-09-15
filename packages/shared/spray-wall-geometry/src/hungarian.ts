@@ -1,6 +1,11 @@
 /**
- * Rectangular linear assignment — the Hungarian method, by shortest augmenting
- * paths (Jonker-Volgenant form), O(n^2 m).
+ * Rectangular linear assignment — the Hungarian algorithm, in its
+ * shortest-augmenting-path formulation with dual potentials, O(n^2 m).
+ *
+ * "Hungarian" is the name used everywhere for this: the file, the docs
+ * (`docs/spray-walls.md`, "The gates") and the PR that added it. The potentials
+ * and the per-row Dijkstra are what make it O(n^2 m) rather than the textbook
+ * O(n^4) matrix-reduction version; they are not a different algorithm.
  *
  * Implemented rather than depended on. The epic caps a wall at 1,500 holds, so
  * the worst case here is about 3.4 billion floating-point comparisons in theory

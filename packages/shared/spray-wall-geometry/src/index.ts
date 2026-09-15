@@ -19,6 +19,7 @@ export {
   boundingSize,
   homographyFromAnchors,
   invert,
+  isConvexQuad,
   isSolvableAnchorQuad,
   isValidAnchorQuad,
   mapPoint,

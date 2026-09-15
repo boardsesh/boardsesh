@@ -93,6 +93,44 @@ export function quadDoubleArea(quad: Quad): number {
 }
 
 /**
+ * Cross products of consecutive edges around the ring, one per vertex.
+ *
+ * The sign of each says which way the boundary turns there. All four the same
+ * sign means a convex, non-self-intersecting quadrilateral; mixed signs mean
+ * either a concave one or a bow-tie, and a zero means three of the four points
+ * are collinear.
+ */
+function quadTurns(quad: Quad): number[] {
+  return quad.map((_, index) => {
+    const [x0, y0] = quad[index];
+    const [x1, y1] = quad[(index + 1) % 4];
+    const [x2, y2] = quad[(index + 2) % 4];
+    return (x1 - x0) * (y2 - y1) - (y1 - y0) * (x2 - x1);
+  });
+}
+
+/**
+ * Is this quad convex and non-self-intersecting?
+ *
+ * The bounding-box and shoelace-area rules alone are not enough, which is the
+ * bug this function fixes. `[[0, 0], [100, 0], [40, 40], [0, 100]]` is concave
+ * and clears both — a big box, 2,000 units of enclosed area — but the homography
+ * it produces has a denominator (`h20·x + h21·y + 1`) that crosses ZERO inside
+ * the wall. Every hold near that line maps to infinity, and holds on opposite
+ * sides of it come out mirrored. A bow-tie is worse and just as admissible to a
+ * shoelace test, because the two lobes' signed areas partly cancel rather than
+ * summing to nothing.
+ *
+ * Consistent turn signs is the whole test for a four-gon. Strict, so three
+ * collinear anchors — one turn of zero — are refused too: that is a triangle with
+ * a redundant tap, and the DLT has no unique solution for it.
+ */
+export function isConvexQuad(quad: Quad): boolean {
+  const turns = quadTurns(quad);
+  return turns.every((turn) => turn > 0) || turns.every((turn) => turn < 0);
+}
+
+/**
  * Whether a quad describes a shape a homography can actually be solved from.
  *
  * This is the gate `createSprayWallVersion` needs rather than the identity
@@ -102,6 +140,10 @@ export function quadDoubleArea(quad: Quad): number {
  * degenerate quad accepted at creation does not merely lose a transform; it pins
  * a 1x1 (or 8x0) coordinate space on the wall for good, and every hold ever drawn
  * on it lands in the same pixel. Refusing it at the door is the only cheap moment.
+ *
+ * Three rules, and the convexity one is not optional — see {@link isConvexQuad}
+ * for the concave quad that passes the other two and still puts a division by
+ * zero in the middle of the wall.
  */
 export function isSolvableAnchorQuad(quad: unknown): quad is Quad {
   if (!isValidAnchorQuad(quad)) return false;
@@ -111,7 +153,9 @@ export function isSolvableAnchorQuad(quad: unknown): quad is Quad {
 
   // Compared against the bounding box rather than an absolute pixel count so the
   // rule reads the same for a phone photo and a 40-megapixel one.
-  return Math.abs(quadDoubleArea(quad)) / 2 >= width * height * MIN_QUAD_AREA_FRACTION;
+  if (Math.abs(quadDoubleArea(quad)) / 2 < width * height * MIN_QUAD_AREA_FRACTION) return false;
+
+  return isConvexQuad(quad);
 }
 
 /**
@@ -228,13 +272,20 @@ export function mapPoint(homography: Homography, x: number, y: number): [number,
  * in canonical coordinates has to be pushed back through this matrix before it
  * can be drawn on top of the version's photo.
  *
- * Returns the identity for a singular matrix, for the same reason
- * `homographyFromAnchors` does: nothing renders from NaN.
+ * THROWS on a singular matrix, unlike `homographyFromAnchors`, which falls back
+ * to the identity. The difference is deliberate: that function is handed
+ * user-tapped anchors and has to survive whatever arrives, whereas this one is
+ * handed a matrix the system itself stored, so a singular input is a bug
+ * upstream. Returning the identity here would draw every hold at its canonical
+ * coordinate on top of the photo — plausible-looking, completely wrong, and
+ * silent.
  */
 export function invert(homography: Homography): Homography {
   const [a, b, c, d, e, f, g, h, i] = homography;
   const determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
-  if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-12) return [...IDENTITY_HOMOGRAPHY];
+  if (!Number.isFinite(determinant) || determinant === 0) {
+    throw new Error(`homography is singular (determinant ${determinant}), so it has no inverse`);
+  }
 
   const adjugate = [
     e * i - f * h,
@@ -247,9 +298,17 @@ export function invert(homography: Homography): Homography {
     b * g - a * h,
     a * e - b * d,
   ];
-  // Normalised by h22 rather than by the determinant: a homography is only
-  // defined up to scale, and keeping the bottom-right at 1 means a matrix that
-  // round-trips through invert() twice compares equal to the one it started as.
+  // Normalised by the new bottom-right entry rather than by the determinant: a
+  // homography is only defined up to scale, and keeping h22 at 1 means a matrix
+  // that round-trips through invert() twice compares equal to the one it started
+  // as.
+  //
+  // `adjugate[8]` is `a·e - b·d`, which can be zero for a perfectly invertible
+  // matrix (the affine part is degenerate while the projective part is not). The
+  // inverse still exists; it just cannot be written with h22 = 1. Dividing by the
+  // determinant instead gives the true inverse rather than a scaled one, so the
+  // double round trip still maps every point back to itself — only the matrices
+  // themselves differ by a constant, which a homography does not care about.
   const scale = adjugate[8];
   if (!Number.isFinite(scale) || scale === 0) return adjugate.map((value) => value / determinant);
   return adjugate.map((value) => value / scale);

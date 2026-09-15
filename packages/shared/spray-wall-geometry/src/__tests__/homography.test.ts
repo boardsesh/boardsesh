@@ -17,11 +17,13 @@ import {
   boundingSize,
   homographyFromAnchors,
   invert,
+  isConvexQuad,
   isSolvableAnchorQuad,
   isValidAnchorQuad,
   mapPoint,
   mapRadius,
   mapRing,
+  quadDoubleArea,
 } from '../homography';
 
 const UNIT_FRAME = { width: 100, height: 200 };
@@ -217,6 +219,71 @@ describe('isSolvableAnchorQuad', () => {
     ).toBe(false);
   });
 
+  it('refuses a CONCAVE quad that clears the size and area rules', () => {
+    // The bug this rule exists for. Big bounding box, 2,000 units of enclosed
+    // area — and the homography it produces has a denominator that crosses zero
+    // inside the wall, so holds near that line map to infinity and holds either
+    // side of it come out mirrored.
+    const concave: Quad = [
+      [0, 0],
+      [100, 0],
+      [40, 40],
+      [0, 100],
+    ];
+    expect(boundingSize(concave)).toEqual({ width: 100, height: 100 });
+    expect(Math.abs(quadDoubleArea(concave)) / 2).toBeGreaterThan(100 * 100 * 0.02);
+    expect(isConvexQuad(concave)).toBe(false);
+    expect(isSolvableAnchorQuad(concave)).toBe(false);
+  });
+
+  it('refuses a bow-tie, whose lobes hide each other from a shoelace test', () => {
+    // Anchors tapped TL, TR, BL, BR instead of TL, TR, BR, BL. The two lobes'
+    // signed areas partly cancel rather than summing to nothing, so this one
+    // clears the size and area rules with 2,000 units to spare and only the
+    // convexity test catches it. Edges (100,0)-(0,100) and (140,140)-(0,0) cross
+    // at (50,50).
+    const bowTie: Quad = [
+      [0, 0],
+      [100, 0],
+      [0, 100],
+      [140, 140],
+    ];
+    expect(boundingSize(bowTie)).toEqual({ width: 140, height: 140 });
+    expect(Math.abs(quadDoubleArea(bowTie)) / 2).toBeGreaterThan(140 * 140 * 0.02);
+    expect(isConvexQuad(bowTie)).toBe(false);
+    expect(isSolvableAnchorQuad(bowTie)).toBe(false);
+  });
+
+  it('refuses three collinear anchors with a fourth off the line', () => {
+    // A triangle with a redundant tap. One turn of zero, and the DLT has no
+    // unique solution for it.
+    const collinearEdge: Quad = [
+      [0, 0],
+      [50, 0],
+      [100, 0],
+      [50, 100],
+    ];
+    expect(isConvexQuad(collinearEdge)).toBe(false);
+    expect(isSolvableAnchorQuad(collinearEdge)).toBe(false);
+  });
+
+  it('still accepts a hard but convex trapezoid, either winding', () => {
+    // The rule must not cost us the real case: a wall shot from far off to one
+    // side is a steep trapezoid, and a climber may tap it either way round.
+    const steep: Quad = [
+      [300, 40],
+      [980, 260],
+      [900, 690],
+      [120, 500],
+    ];
+    expect(isConvexQuad(steep)).toBe(true);
+    expect(isSolvableAnchorQuad(steep)).toBe(true);
+
+    const reversed: Quad = [...steep].reverse() as Quad;
+    expect(isConvexQuad(reversed)).toBe(true);
+    expect(isSolvableAnchorQuad(reversed)).toBe(true);
+  });
+
   it('refuses a quad with almost no area inside its own box', () => {
     // A bow-tie of four taps along a diagonal: the bounding box is big, the
     // enclosed area is not. Accepting it would pin a useless canonical frame on
@@ -252,9 +319,44 @@ describe('invert', () => {
     expect(invert(IDENTITY_HOMOGRAPHY)).toEqual(IDENTITY_HOMOGRAPHY);
   });
 
-  it('returns the identity for a singular matrix', () => {
-    // Nothing renders from NaN; the same rule as homographyFromAnchors.
-    expect(invert([1, 2, 3, 2, 4, 6, 3, 6, 9])).toEqual(IDENTITY_HOMOGRAPHY);
+  it('throws on a singular matrix instead of quietly returning the identity', () => {
+    // An identity here would draw every hold at its canonical coordinate on top
+    // of the photo: plausible-looking, completely wrong, and silent. A stored
+    // matrix that is singular is a bug upstream, not user input to absorb.
+    expect(() => invert([1, 2, 3, 2, 4, 6, 3, 6, 9])).toThrow(/singular/);
+    expect(() => invert([0, 0, 0, 0, 0, 0, 0, 0, 0])).toThrow(/singular/);
+  });
+
+  it('inverts a matrix whose adjugate bottom-right is zero', () => {
+    // `a*e - b*d === 0` with a non-zero determinant: the affine part is
+    // degenerate, the matrix is not. The inverse exists, it just cannot be
+    // written with h22 = 1, so the round trip has to hold through the
+    // divide-by-determinant branch.
+    const homography = [1, 2, 0, 2, 4, 1, 1, 0, 1];
+    expect(homography[0] * homography[4] - homography[1] * homography[3]).toBe(0);
+
+    const inverse = invert(homography);
+    inverse.forEach((value) => expect(Number.isFinite(value)).toBe(true));
+
+    for (const [x, y] of [
+      [3, 5],
+      [-2, 7],
+      [11, 0.5],
+    ]) {
+      const [u, v] = mapPoint(homography, x, y);
+      const [backX, backY] = mapPoint(inverse, u, v);
+      expect(backX).toBeCloseTo(x, 9);
+      expect(backY).toBeCloseTo(y, 9);
+    }
+
+    // And the double invert is the same map, even though the matrices differ by
+    // a constant a homography does not care about.
+    const twice = invert(inverse);
+    const [x, y] = [4, 9];
+    const [onceX, onceY] = mapPoint(homography, x, y);
+    const [twiceX, twiceY] = mapPoint(twice, x, y);
+    expect(twiceX).toBeCloseTo(onceX, 9);
+    expect(twiceY).toBeCloseTo(onceY, 9);
   });
 });
 
