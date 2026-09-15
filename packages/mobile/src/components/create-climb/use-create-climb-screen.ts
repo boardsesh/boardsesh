@@ -93,6 +93,24 @@ type UseCreateClimbScreenArgs = {
   onPublished?: () => void;
   /** Replaces edit/fork route identity with a plain creator after Start new. */
   onStartedNewClimb?: () => void;
+  /**
+   * The spray wall's live cache token (`''` off spray), from `useSprayWallToken`.
+   *
+   * `createClimbDraftKey` folds the wall VERSION into the autosave slot, but it
+   * reads it out of a module-level registry — so a controller mounted before the
+   * wall landed would memoise the `-sv0` key and keep autosaving into a slot the
+   * loader's superseded-draft sweep has already removed. Passing the token in
+   * makes the key recompute when the wall arrives.
+   */
+  sprayWallToken?: string;
+  /**
+   * The source climb's grade as a difficulty id, for a remix of a climb on a
+   * board that publishes with the setter's own grade. A fork inherits its
+   * parent's grade the way it inherits its rules; without it a remix of a graded
+   * wall climb opens ungraded and cannot be published until the setter finds the
+   * grade again.
+   */
+  forkDifficultyId?: number | null;
 };
 
 const BLE_PREVIEW_DEBOUNCE_MS = 250;
@@ -261,6 +279,8 @@ export function useCreateClimbScreen({
   editClimbUuid,
   onPublished,
   onStartedNewClimb,
+  sprayWallToken = '',
+  forkDifficultyId,
 }: UseCreateClimbScreenArgs) {
   const router = useRouter();
   const { t } = useTranslation('climbs');
@@ -384,7 +404,13 @@ export function useCreateClimbScreen({
   // Only boards with no crowd grade ask for it (`requiresSetterGrade`), and only
   // publishing needs it — a draft may sit ungraded, because the grade is the last
   // thing a setter decides.
-  const [setterGradeDifficultyId, setSetterGradeDifficultyId] = useState<number | null>(null);
+  // A remix inherits its parent's grade, the way it inherits its rules (#4832) —
+  // a wall climb's grade is the setter's own, and a remix of a V5 is a V5 until
+  // its setter says otherwise. It also beats the last-used seed below, for the
+  // same reason an explicit `forkCharacteristics` array beats the board default.
+  const [setterGradeDifficultyId, setSetterGradeDifficultyId] = useState<number | null>(() =>
+    isForking ? (forkDifficultyId ?? null) : null,
+  );
   const [showAllHolds, setShowAllHolds] = useState(false);
 
   // ---- Route mode. ----
@@ -469,7 +495,8 @@ export function useCreateClimbScreen({
   }, [feetFollowPaint, litUpHoldsMap]);
 
   // Seeds the picker on a fresh climb only. A restored draft, a fork and an edit
-  // all carry their own grade and overwrite this below.
+  // all carry their own grade — the fork's is already in the initial state above,
+  // and the other two overwrite it below.
   const { lastDifficultyId, rememberDifficultyId: rememberLastUsedGrade } = useLastUsedGrade(board.boardName);
   const seededLastGradeRef = useRef(false);
   useEffect(() => {
@@ -510,7 +537,10 @@ export function useCreateClimbScreen({
     });
   }, [board.boardName]);
 
-  const draftKey = useMemo(() => createClimbDraftKey(board), [board]);
+  // `sprayWallToken` is in the deps, not just along for the ride: the key folds
+  // the wall version in, and on a cold spray entry the wall lands AFTER the first
+  // render. See `UseCreateClimbScreenArgs.sprayWallToken`.
+  const draftKey = useMemo(() => createClimbDraftKey(board), [board, sprayWallToken]);
 
   // ---- One deterministic autosave slot per authoring mode. ----
   // Identity now lives in the KEY, which is why autosave no longer has to be

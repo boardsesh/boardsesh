@@ -259,7 +259,10 @@ beforeEach(async () => {
   await db.execute(sql`
     INSERT INTO board_difficulty_grades (board_type, difficulty, boulder_name, route_name, is_listed)
     VALUES ('spray', 10, '4a/V0', '5b/5.9', true),
-           ('spray', 18, '6b/V4', '7a/5.11d', true)
+           ('spray', 18, '6b/V4', '7a/5.11d', true),
+           -- The grade-EDIT tests move a climb off 6b/V4, so the scale needs
+           -- somewhere to move it TO. Transcribed from migration 0227 like the rest.
+           ('spray', 22, '7a/V6', '7c/5.12d', true)
     ON CONFLICT (board_type, difficulty) DO NOTHING
   `);
 
@@ -1171,6 +1174,106 @@ describe('saveClimb on a spray wall', () => {
         ctxFor(OWNER),
       ),
     ).resolves.toMatchObject({ isDraft: false });
+  });
+
+  it('applies a grade EDIT to an already-published climb', async () => {
+    // The picker is offered for the whole edit window, but `updateClimb` used to
+    // resolve `userGrade` only while PUBLISHING — so a setter who moved the grade
+    // got a success toast and a stats row that still said 6b/V4.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+
+    const published = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Graded too soft',
+          isDraft: false,
+          frames: framesFor(holdIds),
+          angle: 40,
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: published.uuid, boardType: 'spray', userGrade: '7a/V6' } },
+      ctxFor(OWNER),
+    );
+
+    const [stats] = (await db.execute(sql`
+      SELECT display_difficulty, difficulty_average FROM board_climb_stats WHERE climb_uuid = ${published.uuid}
+    `)) as unknown as Array<{ display_difficulty: number; difficulty_average: number }>;
+    // 7a/V6 is difficulty 22 on the shared scale; 6b/V4 was 18.
+    expect(stats.display_difficulty).toBe(22);
+    expect(Number(stats.difficulty_average)).toBe(22);
+  });
+
+  it('applies a grade edit to a draft without publishing it', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+
+    const draft = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Regraded draft',
+          isDraft: true,
+          frames: framesFor(holdIds),
+          angle: 40,
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { uuid: draft.uuid, boardType: 'spray', userGrade: '4a/V0' } },
+      ctxFor(OWNER),
+    );
+
+    const [stats] = (await db.execute(sql`
+      SELECT s.display_difficulty, c.is_draft
+      FROM board_climb_stats s
+      JOIN board_climbs c ON c.board_type = s.board_type AND c.uuid = s.climb_uuid
+      WHERE s.climb_uuid = ${draft.uuid}
+    `)) as unknown as Array<{ display_difficulty: number; is_draft: boolean }>;
+    expect(stats.display_difficulty).toBe(10);
+    // Still a draft: a grade edit is not a publish.
+    expect(stats.is_draft).toBe(true);
+  });
+
+  it('refuses a grade edit that names no grade on the scale', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+
+    const published = (await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          name: 'Well graded',
+          isDraft: false,
+          frames: framesFor(holdIds),
+          angle: 40,
+          userGrade: '6b/V4',
+        },
+      },
+      ctxFor(OWNER),
+    )) as { uuid: string };
+
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        { input: { uuid: published.uuid, boardType: 'spray', userGrade: 'V99' } },
+        ctxFor(OWNER),
+      ),
+    ).rejects.toThrow(/not a grade on the Boardsesh scale/i);
   });
 
   it('refuses to publish an ungraded draft through updateClimb', async () => {
