@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-14T22:42:06.548Z",
+  "generatedAt": "2026-09-15T01:04:22.897Z",
   "entries": [
+    {
+      "prNumber": 5459,
+      "category": "fixed",
+      "title": "The Climbs tab no longer crashes when you pick a board",
+      "mergedAt": "2026-09-15T01:02:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5459"
+    },
     {
       "prNumber": 5411,
       "category": "fixed",
