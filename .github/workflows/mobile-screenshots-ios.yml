@@ -24,10 +24,16 @@ name: Mobile Screenshots (iOS)
 #                  compares them pixel-wise (scripts/compare-screenshots.ts).
 #                  Unchanged → ios-capture is skipped and the run ends in ~15 min.
 #                  A probe that CRASHES (result=failure) is treated the same as a
-#                  skip, not a stop: ios-capture still fans out to every shard
-#                  rather than silently leaving the run short, and ios-finalize's
-#                  dimension gate catches anything the crashed probe itself failed
-#                  to capture.
+#                  skip, not a stop: ios-capture's `if:` still fans out rather
+#                  than silently leaving the run short. Its MATRIX also has to
+#                  react to the crash: `setup` computes two full matrices
+#                  (`ios_matrix_full`, `ios_matrix_without_probe` — the second
+#                  excludes only the probe's own en-US x iPhone 16 Pro Max
+#                  shard) and ios-capture picks between them on
+#                  `needs.probe.result`, not on `gate` alone — a crashed probe
+#                  never actually captured or uploaded that shard, so it needs
+#                  the FULL 12-shard matrix, or ios-finalize's dimension gate
+#                  would red the whole run over a hole the probe itself left.
 #                  This one shard is blind to a change confined to another locale
 #                  (es/fr/de strings) or to an iPad-only layout — it would always
 #                  read as "unchanged". scripts/screenshot-probe-scope.ts closes
@@ -39,9 +45,10 @@ name: Mobile Screenshots (iOS)
 #                  Pro Max — Apple scales it down to all other iPhones — plus the
 #                  iPad Pro 13-inch and 11-inch, a separate slot that doesn't
 #                  auto-scale) = 12 shards, each its own runner: one Metro, one
-#                  simulator, one capture. When the probe ran, its own shard is
-#                  excluded from the matrix (the probe already uploaded it), so a
-#                  changed probe fans out to the remaining 11.
+#                  simulator, one capture. When the probe actually SUCCEEDED, its
+#                  own shard is excluded from the matrix (the probe already
+#                  uploaded it), so a changed probe fans out to the remaining 11;
+#                  a skipped (gate=full) or crashed probe gets the full 12.
 #   ios-finalize — merge the per-shard artifacts into one tree, run the dimension
 #                  gate (it needs all five App Store locales at once), and upload.
 #                  Publishing the baseline needs `publish_baseline: true` on this
@@ -124,7 +131,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ios_locales: ${{ steps.compute.outputs.ios_locales }}
-      ios_matrix: ${{ steps.compute.outputs.ios_matrix }}
+      # Two matrices — ios-capture picks between them based on the probe's
+      # ACTUAL result, not `gate` alone. See the "Compute locales, matrix and
+      # gate" step below for why a probe crash needs the full one.
+      ios_matrix_full: ${{ steps.compute.outputs.ios_matrix_full }}
+      ios_matrix_without_probe: ${{ steps.compute.outputs.ios_matrix_without_probe }}
       gate: ${{ steps.compute.outputs.gate }}
       source_sha: ${{ steps.compute.outputs.source_sha }}
     steps:
@@ -184,22 +195,31 @@ jobs:
             echo "::error::devices[0] must be the iPhone 16 Pro Max entry (the probe shard assumption)."
             exit 1
           fi
-          if [ "$gate" = "probe" ]; then
-            # Derive the excluded (locale, device) pair from devices[0] instead of
-            # hand-copying the literal, so it can never drift from the device the
-            # probe actually shoots.
-            exclude=$(printf '%s' "$devices" | jq -c '[{locale:"en-US", device: .[0]}]')
-          else
-            exclude='[]'
-          fi
-          ios_matrix=$(jq -cn \
+          # Two full matrices, always computed regardless of `gate` — ios-capture
+          # itself picks between them at evaluation time, based on the probe's
+          # ACTUAL result rather than this job's gate input. A probe that
+          # CRASHES never captured or uploaded its shard, even though gate=probe
+          # asked for the exclude, so ios-capture must fall back to the full
+          # 12-shard matrix on that path instead of leaving a hole for
+          # ios-finalize's assertCompleteTree to catch as a red finalize job.
+          ios_matrix_full=$(jq -cn \
             --argjson locale "$ios_locales" \
             --argjson device "$devices" \
-            --argjson exclude "$exclude" \
+            '{locale: $locale, device: $device, exclude: []}')
+          # Derive the excluded (locale, device) pair from devices[0] instead of
+          # hand-copying the literal, so it can never drift from the device the
+          # probe actually shoots. Only worth applying when the probe actually
+          # succeeded in capturing and uploading that shard itself.
+          probe_exclude=$(printf '%s' "$devices" | jq -c '[{locale:"en-US", device: .[0]}]')
+          ios_matrix_without_probe=$(jq -cn \
+            --argjson locale "$ios_locales" \
+            --argjson device "$devices" \
+            --argjson exclude "$probe_exclude" \
             '{locale: $locale, device: $device, exclude: $exclude}')
           {
             echo "ios_locales=$ios_locales"
-            echo "ios_matrix=$ios_matrix"
+            echo "ios_matrix_full=$ios_matrix_full"
+            echo "ios_matrix_without_probe=$ios_matrix_without_probe"
             echo "gate=$gate"
             echo "source_sha=$SOURCE_SHA"
           } >> "$GITHUB_OUTPUT"
@@ -416,6 +436,15 @@ jobs:
       (needs.probe.result == 'skipped' || needs.probe.result == 'failure' ||
        (needs.probe.result == 'success' &&
         (needs.probe.outputs.changed == 'true' || needs.probe.outputs.force_full == 'true')))
+    # The `if:` above lets a crashed probe fan out, but the MATRIX also has to
+    # switch to the full 12-shard set on that path: a probe that crashed never
+    # captured or uploaded its own shard, even though `gate=probe` computed the
+    # exclude assuming it would. `needs.probe.result == 'success'` is the only
+    # branch that gets the excluded (11-shard) matrix; both `skipped` (gate=full,
+    # no probe ran) and `failure` fall through to the full one. GitHub Actions'
+    # `&&`/`||` return the actual operand, not a coerced boolean, and a matrix
+    # JSON string is always non-empty (truthy) — so `false && x` short-circuits
+    # to `false` without evaluating `x`, and `false || y` then evaluates to `y`.
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
@@ -431,8 +460,11 @@ jobs:
       # 13-inch and 11-inch, a separate App Store slot that doesn't auto-scale from
       # iPhone. Locale is the other axis, a full sweep. Matrix = 4 locales × 3 devices
       # = 12 shards, one simulator per shard — minus the probe's own pair when the
-      # probe ran. Built by the setup job (locales, devices and the exclude list).
-      matrix: ${{ fromJSON(needs.setup.outputs.ios_matrix) }}
+      # probe actually succeeded and uploaded it itself (see the `if:` comment
+      # above for the failure/skip fallback to the full 12).
+      matrix: >-
+        ${{ fromJSON(needs.probe.result == 'success' && needs.setup.outputs.ios_matrix_without_probe ||
+            needs.setup.outputs.ios_matrix_full) }}
 
     env:
       EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
@@ -512,11 +544,14 @@ jobs:
       # A complete, trustworthy App Store tree landed in this run: the fan-out
       # succeeded and neither the flow nor the locale list was narrowed. Whether
       # the probe itself succeeded, was skipped, or crashed does not gate this —
-      # a probe crash still fans out to every shard (see ios-capture's `if:`
-      # above), and any shard a crashed probe failed to produce is caught by the
-      # dimension gate below, which every upload and baseline-refresh step is
-      # already conditioned on via `success()`. Only such a run may refresh the
-      # baseline or push to App Store Connect.
+      # a probe crash also switches ios-capture onto the full 12-shard matrix
+      # (see its `strategy.matrix` expression above), not just the excluded
+      # 11-shard one gate=probe would otherwise ask for, so all 12 shards are
+      # genuinely expected here regardless of how the probe fared. Any shard
+      # ios-capture itself failed to produce is still caught by the dimension
+      # gate below, which every upload and baseline-refresh step is already
+      # conditioned on via `success()`. Only such a run may refresh the baseline
+      # or push to App Store Connect.
       FULL_SET_CAPTURED: >-
         ${{ needs.ios-capture.result == 'success' &&
             (inputs.flow == null || inputs.flow == 'app-store') &&
