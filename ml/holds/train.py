@@ -166,6 +166,23 @@ def main() -> int:
             "'macOS (Apple Silicon)' batch-size guidance. Halve it on an MPS 'out of memory' error."
         ),
     )
+    parser.add_argument(
+        "--grad-accum-steps",
+        type=int,
+        help=(
+            "override the config's gradient accumulation. The effective batch is batch_size x "
+            "grad_accum_steps and the configs are tuned to keep it at 8-16 on tiny CPU batches; a "
+            "GPU box raising --batch-size should lower this in step (e.g. --batch-size 16 "
+            "--grad-accum-steps 1) so the optimizer still sees the same effective batch."
+        ),
+    )
+    parser.add_argument(
+        "--resume",
+        help=(
+            "resume a run from a Lightning checkpoint: a path, or 'last' for the config's own "
+            "last.ckpt. Forwarded to rfdetr's `resume`, i.e. trainer.fit(ckpt_path=...)."
+        ),
+    )
     parser.add_argument("--max-train-images", type=int, help="cap the training set, for a quick smoke run")
     parser.add_argument(
         "--threads",
@@ -196,6 +213,13 @@ def main() -> int:
         train_config["epochs"] = args.epochs
     if args.batch_size is not None:
         train_config["batch_size"] = args.batch_size
+    if args.grad_accum_steps is not None:
+        train_config["grad_accum_steps"] = args.grad_accum_steps
+    if args.resume:
+        resume_path = config.checkpoint_dir / "last.ckpt" if args.resume == "last" else Path(args.resume)
+        if not resume_path.exists():
+            raise SystemExit(f"--resume: no checkpoint at {resume_path}")
+        train_config["resume"] = str(resume_path)
 
     output_dir = config.checkpoint_dir
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -220,12 +244,21 @@ def main() -> int:
     )
     elapsed = time.time() - started
 
+    # The summary is a shareable artifact: keep the resume checkpoint repo-relative
+    # so a committed copy does not embed this machine's home directory layout. A
+    # checkpoint OUTSIDE the repo stays absolute — pass --resume last (or an
+    # in-repo path) when the summary is destined for results/.
+    summary_train_config = dict(train_config)
+    if "resume" in summary_train_config:
+        resume_value = Path(summary_train_config["resume"])
+        if resume_value.is_absolute() and resume_value.is_relative_to(HOLDS_DIR):
+            summary_train_config["resume"] = str(resume_value.relative_to(HOLDS_DIR))
     summary = {
         "config": config.name,
         "dataset": str(dataset_dir),
         "device": device_name,
         "accelerator": accelerator,
-        "train_config": train_config,
+        "train_config": summary_train_config,
         "wall_clock_seconds": round(elapsed, 1),
         "output_dir": str(output_dir),
     }

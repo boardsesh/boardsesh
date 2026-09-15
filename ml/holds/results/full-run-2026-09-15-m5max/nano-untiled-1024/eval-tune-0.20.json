@@ -1,0 +1,139 @@
+{
+  "config": "nano-untiled-1024",
+  "model": ".data/artifacts/nano-untiled-1024/model-int8.onnx",
+  "model_bytes": 31327953,
+  "dataset": ".data/spraywall-coco",
+  "split": "tune",
+  "photos": 11,
+  "holds": 1292,
+  "box": {
+    "precision": 0.555,
+    "recall": 0.6873,
+    "f1": 0.6141,
+    "tp": 888,
+    "fp": 712,
+    "fn": 404
+  },
+  "latency_seconds": {
+    "p50": 0.168,
+    "p95": 0.183,
+    "mean": 0.17
+  },
+  "peak_rss_mb": 995.0,
+  "correction_rate_micro": 0.8638,
+  "correction_rate_macro": 0.8887,
+  "score_threshold": 0.2,
+  "threads": 8,
+  "per_photo": [
+    {
+      "file_name": "cbj-hwow-19-training-homewall-for-hueco-off-days.jpg",
+      "holds": 96,
+      "detections": 121,
+      "tp": 46,
+      "fp": 75,
+      "fn": 50,
+      "correction_rate": 1.3021,
+      "seconds": 0.185
+    },
+    {
+      "file_name": "cbj-hwow-33-garage-homewall-with-many-angles.jpg",
+      "holds": 138,
+      "detections": 152,
+      "tp": 132,
+      "fp": 20,
+      "fn": 6,
+      "correction_rate": 0.1884,
+      "seconds": 0.181
+    },
+    {
+      "file_name": "cbj-hwow-41-a-routesetters-backyard-homewall.jpg",
+      "holds": 201,
+      "detections": 212,
+      "tp": 130,
+      "fp": 82,
+      "fn": 71,
+      "correction_rate": 0.7612,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "cbj-hwow-55-many-angled-homewall-covered-with-volu-2.jpg",
+      "holds": 148,
+      "detections": 234,
+      "tp": 81,
+      "fp": 153,
+      "fn": 67,
+      "correction_rate": 1.4865,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "cbj-hwow-56-all-season-backyard-midwest-homewall.jpg",
+      "holds": 61,
+      "detections": 68,
+      "tp": 60,
+      "fp": 8,
+      "fn": 1,
+      "correction_rate": 0.1475,
+      "seconds": 0.165
+    },
+    {
+      "file_name": "cbj-hwow-63-spare-basement-space-becomes-colorful-.jpg",
+      "holds": 86,
+      "detections": 105,
+      "tp": 75,
+      "fp": 30,
+      "fn": 11,
+      "correction_rate": 0.4767,
+      "seconds": 0.168
+    },
+    {
+      "file_name": "flickr-ropes-adventure-323351.jpg",
+      "holds": 283,
+      "detections": 281,
+      "tp": 182,
+      "fp": 99,
+      "fn": 101,
+      "correction_rate": 0.7067,
+      "seconds": 0.163
+    },
+    {
+      "file_name": "flickr-zie-chappa-charra-586712.jpg",
+      "holds": 54,
+      "detections": 66,
+      "tp": 34,
+      "fp": 32,
+      "fn": 20,
+      "correction_rate": 0.963,
+      "seconds": 0.158
+    },
+    {
+      "file_name": "web-instructables-000.jpg",
+      "holds": 78,
+      "detections": 134,
+      "tp": 42,
+      "fp": 92,
+      "fn": 36,
+      "correction_rate": 1.641,
+      "seconds": 0.17
+    },
+    {
+      "file_name": "web-spotsettingblog-079.jpg",
+      "holds": 90,
+      "detections": 149,
+      "tp": 62,
+      "fp": 87,
+      "fn": 28,
+      "correction_rate": 1.2778,
+      "seconds": 0.172
+    },
+    {
+      "file_name": "web-treelinereview-088.jpg",
+      "holds": 57,
+      "detections": 78,
+      "tp": 44,
+      "fp": 34,
+      "fn": 13,
+      "correction_rate": 0.8246,
+      "seconds": 0.173
+    }
+  ]
+}

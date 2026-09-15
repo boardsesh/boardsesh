@@ -107,11 +107,18 @@ python export.py --config medium-untiled-1280 --formats onnx --shrink int8
 
 # 4. Score the exported artifact on the spray-wall eval split, threshold
 #    chosen on `tune` first (see "Reproducing every number" above for how the
-#    spray-wall corpus's tune/eval halves are built).
+#    spray-wall corpus's tune/eval halves are built). The sweep must run against
+#    the SAME int8 file the final number is reported on — quantization shifts
+#    score calibration, so a threshold tuned on the fp32 model.onnx (eval.py's
+#    default when --model is omitted) is tuned on the wrong artifact.
+for t in 0.05 0.10 0.15 0.20 0.30 0.40 0.50 0.60 0.70; do
+  python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco \
+    --split tune --score-threshold $t \
+    --model .data/artifacts/medium-untiled-1280/model-int8.onnx \
+    --out .data/artifacts/medium-untiled-1280/eval-tune-$t.json
+done
 python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco \
-  --split tune                                    # sweep here for the threshold
-python eval.py --config medium-untiled-1280 --dataset .data/spraywall-coco \
-  --split eval --score-threshold <chosen> \
+  --split eval --score-threshold <best of the sweep> \
   --model .data/artifacts/medium-untiled-1280/model-int8.onnx \
   --out .data/artifacts/medium-untiled-1280/eval-full-run.json
 ```
@@ -124,14 +131,13 @@ retrying the same number. `--threads` / `HOLDS_THREADS` only matter for
 `--device cpu`; they do nothing for `mps` compute (data loading still uses
 some CPU threads regardless of device).
 
-**Caveat, stated honestly**: nobody has run this harness's training path on
-`mps` yet. `rfdetr==1.10.1`'s Lightning trainer has explicit MPS handling
-(`torch.backends.mps.is_available()` branches for autocast precision, and
-`torch.compile` is deliberately CUDA-only — "CPU and MPS are not supported"),
-so it should work, but it is untested here. If `--device mps` fails partway
-through — a missing MPS kernel for some op is the most likely shape of that —
-`--device cpu` on the same Mac still runs the full pipeline and, on an M5 Max,
-should still be faster than the CPU box this harness was written on.
+**MPS status (2026-09-15)**: this path has now run in anger — the full-run
+results below all come from `--device mps` on an M5 Max. Two things bit and
+their fixes are in "The full run (M5 Max, 2026-09-15)" under *Training notes*:
+the allocator pool stalls training after the first validation unless the batch
+stays at 8 with the watermark ratios capped, and nano cannot train at a 1024 px
+input (quadratic attention; use 768). If `mps` misbehaves in some new way,
+`--device cpu` on the same Mac still runs the full pipeline.
 
 **What to hand back**: the `eval-*.json` files (`eval.py`'s `--out`, with the
 per-photo breakdown) from the `tune` sweep and the final `eval` split score,
@@ -258,15 +264,84 @@ that fails to benefit from better data at this photo scale. If SW-02 wants a
 phone-sized model, the lever is a smaller architecture at full-frame resolution
 (YOLOX-nano), not RF-DETR nano with tiles.
 
+### The full run (M5 Max, 2026-09-15)
+
+The full-dataset run the paragraph below asked for happened: all 3,876
+train-split photos, 10 epochs, on an M5 Max's GPU (`--device mps`). Two configs
+were trained; `nano-tiled-1024` was deliberately skipped, because the spike had
+already shown 2×2 tiling hurts at this photo scale, and its replacement is the
+new **`nano-untiled-1024`** config — the same nano weights given one full-frame
+pass at 768 px instead of four 384 px tiles (768 and not 1024 because DINOv2
+attention is quadratic in tokens: 1024-px training, which rfdetr's multi-scale
+augmentation pushes to 1184, ran ~70× slower per step on MPS).
+
+Protocol as always: threshold swept on the spray `tune` half **against the int8
+artifact**, F1 reported once on `eval` (10 photos, 964 holds). Previous-run
+columns are the 600-photo/1,400-tile CC BY retrains from the table above.
+
+| | nano-untiled, **full** | medium-untiled, **full** | nano-tiled, CC BY | medium-untiled, CC BY | Gate |
+| --- | --- | --- | --- | --- | --- |
+| Trained on | 3,876 photos × 10 ep | 3,876 photos × 10 ep | 1,400 tiles × 1 ep | 600 photos × 1 ep | — |
+| Threshold (from `tune`, int8) | 0.60 | 0.60 | 0.05 | 0.20 | — |
+| Precision | 0.682 | 0.695 | 0.228 | 0.514 | — |
+| Recall | 0.637 | 0.610 | 0.419 | 0.612 | — |
+| **F1 @ box IoU 0.5** | **0.659** | 0.650 | 0.295 | 0.559 | ≥ 0.80 ❌ |
+| Corrections ÷ holds | **0.660** | 0.658 | 2.00 | 0.97 | ≤ 0.10 ❌ |
+| Weighted corr. (2·miss+FP) ÷ holds | **1.02** | 1.05 | — | — | ~0.5 (proposed) ❌ |
+| Latency p50 / p95 (M5 Max CPU) | 0.166 / 0.187 s | 0.148 / 0.241 s | — | — | ≤ 8 s ✅ |
+| Peak RSS (onnxruntime, macOS) | **987 MB** | 593 MB | — | — | < 500 MB ❌ |
+| int8 artifact | 31.3 MB | 32.8 MB | 28.7 MB | 32.8 MB | — |
+| Roboflow test split (in-domain) F1 | 0.908 | 0.893 | — | — | — |
+| Train wall clock | 99 min | 78 min¹ | 39 min (CPU) | 34 min (CPU) | — |
+
+¹ plus one 70-min epoch wasted on an MPS allocator stall before the batch/pool
+fix (see below). Earlier peak-RSS numbers in this README were measured with a
+Darwin `ru_maxrss` bug (bytes read as KB); the numbers in this table are correct
+on both platforms.
+
+What the full run settles:
+
+- **Full-frame nano beats medium.** 0.659 vs 0.650, at a third of the training
+  cost and 31.3 MB. The spike's hypothesis — the lever is full-frame resolution,
+  not model size — held: the same weights that scored 0.295 with tiles score
+  0.659 without them.
+- **The dataset is exhausted.** Per-epoch scoring on the spray halves (the
+  `results/full-run-2026-09-15-m5max/*/curve/` files — one file per epoch in
+  which `checkpoint_best_ema.pth` changed, so a missing epoch number, like
+  medium's 7, means the in-domain EMA metric did not improve that epoch and
+  there was no new checkpoint to score) shows both configs
+  plateauing by epoch 4–6 (medium 0.586 → 0.619, nano 0.590 → 0.615, fp32
+  coarse-sweep numbers) and flat for the rest of the run, while the in-domain
+  Roboflow test F1 reaches 0.89–0.91. The model has learned this dataset; the
+  remaining gap to any gate is **domain shift to real spray walls**, and the
+  fix is spray-wall training photos (the corpus protocol below), not more
+  epochs or a bigger model.
+- **Full training fixes calibration.** The tune-optimal threshold moved from
+  0.05–0.20 to 0.60 on both configs, and F1-optimal and tap-optimal (weighted
+  corrections) thresholds now coincide at 0.60.
+- **Memory is the new on-device blocker for nano.** One 768 px full-frame pass
+  through onnxruntime's CPU provider peaks at 987 MB — double the 500 MB gate —
+  versus 391 MB for the tiled config it replaces. If SW-02 wants this accuracy
+  on-device, the options are a tiled *inference* mode over full-frame-trained
+  weights, a smaller input at eval time, or a runtime with a leaner memory plan
+  (CoreML/NNAPI), all unmeasured here.
+
+Training notes for whoever runs this next, all on the M5 Max: batch 16 with
+default MPS watermarks stalled after the first epoch-end validation (the
+allocator pool grew to ~100 GB and every step then blocked in a synchronous GPU
+copy at ~2 min/step); batch 8 + `PYTORCH_MPS_HIGH_WATERMARK_RATIO=1.0
+PYTORCH_MPS_LOW_WATERMARK_RATIO=0.5` ran clean at ~8.5 min/epoch, and
+`train.py --resume last` recovered the stalled run without losing its finished
+epoch. `HOLDS_THREADS` is irrelevant to MPS compute.
+
 ### What a full training run would need
 
-The retrain used **600 of the 3,876 train-split photos for one epoch** and took 34 minutes of CPU;
-nano took 39 minutes for 1,400 tiles. A run that actually exhausts the dataset —
-all 3,876 train-split photos, 10 epochs, which is the usual RF-DETR fine-tuning recipe — is
-about **65× that compute: roughly 37 hours on these 8 CPU threads (64.6 × 34.4 min), or 1–2 hours on
-a single mid-range GPU.** That is the single cheapest experiment left on this
-epic, and it is the one that would turn 0.559 into a real answer. Nothing in the
-harness needs to change to run it; it needs a GPU box for an afternoon.
+(Answered above — kept for the record.) The retrain used **600 of the 3,876
+train-split photos for one epoch** and took 34 minutes of CPU; nano took 39
+minutes for 1,400 tiles. A run that actually exhausts the dataset — all 3,876
+train-split photos, 10 epochs, the usual RF-DETR fine-tuning recipe — was
+estimated at roughly 37 hours on those 8 CPU threads, or 1–2 hours on a GPU.
+The M5 Max run above took 1.6–2.9 h per config, MPS quirks included.
 
 ### General climbing walls (Commons), and The Way Up
 
