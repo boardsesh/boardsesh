@@ -1,6 +1,7 @@
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
@@ -590,7 +591,18 @@ export const sessionFeedQueries = {
           aliases: 'board_climb_aliases',
         }),
       )
-      .where(tickWhere)
+      .where(
+        and(
+          tickWhere,
+          // The rows carry the climb's name and frames, and session access does not
+          // imply wall access — a session's participants are not the same set as a
+          // private wall's viewers.
+          sprayClimbVisibilityCondition(
+            { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+            ctx?.userId,
+          ),
+        ),
+      )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt));
 
     if (tickRows.length === 0) return null;
