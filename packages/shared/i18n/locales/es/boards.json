@@ -728,7 +728,8 @@
       "move": "Arrastra una presa hasta donde está de verdad.",
       "draw": "Elige una presa y dibuja su contorno.",
       "oneSelected": "Presa n.º {{id}} elegida.",
-      "twoSelected": "Dos elegidas. Fusionar las convierte en una."
+      "twoSelected": "Dos elegidas. Fusionar las convierte en una.",
+      "oneSelectedNew": "Tu presa nueva está seleccionada."
     },
     "errors": {
       "nothingToMove": "Elige primero una presa y luego arrástrala.",
@@ -820,6 +821,13 @@
       "body": "Tu muro y su foto están guardados. Retómalo donde lo dejaste.",
       "stay": "Seguir",
       "go": "Salir"
+    },
+    "resume": {
+      "checking": "Buscando un muro que empezaste…",
+      "title": "Tienes un muro a medias",
+      "body": "«{{name}}» no está terminado. Retómalo donde lo dejaste o empieza de nuevo.",
+      "pickUp": "Retomarlo",
+      "startOver": "Empezar de nuevo"
     }
   },
   "sprayReset": {

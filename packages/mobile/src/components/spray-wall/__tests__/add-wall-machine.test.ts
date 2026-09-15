@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Quad } from '@boardsesh/spray-wall-geometry';
 import {
   addWallReducer,
+  hasUnfinishedWall,
   initialAddWallState,
   isBusy,
   leavingKeepsDraft,
@@ -37,8 +38,13 @@ const BOW_TIE: Quad = [
   [900, 700],
 ];
 
-function run(actions: AddWallAction[], from: AddWallState = initialAddWallState()): AddWallState {
+function run(actions: AddWallAction[], from: AddWallState = fresh()): AddWallState {
   return actions.reduce(addWallReducer, from);
+}
+
+/** A flow that has already answered "no, there is nothing to pick up". */
+function fresh(): AddWallState {
+  return addWallReducer(initialAddWallState(), { type: 'RESUME_DECLINED' });
 }
 
 /** The state a flow is in once the photo is chosen and the wall is on the server. */
@@ -56,11 +62,13 @@ function atReview(candidates: { cx: number; cy: number; r: number; confidence: n
 }
 
 describe('addWallReducer — walking forwards', () => {
-  it('starts on the meta step with nothing chosen', () => {
+  it('starts by checking for a wall to pick up', () => {
     const state = initialAddWallState();
-    expect(state.step).toBe('meta');
+    expect(state.step).toBe('resuming');
     expect(state.photo).toBeNull();
+    expect(state.wall).toBeNull();
     expect(state.draft).toBeNull();
+    expect(state.published).toBe(false);
   });
 
   it('runs meta → photo → anchors → upload', () => {
@@ -84,13 +92,13 @@ describe('addWallReducer — walking forwards', () => {
 
 describe('addWallReducer — the anchor quad', () => {
   it('accepts a convex quad', () => {
-    const state = addWallReducer(initialAddWallState(), { type: 'ANCHORS_SET', anchors: SQUARE });
+    const state = addWallReducer(fresh(), { type: 'ANCHORS_SET', anchors: SQUARE });
     expect(state.anchors).toEqual(SQUARE);
     expect(state.anchorRejection).toBeNull();
   });
 
   it('refuses a quad that crosses itself, and keeps the last good one', () => {
-    const good = addWallReducer(initialAddWallState(), { type: 'ANCHORS_SET', anchors: SQUARE });
+    const good = addWallReducer(fresh(), { type: 'ANCHORS_SET', anchors: SQUARE });
     const rejected = addWallReducer(good, { type: 'ANCHORS_SET', anchors: BOW_TIE });
     expect(rejected.anchorRejection).toBe('not-convex');
     // The bow-tie is NOT stored: a crossed quad maps the wall inside out, and the
@@ -322,5 +330,102 @@ describe('leavingKeepsDraft', () => {
       atReview(),
     );
     expect(leavingKeepsDraft(published)).toBe(false);
+  });
+});
+
+describe('addWallReducer — picking up an abandoned wall', () => {
+  const WALL = { wallUuid: 'wall-1', layoutId: 9001, viewerCanEdit: true };
+
+  it('declining the resume starts a fresh wall', () => {
+    const state = addWallReducer(initialAddWallState(), { type: 'RESUME_DECLINED' });
+    expect(state.step).toBe('meta');
+    expect(state.wall).toBeNull();
+    expect(state.draft).toBeNull();
+  });
+
+  it('resuming a bare wall rejoins at the photo and REUSES the wall', () => {
+    const state = addWallReducer(initialAddWallState(), { type: 'RESUMED_AT_PHOTO', wall: WALL });
+    expect(state.step).toBe('photo');
+    // The whole point: the meta step never runs again, and nothing downstream
+    // may call createSprayWall for a wall that already exists.
+    expect(state.wall).toEqual(WALL);
+    expect(state.draft).toBeNull();
+  });
+
+  it('resuming a draft with a photo rejoins at the editor with no candidates', () => {
+    const state = addWallReducer(initialAddWallState(), { type: 'RESUMED_AT_REVIEW', draft: DRAFT });
+    expect(state.step).toBe('review');
+    expect(state.draft).toEqual(DRAFT);
+    expect(state.wall).toEqual(WALL);
+    // No second detector pass: the first run's candidates were either ruled on
+    // or are gone, and re-suggesting over saved holds would draw them twice.
+    expect(state.detection.candidates).toHaveLength(0);
+    expect(state.detection.outcome).toBe('idle');
+  });
+
+  it('knows a created wall is unfinished until it publishes', () => {
+    const created = run([{ type: 'WALL_CREATED', wall: WALL }]);
+    expect(hasUnfinishedWall(created)).toBe(true);
+
+    const published = run(
+      [
+        { type: 'HOLDS_SAVED', holdCount: 3 },
+        { type: 'REVIEW_DONE' },
+        { type: 'PUBLISH_STARTED' },
+        { type: 'PUBLISHED' },
+      ],
+      atReview(),
+    );
+    expect(hasUnfinishedWall(published)).toBe(false);
+  });
+
+  it('records the wall before the draft, so a failed upload still knows about it', () => {
+    const state = run([
+      { type: 'WALL_CREATED', wall: WALL },
+      { type: 'UPLOAD_FAILED', message: 'no signal' },
+    ]);
+    expect(state.wall).toEqual(WALL);
+    expect(state.draft).toBeNull();
+    expect(hasUnfinishedWall(state)).toBe(true);
+  });
+});
+
+describe('addWallReducer — publishing is latched separately from binding', () => {
+  function published(): AddWallState {
+    return run(
+      [
+        { type: 'HOLDS_SAVED', holdCount: 3 },
+        { type: 'REVIEW_DONE' },
+        { type: 'PUBLISH_STARTED' },
+        { type: 'PUBLISHED' },
+      ],
+      atReview(),
+    );
+  }
+
+  it('latches `published` so a retry cannot re-publish', () => {
+    const state = published();
+    expect(state.published).toBe(true);
+
+    // The BIND failed, not the publish. The retry has to bind again and must not
+    // call publishSprayWallVersion, which refuses an already-published version.
+    const bindFailed = addWallReducer(state, { type: 'PUBLISH_FAILED', message: 'could not switch board' });
+    expect(bindFailed.published).toBe(true);
+    expect(bindFailed.step).toBe('publish');
+    expect(bindFailed.publish.error).toBe('could not switch board');
+  });
+
+  it('is not latched when the publish itself failed', () => {
+    const state = run(
+      [
+        { type: 'HOLDS_SAVED', holdCount: 3 },
+        { type: 'REVIEW_DONE' },
+        { type: 'PUBLISH_STARTED' },
+        { type: 'PUBLISH_FAILED', message: 'server said no' },
+      ],
+      atReview(),
+    );
+    expect(state.published).toBe(false);
+    expect(state.step).toBe('publish');
   });
 });

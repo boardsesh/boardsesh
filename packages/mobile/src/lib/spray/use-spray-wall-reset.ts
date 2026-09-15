@@ -159,7 +159,12 @@ export function useSprayWallWithVersions(wallUuid: string | null) {
 }
 
 /**
- * Abandon the open draft.
+ * Abandon the open draft, and keep the wall.
+ *
+ * Not `useDiscardSprayWallDraft` (SW-09), which discards the draft AND deletes
+ * the wall: that is the right ending for an add-a-wall attempt nobody finished,
+ * and the wrong one here by a mile. A reset's wall is published, carries climbs
+ * and is somebody's board — the only thing being thrown away is the photograph.
  *
  * `discardSprayWallVersion` DELETES the row rather than marking it — there is no
  * status that would work, because `superseded` reads as landed and a discarded

@@ -24,8 +24,17 @@ describe('predictCompressedSize', () => {
     expect(predictCompressedSize(3024, 4032)).toEqual({ width: 1536, height: WALL_PHOTO_MAX_DIMENSION });
   });
 
-  it('answers something usable for a photo whose size the picker could not report', () => {
+  it('answers zero for a photo whose size the picker could not report', () => {
     expect(predictCompressedSize(0, 0)).toEqual({ width: 0, height: 0 });
+    expect(predictCompressedSize(-1, 100)).toEqual({ width: 0, height: 0 });
+  });
+
+  it('never lets a NaN dimension out', () => {
+    // A NaN flowing on would make every anchor and every rescaled candidate NaN
+    // too, which draws nothing and reports nothing.
+    expect(predictCompressedSize(Number.NaN, 1200)).toEqual({ width: 0, height: 0 });
+    expect(predictCompressedSize(1600, Number.NaN)).toEqual({ width: 0, height: 0 });
+    expect(predictCompressedSize(Number.POSITIVE_INFINITY, 1200)).toEqual({ width: 0, height: 0 });
   });
 });
 

@@ -40,7 +40,13 @@ export function predictCompressedSize(
   height: number,
   maxDimension = WALL_PHOTO_MAX_DIMENSION,
 ): { width: number; height: number } {
-  if (!(width > 0) || !(height > 0)) return { width, height };
+  // Anything that is not a real, positive pixel count answers zero rather than
+  // being passed through. A picker that could not report a size hands back 0 —
+  // and on some providers NaN — and `NaN` flowing on would make every anchor and
+  // every rescaled candidate NaN too, which draws nothing and says nothing.
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return { width: 0, height: 0 };
+  }
   const longest = Math.max(width, height);
   if (longest <= maxDimension) return { width, height };
   const scale = maxDimension / longest;

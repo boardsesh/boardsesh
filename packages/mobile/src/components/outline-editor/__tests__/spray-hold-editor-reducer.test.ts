@@ -174,14 +174,64 @@ describe('sprayEditorReducer', () => {
     );
     expect(hasUnsavedWork(state)).toBe(true);
 
-    const saved = sprayEditorReducer(state, { type: 'MARK_SAVED' });
+    const saved = sprayEditorReducer(state, { type: 'MARK_SAVED', writtenIds: [1] });
     expect(hasUnsavedWork(saved)).toBe(false);
     expect(saved.removedIds).toEqual([]);
     // The hold is still where the climber moved it — only the "needs writing"
     // flag is gone.
     expect(saved.holds[1]).toMatchObject({ cx: 9, cy: 9, dirty: false });
     // A second press of Save must therefore send nothing at all.
-    expect(sprayEditorReducer(saved, { type: 'MARK_SAVED' })).toBe(saved);
+    expect(sprayEditorReducer(saved, { type: 'MARK_SAVED', writtenIds: [1] })).toBe(saved);
+  });
+
+  it('MARK_SAVED leaves a hold the save left OUT still dirty', () => {
+    // A plan can succeed while omitting holds — one the homography sends off the
+    // wall, one drawn while the request was in flight — and the screen says so.
+    // Clearing those too would let the next re-seed delete work the UI had just
+    // promised was still there.
+    const state = run(
+      loaded([storedHold(1), storedHold(2)]),
+      { type: 'MOVE_HOLD', id: 1, cx: 9, cy: 9 },
+      { type: 'MOVE_HOLD', id: 2, cx: 8, cy: 8 },
+    );
+    const saved = sprayEditorReducer(state, { type: 'MARK_SAVED', writtenIds: [1] });
+    expect(saved.holds[1].dirty).toBe(false);
+    expect(saved.holds[2].dirty).toBe(true);
+    expect(hasUnsavedWork(saved)).toBe(true);
+  });
+
+  it('MARK_REMOVED strips the removed holds from the undo stack too', () => {
+    // The removal has LANDED. If the upsert then fails, undoing past the delete
+    // must not restore the hold as a clean live one — the next save would name an
+    // id the server has already stamped off, and the whole batch is refused.
+    const state = run(
+      loaded([storedHold(1), storedHold(2)]),
+      { type: 'DELETE', ids: [2] },
+      { type: 'MOVE_HOLD', id: 1, cx: 9, cy: 9 },
+      { type: 'MARK_REMOVED' },
+    );
+    expect(state.removedIds).toEqual([]);
+
+    const undoneTwice = run(state, { type: 'UNDO' }, { type: 'UNDO' });
+    expect(Object.keys(undoneTwice.holds)).toEqual(['1']);
+    expect(undoneTwice.removedIds).toEqual([]);
+
+    // ...and redoing forward cannot bring it back either.
+    const redone = run(undoneTwice, { type: 'REDO' }, { type: 'REDO' });
+    expect(Object.keys(redone.holds)).toEqual(['1']);
+  });
+
+  it('MARK_REMOVED leaves everything else undoable', () => {
+    const state = run(
+      loaded([storedHold(1), storedHold(2)]),
+      { type: 'DELETE', ids: [2] },
+      { type: 'MOVE_HOLD', id: 1, cx: 9, cy: 9 },
+      { type: 'MARK_REMOVED' },
+      { type: 'UNDO' },
+    );
+    // Losing an hour of corrections because one hold came off would be its own
+    // bug: history is rewritten, not cleared.
+    expect(state.holds[1]).toMatchObject({ cx: 100, dirty: false });
   });
 
   it('the threshold drops a selection it has just hidden', () => {

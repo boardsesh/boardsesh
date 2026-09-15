@@ -26,7 +26,16 @@ import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-typ
  * — because none of the three is separately actionable: they retry together and
  * they fail into the same place.
  */
-export type AddWallStep = 'meta' | 'photo' | 'anchors' | 'upload' | 'detect' | 'review' | 'publish' | 'done';
+export type AddWallStep =
+  | 'resuming'
+  | 'meta'
+  | 'photo'
+  | 'anchors'
+  | 'upload'
+  | 'detect'
+  | 'review'
+  | 'publish'
+  | 'done';
 
 /** A photo as the picker and the compressor left it: a local JPEG and its pixels. */
 export type PickedWallPhoto = {
@@ -37,13 +46,25 @@ export type PickedWallPhoto = {
   source: 'library' | 'camera';
 };
 
-/** The wall and the draft version the upload step created. */
-export type CreatedWallDraft = {
+/**
+ * The wall row, once it exists — with or without a version on it yet.
+ *
+ * `createSprayWall` writes a REAL `user_boards` row, and it has to: the photo
+ * handler authorises an upload against a wall the caller owns. So from that
+ * moment the wall counts against the ten-wall cap and is something the climber
+ * can come back to, which is why it is machine state and not a ref — a ref dies
+ * with the mount, and the wall does not.
+ */
+export type CreatedWall = {
   wallUuid: string;
   layoutId: number;
+  viewerCanEdit: boolean;
+};
+
+/** The wall plus the draft version the upload step adopted a photo onto. */
+export type CreatedWallDraft = CreatedWall & {
   versionId: string;
   versionNumber: number;
-  viewerCanEdit: boolean;
 };
 
 /** Why the anchor quad was refused. */
@@ -58,13 +79,25 @@ export type AddWallState = {
   anchors: Quad | null;
   anchorRejection: AnchorRejection | null;
   /**
-   * The wall, once it exists on the server.
+   * The wall row, once it exists on the server.
    *
    * Survives every failure after it, and is never created twice: a retried
    * upload reuses it. Without that, three taps on "Try again" would leave three
-   * walls behind, and the per-account cap is ten.
+   * walls behind against a cap of ten.
    */
+  wall: CreatedWall | null;
+  /** The wall's one open draft version, once a photo has been adopted onto it. */
   draft: CreatedWallDraft | null;
+  /**
+   * Whether the version was published.
+   *
+   * LATCHED separately from the step, because publishing and BINDING the wall as
+   * the active board are two writes behind one button. If the bind fails, the
+   * retry must bind again and NOT re-publish — `publishSprayWallVersion` refuses
+   * a version that is already published, so a shared retry turns a recoverable
+   * hiccup into a dead end.
+   */
+  published: boolean;
   upload: {
     running: boolean;
     /** 0–1, or null when the platform cannot report bytes (indeterminate bar). */
@@ -98,6 +131,10 @@ export type AddWallState = {
 };
 
 export type AddWallAction =
+  | { type: 'RESUME_CHECK_STARTED' }
+  | { type: 'RESUME_DECLINED' }
+  | { type: 'RESUMED_AT_PHOTO'; wall: CreatedWall }
+  | { type: 'RESUMED_AT_REVIEW'; draft: CreatedWallDraft }
   | { type: 'META_DONE' }
   | { type: 'PHOTO_PICKED'; photo: PickedWallPhoto }
   | { type: 'PHOTO_CONFIRMED' }
@@ -107,6 +144,7 @@ export type AddWallAction =
   | { type: 'UPLOAD_STARTED' }
   | { type: 'UPLOAD_PROGRESS'; progress: number | null }
   | { type: 'UPLOAD_FAILED'; message: string }
+  | { type: 'WALL_CREATED'; wall: CreatedWall }
   | { type: 'DRAFT_CREATED'; draft: CreatedWallDraft }
   | { type: 'DETECTION_STARTED' }
   | { type: 'DETECTION_PROGRESS'; done: number; total: number }
@@ -124,11 +162,13 @@ const NO_CANDIDATES: readonly SprayHoldCandidate[] = [];
 
 export function initialAddWallState(): AddWallState {
   return {
-    step: 'meta',
+    step: 'resuming',
     photo: null,
     anchors: null,
     anchorRejection: null,
+    wall: null,
     draft: null,
+    published: false,
     upload: { running: false, progress: null, error: null, attempts: 0 },
     detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
     publish: { running: false, error: null },
@@ -166,6 +206,19 @@ export function leavingKeepsDraft(state: AddWallState): boolean {
   return state.draft != null && state.step !== 'done';
 }
 
+/**
+ * Whether the flow has left a wall row on the server that the climber has not
+ * finished.
+ *
+ * Wider than `leavingKeepsDraft`: a wall created for an upload that then failed
+ * has no version at all, so there is no draft to keep — but the ROW is there, it
+ * counts against the ten-wall cap, and the next run of this flow has to find it
+ * rather than mint another one beside it.
+ */
+export function hasUnfinishedWall(state: AddWallState): boolean {
+  return state.wall != null && !state.published;
+}
+
 /** Whether the flow is mid-request and a back gesture should be declined. */
 export function isBusy(state: AddWallState): boolean {
   return state.upload.running || state.detection.outcome === 'running' || state.publish.running;
@@ -173,6 +226,37 @@ export function isBusy(state: AddWallState): boolean {
 
 export function addWallReducer(state: AddWallState, action: AddWallAction): AddWallState {
   switch (action.type) {
+    case 'RESUME_CHECK_STARTED':
+      return { ...state, step: 'resuming' };
+
+    case 'RESUME_DECLINED':
+      // Either there was nothing to resume, or the climber chose to start over
+      // and the old wall has been cleaned up. Either way this is a fresh wall.
+      return { ...state, step: 'meta', wall: null, draft: null };
+
+    case 'RESUMED_AT_PHOTO':
+      // The wall exists but no photo was ever adopted onto it. Its name, angle
+      // and visibility are already stored on the row, so the meta step has
+      // nothing left to ask and the flow rejoins at the photo.
+      return { ...state, step: 'photo', wall: action.wall, draft: null };
+
+    case 'RESUMED_AT_REVIEW':
+      // A draft version with a photo: the holds are the only thing left. No
+      // second detector run — the candidates from the first pass were either
+      // ruled on or are gone, and re-suggesting over saved holds would draw
+      // every one of them twice.
+      return {
+        ...state,
+        step: 'review',
+        wall: {
+          wallUuid: action.draft.wallUuid,
+          layoutId: action.draft.layoutId,
+          viewerCanEdit: action.draft.viewerCanEdit,
+        },
+        draft: action.draft,
+        detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
+      };
+
     case 'META_DONE':
       return { ...state, step: 'photo' };
 
@@ -228,10 +312,18 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       // retries the upload alone rather than restarting the flow.
       return { ...state, step: 'upload', upload: { ...state.upload, running: false, error: action.message } };
 
+    case 'WALL_CREATED':
+      return { ...state, wall: action.wall };
+
     case 'DRAFT_CREATED':
       return {
         ...state,
         step: 'detect',
+        wall: {
+          wallUuid: action.draft.wallUuid,
+          layoutId: action.draft.layoutId,
+          viewerCanEdit: action.draft.viewerCanEdit,
+        },
         draft: action.draft,
         upload: { ...state.upload, running: false, progress: 1, error: null },
       };
@@ -290,10 +382,13 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       return { ...state, step: 'publish', publish: { running: true, error: null } };
 
     case 'PUBLISH_FAILED':
-      return { ...state, publish: { running: false, error: action.message } };
+      // Back onto the publish step so the retry is reachable — including when
+      // the failure was the BIND rather than the publish, which leaves
+      // `published` latched and is why the retry does not re-publish.
+      return { ...state, step: 'publish', publish: { running: false, error: action.message } };
 
     case 'PUBLISHED':
-      return { ...state, step: 'done', publish: { running: false, error: null } };
+      return { ...state, step: 'done', published: true, publish: { running: false, error: null } };
 
     case 'BACK': {
       // Never interrupt a request: the callback would land on a step that is no

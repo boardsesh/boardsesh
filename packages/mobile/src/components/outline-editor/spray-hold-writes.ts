@@ -35,6 +35,14 @@ export type SprayHoldWireInput = {
 export type SprayHoldWritePlan = {
   /** For `upsertSprayWallHolds`. Empty means there is nothing to upsert. */
   upsert: readonly SprayHoldWireInput[];
+  /**
+   * The EDITOR's own ids for the holds in `upsert`, local negatives included.
+   *
+   * A successful save clears `dirty` for exactly these and no others. The wire
+   * inputs cannot answer that question: a new hold goes out with no `id` at all,
+   * because the server allocates it.
+   */
+  writtenIds: readonly number[];
   /** For `removeSprayWallHolds`. Server ids only. */
   removeIds: readonly number[];
   /**
@@ -61,6 +69,7 @@ export type SprayHoldWritePlan = {
 
 const EMPTY_PLAN: SprayHoldWritePlan = {
   upsert: [],
+  writtenIds: [],
   removeIds: [],
   unmappableIds: [],
   outlinesDropped: 0,
@@ -76,6 +85,7 @@ const EMPTY_PLAN: SprayHoldWritePlan = {
  */
 export function buildSprayHoldWritePlan(state: SprayEditorState, homography: readonly number[]): SprayHoldWritePlan {
   const upsert: SprayHoldWireInput[] = [];
+  const writtenIds: number[] = [];
   const unmappableIds: number[] = [];
   let outlinesDropped = 0;
   // Every hold that would be on the wall once this save lands: the removals have
@@ -86,18 +96,33 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
     // A candidate awaiting a verdict is not work in progress — it is a proposal.
     // Saving must not turn it into a hold on somebody's wall.
     if (hold.review === 'pending') continue;
-    aliveAfterSave += 1;
-    if (!hold.dirty) continue;
+
+    // A hold the server already carries stays alive whatever happens to this
+    // save, so it counts now. A hold this session drew counts only if it
+    // actually goes out — otherwise a wall one under its cap plus one valid
+    // addition plus one off-wall addition would be reported over the cap,
+    // although the mutation would land exactly ON it.
+    const alreadyOnTheWall = hold.id > 0;
+    if (alreadyOnTheWall) aliveAfterSave += 1;
+
+    if (!hold.dirty) {
+      // A clean local hold is one a previous save wrote and the refetch has not
+      // renamed yet. Its row exists.
+      if (!alreadyOnTheWall) aliveAfterSave += 1;
+      continue;
+    }
 
     const canonical = mapPhotoHoldToCanonical(homography, hold);
     if (!canonical) {
       unmappableIds.push(hold.id);
       continue;
     }
+    if (!alreadyOnTheWall) aliveAfterSave += 1;
 
     const outline = ringForTheWire(canonical.outline);
     if (canonical.outline != null && outline == null) outlinesDropped += 1;
 
+    writtenIds.push(hold.id);
     upsert.push({
       // A negative id is this session's own bookkeeping and means "new hold";
       // the server allocates the catalogue id.
@@ -119,10 +144,14 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
 
   return {
     upsert,
+    writtenIds,
     removeIds: [...state.removedIds],
     unmappableIds,
     outlinesDropped,
-    overCap: aliveAfterSave > MAX_HOLDS_PER_WALL || upsert.length > MAX_HOLDS_PER_WALL,
+    // One condition, not two: `upsert` is a subset of the alive holds, so
+    // `upsert.length` can never exceed `aliveAfterSave` and a second test on it
+    // is unreachable.
+    overCap: aliveAfterSave > MAX_HOLDS_PER_WALL,
   };
 }
 

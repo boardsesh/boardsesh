@@ -55,6 +55,13 @@ type SprayEditToolbarProps = {
   onAcceptSelected: () => void;
   onRejectSelected: () => void;
   onAcceptAll: () => void;
+  /**
+   * How many of the selected holds are still awaiting a verdict.
+   *
+   * Keep and Drop are gated on this, not on `selectedCount`: a review control
+   * that reached a persisted hold would take it off the wall.
+   */
+  pendingSelectedCount: number;
   /** The target reviews `source: auto` holds. False hides the slider and the verdict row. */
   canReviewCandidates: boolean;
   canUndo: boolean;
@@ -94,6 +101,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
   onAcceptSelected,
   onRejectSelected,
   onAcceptAll,
+  pendingSelectedCount,
   canReviewCandidates,
   canUndo,
   canRedo,
@@ -244,7 +252,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
               variant="tonal"
               size="small"
               onPress={onAcceptSelected}
-              disabled={selectedCount === 0 || locked}
+              disabled={pendingSelectedCount === 0 || locked}
               style={styles.button}
             />
             <Button
@@ -253,7 +261,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
               size="small"
               role="destructive"
               onPress={onRejectSelected}
-              disabled={selectedCount === 0 || locked}
+              disabled={pendingSelectedCount === 0 || locked}
               style={styles.button}
             />
             <Button

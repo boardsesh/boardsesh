@@ -728,7 +728,8 @@
       "move": "Drag a hold to where it really is.",
       "draw": "Pick a hold, then draw its edge.",
       "oneSelected": "Hold #{{id}} is picked.",
-      "twoSelected": "Two picked. Merge makes them one."
+      "twoSelected": "Two picked. Merge makes them one.",
+      "oneSelectedNew": "Your new hold is picked."
     },
     "errors": {
       "nothingToMove": "Pick a hold first, then drag it.",
@@ -820,6 +821,13 @@
       "body": "Your wall and its photo are saved. Pick it up where you left off.",
       "stay": "Keep going",
       "go": "Leave"
+    },
+    "resume": {
+      "checking": "Looking for a wall you started…",
+      "title": "You've a wall on the go",
+      "body": "“{{name}}” isn't finished. Pick up where you left off, or start over.",
+      "pickUp": "Pick up where you left off",
+      "startOver": "Start over"
     }
   },
   "sprayReset": {

@@ -23,7 +23,13 @@ import { SprayHoldSvgLayer } from './SprayHoldSvgLayer';
 import { SprayEditToolbar, type SprayEditorTool } from './SprayEditToolbar';
 import { renderToBoardScale, type StrokeRejection } from './stroke';
 import { buildSprayHoldWritePlan, planHasWork } from './spray-hold-writes';
-import { buildEditorSeed, shouldSeedEditor, sprayEditorSeedKey } from './spray-hold-seed';
+import {
+  buildEditorSeed,
+  holdsToCarryOver,
+  seedIncludesCandidates,
+  seedReason,
+  sprayEditorSeedKey,
+} from './spray-hold-seed';
 import type { SprayHoldCandidate, SprayHoldSaveSummary } from './spray-hold-editor-types';
 import { editorTargetCapabilities, type SprayWallEditorTarget } from './editor-target';
 import { withUnsavedDraftGuard } from './draft-guard';
@@ -154,36 +160,52 @@ export function SprayHoldEditorScreen({
    *
    * A ref, not state: it is a latch between two async events, and rendering on it
    * would change nothing on screen. Armed on save, disarmed by the arrival of a
-   * payload that is not the one already seeded — see `spray-hold-seed.ts` for why
-   * the trigger has to be the payload rather than a counter.
+   * payload that is both newer than the save and not the one already seeded —
+   * see `spray-hold-seed.ts` for why neither test is enough on its own.
    */
   const awaitingSavedPayloadRef = useRef(false);
-  /** Has this version been saved once? Gates the detector's proposals. */
-  const savedThisVersionRef = useRef(false);
+  const saveStartedAtMsRef = useRef<number | null>(null);
 
-  const seedKey = sprayEditorSeedKey(wall, candidates?.length ?? 0);
+  // The WALL and its VERSION. The detector run is tracked separately, by array
+  // identity: folding its COUNT in here made a fresh run of the same length
+  // invisible and a run of a different length look like a new version.
+  const seedKey = sprayEditorSeedKey(wall);
   const seededKeyRef = useRef<string | null>(null);
   const seededWallRef = useRef<typeof wall>(null);
+  const seededCandidatesRef = useRef<readonly SprayHoldCandidate[] | null>(null);
+
+  // Read by the seed effect without being one of its dependencies: the carry-over
+  // is a snapshot of whatever is unsaved at the moment a seed happens, and making
+  // it a dependency would re-run the effect on every edit.
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
-    if (
-      !wall ||
-      !shouldSeedEditor({
-        seedKey,
-        seededKey: seededKeyRef.current,
-        wall,
-        seededWall: seededWallRef.current,
-        awaitingSavedPayload: awaitingSavedPayloadRef.current,
-      })
-    ) {
-      return;
-    }
-    const isNewVersion = seededKeyRef.current !== seedKey;
-    if (isNewVersion) savedThisVersionRef.current = false;
+    if (!wall) return;
+    const reason = seedReason({
+      seedKey,
+      seededKey: seededKeyRef.current,
+      wall,
+      seededWall: seededWallRef.current,
+      candidatesChanged: seededCandidatesRef.current !== (candidates ?? null),
+      awaitingSavedPayload: awaitingSavedPayloadRef.current,
+      saveStartedAtMs: saveStartedAtMsRef.current,
+    });
+    if (!reason) return;
+
     seededKeyRef.current = seedKey;
     seededWallRef.current = wall;
+    seededCandidatesRef.current = candidates ?? null;
     awaitingSavedPayloadRef.current = false;
-    dispatch({ type: 'LOAD', holds: buildEditorSeed(wall, candidates ?? [], !savedThisVersionRef.current) });
+
+    // Anything this session changed that the last save did not take comes with
+    // us. A partial save tells the climber some holds were left out; dropping
+    // them here would make that message a lie.
+    const carryOver = holdsToCarryOver(Object.values(stateRef.current.holds));
+    dispatch({
+      type: 'LOAD',
+      holds: buildEditorSeed(wall, candidates ?? [], seedIncludesCandidates(reason), carryOver),
+    });
   }, [wall, seedKey, candidates]);
 
   const boardRender = useMemo(() => {
@@ -352,14 +374,30 @@ export function SprayHoldEditorScreen({
     dispatch({ type: 'MERGE', ids: state.selectedIds });
   }, [viewerCanEdit, state.selectedIds, t]);
 
+  /**
+   * The selected holds that are still awaiting a verdict.
+   *
+   * Drop and Keep act on these and nothing else. Delegating Drop to the general
+   * delete would queue a PERSISTED hold for server removal the moment somebody
+   * selected one while any candidate was pending — a review control silently
+   * taking a hold off the wall.
+   */
+  const pendingSelectedIds = useMemo(
+    () => state.selectedIds.filter((id) => state.holds[id]?.review === 'pending'),
+    [state.selectedIds, state.holds],
+  );
+
   const handleAcceptSelected = useCallback(() => {
     if (!viewerCanEdit) return;
-    dispatch({ type: 'ACCEPT', ids: state.selectedIds });
-  }, [viewerCanEdit, state.selectedIds]);
+    dispatch({ type: 'ACCEPT', ids: pendingSelectedIds });
+  }, [viewerCanEdit, pendingSelectedIds]);
 
   // Rejecting a candidate is deleting it — it never became a hold, so there is
-  // nothing else for "no" to mean.
-  const handleRejectSelected = handleDelete;
+  // nothing else for "no" to mean. Only ever a candidate, though.
+  const handleRejectSelected = useCallback(() => {
+    if (!viewerCanEdit || pendingSelectedIds.length === 0) return;
+    dispatch({ type: 'DELETE', ids: pendingSelectedIds });
+  }, [viewerCanEdit, pendingSelectedIds]);
 
   const handleAcceptAll = useCallback(() => {
     if (!viewerCanEdit) return;
@@ -384,6 +422,9 @@ export function SprayHoldEditorScreen({
       return;
     }
     setErrorText(null);
+    // Stamped BEFORE the request so a payload registered while it was in flight —
+    // a presigned-photo refresh, say — cannot be mistaken for its answer.
+    saveStartedAtMsRef.current = Date.now();
     saveHolds.mutate(
       {
         wallUuid,
@@ -400,13 +441,12 @@ export function SprayHoldEditorScreen({
           // they are clear a second press of Save re-sends holds the server has
           // already applied, and a correction re-sent names an id the resolver
           // has just superseded — which fails the whole batch.
-          dispatch({ type: 'MARK_SAVED' });
+          dispatch({ type: 'MARK_SAVED', writtenIds: plan.writtenIds });
           // The refetched draft carries the server's own ids for every hold this
           // session minted locally, so the editor re-seeds from it rather than
           // keeping negative ids that no longer mean anything. Armed rather than
           // done here: the payload may not have landed yet, and re-seeding from
           // the pre-save one would undo the save on screen.
-          savedThisVersionRef.current = true;
           awaitingSavedPayloadRef.current = true;
           showToast(t('sprayEditor.toast.saved', { value: result.written }), 'success');
           if (plan.unmappableIds.length > 0) {
@@ -431,7 +471,14 @@ export function SprayHoldEditorScreen({
   const statusLine = useMemo(() => {
     if (!viewerCanEdit) return t('sprayEditor.status.readOnly');
     if (state.selectedIds.length === 2) return t('sprayEditor.status.twoSelected');
-    if (state.selectedIds.length === 1) return t('sprayEditor.status.oneSelected', { id: state.selectedIds[0] });
+    if (state.selectedIds.length === 1) {
+      // A hold this session drew has a negative id — this editor's own
+      // bookkeeping, and "Hold #-1" means nothing to a wall owner.
+      const [selectedId] = state.selectedIds;
+      return selectedId > 0
+        ? t('sprayEditor.status.oneSelected', { id: selectedId })
+        : t('sprayEditor.status.oneSelectedNew');
+    }
     if (tool === 'add') return t('sprayEditor.status.add');
     if (tool === 'move') return t('sprayEditor.status.move');
     if (tool === 'draw') return t('sprayEditor.status.draw');
@@ -535,6 +582,7 @@ export function SprayHoldEditorScreen({
           onAcceptSelected={handleAcceptSelected}
           onRejectSelected={handleRejectSelected}
           onAcceptAll={handleAcceptAll}
+          pendingSelectedCount={pendingSelectedIds.length}
           canReviewCandidates={capabilities.canReviewCandidates}
           canUndo={state.past.length > 0}
           canRedo={state.future.length > 0}
