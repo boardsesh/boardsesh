@@ -132,6 +132,15 @@ describe('clearUserData', () => {
     await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: 'climb-1' }, 'tick-1');
     await setCheckpoint(db, getCheckpointKey('boardsesh_ticks'), { updatedAt: now, syncSeq: '5' });
 
+    // A downloaded spray wall: board reference data by table, but private by
+    // nature — a photograph of somebody's garage — so it is the one board table
+    // this wipe takes (#5448).
+    await db.runAsync(`INSERT INTO spray_walls (layout_id, board_uuid, photo_key) VALUES (?, ?, ?)`, [
+      4,
+      'board-4',
+      'spray-walls/wall-4/photo-1.jpg',
+    ]);
+
     // Board reference data that must survive the wipe.
     await db.runAsync(`INSERT INTO board_climbs (uuid, board_type) VALUES (?, ?)`, ['climb-1', 'kilter']);
     await db.runAsync(
@@ -149,6 +158,8 @@ describe('clearUserData', () => {
     expect(await countRows('setter_follows')).toBe(0);
     expect(await countRows('playlist_follows')).toBe(0);
     expect(await getPendingCount(db)).toBe(0);
+    // The next account on this device must not read the previous one's wall.
+    expect(await countRows('spray_walls')).toBe(0);
     expect(await getCheckpoint(db, getCheckpointKey('boardsesh_ticks'))).toBeNull();
 
     // The expensive shared cache is deliberately retained.

@@ -1,5 +1,5 @@
 import type { DocumentsPulledSink } from '@boardsesh/offline-sync';
-import { storeSprayPhoto } from '../lib/spray/spray-photo-store';
+import { pruneStoredSprayPhotos, storeSprayPhoto } from '../lib/spray/spray-photo-store';
 
 /**
  * Turn a pulled `spray_walls` page into photographs on disk (issue #5448).
@@ -27,9 +27,10 @@ import { storeSprayPhoto } from '../lib/spray/spray-photo-store';
  * a layout is one wall), a wall has one published photo, and a photo already on
  * disk costs a single `stat`. A reset is the only event that fetches bytes.
  */
-export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, documents }) => {
+export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, documents, db }) => {
   if (tableName !== 'spray_walls') return;
 
+  let storedAny = false;
   for (const document of documents) {
     const photoKey = document.photo_key;
     const photoUrl = document.photo_url;
@@ -38,6 +39,22 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     // not an error — the wall still syncs its holds.
     if (typeof photoKey !== 'string' || !photoKey) continue;
     if (typeof photoUrl !== 'string' || !photoUrl) continue;
-    await storeSprayPhoto(photoKey, photoUrl);
+    if (await storeSprayPhoto(photoKey, photoUrl)) storedAny = true;
   }
+
+  // Reap the generation this page replaced. A reset mints a NEW `photo_key`, so
+  // without this every reset of every wall leaves its predecessor's JPEG in the
+  // durable directory forever — and `Paths.document` is not swept by anything,
+  // which is exactly why the photo lives there.
+  //
+  // Only after a store actually landed: the live set is read from the rows this
+  // page just committed, and running it on a page that stored nothing would be a
+  // directory walk per sync cycle for no reclaim. Keys come from the DATABASE,
+  // not from the page — a page names one wall, and deleting everything the other
+  // walls own is the failure this guard exists to avoid.
+  if (!storedAny) return;
+  const rows = await db.getAllAsync<{ photo_key: string | null }>(
+    'SELECT photo_key FROM spray_walls WHERE photo_key IS NOT NULL',
+  );
+  pruneStoredSprayPhotos(rows.map((row) => row.photo_key).filter((key): key is string => !!key));
 };

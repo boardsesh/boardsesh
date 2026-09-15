@@ -111,16 +111,22 @@ export function evaluateDeletionsCoverage(coverageAt: number | null, nowMs: numb
  *    (removeBoardScopeData, behind the Storage settings flow).
  *  - `spray_walls` rows and their `checkpoint:spray_walls:<scope>` keys — the one
  *    board table the sentence above is not true of. A wall DOES emit a tombstone
- *    (migration 0228, on the soft delete), scoped to its owner, so a coverage gap
- *    can strand a wall the owner deleted while the device was away. It is still
- *    not cleared here, for two reasons: the checkpoints are per scope key and
- *    this function has no scope list to enumerate, so deleting the rows without
- *    them would rewind nothing and the wall would never come back; and the
- *    exposure is the owner's own deleted wall on the owner's own device, not a
- *    cross-user leak — sign-out clears the table and the photographs outright,
- *    and so does removing the board. The stranded row goes the moment anything
- *    about that wall changes on the server. A per-scope reset is the fix if this
- *    ever matters in practice.
+ *    (migration 0228, on the soft delete), so a coverage gap can strand a wall
+ *    that is gone from the server. It is still not cleared here because the
+ *    checkpoints are per scope key and this function has no scope list to
+ *    enumerate: deleting the rows without rewinding the cursors would leave a
+ *    wall the device can never fetch again.
+ *
+ *    BE PRECISE ABOUT WHO IS EXPOSED. The tombstone is scoped to the wall's
+ *    OWNER (`INSERT INTO sync_deletions … user_id = owner_id`), and `syncDeletions`
+ *    only serves a caller their own rows plus NULL-scoped reference ones — so a
+ *    gym member or a public-wall viewer who mirrored a wall never receives its
+ *    tombstone at all, coverage gap or no coverage gap. Their copy of the holds,
+ *    the geometry and the photograph survives the owner deleting the wall or
+ *    flipping it back to private, until they sign out or remove the board. That
+ *    is not this function's bug to fix — it is a hole in the tombstone's scope —
+ *    and the fix is tracked as SW-15b (#5490): an empty per-board page for a scope
+ *    that still has a local row is the signal to delete the row and its photo.
  *  - `pending_mutations`. Unsynced local writes are not recoverable from the
  *    server; drainMutationQueue legitimately leaves rows behind (attempt budget,
  *    dead letters, offline), so "drain first, then wipe" is not a substitute for
