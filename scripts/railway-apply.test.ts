@@ -40,6 +40,7 @@ const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 const WEB_SYNC_VARIABLES = {
   SMTP_USER: 'mailer@boardsesh.com',
   SMTP_PASSWORD: 'test-password',
+  INTERNAL_SERVICE_SECRET: 'test-internal-service-secret',
   BOARDSESH_WEB: '1',
   BASE_URL: CANONICAL_WEB_ORIGIN,
 };
@@ -60,6 +61,7 @@ function liveState(overrides: Partial<LiveState> = {}): LiveState {
       [WEB_SERVICE_NAME]: {
         SMTP_USER: 'mailer@boardsesh.com',
         SMTP_PASSWORD: 'test-password',
+        INTERNAL_SERVICE_SECRET: 'test-internal-service-secret',
         BOARDSESH_WEB: '1',
         BASE_URL: CANONICAL_WEB_ORIGIN,
       },
@@ -180,6 +182,17 @@ describe('diffServiceVars', () => {
     );
   });
 
+  it('reports a missing web INTERNAL_SERVICE_SECRET (#5291)', () => {
+    const { INTERNAL_SERVICE_SECRET: _omitted, ...webWithoutSecret } = WEB_SYNC_VARIABLES;
+    const live = liveState({
+      variables: { ...liveState().variables, [WEB_SERVICE_NAME]: webWithoutSecret },
+    });
+
+    expect(diffServiceVars(webService, live, NO_SUPPLIED).map((change) => change.summary)).toEqual([
+      expect.stringContaining('INTERNAL_SERVICE_SECRET is absent'),
+    ]);
+  });
+
   it('allows an absent BOARDSESH_WEB override', () => {
     const live = liveState({
       variables: {
@@ -187,6 +200,7 @@ describe('diffServiceVars', () => {
         [WEB_SERVICE_NAME]: {
           SMTP_USER: 'mailer@boardsesh.com',
           SMTP_PASSWORD: 'test-password',
+          INTERNAL_SERVICE_SECRET: 'test-internal-service-secret',
           BASE_URL: CANONICAL_WEB_ORIGIN,
         },
       },
