@@ -309,6 +309,418 @@ export function findSensitiveVariableKeys(variables: unknown): string[] {
   return [...sensitiveKeys].sort();
 }
 
+// ---------------------------------------------------------------------------
+// Pseudonymisation
+// ---------------------------------------------------------------------------
+
+/**
+ * What a person's personal fields are called, grouped by the id field that says
+ * WHICH person they belong to.
+ *
+ * THE RULE, and it is deliberately narrow: a field is personal only when it
+ * appears on an object that also carries the group's id key. Nothing is matched
+ * on its name alone. That is what keeps a climb's `name`, a playlist's `name`,
+ * a board's `name` and a gym's `name` out of this — every one of them sits
+ * beside an `id`/`uuid`, and none of them is a `displayName`.
+ *
+ * Deliberately NOT here, and the reasoning, because both look like near
+ * misses:
+ *
+ *   - `setterUsername` / `setter_username` / `faUsername`. These are Aurora's
+ *     public attribution on the CLIMB (the same string the Aurora apps and
+ *     boardsesh.com's public climb pages render), not a field on a person
+ *     object — and the object they sit on carries the id of the climber who
+ *     LOGGED the tick, not of the setter, so there is no id to hash a stable
+ *     pseudonym from. Rewriting them from the wrong id would give one setter a
+ *     different name on every climb.
+ *   - A beta link's `link`. It is a public Instagram post URL that carries no
+ *     handle, and the recorded thumbnail fixture is keyed on its shortcode —
+ *     rewriting it would break the static lookup for no privacy gain. The
+ *     handle beside it (`foreignUsername`) IS rewritten; see
+ *     `PSEUDONYMISED_HANDLE_ONLY_KEYS`.
+ *   - Bare user ids (`ownerUserId`, `follower_id`, `socialEntityId`, …). They
+ *     are opaque uuids, they are what a stable pseudonym hashes FROM, and
+ *     replay needs them to keep matching the ids the app reasons about.
+ */
+export type PersonFieldGroup = {
+  /** The key naming the person these fields describe. Its value must be a non-empty string. */
+  idKey: string;
+  /** Human-readable names. Rewritten to a two-word pseudonym. */
+  displayNameKeys: readonly string[];
+  /** Account handles. Rewritten to `climber_<6 hex>`. */
+  handleKeys: readonly string[];
+  /** Avatar / profile image URLs. Rewritten to `null` (the app renders initials). */
+  avatarKeys: readonly string[];
+  /** Email addresses. Rewritten to `climber_<6 hex>@pseudonymised.invalid`. */
+  emailKeys: readonly string[];
+};
+
+/**
+ * Ordered on purpose: the FIRST group whose id key is present claims a shared
+ * field name. `userId` therefore beats `id` on an object carrying both (a
+ * comment is `{ id, userId, displayName }` — the display name is the commenter's,
+ * not the comment's).
+ */
+export const PSEUDONYMISED_PERSON_FIELDS: readonly PersonFieldGroup[] = [
+  {
+    idKey: 'userId',
+    displayNameKeys: ['displayName', 'userDisplayName', 'userName'],
+    handleKeys: ['username', 'handle', 'instagramHandle'],
+    avatarKeys: ['avatarUrl', 'userAvatarUrl', 'userAvatar', 'profileImageUrl'],
+    emailKeys: ['email', 'userEmail'],
+  },
+  {
+    idKey: 'ownerId',
+    displayNameKeys: ['ownerDisplayName', 'ownerName'],
+    handleKeys: ['ownerUsername', 'ownerHandle'],
+    avatarKeys: ['ownerAvatarUrl', 'ownerAvatar'],
+    emailKeys: ['ownerEmail'],
+  },
+  {
+    idKey: 'ownerUserId',
+    displayNameKeys: ['ownerDisplayName', 'ownerName'],
+    handleKeys: ['ownerUsername', 'ownerHandle'],
+    avatarKeys: ['ownerAvatarUrl', 'ownerAvatar'],
+    emailKeys: ['ownerEmail'],
+  },
+  {
+    idKey: 'creatorId',
+    displayNameKeys: ['creatorDisplayName', 'creatorName'],
+    handleKeys: ['creatorUsername', 'creatorHandle'],
+    avatarKeys: ['creatorAvatarUrl', 'creatorAvatar'],
+    emailKeys: ['creatorEmail'],
+  },
+  {
+    idKey: 'authorId',
+    displayNameKeys: ['authorDisplayName', 'authorName'],
+    handleKeys: ['authorUsername', 'authorHandle'],
+    avatarKeys: ['authorAvatarUrl', 'authorAvatar'],
+    emailKeys: ['authorEmail'],
+  },
+  {
+    idKey: 'id',
+    displayNameKeys: ['displayName'],
+    handleKeys: ['username', 'handle', 'instagramHandle'],
+    avatarKeys: ['avatarUrl', 'profileImageUrl'],
+    emailKeys: ['email'],
+  },
+  {
+    idKey: 'uuid',
+    displayNameKeys: ['displayName'],
+    handleKeys: ['username', 'handle', 'instagramHandle'],
+    avatarKeys: ['avatarUrl', 'profileImageUrl'],
+    emailKeys: ['email'],
+  },
+];
+
+/**
+ * Handles whose owner has NO id anywhere in the payload, so the handle itself
+ * is the identity the pseudonym hashes from.
+ *
+ * Today that is one field: a beta link's `foreignUsername`, the Instagram
+ * handle of whoever filmed the video. The link row carries `climbUuid`,
+ * `tickUuid` and `boardId` — none of which is that person — so the id-group
+ * rule above cannot reach it.
+ *
+ * Hashing a value onto a value is only idempotent if an already-rewritten one
+ * is recognised and skipped, which `PSEUDONYM_HANDLE_PATTERN` does.
+ */
+export const PSEUDONYMISED_HANDLE_ONLY_KEYS: readonly string[] = ['foreignUsername'];
+
+/**
+ * Ids that name something other than a person, and are therefore left alone
+ * exactly like our own account is. `00000000-…` is what the backend puts on a
+ * board Boardsesh itself owns rather than a climber; pseudonymising it would
+ * put "Granite Marmot" where the product name belongs.
+ */
+export const NON_PERSON_USER_IDS: readonly string[] = ['00000000-0000-0000-0000-000000000000'];
+
+/**
+ * The pseudonym word space: `<adjective> <noun>`, 1024 combinations.
+ *
+ * Fixed and exported because it is also the ORACLE — the drift-test guard asks
+ * "is this display name one this repo could have generated?", and a name
+ * outside the space is a real one that the rewrite missed. Keep both lists
+ * obviously fictional and obviously climber-ish, and never remove an entry: a
+ * committed fixture's pseudonym would stop being recognised.
+ */
+export const PSEUDONYM_ADJECTIVES: readonly string[] = [
+  'Amber',
+  'Basalt',
+  'Bold',
+  'Breezy',
+  'Brisk',
+  'Chalky',
+  'Cheery',
+  'Copper',
+  'Crimpy',
+  'Dusty',
+  'Flinty',
+  'Frosty',
+  'Granite',
+  'Gritty',
+  'Hazel',
+  'Keen',
+  'Lanky',
+  'Lucky',
+  'Mossy',
+  'Nimble',
+  'Patient',
+  'Plucky',
+  'Quiet',
+  'Rowdy',
+  'Rusty',
+  'Sandy',
+  'Silent',
+  'Slopey',
+  'Spry',
+  'Steady',
+  'Sturdy',
+  'Sunny',
+];
+
+export const PSEUDONYM_NOUNS: readonly string[] = [
+  'Auklet',
+  'Badger',
+  'Beetle',
+  'Bison',
+  'Chough',
+  'Crane',
+  'Curlew',
+  'Dipper',
+  'Falcon',
+  'Finch',
+  'Fulmar',
+  'Gecko',
+  'Grouse',
+  'Hare',
+  'Heron',
+  'Ibex',
+  'Kestrel',
+  'Lynx',
+  'Magpie',
+  'Mantis',
+  'Marmot',
+  'Newt',
+  'Osprey',
+  'Otter',
+  'Pika',
+  'Puffin',
+  'Raven',
+  'Shrike',
+  'Sparrow',
+  'Stoat',
+  'Vole',
+  'Wren',
+];
+
+/** The shape every pseudonymised handle takes. Also the drift-test guard's oracle. */
+export const PSEUDONYM_HANDLE_PATTERN = /^climber_[0-9a-f]{6}$/;
+
+/** The domain every pseudonymised email lands on. Reserved by RFC 2606, so it can never resolve. */
+export const PSEUDONYM_EMAIL_DOMAIN = 'pseudonymised.invalid';
+
+/**
+ * FNV-1a, 32-bit.
+ *
+ * Hand-rolled rather than imported because this module is pure by contract (no
+ * `node:crypto`, so the mobile drift test can import it), and the hash is not a
+ * security boundary — it only has to be stable, so that the same climber gets
+ * the same pseudonym in every fixture and the feed reads coherently. It is NOT
+ * a one-way function: the pseudonyms are a de-identification of data we chose
+ * to stop committing, not a cryptographic anonymisation of data we keep.
+ */
+function fnv1a32(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+/** The stable two-word pseudonym for one identity. */
+export function pseudonymDisplayName(identity: string): string {
+  const hash = fnv1a32(identity);
+  const adjective = PSEUDONYM_ADJECTIVES[hash % PSEUDONYM_ADJECTIVES.length];
+  const noun = PSEUDONYM_NOUNS[Math.floor(hash / PSEUDONYM_ADJECTIVES.length) % PSEUDONYM_NOUNS.length];
+  return `${adjective} ${noun}`;
+}
+
+/** The stable `climber_<6 hex>` handle for one identity. */
+export function pseudonymHandle(identity: string): string {
+  return `climber_${(fnv1a32(identity) >>> 8).toString(16).padStart(6, '0')}`;
+}
+
+/** The stable pseudonymous email for one identity. */
+export function pseudonymEmail(identity: string): string {
+  return `${pseudonymHandle(identity)}@${PSEUDONYM_EMAIL_DOMAIN}`;
+}
+
+const PSEUDONYM_ADJECTIVE_SET = new Set(PSEUDONYM_ADJECTIVES);
+const PSEUDONYM_NOUN_SET = new Set(PSEUDONYM_NOUNS);
+
+/** Whether a display name is one this repo could have generated. */
+export function isPseudonymDisplayName(value: string): boolean {
+  const words = value.split(' ');
+  return words.length === 2 && PSEUDONYM_ADJECTIVE_SET.has(words[0]) && PSEUDONYM_NOUN_SET.has(words[1]);
+}
+
+/** Which flavour of personal field this is, and therefore what replaces it. */
+export type PersonFieldKind = 'displayName' | 'handle' | 'avatar' | 'email';
+
+/** What one personal field is replaced by. `null` for an avatar — the app renders initials. */
+function pseudonymFor(kind: PersonFieldKind, identity: string): string | null {
+  switch (kind) {
+    case 'displayName':
+      return pseudonymDisplayName(identity);
+    case 'handle':
+      return pseudonymHandle(identity);
+    case 'email':
+      return pseudonymEmail(identity);
+    case 'avatar':
+      return null;
+  }
+}
+
+type PersonFieldVisitor = (visit: {
+  /** The object the field sits on. Mutating `container[key]` rewrites the field. */
+  container: Record<string, unknown>;
+  key: string;
+  kind: PersonFieldKind;
+  /** What the pseudonym hashes from: the person's id, or the handle itself. */
+  identity: string;
+  /** Dotted path from the root, for a message that names the offending field. */
+  path: string;
+  /** The current value. Always a non-empty string — a null field has nothing to reveal. */
+  value: string;
+}) => void;
+
+/**
+ * Walk any JSON value and call back once per personal field belonging to a
+ * person who is neither our own account nor a non-person id.
+ *
+ * Shared by the rewrite and by the drift-test guard so the two can never
+ * disagree about what counts as a person.
+ */
+function visitPersonFields(root: unknown, ownUserId: string | null, visit: PersonFieldVisitor): void {
+  const nonPersonIds = new Set(NON_PERSON_USER_IDS);
+
+  const walk = (node: unknown, path: string): void => {
+    if (Array.isArray(node)) {
+      node.forEach((element, index) => walk(element, `${path}[${index}]`));
+      return;
+    }
+    if (typeof node !== 'object' || node === null) return;
+    const container = node as Record<string, unknown>;
+
+    // A field name claimed by an earlier group is not offered to a later one,
+    // so `displayName` on `{ id, userId, displayName }` belongs to `userId`.
+    const claimed = new Set<string>();
+    for (const group of PSEUDONYMISED_PERSON_FIELDS) {
+      const personId = container[group.idKey];
+      if (typeof personId !== 'string' || personId.length === 0) continue;
+      const fields: { key: string; kind: PersonFieldKind }[] = [];
+      const collect = (keys: readonly string[], kind: PersonFieldKind): void => {
+        for (const key of keys) {
+          if (claimed.has(key) || !Object.hasOwn(container, key)) continue;
+          fields.push({ key, kind });
+        }
+      };
+      collect(group.displayNameKeys, 'displayName');
+      collect(group.handleKeys, 'handle');
+      collect(group.avatarKeys, 'avatar');
+      collect(group.emailKeys, 'email');
+      if (fields.length === 0) continue;
+      for (const field of fields) claimed.add(field.key);
+      // Claimed first, then skipped: our own account's fields must not fall
+      // through to a later group and be rewritten by it.
+      if (personId === ownUserId || nonPersonIds.has(personId)) continue;
+      for (const field of fields) {
+        const value = container[field.key];
+        if (typeof value !== 'string' || value.length === 0) continue;
+        visit({ container, key: field.key, kind: field.kind, identity: personId, path: `${path}.${field.key}`, value });
+      }
+    }
+
+    for (const key of PSEUDONYMISED_HANDLE_ONLY_KEYS) {
+      if (claimed.has(key)) continue;
+      const value = container[key];
+      if (typeof value !== 'string' || value.length === 0) continue;
+      // The handle IS the identity here, so an already-rewritten one would hash
+      // onto a different pseudonym every pass. Recognise and leave it.
+      if (PSEUDONYM_HANDLE_PATTERN.test(value)) continue;
+      visit({ container, key, kind: 'handle', identity: value, path: `${path}.${key}`, value });
+    }
+
+    for (const [key, entry] of Object.entries(container)) walk(entry, path ? `${path}.${key}` : key);
+  };
+
+  walk(root, '');
+}
+
+/** What one `pseudonymiseResponse` pass changed. */
+export type PseudonymiseResult = {
+  /** A deep copy with every other climber's personal fields replaced. The input is never mutated. */
+  response: unknown;
+  /** How many DISTINCT people were rewritten. This is the `persons=` in the log line. */
+  persons: number;
+  /** How many individual fields were rewritten. */
+  fields: number;
+};
+
+/**
+ * Every other climber's personal fields in a recorded GraphQL response,
+ * replaced by a stable stand-in. Our own account (`ownUserId`) is left exactly
+ * as recorded, so the screenshots still show the real signed-in user.
+ *
+ * Deterministic: the pseudonym is a pure function of the person's id, so one
+ * climber reads as the same person in every fixture and a session feed stays
+ * coherent. Idempotent: running it again is a no-op, which is what lets the
+ * one-off rewrite of the committed set (`scripts/screenshot-fixtures-pseudonymise.ts`)
+ * be re-run safely.
+ *
+ * Applied at RECORD time by default (`--no-pseudonymise` opts out), so real
+ * names never reach disk in the first place.
+ */
+export function pseudonymiseResponse(response: unknown, options: { ownUserId: string | null }): PseudonymiseResult {
+  const pseudonymised = cloneJsonValue(response);
+  const identities = new Set<string>();
+  let fields = 0;
+  visitPersonFields(pseudonymised, options.ownUserId, ({ container, key, kind, identity, value }) => {
+    const replacement = pseudonymFor(kind, identity);
+    // Already pseudonymous: leave the bytes alone and do not count it, so a
+    // second pass produces a byte-identical file and `persons=0`.
+    if (replacement === value) return;
+    container[key] = replacement;
+    identities.add(identity);
+    fields += 1;
+  });
+  return { response: pseudonymised, persons: identities.size, fields };
+}
+
+/**
+ * Every personal field in `response` that still holds a real value — the exact
+ * inverse of what `pseudonymiseResponse` would rewrite, as `path = value`
+ * strings.
+ *
+ * The drift test runs this over the committed set so a fixture recorded with
+ * `--no-pseudonymise`, or hand-edited, cannot land a real climber's name in the
+ * repo unnoticed.
+ */
+export function findUnpseudonymisedPersonFields(response: unknown, options: { ownUserId: string | null }): string[] {
+  const offenders: string[] = [];
+  visitPersonFields(response, options.ownUserId, ({ kind, path, value }) => {
+    if (kind === 'displayName' && isPseudonymDisplayName(value)) return;
+    if (kind === 'handle' && PSEUDONYM_HANDLE_PATTERN.test(value)) return;
+    if (kind === 'email' && value.endsWith(`@${PSEUDONYM_EMAIL_DOMAIN}`)) return;
+    // An avatar that reaches here is a non-empty string, and a pseudonymised
+    // avatar is always `null` — so there is nothing to forgive.
+    offenders.push(`${path} = ${JSON.stringify(value)}`);
+  });
+  return offenders;
+}
+
 export type GraphqlFixtureKey = {
   operationName: string;
   /** sha256 of the whitespace-normalised document. */
@@ -885,6 +1297,13 @@ export type ScreenshotBackendLogLine =
   /** `detail` is `status=<n>` or `code=INTERNAL_SERVER_ERROR`. */
   | { event: 'upstream-error'; operationName: string; detail: string }
   | { event: 'redacted'; operationName: string }
+  /**
+   * Other climbers' names/handles/avatars in this response were replaced by
+   * stand-ins before it was written (see `pseudonymiseResponse`). `persons` is
+   * how many DISTINCT people were rewritten. Emitted only when something
+   * changed, and NEVER a problem line — it is the recorder doing its job.
+   */
+  | { event: 'pseudonymised'; operationName: string; hash12: string; persons: number }
   /** `note` is the free-text tail, e.g. `seen with 21 distinct variable sets`. */
   | { event: 'note'; operationName: string; note: string }
   | { event: 'ws-ack' }
@@ -952,6 +1371,8 @@ export function formatScreenshotBackendLine(line: ScreenshotBackendLogLine): str
         return `UPSTREAM-ERROR graphql ${line.operationName} ${line.detail}`;
       case 'redacted':
         return `REDACTED graphql ${line.operationName}`;
+      case 'pseudonymised':
+        return `PSEUDONYMISED graphql ${line.operationName} ${line.hash12} persons=${line.persons}`;
       case 'note':
         return `NOTE graphql ${line.operationName} ${line.note}`;
       case 'ws-ack':
@@ -987,6 +1408,7 @@ const RECORDED_STATIC_PATTERN = /^RECORDED static (\S+) -> (\S+)$/;
 const DUP_PATTERN = /^DUP graphql (\S+) (\S+)$/;
 const UPSTREAM_ERROR_PATTERN = /^UPSTREAM-ERROR graphql (\S+) (\S+)$/;
 const REDACTED_PATTERN = /^REDACTED graphql (\S+)$/;
+const PSEUDONYMISED_PATTERN = /^PSEUDONYMISED graphql (\S+) (\S+) persons=(\d+)$/;
 const NOTE_PATTERN = /^NOTE graphql (\S+) (.+)$/;
 const WS_SUBSCRIBE_PATTERN = /^WS subscribe (\S+)$/;
 const WS_ERROR_PATTERN = /^WS error (.+)$/;
@@ -1087,6 +1509,16 @@ export function parseScreenshotBackendLogLine(line: string): ScreenshotBackendLo
 
   const redacted = REDACTED_PATTERN.exec(body);
   if (redacted) return { event: 'redacted', operationName: redacted[1] };
+
+  const pseudonymised = PSEUDONYMISED_PATTERN.exec(body);
+  if (pseudonymised) {
+    return {
+      event: 'pseudonymised',
+      operationName: pseudonymised[1],
+      hash12: pseudonymised[2],
+      persons: Number(pseudonymised[3]),
+    };
+  }
 
   const note = NOTE_PATTERN.exec(body);
   if (note) return { event: 'note', operationName: note[1], note: note[2] };

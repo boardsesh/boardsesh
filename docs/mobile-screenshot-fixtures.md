@@ -61,6 +61,7 @@ vp run mobile:screenshot-backend -- --mode record --upstream https://ws.boardses
 | `--frozen-now <iso>` | record: the START instant (a FLOOR, not the final value — see "The frozen clock" below), defaults to now, to the second · replay: the manifest's `frozenNow` |
 | `--flow <name>` | `app-store` — record only |
 | `--fresh` | off — record only; discards the existing fixture set first |
+| `--no-pseudonymise` | off — record only; keeps other climbers' real names. Never commit a set recorded with it (see "What is pseudonymised") |
 
 It binds `0.0.0.0` so the iOS simulator (localhost) and the Android emulator
 (`adb reverse`) both reach it, prints its `READY` line to stdout, and stays up
@@ -291,6 +292,88 @@ the literal `screenshot-replay` where a signature would be. The refresh token
 stays the constant `screenshot-replay-refresh`. Both are inert: nothing verifies
 them, because in replay nothing but the fixture set answers a request.
 
+## What is pseudonymised
+
+**Nobody but the recording account is identifiable in a committed set.** The
+store flow walks public surfaces — Discover, the "Everyone" session feed, recent
+beta — so a recording that just wrote down what PROD answered would commit real
+climbers' names, handles and avatar URLs to a public repo. So the recorder
+rewrites them before a response is ever written (`pseudonymiseResponse`,
+`scripts/lib/screenshot-fixtures.ts`), and logs
+`PSEUDONYMISED graphql <Op> <hash12> persons=<n>` when it changed something.
+
+**The rule is narrow by design.** A field is personal only when it sits on an
+object that also carries the id key naming whose field it is — the pairs live in
+`PSEUDONYMISED_PERSON_FIELDS`:
+
+| id key | names | handles | avatars | emails |
+| --- | --- | --- | --- | --- |
+| `userId` | `displayName`, `userDisplayName`, `userName` | `username`, `handle`, `instagramHandle` | `avatarUrl`, `userAvatarUrl`, `userAvatar`, `profileImageUrl` | `email`, `userEmail` |
+| `ownerId` / `ownerUserId` | `ownerDisplayName`, `ownerName` | `ownerUsername`, `ownerHandle` | `ownerAvatarUrl`, `ownerAvatar` | `ownerEmail` |
+| `creatorId` | `creatorDisplayName`, `creatorName` | `creatorUsername`, `creatorHandle` | `creatorAvatarUrl`, `creatorAvatar` | `creatorEmail` |
+| `authorId` | `authorDisplayName`, `authorName` | `authorUsername`, `authorHandle` | `authorAvatarUrl`, `authorAvatar` | `authorEmail` |
+| `id`, `uuid` | `displayName` | `username`, `handle`, `instagramHandle` | `avatarUrl`, `profileImageUrl` | `email` |
+
+Nothing is matched on its name alone, which is what keeps a climb's `name`, a
+playlist's `name`, a board's `name`, a gym's `name` and a session's
+`sessionName` out of it — every one sits beside an `id`/`uuid` and none of them
+is a `displayName`. The groups are ordered, and the first whose id key is
+present claims a shared field name, so `displayName` on `{ id, userId,
+displayName }` is the commenter's, not the comment's.
+
+One field has no id to key on: a beta link's `foreignUsername`, the Instagram
+handle of whoever filmed the video (`PSEUDONYMISED_HANDLE_ONLY_KEYS`). There the
+handle IS the identity, so the pseudonym hashes from the handle itself.
+
+What each becomes:
+
+- **Display name** → `<Adjective> <Noun>` from a fixed 32 × 32 word list
+  (`PSEUDONYM_ADJECTIVES` / `PSEUDONYM_NOUNS`), picked by a stable hash of the
+  person's id. The same climber reads as the same person in every fixture, so a
+  session feed stays coherent.
+- **Handle** → `climber_<6 hex>`, same hash.
+- **Avatar / profile image URL** → `null`. Every one of these is a nullable
+  `String` in the schema and the app renders initials when it is null. If a
+  future avatar field is non-null, replace it with a same-shaped placeholder
+  string rather than making the fixture violate its own schema.
+- **Email** → `climber_<6 hex>@pseudonymised.invalid` (RFC 2606, can never
+  resolve).
+
+**Our own account's data is real.** The manifest's `accountUserId` is left
+untouched — the screenshots have to show a real signed-in climber, with the real
+display name and avatar the store listing is meant to show. The all-zero uuid
+(`NON_PERSON_USER_IDS`) is left alone too: it is what the backend puts on a
+board Boardsesh itself owns, not a person.
+
+**What is deliberately NOT rewritten**, because all three look like near misses:
+
+- `setterUsername` / `setter_username` / `faUsername`. Aurora's public
+  attribution on the CLIMB — the same string the Aurora apps and boardsesh.com's
+  public climb pages render — not a field on a person object. The object it sits
+  on carries the id of the climber who logged the tick, not of the setter, so
+  there is no id to hash a stable pseudonym from.
+- A beta link's `link` and `thumbnail`. A public Instagram post URL carries no
+  handle, and the recorded thumbnail fixture is keyed on its shortcode —
+  rewriting either would break the asset lookup for no privacy gain.
+- Bare user ids. They are opaque uuids, they are what the pseudonym hashes FROM,
+  and replay needs them to keep matching the ids the app reasons about.
+
+**The escape hatch.** `--no-pseudonymise` (on both
+`vp run mobile:screenshots -- --fixtures record` and
+`vp run mobile:screenshot-backend -- --mode record`) records real data. It is
+record-only — replay writes nothing — and a set recorded with it must never be
+committed: the drift test's `carries no real climber but the recording account`
+check fails on it, naming the file and the field.
+
+**Rewriting a set that already exists.**
+`vp run mobile:screenshot-fixtures-pseudonymise` applies the same function to
+every graphql fixture's `response` in place (`--dir` to point it elsewhere,
+`--check` to report without writing). A fixture is keyed by its document and
+variables, never by its response, so nothing else moves — no hash, no filename,
+no manifest entry. The one manifest change it can make is dropping a
+`static/avatars/*` entry, since an avatar URL that is now `null` is an asset the
+app can no longer request. It is idempotent, so running it twice is free.
+
 ## Log grammar
 
 Every line is single-line and prefixed `[screenshot-backend]`.
@@ -312,6 +395,7 @@ RECORDED static <path?query> -> <relative file>
 DUP graphql <Op> <hash12>
 UPSTREAM-ERROR graphql <Op> status=<n>|code=INTERNAL_SERVER_ERROR
 REDACTED graphql <Op>
+PSEUDONYMISED graphql <Op> <hash12> persons=<n>
 NOTE graphql <Op> <note>
 WS connection_init ack
 WS subscribe <Op>
@@ -334,6 +418,10 @@ exercised a screen's data, so that alone must still fail the check. `WS error`
 is never a problem line — it logs a malformed frame the `ws` server rejected
 (bad RSV bits, an unmasked client frame, …) so it is visible in the log, but one
 bad client frame must not fail the capture or take the process down.
+
+`PSEUDONYMISED` is never a problem line either — it is the recorder replacing
+other climbers' names before writing (see "What is pseudonymised"), and
+`persons=` counts the DISTINCT people rewritten in that one response.
 
 `findScreenshotBackendProblems(logText, { mode })` turns that log into the list a
 capture run should fail on — one line per distinct problem, repeats collapsed
@@ -466,7 +554,8 @@ A list that pages itself rather than through React Query —
 drift test scans the source for a `useInfiniteQuery(` with no
 `screenshotModeNextPageParam` beside it, so a new list cannot quietly skip the
 cap; the two `@boardsesh/playlists-react` hooks are on its allowlist because
-`PlaylistDetailView` caps them instead.
+`PlaylistDetailView` wraps its own end-reach handler in `screenshotModeLoadMore`
+instead.
 
 **The workout generator's shuffle is seeded in screenshot mode.** Its candidate
 pool is shuffled per grade and a refresh re-rolls a row out of it, so on
@@ -552,6 +641,33 @@ dispatch explicitly asks it to. To refresh the set, dispatch again with
 live` is the old direct-to-PROD path (no fixtures at all), kept as an escape
 hatch for debugging against real data.
 
+### Refresh cadence and history
+
+**Re-record only when something forces it.** Two things do: the drift test fails
+(a document moved, or a recorded response no longer covers the current
+selection), or a screen in the store flow changed enough that its screenshots
+are wrong. Nothing else — not a stale-looking date, not a feed that has moved on
+in PROD. A replay capture is deterministic precisely because the set does not
+drift underneath it, and a re-record for its own sake costs a CI recording run
+and a fresh round of determinism checking.
+
+**A re-record replaces files in place.** The merge clears `graphql/`, `static/`
+and `manifest.json` under `--out` before writing, so the commit is a diff over
+roughly 5 MB rather than another 5 MB added beside it. Most fixtures come back
+byte-identical (same key, same content), so a typical refresh diff is far
+smaller than the set.
+
+**Old blobs stay in git history, and that is accepted.** Every superseded
+fixture remains reachable in history forever; a shallow clone does not pay for
+it, a full clone does. The alternative — rewriting history, or moving the set
+out of the repo — costs more than the megabytes: the set has to be versioned
+WITH the code that replays it, or a checkout of an old commit replays fixtures
+it was never recorded against. If the pack ever becomes a real problem, the fix
+is to stop committing the set and fetch it by content hash, not to prune
+history. Nothing in the set is a secret — tokens are refused before a fixture is
+written, and everyone but the recording account is a stand-in — so a stale blob
+in history is weight, not exposure.
+
 ## The drift test
 
 `packages/mobile/src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts` runs
@@ -580,7 +696,11 @@ It asserts:
   `@skip`/`@include` are read off the fixture's variables, and an inline fragment
   applies only when `__typename` says it does);
 - the store flow's spine — `GetProfile`, `GetMyBoards`, `SearchClimbs`,
-  `GetClimb`, `GetSessionGroupedFeed` — has a fixture.
+  `GetClimb`, `GetSessionGroupedFeed` — has a fixture;
+- no fixture holds a real person's name, handle, avatar or email for anyone but
+  the recording account (see "What is pseudonymised"). Of every failure in that
+  list this is the only one a re-record cannot undo — by the time it is noticed
+  the name is already in git history.
 
 Everything past the first bullet skips itself while there is no `manifest.json`.
 
@@ -594,6 +714,10 @@ Everything past the first bullet skips itself while there is no `manifest.json`.
 - **"the file was edited by hand"** — a fixture's bytes and its hashes disagree.
   Revert the edit or re-record; never patch a fixture by hand, the replay lookup
   is keyed on those hashes.
+- **"still holds a real person's data at …"** — a fixture carries a real
+  climber's name, handle, avatar or email. Run
+  `vp run mobile:screenshot-fixtures-pseudonymise` and commit the result; if the
+  set was recorded with `--no-pseudonymise`, do not commit it at all.
 - **"which the app no longer sends"** — a stale fixture for a deleted operation.
   Delete it, or re-record with `--fresh`.
 - **"Mobile imports from …, which this test does not read"** — someone imported

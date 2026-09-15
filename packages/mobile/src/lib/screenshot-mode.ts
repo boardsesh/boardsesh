@@ -211,8 +211,8 @@ export const SCREENSHOT_BOARDS: string[] =
  * `onEndReached` handlers stop firing too — but ONLY for those queries. A list
  * whose pager this helper does not reach (the two `@boardsesh/playlists-react`
  * hooks behind `PlaylistDetailView`, the hand-rolled `loadMore` pagers) still
- * reports more pages; those are capped at the consumer, with
- * `screenshotModeLoadMore` or an early return in the handler.
+ * reports more pages; those are capped at the consumer with
+ * `screenshotModeLoadMore`.
  *
  * Pass the param the query would otherwise use and the number of pages already
  * loaded (React Query hands `getNextPageParam` `allPages`, so that is
@@ -233,7 +233,9 @@ export function screenshotModeNextPageParam<TPageParam>(
  * `screenshotModeNextPageParam` only reaches a `useInfiniteQuery`. Several
  * lists page themselves instead — `useDiscoverPlaylists`, `useUserPlaylists`
  * and `useUserBetaLinks` each expose a `loadMore` a list's `onEndReached`
- * calls — and they drift for exactly the same reason: a replay backend answers
+ * calls, and `PlaylistDetailView` wraps its own end-reach handler over
+ * `usePlaylistClimbs` / `useSmartPlaylist` — and they drift for exactly the
+ * same reason: a replay backend answers
  * instantly, the list reaches its end sooner, and the capture asks for a page
  * the recording never took. All six recorded `DiscoverPlaylists` fixtures are
  * `page: 0` with `hasMore: true`, and Discover is a store shot.

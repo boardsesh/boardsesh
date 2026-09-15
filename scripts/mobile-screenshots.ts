@@ -28,6 +28,7 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  *                                 [--app-path <path/to/Boardsesh.app|app.apk>]
  *                                 [--orientation portrait|landscape] [--dev-client]
  *                                 [--fixtures off|record|replay] [--fixtures-dir <path>] [--fresh]
+ *                                 [--no-pseudonymise]
  *
  * --fixtures points the app at the local record/replay backend
  * (scripts/screenshot-backend.ts) instead of a live one, so the screenshots stop
@@ -297,6 +298,13 @@ export interface ScreenshotOptions {
   /** Record only: discard the existing fixture set instead of extending it. */
   fresh: boolean;
   /**
+   * Record only, default true: replace every other climber's name, handle and
+   * avatar with a stable stand-in before a response is written. Threaded
+   * through to the backend as `--no-pseudonymise` when turned off, which is
+   * only ever for a deliberate real-data recording that will NOT be committed.
+   */
+  pseudonymise: boolean;
+  /**
    * Record only: override the minted `frozenNow` FLOOR with this one. `null`
    * mints one (now, to the second). This is the START instant the app runs on
    * during the recording, not the value the finished set ships with: the
@@ -338,6 +346,7 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     fixtures: 'off',
     fixturesDir: DEFAULT_SCREENSHOT_FIXTURES_DIR,
     fresh: false,
+    pseudonymise: true,
     frozenNow: null,
     shutdown: false,
   };
@@ -419,6 +428,9 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
       case '--fresh':
         options.fresh = true;
         break;
+      case '--no-pseudonymise':
+        options.pseudonymise = false;
+        break;
       case '--frozen-now':
         options.frozenNow = expectValue(flag, value);
         index++;
@@ -436,6 +448,13 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
   // leave the caller believing the set was rebuilt.
   if (options.fresh && options.fixtures !== 'record') {
     throw new Error('--fresh only applies to --fixtures record');
+  }
+
+  // Same reasoning as --fresh: only a recording writes fixtures, so turning the
+  // rewrite off anywhere else is a no-op the caller would misread as consent to
+  // ship real names.
+  if (!options.pseudonymise && options.fixtures !== 'record') {
+    throw new Error('--no-pseudonymise only applies to --fixtures record');
   }
 
   // Same reasoning as --fresh: replay reads its frozen instant from the
@@ -1171,6 +1190,7 @@ export function buildBackendArgs(
     // applies — one place owns that URL.
     if (options.backend === 'local') args.push('--upstream', LOCAL_BACKEND_URL);
     if (options.fresh && !alreadyStartedThisRun) args.push('--fresh');
+    if (!options.pseudonymise) args.push('--no-pseudonymise');
   }
   return args;
 }

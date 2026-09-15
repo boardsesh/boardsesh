@@ -27,7 +27,16 @@ import {
   formatMissVariables,
   formatScreenshotBackendLine,
   graphqlFixtureKey,
+  findUnpseudonymisedPersonFields,
+  isPseudonymDisplayName,
   normalizeDocument,
+  pseudonymDisplayName,
+  pseudonymHandle,
+  pseudonymiseResponse,
+  PSEUDONYM_ADJECTIVES,
+  PSEUDONYM_EMAIL_DOMAIN,
+  PSEUDONYM_HANDLE_PATTERN,
+  PSEUDONYM_NOUNS,
   parseScreenshotBackendLogLine,
   redactIgnoredVariablePaths,
   resolveOperationName,
@@ -658,6 +667,10 @@ describe('log grammar', () => {
     ],
     ['REDACTED graphql Me', { event: 'redacted', operationName: 'Me' }],
     [
+      'PSEUDONYMISED graphql GetSessionGroupedFeed 0123456789ab persons=21',
+      { event: 'pseudonymised', operationName: 'GetSessionGroupedFeed', hash12: '0123456789ab', persons: 21 },
+    ],
+    [
       'NOTE graphql SyncTicks seen with 21 distinct variable sets',
       { event: 'note', operationName: 'SyncTicks', note: variantCountNote(21) },
     ],
@@ -759,6 +772,18 @@ describe('findScreenshotBackendProblems', () => {
     expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([
       'no HIT graphql lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
     ]);
+  });
+
+  it('never counts a PSEUDONYMISED line as a problem — it is the recorder doing its job', () => {
+    const log = [
+      line('READY mode=record port=8090 fixtures=/tmp/fx frozenNow=2026-09-08T09:00:00Z graphql=0 static=0'),
+      line(
+        'RECORDED graphql GetSessionGroupedFeed 0123456789ab -> graphql/GetSessionGroupedFeed/0123456789abcdef.json',
+      ),
+      line('PSEUDONYMISED graphql GetSessionGroupedFeed 0123456789ab persons=21'),
+    ].join('\n');
+    expect(findScreenshotBackendProblems(log, { mode: 'record' })).toEqual([]);
+    expect(findScreenshotBackendNotes(log)).toEqual([]);
   });
 
   it('clears the no-HIT-graphql check once a single graphql hit lands, auth hit or not', () => {
@@ -972,5 +997,247 @@ describe('findScreenshotBackendNotes', () => {
         're-record if a visible row shows blank stats.',
     );
     expect(notes[1]).toContain('GetBulkVoteSummaries answered 1 batch(es) with 3 uncovered id(s)');
+  });
+});
+
+// The fixture set is committed to a PUBLIC repo and the capture walks public
+// feeds, so a real climber's name reaching disk is the one failure here that
+// cannot be undone by a re-record — it is already in git history. Every case
+// below is either "this must be replaced" or "this must NOT be", and the second
+// half matters as much: a rule that also renamed climbs or playlists would
+// shoot the wrong screenshots and nobody would know which half was wrong.
+
+const OWN_USER_ID = '11111111-1111-1111-1111-111111111111';
+const OTHER_USER_ID = '22222222-2222-2222-2222-222222222222';
+
+describe('pseudonymiseResponse', () => {
+  it('replaces another climber’s name, handle, avatar and email, keyed on their id', () => {
+    const { response, persons, fields } = pseudonymiseResponse(
+      {
+        data: {
+          participants: [
+            {
+              userId: OTHER_USER_ID,
+              displayName: 'Xin Wei Chow',
+              username: 'xwchow',
+              avatarUrl: 'https://ws.boardsesh.com/static/avatars/22222222.jpg',
+              email: 'xin@example.com',
+              sends: 4,
+            },
+          ],
+        },
+      },
+      { ownUserId: OWN_USER_ID },
+    );
+    const participant = (response as { data: { participants: Record<string, unknown>[] } }).data.participants[0];
+    expect(participant.displayName).toBe(pseudonymDisplayName(OTHER_USER_ID));
+    expect(participant.username).toBe(pseudonymHandle(OTHER_USER_ID));
+    expect(participant.avatarUrl).toBeNull();
+    expect(participant.email).toBe(`${pseudonymHandle(OTHER_USER_ID)}@${PSEUDONYM_EMAIL_DOMAIN}`);
+    // Everything that is not a personal field is untouched.
+    expect(participant.userId).toBe(OTHER_USER_ID);
+    expect(participant.sends).toBe(4);
+    expect(persons).toBe(1);
+    expect(fields).toBe(4);
+  });
+
+  it('leaves our own account exactly as recorded', () => {
+    const profile = {
+      id: OWN_USER_ID,
+      displayName: 'Test User',
+      email: 'test@boardsesh.com',
+      avatarUrl: 'https://ws.boardsesh.com/static/avatars/own.jpg',
+    };
+    const { response, persons, fields } = pseudonymiseResponse({ data: { profile } }, { ownUserId: OWN_USER_ID });
+    expect((response as { data: { profile: unknown } }).data.profile).toEqual(profile);
+    expect(persons).toBe(0);
+    expect(fields).toBe(0);
+  });
+
+  it('gives one person the same pseudonym under every field name and in every fixture', () => {
+    // Bonsai is BOTH a session participant and a playlist creator in the
+    // committed set; a feed where the same climber reads as two different
+    // people is exactly what a per-field hash would produce.
+    const first = pseudonymiseResponse(
+      { data: { participants: [{ userId: OTHER_USER_ID, displayName: 'Bonsai' }] } },
+      { ownUserId: OWN_USER_ID },
+    );
+    const second = pseudonymiseResponse(
+      { data: { playlists: [{ id: 'playlist-1', name: 'Warm up', creatorId: OTHER_USER_ID, creatorName: 'Bonsai' }] } },
+      { ownUserId: OWN_USER_ID },
+    );
+    const participantName = (first.response as { data: { participants: { displayName: string }[] } }).data
+      .participants[0].displayName;
+    const playlist = (second.response as { data: { playlists: Record<string, unknown>[] } }).data.playlists[0];
+    expect(participantName).toBe(playlist.creatorName);
+    // …and the playlist's OWN name is not a person's name.
+    expect(playlist.name).toBe('Warm up');
+  });
+
+  it('never touches a climb, playlist, board or grade name', () => {
+    const catalogue = {
+      data: {
+        climb: { uuid: 'climb-1', name: 'Wax On', setter_username: 'kilterjackie', faUsername: 'ElliLevene' },
+        playlist: { id: 'p1', uuid: 'p1', name: 'Projects 45' },
+        board: { uuid: 'b1', name: "Marco's Board", ownerId: '00000000-0000-0000-0000-000000000000' },
+        grade: { difficultyId: 21, name: '7A/V6' },
+      },
+    };
+    const { response, persons, fields } = pseudonymiseResponse(catalogue, { ownUserId: OWN_USER_ID });
+    expect(response).toEqual(catalogue);
+    expect(persons).toBe(0);
+    expect(fields).toBe(0);
+  });
+
+  it('leaves a board Boardsesh itself owns alone — the all-zero id is not a person', () => {
+    const board = {
+      uuid: 'b1',
+      name: 'Gym wall',
+      ownerId: '00000000-0000-0000-0000-000000000000',
+      ownerDisplayName: 'Boardsesh',
+      ownerAvatarUrl: null,
+    };
+    expect(pseudonymiseResponse({ data: { board } }, { ownUserId: OWN_USER_ID }).response).toEqual({ data: { board } });
+  });
+
+  it('rewrites a beta link’s Instagram handle, hashing the handle itself', () => {
+    const { response, persons } = pseudonymiseResponse(
+      {
+        data: {
+          recentBetaLinks: [
+            {
+              climbName: 'Trampoline',
+              betaLink: {
+                climbUuid: 'climb-1',
+                link: 'https://www.instagram.com/p/DbuOJjnzruX/',
+                foreignUsername: 'shoulderb0ard',
+                thumbnail: '/static/beta-link-thumbnails/instagram/DbuOJjnzruX.jpg',
+              },
+            },
+          ],
+        },
+      },
+      { ownUserId: OWN_USER_ID },
+    );
+    const betaLink = (response as { data: { recentBetaLinks: { betaLink: Record<string, unknown> }[] } }).data
+      .recentBetaLinks[0].betaLink;
+    expect(betaLink.foreignUsername).toBe(pseudonymHandle('shoulderb0ard'));
+    expect(betaLink.foreignUsername).toMatch(PSEUDONYM_HANDLE_PATTERN);
+    expect(persons).toBe(1);
+    // The post URL and its thumbnail key are public and the static fixture is
+    // keyed on that shortcode — rewriting them would break the asset lookup.
+    expect(betaLink.link).toBe('https://www.instagram.com/p/DbuOJjnzruX/');
+    expect(betaLink.thumbnail).toBe('/static/beta-link-thumbnails/instagram/DbuOJjnzruX.jpg');
+  });
+
+  it('is idempotent — a second pass changes nothing and reports nothing', () => {
+    const recorded = {
+      data: {
+        participants: [{ userId: OTHER_USER_ID, displayName: 'Travis Pagel', avatarUrl: 'https://x/y.jpg' }],
+        betaLink: { climbUuid: 'c', foreignUsername: 'kilter.kroz' },
+      },
+    };
+    const once = pseudonymiseResponse(recorded, { ownUserId: OWN_USER_ID });
+    const twice = pseudonymiseResponse(once.response, { ownUserId: OWN_USER_ID });
+    expect(twice.response).toEqual(once.response);
+    expect(twice.persons).toBe(0);
+    expect(twice.fields).toBe(0);
+  });
+
+  it('never mutates the response it was handed', () => {
+    const recorded = { data: { participants: [{ userId: OTHER_USER_ID, displayName: 'Loren Wood' }] } };
+    pseudonymiseResponse(recorded, { ownUserId: OWN_USER_ID });
+    expect(recorded.data.participants[0].displayName).toBe('Loren Wood');
+  });
+
+  it('leaves a null personal field null rather than inventing a person', () => {
+    const recorded = { data: { participants: [{ userId: OTHER_USER_ID, displayName: null, avatarUrl: null }] } };
+    const { response, fields } = pseudonymiseResponse(recorded, { ownUserId: OWN_USER_ID });
+    expect(response).toEqual(recorded);
+    expect(fields).toBe(0);
+  });
+
+  it('attributes a shared field name to the person id, not the row id', () => {
+    // `{ id, userId, displayName }` is a comment: the name is the commenter's,
+    // so the pseudonym must hash from userId or the same climber would read
+    // differently on every comment they left.
+    const { response } = pseudonymiseResponse(
+      { data: { comments: [{ id: 'comment-1', userId: OTHER_USER_ID, displayName: 'Lee Jet' }] } },
+      { ownUserId: OWN_USER_ID },
+    );
+    const comment = (response as { data: { comments: { displayName: string }[] } }).data.comments[0];
+    expect(comment.displayName).toBe(pseudonymDisplayName(OTHER_USER_ID));
+    expect(comment.displayName).not.toBe(pseudonymDisplayName('comment-1'));
+  });
+
+  it('pseudonymises everyone, including us, when the account id is not known yet', () => {
+    // A recording that somehow wrote a fixture before authenticating has no
+    // `accountUserId`. Failing towards MORE pseudonymisation is the safe side.
+    const { fields } = pseudonymiseResponse(
+      { data: { profile: { id: OWN_USER_ID, displayName: 'Test User' } } },
+      { ownUserId: null },
+    );
+    expect(fields).toBe(1);
+  });
+});
+
+describe('the pseudonym word space', () => {
+  it('generates a two-word name it can recognise again', () => {
+    expect(isPseudonymDisplayName(pseudonymDisplayName(OTHER_USER_ID))).toBe(true);
+    expect(isPseudonymDisplayName('Xin Wei Chow')).toBe(false);
+    expect(isPseudonymDisplayName('Bonsai')).toBe(false);
+    // Right shape, wrong words.
+    expect(isPseudonymDisplayName('Purple Wombat')).toBe(false);
+  });
+
+  it('generates a handle matching the pattern the guard greps for', () => {
+    expect(pseudonymHandle('shoulderb0ard')).toMatch(PSEUDONYM_HANDLE_PATTERN);
+    expect(PSEUDONYM_HANDLE_PATTERN.test('kilter.kroz')).toBe(false);
+  });
+
+  it('holds no duplicate word, so the space really is as large as it looks', () => {
+    expect(new Set(PSEUDONYM_ADJECTIVES).size).toBe(PSEUDONYM_ADJECTIVES.length);
+    expect(new Set(PSEUDONYM_NOUNS).size).toBe(PSEUDONYM_NOUNS.length);
+  });
+
+  it('spreads ids across the whole space rather than piling onto one word', () => {
+    const names = new Set<string>();
+    for (let index = 0; index < 400; index += 1) names.add(pseudonymDisplayName(`user-${index}`));
+    // A hash that ignored half its bits would collapse far below this.
+    expect(names.size).toBeGreaterThan(300);
+  });
+});
+
+describe('findUnpseudonymisedPersonFields', () => {
+  it('names the path and value of a real name, handle or avatar left behind', () => {
+    const offenders = findUnpseudonymisedPersonFields(
+      {
+        data: {
+          participants: [
+            { userId: OTHER_USER_ID, displayName: 'Scott Pedersen', avatarUrl: 'https://x/y.jpg' },
+            { userId: OTHER_USER_ID, displayName: pseudonymDisplayName(OTHER_USER_ID), avatarUrl: null },
+          ],
+          betaLink: { climbUuid: 'c', foreignUsername: 'kilter.kroz' },
+        },
+      },
+      { ownUserId: OWN_USER_ID },
+    );
+    expect(offenders).toEqual([
+      'data.participants[0].displayName = "Scott Pedersen"',
+      'data.participants[0].avatarUrl = "https://x/y.jpg"',
+      'data.betaLink.foreignUsername = "kilter.kroz"',
+    ]);
+  });
+
+  it('finds nothing in what pseudonymiseResponse just produced', () => {
+    const recorded = {
+      data: {
+        participants: [{ userId: OTHER_USER_ID, displayName: 'Ivan Buryak', avatarUrl: 'https://x/y.jpg' }],
+        betaLink: { climbUuid: 'c', foreignUsername: 'dong_board' },
+        profile: { id: OWN_USER_ID, displayName: 'Test User', email: 'test@boardsesh.com' },
+      },
+    };
+    const { response } = pseudonymiseResponse(recorded, { ownUserId: OWN_USER_ID });
+    expect(findUnpseudonymisedPersonFields(response, { ownUserId: OWN_USER_ID })).toEqual([]);
   });
 });

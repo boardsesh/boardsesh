@@ -59,6 +59,7 @@ import {
   normalizeDocument,
   resolveOperationName,
   stripIgnoredVariablePaths,
+  findUnpseudonymisedPersonFields,
   validateScreenshotFixtureManifest,
   type GraphqlFixtureFile,
   type ScreenshotFixtureManifest,
@@ -493,6 +494,47 @@ describe.skipIf(!manifest)('the recorded screenshot fixtures', () => {
     const uncovered = REQUIRED_STORE_FLOW_OPERATIONS.filter((operationName) => !recorded.has(operationName));
     expect(uncovered).toEqual([]);
   });
+
+  // -------------------------------------------------------------------------
+  // Nobody but the recording account is identifiable in the committed set
+  // -------------------------------------------------------------------------
+  //
+  // The store flow walks PUBLIC surfaces — Discover, the "Everyone" session
+  // feed, recent beta — and this set is committed to a public repo. The
+  // recorder replaces every other climber before writing
+  // (`pseudonymiseResponse`), but that is one default away from being off
+  // (`--no-pseudonymise`) and a fixture can also be hand-edited. Of every
+  // failure in this file, this is the only one a re-record cannot undo: by the
+  // time it is noticed, the name is already in git history.
+
+  /** How many offending fields one failure line names before it says "+N more". */
+  const PII_OFFENDERS_SHOWN = 5;
+
+  it('carries no real climber but the recording account', () => {
+    const failures: string[] = [];
+    for (const entry of entries) {
+      const fixture = readFixture(entry.file);
+      const offenders = findUnpseudonymisedPersonFields(fixture.response, {
+        ownUserId: manifest?.accountUserId ?? null,
+      });
+      if (offenders.length === 0) continue;
+      // Capped: one "Everyone" feed fixture carries 21 of these, and a failure
+      // message nobody can read is a failure message nobody acts on.
+      const shown = offenders.slice(0, PII_OFFENDERS_SHOWN);
+      const listed =
+        offenders.length > shown.length
+          ? `${shown.join(', ')} (+${offenders.length - shown.length} more)`
+          : shown.join(', ');
+      failures.push(
+        `Fixture ${entry.file} still holds a real person's data at ${listed}. Every climber but ` +
+          `the recording account (${manifest?.accountUserId}) must be a stand-in: a display name from the ` +
+          `pseudonym word space, a \`climber_<6 hex>\` handle, and a null avatar. Run ` +
+          `\`vp run mobile:screenshot-fixtures-pseudonymise\` and commit the result — and if this set was ` +
+          `recorded with --no-pseudonymise, do not commit it at all.`,
+      );
+    }
+    expect(failures).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -571,8 +613,8 @@ describe('BATCHED_OPERATIONS', () => {
  * pager is capped at the consumer instead.
  *
  * Both live in `@boardsesh/playlists-react`, which web also consumes and which
- * must not read a mobile build flag; `PlaylistDetailView` short-circuits its
- * own `onEndReached` in screenshot mode for both.
+ * must not read a mobile build flag; `PlaylistDetailView` wraps its own
+ * `onEndReached` in `screenshotModeLoadMore` for both.
  */
 const UNCAPPED_INFINITE_QUERY_ALLOWLIST = ['use-playlist-climbs.ts', 'use-smart-playlist.ts'];
 

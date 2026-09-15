@@ -155,7 +155,11 @@ describe('screenshot backend', () => {
   let backendOrigin = '';
   let logLines: string[] = [];
 
-  const start = async (options: { mode: 'replay' | 'record'; fresh?: boolean }): Promise<void> => {
+  const start = async (options: {
+    mode: 'replay' | 'record';
+    fresh?: boolean;
+    pseudonymise?: boolean;
+  }): Promise<void> => {
     logLines = [];
     backend = createScreenshotBackend({
       mode: options.mode,
@@ -164,6 +168,7 @@ describe('screenshot backend', () => {
       frozenNow: FROZEN_NOW,
       log: (line) => logLines.push(line),
       fresh: options.fresh,
+      ...(options.pseudonymise === undefined ? {} : { pseudonymise: options.pseudonymise }),
       flow: 'app-store',
     });
     const port = await backend.listen(0);
@@ -273,6 +278,78 @@ describe('screenshot backend', () => {
 
       expect(hasLine('RECORDED graphql SyncTicks')).toBe(true);
       expect(hasLine('RECORDED static /static/avatars/marco.jpg?size=128&v=3')).toBe(true);
+    });
+
+    // The recorded set is committed to a PUBLIC repo and this capture walks
+    // public feeds. A real climber's name that reaches disk here is the only
+    // failure in this file a re-record cannot undo — it is already in git
+    // history by then.
+    it('replaces every other climber’s name, handle and avatar before writing, and logs it', async () => {
+      await start({ mode: 'record', fresh: true });
+      await fetch(`${backendOrigin}/auth/native/credentials`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: ACCOUNT_EMAIL, password: 'hunter2' }),
+      });
+
+      upstream.nextGraphqlResponse = {
+        status: 200,
+        body: {
+          data: {
+            sessionGroupedFeed: {
+              sessions: [
+                {
+                  sessionId: 's1',
+                  participants: [
+                    { userId: ACCOUNT_USER_ID, displayName: 'Test User', avatarUrl: 'https://cdn/own.jpg' },
+                    {
+                      userId: 'aaaa1111-2222-3333-4444-555555555555',
+                      displayName: 'Xin Wei Chow',
+                      avatarUrl: 'https://cdn/xin.jpg',
+                    },
+                  ],
+                  featuredBeta: { betaLink: { climbUuid: 'c1', foreignUsername: 'kilter.kroz' } },
+                },
+              ],
+            },
+          },
+        },
+      };
+      await postGraphql({
+        operationName: 'Feed',
+        query: 'query Feed { sessionGroupedFeed { sessions { sessionId } } }',
+        variables: {},
+      });
+      await stop();
+
+      const manifest = readScreenshotFixtureManifest(fixturesDir);
+      const recorded = readFileSync(join(fixturesDir, manifest?.graphql[0].file ?? ''), 'utf8');
+      expect(recorded).not.toContain('Xin Wei Chow');
+      expect(recorded).not.toContain('https://cdn/xin.jpg');
+      expect(recorded).not.toContain('kilter.kroz');
+      // Our own account is still the real one — the screenshots show a real
+      // signed-in user.
+      expect(recorded).toContain('Test User');
+      expect(recorded).toContain('https://cdn/own.jpg');
+      // Two people rewritten: the stranger, and the beta video's author.
+      expect(hasLine('PSEUDONYMISED graphql Feed')).toBe(true);
+      expect(hasLine('persons=2')).toBe(true);
+      // Never a capture failure.
+      expect(findScreenshotBackendProblems(logLines.join('\n'), { mode: 'record' })).toEqual([]);
+    });
+
+    it('keeps the real names when --no-pseudonymise asked for them', async () => {
+      await start({ mode: 'record', fresh: true, pseudonymise: false });
+      upstream.nextGraphqlResponse = {
+        status: 200,
+        body: { data: { feed: [{ userId: 'aaaa1111-2222-3333-4444-555555555555', displayName: 'Xin Wei Chow' }] } },
+      };
+      await postGraphql({ operationName: 'Feed', query: 'query Feed { feed { userId } }', variables: {} });
+      await stop();
+
+      const manifest = readScreenshotFixtureManifest(fixturesDir);
+      expect(readFileSync(join(fixturesDir, manifest?.graphql[0].file ?? ''), 'utf8')).toContain('Xin Wei Chow');
+      expect(hasLine('PSEUDONYMISED')).toBe(false);
     });
 
     it('keeps the first recording and logs a DUP for a repeat', async () => {

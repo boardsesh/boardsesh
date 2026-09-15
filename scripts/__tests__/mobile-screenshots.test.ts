@@ -62,6 +62,7 @@ function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOpti
     fixtures: 'off',
     fixturesDir: 'packages/mobile/screenshot-fixtures',
     fresh: false,
+    pseudonymise: true,
     frozenNow: null,
     shutdown: false,
     ...overrides,
@@ -147,6 +148,7 @@ describe('parseArgs', () => {
       fixtures: 'replay',
       fixturesDir: '/tmp/fixtures',
       fresh: false,
+      pseudonymise: true,
       frozenNow: null,
       shutdown: true,
     });
@@ -773,6 +775,13 @@ describe('--fixtures', () => {
     expect(() => parseArgs(['--fixtures', 'replay', '--fresh'])).toThrow(/--fresh only applies/);
   });
 
+  it('parses --no-pseudonymise for a recording and rejects it anywhere else', () => {
+    expect(parseArgs(['--fixtures', 'record', '--no-pseudonymise']).pseudonymise).toBe(false);
+    expect(parseArgs(['--fixtures', 'record']).pseudonymise).toBe(true);
+    expect(() => parseArgs(['--no-pseudonymise'])).toThrow(/--no-pseudonymise only applies to --fixtures record/);
+    expect(() => parseArgs(['--fixtures', 'replay', '--no-pseudonymise'])).toThrow(/--no-pseudonymise only applies/);
+  });
+
   it('rejects --frozen-now outside record and an unparseable instant', () => {
     expect(() => parseArgs(['--frozen-now', '2026-09-08T12:00:00Z'])).toThrow(
       /--frozen-now only applies to --fixtures record/,
@@ -919,6 +928,15 @@ describe('buildBackendArgs', () => {
       '--fresh',
     );
     expect(buildBackendArgs(makeOptions({ fixtures: 'record', fresh: false }), context, true)).not.toContain('--fresh');
+  });
+
+  it('adds --no-pseudonymise only when the run asked to keep real names', () => {
+    // Absent by default, so a recording that forgets the flag still produces a
+    // set that is safe to commit.
+    expect(buildBackendArgs(makeOptions({ fixtures: 'record' }), context, false)).not.toContain('--no-pseudonymise');
+    expect(buildBackendArgs(makeOptions({ fixtures: 'record', pseudonymise: false }), context, false)).toContain(
+      '--no-pseudonymise',
+    );
   });
 
   it('adds --upstream only for a local backend, and only in record mode', () => {

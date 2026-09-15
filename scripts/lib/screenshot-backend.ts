@@ -49,6 +49,7 @@ import {
   formatScreenshotBackendLine,
   graphqlFixtureKey,
   indexBatchItemsById,
+  pseudonymiseResponse,
   redactIgnoredVariablePaths,
   resolveOperationName,
   sortManifestEntries,
@@ -85,6 +86,15 @@ export type ScreenshotBackendServerOptions = {
   log: (line: string) => void;
   /** Record only: throw away the existing fixture set instead of extending it. */
   fresh?: boolean;
+  /**
+   * Record only, default TRUE: replace every other climber's name, handle and
+   * avatar with a stable stand-in before a response is written
+   * (`pseudonymiseResponse`). The recorded set is committed to a public repo
+   * and the capture walks public feeds, so real names must never reach disk.
+   * Set false (`--no-pseudonymise`) only for a deliberate real-data recording
+   * that is NOT going to be committed.
+   */
+  pseudonymise?: boolean;
   /** Which capture flow is being recorded. Stored in the manifest for provenance. */
   flow?: string;
 };
@@ -301,6 +311,9 @@ export function isFixtureFileWithinDirectory(fixturesDir: string, file: string):
 export function createScreenshotBackend(options: ScreenshotBackendServerOptions): ScreenshotBackendServer {
   const { mode, fixturesDir, frozenNow, log } = options;
   const isRecording = mode === 'record';
+  // Defaults ON: a recording that forgets the flag must still be safe to
+  // commit. `--no-pseudonymise` is the deliberate opt-out.
+  const pseudonymise = options.pseudonymise ?? true;
   const upstreamUrl = isRecording ? (options.upstreamUrl ?? '').replace(/\/+$/, '') : null;
   if (isRecording && !upstreamUrl) throw new Error('record mode needs an --upstream to record from');
   if (!isRecording && options.upstreamUrl) {
@@ -481,6 +494,31 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       return;
     }
 
+    // Other climbers' names, handles and avatars never reach disk. This capture
+    // walks public feeds (Discover, the "Everyone" session feed, recent beta),
+    // and the recorded set is committed to a public repo — so every person who
+    // is not the recording account is replaced by a stable stand-in BEFORE the
+    // fixture is built. Our own account's data stays exactly as recorded: the
+    // screenshots have to show a real signed-in user.
+    //
+    // `accountUserId` is empty only until the app authenticates, which it does
+    // before it asks for any screen's data. Falling back to `null` there is the
+    // safe direction: it pseudonymises everyone, including us, rather than
+    // leaking a stranger.
+    let persistedResponse: unknown = responseBody;
+    if (pseudonymise) {
+      const result = pseudonymiseResponse(responseBody, { ownUserId: manifest.accountUserId || null });
+      persistedResponse = result.response;
+      if (result.persons > 0) {
+        emit({
+          event: 'pseudonymised',
+          operationName: key.operationName,
+          hash12: shortHash(key.variablesHash),
+          persons: result.persons,
+        });
+      }
+    }
+
     const fixture: GraphqlFixtureFile = {
       formatVersion: SCREENSHOT_FIXTURE_FORMAT_VERSION,
       operationName: key.operationName,
@@ -493,7 +531,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       // nothing — while dropping the variable outright would hide what the app
       // actually sends.
       variables: redactIgnoredVariablePaths(key.operationName, parsedBody.variables ?? {}),
-      response: responseBody,
+      response: persistedResponse,
       status: upstreamResponse.status,
       recordedAt: new Date().toISOString(),
       upstream: upstreamUrl ?? '',

@@ -1055,6 +1055,15 @@ export default defineConfig({
         command: 'tsx scripts/screenshot-fixtures-merge.ts',
         cache: false,
       },
+      // Replace every climber but the recording account with a stable stand-in
+      // across an already-recorded set. The recorder does this itself now; this
+      // is the one-off for a set recorded before it did (and the `--check` a
+      // downloaded recording artifact should pass). See
+      // docs/mobile-screenshot-fixtures.md.
+      'mobile:screenshot-fixtures-pseudonymise': {
+        command: 'tsx scripts/screenshot-fixtures-pseudonymise.ts',
+        cache: false,
+      },
       'mobile:build-sim-app': {
         command: 'tsx scripts/mobile-build-sim-app.ts',
         cache: false,

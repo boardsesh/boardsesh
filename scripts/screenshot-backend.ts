@@ -41,6 +41,11 @@ type CliOptions = {
   frozenNow: string | null;
   fresh: boolean;
   flow: string | null;
+  /**
+   * Record only. True by default; `--no-pseudonymise` turns it off for a
+   * deliberate real-data recording that will NOT be committed.
+   */
+  pseudonymise: boolean;
 };
 
 const USAGE = [
@@ -54,6 +59,9 @@ const USAGE = [
   '                          then trails the newest recorded response); replay: defaults to the manifest',
   '  --flow <name>           record only, the capture flow being recorded',
   '  --fresh                 record only, discard the existing fixture set first',
+  "  --no-pseudonymise       record only, keep other climbers' real names/handles/avatars",
+  '                          (they are replaced by stable stand-ins by default — never commit',
+  '                          a set recorded with this)',
 ].join('\n');
 
 function fail(message: string): never {
@@ -75,6 +83,7 @@ export function parseCliArguments(argv: string[]): CliOptions {
   let frozenNow: string | null = null;
   let flow: string | null = null;
   let fresh = false;
+  let pseudonymise = true;
 
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -116,6 +125,9 @@ export function parseCliArguments(argv: string[]): CliOptions {
       case '--fresh':
         fresh = true;
         break;
+      case '--no-pseudonymise':
+        pseudonymise = false;
+        break;
       case '--help':
       case '-h':
         console.log(USAGE);
@@ -133,6 +145,9 @@ export function parseCliArguments(argv: string[]): CliOptions {
   }
   if (mode === 'replay' && upstream) fail('--upstream is record-only: replay never makes an outbound request');
   if (mode === 'replay' && fresh) fail('--fresh is record-only');
+  // Replay writes nothing, so opting out of a rewrite there is a no-op the
+  // caller would read as "the set now has real names in it".
+  if (mode === 'replay' && !pseudonymise) fail('--no-pseudonymise is record-only: replay writes no fixtures');
 
   const fixturesArgument = fixtures ?? DEFAULT_FIXTURES_DIR;
   return {
@@ -143,6 +158,7 @@ export function parseCliArguments(argv: string[]): CliOptions {
     frozenNow,
     fresh,
     flow,
+    pseudonymise,
   };
 }
 
@@ -175,6 +191,7 @@ async function main(): Promise<void> {
       frozenNow,
       log: (line) => console.log(line),
       fresh: options.fresh,
+      pseudonymise: options.pseudonymise,
       ...(options.flow ? { flow: options.flow } : {}),
     });
   } catch (createError) {
