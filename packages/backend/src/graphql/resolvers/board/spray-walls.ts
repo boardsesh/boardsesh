@@ -850,19 +850,6 @@ export const sprayWallMutations = {
       });
     }
 
-    const [{ versions: versionCount }] = await db
-      .select({ versions: count() })
-      .from(dbSchema.sprayWallVersions)
-      .where(eq(dbSchema.sprayWallVersions.wallId, wall.id));
-
-    if (Number(versionCount) >= MAX_VERSIONS_PER_WALL) {
-      throw new GraphQLError(
-        `This wall has reached the limit of ${MAX_VERSIONS_PER_WALL} photos. ` +
-          `Each one keeps its own hold generation, so there is nothing to prune automatically.`,
-        { extensions: { code: SPRAY_WALL_CODES.versionLimitReached } },
-      );
-    }
-
     // The dimensions come off the STORED object, not the request: they define the
     // canonical frame on version 1, so a client that lied about them would put
     // every hold on the wall at the wrong place. Reading them back also proves the
@@ -897,6 +884,19 @@ export const sprayWallMutations = {
       // outside the transaction would let two concurrent creates both see no open
       // draft and both insert one — the exact state the rule exists to forbid.
       await lockWallForWrite(tx, wall.id);
+
+      const [{ versions: versionCount }] = await tx
+        .select({ versions: count() })
+        .from(dbSchema.sprayWallVersions)
+        .where(eq(dbSchema.sprayWallVersions.wallId, wall.id));
+
+      if (Number(versionCount) >= MAX_VERSIONS_PER_WALL) {
+        throw new GraphQLError(
+          `This wall has reached the limit of ${MAX_VERSIONS_PER_WALL} photos. ` +
+            `Each one keeps its own hold generation, so there is nothing to prune automatically.`,
+          { extensions: { code: SPRAY_WALL_CODES.versionLimitReached } },
+        );
+      }
 
       // ONE active draft per wall.
       //
