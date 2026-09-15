@@ -663,6 +663,15 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
   // leaves the zone partially converged. Safe because the plan is ordered
   // (SSL -> cache rule -> proxied flip last) and re-running converges the rest.
   const appliedPhases = new Set<string>();
+  // Same idea as appliedPhases, and for a sharper reason. `diffR2Bucket` reports
+  // each drifted attribute separately so a dry-run names them all, but
+  // `applyR2Bucket` converges the WHOLE bucket in one call and re-derives what to
+  // do from the `live` snapshot — which by the second call is stale. Calling it
+  // once per change therefore re-ran the domain attach after it had already
+  // succeeded, and Cloudflare answered 409. The zone was correctly converged and
+  // the deploy failed anyway, taking sync-static-assets (which requires a
+  // successful Cloudflare prerequisite) with it. Observed on run 34935969788.
+  const appliedR2Buckets = new Set<string>();
   for (const change of changes) {
     if (change.blocked) {
       console.warn(`[cf-apply] SKIPPED (blocked): ${change.summary}`);
@@ -674,7 +683,11 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
     if (change.resource === 'r2-bucket') {
       const bucket = desiredR2Buckets.find((candidate) => candidate.name === change.r2BucketName);
       if (!bucket || !accountId || !r2State) throw new Error(`Unresolvable R2 change: ${change.summary}`);
-      await applyR2Bucket(token, accountId, zoneId, bucket, r2State.get(bucket.name) ?? null);
+      if (!appliedR2Buckets.has(bucket.name)) {
+        await applyR2Bucket(token, accountId, zoneId, bucket, r2State.get(bucket.name) ?? null);
+        appliedR2Buckets.add(bucket.name);
+      }
+      console.log(`[cf-apply] applied: ${change.summary}`);
       continue;
     }
 
