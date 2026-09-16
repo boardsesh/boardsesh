@@ -123,9 +123,42 @@ describe('App Store listing copy', () => {
 // keywords.txt, so padding those out would cost a keyword.
 const SPANISH_LOCALES = ['es-ES', 'es-MX', 'es-419'];
 
-/** `un Kilter` / `el Tension` with no `Board` after it. */
-const SHORTENED_TRADEMARK =
-  /\b(?:un|una|el|la|los|las|del|al|este|esta|ese|esa|tu|mi)\s+(Kilter|Tension)\b(?!\s+Board)/g;
+/**
+ * Determiners that turn the following word into a noun.
+ *
+ * Matched in both cases, because the motivating line — «Un Kilter junto a un
+ * Tension» — starts a sentence, and a case-sensitive list would have let exactly
+ * that form back in. The trademark itself stays case-sensitive: lower-case
+ * `la tension` is the ordinary Spanish word, not the board.
+ */
+const SPANISH_DETERMINERS = [
+  'un',
+  'una',
+  'el',
+  'la',
+  'los',
+  'las',
+  'del',
+  'al',
+  'este',
+  'esta',
+  'ese',
+  'esa',
+  'tu',
+  'mi',
+];
+
+/** `un Kilter` / `El Tension` with no `Board` after it. */
+const SHORTENED_TRADEMARK = new RegExp(
+  `\\b(?:${SPANISH_DETERMINERS.flatMap((determiner) => [
+    determiner,
+    `${determiner.charAt(0).toUpperCase()}${determiner.slice(1)}`,
+  ])
+    // Longest first, so `una Kilter` is not left to alternation backtracking.
+    .sort((left, right) => right.length - left.length)
+    .join('|')})\\s+(Kilter|Tension)\\b(?!\\s+Board)`,
+  'g',
+);
 
 function shortenedTrademarks(source: string): string[] {
   return [...source.matchAll(SHORTENED_TRADEMARK)].map((match) => match[0]);
@@ -162,6 +195,16 @@ describe('Spanish listing copy', () => {
       expect({ file, found }).toEqual({ file, found: [] });
     },
   );
+
+  // The check above only earns its keep if it catches the line that motivated
+  // it, including at the start of a sentence where the determiner is capitalised.
+  it('catches the shortened forms and leaves the legitimate ones alone', () => {
+    expect(shortenedTrademarks('Un Kilter junto a un Tension')).toEqual(['Un Kilter', 'un Tension']);
+    expect(shortenedTrademarks('El Kilter y La Tension')).toEqual(['El Kilter', 'La Tension']);
+    expect(shortenedTrademarks('Una Kilter cerca')).toEqual(['Una Kilter']);
+    expect(shortenedTrademarks('la app Kilter Board y el Tension Board')).toEqual([]);
+    expect(shortenedTrademarks('Kilter,Tension,MoonBoard')).toEqual([]);
+  });
 });
 
 describe('Play listing copy', () => {

@@ -128,18 +128,26 @@ export const MANIFEST_TIMEOUT_MS = 10_000;
  *
  * Longer than the manifest's because it is 31 MB: two minutes is about 2 Mbit/s,
  * below which the download is not worth waiting for on a gym's wifi. This is a
- * whole-transfer deadline, not an idle one — `File.downloadFileAsync` reports no
- * progress to race against.
+ * whole-transfer deadline, not an idle one — we do not read `onProgress`, so
+ * there is no "stalled" signal to distinguish from "slow".
  */
 export const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 /**
  * Reject with a deadline the wrapped promise cannot see.
  *
- * `AbortSignal.timeout` is what aborts `fetch`; a download that does not take a
- * signal still needs a loser in the race, and this is it. The timer is always
- * cleared, so a resolved promise does not hold the event loop open for the rest
- * of the deadline (which in Hermes keeps the timer queue warm for two minutes).
+ * `AbortSignal.timeout` is what actually cancels the transfer — `fetch` and
+ * `File.downloadFileAsync` both take one, and the download's signal is what stops
+ * the native task from spending the rest of the gym's bandwidth on bytes nobody
+ * is waiting for. This race is the fallback for a platform that accepts a signal
+ * and then ignores it (the Expo WinterCG fetch has done exactly that), so the
+ * caller is bounded either way. The timer is always cleared, so a resolved
+ * promise does not hold the event loop open for the rest of the deadline (which
+ * in Hermes keeps the timer queue warm for two minutes).
+ *
+ * Wrap the WHOLE operation, never just its first await: headers that arrive in a
+ * second followed by a body that stalls would otherwise clear this timer and
+ * then hang with nothing left to bound it.
  */
 async function withDeadline<T>(work: Promise<T>, timeoutMs: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -180,13 +188,18 @@ export const expoModelStoreIo: ModelStoreIo = {
       // Both halves of the deadline: the signal is what actually tears the socket
       // down, and the race is what bounds this function even where the platform
       // fetch ignores a signal (the Expo WinterCG fetch has done exactly that).
-      const response = await withDeadline(
-        fetch(url, { signal: AbortSignal.timeout(MANIFEST_TIMEOUT_MS) }),
+      // The body read is inside the race, not after it — a server that sends
+      // headers promptly and then stalls the JSON would otherwise get past the
+      // deadline and leave the benchmark screen spinning forever.
+      return await withDeadline(
+        (async () => {
+          const response = await fetch(url, { signal: AbortSignal.timeout(MANIFEST_TIMEOUT_MS) });
+          if (!response.ok) return null;
+          return (await response.json()) as unknown;
+        })(),
         MANIFEST_TIMEOUT_MS,
         'Manifest fetch',
       );
-      if (!response.ok) return null;
-      return (await response.json()) as unknown;
     } catch {
       // Offline, DNS failure, TLS failure, a body that is not JSON, or the
       // AbortError from the deadline above.
@@ -202,16 +215,18 @@ export const expoModelStoreIo: ModelStoreIo = {
       // A half-written file from a killed download would otherwise be hashed as
       // if it were complete — and fail, which is correct but wastes the bytes.
       if (destination.exists) destination.delete();
+      // The signal is the half that matters here: without it the native task
+      // keeps pulling all 31 MB after the race has already given up, eating a
+      // gym's uplink for a file the catch block is about to delete.
       const downloaded = await withDeadline(
-        File.downloadFileAsync(url, destination),
+        File.downloadFileAsync(url, destination, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) }),
         DOWNLOAD_TIMEOUT_MS,
         'Model download',
       );
       return downloaded.uri;
     } catch {
-      // A timed-out download leaves a partial file behind — and expo keeps
-      // writing to it, since nothing here can cancel the native transfer. Delete
-      // it so the next attempt re-downloads instead of hashing a truncated file.
+      // A timed-out or aborted download leaves a partial file behind. Delete it
+      // so the next attempt re-downloads instead of hashing a truncated file.
       try {
         const partial = new File(modelDirectory(version), fileName);
         if (partial.exists) partial.delete();

@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { __resetFileSystem, __setDownloadHandler } from '../../../../test/expo-file-system-stub';
 import type { ModelStoreIo } from '../model-store';
 import {
+  DOWNLOAD_TIMEOUT_MS,
   MANIFEST_TIMEOUT_MS,
   MAX_CACHED_VERSIONS,
   MEDIA_BASE_URL,
+  MODEL_CACHE_DIR,
   ensureModel,
   expoModelStoreIo,
   resetVerifiedModelCache,
@@ -320,5 +323,49 @@ describe('expoModelStoreIo.fetchJson', () => {
     await expect(expoModelStoreIo.fetchJson('https://example.test/manifest.json')).resolves.toEqual({
       schemaVersion: 1,
     });
+  });
+
+  // Headers in a second, body never. The deadline has to cover the body read too,
+  // or it has already cleared its timer by the time the stall starts.
+  it('resolves null once the deadline passes on a body that never arrives', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: () => new Promise(() => {}) })),
+    );
+
+    const pending = expoModelStoreIo.fetchJson('https://example.test/manifest.json');
+    await vi.advanceTimersByTimeAsync(MANIFEST_TIMEOUT_MS + 1);
+
+    await expect(pending).resolves.toBeNull();
+  });
+});
+
+describe('expoModelStoreIo.download', () => {
+  afterEach(() => {
+    __resetFileSystem();
+    vi.useRealTimers();
+  });
+
+  it('hands the native transfer an abort signal, so a timeout cancels the bytes too', async () => {
+    let handed: AbortSignal | undefined;
+    __setDownloadHandler((_url, _destination, options) => {
+      handed = options?.signal;
+    });
+
+    const uri = await expoModelStoreIo.download('https://example.test/model-int8.onnx', VERSION, 'model-int8.onnx');
+
+    expect(uri).toBe(`cache/${MODEL_CACHE_DIR}/${VERSION}/model-int8.onnx`);
+    expect(handed).toBeInstanceOf(AbortSignal);
+  });
+
+  it('resolves null once the deadline passes on a transfer that never settles', async () => {
+    vi.useFakeTimers();
+    __setDownloadHandler(() => new Promise(() => {}));
+
+    const pending = expoModelStoreIo.download('https://example.test/model-int8.onnx', VERSION, 'model-int8.onnx');
+    await vi.advanceTimersByTimeAsync(DOWNLOAD_TIMEOUT_MS + 1);
+
+    await expect(pending).resolves.toBeNull();
   });
 });
