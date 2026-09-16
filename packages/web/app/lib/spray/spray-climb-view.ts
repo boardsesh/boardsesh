@@ -1,4 +1,4 @@
-import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants';
+import { convertLitUpHoldsStringToMap, toFlatFrames } from '@boardsesh/board-constants';
 import { IDENTITY_HOMOGRAPHY, invert, mapPoint, mapRadius, type Homography } from '@boardsesh/spray-wall-geometry';
 
 /**
@@ -71,7 +71,14 @@ export function buildSprayLitHoldMarks({
 }): SprayLitHoldMark[] {
   if (!frames) return [];
 
-  const litHolds = convertLitUpHoldsStringToMap(frames, 'spray')[0];
+  // The UNION of every frame, not frame 0. This page is a static render, and
+  // `toFlatFrames` is what a static render of a multi-frame climb owes
+  // the reader — one frame is a fragment of the climb, and for a route the last
+  // frame has already dropped whatever an earlier `x` token cleared. It is also
+  // what this climb's own OG card draws (`buildSprayOgImageUrl` sends the card
+  // a pre-flattened string), so without this the page and the card it links to
+  // would light different holds for the same climb.
+  const litHolds = convertLitUpHoldsStringToMap(toFlatFrames(frames, 'spray'), 'spray')[0];
   if (!litHolds) return [];
 
   let canonicalToPhoto: Homography;

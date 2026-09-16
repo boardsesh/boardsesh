@@ -113,7 +113,12 @@ export function resolveClimbSitemapGroups(configs: readonly SitemapClimbConfig[]
       layoutId: config.layoutId,
       sizeId: config.sizeId,
       setIds: config.setIds,
-      boardSlug: config.sprayWallSlug,
+      // Spray only. A non-spray group is validated through the config-tuple
+      // probe but would be EMITTED at the `/b/{slug}` shape, so a slug that
+      // leaked onto one would mean validating one URL and submitting another.
+      // Unreachable today — `getPublicSprayWallConfigs` is the only writer of
+      // the field — and this keeps it that way if a future source is careless.
+      boardSlug: config.boardType === 'spray' ? config.sprayWallSlug : undefined,
     }))
     .filter((group) => isResolvableGroup(group))
     .sort((left, right) =>
