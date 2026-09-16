@@ -11,7 +11,7 @@ let storefrontMock: StorefrontMock = null;
 const platformMock = { OS: 'ios' as string };
 const flagsMock: Record<string, boolean | string | undefined> = {};
 
-vi.mock('expo', () => ({
+vi.mock('expo-modules-core', () => ({
   requireOptionalNativeModule: () => storefrontMock,
 }));
 vi.mock('react-native', () => ({ Platform: platformMock }));
@@ -99,6 +99,32 @@ describe('useDonationLinksAllowed', () => {
     platformMock.OS = 'ios';
     flagsMock['donation-links'] = true;
     storefrontMock = { getCountryCode: vi.fn().mockRejectedValue(new Error('StoreKit unavailable')) };
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('survives a native proxy that throws synchronously instead of rejecting', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links'] = true;
+    // A renamed or absent method on the native proxy throws a TypeError before
+    // any promise exists. That must degrade to the fallback, not take the screen
+    // down on its way out of the effect.
+    storefrontMock = {
+      getCountryCode: vi.fn(() => {
+        throw new TypeError('getCountryCode is not a function');
+      }),
+    };
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('requires the alpha-3 code, so an alpha-2 "US" is not allowed', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links'] = true;
+    // StoreKit reports alpha-3. If the native side ever hands back alpha-2, the
+    // drift fails SAFE — links stay hidden — and this test is what says so out
+    // loud, since nothing else would notice the app quietly stopped matching.
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('US') };
 
     expect(await renderAllowed()).toBe(false);
   });

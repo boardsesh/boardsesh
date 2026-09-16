@@ -23,10 +23,16 @@
  *   rides the release train); until a binary containing it is installed,
  *   `requireOptionalNativeModule` returns null here and iOS stays on the
  *   unlinked fallback. That is the designed degradation, not a bug.
+ *
+ * The storefront country is read ONCE per app run, by design. Changing the
+ * Apple Account region mid-session therefore keeps the cached answer until the
+ * next relaunch — acceptable in both directions, since the stale answer is
+ * either the compliant fallback or a link the device was entitled to minutes
+ * ago, and the alternative is a native round-trip on every render.
  */
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
-import { requireOptionalNativeModule } from 'expo';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { useFeatureFlag } from '../providers/feature-flags-provider';
 
 type StorefrontNativeModule = {
@@ -35,7 +41,8 @@ type StorefrontNativeModule = {
 };
 
 // Null on every binary shipped today, on Android, and in Expo Go. Probed once at
-// module scope, the same way dev-launcher.ts and the health-workouts module do.
+// module scope, the same way dev-launcher.ts and the health-workouts module do
+// (all of them via expo-modules-core, which is where the helper lives).
 const storefrontNative = requireOptionalNativeModule<StorefrontNativeModule>('Storefront');
 
 /** StoreKit reports storefronts as ISO alpha-3; the US one is `USA`. */
@@ -65,19 +72,28 @@ let resolvedStorefrontCountry: string | null = null;
  * The App Store storefront country, resolved once per app run.
  *
  * Cached as a promise rather than a value so concurrent callers share one native
- * round-trip and no render path ever triggers a second one. A rejection (module
- * present but StoreKit unhappy) resolves to null — unknown, therefore not
- * allowed.
+ * round-trip and no render path ever triggers a second one.
+ *
+ * The try/await sits INSIDE an async function rather than being a `.catch()` on
+ * the call, because the two failures are different shapes. A rejection is a
+ * StoreKit that answered unhappily; a synchronous `TypeError` is a native proxy
+ * whose `getCountryCode` was renamed or never existed — and that one would
+ * escape a trailing `.catch()`, travel up through the effect, and take the
+ * screen down. A module we cannot call is exactly the "unknown region" case
+ * this file exists to answer with null.
  */
 function readStorefrontCountry(): Promise<string | null> {
   if (!storefrontNative) return Promise.resolve(null);
-  storefrontCountryPromise ??= storefrontNative
-    .getCountryCode()
-    .catch(() => null)
-    .then((country) => {
-      resolvedStorefrontCountry = country;
-      return country;
-    });
+  storefrontCountryPromise ??= (async () => {
+    try {
+      return await storefrontNative.getCountryCode();
+    } catch {
+      return null;
+    }
+  })().then((country) => {
+    resolvedStorefrontCountry = country;
+    return country;
+  });
   return storefrontCountryPromise;
 }
 

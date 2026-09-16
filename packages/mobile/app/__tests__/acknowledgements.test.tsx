@@ -80,8 +80,12 @@ vi.mock('../../src/components/PressableSurface', () => ({
 vi.mock('../../src/components/SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('h2', null, title),
 }));
+// Forwards onPress on purpose: the fallback copy must have NO tap target, and a
+// mock that swallowed props would pass just as happily if someone made it
+// pressable. Rendered as a button when pressable so getByRole can catch it.
 vi.mock('../../src/components/Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
+    createElement(onPress ? 'button' : 'span', onPress ? { onClick: onPress, type: 'button' } : null, children),
 }));
 vi.mock('../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 80 }),
@@ -184,7 +188,12 @@ describe('AcknowledgementsScreen', () => {
     donationLinks.allowed = false;
     render(<AcknowledgementsScreen />);
 
-    expect(screen.getByText('Boardsesh is free and community-funded. boardsesh.com/support')).toBeTruthy();
+    const fallback = screen.getByText('Boardsesh is free and community-funded. boardsesh.com/support');
+    expect(fallback).toBeTruthy();
+    // The Text mock renders a button whenever it is given onPress, so this is
+    // what fails if the fallback copy is ever made tappable.
+    expect(fallback.tagName).toBe('SPAN');
+    expect(fallback.closest('button')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Support Boardsesh' })).toBeNull();
     expect(openUrl.openExternalUrl).not.toHaveBeenCalled();
   });
@@ -231,7 +240,9 @@ describe('AcknowledgementsScreen', () => {
 
     render(<EmptySponsorsScreen />);
 
-    expect(screen.getByText('Boardsesh is free and community-funded. boardsesh.com/support')).toBeTruthy();
+    const fallback = screen.getByText('Boardsesh is free and community-funded. boardsesh.com/support');
+    expect(fallback.tagName).toBe('SPAN');
+    expect(fallback.closest('button')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Support Boardsesh' })).toBeNull();
 
     vi.doUnmock('../../src/lib/acknowledgements');

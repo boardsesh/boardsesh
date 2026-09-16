@@ -229,6 +229,12 @@ point of this section.**
   A percentage rollout on Android, or any country condition wider than AU, ships
   a policy violation directly — nothing downstream will catch it.
 
+  **And the answer is sticky.** PostHog values persist on the device, so an
+  Android phone that resolved `true` while in an allowed country keeps the link
+  until its next flag reload somewhere else. Narrowing the targeting does not
+  reach back and correct a device already holding a `true`; plan the rollout
+  knowing a wrong answer outlives the config that produced it.
+
 Everything else about the flag is ordinary: a POSITIVE rollout flag read as
 `=== true`, so unresolved, absent and off all land on the unlinked text, which
 is the safe answer in every region. It deliberately does not wait on
