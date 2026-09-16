@@ -1113,6 +1113,73 @@ describe('remixClimb', () => {
     expect(seed!.suggestedHoldIds[0]).toBeGreaterThan(holdIds[2]);
   });
 
+  it('drops a successor that has itself since come off the wall', async () => {
+    // Two resets. The first moves hold 1 to a successor; the second takes that
+    // successor off. A remix must not offer a hold that is no longer there — and
+    // the row must not even be loaded, or a wall with a long reset history ships
+    // every successor it has ever had over the wire to be thrown away in JS.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const parent = await saveClimbOn(wall, 'Sierra', [holdIds[0], holdIds[1]]);
+
+    const firstReset = await openDraft(wall);
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId: firstReset,
+          kept: [{ holdId: holdIds[0] }, { holdId: holdIds[2] }],
+          removed: [holdIds[1]],
+          added: [{ detection: { cx: 320, cy: 415, r: 28 }, movedFromHoldId: holdIds[1] }],
+        },
+      },
+      ctxFor(OWNER),
+    );
+
+    const [successor] = (await db.execute(sql`
+      SELECT hold_id FROM spray_wall_holds
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId})
+        AND moved_from_hold_id = ${holdIds[1]}
+    `)) as unknown as Array<{ hold_id: number }>;
+
+    // While it is still on the wall it IS offered.
+    const before = (await sprayWallQueries.remixClimb({}, { parentUuid: parent }, ctxFor(OWNER))) as {
+      suggestedHoldIds: number[];
+    };
+    expect(before.suggestedHoldIds).toEqual([successor.hold_id]);
+
+    // The second reset takes it off again.
+    const secondReset = await openDraft(wall);
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId: secondReset,
+          kept: [{ holdId: holdIds[0] }, { holdId: holdIds[2] }],
+          removed: [successor.hold_id],
+          added: [],
+        },
+      },
+      ctxFor(OWNER),
+    );
+
+    const after = (await sprayWallQueries.remixClimb({}, { parentUuid: parent }, ctxFor(OWNER))) as {
+      lostHoldIds: number[];
+      suggestedHoldIds: number[];
+    };
+    expect(after.suggestedHoldIds).toEqual([]);
+    // The lineage row is still there — it is the removal that disqualifies it, not
+    // a missing link — so this genuinely exercises the predicate.
+    expect(after.lostHoldIds).toContain(holdIds[1]);
+    const [linked] = (await db.execute(sql`
+      SELECT count(*)::int AS rows FROM spray_wall_holds
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId})
+        AND moved_from_hold_id = ${holdIds[1]}
+    `)) as unknown as Array<{ rows: number }>;
+    expect(linked.rows).toBe(1);
+  });
+
   it('serves the parent even when it is no longer climbable', async () => {
     // Epic decision 2026-09-14: the parent may be unclimbable after a reset, and
     // that is fine — it is exactly the climb worth remixing.
