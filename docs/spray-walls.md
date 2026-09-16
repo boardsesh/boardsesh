@@ -877,9 +877,12 @@ whole directory. `storage-usage.ts` does not count the directory and says so.
 **Sign-out is the exception to "board data is a shared cache."** Every other
 board table survives a sign-out because a Kilter catalogue is identical whoever
 is signed in. A wall is not: `spray_walls` is the one board table
-`USER_DATA_TABLES_TO_CLEAR` includes, the photographs go with it, and
-`getSprayWallLocal` refuses to serve unless the `local_user_id` stamp names the
-climber asking — the defence that survives a wipe that failed.
+`USER_DATA_TABLES_TO_CLEAR` includes, the wall's climbs, stats and grades go with
+it (`SPRAY_SCOPED_BOARD_TABLES`, `board_type = 'spray'` rows only — those rows
+carry the climb names, frames and grades of somebody's garage, and
+`searchClimbsLocal` reads reference data with no owner stamp), the photographs go
+too, and `getSprayWallLocal` refuses to serve unless the `local_user_id` stamp
+names the climber asking — the defence that survives a wipe that failed.
 
 **One known gap, tracked as #5490.** The delete tombstone is scoped to the wall's
 owner, so a gym member or public-wall viewer who mirrored a wall never receives
