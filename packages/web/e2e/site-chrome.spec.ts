@@ -95,7 +95,17 @@ test.describe('Site chrome - footer links', () => {
     await expectChrome(page);
 
     const footer = page.locator(siteFooter);
-    for (const href of ['/', '/about', '/help', '/docs', '/playlists', '/aurora-migration', '/legal', '/privacy']) {
+    for (const href of [
+      '/',
+      '/about',
+      '/support',
+      '/help',
+      '/docs',
+      '/playlists',
+      '/aurora-migration',
+      '/legal',
+      '/privacy',
+    ]) {
       await expect(footer.locator(`a[href="${href}"]`)).toHaveCount(1);
     }
   });

@@ -9,6 +9,10 @@
       "title": "Acerca de",
       "description": "Una sola app para todos los plafones. Código abierto y dirigida por la comunidad."
     },
+    "support": {
+      "title": "Apoya Boardsesh",
+      "description": "Boardsesh es gratis y de código abierto. Echa una mano con las facturas de hosting, base de datos e infraestructura que lo mantienen en marcha."
+    },
     "help": {
       "title": "Ayuda",
       "description": "Qué puedes hacer en boardsesh.com, qué pasa en la app y dónde pedir ayuda."
@@ -106,6 +110,42 @@
     },
     "legalLink": "Política Legal y de Propiedad Intelectual",
     "footer": "Hecho por escaladores. Abierto para todos."
+  },
+  "support": {
+    "headerTitle": "Apoya el proyecto",
+    "hero": {
+      "title": "Mantén Boardsesh en marcha",
+      "subtitle": "Gratis, de código abierto y pagado por escaladores"
+    },
+    "why": {
+      "title": "Por qué existe esta página",
+      "p1": "Boardsesh es gratis y de código abierto, y siempre lo será. Pero mantenerlo cuesta dinero de verdad: el hosting, la base de datos y la infraestructura suman cada vez que se une más gente.",
+      "p2": "Prometemos no echar a perder Boardsesh, y auto-alojarlo siempre será una opción. Si te sirve y te lo puedes permitir, echar una mano mantiene las luces encendidas."
+    },
+    "rails": {
+      "title": "Dos formas de echar una mano"
+    },
+    "sponsors": {
+      "title": "GitHub Sponsors",
+      "body": "Apoya Boardsesh cada mes. Lo más fácil si ya tienes cuenta de GitHub.",
+      "cta": "Patrocina en GitHub →"
+    },
+    "oneTime": {
+      "title": "Donación única",
+      "body": "Paga con tarjeta, Apple Pay o Google Pay desde el navegador. Sin crear ninguna cuenta.",
+      "cta": "Dona una vez →"
+    },
+    "honesty": {
+      "title": "La letra pequeña",
+      "p1": "Las donaciones no desgravan. Boardsesh no es una ONG, solo escaladores pagando la factura del servidor.",
+      "p2": "Tu dinero va al hosting, la base de datos y la infraestructura. No compra nada extra en la app: todo Boardsesh sigue abierto para todo el mundo, dones o no."
+    },
+    "thanks": {
+      "title": "Gracias",
+      "body": "A quienes ya patrocinan Boardsesh, abren issues, mandan parches o traducen una pantalla: gracias. Vosotros mantenéis esto en movimiento."
+    },
+    "aboutLink": "Conoce más sobre el proyecto →",
+    "footer": "Gratis para todos, financiado por quien puede echar una mano."
   },
   "privacy": {
     "title": "Política de Privacidad",

@@ -13,6 +13,7 @@ export const STATIC_ENTRIES: readonly SitemapItem[] = [
   { path: '/', changeFrequency: 'weekly', priority: 1.0, lastModified: new Date('2026-04-30') },
   { path: '/aurora-migration', changeFrequency: 'weekly', priority: 0.9, lastModified: new Date('2026-04-30') },
   { path: '/about', changeFrequency: 'monthly', priority: 0.8, lastModified: new Date('2026-04-30') },
+  { path: '/support', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-09-16') },
   // /help was rewritten text-first when W-16 removed the interactive climbing UI.
   { path: '/help', changeFrequency: 'monthly', priority: 0.7, lastModified: new Date('2026-08-15') },
   // /docs lost both Aurora proxy operations (plus the tag, the overview bullet and

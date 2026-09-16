@@ -9,6 +9,10 @@
       "title": "Über uns",
       "description": "Eine App für jedes Kletterboard. Open Source, von der Community getragen."
     },
+    "support": {
+      "title": "Boardsesh unterstützen",
+      "description": "Boardsesh ist kostenlos und Open Source. Hilf mit bei den Rechnungen für Hosting, Datenbank und Infrastruktur, die es am Laufen halten."
+    },
     "help": {
       "title": "Hilfe",
       "description": "Was du auf boardsesh.com machen kannst, was in der App passiert und wo du fragen kannst."
@@ -106,6 +110,42 @@
     },
     "legalLink": "Rechtliches & Richtlinie zum geistigen Eigentum",
     "footer": "Von Kletterer*innen gebaut. Offen für alle."
+  },
+  "support": {
+    "headerTitle": "Unterstützen",
+    "hero": {
+      "title": "Halt Boardsesh am Laufen",
+      "subtitle": "Kostenlos, Open Source und von Kletterer*innen bezahlt"
+    },
+    "why": {
+      "title": "Warum es diese Seite gibt",
+      "p1": "Boardsesh ist kostenlos und Open Source, und das bleibt auch so. Der Betrieb kostet trotzdem echtes Geld: Hosting, Datenbank und Infrastruktur summieren sich, je mehr Leute dazukommen.",
+      "p2": "Wir versprechen, Boardsesh nicht zu verschlimmbessern, und Selbsthosten bleibt immer eine Option. Wenn dir die App etwas bringt und du es übrig hast, hältst du damit die Server am Netz."
+    },
+    "rails": {
+      "title": "Zwei Wege zu helfen"
+    },
+    "sponsors": {
+      "title": "GitHub Sponsors",
+      "body": "Unterstütz Boardsesh monatlich. Am einfachsten, wenn du schon einen GitHub-Account hast.",
+      "cta": "Auf GitHub sponsern →"
+    },
+    "oneTime": {
+      "title": "Einmalige Spende",
+      "body": "Zahl per Karte, Apple Pay oder Google Pay direkt im Browser. Ohne Account.",
+      "cta": "Einmal spenden →"
+    },
+    "honesty": {
+      "title": "Das Kleingedruckte",
+      "p1": "Spenden sind nicht steuerlich absetzbar. Boardsesh ist kein Verein, nur Kletterer*innen, die die Serverrechnung zahlen.",
+      "p2": "Dein Geld geht in Hosting, Datenbank und Infrastruktur. Es kauft nichts extra in der App: Boardsesh bleibt komplett offen für alle, ob du spendest oder nicht."
+    },
+    "thanks": {
+      "title": "Danke",
+      "body": "An alle, die Boardsesh schon unterstützen, Fehler melden, Code schicken oder einen Screen übersetzen: danke. Ihr haltet das Ding in Bewegung."
+    },
+    "aboutLink": "Mehr über das Projekt →",
+    "footer": "Kostenlos für alle, finanziert von denen, die können."
   },
   "legal": {
     "headerTitle": "Rechtliches",

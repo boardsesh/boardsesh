@@ -82,6 +82,7 @@ export default function SiteFooter() {
       links: [
         { href: '/', label: t('footer.links.home') },
         { href: '/about', label: t('footer.links.about') },
+        { href: '/support', label: t('footer.links.support') },
         { href: '/help', label: t('footer.links.help') },
         { href: '/playlists', label: t('footer.links.playlists') },
         { href: '/aurora-migration', label: t('footer.links.auroraMigration') },
