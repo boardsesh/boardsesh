@@ -376,6 +376,10 @@ export const sessionMutations = {
       //
       // Seeding is unaffected: the join then restores this row instead of
       // creating one, and clients seed the queue with setQueue after joining.
+      //
+      // Deliberately not best-effort: if this insert fails it throws, and
+      // createSession fails with it. The client never receives the session id,
+      // so no WebSocket join can go on to create this session as public.
       if (!isPublic && !input.discoverable) {
         await ensureSessionRecordExists(sessionId, input.boardPath, ctx.userId ?? null, input.name, false);
       }

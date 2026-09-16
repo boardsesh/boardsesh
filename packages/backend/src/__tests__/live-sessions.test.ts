@@ -449,6 +449,48 @@ describe('config-path sessions (personal LED boards)', () => {
     expect(session.angle).toBe(40);
   });
 
+  it('resolves to a board the creator follows but does not own', async () => {
+    const proj = await projBoard({ ownerId: BOARD_OWNER, name: 'The Proj Wall' });
+    await followBoard(FRIEND, proj.uuid);
+    await followBoard(VIEWER, proj.uuid);
+    const sessionId = await makeSession({ createdBy: FRIEND, boardPath: PROJ_PATH });
+    await goLive(sessionId, FRIEND, PROJ_PATH);
+
+    // Through the candidate query too, not just the resolver.
+    const [session] = await followedLiveSessions(VIEWER);
+    expect(session.sessionId).toBe(sessionId);
+    expect(session.reasons).toEqual(['FOLLOWED_BOARD']);
+    expect(session.board?.name).toBe('The Proj Wall');
+  });
+
+  it('prefers a board the creator owns over an identical one they follow', async () => {
+    const owned = await projBoard({ name: 'My Wall' });
+    const followed = await projBoard({ ownerId: BOARD_OWNER, name: 'Their Wall' });
+    await followBoard(FRIEND, followed.uuid);
+    const sessionId = await makeSession({ createdBy: FRIEND, boardPath: PROJ_PATH });
+    // A newer tick on the followed wall does not outrank ownership.
+    const earlier = await makeSession({ createdBy: FRIEND, status: 'ended' });
+    await addTick({ sessionId: earlier, userId: FRIEND, boardId: followed.id });
+
+    const resolved = await resolveLiveSessionBoards([
+      { id: sessionId, boardId: null, boardPath: PROJ_PATH, createdByUserId: FRIEND },
+    ]);
+    expect(resolved.get(sessionId)).toBe(owned.id);
+  });
+
+  it('gives up on two identical followed boards the creator never ticked on', async () => {
+    const first = await projBoard({ ownerId: BOARD_OWNER, name: 'First Followed Wall' });
+    const second = await projBoard({ ownerId: STRANGER, name: 'Second Followed Wall' });
+    await followBoard(FRIEND, first.uuid);
+    await followBoard(FRIEND, second.uuid);
+    const sessionId = await makeSession({ createdBy: FRIEND, boardPath: PROJ_PATH });
+
+    const resolved = await resolveLiveSessionBoards([
+      { id: sessionId, boardId: null, boardPath: PROJ_PATH, createdByUserId: FRIEND },
+    ]);
+    expect(resolved.has(sessionId)).toBe(false);
+  });
+
   it('never picks another climber’s identical board', async () => {
     await projBoard({ ownerId: BOARD_OWNER, name: 'Somebody Else’s Wall' });
     const sessionId = await makeSession({ createdBy: FRIEND, boardPath: PROJ_PATH });

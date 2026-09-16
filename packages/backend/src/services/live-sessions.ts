@@ -106,6 +106,7 @@ type BoardRow = {
 /** A board that can put sessions in the board arm, with what every resolution step matches on. */
 type ArmBoard = {
   id: number;
+  uuid: string;
   slug: string;
   ownerId: string;
   boardType: string;
@@ -117,11 +118,13 @@ type ArmBoard = {
 // Board paths
 // ---------------------------------------------------------------------------
 
+export type ParsedBoardConfig = { boardType: string; layoutId: number; sizeId: number; setIds: string };
+
 export type ParsedSessionBoardPath = {
   /** `/b/<slug>/<angle>`: gym and LED-less boards */
   slug: string | null;
   /** `/<boardType>/<layout>/<size>/<sets>/<angle>`: every other board, personal LED boards included */
-  config: { boardType: string; layoutId: number; sizeId: number; setIds: string } | null;
+  config: ParsedBoardConfig | null;
   boardType: string | null;
   angle: number | null;
 };
@@ -173,13 +176,14 @@ function toBoardId(value: number | string | null | undefined): number | null {
  * 3. a `/b/<slug>/…` board path → `user_boards.slug`,
  * 4. the Redis session→board binding stamped by `reportBoardClimb`,
  * 5. a config path (`/<type>/<layout>/<size>/<sets>/<angle>`, what mobile
- *    builds for a personal LED board) → the session CREATOR's own live board
- *    with that exact config (set ids normalised). Several identical boards
- *    resolve to the one the creator most recently ticked on; if that does not
- *    single one out, the session stays unresolved. Another climber's board is
- *    never picked. It comes after Redis because it is an inference: a creator
- *    climbing on a friend's identical wall is placed correctly by the binding
- *    once a climb has been sent, and wrongly by this step.
+ *    builds for any non-gym LED board) → a live board with that exact config
+ *    (set ids normalised) that the session CREATOR owns, else one they follow.
+ *    Several in the deciding tier resolve to the one the creator most recently
+ *    ticked on; if that does not single one out, the session stays unresolved.
+ *    A board the creator neither owns nor follows is never picked. It comes
+ *    after Redis because it is an inference: a creator on a wall that shares a
+ *    config with one of theirs is placed correctly by the binding once a climb
+ *    has been sent, and possibly wrongly by this step.
  *
  * `board_climb_events` is deliberately absent: it has a `session_id` column,
  * but `reportBoardClimb` writes null there today, so it cannot place a session.
@@ -188,8 +192,8 @@ function toBoardId(value: number | string | null | undefined): number | null {
  *
  * At most three batched SQL reads regardless of how many sessions come in;
  * Redis is only asked about sessions the first three steps left unresolved,
- * and step 5 runs one query for whatever Redis left (plus one tie-break
- * query when a creator owns several identical boards).
+ * and step 5 runs two parallel queries for whatever Redis left (plus one
+ * tie-break query when a creator has several identical boards).
  */
 export async function resolveLiveSessionBoards(
   sessions: ReadonlyArray<{
@@ -266,9 +270,19 @@ export async function resolveLiveSessionBoards(
 
 /**
  * Step 5 of `resolveLiveSessionBoards`: a config path matched against the
- * creator's own boards. One query for every session; a second, also batched,
- * only when some creator owns several identical boards, reading each tied
- * board's newest tick by its owner (`boardsesh_ticks_board_user_idx`).
+ * boards the session CREATOR owns or follows. Mobile builds a config path for
+ * any LED board that is not a gym board, including a friend's wall the creator
+ * only follows.
+ *
+ * Tiers, first non-empty tier decides: boards the creator owns, then boards
+ * the creator follows. Within the deciding tier a single match wins; several
+ * go to the board the creator most recently ticked on; anything else (never
+ * ticked on any of them, or a tie) leaves the session unresolved. A board that
+ * is neither owned nor followed by the creator is never picked, however
+ * identical its config.
+ *
+ * Two batched queries in parallel (owned via the owner index, followed via the
+ * follower index), plus one batched tick query only when a tier has a tie.
  */
 async function resolveCreatorConfigBoards(
   sessions: ReadonlyArray<{ id: string; boardPath: string | null; createdByUserId: string | null }>,
@@ -277,66 +291,91 @@ async function resolveCreatorConfigBoards(
   const lookups = sessions.flatMap((session) => {
     const { config } = parseSessionBoardPath(session.boardPath);
     return config && session.createdByUserId
-      ? [{ sessionId: session.id, ownerId: session.createdByUserId, config }]
+      ? [{ sessionId: session.id, creatorId: session.createdByUserId, config }]
       : [];
   });
   if (lookups.length === 0) return resolved;
 
   const userBoards = dbSchema.userBoards;
+  const boardFollows = dbSchema.boardFollows;
   const ticks = dbSchema.boardseshTicks;
-  const lookupKey = (ownerId: string, boardType: string, layoutId: number, sizeId: number) =>
-    `${ownerId}|${boardType}|${layoutId}|${sizeId}`;
-  const distinctLookups = new Map(
-    lookups.map((lookup) => [
-      lookupKey(lookup.ownerId, lookup.config.boardType, lookup.config.layoutId, lookup.config.sizeId),
-      lookup,
-    ]),
-  );
+  const distinctLookups = [
+    ...new Map(
+      lookups.map((lookup) => [
+        `${lookup.creatorId}|${lookup.config.boardType}|${lookup.config.layoutId}|${lookup.config.sizeId}`,
+        lookup,
+      ]),
+    ).values(),
+  ];
+  const configColumns = {
+    id: userBoards.id,
+    ownerId: userBoards.ownerId,
+    boardType: userBoards.boardType,
+    layoutId: userBoards.layoutId,
+    sizeId: userBoards.sizeId,
+    setIds: userBoards.setIds,
+  };
+  const configMatches = (config: ParsedBoardConfig) =>
+    and(
+      eq(userBoards.boardType, config.boardType),
+      eq(userBoards.layoutId, config.layoutId),
+      eq(userBoards.sizeId, config.sizeId),
+    );
 
-  const rows = await db
-    .select({
-      id: userBoards.id,
-      ownerId: userBoards.ownerId,
-      boardType: userBoards.boardType,
-      layoutId: userBoards.layoutId,
-      sizeId: userBoards.sizeId,
-      setIds: userBoards.setIds,
-    })
-    .from(userBoards)
-    .where(
-      and(
-        isNull(userBoards.deletedAt),
-        or(
-          ...[...distinctLookups.values()].map(({ ownerId, config }) =>
-            and(
-              eq(userBoards.ownerId, ownerId),
-              eq(userBoards.boardType, config.boardType),
-              eq(userBoards.layoutId, config.layoutId),
-              eq(userBoards.sizeId, config.sizeId),
+  const [ownedRows, followedRows] = await Promise.all([
+    db
+      .select(configColumns)
+      .from(userBoards)
+      .where(
+        and(
+          isNull(userBoards.deletedAt),
+          or(
+            ...distinctLookups.map(({ creatorId, config }) =>
+              and(eq(userBoards.ownerId, creatorId), configMatches(config)),
             ),
           ),
         ),
       ),
-    );
-
-  const matchesBySession = new Map(
-    lookups.map(({ sessionId, ownerId, config }) => [
-      sessionId,
-      rows.filter(
-        (row) =>
-          row.ownerId === ownerId &&
-          row.boardType === config.boardType &&
-          Number(row.layoutId) === config.layoutId &&
-          Number(row.sizeId) === config.sizeId &&
-          normaliseSetIds(row.setIds) === config.setIds,
+    db
+      .select({ ...configColumns, followerId: boardFollows.userId })
+      .from(boardFollows)
+      .innerJoin(userBoards, eq(userBoards.uuid, boardFollows.boardUuid))
+      .where(
+        and(
+          isNull(userBoards.deletedAt),
+          or(
+            ...distinctLookups.map(({ creatorId, config }) =>
+              and(eq(boardFollows.userId, creatorId), configMatches(config)),
+            ),
+          ),
+        ),
       ),
-    ]),
+  ]);
+
+  type ConfigRow = (typeof ownedRows)[number];
+  const sameConfig = (row: ConfigRow, config: ParsedBoardConfig) =>
+    row.boardType === config.boardType &&
+    Number(row.layoutId) === config.layoutId &&
+    Number(row.sizeId) === config.sizeId &&
+    normaliseSetIds(row.setIds) === config.setIds;
+
+  // The deciding tier for each session: owned boards if any match, else followed.
+  const tierBySession = new Map(
+    lookups.map(({ sessionId, creatorId, config }) => {
+      const owned = ownedRows.filter((row) => row.ownerId === creatorId && sameConfig(row, config));
+      const followed = followedRows.filter(
+        (row) => row.followerId === creatorId && row.ownerId !== creatorId && sameConfig(row, config),
+      );
+      const tier = owned.length > 0 ? owned : followed;
+      const uniqueBoards = [...new Map(tier.map((row) => [Number(row.id), row])).values()];
+      return [sessionId, { creatorId, boards: uniqueBoards }] as const;
+    }),
   );
 
-  // Several identical boards: the one the creator ticked on last.
-  const tiedRows = [...matchesBySession.values()].filter((matches) => matches.length > 1).flat();
-  const ownerLastTickedAt = new Map<string, number>();
-  if (tiedRows.length > 0) {
+  // Ties: read each tied board's newest tick by the creator, in one query.
+  const tied = [...tierBySession.values()].filter(({ boards }) => boards.length > 1);
+  const creatorLastTickedAt = new Map<string, number>();
+  if (tied.length > 0) {
     const tickRows = await db
       .select({
         boardId: ticks.boardId,
@@ -347,25 +386,23 @@ async function resolveCreatorConfigBoards(
       .from(ticks)
       .where(
         and(
-          inArray(ticks.boardId, [...new Set(tiedRows.map((row) => Number(row.id)))]),
-          inArray(ticks.userId, [...new Set(tiedRows.map((row) => row.ownerId))]),
+          inArray(ticks.boardId, [...new Set(tied.flatMap(({ boards }) => boards.map((row) => Number(row.id))))]),
+          inArray(ticks.userId, [...new Set(tied.map(({ creatorId }) => creatorId))]),
         ),
       )
       .groupBy(ticks.boardId, ticks.userId);
     for (const row of tickRows) {
-      ownerLastTickedAt.set(`${row.boardId}|${row.userId}`, row.lastTickedAt);
+      creatorLastTickedAt.set(`${row.boardId}|${row.userId}`, row.lastTickedAt);
     }
   }
 
-  for (const [sessionId, matches] of matchesBySession) {
-    if (matches.length === 1) {
-      resolved.set(sessionId, Number(matches[0].id));
+  for (const [sessionId, { creatorId, boards }] of tierBySession) {
+    if (boards.length === 1) {
+      resolved.set(sessionId, Number(boards[0].id));
       continue;
     }
-    // Only the owner's own ticks count, and only a single newest board is a
-    // choice: never ticked on any, or a tie, leaves the session unresolved.
-    const ticked = matches.flatMap((row) => {
-      const lastTickedAt = ownerLastTickedAt.get(`${Number(row.id)}|${row.ownerId}`);
+    const ticked = boards.flatMap((row) => {
+      const lastTickedAt = creatorLastTickedAt.get(`${Number(row.id)}|${creatorId}`);
       return lastTickedAt === undefined || !Number.isFinite(lastTickedAt) ? [] : [{ row, lastTickedAt }];
     });
     const newest = Math.max(...ticked.map(({ lastTickedAt }) => lastTickedAt));
@@ -502,15 +539,26 @@ function boardArmPrefilter(boards: readonly ArmBoard[], redisBoundSessionIds: re
   const slugs = [...new Set(boards.map((board) => board.slug))];
   const ticks = dbSchema.boardseshTicks;
   const trimmedPath = sql`ltrim(${boardSessions.boardPath}, '/')`;
-  // Step 5's shape: the board's own owner started the session on a config path
-  // naming its type, layout and size. Set ids are left to the resolver, which
-  // normalises them; the prefilter only has to be a superset.
+  // Step 5's shape: the board's owner, or someone following it, started the
+  // session on a config path naming its type, layout and size. Set ids are
+  // left to the resolver, which normalises them; the prefilter only has to be
+  // a superset. The follower probe is one lookup on the unique
+  // (user_id, board_uuid) index per surviving session.
+  const followsBoard = dbSchema.boardFollows;
   const creatorConfigPaths = boards.map((board) =>
     and(
-      eq(boardSessions.createdByUserId, board.ownerId),
       sql`split_part(${trimmedPath}, '/', 1) = ${board.boardType}`,
       sql`split_part(${trimmedPath}, '/', 2) = ${String(board.layoutId)}`,
       sql`split_part(${trimmedPath}, '/', 3) = ${String(board.sizeId)}`,
+      or(
+        eq(boardSessions.createdByUserId, board.ownerId),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(followsBoard)
+            .where(and(eq(followsBoard.boardUuid, board.uuid), eq(followsBoard.userId, boardSessions.createdByUserId))),
+        ),
+      ),
     ),
   );
   return or(
@@ -879,6 +927,7 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
 
 function toArmBoard(row: {
   id: number;
+  uuid: string;
   slug: string;
   ownerId: string;
   boardType: string;
@@ -887,6 +936,7 @@ function toArmBoard(row: {
 }): ArmBoard {
   return {
     id: Number(row.id),
+    uuid: row.uuid,
     slug: row.slug,
     ownerId: row.ownerId,
     boardType: row.boardType,
@@ -899,6 +949,7 @@ async function loadFollowedBoards(viewerId: string): Promise<ArmBoard[]> {
   const rows = await db
     .select({
       id: dbSchema.userBoards.id,
+      uuid: dbSchema.userBoards.uuid,
       slug: dbSchema.userBoards.slug,
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
@@ -922,6 +973,7 @@ async function loadSelectedBoard(boardUuid: string, viewerId: string): Promise<A
   const [row] = await db
     .select({
       id: dbSchema.userBoards.id,
+      uuid: dbSchema.userBoards.uuid,
       slug: dbSchema.userBoards.slug,
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
@@ -1010,6 +1062,7 @@ export async function findBoardLiveSessions(boardId: number, viewerId: string | 
   const [boardRow] = await db
     .select({
       id: dbSchema.userBoards.id,
+      uuid: dbSchema.userBoards.uuid,
       slug: dbSchema.userBoards.slug,
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,

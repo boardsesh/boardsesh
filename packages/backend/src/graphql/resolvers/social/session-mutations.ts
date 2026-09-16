@@ -161,7 +161,13 @@ export const sessionEditMutations = {
     // must not fail the edit the creator asked for.
     if (hasIsPublic && nextIsPublic !== session.isPublic && session.status === 'active') {
       await republishBoardQueuePreviewsForSession(validated.sessionId, session.boardId).catch((error: unknown) => {
-        logger.error(`[updateSession] board-queue-preview update failed for ${validated.sessionId}:`, error);
+        // warn, not error: a kiosk that keeps its last snapshot until the next
+        // queue event is operational noise, not a page.
+        logger.warn('[updateSession] board-queue-preview republish failed after a visibility change', {
+          sessionId: validated.sessionId,
+          isPublic: nextIsPublic,
+          error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+        });
       });
     }
 
