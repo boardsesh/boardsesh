@@ -34,6 +34,7 @@ import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state
 import { OfflineState } from '../../../src/components/OfflineState';
 import { dedupeSessionsById } from '../../../src/lib/feed-time-buckets';
 import { deriveFeedScopeInput, type FeedMode } from '../../../src/lib/feed/feed-scope';
+import { createFeedPageGate, requiresCrewPageTap } from '../../../src/lib/feed/crew-page-state';
 import { buildVoteSummaryMap, voteSummaryKey, type VoteSummary } from '../../../src/lib/feed/vote-summary-map';
 import { openClimbInPlayDrawer } from '../../../src/lib/open-climb-in-play-drawer';
 import { hapticLight } from '../../../src/lib/haptics';
@@ -116,8 +117,9 @@ export default function HomeTab() {
   // A visibility recheck can remove every candidate from one page. Advancing
   // that cursor needs an explicit tap, not an automatic drain of sparse pages.
   const lastCrewPage = crewFeed.data?.pages.at(-1)?.crewFeed;
-  const requiresManualPage = mode === 'crew' && lastCrewPage?.items.length === 0 && lastCrewPage.hasMore;
-  const loadingPageRef = useRef(false);
+  const requiresManualPage = mode === 'crew' && requiresCrewPageTap(lastCrewPage);
+  const pageGateRef = useRef(createFeedPageGate());
+  const pageSource = mode === 'crew' ? 'crew' : `gym:${selectedBoard?.uuid ?? 'everyone'}`;
   // The feed is network-only and `networkMode: 'offlineFirst'` pauses an offline
   // fetch instead of failing it, so neither `isLoading` nor `isError` ever
   // resolves — the skeleton list would sit there for good.
@@ -205,12 +207,11 @@ export default function HomeTab() {
   );
 
   const loadNextPage = useCallback(() => {
-    if (!feed.hasNextPage || feed.isFetchingNextPage || loadingPageRef.current) return;
-    loadingPageRef.current = true;
+    if (!feed.hasNextPage || feed.isFetchingNextPage || !pageGateRef.current.claim(pageSource)) return;
     void feed.fetchNextPage().finally(() => {
-      loadingPageRef.current = false;
+      pageGateRef.current.release(pageSource);
     });
-  }, [feed.hasNextPage, feed.isFetchingNextPage, feed.fetchNextPage]);
+  }, [feed.hasNextPage, feed.isFetchingNextPage, feed.fetchNextPage, pageSource]);
   const handleEndReached = useCallback(() => {
     if (!requiresManualPage) loadNextPage();
   }, [requiresManualPage, loadNextPage]);

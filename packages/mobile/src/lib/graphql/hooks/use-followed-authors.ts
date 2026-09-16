@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { onlineManager, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   GET_FOLLOWED_AUTHORS,
@@ -93,8 +93,13 @@ export function useFollowedAuthors() {
     staleTime: 60_000,
   });
   const setterNames = useMemo(() => new Set(query.data?.setterUsernames), [query.data]);
+  const previousAuthorsRef = useRef(query.data);
   useEffect(() => {
-    if (!query.data) return;
+    const previousAuthors = previousAuthorsRef.current;
+    previousAuthorsRef.current = query.data;
+    // Mounting another follow button with cached authors must not refetch feeds.
+    // A first completed sync still retries searches gated on missing local authors.
+    if (!query.data || previousAuthors === query.data) return;
     for (const key of AUTHOR_QUERY_KEYS) {
       if (key !== 'followedAuthors') void queryClient.invalidateQueries({ queryKey: [key] });
     }
@@ -138,9 +143,9 @@ export function useToggleAuthorFollow() {
         return { queued: false, viewerId: userId };
       }
     },
-    onSuccess: ({ queued }) => {
+    onSuccess: ({ queued }, { kind }) => {
       invalidateAuthorQueries(queryClient);
-      if (queued) return; // The drainer invalidates server-backed social state after delivery.
+      if (queued || kind === 'user') return; // User screens own their invalidation; queued writes wait for delivery.
       for (const key of ['publicProfile', 'followers', 'following', 'searchUsers'])
         void queryClient.invalidateQueries({ queryKey: [key] });
     },
