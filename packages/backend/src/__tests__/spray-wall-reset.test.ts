@@ -1180,6 +1180,68 @@ describe('remixClimb', () => {
     expect(linked.rows).toBe(1);
   });
 
+  it('offers one successor per lost hold when the hold editor left a second claim', async () => {
+    // A commit refuses two additions naming one `movedFromHoldId`, and pins the
+    // predecessor to that same commit's removals — but `upsertSprayWallHolds`, the
+    // ordinary hold editor, accepts a predecessor that is still ALIVE. So the
+    // editor can link a move off hold 1 while hold 1 is still up, and a later reset
+    // can take hold 1 off and link its own successor. Two alive rows, one
+    // predecessor. Remix promises at most one suggestion per lost hold, so it keeps
+    // the more recently installed of the pair.
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const parent = await saveClimbOn(wall, 'Tango', [holdIds[0], holdIds[1]]);
+
+    // The hold editor's claim, made while hold 1 is still on the wall.
+    const editorDraft = await openDraft(wall);
+    await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId: editorDraft,
+          holds: [{ cx: 305, cy: 405, r: 30, movedFromHoldId: holdIds[1] }],
+        },
+      },
+      ctxFor(OWNER),
+    );
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: editorDraft } }, ctxFor(OWNER));
+
+    // The reset that actually takes hold 1 off, linking its own successor.
+    const reset = await openDraft(wall);
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId: reset,
+          kept: [{ holdId: holdIds[0] }, { holdId: holdIds[2] }],
+          removed: [holdIds[1]],
+          added: [{ detection: { cx: 640, cy: 700, r: 26 }, movedFromHoldId: holdIds[1] }],
+        },
+      },
+      ctxFor(OWNER),
+    );
+
+    // Both claims are on the wall and both are alive — so the dedupe is doing the
+    // work here, not a missing or removed row.
+    const claims = (await db.execute(sql`
+      SELECT hold_id FROM spray_wall_holds
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId})
+        AND moved_from_hold_id = ${holdIds[1]}
+      ORDER BY hold_id
+    `)) as unknown as Array<{ hold_id: number }>;
+    expect(claims).toHaveLength(2);
+
+    const seed = (await sprayWallQueries.remixClimb({}, { parentUuid: parent }, ctxFor(OWNER))) as {
+      lostHoldIds: number[];
+      suggestedHoldIds: number[];
+    };
+    expect(seed.lostHoldIds).toEqual([holdIds[1]]);
+    // The reset's successor: installed last, and the one whose predecessor really
+    // came off the wall.
+    expect(seed.suggestedHoldIds).toEqual([claims[1].hold_id]);
+  });
+
   it('serves the parent even when it is no longer climbable', async () => {
     // Epic decision 2026-09-14: the parent may be unclimbable after a reset, and
     // that is fine — it is exactly the climb worth remixing.

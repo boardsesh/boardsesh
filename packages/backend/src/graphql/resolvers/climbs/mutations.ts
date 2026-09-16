@@ -1102,9 +1102,11 @@ export const climbMutations = {
           //
           // Inside the same transaction as the hold rewrite it answers, and after
           // it, so the count is read off the rows this edit just wrote. The wall
-          // lock is already held: `assertSprayHoldsAreAlive` took it above, before
-          // it resolved the published generation these holds were validated
-          // against, and `pg_advisory_xact_lock` holds to commit.
+          // lock is already held: `sprayWallMayAnnounceUnderLock` took it above —
+          // it runs for every spray write — and `pg_advisory_xact_lock` holds to
+          // commit. Not `assertSprayHoldsAreAlive`: that one returns before it
+          // locks when the edit touches no holds, which is the same reason
+          // `recordRemixLineage` refuses to lean on it.
           if (sprayTarget) {
             await recomputeMissingHoldCountForClimb(tx, sprayTarget.wallId, validated.uuid);
           }

@@ -8167,8 +8167,10 @@ export type SprayRemixSeed = {
   /**
    * Successors the reset review linked for the lost holds, in hold-id order.
    *
-   * At most one per entry in `lostHoldIds` — a commit refuses two additions
-   * naming the same `movedFromHoldId` — so this is a set of successors, not a
+   * At most one per entry in `lostHoldIds`: a commit refuses two additions
+   * naming the same `movedFromHoldId`, and where the ordinary hold editor has
+   * left a second claim on one predecessor, the more recently installed hold
+   * wins. So this is a set of successors, not a
    * ranking: there is no "best" suggestion to put first. It is NOT positionally
    * aligned with `lostHoldIds` either, because a lost hold may have no successor
    * at all; pair them by reading `movedFromHoldId` off the holds themselves.
