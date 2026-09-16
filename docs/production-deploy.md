@@ -533,6 +533,25 @@ web deploy targets:
 | `SMOKE_KIOSK_GYM_SLUG`      | var    | Fixture the post-deploy smoke reads.                                             |
 | `SMOKE_EMBED_BOARD_UUID`    | var    | Fixture the post-deploy smoke reads.                                             |
 
+### Runtime variables on the Railway web service
+
+The table above is **build-time** configuration: GitHub reads it, and the
+`NEXT_PUBLIC_*` entries are inlined into the web image as it is built. Anything
+set on the Railway `web` service itself is **runtime** configuration — read per
+request, changeable without a rebuild.
+
+| Name                 | Kind   | Purpose                                                                            |
+| -------------------- | ------ | ---------------------------------------------------------------------------------- |
+| `STRIPE_DONATE_URL`  | var    | Stripe Payment Link behind the one-time donation rail on `/support`. Unset hides the rail. |
+
+`STRIPE_DONATE_URL` has no `NEXT_PUBLIC_` prefix on purpose. A prefixed name is
+inlined at build time, and neither `Dockerfile.web` nor `production-deploy.yml`
+passes one as a build arg — so a `NEXT_PUBLIC_STRIPE_DONATE_URL` could never be
+set in production at all. `/support` reads it from a server component, so the
+unprefixed name resolves from the service environment on every request. It must
+be an `https://` URL; anything else is treated as unset and the rail stays
+hidden rather than linking somewhere unintended.
+
 `RAILWAY_TOKEN` must be a project token created for the Boardsesh project's
 Production environment, not a personal or team API token. The rollback helper
 derives and checks its project/environment scope on every use. Rotate it in

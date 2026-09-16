@@ -83,6 +83,8 @@
   }
 }
 
+/* `--neutral-50`, not `--semantic-surface`: the latter is the MuiCard paper
+   colour these rails sit on, so the cards would be invisible in both themes. */
 .rail {
   display: flex;
   flex-direction: column;
@@ -90,7 +92,7 @@
   padding: 16px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--border-radius-md);
-  background: var(--semantic-surface);
+  background: var(--neutral-50);
 }
 
 .railTitle {

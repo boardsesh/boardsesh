@@ -10,7 +10,7 @@
       "description": "Eine App für jedes Kletterboard. Open Source, von der Community getragen."
     },
     "support": {
-      "title": "Boardsesh unterstützen",
+      "title": "Spenden und die Server am Laufen halten",
       "description": "Boardsesh ist kostenlos und Open Source. Hilf mit bei den Rechnungen für Hosting, Datenbank und Infrastruktur, die es am Laufen halten."
     },
     "help": {
@@ -145,6 +145,7 @@
       "body": "An alle, die Boardsesh schon unterstützen, Fehler melden, Code schicken oder einen Screen übersetzen: danke. Ihr haltet das Ding in Bewegung."
     },
     "aboutLink": "Mehr über das Projekt →",
+    "docsLink": "Sieh in der Doku, wie es gebaut ist →",
     "footer": "Kostenlos für alle, finanziert von denen, die können."
   },
   "legal": {

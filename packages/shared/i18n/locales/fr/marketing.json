@@ -10,7 +10,7 @@
       "description": "Une seule app pour chaque board d'escalade. Open source, portée par la communauté."
     },
     "support": {
-      "title": "Soutenir Boardsesh",
+      "title": "Faire un don pour garder les serveurs allumés",
       "description": "Boardsesh est gratuit et open source. Participez aux factures d'hébergement, de base de données et d'infrastructure qui le font tourner."
     },
     "help": {
@@ -145,6 +145,7 @@
       "body": "À celles et ceux qui soutiennent déjà Boardsesh, signalent des bugs, proposent du code ou traduisent un écran : merci. C'est vous qui faites avancer le projet."
     },
     "aboutLink": "En savoir plus sur le projet →",
+    "docsLink": "Voyez comment c'est construit dans la doc développeur →",
     "footer": "Gratuit pour tous, financé par ceux qui le peuvent."
   },
   "legal": {

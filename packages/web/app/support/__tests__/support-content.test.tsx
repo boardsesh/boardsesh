@@ -66,10 +66,22 @@ describe('SupportContent', () => {
 
   // Donations buy nothing, and the page has to say so — the "not tax-deductible"
   // line is a legal obligation, not copy taste.
+  //
+  // Asserted on the LITERAL phrase, not on `tFromCatalog('support.honesty.p1')`:
+  // resolving the same key the component renders would pass against any copy at
+  // all, including copy that dropped the disclosure. Every locale's wording is
+  // pinned in `@boardsesh/i18n`'s `donation-disclosure.test.ts`.
   it('states that donations are not tax-deductible', () => {
-    render(<SupportContent stripeDonateUrl={undefined} />);
+    const { container } = render(<SupportContent stripeDonateUrl={undefined} />);
 
-    expect(screen.getByText(tFromCatalog('marketing', 'support.honesty.p1'))).toBeTruthy();
+    expect(container.textContent).toMatch(/not tax-deductible/i);
+  });
+
+  // No perks, ever — a donation must never read as buying something.
+  it('never promises anything in return for a donation', () => {
+    const { container } = render(<SupportContent stripeDonateUrl={STRIPE_URL} />);
+
+    expect(container.textContent).not.toMatch(/unlock|early access|priority support|perk/i);
   });
 
   // The page is indexable, so it owes a crawler exactly one h1 carrying the
@@ -82,9 +94,12 @@ describe('SupportContent', () => {
     expect(headings[0]?.textContent).toBe(tFromCatalog('marketing', 'support.hero.title'));
   });
 
-  it('links onward to /about for the internal-link rule', () => {
+  // The SEO rules want 2-3 crawlable internal links with descriptive anchor
+  // text on every indexable page; the footer supplies the rest.
+  it('links onward to /about and /docs for the internal-link rule', () => {
     const { container } = render(<SupportContent stripeDonateUrl={undefined} />);
 
     expect(hrefs(container)).toContain('/about');
+    expect(hrefs(container)).toContain('/docs');
   });
 });

@@ -10,7 +10,7 @@
       "description": "Una sola app para todos los plafones. Código abierto y dirigida por la comunidad."
     },
     "support": {
-      "title": "Apoya Boardsesh",
+      "title": "Dona y mantén los servidores en marcha",
       "description": "Boardsesh es gratis y de código abierto. Echa una mano con las facturas de hosting, base de datos e infraestructura que lo mantienen en marcha."
     },
     "help": {
@@ -137,14 +137,15 @@
     },
     "honesty": {
       "title": "La letra pequeña",
-      "p1": "Las donaciones no desgravan. Boardsesh no es una ONG, solo escaladores pagando la factura del servidor.",
+      "p1": "Las donaciones no son deducibles de impuestos. Boardsesh no es una ONG, solo escaladores pagando la factura del servidor.",
       "p2": "Tu dinero va al hosting, la base de datos y la infraestructura. No compra nada extra en la app: todo Boardsesh sigue abierto para todo el mundo, dones o no."
     },
     "thanks": {
       "title": "Gracias",
-      "body": "A quienes ya patrocinan Boardsesh, abren issues, mandan parches o traducen una pantalla: gracias. Vosotros mantenéis esto en movimiento."
+      "body": "A quienes ya patrocinan Boardsesh, abren issues, mandan parches o traducen una pantalla: gracias. Así es como esto sigue en marcha."
     },
     "aboutLink": "Conoce más sobre el proyecto →",
+    "docsLink": "Mira cómo está construido en la documentación →",
     "footer": "Gratis para todos, financiado por quien puede echar una mano."
   },
   "privacy": {
