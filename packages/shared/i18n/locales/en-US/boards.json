@@ -705,7 +705,8 @@
       "value": "Showing finds above {{percent}}%"
     },
     "counts": {
-      "alive": "{{value}} holds",
+      "alive_one": "{{count}} hold",
+      "alive_other": "{{count}} holds",
       "pending": "{{value}} to review",
       "hidden": "{{value}} hidden",
       "unsaved": "{{value}} unsaved"
@@ -742,10 +743,12 @@
       "strokeTooDetailed": "That stroke has too much detail to store. Trace the edge in one pass.",
       "strokeTooShort": "That stroke is too short. Draw a full loop round the hold.",
       "allHoldsOffWall": "Those holds land off the wall. Move them back onto the photo and save again.",
-      "someHoldsOffWall": "{{value}} holds landed off the wall and weren't saved."
+      "someHoldsOffWall_one": "{{count}} hold landed off the wall and wasn't saved.",
+      "someHoldsOffWall_other": "{{count}} holds landed off the wall and weren't saved."
     },
     "toast": {
-      "saved": "Saved {{value}} holds"
+      "saved_one": "Saved {{count}} hold",
+      "saved_other": "Saved {{count}} holds"
     },
     "empty": {
       "noPhoto": "This wall has no photo to edit yet."

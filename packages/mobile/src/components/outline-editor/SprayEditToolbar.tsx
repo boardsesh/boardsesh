@@ -153,7 +153,7 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
   );
 
   const countsLine = useMemo(() => {
-    const parts = [t('sprayEditor.counts.alive', { value: counts.alive })];
+    const parts = [t('sprayEditor.counts.alive', { count: counts.alive })];
     if (counts.pending > 0) parts.push(t('sprayEditor.counts.pending', { value: counts.pending }));
     if (counts.hidden > 0) parts.push(t('sprayEditor.counts.hidden', { value: counts.hidden }));
     const unsaved = counts.unsavedWrites + counts.unsavedRemovals;

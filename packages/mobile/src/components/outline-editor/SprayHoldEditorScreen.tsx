@@ -454,9 +454,9 @@ export function SprayHoldEditorScreen({
           // done here: the payload may not have landed yet, and re-seeding from
           // the pre-save one would undo the save on screen.
           awaitingSavedPayloadRef.current = true;
-          showToast(t('sprayEditor.toast.saved', { value: result.written }), 'success');
+          showToast(t('sprayEditor.toast.saved', { count: result.written }), 'success');
           if (plan.unmappableIds.length > 0) {
-            setErrorText(t('sprayEditor.errors.someHoldsOffWall', { value: plan.unmappableIds.length }));
+            setErrorText(t('sprayEditor.errors.someHoldsOffWall', { count: plan.unmappableIds.length }));
           }
           onSaved?.(result);
         },

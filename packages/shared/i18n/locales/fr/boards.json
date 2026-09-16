@@ -705,7 +705,8 @@
       "value": "Détections au-dessus de {{percent}} %"
     },
     "counts": {
-      "alive": "{{value}} prises",
+      "alive_one": "{{count}} prise",
+      "alive_other": "{{count}} prises",
       "pending": "{{value}} à vérifier",
       "hidden": "{{value}} masquées",
       "unsaved": "{{value}} non enregistrées"
@@ -742,10 +743,12 @@
       "strokeTooDetailed": "Ce tracé a trop de détails pour être enregistré. Suis le contour d'un seul geste.",
       "strokeTooShort": "Ce tracé est trop court. Dessine une boucle complète autour de la prise.",
       "allHoldsOffWall": "Ces prises tombent en dehors du mur. Remets-les sur la photo puis enregistre à nouveau.",
-      "someHoldsOffWall": "{{value}} prises sont tombées en dehors du mur et n'ont pas été enregistrées."
+      "someHoldsOffWall_one": "{{count}} prise est tombée en dehors du mur et n'a pas été enregistrée.",
+      "someHoldsOffWall_other": "{{count}} prises sont tombées en dehors du mur et n'ont pas été enregistrées."
     },
     "toast": {
-      "saved": "{{value}} prises enregistrées"
+      "saved_one": "{{count}} prise enregistrée",
+      "saved_other": "{{count}} prises enregistrées"
     },
     "empty": {
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."

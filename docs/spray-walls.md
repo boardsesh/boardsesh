@@ -525,7 +525,8 @@ draft registered, the board under the editor is the draft's photograph. Every
 cache key folds in the version (`sprayCacheToken`) and a draft's number is one
 past the published one, so nothing the draft writes can be served back for the
 published wall; on unmount `refreshSprayWall` pulls the published generation back
-for whatever outlives the screen.
+for whatever outlives the screen (`invalidateSprayWallRenderData`, which drops the
+cached payload and re-registers through `refreshSprayWall`).
 
 The editor re-seeds itself only for a real reason — a different wall, a new
 version, a new detector run, or a save of its own. Not "the registry
@@ -544,7 +545,7 @@ which is the only evidence the refetch actually happened. The mutation's own
 `onSuccess` also RETURNS the invalidation rather than firing it and forgetting,
 so React Query awaits the refetch before the caller's `onSuccess` runs.
 
-Three things the editor does are decided by this document rather than by taste:
+What the editor does with a wall is decided by this document rather than by taste:
 
 - **It edits THE draft.** One draft per wall, so there is no version to choose:
   the `versionId` handed in is the open one, and publishing or discarding are the

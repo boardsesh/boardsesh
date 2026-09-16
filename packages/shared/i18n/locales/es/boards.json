@@ -705,7 +705,8 @@
       "value": "Mostrando hallazgos por encima del {{percent}} %"
     },
     "counts": {
-      "alive": "{{value}} presas",
+      "alive_one": "{{count}} presa",
+      "alive_other": "{{count}} presas",
       "pending": "{{value}} por revisar",
       "hidden": "{{value}} ocultas",
       "unsaved": "{{value}} sin guardar"
@@ -742,10 +743,12 @@
       "strokeTooDetailed": "Ese trazo tiene demasiado detalle para guardarlo. Repasa el contorno de una sola pasada.",
       "strokeTooShort": "Ese trazo es demasiado corto. Dibuja un bucle completo alrededor de la presa.",
       "allHoldsOffWall": "Esas presas caen fuera del muro. Vuelve a colocarlas sobre la foto y guarda otra vez.",
-      "someHoldsOffWall": "{{value}} presas cayeron fuera del muro y no se guardaron."
+      "someHoldsOffWall_one": "{{count}} presa cayó fuera del muro y no se guardó.",
+      "someHoldsOffWall_other": "{{count}} presas cayeron fuera del muro y no se guardaron."
     },
     "toast": {
-      "saved": "{{value}} presas guardadas"
+      "saved_one": "{{count}} presa guardada",
+      "saved_other": "{{count}} presas guardadas"
     },
     "empty": {
       "noPhoto": "Este muro todavía no tiene foto que editar."

@@ -705,7 +705,8 @@
       "value": "Zeigt Funde über {{percent}} %"
     },
     "counts": {
-      "alive": "{{value}} Griffe",
+      "alive_one": "{{count}} Griff",
+      "alive_other": "{{count}} Griffe",
       "pending": "{{value}} zu prüfen",
       "hidden": "{{value}} ausgeblendet",
       "unsaved": "{{value}} nicht gespeichert"
@@ -742,10 +743,12 @@
       "strokeTooDetailed": "Dieser Strich hat zu viele Details zum Speichern. Fahre die Kante in einem Zug nach.",
       "strokeTooShort": "Dieser Strich ist zu kurz. Zeichne eine ganze Schlaufe um den Griff.",
       "allHoldsOffWall": "Diese Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto und speichere erneut.",
-      "someHoldsOffWall": "{{value}} Griffe lagen außerhalb der Wand und wurden nicht gespeichert."
+      "someHoldsOffWall_one": "{{count}} Griff lag außerhalb der Wand und wurde nicht gespeichert.",
+      "someHoldsOffWall_other": "{{count}} Griffe lagen außerhalb der Wand und wurden nicht gespeichert."
     },
     "toast": {
-      "saved": "{{value}} Griffe gespeichert"
+      "saved_one": "{{count}} Griff gespeichert",
+      "saved_other": "{{count}} Griffe gespeichert"
     },
     "empty": {
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
