@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type SetterStat = { setterUsername: string; climbCount: number };
@@ -36,7 +36,7 @@ const followMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../../src/lib/graphql/hooks/use-followed-authors', () => ({
   useFollowedAuthors: () => ({ data: {}, setterNames: new Set(['alice']) }),
-  useToggleAuthorFollow: () => ({ mutate: followMock, isPending: false }),
+  useToggleAuthorFollow: () => ({ mutateAsync: followMock }),
 }));
 const setterStats = vi.hoisted(() => ({
   data: [
@@ -137,16 +137,18 @@ vi.mock('react-native', () => ({
     onPress,
     accessibilityLabel,
     accessibilityRole,
+    disabled,
   }: {
     children?: ReactNode | ((state: { pressed: boolean }) => ReactNode);
     onPress?: () => void;
     accessibilityLabel?: string;
     accessibilityRole?: string;
+    disabled?: boolean;
   }) => {
     const renderedChildren = typeof children === 'function' ? children({ pressed: false }) : children;
     return createElement(
       'button',
-      { onClick: onPress, 'aria-label': accessibilityLabel, 'data-role': accessibilityRole },
+      { onClick: onPress, disabled, 'aria-label': accessibilityLabel, 'data-role': accessibilityRole },
       renderedChildren,
     );
   },
@@ -197,6 +199,8 @@ const sheetCountInput = {
 };
 
 beforeEach(() => {
+  followMock.mockReset();
+  followMock.mockResolvedValue(undefined);
   emitMock.mockClear();
   navMock.setOptions.mockClear();
   navMock.goBack.mockClear();
@@ -256,10 +260,53 @@ describe('SettersFilterScreen', () => {
     expect(emitMock).not.toHaveBeenCalled();
   });
 
-  it('follows an accountless setter from its row', () => {
+  it('follows an accountless setter from its row', async () => {
     const { getByText } = render(<SettersFilterScreen />);
     fireEvent.click(getByText('authors.follow'));
     expect(followMock).toHaveBeenCalledWith({ kind: 'setter', identifier: 'bob', follow: true });
+    await waitFor(() =>
+      expect((getByText('authors.follow').closest('button') as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
+  it('gates only pending setters and keeps independent requests locked until each settles', async () => {
+    let resolveBob!: () => void;
+    let resolveAlice!: () => void;
+    followMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveBob = resolve;
+        }),
+    );
+    followMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveAlice = resolve;
+        }),
+    );
+    const { getByText } = render(<SettersFilterScreen />);
+    const bob = getByText('authors.follow').closest('button') as HTMLButtonElement;
+    const alice = getByText('authors.unfollow').closest('button') as HTMLButtonElement;
+    fireEvent.click(bob);
+    expect(bob.disabled).toBe(true);
+    expect(alice.disabled).toBe(false);
+    fireEvent.click(alice);
+    expect(alice.disabled).toBe(true);
+    fireEvent.click(bob);
+    expect(followMock).toHaveBeenCalledTimes(2);
+    await act(async () => resolveAlice());
+    expect(alice.disabled).toBe(false);
+    expect(bob.disabled).toBe(true);
+    await act(async () => resolveBob());
+    expect(bob.disabled).toBe(false);
+  });
+
+  it('shows mutation failure and unlocks its setter for retry', async () => {
+    followMock.mockRejectedValueOnce(new Error('Offline write failed'));
+    const { getByText, findByText } = render(<SettersFilterScreen />);
+    fireEvent.click(getByText('authors.follow'));
+    expect(await findByText('authors.followError')).not.toBeNull();
+    expect((getByText('authors.follow').closest('button') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('seeds the selection from the route param', () => {

@@ -60,6 +60,15 @@ beforeEach(() => {
 });
 
 describe('NewClimbFeedCard', () => {
+  it.each(['climbUuid', 'boardType'] as const)('does not open an incomplete climb missing %s', (field) => {
+    const { getByRole } = render(<NewClimbFeedCard climb={{ ...climb, [field]: null }} />);
+    fireEvent.click(getByRole('button', { name: /Fresh holds/ }));
+    expect(mocks.open).not.toHaveBeenCalled();
+  });
+  it('omits setter navigation when the setter is unknown', () => {
+    const { queryByRole } = render(<NewClimbFeedCard climb={{ ...climb, setterUsername: null }} />);
+    expect(queryByRole('button', { name: /authors.setBy/ })).toBeNull();
+  });
   it('uses the resolved small board and opens a full-climb reference preview', () => {
     const { getByRole, getByText } = render(<NewClimbFeedCard climb={climb} />);
     expect(getByText('V4 · 40°')).not.toBeNull();

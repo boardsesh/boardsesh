@@ -69,6 +69,9 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   ],
 
   // Following-only catalogue reads, Crew and the complete author snapshot.
+  // Setter identities can be accountless OR linked: followSetter/unfollowSetter
+  // also insert/delete user_follows for a linked Boardsesh account. Keep profile
+  // and user-follow queries fresh after that server-side side effect lands.
   setter_follows: [
     ['publicProfile'],
     ['followers'],

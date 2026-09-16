@@ -19,7 +19,8 @@ export function SetterFollowButton({ username }: { username: string }) {
         disabled={!follows.data || toggle.isPending}
         onPress={() => toggle.mutate({ kind: 'setter', identifier: username, follow: !following })}
       />
-      {toggle.isError || follows.isError ? <Text variant="footnote">{t('authors.syncNeeded')}</Text> : null}
+      {toggle.isError ? <Text variant="footnote">{t('authors.followError')}</Text> : null}
+      {follows.isError ? <Text variant="footnote">{t('authors.syncNeeded')}</Text> : null}
     </>
   );
 }

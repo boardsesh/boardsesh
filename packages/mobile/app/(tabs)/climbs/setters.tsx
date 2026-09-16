@@ -82,6 +82,7 @@ type SetterRowProps = {
   onFollow: (username: string, follow: boolean) => void;
   following: boolean;
   canFollow: boolean;
+  followPending: boolean;
 };
 
 const SetterRow = memo(function SetterRow({
@@ -92,6 +93,7 @@ const SetterRow = memo(function SetterRow({
   onFollow,
   following,
   canFollow,
+  followPending,
 }: SetterRowProps) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
@@ -113,7 +115,13 @@ const SetterRow = memo(function SetterRow({
         </Text>
       </Pressable>
       {canFollow ? (
-        <Pressable onPress={() => onFollow(setter.setterUsername, !following)} accessibilityRole="button" hitSlop={8}>
+        <Pressable
+          disabled={followPending}
+          accessibilityState={{ disabled: followPending, busy: followPending }}
+          onPress={() => onFollow(setter.setterUsername, !following)}
+          accessibilityRole="button"
+          hitSlop={8}
+        >
           <Text variant="footnote" color={brandColors.primary}>
             {following ? t('authors.unfollow') : t('authors.follow')}
           </Text>
@@ -140,6 +148,9 @@ export default function SettersFilterScreen() {
   const { isAuthenticated } = useAuth();
   const follows = useFollowedAuthors();
   const followMutation = useToggleAuthorFollow();
+  const pendingSettersRef = useRef(new Set<string>());
+  const [pendingSetters, setPendingSetters] = useState<ReadonlySet<string>>(new Set());
+  const [followError, setFollowError] = useState(false);
   const [followingOnly, setFollowingOnly] = useState(false);
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors } = useTheme();
@@ -291,9 +302,19 @@ export default function SettersFilterScreen() {
   );
   const followSetter = useCallback(
     (username: string, follow: boolean) => {
-      followMutation.mutate({ kind: 'setter', identifier: username, follow });
+      if (pendingSettersRef.current.has(username)) return;
+      pendingSettersRef.current.add(username);
+      setPendingSetters(new Set(pendingSettersRef.current));
+      setFollowError(false);
+      void followMutation
+        .mutateAsync({ kind: 'setter', identifier: username, follow })
+        .catch(() => setFollowError(true))
+        .finally(() => {
+          pendingSettersRef.current.delete(username);
+          setPendingSetters(new Set(pendingSettersRef.current));
+        });
     },
-    [followMutation.mutate],
+    [followMutation.mutateAsync],
   );
   const renderRow = useCallback(
     ({ item }: { item: SetterStat }) => (
@@ -304,10 +325,11 @@ export default function SettersFilterScreen() {
         onOpen={openSetter}
         onFollow={followSetter}
         following={follows.setterNames.has(item.setterUsername)}
-        canFollow={isAuthenticated && !!follows.data && !followMutation.isPending}
+        canFollow={isAuthenticated && !!follows.data}
+        followPending={pendingSetters.has(item.setterUsername)}
       />
     ),
-    [toggle, openSetter, followSetter, follows.setterNames, follows.data, isAuthenticated, followMutation.isPending],
+    [toggle, openSetter, followSetter, follows.setterNames, follows.data, isAuthenticated, pendingSetters],
   );
 
   return (
@@ -346,7 +368,7 @@ export default function SettersFilterScreen() {
             />
           </View>
         ) : null}
-        {followMutation.isError ? <Text variant="footnote">{t('authors.followError')}</Text> : null}
+        {followError ? <Text variant="footnote">{t('authors.followError')}</Text> : null}
         {isError ? (
           <View>
             <Text>{t('authors.syncNeeded')}</Text>
