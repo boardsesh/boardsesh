@@ -19,6 +19,7 @@ const DEFAULT_HOLDS: SprayPhotoHold[] = [{ id: 7, cx: 100, cy: 200, r: 18, outli
 function wall(version: number, holds: SprayPhotoHold[] = DEFAULT_HOLDS) {
   return {
     wallUuid: 'wall-uuid',
+    angle: 40,
     version,
     photoWidth: 1200,
     photoHeight: 1600,

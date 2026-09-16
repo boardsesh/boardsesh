@@ -138,6 +138,11 @@ export function registerRenderData(layoutId: number, renderData: SprayWallRender
 
   registerSprayWall(layoutId, {
     wallUuid: renderData.wall.uuid,
+    // The wall's own angle, not the caller's. Every climb set on the wall has to
+    // carry it or the server refuses the write. Optional-chained because
+    // `SprayWall.board` is only non-null by schema contract — see the field's note
+    // on `RegisteredSprayWall` for why a missing angle registers anyway.
+    angle: renderData.wall.board?.angle ?? null,
     version: renderData.versionNumber,
     photoWidth: dimensions.width,
     photoHeight: dimensions.height,

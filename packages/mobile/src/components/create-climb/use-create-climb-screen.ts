@@ -47,6 +47,16 @@ import {
   type CreateClimbDraft,
 } from '../../lib/create-climb-draft-store';
 import { computeRoleCapacity, getNextBrushRole, getPaintRoles, type BrushRole } from './brush-roles';
+import {
+  authoringAngle,
+  defaultAnyFeet,
+  hasFootHolds,
+  nextAnyFeetForFeetChange,
+  requiresSetterGrade,
+  sprayWallUuidFor,
+} from './spray-climb-rules';
+import { useLastUsedGrade } from './use-last-used-grade';
+import { getDifficultyIdForGradeName, getGradeLabel } from '../../lib/grade-label';
 import { useCreateClimbAutosave } from './use-create-climb-autosave';
 import { deriveDraftStatusView, type DraftStatusView } from './draft-status-view';
 import { useBleFrameWriter } from '../../lib/ble/use-ble-frame-writer';
@@ -83,6 +93,24 @@ type UseCreateClimbScreenArgs = {
   onPublished?: () => void;
   /** Replaces edit/fork route identity with a plain creator after Start new. */
   onStartedNewClimb?: () => void;
+  /**
+   * The spray wall's live cache token (`''` off spray), from `useSprayWallToken`.
+   *
+   * `createClimbDraftKey` folds the wall VERSION into the autosave slot, but it
+   * reads it out of a module-level registry — so a controller mounted before the
+   * wall landed would memoise the `-sv0` key and keep autosaving into a slot the
+   * loader's superseded-draft sweep has already removed. Passing the token in
+   * makes the key recompute when the wall arrives.
+   */
+  sprayWallToken?: string;
+  /**
+   * The source climb's grade as a difficulty id, for a remix of a climb on a
+   * board that publishes with the setter's own grade. A fork inherits its
+   * parent's grade the way it inherits its rules; without it a remix of a graded
+   * wall climb opens ungraded and cannot be published until the setter finds the
+   * grade again.
+   */
+  forkDifficultyId?: number | null;
 };
 
 const BLE_PREVIEW_DEBOUNCE_MS = 250;
@@ -102,6 +130,8 @@ type PayloadSignatureFields = {
   anyFeet: boolean;
   isDraft: boolean;
   framesPaceMs: number;
+  /** The setter's own grade, on boards that publish with one. */
+  setterGradeDifficultyId: number | null;
 };
 
 function createPayloadSignature(fields: PayloadSignatureFields): string {
@@ -127,6 +157,11 @@ function createPayloadSignature(fields: PayloadSignatureFields): string {
   // whereas toggling route mode at one frame changes no field of the payload at
   // all (a single-frame climb always publishes `frames_pace: 0`).
   if (fields.framesPaceMs !== DEFAULT_PACE_MS) parts.push(`pace:${fields.framesPaceMs}`);
+  // Appended only once a grade has been picked, for the same reason as the pace:
+  // every signature written before the grade was authorable stays byte-identical,
+  // so no draft on any phone announces "unsynced edits" for a field its setter
+  // never touched.
+  if (fields.setterGradeDifficultyId !== null) parts.push(`grade:${fields.setterGradeDifficultyId}`);
   return parts.join(SIGNATURE_SEPARATOR);
 }
 
@@ -244,6 +279,8 @@ export function useCreateClimbScreen({
   editClimbUuid,
   onPublished,
   onStartedNewClimb,
+  sprayWallToken = '',
+  forkDifficultyId,
 }: UseCreateClimbScreenArgs) {
   const router = useRouter();
   const { t } = useTranslation('climbs');
@@ -343,8 +380,43 @@ export function useCreateClimbScreen({
   // whole coherent rule set at once. The UI gets the mutually-exclusive wrappers
   // below instead.
   const [campus, setCampusState] = useState(() => isCampus(seededForkCharacteristics));
-  const [anyFeet, setAnyFeetState] = useState(() => isAnyFeet(seededForkCharacteristics));
+  // A fork inherits its source's answer; a fresh climb takes the board's default,
+  // which is OPEN on a spray wall — a field of holds with no set-piece feet, where
+  // "feet anywhere" is the convention rather than the exception (#5443).
+  //
+  // The middle case is the one that bites. `saveClimb` stores NULL rather than an
+  // empty array when a climb has no rule tokens at all, and "feet on the marked
+  // holds" IS no token — so a wall climb with feet marked comes back carrying
+  // nothing, `openRemix` sends no `forkCharacteristics`, and the board default
+  // would open the remix with "Any feet" ON over the FOOT holds it just inherited.
+  // `nextAnyFeetForFeetChange` cannot undo that either: the paint is already there
+  // on the first evaluation, which is deliberately not a change. So on a board
+  // where the paint answers this question, a rule-less fork reads the answer off
+  // the paint it was seeded with. A catalogue board keeps its closed default,
+  // exactly as before.
+  const [anyFeet, setAnyFeetState] = useState(() => {
+    if (seededForkCharacteristics) return isAnyFeet(seededForkCharacteristics);
+    if (isForking) return defaultAnyFeet(board.boardName) && !hasFootHolds(initialFrames?.[0] ?? {});
+    return defaultAnyFeet(board.boardName);
+  });
   const [isDraft, setIsDraft] = useState(true);
+  // The setter's own grade, as a difficulty id on the shared Boardsesh scale.
+  // Only boards with no crowd grade ask for it (`requiresSetterGrade`), and only
+  // publishing needs it — a draft may sit ungraded, because the grade is the last
+  // thing a setter decides.
+  // A remix inherits its parent's grade, the way it inherits its rules (#4832) —
+  // a wall climb's grade is the setter's own, and a remix of a V5 is a V5 until
+  // its setter says otherwise. It also beats the last-used seed below, for the
+  // same reason an explicit `forkCharacteristics` array beats the board default.
+  //
+  // Gated on the board asking for a setter grade at all. A Kilter fork carries a
+  // grade too, and seeding it here meant the publish sent a `userGrade` the server
+  // discards for a non-spray board AND remembered it as that board's last-used
+  // grade, so every later Kilter publish carried one as well. Harmless on the wire
+  // and still wrong: the field is not part of what a catalogue board publishes.
+  const [setterGradeDifficultyId, setSetterGradeDifficultyId] = useState<number | null>(() =>
+    isForking && requiresSetterGrade(board.boardName) ? (forkDifficultyId ?? null) : null,
+  );
   const [showAllHolds, setShowAllHolds] = useState(false);
 
   // ---- Route mode. ----
@@ -408,6 +480,26 @@ export function useCreateClimbScreen({
     if (footlessMethod) setAnyFeetState(false);
   }, [footlessMethod]);
 
+  // Marking a foot hold and turning "any feet" on answer the same question, so on
+  // a board that opens feet by default the switch follows the paint: the first
+  // FOOT hold turns it off, and clearing the last one turns it back on. Only a
+  // CHANGE moves it — a setter who marks feet and then turns the switch back on
+  // by hand has said something the paint cannot, and must not be overruled on the
+  // next render. See `nextAnyFeetForFeetChange`.
+  const previousHasFeetRef = useRef<boolean | null>(null);
+  const feetFollowPaint = defaultAnyFeet(board.boardName);
+  // Read through a ref so a campus toggle does not re-run the rule on its own —
+  // only a change in the painted feet may move the switch.
+  const campusRef = useRef(campus);
+  campusRef.current = campus;
+  useEffect(() => {
+    if (!feetFollowPaint) return;
+    const hasFeet = hasFootHolds(litUpHoldsMap);
+    const previousHasFeet = previousHasFeetRef.current;
+    previousHasFeetRef.current = hasFeet;
+    setAnyFeetState((current) => nextAnyFeetForFeetChange(previousHasFeet, hasFeet, current, campusRef.current));
+  }, [feetFollowPaint, litUpHoldsMap]);
+
   const [savedClimb, setSavedClimb] = useState<SavedClimbSnapshot | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
@@ -423,6 +515,29 @@ export function useCreateClimbScreen({
   // can be cancelled — anything keyed on the press instead of this fires for a
   // climb that never changed. The create drawer drops the board zoom on it.
   const [blankClimbEpoch, setBlankClimbEpoch] = useState(0);
+
+  // Seeds the grade picker on a fresh climb only. A restored draft, a fork and an
+  // edit all carry their own grade — the fork's is already in the initial state
+  // above, and the other two overwrite it below.
+  const { lastDifficultyId, rememberDifficultyId: rememberLastUsedGrade } = useLastUsedGrade(board.boardName);
+  // Once per BLANK CLIMB, not once per mount.
+  //
+  // Latching at all is what stops the seed fighting the setter: once it has run,
+  // moving the picker has to stick. But latching for the life of the mount meant
+  // the second and every later climb of a session opened with an empty picker
+  // while a last-used grade sat right there — and a released ref would not have
+  // fixed it either, because releasing a ref re-runs no effect and
+  // `lastDifficultyId` never moves. `blankClimbEpoch` does move, exactly once per
+  // blank climb that actually starts, so keying the latch on it is both the
+  // re-trigger and the guard.
+  const seededLastGradeEpochRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (seededLastGradeEpochRef.current === blankClimbEpoch || lastDifficultyId === null) return;
+    if (isEditing || isForking || !requiresSetterGrade(board.boardName)) return;
+    seededLastGradeEpochRef.current = blankClimbEpoch;
+    setSetterGradeDifficultyId((current) => current ?? lastDifficultyId);
+  }, [blankClimbEpoch, lastDifficultyId, isEditing, isForking, board.boardName]);
+
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [savedSignatureUnknown, setSavedSignatureUnknown] = useState(false);
   const [failedSignature, setFailedSignature] = useState<string | null>(null);
@@ -439,7 +554,10 @@ export function useCreateClimbScreen({
     });
   }, [board.boardName]);
 
-  const draftKey = useMemo(() => createClimbDraftKey(board), [board]);
+  // `sprayWallToken` is in the deps, not just along for the ride: the key folds
+  // the wall version in, and on a cold spray entry the wall lands AFTER the first
+  // render. See `UseCreateClimbScreenArgs.sprayWallToken`.
+  const draftKey = useMemo(() => createClimbDraftKey(board), [board, sprayWallToken]);
 
   // ---- One deterministic autosave slot per authoring mode. ----
   // Identity now lives in the KEY, which is why autosave no longer has to be
@@ -563,7 +681,11 @@ export function useCreateClimbScreen({
       // carries both — the stricter rule, same as everywhere else.
       setCampusState(draft.campus ?? false);
       setAnyFeetState(!draft.campus && (draft.anyFeet ?? false));
+      setSetterGradeDifficultyId(draft.setterGradeDifficultyId ?? null);
       setIsDraft(draft.isDraft);
+      // A restored slot brings its own paint AND its own rules, so the feet rule
+      // must treat this as the session's starting point rather than a change.
+      previousHasFeetRef.current = null;
       // Explicit flag first, then infer from the restored frames: a slot written
       // before route mode existed carries no flag but may well carry a route.
       setRouteMode(draft.routeMode ?? restoredFrameCount > 1);
@@ -646,6 +768,11 @@ export function useCreateClimbScreen({
     // 0/null mean "never authored" and play at the default, so that is what the
     // control opens on. Preserved as stored otherwise — see `resolveStoredPaceMs`.
     const serverPaceMs = resolveStoredPaceMs(editClimb.framesPace);
+    // The grade already on the row, so reopening a graded climb shows what it was
+    // published at rather than an empty picker that reads as "ungraded". Null when
+    // the row carries a grade the shared scale does not name — the rail simply
+    // opens unset rather than snapping the climb to a neighbouring grade.
+    const serverSetterGrade = getDifficultyIdForGradeName(editClimb.difficulty);
     const serverSignature = createPayloadSignature({
       holdsJson: JSON.stringify(serverFrames[0] ?? {}),
       framesJson: JSON.stringify(serverFrames),
@@ -661,6 +788,7 @@ export function useCreateClimbScreen({
       // so counting it here would make the two sides disagree forever and the
       // climb read as permanently edited.
       framesPaceMs: serverFrames.length > 1 ? serverPaceMs : DEFAULT_PACE_MS,
+      setterGradeDifficultyId: serverSetterGrade,
     });
     const serverSnapshot: SavedClimbSnapshot = {
       uuid: editClimb.uuid,
@@ -698,7 +826,10 @@ export function useCreateClimbScreen({
     setNoKickboard(serverNoKickboard);
     setCampusState(serverCampus);
     setAnyFeetState(serverAnyFeet);
+    setSetterGradeDifficultyId(serverSetterGrade);
     setIsDraft(serverIsDraft);
+    // The server copy is this session's starting point for the feet rule too.
+    previousHasFeetRef.current = null;
 
     // ORDERING IS LOAD-BEARING. The `edit:` slot is applied OVER the server copy,
     // and `restoredRef` opens only once that has resolved. Set it any earlier and
@@ -836,6 +967,7 @@ export function useCreateClimbScreen({
     // at all, so a leftover one from a spell in route mode must not make two
     // identical boulders look like different payloads.
     framesPaceMs: publishedFramesPace ?? DEFAULT_PACE_MS,
+    setterGradeDifficultyId,
   });
   const payloadSignatureRef = useRef(payloadSignature);
   payloadSignatureRef.current = payloadSignature;
@@ -859,6 +991,7 @@ export function useCreateClimbScreen({
       noKickboard,
       campus,
       anyFeet,
+      setterGradeDifficultyId,
       routeMode,
       framesPaceMs,
       savedClimbJson,
@@ -875,6 +1008,7 @@ export function useCreateClimbScreen({
       noKickboard,
       campus,
       anyFeet,
+      setterGradeDifficultyId,
       routeMode,
       framesPaceMs,
       isDraft,
@@ -1107,7 +1241,9 @@ export function useCreateClimbScreen({
       setNoMatch(false);
       setNoKickboard(false);
       setCampusState(false);
-      setAnyFeetState(false);
+      setAnyFeetState(defaultAnyFeet(board.boardName));
+      setSetterGradeDifficultyId(null);
+      previousHasFeetRef.current = null;
       // A blank climb is nobody's remix and nobody's edit, so it inherits no
       // MoonBoard method either — the Any-feet row comes back with it.
       setSeededMethod(null);
@@ -1137,7 +1273,7 @@ export function useCreateClimbScreen({
     } finally {
       startNewInFlightRef.current = false;
     }
-  }, [resetHolds, discardAutosaveSlot, isEditing, isForking, onStartedNewClimb, reclaimWall]);
+  }, [resetHolds, discardAutosaveSlot, isEditing, isForking, onStartedNewClimb, reclaimWall, board.boardName]);
 
   const confirmNewClimb = useCallback(() => {
     if (saveInFlightRef.current || startNewInFlightRef.current) return;
@@ -1196,7 +1332,10 @@ export function useCreateClimbScreen({
       // update path; revisit if it shows up in offline-first flows.
       userId: profile?.id ?? null,
       description,
-      angle: board.angle,
+      // The wall's own angle on a spray board, the caller's everywhere else —
+      // the same value Save writes, so "Set as active" queues the climb at the
+      // angle it will be published at.
+      angle: authoringAngle(board.boardName, board.layoutId, board.angle),
       ascensionist_count: 0,
       difficulty: '',
       quality_average: '0',
@@ -1301,7 +1440,12 @@ export function useCreateClimbScreen({
   // tightening it would regress every draft that saves today, and a disabled Save
   // with nothing to say is worse than a silent no-op. While this is true, the
   // status line names the missing requirement directly under the button.
-  const publishBlocked = !isDraft && hasContent && !canPublish;
+  // The setter's own grade, where the board has no crowd grade behind it. Shown
+  // whenever the board asks for one; REQUIRED only to publish, because the grade
+  // is the last thing a setter decides and a draft has to be leavable without it.
+  const showSetterGrade = requiresSetterGrade(board.boardName);
+  const setterGradeMissing = showSetterGrade && !isDraft && setterGradeDifficultyId === null;
+  const publishBlocked = !isDraft && hasContent && (!canPublish || setterGradeMissing);
   const localPersistenceAvailable = isDraftStorageAvailable();
   const saveFailed = failedSignature !== null && failedSignature === payloadSignature;
 
@@ -1315,10 +1459,20 @@ export function useCreateClimbScreen({
           hasUnsavedEdits,
           saveFailed,
           publishBlocked,
+          publishBlockedByGrade: publishBlocked && setterGradeMissing,
         },
         t,
       ),
-    [hasContent, localPersistenceAvailable, savedClimb, hasUnsavedEdits, saveFailed, publishBlocked, t],
+    [
+      hasContent,
+      localPersistenceAvailable,
+      savedClimb,
+      hasUnsavedEdits,
+      saveFailed,
+      publishBlocked,
+      setterGradeMissing,
+      t,
+    ],
   );
 
   // Signal the screen should focus the header name field (e.g. on a save with
@@ -1333,8 +1487,9 @@ export function useCreateClimbScreen({
       return;
     }
     if (editLocked) return;
-    // Drafts stay cheap; publishing needs a start and a finish.
-    if (isDraft ? !canSave : !canPublish) return;
+    // Drafts stay cheap; publishing needs a start, a finish, and — on a board with
+    // no crowd grade — the setter's own grade.
+    if (isDraft ? !canSave : !canPublish || setterGradeMissing) return;
     if (name.trim() === '') {
       requestFocusName();
       return;
@@ -1364,6 +1519,21 @@ export function useCreateClimbScreen({
     // exact value, so the string must match web for these create-climb events.
     const boardLayout = getLayoutName(board.boardName, board.layoutId);
     const characteristics = buildToggleableCharacteristics(noKickboard, campus);
+    // A spray wall does not adjust, so the climb is set at the WALL's angle, not
+    // at whatever the route params carried — `assertSprayAngleMatchesWall` rejects
+    // any other outright. A no-op on every catalogue board.
+    const savedAngle = authoringAngle(board.boardName, board.layoutId, board.angle);
+    // The share-link capability for an unlisted wall; ignored by the server when
+    // the caller is the owner or a gym member, `undefined` off a spray wall.
+    const sprayWallUuid = sprayWallUuidFor(board.boardName, board.layoutId);
+    // The grade string the server grades against — `board_difficulty_grades.boulder_name`
+    // for this board, which is the shared Boardsesh scale a wall copies.
+    // `|| undefined`, not just the null check: `getGradeLabel` answers `''` for an
+    // id the bundled table does not name, and an empty string passes the server's
+    // `userGrade != null` guard — so it would come back as `"" is not a grade on
+    // the Boardsesh scale` instead of simply saying nothing about the grade.
+    const userGrade =
+      setterGradeDifficultyId !== null ? getGradeLabel(setterGradeDifficultyId) || undefined : undefined;
     let nextSavedClimb: SavedClimbSnapshot | null = null;
     try {
       if (canUpdate && savedClimb) {
@@ -1373,7 +1543,7 @@ export function useCreateClimbScreen({
           name: name.trim(),
           description: fullDescription,
           frames,
-          angle: board.angle,
+          angle: savedAngle,
           // The size the editor painted on. Immutable server-side for a board
           // whose hold ids are size-relative (Woods); sent on every update so the
           // server can reject a mismatch outright instead of rewriting a climb
@@ -1388,6 +1558,10 @@ export function useCreateClimbScreen({
           // `false` is how a rule gets turned back off.
           noMatch,
           anyFeet,
+          // Needed to publish a draft that was saved without a grade: the server
+          // takes it from the stats row `saveClimb` seeded, or from here.
+          userGrade,
+          sprayWallUuid,
         });
         nextSavedClimb = {
           uuid: result.uuid,
@@ -1416,10 +1590,12 @@ export function useCreateClimbScreen({
           frames,
           frames_count: frameCount,
           frames_pace: publishedFramesPace ?? 0,
-          angle: board.angle,
+          angle: savedAngle,
           characteristics,
           no_match: noMatch,
           any_feet: anyFeet,
+          user_grade: userGrade,
+          spray_wall_uuid: sprayWallUuid,
         });
         nextSavedClimb = {
           uuid: result.uuid,
@@ -1468,6 +1644,9 @@ export function useCreateClimbScreen({
       void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
       setJustSaved(true);
+      // Seed the next climb's picker with what this one published at — a session
+      // on one wall clusters hard around two or three grades.
+      if (!isDraft && showSetterGrade) rememberLastUsedGrade(setterGradeDifficultyId);
       showToast(isDraft ? t('mobile.create.save.draftToast') : t('mobile.create.save.publishedToast'), 'success');
       // A publish is commit-and-done — dismiss the drawer so the toast shows
       // over the climbs list (drafts stay open so you can keep editing).
@@ -1519,6 +1698,10 @@ export function useCreateClimbScreen({
     noKickboard,
     campus,
     anyFeet,
+    setterGradeDifficultyId,
+    setterGradeMissing,
+    showSetterGrade,
+    rememberLastUsedGrade,
     isDraft,
     autosaveSlotKey,
     discardAutosaveSlot,
@@ -1655,6 +1838,15 @@ export function useCreateClimbScreen({
      *  which the editor cannot change — the form hides the row rather than
      *  offering a toggle that would contradict the row it is editing. */
     anyFeetAvailable,
+    /** True on a board with no crowd grade, where the climb publishes with the
+     *  setter's own grade (a spray wall). The form shows the grade rail only then. */
+    showSetterGrade,
+    /** The picked grade as a difficulty id on the shared Boardsesh scale, or null. */
+    setterGradeDifficultyId,
+    setSetterGradeDifficultyId,
+    /** True while publishing is selected and the missing setter grade is what is
+     *  blocking it — the form's subtitle and the status line both say so. */
+    setterGradeMissing,
     /** Whether this board's climbs can hold more than one frame. Off on Woods,
      *  whose BLE packet builder rejects the comma a second frame introduces. */
     supportsMultiFrame,
