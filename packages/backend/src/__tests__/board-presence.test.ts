@@ -85,6 +85,16 @@ beforeAll(async () => {
       setIds: [1, 2],
       associationIdBase: 2_100_413_030,
     },
+    // The one board that routes a negative angle (-5 slab), so the recent-senders
+    // angle contract has something to accept there and reject on kilter.
+    {
+      boardType: 'grasshopper',
+      productId: 2_100_412_900,
+      layoutId: 1,
+      sizeId: 10,
+      setIds: [1, 2],
+      associationIdBase: 2_100_413_040,
+    },
   ]);
 });
 
@@ -1484,7 +1494,53 @@ describe('board-presence resolvers', () => {
       expect(senders.map((sender) => sender.userId)).toEqual([TEST_USER_ID]);
     });
 
-    it('validates climb UUID and angle before querying ticks', async () => {
+    it('rejects a blank climb UUID before querying ticks', async () => {
+      const boardId = await makeBoard();
+      await expect(
+        boardPresenceQueries.boardClimbRecentSenders(undefined, { boardId, climbUuid: '   ', angle: 40 }, authCtx()),
+      ).rejects.toThrow('Climb UUID cannot be empty');
+    });
+
+    it('rejects every angle no tick could have been written at', async () => {
+      // The args schema tracks SaveTickInputSchema: -5..90 plus the per-board
+      // negative-tilt check. An angle outside that can never match a stored
+      // tick, so it is a client bug and fails loudly instead of reading as a
+      // quiet wall. `makeBoard` builds a kilter board, which routes no negative
+      // angle at all — hence -5 is rejected here but accepted for grasshopper
+      // in the case below.
+      const boardId = await makeBoard();
+      for (const angle of [91, -6, -5]) {
+        await expect(
+          boardPresenceQueries.boardClimbRecentSenders(
+            undefined,
+            { boardId, climbUuid: TEST_CLIMB_UUID, angle },
+            authCtx(),
+          ),
+        ).rejects.toThrow('Invalid recent senders');
+      }
+    });
+
+    it('accepts a negative board angle on the board that routes one', async () => {
+      // Grasshopper's -5 slab is the one negative angle any board takes, and
+      // its ticks carry that angle — clamping the schema to 0 would leave those
+      // walls permanently without a byline.
+      const grasshopper = await boardPresenceMutations.resolveBoardForConfig(
+        undefined,
+        { boardType: 'grasshopper', layoutId: 1, sizeId: 10, setIds: '1,2' },
+        authCtx(),
+      );
+      await expect(
+        boardPresenceQueries.boardClimbRecentSenders(
+          undefined,
+          { boardId: grasshopper.boardId, climbUuid: TEST_CLIMB_UUID, angle: -5 },
+          authCtx(),
+        ),
+      ).resolves.toEqual([]);
+    });
+
+    it('returns no senders for a valid angle nobody has ticked', async () => {
+      // 90 is inside the write range, so this is a genuinely empty result, not
+      // a rejection — the distinction the two cases above turn on.
       const boardId = await makeBoard();
       await expect(
         boardPresenceQueries.boardClimbRecentSenders(
@@ -1493,36 +1549,6 @@ describe('board-presence resolvers', () => {
           authCtx(),
         ),
       ).resolves.toEqual([]);
-      await expect(
-        boardPresenceQueries.boardClimbRecentSenders(undefined, { boardId, climbUuid: '   ', angle: 40 }, authCtx()),
-      ).rejects.toThrow('Climb UUID cannot be empty');
-      await expect(
-        boardPresenceQueries.boardClimbRecentSenders(
-          undefined,
-          { boardId, climbUuid: TEST_CLIMB_UUID, angle: 91 },
-          authCtx(),
-        ),
-      ).rejects.toThrow('Invalid recent senders');
-    });
-
-    it('accepts a negative board angle so tilted walls still get a sender row', async () => {
-      // Aurora boards run on negative tilt and log ticks at that angle, so this
-      // schema tracks BoardPresenceAngleSchema's -90..90 rather than clamping to 0.
-      const boardId = await makeBoard();
-      await expect(
-        boardPresenceQueries.boardClimbRecentSenders(
-          undefined,
-          { boardId, climbUuid: TEST_CLIMB_UUID, angle: -5 },
-          authCtx(),
-        ),
-      ).resolves.toEqual([]);
-      await expect(
-        boardPresenceQueries.boardClimbRecentSenders(
-          undefined,
-          { boardId, climbUuid: TEST_CLIMB_UUID, angle: -91 },
-          authCtx(),
-        ),
-      ).rejects.toThrow('Invalid recent senders');
     });
   });
 

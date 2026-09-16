@@ -74,9 +74,13 @@ export function useBoardClimbRecentSenders({
     angle !== null &&
     angle !== undefined &&
     Number.isInteger(angle) &&
-    // Matches BoardClimbRecentSendersArgsSchema on the backend — Aurora boards
-    // run on negative tilt too, and those ticks carry the negative angle.
-    angle >= -90 &&
+    // Matches BoardClimbRecentSendersArgsSchema's numeric bound on the backend,
+    // which in turn tracks the tick-write range: no tick can carry an angle
+    // outside it, so a request for one has nothing to find. The backend also
+    // rejects negative tilt on boards that do not have it — that check needs
+    // the board type, which this hook does not carry, and a rejection lands in
+    // the same empty-byline path as any other failure below.
+    angle >= -5 &&
     angle <= 90;
   const currentCacheKey = canFetch ? senderCacheKey(boardId, normalizedClimbUuid, angle) : null;
   const [snapshot, setSnapshot] = useState<RecentSendersSnapshot>(EMPTY_RECENT_SENDERS_SNAPSHOT);
