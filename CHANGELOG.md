@@ -26,6 +26,7 @@ A new version shipped to the App Store.
 
 ### Fixed
 
+- Tester-only screen behind Development; never reaches a climber. ([#5519](https://github.com/boardsesh/boardsesh/pull/5519))
 - Board art on the web now fills in once a slow load finishes, instead of leaving you with rings. ([#5502](https://github.com/boardsesh/boardsesh/pull/5502))
 - Tester-only screen behind Development; never reaches a climber. ([#5517](https://github.com/boardsesh/boardsesh/pull/5517))
 
