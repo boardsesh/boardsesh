@@ -12,6 +12,8 @@
 // and the test that matters is the round trip.
 
 import { mapPoint, mapRadius, mapRing, type Homography } from '@boardsesh/spray-wall-geometry';
+import { roundRing } from '@boardsesh/board-art-geometry/ring';
+import { OUTLINE_DECIMALS } from '../../components/outline-editor/stroke';
 import type { CanonicalSprayHold } from './spray-hold-geometry';
 
 /** A hold as the editor holds it: photo pixels, ring in units of the photo radius. */
@@ -21,9 +23,6 @@ export type PhotoSprayHold = {
   r: number;
   outline?: readonly number[] | null;
 };
-
-/** Decimals a stored ring keeps. The backend's `OUTLINE_DECIMALS`; see `stroke.ts`. */
-const OUTLINE_DECIMALS = 4;
 
 /**
  * Smallest canonical radius a hold may be written at.
@@ -48,12 +47,6 @@ const MAX_CANONICAL_RADIUS = 10_000;
 
 function isFinitePair(x: number, y: number): boolean {
   return Number.isFinite(x) && Number.isFinite(y);
-}
-
-function round(value: number, decimals: number): number {
-  const scale = 10 ** decimals;
-  const rounded = Math.round(value * scale) / scale;
-  return rounded === 0 ? 0 : rounded;
 }
 
 /**
@@ -90,9 +83,12 @@ function mapOutlineToCanonical(
     const offsetX = (canonicalRing[index] - canonicalCx) / canonicalR;
     const offsetY = (canonicalRing[index + 1] - canonicalCy) / canonicalR;
     if (!isFinitePair(offsetX, offsetY)) return undefined;
-    relative.push(round(offsetX, OUTLINE_DECIMALS), round(offsetY, OUTLINE_DECIMALS));
+    relative.push(offsetX, offsetY);
   }
-  return relative;
+  // `roundRing` rather than a local rounder: it is the same function `stroke.ts`
+  // rounds a drawn ring with, including the `-0` collapse, so a silhouette that
+  // survives a homography is rounded exactly as one that never left the photo.
+  return roundRing(relative, OUTLINE_DECIMALS);
 }
 
 /**

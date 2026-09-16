@@ -133,10 +133,11 @@ export const SprayEditToolbar = React.memo(function SprayEditToolbar({
   // Zipped against SIZE_PRESETS by key rather than looked up with a computed
   // `t(...)`: the i18n linter only accepts literal keys, and a dynamic one is
   // also invisible to the orphan scanner.
-  // Each row carries its OWN press handler rather than an inline closure built
-  // per render: the mobile perf checklist's "no inline closures" rule, and here
-  // it also keeps `Button`'s memoisation intact across a toolbar that re-renders
-  // on every selection change.
+  // Each row's press handler is a closure, but one built inside this `useMemo`
+  // rather than freshly in the JSX on every render. The perf checklist's rule is
+  // about closure IDENTITY, and a stable one is what keeps `Button`'s
+  // memoisation intact across a toolbar that re-renders on every selection
+  // change.
   const sizeOptions = useMemo(
     () => [
       { key: 'S' as const, label: t('sprayEditor.size.s'), onPress: () => onResize('S') },
