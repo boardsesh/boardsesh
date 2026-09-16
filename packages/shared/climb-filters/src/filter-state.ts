@@ -59,6 +59,7 @@ export type ClimbFilterState = {
   minRating?: number;
   gradeAccuracy?: GradeAccuracyValue;
   setter?: string[];
+  onlyFollowedAuthors?: boolean;
   onlyTallClimbs?: boolean;
   onlyWideClimbs?: boolean;
   onlyWithBetaVideos?: boolean;
@@ -108,6 +109,7 @@ export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
   if (state.minRating != null) return true;
   if (state.gradeAccuracy != null) return true;
   if (state.setter != null && state.setter.length > 0) return true;
+  if (state.onlyFollowedAuthors) return true;
   if (state.onlyTallClimbs) return true;
   if (state.onlyWideClimbs) return true;
   if (state.onlyWithBetaVideos) return true;
@@ -209,6 +211,7 @@ export function toClimbSearchInput(
   if (state.minRating != null) input.minRating = state.minRating;
   if (state.gradeAccuracy != null) input.gradeAccuracy = state.gradeAccuracy;
   if (state.setter != null && state.setter.length > 0) input.setter = state.setter;
+  if (state.onlyFollowedAuthors) input.onlyFollowedAuthors = true;
   if (state.onlyTallClimbs) input.onlyTallClimbs = true;
   if (state.onlyWideClimbs) input.onlyWideClimbs = true;
   if (state.onlyWithBetaVideos) input.onlyWithBetaVideos = true;

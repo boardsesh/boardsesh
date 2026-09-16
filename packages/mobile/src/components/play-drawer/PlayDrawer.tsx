@@ -22,6 +22,7 @@ import {
 import { ScrollView, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useAnimatedReaction, useSharedValue, runOnJS } from 'react-native-reanimated';
 import { router } from 'expo-router';
+import { reportHandledError } from '../../lib/error-reporting';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
@@ -549,6 +550,22 @@ export function PlayDrawer({
    * longer on the wall, so the editor opens with exactly the holds that survived.
    */
   const { openRemix } = useCreateClimbNavigation({ dismissPlayerAndWait });
+  const openingSetterRef = useRef(false);
+  const openSetterPlaylist = useCallback(() => {
+    const username = displayedClimb?.setter_username;
+    if (!username || openingSetterRef.current) return;
+    openingSetterRef.current = true;
+    void (async () => {
+      try {
+        if (dismissPlayerAndWait && (await dismissPlayerAndWait()).status === 'aborted') return;
+        router.push({ pathname: '/(tabs)/climbs/setter/[username]', params: { username } });
+      } catch (error) {
+        reportHandledError(error, { tags: { source: 'setter-playlist-handoff' } });
+      } finally {
+        openingSetterRef.current = false;
+      }
+    })();
+  }, [displayedClimb?.setter_username, dismissPlayerAndWait]);
   const lostHoldCount = displayedClimb?.missingHoldCount ?? 0;
   const handleRemixLostHolds = useCallback(() => {
     if (!displayedClimb) return;
@@ -1828,6 +1845,7 @@ export function PlayDrawer({
                                 ) : undefined
                               }
                               onLongPressName={handleCopyName}
+                              onPressSetter={openSetterPlaylist}
                             />
                           }
                           peek={

@@ -4,6 +4,7 @@ import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, isSizeScopedBoard } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
+import { followedAuthorsLocalCondition } from './followed-authors-local';
 
 /**
  * On-device climb search over local SQLite (board_climbs ⋈ board_climb_stats),
@@ -220,7 +221,11 @@ function ticksExists(negated: boolean, statusSql: string): string {
 
 type JoinAndWhere = { joinSql: string; whereSql: string; joinBinds: Bind[]; whereBinds: Bind[] };
 
-function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null): JoinAndWhere {
+function buildJoinAndWhere(
+  input: ClimbSearchInput,
+  ownerUserId: string | null,
+  followedCondition?: { sql: string; binds: string[] },
+): JoinAndWhere {
   const boardType = input.boardName;
   const angle = input.angle;
   const setIds = parseSetIds(input.setIds);
@@ -261,6 +266,7 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
   };
 
   // Base: board / layout / listed / non-draft.
+  if (followedCondition) push(followedCondition.sql, ...followedCondition.binds);
   push('c.board_type = ?', boardType);
   push('c.layout_id = ?', input.layoutId);
   push('c.is_listed = 1');
@@ -618,7 +624,8 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const sortBy = normalizeSortBy(input.sortBy);
   const sortOrder = input.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
-  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId);
+  const followedCondition = input.onlyFollowedAuthors ? await followedAuthorsLocalCondition(db) : undefined;
+  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId, followedCondition);
 
   // Re-derived from the same two inputs buildJoinAndWhere used, so the SELECT and
   // the ORDER BY read the same row the WHERE filtered on.
@@ -688,7 +695,8 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
 
 export async function countClimbsLocal(db: OfflineDatabase, input: ClimbSearchInput): Promise<number> {
   const ownerUserId = await getLocalUserId(db);
-  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId);
+  const followedCondition = input.onlyFollowedAuthors ? await followedAuthorsLocalCondition(db) : undefined;
+  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId, followedCondition);
   const query = `
     SELECT COUNT(*) AS total
     FROM board_climbs c

@@ -24,6 +24,7 @@ import { clearUserData } from '../db/connection';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { reportError } from '../lib/error-reporting';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
+import { useFollowedAuthors } from '../lib/graphql/hooks/use-followed-authors';
 
 /**
  * Publishes the permanently enabled native offline engine to the module-level
@@ -54,6 +55,7 @@ export function OfflineEngineFlagSync() {
  * host app — offline sync is best-effort and must not take the UI down with it.
  */
 export function OfflineSyncBridge() {
+  useFollowedAuthors();
   // Not `useSQLiteContext()` directly: a dead-handle recovery opens a REPLACEMENT
   // connection without the provider ever re-rendering, so the context value would
   // still be the wrapper around the dead native instance (#5410).

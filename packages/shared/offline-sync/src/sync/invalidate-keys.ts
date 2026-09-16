@@ -51,13 +51,26 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   //   overwritten by a network refetch that raced the drain.
   user_favorites: [['searchClimbs'], ['infiniteSearchClimbs'], ['favoriteStatus']],
 
-  user_follows: [['followers'], ['following']],
+  user_follows: [
+    ['followers'],
+    ['following'],
+    ['followedAuthors'],
+    ['crewFeed'],
+    ['setterStats'],
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+  ],
 
-  // Deliberately empty, not a placeholder key. Nothing on mobile reads a setter's
-  // follow state yet — the setter surface shows ['setterStats'], which this table
-  // does not feed. The old ['setterFollows'] key looked like coverage and was
-  // not. Give this real keys when a follow-a-setter surface ships.
-  setter_follows: [],
+  // Following-only catalogue reads, Crew and the complete author snapshot.
+  setter_follows: [
+    ['followedAuthors'],
+    ['crewFeed'],
+    ['setterStats'],
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+  ],
 
   // Playlist follow state is a field on the playlist detail row
   // (isFollowedByMe + followerCount on ['playlist', uuid]), not its own query.
@@ -79,7 +92,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['boardseshGradesForAngles'],
   ],
 
-  // Deliberately empty, like `setter_follows` — not a placeholder.
+  // Deliberately empty — not a placeholder.
   //
   // A wall's holds and photo are read back through the spray wall registry
   // (`packages/mobile/src/lib/spray/spray-wall-registry.ts`, SW-07 / #5440),

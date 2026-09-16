@@ -64,6 +64,12 @@ export function getActiveFilterTokens({
   const labels = buildFilterLabels(t);
   const sortLabel = buildSortLabel(t);
   const tokens: FilterToken[] = [];
+  if (filters.onlyFollowedAuthors)
+    tokens.push({
+      key: 'onlyFollowedAuthors',
+      label: t('authors.followingClimbs'),
+      clear: () => patchFilters({ onlyFollowedAuthors: undefined }),
+    });
 
   // Grade — only when grades data has loaded, so the label is a real grade name
   // rather than the "#42" id fallback.

@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+vi.mock('../../lib/graphql/hooks/use-followed-authors', () => ({ useFollowedAuthors: () => ({}) }));
 
 // The analytics barrel reaches posthog-react-native; stub it so the module scan
 // never parses it. The two flag readers are what FeatureFlagsProvider itself

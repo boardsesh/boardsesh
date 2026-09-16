@@ -23,7 +23,21 @@ const params = vi.hoisted(() => ({
 const emitMock = vi.hoisted(() => vi.fn());
 // Captures navigation.setOptions calls so tests can assert the headerRight
 // "Clear all" shows only while setters are selected; goBack is the footer's pop.
-const navMock = vi.hoisted(() => ({ setOptions: vi.fn(), goBack: vi.fn() }));
+const navMock = vi.hoisted(() => ({
+  setOptions: vi.fn(),
+  goBack: vi.fn(),
+  push: vi.fn(),
+  addListener: vi.fn((_event: string, handler: () => void) => {
+    focus.cleanup = handler;
+    return () => {};
+  }),
+}));
+const followMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+vi.mock('../../../../src/lib/graphql/hooks/use-followed-authors', () => ({
+  useFollowedAuthors: () => ({ data: {}, setterNames: new Set(['alice']) }),
+  useToggleAuthorFollow: () => ({ mutate: followMock, isPending: false }),
+}));
 const setterStats = vi.hoisted(() => ({
   data: [
     { setterUsername: 'alice', climbCount: 5 },
@@ -53,6 +67,7 @@ vi.mock('expo-router', () => ({
   useLocalSearchParams: () => params.value,
   // The screen drives the native header (title + headerRight) through setOptions.
   useNavigation: () => navMock,
+  useRouter: () => navMock,
   // Run the effect immediately and stash its cleanup so the test can fire it.
   useFocusEffect: (effect: () => void | (() => void)) => {
     const cleanup = effect();
@@ -217,7 +232,7 @@ describe('SettersFilterScreen', () => {
     expect(lastHeaderRight()).toBeTypeOf('function');
   });
 
-  it('hands the selected setters back without apply when the screen loses focus', () => {
+  it('hands the selected setters back without apply when the screen is removed', () => {
     const { getByLabelText } = render(<SettersFilterScreen />);
 
     fireEvent.click(getByLabelText('alice'));
@@ -229,6 +244,22 @@ describe('SettersFilterScreen', () => {
     // Exactly one argument: back keeps the picks as a sheet draft.
     expect(emitMock.mock.calls[0]).toEqual([['alice']]);
     expect(navMock.goBack).not.toHaveBeenCalled();
+  });
+
+  it('opens a setter playlist without handing the filter draft back', () => {
+    const { getByText } = render(<SettersFilterScreen />);
+    fireEvent.click(getByText('alice'));
+    expect(navMock.push).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/setter/[username]',
+      params: { username: 'alice' },
+    });
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it('follows an accountless setter from its row', () => {
+    const { getByText } = render(<SettersFilterScreen />);
+    fireEvent.click(getByText('authors.follow'));
+    expect(followMock).toHaveBeenCalledWith({ kind: 'setter', identifier: 'bob', follow: true });
   });
 
   it('seeds the selection from the route param', () => {

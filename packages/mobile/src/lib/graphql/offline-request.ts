@@ -7,6 +7,8 @@ import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '.
 import { getClimbLocal } from '../../db/queries/get-climb-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
 import { getSetterStatsLocal } from '../../db/queries/get-setter-stats-local';
+import { canReadFollowedAuthors } from '../../db/queries/followed-authors-local';
+import { FollowedAuthorsUnavailableError } from '../followed-authors-error';
 import { isBoardDownloadedLocally, isBoardTypeDownloadedLocally } from '../../db/queries/board-download-status';
 import { getHttpClient } from './client';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
@@ -93,7 +95,11 @@ function registerOfflineOperation<TVariables, TResponse>(operation: OfflineOpera
 // MUST stay first: the sync short-circuit avoids the async mmkv lazy-import
 // inside `isBoardDownloadedLocally` when the filter isn't expressible on-device.
 async function canServeSearchLocal(db: SQLiteDatabase, { input }: SearchClimbsQueryVariables): Promise<boolean> {
-  return isOfflineSearchSupported(input) && (await isBoardDownloadedLocally(db, scopeOf(input)));
+  return (
+    isOfflineSearchSupported(input) &&
+    (await isBoardDownloadedLocally(db, scopeOf(input))) &&
+    (!input.onlyFollowedAuthors || (await canReadFollowedAuthors(db)))
+  );
 }
 
 // A search can come back empty offline for two very different reasons, and the
@@ -163,7 +169,9 @@ registerOfflineOperation<GetSetterStatsQueryVariables, GetSetterStatsQueryRespon
   document: GET_SETTER_STATS,
   surface: 'setter_stats',
   boardNameOf: ({ input }) => input.boardName,
-  canServeLocal: (db, { input }) => isBoardDownloadedLocally(db, scopeOf(input)),
+  canServeLocal: async (db, { input }) =>
+    (await isBoardDownloadedLocally(db, scopeOf(input))) &&
+    (!input.onlyFollowedAuthors || (await canReadFollowedAuthors(db))),
   resolveLocal: async (db, { input }) => ({ setterStats: await getSetterStatsLocal(db, input) }),
   offlineFallback: () => ({ setterStats: [] }),
 });
@@ -302,6 +310,8 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
           return localResponse;
         }
       } else if (!isOnline) {
+        const input = (variables as { input?: { onlyFollowedAuthors?: boolean } } | undefined)?.input;
+        if (input?.onlyFollowedAuthors) throw new FollowedAuthorsUnavailableError();
         // Offline with nothing local to serve — the surface gets an empty
         // result. `variables` can legitimately be undefined here (a registered
         // document called without them degrades to the fallback), and every

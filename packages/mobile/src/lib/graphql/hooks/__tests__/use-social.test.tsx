@@ -13,6 +13,10 @@ import {
 import type { FollowConnection, UserSearchConnection, VoteSummary } from '@boardsesh/shared-schema';
 
 const requestMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../../hooks/use-current-user-id', () => ({
+  useStoredUserId: () => ({ userId: 'me', isLoading: false }),
+}));
+vi.mock('../../../../db', () => ({ getDatabaseHandle: () => null }));
 
 vi.mock('../../client', () => ({
   getHttpClient: () => ({ request: requestMock }),

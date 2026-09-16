@@ -19,6 +19,53 @@ import { notifyOutboxChanged } from '../offline/outbox-store';
 import { localWriteRetryOptions } from '../offline/local-write-telemetry';
 import { takeInjectedWriteFault } from '../offline/dev/write-fault-injection';
 import type { SaveTickMutationVariables } from '../lib/graphql/operations';
+import { readAuthorSnapshot, saveAuthorSnapshot, updateAuthorSnapshot } from '../db/queries/followed-authors-local';
+
+export async function writeAuthorFollowLocal(
+  db: OfflineDatabase,
+  userId: string,
+  kind: 'setter' | 'user',
+  identifier: string,
+  follow: boolean,
+): Promise<void> {
+  const table = kind === 'setter' ? 'setter_follows' : 'user_follows';
+  const column = kind === 'setter' ? 'setter_username' : 'following_id';
+  const payload = kind === 'setter' ? { setterUsername: identifier } : { followingId: identifier };
+  const operation = follow ? 'create' : 'delete';
+  const enqueueOutcome = newEnqueueOutcome();
+  await runLocalWrite(db, table, operation, async (txn) => {
+    if ((await getLocalUserId(txn)) !== userId) throw new Error('Offline follow belongs to another account');
+    const now = new Date().toISOString();
+    if (follow) {
+      await txn.runAsync(
+        `INSERT OR IGNORE INTO ${table} (${column}, follower_id, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+        [identifier, userId, now, now],
+      );
+    } else {
+      await txn.runAsync(`DELETE FROM ${table} WHERE ${column} = ?`, [identifier]);
+    }
+    await txn.runAsync("DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'", [
+      `${follow ? 'del' : 'add'}:${table}:${identifier}`,
+    ]);
+    enqueueOutcome.result = await enqueue(
+      txn,
+      table,
+      operation,
+      payload,
+      `${follow ? 'add' : 'del'}:${table}:${identifier}`,
+    );
+    if (enqueueOutcome.result.existingStatus === 'dead_letter')
+      throw new Error('Resolve the failed follow in Sync issues before retrying');
+    const snapshot = (await readAuthorSnapshot(txn, userId)) ?? {
+      authors: { setterUsernames: [], users: [] },
+      incompleteUserIds: [],
+      complete: false,
+    };
+    await saveAuthorSnapshot(txn, userId, updateAuthorSnapshot(snapshot, kind, identifier, follow));
+  });
+  reportSuppressedEnqueue(table, operation, enqueueOutcome);
+  notifyOutboxChanged();
+}
 
 export type SaveTickInput = SaveTickMutationVariables['input'];
 

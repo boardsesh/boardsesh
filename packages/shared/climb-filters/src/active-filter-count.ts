@@ -11,6 +11,7 @@ import type { ClimbBoardFilterState } from './board-filter-state';
 export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFilters?: ClimbBoardFilterState): number {
   let count = 0;
   if (filters.setter && filters.setter.length > 0) count += 1;
+  if (filters.onlyFollowedAuthors) count += 1;
   if (filters.minAscents != null) count += 1;
   if (filters.minRating != null) count += 1;
   if (filters.gradeAccuracy != null) count += 1;

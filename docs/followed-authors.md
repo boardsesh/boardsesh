@@ -40,3 +40,30 @@ must not drain pages automatically to fill a viewport.
 These APIs are additive. Deploy the backend before releasing the mobile client
 that consumes them. Notification delivery and existing website follows retain
 their current behavior.
+
+## Mobile
+
+The setter picker separates selection (checkbox), opening a setter's computed
+playlist (name), and following (Follow/Unfollow). Its Following toggle filters
+before the top-50 limit. The search sheet's followed-author switch intersects
+with its other filters; setter playlists deliberately start with only the exact
+setter and current board configuration, sorted newest first. Opening a playlist
+does not hand the picker's draft back until the picker is removed.
+
+Crew uses the mixed endpoint across boards. Gym/Everyone keeps the existing
+session feed. New-climb previews use the server-resolved board geometry and fetch
+the full climb through the existing reference-navigation path.
+
+SQLite migration 9 adds an account-keyed author snapshot, cleared on sign-out.
+It stores complete linked-account metadata, including users with no linked
+accounts. Local following searches use the same three membership rules as the
+server and require both a matching signed-in owner and complete author metadata.
+An unknown Boardsesh user can be followed offline, but following-only search
+asks for a sync until that user's linked accounts are known.
+
+Follow writes update SQLite and enqueue the existing Follow/Unfollow operations
+atomically. Opposite pending writes are cancelled, with a corrective final
+mutation always queued. A snapshot refresh cannot overwrite pending changes or
+a toggle that raced its response; the drain and sync invalidations refresh
+author metadata, search/counts, setter lists, and Crew. Existing backend side
+effects that link setter follows to user follows reconcile after delivery.

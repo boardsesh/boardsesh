@@ -1183,6 +1183,14 @@ export function ClimbFilterSheet({
                 </View>
               </Pressable>
 
+              {isAuthenticated ? (
+                <SwitchRow
+                  label={t('authors.followingClimbs')}
+                  value={!!localFilters.onlyFollowedAuthors}
+                  onValueChange={(enabled) => setFiltersPatch({ onlyFollowedAuthors: enabled || undefined })}
+                />
+              ) : null}
+
               <View style={styles.subsectionGap} />
               <Pressable
                 onPress={openHoldFilter}

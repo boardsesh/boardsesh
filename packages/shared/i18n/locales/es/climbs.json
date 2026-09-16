@@ -1,4 +1,21 @@
 {
+  "authors": {
+    "follow": "Seguir",
+    "unfollow": "Dejar de seguir",
+    "following": "Siguiendo",
+    "allSetters": "Todos los setters",
+    "followingClimbs": "Bloques de personas que sigo",
+    "playlistSubtitle": "Todos los bloques de este plafón · Más recientes primero",
+    "signIn": "Inicia sesión para seguir a este setter",
+    "syncNeeded": "Conéctate para sincronizar a quienes sigues y sus setters vinculados.",
+    "followError": "No se pudo actualizar. Inténtalo de nuevo.",
+    "loadError": "No se pudieron cargar estos bloques.",
+    "empty": "Este setter aún no tiene bloques en este plafón.",
+    "chooseBoard": "Elige un plafón",
+    "retry": "Reintentar",
+    "newClimb": "Nuevo bloque",
+    "setBy": "Equipado por {{setter}}"
+  },
   "sends_one": "{{formattedCount}} encadene",
   "sends_other": "{{formattedCount}} encadenes",
   "metadata": {

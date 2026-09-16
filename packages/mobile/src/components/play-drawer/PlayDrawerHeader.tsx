@@ -54,6 +54,7 @@ type PlayDrawerHeaderProps = {
   /** Long-press handler on the name (copies it to the clipboard). When omitted the
    *  name is a plain, non-interactive label — used for the swipe "peek" header. */
   onLongPressName?: () => void;
+  onPressSetter?: () => void;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -71,6 +72,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   isHidden = false,
   leading,
   onLongPressName,
+  onPressSetter,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const resolvedGradeColor = useMemo(
@@ -82,7 +84,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   if (ascensionistCount > 0) subtitleParts.push(formatSends(ascensionistCount, t));
   const qualityNum = qualityAverage == null ? Number.NaN : parseFloat(qualityAverage);
   if (qualityAverage != null && qualityNum > 0) subtitleParts.push(`${formatQuality(qualityAverage)}★`);
-  if (setterUsername) subtitleParts.push(setterUsername);
+  if (setterUsername && !onPressSetter) subtitleParts.push(setterUsername);
 
   // Woods states both rules on every problem, so we do too — see the
   // `explicitClimbRules` capability. Recomputed per climb, which is also what
@@ -138,6 +140,12 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
           </View>
           <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
             {subtitleParts.join(' · ')}
+            {setterUsername && onPressSetter ? (
+              <Text variant="caption1" onPress={onPressSetter} accessibilityRole="link">
+                {subtitleParts.length > 0 ? ' · ' : ''}
+                {setterUsername}
+              </Text>
+            ) : null}
           </Text>
           {/* One caption line, same grey as the subtitle: this is context for a
               climb you can still open by link or queue, not an error. */}
@@ -182,6 +190,7 @@ type LivePlayDrawerHeaderProps = {
   angle: number;
   leading?: ReactNode;
   onLongPressName?: () => void;
+  onPressSetter?: () => void;
 };
 
 /** The only play-header child subscribed to the exact live-stat key. */
@@ -192,6 +201,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
   angle,
   leading,
   onLongPressName,
+  onPressSetter,
 }: LivePlayDrawerHeaderProps) {
   const { resolveGrade } = useDisplayGrade();
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
@@ -213,6 +223,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
       qualityAverage={liveStats.qualityAverage}
       ascensionistCount={liveStats.ascensionistCount}
       setterUsername={climb.setter_username}
+      onPressSetter={onPressSetter}
       benchmarkDifficulty={climb.benchmark_difficulty}
       characteristics={climb.characteristics}
       isNoMatch={climb.is_no_match}

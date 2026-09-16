@@ -29,7 +29,8 @@ export function statusForAuth(filters: ClimbFilters, isAuthenticated: boolean): 
     filters.showOnlyAttempted ||
     filters.showOnlyCompleted ||
     filters.minUserRating != null ||
-    filters.onlyRatedByMe;
+    filters.onlyRatedByMe ||
+    filters.onlyFollowedAuthors;
   if (!needsStatusReset && !needsProgressReset) return filters;
   return {
     ...filters,
@@ -40,5 +41,6 @@ export function statusForAuth(filters: ClimbFilters, isAuthenticated: boolean): 
     showOnlyCompleted: undefined,
     minUserRating: undefined,
     onlyRatedByMe: undefined,
+    onlyFollowedAuthors: undefined,
   };
 }
