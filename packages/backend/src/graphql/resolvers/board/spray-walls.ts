@@ -1102,18 +1102,35 @@ export const sprayWallQueries = {
     // and there is no second predicate to keep in step with the alive rule.
     //
     // `aliveHolds` orders by hold id, so this does too. There is no ranking to
-    // preserve: a commit refuses two additions naming one `movedFromHoldId`, so
-    // each lost hold has at most one successor here.
+    // preserve, but there IS a duplicate to collapse, and a commit alone does not
+    // rule it out: `commitSprayWallVersion` refuses two additions naming one
+    // `movedFromHoldId` AND pins the predecessor to that same commit's removals,
+    // yet `upsertSprayWallHolds` — the ordinary hold editor — accepts a
+    // `movedFromHoldId` at any hold the wall has ever had, an alive one included.
+    // So a hold-editor move off a live hold, followed by a reset that later takes
+    // that same hold off and links its own successor, leaves two alive rows
+    // pointing at one predecessor. Keep the LAST, which is the higher hold id
+    // under `aliveHolds`' ordering: it is the more recently installed of the two,
+    // and the one whose predecessor genuinely came off the wall.
     const lost = new Set(lostHoldIds);
-    const suggestedHoldIds = aliveRows
-      .filter((hold) => hold.movedFromHoldId != null && lost.has(hold.movedFromHoldId))
-      .map((hold) => hold.holdId);
+    const successorByLostHold = new Map<number, number>();
+    for (const hold of aliveRows) {
+      if (hold.movedFromHoldId != null && lost.has(hold.movedFromHoldId)) {
+        successorByLostHold.set(hold.movedFromHoldId, hold.holdId);
+      }
+    }
+    const suggestedHoldIds = [...successorByLostHold.values()].sort((left, right) => left - right);
 
+    // `board_climbs.name` and `.angle` are both nullable, and `SprayRemixSeed`
+    // declares neither nullable. `saveClimb` requires both on a spray climb, so
+    // this is defence in depth — but without it a legacy NULL name would null the
+    // whole seed on a non-null violation, which a client cannot tell apart from
+    // "you may not see this wall", and a NULL angle would quietly read as 0°.
     return {
       parentUuid: parent.uuid,
-      parentName: parent.name,
+      parentName: parent.name || 'Unknown Climb',
       layoutId: parent.layoutId,
-      angle: Number(parent.angle),
+      angle: Number(parent.angle ?? loaded.board.angle),
       frames: survivingTokens.join(''),
       lostHoldIds,
       keptHoldIds,
