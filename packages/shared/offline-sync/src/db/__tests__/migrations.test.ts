@@ -46,6 +46,7 @@ const EXPECTED_PRIMARY_KEYS: Record<string, string[]> = {
 const ALTER_ADDED_COLUMNS: { version: number; table: string; column: string }[] = [
   { version: 2, table: 'board_climbs', column: 'characteristics' },
   { version: 5, table: 'board_climbs', column: 'is_hidden' },
+  { version: 7, table: 'board_climbs', column: 'missing_hold_count' },
 ];
 
 async function rollBackAlterColumnsAbove(
@@ -223,6 +224,79 @@ describe('runMigrations', () => {
     await runMigrations(upgradedDb);
     expect(await listTables(upgradedDb)).toContain('board_climb_grades');
     expect(await pkQuery(upgradedDb)).toEqual(['board_type', 'climb_uuid', 'angle']);
+  });
+
+  it('v7 adds board_climbs.missing_hold_count, on fresh and on v6-stamped databases', async () => {
+    // The column the offline Intact / Lost-holds filter reads (#5448). It is
+    // nullable on purpose: every catalogue-board climb carries NULL and the
+    // reader COALESCEs that to "intact".
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    expect(await tableColumns(freshDb, 'board_climbs')).toContain('missing_hold_count');
+
+    const upgradedDb = createTestDatabase();
+    await runMigrations(upgradedDb);
+    await rollBackAlterColumnsAbove(upgradedDb, 6);
+    await upgradedDb.execAsync('DROP TABLE IF EXISTS spray_walls');
+    expect(await tableColumns(upgradedDb, 'board_climbs')).not.toContain('missing_hold_count');
+    await upgradedDb.runAsync('UPDATE schema_version SET version = 6 WHERE id = 1');
+    await runMigrations(upgradedDb);
+    expect(await tableColumns(upgradedDb, 'board_climbs')).toContain('missing_hold_count');
+  });
+
+  it('v8 creates spray_walls with its manifest PK + columns, on fresh and on v7-stamped databases', async () => {
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    expect(await listTables(freshDb)).toContain('spray_walls');
+    // `layout_id` is the key every other part of the mirror knows a wall by —
+    // and the single-segment record_id migration 0228's tombstone trigger emits.
+    expect(await primaryKeyColumns(freshDb, 'spray_walls')).toEqual(['layout_id']);
+    const columns = await tableColumns(freshDb, 'spray_walls');
+    for (const column of [
+      'layout_id',
+      'board_uuid',
+      'name',
+      'reference_width',
+      'reference_height',
+      'current_version_number',
+      'photo_key',
+      'holds',
+      'homography',
+      'updated_at',
+      'sync_seq',
+    ]) {
+      expect(columns, `spray_walls.${column}`).toContain(column);
+    }
+    // The presigned photo URL is transient: it rides the payload and is never a
+    // column. A column here would persist a signature that is dead in 15 minutes.
+    expect(columns).not.toContain('photo_url');
+
+    // Existing install stamped at v7: only the pending v8 migration applies.
+    const upgradedDb = createTestDatabase();
+    await runMigrations(upgradedDb);
+    await upgradedDb.execAsync('DROP TABLE spray_walls');
+    await upgradedDb.runAsync('UPDATE schema_version SET version = 7 WHERE id = 1');
+    await runMigrations(upgradedDb);
+    expect(await listTables(upgradedDb)).toContain('spray_walls');
+    expect(await primaryKeyColumns(upgradedDb, 'spray_walls')).toEqual(['layout_id']);
+  });
+
+  it('holds every column the sync config will write, for every syncable table', async () => {
+    // The manifest's whole point: `upsertDocuments` builds
+    // `INSERT INTO <table> (<localColumns ∩ document keys>)`, so a localColumns
+    // entry with no column behind it is a runtime "no such column" on the device
+    // and not a type error anywhere.
+    const db = createTestDatabase();
+    await runMigrations(db);
+    for (const [tableName, config] of Object.entries(TABLE_CONFIGS)) {
+      const columns = await tableColumns(db, tableName);
+      for (const column of config.localColumns) {
+        expect(columns, `${tableName}.${column}`).toContain(column);
+      }
+      for (const column of config.transientColumns ?? []) {
+        expect(columns, `${tableName}.${column} must NOT be stored`).not.toContain(column);
+      }
+    }
   });
 
   it('applies a newly appended migration on top of an older version', async () => {

@@ -11,7 +11,7 @@
 // node-based fake (or node:sqlite) can exercise the version bookkeeping without
 // loading native expo-sqlite.
 
-import { SCHEMA_STATEMENTS } from './schema';
+import { SCHEMA_STATEMENTS, SPRAY_WALLS } from './schema';
 import { applyBusyTimeout } from './pragmas';
 import { requeueTransportDeadLetters, setDeadLetterRecoveryNotice } from '../mutation-queue/dead-letter-recovery';
 import type { OfflineDatabase, SqlExecutor } from '../database';
@@ -114,6 +114,33 @@ export const MIGRATIONS: Migration[] = [
       // notice.
       if (requeued > 0) await setDeadLetterRecoveryNotice(txn, requeued);
     },
+  },
+  {
+    // How many of a climb's holds have come off the wall (server
+    // `board_climbs.missing_hold_count`, materialised by
+    // `recomputeMissingHoldCounts` whenever a spray-wall reset lands). Nullable
+    // INTEGER here because it is nullable there: every climb on the eight
+    // catalogue boards carries NULL, holds do not come off a Kilter.
+    //
+    // This is what lets the offline climb search answer the Intact / Lost-holds
+    // filter (SW-12) instead of declining it. An ALTER rather than a v1 edit, so
+    // an existing database picks it up without a re-crawl — and, deliberately,
+    // WITHOUT a `refreshRevision` bump; see the comment on `board_climbs` in
+    // sync/table-config.ts for why a bump would be the expensive wrong answer.
+    version: 7,
+    statements: ['ALTER TABLE board_climbs ADD COLUMN missing_hold_count INTEGER;'],
+  },
+  {
+    // Spray walls: the photo identity, geometry and holds of a runtime-created
+    // wall (issue #5448). A new per-board reference table, so it is a v8 CREATE
+    // rather than an edit to v1's SCHEMA_STATEMENTS, exactly like
+    // board_climb_grades at v4. The DDL text lives in schema.ts with the rest of
+    // the on-device DDL.
+    //
+    // No index: the table is read by its primary key (`layout_id`) and holds at
+    // most `MAX_SPRAY_WALLS_PER_USER` rows per account.
+    version: 8,
+    statements: [SPRAY_WALLS],
   },
 ];
 
