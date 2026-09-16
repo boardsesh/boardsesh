@@ -57,8 +57,13 @@ describe('toRecentSenders', () => {
 
     expect(senders).toHaveLength(RECENT_CLIMB_SENDERS_LIMIT);
     expect(senders.map((sender) => sender.userId)).toEqual(['user-0', 'user-1', 'user-2', 'user-3', 'user-4']);
-    // Newest row of an 8-row window, so the last daily step: epoch + 7 days.
-    expect(senders[0].lastSentAt).toBe('2026-07-08T10:00:00.000Z');
+    // The newest row is the last daily step of the window. Derived from the
+    // epoch rather than pasted, so raising the fetch limit moves the
+    // expectation with the fixture; built by raw arithmetic rather than
+    // `postgresTimestamp`, so it still pins the unzoned-to-UTC parse instead
+    // of restating the helper that produced the input.
+    const newestSentAt = new Date(WINDOW_EPOCH_MS + (RECENT_CLIMB_SENDERS_FETCH_LIMIT - 1) * ONE_DAY_MS);
+    expect(senders[0].lastSentAt).toBe(newestSentAt.toISOString());
   });
 
   it('prefers profile identity over the auth account', () => {
