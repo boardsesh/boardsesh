@@ -41,7 +41,17 @@ vi.mock('next/link', () => ({
 }));
 
 /** Every static entry in `app/sitemap.ts`. */
-const SITEMAP_PATHS = ['/', '/about', '/help', '/docs', '/playlists', '/aurora-migration', '/legal', '/privacy'];
+const SITEMAP_PATHS = [
+  '/',
+  '/about',
+  '/support',
+  '/help',
+  '/docs',
+  '/playlists',
+  '/aurora-migration',
+  '/legal',
+  '/privacy',
+];
 
 /**
  * Every path the footer links to — a superset of `SITEMAP_PATHS`.

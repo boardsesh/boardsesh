@@ -1,0 +1,114 @@
+/* Color values use CSS custom properties defined in index.css (derived from theme-config.ts) */
+
+.pageLayout {
+  min-height: 100vh;
+  padding-top: var(--global-header-height);
+  background: var(--neutral-50);
+}
+
+.header {
+  background: var(--semantic-surface);
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: var(--shadow-xs);
+}
+
+.headerTitle {
+  margin: 0;
+  flex: 1;
+}
+
+.content {
+  padding: 24px;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+@media (max-width: 576px) {
+  .content {
+    padding: 16px;
+  }
+}
+
+.heroSection {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.heroTitle {
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.heroSubtitle {
+  font-size: 16px;
+}
+
+@media (max-width: 576px) {
+  .heroSubtitle {
+    font-size: 14px;
+  }
+}
+
+.sectionIcon {
+  margin-right: 8px;
+}
+
+.primaryIcon {
+  color: var(--color-primary);
+}
+
+.successIcon {
+  color: var(--color-success);
+}
+
+.warningIcon {
+  color: var(--color-warning);
+}
+
+/* Two donation rails side by side; CSS-only stack on narrow screens so no JS
+   breakpoint detection is needed (CLAUDE.md). */
+.rails {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .rails {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--border-radius-md);
+  background: var(--semantic-surface);
+}
+
+.railTitle {
+  display: flex;
+  align-items: center;
+  margin: 0;
+}
+
+.railCta {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.cardContent {
+  width: 100%;
+}
+
+.callToAction {
+  text-align: center;
+  padding-top: 16px;
+}

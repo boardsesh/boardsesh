@@ -9,6 +9,10 @@
       "title": "About",
       "description": "One app for every climbing board. Open source, community-driven."
     },
+    "support": {
+      "title": "Support Boardsesh",
+      "description": "Boardsesh is free and open source. Chip in for the hosting, database, and infrastructure bills that keep it running."
+    },
     "help": {
       "title": "Help",
       "description": "What you can do on boardsesh.com, what happens in the app, and where to ask for help."
@@ -106,6 +110,42 @@
     },
     "legalLink": "Legal & Intellectual Property Policy",
     "footer": "Made by climbers. Open to everyone."
+  },
+  "support": {
+    "headerTitle": "Support",
+    "hero": {
+      "title": "Keep Boardsesh running",
+      "subtitle": "Free, open source, and paid for by climbers"
+    },
+    "why": {
+      "title": "Why this page exists",
+      "p1": "Boardsesh is free and open source, and it always will be. Running it costs real money: hosting, the database, and infrastructure bills add up as more climbers join.",
+      "p2": "We promise not to enshittify Boardsesh, and self-hosting will always be an option. If you get something out of it and can spare it, chipping in keeps the lights on."
+    },
+    "rails": {
+      "title": "Two ways to chip in"
+    },
+    "sponsors": {
+      "title": "GitHub Sponsors",
+      "body": "Back Boardsesh every month. Easiest if you already have a GitHub account.",
+      "cta": "Sponsor on GitHub →"
+    },
+    "oneTime": {
+      "title": "One-time donation",
+      "body": "Pay by card, Apple Pay, or Google Pay in your browser. No account needed.",
+      "cta": "Give once →"
+    },
+    "honesty": {
+      "title": "The small print",
+      "p1": "Donations are not tax-deductible. Boardsesh is not a charity, just climbers paying the server bill.",
+      "p2": "Your money goes to hosting, the database, and infrastructure. It buys nothing extra in the app: every part of Boardsesh stays open to everyone, sponsor or not."
+    },
+    "thanks": {
+      "title": "Thanks",
+      "body": "To everyone already sponsoring Boardsesh, reporting bugs, sending patches, or translating a screen: thank you. You keep this thing moving."
+    },
+    "aboutLink": "Read more about the project →",
+    "footer": "Free for everyone, funded by whoever can chip in."
   },
   "legal": {
     "headerTitle": "Legal",
