@@ -1,5 +1,6 @@
 import type { FeatureFlagDefinition } from '../providers/feature-flags-provider';
 import type { FeatureFlagOverrides } from '../lib/feature-flag-overrides';
+import { isDevBuild } from '../lib/is-dev-build';
 import { BOOLEAN_FLAG_OPTIONS } from './FeatureFlagsForm.logic';
 import type { FeatureFlagRow } from './FeatureFlagsForm.types';
 
@@ -33,13 +34,22 @@ export function buildFeatureFlagRows(
     const override = overrides[definition.key];
     const base = baseFlags[definition.key];
 
-    const overrideBool = typeof override === 'boolean' ? override : undefined;
+    // A policy-controlled flag's override is dropped by the provider outside a
+    // dev build, so on a store binary this row must not claim to have forced
+    // anything: it reports the live value and says why it cannot be changed.
+    // Rendering the tester's stored choice here would be a toggle that lies.
+    const overrideIgnored = definition.policyControlled === true && !isDevBuild();
+    const honouredOverride = overrideIgnored ? undefined : override;
+
+    const overrideBool = typeof honouredOverride === 'boolean' ? honouredOverride : undefined;
     const baseBool = typeof base === 'boolean' ? base : undefined;
     const choice = overrideBool === undefined ? 'default' : overrideBool ? 'on' : 'off';
     // i18n-ignore-next-line — tester-only screen
     const baseLabel = baseBool === undefined ? 'not set' : baseBool ? 'on' : 'off';
     const configuredValue: boolean | undefined = overrideBool ?? baseBool;
     const effective = configuredValue === true;
+    // i18n-ignore-next-line — tester-only screen
+    const policyNote = overrideIgnored ? ' · override ignored on this build (region-gated)' : '';
     return {
       key: definition.key,
       label: definition.label,
@@ -47,7 +57,7 @@ export function buildFeatureFlagRows(
       options: BOOLEAN_FLAG_OPTIONS,
       choice,
       // i18n-ignore-next-line — tester-only screen
-      effectiveLabel: `Live default: ${baseLabel} · Effective: ${effective ? 'on' : 'off'}`,
+      effectiveLabel: `Live default: ${baseLabel} · Effective: ${effective ? 'on' : 'off'}${policyNote}`,
     };
   });
 }
