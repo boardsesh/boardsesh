@@ -149,7 +149,7 @@
       "kilterNewCopy": "Connectez-vous avec votre identifiant et mot de passe Kilter pour rapatrier vos croix, essais, notes et circuits dans Boardsesh.",
       "kilterSignIn": "Se connecter à Kilter",
       "reconnect": "Reconnecter",
-      "notConnected": "Non lié. Liez votre compte {{boardName}} pour importer vos données Aurora, ou importez depuis un fichier d'export JSON.",
+      "notConnected": "Non lié. Liez votre compte {{boardName}} pour récupérer vos croix, ou importez depuis un fichier d'export JSON.",
       "link": "Lier",
       "import": "Importer",
       "requestData": "Demander vos données",
@@ -177,7 +177,7 @@
     },
     "linkDialog": {
       "title": "Lier le compte {{boardName}}",
-      "description": "Saisissez l'identifiant et le mot de passe de votre compte {{boardName}} Board pour importer vos données Aurora. Vos identifiants sont chiffrés et stockés en sécurité. Les données se synchronisent toutes les 12 heures.",
+      "description": "Connectez-vous comme vous le feriez sur {{boardName}} : avec votre identifiant {{boardName}}, pas votre e-mail. Vos identifiants sont chiffrés avant d'être stockés.",
       "usernameLabel": "Identifiant",
       "usernamePlaceholder": "Votre identifiant",
       "passwordLabel": "Mot de passe",
@@ -185,12 +185,12 @@
       "submit": "Lier le compte",
       "submitting": "Liaison...",
       "linkError": "Liaison du compte impossible",
-      "linkSuccess": "Compte {{boardName}} lié. Vos données arriveront sous 12 heures.",
+      "linkSuccess": "Compte {{boardName}} lié. Vos croix sont en route — la plupart arrivent en quelques minutes.",
       "accountAlreadyLinked": "Un autre membre de Boardsesh a déjà lié ce compte. S'il est à toi, délie-le d'abord de son compte, puis réessaie."
     },
     "kilterLinkDialog": {
       "title": "Se connecter à Kilter",
-      "description": "Saisissez votre identifiant et mot de passe Kilter. Votre mot de passe est échangé contre un jeton sécurisé et n'est jamais stocké. Vos croix se synchronisent sous quelques heures.",
+      "description": "Saisissez votre identifiant et mot de passe Kilter. Votre mot de passe est échangé contre un jeton sécurisé et n'est jamais stocké. Vos croix commencent à arriver en quelques minutes.",
       "passwordHelp": "Fonctionne avec votre connexion Kilter habituelle. Les comptes avec double authentification ou connexion sociale uniquement ne peuvent pas se connecter ainsi — utilisez Importer."
     },
     "unlinkError": "Déliaison du compte impossible",
@@ -201,7 +201,7 @@
       "connected": "Connecté",
       "notConnected": "Non connecté",
       "kilterNotAllowed": "La synchronisation Kilter n'est pas encore activée pour ce compte.",
-      "linkSuccess": "{{boardName}} lié",
+      "linkSuccess": "{{boardName}} lié — vos croix sont en route.",
       "unlinkSuccess": "{{boardName}} délié",
       "unlinkPartial": "{{boardName}} a été retiré ici, mais la session du fournisseur peut rester active.",
       "invalidCredentials": "Cet identifiant ou ce mot de passe n'a pas fonctionné.",

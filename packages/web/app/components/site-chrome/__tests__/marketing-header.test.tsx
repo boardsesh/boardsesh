@@ -376,7 +376,7 @@ describe('MarketingHeader', () => {
       mockPathname = '/aurora-migration';
       render(<MarketingHeader />);
 
-      expect(screen.getByText('Aurora Migration')).toBeTruthy();
+      expect(screen.getByText('Bring your logbook')).toBeTruthy();
       expect(screen.getByTestId('back-button').getAttribute('data-fallback')).toBe('/');
     });
   });
