@@ -134,6 +134,16 @@ function serialFacet(board: BoardLabelSource): string | null {
  * than a raw id.
  */
 export function boardConfigLabel(board: BoardLabelSource): string | null {
+  // A spray wall has no catalogue layout and no catalogue size to name — its
+  // layout row is created at runtime when the owner photographs it, and its size
+  // is that same row. Both facets below would miss the generated tables and
+  // answer null anyway; saying so here makes it a decision rather than an
+  // accident, and keeps the subtitle at `formatBoardDisplayName` ("Spray wall")
+  // instead of some raw id a future table might start returning. The wall's own
+  // name is the row title, and the angle is still available as a disambiguation
+  // facet when two of a climber's walls collide.
+  if (toBoardName(board.boardType) === 'spray') return null;
+
   const parts = [layoutFacet(board), sizeFacet(board)].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(' ') : null;
 }

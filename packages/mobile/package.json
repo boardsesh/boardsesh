@@ -38,6 +38,7 @@
     "@boardsesh/queue-react": "workspace:*",
     "@boardsesh/queue-runtime": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
+    "@boardsesh/spray-wall-geometry": "workspace:*",
     "@boardsesh/velvet-tokens": "workspace:*",
     "@boardsesh/watch-pairing": "workspace:*",
     "@expo/ui": "57.0.14",

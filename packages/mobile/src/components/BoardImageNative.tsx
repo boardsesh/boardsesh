@@ -6,6 +6,7 @@ import type { BackgroundVariant } from '../lib/background-image-cache';
 import type { BoardRenderSettings } from '../lib/board-render-settings';
 import type { HoldColorOverrides } from '../lib/hold-color-overrides';
 import { LayeredClimbImage } from './LayeredClimbImage';
+import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
 
 type BoardImageNativeProps = {
   frames: string;
@@ -198,8 +199,11 @@ const BoardImageNative = React.memo(function BoardImageNative({
         // frames render nothing at all — `useNativeClimbRender` returns before
         // it draws — so retaining there would leave the holds the climber just
         // cleared painted on the board with nothing ever coming to replace them.
+        //
+        // `overlayRetainIdentity` folds the spray wall version in, so a reset is a
+        // different board as far as bridging goes.
         retainPreviousOverlayFor={
-          retainPreviousOverlay && frames ? `${boardName}-${layoutId}-${sizeId}-${setIds}` : undefined
+          retainPreviousOverlay && frames ? overlayRetainIdentity(boardName, layoutId, sizeId, setIds) : undefined
         }
         underOverlay={underOverlay}
         // Only once the loader has given up: a null overlay during an ordinary

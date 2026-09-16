@@ -1,4 +1,10 @@
-import type { BoardArtGeometry, BoardArtGeometryQuery, OutlineCountsTable, WallLightness } from './types';
+import type {
+  BoardArtGeometry,
+  BoardArtGeometryKey,
+  BoardArtGeometryQuery,
+  OutlineCountsTable,
+  WallLightness,
+} from './types';
 import { boardArtGeometryKey } from './types';
 import { BOARD_ART_GEOMETRY_SHARDS, WALL_LIGHTNESS, loadOutlineCounts } from './generated/shards';
 import { BOARD_ART_GEOMETRY_SHARDS_ASYNC } from './shards-async';
@@ -45,6 +51,50 @@ const shardCache = new Map<string, BoardArtGeometry | null>();
 const pendingShards = new Map<string, Promise<BoardArtGeometry | null>>();
 
 /**
+ * Geometry handed in at RUNTIME rather than shipped as a shard, consulted before
+ * anything else (issue #5440).
+ *
+ * A spray wall is photographed by its owner and its holds arrive from the
+ * server, so there is no build-time shard for it and there never can be: the
+ * board did not exist when the tables were generated. The mobile spray registry
+ * maps a wall's canonical holds into the version's photo and registers the
+ * resulting silhouettes here, under the same `spray/<layoutId>-<sizeId>` key
+ * `boardArtGeometryKey` produces for every other board. Existing consumers —
+ * `use-native-climb-render.ts`, the backend's `board-geometry.ts` — then read a
+ * wall's true hold shapes through the call they already make.
+ *
+ * Checked FIRST, and kept out of `shardCache`, for two reasons. A wall reset
+ * replaces the whole table (new photo, new hold generation), and a re-register
+ * has to take effect at once rather than sit behind an entry the shard cache has
+ * already memoised. And nothing may overwrite a shipped shard by accident: a
+ * runtime key colliding with a catalogue one would silently repaint a real
+ * board, so registering is the caller's explicit act and
+ * `unregisterRuntimeGeometry` puts the catalogue answer back.
+ */
+const runtimeGeometry = new Map<string, BoardArtGeometry>();
+
+/**
+ * Publish geometry for a config the shards do not cover, replacing whatever was
+ * registered under the same key.
+ *
+ * Replacement is the point: a spray wall's version-2 holds must never be drawn
+ * alongside version-1's leftovers.
+ */
+export function registerRuntimeGeometry(key: BoardArtGeometryKey, geometry: BoardArtGeometry): void {
+  runtimeGeometry.set(key, geometry);
+}
+
+/** Withdraw runtime geometry, so the key falls back to the shards (for a wall: to nothing). */
+export function unregisterRuntimeGeometry(key: BoardArtGeometryKey): void {
+  runtimeGeometry.delete(key);
+}
+
+/** What is registered under a key right now, or `null`. */
+export function getRuntimeGeometry(key: BoardArtGeometryKey): BoardArtGeometry | null {
+  return runtimeGeometry.get(key) ?? null;
+}
+
+/**
  * The traced silhouettes, silhouette lightness and painted-LED offsets for one
  * board config, or `null` where the catalogue has no shard for it.
  *
@@ -58,6 +108,11 @@ const pendingShards = new Map<string, Promise<BoardArtGeometry | null>>();
  */
 export function loadBoardArtGeometry(query: BoardArtGeometryQuery): BoardArtGeometry | null {
   const key = boardArtGeometryKey(query);
+  // Runtime geometry outranks everything, including a memoised `null` — see
+  // `runtimeGeometry`.
+  const runtime = runtimeGeometry.get(key);
+  if (runtime) return runtime;
+
   const cached = shardCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -89,6 +144,8 @@ export function loadBoardArtGeometry(query: BoardArtGeometryQuery): BoardArtGeom
  */
 export function boardArtGeometryPending(query: BoardArtGeometryQuery): boolean {
   const key = boardArtGeometryKey(query);
+  // Registered runtime geometry is already in hand, so nothing is in flight.
+  if (runtimeGeometry.has(key)) return false;
   if (shardCache.has(key)) return false;
   return Boolean(BOARD_ART_GEOMETRY_SHARDS_ASYNC?.[key]);
 }
@@ -107,6 +164,9 @@ export function boardArtGeometryPending(query: BoardArtGeometryQuery): boolean {
  */
 export async function prefetchBoardArtGeometry(query: BoardArtGeometryQuery): Promise<BoardArtGeometry | null> {
   const key = boardArtGeometryKey(query);
+  const runtime = runtimeGeometry.get(key);
+  if (runtime) return runtime;
+
   const cached = shardCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -167,8 +227,13 @@ export function getOutlineCounts(): OutlineCountsTable {
   return loadOutlineCounts();
 }
 
-/** Drop the memoised shards. Tests only; the tables behind a key never change at runtime. */
+/**
+ * Drop the memoised shards AND every runtime registration. Tests only; the
+ * tables behind a catalogue key never change at runtime, and a wall's
+ * registration is withdrawn by name (`unregisterRuntimeGeometry`) in production.
+ */
 export function clearBoardArtGeometryCache(): void {
   shardCache.clear();
   pendingShards.clear();
+  runtimeGeometry.clear();
 }

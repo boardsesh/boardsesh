@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useBoardClimbRecentSenders } from '@boardsesh/board-presence-react';
 import { getBoardRenderData } from '../../../lib/board-details';
+import { useSprayWallToken } from '../../../lib/spray/use-spray-wall-token';
 import { parseSetIds } from '../../../lib/board-presence/parse-set-ids';
 import { useTheme } from '../../../providers/theme-provider';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
@@ -27,6 +28,10 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
 
+  // The kiosk is handed a board config and nothing else, so on a wall it would
+  // resolve `null` on its first render and show `WallEmptyState` for the whole
+  // session. `''` off spray, so no catalogue kiosk changes.
+  const sprayToken = useSprayWallToken(boardConfig.boardName, boardConfig.layoutId);
   const renderData = useMemo(() => {
     const setIds = parseSetIds(boardConfig.setIds);
     if (setIds.length === 0) return null;
@@ -36,7 +41,8 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
       sizeId: boardConfig.sizeId,
       setIds,
     });
-  }, [boardConfig]);
+    // `sprayToken` recomputes this when the wall lands or is reset.
+  }, [boardConfig, sprayToken]);
 
   const aspectRatio = renderData ? renderData.boardWidth / renderData.boardHeight : null;
   const { onLayout, layout, typeScale } = useWallKioskLayout(aspectRatio);

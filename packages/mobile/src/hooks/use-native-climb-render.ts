@@ -28,6 +28,7 @@ import {
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
+import { sprayCacheToken, subscribeToSprayWalls } from '../lib/spray/spray-wall-registry';
 import {
   ensureBackgroundsCached,
   tryGetBackgroundPathsSync,
@@ -1185,7 +1186,11 @@ function getBoardHoldIds(
   setIds: string,
   setIdsArray: number[],
 ): Set<number> | null {
-  const boardKey = `${boardName}-${layoutId}-${sizeId}-${setIds}`;
+  // The spray token carries the wall version (`''` for every catalogue board).
+  // Without it a reset would be answered out of this Set with the hold ids that
+  // came OFF the wall, and the overlay's hold-match check would pass on holds
+  // that no longer exist.
+  const boardKey = `${boardName}-${layoutId}-${sizeId}-${setIds}${sprayCacheToken(boardName, layoutId)}`;
   const cached = boardHoldIdsCache.get(boardKey);
   if (cached) return cached;
 
@@ -1201,6 +1206,13 @@ function getBoardHoldIds(
   boardHoldIdsCache.set(boardKey, holdIds);
   return holdIds;
 }
+
+/**
+ * Test-only handle onto the hold-id lookup, so the cache key can be pinned
+ * directly. The effect that calls it in production is behind a native renderer
+ * and a mounted surface; the KEY is the part that has to be right.
+ */
+export const _getBoardHoldIdsForTests = getBoardHoldIds;
 
 /** Test-only handle so a suite can force a fresh board-hold lookup. */
 export function _resetBoardHoldIdsCacheForTests(): void {
@@ -1381,7 +1393,20 @@ export function buildCacheKey(
   // board width. The token tracks the requested width, not the clamped
   // output, so it stays stable for a given (board, renderWidth) pair.
   const width = renderWidth != null ? `${renderWidth}` : 'full';
-  return `v${RENDERER_VERSION}_${style}_w${width}_${boardName}_${layoutId}_${sizeId}_${canonicalSetIds}_${framesHash}`;
+  // Spray walls only: `sprayCacheToken` is `''` for every catalogue board, so no
+  // overlay PNG already on disk changes name and the warm-up scan still matches.
+  // For a wall it is `-sv<version>`, and it has to be here rather than folded
+  // into `sizeId` — a wall's size id is its layout id forever, and encoding the
+  // version there would leak into `compatible_size_ids`, the offline key,
+  // `board_sessions.board_path` and share URLs (`docs/spray-walls.md`). Drop this
+  // token and a reset serves the previous generation's overlay over the new
+  // photo, which is the whole failure this exists to prevent.
+  //
+  // It rides on the SET-IDS segment, not on `sizeId`: `overlayNameMatchesScope`
+  // matches `_{boardName}_{layoutId}_{sizeId}_` as a delimited run to reap one
+  // board's art, and splitting that run would make a wall unreapable.
+  const spray = sprayCacheToken(boardName, layoutId);
+  return `v${RENDERER_VERSION}_${style}_w${width}_${boardName}_${layoutId}_${sizeId}_${canonicalSetIds}${spray}_${framesHash}`;
 }
 
 /**
@@ -1409,7 +1434,11 @@ export function buildBoardKey(
   // near-black MoonBoard layers resolve to `.dark.webp` siblings in dark mode
   // (see background-image-cache.ts), so without this term a flip would leave
   // the previous scheme's paths on screen until some other prop changed.
-  return `${boardName}-${layoutId}-${sizeId}-${setIds}-${variant}-${colorScheme}`;
+  //
+  // The wall version is in it for a third instance of the same reason: a spray
+  // wall's background is a downloaded photograph named per version, so a reset
+  // that did not move this key would leave the previous photo on screen.
+  return `${boardName}-${layoutId}-${sizeId}-${setIds}-${variant}-${colorScheme}${sprayCacheToken(boardName, layoutId)}`;
 }
 
 function getBoardConfig(
@@ -1432,7 +1461,11 @@ function getBoardConfig(
   litHoldIds: Set<number> = new Set(),
 ) {
   const widthKey = renderWidth != null ? `${renderWidth}` : 'full';
-  const configKey = `${boardName}-${layoutId}-${sizeId}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
+  // Spray token: the wall version, so a reset rebuilds the config (new hold
+  // positions, new photo dimensions, new runtime geometry) instead of reusing the
+  // entry the previous generation wrote.
+  const spray = sprayCacheToken(boardName, layoutId);
+  const configKey = `${boardName}-${layoutId}-${sizeId}${spray}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
   let cached = boardConfigCache.get(configKey);
 
   if (!cached) {
@@ -1882,9 +1915,26 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     [effectiveOverrideSignature, boardRenderSignature],
   );
 
+  // The wall version for a spray board, `''` for every catalogue one.
+  //
+  // Subscribed rather than read, because it is the ONE builder input that is not
+  // a prop: `useSprayWall` writes it into a module-level registry, so nothing
+  // would re-render the surfaces that key off it. Without this a board mounted
+  // before the wall query landed keeps the `-sv0` key it computed — the effect
+  // below never re-runs and the wall stays blank for the life of the hook
+  // instance — and after a reset the memoised previous-version key survives,
+  // which is the stale overlay over the new photograph this whole slice exists
+  // to prevent. A primitive snapshot, so a re-render with no change is a no-op.
+  const sprayVersionToken = useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => sprayCacheToken(boardName, layoutId), [boardName, layoutId]),
+  );
+
   // Both keys feed cache lookups on every FlashList row recycle; buildCacheKey
   // runs an fnv1a char-loop over the frames string. Memoize on exactly the
   // builders' inputs — a stale key would collide two climbs' overlays.
+  // `sprayVersionToken` is in the deps for that reason: the builders read it out
+  // of the registry rather than off a prop.
   const currentCacheKey = useMemo(
     () =>
       buildCacheKey(
@@ -1897,11 +1947,21 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         renderWidth,
         effectiveRenderSignature,
       ),
-    [boardName, layoutId, sizeId, setIds, flatFrames, filledStyle, renderWidth, effectiveRenderSignature],
+    [
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      flatFrames,
+      filledStyle,
+      renderWidth,
+      effectiveRenderSignature,
+      sprayVersionToken,
+    ],
   );
   const currentBoardKey = useMemo(
     () => buildBoardKey(boardName, layoutId, sizeId, setIds, variant, colorScheme),
-    [boardName, layoutId, sizeId, setIds, variant, colorScheme],
+    [boardName, layoutId, sizeId, setIds, variant, colorScheme, sprayVersionToken],
   );
 
   // Parsed set ids, reused by the lazy background initializer and the
